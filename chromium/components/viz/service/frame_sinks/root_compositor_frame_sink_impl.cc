@@ -702,14 +702,14 @@ void RootCompositorFrameSinkImpl::FrameIntervalDeciderResultCallback(
   // and ChromeOS. Support other platforms / configurations.
 
   base::TimeDelta interval = absl::visit(
-      base::Overloaded(
+      base::Overloaded{
           [](FrameIntervalDecider::FrameIntervalClass frame_interval_class) {
             // For now, setting 0 implies no preference, and
             // allow the OS to use its own heuristics to
             // estimate.
             return base::Milliseconds(0);
           },
-          [](base::TimeDelta interval) { return interval; }),
+          [](base::TimeDelta interval) { return interval; }},
       result);
 
   if (decided_display_interval_ == interval) {

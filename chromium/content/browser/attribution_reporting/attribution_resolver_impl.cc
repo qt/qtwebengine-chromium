@@ -1144,7 +1144,7 @@ AttributionResolverImpl::ProcessAggregatableDebugReport(
     base::UmaHistogramEnumeration(
         "Conversions.AggregatableDebugReport.ProcessResult", result);
 
-    return ProcessAggregatableDebugReportResult(std::move(report), result);
+    return ProcessAggregatableDebugReportResult{std::move(report), result};
   };
 
   report.set_report_id(delegate_->NewReportID());

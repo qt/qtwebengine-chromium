@@ -541,12 +541,14 @@ void SplitCookiesIntoAllowedAndBlocked(
     if (cookie_and_access_result->access_result.status
             .ExcludedByUserPreferencesOrTPCD()) {
       blocked->cookie_access_result_list.emplace_back(
-          std::move(cookie_and_access_result->cookie_or_line->get_cookie()),
-          cookie_and_access_result->access_result);
+          net::CookieWithAccessResult{
+              std::move(cookie_and_access_result->cookie_or_line->get_cookie()),
+              cookie_and_access_result->access_result});
     } else if (cookie_and_access_result->access_result.status.IsInclude()) {
       allowed->cookie_access_result_list.emplace_back(
-          std::move(cookie_and_access_result->cookie_or_line->get_cookie()),
-          cookie_and_access_result->access_result);
+          net::CookieWithAccessResult{
+              std::move(cookie_and_access_result->cookie_or_line->get_cookie()),
+              cookie_and_access_result->access_result});
     }
   }
 }

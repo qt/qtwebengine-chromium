@@ -7765,7 +7765,7 @@ std::optional<PositionAreaKeyword> ConsumePositionAreaKeyword(
     default:
       return std::nullopt;
   }
-  return PositionAreaKeyword(css_parsing_utils::ConsumeIdent(stream), type);
+  return PositionAreaKeyword{css_parsing_utils::ConsumeIdent(stream), type};
 }
 
 }  // namespace

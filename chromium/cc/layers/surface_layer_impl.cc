@@ -258,12 +258,12 @@ void SurfaceLayerImpl::AppendRainbowDebugBorder(
       layer_tree_impl() ? layer_tree_impl()->device_scale_factor() : 1);
 
   auto colors = std::to_array<SkColor4f>({
-      SkColor4f(1.0f, 0.0f, 0.0f, 0.5f),     // Red.
-      SkColor4f(1.0f, 0.65f, 0.0f, 0.5f),    // Orange.
-      SkColor4f(1.0f, 1.0f, 0.0f, 0.5f),     // Yellow.
-      SkColor4f(0.0f, 0.5f, 0.0f, 0.5f),     // Green.
-      SkColor4f(0.0f, 0.0f, 1.0f, 0.50f),    // Blue.
-      SkColor4f(0.93f, 0.51f, 0.93f, 0.5f),  // Violet.
+      SkColor4f{1.0f, 0.0f, 0.0f, 0.5f},     // Red.
+      SkColor4f{1.0f, 0.65f, 0.0f, 0.5f},    // Orange.
+      SkColor4f{1.0f, 1.0f, 0.0f, 0.5f},     // Yellow.
+      SkColor4f{0.0f, 0.5f, 0.0f, 0.5f},     // Green.
+      SkColor4f{0.0f, 0.0f, 1.0f, 0.50f},    // Blue.
+      SkColor4f{0.93f, 0.51f, 0.93f, 0.5f},  // Violet.
   });
 
   const int kStripeWidth = 300;

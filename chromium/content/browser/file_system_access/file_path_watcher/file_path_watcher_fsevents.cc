@@ -255,12 +255,12 @@ void FilePathWatcherFSEvents::FSEventsCallback(
     if (cf_inode) {
       SInt64 sint_inode;
       if (CFNumberGetValue(cf_inode, kCFNumberSInt64Type, &sint_inode)) {
-        events[event_id] = ChangeEvent(event_flags, event_path,
-                                       static_cast<uint64_t>(sint_inode));
+        events[event_id] = ChangeEvent{event_flags, event_path,
+                                       static_cast<uint64_t>(sint_inode)};
         continue;
       }
     }
-    events[event_id] = ChangeEvent(event_flags, event_path, std::nullopt);
+    events[event_id] = ChangeEvent{event_flags, event_path, std::nullopt};
   }
 
   // Reinitialize the event stream if we find changes to the root. This is

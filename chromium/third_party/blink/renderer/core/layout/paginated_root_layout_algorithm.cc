@@ -74,7 +74,7 @@ const LayoutResult* PaginatedRootLayoutAlgorithm::Layout() {
     // so that we don't have to add work-arounds to ignore it on the paint side.
     LogicalOffset origin =
         converter.ToLogical(PhysicalOffset(), result.fragment->Size());
-    page_containers.emplace_back(result.fragment, origin);
+    page_containers.emplace_back(LogicalFragmentLink{result.fragment, origin});
 
     page_area_params.break_token = result.fragmentainer_break_token;
     needs_total_page_count |= result.needs_total_page_count;
@@ -122,7 +122,8 @@ const LayoutResult* PaginatedRootLayoutAlgorithm::Layout() {
       DCHECK(!result.needs_total_page_count);
 
       page_area_params.break_token = result.fragmentainer_break_token;
-      page_containers.emplace_back(result.fragment, old_container.offset);
+      page_containers.emplace_back(
+          LogicalFragmentLink{result.fragment, old_container.offset});
       page_index++;
     }
   }

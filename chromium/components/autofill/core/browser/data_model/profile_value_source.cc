@@ -18,7 +18,7 @@ void PossibleProfileValueSources::AddPossibleValueSource(std::string identifier,
   if (!IsAddressType(type)) {
     return;
   }
-  profile_value_sources_.emplace_back(std::move(identifier), type);
+  profile_value_sources_.push_back({std::move(identifier), type});
 }
 
 void PossibleProfileValueSources::ClearAllPossibleValueSources() {

@@ -90,8 +90,8 @@ CreateReportResult::EventLevel CreateEventLevelResult(
       DCHECK(dropped_event_level_report.has_value());
       DCHECK_EQ(dropped_event_level_report->GetReportType(),
                 AttributionReport::Type::kEventLevel);
-      return CreateReportResult::PriorityTooLow(
-          *std::move(dropped_event_level_report));
+      return CreateReportResult::PriorityTooLow{
+          *std::move(dropped_event_level_report)};
     case EventLevelResult::kNeverAttributedSource:
       return CreateReportResult::NeverAttributedSource();
     case EventLevelResult::kExcessiveReportingOrigins:
@@ -108,8 +108,8 @@ CreateReportResult::EventLevel CreateEventLevelResult(
       DCHECK(dropped_event_level_report.has_value());
       DCHECK_EQ(dropped_event_level_report->GetReportType(),
                 AttributionReport::Type::kEventLevel);
-      return CreateReportResult::ExcessiveEventLevelReports(
-          *std::move(dropped_event_level_report));
+      return CreateReportResult::ExcessiveEventLevelReports{
+          *std::move(dropped_event_level_report)};
     case EventLevelResult::kFalselyAttributedSource:
       return CreateReportResult::FalselyAttributedSource();
     case EventLevelResult::kReportWindowPassed:
@@ -133,8 +133,8 @@ CreateReportResult::Aggregatable CreateAggregatableResult(
       DCHECK(new_aggregatable_report.has_value());
       DCHECK_EQ(new_aggregatable_report->GetReportType(),
                 AttributionReport::Type::kAggregatableAttribution);
-      return CreateReportResult::AggregatableSuccess(
-          *std::move(new_aggregatable_report));
+      return CreateReportResult::AggregatableSuccess{
+          *std::move(new_aggregatable_report)};
     case AggregatableResult::kInternalError:
       return CreateReportResult::InternalError();
     case AggregatableResult::kNoCapacityForConversionDestination:

@@ -522,8 +522,8 @@ void BiddingAndAuctionResponse::TryParseSingleDebugReport(
           report_dict.FindBool("isSellerReport");
       bool is_seller_report =
           maybe_seller_report.has_value() && *maybe_seller_report;
-      output.component_win_debugging_only_reports[DebugReportKey(
-          is_seller_report, is_win_report)] = reporting_url;
+      output.component_win_debugging_only_reports[DebugReportKey{
+          is_seller_report, is_win_report}] = reporting_url;
     }
   } else {
     // "url" field is allowed to be not set in debugReports, for cases like

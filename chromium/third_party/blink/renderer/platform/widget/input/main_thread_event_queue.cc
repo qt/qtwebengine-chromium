@@ -225,15 +225,16 @@ class QueuedWebInputEvent : public MainThreadEventQueueTask {
   };
   void TakeCallbacksInto(Vector<CallbackInfo>& callbacks) {
     if (callback_) {
-      callbacks.emplace_back(std::move(callback_), event_->latency_info());
+      callbacks.emplace_back(
+          CallbackInfo{std::move(callback_), event_->latency_info()});
     }
     if (!blocking_coalesced_callbacks_.empty()) {
       ui::LatencyInfo coalesced_latency_info = event_->latency_info();
       coalesced_latency_info.set_coalesced();
       for (auto& callback : blocking_coalesced_callbacks_) {
         coalesced_latency_info.set_trace_id(callback.second);
-        callbacks.emplace_back(std::move(callback.first),
-                               coalesced_latency_info);
+        callbacks.emplace_back(
+            CallbackInfo{std::move(callback.first), coalesced_latency_info});
       }
       blocking_coalesced_callbacks_.clear();
     }

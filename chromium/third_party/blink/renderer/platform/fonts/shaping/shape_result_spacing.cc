@@ -90,8 +90,8 @@ void ShapeResultSpacing<TextContainerType>::ComputeExpansion(
   }
 
   if (expansion_opportunity_count_) {
-    expansion_per_opportunity_ =
-        (expansion_ / expansion_opportunity_count_).To<TextRunLayoutUnit>();
+    expansion_per_opportunity_ = (expansion_ / expansion_opportunity_count_)
+                                     .template To<TextRunLayoutUnit>();
   }
 }
 
@@ -105,7 +105,8 @@ TextRunLayoutUnit ShapeResultSpacing<TextContainerType>::NextExpansion() {
   is_after_expansion_ = true;
 
   if (!--expansion_opportunity_count_) [[unlikely]] {
-    const TextRunLayoutUnit remaining = expansion_.To<TextRunLayoutUnit>();
+    const TextRunLayoutUnit remaining =
+        expansion_.template To<TextRunLayoutUnit>();
     expansion_ = InlineLayoutUnit();
     return remaining;
   }

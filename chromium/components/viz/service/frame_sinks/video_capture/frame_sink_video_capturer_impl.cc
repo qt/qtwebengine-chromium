@@ -526,7 +526,7 @@ void FrameSinkVideoCapturerImpl::CreateOverlay(
   // This will cause an existing overlay with the same stacking index to be
   // dropped, per mojom-documented behavior.
   overlays_.emplace(stacking_index, std::make_unique<VideoCaptureOverlay>(
-                                        *this, std::move(receiver)));
+                                        this, std::move(receiver)));
 }
 
 gfx::Size FrameSinkVideoCapturerImpl::GetSourceSize() {

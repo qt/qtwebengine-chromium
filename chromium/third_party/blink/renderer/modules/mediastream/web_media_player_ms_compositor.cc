@@ -471,8 +471,8 @@ void WebMediaPlayerMSCompositor::EnqueueFrame(
     RenderWithoutAlgorithm(frame, is_copy);
   }
 
-  pending_frames_info_.emplace_back(frame->unique_id(), frame->timestamp(),
-                                    render_time, is_copy);
+  pending_frames_info_.emplace_back(PendingFrameInfo{
+      frame->unique_id(), frame->timestamp(), render_time, is_copy});
   rendering_frame_buffer_->EnqueueFrame(std::move(frame));
 
   // Note 2: `EnqueueFrame` may drop the frame instead of enqueuing it for many

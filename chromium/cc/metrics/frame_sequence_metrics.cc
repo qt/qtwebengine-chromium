@@ -632,7 +632,7 @@ void FrameSequenceMetrics::CalculateJankV3(
           // Record `last_presented_termination_time` and `current_frame_delta`
           // as the timestamp and duration of the current jank.
           v3_.janks.push_back(
-              Jank(last_presented_termination_time, current_frame_delta));
+              Jank{last_presented_termination_time, current_frame_delta});
         }
         TraceJankV3(frame_info.sequence_number, last_presented_termination_time,
                     termination_time);

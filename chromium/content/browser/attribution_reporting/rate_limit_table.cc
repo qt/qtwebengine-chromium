@@ -463,8 +463,8 @@ RateLimitTable::GetSourcesToDeactivateForDestinationLimit(
     AddDestination(
         destination_datas, destination.Serialize(),
         StoredSource::Id(kUnsetRecordId),
-        DestinationAttribute(source.registration().destination_limit_priority,
-                             source_time));
+        DestinationAttribute{source.registration().destination_limit_priority,
+                             source_time});
   }
 
   // Check the number of unique destinations covered by all source registrations
@@ -490,8 +490,8 @@ RateLimitTable::GetSourcesToDeactivateForDestinationLimit(
     }
     AddDestination(destination_datas, /*destination=*/statement.ColumnString(0),
                    StoredSource::Id(source_id),
-                   DestinationAttribute(/*priority=*/statement.ColumnInt64(2),
-                                        /*time=*/statement.ColumnTime(1)));
+                   DestinationAttribute{/*priority=*/statement.ColumnInt64(2),
+                                        /*time=*/statement.ColumnTime(1)});
   }
 
   if (!statement.Succeeded()) {

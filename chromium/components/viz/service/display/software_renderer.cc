@@ -1045,7 +1045,8 @@ void SoftwareRenderer::AllocateRenderPassResourceIfNeeded(
   if (!bitmap.tryAllocPixels(info))
     base::TerminateBecauseOutOfMemory(info.computeMinByteSize());
 
-  render_pass_bitmaps_.emplace(render_pass_id, std::move(bitmap));
+  render_pass_bitmaps_.emplace(render_pass_id,
+                               RenderPassBitmapBacking{std::move(bitmap)});
 }
 
 bool SoftwareRenderer::IsRenderPassResourceAllocated(

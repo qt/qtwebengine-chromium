@@ -1329,10 +1329,10 @@ void LayerPropertiesUpdater::AddNonCompositedScroll(const PaintChunk& chunk) {
       hit_test_opaqueness = cc::HitTestOpaqueness::kMixed;
     }
     top_non_composited_scrolls_.emplace_back(
-        &scroll_translation,
-        chunk_to_layer_mapper_.MapVisualRect(
-            chunk.hit_test_data->scroll_hit_test_rect),
-        hit_test_opaqueness);
+        NonCompositedScroll{&scroll_translation,
+                            chunk_to_layer_mapper_.MapVisualRect(
+                                chunk.hit_test_data->scroll_hit_test_rect),
+                            hit_test_opaqueness});
   } else {
     // A top non-composited scroller with nested non-composited scrollers is
     // forced to be non-fast.
@@ -1553,9 +1553,9 @@ void LayerPropertiesUpdater::Update() {
       if (scroll.hit_test_opaqueness == cc::HitTestOpaqueness::kMixed) {
         main_thread_scroll_hit_test_region_.Union(scroll.layer_hit_test_rect);
       } else if (scroll.hit_test_opaqueness == cc::HitTestOpaqueness::kOpaque) {
-        non_composited_scroll_hit_test_rects.emplace_back(
+        non_composited_scroll_hit_test_rects.emplace_back(cc::ScrollHitTestRect{
             scroll.scroll_translation->ScrollNode()->GetCompositorElementId(),
-            scroll.layer_hit_test_rect);
+            scroll.layer_hit_test_rect});
       }
     }
     layer_.SetMainThreadScrollHitTestRegion(

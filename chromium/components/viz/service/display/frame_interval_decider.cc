@@ -84,7 +84,7 @@ FrameIntervalDecider::~FrameIntervalDecider() = default;
 void FrameIntervalDecider::UpdateSettings(
     Settings settings,
     std::vector<std::unique_ptr<FrameIntervalMatcher>> matchers) {
-  absl::visit(base::Overloaded(
+  absl::visit(base::Overloaded{
                   [](const absl::monostate& monostate) {},
                   [](const FixedIntervalSettings& fixed_interval_settings) {
                     CHECK(!fixed_interval_settings.supported_intervals.empty());
@@ -94,7 +94,7 @@ void FrameIntervalDecider::UpdateSettings(
                   [](const ContinuousRangeSettings& continuous_range_settings) {
                     CHECK_LE(continuous_range_settings.min_interval,
                              continuous_range_settings.max_interval);
-                  }),
+                  }},
               settings.interval_settings);
 
   settings_ = std::move(settings);
@@ -133,7 +133,7 @@ void FrameIntervalDecider::Decide(
   // If nothing matched, use the default.
   if (!match_result) {
     match_result = absl::visit(
-        base::Overloaded(
+        base::Overloaded{
             [](const absl::monostate& monostate) -> Result {
               return FrameIntervalClass::kDefault;
             },
@@ -141,7 +141,7 @@ void FrameIntervalDecider::Decide(
               return fixed_interval_settings.default_interval;
             },
             [](const ContinuousRangeSettings& continuous_range_settings)
-                -> Result { return continuous_range_settings.min_interval; }),
+                -> Result { return continuous_range_settings.min_interval; }},
         settings_.interval_settings);
   }
 
@@ -190,7 +190,7 @@ bool FrameIntervalDecider::MayDecreaseFrameInterval(
     return true;
   }
   return absl::visit(
-      base::Overloaded(
+      base::Overloaded{
           [&](FrameIntervalClass from_frame_interval_class) {
             if (!absl::holds_alternative<FrameIntervalClass>(to.value())) {
               return true;
@@ -207,7 +207,7 @@ bool FrameIntervalDecider::MayDecreaseFrameInterval(
             base::TimeDelta to_interval =
                 absl::get<base::TimeDelta>(to.value());
             return from_interval > to_interval;
-          }),
+          }},
       from.value());
 }
 

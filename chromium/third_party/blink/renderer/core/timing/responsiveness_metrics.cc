@@ -569,7 +569,7 @@ void ResponsivenessMetrics::SetKeyIdAndRecordLatency(
       key_code_to_interaction_info_map_.Set(key_code, std::move(keydown_entry));
     }
     last_keydown_keycode_info_ =
-        KeycodeInfo(key_code, GetCurrentInteractionId(), GetInteractionCount());
+        KeycodeInfo{key_code, GetCurrentInteractionId(), GetInteractionCount()};
   } else if (event_type == event_type_names::kKeyup) {
     if (composition_state_ == kNonComposition) {
       CHECK(entry->GetEventTimingReportingInfo()->key_code.has_value());
