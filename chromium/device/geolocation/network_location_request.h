@@ -49,6 +49,7 @@ class NetworkLocationRequest : private net::URLFetcherDelegate {
   bool MakeRequest(const WifiData& wifi_data, const base::Time& wifi_timestamp);
 
   bool is_request_pending() const { return url_fetcher_ != NULL; }
+  const std::string api_key() const { return api_key_; }
 
  private:
   // net::URLFetcherDelegate
