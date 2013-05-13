@@ -11,12 +11,15 @@
 #include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "content/public/browser/access_token_store.h"
+#include "content/browser/geolocation/location_arbitrator_impl.h"
+#include "google_apis/google_api_keys.h"
 
 namespace content {
 namespace {
 // The maximum period of time we'll wait for a complete set of wifi data
 // before sending the request.
 const int kDataCompleteWaitSeconds = 2;
+const char kDummyToken[] = "dummytoken";
 }  // namespace
 
 // static
@@ -191,6 +194,15 @@ bool NetworkLocationProvider::StartProvider(bool high_accuracy) {
     LOG(WARNING) << "StartProvider() : Failed, Bad URL: "
                  << request_->url().possibly_invalid_spec();
     return false;
+  }
+
+  // No point in sending requests without an API key.
+  if (request_->url() == LocationArbitratorImpl::DefaultNetworkProviderURL()
+          && google_apis::GetAPIKey() == kDummyToken) {
+      Geoposition pos;
+      pos.error_code = Geoposition::ERROR_CODE_POSITION_UNAVAILABLE;
+      NotifyCallback(pos);
+      return false;
   }
 
   // Registers a callback with the data provider. The first call to Register
