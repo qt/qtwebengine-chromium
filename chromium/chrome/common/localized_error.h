@@ -55,9 +55,11 @@ class LocalizedError {
   // on HTTP errors, like 404 or connection reset, but using information from
   // the associated |app| in order to make the error page look like it's more
   // part of the app.
+#if !defined(TOOLKIT_QT)
   static void GetAppErrorStrings(const GURL& display_url,
                                  const extensions::Extension* app,
                                  base::DictionaryValue* error_strings);
+#endif // !defined(TOOLKIT_QT)
 #endif
 
   static const char kHttpErrorDomain[];
