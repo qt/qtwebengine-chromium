@@ -60,6 +60,7 @@ class NetworkLocationRequest {
                        partial_traffic_annotation);
 
   bool is_request_pending() const { return bool(url_loader_); }
+  const std::string api_key() const { return api_key_; }
 
  private:
   void OnRequestComplete(std::unique_ptr<std::string> data);
