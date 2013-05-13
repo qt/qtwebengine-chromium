@@ -33,10 +33,9 @@
 #include "chrome/common/chrome_switches.h"
 #endif
 
-#if defined(ENABLE_EXTENSIONS)
-#include "extensions/common/constants.h"
-#include "extensions/common/extension_icon_set.h"
-#include "extensions/common/manifest_handlers/icons_handler.h"
+#if defined(TOOLKIT_QT)
+// Used to fetch the application name
+#include "web_engine_library_info.h"
 #endif
 
 using blink::WebURLError;
@@ -601,7 +600,11 @@ void LocalizedError::GetStrings(int error_code,
   summary->SetString("hostName", net::IDNToUnicode(failed_url.host(),
                                                    accept_languages));
   summary->SetString("productName",
+#if !defined(TOOLKIT_QT)
                      l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
+#else
+                     WebEngineLibraryInfo::getApplicationName());
+#endif
 
   error_strings->SetString(
       "details", l10n_util::GetStringUTF16(IDS_ERRORPAGE_NET_BUTTON_DETAILS));
@@ -886,7 +889,8 @@ bool LocalizedError::HasStrings(const std::string& error_domain,
   return LookupErrorMap(error_domain, error_code, /*is_post=*/false) != NULL;
 }
 
-#if defined(ENABLE_EXTENSIONS)
+
+#if !defined(TOOLKIT_QT)
 void LocalizedError::GetAppErrorStrings(
     const GURL& display_url,
     const extensions::Extension* app,
@@ -926,4 +930,4 @@ void LocalizedError::GetAppErrorStrings(
   error_strings->Set("suggestionsLearnMore", suggest_learn_more);
 #endif  // defined(OS_CHROMEOS)
 }
-#endif
+#endif // !defined(TOOLKIT_QT)
