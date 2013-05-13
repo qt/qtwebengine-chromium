@@ -1649,8 +1649,13 @@ def CalculateVariables(default_variables, params):
     default_variables.setdefault('SHARED_LIB_SUFFIX', '.so')
     default_variables.setdefault('SHARED_LIB_DIR',
                                  os.path.join('$!PRODUCT_DIR', 'lib'))
+    # Take into account the fact that toplevel_dir might not be equal to depth
+    toplevel_offset = ''
+    if 'options' in params:
+      options = params['options']
+      toplevel_offset = os.path.relpath(options.depth, options.toplevel_dir)
     default_variables.setdefault('LIB_DIR',
-                                 os.path.join('$!PRODUCT_DIR', 'obj'))
+                                 os.path.join('$!PRODUCT_DIR', 'obj', toplevel_offset))
 
 def ComputeOutputDir(params):
   """Returns the path from the toplevel_dir to the build output directory."""
