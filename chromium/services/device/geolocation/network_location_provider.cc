@@ -151,6 +151,14 @@ void NetworkLocationProvider::StartProvider(bool high_accuracy) {
   if (IsStarted())
     return;
 
+  // No point in sending requests without an API key.
+  if (request_->api_key().empty()) {
+      mojom::Geoposition pos;
+      pos.error_code = mojom::Geoposition::ErrorCode::POSITION_UNAVAILABLE;
+      location_provider_update_callback_.Run(this, pos);
+      return;
+  }
+
   // Registers a callback with the data provider. The first call to Register()
   // will create a singleton data provider that will be deleted on Unregister().
   wifi_data_provider_manager_ =
