@@ -59,6 +59,7 @@ class DEVICE_GEOLOCATION_EXPORT NetworkLocationRequest
                        partial_traffic_annotation);
 
   bool is_request_pending() const { return url_fetcher_ != NULL; }
+  const std::string api_key() const { return api_key_; }
 
  private:
   // net::URLFetcherDelegate
