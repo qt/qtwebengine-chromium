@@ -430,6 +430,12 @@ namespace webrtc {
 class DesktopConfigurationMonitor;
 }
 
+namespace QtWebEngineCore {
+class DevToolsFrontendQt;
+class PrefServiceAdapter;
+class ProfileAdapter;
+}
+
 namespace base {
 class Environment;
 }
@@ -624,6 +630,10 @@ class BASE_EXPORT [[nodiscard]] ScopedAllowBlocking {
   friend class weblayer::ContentBrowserClientImpl;
   friend class weblayer::ProfileImpl;
   friend class weblayer::WebLayerPathProvider;
+
+  friend class QtWebEngineCore::DevToolsFrontendQt;
+  friend class QtWebEngineCore::PrefServiceAdapter;
+  friend class QtWebEngineCore::ProfileAdapter;
 
   // Sorting with function name (with namespace), ignoring the return type.
   friend void base::GetNSExecutablePath(base::FilePath*);
