@@ -45,6 +45,11 @@
 #include "build/build_config.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
+namespace QtWebEngineCore {
+class MessageLoopForUIQt;
+class WebContentsAdapter;
+}
+
 namespace base {
 
 namespace internal {
@@ -213,6 +218,8 @@ class BASE_EXPORT SequenceManagerImpl
   friend class internal::TaskQueueImpl;
   friend class internal::DefaultWakeUpQueue;
   friend class ::base::sequence_manager::SequenceManagerForTest;
+  friend class QtWebEngineCore::MessagePumpForUIQt;
+  friend class QtWebEngineCore::WebContentsAdapter;
 
  private:
   // Returns the SequenceManager running the

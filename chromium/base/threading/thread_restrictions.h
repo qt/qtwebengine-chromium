@@ -441,6 +441,12 @@ namespace webrtc {
 class DesktopConfigurationMonitor;
 }
 
+namespace QtWebEngineCore {
+class DevToolsFrontendQt;
+class PrefServiceAdapter;
+class ProfileAdapter;
+}
+
 namespace base {
 class Environment;
 }
@@ -658,6 +664,10 @@ class BASE_EXPORT [[maybe_unused, nodiscard]] ScopedAllowBlocking {
   friend class base::win::OSInfo;
   friend class content::WebContentsImpl;  // http://crbug.com/1262162
 #endif
+
+  friend class QtWebEngineCore::DevToolsFrontendQt;
+  friend class QtWebEngineCore::PrefServiceAdapter;
+  friend class QtWebEngineCore::ProfileAdapter;
 
   // Sorted by function name (with namespace), ignoring the return type.
   friend bool ::EnsureBrowserStateDirectoriesCreated(const base::FilePath&,
