@@ -451,6 +451,12 @@ class WebLayerPathProvider;
 // NOTE: Please do not append entries here. Put them in the list above and keep
 // the list sorted.
 
+namespace QtWebEngineCore {
+class DevToolsFrontendQt;
+class PrefServiceAdapter;
+class ProfileAdapter;
+}
+
 namespace base {
 
 namespace android {
@@ -663,6 +669,10 @@ class BASE_EXPORT ScopedAllowBlocking {
 #if BUILDFLAG(IS_IOS)
   friend class ::BrowserStateDirectoryBuilder;
 #endif
+
+  friend class QtWebEngineCore::DevToolsFrontendQt;
+  friend class QtWebEngineCore::PrefServiceAdapter;
+  friend class QtWebEngineCore::ProfileAdapter;
 
   // Sorted by function name (with namespace), ignoring the return type.
   friend Profile* ::GetLastProfileMac();  // http://crbug.com/1176734
