@@ -17,6 +17,11 @@
 #include "base/task/task_observer.h"
 #include "build/build_config.h"
 
+namespace QtWebEngineCore {
+class MessagePumpForUIQt;
+class WebContentsAdapter;
+}
+
 namespace web {
 class TestWebThreadBundle;
 }
@@ -208,6 +213,8 @@ class BASE_EXPORT MessageLoopCurrent {
   friend class sequence_manager::internal::SequenceManagerImpl;
   friend class MessageLoopTaskRunnerTest;
   friend class web::TestWebThreadBundle;
+  friend class QtWebEngineCore::MessagePumpForUIQt;
+  friend class QtWebEngineCore::WebContentsAdapter;
 
   // Return the pointer to MessageLoop for internal needs.
   // All other callers should call MessageLoopCurrent::Get().
