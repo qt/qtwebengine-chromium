@@ -13,6 +13,10 @@
 #include "base/threading/thread_checker.h"
 #include "build/build_config.h"
 
+namespace QtWebEngineCore {
+class WebEngineContext;
+}
+
 namespace base {
 #if defined(OS_ANDROID)
 class MessagePumpForUI;
@@ -74,6 +78,7 @@ class BASE_EXPORT RunLoop {
 
  private:
   friend class MessageLoop;
+  friend class QtWebEngineCore::WebEngineContext;
 #if defined(OS_ANDROID)
   // Android doesn't support the blocking MessageLoop::Run, so it calls
   // BeforeRun and AfterRun directly.
