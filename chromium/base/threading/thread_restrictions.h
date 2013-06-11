@@ -344,6 +344,12 @@ namespace webrtc {
 class DesktopConfigurationMonitor;
 }
 
+namespace QtWebEngineCore {
+class DevToolsFrontendQt;
+class PrefServiceAdapter;
+class ProfileAdapter;
+}
+
 namespace base {
 class Environment;
 }
@@ -488,6 +494,10 @@ class BASE_EXPORT ScopedAllowBlocking {
   friend class weblayer::ContentBrowserClientImpl;
   friend class weblayer::ProfileImpl;
   friend class weblayer::WebLayerPathProvider;
+
+  friend class QtWebEngineCore::DevToolsFrontendQt;
+  friend class QtWebEngineCore::PrefServiceAdapter;
+  friend class QtWebEngineCore::ProfileAdapter;
 
   friend Profile* ::GetLastProfileMac();  // crbug.com/1176734
   friend bool PathProviderWin(int, FilePath*);
