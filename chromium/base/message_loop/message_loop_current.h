@@ -17,6 +17,11 @@
 #include "base/task/task_observer.h"
 #include "build/build_config.h"
 
+namespace QtWebEngineCore {
+class MessagePumpForUIQt;
+class WebContentsAdapter;
+}
+
 namespace web {
 class TestWebThreadBundle;
 }
@@ -192,6 +197,8 @@ class BASE_EXPORT MessageLoopCurrent {
   friend class sequence_manager::internal::SequenceManagerImpl;
   friend class MessageLoopTaskRunnerTest;
   friend class web::TestWebThreadBundle;
+  friend class QtWebEngineCore::MessagePumpForUIQt;
+  friend class QtWebEngineCore::WebContentsAdapter;
 
   sequence_manager::internal::SequenceManagerImpl* current_;
 };
