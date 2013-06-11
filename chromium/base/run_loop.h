@@ -21,6 +21,10 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 
+namespace QtWebEngineCore {
+class WebEngineContext;
+}
+
 namespace base {
 
 namespace test {
@@ -285,6 +289,7 @@ class BASE_EXPORT RunLoop {
 
  private:
   FRIEND_TEST_ALL_PREFIXES(MessageLoopTypedTest, RunLoopQuitOrderAfter);
+  friend class QtWebEngineCore::WebEngineContext;
 
 #if defined(OS_ANDROID)
   // Android doesn't support the blocking RunLoop::Run, so it calls
