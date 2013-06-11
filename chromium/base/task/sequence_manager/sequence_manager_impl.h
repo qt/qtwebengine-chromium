@@ -51,6 +51,11 @@
 #include "base/values.h"
 #include "build/build_config.h"
 
+namespace QtWebEngineCore {
+class MessageLoopForUIQt;
+class WebContentsAdapter;
+}
+
 namespace base {
 
 namespace internal {
@@ -219,6 +224,8 @@ class BASE_EXPORT SequenceManagerImpl
   friend class internal::TaskQueueImpl;
   friend class internal::DefaultWakeUpQueue;
   friend class ::base::sequence_manager::SequenceManagerForTest;
+  friend class QtWebEngineCore::MessagePumpForUIQt;
+  friend class QtWebEngineCore::WebContentsAdapter;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(SequenceManagerTest,

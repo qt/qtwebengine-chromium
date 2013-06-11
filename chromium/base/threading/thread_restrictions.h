@@ -460,6 +460,15 @@ class WebMainLoop;
 // NOTE: Please do not append entries here. Put them in the list above and keep
 // the list sorted.
 
+namespace QtWebEngineCore {
+class DevToolsFrontendQt;
+class NSSCryptoModuleDelegateQt;
+class PrefServiceAdapter;
+class ProfileAdapter;
+class PermissionManagerQt;
+class WebContentsAdapter;
+}
+
 namespace base {
 
 namespace android {
@@ -668,6 +677,12 @@ class BASE_EXPORT ScopedAllowBlocking {
   friend class ::BrowserStateDirectoryBuilder;
 #endif
 
+  friend class QtWebEngineCore::DevToolsFrontendQt;
+  friend class QtWebEngineCore::PrefServiceAdapter;
+  friend class QtWebEngineCore::ProfileAdapter;
+  friend class QtWebEngineCore::PermissionManagerQt;
+  friend class QtWebEngineCore::WebContentsAdapter;
+
   // Sorted by function name (with namespace), ignoring the return type.
   friend Profile* ::GetLastProfileMac();  // http://crbug.com/1176734
   // Note: This function return syntax is required so the "::" doesn't get
@@ -799,6 +814,8 @@ class BASE_EXPORT ScopedAllowBaseSyncPrimitives {
   friend class syncer::GetLocalChangesRequest;
   friend class updater::SystemctlLauncherScopedAllowBaseSyncPrimitives;
   friend class webnn::WebNNTensorImpl;
+
+  friend class QtWebEngineCore::NSSCryptoModuleDelegateQt;
 
   // Usage that should be fixed:
   // Sorted by class name (with namespace).
