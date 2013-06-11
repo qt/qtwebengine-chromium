@@ -40,6 +40,11 @@
 #include "base/values.h"
 #include "build/build_config.h"
 
+namespace QtWebEngineCore {
+class MessageLoopForUIQt;
+class WebContentsAdapter;
+}
+
 namespace base {
 
 namespace trace_event {
@@ -206,6 +211,8 @@ class BASE_EXPORT SequenceManagerImpl
 
   friend class internal::TaskQueueImpl;
   friend class ::base::sequence_manager::SequenceManagerForTest;
+  friend class QtWebEngineCore::MessagePumpForUIQt;
+  friend class QtWebEngineCore::WebContentsAdapter;
 
  private:
   class NativeWorkHandleImpl;
