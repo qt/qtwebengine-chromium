@@ -1474,6 +1474,9 @@
     # rlz codes for searches but do not use the library.
     'enable_rlz%': 0,
 
+    # Compile with libc++ instead of libstdc++.
+    'use_libcpp%' : 0,
+
     # Turns on the i18n support in V8.
     'v8_enable_i18n_support': 1,
 
@@ -2633,6 +2636,18 @@
       }],
       ['use_clipboard_aurax11==1', {
         'defines': ['USE_CLIPBOARD_AURAX11=1'],
+      }],
+      ['use_libcpp==1', {
+        'cflags_cc': [
+          '-Wno-deprecated',
+          '-Wno-newline-eof',
+          '-Wno-unknown-warning-option',
+          '-Wno-unused-value',
+          '-Wno-unused-variable',
+          '-Wno-unused-function',
+          '-Wno-header-hygiene',
+          '-stdlib=libc++'
+        ],
       }],
       ['enable_one_click_signin==1', {
         'defines': ['ENABLE_ONE_CLICK_SIGNIN'],
@@ -4893,6 +4908,20 @@
                 # cfe-dev discussion.
                 '-Wno-selector-type-mismatch',
               ],
+            }],
+            ['use_libcpp==1', {
+              'OTHER_CPLUSPLUSFLAGS': ['-stdlib=libc++'],
+              'USE_LIBCPP': 'YES',
+              'WARNING_CFLAGS': [
+                '-Wno-deprecated',
+                '-Wno-newline-eof',
+                '-Wno-unknown-warning-option',
+                '-Wno-unused-value',
+                '-Wno-unused-variable',
+                '-Wno-unused-function',
+                '-Wno-header-hygiene',
+              ],
+
               'conditions': [
                 ['clang_xcode==0', {
                   'CC': '$(SOURCE_ROOT)/<(clang_dir)/clang',
