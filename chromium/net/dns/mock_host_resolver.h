@@ -209,7 +209,37 @@ class RuleBasedHostResolverProc : public HostResolverProc {
                       int* os_error) OVERRIDE;
 
  private:
-  struct Rule;
+  struct Rule {
+    enum ResolverType {
+      kResolverTypeFail,
+      kResolverTypeSystem,
+      kResolverTypeIPLiteral,
+    };
+
+    ResolverType resolver_type;
+    std::string host_pattern;
+    AddressFamily address_family;
+    HostResolverFlags host_resolver_flags;
+    std::string replacement;
+    std::string canonical_name;
+    int latency_ms;  // In milliseconds.
+
+    Rule(ResolverType resolver_type,
+         const std::string& host_pattern,
+         AddressFamily address_family,
+         HostResolverFlags host_resolver_flags,
+         const std::string& replacement,
+         const std::string& canonical_name,
+         int latency_ms)
+        : resolver_type(resolver_type),
+          host_pattern(host_pattern),
+          address_family(address_family),
+          host_resolver_flags(host_resolver_flags),
+          replacement(replacement),
+          canonical_name(canonical_name),
+          latency_ms(latency_ms) {}
+  };
+
   typedef std::list<Rule> RuleList;
 
   virtual ~RuleBasedHostResolverProc();

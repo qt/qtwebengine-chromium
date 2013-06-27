@@ -4,6 +4,8 @@
 
 #include "gpu/config/dx_diag_node.h"
 
+#if defined(OS_WIN)
+
 namespace gpu {
 
 DxDiagNode::DxDiagNode() {}
@@ -11,3 +13,5 @@ DxDiagNode::DxDiagNode() {}
 DxDiagNode::~DxDiagNode() {}
 
 }  // namespace gpu
+
+#endif // defined(OS_WIN)

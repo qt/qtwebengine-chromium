@@ -11,14 +11,11 @@
 
 #include "base/memory/weak_ptr.h"
 #include "ppapi/shared_impl/resource.h"
+#include "ppapi/shared_impl/scoped_pp_var.h"
 #include "third_party/WebKit/public/web/WebSerializedScriptValue.h"
 #include "third_party/npapi/bindings/npruntime.h"
 
 struct PP_Var;
-
-namespace ppapi {
-class ScopedPPVar;
-}
 
 namespace content {
 
@@ -90,7 +87,18 @@ class MessageChannel {
 
  private:
   // Struct for storing the result of a NPVariant being converted to a PP_Var.
-  struct VarConversionResult;
+  struct VarConversionResult {
+    VarConversionResult(const ppapi::ScopedPPVar& r, bool s)
+        : result(r),
+          success(s),
+          conversion_completed(true) {}
+    VarConversionResult()
+        : success(false),
+          conversion_completed(false) {}
+    ppapi::ScopedPPVar result;
+    bool success;
+    bool conversion_completed;
+  };
 
   // This is called when an NPVariant is finished being converted.
   // |result_iteartor| is an iterator into |converted_var_queue_| where the

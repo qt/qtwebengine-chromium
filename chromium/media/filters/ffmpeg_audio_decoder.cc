@@ -23,12 +23,6 @@
 
 namespace media {
 
-// Helper structure for managing multiple decoded audio frames per packet.
-struct QueuedAudioBuffer {
-  AudioDecoder::Status status;
-  scoped_refptr<AudioBuffer> buffer;
-};
-
 // Returns true if the decode result was end of stream.
 static inline bool IsEndOfStream(int result,
                                  int decoded_size,

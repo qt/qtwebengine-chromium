@@ -13,25 +13,6 @@
 
 namespace net {
 
-struct MockCertVerifier::Rule {
-  Rule(X509Certificate* cert,
-       const std::string& hostname,
-       const CertVerifyResult& result,
-       int rv)
-      : cert(cert),
-        hostname(hostname),
-        result(result),
-        rv(rv) {
-    DCHECK(cert);
-    DCHECK(result.verified_cert.get());
-  }
-
-  scoped_refptr<X509Certificate> cert;
-  std::string hostname;
-  CertVerifyResult result;
-  int rv;
-};
-
 MockCertVerifier::MockCertVerifier() : default_result_(ERR_CERT_INVALID) {}
 
 MockCertVerifier::~MockCertVerifier() {}

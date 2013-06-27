@@ -54,7 +54,20 @@ class WorkerDevToolsManager {
  private:
   friend struct DefaultSingletonTraits<WorkerDevToolsManager>;
   class DetachedClientHosts;
-  struct InspectedWorker;
+
+  struct InspectedWorker {
+    InspectedWorker(WorkerProcessHost* host, int route_id, const GURL& url,
+                    const base::string16& name)
+        : host(host),
+          route_id(route_id),
+          worker_url(url),
+          worker_name(name) {}
+    WorkerProcessHost* const host;
+    int const route_id;
+    GURL worker_url;
+    base::string16 worker_name;
+  };
+
   typedef std::list<InspectedWorker> InspectedWorkersList;
 
   WorkerDevToolsManager();
@@ -84,7 +97,16 @@ class WorkerDevToolsManager {
 
   InspectedWorkersList inspected_workers_;
 
-  struct TerminatedInspectedWorker;
+  struct TerminatedInspectedWorker {
+    TerminatedInspectedWorker(WorkerId id, const GURL& url, const base::string16& name)
+        : old_worker_id(id),
+          worker_url(url),
+          worker_name(name) {}
+    WorkerId old_worker_id;
+    GURL worker_url;
+    base::string16 worker_name;
+  };
+
   typedef std::list<TerminatedInspectedWorker> TerminatedInspectedWorkers;
   // List of terminated workers for which there may be a devtools client on
   // the UI thread. Worker entry is added into this list when inspected worker
