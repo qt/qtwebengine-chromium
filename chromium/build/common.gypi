@@ -4070,6 +4070,7 @@
                 '-Wno-unused-value',
                 '-Wno-unused-variable',
                 '-Wno-unused-function',
+                '-Wno-header-hygiene',
               ],
             }],
             ['clang==1 and clang_use_chrome_plugins==1', {
