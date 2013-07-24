@@ -60,6 +60,7 @@ def _ReadFirstIdsFromFile(filename, defines):
   def ReplaceVariable(matchobj):
     for key, value in defines.items():
       if matchobj.group(1) == key:
+        value = os.path.abspath(value)
         return value
     return ''
 
@@ -596,6 +597,11 @@ class GritNode(base.Node):
         abs_filename = os.path.abspath(filename_or_stream)
         if abs_filename[:len(src_root_dir)] != src_root_dir:
           filename = os.path.basename(filename_or_stream)
+          # If the file is not within src_root_dir and the basename is not
+          # found as a key, fall back to using the absolute file name.
+          if not filename in first_ids:
+            filename = abs_filename
+            filename = filename.replace('\\', '/')
         else:
           filename = abs_filename[len(src_root_dir) + 1:]
           filename = filename.replace('\\', '/')
