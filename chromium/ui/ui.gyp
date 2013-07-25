@@ -350,7 +350,7 @@
             ],
           },
         }],
-        ['toolkit_views==1', {
+        ['toolkit_views==1 or use_qt==1', {
           'dependencies': [
             'events/events.gyp:events',
           ],
