@@ -1,0 +1,76 @@
+Current Status as of May 23, 2013
+
+
+Upstream cherry-picks:
+d18341fb1121332056aecc00096159df16d01107:
+  aacdec: free frame buffer if no audio was decoded
+  See https://ffmpeg.org/trac/ffmpeg/2095.
+  See also https://ffmpeg.org/trac/ffmpeg/2529 for this and the next item
+  below.
+
+004779cc59ae6b649e20aa260cd4a4d2e1f4bc48:
+  avcodec/utils: Fix leak by dereferencing audio frame when side data
+  causes whole frame skip (when avctx->refcounted_frames is true).
+  See https://ffmpeg.org/trac/ffmpeg/2529 for this and the previous item.
+
+fbaf75b166cd067cf383a75ffcccb1e2b370bf6d: (See http://crbug.com/234630#c5)
+  h264: Use the correct croping values.
+
+7edb984dd051b6919d7d8471c70499273f31b0fa: (See http://crbug.com/234630#c5)
+  avutil/log: Fix context pointer used for get_category()
+
+e3869dd17ee15a1732dacba24e4cff36dd3d4cc5 and
+5747d835c775597dcfd8ee1c49dfa5c6fe391c7c:
+  lavc/x86 constants.c and dsp_util_mmx.[ch] refactoring.  This unblocked
+  linking in build_ffmpeg.sh with MSVC.
+
+c54a1565f512858ccfa70392f40f11c098bc1b63
+  fixes read_frame_internal() issues when skipping to keyframes.
+
+
+Current patches:
+
+to_upstream/
+uninitcond_dct_token_vp3_dequant.patch
+  wolenetz: Initializes all dct_tokens to zero.  Upstream may take
+  fix differently.
+  See https://ffmpeg.org/trac/ffmpeg/attachment/ticket/2527
+
+unblock_windows_build.patch
+  wolenetz: MSVC fails to detect that abort() in av_assert0(0) occurs in
+  all code paths in lavc/utils.c avcodec_default_reget_buffer().  This patch
+  includes an explicit return AVERROR_BUG after the assert to unblock
+  the build when MSVC is configured to treat all warnings as errors.
+
+ugly/
+01_enable_checked_bitstream.patch
+  dalecurtis: Removes "#define UNCHECKED_BITSTREAM_READER 1" from all codecs
+  defining it. In Chromium, all codecs should use the safe bitstream reader.
+
+02_compile_with_disabled_features.patch
+  dalecurtis: Add CONFIG_* checks to compile out code which we don't use which
+  might be a security risk.  Discuss with cevans before removing.  Upstream does
+  not want this patch.
+  wolenetz: In M27 merge, added call to matroska_read_close(s) in to this patch
+  in matroska_read_header() to mitigate memory leak caught by valgrind.
+  Confirmed with rbultje that this conforms to API (on error in
+  matroska_read_header(), resulting state should be same as prior to call; and
+  no double-free is expected to result from this either.)
+
+compile_with_no_iconv.patch
+  wolenetz: When CONFIG_ICONV is 0, the original code path did not return a
+  value, causing compile failure on Windows.  It also aborted via an assert.
+  This patch enables compiling by returning an appropriate error code and also
+  removes the assert and abort.
+
+undeprecate_destruct_packet_api.patch
+  wolenetz: Until upstream fully deprecates usage of FF_API_DESTRUCT_PACKET and
+  we switch to using refcounted AVBuffer API, this patch is necessary.
+  See http://crbug.com/236611
+
+preserve_m27_avcodecids.patch
+  wolenetz: Insert a deprecated placeholder into AVCodecID enum such that
+  the resulting IDs are either new IDs since M27 or have same enumeration as
+  M27.  This is specific to the M29 roll.
+  See https://ffmpeg.org/trac/ffmpeg/ticket/2575
+  See also http://crbug.com/241212

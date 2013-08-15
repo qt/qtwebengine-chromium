@@ -1,0 +1,11 @@
+#!/bin/sh
+
+# This script forwards requests for a program named "ld.bfd", to
+# work around NaCl build dependencies.
+
+if [ -x /usr/bin/ld.bfd ]; then
+  /usr/bin/ld.bfd "$@"
+else
+  # Hope for the best!
+  /usr/bin/ld "$@"
+fi

@@ -1,0 +1,52 @@
+Index: src/libusb1-glue.c
+===================================================================
+--- src/libusb1-glue.c	(revision 148597)
++++ src/libusb1-glue.c	(working copy)
+@@ -197,15 +197,15 @@
+ }
+ 
+ /**
+- * This checks if a device has an MTP descriptor. The descriptor was
+- * elaborated about in gPhoto bug 1482084, and some official documentation
+- * with no strings attached was published by Microsoft at
++ * This checks if a device is a PTP device or has an MTP descriptor. The
++ * descriptor was elaborated about in gPhoto bug 1482084, and some official
++ * documentation with no strings attached was published by Microsoft at
+  * http://www.microsoft.com/whdc/system/bus/USB/USBFAQ_intermed.mspx#E3HAC
+  *
+  * @param dev a device struct from libusb.
+  * @param dumpfile set to non-NULL to make the descriptors dump out
+  *        to this file in human-readable hex so we can scruitinze them.
+- * @return 1 if the device is MTP compliant, 0 if not.
++ * @return 1 if the device is PTP or MTP compliant, 0 if not.
+  */
+ static int probe_device_descriptor(libusb_device *dev, FILE *dumpfile)
+ {
+@@ -289,7 +289,6 @@
+ 	   * Check for Still Image Capture class with PIMA 15740 protocol,
+ 	   * also known as PTP
+ 	   */
+-#if 0
+ 	  if (intf->bInterfaceClass == LIBUSB_CLASS_PTP
+ 	      && intf->bInterfaceSubClass == 0x01
+ 	      && intf->bInterfaceProtocol == 0x01) {
+@@ -297,17 +296,9 @@
+ 	      fprintf(dumpfile, "   Found PTP device, check vendor "
+ 		      "extension...\n");
+ 	    }
+-	    /*
+-	     * This is where we may insert code to open a PTP
+-	     * session and query the vendor extension ID to see
+-	     * if it is 0xffffffff, i.e. MTP according to the spec.
+-	     */
+-	    if (was_mtp_extension) {
+-	      libusb_close(devh);
+-	      return 1;
+-	    }
++	    libusb_close(devh);
++	    return 1;
+ 	  }
+-#endif
+ 
+ 	  /*
+ 	   * Next we search for the MTP substring in the interface name.

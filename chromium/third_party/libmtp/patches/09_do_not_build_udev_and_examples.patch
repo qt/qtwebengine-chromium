@@ -1,0 +1,573 @@
+Index: Makefile.am
+===================================================================
+--- Makefile.am	(revision 148712)
++++ Makefile.am	(working copy)
+@@ -1,4 +1,4 @@
+-SUBDIRS=src examples util doc
++SUBDIRS=src util doc
+ ACLOCAL_AMFLAGS=-I m4
+ 
+ pkgconfigdir=$(libdir)/pkgconfig
+@@ -8,17 +8,17 @@
+ 
+ # This stuff only makes sense on Linux so only
+ # build and ship it on Linux.
+-if USE_LINUX
+-udevrulesdir=@UDEV@/rules.d
+-udevrules_DATA=@UDEV_RULES@
+-noinst_DATA=libmtp.usermap libmtp.fdi
+-
+-libmtp.usermap: util/mtp-hotplug
+-	util/mtp-hotplug > libmtp.usermap
+-@UDEV_RULES@: util/mtp-hotplug
+-	util/mtp-hotplug -u -p"@UDEV@" @UDEV_GROUP@ @UDEV_MODE@ > @UDEV_RULES@
+-libmtp.fdi: util/mtp-hotplug
+-	util/mtp-hotplug -H > libmtp.fdi
+-
+-CLEANFILES = libmtp.usermap @UDEV_RULES@ libmtp.fdi
+-endif
++#if USE_LINUX
++#udevrulesdir=@UDEV@/rules.d
++#udevrules_DATA=@UDEV_RULES@
++#noinst_DATA=libmtp.usermap libmtp.fdi
++#
++#libmtp.usermap: util/mtp-hotplug
++#	util/mtp-hotplug > libmtp.usermap
++#@UDEV_RULES@: util/mtp-hotplug
++#	util/mtp-hotplug -u -p"@UDEV@" @UDEV_GROUP@ @UDEV_MODE@ > @UDEV_RULES@
++#libmtp.fdi: util/mtp-hotplug
++#	util/mtp-hotplug -H > libmtp.fdi
++#
++#CLEANFILES = libmtp.usermap @UDEV_RULES@ libmtp.fdi
++#endif
+Index: Makefile.in
+===================================================================
+--- Makefile.in	(revision 148712)
++++ Makefile.in	(working copy)
+@@ -91,9 +91,8 @@
+     || { echo " ( cd '$$dir' && rm -f" $$files ")"; \
+          $(am__cd) "$$dir" && rm -f $$files; }; \
+   }
+-am__installdirs = "$(DESTDIR)$(pkgconfigdir)" \
+-	"$(DESTDIR)$(udevrulesdir)"
+-DATA = $(noinst_DATA) $(pkgconfig_DATA) $(udevrules_DATA)
++am__installdirs = "$(DESTDIR)$(pkgconfigdir)"
++DATA = $(pkgconfig_DATA)
+ RECURSIVE_CLEAN_TARGETS = mostlyclean-recursive clean-recursive	\
+   distclean-recursive maintainer-clean-recursive
+ AM_RECURSIVE_TARGETS = $(RECURSIVE_TARGETS:-recursive=) \
+@@ -272,18 +271,11 @@
+ top_build_prefix = @top_build_prefix@
+ top_builddir = @top_builddir@
+ top_srcdir = @top_srcdir@
+-SUBDIRS = src examples util doc
++SUBDIRS = src util doc
+ ACLOCAL_AMFLAGS = -I m4
+ pkgconfigdir = $(libdir)/pkgconfig
+ pkgconfig_DATA = libmtp.pc
+ EXTRA_DIST = libmtp.pc libmtp.sh COPYING README.windows.txt
+-
+-# This stuff only makes sense on Linux so only
+-# build and ship it on Linux.
+-@USE_LINUX_TRUE@udevrulesdir = @UDEV@/rules.d
+-@USE_LINUX_TRUE@udevrules_DATA = @UDEV_RULES@
+-@USE_LINUX_TRUE@noinst_DATA = libmtp.usermap libmtp.fdi
+-@USE_LINUX_TRUE@CLEANFILES = libmtp.usermap @UDEV_RULES@ libmtp.fdi
+ all: config.h
+ 	$(MAKE) $(AM_MAKEFLAGS) all-recursive
+ 
+@@ -370,25 +362,7 @@
+ 	@list='$(pkgconfig_DATA)'; test -n "$(pkgconfigdir)" || list=; \
+ 	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+ 	dir='$(DESTDIR)$(pkgconfigdir)'; $(am__uninstall_files_from_dir)
+-install-udevrulesDATA: $(udevrules_DATA)
+-	@$(NORMAL_INSTALL)
+-	test -z "$(udevrulesdir)" || $(MKDIR_P) "$(DESTDIR)$(udevrulesdir)"
+-	@list='$(udevrules_DATA)'; test -n "$(udevrulesdir)" || list=; \
+-	for p in $$list; do \
+-	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+-	  echo "$$d$$p"; \
+-	done | $(am__base_list) | \
+-	while read files; do \
+-	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(udevrulesdir)'"; \
+-	  $(INSTALL_DATA) $$files "$(DESTDIR)$(udevrulesdir)" || exit $$?; \
+-	done
+ 
+-uninstall-udevrulesDATA:
+-	@$(NORMAL_UNINSTALL)
+-	@list='$(udevrules_DATA)'; test -n "$(udevrulesdir)" || list=; \
+-	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+-	dir='$(DESTDIR)$(udevrulesdir)'; $(am__uninstall_files_from_dir)
+-
+ # This directory's subdirectories are mostly independent; you can cd
+ # into them and run `make' without going through this Makefile.
+ # To change the values of `make' variables: instead of editing Makefiles,
+@@ -719,7 +693,7 @@
+ all-am: Makefile $(DATA) config.h
+ installdirs: installdirs-recursive
+ installdirs-am:
+-	for dir in "$(DESTDIR)$(pkgconfigdir)" "$(DESTDIR)$(udevrulesdir)"; do \
++	for dir in "$(DESTDIR)$(pkgconfigdir)"; do \
+ 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
+ 	done
+ install: install-recursive
+@@ -744,7 +718,6 @@
+ mostlyclean-generic:
+ 
+ clean-generic:
+-	-test -z "$(CLEANFILES)" || rm -f $(CLEANFILES)
+ 
+ distclean-generic:
+ 	-test -z "$(CONFIG_CLEAN_FILES)" || rm -f $(CONFIG_CLEAN_FILES)
+@@ -775,7 +748,7 @@
+ 
+ info-am:
+ 
+-install-data-am: install-pkgconfigDATA install-udevrulesDATA
++install-data-am: install-pkgconfigDATA
+ 
+ install-dvi: install-dvi-recursive
+ 
+@@ -821,7 +794,7 @@
+ 
+ ps-am:
+ 
+-uninstall-am: uninstall-pkgconfigDATA uninstall-udevrulesDATA
++uninstall-am: uninstall-pkgconfigDATA
+ 
+ .MAKE: $(RECURSIVE_CLEAN_TARGETS) $(RECURSIVE_TARGETS) all \
+ 	ctags-recursive install-am install-strip tags-recursive
+@@ -837,20 +810,29 @@
+ 	install-dvi-am install-exec install-exec-am install-html \
+ 	install-html-am install-info install-info-am install-man \
+ 	install-pdf install-pdf-am install-pkgconfigDATA install-ps \
+-	install-ps-am install-strip install-udevrulesDATA installcheck \
+-	installcheck-am installdirs installdirs-am maintainer-clean \
++	install-ps-am install-strip installcheck installcheck-am \
++	installdirs installdirs-am maintainer-clean \
+ 	maintainer-clean-generic mostlyclean mostlyclean-generic \
+ 	mostlyclean-libtool pdf pdf-am ps ps-am tags tags-recursive \
+-	uninstall uninstall-am uninstall-pkgconfigDATA \
+-	uninstall-udevrulesDATA
++	uninstall uninstall-am uninstall-pkgconfigDATA
+ 
+ 
+-@USE_LINUX_TRUE@libmtp.usermap: util/mtp-hotplug
+-@USE_LINUX_TRUE@	util/mtp-hotplug > libmtp.usermap
+-@USE_LINUX_TRUE@@UDEV_RULES@: util/mtp-hotplug
+-@USE_LINUX_TRUE@	util/mtp-hotplug -u -p"@UDEV@" @UDEV_GROUP@ @UDEV_MODE@ > @UDEV_RULES@
+-@USE_LINUX_TRUE@libmtp.fdi: util/mtp-hotplug
+-@USE_LINUX_TRUE@	util/mtp-hotplug -H > libmtp.fdi
++# This stuff only makes sense on Linux so only
++# build and ship it on Linux.
++#if USE_LINUX
++#udevrulesdir=@UDEV@/rules.d
++#udevrules_DATA=@UDEV_RULES@
++#noinst_DATA=libmtp.usermap libmtp.fdi
++#
++#libmtp.usermap: util/mtp-hotplug
++#	util/mtp-hotplug > libmtp.usermap
++#@UDEV_RULES@: util/mtp-hotplug
++#	util/mtp-hotplug -u -p"@UDEV@" @UDEV_GROUP@ @UDEV_MODE@ > @UDEV_RULES@
++#libmtp.fdi: util/mtp-hotplug
++#	util/mtp-hotplug -H > libmtp.fdi
++#
++#CLEANFILES = libmtp.usermap @UDEV_RULES@ libmtp.fdi
++#endif
+ 
+ # Tell versions [3.59,3.63) of GNU make to not export all variables.
+ # Otherwise a system limit (for SysV at least) may be exceeded.
+Index: util/Makefile.am
+===================================================================
+--- util/Makefile.am	(revision 148712)
++++ util/Makefile.am	(working copy)
+@@ -1,11 +1,11 @@
+-if USE_LINUX
+-bin_PROGRAMS=mtp-hotplug
+-mtp_hotplug_SOURCES=mtp-hotplug.c
++#if USE_LINUX
++#bin_PROGRAMS=mtp-hotplug
++#mtp_hotplug_SOURCES=mtp-hotplug.c
++#
++#mtp_probedir=@UDEV@
++#mtp_probe_PROGRAMS=mtp-probe
++#mtp_probe_SOURCES=mtp-probe.c
++#endif
+ 
+-mtp_probedir=@UDEV@
+-mtp_probe_PROGRAMS=mtp-probe
+-mtp_probe_SOURCES=mtp-probe.c
+-endif
+-
+ AM_CPPFLAGS=-I$(top_builddir)/src
+ LDADD=../src/libmtp.la
+Index: util/Makefile.in
+===================================================================
+--- util/Makefile.in	(revision 148712)
++++ util/Makefile.in	(working copy)
+@@ -15,6 +15,14 @@
+ 
+ @SET_MAKE@
+ 
++#if USE_LINUX
++#bin_PROGRAMS=mtp-hotplug
++#mtp_hotplug_SOURCES=mtp-hotplug.c
++#
++#mtp_probedir=@UDEV@
++#mtp_probe_PROGRAMS=mtp-probe
++#mtp_probe_SOURCES=mtp-probe.c
++#endif
+ VPATH = @srcdir@
+ pkgdatadir = $(datadir)/@PACKAGE@
+ pkgincludedir = $(includedir)/@PACKAGE@
+@@ -34,8 +42,6 @@
+ POST_UNINSTALL = :
+ build_triplet = @build@
+ host_triplet = @host@
+-@USE_LINUX_TRUE@bin_PROGRAMS = mtp-hotplug$(EXEEXT)
+-@USE_LINUX_TRUE@mtp_probe_PROGRAMS = mtp-probe$(EXEEXT)
+ subdir = util
+ DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in
+ ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
+@@ -50,36 +56,8 @@
+ CONFIG_HEADER = $(top_builddir)/config.h
+ CONFIG_CLEAN_FILES =
+ CONFIG_CLEAN_VPATH_FILES =
+-am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(mtp_probedir)"
+-PROGRAMS = $(bin_PROGRAMS) $(mtp_probe_PROGRAMS)
+-am__mtp_hotplug_SOURCES_DIST = mtp-hotplug.c
+-@USE_LINUX_TRUE@am_mtp_hotplug_OBJECTS = mtp-hotplug.$(OBJEXT)
+-mtp_hotplug_OBJECTS = $(am_mtp_hotplug_OBJECTS)
+-mtp_hotplug_LDADD = $(LDADD)
+-mtp_hotplug_DEPENDENCIES = ../src/libmtp.la
+-am__mtp_probe_SOURCES_DIST = mtp-probe.c
+-@USE_LINUX_TRUE@am_mtp_probe_OBJECTS = mtp-probe.$(OBJEXT)
+-mtp_probe_OBJECTS = $(am_mtp_probe_OBJECTS)
+-mtp_probe_LDADD = $(LDADD)
+-mtp_probe_DEPENDENCIES = ../src/libmtp.la
+-DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir)
+-depcomp = $(SHELL) $(top_srcdir)/depcomp
+-am__depfiles_maybe = depfiles
+-am__mv = mv -f
+-COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
+-	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
+-LTCOMPILE = $(LIBTOOL) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) \
+-	--mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) \
+-	$(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
+-CCLD = $(CC)
+-LINK = $(LIBTOOL) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) \
+-	--mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
+-	$(LDFLAGS) -o $@
+-SOURCES = $(mtp_hotplug_SOURCES) $(mtp_probe_SOURCES)
+-DIST_SOURCES = $(am__mtp_hotplug_SOURCES_DIST) \
+-	$(am__mtp_probe_SOURCES_DIST)
+-ETAGS = etags
+-CTAGS = ctags
++SOURCES =
++DIST_SOURCES =
+ DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
+ ACLOCAL = @ACLOCAL@
+ AMTAR = @AMTAR@
+@@ -211,15 +189,11 @@
+ top_build_prefix = @top_build_prefix@
+ top_builddir = @top_builddir@
+ top_srcdir = @top_srcdir@
+-@USE_LINUX_TRUE@mtp_hotplug_SOURCES = mtp-hotplug.c
+-@USE_LINUX_TRUE@mtp_probedir = @UDEV@
+-@USE_LINUX_TRUE@mtp_probe_SOURCES = mtp-probe.c
+ AM_CPPFLAGS = -I$(top_builddir)/src
+ LDADD = ../src/libmtp.la
+ all: all-am
+ 
+ .SUFFIXES:
+-.SUFFIXES: .c .lo .o .obj
+ $(srcdir)/Makefile.in:  $(srcdir)/Makefile.am  $(am__configure_deps)
+ 	@for dep in $?; do \
+ 	  case '$(am__configure_deps)' in \
+@@ -250,187 +224,19 @@
+ $(ACLOCAL_M4):  $(am__aclocal_m4_deps)
+ 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
+ $(am__aclocal_m4_deps):
+-install-binPROGRAMS: $(bin_PROGRAMS)
+-	@$(NORMAL_INSTALL)
+-	test -z "$(bindir)" || $(MKDIR_P) "$(DESTDIR)$(bindir)"
+-	@list='$(bin_PROGRAMS)'; test -n "$(bindir)" || list=; \
+-	for p in $$list; do echo "$$p $$p"; done | \
+-	sed 's/$(EXEEXT)$$//' | \
+-	while read p p1; do if test -f $$p || test -f $$p1; \
+-	  then echo "$$p"; echo "$$p"; else :; fi; \
+-	done | \
+-	sed -e 'p;s,.*/,,;n;h' -e 's|.*|.|' \
+-	    -e 'p;x;s,.*/,,;s/$(EXEEXT)$$//;$(transform);s/$$/$(EXEEXT)/' | \
+-	sed 'N;N;N;s,\n, ,g' | \
+-	$(AWK) 'BEGIN { files["."] = ""; dirs["."] = 1 } \
+-	  { d=$$3; if (dirs[d] != 1) { print "d", d; dirs[d] = 1 } \
+-	    if ($$2 == $$4) files[d] = files[d] " " $$1; \
+-	    else { print "f", $$3 "/" $$4, $$1; } } \
+-	  END { for (d in files) print "f", d, files[d] }' | \
+-	while read type dir files; do \
+-	    if test "$$dir" = .; then dir=; else dir=/$$dir; fi; \
+-	    test -z "$$files" || { \
+-	    echo " $(INSTALL_PROGRAM_ENV) $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=install $(INSTALL_PROGRAM) $$files '$(DESTDIR)$(bindir)$$dir'"; \
+-	    $(INSTALL_PROGRAM_ENV) $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=install $(INSTALL_PROGRAM) $$files "$(DESTDIR)$(bindir)$$dir" || exit $$?; \
+-	    } \
+-	; done
+ 
+-uninstall-binPROGRAMS:
+-	@$(NORMAL_UNINSTALL)
+-	@list='$(bin_PROGRAMS)'; test -n "$(bindir)" || list=; \
+-	files=`for p in $$list; do echo "$$p"; done | \
+-	  sed -e 'h;s,^.*/,,;s/$(EXEEXT)$$//;$(transform)' \
+-	      -e 's/$$/$(EXEEXT)/' `; \
+-	test -n "$$list" || exit 0; \
+-	echo " ( cd '$(DESTDIR)$(bindir)' && rm -f" $$files ")"; \
+-	cd "$(DESTDIR)$(bindir)" && rm -f $$files
+-
+-clean-binPROGRAMS:
+-	@list='$(bin_PROGRAMS)'; test -n "$$list" || exit 0; \
+-	echo " rm -f" $$list; \
+-	rm -f $$list || exit $$?; \
+-	test -n "$(EXEEXT)" || exit 0; \
+-	list=`for p in $$list; do echo "$$p"; done | sed 's/$(EXEEXT)$$//'`; \
+-	echo " rm -f" $$list; \
+-	rm -f $$list
+-install-mtp_probePROGRAMS: $(mtp_probe_PROGRAMS)
+-	@$(NORMAL_INSTALL)
+-	test -z "$(mtp_probedir)" || $(MKDIR_P) "$(DESTDIR)$(mtp_probedir)"
+-	@list='$(mtp_probe_PROGRAMS)'; test -n "$(mtp_probedir)" || list=; \
+-	for p in $$list; do echo "$$p $$p"; done | \
+-	sed 's/$(EXEEXT)$$//' | \
+-	while read p p1; do if test -f $$p || test -f $$p1; \
+-	  then echo "$$p"; echo "$$p"; else :; fi; \
+-	done | \
+-	sed -e 'p;s,.*/,,;n;h' -e 's|.*|.|' \
+-	    -e 'p;x;s,.*/,,;s/$(EXEEXT)$$//;$(transform);s/$$/$(EXEEXT)/' | \
+-	sed 'N;N;N;s,\n, ,g' | \
+-	$(AWK) 'BEGIN { files["."] = ""; dirs["."] = 1 } \
+-	  { d=$$3; if (dirs[d] != 1) { print "d", d; dirs[d] = 1 } \
+-	    if ($$2 == $$4) files[d] = files[d] " " $$1; \
+-	    else { print "f", $$3 "/" $$4, $$1; } } \
+-	  END { for (d in files) print "f", d, files[d] }' | \
+-	while read type dir files; do \
+-	    if test "$$dir" = .; then dir=; else dir=/$$dir; fi; \
+-	    test -z "$$files" || { \
+-	    echo " $(INSTALL_PROGRAM_ENV) $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=install $(INSTALL_PROGRAM) $$files '$(DESTDIR)$(mtp_probedir)$$dir'"; \
+-	    $(INSTALL_PROGRAM_ENV) $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=install $(INSTALL_PROGRAM) $$files "$(DESTDIR)$(mtp_probedir)$$dir" || exit $$?; \
+-	    } \
+-	; done
+-
+-uninstall-mtp_probePROGRAMS:
+-	@$(NORMAL_UNINSTALL)
+-	@list='$(mtp_probe_PROGRAMS)'; test -n "$(mtp_probedir)" || list=; \
+-	files=`for p in $$list; do echo "$$p"; done | \
+-	  sed -e 'h;s,^.*/,,;s/$(EXEEXT)$$//;$(transform)' \
+-	      -e 's/$$/$(EXEEXT)/' `; \
+-	test -n "$$list" || exit 0; \
+-	echo " ( cd '$(DESTDIR)$(mtp_probedir)' && rm -f" $$files ")"; \
+-	cd "$(DESTDIR)$(mtp_probedir)" && rm -f $$files
+-
+-clean-mtp_probePROGRAMS:
+-	@list='$(mtp_probe_PROGRAMS)'; test -n "$$list" || exit 0; \
+-	echo " rm -f" $$list; \
+-	rm -f $$list || exit $$?; \
+-	test -n "$(EXEEXT)" || exit 0; \
+-	list=`for p in $$list; do echo "$$p"; done | sed 's/$(EXEEXT)$$//'`; \
+-	echo " rm -f" $$list; \
+-	rm -f $$list
+-mtp-hotplug$(EXEEXT): $(mtp_hotplug_OBJECTS) $(mtp_hotplug_DEPENDENCIES) $(EXTRA_mtp_hotplug_DEPENDENCIES) 
+-	@rm -f mtp-hotplug$(EXEEXT)
+-	$(LINK) $(mtp_hotplug_OBJECTS) $(mtp_hotplug_LDADD) $(LIBS)
+-mtp-probe$(EXEEXT): $(mtp_probe_OBJECTS) $(mtp_probe_DEPENDENCIES) $(EXTRA_mtp_probe_DEPENDENCIES) 
+-	@rm -f mtp-probe$(EXEEXT)
+-	$(LINK) $(mtp_probe_OBJECTS) $(mtp_probe_LDADD) $(LIBS)
+-
+-mostlyclean-compile:
+-	-rm -f *.$(OBJEXT)
+-
+-distclean-compile:
+-	-rm -f *.tab.c
+-
+-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mtp-hotplug.Po@am__quote@
+-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mtp-probe.Po@am__quote@
+-
+-.c.o:
+-@am__fastdepCC_TRUE@	$(COMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<
+-@am__fastdepCC_TRUE@	$(am__mv) $(DEPDIR)/$*.Tpo $(DEPDIR)/$*.Po
+-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$<' object='$@' libtool=no @AMDEPBACKSLASH@
+-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+-@am__fastdepCC_FALSE@	$(COMPILE) -c $<
+-
+-.c.obj:
+-@am__fastdepCC_TRUE@	$(COMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ `$(CYGPATH_W) '$<'`
+-@am__fastdepCC_TRUE@	$(am__mv) $(DEPDIR)/$*.Tpo $(DEPDIR)/$*.Po
+-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$<' object='$@' libtool=no @AMDEPBACKSLASH@
+-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+-@am__fastdepCC_FALSE@	$(COMPILE) -c `$(CYGPATH_W) '$<'`
+-
+-.c.lo:
+-@am__fastdepCC_TRUE@	$(LTCOMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<
+-@am__fastdepCC_TRUE@	$(am__mv) $(DEPDIR)/$*.Tpo $(DEPDIR)/$*.Plo
+-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$<' object='$@' libtool=yes @AMDEPBACKSLASH@
+-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+-@am__fastdepCC_FALSE@	$(LTCOMPILE) -c -o $@ $<
+-
+ mostlyclean-libtool:
+ 	-rm -f *.lo
+ 
+ clean-libtool:
+ 	-rm -rf .libs _libs
+-
+-ID: $(HEADERS) $(SOURCES) $(LISP) $(TAGS_FILES)
+-	list='$(SOURCES) $(HEADERS) $(LISP) $(TAGS_FILES)'; \
+-	unique=`for i in $$list; do \
+-	    if test -f "$$i"; then echo $$i; else echo $(srcdir)/$$i; fi; \
+-	  done | \
+-	  $(AWK) '{ files[$$0] = 1; nonempty = 1; } \
+-	      END { if (nonempty) { for (i in files) print i; }; }'`; \
+-	mkid -fID $$unique
+ tags: TAGS
++TAGS:
+ 
+-TAGS:  $(HEADERS) $(SOURCES)  $(TAGS_DEPENDENCIES) \
+-		$(TAGS_FILES) $(LISP)
+-	set x; \
+-	here=`pwd`; \
+-	list='$(SOURCES) $(HEADERS)  $(LISP) $(TAGS_FILES)'; \
+-	unique=`for i in $$list; do \
+-	    if test -f "$$i"; then echo $$i; else echo $(srcdir)/$$i; fi; \
+-	  done | \
+-	  $(AWK) '{ files[$$0] = 1; nonempty = 1; } \
+-	      END { if (nonempty) { for (i in files) print i; }; }'`; \
+-	shift; \
+-	if test -z "$(ETAGS_ARGS)$$*$$unique"; then :; else \
+-	  test -n "$$unique" || unique=$$empty_fix; \
+-	  if test $$# -gt 0; then \
+-	    $(ETAGS) $(ETAGSFLAGS) $(AM_ETAGSFLAGS) $(ETAGS_ARGS) \
+-	      "$$@" $$unique; \
+-	  else \
+-	    $(ETAGS) $(ETAGSFLAGS) $(AM_ETAGSFLAGS) $(ETAGS_ARGS) \
+-	      $$unique; \
+-	  fi; \
+-	fi
+ ctags: CTAGS
+-CTAGS:  $(HEADERS) $(SOURCES)  $(TAGS_DEPENDENCIES) \
+-		$(TAGS_FILES) $(LISP)
+-	list='$(SOURCES) $(HEADERS)  $(LISP) $(TAGS_FILES)'; \
+-	unique=`for i in $$list; do \
+-	    if test -f "$$i"; then echo $$i; else echo $(srcdir)/$$i; fi; \
+-	  done | \
+-	  $(AWK) '{ files[$$0] = 1; nonempty = 1; } \
+-	      END { if (nonempty) { for (i in files) print i; }; }'`; \
+-	test -z "$(CTAGS_ARGS)$$unique" \
+-	  || $(CTAGS) $(CTAGSFLAGS) $(AM_CTAGSFLAGS) $(CTAGS_ARGS) \
+-	     $$unique
++CTAGS:
+ 
+-GTAGS:
+-	here=`$(am__cd) $(top_builddir) && pwd` \
+-	  && $(am__cd) $(top_srcdir) \
+-	  && gtags -i $(GTAGS_ARGS) "$$here"
+ 
+-distclean-tags:
+-	-rm -f TAGS ID GTAGS GRTAGS GSYMS GPATH tags
+-
+ distdir: $(DISTFILES)
+ 	@srcdirstrip=`echo "$(srcdir)" | sed 's/[].[^$$\\*]/\\\\&/g'`; \
+ 	topsrcdirstrip=`echo "$(top_srcdir)" | sed 's/[].[^$$\\*]/\\\\&/g'`; \
+@@ -463,11 +269,8 @@
+ 	done
+ check-am: all-am
+ check: check-am
+-all-am: Makefile $(PROGRAMS)
++all-am: Makefile
+ installdirs:
+-	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(mtp_probedir)"; do \
+-	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
+-	done
+ install: install-am
+ install-exec: install-exec-am
+ install-data: install-data-am
+@@ -500,14 +303,11 @@
+ 	@echo "it deletes files that may require special tools to rebuild."
+ clean: clean-am
+ 
+-clean-am: clean-binPROGRAMS clean-generic clean-libtool \
+-	clean-mtp_probePROGRAMS mostlyclean-am
++clean-am: clean-generic clean-libtool mostlyclean-am
+ 
+ distclean: distclean-am
+-	-rm -rf ./$(DEPDIR)
+ 	-rm -f Makefile
+-distclean-am: clean-am distclean-compile distclean-generic \
+-	distclean-tags
++distclean-am: clean-am distclean-generic
+ 
+ dvi: dvi-am
+ 
+@@ -521,13 +321,13 @@
+ 
+ info-am:
+ 
+-install-data-am: install-mtp_probePROGRAMS
++install-data-am:
+ 
+ install-dvi: install-dvi-am
+ 
+ install-dvi-am:
+ 
+-install-exec-am: install-binPROGRAMS
++install-exec-am:
+ 
+ install-html: install-html-am
+ 
+@@ -550,14 +350,12 @@
+ installcheck-am:
+ 
+ maintainer-clean: maintainer-clean-am
+-	-rm -rf ./$(DEPDIR)
+ 	-rm -f Makefile
+ maintainer-clean-am: distclean-am maintainer-clean-generic
+ 
+ mostlyclean: mostlyclean-am
+ 
+-mostlyclean-am: mostlyclean-compile mostlyclean-generic \
+-	mostlyclean-libtool
++mostlyclean-am: mostlyclean-generic mostlyclean-libtool
+ 
+ pdf: pdf-am
+ 
+@@ -567,25 +365,20 @@
+ 
+ ps-am:
+ 
+-uninstall-am: uninstall-binPROGRAMS uninstall-mtp_probePROGRAMS
++uninstall-am:
+ 
+ .MAKE: install-am install-strip
+ 
+-.PHONY: CTAGS GTAGS all all-am check check-am clean clean-binPROGRAMS \
+-	clean-generic clean-libtool clean-mtp_probePROGRAMS ctags \
+-	distclean distclean-compile distclean-generic \
+-	distclean-libtool distclean-tags distdir dvi dvi-am html \
+-	html-am info info-am install install-am install-binPROGRAMS \
++.PHONY: all all-am check check-am clean clean-generic clean-libtool \
++	distclean distclean-generic distclean-libtool distdir dvi \
++	dvi-am html html-am info info-am install install-am \
+ 	install-data install-data-am install-dvi install-dvi-am \
+ 	install-exec install-exec-am install-html install-html-am \
+-	install-info install-info-am install-man \
+-	install-mtp_probePROGRAMS install-pdf install-pdf-am \
+-	install-ps install-ps-am install-strip installcheck \
+-	installcheck-am installdirs maintainer-clean \
+-	maintainer-clean-generic mostlyclean mostlyclean-compile \
+-	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
+-	tags uninstall uninstall-am uninstall-binPROGRAMS \
+-	uninstall-mtp_probePROGRAMS
++	install-info install-info-am install-man install-pdf \
++	install-pdf-am install-ps install-ps-am install-strip \
++	installcheck installcheck-am installdirs maintainer-clean \
++	maintainer-clean-generic mostlyclean mostlyclean-generic \
++	mostlyclean-libtool pdf pdf-am ps ps-am uninstall uninstall-am
+ 
+ 
+ # Tell versions [3.59,3.63) of GNU make to not export all variables.

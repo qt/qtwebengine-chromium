@@ -1,0 +1,220 @@
+/*
+ *  Copyright (c) 2013 The WebRTC project authors. All Rights Reserved.
+ *
+ *  Use of this source code is governed by a BSD-style license
+ *  that can be found in the LICENSE file in the root of the source
+ *  tree. An additional intellectual property rights grant can be found
+ *  in the file PATENTS.  All contributing project authors may
+ *  be found in the AUTHORS file in the root of the source tree.
+ */
+
+#include "webrtc/video_engine/internal/video_send_stream.h"
+
+#include <vector>
+
+#include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
+#include "webrtc/video_engine/include/vie_base.h"
+#include "webrtc/video_engine/include/vie_capture.h"
+#include "webrtc/video_engine/include/vie_codec.h"
+#include "webrtc/video_engine/include/vie_network.h"
+#include "webrtc/video_engine/include/vie_rtp_rtcp.h"
+#include "webrtc/video_engine/new_include/video_send_stream.h"
+
+namespace webrtc {
+namespace internal {
+
+// Super simple and temporary overuse logic. This will move to the application
+// as soon as the new API allows changing send codec on the fly.
+class ResolutionAdaptor : public webrtc::CpuOveruseObserver {
+ public:
+  ResolutionAdaptor(ViECodec* codec, int channel, size_t width, size_t height)
+      : codec_(codec),
+        channel_(channel),
+        max_width_(width),
+        max_height_(height) {}
+
+  virtual ~ResolutionAdaptor() {}
+
+  virtual void OveruseDetected() OVERRIDE {
+    VideoCodec codec;
+    if (codec_->GetSendCodec(channel_, codec) != 0)
+      return;
+
+    if (codec.width / 2 < min_width || codec.height / 2 < min_height)
+      return;
+
+    codec.width /= 2;
+    codec.height /= 2;
+    codec_->SetSendCodec(channel_, codec);
+  }
+
+  virtual void NormalUsage() OVERRIDE {
+    VideoCodec codec;
+    if (codec_->GetSendCodec(channel_, codec) != 0)
+      return;
+
+    if (codec.width * 2u > max_width_ || codec.height * 2u > max_height_)
+      return;
+
+    codec.width *= 2;
+    codec.height *= 2;
+    codec_->SetSendCodec(channel_, codec);
+  }
+
+ private:
+  // Temporary and arbitrary chosen minimum resolution.
+  static const size_t min_width = 160;
+  static const size_t min_height = 120;
+
+  ViECodec* codec_;
+  const int channel_;
+
+  const size_t max_width_;
+  const size_t max_height_;
+};
+
+VideoSendStream::VideoSendStream(newapi::Transport* transport,
+                                 bool overuse_detection,
+                                 webrtc::VideoEngine* video_engine,
+                                 const newapi::VideoSendStream::Config& config)
+    : transport_(transport), config_(config) {
+
+  if (config_.codec.numberOfSimulcastStreams > 0) {
+    assert(config_.rtp.ssrcs.size() == config_.codec.numberOfSimulcastStreams);
+  } else {
+    assert(config_.rtp.ssrcs.size() == 1);
+  }
+
+  video_engine_base_ = ViEBase::GetInterface(video_engine);
+  video_engine_base_->CreateChannel(channel_);
+  assert(channel_ != -1);
+
+  rtp_rtcp_ = ViERTP_RTCP::GetInterface(video_engine);
+  assert(rtp_rtcp_ != NULL);
+
+  assert(config_.rtp.ssrcs.size() == 1);
+  rtp_rtcp_->SetLocalSSRC(channel_, config_.rtp.ssrcs[0]);
+  rtp_rtcp_->SetNACKStatus(channel_, config_.rtp.nack.rtp_history_ms > 0);
+
+  capture_ = ViECapture::GetInterface(video_engine);
+  capture_->AllocateExternalCaptureDevice(capture_id_, external_capture_);
+  capture_->ConnectCaptureDevice(capture_id_, channel_);
+
+  network_ = ViENetwork::GetInterface(video_engine);
+  assert(network_ != NULL);
+
+  network_->RegisterSendTransport(channel_, *this);
+
+  codec_ = ViECodec::GetInterface(video_engine);
+  if (codec_->SetSendCodec(channel_, config_.codec) != 0) {
+    abort();
+  }
+
+  if (overuse_detection) {
+    overuse_observer_.reset(
+        new ResolutionAdaptor(codec_, channel_, config_.codec.width,
+                              config_.codec.height));
+    video_engine_base_->RegisterCpuOveruseObserver(channel_,
+                                                overuse_observer_.get());
+  }
+}
+
+VideoSendStream::~VideoSendStream() {
+  network_->DeregisterSendTransport(channel_);
+  video_engine_base_->DeleteChannel(channel_);
+
+  capture_->DisconnectCaptureDevice(channel_);
+  capture_->ReleaseCaptureDevice(capture_id_);
+
+  video_engine_base_->Release();
+  capture_->Release();
+  codec_->Release();
+  network_->Release();
+  rtp_rtcp_->Release();
+}
+
+void VideoSendStream::PutFrame(const I420VideoFrame& frame,
+                               uint32_t time_since_capture_ms) {
+  // TODO(pbos): frame_copy should happen after the VideoProcessingModule has
+  //             resized the frame.
+  I420VideoFrame frame_copy;
+  frame_copy.CopyFrame(frame);
+
+  if (config_.pre_encode_callback != NULL) {
+    config_.pre_encode_callback->FrameCallback(&frame_copy);
+  }
+
+  ViEVideoFrameI420 vf;
+
+  // TODO(pbos): This represents a memcpy step and is only required because
+  //             external_capture_ only takes ViEVideoFrameI420s.
+  vf.y_plane = frame_copy.buffer(kYPlane);
+  vf.u_plane = frame_copy.buffer(kUPlane);
+  vf.v_plane = frame_copy.buffer(kVPlane);
+  vf.y_pitch = frame.stride(kYPlane);
+  vf.u_pitch = frame.stride(kUPlane);
+  vf.v_pitch = frame.stride(kVPlane);
+  vf.width = frame.width();
+  vf.height = frame.height();
+
+  external_capture_->IncomingFrameI420(vf, frame.render_time_ms());
+
+  if (config_.local_renderer != NULL) {
+    config_.local_renderer->RenderFrame(frame, 0);
+  }
+}
+
+newapi::VideoSendStreamInput* VideoSendStream::Input() { return this; }
+
+void VideoSendStream::StartSend() {
+  if (video_engine_base_->StartSend(channel_) != 0)
+    abort();
+  if (video_engine_base_->StartReceive(channel_) != 0)
+    abort();
+}
+
+void VideoSendStream::StopSend() {
+  if (video_engine_base_->StopSend(channel_) != 0)
+    abort();
+  if (video_engine_base_->StopReceive(channel_) != 0)
+    abort();
+}
+
+bool VideoSendStream::SetTargetBitrate(
+    int min_bitrate,
+    int max_bitrate,
+    const std::vector<SimulcastStream>& streams) {
+  return false;
+}
+
+void VideoSendStream::GetSendCodec(VideoCodec* send_codec) {
+  *send_codec = config_.codec;
+}
+
+int VideoSendStream::SendPacket(int /*channel*/,
+                                const void* packet,
+                                int length) {
+  // TODO(pbos): Lock these methods and the destructor so it can't be processing
+  //             a packet when the destructor has been called.
+  assert(length >= 0);
+  bool success = transport_->SendRTP(static_cast<const uint8_t*>(packet),
+                                     static_cast<size_t>(length));
+  return success ? 0 : -1;
+}
+
+int VideoSendStream::SendRTCPPacket(int /*channel*/,
+                                    const void* packet,
+                                    int length) {
+  assert(length >= 0);
+  bool success = transport_->SendRTCP(static_cast<const uint8_t*>(packet),
+                                      static_cast<size_t>(length));
+  return success ? 0 : -1;
+}
+
+bool VideoSendStream::DeliverRtcp(const uint8_t* packet, size_t length) {
+  return network_->ReceivedRTCPPacket(
+             channel_, packet, static_cast<int>(length)) == 0;
+}
+
+}  // namespace internal
+}  // namespace webrtc

@@ -1,0 +1,35 @@
+Index: src/ptp.c
+===================================================================
+--- src/ptp.c	(revision 148712)
++++ src/ptp.c	(working copy)
+@@ -1931,6 +1931,7 @@
+ 	return ptp_transaction(params, &ptp, PTP_DP_SENDDATA, size, &data, NULL);
+ }
+ 
++#if 0
+ uint16_t
+ ptp_canon_eos_setdevicepropvalue (PTPParams* params,
+ 	uint16_t propcode, PTPPropertyValue *value, uint16_t datatype
+@@ -2015,6 +2016,7 @@
+ 	free (data);
+ 	return ret;
+ }
++#endif
+ 
+ /**
+  * ptp_canon_getpartialobject:
+Index: src/ptp.h
+===================================================================
+--- src/ptp.h	(revision 148712)
++++ src/ptp.h	(working copy)
+@@ -2632,8 +2632,10 @@
+ uint16_t ptp_canon_eos_bulbend (PTPParams* params);
+ uint16_t ptp_canon_eos_getdevicepropdesc (PTPParams* params, uint16_t propcode,
+ 				PTPDevicePropDesc *devicepropertydesc);
++#if 0
+ uint16_t ptp_canon_eos_setdevicepropvalue (PTPParams* params, uint16_t propcode,
+                         	PTPPropertyValue* value, uint16_t datatype);
++#endif
+ uint16_t ptp_nikon_get_vendorpropcodes (PTPParams* params, uint16_t **props, unsigned int *size);
+ uint16_t ptp_nikon_curve_download (PTPParams* params, 
+ 				unsigned char **data, unsigned int *size);

@@ -1,0 +1,2 @@
+This is the DBus-C++ project, modified to not require exceptions
+Upstream is not especially interested in these changes.

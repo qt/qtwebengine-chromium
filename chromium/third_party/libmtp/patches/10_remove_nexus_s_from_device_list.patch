@@ -1,0 +1,14 @@
+Index: src/music-players.h
+===================================================================
+--- src/music-players.h	(revision 149707)
++++ src/music-players.h	(working copy)
+@@ -1553,9 +1553,6 @@
+   // Reported by anonymous Sourceforge user
+   { "Google Inc (for Asus)", 0x18d1, "TF101 Transformer", 0x4e0f,
+       DEVICE_FLAGS_ANDROID_BUGS },
+-  // Reported by Laurent Artaud <laurenta@users.sourceforge.net>
+-  { "Google Inc (for Samsung)", 0x18d1, "Nexus S", 0x4e21,
+-      DEVICE_FLAGS_ANDROID_BUGS },
+   // Reported by Chris Smith <tcgsmythe@users.sourceforge.net>
+   { "Google Inc (for Asus)", 0x18d1, "Nexus 7", 0x4e41,
+       DEVICE_FLAGS_ANDROID_BUGS },
