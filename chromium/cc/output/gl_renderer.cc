@@ -16,6 +16,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "build/build_config.h"
+#include "cc/base/util.h"
 #include "cc/base/math_util.h"
 #include "cc/layers/video_layer_impl.h"
 #include "cc/output/compositor_frame.h"
