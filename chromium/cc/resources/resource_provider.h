@@ -20,10 +20,13 @@
 #include "cc/output/output_surface.h"
 #include "cc/resources/texture_mailbox.h"
 #include "cc/resources/transferable_resource.h"
-#include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/gfx/size.h"
+
+// A correct fix would be not to use GL types in this interal API file.
+typedef unsigned int     GLenum;
+typedef int              GLint;
 
 namespace WebKit { class WebGraphicsContext3D; }
 

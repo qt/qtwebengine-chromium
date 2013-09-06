@@ -10,6 +10,7 @@
 #include "cc/layers/texture_layer_client.h"
 #include "cc/layers/texture_layer_impl.h"
 #include "cc/trees/layer_tree_host.h"
+#include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 
 namespace cc {
