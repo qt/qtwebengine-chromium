@@ -85,6 +85,9 @@ void MessagePumpGtk::DispatchEvents(GdkEvent* event) {
   DidProcessEvent(event);
 }
 
+// FIXME: Get our own MessagePumpUI to avoid this.
+// Comment out this version so that our Qt version in shared_globals.cpp is used.
+/*
 // static
 Display* MessagePumpGtk::GetDefaultXDisplay() {
   static GdkDisplay* display = gdk_display_get_default();
@@ -96,6 +99,7 @@ Display* MessagePumpGtk::GetDefaultXDisplay() {
   }
   return GDK_DISPLAY_XDISPLAY(display);
 }
+*/
 
 void MessagePumpGtk::WillProcessEvent(GdkEvent* event) {
   FOR_EACH_OBSERVER(MessagePumpObserver, observers(), WillProcessEvent(event));
