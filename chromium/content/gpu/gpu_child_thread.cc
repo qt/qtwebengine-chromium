@@ -131,6 +131,8 @@ ChildThreadImpl::Options GetOptions(
 
 }  // namespace
 
+GpuChildThread* GpuChildThread::instance_ = 0;
+
 GpuChildThread::GpuChildThread(
     GpuWatchdogThread* watchdog_thread,
     bool dead_on_arrival,
@@ -150,6 +152,8 @@ GpuChildThread::GpuChildThread(
   target_services_ = NULL;
 #endif
   g_thread_safe_sender.Get() = thread_safe_sender();
+
+  instance_ = this;
 }
 
 GpuChildThread::GpuChildThread(
@@ -177,6 +181,8 @@ GpuChildThread::GpuChildThread(
     VLOG(1) << "gfx::GLSurface::InitializeOneOff failed";
 
   g_thread_safe_sender.Get() = thread_safe_sender();
+
+  instance_ = this;
 }
 
 GpuChildThread::~GpuChildThread() {

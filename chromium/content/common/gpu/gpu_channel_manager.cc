@@ -18,6 +18,7 @@
 #include "content/common/gpu/gpu_memory_manager.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/message_router.h"
+#include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_switches.h"
 #include "gpu/command_buffer/common/value_state.h"
 #include "gpu/command_buffer/service/feature_info.h"
@@ -165,6 +166,15 @@ bool GpuChannelManager::OnMessageReceived(const IPC::Message& msg) {
 
 bool GpuChannelManager::Send(IPC::Message* msg) {
   return channel_->Send(msg);
+}
+
+gfx::GLShareGroup* GpuChannelManager::share_group() const {
+  // Qt: Ask the browser client at the top to manage the context sharing.
+  // This can only work with --in-process-gpu or --single-process.
+  if (GetContentClient()->browser() && GetContentClient()->browser()->GetInProcessGpuShareGroup())
+    return GetContentClient()->browser()->GetInProcessGpuShareGroup();
+  else
+    return share_group_.get();
 }
 
 scoped_ptr<GpuChannel> GpuChannelManager::CreateGpuChannel(

@@ -71,6 +71,10 @@ class GpuChildThread : public ChildThreadImpl {
   bool OnControlMessageReceived(const IPC::Message& msg) override;
   bool OnMessageReceived(const IPC::Message& msg) override;
 
+  GpuChannelManager* ChannelManager() const { return gpu_channel_manager_.get(); }
+
+  static GpuChildThread* instance() { return instance_; }
+
  private:
   // Message handlers.
   void OnInitialize();
@@ -121,6 +125,8 @@ class GpuChildThread : public ChildThreadImpl {
 
   // Bindings to the ProcessControl impl.
   mojo::WeakBindingSet<ProcessControl> process_control_bindings_;
+
+  static GpuChildThread* instance_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuChildThread);
 };
