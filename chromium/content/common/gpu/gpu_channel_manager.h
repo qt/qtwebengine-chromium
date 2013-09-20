@@ -90,6 +90,8 @@ class CONTENT_EXPORT GpuChannelManager : public IPC::Listener,
   gpu::gles2::ProgramCache* program_cache();
   gpu::gles2::ShaderTranslatorCache* shader_translator_cache();
 
+  gpu::gles2::MailboxManager* mailbox_manager() { return mailbox_manager_.get(); }
+
   GpuMemoryManager* gpu_memory_manager() { return &gpu_memory_manager_; }
 
   GpuChannel* LookupChannel(int32 client_id);
