@@ -294,6 +294,10 @@ class GpuMainThread : public base::Thread {
     Stop();
   }
 
+  GpuChildThread* ChildThread() const {
+    return gpu_process_ ? static_cast<GpuChildThread*>(gpu_process_->main_thread()) : 0;
+  }
+
  protected:
   virtual void Init() OVERRIDE {
     gpu_process_ = new GpuProcess();
@@ -618,6 +622,11 @@ bool GpuProcessHost::Init() {
     return false;
 
   return true;
+}
+
+GpuChildThread* GpuProcessHost::ChildThread() const
+{
+  return in_process_gpu_thread_ ? in_process_gpu_thread_->ChildThread() : 0;
 }
 
 void GpuProcessHost::RouteOnUIThread(const IPC::Message& message) {
