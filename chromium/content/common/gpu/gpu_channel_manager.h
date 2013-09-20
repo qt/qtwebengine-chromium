@@ -90,6 +90,8 @@ class GpuChannelManager : public IPC::Listener,
 
   gpu::gles2::ProgramCache* program_cache();
 
+  gpu::gles2::MailboxManager* mailbox_manager() { return mailbox_manager_.get(); }
+
   GpuMemoryManager* gpu_memory_manager() { return &gpu_memory_manager_; }
 
   GpuEventsDispatcher* gpu_devtools_events_dispatcher() {
