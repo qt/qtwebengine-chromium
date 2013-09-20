@@ -23,6 +23,7 @@
 #include "content/common/gpu_host_messages.h"
 #include "content/gpu/gpu_process_control_impl.h"
 #include "content/gpu/gpu_watchdog_thread.h"
+#include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/gpu/content_gpu_client.h"
@@ -152,6 +153,9 @@ ChildThreadImpl::Options GetOptions(
 
 }  // namespace
 
+// FIXME: try replacing instance_ with current().
+GpuChildThread* GpuChildThread::instance_ = 0;
+
 // static
 GpuChildThread* GpuChildThread::current() {
   return g_lazy_tls.Pointer()->Get();
@@ -177,6 +181,8 @@ GpuChildThread::GpuChildThread(
 #endif
   g_thread_safe_sender.Get() = thread_safe_sender();
   g_lazy_tls.Pointer()->Set(this);
+
+  instance_ = this;
 }
 
 GpuChildThread::GpuChildThread(
@@ -212,6 +218,8 @@ GpuChildThread::GpuChildThread(
 
   g_thread_safe_sender.Get() = thread_safe_sender();
   g_lazy_tls.Pointer()->Set(this);
+
+  instance_ = this;
 }
 
 GpuChildThread::~GpuChildThread() {
@@ -415,6 +423,10 @@ void GpuChildThread::OnInitialize(const gpu::GpuPreferences& gpu_preferences) {
                             sync_point_manager_, gpu_memory_buffer_factory_));
 
   media_service_.reset(new MediaService(gpu_channel_manager_.get()));
+
+#if defined(TOOLKIT_QT)
+  gpu_channel_manager_->set_share_group(GetContentClient()->browser()->GetInProcessGpuShareGroup());
+#endif
 
 #if defined(USE_OZONE)
   ui::OzonePlatform::GetInstance()

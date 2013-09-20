@@ -81,6 +81,9 @@ class GpuChildThread : public ChildThreadImpl,
 
   gpu::GpuPreferences gpu_preferences() { return gpu_preferences_; }
 
+  gpu::GpuChannelManager* ChannelManager() const { return gpu_channel_manager_.get(); }
+  static GpuChildThread* instance() { return instance_; }
+
  private:
   // ChildThread overrides.
   bool Send(IPC::Message* msg) override;
@@ -186,6 +189,8 @@ class GpuChildThread : public ChildThreadImpl,
 
   // Bindings to the mojom::ProcessControl impl.
   mojo::BindingSet<mojom::ProcessControl> process_control_bindings_;
+
+  static GpuChildThread* instance_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuChildThread);
 };
