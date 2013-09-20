@@ -56,6 +56,8 @@ class GpuChildThread : public ChildThread {
   virtual bool Send(IPC::Message* msg) OVERRIDE;
   virtual bool OnControlMessageReceived(const IPC::Message& msg) OVERRIDE;
 
+  GpuChannelManager* ChannelManager() const { return gpu_channel_manager_.get(); }
+
  private:
   // Message handlers.
   void OnInitialize();

@@ -40,6 +40,7 @@ struct ChannelHandle;
 
 namespace content {
 class BrowserChildProcessHostImpl;
+class GpuChildThread;
 class GpuMainThread;
 class RenderWidgetHostViewFrameSubscriber;
 class ShaderDiskCache;
@@ -86,6 +87,8 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // null if the process no longer exists.
   static GpuProcessHost* FromID(int host_id);
   int host_id() const { return host_id_; }
+
+  GpuChildThread* ChildThread() const;
 
   // IPC::Sender implementation.
   virtual bool Send(IPC::Message* msg) OVERRIDE;
