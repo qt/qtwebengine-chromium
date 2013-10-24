@@ -52,6 +52,7 @@ struct WebWindowFeatures;
 }
 
 namespace gfx {
+class GLShareGroup;
 class ImageSkia;
 }
 
@@ -570,6 +571,10 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Contact Viatcheslav Ostapenko at sl.ostapenko@samsung.com for more
   // information.
   virtual VibrationProvider* OverrideVibrationProvider();
+
+  // Allow an embedder to provide a share group reimplementation to connect renderer
+  // GL contexts with the root compositor.
+  virtual gfx::GLShareGroup* GetInProcessGpuShareGroup() { return 0; }
 
   // Creates a new DevToolsManagerDelegate. The caller owns the returned value.
   // It's valid to return NULL.
