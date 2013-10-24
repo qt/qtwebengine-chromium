@@ -16,6 +16,7 @@
 #include "content/common/gpu/gpu_memory_manager.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/message_router.h"
+#include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_switches.h"
 #include "gpu/command_buffer/common/value_state.h"
 #include "gpu/command_buffer/service/feature_info.h"
@@ -163,8 +164,23 @@ scoped_ptr<GpuChannel> GpuChannelManager::CreateGpuChannel(
     bool preempts,
     bool allow_future_sync_points,
     bool allow_real_time_streams) {
+  gfx::GLShareGroup* share_group = nullptr;
+  gpu::gles2::MailboxManager* mailbox_manager = nullptr;
+  if (!share_group_.get()) {
+    share_group_ = new gfx::GLShareGroup;
+    DCHECK(!mailbox_manager_.get());
+    mailbox_manager_ = gpu::gles2::MailboxManager::Create();
+  }
+  // Qt: Ask the browser client at the top to manage the context sharing.
+  // This can only work with --in-process-gpu or --single-process.
+  if (GetContentClient()->browser() && GetContentClient()->browser()->GetInProcessGpuShareGroup())
+    share_group = GetContentClient()->browser()->GetInProcessGpuShareGroup();
+  else
+    share_group = share_group_.get();
+  mailbox_manager = mailbox_manager_.get();
+
   return make_scoped_ptr(
-      new GpuChannel(this, watchdog_, share_group(), mailbox_manager(),
+      new GpuChannel(this, watchdog_, share_group, mailbox_manager,
                      preempts ? preemption_flag() : nullptr, task_runner_.get(),
                      io_task_runner_.get(), client_id, client_tracing_id,
                      allow_future_sync_points, allow_real_time_streams));
