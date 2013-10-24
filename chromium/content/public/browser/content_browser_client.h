@@ -48,6 +48,7 @@ class CryptoModuleBlockingPasswordDelegate;
 }
 
 namespace gfx {
+class GLShareGroup;
 class ImageSkia;
 }
 
@@ -562,6 +563,10 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Allows an embedder to return its own LocationProvider implementation.
   // Return NULL to use the default one for the platform to be created.
   virtual LocationProvider* OverrideSystemLocationProvider();
+
+  // Allow an embedder to provide a share group reimplementation to connect renderer
+  // GL contexts with the root compositor.
+  virtual gfx::GLShareGroup* GetInProcessGpuShareGroup() { return 0; }
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   // Populates |mappings| with all files that need to be mapped before launching
