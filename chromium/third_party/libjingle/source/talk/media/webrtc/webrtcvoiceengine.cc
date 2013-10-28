@@ -1472,19 +1472,6 @@ void WebRtcVoiceEngine::StopAecDump() {
   }
 }
 
-// This struct relies on the generated copy constructor and assignment operator
-// since it is used in an stl::map.
-struct WebRtcVoiceMediaChannel::WebRtcVoiceChannelInfo {
-  WebRtcVoiceChannelInfo() : channel(-1), renderer(NULL) {}
-  WebRtcVoiceChannelInfo(int ch, AudioRenderer* r)
-      : channel(ch),
-        renderer(r) {}
-  ~WebRtcVoiceChannelInfo() {}
-
-  int channel;
-  AudioRenderer* renderer;
-};
-
 // WebRtcVoiceMediaChannel
 WebRtcVoiceMediaChannel::WebRtcVoiceMediaChannel(WebRtcVoiceEngine *engine)
     : WebRtcMediaChannel<VoiceMediaChannel, WebRtcVoiceEngine>(
