@@ -12,6 +12,7 @@
 #include "base/containers/hash_tables.h"
 #include "base/values.h"
 #include "cc/layers/layer_impl.h"
+#include "cc/trees/layer_tree_host.h"
 #include "cc/resources/ui_resource_client.h"
 #include "ui/base/latency_info.h"
 
@@ -42,7 +43,6 @@ class Proxy;
 class ResourceProvider;
 class TileManager;
 struct RendererCapabilities;
-struct UIResourceRequest;
 
 typedef std::list<UIResourceRequest> UIResourceRequestQueue;
 
