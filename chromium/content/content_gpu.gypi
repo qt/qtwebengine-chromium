@@ -6,6 +6,7 @@
   'dependencies': [
     '../base/base.gyp:base',
     '../skia/skia.gyp:skia',
+    '../third_party/khronos/khronos.gyp:khronos_headers',
     '../ui/gl/gl.gyp:gl',
   ],
   'sources': [
@@ -35,6 +36,11 @@
           '-lsetupapi.lib',
         ],
       },
+    }],
+    ['qt_os=="mac"', {
+      'export_dependent_settings': [
+        '../third_party/khronos/khronos.gyp:khronos_headers',
+      ],
     }],
     ['target_arch!="arm" and chromeos == 1', {
       'include_dirs': [
