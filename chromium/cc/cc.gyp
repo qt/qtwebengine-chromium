@@ -25,6 +25,7 @@
         'optimize': 'max',
       },
       'export_dependent_settings': [
+        '<(DEPTH)/gpu/gpu.gyp:gpu',
         '<(DEPTH)/skia/skia.gyp:skia',
       ],
       'defines': [

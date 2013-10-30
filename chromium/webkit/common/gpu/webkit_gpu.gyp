@@ -30,6 +30,9 @@
             '<(DEPTH)/ui/gfx/gfx.gyp:gfx',
             '<(DEPTH)/ui/gfx/gfx.gyp:gfx_geometry',
           ],
+          'export_dependent_settings': [
+            '<(DEPTH)/gpu/gpu.gyp:gles2_implementation',
+          ],
           'sources': [
             # This list contains all .h and .cc in gpu except for test code.
             'context_provider_in_process.cc',
