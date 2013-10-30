@@ -1655,6 +1655,7 @@
         'content_common_mojo_bindings',
         '../cc/cc.gyp:cc',
         '../cc/cc.gyp:cc_surfaces',
+        '../gpu/gpu.gyp:gpu_ipc',
         '../mojo/public/mojo_public.gyp:mojo_application_bindings',
         '../mojo/public/mojo_public.gyp:mojo_cpp_bindings',
         '../mojo/public/mojo_public.gyp:mojo_js_bindings',
