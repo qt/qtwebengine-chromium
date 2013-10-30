@@ -23,6 +23,9 @@
         'command_buffer/command_buffer.gyp:gles2_utils',
         'gles2_cmd_helper',
       ],
+      'export_dependent_settings': [
+        '../third_party/khronos/khronos.gyp:khronos_headers',
+      ],
       'defines': [
         'GLES2_IMPL_IMPLEMENTATION',
       ],
@@ -348,6 +351,9 @@
             'gpu_config',
             'gpu_ipc',
           ],
+          'export_dependent_settings': [
+            'command_buffer_common',
+          ],
           'sources': [
             'gpu_export.h',
           ],
@@ -388,6 +394,9 @@
             'command_buffer_client.gypi',
           ],
           'dependencies': [
+            'command_buffer_common',
+          ],
+          'export_dependent_settings': [
             'command_buffer_common',
           ],
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
