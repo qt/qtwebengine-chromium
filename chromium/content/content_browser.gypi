@@ -1323,6 +1323,7 @@
       'dependencies': [
         'browser/devtools/devtools_resources.gyp:devtools_resources',
         '../cc/cc.gyp:cc',
+        '../gpu/gpu.gyp:gpu_ipc',
         '../net/net.gyp:http_server',
         '../third_party/leveldatabase/leveldatabase.gyp:leveldatabase',
         '../ui/surface/surface.gyp:surface',
