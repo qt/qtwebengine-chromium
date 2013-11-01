@@ -91,6 +91,9 @@
         'command_buffer_client',
         'gles2_implementation',
       ],
+      'export_dependent_settings': [
+        'command_buffer_client',
+      ],
       'defines': [
         'GLES2_C_LIB_IMPLEMENTATION',
       ],
@@ -115,6 +118,9 @@
         'command_buffer/command_buffer.gyp:gles2_utils',
         'command_buffer_client',
         'gles2_implementation_client_side_arrays_no_check',
+      ],
+      'export_dependent_settings': [
+        'command_buffer_client',
       ],
       'sources': [
         '<@(gles2_c_lib_source_files)',
@@ -422,6 +428,9 @@
             'gpu_ipc.gypi',
           ],
           'dependencies': [
+            'command_buffer_common',
+          ],
+          'export_dependent_settings': [
             'command_buffer_common',
           ],
         },
