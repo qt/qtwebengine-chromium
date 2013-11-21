@@ -435,8 +435,7 @@ class DownloadManagerTest : public testing::Test {
   static const size_t kTestDataLen;
 
   DownloadManagerTest()
-      : callback_called_(false),
-        ui_thread_(BrowserThread::UI, &message_loop_),
+      : ui_thread_(BrowserThread::UI, &message_loop_),
         file_thread_(BrowserThread::FILE, &message_loop_),
         next_download_id_(0) {
   }

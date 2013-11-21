@@ -22,16 +22,14 @@ class CC_EXPORT PrioritizedTileSet {
 
   void InsertTile(Tile* tile, ManagedTileBin bin);
   void Clear();
+  void Sort();
 
-  class CC_EXPORT Iterator {
+  class CC_EXPORT PriorityIterator {
    public:
-    Iterator(PrioritizedTileSet* set, bool use_priority_ordering);
+    explicit PriorityIterator(PrioritizedTileSet* set);
+    ~PriorityIterator();
 
-    ~Iterator();
-
-    void DisablePriorityOrdering();
-
-    Iterator& operator++();
+    PriorityIterator& operator++();
     Tile* operator->() { return *(*this); }
     Tile* operator*();
     operator bool() const {
@@ -44,17 +42,13 @@ class CC_EXPORT PrioritizedTileSet {
     PrioritizedTileSet* tile_set_;
     ManagedTileBin current_bin_;
     std::vector<scoped_refptr<Tile> >::iterator iterator_;
-    bool use_priority_ordering_;
   };
 
  private:
-  friend class Iterator;
-
-  void SortBinIfNeeded(ManagedTileBin bin);
+  friend class PriorityIterator;
 
   typedef scoped_refptr<Tile> TileRef;
   std::vector<TileRef> tiles_[NUM_BINS];
-  bool bin_sorted_[NUM_BINS];
 };
 
 }  // namespace cc

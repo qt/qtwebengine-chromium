@@ -132,7 +132,7 @@
 #include "media/base/filter_collection.h"
 #include "media/base/media_switches.h"
 #include "media/filters/audio_renderer_impl.h"
-#include "media/filters/gpu_video_accelerator_factories.h"
+#include "media/filters/gpu_video_decoder_factories.h"
 #include "net/base/data_url.h"
 #include "net/base/escape.h"
 #include "net/base/net_errors.h"
@@ -2290,6 +2290,7 @@ WebView* RenderViewImpl::createView(
     params.frame_name = frame_name;
   params.opener_frame_id = creator->identifier();
   params.opener_url = creator->document().url();
+  params.opener_top_level_frame_url = creator->top()->document().url();
   GURL security_url(creator->document().securityOrigin().toString().utf8());
   if (!security_url.is_valid())
     security_url = GURL();
@@ -2687,10 +2688,6 @@ void RenderViewImpl::showContextMenu(
       RenderViewObserver, observers_, DidRequestShowContextMenu(frame, data));
 }
 
-void RenderViewImpl::clearContextMenu() {
-  context_menu_node_.reset();
-}
-
 void RenderViewImpl::setStatusText(const WebString& text) {
 }
 
@@ -2993,7 +2990,7 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
 #if defined(ENABLE_WEBRTC)
   EnsureMediaStreamClient();
 #if !defined(GOOGLE_TV)
-  if (media_stream_client_->IsMediaStream(url)) {
+  if (media_stream_client_ && media_stream_client_->IsMediaStream(url)) {
 #if defined(OS_ANDROID) && defined(ARCH_CPU_ARMEL)
     bool found_neon =
         (android_getCpuFeatures() & ANDROID_CPU_ARM_FEATURE_NEON) != 0;
@@ -3071,7 +3068,7 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
     DVLOG(1) << "Using AudioRendererMixerManager-provided sink: " << sink.get();
   }
 
-  scoped_refptr<media::GpuVideoAcceleratorFactories> gpu_factories =
+  scoped_refptr<media::GpuVideoDecoderFactories> gpu_factories =
       RenderThreadImpl::current()->GetGpuFactories(
           RenderThreadImpl::current()->GetMediaThreadMessageLoopProxy());
 
@@ -4235,13 +4232,17 @@ bool RenderViewImpl::ShouldUpdateSelectionTextFromContextMenuParams(
 void RenderViewImpl::reportFindInPageMatchCount(int request_id,
                                                 int count,
                                                 bool final_update) {
-  NOTREACHED();
+  // TODO(jam): switch PepperPluginInstanceImpl to take a RenderFrame
+  main_render_frame_->reportFindInPageMatchCount(
+      request_id, count, final_update);
 }
 
 void RenderViewImpl::reportFindInPageSelection(int request_id,
                                                int active_match_ordinal,
                                                const WebRect& selection_rect) {
-  NOTREACHED();
+  // TODO(jam): switch PepperPluginInstanceImpl to take a RenderFrame
+  main_render_frame_->reportFindInPageSelection(
+      request_id, active_match_ordinal, selection_rect);
 }
 
 void RenderViewImpl::openFileSystem(

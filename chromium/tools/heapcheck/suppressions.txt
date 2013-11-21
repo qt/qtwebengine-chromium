@@ -180,11 +180,21 @@
    fun:aura::RootWindowHost::Create
 }
 
-# When NSS 3.15 is the minimum version required, this should be removed.
+# There is not CloseTestNSSDB due to NSS bug 588269.
+# When NSS 3.14 is the minimum version required, this should be removed.
+# http://crbug.com/156433 .
 {
-   bug_272673
+   bug_156433_a
    Heapcheck:Leak
-   fun:*
+   fun:sqlite3MemMalloc
+   fun:*OpenUserDB
+   fun:*OpenTestNSSDB
+   fun:*ScopedTestNSSDB
+}
+{
+   bug_156433_b
+   Heapcheck:Leak
+   fun:PORT_Alloc_Util
    fun:*OpenUserDB
    fun:*OpenTestNSSDB
    fun:*ScopedTestNSSDB
@@ -840,15 +850,11 @@
    fun:message_center::MessageCenterViewTest::SetUp
 }
 {
-   bug_272083
+   bug_271431
    Heapcheck:Leak
-   fun:ThemeService::SetManagedUserTheme
-   fun:ThemeService::OnManagedUserInitialized
-}
-{
-   bug_272596
-   Heapcheck:Leak
-   fun:*
-   fun:net::NSSCertDatabase::ListCerts
-   fun:LoadNSSCertificates
+   ...
+   fun:CreateBubble
+   fun:autofill::GeneratedCreditCardBubbleController::Show
+   fun:autofill::GeneratedCreditCardBubbleController::SetupAndShow
+   fun:autofill::GeneratedCreditCardBubbleController::Show
 }

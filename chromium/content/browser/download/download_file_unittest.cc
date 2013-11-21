@@ -76,7 +76,6 @@ class DownloadFileTest : public testing::Test {
   DownloadFileTest() :
       observer_(new StrictMock<MockDownloadDestinationObserver>),
       observer_factory_(observer_.get()),
-      input_stream_(NULL),
       bytes_(-1),
       bytes_per_sec_(-1),
       hash_state_("xyzzy"),

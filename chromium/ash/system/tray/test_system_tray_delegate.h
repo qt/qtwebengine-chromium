@@ -38,6 +38,7 @@ class TestSystemTrayDelegate : public SystemTrayDelegate {
   virtual bool SystemShouldUpgrade() const OVERRIDE;
   virtual base::HourClockType GetHourClockType() const OVERRIDE;
   virtual void ShowSettings() OVERRIDE;
+  virtual bool ShouldShowSettings() OVERRIDE;
   virtual void ShowDateSettings() OVERRIDE;
   virtual void ShowNetworkSettings(const std::string& service_path) OVERRIDE;
   virtual void ShowBluetoothSettings() OVERRIDE;
@@ -83,6 +84,10 @@ class TestSystemTrayDelegate : public SystemTrayDelegate {
   virtual void ShowOtherCellular() OVERRIDE;
   virtual bool GetBluetoothAvailable() OVERRIDE;
   virtual bool GetBluetoothEnabled() OVERRIDE;
+  virtual bool GetCellularCarrierInfo(std::string* carrier_id,
+                                      std::string* topup_url,
+                                      std::string* setup_url) OVERRIDE;
+  virtual void ShowCellularURL(const std::string& url) OVERRIDE;
   virtual void ChangeProxySettings() OVERRIDE;
   virtual VolumeControlDelegate* GetVolumeControlDelegate() const OVERRIDE;
   virtual void SetVolumeControlDelegate(

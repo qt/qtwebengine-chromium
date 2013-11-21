@@ -11,7 +11,6 @@
 #include "base/values.h"
 #include "content/common/content_export.h"
 #include "content/public/common/browser_plugin_permission_type.h"
-#include "ui/gfx/size.h"
 
 namespace content {
 
@@ -58,10 +57,6 @@ class CONTENT_EXPORT BrowserPluginGuestDelegate {
       BrowserPluginPermissionType permission_type,
       const base::DictionaryValue& request_info,
       const PermissionResponseCallback& callback);
-
-  // Notifies that the content size of the guest has changed in autosize mode.
-  virtual void SizeChanged(const gfx::Size& old_size,
-                           const gfx::Size& new_size) {}
 };
 
 }  // namespace content

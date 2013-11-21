@@ -78,20 +78,19 @@ void EnableSSLServerSockets() {
   g_nss_ssl_server_init_singleton.Get();
 }
 
-scoped_ptr<SSLServerSocket> CreateSSLServerSocket(
-    scoped_ptr<StreamSocket> socket,
+SSLServerSocket* CreateSSLServerSocket(
+    StreamSocket* socket,
     X509Certificate* cert,
     crypto::RSAPrivateKey* key,
     const SSLConfig& ssl_config) {
   DCHECK(g_nss_server_sockets_init) << "EnableSSLServerSockets() has not been"
                                     << "called yet!";
 
-  return scoped_ptr<SSLServerSocket>(
-      new SSLServerSocketNSS(socket.Pass(), cert, key, ssl_config));
+  return new SSLServerSocketNSS(socket, cert, key, ssl_config);
 }
 
 SSLServerSocketNSS::SSLServerSocketNSS(
-    scoped_ptr<StreamSocket> transport_socket,
+    StreamSocket* transport_socket,
     scoped_refptr<X509Certificate> cert,
     crypto::RSAPrivateKey* key,
     const SSLConfig& ssl_config)
@@ -101,7 +100,7 @@ SSLServerSocketNSS::SSLServerSocketNSS(
       user_write_buf_len_(0),
       nss_fd_(NULL),
       nss_bufs_(NULL),
-      transport_socket_(transport_socket.Pass()),
+      transport_socket_(transport_socket),
       ssl_config_(ssl_config),
       cert_(cert),
       next_handshake_state_(STATE_NONE),

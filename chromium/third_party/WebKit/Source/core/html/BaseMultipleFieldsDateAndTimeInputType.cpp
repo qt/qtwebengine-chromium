@@ -130,22 +130,22 @@ bool DateTimeFormatValidator::validateFormat(const String& format, const BaseMul
 
 DateTimeEditElement* BaseMultipleFieldsDateAndTimeInputType::dateTimeEditElement() const
 {
-    return toDateTimeEditElement(element()->userAgentShadowRoot()->getElementById(ShadowElementNames::dateTimeEdit()));
+    return toDateTimeEditElement(element()->uaShadowElementById(ShadowElementNames::dateTimeEdit()));
 }
 
 SpinButtonElement* BaseMultipleFieldsDateAndTimeInputType::spinButtonElement() const
 {
-    return toSpinButtonElement(element()->userAgentShadowRoot()->getElementById(ShadowElementNames::spinButton()));
+    return toSpinButtonElement(element()->uaShadowElementById(ShadowElementNames::spinButton()));
 }
 
 ClearButtonElement* BaseMultipleFieldsDateAndTimeInputType::clearButtonElement() const
 {
-    return toClearButtonElement(element()->userAgentShadowRoot()->getElementById(ShadowElementNames::clearButton()));
+    return toClearButtonElement(element()->uaShadowElementById(ShadowElementNames::clearButton()));
 }
 
 PickerIndicatorElement* BaseMultipleFieldsDateAndTimeInputType::pickerIndicatorElement() const
 {
-    return toPickerIndicatorElement(element()->userAgentShadowRoot()->getElementById(ShadowElementNames::pickerIndicator()));
+    return toPickerIndicatorElement(element()->uaShadowElementById(ShadowElementNames::pickerIndicator()));
 }
 
 inline bool BaseMultipleFieldsDateAndTimeInputType::containsFocusedShadowElement() const

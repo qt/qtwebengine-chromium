@@ -22,14 +22,42 @@ class Target;
 class NinjaTargetWriter {
  public:
   NinjaTargetWriter(const Target* target, std::ostream& out);
-  virtual ~NinjaTargetWriter();
+  ~NinjaTargetWriter();
+
+  void Run();
 
   static void RunAndWriteFile(const Target* target);
 
-  virtual void Run() = 0;
+ private:
+  void WriteCopyRules();
 
- protected:
-  void WriteEnvironment();
+  void WriteCustomRules();
+  void WriteCustomArg(const std::string& arg);
+
+  // Writs the rules for compiling each source, writing all output files
+  // to the given vector.
+  //
+  // common_deps is a precomputed string of all ninja files that are common
+  // to each build step. This is added to each one.
+  void WriteCustomSourceRules(const std::string& custom_rule_name,
+                              const std::string& common_deps,
+                              const SourceDir& script_cd,
+                              const std::string& script_cd_to_root,
+                              std::vector<OutputFile>* output_files);
+
+  void WriteCompilerVars();
+  void WriteSources(std::vector<OutputFile>* object_files);
+  void WriteLinkerStuff(const std::vector<OutputFile>& object_files);
+
+  // Writes the build line for linking the target. Includes newline.
+  void WriteLinkCommand(const OutputFile& external_output_file,
+                        const OutputFile& internal_output_file,
+                        const std::vector<OutputFile>& object_files);
+
+  // Returns NULL if the source type should not be compiled on this target.
+  const char* GetCommandForSourceType(SourceFileType type) const;
+
+  const char* GetCommandForTargetType() const;
 
   const Settings* settings_;  // Non-owning.
   const Target* target_;  // Non-owning.
@@ -37,9 +65,6 @@ class NinjaTargetWriter {
   PathOutput path_output_;
 
   NinjaHelper helper_;
-
- private:
-  void WriteCopyRules();
 
   DISALLOW_COPY_AND_ASSIGN(NinjaTargetWriter);
 };

@@ -163,24 +163,6 @@ public:
         PrefixedShadowRootConstructor,
         ConsoleMarkTimeline,
         CSSPseudoElementUserAgentCustomPseudo,
-        DocumentTypeEntities, // Removed from DOM4.
-        DocumentTypeInternalSubset, // Removed from DOM4.
-        DocumentTypeNotations, // Removed from DOM4.
-        ElementGetAttributeNode, // Removed from DOM4.
-        ElementSetAttributeNode, // Removed from DOM4.
-        ElementRemoveAttributeNode, // Removed from DOM4.
-        ElementGetAttributeNodeNS, // Removed from DOM4.
-        DocumentCreateAttribute, // Removed from DOM4.
-        DocumentCreateAttributeNS, // Removed from DOM4.
-        DocumentCreateCDATASection, // Removed from DOM4.
-        DocumentInputEncoding, // Removed from DOM4.
-        DocumentXMLEncoding, // Removed from DOM4.
-        DocumentXMLStandalone, // Removed from DOM4.
-        DocumentXMLVersion, // Removed from DOM4.
-        NodeIsSameNode, // Removed from DOM4.
-        NodeIsSupported, // Removed from DOM4.
-        NodeNamespaceURI, // Removed from DOM4.
-        NodePrefix, // Removed from DOM4.
         // Add new features immediately above this line. Don't change assigned
         // numbers of each items, and don't reuse unused slots.
         NumberOfFeatures, // This enum value must be last.

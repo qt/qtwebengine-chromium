@@ -26,6 +26,15 @@
 #include "config.h"
 #include "core/xml/parser/XMLDocumentParser.h"
 
+#include <libxml/parser.h>
+#include <libxml/parserInternals.h>
+#include <libxslt/xslt.h>
+#include <wtf/StringExtras.h>
+#include <wtf/text/CString.h>
+#include <wtf/Threading.h>
+#include <wtf/unicode/UTF8.h>
+#include <wtf/UnusedParam.h>
+#include <wtf/Vector.h>
 #include "HTMLNames.h"
 #include "XMLNSNames.h"
 #include "bindings/v8/ExceptionState.h"
@@ -40,14 +49,14 @@
 #include "core/dom/ProcessingInstruction.h"
 #include "core/dom/ScriptLoader.h"
 #include "core/dom/TransformSource.h"
-#include "core/fetch/ResourceFetcher.h"
-#include "core/fetch/ScriptResource.h"
 #include "core/html/HTMLHtmlElement.h"
 #include "core/html/HTMLTemplateElement.h"
 #include "core/html/parser/HTMLEntityParser.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/ImageLoader.h"
 #include "core/loader/TextResourceDecoder.h"
+#include "core/loader/cache/ResourceFetcher.h"
+#include "core/loader/cache/ScriptResource.h"
 #include "core/page/Frame.h"
 #include "core/page/UseCounter.h"
 #include "core/platform/network/ResourceError.h"
@@ -58,16 +67,7 @@
 #include "core/xml/parser/XMLDocumentParserScope.h"
 #include "core/xml/parser/XMLParserInput.h"
 #include "weborigin/SecurityOrigin.h"
-#include "wtf/StringExtras.h"
 #include "wtf/TemporaryChange.h"
-#include "wtf/Threading.h"
-#include "wtf/UnusedParam.h"
-#include "wtf/Vector.h"
-#include "wtf/text/CString.h"
-#include "wtf/unicode/UTF8.h"
-#include <libxml/parser.h>
-#include <libxml/parserInternals.h>
-#include <libxslt/xslt.h>
 
 using namespace std;
 

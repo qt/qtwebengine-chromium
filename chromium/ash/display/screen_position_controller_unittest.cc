@@ -34,11 +34,11 @@ namespace test {
 
 namespace {
 void SetSecondaryDisplayLayout(DisplayLayout::Position position) {
-  DisplayLayout layout =
-      Shell::GetInstance()->display_manager()->GetCurrentDisplayLayout();
+  DisplayController* display_controller =
+      Shell::GetInstance()->display_controller();
+  DisplayLayout layout = display_controller->GetCurrentDisplayLayout();
   layout.position = position;
-  Shell::GetInstance()->display_controller()->
-      SetLayoutForCurrentDisplays(layout);
+  display_controller->SetLayoutForCurrentDisplays(layout);
 }
 
 internal::ScreenPositionController* GetScreenPositionController() {

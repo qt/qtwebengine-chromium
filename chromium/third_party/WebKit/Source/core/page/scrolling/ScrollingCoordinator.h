@@ -102,6 +102,14 @@ public:
     String mainThreadScrollingReasonsAsText() const;
     Region computeShouldHandleScrollGestureOnMainThreadRegion(const Frame*, const IntPoint& frameLocation) const;
 
+    class TouchEventTargetRectsObserver {
+    public:
+        virtual void touchEventTargetRectsChanged(const LayerHitTestRects&) = 0;
+    };
+
+    void addTouchEventTargetRectsObserver(TouchEventTargetRectsObserver*);
+    void removeTouchEventTargetRectsObserver(TouchEventTargetRectsObserver*);
+
 protected:
     explicit ScrollingCoordinator(Page*);
 
@@ -139,6 +147,8 @@ private:
     typedef HashMap<ScrollableArea*, OwnPtr<WebKit::WebScrollbarLayer> > ScrollbarMap;
     ScrollbarMap m_horizontalScrollbars;
     ScrollbarMap m_verticalScrollbars;
+
+    HashSet<TouchEventTargetRectsObserver*> m_touchEventTargetRectsObservers;
 };
 
 } // namespace WebCore

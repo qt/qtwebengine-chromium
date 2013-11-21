@@ -34,11 +34,6 @@ class ASH_EXPORT ShelfWidget : public views::Widget,
       internal::WorkspaceController* workspace_controller);
   virtual ~ShelfWidget();
 
-  // Returns if shelf alignment option is enabled, and the user is able
-  // to adjust the alignment (guest and supervised mode users cannot for
-  // example).
-  static bool ShelfAlignmentAllowed();
-
   void SetAlignment(ShelfAlignment alignmnet);
   ShelfAlignment GetAlignment() const;
 
@@ -78,6 +73,9 @@ class ASH_EXPORT ShelfWidget : public views::Widget,
 
   // TODO(harrym): Remove when Status Area Widget is a child view.
   void ShutdownStatusAreaWidget();
+
+  // Set the bounds of the widget and the dim shelf overlay.
+  void SetWidgetBounds(const gfx::Rect& rect);
 
   // Force the shelf to be presented in an undimmed state.
   void ForceUndimming(bool force);

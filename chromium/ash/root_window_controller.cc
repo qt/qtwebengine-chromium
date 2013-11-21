@@ -4,6 +4,7 @@
 
 #include "ash/root_window_controller.h"
 
+#include <queue>
 #include <vector>
 
 #include "ash/ash_constants.h"
@@ -27,6 +28,7 @@
 #include "ash/touch/touch_observer_hud.h"
 #include "ash/wm/always_on_top_controller.h"
 #include "ash/wm/base_layout_manager.h"
+#include "ash/wm/boot_splash_screen.h"
 #include "ash/wm/dock/docked_window_layout_manager.h"
 #include "ash/wm/panels/panel_layout_manager.h"
 #include "ash/wm/panels/panel_window_event_handler.h"
@@ -44,11 +46,13 @@
 #include "base/command_line.h"
 #include "base/time/time.h"
 #include "ui/aura/client/aura_constants.h"
+#include "ui/aura/client/drag_drop_client.h"
 #include "ui/aura/client/tooltip_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
 #include "ui/aura/window_observer.h"
+#include "ui/aura/window_tracker.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/models/menu_model.h"
 #include "ui/gfx/screen.h"
@@ -59,20 +63,14 @@
 #include "ui/views/view_model.h"
 #include "ui/views/view_model_utils.h"
 
-#if defined(OS_CHROMEOS)
-#include "ash/wm/boot_splash_screen_chromeos.h"
-#endif
-
 namespace ash {
 namespace {
 
-#if defined(OS_CHROMEOS)
 // Duration for the animation that hides the boot splash screen, in
 // milliseconds.  This should be short enough in relation to
 // wm/window_animation.cc's brightness/grayscale fade animation that the login
 // background image animation isn't hidden by the splash screen animation.
 const int kBootSplashScreenHideDurationMs = 500;
-#endif
 
 // Creates a new window for use as a container.
 aura::Window* CreateContainer(int window_id,
@@ -261,12 +259,17 @@ void RootWindowController::Shutdown() {
   wallpaper_controller_.reset();
   animating_wallpaper_controller_.reset();
 
-  CloseChildWindows();
+  // Change the active root window before closing child windows. If any child
+  // being removed triggers a relayout of the shelf it will try to build a
+  // window list adding windows from the active root window's containers which
+  // may have already gone away.
   if (Shell::GetActiveRootWindow() == root_window_) {
     Shell::GetInstance()->set_active_root_window(
         Shell::GetPrimaryRootWindow() == root_window_.get() ?
         NULL : Shell::GetPrimaryRootWindow());
   }
+
+  CloseChildWindows();
   SetRootWindowController(root_window_.get(), NULL);
   screen_dimmer_.reset();
   workspace_controller_.reset();
@@ -350,7 +353,6 @@ void RootWindowController::UpdateAfterLoginStatusChange(
 }
 
 void RootWindowController::HandleInitialDesktopBackgroundAnimationStarted() {
-#if defined(OS_CHROMEOS)
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kAshAnimateFromBootSplashScreen) &&
       boot_splash_screen_.get()) {
@@ -359,15 +361,12 @@ void RootWindowController::HandleInitialDesktopBackgroundAnimationStarted() {
     boot_splash_screen_->StartHideAnimation(
         base::TimeDelta::FromMilliseconds(kBootSplashScreenHideDurationMs));
   }
-#endif
 }
 
 void RootWindowController::OnWallpaperAnimationFinished(views::Widget* widget) {
   // Make sure the wallpaper is visible.
   system_background_->SetColor(SK_ColorBLACK);
-#if defined(OS_CHROMEOS)
   boot_splash_screen_.reset();
-#endif
 
   Shell::GetInstance()->user_wallpaper_delegate()->
       OnWallpaperAnimationFinished();
@@ -404,6 +403,8 @@ void RootWindowController::CloseChildWindows() {
     docked_layout_manager_ = NULL;
   }
 
+  aura::client::SetDragDropClient(root_window_.get(), NULL);
+
   // TODO(harrym): Remove when Status Area Widget is a child view.
   shelf_->ShutdownStatusAreaWidget();
 
@@ -417,10 +418,26 @@ void RootWindowController::CloseChildWindows() {
   workspace_controller_.reset();
   aura::client::SetTooltipClient(root_window_.get(), NULL);
 
-  while (!root_window_->children().empty()) {
-    aura::Window* child = root_window_->children()[0];
-    delete child;
+  // Remove all toplevel windows first.
+  std::queue<aura::Window*> non_toplevel_windows;
+  non_toplevel_windows.push(root_window_.get());
+  while (!non_toplevel_windows.empty()) {
+    aura::Window* non_toplevel_window = non_toplevel_windows.front();
+    non_toplevel_windows.pop();
+    aura::WindowTracker toplevel_windows;
+    for (size_t i = 0; i < non_toplevel_window->children().size(); ++i) {
+      aura::Window* child = non_toplevel_window->children()[i];
+      if (child->delegate())
+        toplevel_windows.Add(child);
+      else
+        non_toplevel_windows.push(child);
+    }
+    while (!toplevel_windows.windows().empty())
+      delete *toplevel_windows.windows().begin();
   }
+  // And then remove the containers.
+  while (!root_window_->children().empty())
+    delete root_window_->children()[0];
 
   shelf_.reset(NULL);
 }
@@ -496,7 +513,6 @@ void RootWindowController::InitKeyboard() {
 
     aura::Window* keyboard_container =
         keyboard_controller_->GetContainerWindow();
-    keyboard_container->set_id(kShellWindowId_VirtualKeyboardContainer);
     parent->AddChild(keyboard_container);
     keyboard_container->SetBounds(parent->bounds());
   }

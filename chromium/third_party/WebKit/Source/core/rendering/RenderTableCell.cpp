@@ -34,7 +34,6 @@
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderTableCol.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/SubtreeLayoutScope.h"
 #include "core/rendering/style/CollapsedBorderValue.h"
 
 using namespace std;
@@ -163,7 +162,7 @@ void RenderTableCell::computePreferredLogicalWidths()
     }
 }
 
-void RenderTableCell::computeIntrinsicPadding(int rowHeight, SubtreeLayoutScope& layouter)
+void RenderTableCell::computeIntrinsicPadding(int rowHeight)
 {
     int oldIntrinsicPaddingBefore = intrinsicPaddingBefore();
     int oldIntrinsicPaddingAfter = intrinsicPaddingAfter();
@@ -201,19 +200,20 @@ void RenderTableCell::computeIntrinsicPadding(int rowHeight, SubtreeLayoutScope&
     // FIXME: Changing an intrinsic padding shouldn't trigger a relayout as it only shifts the cell inside the row but
     // doesn't change the logical height.
     if (intrinsicPaddingBefore != oldIntrinsicPaddingBefore || intrinsicPaddingAfter != oldIntrinsicPaddingAfter)
-        layouter.setNeedsLayout(this);
+        setNeedsLayout(MarkOnlyThis);
 }
 
 void RenderTableCell::updateLogicalWidth()
 {
 }
 
-void RenderTableCell::setCellLogicalWidth(int tableLayoutLogicalWidth, SubtreeLayoutScope& layouter)
+void RenderTableCell::setCellLogicalWidth(int tableLayoutLogicalWidth)
 {
     if (tableLayoutLogicalWidth == logicalWidth())
         return;
 
-    layouter.setNeedsLayout(this);
+    setNeedsLayout(MarkOnlyThis);
+    row()->setChildNeedsLayout(MarkOnlyThis);
 
     if (!table()->selfNeedsLayout() && checkForRepaintDuringLayout())
         repaint();
@@ -224,8 +224,6 @@ void RenderTableCell::setCellLogicalWidth(int tableLayoutLogicalWidth, SubtreeLa
 
 void RenderTableCell::layout()
 {
-    ASSERT(needsLayout());
-
     StackStats::LayoutCheckPoint layoutCheckPoint;
     updateFirstLetter();
 
@@ -239,8 +237,7 @@ void RenderTableCell::layout()
     if (isBaselineAligned() && section()->rowBaseline(rowIndex()) && cellBaselinePosition() > section()->rowBaseline(rowIndex())) {
         int newIntrinsicPaddingBefore = max<LayoutUnit>(0, intrinsicPaddingBefore() - max<LayoutUnit>(0, cellBaselinePosition() - oldCellBaseline));
         setIntrinsicPaddingBefore(newIntrinsicPaddingBefore);
-        SubtreeLayoutScope layouter(this);
-        layouter.setNeedsLayout(this);
+        setNeedsLayout(MarkOnlyThis);
         layoutBlock(cellWidthChanged());
     }
 

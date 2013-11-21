@@ -77,12 +77,12 @@ void Scheduler::ScheduleTargetFileWrite(const Target* target) {
       base::SequencedWorkerPool::BLOCK_SHUTDOWN);
 }
 
-void Scheduler::AddGenDependency(const base::FilePath& file) {
+void Scheduler::AddGenDependency(const SourceFile& source_file) {
   base::AutoLock lock(lock_);
-  gen_dependencies_.push_back(file);
+  gen_dependencies_.push_back(source_file);
 }
 
-std::vector<base::FilePath> Scheduler::GetGenDependencies() const {
+std::vector<SourceFile> Scheduler::GetGenDependencies() const {
   base::AutoLock lock(lock_);
   return gen_dependencies_;
 }

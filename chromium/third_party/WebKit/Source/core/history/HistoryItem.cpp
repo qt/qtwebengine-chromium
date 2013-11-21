@@ -53,6 +53,18 @@ HistoryItem::HistoryItem()
 {
 }
 
+HistoryItem::HistoryItem(const String& urlString)
+    : m_urlString(urlString)
+    , m_originalURLString(urlString)
+    , m_lastVisitedTime(0)
+    , m_pageScaleFactor(0)
+    , m_isTargetItem(false)
+    , m_visitCount(0)
+    , m_itemSequenceNumber(generateSequenceNumber())
+    , m_documentSequenceNumber(generateSequenceNumber())
+{
+}
+
 HistoryItem::~HistoryItem()
 {
 }

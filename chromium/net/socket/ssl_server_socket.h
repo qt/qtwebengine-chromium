@@ -6,7 +6,6 @@
 #define NET_SOCKET_SSL_SERVER_SOCKET_H_
 
 #include "base/basictypes.h"
-#include "base/memory/scoped_ptr.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
 #include "net/socket/ssl_socket.h"
@@ -53,8 +52,8 @@ NET_EXPORT void EnableSSLServerSockets();
 //
 // The caller starts the SSL server handshake by calling Handshake on the
 // returned socket.
-NET_EXPORT scoped_ptr<SSLServerSocket> CreateSSLServerSocket(
-    scoped_ptr<StreamSocket> socket,
+NET_EXPORT SSLServerSocket* CreateSSLServerSocket(
+    StreamSocket* socket,
     X509Certificate* certificate,
     crypto::RSAPrivateKey* key,
     const SSLConfig& ssl_config);

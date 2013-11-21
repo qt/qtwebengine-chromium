@@ -35,11 +35,11 @@ class XmppClientSocketFactory : public ResolvingClientSocketFactory {
   virtual ~XmppClientSocketFactory();
 
   // ResolvingClientSocketFactory implementation.
-  virtual scoped_ptr<net::StreamSocket> CreateTransportClientSocket(
+  virtual net::StreamSocket* CreateTransportClientSocket(
       const net::HostPortPair& host_and_port) OVERRIDE;
 
-  virtual scoped_ptr<net::SSLClientSocket> CreateSSLClientSocket(
-      scoped_ptr<net::ClientSocketHandle> transport_socket,
+  virtual net::SSLClientSocket* CreateSSLClientSocket(
+      net::ClientSocketHandle* transport_socket,
       const net::HostPortPair& host_and_port) OVERRIDE;
 
  private:

@@ -29,14 +29,13 @@
 #include "core/dom/DocumentStyleSheetCollection.h"
 #include "core/dom/Element.h"
 #include "core/dom/Position.h"
-#include "core/fetch/ImageResourceClient.h"
+#include "core/loader/cache/ImageResourceClient.h"
 #include "core/platform/graphics/FloatQuad.h"
 #include "core/platform/graphics/LayoutRect.h"
 #include "core/platform/graphics/transforms/TransformationMatrix.h"
 #include "core/rendering/PaintPhase.h"
 #include "core/rendering/RenderObjectChildList.h"
 #include "core/rendering/ScrollBehavior.h"
-#include "core/rendering/SubtreeLayoutScope.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/StyleInheritedData.h"
 #include "wtf/HashSet.h"
@@ -622,10 +621,10 @@ public:
 
     Element* offsetParent() const;
 
-    void markContainingBlocksForLayout(bool scheduleRelayout = true, RenderObject* newRoot = 0, SubtreeLayoutScope* = 0);
-    void setNeedsLayout(MarkingBehavior = MarkContainingBlockChain, SubtreeLayoutScope* = 0);
+    void markContainingBlocksForLayout(bool scheduleRelayout = true, RenderObject* newRoot = 0);
+    void setNeedsLayout(MarkingBehavior = MarkContainingBlockChain);
     void clearNeedsLayout();
-    void setChildNeedsLayout(MarkingBehavior = MarkContainingBlockChain, SubtreeLayoutScope* = 0);
+    void setChildNeedsLayout(MarkingBehavior = MarkContainingBlockChain);
     void setNeedsPositionedMovementLayout();
     void setNeedsSimplifiedNormalFlowLayout();
     void setPreferredLogicalWidthsDirty(bool, MarkingBehavior = MarkContainingBlockChain);
@@ -664,7 +663,6 @@ public:
 
     void updateFillImages(const FillLayer*, const FillLayer*);
     void updateImage(StyleImage*, StyleImage*);
-    void updateShapeImage(const ShapeValue*, const ShapeValue*);
 
     virtual void paint(PaintInfo&, const LayoutPoint&);
 
@@ -1072,8 +1070,6 @@ private:
         return styleColor;
     }
 
-    void removeShapeImageClient(ShapeValue*);
-
 #ifndef NDEBUG
     void checkBlockPositionedObjectsNeedLayout();
 #endif
@@ -1244,14 +1240,14 @@ inline bool RenderObject::isBeforeOrAfterContent() const
     return isBeforeContent() || isAfterContent();
 }
 
-inline void RenderObject::setNeedsLayout(MarkingBehavior markParents, SubtreeLayoutScope* layouter)
+inline void RenderObject::setNeedsLayout(MarkingBehavior markParents)
 {
     ASSERT(!isSetNeedsLayoutForbidden());
     bool alreadyNeededLayout = m_bitfields.needsLayout();
     m_bitfields.setNeedsLayout(true);
     if (!alreadyNeededLayout) {
-        if (markParents == MarkContainingBlockChain && (!layouter || layouter->root() != this))
-            markContainingBlocksForLayout(true, 0, layouter);
+        if (markParents == MarkContainingBlockChain)
+            markContainingBlocksForLayout();
         if (hasLayer())
             setLayerNeedsFullRepaint();
     }
@@ -1271,14 +1267,13 @@ inline void RenderObject::clearNeedsLayout()
 #endif
 }
 
-inline void RenderObject::setChildNeedsLayout(MarkingBehavior markParents, SubtreeLayoutScope* layouter)
+inline void RenderObject::setChildNeedsLayout(MarkingBehavior markParents)
 {
     ASSERT(!isSetNeedsLayoutForbidden());
     bool alreadyNeededLayout = normalChildNeedsLayout();
     setNormalChildNeedsLayout(true);
-    // FIXME: Replace MarkOnlyThis with the SubtreeLayoutScope code path and remove the MarkingBehavior argument entirely.
-    if (!alreadyNeededLayout && markParents == MarkContainingBlockChain && (!layouter || layouter->root() != this))
-        markContainingBlocksForLayout(true, 0, layouter);
+    if (!alreadyNeededLayout && markParents == MarkContainingBlockChain)
+        markContainingBlocksForLayout();
 }
 
 inline void RenderObject::setNeedsPositionedMovementLayout()

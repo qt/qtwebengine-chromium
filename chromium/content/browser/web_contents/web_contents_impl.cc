@@ -1422,6 +1422,23 @@ void WebContentsImpl::CreateNewWindow(
     int main_frame_route_id,
     const ViewHostMsg_CreateWindow_Params& params,
     SessionStorageNamespace* session_storage_namespace) {
+  if (delegate_ &&
+      !delegate_->ShouldCreateWebContents(this,
+                                          route_id,
+                                          params.window_container_type,
+                                          params.frame_name,
+                                          params.target_url,
+                                          params.referrer,
+                                          params.disposition,
+                                          params.features,
+                                          params.user_gesture,
+                                          params.opener_suppressed)) {
+    GetRenderViewHost()->GetProcess()->ResumeRequestsForView(route_id);
+    GetRenderViewHost()->GetProcess()->ResumeRequestsForView(
+        main_frame_route_id);
+    return;
+  }
+
   // We usually create the new window in the same BrowsingInstance (group of
   // script-related windows), by passing in the current SiteInstance.  However,
   // if the opener is being suppressed (in a non-guest), we create a new
@@ -1432,6 +1449,12 @@ void WebContentsImpl::CreateNewWindow(
       params.opener_suppressed && !is_guest ?
       SiteInstance::CreateForURL(GetBrowserContext(), params.target_url) :
       GetSiteInstance();
+
+  // Create the new web contents. This will automatically create the new
+  // WebContentsView. In the future, we may want to create the view separately.
+  WebContentsImpl* new_contents =
+      new WebContentsImpl(GetBrowserContext(),
+                          params.opener_suppressed ? NULL : this);
 
   // We must assign the SessionStorageNamespace before calling Init().
   //
@@ -1447,27 +1470,6 @@ void WebContentsImpl::CreateNewWindow(
   SessionStorageNamespaceImpl* session_storage_namespace_impl =
       static_cast<SessionStorageNamespaceImpl*>(session_storage_namespace);
   CHECK(session_storage_namespace_impl->IsFromContext(dom_storage_context));
-
-  if (delegate_ &&
-      !delegate_->ShouldCreateWebContents(this,
-                                          route_id,
-                                          params.window_container_type,
-                                          params.frame_name,
-                                          params.target_url,
-                                          partition_id,
-                                          session_storage_namespace)) {
-    GetRenderViewHost()->GetProcess()->ResumeRequestsForView(route_id);
-    GetRenderViewHost()->GetProcess()->ResumeRequestsForView(
-        main_frame_route_id);
-    return;
-  }
-
-  // Create the new web contents. This will automatically create the new
-  // WebContentsView. In the future, we may want to create the view separately.
-  WebContentsImpl* new_contents =
-      new WebContentsImpl(GetBrowserContext(),
-                          params.opener_suppressed ? NULL : this);
-
   new_contents->GetController().SetSessionStorageNamespace(
       partition_id,
       session_storage_namespace);
@@ -2241,12 +2243,20 @@ void WebContentsImpl::DidFailProvisionalLoadWithError(
       return;
     }
 
-    // Do not clear the pending entry if one exists, so that the user's typed
-    // URL is not lost when a navigation fails or is aborted.  We'll allow
-    // the view to clear the pending entry and typed URL if the user requests.
-
     render_manager_.RendererAbortedProvisionalLoad(render_view_host);
   }
+
+  // Do not usually clear the pending entry if one exists, so that the user's
+  // typed URL is not lost when a navigation fails or is aborted.  However, in
+  // cases that we don't show the pending entry (e.g., renderer-initiated
+  // navigations in an existing tab), we don't keep it around.  That prevents
+  // spoofs on in-page navigations that don't go through
+  // DidStartProvisionalLoadForFrame.
+  // In general, we allow the view to clear the pending entry and typed URL if
+  // the user requests (e.g., hitting Escape with focus in the address bar).
+  // Note: don't touch the transient entry, since an interstitial may exist.
+  if (controller_.GetPendingEntry() != controller_.GetVisibleEntry())
+    controller_.DiscardPendingEntry();
 
   FOR_EACH_OBSERVER(WebContentsObserver,
                     observers_,
@@ -2863,16 +2873,14 @@ void WebContentsImpl::RenderViewCreated(RenderViewHost* render_view_host) {
       NOTIFICATION_WEB_CONTENTS_RENDER_VIEW_HOST_CREATED,
       Source<WebContents>(this),
       Details<RenderViewHost>(render_view_host));
-  NavigationEntry* entry = controller_.GetActiveEntry();
-  if (!entry)
-    return;
 
   // When we're creating views, we're still doing initial setup, so we always
   // use the pending Web UI rather than any possibly existing committed one.
   if (render_manager_.pending_web_ui())
     render_manager_.pending_web_ui()->RenderViewCreated(render_view_host);
 
-  if (entry->IsViewSourceMode()) {
+  NavigationEntry* entry = controller_.GetActiveEntry();
+  if (entry && entry->IsViewSourceMode()) {
     // Put the renderer in view source mode.
     render_view_host->Send(
         new ViewMsg_EnableViewSourceMode(render_view_host->GetRoutingID()));
@@ -3651,6 +3659,13 @@ bool WebContentsImpl::CreateRenderViewForRenderManager(
 
   return true;
 }
+
+#if defined(OS_ANDROID)
+bool WebContentsImpl::CreateRenderViewForInitialEmptyDocument() {
+  return CreateRenderViewForRenderManager(GetRenderViewHost(),
+                                          MSG_ROUTING_NONE);
+}
+#endif
 
 void WebContentsImpl::OnDialogClosed(RenderViewHost* rvh,
                                      IPC::Message* reply_msg,

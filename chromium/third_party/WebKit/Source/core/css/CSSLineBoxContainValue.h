@@ -53,7 +53,7 @@ private:
     LineBoxContain m_value;
 
 private:
-    explicit CSSLineBoxContainValue(LineBoxContain);
+    CSSLineBoxContainValue(LineBoxContain);
 };
 
 } // namespace

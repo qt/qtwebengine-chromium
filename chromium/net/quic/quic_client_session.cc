@@ -81,7 +81,7 @@ void QuicClientSession::StreamRequest::OnRequestCompleteFailure(int rv) {
 
 QuicClientSession::QuicClientSession(
     QuicConnection* connection,
-    scoped_ptr<DatagramClientSocket> socket,
+    DatagramClientSocket* socket,
     QuicStreamFactory* stream_factory,
     QuicCryptoClientStreamFactory* crypto_client_stream_factory,
     const string& server_hostname,
@@ -91,7 +91,7 @@ QuicClientSession::QuicClientSession(
     : QuicSession(connection, config, false),
       weak_factory_(this),
       stream_factory_(stream_factory),
-      socket_(socket.Pass()),
+      socket_(socket),
       read_buffer_(new IOBufferWithSize(kMaxPacketSize)),
       read_pending_(false),
       num_total_streams_(0),
@@ -260,18 +260,7 @@ void QuicClientSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
   QuicSession::OnCryptoHandshakeEvent(event);
 }
 
-void QuicClientSession::OnCryptoHandshakeMessageSent(
-    const CryptoHandshakeMessage& message) {
-  logger_.OnCryptoHandshakeMessageSent(message);
-}
-
-void QuicClientSession::OnCryptoHandshakeMessageReceived(
-    const CryptoHandshakeMessage& message) {
-  logger_.OnCryptoHandshakeMessageReceived(message);
-}
-
 void QuicClientSession::ConnectionClose(QuicErrorCode error, bool from_peer) {
-  logger_.OnConnectionClose(error, from_peer);
   UMA_HISTOGRAM_SPARSE_SLOWLY("Net.QuicSession.ConnectionCloseErrorCode",
                               error);
   UMA_HISTOGRAM_SPARSE_SLOWLY("Net.QuicSession.QuicVersion",

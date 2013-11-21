@@ -119,7 +119,7 @@ void WorkerFileSystemClient::openFileSystem(ScriptExecutionContext* context, Web
     String mode = "openFileSystemMode";
     mode.append(String::number(runLoop.createUniqueId()));
 
-    RefPtr<WorkerFileSystemCallbacksBridge> bridge = WorkerFileSystemCallbacksBridge::create(workerLoaderProxy, workerGlobalScope, new WebFileSystemCallbacksImpl(callbacks));
+    RefPtr<WorkerFileSystemCallbacksBridge> bridge = WorkerFileSystemCallbacksBridge::create(workerLoaderProxy, workerGlobalScope, new WebFileSystemCallbacksImpl(callbacks, context, synchronousType));
     bridge->postOpenFileSystemToMainThread(webWorker->commonClient(), static_cast<WebFileSystemType>(type), size, openMode == CreateFileSystemIfNotPresent, mode);
 
     if (synchronousType == SynchronousFileSystem) {

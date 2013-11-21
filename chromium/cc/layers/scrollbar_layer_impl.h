@@ -8,7 +8,6 @@
 #include "cc/base/cc_export.h"
 #include "cc/input/scrollbar.h"
 #include "cc/layers/layer_impl.h"
-#include "cc/resources/ui_resource_client.h"
 
 namespace cc {
 
@@ -34,6 +33,8 @@ class CC_EXPORT ScrollbarLayerImpl : public LayerImpl {
   virtual void AppendQuads(QuadSink* quad_sink,
                            AppendQuadsData* append_quads_data) OVERRIDE;
 
+  virtual void DidLoseOutputSurface() OVERRIDE;
+
   int scroll_layer_id() const { return scroll_layer_id_; }
   void set_scroll_layer_id(int id) { scroll_layer_id_ = id; }
 
@@ -47,11 +48,11 @@ class CC_EXPORT ScrollbarLayerImpl : public LayerImpl {
   void SetTrackStart(int track_start);
   void SetTrackLength(int track_length);
   void SetVerticalAdjust(float vertical_adjust);
-  void set_track_ui_resource_id(UIResourceId uid) {
-    track_ui_resource_id_ = uid;
+  void set_track_resource_id(ResourceProvider::ResourceId id) {
+    track_resource_id_ = id;
   }
-  void set_thumb_ui_resource_id(UIResourceId uid) {
-    thumb_ui_resource_id_ = uid;
+  void set_thumb_resource_id(ResourceProvider::ResourceId id) {
+    thumb_resource_id_ = id;
   }
   void SetVisibleToTotalLengthRatio(float ratio);
   void set_is_overlay_scrollbar(bool is_overlay_scrollbar) {
@@ -74,8 +75,8 @@ class CC_EXPORT ScrollbarLayerImpl : public LayerImpl {
 
   gfx::Rect ScrollbarLayerRectToContentRect(gfx::RectF layer_rect) const;
 
-  UIResourceId track_ui_resource_id_;
-  UIResourceId thumb_ui_resource_id_;
+  ResourceProvider::ResourceId track_resource_id_;
+  ResourceProvider::ResourceId thumb_resource_id_;
 
   float current_pos_;
   int maximum_;

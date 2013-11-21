@@ -13,9 +13,6 @@
             'auto_login_parser/auto_login_parser_unittest.cc',
             'browser_context_keyed_service/browser_context_dependency_manager_unittest.cc',
             'browser_context_keyed_service/dependency_graph_unittest.cc',
-            'json_schema/json_schema_validator_unittest.cc',
-            'json_schema/json_schema_validator_unittest_base.cc',
-            'json_schema/json_schema_validator_unittest_base.h',
             'navigation_interception/intercept_navigation_resource_throttle_unittest.cc',
             'sessions/serialized_navigation_entry_unittest.cc',
             'test/run_all_unittests.cc',
@@ -41,16 +38,10 @@
             # Dependencies of encryptor
             'encryptor',
 
-            # Dependencies of json_schema
-            'json_schema',
-
             # Dependencies of intercept_navigation_resource_throttle_unittest.cc
             '../content/content.gyp:test_support_content',
             '../skia/skia.gyp:skia',
             'navigation_interception',
-
-            # Dependencies of policy
-            'policy_component',
 
             # Dependencies of sessions
             '../third_party/protobuf/protobuf.gyp:protobuf_lite',
@@ -95,11 +86,6 @@
             'link_settings': {
                 'ldflags': ['-rdynamic'],
             },
-            }],
-            ['configuration_policy==1', {
-              'sources': [
-                'policy/core/common/policy_schema_unittest.cc',
-              ],
             }],
           ],
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.

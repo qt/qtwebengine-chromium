@@ -19,8 +19,8 @@
 #include "webkit/browser/fileapi/file_system_options.h"
 #include "webkit/browser/fileapi/file_system_usage_cache.h"
 #include "webkit/browser/fileapi/obfuscated_file_util.h"
+#include "webkit/browser/fileapi/sandbox_context.h"
 #include "webkit/browser/fileapi/sandbox_file_stream_writer.h"
-#include "webkit/browser/fileapi/sandbox_file_system_backend_delegate.h"
 #include "webkit/browser/fileapi/sandbox_quota_observer.h"
 #include "webkit/browser/quota/quota_manager.h"
 #include "webkit/common/fileapi/file_system_types.h"
@@ -39,8 +39,8 @@ const char kPersistentOriginsCountLabel[] = "FileSystem.PersistentOriginsCount";
 }  // anonymous namespace
 
 SandboxFileSystemBackend::SandboxFileSystemBackend(
-    SandboxFileSystemBackendDelegate* delegate)
-    : delegate_(delegate),
+    SandboxContext* sandbox_context)
+    : sandbox_context_(sandbox_context),
       enable_temporary_file_system_in_incognito_(false) {
 }
 
@@ -55,10 +55,10 @@ bool SandboxFileSystemBackend::CanHandleType(FileSystemType type) const {
 void SandboxFileSystemBackend::Initialize(FileSystemContext* context) {
   // Set quota observers.
   update_observers_ = update_observers_.AddObserver(
-      delegate_->quota_observer(),
-      delegate_->file_task_runner());
+      sandbox_context_->quota_observer(),
+      sandbox_context_->file_task_runner());
   access_observers_ = access_observers_.AddObserver(
-      delegate_->quota_observer(), NULL);
+      sandbox_context_->quota_observer(), NULL);
 }
 
 void SandboxFileSystemBackend::OpenFileSystem(
@@ -67,8 +67,8 @@ void SandboxFileSystemBackend::OpenFileSystem(
     OpenFileSystemMode mode,
     const OpenFileSystemCallback& callback) {
   DCHECK(CanHandleType(type));
-  DCHECK(delegate_);
-  if (delegate_->file_system_options().is_incognito() &&
+  DCHECK(sandbox_context_);
+  if (sandbox_context_->file_system_options().is_incognito() &&
       !(type == kFileSystemTypeTemporary &&
         enable_temporary_file_system_in_incognito_)) {
     // TODO(kinuko): return an isolated temporary directory.
@@ -76,20 +76,20 @@ void SandboxFileSystemBackend::OpenFileSystem(
     return;
   }
 
-  delegate_->OpenFileSystem(
+  sandbox_context_->OpenFileSystem(
       origin_url, type, mode, callback,
       GetFileSystemRootURI(origin_url, type));
 }
 
 FileSystemFileUtil* SandboxFileSystemBackend::GetFileUtil(
     FileSystemType type) {
-  return delegate_->sync_file_util();
+  return sandbox_context_->sync_file_util();
 }
 
 AsyncFileUtil* SandboxFileSystemBackend::GetAsyncFileUtil(
     FileSystemType type) {
-  DCHECK(delegate_);
-  return delegate_->file_util();
+  DCHECK(sandbox_context_);
+  return sandbox_context_->file_util();
 }
 
 CopyOrMoveFileValidatorFactory*
@@ -106,8 +106,8 @@ FileSystemOperation* SandboxFileSystemBackend::CreateFileSystemOperation(
     FileSystemContext* context,
     base::PlatformFileError* error_code) const {
   DCHECK(CanHandleType(url.type()));
-  DCHECK(delegate_);
-  if (!delegate_->IsAccessValid(url)) {
+  DCHECK(sandbox_context_);
+  if (!sandbox_context_->IsAccessValid(url)) {
     *error_code = base::PLATFORM_FILE_ERROR_SECURITY;
     return NULL;
   }
@@ -117,7 +117,7 @@ FileSystemOperation* SandboxFileSystemBackend::CreateFileSystemOperation(
   operation_context->set_update_observers(update_observers_);
   operation_context->set_change_observers(change_observers_);
 
-  SpecialStoragePolicy* policy = delegate_->special_storage_policy();
+  SpecialStoragePolicy* policy = sandbox_context_->special_storage_policy();
   if (policy && policy->IsStorageUnlimited(url.origin()))
     operation_context->set_quota_limit_type(quota::kQuotaLimitTypeUnlimited);
   else
@@ -133,8 +133,8 @@ SandboxFileSystemBackend::CreateFileStreamReader(
     const base::Time& expected_modification_time,
     FileSystemContext* context) const {
   DCHECK(CanHandleType(url.type()));
-  DCHECK(delegate_);
-  if (!delegate_->IsAccessValid(url))
+  DCHECK(sandbox_context_);
+  if (!sandbox_context_->IsAccessValid(url))
     return scoped_ptr<webkit_blob::FileStreamReader>();
   return scoped_ptr<webkit_blob::FileStreamReader>(
       new FileSystemFileStreamReader(
@@ -147,8 +147,8 @@ SandboxFileSystemBackend::CreateFileStreamWriter(
     int64 offset,
     FileSystemContext* context) const {
   DCHECK(CanHandleType(url.type()));
-  DCHECK(delegate_);
-  if (!delegate_->IsAccessValid(url))
+  DCHECK(sandbox_context_);
+  if (!sandbox_context_->IsAccessValid(url))
     return scoped_ptr<fileapi::FileStreamWriter>();
   return scoped_ptr<fileapi::FileStreamWriter>(
       new SandboxFileStreamWriter(context, url, offset, update_observers_));
@@ -158,10 +158,10 @@ FileSystemQuotaUtil* SandboxFileSystemBackend::GetQuotaUtil() {
   return this;
 }
 
-SandboxFileSystemBackendDelegate::OriginEnumerator*
+SandboxContext::OriginEnumerator*
 SandboxFileSystemBackend::CreateOriginEnumerator() {
-  DCHECK(delegate_);
-  return delegate_->CreateOriginEnumerator();
+  DCHECK(sandbox_context_);
+  return sandbox_context_->CreateOriginEnumerator();
 }
 
 base::PlatformFileError
@@ -171,16 +171,16 @@ SandboxFileSystemBackend::DeleteOriginDataOnFileThread(
     const GURL& origin_url,
     fileapi::FileSystemType type) {
   DCHECK(CanHandleType(type));
-  DCHECK(delegate_);
-  return delegate_->DeleteOriginDataOnFileThread(
+  DCHECK(sandbox_context_);
+  return sandbox_context_->DeleteOriginDataOnFileThread(
       file_system_context, proxy, origin_url, type);
 }
 
 void SandboxFileSystemBackend::GetOriginsForTypeOnFileThread(
     fileapi::FileSystemType type, std::set<GURL>* origins) {
   DCHECK(CanHandleType(type));
-  DCHECK(delegate_);
-  delegate_->GetOriginsForTypeOnFileThread(type, origins);
+  DCHECK(sandbox_context_);
+  sandbox_context_->GetOriginsForTypeOnFileThread(type, origins);
   switch (type) {
     case kFileSystemTypeTemporary:
       UMA_HISTOGRAM_COUNTS(kTemporaryOriginsCountLabel, origins->size());
@@ -197,8 +197,8 @@ void SandboxFileSystemBackend::GetOriginsForHostOnFileThread(
     fileapi::FileSystemType type, const std::string& host,
     std::set<GURL>* origins) {
   DCHECK(CanHandleType(type));
-  DCHECK(delegate_);
-  delegate_->GetOriginsForHostOnFileThread(type, host, origins);
+  DCHECK(sandbox_context_);
+  sandbox_context_->GetOriginsForHostOnFileThread(type, host, origins);
 }
 
 int64 SandboxFileSystemBackend::GetOriginUsageOnFileThread(
@@ -206,9 +206,25 @@ int64 SandboxFileSystemBackend::GetOriginUsageOnFileThread(
     const GURL& origin_url,
     fileapi::FileSystemType type) {
   DCHECK(CanHandleType(type));
-  DCHECK(delegate_);
-  return delegate_->GetOriginUsageOnFileThread(
+  DCHECK(sandbox_context_);
+  return sandbox_context_->GetOriginUsageOnFileThread(
       file_system_context, origin_url, type);
+}
+
+void SandboxFileSystemBackend::InvalidateUsageCache(
+    const GURL& origin,
+    fileapi::FileSystemType type) {
+  DCHECK(CanHandleType(type));
+  DCHECK(sandbox_context_);
+  sandbox_context_->InvalidateUsageCache(origin, type);
+}
+
+void SandboxFileSystemBackend::StickyInvalidateUsageCache(
+    const GURL& origin,
+    fileapi::FileSystemType type) {
+  DCHECK(CanHandleType(type));
+  DCHECK(sandbox_context_);
+  sandbox_context_->StickyInvalidateUsageCache(origin, type);
 }
 
 void SandboxFileSystemBackend::AddFileUpdateObserver(

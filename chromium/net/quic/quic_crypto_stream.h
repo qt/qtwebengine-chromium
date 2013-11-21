@@ -34,8 +34,7 @@ class NET_EXPORT_PRIVATE QuicCryptoStream
 
   // CryptoFramerVisitorInterface implementation
   virtual void OnError(CryptoFramer* framer) OVERRIDE;
-  virtual void OnHandshakeMessage(
-      const CryptoHandshakeMessage& message) OVERRIDE;
+  virtual void OnHandshakeMessage(const CryptoHandshakeMessage& message) = 0;
 
   // ReliableQuicStream implementation
   virtual uint32 ProcessData(const char* data, uint32 data_len) OVERRIDE;

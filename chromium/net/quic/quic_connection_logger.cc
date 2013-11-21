@@ -10,7 +10,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "net/base/net_log.h"
-#include "net/quic/crypto/crypto_handshake.h"
 
 namespace net {
 
@@ -42,18 +41,6 @@ base::Value* NetLogQuicPacketSentCallback(
     dict->SetInteger("net_error", rv);
   }
   return dict;
-}
-
-base::Value* NetLogQuicPacketRetransmittedCallback(
-    QuicPacketSequenceNumber old_sequence_number,
-    QuicPacketSequenceNumber new_sequence_number,
-    NetLog::LogLevel /* log_level */) {
- base::DictionaryValue* dict = new base::DictionaryValue();
- dict->SetString("old_packet_sequence_number",
-                 base::Uint64ToString(old_sequence_number));
- dict->SetString("new_packet_sequence_number",
-                 base::Uint64ToString(new_sequence_number));
- return dict;
 }
 
 base::Value* NetLogQuicPacketHeaderCallback(const QuicPacketHeader* header,
@@ -99,7 +86,7 @@ base::Value* NetLogQuicAckFrameCallback(const QuicAckFrame* frame,
       frame->received_info.missing_packets;
   for (SequenceNumberSet::const_iterator it = missing_packets.begin();
        it != missing_packets.end(); ++it) {
-    missing->AppendString(base::Uint64ToString(*it));
+    missing->Append(new base::StringValue(base::Uint64ToString(*it)));
   }
   return dict;
 }
@@ -120,7 +107,7 @@ base::Value* NetLogQuicCongestionFeedbackFrameCallback(
            it != frame->inter_arrival.received_packet_times.end(); ++it) {
         std::string value = base::Uint64ToString(it->first) + "@" +
             base::Uint64ToString(it->second.ToDebuggingValue());
-        received->AppendString(value);
+        received->Append(new base::StringValue(value));
       }
       break;
     }
@@ -156,37 +143,6 @@ base::Value* NetLogQuicConnectionCloseFrameCallback(
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetInteger("quic_error", frame->error_code);
   dict->SetString("details", frame->error_details);
-  return dict;
-}
-
-base::Value* NetLogQuicVersionNegotiationPacketCallback(
-    const QuicVersionNegotiationPacket* packet,
-    NetLog::LogLevel /* log_level */) {
-  base::DictionaryValue* dict = new base::DictionaryValue();
-  base::ListValue* versions = new base::ListValue();
-  dict->Set("versions", versions);
-  for (QuicVersionVector::const_iterator it = packet->versions.begin();
-       it != packet->versions.end(); ++it) {
-    versions->AppendString(QuicVersionToString(*it));
-  }
-  return dict;
-}
-
-base::Value* NetLogQuicCryptoHandshakeMessageCallback(
-    const CryptoHandshakeMessage* message,
-    NetLog::LogLevel /* log_level */) {
-  base::DictionaryValue* dict = new base::DictionaryValue();
-  dict->SetString("quic_crypto_handshake_message", message->DebugString());
-  return dict;
-}
-
-base::Value* NetLogQuicConnectionClosedCallback(
-    QuicErrorCode error,
-    bool from_peer,
-    NetLog::LogLevel /* log_level */) {
-  base::DictionaryValue* dict = new base::DictionaryValue();
-  dict->SetInteger("quic_error", error);
-  dict->SetBoolean("from_peer", from_peer);
   return dict;
 }
 
@@ -258,15 +214,6 @@ void QuicConnectionLogger::OnPacketSent(
       NetLog::TYPE_QUIC_SESSION_PACKET_SENT,
       base::Bind(&NetLogQuicPacketSentCallback, sequence_number, level,
                  packet.length(), rv));
-}
-
-void QuicConnectionLogger:: OnPacketRetransmitted(
-      QuicPacketSequenceNumber old_sequence_number,
-      QuicPacketSequenceNumber new_sequence_number) {
-  net_log_.AddEvent(
-      NetLog::TYPE_QUIC_SESSION_PACKET_RETRANSMITTED,
-      base::Bind(&NetLogQuicPacketRetransmittedCallback,
-                 old_sequence_number, new_sequence_number));
 }
 
 void QuicConnectionLogger::OnPacketReceived(const IPEndPoint& self_address,
@@ -374,43 +321,15 @@ void QuicConnectionLogger::OnConnectionCloseFrame(
 
 void QuicConnectionLogger::OnPublicResetPacket(
     const QuicPublicResetPacket& packet) {
-  net_log_.AddEvent(NetLog::TYPE_QUIC_SESSION_PUBLIC_RESET_PACKET_RECEIVED);
 }
 
 void QuicConnectionLogger::OnVersionNegotiationPacket(
     const QuicVersionNegotiationPacket& packet) {
-  net_log_.AddEvent(
-      NetLog::TYPE_QUIC_SESSION_VERSION_NEGOTIATION_PACKET_RECEIVED,
-      base::Bind(&NetLogQuicVersionNegotiationPacketCallback, &packet));
 }
 
 void QuicConnectionLogger::OnRevivedPacket(
     const QuicPacketHeader& revived_header,
     base::StringPiece payload) {
-  net_log_.AddEvent(
-      NetLog::TYPE_QUIC_SESSION_PACKET_HEADER_REVIVED,
-      base::Bind(&NetLogQuicPacketHeaderCallback, &revived_header));
-}
-
-void QuicConnectionLogger::OnCryptoHandshakeMessageReceived(
-    const CryptoHandshakeMessage& message) {
-  net_log_.AddEvent(
-      NetLog::TYPE_QUIC_SESSION_CRYPTO_HANDSHAKE_MESSAGE_RECEIVED,
-      base::Bind(&NetLogQuicCryptoHandshakeMessageCallback, &message));
-}
-
-void QuicConnectionLogger::OnCryptoHandshakeMessageSent(
-    const CryptoHandshakeMessage& message) {
-  net_log_.AddEvent(
-      NetLog::TYPE_QUIC_SESSION_CRYPTO_HANDSHAKE_MESSAGE_SENT,
-      base::Bind(&NetLogQuicCryptoHandshakeMessageCallback, &message));
-}
-
-void QuicConnectionLogger::OnConnectionClose(QuicErrorCode error,
-                                             bool from_peer) {
-  net_log_.AddEvent(
-      NetLog::TYPE_QUIC_SESSION_CLOSED,
-      base::Bind(&NetLogQuicConnectionClosedCallback, error, from_peer));
 }
 
 }  // namespace net

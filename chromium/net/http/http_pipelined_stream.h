@@ -81,8 +81,6 @@ class HttpPipelinedStream : public HttpStream {
 
   virtual void Drain(HttpNetworkSession* session) OVERRIDE;
 
-  virtual void SetPriority(RequestPriority priority) OVERRIDE;
-
   // The SSLConfig used to establish this stream's pipeline.
   const SSLConfig& used_ssl_config() const;
 

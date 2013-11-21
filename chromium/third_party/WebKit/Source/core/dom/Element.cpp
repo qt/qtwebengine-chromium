@@ -1279,7 +1279,7 @@ void Element::removedFrom(ContainerNode* insertionPoint)
         setContainsFullScreenElementOnAncestorsCrossingFrameBoundaries(false);
 
     if (document()->page())
-        document()->page()->pointerLockController().elementRemoved(this);
+        document()->page()->pointerLockController()->elementRemoved(this);
 
     setSavedLayerScrollOffset(IntSize());
 
@@ -1317,16 +1317,6 @@ void Element::attach(const AttachContext& context)
     PostAttachCallbackDisabler callbackDisabler(this);
     StyleResolverParentPusher parentPusher(this);
     WidgetHierarchyUpdatesSuspensionScope suspendWidgetHierarchyUpdates;
-
-    // We've already been through detach when doing a lazyAttach, but we might
-    // need to clear any state that's been added since then.
-    if (hasRareData() && styleChangeType() == LazyAttachStyleChange) {
-        ElementRareData* data = elementRareData();
-        data->clearComputedStyle();
-        data->resetDynamicRestyleObservations();
-        if (!context.resolvedStyle)
-            data->resetStyleState();
-    }
 
     NodeRenderingContext(this, context.resolvedStyle).createRendererForElementIfNeeded();
 
@@ -1511,9 +1501,6 @@ bool Element::recalcStyle(StyleChange change)
             change = Force;
         else if (change != Force)
             change = localChange;
-    } else {
-        // We still want to seed the style sharing list when just walking the tree to maximize sharing.
-        document()->styleResolver()->addToStyleSharingList(this);
     }
     StyleResolverParentPusher parentPusher(this);
 
@@ -1547,11 +1534,10 @@ bool Element::recalcStyle(StyleChange change)
         } else if (child->isElementNode()) {
             Element* element = toElement(child);
 
-            bool childRulesChanged = element->needsStyleRecalc() && element->styleChangeType() >= SubtreeStyleChange;
-
             if (forceCheckOfNextElementSibling || forceCheckOfAnyElementSibling)
                 element->setNeedsStyleRecalc();
 
+            bool childRulesChanged = element->needsStyleRecalc() && element->styleChangeType() >= SubtreeStyleChange;
             forceCheckOfNextElementSibling = childRulesChanged && hasDirectAdjacentRules;
             forceCheckOfAnyElementSibling = forceCheckOfAnyElementSibling || (childRulesChanged && hasIndirectAdjacentRules);
 
@@ -1640,6 +1626,12 @@ ShadowRoot* Element::ensureUserAgentShadowRoot()
     ShadowRoot* shadowRoot = ensureShadow()->addShadowRoot(this, ShadowRoot::UserAgentShadowRoot);
     didAddUserAgentShadowRoot(shadowRoot);
     return shadowRoot;
+}
+
+Element* Element::uaShadowElementById(const AtomicString& id) const
+{
+    ShadowRoot* shadowRoot = userAgentShadowRoot();
+    return shadowRoot ? shadowRoot->getElementById(id) : 0;
 }
 
 bool Element::supportsShadowElementForUserAgentShadow() const
@@ -2638,7 +2630,7 @@ void Element::setIsInTopLayer(bool inTopLayer)
 void Element::webkitRequestPointerLock()
 {
     if (document()->page())
-        document()->page()->pointerLockController().requestPointerLock(this);
+        document()->page()->pointerLockController()->requestPointerLock(this);
 }
 
 SpellcheckAttributeState Element::spellcheckAttributeState() const

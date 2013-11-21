@@ -162,6 +162,7 @@
 #endif /* OS(DARWIN) */
 
 #if OS(WINDOWS)
+#define HAVE_ISDEBUGGERPRESENT 1
 #define HAVE_VIRTUALALLOC 1
 #endif
 

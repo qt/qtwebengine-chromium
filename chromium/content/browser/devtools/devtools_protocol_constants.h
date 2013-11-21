@@ -15,16 +15,13 @@ namespace content {
 namespace devtools {
 
 namespace Inspector {
-
 namespace detached {
   extern const char kName[];
   extern const char kParamReason[];
 }  // detached
-
 namespace targetCrashed {
   extern const char kName[];
 }  // targetCrashed
-
 }  // Inspector
 
 namespace DOM {
@@ -35,18 +32,15 @@ namespace setFileInputFiles {
 }  // DOM
 
 namespace Page {
-
 namespace handleJavaScriptDialog {
   extern const char kName[];
   extern const char kParamAccept[];
   extern const char kParamPromptText[];
 }  // handleJavaScriptDialog
-
 namespace navigate {
   extern const char kName[];
   extern const char kParamUrl[];
 }  // navigate
-
 namespace captureScreenshot {
   extern const char kName[];
   extern const char kParamFormat[];
@@ -54,23 +48,6 @@ namespace captureScreenshot {
   extern const char kParamScale[];
   extern const char kResponseData[];
 }  // captureScreenshot
-
-namespace startScreencast {
-  extern const char kName[];
-  extern const char kParamFormat[];
-  extern const char kParamQuality[];
-  extern const char kParamScale[];
-}  // startScreencast
-
-namespace stopScreencast {
-  extern const char kName[];
-}  // stopScreencast
-
-namespace screencastFrame {
-  extern const char kName[];
-  extern const char kResponseData[];
-}  // screencastFrame
-
 }  // Page
 
 namespace Tracing {
@@ -98,11 +75,9 @@ namespace dataCollected {
 
 
 namespace Worker {
-
 namespace disconnectedFromWorker {
   extern const char kName[];
 }  // disconnectedFromWorker
-
 }  // Worker
 
 }  // devtools

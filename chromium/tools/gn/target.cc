@@ -19,7 +19,7 @@ void TargetResolvedThunk(const base::Callback<void(const Target*)>& cb,
 Target::Target(const Settings* settings, const Label& label)
     : Item(label),
       settings_(settings),
-      output_type_(UNKNOWN),
+      output_type_(NONE),
       generated_(false),
       generator_function_(NULL) {
 }
@@ -54,13 +54,15 @@ void Target::OnResolved() {
 
     // Direct dependent libraries.
     if (deps_[dep]->output_type() == STATIC_LIBRARY ||
-        deps_[dep]->output_type() == SHARED_LIBRARY)
+        deps_[dep]->output_type() == SHARED_LIBRARY ||
+        deps_[dep]->output_type() == LOADABLE_MODULE)
       inherited_libraries_.insert(deps_[dep]);
 
-    // Inherited libraries. Don't pull transitive libraries from shared
+    // Inherited libraries. DOn't pull transitive libraries from shared
     // libraries, since obviously those shouldn't be linked directly into
     // later deps unless explicitly specified.
     if (deps_[dep]->output_type() != SHARED_LIBRARY &&
+        deps_[dep]->output_type() != LOADABLE_MODULE &&
         deps_[dep]->output_type() != EXECUTABLE) {
       const std::set<const Target*> inherited =
           deps_[dep]->inherited_libraries();

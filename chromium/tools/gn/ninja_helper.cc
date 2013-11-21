@@ -109,6 +109,10 @@ OutputFile NinjaHelper::GetOutputFileForSource(
 
 OutputFile NinjaHelper::GetTargetOutputFile(const Target* target) const {
   OutputFile ret;
+  if (target->output_type() == Target::NONE) {
+    NOTREACHED();
+    return ret;
+  }
 
   // This is prepended to the output file name.
   const char* prefix;
@@ -120,7 +124,7 @@ OutputFile NinjaHelper::GetTargetOutputFile(const Target* target) const {
     prefix = "";
 
   const char* extension;
-  if (target->output_type() == Target::GROUP ||
+  if (target->output_type() == Target::NONE ||
       target->output_type() == Target::COPY_FILES ||
       target->output_type() == Target::CUSTOM) {
     extension = "stamp";
@@ -135,6 +139,7 @@ OutputFile NinjaHelper::GetTargetOutputFile(const Target* target) const {
 
   // Binaries and loadable libraries go into the toolchain root.
   if (target->output_type() == Target::EXECUTABLE ||
+      target->output_type() == Target::LOADABLE_MODULE ||
       (target->settings()->IsMac() &&
           (target->output_type() == Target::SHARED_LIBRARY ||
            target->output_type() == Target::STATIC_LIBRARY)) ||

@@ -16,8 +16,6 @@
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "cc/base/switches.h"
-#include "cc/debug/test_context_provider.h"
-#include "cc/debug/test_web_graphics_context_3d.h"
 #include "cc/input/input_handler.h"
 #include "cc/layers/layer.h"
 #include "cc/output/context_provider.h"
@@ -26,14 +24,15 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/compositor/compositor_observer.h"
 #include "ui/compositor/compositor_switches.h"
+#include "ui/compositor/context_provider_from_context_factory.h"
 #include "ui/compositor/dip_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/reflector.h"
+#include "ui/compositor/test_web_graphics_context_3d.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gl_switches.h"
-#include "webkit/common/gpu/context_provider_in_process.h"
 #include "webkit/common/gpu/grcontext_for_webgraphicscontext3d.h"
 #include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 
@@ -109,17 +108,13 @@ bool DefaultContextFactory::Initialize() {
 
 scoped_ptr<cc::OutputSurface> DefaultContextFactory::CreateOutputSurface(
     Compositor* compositor) {
-  WebKit::WebGraphicsContext3D::Attributes attrs;
-  attrs.depth = false;
-  attrs.stencil = false;
-  attrs.antialias = false;
-  attrs.shareResources = true;
+  return make_scoped_ptr(new cc::OutputSurface(
+      CreateContextCommon(compositor, false)));
+}
 
-  using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
-  scoped_ptr<WebKit::WebGraphicsContext3D> context(
-      WebGraphicsContext3DInProcessCommandBufferImpl::CreateViewContext(
-          attrs, compositor->widget()));
-  return make_scoped_ptr(new cc::OutputSurface(context.Pass()));
+scoped_ptr<WebKit::WebGraphicsContext3D>
+DefaultContextFactory::CreateOffscreenContext() {
+  return CreateContextCommon(NULL, true);
 }
 
 scoped_refptr<Reflector> DefaultContextFactory::CreateReflector(
@@ -137,7 +132,7 @@ DefaultContextFactory::OffscreenContextProviderForMainThread() {
   if (!offscreen_contexts_main_thread_.get() ||
       !offscreen_contexts_main_thread_->DestroyedOnMainThread()) {
     offscreen_contexts_main_thread_ =
-        webkit::gpu::ContextProviderInProcess::CreateOffscreen();
+        ContextProviderFromContextFactory::CreateForOffscreen(this);
     if (offscreen_contexts_main_thread_.get() &&
         !offscreen_contexts_main_thread_->BindToCurrentThread())
       offscreen_contexts_main_thread_ = NULL;
@@ -150,7 +145,7 @@ DefaultContextFactory::OffscreenContextProviderForCompositorThread() {
   if (!offscreen_contexts_compositor_thread_.get() ||
       !offscreen_contexts_compositor_thread_->DestroyedOnMainThread()) {
     offscreen_contexts_compositor_thread_ =
-        webkit::gpu::ContextProviderInProcess::CreateOffscreen();
+        ContextProviderFromContextFactory::CreateForOffscreen(this);
   }
   return offscreen_contexts_compositor_thread_;
 }
@@ -160,15 +155,39 @@ void DefaultContextFactory::RemoveCompositor(Compositor* compositor) {
 
 bool DefaultContextFactory::DoesCreateTestContexts() { return false; }
 
+scoped_ptr<WebKit::WebGraphicsContext3D>
+DefaultContextFactory::CreateContextCommon(Compositor* compositor,
+                                           bool offscreen) {
+  DCHECK(offscreen || compositor);
+  WebKit::WebGraphicsContext3D::Attributes attrs;
+  attrs.depth = false;
+  attrs.stencil = false;
+  attrs.antialias = false;
+  attrs.shareResources = true;
+  using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
+  if (offscreen) {
+    return WebGraphicsContext3DInProcessCommandBufferImpl::
+        CreateOffscreenContext(attrs);
+  }
+  return WebGraphicsContext3DInProcessCommandBufferImpl::CreateViewContext(
+      attrs, compositor->widget());
+}
+
 TestContextFactory::TestContextFactory() {}
 
 TestContextFactory::~TestContextFactory() {}
 
 scoped_ptr<cc::OutputSurface> TestContextFactory::CreateOutputSurface(
     Compositor* compositor) {
-  scoped_ptr<WebKit::WebGraphicsContext3D> context(
-      cc::TestWebGraphicsContext3D::Create());
-  return make_scoped_ptr(new cc::OutputSurface(context.Pass()));
+  return make_scoped_ptr(new cc::OutputSurface(CreateOffscreenContext()));
+}
+
+scoped_ptr<WebKit::WebGraphicsContext3D>
+TestContextFactory::CreateOffscreenContext() {
+  scoped_ptr<ui::TestWebGraphicsContext3D> context(
+      new ui::TestWebGraphicsContext3D);
+  context->Initialize();
+  return context.PassAs<WebKit::WebGraphicsContext3D>();
 }
 
 scoped_refptr<Reflector> TestContextFactory::CreateReflector(
@@ -184,7 +203,8 @@ scoped_refptr<cc::ContextProvider>
 TestContextFactory::OffscreenContextProviderForMainThread() {
   if (!offscreen_contexts_main_thread_.get() ||
       offscreen_contexts_main_thread_->DestroyedOnMainThread()) {
-    offscreen_contexts_main_thread_ = cc::TestContextProvider::Create();
+    offscreen_contexts_main_thread_ =
+        ContextProviderFromContextFactory::CreateForOffscreen(this);
     CHECK(offscreen_contexts_main_thread_->BindToCurrentThread());
   }
   return offscreen_contexts_main_thread_;
@@ -194,7 +214,8 @@ scoped_refptr<cc::ContextProvider>
 TestContextFactory::OffscreenContextProviderForCompositorThread() {
   if (!offscreen_contexts_compositor_thread_.get() ||
       offscreen_contexts_compositor_thread_->DestroyedOnMainThread()) {
-    offscreen_contexts_compositor_thread_ = cc::TestContextProvider::Create();
+    offscreen_contexts_compositor_thread_ =
+        ContextProviderFromContextFactory::CreateForOffscreen(this);
   }
   return offscreen_contexts_compositor_thread_;
 }
@@ -479,7 +500,18 @@ void Compositor::Initialize() {
 #endif
   if (use_thread) {
     g_compositor_thread = new base::Thread("Browser Compositor");
+#if defined(OS_POSIX)
+    // Workaround for crbug.com/293736
+    // On Posix, MessagePumpDefault uses system time, so delayed tasks (for
+    // compositor scheduling) work incorrectly across system time changes (e.g.
+    // tlsdate). So instead, use an IO loop, which uses libevent, that uses
+    // monotonic time (immune to these problems).
+    base::Thread::Options options;
+    options.message_loop_type = base::MessageLoop::TYPE_IO;
+    g_compositor_thread->StartWithOptions(options);
+#else
     g_compositor_thread->Start();
+#endif
   }
 
   DCHECK(!g_compositor_initialized) << "Compositor initialized twice.";

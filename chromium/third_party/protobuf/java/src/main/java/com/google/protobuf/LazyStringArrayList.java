@@ -172,6 +172,7 @@ public class LazyStringArrayList extends AbstractList<String>
     }
   }
 
+  @Override
   public List<?> getUnderlyingElements() {
     return Collections.unmodifiableList(list);
   }

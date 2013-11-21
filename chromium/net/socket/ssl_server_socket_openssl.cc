@@ -16,13 +16,13 @@ void EnableSSLServerSockets() {
   NOTIMPLEMENTED();
 }
 
-scoped_ptr<SSLServerSocket> CreateSSLServerSocket(
-    scoped_ptr<StreamSocket> socket,
-    X509Certificate* certificate,
-    crypto::RSAPrivateKey* key,
-    const SSLConfig& ssl_config) {
+SSLServerSocket* CreateSSLServerSocket(StreamSocket* socket,
+                                       X509Certificate* certificate,
+                                       crypto::RSAPrivateKey* key,
+                                       const SSLConfig& ssl_config) {
   NOTIMPLEMENTED();
-  return scoped_ptr<SSLServerSocket>();
+  delete socket;
+  return NULL;
 }
 
 }  // namespace net

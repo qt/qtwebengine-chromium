@@ -4,7 +4,6 @@
 
 #include "ash/shelf/shelf_widget.h"
 
-#include "ash/ash_switches.h"
 #include "ash/focus_cycler.h"
 #include "ash/launcher/launcher_delegate.h"
 #include "ash/launcher/launcher_model.h"
@@ -16,7 +15,6 @@
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
-#include "ash/system/tray/test_system_tray_delegate.h"
 #include "ash/wm/property_util.h"
 #include "ash/wm/status_area_layout_manager.h"
 #include "ash/wm/window_properties.h"
@@ -256,6 +254,9 @@ class ShelfWidget::DelegateView : public views::WidgetDelegate,
   void SetDimmed(bool dimmed);
   bool GetDimmed() const;
 
+  // Set the bounds of the widget.
+  void SetWidgetBounds(const gfx::Rect bounds);
+
   void SetParentLayer(ui::Layer* layer);
 
   // views::View overrides:
@@ -358,6 +359,11 @@ bool ShelfWidget::DelegateView::GetDimmed() const {
   return dimmer_.get() && dimmer_->IsVisible();
 }
 
+void ShelfWidget::DelegateView::SetWidgetBounds(const gfx::Rect bounds) {
+  if (dimmer_)
+    dimmer_->SetBounds(bounds);
+}
+
 void ShelfWidget::DelegateView::SetParentLayer(ui::Layer* layer) {
   layer->Add(&opaque_background_);
   ReorderLayers();
@@ -424,8 +430,6 @@ void ShelfWidget::DelegateView::ReorderChildLayers(ui::Layer* parent_layer) {
 
 void ShelfWidget::DelegateView::OnBoundsChanged(const gfx::Rect& old_bounds) {
   opaque_background_.SetBounds(GetLocalBounds());
-  if (dimmer_)
-    dimmer_->SetBounds(GetBoundsInScreen());
 }
 
 void ShelfWidget::DelegateView::ForceUndimming(bool force) {
@@ -524,31 +528,6 @@ ShelfBackgroundType ShelfWidget::GetBackgroundType() const {
   return SHELF_BACKGROUND_DEFAULT;
 }
 
-// static
-bool ShelfWidget::ShelfAlignmentAllowed() {
-  if (!ash::switches::ShowShelfAlignmentMenu())
-    return false;
-  user::LoginStatus login_status =
-      Shell::GetInstance()->system_tray_delegate()->GetUserLoginStatus();
-
-  switch (login_status) {
-    case user::LOGGED_IN_USER:
-    case user::LOGGED_IN_OWNER:
-      return true;
-    case user::LOGGED_IN_LOCKED:
-    case user::LOGGED_IN_PUBLIC:
-    case user::LOGGED_IN_LOCALLY_MANAGED:
-    case user::LOGGED_IN_GUEST:
-    case user::LOGGED_IN_RETAIL_MODE:
-    case user::LOGGED_IN_KIOSK_APP:
-    case user::LOGGED_IN_NONE:
-      return false;
-  }
-
-  DCHECK(false);
-  return false;
-}
-
 ShelfAlignment ShelfWidget::GetAlignment() const {
   return shelf_layout_manager_->GetAlignment();
 }
@@ -621,6 +600,11 @@ void ShelfWidget::ShutdownStatusAreaWidget() {
   if (status_area_widget_)
     status_area_widget_->Shutdown();
   status_area_widget_ = NULL;
+}
+
+void ShelfWidget::SetWidgetBounds(const gfx::Rect& rect) {
+  Widget::SetBounds(rect);
+  delegate_view_->SetWidgetBounds(rect);
 }
 
 void ShelfWidget::ForceUndimming(bool force) {

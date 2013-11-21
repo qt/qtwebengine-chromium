@@ -427,7 +427,7 @@ TEST(GeneratedMessageReflectionTest, ReleaseExtensionMessageTest) {
   TestUtil::ExpectAllExtensionsSet(message);
 }
 
-#ifdef PROTOBUF_HAS_DEATH_TEST
+#ifdef GTEST_HAS_DEATH_TEST
 
 TEST(GeneratedMessageReflectionTest, UsageErrors) {
   unittest::TestAllTypes message;
@@ -476,7 +476,7 @@ TEST(GeneratedMessageReflectionTest, UsageErrors) {
 #undef f
 }
 
-#endif  // PROTOBUF_HAS_DEATH_TEST
+#endif  // GTEST_HAS_DEATH_TEST
 
 
 }  // namespace

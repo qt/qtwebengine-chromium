@@ -30,11 +30,9 @@
 
 //-----------------------------------------------------------------------------
 
-namespace net {
-
 namespace {
 
-const SSLConfig kDefaultSSLConfig;
+const net::SSLConfig kDefaultSSLConfig;
 
 // WrappedStreamSocket is a base class that wraps an existing StreamSocket,
 // forwarding the Socket and StreamSocket interfaces to the underlying
@@ -42,30 +40,33 @@ const SSLConfig kDefaultSSLConfig;
 // This is to provide a common base class for subclasses to override specific
 // StreamSocket methods for testing, while still communicating with a 'real'
 // StreamSocket.
-class WrappedStreamSocket : public StreamSocket {
+class WrappedStreamSocket : public net::StreamSocket {
  public:
-  explicit WrappedStreamSocket(scoped_ptr<StreamSocket> transport)
-      : transport_(transport.Pass()) {}
+  explicit WrappedStreamSocket(scoped_ptr<net::StreamSocket> transport)
+      : transport_(transport.Pass()) {
+  }
   virtual ~WrappedStreamSocket() {}
 
   // StreamSocket implementation:
-  virtual int Connect(const CompletionCallback& callback) OVERRIDE {
+  virtual int Connect(const net::CompletionCallback& callback) OVERRIDE {
     return transport_->Connect(callback);
   }
-  virtual void Disconnect() OVERRIDE { transport_->Disconnect(); }
+  virtual void Disconnect() OVERRIDE {
+    transport_->Disconnect();
+  }
   virtual bool IsConnected() const OVERRIDE {
     return transport_->IsConnected();
   }
   virtual bool IsConnectedAndIdle() const OVERRIDE {
     return transport_->IsConnectedAndIdle();
   }
-  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE {
+  virtual int GetPeerAddress(net::IPEndPoint* address) const OVERRIDE {
     return transport_->GetPeerAddress(address);
   }
-  virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE {
+  virtual int GetLocalAddress(net::IPEndPoint* address) const OVERRIDE {
     return transport_->GetLocalAddress(address);
   }
-  virtual const BoundNetLog& NetLog() const OVERRIDE {
+  virtual const net::BoundNetLog& NetLog() const OVERRIDE {
     return transport_->NetLog();
   }
   virtual void SetSubresourceSpeculation() OVERRIDE {
@@ -83,22 +84,20 @@ class WrappedStreamSocket : public StreamSocket {
   virtual bool WasNpnNegotiated() const OVERRIDE {
     return transport_->WasNpnNegotiated();
   }
-  virtual NextProto GetNegotiatedProtocol() const OVERRIDE {
+  virtual net::NextProto GetNegotiatedProtocol() const OVERRIDE {
     return transport_->GetNegotiatedProtocol();
   }
-  virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE {
+  virtual bool GetSSLInfo(net::SSLInfo* ssl_info) OVERRIDE {
     return transport_->GetSSLInfo(ssl_info);
   }
 
   // Socket implementation:
-  virtual int Read(IOBuffer* buf,
-                   int buf_len,
-                   const CompletionCallback& callback) OVERRIDE {
+  virtual int Read(net::IOBuffer* buf, int buf_len,
+                   const net::CompletionCallback& callback) OVERRIDE {
     return transport_->Read(buf, buf_len, callback);
   }
-  virtual int Write(IOBuffer* buf,
-                    int buf_len,
-                    const CompletionCallback& callback) OVERRIDE {
+  virtual int Write(net::IOBuffer* buf, int buf_len,
+                    const net::CompletionCallback& callback) OVERRIDE {
     return transport_->Write(buf, buf_len, callback);
   }
   virtual bool SetReceiveBufferSize(int32 size) OVERRIDE {
@@ -109,7 +108,7 @@ class WrappedStreamSocket : public StreamSocket {
   }
 
  protected:
-  scoped_ptr<StreamSocket> transport_;
+  scoped_ptr<net::StreamSocket> transport_;
 };
 
 // ReadBufferingStreamSocket is a wrapper for an existing StreamSocket that
@@ -120,13 +119,12 @@ class WrappedStreamSocket : public StreamSocket {
 // them from the TestServer.
 class ReadBufferingStreamSocket : public WrappedStreamSocket {
  public:
-  explicit ReadBufferingStreamSocket(scoped_ptr<StreamSocket> transport);
+  explicit ReadBufferingStreamSocket(scoped_ptr<net::StreamSocket> transport);
   virtual ~ReadBufferingStreamSocket() {}
 
   // Socket implementation:
-  virtual int Read(IOBuffer* buf,
-                   int buf_len,
-                   const CompletionCallback& callback) OVERRIDE;
+  virtual int Read(net::IOBuffer* buf, int buf_len,
+                   const net::CompletionCallback& callback) OVERRIDE;
 
   // Sets the internal buffer to |size|. This must not be greater than
   // the largest value supplied to Read() - that is, it does not handle
@@ -150,18 +148,19 @@ class ReadBufferingStreamSocket : public WrappedStreamSocket {
   void OnReadCompleted(int result);
 
   State state_;
-  scoped_refptr<GrowableIOBuffer> read_buffer_;
+  scoped_refptr<net::GrowableIOBuffer> read_buffer_;
   int buffer_size_;
 
-  scoped_refptr<IOBuffer> user_read_buf_;
-  CompletionCallback user_read_callback_;
+  scoped_refptr<net::IOBuffer> user_read_buf_;
+  net::CompletionCallback user_read_callback_;
 };
 
 ReadBufferingStreamSocket::ReadBufferingStreamSocket(
-    scoped_ptr<StreamSocket> transport)
+    scoped_ptr<net::StreamSocket> transport)
     : WrappedStreamSocket(transport.Pass()),
-      read_buffer_(new GrowableIOBuffer()),
-      buffer_size_(0) {}
+      read_buffer_(new net::GrowableIOBuffer()),
+      buffer_size_(0) {
+}
 
 void ReadBufferingStreamSocket::SetBufferSize(int size) {
   DCHECK(!user_read_buf_.get());
@@ -169,19 +168,19 @@ void ReadBufferingStreamSocket::SetBufferSize(int size) {
   read_buffer_->SetCapacity(size);
 }
 
-int ReadBufferingStreamSocket::Read(IOBuffer* buf,
+int ReadBufferingStreamSocket::Read(net::IOBuffer* buf,
                                     int buf_len,
-                                    const CompletionCallback& callback) {
+                                    const net::CompletionCallback& callback) {
   if (buffer_size_ == 0)
     return transport_->Read(buf, buf_len, callback);
 
   if (buf_len < buffer_size_)
-    return ERR_UNEXPECTED;
+    return net::ERR_UNEXPECTED;
 
   state_ = STATE_READ;
   user_read_buf_ = buf;
-  int result = DoLoop(OK);
-  if (result == ERR_IO_PENDING)
+  int result = DoLoop(net::OK);
+  if (result == net::ERR_IO_PENDING)
     user_read_callback_ = callback;
   else
     user_read_buf_ = NULL;
@@ -203,10 +202,10 @@ int ReadBufferingStreamSocket::DoLoop(int result) {
       case STATE_NONE:
       default:
         NOTREACHED() << "Unexpected state: " << current_state;
-        rv = ERR_UNEXPECTED;
+        rv = net::ERR_UNEXPECTED;
         break;
     }
-  } while (rv != ERR_IO_PENDING && state_ != STATE_NONE);
+  } while (rv != net::ERR_IO_PENDING && state_ != STATE_NONE);
   return rv;
 }
 
@@ -228,11 +227,10 @@ int ReadBufferingStreamSocket::DoReadComplete(int result) {
   read_buffer_->set_offset(read_buffer_->offset() + result);
   if (read_buffer_->RemainingCapacity() > 0) {
     state_ = STATE_READ;
-    return OK;
+    return net::OK;
   }
 
-  memcpy(user_read_buf_->data(),
-         read_buffer_->StartOfBuffer(),
+  memcpy(user_read_buf_->data(), read_buffer_->StartOfBuffer(),
          read_buffer_->capacity());
   read_buffer_->set_offset(0);
   return read_buffer_->capacity();
@@ -240,7 +238,7 @@ int ReadBufferingStreamSocket::DoReadComplete(int result) {
 
 void ReadBufferingStreamSocket::OnReadCompleted(int result) {
   result = DoLoop(result);
-  if (result == ERR_IO_PENDING)
+  if (result == net::ERR_IO_PENDING)
     return;
 
   user_read_buf_ = NULL;
@@ -254,18 +252,16 @@ class SynchronousErrorStreamSocket : public WrappedStreamSocket {
   virtual ~SynchronousErrorStreamSocket() {}
 
   // Socket implementation:
-  virtual int Read(IOBuffer* buf,
-                   int buf_len,
-                   const CompletionCallback& callback) OVERRIDE;
-  virtual int Write(IOBuffer* buf,
-                    int buf_len,
-                    const CompletionCallback& callback) OVERRIDE;
+  virtual int Read(net::IOBuffer* buf, int buf_len,
+                   const net::CompletionCallback& callback) OVERRIDE;
+  virtual int Write(net::IOBuffer* buf, int buf_len,
+                    const net::CompletionCallback& callback) OVERRIDE;
 
   // Sets the next Read() call and all future calls to return |error|.
   // If there is already a pending asynchronous read, the configured error
   // will not be returned until that asynchronous read has completed and Read()
   // is called again.
-  void SetNextReadError(Error error) {
+  void SetNextReadError(net::Error error) {
     DCHECK_GE(0, error);
     have_read_error_ = true;
     pending_read_error_ = error;
@@ -275,7 +271,7 @@ class SynchronousErrorStreamSocket : public WrappedStreamSocket {
   // If there is already a pending asynchronous write, the configured error
   // will not be returned until that asynchronous write has completed and
   // Write() is called again.
-  void SetNextWriteError(Error error) {
+  void SetNextWriteError(net::Error error) {
     DCHECK_GE(0, error);
     have_write_error_ = true;
     pending_write_error_ = error;
@@ -295,21 +291,24 @@ SynchronousErrorStreamSocket::SynchronousErrorStreamSocket(
     scoped_ptr<StreamSocket> transport)
     : WrappedStreamSocket(transport.Pass()),
       have_read_error_(false),
-      pending_read_error_(OK),
+      pending_read_error_(net::OK),
       have_write_error_(false),
-      pending_write_error_(OK) {}
+      pending_write_error_(net::OK) {
+}
 
-int SynchronousErrorStreamSocket::Read(IOBuffer* buf,
-                                       int buf_len,
-                                       const CompletionCallback& callback) {
+int SynchronousErrorStreamSocket::Read(
+    net::IOBuffer* buf,
+    int buf_len,
+    const net::CompletionCallback& callback) {
   if (have_read_error_)
     return pending_read_error_;
   return transport_->Read(buf, buf_len, callback);
 }
 
-int SynchronousErrorStreamSocket::Write(IOBuffer* buf,
-                                        int buf_len,
-                                        const CompletionCallback& callback) {
+int SynchronousErrorStreamSocket::Write(
+    net::IOBuffer* buf,
+    int buf_len,
+    const net::CompletionCallback& callback) {
   if (have_write_error_)
     return pending_write_error_;
   return transport_->Write(buf, buf_len, callback);
@@ -325,14 +324,12 @@ class FakeBlockingStreamSocket : public WrappedStreamSocket {
   virtual ~FakeBlockingStreamSocket() {}
 
   // Socket implementation:
-  virtual int Read(IOBuffer* buf,
-                   int buf_len,
-                   const CompletionCallback& callback) OVERRIDE {
+  virtual int Read(net::IOBuffer* buf, int buf_len,
+                   const net::CompletionCallback& callback) OVERRIDE {
     return read_state_.RunWrappedFunction(buf, buf_len, callback);
   }
-  virtual int Write(IOBuffer* buf,
-                    int buf_len,
-                    const CompletionCallback& callback) OVERRIDE {
+  virtual int Write(net::IOBuffer* buf, int buf_len,
+                    const net::CompletionCallback& callback) OVERRIDE {
     return write_state_.RunWrappedFunction(buf, buf_len, callback);
   }
 
@@ -353,8 +350,9 @@ class FakeBlockingStreamSocket : public WrappedStreamSocket {
   class BlockingState {
    public:
     // Wrapper for the underlying Socket function to call (ie: Read/Write).
-    typedef base::Callback<int(IOBuffer*, int, const CompletionCallback&)>
-        WrappedSocketFunction;
+    typedef base::Callback<
+        int(net::IOBuffer*, int,
+            const net::CompletionCallback&)> WrappedSocketFunction;
 
     explicit BlockingState(const WrappedSocketFunction& function);
     ~BlockingState() {}
@@ -373,9 +371,8 @@ class FakeBlockingStreamSocket : public WrappedStreamSocket {
     // Performs the wrapped socket function on the underlying transport. If
     // configured to block via SetShouldBlock(), then |user_callback| will not
     // be invoked until Unblock() has been called.
-    int RunWrappedFunction(IOBuffer* buf,
-                           int len,
-                           const CompletionCallback& user_callback);
+    int RunWrappedFunction(net::IOBuffer* buf, int len,
+                           const net::CompletionCallback& user_callback);
 
    private:
     // Handles completion from the underlying wrapped socket function.
@@ -385,7 +382,7 @@ class FakeBlockingStreamSocket : public WrappedStreamSocket {
     bool should_block_;
     bool have_result_;
     int pending_result_;
-    CompletionCallback user_callback_;
+    net::CompletionCallback user_callback_;
   };
 
   BlockingState read_state_;
@@ -400,14 +397,16 @@ FakeBlockingStreamSocket::FakeBlockingStreamSocket(
       read_state_(base::Bind(&Socket::Read,
                              base::Unretained(transport_.get()))),
       write_state_(base::Bind(&Socket::Write,
-                              base::Unretained(transport_.get()))) {}
+                              base::Unretained(transport_.get()))) {
+}
 
 FakeBlockingStreamSocket::BlockingState::BlockingState(
     const WrappedSocketFunction& function)
     : wrapped_function_(function),
       should_block_(false),
       have_result_(false),
-      pending_result_(OK) {}
+      pending_result_(net::OK) {
+}
 
 void FakeBlockingStreamSocket::BlockingState::SetShouldBlock() {
   DCHECK(!should_block_);
@@ -430,24 +429,24 @@ void FakeBlockingStreamSocket::BlockingState::Unblock() {
 }
 
 int FakeBlockingStreamSocket::BlockingState::RunWrappedFunction(
-    IOBuffer* buf,
+    net::IOBuffer* buf,
     int len,
-    const CompletionCallback& callback) {
+    const net::CompletionCallback& callback) {
 
   // The callback to be called by the underlying transport. Either forward
   // directly to the user's callback if not set to block, or intercept it with
   // OnCompleted so that the user's callback is not invoked until Unblock() is
   // called.
-  CompletionCallback transport_callback =
+  net::CompletionCallback transport_callback =
       !should_block_ ? callback : base::Bind(&BlockingState::OnCompleted,
                                              base::Unretained(this));
   int rv = wrapped_function_.Run(buf, len, transport_callback);
   if (should_block_) {
     user_callback_ = callback;
     // May have completed synchronously.
-    have_result_ = (rv != ERR_IO_PENDING);
+    have_result_ = (rv != net::ERR_IO_PENDING);
     pending_result_ = rv;
-    return ERR_IO_PENDING;
+    return net::ERR_IO_PENDING;
   }
 
   return rv;
@@ -467,61 +466,64 @@ void FakeBlockingStreamSocket::BlockingState::OnCompleted(int result) {
   base::ResetAndReturn(&user_callback_).Run(result);
 }
 
-// CompletionCallback that will delete the associated StreamSocket when
+// CompletionCallback that will delete the associated net::StreamSocket when
 // the callback is invoked.
-class DeleteSocketCallback : public TestCompletionCallbackBase {
+class DeleteSocketCallback : public net::TestCompletionCallbackBase {
  public:
-  explicit DeleteSocketCallback(StreamSocket* socket)
+  explicit DeleteSocketCallback(net::StreamSocket* socket)
       : socket_(socket),
         callback_(base::Bind(&DeleteSocketCallback::OnComplete,
-                             base::Unretained(this))) {}
+                             base::Unretained(this))) {
+  }
   virtual ~DeleteSocketCallback() {}
 
-  const CompletionCallback& callback() const { return callback_; }
+  const net::CompletionCallback& callback() const { return callback_; }
 
  private:
   void OnComplete(int result) {
-    if (socket_) {
-      delete socket_;
-      socket_ = NULL;
-    } else {
-      ADD_FAILURE() << "Deleting socket twice";
-    }
-    SetResult(result);
+   if (socket_) {
+     delete socket_;
+     socket_ = NULL;
+   } else {
+     ADD_FAILURE() << "Deleting socket twice";
+   }
+   SetResult(result);
   }
 
-  StreamSocket* socket_;
-  CompletionCallback callback_;
+  net::StreamSocket* socket_;
+  net::CompletionCallback callback_;
 
   DISALLOW_COPY_AND_ASSIGN(DeleteSocketCallback);
 };
 
+}  // namespace
+
 class SSLClientSocketTest : public PlatformTest {
  public:
   SSLClientSocketTest()
-      : socket_factory_(ClientSocketFactory::GetDefaultFactory()),
-        cert_verifier_(new MockCertVerifier),
-        transport_security_state_(new TransportSecurityState) {
-    cert_verifier_->set_default_result(OK);
+      : socket_factory_(net::ClientSocketFactory::GetDefaultFactory()),
+        cert_verifier_(new net::MockCertVerifier),
+        transport_security_state_(new net::TransportSecurityState) {
+    cert_verifier_->set_default_result(net::OK);
     context_.cert_verifier = cert_verifier_.get();
     context_.transport_security_state = transport_security_state_.get();
   }
 
  protected:
-  scoped_ptr<SSLClientSocket> CreateSSLClientSocket(
-      scoped_ptr<StreamSocket> transport_socket,
-      const HostPortPair& host_and_port,
-      const SSLConfig& ssl_config) {
-    scoped_ptr<ClientSocketHandle> connection(new ClientSocketHandle);
-    connection->SetSocket(transport_socket.Pass());
-    return socket_factory_->CreateSSLClientSocket(
-        connection.Pass(), host_and_port, ssl_config, context_);
+  net::SSLClientSocket* CreateSSLClientSocket(
+      net::StreamSocket* transport_socket,
+      const net::HostPortPair& host_and_port,
+      const net::SSLConfig& ssl_config) {
+    return socket_factory_->CreateSSLClientSocket(transport_socket,
+                                                  host_and_port,
+                                                  ssl_config,
+                                                  context_);
   }
 
-  ClientSocketFactory* socket_factory_;
-  scoped_ptr<MockCertVerifier> cert_verifier_;
-  scoped_ptr<TransportSecurityState> transport_security_state_;
-  SSLClientSocketContext context_;
+  net::ClientSocketFactory* socket_factory_;
+  scoped_ptr<net::MockCertVerifier> cert_verifier_;
+  scoped_ptr<net::TransportSecurityState> transport_security_state_;
+  net::SSLClientSocketContext context_;
 };
 
 //-----------------------------------------------------------------------------
@@ -534,45 +536,45 @@ class SSLClientSocketTest : public PlatformTest {
 // timeout. This means that an SSL connect end event may appear as a socket
 // write.
 static bool LogContainsSSLConnectEndEvent(
-    const CapturingNetLog::CapturedEntryList& log,
-    int i) {
-  return LogContainsEndEvent(log, i, NetLog::TYPE_SSL_CONNECT) ||
-         LogContainsEvent(
-             log, i, NetLog::TYPE_SOCKET_BYTES_SENT, NetLog::PHASE_NONE);
-}
-;
+    const net::CapturingNetLog::CapturedEntryList& log, int i) {
+  return net::LogContainsEndEvent(log, i, net::NetLog::TYPE_SSL_CONNECT) ||
+         net::LogContainsEvent(log, i, net::NetLog::TYPE_SOCKET_BYTES_SENT,
+                                net::NetLog::PHASE_NONE);
+};
 
 TEST_F(SSLClientSocketTest, Connect) {
-  SpawnedTestServer test_server(SpawnedTestServer::TYPE_HTTPS,
-                                SpawnedTestServer::kLocalhost,
-                                base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
-  AddressList addr;
+  net::AddressList addr;
   ASSERT_TRUE(test_server.GetAddressList(&addr));
 
-  TestCompletionCallback callback;
-  CapturingNetLog log;
-  scoped_ptr<StreamSocket> transport(
-      new TCPClientSocket(addr, &log, NetLog::Source()));
+  net::TestCompletionCallback callback;
+  net::CapturingNetLog log;
+  net::StreamSocket* transport = new net::TCPClientSocket(
+      addr, &log, net::NetLog::Source());
   int rv = transport->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
 
-  scoped_ptr<SSLClientSocket> sock(CreateSSLClientSocket(
-      transport.Pass(), test_server.host_port_pair(), kDefaultSSLConfig));
+  scoped_ptr<net::SSLClientSocket> sock(
+      CreateSSLClientSocket(transport, test_server.host_port_pair(),
+                            kDefaultSSLConfig));
 
   EXPECT_FALSE(sock->IsConnected());
 
   rv = sock->Connect(callback.callback());
 
-  CapturingNetLog::CapturedEntryList entries;
+  net::CapturingNetLog::CapturedEntryList entries;
   log.GetEntries(&entries);
-  EXPECT_TRUE(LogContainsBeginEvent(entries, 5, NetLog::TYPE_SSL_CONNECT));
-  if (rv == ERR_IO_PENDING)
+  EXPECT_TRUE(net::LogContainsBeginEvent(
+      entries, 5, net::NetLog::TYPE_SSL_CONNECT));
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
   EXPECT_TRUE(sock->IsConnected());
   log.GetEntries(&entries);
   EXPECT_TRUE(LogContainsSSLConnectEndEvent(entries, -1));
@@ -582,40 +584,43 @@ TEST_F(SSLClientSocketTest, Connect) {
 }
 
 TEST_F(SSLClientSocketTest, ConnectExpired) {
-  SpawnedTestServer::SSLOptions ssl_options(
-      SpawnedTestServer::SSLOptions::CERT_EXPIRED);
-  SpawnedTestServer test_server(
-      SpawnedTestServer::TYPE_HTTPS, ssl_options, base::FilePath());
+  net::SpawnedTestServer::SSLOptions ssl_options(
+      net::SpawnedTestServer::SSLOptions::CERT_EXPIRED);
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     ssl_options,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
-  cert_verifier_->set_default_result(ERR_CERT_DATE_INVALID);
+  cert_verifier_->set_default_result(net::ERR_CERT_DATE_INVALID);
 
-  AddressList addr;
+  net::AddressList addr;
   ASSERT_TRUE(test_server.GetAddressList(&addr));
 
-  TestCompletionCallback callback;
-  CapturingNetLog log;
-  scoped_ptr<StreamSocket> transport(
-      new TCPClientSocket(addr, &log, NetLog::Source()));
+  net::TestCompletionCallback callback;
+  net::CapturingNetLog log;
+  net::StreamSocket* transport = new net::TCPClientSocket(
+      addr, &log, net::NetLog::Source());
   int rv = transport->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
 
-  scoped_ptr<SSLClientSocket> sock(CreateSSLClientSocket(
-      transport.Pass(), test_server.host_port_pair(), kDefaultSSLConfig));
+  scoped_ptr<net::SSLClientSocket> sock(
+      CreateSSLClientSocket(transport, test_server.host_port_pair(),
+                            kDefaultSSLConfig));
 
   EXPECT_FALSE(sock->IsConnected());
 
   rv = sock->Connect(callback.callback());
 
-  CapturingNetLog::CapturedEntryList entries;
+  net::CapturingNetLog::CapturedEntryList entries;
   log.GetEntries(&entries);
-  EXPECT_TRUE(LogContainsBeginEvent(entries, 5, NetLog::TYPE_SSL_CONNECT));
-  if (rv == ERR_IO_PENDING)
+  EXPECT_TRUE(net::LogContainsBeginEvent(
+      entries, 5, net::NetLog::TYPE_SSL_CONNECT));
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
 
-  EXPECT_EQ(ERR_CERT_DATE_INVALID, rv);
+  EXPECT_EQ(net::ERR_CERT_DATE_INVALID, rv);
 
   // Rather than testing whether or not the underlying socket is connected,
   // test that the handshake has finished. This is because it may be
@@ -626,40 +631,43 @@ TEST_F(SSLClientSocketTest, ConnectExpired) {
 }
 
 TEST_F(SSLClientSocketTest, ConnectMismatched) {
-  SpawnedTestServer::SSLOptions ssl_options(
-      SpawnedTestServer::SSLOptions::CERT_MISMATCHED_NAME);
-  SpawnedTestServer test_server(
-      SpawnedTestServer::TYPE_HTTPS, ssl_options, base::FilePath());
+  net::SpawnedTestServer::SSLOptions ssl_options(
+      net::SpawnedTestServer::SSLOptions::CERT_MISMATCHED_NAME);
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     ssl_options,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
-  cert_verifier_->set_default_result(ERR_CERT_COMMON_NAME_INVALID);
+  cert_verifier_->set_default_result(net::ERR_CERT_COMMON_NAME_INVALID);
 
-  AddressList addr;
+  net::AddressList addr;
   ASSERT_TRUE(test_server.GetAddressList(&addr));
 
-  TestCompletionCallback callback;
-  CapturingNetLog log;
-  scoped_ptr<StreamSocket> transport(
-      new TCPClientSocket(addr, &log, NetLog::Source()));
+  net::TestCompletionCallback callback;
+  net::CapturingNetLog log;
+  net::StreamSocket* transport = new net::TCPClientSocket(
+      addr, &log, net::NetLog::Source());
   int rv = transport->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
 
-  scoped_ptr<SSLClientSocket> sock(CreateSSLClientSocket(
-      transport.Pass(), test_server.host_port_pair(), kDefaultSSLConfig));
+  scoped_ptr<net::SSLClientSocket> sock(
+      CreateSSLClientSocket(transport, test_server.host_port_pair(),
+                            kDefaultSSLConfig));
 
   EXPECT_FALSE(sock->IsConnected());
 
   rv = sock->Connect(callback.callback());
 
-  CapturingNetLog::CapturedEntryList entries;
+  net::CapturingNetLog::CapturedEntryList entries;
   log.GetEntries(&entries);
-  EXPECT_TRUE(LogContainsBeginEvent(entries, 5, NetLog::TYPE_SSL_CONNECT));
-  if (rv == ERR_IO_PENDING)
+  EXPECT_TRUE(net::LogContainsBeginEvent(
+      entries, 5, net::NetLog::TYPE_SSL_CONNECT));
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
 
-  EXPECT_EQ(ERR_CERT_COMMON_NAME_INVALID, rv);
+  EXPECT_EQ(net::ERR_CERT_COMMON_NAME_INVALID, rv);
 
   // Rather than testing whether or not the underlying socket is connected,
   // test that the handshake has finished. This is because it may be
@@ -672,35 +680,38 @@ TEST_F(SSLClientSocketTest, ConnectMismatched) {
 // Attempt to connect to a page which requests a client certificate. It should
 // return an error code on connect.
 TEST_F(SSLClientSocketTest, ConnectClientAuthCertRequested) {
-  SpawnedTestServer::SSLOptions ssl_options;
+  net::SpawnedTestServer::SSLOptions ssl_options;
   ssl_options.request_client_certificate = true;
-  SpawnedTestServer test_server(
-      SpawnedTestServer::TYPE_HTTPS, ssl_options, base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     ssl_options,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
-  AddressList addr;
+  net::AddressList addr;
   ASSERT_TRUE(test_server.GetAddressList(&addr));
 
-  TestCompletionCallback callback;
-  CapturingNetLog log;
-  scoped_ptr<StreamSocket> transport(
-      new TCPClientSocket(addr, &log, NetLog::Source()));
+  net::TestCompletionCallback callback;
+  net::CapturingNetLog log;
+  net::StreamSocket* transport = new net::TCPClientSocket(
+      addr, &log, net::NetLog::Source());
   int rv = transport->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
 
-  scoped_ptr<SSLClientSocket> sock(CreateSSLClientSocket(
-      transport.Pass(), test_server.host_port_pair(), kDefaultSSLConfig));
+  scoped_ptr<net::SSLClientSocket> sock(
+      CreateSSLClientSocket(transport, test_server.host_port_pair(),
+                            kDefaultSSLConfig));
 
   EXPECT_FALSE(sock->IsConnected());
 
   rv = sock->Connect(callback.callback());
 
-  CapturingNetLog::CapturedEntryList entries;
+  net::CapturingNetLog::CapturedEntryList entries;
   log.GetEntries(&entries);
-  EXPECT_TRUE(LogContainsBeginEvent(entries, 5, NetLog::TYPE_SSL_CONNECT));
-  if (rv == ERR_IO_PENDING)
+  EXPECT_TRUE(net::LogContainsBeginEvent(
+      entries, 5, net::NetLog::TYPE_SSL_CONNECT));
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
 
   log.GetEntries(&entries);
@@ -720,9 +731,9 @@ TEST_F(SSLClientSocketTest, ConnectClientAuthCertRequested) {
   // certificate. This test may still be useful as we'll want to close
   // the socket on a timeout if the user takes a long time to pick a
   // cert. Related bug: https://bugzilla.mozilla.org/show_bug.cgi?id=542832
-  ExpectLogContainsSomewhere(
-      entries, 0, NetLog::TYPE_SSL_CONNECT, NetLog::PHASE_END);
-  EXPECT_EQ(ERR_SSL_CLIENT_AUTH_CERT_NEEDED, rv);
+  net::ExpectLogContainsSomewhere(
+      entries, 0, net::NetLog::TYPE_SSL_CONNECT, net::NetLog::PHASE_END);
+  EXPECT_EQ(net::ERR_SSL_CLIENT_AUTH_CERT_NEEDED, rv);
   EXPECT_FALSE(sock->IsConnected());
 }
 
@@ -731,30 +742,32 @@ TEST_F(SSLClientSocketTest, ConnectClientAuthCertRequested) {
 //
 // TODO(davidben): Also test providing an actual certificate.
 TEST_F(SSLClientSocketTest, ConnectClientAuthSendNullCert) {
-  SpawnedTestServer::SSLOptions ssl_options;
+  net::SpawnedTestServer::SSLOptions ssl_options;
   ssl_options.request_client_certificate = true;
-  SpawnedTestServer test_server(
-      SpawnedTestServer::TYPE_HTTPS, ssl_options, base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     ssl_options,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
-  AddressList addr;
+  net::AddressList addr;
   ASSERT_TRUE(test_server.GetAddressList(&addr));
 
-  TestCompletionCallback callback;
-  CapturingNetLog log;
-  scoped_ptr<StreamSocket> transport(
-      new TCPClientSocket(addr, &log, NetLog::Source()));
+  net::TestCompletionCallback callback;
+  net::CapturingNetLog log;
+  net::StreamSocket* transport = new net::TCPClientSocket(
+      addr, &log, net::NetLog::Source());
   int rv = transport->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
 
-  SSLConfig ssl_config = kDefaultSSLConfig;
+  net::SSLConfig ssl_config = kDefaultSSLConfig;
   ssl_config.send_client_cert = true;
   ssl_config.client_cert = NULL;
 
-  scoped_ptr<SSLClientSocket> sock(CreateSSLClientSocket(
-      transport.Pass(), test_server.host_port_pair(), ssl_config));
+  scoped_ptr<net::SSLClientSocket> sock(
+      CreateSSLClientSocket(transport, test_server.host_port_pair(),
+                            ssl_config));
 
   EXPECT_FALSE(sock->IsConnected());
 
@@ -762,13 +775,14 @@ TEST_F(SSLClientSocketTest, ConnectClientAuthSendNullCert) {
   // TODO(davidben): Add a test which requires them and verify the error.
   rv = sock->Connect(callback.callback());
 
-  CapturingNetLog::CapturedEntryList entries;
+  net::CapturingNetLog::CapturedEntryList entries;
   log.GetEntries(&entries);
-  EXPECT_TRUE(LogContainsBeginEvent(entries, 5, NetLog::TYPE_SSL_CONNECT));
-  if (rv == ERR_IO_PENDING)
+  EXPECT_TRUE(net::LogContainsBeginEvent(
+      entries, 5, net::NetLog::TYPE_SSL_CONNECT));
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
 
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
   EXPECT_TRUE(sock->IsConnected());
   log.GetEntries(&entries);
   EXPECT_TRUE(LogContainsSSLConnectEndEvent(entries, -1));
@@ -776,7 +790,7 @@ TEST_F(SSLClientSocketTest, ConnectClientAuthSendNullCert) {
   // We responded to the server's certificate request with a Certificate
   // message with no client certificate in it.  ssl_info.client_cert_sent
   // should be false in this case.
-  SSLInfo ssl_info;
+  net::SSLInfo ssl_info;
   sock->GetSSLInfo(&ssl_info);
   EXPECT_FALSE(ssl_info.client_cert_sent);
 
@@ -790,50 +804,51 @@ TEST_F(SSLClientSocketTest, ConnectClientAuthSendNullCert) {
 //   - Server sends data unexpectedly.
 
 TEST_F(SSLClientSocketTest, Read) {
-  SpawnedTestServer test_server(SpawnedTestServer::TYPE_HTTPS,
-                                SpawnedTestServer::kLocalhost,
-                                base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
-  AddressList addr;
+  net::AddressList addr;
   ASSERT_TRUE(test_server.GetAddressList(&addr));
 
-  TestCompletionCallback callback;
-  scoped_ptr<StreamSocket> transport(
-      new TCPClientSocket(addr, NULL, NetLog::Source()));
+  net::TestCompletionCallback callback;
+  net::StreamSocket* transport = new net::TCPClientSocket(
+      addr, NULL, net::NetLog::Source());
   int rv = transport->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
 
-  scoped_ptr<SSLClientSocket> sock(CreateSSLClientSocket(
-      transport.Pass(), test_server.host_port_pair(), kDefaultSSLConfig));
+  scoped_ptr<net::SSLClientSocket> sock(
+      CreateSSLClientSocket(transport, test_server.host_port_pair(),
+                            kDefaultSSLConfig));
 
   rv = sock->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
   EXPECT_TRUE(sock->IsConnected());
 
   const char request_text[] = "GET / HTTP/1.0\r\n\r\n";
-  scoped_refptr<IOBuffer> request_buffer(
-      new IOBuffer(arraysize(request_text) - 1));
+  scoped_refptr<net::IOBuffer> request_buffer(
+      new net::IOBuffer(arraysize(request_text) - 1));
   memcpy(request_buffer->data(), request_text, arraysize(request_text) - 1);
 
   rv = sock->Write(
       request_buffer.get(), arraysize(request_text) - 1, callback.callback());
-  EXPECT_TRUE(rv >= 0 || rv == ERR_IO_PENDING);
+  EXPECT_TRUE(rv >= 0 || rv == net::ERR_IO_PENDING);
 
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
   EXPECT_EQ(static_cast<int>(arraysize(request_text) - 1), rv);
 
-  scoped_refptr<IOBuffer> buf(new IOBuffer(4096));
+  scoped_refptr<net::IOBuffer> buf(new net::IOBuffer(4096));
   for (;;) {
     rv = sock->Read(buf.get(), 4096, callback.callback());
-    EXPECT_TRUE(rv >= 0 || rv == ERR_IO_PENDING);
+    EXPECT_TRUE(rv >= 0 || rv == net::ERR_IO_PENDING);
 
-    if (rv == ERR_IO_PENDING)
+    if (rv == net::ERR_IO_PENDING)
       rv = callback.WaitForResult();
 
     EXPECT_GE(rv, 0);
@@ -847,40 +862,39 @@ TEST_F(SSLClientSocketTest, Read) {
 // the socket connection uncleanly.
 // This is a regression test for http://crbug.com/238536
 TEST_F(SSLClientSocketTest, Read_WithSynchronousError) {
-  SpawnedTestServer test_server(SpawnedTestServer::TYPE_HTTPS,
-                                SpawnedTestServer::kLocalhost,
-                                base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
-  AddressList addr;
+  net::AddressList addr;
   ASSERT_TRUE(test_server.GetAddressList(&addr));
 
-  TestCompletionCallback callback;
-  scoped_ptr<StreamSocket> real_transport(
-      new TCPClientSocket(addr, NULL, NetLog::Source()));
-  scoped_ptr<SynchronousErrorStreamSocket> transport(
-      new SynchronousErrorStreamSocket(real_transport.Pass()));
+  net::TestCompletionCallback callback;
+  scoped_ptr<net::StreamSocket> real_transport(new net::TCPClientSocket(
+      addr, NULL, net::NetLog::Source()));
+  SynchronousErrorStreamSocket* transport = new SynchronousErrorStreamSocket(
+      real_transport.Pass());
   int rv = callback.GetResult(transport->Connect(callback.callback()));
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
 
   // Disable TLS False Start to avoid handshake non-determinism.
-  SSLConfig ssl_config;
+  net::SSLConfig ssl_config;
   ssl_config.false_start_enabled = false;
 
-  SynchronousErrorStreamSocket* raw_transport = transport.get();
-  scoped_ptr<SSLClientSocket> sock(
-      CreateSSLClientSocket(transport.PassAs<StreamSocket>(),
-                            test_server.host_port_pair(),
+  scoped_ptr<net::SSLClientSocket> sock(
+      CreateSSLClientSocket(transport, test_server.host_port_pair(),
                             ssl_config));
 
   rv = callback.GetResult(sock->Connect(callback.callback()));
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
   EXPECT_TRUE(sock->IsConnected());
 
   const char request_text[] = "GET / HTTP/1.0\r\n\r\n";
   static const int kRequestTextSize =
       static_cast<int>(arraysize(request_text) - 1);
-  scoped_refptr<IOBuffer> request_buffer(new IOBuffer(kRequestTextSize));
+  scoped_refptr<net::IOBuffer> request_buffer(
+      new net::IOBuffer(kRequestTextSize));
   memcpy(request_buffer->data(), request_text, kRequestTextSize);
 
   rv = callback.GetResult(
@@ -888,9 +902,9 @@ TEST_F(SSLClientSocketTest, Read_WithSynchronousError) {
   EXPECT_EQ(kRequestTextSize, rv);
 
   // Simulate an unclean/forcible shutdown.
-  raw_transport->SetNextReadError(ERR_CONNECTION_RESET);
+  transport->SetNextReadError(net::ERR_CONNECTION_RESET);
 
-  scoped_refptr<IOBuffer> buf(new IOBuffer(4096));
+  scoped_refptr<net::IOBuffer> buf(new net::IOBuffer(4096));
 
   // Note: This test will hang if this bug has regressed. Simply checking that
   // rv != ERR_IO_PENDING is insufficient, as ERR_IO_PENDING is a legitimate
@@ -899,7 +913,7 @@ TEST_F(SSLClientSocketTest, Read_WithSynchronousError) {
 
 #if !defined(USE_OPENSSL)
   // SSLClientSocketNSS records the error exactly
-  EXPECT_EQ(ERR_CONNECTION_RESET, rv);
+  EXPECT_EQ(net::ERR_CONNECTION_RESET, rv);
 #else
   // SSLClientSocketOpenSSL treats any errors as a simple EOF.
   EXPECT_EQ(0, rv);
@@ -911,51 +925,49 @@ TEST_F(SSLClientSocketTest, Read_WithSynchronousError) {
 // intermediary terminates the socket connection uncleanly.
 // This is a regression test for http://crbug.com/249848
 TEST_F(SSLClientSocketTest, Write_WithSynchronousError) {
-  SpawnedTestServer test_server(SpawnedTestServer::TYPE_HTTPS,
-                                SpawnedTestServer::kLocalhost,
-                                base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
-  AddressList addr;
+  net::AddressList addr;
   ASSERT_TRUE(test_server.GetAddressList(&addr));
 
-  TestCompletionCallback callback;
-  scoped_ptr<StreamSocket> real_transport(
-      new TCPClientSocket(addr, NULL, NetLog::Source()));
-  // Note: |error_socket|'s ownership is handed to |transport|, but a pointer
+  net::TestCompletionCallback callback;
+  scoped_ptr<net::StreamSocket> real_transport(new net::TCPClientSocket(
+      addr, NULL, net::NetLog::Source()));
+  // Note: |error_socket|'s ownership is handed to |transport|, but the pointer
   // is retained in order to configure additional errors.
-  scoped_ptr<SynchronousErrorStreamSocket> error_socket(
-      new SynchronousErrorStreamSocket(real_transport.Pass()));
-  SynchronousErrorStreamSocket* raw_error_socket = error_socket.get();
-  scoped_ptr<FakeBlockingStreamSocket> transport(
-      new FakeBlockingStreamSocket(error_socket.PassAs<StreamSocket>()));
-  FakeBlockingStreamSocket* raw_transport = transport.get();
+  SynchronousErrorStreamSocket* error_socket = new SynchronousErrorStreamSocket(
+      real_transport.Pass());
+  FakeBlockingStreamSocket* transport = new FakeBlockingStreamSocket(
+      scoped_ptr<net::StreamSocket>(error_socket));
   int rv = callback.GetResult(transport->Connect(callback.callback()));
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
 
   // Disable TLS False Start to avoid handshake non-determinism.
-  SSLConfig ssl_config;
+  net::SSLConfig ssl_config;
   ssl_config.false_start_enabled = false;
 
-  scoped_ptr<SSLClientSocket> sock(
-      CreateSSLClientSocket(transport.PassAs<StreamSocket>(),
-                            test_server.host_port_pair(),
+  scoped_ptr<net::SSLClientSocket> sock(
+      CreateSSLClientSocket(transport, test_server.host_port_pair(),
                             ssl_config));
 
   rv = callback.GetResult(sock->Connect(callback.callback()));
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
   EXPECT_TRUE(sock->IsConnected());
 
   const char request_text[] = "GET / HTTP/1.0\r\n\r\n";
   static const int kRequestTextSize =
       static_cast<int>(arraysize(request_text) - 1);
-  scoped_refptr<IOBuffer> request_buffer(new IOBuffer(kRequestTextSize));
+  scoped_refptr<net::IOBuffer> request_buffer(
+      new net::IOBuffer(kRequestTextSize));
   memcpy(request_buffer->data(), request_text, kRequestTextSize);
 
   // Simulate an unclean/forcible shutdown on the underlying socket.
   // However, simulate this error asynchronously.
-  raw_error_socket->SetNextWriteError(ERR_CONNECTION_RESET);
-  raw_transport->SetNextWriteShouldBlock();
+  error_socket->SetNextWriteError(net::ERR_CONNECTION_RESET);
+  transport->SetNextWriteShouldBlock();
 
   // This write should complete synchronously, because the TLS ciphertext
   // can be created and placed into the outgoing buffers independent of the
@@ -964,14 +976,14 @@ TEST_F(SSLClientSocketTest, Write_WithSynchronousError) {
       sock->Write(request_buffer.get(), kRequestTextSize, callback.callback()));
   EXPECT_EQ(kRequestTextSize, rv);
 
-  scoped_refptr<IOBuffer> buf(new IOBuffer(4096));
+  scoped_refptr<net::IOBuffer> buf(new net::IOBuffer(4096));
 
   rv = sock->Read(buf.get(), 4096, callback.callback());
-  EXPECT_EQ(ERR_IO_PENDING, rv);
+  EXPECT_EQ(net::ERR_IO_PENDING, rv);
 
   // Now unblock the outgoing request, having it fail with the connection
   // being reset.
-  raw_transport->UnblockWrite();
+  transport->UnblockWrite();
 
   // Note: This will cause an inifite loop if this bug has regressed. Simply
   // checking that rv != ERR_IO_PENDING is insufficient, as ERR_IO_PENDING
@@ -980,7 +992,7 @@ TEST_F(SSLClientSocketTest, Write_WithSynchronousError) {
 
 #if !defined(USE_OPENSSL)
   // SSLClientSocketNSS records the error exactly
-  EXPECT_EQ(ERR_CONNECTION_RESET, rv);
+  EXPECT_EQ(net::ERR_CONNECTION_RESET, rv);
 #else
   // SSLClientSocketOpenSSL treats any errors as a simple EOF.
   EXPECT_EQ(0, rv);
@@ -990,37 +1002,38 @@ TEST_F(SSLClientSocketTest, Write_WithSynchronousError) {
 // Test the full duplex mode, with Read and Write pending at the same time.
 // This test also serves as a regression test for http://crbug.com/29815.
 TEST_F(SSLClientSocketTest, Read_FullDuplex) {
-  SpawnedTestServer test_server(SpawnedTestServer::TYPE_HTTPS,
-                                SpawnedTestServer::kLocalhost,
-                                base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
-  AddressList addr;
+  net::AddressList addr;
   ASSERT_TRUE(test_server.GetAddressList(&addr));
 
-  TestCompletionCallback callback;  // Used for everything except Write.
+  net::TestCompletionCallback callback;  // Used for everything except Write.
 
-  scoped_ptr<StreamSocket> transport(
-      new TCPClientSocket(addr, NULL, NetLog::Source()));
+  net::StreamSocket* transport = new net::TCPClientSocket(
+      addr, NULL, net::NetLog::Source());
   int rv = transport->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
 
-  scoped_ptr<SSLClientSocket> sock(CreateSSLClientSocket(
-      transport.Pass(), test_server.host_port_pair(), kDefaultSSLConfig));
+  scoped_ptr<net::SSLClientSocket> sock(
+      CreateSSLClientSocket(transport, test_server.host_port_pair(),
+                            kDefaultSSLConfig));
 
   rv = sock->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
   EXPECT_TRUE(sock->IsConnected());
 
   // Issue a "hanging" Read first.
-  scoped_refptr<IOBuffer> buf(new IOBuffer(4096));
+  scoped_refptr<net::IOBuffer> buf(new net::IOBuffer(4096));
   rv = sock->Read(buf.get(), 4096, callback.callback());
   // We haven't written the request, so there should be no response yet.
-  ASSERT_EQ(ERR_IO_PENDING, rv);
+  ASSERT_EQ(net::ERR_IO_PENDING, rv);
 
   // Write the request.
   // The request is padded with a User-Agent header to a size that causes the
@@ -1030,14 +1043,15 @@ TEST_F(SSLClientSocketTest, Read_FullDuplex) {
   for (int i = 0; i < 3770; ++i)
     request_text.push_back('*');
   request_text.append("\r\n\r\n");
-  scoped_refptr<IOBuffer> request_buffer(new StringIOBuffer(request_text));
+  scoped_refptr<net::IOBuffer> request_buffer(
+      new net::StringIOBuffer(request_text));
 
-  TestCompletionCallback callback2;  // Used for Write only.
+  net::TestCompletionCallback callback2;  // Used for Write only.
   rv = sock->Write(
       request_buffer.get(), request_text.size(), callback2.callback());
-  EXPECT_TRUE(rv >= 0 || rv == ERR_IO_PENDING);
+  EXPECT_TRUE(rv >= 0 || rv == net::ERR_IO_PENDING);
 
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback2.WaitForResult();
   EXPECT_EQ(static_cast<int>(request_text.size()), rv);
 
@@ -1053,65 +1067,62 @@ TEST_F(SSLClientSocketTest, Read_FullDuplex) {
 // callback, the Write() callback should not be invoked.
 // Regression test for http://crbug.com/232633
 TEST_F(SSLClientSocketTest, Read_DeleteWhilePendingFullDuplex) {
-  SpawnedTestServer test_server(SpawnedTestServer::TYPE_HTTPS,
-                                SpawnedTestServer::kLocalhost,
-                                base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
-  AddressList addr;
+  net::AddressList addr;
   ASSERT_TRUE(test_server.GetAddressList(&addr));
 
-  TestCompletionCallback callback;
-  scoped_ptr<StreamSocket> real_transport(
-      new TCPClientSocket(addr, NULL, NetLog::Source()));
-  // Note: |error_socket|'s ownership is handed to |transport|, but a pointer
+  net::TestCompletionCallback callback;
+  scoped_ptr<net::StreamSocket> real_transport(new net::TCPClientSocket(
+      addr, NULL, net::NetLog::Source()));
+  // Note: |error_socket|'s ownership is handed to |transport|, but the pointer
   // is retained in order to configure additional errors.
-  scoped_ptr<SynchronousErrorStreamSocket> error_socket(
-      new SynchronousErrorStreamSocket(real_transport.Pass()));
-  SynchronousErrorStreamSocket* raw_error_socket = error_socket.get();
-  scoped_ptr<FakeBlockingStreamSocket> transport(
-      new FakeBlockingStreamSocket(error_socket.PassAs<StreamSocket>()));
-  FakeBlockingStreamSocket* raw_transport = transport.get();
+  SynchronousErrorStreamSocket* error_socket = new SynchronousErrorStreamSocket(
+      real_transport.Pass());
+  FakeBlockingStreamSocket* transport = new FakeBlockingStreamSocket(
+      scoped_ptr<net::StreamSocket>(error_socket));
 
   int rv = callback.GetResult(transport->Connect(callback.callback()));
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
 
   // Disable TLS False Start to avoid handshake non-determinism.
-  SSLConfig ssl_config;
+  net::SSLConfig ssl_config;
   ssl_config.false_start_enabled = false;
 
-  scoped_ptr<SSLClientSocket> sock =
-      CreateSSLClientSocket(transport.PassAs<StreamSocket>(),
-                            test_server.host_port_pair(),
-                            ssl_config);
+  net::SSLClientSocket* sock(
+      CreateSSLClientSocket(transport, test_server.host_port_pair(),
+                            ssl_config));
 
   rv = callback.GetResult(sock->Connect(callback.callback()));
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
   EXPECT_TRUE(sock->IsConnected());
 
   std::string request_text = "GET / HTTP/1.1\r\nUser-Agent: long browser name ";
   request_text.append(20 * 1024, '*');
   request_text.append("\r\n\r\n");
-  scoped_refptr<DrainableIOBuffer> request_buffer(new DrainableIOBuffer(
-      new StringIOBuffer(request_text), request_text.size()));
+  scoped_refptr<net::DrainableIOBuffer> request_buffer(
+      new net::DrainableIOBuffer(new net::StringIOBuffer(request_text),
+                                 request_text.size()));
 
   // Simulate errors being returned from the underlying Read() and Write() ...
-  raw_error_socket->SetNextReadError(ERR_CONNECTION_RESET);
-  raw_error_socket->SetNextWriteError(ERR_CONNECTION_RESET);
+  error_socket->SetNextReadError(net::ERR_CONNECTION_RESET);
+  error_socket->SetNextWriteError(net::ERR_CONNECTION_RESET);
   // ... but have those errors returned asynchronously. Because the Write() will
   // return first, this will trigger the error.
-  raw_transport->SetNextReadShouldBlock();
-  raw_transport->SetNextWriteShouldBlock();
+  transport->SetNextReadShouldBlock();
+  transport->SetNextWriteShouldBlock();
 
   // Enqueue a Read() before calling Write(), which should "hang" due to
   // the ERR_IO_PENDING caused by SetReadShouldBlock() and thus return.
-  SSLClientSocket* raw_sock = sock.get();
-  DeleteSocketCallback read_callback(sock.release());
-  scoped_refptr<IOBuffer> read_buf(new IOBuffer(4096));
-  rv = raw_sock->Read(read_buf.get(), 4096, read_callback.callback());
+  DeleteSocketCallback read_callback(sock);
+  scoped_refptr<net::IOBuffer> read_buf(new net::IOBuffer(4096));
+  rv = sock->Read(read_buf.get(), 4096, read_callback.callback());
 
   // Ensure things didn't complete synchronously, otherwise |sock| is invalid.
-  ASSERT_EQ(ERR_IO_PENDING, rv);
+  ASSERT_EQ(net::ERR_IO_PENDING, rv);
   ASSERT_FALSE(read_callback.have_result());
 
 #if !defined(USE_OPENSSL)
@@ -1131,9 +1142,9 @@ TEST_F(SSLClientSocketTest, Read_DeleteWhilePendingFullDuplex) {
   // SSLClientSocketOpenSSL::Write() will not return until all of
   // |request_buffer| has been written to the underlying BIO (although not
   // necessarily the underlying transport).
-  rv = callback.GetResult(raw_sock->Write(request_buffer.get(),
-                                          request_buffer->BytesRemaining(),
-                                          callback.callback()));
+  rv = callback.GetResult(sock->Write(request_buffer.get(),
+                                      request_buffer->BytesRemaining(),
+                                      callback.callback()));
   ASSERT_LT(0, rv);
   request_buffer->DidConsume(rv);
 
@@ -1146,22 +1157,22 @@ TEST_F(SSLClientSocketTest, Read_DeleteWhilePendingFullDuplex) {
   // Attempt to write the remaining data. NSS will not be able to consume the
   // application data because the internal buffers are full, while OpenSSL will
   // return that its blocked because the underlying transport is blocked.
-  rv = raw_sock->Write(request_buffer.get(),
-                       request_buffer->BytesRemaining(),
-                       callback.callback());
-  ASSERT_EQ(ERR_IO_PENDING, rv);
+  rv = sock->Write(request_buffer.get(),
+                   request_buffer->BytesRemaining(),
+                   callback.callback());
+  ASSERT_EQ(net::ERR_IO_PENDING, rv);
   ASSERT_FALSE(callback.have_result());
 
   // Now unblock Write(), which will invoke OnSendComplete and (eventually)
   // call the Read() callback, deleting the socket and thus aborting calling
   // the Write() callback.
-  raw_transport->UnblockWrite();
+  transport->UnblockWrite();
 
   rv = read_callback.WaitForResult();
 
 #if !defined(USE_OPENSSL)
   // NSS records the error exactly.
-  EXPECT_EQ(ERR_CONNECTION_RESET, rv);
+  EXPECT_EQ(net::ERR_CONNECTION_RESET, rv);
 #else
   // OpenSSL treats any errors as a simple EOF.
   EXPECT_EQ(0, rv);
@@ -1172,49 +1183,50 @@ TEST_F(SSLClientSocketTest, Read_DeleteWhilePendingFullDuplex) {
 }
 
 TEST_F(SSLClientSocketTest, Read_SmallChunks) {
-  SpawnedTestServer test_server(SpawnedTestServer::TYPE_HTTPS,
-                                SpawnedTestServer::kLocalhost,
-                                base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
-  AddressList addr;
+  net::AddressList addr;
   ASSERT_TRUE(test_server.GetAddressList(&addr));
 
-  TestCompletionCallback callback;
-  scoped_ptr<StreamSocket> transport(
-      new TCPClientSocket(addr, NULL, NetLog::Source()));
+  net::TestCompletionCallback callback;
+  net::StreamSocket* transport = new net::TCPClientSocket(
+      addr, NULL, net::NetLog::Source());
   int rv = transport->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
 
-  scoped_ptr<SSLClientSocket> sock(CreateSSLClientSocket(
-      transport.Pass(), test_server.host_port_pair(), kDefaultSSLConfig));
+  scoped_ptr<net::SSLClientSocket> sock(
+      CreateSSLClientSocket(transport, test_server.host_port_pair(),
+                            kDefaultSSLConfig));
 
   rv = sock->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
 
   const char request_text[] = "GET / HTTP/1.0\r\n\r\n";
-  scoped_refptr<IOBuffer> request_buffer(
-      new IOBuffer(arraysize(request_text) - 1));
+  scoped_refptr<net::IOBuffer> request_buffer(
+      new net::IOBuffer(arraysize(request_text) - 1));
   memcpy(request_buffer->data(), request_text, arraysize(request_text) - 1);
 
   rv = sock->Write(
       request_buffer.get(), arraysize(request_text) - 1, callback.callback());
-  EXPECT_TRUE(rv >= 0 || rv == ERR_IO_PENDING);
+  EXPECT_TRUE(rv >= 0 || rv == net::ERR_IO_PENDING);
 
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
   EXPECT_EQ(static_cast<int>(arraysize(request_text) - 1), rv);
 
-  scoped_refptr<IOBuffer> buf(new IOBuffer(1));
+  scoped_refptr<net::IOBuffer> buf(new net::IOBuffer(1));
   for (;;) {
     rv = sock->Read(buf.get(), 1, callback.callback());
-    EXPECT_TRUE(rv >= 0 || rv == ERR_IO_PENDING);
+    EXPECT_TRUE(rv >= 0 || rv == net::ERR_IO_PENDING);
 
-    if (rv == ERR_IO_PENDING)
+    if (rv == net::ERR_IO_PENDING)
       rv = callback.WaitForResult();
 
     EXPECT_GE(rv, 0);
@@ -1224,36 +1236,34 @@ TEST_F(SSLClientSocketTest, Read_SmallChunks) {
 }
 
 TEST_F(SSLClientSocketTest, Read_ManySmallRecords) {
-  SpawnedTestServer test_server(SpawnedTestServer::TYPE_HTTPS,
-                                SpawnedTestServer::kLocalhost,
-                                base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
-  AddressList addr;
+  net::AddressList addr;
   ASSERT_TRUE(test_server.GetAddressList(&addr));
 
-  TestCompletionCallback callback;
+  net::TestCompletionCallback callback;
 
-  scoped_ptr<StreamSocket> real_transport(
-      new TCPClientSocket(addr, NULL, NetLog::Source()));
-  scoped_ptr<ReadBufferingStreamSocket> transport(
-      new ReadBufferingStreamSocket(real_transport.Pass()));
-  ReadBufferingStreamSocket* raw_transport = transport.get();
+  scoped_ptr<net::StreamSocket> real_transport(new net::TCPClientSocket(
+      addr, NULL, net::NetLog::Source()));
+  ReadBufferingStreamSocket* transport = new ReadBufferingStreamSocket(
+      real_transport.Pass());
   int rv = callback.GetResult(transport->Connect(callback.callback()));
-  ASSERT_EQ(OK, rv);
+  ASSERT_EQ(net::OK, rv);
 
-  scoped_ptr<SSLClientSocket> sock(
-      CreateSSLClientSocket(transport.PassAs<StreamSocket>(),
-                            test_server.host_port_pair(),
+  scoped_ptr<net::SSLClientSocket> sock(
+      CreateSSLClientSocket(transport, test_server.host_port_pair(),
                             kDefaultSSLConfig));
 
   rv = callback.GetResult(sock->Connect(callback.callback()));
-  ASSERT_EQ(OK, rv);
+  ASSERT_EQ(net::OK, rv);
   ASSERT_TRUE(sock->IsConnected());
 
   const char request_text[] = "GET /ssl-many-small-records HTTP/1.0\r\n\r\n";
-  scoped_refptr<IOBuffer> request_buffer(
-      new IOBuffer(arraysize(request_text) - 1));
+  scoped_refptr<net::IOBuffer> request_buffer(
+      new net::IOBuffer(arraysize(request_text) - 1));
   memcpy(request_buffer->data(), request_text, arraysize(request_text) - 1);
 
   rv = callback.GetResult(sock->Write(
@@ -1270,114 +1280,117 @@ TEST_F(SSLClientSocketTest, Read_ManySmallRecords) {
   // 15K was chosen because 15K is smaller than the 17K (max) read issued by
   // the SSLClientSocket implementation, and larger than the minimum amount
   // of ciphertext necessary to contain the 8K of plaintext requested below.
-  raw_transport->SetBufferSize(15000);
+  transport->SetBufferSize(15000);
 
-  scoped_refptr<IOBuffer> buffer(new IOBuffer(8192));
+  scoped_refptr<net::IOBuffer> buffer(new net::IOBuffer(8192));
   rv = callback.GetResult(sock->Read(buffer.get(), 8192, callback.callback()));
   ASSERT_EQ(rv, 8192);
 }
 
 TEST_F(SSLClientSocketTest, Read_Interrupted) {
-  SpawnedTestServer test_server(SpawnedTestServer::TYPE_HTTPS,
-                                SpawnedTestServer::kLocalhost,
-                                base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
-  AddressList addr;
+  net::AddressList addr;
   ASSERT_TRUE(test_server.GetAddressList(&addr));
 
-  TestCompletionCallback callback;
-  scoped_ptr<StreamSocket> transport(
-      new TCPClientSocket(addr, NULL, NetLog::Source()));
+  net::TestCompletionCallback callback;
+  net::StreamSocket* transport = new net::TCPClientSocket(
+      addr, NULL, net::NetLog::Source());
   int rv = transport->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
 
-  scoped_ptr<SSLClientSocket> sock(CreateSSLClientSocket(
-      transport.Pass(), test_server.host_port_pair(), kDefaultSSLConfig));
+  scoped_ptr<net::SSLClientSocket> sock(
+      CreateSSLClientSocket(transport, test_server.host_port_pair(),
+                            kDefaultSSLConfig));
 
   rv = sock->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
 
   const char request_text[] = "GET / HTTP/1.0\r\n\r\n";
-  scoped_refptr<IOBuffer> request_buffer(
-      new IOBuffer(arraysize(request_text) - 1));
+  scoped_refptr<net::IOBuffer> request_buffer(
+      new net::IOBuffer(arraysize(request_text) - 1));
   memcpy(request_buffer->data(), request_text, arraysize(request_text) - 1);
 
   rv = sock->Write(
       request_buffer.get(), arraysize(request_text) - 1, callback.callback());
-  EXPECT_TRUE(rv >= 0 || rv == ERR_IO_PENDING);
+  EXPECT_TRUE(rv >= 0 || rv == net::ERR_IO_PENDING);
 
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
   EXPECT_EQ(static_cast<int>(arraysize(request_text) - 1), rv);
 
   // Do a partial read and then exit.  This test should not crash!
-  scoped_refptr<IOBuffer> buf(new IOBuffer(512));
+  scoped_refptr<net::IOBuffer> buf(new net::IOBuffer(512));
   rv = sock->Read(buf.get(), 512, callback.callback());
-  EXPECT_TRUE(rv > 0 || rv == ERR_IO_PENDING);
+  EXPECT_TRUE(rv > 0 || rv == net::ERR_IO_PENDING);
 
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
 
   EXPECT_GT(rv, 0);
 }
 
 TEST_F(SSLClientSocketTest, Read_FullLogging) {
-  SpawnedTestServer test_server(SpawnedTestServer::TYPE_HTTPS,
-                                SpawnedTestServer::kLocalhost,
-                                base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
-  AddressList addr;
+  net::AddressList addr;
   ASSERT_TRUE(test_server.GetAddressList(&addr));
 
-  TestCompletionCallback callback;
-  CapturingNetLog log;
-  log.SetLogLevel(NetLog::LOG_ALL);
-  scoped_ptr<StreamSocket> transport(
-      new TCPClientSocket(addr, &log, NetLog::Source()));
+  net::TestCompletionCallback callback;
+  net::CapturingNetLog log;
+  log.SetLogLevel(net::NetLog::LOG_ALL);
+  net::StreamSocket* transport = new net::TCPClientSocket(
+      addr, &log, net::NetLog::Source());
   int rv = transport->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
 
-  scoped_ptr<SSLClientSocket> sock(CreateSSLClientSocket(
-      transport.Pass(), test_server.host_port_pair(), kDefaultSSLConfig));
+  scoped_ptr<net::SSLClientSocket> sock(
+      CreateSSLClientSocket(transport, test_server.host_port_pair(),
+                            kDefaultSSLConfig));
 
   rv = sock->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
   EXPECT_TRUE(sock->IsConnected());
 
   const char request_text[] = "GET / HTTP/1.0\r\n\r\n";
-  scoped_refptr<IOBuffer> request_buffer(
-      new IOBuffer(arraysize(request_text) - 1));
+  scoped_refptr<net::IOBuffer> request_buffer(
+      new net::IOBuffer(arraysize(request_text) - 1));
   memcpy(request_buffer->data(), request_text, arraysize(request_text) - 1);
 
   rv = sock->Write(
       request_buffer.get(), arraysize(request_text) - 1, callback.callback());
-  EXPECT_TRUE(rv >= 0 || rv == ERR_IO_PENDING);
+  EXPECT_TRUE(rv >= 0 || rv == net::ERR_IO_PENDING);
 
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
   EXPECT_EQ(static_cast<int>(arraysize(request_text) - 1), rv);
 
-  CapturingNetLog::CapturedEntryList entries;
+  net::CapturingNetLog::CapturedEntryList entries;
   log.GetEntries(&entries);
-  size_t last_index = ExpectLogContainsSomewhereAfter(
-      entries, 5, NetLog::TYPE_SSL_SOCKET_BYTES_SENT, NetLog::PHASE_NONE);
+  size_t last_index = net::ExpectLogContainsSomewhereAfter(
+      entries, 5, net::NetLog::TYPE_SSL_SOCKET_BYTES_SENT,
+      net::NetLog::PHASE_NONE);
 
-  scoped_refptr<IOBuffer> buf(new IOBuffer(4096));
+  scoped_refptr<net::IOBuffer> buf(new net::IOBuffer(4096));
   for (;;) {
     rv = sock->Read(buf.get(), 4096, callback.callback());
-    EXPECT_TRUE(rv >= 0 || rv == ERR_IO_PENDING);
+    EXPECT_TRUE(rv >= 0 || rv == net::ERR_IO_PENDING);
 
-    if (rv == ERR_IO_PENDING)
+    if (rv == net::ERR_IO_PENDING)
       rv = callback.WaitForResult();
 
     EXPECT_GE(rv, 0);
@@ -1385,59 +1398,61 @@ TEST_F(SSLClientSocketTest, Read_FullLogging) {
       break;
 
     log.GetEntries(&entries);
-    last_index =
-        ExpectLogContainsSomewhereAfter(entries,
-                                        last_index + 1,
-                                        NetLog::TYPE_SSL_SOCKET_BYTES_RECEIVED,
-                                        NetLog::PHASE_NONE);
+    last_index = net::ExpectLogContainsSomewhereAfter(
+        entries, last_index + 1, net::NetLog::TYPE_SSL_SOCKET_BYTES_RECEIVED,
+        net::NetLog::PHASE_NONE);
   }
 }
 
 // Regression test for http://crbug.com/42538
 TEST_F(SSLClientSocketTest, PrematureApplicationData) {
-  SpawnedTestServer test_server(SpawnedTestServer::TYPE_HTTPS,
-                                SpawnedTestServer::kLocalhost,
-                                base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
-  AddressList addr;
-  TestCompletionCallback callback;
+  net::AddressList addr;
+  net::TestCompletionCallback callback;
 
   static const unsigned char application_data[] = {
-      0x17, 0x03, 0x01, 0x00, 0x4a, 0x02, 0x00, 0x00, 0x46, 0x03, 0x01, 0x4b,
-      0xc2, 0xf8, 0xb2, 0xc1, 0x56, 0x42, 0xb9, 0x57, 0x7f, 0xde, 0x87, 0x46,
-      0xf7, 0xa3, 0x52, 0x42, 0x21, 0xf0, 0x13, 0x1c, 0x9c, 0x83, 0x88, 0xd6,
-      0x93, 0x0c, 0xf6, 0x36, 0x30, 0x05, 0x7e, 0x20, 0xb5, 0xb5, 0x73, 0x36,
-      0x53, 0x83, 0x0a, 0xfc, 0x17, 0x63, 0xbf, 0xa0, 0xe4, 0x42, 0x90, 0x0d,
-      0x2f, 0x18, 0x6d, 0x20, 0xd8, 0x36, 0x3f, 0xfc, 0xe6, 0x01, 0xfa, 0x0f,
-      0xa5, 0x75, 0x7f, 0x09, 0x00, 0x04, 0x00, 0x16, 0x03, 0x01, 0x11, 0x57,
-      0x0b, 0x00, 0x11, 0x53, 0x00, 0x11, 0x50, 0x00, 0x06, 0x22, 0x30, 0x82,
-      0x06, 0x1e, 0x30, 0x82, 0x05, 0x06, 0xa0, 0x03, 0x02, 0x01, 0x02, 0x02,
-      0x0a};
+    0x17, 0x03, 0x01, 0x00, 0x4a, 0x02, 0x00, 0x00, 0x46, 0x03, 0x01, 0x4b,
+    0xc2, 0xf8, 0xb2, 0xc1, 0x56, 0x42, 0xb9, 0x57, 0x7f, 0xde, 0x87, 0x46,
+    0xf7, 0xa3, 0x52, 0x42, 0x21, 0xf0, 0x13, 0x1c, 0x9c, 0x83, 0x88, 0xd6,
+    0x93, 0x0c, 0xf6, 0x36, 0x30, 0x05, 0x7e, 0x20, 0xb5, 0xb5, 0x73, 0x36,
+    0x53, 0x83, 0x0a, 0xfc, 0x17, 0x63, 0xbf, 0xa0, 0xe4, 0x42, 0x90, 0x0d,
+    0x2f, 0x18, 0x6d, 0x20, 0xd8, 0x36, 0x3f, 0xfc, 0xe6, 0x01, 0xfa, 0x0f,
+    0xa5, 0x75, 0x7f, 0x09, 0x00, 0x04, 0x00, 0x16, 0x03, 0x01, 0x11, 0x57,
+    0x0b, 0x00, 0x11, 0x53, 0x00, 0x11, 0x50, 0x00, 0x06, 0x22, 0x30, 0x82,
+    0x06, 0x1e, 0x30, 0x82, 0x05, 0x06, 0xa0, 0x03, 0x02, 0x01, 0x02, 0x02,
+    0x0a
+  };
 
   // All reads and writes complete synchronously (async=false).
-  MockRead data_reads[] = {
-      MockRead(SYNCHRONOUS,
-               reinterpret_cast<const char*>(application_data),
-               arraysize(application_data)),
-      MockRead(SYNCHRONOUS, OK), };
+  net::MockRead data_reads[] = {
+    net::MockRead(net::SYNCHRONOUS,
+                  reinterpret_cast<const char*>(application_data),
+                  arraysize(application_data)),
+    net::MockRead(net::SYNCHRONOUS, net::OK),
+  };
 
-  StaticSocketDataProvider data(data_reads, arraysize(data_reads), NULL, 0);
+  net::StaticSocketDataProvider data(data_reads, arraysize(data_reads),
+                                     NULL, 0);
 
-  scoped_ptr<StreamSocket> transport(
-      new MockTCPClientSocket(addr, NULL, &data));
+  net::StreamSocket* transport =
+      new net::MockTCPClientSocket(addr, NULL, &data);
   int rv = transport->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
 
-  scoped_ptr<SSLClientSocket> sock(CreateSSLClientSocket(
-      transport.Pass(), test_server.host_port_pair(), kDefaultSSLConfig));
+  scoped_ptr<net::SSLClientSocket> sock(
+      CreateSSLClientSocket(transport, test_server.host_port_pair(),
+                            kDefaultSSLConfig));
 
   rv = sock->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(ERR_SSL_PROTOCOL_ERROR, rv);
+  EXPECT_EQ(net::ERR_SSL_PROTOCOL_ERROR, rv);
 }
 
 TEST_F(SSLClientSocketTest, CipherSuiteDisables) {
@@ -1445,41 +1460,46 @@ TEST_F(SSLClientSocketTest, CipherSuiteDisables) {
   // http://www.iana.org/assignments/tls-parameters/tls-parameters.xml,
   // only disabling those cipher suites that the test server actually
   // implements.
-  const uint16 kCiphersToDisable[] = {0x0005,  // TLS_RSA_WITH_RC4_128_SHA
+  const uint16 kCiphersToDisable[] = {
+    0x0005,  // TLS_RSA_WITH_RC4_128_SHA
   };
 
-  SpawnedTestServer::SSLOptions ssl_options;
+  net::SpawnedTestServer::SSLOptions ssl_options;
   // Enable only RC4 on the test server.
-  ssl_options.bulk_ciphers = SpawnedTestServer::SSLOptions::BULK_CIPHER_RC4;
-  SpawnedTestServer test_server(
-      SpawnedTestServer::TYPE_HTTPS, ssl_options, base::FilePath());
+  ssl_options.bulk_ciphers =
+      net::SpawnedTestServer::SSLOptions::BULK_CIPHER_RC4;
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     ssl_options,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
-  AddressList addr;
+  net::AddressList addr;
   ASSERT_TRUE(test_server.GetAddressList(&addr));
 
-  TestCompletionCallback callback;
-  CapturingNetLog log;
-  scoped_ptr<StreamSocket> transport(
-      new TCPClientSocket(addr, &log, NetLog::Source()));
+  net::TestCompletionCallback callback;
+  net::CapturingNetLog log;
+  net::StreamSocket* transport = new net::TCPClientSocket(
+      addr, &log, net::NetLog::Source());
   int rv = transport->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
 
-  SSLConfig ssl_config;
+  net::SSLConfig ssl_config;
   for (size_t i = 0; i < arraysize(kCiphersToDisable); ++i)
     ssl_config.disabled_cipher_suites.push_back(kCiphersToDisable[i]);
 
-  scoped_ptr<SSLClientSocket> sock(CreateSSLClientSocket(
-      transport.Pass(), test_server.host_port_pair(), ssl_config));
+  scoped_ptr<net::SSLClientSocket> sock(
+      CreateSSLClientSocket(transport, test_server.host_port_pair(),
+                            ssl_config));
 
   EXPECT_FALSE(sock->IsConnected());
 
   rv = sock->Connect(callback.callback());
-  CapturingNetLog::CapturedEntryList entries;
+  net::CapturingNetLog::CapturedEntryList entries;
   log.GetEntries(&entries);
-  EXPECT_TRUE(LogContainsBeginEvent(entries, 5, NetLog::TYPE_SSL_CONNECT));
+  EXPECT_TRUE(net::LogContainsBeginEvent(
+      entries, 5, net::NetLog::TYPE_SSL_CONNECT));
 
   // NSS has special handling that maps a handshake_failure alert received
   // immediately after a client_hello to be a mismatched cipher suite error,
@@ -1487,16 +1507,17 @@ TEST_F(SSLClientSocketTest, CipherSuiteDisables) {
   // Secure Transport (OS X), the handshake_failure is bubbled up without any
   // interpretation, leading to ERR_SSL_PROTOCOL_ERROR. Either way, a failure
   // indicates that no cipher suite was negotiated with the test server.
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_TRUE(rv == ERR_SSL_VERSION_OR_CIPHER_MISMATCH ||
-              rv == ERR_SSL_PROTOCOL_ERROR);
+  EXPECT_TRUE(rv == net::ERR_SSL_VERSION_OR_CIPHER_MISMATCH ||
+              rv == net::ERR_SSL_PROTOCOL_ERROR);
   // The exact ordering differs between SSLClientSocketNSS (which issues an
   // extra read) and SSLClientSocketMac (which does not). Just make sure the
   // error appears somewhere in the log.
   log.GetEntries(&entries);
-  ExpectLogContainsSomewhere(
-      entries, 0, NetLog::TYPE_SSL_HANDSHAKE_ERROR, NetLog::PHASE_NONE);
+  net::ExpectLogContainsSomewhere(entries, 0,
+                                  net::NetLog::TYPE_SSL_HANDSHAKE_ERROR,
+                                  net::NetLog::PHASE_NONE);
 
   // We cannot test sock->IsConnected(), as the NSS implementation disconnects
   // the socket when it encounters an error, whereas other implementations
@@ -1518,65 +1539,65 @@ TEST_F(SSLClientSocketTest, CipherSuiteDisables) {
 // Here we verify that such a simple ClientSocketHandle, not associated with any
 // client socket pool, can be destroyed safely.
 TEST_F(SSLClientSocketTest, ClientSocketHandleNotFromPool) {
-  SpawnedTestServer test_server(SpawnedTestServer::TYPE_HTTPS,
-                                SpawnedTestServer::kLocalhost,
-                                base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
-  AddressList addr;
+  net::AddressList addr;
   ASSERT_TRUE(test_server.GetAddressList(&addr));
 
-  TestCompletionCallback callback;
-  scoped_ptr<StreamSocket> transport(
-      new TCPClientSocket(addr, NULL, NetLog::Source()));
+  net::TestCompletionCallback callback;
+  net::StreamSocket* transport = new net::TCPClientSocket(
+      addr, NULL, net::NetLog::Source());
   int rv = transport->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
 
-  scoped_ptr<ClientSocketHandle> socket_handle(new ClientSocketHandle());
-  socket_handle->SetSocket(transport.Pass());
+  net::ClientSocketHandle* socket_handle = new net::ClientSocketHandle();
+  socket_handle->set_socket(transport);
 
-  scoped_ptr<SSLClientSocket> sock(
-      socket_factory_->CreateSSLClientSocket(socket_handle.Pass(),
-                                             test_server.host_port_pair(),
-                                             kDefaultSSLConfig,
-                                             context_));
+  scoped_ptr<net::SSLClientSocket> sock(
+      socket_factory_->CreateSSLClientSocket(
+          socket_handle, test_server.host_port_pair(), kDefaultSSLConfig,
+          context_));
 
   EXPECT_FALSE(sock->IsConnected());
   rv = sock->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
 }
 
 // Verifies that SSLClientSocket::ExportKeyingMaterial return a success
 // code and different keying label results in different keying material.
 TEST_F(SSLClientSocketTest, ExportKeyingMaterial) {
-  SpawnedTestServer test_server(SpawnedTestServer::TYPE_HTTPS,
-                                SpawnedTestServer::kLocalhost,
-                                base::FilePath());
+  net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                     net::SpawnedTestServer::kLocalhost,
+                                     base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
-  AddressList addr;
+  net::AddressList addr;
   ASSERT_TRUE(test_server.GetAddressList(&addr));
 
-  TestCompletionCallback callback;
+  net::TestCompletionCallback callback;
 
-  scoped_ptr<StreamSocket> transport(
-      new TCPClientSocket(addr, NULL, NetLog::Source()));
+  net::StreamSocket* transport = new net::TCPClientSocket(
+      addr, NULL, net::NetLog::Source());
   int rv = transport->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
 
-  scoped_ptr<SSLClientSocket> sock(CreateSSLClientSocket(
-      transport.Pass(), test_server.host_port_pair(), kDefaultSSLConfig));
+  scoped_ptr<net::SSLClientSocket> sock(
+      CreateSSLClientSocket(transport, test_server.host_port_pair(),
+                            kDefaultSSLConfig));
 
   rv = sock->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
   EXPECT_TRUE(sock->IsConnected());
 
   const int kKeyingMaterialSize = 32;
@@ -1584,23 +1605,23 @@ TEST_F(SSLClientSocketTest, ExportKeyingMaterial) {
   const char* kKeyingContext = "";
   unsigned char client_out1[kKeyingMaterialSize];
   memset(client_out1, 0, sizeof(client_out1));
-  rv = sock->ExportKeyingMaterial(
-      kKeyingLabel1, false, kKeyingContext, client_out1, sizeof(client_out1));
-  EXPECT_EQ(rv, OK);
+  rv = sock->ExportKeyingMaterial(kKeyingLabel1, false, kKeyingContext,
+                                  client_out1, sizeof(client_out1));
+  EXPECT_EQ(rv, net::OK);
 
   const char* kKeyingLabel2 = "client-socket-test-2";
   unsigned char client_out2[kKeyingMaterialSize];
   memset(client_out2, 0, sizeof(client_out2));
-  rv = sock->ExportKeyingMaterial(
-      kKeyingLabel2, false, kKeyingContext, client_out2, sizeof(client_out2));
-  EXPECT_EQ(rv, OK);
+  rv = sock->ExportKeyingMaterial(kKeyingLabel2, false, kKeyingContext,
+                                  client_out2, sizeof(client_out2));
+  EXPECT_EQ(rv, net::OK);
   EXPECT_NE(memcmp(client_out1, client_out2, kKeyingMaterialSize), 0);
 }
 
 // Verifies that SSLClientSocket::ClearSessionCache can be called without
 // explicit NSS initialization.
 TEST(SSLClientSocket, ClearSessionCache) {
-  SSLClientSocket::ClearSessionCache();
+  net::SSLClientSocket::ClearSessionCache();
 }
 
 // This tests that SSLInfo contains a properly re-constructed certificate
@@ -1618,84 +1639,86 @@ TEST(SSLClientSocket, ClearSessionCache) {
 TEST_F(SSLClientSocketTest, VerifyReturnChainProperlyOrdered) {
   // By default, cause the CertVerifier to treat all certificates as
   // expired.
-  cert_verifier_->set_default_result(ERR_CERT_DATE_INVALID);
+  cert_verifier_->set_default_result(net::ERR_CERT_DATE_INVALID);
 
   // We will expect SSLInfo to ultimately contain this chain.
-  CertificateList certs =
-      CreateCertificateListFromFile(GetTestCertsDirectory(),
-                                    "redundant-validated-chain.pem",
-                                    X509Certificate::FORMAT_AUTO);
+  net::CertificateList certs = CreateCertificateListFromFile(
+      net::GetTestCertsDirectory(), "redundant-validated-chain.pem",
+      net::X509Certificate::FORMAT_AUTO);
   ASSERT_EQ(3U, certs.size());
 
-  X509Certificate::OSCertHandles temp_intermediates;
+  net::X509Certificate::OSCertHandles temp_intermediates;
   temp_intermediates.push_back(certs[1]->os_cert_handle());
   temp_intermediates.push_back(certs[2]->os_cert_handle());
 
-  CertVerifyResult verify_result;
-  verify_result.verified_cert = X509Certificate::CreateFromHandle(
-      certs[0]->os_cert_handle(), temp_intermediates);
+  net::CertVerifyResult verify_result;
+  verify_result.verified_cert =
+      net::X509Certificate::CreateFromHandle(certs[0]->os_cert_handle(),
+                                             temp_intermediates);
 
   // Add a rule that maps the server cert (A) to the chain of A->B->C2
   // rather than A->B->C.
-  cert_verifier_->AddResultForCert(certs[0].get(), verify_result, OK);
+  cert_verifier_->AddResultForCert(certs[0].get(), verify_result, net::OK);
 
   // Load and install the root for the validated chain.
-  scoped_refptr<X509Certificate> root_cert = ImportCertFromFile(
-      GetTestCertsDirectory(), "redundant-validated-chain-root.pem");
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), root_cert);
-  ScopedTestRoot scoped_root(root_cert.get());
+  scoped_refptr<net::X509Certificate> root_cert =
+    net::ImportCertFromFile(net::GetTestCertsDirectory(),
+                           "redundant-validated-chain-root.pem");
+  ASSERT_NE(static_cast<net::X509Certificate*>(NULL), root_cert);
+  net::ScopedTestRoot scoped_root(root_cert.get());
 
   // Set up a test server with CERT_CHAIN_WRONG_ROOT.
-  SpawnedTestServer::SSLOptions ssl_options(
-      SpawnedTestServer::SSLOptions::CERT_CHAIN_WRONG_ROOT);
-  SpawnedTestServer test_server(
-      SpawnedTestServer::TYPE_HTTPS,
-      ssl_options,
+  net::SpawnedTestServer::SSLOptions ssl_options(
+      net::SpawnedTestServer::SSLOptions::CERT_CHAIN_WRONG_ROOT);
+  net::SpawnedTestServer test_server(
+      net::SpawnedTestServer::TYPE_HTTPS, ssl_options,
       base::FilePath(FILE_PATH_LITERAL("net/data/ssl")));
   ASSERT_TRUE(test_server.Start());
 
-  AddressList addr;
+  net::AddressList addr;
   ASSERT_TRUE(test_server.GetAddressList(&addr));
 
-  TestCompletionCallback callback;
-  CapturingNetLog log;
-  scoped_ptr<StreamSocket> transport(
-      new TCPClientSocket(addr, &log, NetLog::Source()));
+  net::TestCompletionCallback callback;
+  net::CapturingNetLog log;
+  net::StreamSocket* transport = new net::TCPClientSocket(
+      addr, &log, net::NetLog::Source());
   int rv = transport->Connect(callback.callback());
-  if (rv == ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
 
-  scoped_ptr<SSLClientSocket> sock(CreateSSLClientSocket(
-      transport.Pass(), test_server.host_port_pair(), kDefaultSSLConfig));
+  scoped_ptr<net::SSLClientSocket> sock(
+      CreateSSLClientSocket(transport, test_server.host_port_pair(),
+                            kDefaultSSLConfig));
   EXPECT_FALSE(sock->IsConnected());
   rv = sock->Connect(callback.callback());
 
-  CapturingNetLog::CapturedEntryList entries;
+  net::CapturingNetLog::CapturedEntryList entries;
   log.GetEntries(&entries);
-  EXPECT_TRUE(LogContainsBeginEvent(entries, 5, NetLog::TYPE_SSL_CONNECT));
-  if (rv == ERR_IO_PENDING)
+  EXPECT_TRUE(net::LogContainsBeginEvent(
+      entries, 5, net::NetLog::TYPE_SSL_CONNECT));
+  if (rv == net::ERR_IO_PENDING)
     rv = callback.WaitForResult();
 
-  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(net::OK, rv);
   EXPECT_TRUE(sock->IsConnected());
   log.GetEntries(&entries);
   EXPECT_TRUE(LogContainsSSLConnectEndEvent(entries, -1));
 
-  SSLInfo ssl_info;
+  net::SSLInfo ssl_info;
   sock->GetSSLInfo(&ssl_info);
 
   // Verify that SSLInfo contains the corrected re-constructed chain A -> B
   // -> C2.
-  const X509Certificate::OSCertHandles& intermediates =
+  const net::X509Certificate::OSCertHandles& intermediates =
       ssl_info.cert->GetIntermediateCertificates();
   ASSERT_EQ(2U, intermediates.size());
-  EXPECT_TRUE(X509Certificate::IsSameOSCert(ssl_info.cert->os_cert_handle(),
-                                            certs[0]->os_cert_handle()));
-  EXPECT_TRUE(X509Certificate::IsSameOSCert(intermediates[0],
-                                            certs[1]->os_cert_handle()));
-  EXPECT_TRUE(X509Certificate::IsSameOSCert(intermediates[1],
-                                            certs[2]->os_cert_handle()));
+  EXPECT_TRUE(net::X509Certificate::IsSameOSCert(
+      ssl_info.cert->os_cert_handle(), certs[0]->os_cert_handle()));
+  EXPECT_TRUE(net::X509Certificate::IsSameOSCert(
+      intermediates[0], certs[1]->os_cert_handle()));
+  EXPECT_TRUE(net::X509Certificate::IsSameOSCert(
+      intermediates[1], certs[2]->os_cert_handle()));
 
   sock->Disconnect();
   EXPECT_FALSE(sock->IsConnected());
@@ -1706,34 +1729,37 @@ class SSLClientSocketCertRequestInfoTest : public SSLClientSocketTest {
  protected:
   // Creates a test server with the given SSLOptions, connects to it and returns
   // the SSLCertRequestInfo reported by the socket.
-  scoped_refptr<SSLCertRequestInfo> GetCertRequest(
-      SpawnedTestServer::SSLOptions ssl_options) {
-    SpawnedTestServer test_server(
-        SpawnedTestServer::TYPE_HTTPS, ssl_options, base::FilePath());
+  scoped_refptr<net::SSLCertRequestInfo> GetCertRequest(
+      net::SpawnedTestServer::SSLOptions ssl_options) {
+    net::SpawnedTestServer test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                       ssl_options,
+                                       base::FilePath());
     if (!test_server.Start())
       return NULL;
 
-    AddressList addr;
+    net::AddressList addr;
     if (!test_server.GetAddressList(&addr))
       return NULL;
 
-    TestCompletionCallback callback;
-    CapturingNetLog log;
-    scoped_ptr<StreamSocket> transport(
-        new TCPClientSocket(addr, &log, NetLog::Source()));
+    net::TestCompletionCallback callback;
+    net::CapturingNetLog log;
+    net::StreamSocket* transport = new net::TCPClientSocket(
+        addr, &log, net::NetLog::Source());
     int rv = transport->Connect(callback.callback());
-    if (rv == ERR_IO_PENDING)
+    if (rv == net::ERR_IO_PENDING)
       rv = callback.WaitForResult();
-    EXPECT_EQ(OK, rv);
+    EXPECT_EQ(net::OK, rv);
 
-    scoped_ptr<SSLClientSocket> sock(CreateSSLClientSocket(
-        transport.Pass(), test_server.host_port_pair(), kDefaultSSLConfig));
+    scoped_ptr<net::SSLClientSocket> sock(
+        CreateSSLClientSocket(transport, test_server.host_port_pair(),
+                              kDefaultSSLConfig));
     EXPECT_FALSE(sock->IsConnected());
 
     rv = sock->Connect(callback.callback());
-    if (rv == ERR_IO_PENDING)
+    if (rv == net::ERR_IO_PENDING)
       rv = callback.WaitForResult();
-    scoped_refptr<SSLCertRequestInfo> request_info = new SSLCertRequestInfo();
+    scoped_refptr<net::SSLCertRequestInfo> request_info =
+        new net::SSLCertRequestInfo();
     sock->GetSSLCertRequestInfo(request_info.get());
     sock->Disconnect();
     EXPECT_FALSE(sock->IsConnected());
@@ -1743,9 +1769,10 @@ class SSLClientSocketCertRequestInfoTest : public SSLClientSocketTest {
 };
 
 TEST_F(SSLClientSocketCertRequestInfoTest, NoAuthorities) {
-  SpawnedTestServer::SSLOptions ssl_options;
+  net::SpawnedTestServer::SSLOptions ssl_options;
   ssl_options.request_client_certificate = true;
-  scoped_refptr<SSLCertRequestInfo> request_info = GetCertRequest(ssl_options);
+  scoped_refptr<net::SSLCertRequestInfo> request_info =
+      GetCertRequest(ssl_options);
   ASSERT_TRUE(request_info.get());
   EXPECT_EQ(0u, request_info->cert_authorities.size());
 }
@@ -1754,36 +1781,39 @@ TEST_F(SSLClientSocketCertRequestInfoTest, TwoAuthorities) {
   const base::FilePath::CharType kThawteFile[] =
       FILE_PATH_LITERAL("thawte.single.pem");
   const unsigned char kThawteDN[] = {
-      0x30, 0x4c, 0x31, 0x0b, 0x30, 0x09, 0x06, 0x03, 0x55, 0x04, 0x06, 0x13,
-      0x02, 0x5a, 0x41, 0x31, 0x25, 0x30, 0x23, 0x06, 0x03, 0x55, 0x04, 0x0a,
-      0x13, 0x1c, 0x54, 0x68, 0x61, 0x77, 0x74, 0x65, 0x20, 0x43, 0x6f, 0x6e,
-      0x73, 0x75, 0x6c, 0x74, 0x69, 0x6e, 0x67, 0x20, 0x28, 0x50, 0x74, 0x79,
-      0x29, 0x20, 0x4c, 0x74, 0x64, 0x2e, 0x31, 0x16, 0x30, 0x14, 0x06, 0x03,
-      0x55, 0x04, 0x03, 0x13, 0x0d, 0x54, 0x68, 0x61, 0x77, 0x74, 0x65, 0x20,
-      0x53, 0x47, 0x43, 0x20, 0x43, 0x41};
+    0x30, 0x4c, 0x31, 0x0b, 0x30, 0x09, 0x06, 0x03, 0x55, 0x04, 0x06, 0x13,
+    0x02, 0x5a, 0x41, 0x31, 0x25, 0x30, 0x23, 0x06, 0x03, 0x55, 0x04, 0x0a,
+    0x13, 0x1c, 0x54, 0x68, 0x61, 0x77, 0x74, 0x65, 0x20, 0x43, 0x6f, 0x6e,
+    0x73, 0x75, 0x6c, 0x74, 0x69, 0x6e, 0x67, 0x20, 0x28, 0x50, 0x74, 0x79,
+    0x29, 0x20, 0x4c, 0x74, 0x64, 0x2e, 0x31, 0x16, 0x30, 0x14, 0x06, 0x03,
+    0x55, 0x04, 0x03, 0x13, 0x0d, 0x54, 0x68, 0x61, 0x77, 0x74, 0x65, 0x20,
+    0x53, 0x47, 0x43, 0x20, 0x43, 0x41
+  };
   const size_t kThawteLen = sizeof(kThawteDN);
 
   const base::FilePath::CharType kDiginotarFile[] =
       FILE_PATH_LITERAL("diginotar_root_ca.pem");
   const unsigned char kDiginotarDN[] = {
-      0x30, 0x5f, 0x31, 0x0b, 0x30, 0x09, 0x06, 0x03, 0x55, 0x04, 0x06, 0x13,
-      0x02, 0x4e, 0x4c, 0x31, 0x12, 0x30, 0x10, 0x06, 0x03, 0x55, 0x04, 0x0a,
-      0x13, 0x09, 0x44, 0x69, 0x67, 0x69, 0x4e, 0x6f, 0x74, 0x61, 0x72, 0x31,
-      0x1a, 0x30, 0x18, 0x06, 0x03, 0x55, 0x04, 0x03, 0x13, 0x11, 0x44, 0x69,
-      0x67, 0x69, 0x4e, 0x6f, 0x74, 0x61, 0x72, 0x20, 0x52, 0x6f, 0x6f, 0x74,
-      0x20, 0x43, 0x41, 0x31, 0x20, 0x30, 0x1e, 0x06, 0x09, 0x2a, 0x86, 0x48,
-      0x86, 0xf7, 0x0d, 0x01, 0x09, 0x01, 0x16, 0x11, 0x69, 0x6e, 0x66, 0x6f,
-      0x40, 0x64, 0x69, 0x67, 0x69, 0x6e, 0x6f, 0x74, 0x61, 0x72, 0x2e, 0x6e,
-      0x6c};
+    0x30, 0x5f, 0x31, 0x0b, 0x30, 0x09, 0x06, 0x03, 0x55, 0x04, 0x06, 0x13,
+    0x02, 0x4e, 0x4c, 0x31, 0x12, 0x30, 0x10, 0x06, 0x03, 0x55, 0x04, 0x0a,
+    0x13, 0x09, 0x44, 0x69, 0x67, 0x69, 0x4e, 0x6f, 0x74, 0x61, 0x72, 0x31,
+    0x1a, 0x30, 0x18, 0x06, 0x03, 0x55, 0x04, 0x03, 0x13, 0x11, 0x44, 0x69,
+    0x67, 0x69, 0x4e, 0x6f, 0x74, 0x61, 0x72, 0x20, 0x52, 0x6f, 0x6f, 0x74,
+    0x20, 0x43, 0x41, 0x31, 0x20, 0x30, 0x1e, 0x06, 0x09, 0x2a, 0x86, 0x48,
+    0x86, 0xf7, 0x0d, 0x01, 0x09, 0x01, 0x16, 0x11, 0x69, 0x6e, 0x66, 0x6f,
+    0x40, 0x64, 0x69, 0x67, 0x69, 0x6e, 0x6f, 0x74, 0x61, 0x72, 0x2e, 0x6e,
+    0x6c
+  };
   const size_t kDiginotarLen = sizeof(kDiginotarDN);
 
-  SpawnedTestServer::SSLOptions ssl_options;
+  net::SpawnedTestServer::SSLOptions ssl_options;
   ssl_options.request_client_certificate = true;
   ssl_options.client_authorities.push_back(
-      GetTestClientCertsDirectory().Append(kThawteFile));
+      net::GetTestClientCertsDirectory().Append(kThawteFile));
   ssl_options.client_authorities.push_back(
-      GetTestClientCertsDirectory().Append(kDiginotarFile));
-  scoped_refptr<SSLCertRequestInfo> request_info = GetCertRequest(ssl_options);
+      net::GetTestClientCertsDirectory().Append(kDiginotarFile));
+  scoped_refptr<net::SSLCertRequestInfo> request_info =
+      GetCertRequest(ssl_options);
   ASSERT_TRUE(request_info.get());
   ASSERT_EQ(2u, request_info->cert_authorities.size());
   EXPECT_EQ(std::string(reinterpret_cast<const char*>(kThawteDN), kThawteLen),
@@ -1792,7 +1822,3 @@ TEST_F(SSLClientSocketCertRequestInfoTest, TwoAuthorities) {
       std::string(reinterpret_cast<const char*>(kDiginotarDN), kDiginotarLen),
       request_info->cert_authorities[1]);
 }
-
-}  // namespace
-
-}  // namespace net

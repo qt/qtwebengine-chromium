@@ -27,12 +27,12 @@
 #include "core/dom/Element.h"
 #include "core/dom/Event.h"
 #include "core/dom/EventSender.h"
-#include "core/fetch/FetchRequest.h"
-#include "core/fetch/ImageResource.h"
-#include "core/fetch/ResourceFetcher.h"
 #include "core/html/HTMLObjectElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/loader/CrossOriginAccessControl.h"
+#include "core/loader/cache/FetchRequest.h"
+#include "core/loader/cache/ImageResource.h"
+#include "core/loader/cache/ResourceFetcher.h"
 #include "core/page/Frame.h"
 #include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderVideo.h"
@@ -61,7 +61,8 @@ static ImageEventSender& errorEventSender()
 
 static inline bool pageIsBeingDismissed(Document* document)
 {
-    return document->pageDismissalEventBeingDispatched() != Document::NoDismissal;
+    Frame* frame = document->frame();
+    return frame && frame->loader()->pageDismissalEventBeingDispatched() != FrameLoader::NoDismissal;
 }
 
 ImageLoader::ImageLoader(Element* element)
@@ -394,7 +395,7 @@ void ImageLoader::dispatchPendingBeforeLoadEvent()
     m_hasPendingLoadEvent = false;
 
     if (m_element->hasTagName(HTMLNames::objectTag))
-        toHTMLObjectElement(m_element)->renderFallbackContent();
+        static_cast<HTMLObjectElement*>(m_element)->renderFallbackContent();
 
     // Only consider updating the protection ref-count of the Element immediately before returning
     // from this function as doing so might result in the destruction of this ImageLoader.

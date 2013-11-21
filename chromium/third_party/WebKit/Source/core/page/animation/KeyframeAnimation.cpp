@@ -108,7 +108,7 @@ void KeyframeAnimation::fetchIntervalEndpointsForProperty(CSSPropertyID property
     // Find keyframe that is closest to elapsed time.
     while (distance > 1) {
         currentIndex = (lastIndex + firstIndex) >> 1;
-        double key = m_keyframes[currentIndex].key();
+        float key = m_keyframes[currentIndex].key();
         distance = lastIndex - currentIndex;
 
         if (key < fractionalTime) {

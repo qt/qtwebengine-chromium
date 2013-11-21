@@ -37,6 +37,7 @@ import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
@@ -775,15 +776,6 @@ public abstract class ByteString implements Iterable<Byte> {
       flushLastBuffer();
       return ByteString.copyFrom(flushedBuffers);
     }
-    
-    /**
-     * Implement java.util.Arrays.copyOf() for jdk 1.5.
-     */
-    private byte[] copyArray(byte[] buffer, int length) {
-      byte[] result = new byte[length];
-      System.arraycopy(buffer, 0, result, 0, Math.min(buffer.length, length));
-      return result;
-    }
 
     /**
      * Writes the complete contents of this byte array output stream to
@@ -808,7 +800,7 @@ public abstract class ByteString implements Iterable<Byte> {
         byteString.writeTo(out);
       }
 
-      out.write(copyArray(cachedBuffer, cachedBufferPos));
+      out.write(Arrays.copyOf(cachedBuffer, cachedBufferPos));
     }
 
     /**
@@ -861,7 +853,7 @@ public abstract class ByteString implements Iterable<Byte> {
     private void flushLastBuffer()  {
       if (bufferPos < buffer.length) {
         if (bufferPos > 0) {
-          byte[] bufferCopy = copyArray(buffer, bufferPos);
+          byte[] bufferCopy = Arrays.copyOf(buffer, bufferPos);
           flushedBuffers.add(new LiteralByteString(bufferCopy));
         }
         // We reuse this buffer for further writes.

@@ -49,6 +49,8 @@
     'ext/lazy_pixel_ref_utils.cc',
     'ext/lazy_pixel_ref_utils.h',
     'ext/SkThread_chrome.cc',
+    'ext/opacity_draw_filter.cc',
+    'ext/opacity_draw_filter.h',
     'ext/paint_simplifier.cc',
     'ext/paint_simplifier.h',
     'ext/platform_canvas.cc',
@@ -88,7 +90,7 @@
         'ext/SkThread_chrome.cc',
       ],
     }],
-    [ 'OS == "android"', {
+    [ 'OS == "android" and enable_printing == 0', {
       'sources!': [
         'ext/vector_platform_device_skia.cc',
       ],

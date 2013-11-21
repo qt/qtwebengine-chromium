@@ -81,8 +81,6 @@ class HttpBasicStream : public HttpStream {
 
   virtual void Drain(HttpNetworkSession* session) OVERRIDE;
 
-  virtual void SetPriority(RequestPriority priority) OVERRIDE;
-
  private:
   scoped_refptr<GrowableIOBuffer> read_buf_;
 

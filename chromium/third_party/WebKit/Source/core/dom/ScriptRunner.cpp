@@ -30,7 +30,7 @@
 #include "core/dom/Element.h"
 #include "core/dom/PendingScript.h"
 #include "core/dom/ScriptLoader.h"
-#include "core/fetch/ScriptResource.h"
+#include "core/loader/cache/ScriptResource.h"
 
 namespace WebCore {
 

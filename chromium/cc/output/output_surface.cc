@@ -219,7 +219,7 @@ void OutputSurface::BeginFrame(const BeginFrameArgs& args) {
   }
 }
 
-base::TimeDelta OutputSurface::AlternateRetroactiveBeginFramePeriod() {
+base::TimeDelta OutputSurface::RetroactiveBeginFramePeriod() {
   return BeginFrameArgs::DefaultRetroactiveBeginFramePeriod();
 }
 
@@ -239,11 +239,9 @@ void OutputSurface::CheckForRetroactiveBeginFrame() {
   TRACE_EVENT0("cc", "OutputSurface::CheckForRetroactiveBeginFrame");
   check_for_retroactive_begin_frame_pending_ = false;
   base::TimeTicks now = base::TimeTicks::Now();
-  // TODO(brianderson): Remove the alternative deadline once we have better
-  // deadline estimations.
   base::TimeTicks alternative_deadline =
       skipped_begin_frame_args_.frame_time +
-      AlternateRetroactiveBeginFramePeriod();
+      RetroactiveBeginFramePeriod();
   if (now < skipped_begin_frame_args_.deadline ||
       now < alternative_deadline) {
     BeginFrame(skipped_begin_frame_args_);

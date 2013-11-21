@@ -23,16 +23,14 @@ class MEDIA_EXPORT MediaDrmBridge : public MediaKeys {
  public:
   virtual ~MediaDrmBridge();
 
-  // Returns a MediaDrmBridge instance if |scheme_uuid| is supported, or a NULL
+  // Returns a MediaDrmBridge instance if |uuid| is supported, or a NULL
   // pointer otherwise.
   static MediaDrmBridge* Create(int media_keys_id,
-                                const std::vector<uint8>& scheme_uuid,
+                                const std::vector<uint8>& uuid,
                                 MediaPlayerManager* manager);
 
-  // Checks whether MediaDRM is available.
+  // Checks whether DRM is available.
   static bool IsAvailable();
-
-  static bool RegisterMediaDrmBridge(JNIEnv* env);
 
   // MediaKeys implementations.
   virtual bool GenerateKeyRequest(const std::string& type,
@@ -43,15 +41,13 @@ class MEDIA_EXPORT MediaDrmBridge : public MediaKeys {
                       const std::string& session_id) OVERRIDE;
   virtual void CancelKeyRequest(const std::string& session_id) OVERRIDE;
 
+  // Drm related message was received.
+  void OnDrmEvent(JNIEnv* env, jobject, jstring session_id,
+                  jint event, jint extra, jstring data);
+
   // Called after we got the response for GenerateKeyRequest().
-  void OnKeyMessage(JNIEnv* env, jobject, jstring j_session_id,
+  void OnKeyMessage(JNIEnv* env, jobject, jstring session_id,
                     jbyteArray message, jstring destination_url);
-
-  // Called when key is added.
-  void OnKeyAdded(JNIEnv* env, jobject, jstring j_session_id);
-
-  // Called when error happens.
-  void OnKeyError(JNIEnv* env, jobject, jstring j_session_id);
 
   // Methods to create and release a MediaCrypto object.
   base::android::ScopedJavaLocalRef<jobject> GetMediaCrypto();
@@ -60,17 +56,14 @@ class MEDIA_EXPORT MediaDrmBridge : public MediaKeys {
 
  private:
   MediaDrmBridge(int media_keys_id,
-                 const std::vector<uint8>& scheme_uuid,
+                 const std::vector<uint8>& uuid,
                  MediaPlayerManager* manager);
 
-  // ID of the MediaKeys object.
+  // Id of the MediaKeys object.
   int media_keys_id_;
 
   // UUID of the key system.
-  std::vector<uint8> scheme_uuid_;
-
-  // Java MediaDrm instance.
-  base::android::ScopedJavaGlobalRef<jobject> j_media_drm_;
+  std::vector<uint8> uuid_;
 
   // Non-owned pointer.
   MediaPlayerManager* manager_;

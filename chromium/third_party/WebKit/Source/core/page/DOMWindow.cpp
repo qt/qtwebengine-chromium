@@ -70,7 +70,6 @@
 #include "core/page/Console.h"
 #include "core/page/CreateWindow.h"
 #include "core/page/DOMPoint.h"
-#include "core/page/DOMWindowLifecycleNotifier.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameTree.h"
@@ -639,20 +638,14 @@ Storage* DOMWindow::sessionStorage(ExceptionState& es) const
     if (!document)
         return 0;
 
-    String accessDeniedMessage = "Access to 'sessionStorage' is denied for this document.";
     if (!document->securityOrigin()->canAccessLocalStorage()) {
-        if (document->isSandboxed(SandboxOrigin))
-            es.throwDOMException(SecurityError, accessDeniedMessage + " The document is sandboxed and lacks the \"allow-same-origin\" flag.");
-        else if (document->url().protocolIs("data"))
-            es.throwDOMException(SecurityError, accessDeniedMessage + " Storage is disabled inside 'data:' URLs.");
-        else
-            es.throwDOMException(SecurityError, accessDeniedMessage);
+        es.throwDOMException(SecurityError);
         return 0;
     }
 
     if (m_sessionStorage) {
         if (!m_sessionStorage->area()->canAccessStorage(m_frame)) {
-            es.throwDOMException(SecurityError, accessDeniedMessage);
+            es.throwDOMException(SecurityError);
             return 0;
         }
         return m_sessionStorage.get();
@@ -664,7 +657,7 @@ Storage* DOMWindow::sessionStorage(ExceptionState& es) const
 
     OwnPtr<StorageArea> storageArea = page->sessionStorage()->storageArea(document->securityOrigin());
     if (!storageArea->canAccessStorage(m_frame)) {
-        es.throwDOMException(SecurityError, accessDeniedMessage);
+        es.throwDOMException(SecurityError);
         return 0;
     }
 
@@ -681,20 +674,14 @@ Storage* DOMWindow::localStorage(ExceptionState& es) const
     if (!document)
         return 0;
 
-    String accessDeniedMessage = "Access to 'localStorage' is denied for this document.";
     if (!document->securityOrigin()->canAccessLocalStorage()) {
-        if (document->isSandboxed(SandboxOrigin))
-            es.throwDOMException(SecurityError, accessDeniedMessage + " The document is sandboxed and lacks the \"allow-same-origin\" flag.");
-        else if (document->url().protocolIs("data"))
-            es.throwDOMException(SecurityError, accessDeniedMessage + " Storage is disabled inside 'data:' URLs.");
-        else
-            es.throwDOMException(SecurityError, accessDeniedMessage);
+        es.throwDOMException(SecurityError);
         return 0;
     }
 
     if (m_localStorage) {
         if (!m_localStorage->area()->canAccessStorage(m_frame)) {
-            es.throwDOMException(SecurityError, accessDeniedMessage);
+            es.throwDOMException(SecurityError);
             return 0;
         }
         return m_localStorage.get();
@@ -709,7 +696,7 @@ Storage* DOMWindow::localStorage(ExceptionState& es) const
 
     OwnPtr<StorageArea> storageArea = StorageNamespace::localStorageArea(document->securityOrigin());
     if (!storageArea->canAccessStorage(m_frame)) {
-        es.throwDOMException(SecurityError, accessDeniedMessage);
+        es.throwDOMException(SecurityError);
         return 0;
     }
 
@@ -736,7 +723,7 @@ void DOMWindow::postMessage(PassRefPtr<SerializedScriptValue> message, const Mes
         // It doesn't make sense target a postMessage at a unique origin
         // because there's no way to represent a unique origin in a string.
         if (target->isUnique()) {
-            es.throwDOMException(SyntaxError, "Invalid target origin '" + targetOrigin + "' in a call to 'postMessage'.");
+            es.throwDOMException(SyntaxError);
             return;
         }
     }
@@ -1254,7 +1241,11 @@ double DOMWindow::devicePixelRatio() const
     if (!m_frame)
         return 0.0;
 
-    return m_frame->devicePixelRatio();
+    Page* page = m_frame->page();
+    if (!page)
+        return 0.0;
+
+    return page->deviceScaleFactor();
 }
 
 void DOMWindow::scrollBy(int x, int y) const
@@ -1513,7 +1504,8 @@ void DOMWindow::removeAllEventListeners()
 {
     EventTarget::removeAllEventListeners();
 
-    lifecycleNotifier()->notifyRemoveAllEventListeners();
+    if (DeviceMotionController* controller = DeviceMotionController::from(document()))
+        controller->stopUpdating();
     if (DeviceOrientationController* controller = DeviceOrientationController::from(page()))
         controller->removeAllDeviceEventListeners(this);
     if (Document* document = this->document())
@@ -1736,16 +1728,6 @@ DOMWindow* DOMWindow::anonymousIndexedGetter(uint32_t index)
         return child->domWindow();
 
     return 0;
-}
-
-DOMWindowLifecycleNotifier* DOMWindow::lifecycleNotifier()
-{
-    return static_cast<DOMWindowLifecycleNotifier*>(LifecycleContext::lifecycleNotifier());
-}
-
-PassOwnPtr<LifecycleNotifier> DOMWindow::createLifecycleNotifier()
-{
-    return DOMWindowLifecycleNotifier::create(this);
 }
 
 

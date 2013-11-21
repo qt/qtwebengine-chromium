@@ -1030,33 +1030,6 @@ bool Node::containsIncludingHostElements(const Node* node) const
     return false;
 }
 
-inline void Node::detachNode(Node* root, const AttachContext& context)
-{
-    Node* node = root;
-    while (node) {
-        if (node->styleChangeType() == LazyAttachStyleChange) {
-            // FIXME: This is needed because Node::lazyAttach marks nodes as being attached even
-            // though they've never been through attach(). This allows us to avoid doing all the
-            // virtual calls to detach() and other associated work.
-            node->clearAttached();
-            node->clearChildNeedsStyleRecalc();
-
-            for (ShadowRoot* shadowRoot = node->youngestShadowRoot(); shadowRoot; shadowRoot = shadowRoot->olderShadowRoot())
-                detachNode(shadowRoot, context);
-
-            node = NodeTraversal::next(node, root);
-            continue;
-        }
-        // Handle normal reattaches from style recalc (ex. display type changes)
-        // or descendants of lazy attached nodes that got actually attached, for example,
-        // by innerHTML or editing.
-        // FIXME: innerHTML and editing should also lazyAttach.
-        if (node->attached())
-            node->detach(context);
-        node = NodeTraversal::nextSkippingChildren(node, root);
-    }
-}
-
 void Node::reattach(const AttachContext& context)
 {
     // FIXME: Text::updateTextRenderer calls reattach outside a style recalc.
@@ -1064,7 +1037,8 @@ void Node::reattach(const AttachContext& context)
     AttachContext reattachContext(context);
     reattachContext.performingReattach = true;
 
-    detachNode(this, reattachContext);
+    if (attached())
+        detach(reattachContext);
     attach(reattachContext);
 }
 
@@ -1136,7 +1110,7 @@ void Node::detach(const AttachContext& context)
         }
     }
 
-    clearAttached();
+    clearFlag(IsAttachedFlag);
 
 #ifndef NDEBUG
     detachingNode = 0;
@@ -2490,8 +2464,9 @@ void Node::defaultEventHandler(Event* event)
         if (dispatchDOMActivateEvent(detail, event))
             event->setDefaultHandled();
     } else if (eventType == eventNames().contextmenuEvent) {
-        if (Page* page = document()->page())
-            page->contextMenuController().handleContextMenuEvent(event);
+        if (Frame* frame = document()->frame())
+            if (Page* page = frame->page())
+                page->contextMenuController()->handleContextMenuEvent(event);
     } else if (eventType == eventNames().textInputEvent) {
         if (event->hasInterface(eventNames().interfaceForTextEvent))
             if (Frame* frame = document()->frame())
@@ -2648,14 +2623,15 @@ PassRefPtr<NodeList> Node::getDestinationInsertionPoints()
     document()->updateDistributionForNodeIfNeeded(this);
     Vector<InsertionPoint*, 8> insertionPoints;
     collectInsertionPointsWhereNodeIsDistributed(this, insertionPoints);
-    Vector<RefPtr<Node> > filteredInsertionPoints;
     for (size_t i = 0; i < insertionPoints.size(); ++i) {
         InsertionPoint* insertionPoint = insertionPoints[i];
         ASSERT(insertionPoint->containingShadowRoot());
-        if (insertionPoint->containingShadowRoot()->type() != ShadowRoot::UserAgentShadowRoot)
-            filteredInsertionPoints.append(insertionPoint);
+        if (insertionPoint->containingShadowRoot()->type() == ShadowRoot::UserAgentShadowRoot)
+            return StaticNodeList::createEmpty();
     }
-    return StaticNodeList::adopt(filteredInsertionPoints);
+    Vector<RefPtr<Node> > asNodes;
+    asNodes.appendRange(insertionPoints.begin(), insertionPoints.end());
+    return StaticNodeList::adopt(asNodes);
 }
 
 void Node::registerScopedHTMLStyleChild()

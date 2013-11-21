@@ -31,13 +31,13 @@
 #include "core/dom/NodeList.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Text.h"
-#include "core/fetch/ImageResource.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/HTMLMetaElement.h"
 #include "core/html/HTMLParamElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/loader/cache/ImageResource.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
@@ -450,7 +450,8 @@ bool HTMLObjectElement::containsJavaApplet() const
                 && equalIgnoringCase(child->getNameAttribute(), "type")
                 && MIMETypeRegistry::isJavaAppletMIMEType(child->getAttribute(valueAttr).string()))
             return true;
-        if (child->hasTagName(objectTag) && toHTMLObjectElement(child)->containsJavaApplet())
+        if (child->hasTagName(objectTag)
+                && static_cast<HTMLObjectElement*>(child)->containsJavaApplet())
             return true;
         if (child->hasTagName(appletTag))
             return true;

@@ -984,7 +984,7 @@ void WebFrameImpl::stopLoading()
     // FIXME: Figure out what we should really do here.  It seems like a bug
     // that FrameLoader::stopLoading doesn't call stopAllLoaders.
     frame()->loader()->stopAllLoaders();
-    frame()->loader()->stopLoading();
+    frame()->loader()->stopLoading(UnloadEventPolicyNone);
 }
 
 WebDataSource* WebFrameImpl::provisionalDataSource() const
@@ -1366,11 +1366,6 @@ void WebFrameImpl::moveCaretSelection(const WebPoint& point)
     VisiblePosition position = visiblePositionForWindowPoint(point);
     if (frame()->selection()->shouldChangeSelection(position))
         frame()->selection()->moveTo(position, UserTriggered);
-}
-
-void WebFrameImpl::setCaretVisible(bool visible)
-{
-    frame()->selection()->setCaretVisible(visible);
 }
 
 VisiblePosition WebFrameImpl::visiblePositionForWindowPoint(const WebPoint& point)

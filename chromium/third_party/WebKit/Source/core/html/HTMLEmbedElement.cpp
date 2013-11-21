@@ -183,7 +183,7 @@ bool HTMLEmbedElement::rendererIsNeeded(const NodeRenderingContext& context)
     ContainerNode* p = parentNode();
     if (p && p->hasTagName(objectTag)) {
         ASSERT(p->renderer());
-        if (!toHTMLObjectElement(p)->useFallbackContent()) {
+        if (!static_cast<HTMLObjectElement*>(p)->useFallbackContent()) {
             ASSERT(!p->renderer()->isEmbeddedObject());
             return false;
         }

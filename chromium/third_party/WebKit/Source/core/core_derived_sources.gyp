@@ -481,7 +481,7 @@
             'scripts/Hasher.pm',
             'scripts/StaticString.pm',
             'scripts/make_names.pl',
-            'fetch/FetchInitiatorTypeNames.in',
+            'loader/cache/FetchInitiatorTypeNames.in',
           ],
           'outputs': [
             '<(SHARED_INTERMEDIATE_DIR)/blink/FetchInitiatorTypeNames.cpp',

@@ -86,7 +86,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   // Wait for the navigation in the new window to finish, if it hasn't.
   WaitForLoadStop(new_shell->web_contents());
   EXPECT_EQ("/files/navigate_opener.html",
-            new_shell->web_contents()->GetLastCommittedURL().path());
+            new_shell->web_contents()->GetURL().path());
 
   // Should have the same SiteInstance.
   scoped_refptr<SiteInstance> blank_site_instance(
@@ -153,8 +153,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   // Wait for the window to open.
   Shell* new_shell = new_shell_observer.GetShell();
 
-  EXPECT_EQ("/files/title2.html",
-            new_shell->web_contents()->GetVisibleURL().path());
+  EXPECT_EQ("/files/title2.html", new_shell->web_contents()->GetURL().path());
 
   // Wait for the cross-site transition in the new tab to finish.
   WaitForLoadStop(new_shell->web_contents());
@@ -208,8 +207,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   Shell* new_shell = new_shell_observer.GetShell();
 
   // Opens in new window.
-  EXPECT_EQ("/files/title2.html",
-            new_shell->web_contents()->GetVisibleURL().path());
+  EXPECT_EQ("/files/title2.html", new_shell->web_contents()->GetURL().path());
 
   // Wait for the cross-site transition in the new tab to finish.
   WaitForLoadStop(new_shell->web_contents());
@@ -264,7 +262,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   // Wait for the cross-site transition in the new tab to finish.
   WaitForLoadStop(new_shell->web_contents());
   EXPECT_EQ("/files/title2.html",
-            new_shell->web_contents()->GetLastCommittedURL().path());
+            new_shell->web_contents()->GetURL().path());
 
   // Should have the same SiteInstance.
   scoped_refptr<SiteInstance> blank_site_instance(
@@ -310,8 +308,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
 
   // Opens in same window.
   EXPECT_EQ(1u, Shell::windows().size());
-  EXPECT_EQ("/files/title2.html",
-            shell()->web_contents()->GetLastCommittedURL().path());
+  EXPECT_EQ("/files/title2.html", shell()->web_contents()->GetURL().path());
 
   // Should have the same SiteInstance.
   scoped_refptr<SiteInstance> noref_site_instance(
@@ -379,7 +376,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   // Wait for the navigation in the new tab to finish, if it hasn't.
   WaitForLoadStop(new_shell->web_contents());
   EXPECT_EQ("/files/navigate_opener.html",
-            new_shell->web_contents()->GetLastCommittedURL().path());
+            new_shell->web_contents()->GetURL().path());
 
   // Should have the same SiteInstance.
   scoped_refptr<SiteInstance> blank_site_instance(
@@ -459,7 +456,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, DisownOpener) {
   // Wait for the navigation in the new tab to finish, if it hasn't.
   WaitForLoadStop(new_shell->web_contents());
   EXPECT_EQ("/files/title2.html",
-            new_shell->web_contents()->GetLastCommittedURL().path());
+            new_shell->web_contents()->GetURL().path());
 
   // Should have the same SiteInstance.
   scoped_refptr<SiteInstance> blank_site_instance(
@@ -565,8 +562,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   // send it to post_message.html on a different site.
   WebContents* foo_contents = new_shell->web_contents();
   WaitForLoadStop(foo_contents);
-  EXPECT_EQ("/files/navigate_opener.html",
-            foo_contents->GetLastCommittedURL().path());
+  EXPECT_EQ("/files/navigate_opener.html", foo_contents->GetURL().path());
   NavigateToURL(new_shell, https_server.GetURL("files/post_message.html"));
   scoped_refptr<SiteInstance> foo_site_instance(
       foo_contents->GetSiteInstance());
@@ -585,7 +581,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   Shell* new_shell2 = new_shell_observer2.GetShell();
   WebContents* new_contents = new_shell2->web_contents();
   WaitForLoadStop(new_contents);
-  EXPECT_EQ("/files/title2.html", new_contents->GetLastCommittedURL().path());
+  EXPECT_EQ("/files/title2.html", new_contents->GetURL().path());
   NavigateToURL(new_shell2, test_server()->GetURL("files/post_message.html"));
   EXPECT_EQ(orig_site_instance, new_contents->GetSiteInstance());
   RenderViewHostManager* new_manager =
@@ -702,7 +698,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   // Wait for the navigation in the new window to finish, if it hasn't.
   WaitForLoadStop(new_shell->web_contents());
   EXPECT_EQ("/files/navigate_opener.html",
-            new_shell->web_contents()->GetLastCommittedURL().path());
+            new_shell->web_contents()->GetURL().path());
 
   // Should have the same SiteInstance.
   scoped_refptr<SiteInstance> blank_site_instance(
@@ -769,7 +765,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   // Wait for the navigation in the new window to finish, if it hasn't.
   WaitForLoadStop(new_shell->web_contents());
   EXPECT_EQ("/files/navigate_opener.html",
-            new_shell->web_contents()->GetLastCommittedURL().path());
+            new_shell->web_contents()->GetURL().path());
 
   // Should have the same SiteInstance.
   scoped_refptr<SiteInstance> opened_site_instance(
@@ -833,8 +829,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, ClickLinkAfter204Error) {
   scoped_refptr<SiteInstance> post_nav_site_instance(
       shell()->web_contents()->GetSiteInstance());
   EXPECT_EQ(orig_site_instance, post_nav_site_instance);
-  EXPECT_EQ("/nocontent",
-            shell()->web_contents()->GetVisibleURL().path());
+  EXPECT_EQ("/nocontent", shell()->web_contents()->GetURL().path());
   EXPECT_EQ("/files/click-noreferrer-links.html",
             shell()->web_contents()->GetController().
                 GetLastCommittedEntry()->GetVirtualURL().path());
@@ -852,8 +847,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, ClickLinkAfter204Error) {
 
   // Opens in same tab.
   EXPECT_EQ(1u, Shell::windows().size());
-  EXPECT_EQ("/files/title2.html",
-            shell()->web_contents()->GetLastCommittedURL().path());
+  EXPECT_EQ("/files/title2.html", shell()->web_contents()->GetURL().path());
 
   // Should have the same SiteInstance.
   scoped_refptr<SiteInstance> noref_site_instance(
@@ -1079,7 +1073,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   // Wait for the navigation in the new tab to finish, if it hasn't.
   WaitForLoadStop(new_shell->web_contents());
   EXPECT_EQ("/files/navigate_opener.html",
-            new_shell->web_contents()->GetLastCommittedURL().path());
+            new_shell->web_contents()->GetURL().path());
 
   RenderViewHost* rvh = new_shell->web_contents()->GetRenderViewHost();
 
@@ -1110,7 +1104,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   }
 
   EXPECT_EQ("/files/navigate_opener.html",
-            new_shell->web_contents()->GetLastCommittedURL().path());
+            new_shell->web_contents()->GetURL().path());
 
   EXPECT_EQ(rvh, new_shell->web_contents()->GetRenderViewHost());
 
@@ -1193,7 +1187,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, LeakingRenderViewHosts) {
   // view-source URL, we create a new SiteInstance.
   RenderViewHost* blank_rvh = shell()->web_contents()->GetRenderViewHost();
   SiteInstance* blank_site_instance = blank_rvh->GetSiteInstance();
-  EXPECT_EQ(shell()->web_contents()->GetLastCommittedURL(), GURL::EmptyGURL());
+  EXPECT_EQ(shell()->web_contents()->GetURL(), GURL::EmptyGURL());
   EXPECT_EQ(blank_site_instance->GetSiteURL(), GURL::EmptyGURL());
   rvh_observers.AddObserverToRVH(blank_rvh);
 
@@ -1275,7 +1269,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   // Wait for the navigation in the new window to finish, if it hasn't.
   WaitForLoadStop(new_shell->web_contents());
   EXPECT_EQ("/files/title1.html",
-            new_shell->web_contents()->GetLastCommittedURL().path());
+            new_shell->web_contents()->GetURL().path());
 
   // Should have the same SiteInstance.
   EXPECT_EQ(orig_site_instance, new_shell->web_contents()->GetSiteInstance());
@@ -1292,7 +1286,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   // Make sure it ends up at the right page.
   WaitForLoadStop(shell()->web_contents());
   EXPECT_EQ(https_server.GetURL("files/title1.html"),
-            shell()->web_contents()->GetLastCommittedURL());
+            shell()->web_contents()->GetURL());
   EXPECT_EQ(new_site_instance, shell()->web_contents()->GetSiteInstance());
 }
 

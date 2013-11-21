@@ -362,8 +362,11 @@ void Plan::ResumeDelayedJobs(Edge* edge) {
 void Plan::EdgeFinished(Edge* edge) {
   map<Edge*, bool>::iterator i = want_.find(edge);
   assert(i != want_.end());
-  if (i->second)
+  if (i->second) {
     --wanted_edges_;
+    if (!edge->is_phony())
+      --command_edges_;
+  }
   want_.erase(i);
   edge->outputs_ready_ = true;
 
@@ -422,24 +425,22 @@ void Plan::CleanNode(DependencyScan* scan, Node* node) {
       }
       string command = (*ei)->EvaluateCommand(true);
 
-      // Now, recompute the dirty state of each output.
-      bool all_outputs_clean = true;
+      // Now, this edge is dirty if any of the outputs are dirty.
+      bool dirty = false;
       for (vector<Node*>::iterator ni = (*ei)->outputs_.begin();
-           ni != (*ei)->outputs_.end(); ++ni) {
-        if (!(*ni)->dirty())
-          continue;
-
-        if (scan->RecomputeOutputDirty(*ei, most_recent_input, 0,
-                                       command, *ni)) {
-          (*ni)->MarkDirty();
-          all_outputs_clean = false;
-        } else {
-          CleanNode(scan, *ni);
-        }
+           !dirty && ni != (*ei)->outputs_.end(); ++ni) {
+        dirty = scan->RecomputeOutputDirty(*ei, most_recent_input, 0,
+                                           command, *ni);
       }
 
-      // If we cleaned all outputs, mark the node as not wanted.
-      if (all_outputs_clean) {
+      // If the edge isn't dirty, clean the outputs and mark the edge as not
+      // wanted.
+      if (!dirty) {
+        for (vector<Node*>::iterator ni = (*ei)->outputs_.begin();
+             ni != (*ei)->outputs_.end(); ++ni) {
+          CleanNode(scan, *ni);
+        }
+
         want_i->second = false;
         --wanted_edges_;
         if (!(*ei)->is_phony())
@@ -641,7 +642,10 @@ bool Builder::Build(string* err) {
       }
 
       --pending_commands;
-      FinishCommand(&result);
+      if (!FinishCommand(&result, err)) {
+        status_->BuildFinished();
+        return false;
+      }
 
       if (!result.success()) {
         if (failures_allowed)
@@ -704,7 +708,7 @@ bool Builder::StartEdge(Edge* edge, string* err) {
   return true;
 }
 
-void Builder::FinishCommand(CommandRunner::Result* result) {
+bool Builder::FinishCommand(CommandRunner::Result* result, string* err) {
   METRIC_RECORD("FinishCommand");
 
   Edge* edge = result->edge;
@@ -733,7 +737,7 @@ void Builder::FinishCommand(CommandRunner::Result* result) {
 
   // The rest of this function only applies to successful commands.
   if (!result->success())
-    return;
+    return true;
 
   // Restat the edge outputs, if necessary.
   TimeStamp restat_mtime = 0;
@@ -763,7 +767,7 @@ void Builder::FinishCommand(CommandRunner::Result* result) {
       }
 
       string depfile = edge->GetBinding("depfile");
-      if (restat_mtime != 0 && !depfile.empty()) {
+      if (restat_mtime != 0 && deps_type.empty() && !depfile.empty()) {
         TimeStamp depfile_mtime = disk_interface_->Stat(depfile);
         if (depfile_mtime > restat_mtime)
           restat_mtime = depfile_mtime;
@@ -783,17 +787,23 @@ void Builder::FinishCommand(CommandRunner::Result* result) {
     disk_interface_->RemoveFile(rspfile);
 
   if (scan_.build_log()) {
-    scan_.build_log()->RecordCommand(edge, start_time, end_time,
-                                     restat_mtime);
+    if (!scan_.build_log()->RecordCommand(edge, start_time, end_time,
+                                          restat_mtime)) {
+      *err = string("Error writing to build log: ") + strerror(errno);
+      return false;
+    }
   }
 
   if (!deps_type.empty() && !config_.dry_run) {
     assert(edge->outputs_.size() == 1 && "should have been rejected by parser");
     Node* out = edge->outputs_[0];
     TimeStamp deps_mtime = disk_interface_->Stat(out->path());
-    scan_.deps_log()->RecordDeps(out, deps_mtime, deps_nodes);
+    if (!scan_.deps_log()->RecordDeps(out, deps_mtime, deps_nodes)) {
+      *err = string("Error writing to deps log: ") + strerror(errno);
+      return false;
+    }
   }
-
+  return true;
 }
 
 bool Builder::ExtractDeps(CommandRunner::Result* result,

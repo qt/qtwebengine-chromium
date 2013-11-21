@@ -77,8 +77,8 @@ base::StringPiece FakeSSLClientSocket::GetSslServerHello() {
 }
 
 FakeSSLClientSocket::FakeSSLClientSocket(
-    scoped_ptr<net::StreamSocket> transport_socket)
-    : transport_socket_(transport_socket.Pass()),
+    net::StreamSocket* transport_socket)
+    : transport_socket_(transport_socket),
       next_handshake_state_(STATE_NONE),
       handshake_completed_(false),
       write_buf_(NewDrainableIOBufferWithSize(arraysize(kSslClientHello))),

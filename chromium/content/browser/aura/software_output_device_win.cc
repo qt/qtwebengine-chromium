@@ -11,7 +11,6 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/canvas_skia_paint.h"
 #include "ui/gfx/gdi_util.h"
-#include "ui/gfx/skia_util.h"
 
 namespace content {
 
@@ -97,14 +96,6 @@ void SoftwareOutputDeviceWin::EndPaint(cc::SoftwareFrameData* frame_data) {
                        &bitmap_info_);
     ::ReleaseDC(hwnd_, hdc);
   }
-}
-
-void SoftwareOutputDeviceWin::CopyToBitmap(
-    gfx::Rect rect, SkBitmap* output) {
-  DCHECK(contents_);
-  SkDevice* device = contents_->sk_canvas()->getDevice();
-  const SkBitmap& bitmap = device->accessBitmap(false);
-  bitmap.extractSubset(output, gfx::RectToSkIRect(rect));
 }
 
 }  // namespace content

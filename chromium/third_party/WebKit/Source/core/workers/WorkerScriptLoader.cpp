@@ -26,6 +26,7 @@
  */
 
 #include "config.h"
+
 #include "core/workers/WorkerScriptLoader.h"
 
 #include "core/dom/ScriptExecutionContext.h"
@@ -35,9 +36,9 @@
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerScriptLoaderClient.h"
 
-#include "wtf/OwnPtr.h"
-#include "wtf/RefPtr.h"
-#include "wtf/UnusedParam.h"
+#include <wtf/OwnPtr.h>
+#include <wtf/RefPtr.h>
+#include <wtf/UnusedParam.h>
 
 namespace WebCore {
 

@@ -51,7 +51,6 @@
 #include "core/css/StyleSheetList.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Attr.h"
-#include "core/dom/BeforeUnloadEvent.h"
 #include "core/dom/CDATASection.h"
 #include "core/dom/Comment.h"
 #include "core/dom/ContextFeatures.h"
@@ -98,7 +97,6 @@
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
-#include "core/fetch/ResourceFetcher.h"
 #include "core/html/FormController.h"
 #include "core/html/HTMLAllCollection.h"
 #include "core/html/HTMLAnchorElement.h"
@@ -110,7 +108,6 @@
 #include "core/html/HTMLHtmlElement.h"
 #include "core/html/HTMLIFrameElement.h"
 #include "core/html/HTMLImport.h"
-#include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLLinkElement.h"
 #include "core/html/HTMLNameCollection.h"
 #include "core/html/HTMLScriptElement.h"
@@ -131,6 +128,7 @@
 #include "core/loader/Prerenderer.h"
 #include "core/loader/TextResourceDecoder.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
+#include "core/loader/cache/ResourceFetcher.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/ContentSecurityPolicy.h"
@@ -146,6 +144,7 @@
 #include "core/page/PageConsole.h"
 #include "core/page/PointerLockController.h"
 #include "core/page/Settings.h"
+#include "core/page/ValidationMessageClient.h"
 #include "core/page/animation/AnimationController.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
 #include "core/platform/DateComponents.h"
@@ -436,7 +435,6 @@ Document::Document(const DocumentInit& initializer, DocumentClassFlags documentC
     , m_referrerPolicy(ReferrerPolicyDefault)
     , m_directionSetOnDocumentElement(false)
     , m_writingModeSetOnDocumentElement(false)
-    , m_didAllowNavigationViaBeforeUnloadConfirmationPanel(false)
     , m_writeRecursionIsTooDeep(false)
     , m_writeRecursionDepth(0)
     , m_wheelEventHandlerCount(0)
@@ -1088,11 +1086,8 @@ void Document::setReadyState(ReadyState readyState)
             m_documentTiming.domLoading = monotonicallyIncreasingTime();
         break;
     case Interactive:
-        if (!m_documentTiming.domInteractive) {
+        if (!m_documentTiming.domInteractive)
             m_documentTiming.domInteractive = monotonicallyIncreasingTime();
-            if (RuntimeEnabledFeatures::webAnimationsEnabled())
-                m_timeline->setZeroTimeAsPerfTime(m_documentTiming.domInteractive);
-        }
         break;
     case Complete:
         if (!m_documentTiming.domComplete)
@@ -1298,7 +1293,6 @@ void Document::updateTitle(const StringWithDirection& title)
 
     m_rawTitle = title;
 
-    StringWithDirection oldTitle = m_title;
     if (m_rawTitle.string().isEmpty())
         m_title = StringWithDirection();
     else {
@@ -1307,11 +1301,8 @@ void Document::updateTitle(const StringWithDirection& title)
         else
             m_title = canonicalizedTitle<UChar>(this, m_rawTitle);
     }
-
-    if (!m_frame || oldTitle == m_title)
-        return;
-    m_frame->loader()->history()->setCurrentItemTitle(m_title);
-    m_frame->loader()->client()->dispatchDidReceiveTitle(m_title);
+    if (Frame* f = frame())
+        f->loader()->setTitle(m_title);
 }
 
 void Document::setTitle(const String& title)
@@ -1680,10 +1671,8 @@ void Document::recalcStyle(StyleChange change)
         m_inStyleRecalc = false;
 
         // Pseudo element removal and similar may only work with these flags still set. Reset them after the style recalc.
-        if (m_styleResolver) {
+        if (m_styleResolver)
             m_styleSheetCollection->resetCSSFeatureFlags(m_styleResolver->ruleFeatureSet());
-            m_styleResolver->clearStyleSharingList();
-        }
 
         if (frameView) {
             frameView->resumeScheduledEvents();
@@ -1899,8 +1888,11 @@ void Document::detach(const AttachContext& context)
 {
     ASSERT(attached());
 
-    if (page())
-        page()->documentDetached(this);
+    if (page()) {
+        page()->pointerLockController()->documentDetached(this);
+        if (ValidationMessageClient* client = page()->validationMessageClient())
+            client->documentDetached(*this);
+    }
 
     if (this == topDocument())
         clearAXObjectCache();
@@ -2330,95 +2322,6 @@ void Document::implicitClose()
         accessSVGExtensions()->startAnimations();
 }
 
-bool Document::dispatchBeforeUnloadEvent(Chrome& chrome, Document* navigatingDocument)
-{
-    if (!m_domWindow)
-        return true;
-
-    if (!body())
-        return true;
-
-    RefPtr<Document> protect(this);
-
-    RefPtr<BeforeUnloadEvent> beforeUnloadEvent = BeforeUnloadEvent::create();
-    m_loadEventProgress = BeforeUnloadEventInProgress;
-    dispatchWindowEvent(beforeUnloadEvent.get(), this);
-    m_loadEventProgress = BeforeUnloadEventCompleted;
-    if (!beforeUnloadEvent->defaultPrevented())
-        defaultEventHandler(beforeUnloadEvent.get());
-    if (beforeUnloadEvent->result().isNull())
-        return true;
-
-    if (navigatingDocument->m_didAllowNavigationViaBeforeUnloadConfirmationPanel) {
-        addConsoleMessage(JSMessageSource, ErrorMessageLevel, "Blocked attempt to show multiple 'beforeunload' confirmation panels for a single navigation.");
-        return true;
-    }
-
-    String text = displayStringModifiedByEncoding(beforeUnloadEvent->result());
-    if (chrome.runBeforeUnloadConfirmPanel(text, m_frame)) {
-        navigatingDocument->m_didAllowNavigationViaBeforeUnloadConfirmationPanel = true;
-        return true;
-    }
-    return false;
-}
-
-void Document::dispatchUnloadEvents()
-{
-    RefPtr<Document> protect(this);
-    if (m_parser)
-        m_parser->stopParsing();
-
-    if (m_loadEventProgress >= LoadEventTried && m_loadEventProgress <= UnloadEventInProgress) {
-        Element* currentFocusedElement = focusedElement();
-        if (currentFocusedElement && currentFocusedElement->hasTagName(inputTag))
-            toHTMLInputElement(currentFocusedElement)->endEditing();
-        if (m_loadEventProgress < PageHideInProgress) {
-            m_loadEventProgress = PageHideInProgress;
-            dispatchWindowEvent(PageTransitionEvent::create(eventNames().pagehideEvent, false), this);
-            if (!m_frame)
-                return;
-
-            // The DocumentLoader (and thus its DocumentLoadTiming) might get destroyed
-            // while dispatching the event, so protect it to prevent writing the end
-            // time into freed memory.
-            RefPtr<DocumentLoader> documentLoader =  m_frame->loader()->provisionalDocumentLoader();
-            m_loadEventProgress = UnloadEventInProgress;
-            RefPtr<Event> unloadEvent(Event::create(eventNames().unloadEvent, false, false));
-            if (documentLoader && !documentLoader->timing()->unloadEventStart() && !documentLoader->timing()->unloadEventEnd()) {
-                DocumentLoadTiming* timing = documentLoader->timing();
-                ASSERT(timing->navigationStart());
-                timing->markUnloadEventStart();
-                dispatchWindowEvent(unloadEvent, this);
-                timing->markUnloadEventEnd();
-            } else {
-                m_frame->domWindow()->dispatchEvent(unloadEvent, m_frame->document());
-            }
-        }
-        updateStyleIfNeeded();
-        m_loadEventProgress = UnloadEventHandled;
-    }
-
-    if (!m_frame)
-        return;
-
-    // Don't remove event listeners from a transitional empty document (see https://bugs.webkit.org/show_bug.cgi?id=28716 for more information).
-    bool keepEventListeners = m_frame->loader()->stateMachine()->isDisplayingInitialEmptyDocument() && m_frame->loader()->provisionalDocumentLoader()
-        && isSecureTransitionTo(m_frame->loader()->provisionalDocumentLoader()->url());
-    if (!keepEventListeners)
-        removeAllEventListeners();
-}
-
-Document::PageDismissalType Document::pageDismissalEventBeingDispatched() const
-{
-    if (m_loadEventProgress == BeforeUnloadEventInProgress)
-        return BeforeUnloadDismissal;
-    if (m_loadEventProgress == PageHideInProgress)
-        return PageHideDismissal;
-    if (m_loadEventProgress == UnloadEventInProgress)
-        return UnloadDismissal;
-    return NoDismissal;
-}
-
 void Document::setParsing(bool b)
 {
     m_bParsing = b;
@@ -2710,7 +2613,6 @@ Frame* Document::findUnsafeParentScrollPropagationBoundary()
 
 void Document::seamlessParentUpdatedStylesheets()
 {
-    m_styleSheetCollection->didModifySeamlessParentStyleSheet();
     styleResolverChanged(RecalcStyleImmediately);
 }
 
@@ -4730,18 +4632,18 @@ void Document::webkitExitPointerLock()
 {
     if (!page())
         return;
-    if (Element* target = page()->pointerLockController().element()) {
+    if (Element* target = page()->pointerLockController()->element()) {
         if (target->document() != this)
             return;
     }
-    page()->pointerLockController().requestPointerUnlock();
+    page()->pointerLockController()->requestPointerUnlock();
 }
 
 Element* Document::webkitPointerLockElement() const
 {
-    if (!page() || page()->pointerLockController().lockPending())
+    if (!page() || page()->pointerLockController()->lockPending())
         return 0;
-    if (Element* element = page()->pointerLockController().element()) {
+    if (Element* element = page()->pointerLockController()->element()) {
         if (element->document() == this)
             return element;
     }

@@ -259,10 +259,6 @@ public:
     // the given frame. Additional context data is supplied.
     virtual void showContextMenu(WebFrame*, const WebContextMenuData&) { }
 
-    // Called when the data attached to the currently displayed context menu is
-    // invalidated. The context menu may be closed if possible.
-    virtual void clearContextMenu() { }
-
     // Called when a drag-n-drop operation should begin.
     virtual void startDragging(WebFrame*, const WebDragData&, WebDragOperationsMask, const WebImage&, const WebPoint& dragImageOffset) { }
 
@@ -304,6 +300,9 @@ public:
     // history item.
     virtual int historyBackListCount() { return 0; }
     virtual int historyForwardListCount() { return 0; }
+
+    // Called to notify the embedder when a new history item is added.
+    virtual void didAddHistoryItem() { }
 
 
     // Accessibility -------------------------------------------------------

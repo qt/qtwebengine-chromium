@@ -27,7 +27,6 @@ public:
     static PassRefPtr<ImageBitmap> create(HTMLCanvasElement*, const IntRect&);
     static PassRefPtr<ImageBitmap> create(ImageData*, const IntRect&);
     static PassRefPtr<ImageBitmap> create(ImageBitmap*, const IntRect&);
-    static PassRefPtr<ImageBitmap> create(Image*, const IntRect&);
 
     PassRefPtr<Image> bitmapImage() const;
     PassRefPtr<HTMLImageElement> imageElement() const { return m_imageElement; }
@@ -47,7 +46,6 @@ private:
     ImageBitmap(HTMLCanvasElement*, const IntRect&);
     ImageBitmap(ImageData*, const IntRect&);
     ImageBitmap(ImageBitmap*, const IntRect&);
-    ImageBitmap(Image*, const IntRect&);
 
     // ImageLoaderClient
     virtual void notifyImageSourceChanged();

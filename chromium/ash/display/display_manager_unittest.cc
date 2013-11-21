@@ -717,42 +717,6 @@ TEST_F(DisplayManagerTest, NativeDisplaysChangedAfterPrimaryChange) {
   EXPECT_EQ("0,0 100x100", GetDisplayForId(10).bounds().ToString());
 }
 
-TEST_F(DisplayManagerTest, DontRememberBestResolution) {
-  int display_id = 1000;
-  DisplayInfo native_display_info =
-      CreateDisplayInfo(display_id, gfx::Rect(0, 0, 1000, 500));
-  std::vector<Resolution> resolutions;
-  resolutions.push_back(Resolution(gfx::Size(1000, 500), false));
-  resolutions.push_back(Resolution(gfx::Size(800, 300), false));
-  resolutions.push_back(Resolution(gfx::Size(400, 500), false));
-
-  native_display_info.set_resolutions(resolutions);
-
-  std::vector<DisplayInfo> display_info_list;
-  display_info_list.push_back(native_display_info);
-  display_manager()->OnNativeDisplaysChanged(display_info_list);
-
-  gfx::Size selected;
-  EXPECT_FALSE(display_manager()->GetSelectedResolutionForDisplayId(
-      display_id, &selected));
-
-  // Unsupported resolution.
-  display_manager()->SetDisplayResolution(display_id, gfx::Size(800, 4000));
-  EXPECT_FALSE(display_manager()->GetSelectedResolutionForDisplayId(
-      display_id, &selected));
-
-  // Supported resolution.
-  display_manager()->SetDisplayResolution(display_id, gfx::Size(800, 300));
-  EXPECT_TRUE(display_manager()->GetSelectedResolutionForDisplayId(
-      display_id, &selected));
-  EXPECT_EQ("800x300", selected.ToString());
-
-  // Best resolution.
-  display_manager()->SetDisplayResolution(display_id, gfx::Size(1000, 500));
-  EXPECT_FALSE(display_manager()->GetSelectedResolutionForDisplayId(
-      display_id, &selected));
-}
-
 TEST_F(DisplayManagerTest, Rotate) {
   if (!SupportsMultipleDisplays())
     return;
@@ -1025,27 +989,6 @@ TEST_F(DisplayManagerTest, SoftwareMirroring) {
   EXPECT_EQ("600x800", GetMirroredDisplay().size().ToString());
 
   Shell::GetScreen()->RemoveObserver(&display_observer);
-}
-
-TEST_F(DisplayManagerTest, MirroredLayout) {
-  if (!SupportsMultipleDisplays())
-    return;
-
-  DisplayManager* display_manager = Shell::GetInstance()->display_manager();
-  UpdateDisplay("500x500,400x400");
-  EXPECT_FALSE(display_manager->GetCurrentDisplayLayout().mirrored);
-  EXPECT_EQ(2, Shell::GetScreen()->GetNumDisplays());
-  EXPECT_EQ(2U, display_manager->num_connected_displays());
-
-  UpdateDisplay("1+0-500x500,1+0-500x500");
-  EXPECT_TRUE(display_manager->GetCurrentDisplayLayout().mirrored);
-  EXPECT_EQ(1, Shell::GetScreen()->GetNumDisplays());
-  EXPECT_EQ(2U, display_manager->num_connected_displays());
-
-  UpdateDisplay("500x500,500x500");
-  EXPECT_FALSE(display_manager->GetCurrentDisplayLayout().mirrored);
-  EXPECT_EQ(2, Shell::GetScreen()->GetNumDisplays());
-  EXPECT_EQ(2U, display_manager->num_connected_displays());
 }
 
 }  // namespace internal

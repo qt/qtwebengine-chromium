@@ -19,7 +19,6 @@ AnimatedWebP status=experimental
 ApplicationCache status=stable
 AuthorShadowDOMForAnyElement
 Crypto status=test
-CSSAnimationUnprefixed status=experimental
 CSSCompositing status=experimental
 CSSExclusions status=experimental
 CSSGridLayout status=experimental
@@ -33,7 +32,6 @@ Database status=stable
 DataListElement status=stable
 DeviceMotion status=test
 DeviceOrientation status=stable
-DevicePixelRatioIncludesZoom status=experimental
 DialogElement status=experimental
 DirectoryUpload status=stable
 EncodingAPI status=experimental

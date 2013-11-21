@@ -531,6 +531,11 @@ const char kEnableWebMIDI[]                 = "enable-web-midi";
 // Enable WebRTC to open TCP server sockets.
 const char kEnableWebRtcTcpServerSocket[]   = "enable-webrtc-tcp-server-socket";
 
+// Enables experimental features for the geolocation API.
+// Current features:
+// - CoreLocation support for Mac OS X 10.6
+const char kExperimentalLocationFeatures[]  = "experimental-location-features";
+
 // Load NPAPI plugins from the specified directory.
 const char kExtraPluginDir[]                = "extra-plugin-dir";
 
@@ -777,10 +782,6 @@ const char kTestingFixedHttpsPort[]         = "testing-fixed-https-port";
 // Runs the security test for the renderer sandbox.
 const char kTestSandbox[]                   = "test-sandbox";
 
-// Enables not sending touch events to renderer while scrolling.
-const char kNoTouchToRendererWhileScrolling[] =
-    "no-touch-to-renderer-while-scrolling";
-
 // Causes TRACE_EVENT flags to be recorded from startup. Optionally, can
 // specify the specific trace categories to include (e.g.
 // --trace-startup=base,net) otherwise, all events are recorded. Setting this
@@ -871,9 +872,6 @@ const char kEnableWebRtcAecRecordings[]     = "enable-webrtc-aec-recordings";
 
 // Enables HW decode acceleration for WebRTC.
 const char kEnableWebRtcHWDecoding[]        = "enable-webrtc-hw-decoding";
-
-// Enables HW encode acceleration for WebRTC.
-const char kEnableWebRtcHWEncoding[] = "enable-webrtc-hw-encoding";
 
 #endif
 

@@ -856,10 +856,6 @@ WebInspector.CodeMirrorTextEditor.prototype = {
     {
     },
 
-    /**
-     * @param {number} width
-     * @param {number} height
-     */
     _updatePaddingBottom: function(width, height)
     {
         var scrollInfo = this._codeMirror.getScrollInfo();
@@ -877,12 +873,9 @@ WebInspector.CodeMirrorTextEditor.prototype = {
 
     _resizeEditor: function()
     {
-        var parentElement = this.element.parentElement;
-        if (!parentElement || !this.isShowing())
-            return;
         var scrollInfo = this._codeMirror.getScrollInfo();
-        var width = parentElement.offsetWidth;
-        var height = parentElement.offsetHeight;
+        var width = this.element.parentElement.offsetWidth;
+        var height = this.element.parentElement.offsetHeight;
         this._codeMirror.setSize(width, height);
         this._updatePaddingBottom(width, height);
         this._codeMirror.scrollTo(scrollInfo.left, scrollInfo.top);

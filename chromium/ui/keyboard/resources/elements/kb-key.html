@@ -4,8 +4,7 @@
   -- found in the LICENSE file.
   -->
 
-<polymer-element name="kb-key" extends="kb-key-base"
-    attributes="keyCode shiftModifier weight">
+<polymer-element name="kb-key" extends="kb-key-base" attributes="weight">
   <template>
     <style>
       @host {
@@ -21,24 +20,6 @@
   </template>
   <script>
     Polymer('kb-key', {
-      /**
-       * Key codes have been deprecated in DOM3 key events, but are required
-       * for legacy web content. The key codes depend on the position of the
-       * key on the keyboard and is independent of which modifier keys (shift,
-       *  alt, ...) are active.
-       * @type {number|undefined}
-       */
-      keyCode: undefined,
-      /**
-       * Whether the shift key is pressed when producing the key value.
-       * @type {boolean}
-       */
-      shiftModifier: false,
-      /**
-       * Weighting to use for layout in order to properly size the key.
-       * Keys with a high weighting are wider than normal keys.
-       * @type {number}
-       */
       weight: 1
     });
   </script>

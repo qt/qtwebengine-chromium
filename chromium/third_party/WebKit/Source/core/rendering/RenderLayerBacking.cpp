@@ -30,11 +30,11 @@
 #include "CSSPropertyNames.h"
 #include "HTMLNames.h"
 #include "RuntimeEnabledFeatures.h"
-#include "core/fetch/ImageResource.h"
 #include "core/html/HTMLIFrameElement.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/loader/cache/ImageResource.h"
 #include "core/page/Chrome.h"
 #include "core/page/FrameView.h"
 #include "core/page/Settings.h"
@@ -1708,7 +1708,7 @@ bool RenderLayerBacking::startAnimation(double timeOffset, const CSSAnimationDat
     for (size_t i = 0; i < numKeyframes; ++i) {
         const KeyframeValue& currentKeyframe = keyframes[i];
         const RenderStyle* keyframeStyle = currentKeyframe.style();
-        double key = currentKeyframe.key();
+        float key = currentKeyframe.key();
 
         if (!keyframeStyle)
             continue;

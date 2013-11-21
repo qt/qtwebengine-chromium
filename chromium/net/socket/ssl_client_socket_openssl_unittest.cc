@@ -107,13 +107,11 @@ class SSLClientSocketOpenSSLClientAuthTest : public PlatformTest {
   }
 
  protected:
-  scoped_ptr<SSLClientSocket> CreateSSLClientSocket(
-      scoped_ptr<StreamSocket> transport_socket,
+  SSLClientSocket* CreateSSLClientSocket(
+      StreamSocket* transport_socket,
       const HostPortPair& host_and_port,
       const SSLConfig& ssl_config) {
-    scoped_ptr<ClientSocketHandle> connection(new ClientSocketHandle);
-    connection->SetSocket(transport_socket.Pass());
-    return socket_factory_->CreateSSLClientSocket(connection.Pass(),
+    return socket_factory_->CreateSSLClientSocket(transport_socket,
                                                   host_and_port,
                                                   ssl_config,
                                                   context_);
@@ -166,9 +164,9 @@ class SSLClientSocketOpenSSLClientAuthTest : public PlatformTest {
   // itself was a success.
   bool CreateAndConnectSSLClientSocket(SSLConfig& ssl_config,
                                        int* result) {
-    sock_ = CreateSSLClientSocket(transport_.Pass(),
-                                  test_server_->host_port_pair(),
-                                  ssl_config);
+    sock_.reset(CreateSSLClientSocket(transport_.release(),
+                                      test_server_->host_port_pair(),
+                                      ssl_config));
 
     if (sock_->IsConnected()) {
       LOG(ERROR) << "SSL Socket prematurely connected";

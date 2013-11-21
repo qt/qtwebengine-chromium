@@ -127,8 +127,6 @@ class MockHttpStream : public HttpStream {
 
   virtual void Drain(HttpNetworkSession*) OVERRIDE {}
 
-  virtual void SetPriority(RequestPriority priority) OVERRIDE {}
-
   // Methods to tweak/observer mock behavior:
   void set_stall_reads_forever() { stall_reads_forever_ = true; }
 

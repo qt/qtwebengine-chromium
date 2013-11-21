@@ -38,8 +38,7 @@ IPC_STRUCT_TRAITS_BEGIN(autofill::WebElementDescriptor)
   IPC_STRUCT_TRAITS_MEMBER(retrieval_method)
 IPC_STRUCT_TRAITS_END()
 
-IPC_ENUM_TRAITS_MAX_VALUE(autofill::WebElementDescriptor::RetrievalMethod,
-                          autofill::WebElementDescriptor::NONE)
+IPC_ENUM_TRAITS(autofill::WebElementDescriptor::RetrievalMethod)
 
 IPC_STRUCT_TRAITS_BEGIN(autofill::FormFieldData)
   IPC_STRUCT_TRAITS_MEMBER(label)
@@ -100,9 +99,7 @@ IPC_STRUCT_TRAITS_BEGIN(autofill::PasswordAndRealm)
   IPC_STRUCT_TRAITS_MEMBER(realm)
 IPC_STRUCT_TRAITS_END()
 
-IPC_ENUM_TRAITS_MAX_VALUE(
-    WebKit::WebFormElement::AutocompleteResult,
-    WebKit::WebFormElement::AutocompleteResultErrorInvalid)
+IPC_ENUM_TRAITS(WebKit::WebFormElement::AutocompleteResult)
 
 // Autofill messages sent from the browser to the renderer.
 

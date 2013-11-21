@@ -130,10 +130,10 @@ void TransportClientSocketTest::SetUp() {
   CHECK_EQ(ERR_IO_PENDING, rv);
   rv = callback.WaitForResult();
   CHECK_EQ(rv, OK);
-  sock_ =
+  sock_.reset(
       socket_factory_->CreateTransportClientSocket(addr,
                                                    &net_log_,
-                                                   NetLog::Source());
+                                                   NetLog::Source()));
 }
 
 int TransportClientSocketTest::DrainClientSocket(

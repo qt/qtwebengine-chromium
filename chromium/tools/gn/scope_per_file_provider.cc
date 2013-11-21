@@ -29,8 +29,6 @@ const Value* ScopePerFileProvider::GetProgrammaticValue(
   if (ident == variables::kPythonPath)
     return GetPythonPath();
 
-  if (ident == variables::kRelativeBuildToSourceRootDir)
-    return GetRelativeBuildToSourceRootDir();
   if (ident == variables::kRelativeRootOutputDir)
     return GetRelativeRootOutputDir();
   if (ident == variables::kRelativeRootGenDir)
@@ -67,16 +65,6 @@ const Value* ScopePerFileProvider::GetPythonPath() {
         FilePathToUTF8(scope_->settings()->build_settings()->python_path())));
   }
   return python_path_.get();
-}
-
-const Value* ScopePerFileProvider::GetRelativeBuildToSourceRootDir() {
-  if (!relative_build_to_source_root_dir_) {
-    const SourceDir& build_dir =
-        scope_->settings()->build_settings()->build_dir();
-    relative_build_to_source_root_dir_.reset(
-        new Value(NULL, InvertDirWithNoLastSlash(build_dir)));
-  }
-  return relative_build_to_source_root_dir_.get();
 }
 
 const Value* ScopePerFileProvider::GetRelativeRootOutputDir() {
@@ -138,13 +126,7 @@ std::string ScopePerFileProvider::GetFileDirWithNoLastSlash() const {
 }
 
 std::string ScopePerFileProvider::GetRelativeRootWithNoLastSlash() const {
-  return InvertDirWithNoLastSlash(source_file_.GetDir());
-}
-
-// static
-std::string ScopePerFileProvider::InvertDirWithNoLastSlash(
-    const SourceDir& dir) {
-  std::string inverted = InvertDir(dir);
+  std::string inverted = InvertDir(source_file_.GetDir());
   if (inverted.empty())
     return ".";
   return inverted.substr(0, inverted.size() - 1);

@@ -117,9 +117,11 @@ void NinjaBuildWriter::WriteNinjaRules() {
     out_ << " " << EscapeString(FilePathToUTF8(input_files[i]), ninja_options);
 
   // Other files read by the build.
-  std::vector<base::FilePath> other_files = g_scheduler->GetGenDependencies();
-  for (size_t i = 0; i < other_files.size(); i++)
-    out_ << " " << EscapeString(FilePathToUTF8(other_files[i]), ninja_options);
+  std::vector<SourceFile> other_files = g_scheduler->GetGenDependencies();
+  for (size_t i = 0; i < other_files.size(); i++) {
+    out_ << " ";
+    path_output_.WriteFile(out_, other_files[i]);
+  }
 
   out_ << std::endl << std::endl;
 }
@@ -141,6 +143,8 @@ void NinjaBuildWriter::WritePhonyAndAllRules() {
   // we'll get naming conflicts).
   for (size_t i = 0; i < default_toolchain_targets_.size(); i++) {
     const Target* target = default_toolchain_targets_[i];
+    if (target->output_type() == Target::NONE)
+      continue;  // Nothing to generate.
 
     OutputFile target_file = helper_.GetTargetOutputFile(target);
     if (target_file.value() != target->label().name()) {

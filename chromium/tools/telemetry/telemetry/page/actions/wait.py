@@ -1,8 +1,6 @@
 # Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-
-import re
 import time
 
 from telemetry.core import util
@@ -45,14 +43,14 @@ class WaitAction(page_action.PageAction):
 
     elif self.condition == 'element':
       assert hasattr(self, 'text') or hasattr(self, 'selector')
-      if hasattr(self, 'text'):
+      if self.text:
         callback_code = 'function(element) { return element != null; }'
         util.WaitFor(
             lambda: util.FindElementAndPerformAction(
                 tab, self.text, callback_code), self.DEFAULT_TIMEOUT)
-      else:
+      elif self.selector:
         util.WaitFor(lambda: tab.EvaluateJavaScript(
-             'document.querySelector("%s") != null' % re.escape(self.selector)),
+             'document.querySelector("%s") != null' % self.selector),
              self.DEFAULT_TIMEOUT)
 
     elif self.condition == 'javascript':

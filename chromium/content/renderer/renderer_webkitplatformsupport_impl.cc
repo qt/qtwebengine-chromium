@@ -148,6 +148,8 @@ class RendererWebKitPlatformSupportImpl::MimeRegistry
       const WebKit::WebString& file_extension);
   virtual WebKit::WebString mimeTypeFromFile(
       const WebKit::WebString& file_path);
+  virtual WebKit::WebString preferredExtensionForMIMEType(
+      const WebKit::WebString& mime_type);
 };
 
 class RendererWebKitPlatformSupportImpl::FileUtilities
@@ -223,10 +225,6 @@ RendererWebKitPlatformSupportImpl::RendererWebKitPlatformSupportImpl()
 }
 
 RendererWebKitPlatformSupportImpl::~RendererWebKitPlatformSupportImpl() {
-#ifdef USE_THREADLOCAL_WEBFILESYSTEM
-  // TODO(kinuko): Delete this ifdef after blink side switch's over.
-  WebFileSystemImpl::DeleteThreadSpecificInstance();
-#endif
 }
 
 //------------------------------------------------------------------------------
@@ -376,14 +374,9 @@ WebIDBFactory* RendererWebKitPlatformSupportImpl::idbFactory() {
 //------------------------------------------------------------------------------
 
 WebFileSystem* RendererWebKitPlatformSupportImpl::fileSystem() {
-#ifdef USE_THREADLOCAL_WEBFILESYSTEM
-  // TODO(kinuko): Delete this ifdef after blink side switch's over.
-  return WebFileSystemImpl::ThreadSpecificInstance(child_thread_loop_.get());
-#else
   if (!web_file_system_)
     web_file_system_.reset(new WebFileSystemImpl(child_thread_loop_.get()));
   return web_file_system_.get();
-#endif
 }
 
 //------------------------------------------------------------------------------
@@ -489,6 +482,21 @@ WebString RendererWebKitPlatformSupportImpl::MimeRegistry::mimeTypeFromFile(
       base::FilePath::FromUTF16Unsafe(file_path),
       &mime_type));
   return ASCIIToUTF16(mime_type);
+}
+
+WebString
+RendererWebKitPlatformSupportImpl::MimeRegistry::preferredExtensionForMIMEType(
+    const WebString& mime_type) {
+  if (IsPluginProcess())
+    return SimpleWebMimeRegistryImpl::preferredExtensionForMIMEType(mime_type);
+
+  // The sandbox restricts our access to the registry, so we need to proxy
+  // these calls over to the browser process.
+  base::FilePath::StringType file_extension;
+  RenderThread::Get()->Send(
+      new MimeRegistryMsg_GetPreferredExtensionForMimeType(
+          UTF16ToASCII(mime_type), &file_extension));
+  return base::FilePath(file_extension).AsUTF16Unsafe();
 }
 
 //------------------------------------------------------------------------------

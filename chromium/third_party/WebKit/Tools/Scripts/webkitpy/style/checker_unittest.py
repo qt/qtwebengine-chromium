@@ -213,7 +213,43 @@ class GlobalVariablesTest(unittest.TestCase):
                     "build/include")
         assertCheck("random_path.cpp",
                     "readability/naming")
-        assertNoCheck("Source/core/css/CSSParser-in.cpp",
+        assertNoCheck("Source/WebKit/gtk/webkit/webkit.h",
+                      "readability/naming")
+        assertNoCheck("Tools/DumpRenderTree/gtk/DumpRenderTree.cpp",
+                      "readability/null")
+        assertNoCheck("Source/WebKit/efl/ewk/ewk_view.h",
+                      "readability/naming")
+        assertNoCheck("Source/WebCore/css/CSSParser.cpp",
+                      "readability/naming")
+
+        # Test if Qt exceptions are indeed working
+        assertCheck("Source/WebKit/qt/WidgetApi/qwebpage.cpp",
+                    "readability/braces")
+        assertCheck("Source/WebKit/qt/tests/qwebelement/tst_qwebelement.cpp",
+                    "readability/braces")
+        assertCheck("Source/WebKit/qt/declarative/platformplugin/WebPlugin.cpp",
+                    "readability/braces")
+        assertCheck("Source/WebKit/qt/examples/platformplugin/WebPlugin.cpp",
+                    "readability/braces")
+        assertNoCheck("Source/WebKit/qt/WidgetApi/qwebpage.cpp",
+                      "readability/naming")
+        assertNoCheck("Source/WebKit/qt/tests/qwebelement/tst_qwebelement.cpp",
+                      "readability/naming")
+        assertNoCheck("Source/WebKit/qt/declarative/platformplugin/WebPlugin.cpp",
+                      "readability/naming")
+        assertNoCheck("Source/WebKit/qt/examples/platformplugin/WebPlugin.cpp",
+                      "readability/naming")
+
+        assertNoCheck("Tools/MiniBrowser/qt/UrlLoader.cpp",
+                    "build/include")
+
+        assertNoCheck("Source/WebKit2/UIProcess/API/qt",
+                    "readability/parameter_name")
+
+        assertNoCheck("Source/WebCore/ForwardingHeaders/debugger/Debugger.h",
+                      "build/header_guard")
+
+        assertNoCheck("Source/WebCore/platform/graphics/gstreamer/VideoSinkGStreamer.cpp",
                       "readability/naming")
 
         # Third-party Python code: webkitpy/thirdparty
@@ -223,6 +259,13 @@ class GlobalVariablesTest(unittest.TestCase):
         assertCheck(path, "pep8/W191")
         assertCheck(path, "pep8/W291")
         assertCheck(path, "whitespace/carriage_return")
+
+        # Test if the exception for GDBInterface.cpp is in place.
+        assertNoCheck("Source/JavaScriptCore/jit/GDBInterface.cpp",
+                      "readability/naming")
+
+        # Javascript keywords.
+        assertCheck("Source/JavaScriptCore/parser/Keywords.table", "whitespace/carriage_return")
 
     def test_max_reports_per_category(self):
         """Check that _MAX_REPORTS_PER_CATEGORY is valid."""
@@ -456,9 +499,12 @@ class CheckerDispatcherDispatchTest(unittest.TestCase):
     def test_text_paths(self):
         """Test paths that should be checked as text."""
         paths = [
+           "foo.ac",
            "foo.cc",
            "foo.cgi",
            "foo.css",
+           "foo.exp",
+           "foo.flex",
            "foo.gyp",
            "foo.gypi",
            "foo.html",
@@ -469,9 +515,12 @@ class CheckerDispatcherDispatchTest(unittest.TestCase):
            "foo.php",
            "foo.pl",
            "foo.pm",
+           "foo.pri",
+           "foo.pro",
            "foo.rb",
            "foo.sh",
            "foo.txt",
+           "foo.wm",
            "foo.xhtml",
            "foo.y",
            os.path.join("Source", "WebCore", "inspector", "front-end", "inspector.js"),

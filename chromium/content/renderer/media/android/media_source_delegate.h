@@ -184,6 +184,7 @@ class MediaSourceDelegate : public media::DemuxerHost {
 
   // Message loop for main renderer thread.
   const scoped_refptr<base::MessageLoopProxy> main_loop_;
+#if defined(GOOGLE_TV)
   // Message loop for the media thread.
   // When there is high load in the render thread, the reading from |demuxer_|
   // and its read-callback loops run very slowly.  To improve the response time
@@ -193,6 +194,7 @@ class MediaSourceDelegate : public media::DemuxerHost {
   ReadFromDemuxerAckCB send_read_from_demuxer_ack_cb_;
   base::Closure send_seek_request_ack_cb_;
   DemuxerReadyCB send_demuxer_ready_cb_;
+#endif
 
   WebMediaPlayerProxyAndroid* proxy_;
   int player_id_;

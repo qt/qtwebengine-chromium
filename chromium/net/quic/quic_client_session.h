@@ -13,7 +13,6 @@
 #include <string>
 
 #include "base/containers/hash_tables.h"
-#include "base/memory/scoped_ptr.h"
 #include "net/base/completion_callback.h"
 #include "net/quic/quic_connection_logger.h"
 #include "net/quic/quic_crypto_client_stream.h"
@@ -75,7 +74,7 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicSession {
   // not |stream_factory|, which must outlive this session.
   // TODO(rch): decouple the factory from the session via a Delegate interface.
   QuicClientSession(QuicConnection* connection,
-                    scoped_ptr<DatagramClientSocket> socket,
+                    DatagramClientSocket* socket,
                     QuicStreamFactory* stream_factory,
                     QuicCryptoClientStreamFactory* crypto_client_stream_factory,
                     const std::string& server_hostname,
@@ -103,10 +102,6 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicSession {
   virtual QuicCryptoClientStream* GetCryptoStream() OVERRIDE;
   virtual void CloseStream(QuicStreamId stream_id) OVERRIDE;
   virtual void OnCryptoHandshakeEvent(CryptoHandshakeEvent event) OVERRIDE;
-  virtual void OnCryptoHandshakeMessageSent(
-      const CryptoHandshakeMessage& message) OVERRIDE;
-  virtual void OnCryptoHandshakeMessageReceived(
-      const CryptoHandshakeMessage& message) OVERRIDE;
   virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
 
   // QuicConnectionVisitorInterface methods:

@@ -455,7 +455,6 @@ public:
     }
     ShapeInsideInfo* layoutShapeInsideInfo() const;
     bool allowsShapeInsideInfoSharing() const { return !isInline() && !isFloating(); }
-    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) OVERRIDE;
 
 protected:
     virtual void willBeDestroyed();
@@ -655,7 +654,7 @@ private:
         bool everHadLayout;
     };
 
-    class FloatingObject {
+    struct FloatingObject {
         WTF_MAKE_NONCOPYABLE(FloatingObject); WTF_MAKE_FAST_ALLOCATED;
     public:
         // Note that Type uses bits so you can use FloatLeftRight as a mask to query for both left and right.
@@ -712,12 +711,12 @@ private:
         bool isPlaced() const { return m_isPlaced; }
         void setIsPlaced(bool placed = true) { m_isPlaced = placed; }
 
-        LayoutUnit x() const { ASSERT(isPlaced()); return m_frameRect.x(); }
-        LayoutUnit maxX() const { ASSERT(isPlaced()); return m_frameRect.maxX(); }
-        LayoutUnit y() const { ASSERT(isPlaced()); return m_frameRect.y(); }
-        LayoutUnit maxY() const { ASSERT(isPlaced()); return m_frameRect.maxY(); }
-        LayoutUnit width() const { return m_frameRect.width(); }
-        LayoutUnit height() const { return m_frameRect.height(); }
+        inline LayoutUnit x() const { ASSERT(isPlaced()); return m_frameRect.x(); }
+        inline LayoutUnit maxX() const { ASSERT(isPlaced()); return m_frameRect.maxX(); }
+        inline LayoutUnit y() const { ASSERT(isPlaced()); return m_frameRect.y(); }
+        inline LayoutUnit maxY() const { ASSERT(isPlaced()); return m_frameRect.maxY(); }
+        inline LayoutUnit width() const { return m_frameRect.width(); }
+        inline LayoutUnit height() const { return m_frameRect.height(); }
 
         void setX(LayoutUnit x) { ASSERT(!isInPlacedTree()); m_frameRect.setX(x); }
         void setY(LayoutUnit y) { ASSERT(!isInPlacedTree()); m_frameRect.setY(y); }
@@ -726,9 +725,6 @@ private:
 
         const LayoutRect& frameRect() const { ASSERT(isPlaced()); return m_frameRect; }
         void setFrameRect(const LayoutRect& frameRect) { ASSERT(!isInPlacedTree()); m_frameRect = frameRect; }
-
-        int paginationStrut() const { return m_paginationStrut; }
-        void setPaginationStrut(int strut) { m_paginationStrut = strut; }
 
 #ifndef NDEBUG
         bool isInPlacedTree() const { return m_isInPlacedTree; }
@@ -740,57 +736,12 @@ private:
         bool isDescendant() const { return m_isDescendant; }
         void setIsDescendant(bool isDescendant) { m_isDescendant = isDescendant; }
 
-        // FIXME: Callers of these methods are dangerous and should be whitelisted explicitly or removed.
-        void setRenderer(RenderBox* renderer) { m_renderer = renderer; }
-        RootInlineBox* originatingLine() const { return m_originatingLine; }
-        void setOriginatingLine(RootInlineBox* line) { m_originatingLine = line; }
-
-        LayoutUnit logicalTop(bool isHorizontalWritingMode) const { return isHorizontalWritingMode ? y() : x(); }
-        LayoutUnit logicalBottom(bool isHorizontalWritingMode) const { return isHorizontalWritingMode ? maxY() : maxX(); }
-        LayoutUnit logicalLeft(bool isHorizontalWritingMode) const { return isHorizontalWritingMode ? x() : y(); }
-        LayoutUnit logicalRight(bool isHorizontalWritingMode) const { return isHorizontalWritingMode ? maxX() : maxY(); }
-        LayoutUnit logicalWidth(bool isHorizontalWritingMode) const { return isHorizontalWritingMode ? width() : height(); }
-
-        int pixelSnappedLogicalTop(bool isHorizontalWritingMode) const { return isHorizontalWritingMode ? frameRect().pixelSnappedY() : frameRect().pixelSnappedX(); }
-        int pixelSnappedLogicalBottom(bool isHorizontalWritingMode) const { return isHorizontalWritingMode ? frameRect().pixelSnappedMaxY() : frameRect().pixelSnappedMaxX(); }
-        int pixelSnappedLogicalLeft(bool isHorizontalWritingMode) const { return isHorizontalWritingMode ? frameRect().pixelSnappedX() : frameRect().pixelSnappedY(); }
-        int pixelSnappedLogicalRight(bool isHorizontalWritingMode) const { return isHorizontalWritingMode ? frameRect().pixelSnappedMaxX() : frameRect().pixelSnappedMaxY(); }
-
-        void setLogicalTop(LayoutUnit logicalTop, bool isHorizontalWritingMode)
-        {
-            if (isHorizontalWritingMode)
-                setY(logicalTop);
-            else
-                setX(logicalTop);
-        }
-        void setLogicalLeft(LayoutUnit logicalLeft, bool isHorizontalWritingMode)
-        {
-            if (isHorizontalWritingMode)
-                setX(logicalLeft);
-            else
-                setY(logicalLeft);
-        }
-        void setLogicalHeight(LayoutUnit logicalHeight, bool isHorizontalWritingMode)
-        {
-            if (isHorizontalWritingMode)
-                setHeight(logicalHeight);
-            else
-                setWidth(logicalHeight);
-        }
-        void setLogicalWidth(LayoutUnit logicalWidth, bool isHorizontalWritingMode)
-        {
-            if (isHorizontalWritingMode)
-                setWidth(logicalWidth);
-            else
-                setHeight(logicalWidth);
-        }
-
-    private:
         RenderBox* m_renderer;
         RootInlineBox* m_originatingLine;
         LayoutRect m_frameRect;
-        int m_paginationStrut; // FIXME: Is this class size-sensitive? Does this need 32-bits?
+        int m_paginationStrut;
 
+    private:
         unsigned m_type : 2; // Type (left or right aligned)
         unsigned m_shouldPaint : 1;
         unsigned m_isDescendant : 1;
@@ -801,6 +752,46 @@ private:
     };
 
     LayoutPoint flipFloatForWritingModeForChild(const FloatingObject*, const LayoutPoint&) const;
+
+    LayoutUnit logicalTopForFloat(const FloatingObject* child) const { return isHorizontalWritingMode() ? child->y() : child->x(); }
+    LayoutUnit logicalBottomForFloat(const FloatingObject* child) const { return isHorizontalWritingMode() ? child->maxY() : child->maxX(); }
+    LayoutUnit logicalLeftForFloat(const FloatingObject* child) const { return isHorizontalWritingMode() ? child->x() : child->y(); }
+    LayoutUnit logicalRightForFloat(const FloatingObject* child) const { return isHorizontalWritingMode() ? child->maxX() : child->maxY(); }
+    LayoutUnit logicalWidthForFloat(const FloatingObject* child) const { return isHorizontalWritingMode() ? child->width() : child->height(); }
+
+    int pixelSnappedLogicalTopForFloat(const FloatingObject* child) const { return isHorizontalWritingMode() ? child->frameRect().pixelSnappedY() : child->frameRect().pixelSnappedX(); }
+    int pixelSnappedLogicalBottomForFloat(const FloatingObject* child) const { return isHorizontalWritingMode() ? child->frameRect().pixelSnappedMaxY() : child->frameRect().pixelSnappedMaxX(); }
+    int pixelSnappedLogicalLeftForFloat(const FloatingObject* child) const { return isHorizontalWritingMode() ? child->frameRect().pixelSnappedX() : child->frameRect().pixelSnappedY(); }
+    int pixelSnappedLogicalRightForFloat(const FloatingObject* child) const { return isHorizontalWritingMode() ? child->frameRect().pixelSnappedMaxX() : child->frameRect().pixelSnappedMaxY(); }
+
+    void setLogicalTopForFloat(FloatingObject* child, LayoutUnit logicalTop)
+    {
+        if (isHorizontalWritingMode())
+            child->setY(logicalTop);
+        else
+            child->setX(logicalTop);
+    }
+    void setLogicalLeftForFloat(FloatingObject* child, LayoutUnit logicalLeft)
+    {
+        if (isHorizontalWritingMode())
+            child->setX(logicalLeft);
+        else
+            child->setY(logicalLeft);
+    }
+    void setLogicalHeightForFloat(FloatingObject* child, LayoutUnit logicalHeight)
+    {
+        if (isHorizontalWritingMode())
+            child->setHeight(logicalHeight);
+        else
+            child->setWidth(logicalHeight);
+    }
+    void setLogicalWidthForFloat(FloatingObject* child, LayoutUnit logicalWidth)
+    {
+        if (isHorizontalWritingMode())
+            child->setWidth(logicalWidth);
+        else
+            child->setHeight(logicalWidth);
+    }
 
     LayoutUnit xPositionForFloatIncludingMargin(const FloatingObject* child) const
     {
@@ -1158,13 +1149,13 @@ public:
 
 protected:
     struct FloatingObjectHashFunctions {
-        static unsigned hash(FloatingObject* key) { return DefaultHash<RenderBox*>::Hash::hash(key->renderer()); }
-        static bool equal(FloatingObject* a, FloatingObject* b) { return a->renderer() == b->renderer(); }
+        static unsigned hash(FloatingObject* key) { return DefaultHash<RenderBox*>::Hash::hash(key->m_renderer); }
+        static bool equal(FloatingObject* a, FloatingObject* b) { return a->m_renderer == b->m_renderer; }
         static const bool safeToCompareToEmptyOrDeleted = true;
     };
     struct FloatingObjectHashTranslator {
         static unsigned hash(RenderBox* key) { return DefaultHash<RenderBox*>::Hash::hash(key); }
-        static bool equal(FloatingObject* a, RenderBox* b) { return a->renderer() == b; }
+        static bool equal(FloatingObject* a, RenderBox* b) { return a->m_renderer == b; }
     };
     typedef ListHashSet<FloatingObject*, 4, FloatingObjectHashFunctions> FloatingObjectSet;
     typedef FloatingObjectSet::const_iterator FloatingObjectSetIterator;
@@ -1173,39 +1164,46 @@ protected:
     typedef PODFreeListArena<PODRedBlackTree<FloatingObjectInterval>::Node> IntervalArena;
 
     template <FloatingObject::Type FloatTypeValue>
-    class ComputeFloatOffsetAdapter {
+    class FloatIntervalSearchAdapter {
     public:
         typedef FloatingObjectInterval IntervalType;
 
-        ComputeFloatOffsetAdapter(const RenderBlock* renderer, int lineTop, int lineBottom, LayoutUnit& offset)
+        FloatIntervalSearchAdapter(const RenderBlock* renderer, int lowValue, int highValue, LayoutUnit& offset, LayoutUnit* heightRemaining)
             : m_renderer(renderer)
-            , m_lineTop(lineTop)
-            , m_lineBottom(lineBottom)
+            , m_lowValue(lowValue)
+            , m_highValue(highValue)
             , m_offset(offset)
-            , m_outermostFloat(0)
+            , m_heightRemaining(heightRemaining)
+            , m_last(0)
         {
         }
 
-        inline int lowValue() const { return m_lineTop; }
-        inline int highValue() const { return m_lineBottom; }
-        void collectIfNeeded(const IntervalType&);
+        inline int lowValue() const { return m_lowValue; }
+        inline int highValue() const { return m_highValue; }
+        void collectIfNeeded(const IntervalType&) const;
 
         // When computing the offset caused by the floats on a given line, if
         // the outermost float on that line has a shape-outside, the inline
         // content that butts up against that float must be positioned using
         // the contours of the shape, not the margin box of the float.
-        const FloatingObject* outermostFloat() const { return m_outermostFloat; }
-
-        LayoutUnit getHeightRemaining() const;
+        // We save the last float encountered so that the offset can be
+        // computed correctly by the code using this adapter.
+        const FloatingObject* lastFloat() const { return m_last; }
 
     private:
-        bool updateOffsetIfNeeded(const FloatingObject*);
+        bool updateOffsetIfNeeded(const FloatingObject*) const;
 
         const RenderBlock* m_renderer;
-        int m_lineTop;
-        int m_lineBottom;
+        int m_lowValue;
+        int m_highValue;
         LayoutUnit& m_offset;
-        const FloatingObject* m_outermostFloat;
+        LayoutUnit* m_heightRemaining;
+        // This member variable is mutable because the collectIfNeeded method
+        // is declared as const, even though it doesn't actually respect that
+        // contract. It modifies other member variables via loopholes in the
+        // const behavior. Instead of using loopholes, I decided it was better
+        // to make the fact that this is modified in a const method explicit.
+        mutable const FloatingObject* m_last;
     };
 
     void createFloatingObjects();
@@ -1215,8 +1213,6 @@ public:
     class FloatingObjects {
         WTF_MAKE_NONCOPYABLE(FloatingObjects); WTF_MAKE_FAST_ALLOCATED;
     public:
-        ~FloatingObjects();
-
         void clear();
         void add(FloatingObject*);
         void remove(FloatingObject*);
@@ -1232,7 +1228,6 @@ public:
             computePlacedFloatsTreeIfNeeded();
             return m_placedFloatsTree;
         }
-        void clearLineBoxTreePointers();
     private:
         FloatingObjects(const RenderBlock*, bool horizontalWritingMode);
         void computePlacedFloatsTree();

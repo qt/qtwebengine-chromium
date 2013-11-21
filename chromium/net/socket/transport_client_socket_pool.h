@@ -156,7 +156,7 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool : public ClientSocketPool {
   virtual void CancelRequest(const std::string& group_name,
                              ClientSocketHandle* handle) OVERRIDE;
   virtual void ReleaseSocket(const std::string& group_name,
-                             scoped_ptr<StreamSocket> socket,
+                             StreamSocket* socket,
                              int id) OVERRIDE;
   virtual void FlushWithError(int error) OVERRIDE;
   virtual bool IsStalled() const OVERRIDE;
@@ -193,7 +193,7 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool : public ClientSocketPool {
 
     // ClientSocketPoolBase::ConnectJobFactory methods.
 
-    virtual scoped_ptr<ConnectJob> NewConnectJob(
+    virtual ConnectJob* NewConnectJob(
         const std::string& group_name,
         const PoolBase::Request& request,
         ConnectJob::Delegate* delegate) const OVERRIDE;

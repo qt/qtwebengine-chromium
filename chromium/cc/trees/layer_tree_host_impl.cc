@@ -327,11 +327,9 @@ void LayerTreeHostImpl::ManageTiles() {
 
   size_t memory_required_bytes;
   size_t memory_nice_to_have_bytes;
-  size_t memory_allocated_bytes;
   size_t memory_used_bytes;
   tile_manager_->GetMemoryStats(&memory_required_bytes,
                                 &memory_nice_to_have_bytes,
-                                &memory_allocated_bytes,
                                 &memory_used_bytes);
   SendManagedMemoryStats(memory_required_bytes,
                          memory_nice_to_have_bytes,
@@ -1529,6 +1527,11 @@ void LayerTreeHostImpl::SetVisible(bool visible) {
   DidVisibilityChange(this, visible_);
   EnforceManagedMemoryPolicy(ActualManagedMemoryPolicy());
 
+  // Evict tiles immediately if invisible since this tab may never get another
+  // draw or timer tick.
+  if (!visible_)
+    ManageTiles();
+
   if (!renderer_)
     return;
 
@@ -2502,9 +2505,7 @@ void LayerTreeHostImpl::CreateUIResource(
   if (id)
     DeleteUIResource(uid);
   id = resource_provider_->CreateResource(
-      bitmap->GetSize(),
-      resource_provider_->best_texture_format(),
-      ResourceProvider::TextureUsageAny);
+      bitmap->GetSize(), GL_RGBA, ResourceProvider::TextureUsageAny);
 
   ui_resource_map_[uid] = id;
   resource_provider_->SetPixels(id,

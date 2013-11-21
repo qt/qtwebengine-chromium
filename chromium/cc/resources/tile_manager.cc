@@ -175,7 +175,7 @@ TileManager::~TileManager() {
 void TileManager::SetGlobalState(
     const GlobalStateThatImpactsTilePriority& global_state) {
   global_state_ = global_state;
-  resource_pool_->SetMemoryUsageLimits(
+  resource_pool_->SetResourceUsageLimits(
       global_state_.memory_limit_in_bytes,
       global_state_.unused_memory_limit_in_bytes,
       global_state_.num_resources_limit);
@@ -347,6 +347,7 @@ void TileManager::GetPrioritizedTileSet(PrioritizedTileSet* tiles) {
   TRACE_EVENT0("cc", "TileManager::GetPrioritizedTileSet");
 
   GetTilesWithAssignedBins(tiles);
+  tiles->Sort();
 }
 
 void TileManager::ManageTiles() {
@@ -362,16 +363,12 @@ void TileManager::ManageTiles() {
                          &tiles_that_need_to_be_rasterized);
   CleanUpUnusedImageDecodeTasks();
 
-  // Finally, schedule rasterizer tasks.
-  ScheduleTasks(tiles_that_need_to_be_rasterized);
-
   TRACE_EVENT_INSTANT1(
       "cc", "DidManage", TRACE_EVENT_SCOPE_THREAD,
       "state", TracedValue::FromValue(BasicStateAsValue().release()));
 
-  TRACE_COUNTER_ID1("cc", "unused_memory_bytes", this,
-                    resource_pool_->total_memory_usage_bytes() -
-                    resource_pool_->acquired_memory_usage_bytes());
+  // Finally, schedule rasterizer tasks.
+  ScheduleTasks(tiles_that_need_to_be_rasterized);
 }
 
 bool TileManager::UpdateVisibleTiles() {
@@ -394,11 +391,9 @@ bool TileManager::UpdateVisibleTiles() {
 void TileManager::GetMemoryStats(
     size_t* memory_required_bytes,
     size_t* memory_nice_to_have_bytes,
-    size_t* memory_allocated_bytes,
     size_t* memory_used_bytes) const {
   *memory_required_bytes = 0;
   *memory_nice_to_have_bytes = 0;
-  *memory_allocated_bytes = resource_pool_->total_memory_usage_bytes();
   *memory_used_bytes = resource_pool_->acquired_memory_usage_bytes();
   for (TileMap::const_iterator it = tiles_.begin();
        it != tiles_.end();
@@ -445,16 +440,13 @@ scoped_ptr<base::Value> TileManager::GetMemoryRequirementsAsValue() const {
 
   size_t memory_required_bytes;
   size_t memory_nice_to_have_bytes;
-  size_t memory_allocated_bytes;
   size_t memory_used_bytes;
   GetMemoryStats(&memory_required_bytes,
                  &memory_nice_to_have_bytes,
-                 &memory_allocated_bytes,
                  &memory_used_bytes);
   requirements->SetInteger("memory_required_bytes", memory_required_bytes);
   requirements->SetInteger("memory_nice_to_have_bytes",
                            memory_nice_to_have_bytes);
-  requirements->SetInteger("memory_allocated_bytes", memory_allocated_bytes);
   requirements->SetInteger("memory_used_bytes", memory_used_bytes);
   return requirements.PassAs<base::Value>();
 }
@@ -487,7 +479,7 @@ void TileManager::AssignGpuMemoryToTiles(
   // the needs-to-be-rasterized queue.
   size_t bytes_releasable = 0;
   size_t resources_releasable = 0;
-  for (PrioritizedTileSet::Iterator it(tiles, false);
+  for (PrioritizedTileSet::PriorityIterator it(tiles);
        it;
        ++it) {
     const Tile* tile = *it;
@@ -509,9 +501,10 @@ void TileManager::AssignGpuMemoryToTiles(
       static_cast<int64>(bytes_releasable) +
       static_cast<int64>(global_state_.memory_limit_in_bytes) -
       static_cast<int64>(resource_pool_->acquired_memory_usage_bytes());
-  int resources_available = resources_releasable +
-                            global_state_.num_resources_limit -
-                            resource_pool_->NumResources();
+  int resources_available =
+      resources_releasable +
+      global_state_.num_resources_limit -
+      resource_pool_->acquired_resource_count();
 
   size_t bytes_allocatable =
       std::max(static_cast<int64>(0), bytes_available);
@@ -523,7 +516,7 @@ void TileManager::AssignGpuMemoryToTiles(
   bool oomed = false;
 
   unsigned schedule_priority = 1u;
-  for (PrioritizedTileSet::Iterator it(tiles, true);
+  for (PrioritizedTileSet::PriorityIterator it(tiles);
        it;
        ++it) {
     Tile* tile = *it;
@@ -606,7 +599,6 @@ void TileManager::AssignGpuMemoryToTiles(
       all_tiles_that_need_to_be_rasterized_have_memory_ = false;
       if (tile->required_for_activation())
         all_tiles_required_for_activation_have_memory_ = false;
-      it.DisablePriorityOrdering();
       continue;
     }
 
@@ -708,6 +700,10 @@ void TileManager::ScheduleTasks(
 
     tasks.Append(tile_version.raster_task_, tile->required_for_activation());
   }
+
+  // We must reduce the amount of unused resoruces before calling
+  // ScheduleTasks to prevent usage from rising above limits.
+  resource_pool_->ReduceResourceUsage();
 
   // Schedule running of |tasks|. This replaces any previously
   // scheduled tasks and effectively cancels all tasks not present

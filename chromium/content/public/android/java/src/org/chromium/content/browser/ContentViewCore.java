@@ -27,6 +27,7 @@ import android.text.Editable;
 import android.util.Log;
 import android.util.Pair;
 import android.view.ActionMode;
+import android.view.HapticFeedbackConstants;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -58,8 +59,8 @@ import org.chromium.content.browser.accessibility.BrowserAccessibilityManager;
 import org.chromium.content.browser.input.AdapterInputConnection;
 import org.chromium.content.browser.input.HandleView;
 import org.chromium.content.browser.input.ImeAdapter;
-import org.chromium.content.browser.input.InputMethodManagerWrapper;
 import org.chromium.content.browser.input.ImeAdapter.AdapterInputConnectionFactory;
+import org.chromium.content.browser.input.InputMethodManagerWrapper;
 import org.chromium.content.browser.input.InsertionHandleController;
 import org.chromium.content.browser.input.SelectPopupDialog;
 import org.chromium.content.browser.input.SelectionHandleController;
@@ -71,7 +72,6 @@ import org.chromium.ui.gfx.DeviceDisplayInfo;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -403,6 +403,12 @@ import java.util.Map;
     // The AccessibilityInjector that handles loading Accessibility scripts into the web page.
     private AccessibilityInjector mAccessibilityInjector;
 
+    // Whether native accessibility, i.e. without any script injection, is allowed.
+    private boolean mNativeAccessibilityAllowed;
+
+    // Whether native accessibility, i.e. without any script injection, has been enabled.
+    private boolean mNativeAccessibilityEnabled;
+
     // Handles native accessibility, i.e. without any script injection.
     private BrowserAccessibilityManager mBrowserAccessibilityManager;
 
@@ -519,9 +525,9 @@ import java.util.Map;
                 // The anchor view should not go outside the bounds of the ContainerView.
                 int leftMargin = Math.round(x * scale);
                 int topMargin = Math.round(mRenderCoordinates.getContentOffsetYPix() + y * scale);
+                int scaledWidth = Math.round(width * scale);
                 // ContentViewCore currently only supports these two container view types.
                 if (mContainerView instanceof FrameLayout) {
-                    int scaledWidth = Math.round(width * scale);
                     if (scaledWidth + leftMargin > mContainerView.getWidth()) {
                         scaledWidth = mContainerView.getWidth() - leftMargin;
                     }
@@ -538,9 +544,10 @@ import java.util.Map;
                     // these models.
                     leftMargin += mRenderCoordinates.getScrollXPixInt();
                     topMargin += mRenderCoordinates.getScrollYPixInt();
+
                     android.widget.AbsoluteLayout.LayoutParams lp =
-                            new android.widget.AbsoluteLayout.LayoutParams((int)width,
-                                    (int)(height * scale), leftMargin, topMargin);
+                            new android.widget.AbsoluteLayout.LayoutParams(
+                                scaledWidth, (int)(height * scale), leftMargin, topMargin);
                     view.setLayoutParams(lp);
                 } else {
                     Log.e(TAG, "Unknown layout " + mContainerView.getClass().getName());
@@ -757,8 +764,6 @@ import java.util.Map;
         mContainerViewInternals = internalDispatcher;
 
         mContainerView.setWillNotDraw(false);
-        mContainerView.setFocusable(true);
-        mContainerView.setFocusableInTouchMode(true);
         mContainerView.setClickable(true);
 
         mZoomManager = new ZoomManager(mContext, this);
@@ -1375,7 +1380,20 @@ import java.util.Map;
     public void evaluateJavaScript(
             String script, JavaScriptCallback callback) throws IllegalStateException {
         checkIsAlive();
-        nativeEvaluateJavaScript(mNativeContentViewCore, script, callback);
+        nativeEvaluateJavaScript(mNativeContentViewCore, script, callback, false);
+    }
+
+    /**
+     * Injects the passed Javascript code in the current page and evaluates it.
+     * If there is no page existing, a new one will be created.
+     *
+     * @param script The Javascript to execute.
+     * @throws IllegalStateException If the ContentView has been destroyed.
+     */
+    public void evaluateJavaScriptEvenIfNotYetNavigated(String script)
+            throws IllegalStateException {
+        checkIsAlive();
+        nativeEvaluateJavaScript(mNativeContentViewCore, script, null, true);
     }
 
     /**
@@ -1657,6 +1675,15 @@ import java.util.Map;
         mScrolledAndZoomedFocusedEditableNode = false;
     }
 
+    /**
+     * @see View#onWindowFocusChanged(boolean)
+     */
+    public void onWindowFocusChanged(boolean hasWindowFocus) {
+        if (!hasWindowFocus) {
+            mContentViewGestureHandler.onWindowFocusLost();
+        }
+    }
+
     public void onFocusChanged(boolean gainFocus) {
         if (!gainFocus) getContentViewClient().onImeStateChangeRequested(false);
         if (mNativeContentViewCore != 0) nativeSetFocus(mNativeContentViewCore, gainFocus);
@@ -1860,17 +1887,32 @@ import java.util.Map;
         }
     }
 
+    /**
+     * Called by native side when the corresponding renderer crashes. Note that if a renderer is
+     * shared between tabs, this might be called multiple times while the tab is crashed. This is
+     * because the tabs sharing a renderer also share RenderProcessHost. When one of those tabs
+     * reloads and a new renderer is created for the shared RenderProcessHost, all tabs are notified
+     * in onRenderProcessSwap(), not only the one that reloads. If this renderer dies, all the other
+     * dead tabs are notified again.
+     * @param alreadyCrashed true iff this tab is already in crashed state but the shared renderer
+     *                       resurrected and died again since the last time this was called.
+     */
     @SuppressWarnings("unused")
     @CalledByNative
-    private void onTabCrash() {
+    private void onTabCrash(boolean alreadyCrashed) {
         assert mPid != 0;
-        getContentViewClient().onRendererCrash(ChildProcessLauncher.isOomProtected(mPid));
+        if (!alreadyCrashed) {
+            getContentViewClient().onRendererCrash(ChildProcessLauncher.isOomProtected(mPid));
+        }
         mPid = 0;
     }
 
     private void handleTapOrPress(
             long timeMs, float xPix, float yPix, int isLongPressOrTap, boolean showPress) {
-        if (!mContainerView.isFocused()) mContainerView.requestFocus();
+        if (mContainerView.isFocusable() && mContainerView.isFocusableInTouchMode()
+                && !mContainerView.isFocused())  {
+            mContainerView.requestFocus();
+        }
 
         if (!mPopupZoomer.isShowing()) mPopupZoomer.setLastTouch(xPix, yPix);
 
@@ -1903,6 +1945,10 @@ import java.util.Map;
 
     public void updateMultiTouchZoomSupport(boolean supportsMultiTouchZoom) {
         mZoomManager.updateMultiTouchSupport(supportsMultiTouchZoom);
+    }
+
+    public void updateDoubleTapDragSupport(boolean supportsDoubleTapDrag) {
+        mContentViewGestureHandler.updateDoubleTapDragSupport(supportsDoubleTapDrag);
     }
 
     public void selectPopupMenuItems(int[] indices) {
@@ -2403,9 +2449,18 @@ import java.util.Map;
                 mEndHandlePoint.setLocalDip(x1, y1);
             }
 
+            boolean wereSelectionHandlesShowing = getSelectionHandleController().isShowing();
+
             getSelectionHandleController().onSelectionChanged(anchorDir, focusDir);
             updateHandleScreenPositions();
             mHasSelection = true;
+
+            if (!wereSelectionHandlesShowing && getSelectionHandleController().isShowing()) {
+                // TODO(cjhopman): Remove this when there is a better signal that long press caused
+                // a selection. See http://crbug.com/150151.
+                mContainerView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            }
+
         } else {
             mUnselectAllOnActionModeDismiss = false;
             hideSelectActionBar();
@@ -2472,15 +2527,19 @@ import java.util.Map;
     @SuppressWarnings("unused")
     @CalledByNative
     private void onWebContentsConnected() {
-        if (mImeAdapter != null &&
-                !mImeAdapter.isNativeImeAdapterAttached() && mNativeContentViewCore != 0) {
-            mImeAdapter.attach(nativeGetNativeImeAdapter(mNativeContentViewCore));
-        }
+        attachImeAdapter();
     }
 
     @SuppressWarnings("unused")
     @CalledByNative
     private void onWebContentsSwapped() {
+        attachImeAdapter();
+    }
+
+    /**
+     * Attaches the native ImeAdapter object to the java ImeAdapter to allow communication via JNI.
+     */
+    public void attachImeAdapter() {
         if (mImeAdapter != null && mNativeContentViewCore != 0) {
             mImeAdapter.attach(nativeGetNativeImeAdapter(mNativeContentViewCore));
         }
@@ -2751,14 +2810,23 @@ import java.util.Map;
      * If native accessibility (not script injection) is enabled, and if this is
      * running on JellyBean or later, returns an AccessibilityNodeProvider that
      * implements native accessibility for this view. Returns null otherwise.
+     * Lazily initializes native accessibility here if it's allowed.
      * @return The AccessibilityNodeProvider, if available, or null otherwise.
      */
     public AccessibilityNodeProvider getAccessibilityNodeProvider() {
         if (mBrowserAccessibilityManager != null) {
             return mBrowserAccessibilityManager.getAccessibilityNodeProvider();
-        } else {
-            return null;
         }
+
+        if (mNativeAccessibilityAllowed &&
+                !mNativeAccessibilityEnabled &&
+                mNativeContentViewCore != 0 &&
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            mNativeAccessibilityEnabled = true;
+            nativeSetAccessibilityEnabled(mNativeContentViewCore, true);
+        }
+
+        return null;
     }
 
     /**
@@ -2845,29 +2913,20 @@ import java.util.Map;
      * Turns browser accessibility on or off.
      * If |state| is |false|, this turns off both native and injected accessibility.
      * Otherwise, if accessibility script injection is enabled, this will enable the injected
-     * accessibility scripts, and if it is disabled this will enable the native accessibility.
+     * accessibility scripts. Native accessibility is enabled on demand.
      */
     public void setAccessibilityState(boolean state) {
-        boolean injectedAccessibility = false;
-        boolean nativeAccessibility = false;
-        if (state) {
-            if (isDeviceAccessibilityScriptInjectionEnabled()) {
-                injectedAccessibility = true;
-            } else {
-                nativeAccessibility = true;
-            }
+        if (!state) {
+            setInjectedAccessibility(false);
+            return;
         }
-        setInjectedAccessibility(injectedAccessibility);
-        setNativeAccessibilityState(nativeAccessibility);
-    }
 
-    /**
-     * Enable or disable native accessibility features.
-     */
-    public void setNativeAccessibilityState(boolean enabled) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-            nativeSetAccessibilityEnabled(mNativeContentViewCore, enabled);
+        if (isDeviceAccessibilityScriptInjectionEnabled()) {
+            setInjectedAccessibility(true);
+            return;
         }
+
+        mNativeAccessibilityAllowed = true;
     }
 
     /**
@@ -3121,7 +3180,7 @@ import java.util.Map;
     private native void nativeClearHistory(int nativeContentViewCoreImpl);
 
     private native void nativeEvaluateJavaScript(int nativeContentViewCoreImpl,
-            String script, JavaScriptCallback callback);
+            String script, JavaScriptCallback callback, boolean startRenderer);
 
     private native int nativeGetNativeImeAdapter(int nativeContentViewCoreImpl);
 

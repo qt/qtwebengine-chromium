@@ -419,10 +419,8 @@ bool HttpNetworkTransaction::GetLoadTimingInfo(
 
 void HttpNetworkTransaction::SetPriority(RequestPriority priority) {
   priority_ = priority;
-  if (stream_request_)
-    stream_request_->SetPriority(priority);
-  if (stream_)
-    stream_->SetPriority(priority);
+  // TODO(akalin): Plumb this through to |stream_request_| and
+  // |stream_|.
 }
 
 void HttpNetworkTransaction::OnStreamReady(const SSLConfig& used_ssl_config,

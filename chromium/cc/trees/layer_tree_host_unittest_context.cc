@@ -5,8 +5,6 @@
 #include "cc/trees/layer_tree_host.h"
 
 #include "base/basictypes.h"
-#include "cc/debug/test_context_provider.h"
-#include "cc/debug/test_web_graphics_context_3d.h"
 #include "cc/layers/content_layer.h"
 #include "cc/layers/heads_up_display_layer.h"
 #include "cc/layers/io_surface_layer.h"
@@ -21,6 +19,7 @@
 #include "cc/test/fake_content_layer.h"
 #include "cc/test/fake_content_layer_client.h"
 #include "cc/test/fake_content_layer_impl.h"
+#include "cc/test/fake_context_provider.h"
 #include "cc/test/fake_delegated_renderer_layer.h"
 #include "cc/test/fake_delegated_renderer_layer_impl.h"
 #include "cc/test/fake_layer_tree_host_client.h"
@@ -31,6 +30,7 @@
 #include "cc/test/fake_video_frame_provider.h"
 #include "cc/test/layer_tree_test.h"
 #include "cc/test/render_pass_test_common.h"
+#include "cc/test/test_web_graphics_context_3d.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/single_thread_proxy.h"
@@ -141,7 +141,7 @@ class LayerTreeHostContextTest : public LayerTreeTest {
 
     if (!offscreen_contexts_main_thread_.get() ||
         offscreen_contexts_main_thread_->DestroyedOnMainThread()) {
-      offscreen_contexts_main_thread_ = TestContextProvider::Create(
+      offscreen_contexts_main_thread_ = FakeContextProvider::Create(
           base::Bind(&LayerTreeHostContextTest::CreateOffscreenContext3d,
                      base::Unretained(this)));
       if (offscreen_contexts_main_thread_.get() &&
@@ -157,7 +157,7 @@ class LayerTreeHostContextTest : public LayerTreeTest {
 
     if (!offscreen_contexts_compositor_thread_.get() ||
         offscreen_contexts_compositor_thread_->DestroyedOnMainThread()) {
-      offscreen_contexts_compositor_thread_ = TestContextProvider::Create(
+      offscreen_contexts_compositor_thread_ = FakeContextProvider::Create(
           base::Bind(&LayerTreeHostContextTest::CreateOffscreenContext3d,
                      base::Unretained(this)));
     }
@@ -236,8 +236,8 @@ class LayerTreeHostContextTest : public LayerTreeTest {
   bool context_should_support_io_surface_;
   bool fallback_context_works_;
 
-  scoped_refptr<TestContextProvider> offscreen_contexts_main_thread_;
-  scoped_refptr<TestContextProvider> offscreen_contexts_compositor_thread_;
+  scoped_refptr<FakeContextProvider> offscreen_contexts_main_thread_;
+  scoped_refptr<FakeContextProvider> offscreen_contexts_compositor_thread_;
 };
 
 class LayerTreeHostContextTestLostContextSucceeds

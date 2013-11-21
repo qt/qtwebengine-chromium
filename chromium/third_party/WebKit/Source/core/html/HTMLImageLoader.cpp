@@ -26,10 +26,10 @@
 #include "core/dom/Element.h"
 #include "core/dom/Event.h"
 #include "core/dom/EventNames.h"
-#include "core/fetch/ImageResource.h"
 #include "core/html/HTMLObjectElement.h"
 #include "core/html/HTMLVideoElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/loader/cache/ImageResource.h"
 
 namespace WebCore {
 
@@ -69,7 +69,7 @@ void HTMLImageLoader::notifyFinished(Resource*)
     bool loadError = cachedImage->errorOccurred() || cachedImage->response().httpStatusCode() >= 400;
 
     if (loadError && element->hasTagName(HTMLNames::objectTag))
-        toHTMLObjectElement(element.get())->renderFallbackContent();
+        static_cast<HTMLObjectElement*>(element.get())->renderFallbackContent();
 }
 
 }

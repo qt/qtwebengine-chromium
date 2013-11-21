@@ -64,9 +64,10 @@ public:
     virtual void createWriter(AsyncFileWriterClient*, const KURL& path, PassOwnPtr<AsyncFileSystemCallbacks>);
     virtual void createSnapshotFileAndReadMetadata(const KURL& path, PassOwnPtr<AsyncFileSystemCallbacks>);
 
-private:
+protected:
     AsyncFileSystemChromium();
-    WebKit::WebFileSystem* webFileSystem();
+
+    WebKit::WebFileSystem* m_webFileSystem;
 };
 
 } // namespace WebCore

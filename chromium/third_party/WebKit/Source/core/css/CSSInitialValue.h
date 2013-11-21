@@ -44,7 +44,7 @@ public:
     bool equals(const CSSInitialValue&) const { return true; }
 
 private:
-    explicit CSSInitialValue(bool implicit)
+    CSSInitialValue(bool implicit)
         : CSSValue(InitialClass)
         , m_isImplicit(implicit)
     {

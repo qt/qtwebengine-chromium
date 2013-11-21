@@ -91,8 +91,7 @@ class CoalescedWebTouchEvent {
 
 TouchEventQueue::TouchEventQueue(TouchEventQueueClient* client)
     : client_(client),
-      dispatching_touch_ack_(false),
-      no_touch_move_to_renderer_(false) {
+      dispatching_touch_ack_(false) {
   DCHECK(client);
 }
 
@@ -212,10 +211,6 @@ bool TouchEventQueue::ShouldForwardToRenderer(
   // Touch press events should always be forwarded to the renderer.
   if (event.type == WebKit::WebInputEvent::TouchStart)
     return true;
-
-  if (event.type == WebKit::WebInputEvent::TouchMove &&
-      no_touch_move_to_renderer_)
-    return false;
 
   for (unsigned int i = 0; i < event.touchesLength; ++i) {
     const WebKit::WebTouchPoint& point = event.touches[i];

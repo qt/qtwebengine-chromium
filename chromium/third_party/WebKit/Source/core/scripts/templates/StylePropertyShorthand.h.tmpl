@@ -70,9 +70,8 @@ private:
 {%- set camel_case_name = property.camel_case_name %}
 const StylePropertyShorthand& {{ camel_case_name }}Shorthand();
 {%- endfor %}
-
-// Returns an empty list if the property is not a shorthand, otherwise the list of longhands for parsing.
-const StylePropertyShorthand& parsingShorthandForProperty(CSSPropertyID);
+const StylePropertyShorthand& borderShorthandForParsing();
+const StylePropertyShorthand& webkitAnimationShorthandForParsing();
 
 // Returns an empty list if the property is not a shorthand.
 const StylePropertyShorthand& shorthandForProperty(CSSPropertyID);

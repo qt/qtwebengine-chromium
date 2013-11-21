@@ -140,10 +140,10 @@ int SOCKSConnectJob::DoSOCKSConnect() {
 
   // Add a SOCKS connection on top of the tcp socket.
   if (socks_params_->is_socks_v5()) {
-    socket_.reset(new SOCKS5ClientSocket(transport_socket_handle_.Pass(),
+    socket_.reset(new SOCKS5ClientSocket(transport_socket_handle_.release(),
                                          socks_params_->destination()));
   } else {
-    socket_.reset(new SOCKSClientSocket(transport_socket_handle_.Pass(),
+    socket_.reset(new SOCKSClientSocket(transport_socket_handle_.release(),
                                         socks_params_->destination(),
                                         resolver_));
   }
@@ -157,7 +157,7 @@ int SOCKSConnectJob::DoSOCKSConnectComplete(int result) {
     return result;
   }
 
-  SetSocket(socket_.Pass());
+  set_socket(socket_.release());
   return result;
 }
 
@@ -166,18 +166,17 @@ int SOCKSConnectJob::ConnectInternal() {
   return DoLoop(OK);
 }
 
-scoped_ptr<ConnectJob>
-SOCKSClientSocketPool::SOCKSConnectJobFactory::NewConnectJob(
+ConnectJob* SOCKSClientSocketPool::SOCKSConnectJobFactory::NewConnectJob(
     const std::string& group_name,
     const PoolBase::Request& request,
     ConnectJob::Delegate* delegate) const {
-  return scoped_ptr<ConnectJob>(new SOCKSConnectJob(group_name,
-                                                    request.params(),
-                                                    ConnectionTimeout(),
-                                                    transport_pool_,
-                                                    host_resolver_,
-                                                    delegate,
-                                                    net_log_));
+  return new SOCKSConnectJob(group_name,
+                             request.params(),
+                             ConnectionTimeout(),
+                             transport_pool_,
+                             host_resolver_,
+                             delegate,
+                             net_log_);
 }
 
 base::TimeDelta
@@ -239,9 +238,8 @@ void SOCKSClientSocketPool::CancelRequest(const std::string& group_name,
 }
 
 void SOCKSClientSocketPool::ReleaseSocket(const std::string& group_name,
-                                          scoped_ptr<StreamSocket> socket,
-                                          int id) {
-  base_.ReleaseSocket(group_name, socket.Pass(), id);
+                                          StreamSocket* socket, int id) {
+  base_.ReleaseSocket(group_name, socket, id);
 }
 
 void SOCKSClientSocketPool::FlushWithError(int error) {

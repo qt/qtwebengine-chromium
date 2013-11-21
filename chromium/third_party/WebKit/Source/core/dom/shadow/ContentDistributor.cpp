@@ -33,6 +33,7 @@
 #include "core/html/shadow/HTMLContentElement.h"
 #include "core/html/shadow/HTMLShadowElement.h"
 
+
 namespace WebCore {
 
 void ContentDistribution::swap(ContentDistribution& other)
@@ -156,6 +157,8 @@ InsertionPoint* ContentDistributor::findInsertionPointFor(const Node* key) const
 
 void ContentDistributor::populate(Node* node, Vector<Node*>& pool)
 {
+    node->lazyReattachIfAttached();
+
     if (!isActiveInsertionPoint(node)) {
         pool.append(node);
         return;
@@ -224,14 +227,6 @@ void ContentDistributor::distribute(Element* host)
         if (ElementShadow* shadow = shadowOfParentForDistribution(shadowElement))
             shadow->setNeedsDistributionRecalc();
     }
-
-    // Detach all nodes that were not distributed and have a renderer.
-    for (size_t i = 0; i < pool.size(); ++i) {
-        if (distributed[i])
-            continue;
-        if (pool[i]->renderer())
-            pool[i]->lazyReattachIfAttached();
-    }
 }
 
 void ContentDistributor::distributeSelectionsTo(InsertionPoint* insertionPoint, const Vector<Node*>& pool, Vector<bool>& distributed)
@@ -251,6 +246,7 @@ void ContentDistributor::distributeSelectionsTo(InsertionPoint* insertionPoint, 
         distributed[i] = true;
     }
 
+    insertionPoint->lazyReattachIfAttached();
     insertionPoint->setDistribution(distribution);
 }
 
@@ -258,6 +254,7 @@ void ContentDistributor::distributeNodeChildrenTo(InsertionPoint* insertionPoint
 {
     ContentDistribution distribution;
     for (Node* node = containerNode->firstChild(); node; node = node->nextSibling()) {
+        node->lazyReattachIfAttached();
         if (isActiveInsertionPoint(node)) {
             InsertionPoint* innerInsertionPoint = toInsertionPoint(node);
             if (innerInsertionPoint->hasDistribution()) {
@@ -277,6 +274,7 @@ void ContentDistributor::distributeNodeChildrenTo(InsertionPoint* insertionPoint
         }
     }
 
+    insertionPoint->lazyReattachIfAttached();
     insertionPoint->setDistribution(distribution);
 }
 

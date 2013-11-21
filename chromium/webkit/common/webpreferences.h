@@ -169,7 +169,11 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool user_gesture_required_for_media_playback;
   GURL default_video_poster_url;
   bool support_deprecated_target_density_dpi;
+  bool use_legacy_background_size_shorthand_behavior;
+  bool wide_viewport_quirk;
   bool use_wide_viewport;
+  bool viewport_meta_layout_size_quirk;
+  bool viewport_meta_zero_values_quirk;
 #endif
 
   // We try to keep the default values the same as the default values in

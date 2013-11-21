@@ -177,7 +177,6 @@ struct ZoneAllocationPolicy {
   explicit ZoneAllocationPolicy(Zone* zone) : zone_(zone) { }
   INLINE(void* New(size_t size));
   INLINE(static void Delete(void *pointer)) { }
-  Zone* zone() { return zone_; }
 
  private:
   Zone* zone_;
@@ -202,7 +201,7 @@ class ZoneList: public List<T, ZoneAllocationPolicy> {
   ZoneList(const ZoneList<T>& other, Zone* zone)
       : List<T, ZoneAllocationPolicy>(other.length(),
                                       ZoneAllocationPolicy(zone)) {
-    AddAll(other, zone);
+    AddAll(other, ZoneAllocationPolicy(zone));
   }
 
   // We add some convenience wrappers so that we can pass in a Zone
@@ -210,7 +209,8 @@ class ZoneList: public List<T, ZoneAllocationPolicy> {
   INLINE(void Add(const T& element, Zone* zone)) {
     List<T, ZoneAllocationPolicy>::Add(element, ZoneAllocationPolicy(zone));
   }
-  INLINE(void AddAll(const List<T, ZoneAllocationPolicy>& other, Zone* zone)) {
+  INLINE(void AddAll(const List<T, ZoneAllocationPolicy>& other,
+                     Zone* zone)) {
     List<T, ZoneAllocationPolicy>::AddAll(other, ZoneAllocationPolicy(zone));
   }
   INLINE(void AddAll(const Vector<T>& other, Zone* zone)) {
@@ -246,11 +246,6 @@ class ZoneSplayTree: public SplayTree<Config, ZoneAllocationPolicy> {
   explicit ZoneSplayTree(Zone* zone)
       : SplayTree<Config, ZoneAllocationPolicy>(ZoneAllocationPolicy(zone)) {}
   ~ZoneSplayTree();
-
-  INLINE(void* operator new(size_t size, Zone* zone));
-
-  void operator delete(void* pointer) { UNREACHABLE(); }
-  void operator delete(void* pointer, Zone* zone) { UNREACHABLE(); }
 };
 
 

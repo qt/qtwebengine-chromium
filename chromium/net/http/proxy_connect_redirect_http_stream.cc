@@ -109,10 +109,6 @@ void ProxyConnectRedirectHttpStream::Drain(HttpNetworkSession* session) {
   NOTREACHED();
 }
 
-void ProxyConnectRedirectHttpStream::SetPriority(RequestPriority priority) {
-  // Nothing to do.
-}
-
 UploadProgress ProxyConnectRedirectHttpStream::GetUploadProgress() const {
   NOTREACHED();
   return UploadProgress();

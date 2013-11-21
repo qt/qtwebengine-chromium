@@ -48,5 +48,8 @@ WebRTCAudioDeviceTest.WebRtcRecordingSetupTime
 FontSerializationTest.StyledFonts
 MacSandboxTest.FontLoadingTest
 
+# http://crbug.com/247685
+DesktopCaptureDeviceTest.Capture
+
 # http://crbug.com/270254
 DeviceOrientationEventPumpTest.*

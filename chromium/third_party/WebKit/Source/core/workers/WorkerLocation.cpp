@@ -25,9 +25,10 @@
  */
 
 #include "config.h"
+
 #include "core/workers/WorkerLocation.h"
 
-#include "wtf/text/WTFString.h"
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 

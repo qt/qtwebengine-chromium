@@ -83,14 +83,6 @@ namespace WebCore {
 // NOTE: Do not use this list, use computableProperties() instead
 // to respect runtime enabling of CSS properties.
 static const CSSPropertyID staticComputableProperties[] = {
-    CSSPropertyAnimationDelay,
-    CSSPropertyAnimationDirection,
-    CSSPropertyAnimationDuration,
-    CSSPropertyAnimationFillMode,
-    CSSPropertyAnimationIterationCount,
-    CSSPropertyAnimationName,
-    CSSPropertyAnimationPlayState,
-    CSSPropertyAnimationTimingFunction,
     CSSPropertyBackgroundAttachment,
     CSSPropertyBackgroundBlendMode,
     CSSPropertyBackgroundClip,
@@ -2338,48 +2330,24 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
             return cssValuePool().createIdentifierValue(CSSValueBorderBox);
         case CSSPropertyWebkitAppRegion:
             return cssValuePool().createIdentifierValue(style->getDraggableRegionMode() == DraggableRegionDrag ? CSSValueDrag : CSSValueNoDrag);
-        case CSSPropertyAnimationDelay:
-            if (!RuntimeEnabledFeatures::cssAnimationUnprefixedEnabled())
-                break;
         case CSSPropertyWebkitAnimationDelay:
             return getDelayValue(style->animations());
-        case CSSPropertyAnimationDirection:
-            if (!RuntimeEnabledFeatures::cssAnimationUnprefixedEnabled())
-                break;
         case CSSPropertyWebkitAnimationDirection: {
             RefPtr<CSSValueList> list = CSSValueList::createCommaSeparated();
             const CSSAnimationDataList* t = style->animations();
             if (t) {
                 for (size_t i = 0; i < t->size(); ++i) {
-                    switch (t->animation(i)->direction()) {
-                    case CSSAnimationData::AnimationDirectionNormal:
-                        list->append(cssValuePool().createIdentifierValue(CSSValueNormal));
-                        break;
-                    case CSSAnimationData::AnimationDirectionAlternate:
+                    if (t->animation(i)->direction())
                         list->append(cssValuePool().createIdentifierValue(CSSValueAlternate));
-                        break;
-                    case CSSAnimationData::AnimationDirectionReverse:
-                        list->append(cssValuePool().createIdentifierValue(CSSValueReverse));
-                        break;
-                    case CSSAnimationData::AnimationDirectionAlternateReverse:
-                        list->append(cssValuePool().createIdentifierValue(CSSValueAlternateReverse));
-                        break;
-                    default:
-                        ASSERT_NOT_REACHED();
-                    }
+                    else
+                        list->append(cssValuePool().createIdentifierValue(CSSValueNormal));
                 }
             } else
                 list->append(cssValuePool().createIdentifierValue(CSSValueNormal));
             return list.release();
         }
-        case CSSPropertyAnimationDuration:
-            if (!RuntimeEnabledFeatures::cssAnimationUnprefixedEnabled())
-                break;
         case CSSPropertyWebkitAnimationDuration:
             return getDurationValue(style->animations());
-        case CSSPropertyAnimationFillMode:
-            if (!RuntimeEnabledFeatures::cssAnimationUnprefixedEnabled())
-                break;
         case CSSPropertyWebkitAnimationFillMode: {
             RefPtr<CSSValueList> list = CSSValueList::createCommaSeparated();
             const CSSAnimationDataList* t = style->animations();
@@ -2404,9 +2372,6 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
                 list->append(cssValuePool().createIdentifierValue(CSSValueNone));
             return list.release();
         }
-        case CSSPropertyAnimationIterationCount:
-            if (!RuntimeEnabledFeatures::cssAnimationUnprefixedEnabled())
-                break;
         case CSSPropertyWebkitAnimationIterationCount: {
             RefPtr<CSSValueList> list = CSSValueList::createCommaSeparated();
             const CSSAnimationDataList* t = style->animations();
@@ -2422,9 +2387,6 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
                 list->append(cssValuePool().createValue(CSSAnimationData::initialAnimationIterationCount(), CSSPrimitiveValue::CSS_NUMBER));
             return list.release();
         }
-        case CSSPropertyAnimationName:
-            if (!RuntimeEnabledFeatures::cssAnimationUnprefixedEnabled())
-                break;
         case CSSPropertyWebkitAnimationName: {
             RefPtr<CSSValueList> list = CSSValueList::createCommaSeparated();
             const CSSAnimationDataList* t = style->animations();
@@ -2435,9 +2397,6 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
                 list->append(cssValuePool().createIdentifierValue(CSSValueNone));
             return list.release();
         }
-        case CSSPropertyAnimationPlayState:
-            if (!RuntimeEnabledFeatures::cssAnimationUnprefixedEnabled())
-                break;
         case CSSPropertyWebkitAnimationPlayState: {
             RefPtr<CSSValueList> list = CSSValueList::createCommaSeparated();
             const CSSAnimationDataList* t = style->animations();
@@ -2453,9 +2412,6 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
                 list->append(cssValuePool().createIdentifierValue(CSSValueRunning));
             return list.release();
         }
-        case CSSPropertyAnimationTimingFunction:
-            if (!RuntimeEnabledFeatures::cssAnimationUnprefixedEnabled())
-                break;
         case CSSPropertyWebkitAnimationTimingFunction:
             return getTimingFunctionValue(style->animations());
         case CSSPropertyWebkitAppearance:
@@ -2810,7 +2766,6 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
             break;
 
         /* Unimplemented -webkit- properties */
-        case CSSPropertyAnimation:
         case CSSPropertyWebkitAnimation:
         case CSSPropertyWebkitBorderRadius:
         case CSSPropertyWebkitMarginCollapse:

@@ -159,6 +159,7 @@ extern const char kEnableWebAnimationsSVG[];
 CONTENT_EXPORT extern const char kEnableWebGLDraftExtensions[];
 extern const char kEnableWebMIDI[];
 extern const char kEnableWebRtcTcpServerSocket[];
+CONTENT_EXPORT extern const char kExperimentalLocationFeatures[];
 CONTENT_EXPORT extern const char kExtraPluginDir[];
 CONTENT_EXPORT extern const char kForceCompositingMode[];
 extern const char kForceFieldTrials[];
@@ -223,7 +224,6 @@ extern const char kTapDownDeferralTimeMs[];
 CONTENT_EXPORT extern const char kTestingFixedHttpPort[];
 CONTENT_EXPORT extern const char kTestingFixedHttpsPort[];
 CONTENT_EXPORT extern const char kTestSandbox[];
-CONTENT_EXPORT extern const char kNoTouchToRendererWhileScrolling[];
 extern const char kTraceStartup[];
 extern const char kTraceStartupDuration[];
 extern const char kTraceStartupFile[];
@@ -248,7 +248,6 @@ CONTENT_EXPORT extern const char kDisableDeviceEnumeration[];
 CONTENT_EXPORT extern const char kEnableSCTPDataChannels[];
 extern const char kEnableWebRtcAecRecordings[];
 extern const char kEnableWebRtcHWDecoding[];
-extern const char kEnableWebRtcHWEncoding[];
 #endif
 
 #if defined(OS_ANDROID)

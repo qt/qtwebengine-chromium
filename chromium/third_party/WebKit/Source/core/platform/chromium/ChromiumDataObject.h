@@ -62,8 +62,8 @@ public:
     // FIXME: Implement V8DataTransferItemList::indexedPropertyDeleter to get this called.
     void deleteItem(unsigned long index);
     void clearAll();
-    PassRefPtr<ChromiumDataObjectItem> add(const String& data, const String& type, ExceptionState&);
-    PassRefPtr<ChromiumDataObjectItem> add(PassRefPtr<File>, ScriptExecutionContext*);
+    void add(const String& data, const String& type, ExceptionState&);
+    void add(PassRefPtr<File>, ScriptExecutionContext*);
 
     // WebCore helpers.
     void clearData(const String& type);

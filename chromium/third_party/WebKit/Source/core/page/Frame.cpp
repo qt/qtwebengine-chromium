@@ -39,10 +39,10 @@
 #include "core/editing/InputMethodController.h"
 #include "core/editing/htmlediting.h"
 #include "core/editing/markup.h"
-#include "core/fetch/ResourceFetcher.h"
 #include "core/html/HTMLFrameElementBase.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
+#include "core/loader/cache/ResourceFetcher.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/DOMWindow.h"
@@ -707,17 +707,6 @@ PassOwnPtr<DragImage> Frame::dragImageForSelection()
 
     RefPtr<Image> image = buffer->copyImage();
     return DragImage::create(image.get());
-}
-
-double Frame::devicePixelRatio() const
-{
-    if (!m_page)
-        return 0;
-
-    double ratio = m_page->deviceScaleFactor();
-    if (RuntimeEnabledFeatures::devicePixelRatioIncludesZoomEnabled())
-        ratio *= pageZoomFactor();
-    return ratio;
 }
 
 } // namespace WebCore

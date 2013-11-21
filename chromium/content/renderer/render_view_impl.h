@@ -484,7 +484,6 @@ class CONTENT_EXPORT RenderViewImpl
                                           const WebKit::WebString& message);
   virtual void showContextMenu(WebKit::WebFrame* frame,
                                const WebKit::WebContextMenuData& data);
-  virtual void clearContextMenu();
   virtual void setStatusText(const WebKit::WebString& text);
   virtual void setMouseOverURL(const WebKit::WebURL& url);
   virtual void setKeyboardFocusURL(const WebKit::WebURL& url);
@@ -1091,6 +1090,9 @@ class CONTENT_EXPORT RenderViewImpl
   void CheckPreferredSize();
 
   // Initializes |media_stream_client_| if needed.
+  // TODO(qinmin): rename this function as it does not guarantee
+  // |media_stream_client_| will be created.
+  // http://crbug.com/278490.
   void EnsureMediaStreamClient();
 
   // This callback is triggered when DownloadFavicon completes, either

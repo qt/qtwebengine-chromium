@@ -32,9 +32,9 @@
 #include "core/html/HTMLImportsController.h"
 
 #include "core/dom/Document.h"
-#include "core/fetch/ResourceFetcher.h"
 #include "core/html/HTMLImportLoader.h"
 #include "core/html/HTMLImportLoaderClient.h"
+#include "core/loader/cache/ResourceFetcher.h"
 
 namespace WebCore {
 
@@ -78,14 +78,9 @@ PassRefPtr<HTMLImportLoader> HTMLImportsController::createLoader(HTMLImport* par
     if (!resource)
         return 0;
 
-    RefPtr<HTMLImportLoader> loader = adoptRef(new HTMLImportLoader(parent, request.url()));
+    RefPtr<HTMLImportLoader> loader = adoptRef(new HTMLImportLoader(parent, request.url(), resource));
     parent->appendChild(loader.get());
     m_imports.append(loader);
-
-    // We set resource after the import tree is built since
-    // Resource::addClient() immediately calls back to feed the bytes when the resource is cached.
-    loader->setResource(resource);
-
     return loader.release();
 }
 

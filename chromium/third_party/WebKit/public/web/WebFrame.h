@@ -456,8 +456,6 @@ public:
     virtual void moveRangeSelection(const WebPoint& base, const WebPoint& extent) = 0;
     virtual void moveCaretSelection(const WebPoint&) = 0;
 
-    virtual void setCaretVisible(bool) = 0;
-
     // Printing ------------------------------------------------------------
 
     // Reformats the WebFrame for printing. WebPrintParams specifies the printable

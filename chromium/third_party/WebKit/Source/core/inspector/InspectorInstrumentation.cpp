@@ -31,7 +31,6 @@
 #include "config.h"
 #include "core/inspector/InspectorInstrumentation.h"
 
-#include "core/fetch/FetchInitiatorInfo.h"
 #include "core/inspector/InspectorAgent.h"
 #include "core/inspector/InspectorCSSAgent.h"
 #include "core/inspector/InspectorConsoleAgent.h"
@@ -42,6 +41,7 @@
 #include "core/inspector/InspectorTimelineAgent.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/inspector/WorkerInspectorController.h"
+#include "core/loader/cache/FetchInitiatorInfo.h"
 #include "core/workers/WorkerGlobalScope.h"
 
 namespace WebCore {

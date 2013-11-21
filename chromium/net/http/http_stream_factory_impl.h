@@ -9,7 +9,6 @@
 #include <set>
 #include <vector>
 
-#include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_log.h"
@@ -67,10 +66,8 @@ class NET_EXPORT_PRIVATE HttpStreamFactoryImpl :
   size_t num_orphaned_jobs() const { return orphaned_job_set_.size(); }
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(HttpStreamFactoryImplRequestTest, SetPriority);
-
-  class NET_EXPORT_PRIVATE Request;
-  class NET_EXPORT_PRIVATE Job;
+  class Request;
+  class Job;
 
   typedef std::set<Request*> RequestSet;
   typedef std::vector<Request*> RequestVector;

@@ -17,7 +17,7 @@
 #include "webkit/browser/fileapi/file_system_backend.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/mock_file_system_options.h"
-#include "webkit/browser/fileapi/sandbox_file_system_backend_delegate.h"
+#include "webkit/browser/fileapi/sandbox_context.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
 // PS stands for path separator.
@@ -85,11 +85,11 @@ class SandboxFileSystemBackendTest : public testing::Test {
  protected:
   virtual void SetUp() {
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
-    SetUpNewDelegate(CreateAllowFileAccessOptions());
+    SetUpNewSandboxContext(CreateAllowFileAccessOptions());
   }
 
-  void SetUpNewDelegate(const FileSystemOptions& options) {
-    delegate_.reset(new SandboxFileSystemBackendDelegate(
+  void SetUpNewSandboxContext(const FileSystemOptions& options) {
+    context_.reset(new SandboxContext(
         NULL /* quota_manager_proxy */,
         base::MessageLoopProxy::current().get(),
         data_dir_.path(),
@@ -98,18 +98,17 @@ class SandboxFileSystemBackendTest : public testing::Test {
   }
 
   void SetUpNewBackend(const FileSystemOptions& options) {
-    SetUpNewDelegate(options);
-    backend_.reset(new SandboxFileSystemBackend(delegate_.get()));
+    SetUpNewSandboxContext(options);
+    backend_.reset(new SandboxFileSystemBackend(context_.get()));
   }
 
-  SandboxFileSystemBackendDelegate::OriginEnumerator*
-  CreateOriginEnumerator() const {
+  SandboxContext::OriginEnumerator* CreateOriginEnumerator() const {
     return backend_->CreateOriginEnumerator();
   }
 
   void CreateOriginTypeDirectory(const GURL& origin,
                                  fileapi::FileSystemType type) {
-    base::FilePath target = delegate_->
+    base::FilePath target = context_->
         GetBaseDirectoryForOriginAndType(origin, type, true);
     ASSERT_TRUE(!target.empty());
     ASSERT_TRUE(base::DirectoryExists(target));
@@ -127,7 +126,7 @@ class SandboxFileSystemBackendTest : public testing::Test {
     if (error != base::PLATFORM_FILE_OK)
       return false;
     base::FilePath returned_root_path =
-        delegate_->GetBaseDirectoryForOriginAndType(
+        context_->GetBaseDirectoryForOriginAndType(
             origin_url, type, false /* create */);
     if (root_path)
       *root_path = returned_root_path;
@@ -135,19 +134,18 @@ class SandboxFileSystemBackendTest : public testing::Test {
   }
 
   base::FilePath file_system_path() const {
-    return data_dir_.path().Append(
-        SandboxFileSystemBackendDelegate::kFileSystemDirectory);
+    return data_dir_.path().Append(SandboxContext::kFileSystemDirectory);
   }
 
   base::ScopedTempDir data_dir_;
   base::MessageLoop message_loop_;
-  scoped_ptr<SandboxFileSystemBackendDelegate> delegate_;
+  scoped_ptr<SandboxContext> context_;
   scoped_ptr<SandboxFileSystemBackend> backend_;
 };
 
 TEST_F(SandboxFileSystemBackendTest, Empty) {
   SetUpNewBackend(CreateAllowFileAccessOptions());
-  scoped_ptr<SandboxFileSystemBackendDelegate::OriginEnumerator> enumerator(
+  scoped_ptr<SandboxContext::OriginEnumerator> enumerator(
       CreateOriginEnumerator());
   ASSERT_TRUE(enumerator->Next().is_empty());
 }
@@ -180,7 +178,7 @@ TEST_F(SandboxFileSystemBackendTest, EnumerateOrigins) {
     persistent_set.insert(GURL(persistent_origins[i]));
   }
 
-  scoped_ptr<SandboxFileSystemBackendDelegate::OriginEnumerator> enumerator(
+  scoped_ptr<SandboxContext::OriginEnumerator> enumerator(
       CreateOriginEnumerator());
   size_t temporary_actual_size = 0;
   size_t persistent_actual_size = 0;

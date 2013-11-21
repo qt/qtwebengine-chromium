@@ -35,8 +35,7 @@
 namespace WebCore {
 
 DeviceMotionController::DeviceMotionController(Document* document)
-    : DOMWindowLifecycleObserver(document->domWindow())
-    , DeviceSensorEventController(document)
+    : DeviceSensorEventController(document)
 {
 }
 
@@ -89,11 +88,6 @@ bool DeviceMotionController::isNullEvent(Event* event)
     ASSERT(event->type() == eventNames().devicemotionEvent);
     DeviceMotionEvent* motionEvent = static_cast<DeviceMotionEvent*>(event);
     return !motionEvent->deviceMotionData()->canProvideEventData();
-}
-
-void DeviceMotionController::removeAllEventListeners()
-{
-    stopUpdating();
 }
 
 } // namespace WebCore

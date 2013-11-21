@@ -673,11 +673,10 @@ static inline bool objectIsRelayoutBoundary(const RenderObject* object)
     return true;
 }
 
-void RenderObject::markContainingBlocksForLayout(bool scheduleRelayout, RenderObject* newRoot, SubtreeLayoutScope* layouter)
+void RenderObject::markContainingBlocksForLayout(bool scheduleRelayout, RenderObject* newRoot)
 {
     ASSERT(!scheduleRelayout || !newRoot);
     ASSERT(!isSetNeedsLayoutForbidden());
-    ASSERT(!layouter || this != layouter->root());
 
     RenderObject* object = container();
     RenderObject* last = this;
@@ -721,12 +720,6 @@ void RenderObject::markContainingBlocksForLayout(bool scheduleRelayout, RenderOb
                 return;
             object->setNormalChildNeedsLayout(true);
             ASSERT(!object->isSetNeedsLayoutForbidden());
-        }
-
-        if (layouter) {
-            layouter->addRendererToLayout(object);
-            if (object == layouter->root())
-                return;
         }
 
         if (object == newRoot)
@@ -1128,7 +1121,7 @@ void RenderObject::drawLineForBoxSide(GraphicsContext* graphicsContext, int x1, 
 void RenderObject::paintFocusRing(PaintInfo& paintInfo, const LayoutPoint& paintOffset, RenderStyle* style)
 {
     Vector<IntRect> focusRingRects;
-    addFocusRingRects(focusRingRects, paintOffset, paintInfo.paintContainer());
+    addFocusRingRects(focusRingRects, paintOffset, paintInfo.paintContainer);
     if (style->outlineStyleIsAuto())
         paintInfo.context->drawFocusRing(focusRingRects, style->outlineWidth(), style->outlineOffset(), resolveColor(style, CSSPropertyOutlineColor));
     else
@@ -1871,8 +1864,6 @@ void RenderObject::setStyle(PassRefPtr<RenderStyle> style)
     updateImage(oldStyle ? oldStyle->borderImage().image() : 0, m_style ? m_style->borderImage().image() : 0);
     updateImage(oldStyle ? oldStyle->maskBoxImage().image() : 0, m_style ? m_style->maskBoxImage().image() : 0);
 
-    updateShapeImage(oldStyle ? oldStyle->shapeInside() : 0, m_style ? m_style->shapeInside() : 0);
-
     // We need to ensure that view->maximalOutlineSize() is valid for any repaints that happen
     // during styleDidChange (it's used by clippedOverflowRectForRepaint()).
     if (m_style->outlineWidth() > 0 && m_style->outlineSize() > maximalOutlineSize(PaintPhaseOutline))
@@ -2112,12 +2103,6 @@ void RenderObject::updateImage(StyleImage* oldImage, StyleImage* newImage)
         if (newImage)
             newImage->addClient(this);
     }
-}
-
-void RenderObject::updateShapeImage(const ShapeValue* oldShapeValue, const ShapeValue* newShapeValue)
-{
-    if (oldShapeValue || newShapeValue)
-        updateImage(oldShapeValue ? oldShapeValue->image() : 0, newShapeValue ? newShapeValue->image() : 0);
 }
 
 LayoutRect RenderObject::viewRect() const
@@ -2671,14 +2656,6 @@ void RenderObject::destroyAndCleanupAnonymousWrappers()
     // WARNING: |this| is deleted here.
 }
 
-void RenderObject::removeShapeImageClient(ShapeValue* shapeValue)
-{
-    if (!shapeValue)
-        return;
-    if (StyleImage* shapeImage = shapeValue->image())
-        shapeImage->removeClient(this);
-}
-
 void RenderObject::destroy()
 {
     willBeDestroyed();
@@ -2704,8 +2681,6 @@ void RenderObject::postDestroy()
 
         if (StyleImage* maskBoxImage = m_style->maskBoxImage().image())
             maskBoxImage->removeClient(this);
-
-        removeShapeImageClient(m_style->shapeInside());
     }
 
     delete this;

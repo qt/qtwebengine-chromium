@@ -312,16 +312,6 @@ modules = [
         ]
     },
     {
-        "name": "layers",
-        "dependencies": ["components"],
-        "sources": [
-            "LayerTreeModel.js",
-            "LayersPanel.js",
-            "LayerTree.js",
-            "Layers3DView.js",
-        ]
-    },
-    {
         "name": "extensions",
         "dependencies": ["components"],
         "sources": [
