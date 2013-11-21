@@ -26,6 +26,15 @@ public class ContentViewScrollingTest extends ContentShellTestBase {
             "<body>Lorem ipsum dolor sit amet, consectetur adipiscing elit.</body>" +
             "</html>");
 
+    private void assertWaitForPageScaleFactor(final float scale) throws InterruptedException {
+        assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
+            @Override
+            public boolean isSatisfied() {
+                return getContentViewCore().getScale() == scale;
+            }
+        }));
+    }
+
     private void assertWaitForScroll(final boolean hugLeft, final boolean hugTop)
             throws InterruptedException {
         assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
@@ -70,7 +79,7 @@ public class ContentViewScrollingTest extends ContentShellTestBase {
 
         launchContentShellWithUrl(LARGE_PAGE);
         assertTrue("Page failed to load", waitForActiveShellToBeDoneLoading());
-        assertWaitForPageScaleFactorMatch(1.0f);
+        assertWaitForPageScaleFactor(1.0f);
 
         assertEquals(0, getContentViewCore().getNativeScrollXForTest());
         assertEquals(0, getContentViewCore().getNativeScrollYForTest());

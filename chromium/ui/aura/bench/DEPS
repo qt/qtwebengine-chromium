@@ -1,5 +1,4 @@
 include_rules = [
-  "+cc",
   "+third_party/khronos",
   "+third_party/WebKit/public/platform",
 ]

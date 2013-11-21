@@ -36,7 +36,6 @@
 #include "core/css/resolver/StyleBuilder.h"
 #include "core/css/resolver/StyleResolverState.h"
 #include "core/css/resolver/StyleResourceLoader.h"
-#include "wtf/Deque.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
 #include "wtf/RefPtr.h"
@@ -85,9 +84,6 @@ enum RuleMatchingBehavior {
     MatchAllRulesExcludingSMIL,
     MatchOnlyUserAgentRules,
 };
-
-const unsigned styleSharingListSize = 20;
-typedef WTF::Deque<Element*, styleSharingListSize> StyleSharingList;
 
 #undef STYLE_STATS
 
@@ -216,9 +212,10 @@ public:
     // FIXME: It could be better to call m_ruleSets.appendAuthorStyleSheets() directly after we factor StyleRsolver further.
     // https://bugs.webkit.org/show_bug.cgi?id=108890
     void appendAuthorStyleSheets(unsigned firstNew, const Vector<RefPtr<CSSStyleSheet> >&);
+    // FIXME: resetAuthorStyle() will be removed when rulesets are reset in a per-scoping node manner.
+    void resetAuthorStyle();
     void resetAuthorStyle(const ContainerNode*);
     void resetAtHostRules(const ContainerNode*);
-    void finishAppendAuthorStyleSheets();
 
     DocumentRuleSets& ruleSets() { return m_ruleSets; }
     const DocumentRuleSets& ruleSets() const { return m_ruleSets; }
@@ -278,11 +275,6 @@ public:
     void collectViewportRules(RuleSet*);
 
     const RuleFeatureSet& ruleFeatureSet() const { return m_features; }
-
-    StyleSharingList& styleSharingList() { return m_styleSharingList; }
-
-    void addToStyleSharingList(Element*);
-    void clearStyleSharingList();
 
 #ifdef STYLE_STATS
     ALWAYS_INLINE static StyleSharingStats& styleSharingStats() { return m_styleSharingStats; }
@@ -366,8 +358,6 @@ private:
     InspectorCSSOMWrappers m_inspectorCSSOMWrappers;
 
     StyleResourceLoader m_styleResourceLoader;
-
-    StyleSharingList m_styleSharingList;
 
 #ifdef STYLE_STATS
     static StyleSharingStats m_styleSharingStats;

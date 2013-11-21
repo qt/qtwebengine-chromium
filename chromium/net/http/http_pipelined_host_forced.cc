@@ -36,9 +36,10 @@ HttpPipelinedStream* HttpPipelinedHostForced::CreateStreamOnNewPipeline(
     bool was_npn_negotiated,
     NextProto protocol_negotiated) {
   CHECK(!pipeline_.get());
-  scoped_ptr<BufferedWriteStreamSocket> buffered_socket(
-      new BufferedWriteStreamSocket(connection->PassSocket()));
-  connection->SetSocket(buffered_socket.PassAs<StreamSocket>());
+  StreamSocket* wrapped_socket = connection->release_socket();
+  BufferedWriteStreamSocket* buffered_socket = new BufferedWriteStreamSocket(
+      wrapped_socket);
+  connection->set_socket(buffered_socket);
   pipeline_.reset(factory_->CreateNewPipeline(
       connection, this, key_.origin(), used_ssl_config, used_proxy_info,
       net_log, was_npn_negotiated, protocol_negotiated));

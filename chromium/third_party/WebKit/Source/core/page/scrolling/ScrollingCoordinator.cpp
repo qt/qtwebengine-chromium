@@ -366,6 +366,11 @@ void ScrollingCoordinator::setTouchEventTargetRects(const LayerHitTestRects& lay
     LayerHitTestRects compositorRects;
     convertLayerRectsToEnclosingCompositedLayer(layerRects, compositorRects);
 
+    // Inform any observers (i.e. for testing) of these new rects.
+    HashSet<TouchEventTargetRectsObserver*>::iterator stop = m_touchEventTargetRectsObservers.end();
+    for (HashSet<TouchEventTargetRectsObserver*>::iterator it = m_touchEventTargetRectsObservers.begin(); it != stop; ++it)
+        (*it)->touchEventTargetRectsChanged(compositorRects);
+
     // Note that ideally we'd clear the touch event handler region on all layers first,
     // in case there are others that no longer have any handlers. But it's unlikely to
     // matter much in practice (just makes us more conservative).
@@ -491,6 +496,16 @@ Region ScrollingCoordinator::computeShouldHandleScrollGestureOnMainThreadRegion(
         shouldHandleScrollGestureOnMainThreadRegion.unite(computeShouldHandleScrollGestureOnMainThreadRegion(subFrame, offset));
 
     return shouldHandleScrollGestureOnMainThreadRegion;
+}
+
+void ScrollingCoordinator::addTouchEventTargetRectsObserver(TouchEventTargetRectsObserver* observer)
+{
+    m_touchEventTargetRectsObservers.add(observer);
+}
+
+void ScrollingCoordinator::removeTouchEventTargetRectsObserver(TouchEventTargetRectsObserver* observer)
+{
+    m_touchEventTargetRectsObservers.remove(observer);
 }
 
 static void accumulateDocumentTouchEventTargetRects(LayerHitTestRects& rects, const Document* document)

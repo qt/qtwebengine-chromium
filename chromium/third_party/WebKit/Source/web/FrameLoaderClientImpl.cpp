@@ -44,6 +44,7 @@
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/ProgressTracker.h"
+#include "core/loader/ResourceLoader.h"
 #include "core/page/Chrome.h"
 #include "core/page/EventHandler.h"
 #include "core/page/FrameView.h"
@@ -523,11 +524,36 @@ void FrameLoaderClientImpl::loadURLExternally(const ResourceRequest& request, Na
     }
 }
 
-void FrameLoaderClientImpl::navigateBackForward(int offset) const
+bool FrameLoaderClientImpl::shouldGoToHistoryItem(HistoryItem* item) const
 {
+    const KURL& url = item->url();
+    if (!url.protocolIs(backForwardNavigationScheme))
+        return true;
+
+    // Else, we'll punt this history navigation to the embedder.  It is
+    // necessary that we intercept this here, well before the FrameLoader
+    // has made any state changes for this history traversal.
+
+    bool ok;
+    int offset = url.lastPathComponent().toIntStrict(&ok);
+    if (!ok) {
+        ASSERT_NOT_REACHED();
+        return false;
+    }
+
     WebViewImpl* webview = m_webFrame->viewImpl();
     if (webview->client())
         webview->client()->navigateBackForwardSoon(offset);
+
+    return false;
+}
+
+bool FrameLoaderClientImpl::shouldStopLoadingForHistoryItem(HistoryItem* targetItem) const
+{
+    // Don't stop loading for pseudo-back-forward URLs, since they will get
+    // translated and then pass through again.
+    const KURL& url = targetItem->url();
+    return !url.protocolIs(backForwardNavigationScheme);
 }
 
 void FrameLoaderClientImpl::didAccessInitialDocument()

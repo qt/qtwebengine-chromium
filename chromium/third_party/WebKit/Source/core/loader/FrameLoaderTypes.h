@@ -71,6 +71,12 @@ namespace WebCore {
         ObjectContentOtherPlugin
     };
 
+    enum UnloadEventPolicy {
+        UnloadEventPolicyNone,
+        UnloadEventPolicyUnloadOnly,
+        UnloadEventPolicyUnloadAndPageHide
+    };
+
     enum ShouldSendReferrer {
         MaybeSendReferrer,
         NeverSendReferrer

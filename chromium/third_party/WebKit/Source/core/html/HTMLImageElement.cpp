@@ -28,9 +28,9 @@
 #include "bindings/v8/ScriptEventListener.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/EventNames.h"
-#include "core/fetch/ImageResource.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/loader/cache/ImageResource.h"
 #include "core/rendering/RenderImage.h"
 
 using namespace std;
@@ -179,11 +179,6 @@ void HTMLImageElement::attach(const AttachContext& context)
 Node::InsertionNotificationRequest HTMLImageElement::insertedInto(ContainerNode* insertionPoint)
 {
     // m_form can be non-null if it was set in constructor.
-    if (m_form && insertionPoint->highestAncestor() != m_form->highestAncestor()) {
-        m_form->removeImgElement(this);
-        m_form = 0;
-    }
-
     if (!m_form) {
         m_form = findFormAncestor();
         if (m_form)

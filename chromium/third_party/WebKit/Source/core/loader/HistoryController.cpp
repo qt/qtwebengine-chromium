@@ -196,8 +196,12 @@ bool HistoryController::shouldStopLoadingForHistoryItem(HistoryItem* targetItem)
 {
     if (!m_currentItem)
         return false;
+
     // Don't abort the current load if we're navigating within the current document.
-    return !m_currentItem->shouldDoSameDocumentNavigationTo(targetItem);
+    if (m_currentItem->shouldDoSameDocumentNavigationTo(targetItem))
+        return false;
+
+    return m_frame->loader()->client()->shouldStopLoadingForHistoryItem(targetItem);
 }
 
 // Main funnel for navigating to a previous location (back/forward, non-search snap-back)
@@ -212,6 +216,8 @@ void HistoryController::goToItem(HistoryItem* targetItem)
     // <rdar://problem/3979539> back/forward cache navigations should consult policy delegate
     Page* page = m_frame->page();
     if (!page)
+        return;
+    if (!m_frame->loader()->client()->shouldGoToHistoryItem(targetItem))
         return;
     if (m_defersLoading) {
         m_deferredItem = targetItem;
@@ -245,7 +251,8 @@ void HistoryController::setDefersLoading(bool defer)
 void HistoryController::updateForBackForwardNavigation()
 {
 #if !LOG_DISABLED
-    LOG(History, "WebCoreHistory: Updating History for back/forward navigation in frame %s", m_frame->document()->title().utf8().data());
+    if (m_frame->loader()->documentLoader())
+        LOG(History, "WebCoreHistory: Updating History for back/forward navigation in frame %s", m_frame->loader()->documentLoader()->title().string().utf8().data());
 #endif
 
     saveScrollPositionAndViewStateToItem(m_previousItem.get());
@@ -258,7 +265,8 @@ void HistoryController::updateForBackForwardNavigation()
 void HistoryController::updateForReload()
 {
 #if !LOG_DISABLED
-    LOG(History, "WebCoreHistory: Updating History for reload in frame %s", m_frame->document()->title().utf8().data());
+    if (m_frame->loader()->documentLoader())
+        LOG(History, "WebCoreHistory: Updating History for reload in frame %s", m_frame->loader()->documentLoader()->title().string().utf8().data());
 #endif
 
     if (m_currentItem) {
@@ -287,7 +295,7 @@ void HistoryController::updateForStandardLoad()
 void HistoryController::updateForRedirectWithLockedBackForwardList()
 {
 #if !LOG_DISABLED
-    LOG(History, "WebCoreHistory: Updating History for redirect load in frame %s", m_frame->document()->title().utf8().data());
+    LOG(History, "WebCoreHistory: Updating History for redirect load in frame %s", m_frame->loader()->documentLoader()->title().string().utf8().data());
 #endif
 
     if (!m_currentItem && !m_frame->tree()->parent()) {
@@ -309,8 +317,8 @@ void HistoryController::updateForCommit()
 {
     FrameLoader* frameLoader = m_frame->loader();
 #if !LOG_DISABLED
-    if (m_frame->document())
-        LOG(History, "WebCoreHistory: Updating History for commit in frame %s", m_frame->document()->title().utf8().data());
+    if (frameLoader->documentLoader())
+        LOG(History, "WebCoreHistory: Updating History for commit in frame %s", frameLoader->documentLoader()->title().string().utf8().data());
 #endif
     FrameLoadType type = frameLoader->loadType();
     if (isBackForwardLoadType(type) || (isReloadTypeWithProvisionalItem(type) && !frameLoader->documentLoader()->unreachableURL().isEmpty())) {
@@ -487,12 +495,13 @@ void HistoryController::initializeItem(HistoryItem* item)
 
     Frame* parentFrame = m_frame->tree()->parent();
     String parent = parentFrame ? parentFrame->tree()->uniqueName() : "";
+    StringWithDirection title = documentLoader->title();
 
     item->setURL(url);
     item->setTarget(m_frame->tree()->uniqueName());
     item->setParent(parent);
     // FIXME: should store title directionality in history as well.
-    item->setTitle(m_frame->document()->title());
+    item->setTitle(title.string());
     item->setOriginalURLString(originalURL.string());
 
     // Save form state if this is a POST
@@ -695,6 +704,7 @@ void HistoryController::pushState(PassRefPtr<SerializedScriptValue> stateObject,
     m_currentItem->setTitle(title);
     m_currentItem->setStateObject(stateObject);
     m_currentItem->setURLString(urlString);
+
     page->backForward()->addItem(topItem.release());
 }
 

@@ -306,7 +306,7 @@ void Shell::WebContentsCreated(WebContents* source_contents,
 }
 
 void Shell::DidNavigateMainFramePostCommit(WebContents* web_contents) {
-  PlatformSetAddressBarURL(web_contents->GetLastCommittedURL());
+  PlatformSetAddressBarURL(web_contents->GetURL());
 }
 
 JavaScriptDialogManager* Shell::GetJavaScriptDialogManager() {

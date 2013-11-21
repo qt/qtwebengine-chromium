@@ -108,12 +108,4 @@ TransformOperations TransformOperations::blend(const TransformOperations& from, 
     return blendByUsingMatrixInterpolation(from, progress);
 }
 
-TransformOperations TransformOperations::add(const TransformOperations& addend) const
-{
-    TransformOperations result;
-    result.m_operations = operations();
-    result.m_operations.append(addend.operations());
-    return result;
-}
-
 } // namespace WebCore

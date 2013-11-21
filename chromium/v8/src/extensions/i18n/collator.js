@@ -35,6 +35,8 @@
  * Useful for subclassing.
  */
 function initializeCollator(collator, locales, options) {
+  native function NativeJSCreateCollator();
+
   if (collator.hasOwnProperty('__initializedIntlObject')) {
     throw new TypeError('Trying to re-initialize Collator object.');
   }
@@ -101,9 +103,9 @@ function initializeCollator(collator, locales, options) {
     usage: {value: internalOptions.usage, writable: true}
   });
 
-  var internalCollator = %CreateCollator(requestedLocale,
-                                         internalOptions,
-                                         resolved);
+  var internalCollator = NativeJSCreateCollator(requestedLocale,
+                                                internalOptions,
+                                                resolved);
 
   // Writable, configurable and enumerable are set to false by default.
   Object.defineProperty(collator, 'collator', {value: internalCollator});
@@ -202,7 +204,8 @@ function initializeCollator(collator, locales, options) {
  * the sort order, or x comes after y in the sort order, respectively.
  */
 function compare(collator, x, y) {
-  return %InternalCompare(collator.collator, String(x), String(y));
+  native function NativeJSInternalCompare();
+  return NativeJSInternalCompare(collator.collator, String(x), String(y));
 };
 
 

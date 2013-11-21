@@ -303,11 +303,4 @@ ProfileNameIdleTimeMap* ScriptProfiler::currentProfileNameIdleTimeMap()
     return *map;
 }
 
-void ScriptProfiler::setIdle(bool isIdle)
-{
-    v8::Isolate* isolate = v8::Isolate::GetCurrent();
-    if (v8::CpuProfiler* profiler = isolate->GetCpuProfiler())
-        profiler->SetIdle(isIdle);
-}
-
 } // namespace WebCore

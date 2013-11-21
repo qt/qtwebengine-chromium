@@ -35,7 +35,9 @@ class GpuProcessTransportFactory
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
   CreateOffscreenCommandBufferContext();
 
-  // ui::ContextFactory implementation.
+  // ContextFactory implementation.
+  virtual scoped_ptr<WebKit::WebGraphicsContext3D> CreateOffscreenContext()
+      OVERRIDE;
   virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(
       ui::Compositor* compositor) OVERRIDE;
   virtual scoped_refptr<ui::Reflector> CreateReflector(
@@ -44,10 +46,6 @@ class GpuProcessTransportFactory
   virtual void RemoveReflector(
       scoped_refptr<ui::Reflector> reflector) OVERRIDE;
   virtual void RemoveCompositor(ui::Compositor* compositor) OVERRIDE;
-  virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProviderForMainThread() OVERRIDE;
-  virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProviderForCompositorThread() OVERRIDE;
   virtual bool DoesCreateTestContexts() OVERRIDE;
 
   // ImageTransportFactory implementation.
@@ -67,6 +65,12 @@ class GpuProcessTransportFactory
   virtual void AddObserver(ImageTransportFactoryObserver* observer) OVERRIDE;
   virtual void RemoveObserver(
       ImageTransportFactoryObserver* observer) OVERRIDE;
+
+  // ui::ContextFactory implementation.
+  virtual scoped_refptr<cc::ContextProvider>
+      OffscreenContextProviderForMainThread() OVERRIDE;
+  virtual scoped_refptr<cc::ContextProvider>
+      OffscreenContextProviderForCompositorThread() OVERRIDE;
 
   void OnLostContext(ui::Compositor* compositor);
 

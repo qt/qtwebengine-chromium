@@ -283,14 +283,6 @@ void QuicSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
   }
 }
 
-void QuicSession::OnCryptoHandshakeMessageSent(
-    const CryptoHandshakeMessage& message) {
-}
-
-void QuicSession::OnCryptoHandshakeMessageReceived(
-    const CryptoHandshakeMessage& message) {
-}
-
 QuicConfig* QuicSession::config() {
   return &config_;
 }

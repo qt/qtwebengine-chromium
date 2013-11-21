@@ -399,6 +399,8 @@
         'disk_cache/simple/simple_index.h',
         'disk_cache/simple/simple_index_file.cc',
         'disk_cache/simple/simple_index_file.h',
+        'disk_cache/simple/simple_index_file_posix.cc',
+        'disk_cache/simple/simple_index_file_win.cc',
         'disk_cache/simple/simple_net_log_parameters.cc',
         'disk_cache/simple/simple_net_log_parameters.h',
         'disk_cache/simple/simple_synchronous_entry.cc',
@@ -1631,7 +1633,6 @@
         'http/http_security_headers_unittest.cc',
         'http/http_server_properties_impl_unittest.cc',
         'http/http_status_code_unittest.cc',
-        'http/http_stream_factory_impl_request_unittest.cc',
         'http/http_stream_factory_impl_unittest.cc',
         'http/http_stream_parser_unittest.cc',
         'http/http_transaction_unittest.cc',
@@ -2133,6 +2134,11 @@
           'dependencies': [
             '../testing/android/native_test.gyp:native_test_native_code',
           ]
+        }],
+        [ 'OS != "win" and OS != "mac"', {
+          'sources!': [
+            'cert/x509_cert_types_unittest.cc',
+          ],
         }],
       ],
     },

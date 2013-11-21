@@ -174,7 +174,7 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
                                   gfx::Rect viewport);
 
   // virtual for testing.
-  virtual base::TimeDelta AlternateRetroactiveBeginFramePeriod();
+  virtual base::TimeDelta RetroactiveBeginFramePeriod();
   virtual void PostCheckForRetroactiveBeginFrame();
   void CheckForRetroactiveBeginFrame();
 

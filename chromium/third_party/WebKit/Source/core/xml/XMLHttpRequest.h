@@ -108,7 +108,7 @@ public:
     String getResponseHeader(const AtomicString& name, ExceptionState&) const;
     ScriptString responseText(ExceptionState&);
     Document* responseXML(ExceptionState&);
-    Blob* responseBlob();
+    Blob* responseBlob(ExceptionState&);
     unsigned long timeout() const { return m_timeoutMilliseconds; }
     void setTimeout(unsigned long timeout, ExceptionState&);
 
@@ -124,7 +124,7 @@ public:
     ResponseTypeCode responseTypeCode() const { return m_responseTypeCode; }
 
     // response attribute has custom getter.
-    ArrayBuffer* responseArrayBuffer();
+    ArrayBuffer* responseArrayBuffer(ExceptionState&);
 
     void setLastSendLineNumber(unsigned lineNumber) { m_lastSendLineNumber = lineNumber; }
     void setLastSendURL(const String& url) { m_lastSendURL = url; }

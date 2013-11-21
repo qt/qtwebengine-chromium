@@ -14,7 +14,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "webkit/browser/fileapi/file_system_backend.h"
 #include "webkit/browser/fileapi/file_system_quota_util.h"
-#include "webkit/browser/fileapi/sandbox_file_system_backend_delegate.h"
+#include "webkit/browser/fileapi/sandbox_context.h"
 #include "webkit/browser/fileapi/task_runner_bound_observer_list.h"
 #include "webkit/browser/quota/special_storage_policy.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
@@ -30,7 +30,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackend
     : public FileSystemBackend,
       public FileSystemQuotaUtil {
  public:
-  explicit SandboxFileSystemBackend(SandboxFileSystemBackendDelegate* delegate);
+  explicit SandboxFileSystemBackend(SandboxContext* sandbox_context);
   virtual ~SandboxFileSystemBackend();
 
   // FileSystemBackend overrides.
@@ -63,7 +63,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackend
 
   // Returns an origin enumerator of this backend.
   // This method can only be called on the file thread.
-  SandboxFileSystemBackendDelegate::OriginEnumerator* CreateOriginEnumerator();
+  SandboxContext::OriginEnumerator* CreateOriginEnumerator();
 
   // FileSystemQuotaUtil overrides.
   virtual base::PlatformFileError DeleteOriginDataOnFileThread(
@@ -80,6 +80,12 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackend
       std::set<GURL>* origins) OVERRIDE;
   virtual int64 GetOriginUsageOnFileThread(
       FileSystemContext* context,
+      const GURL& origin_url,
+      FileSystemType type) OVERRIDE;
+  virtual void InvalidateUsageCache(
+      const GURL& origin_url,
+      FileSystemType type) OVERRIDE;
+  virtual void StickyInvalidateUsageCache(
       const GURL& origin_url,
       FileSystemType type) OVERRIDE;
   virtual void AddFileUpdateObserver(
@@ -106,7 +112,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackend
   }
 
  private:
-  SandboxFileSystemBackendDelegate* delegate_;  // Not owned.
+  SandboxContext* sandbox_context_;  // Not owned.
 
   bool enable_temporary_file_system_in_incognito_;
 

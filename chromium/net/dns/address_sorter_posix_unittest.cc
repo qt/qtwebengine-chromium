@@ -10,8 +10,6 @@
 #include "net/base/net_util.h"
 #include "net/base/test_completion_callback.h"
 #include "net/socket/client_socket_factory.h"
-#include "net/socket/ssl_client_socket.h"
-#include "net/socket/stream_socket.h"
 #include "net/udp/datagram_client_socket.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -92,27 +90,27 @@ class TestSocketFactory : public ClientSocketFactory {
   TestSocketFactory() {}
   virtual ~TestSocketFactory() {}
 
-  virtual scoped_ptr<DatagramClientSocket> CreateDatagramClientSocket(
+  virtual DatagramClientSocket* CreateDatagramClientSocket(
       DatagramSocket::BindType,
       const RandIntCallback&,
       NetLog*,
       const NetLog::Source&) OVERRIDE {
-    return scoped_ptr<DatagramClientSocket>(new TestUDPClientSocket(&mapping_));
+    return new TestUDPClientSocket(&mapping_);
   }
-  virtual scoped_ptr<StreamSocket> CreateTransportClientSocket(
+  virtual StreamSocket* CreateTransportClientSocket(
       const AddressList&,
       NetLog*,
       const NetLog::Source&) OVERRIDE {
     NOTIMPLEMENTED();
-    return scoped_ptr<StreamSocket>();
+    return NULL;
   }
-  virtual scoped_ptr<SSLClientSocket> CreateSSLClientSocket(
-      scoped_ptr<ClientSocketHandle>,
+  virtual SSLClientSocket* CreateSSLClientSocket(
+      ClientSocketHandle*,
       const HostPortPair&,
       const SSLConfig&,
       const SSLClientSocketContext&) OVERRIDE {
     NOTIMPLEMENTED();
-    return scoped_ptr<SSLClientSocket>();
+    return NULL;
   }
   virtual void ClearSSLSessionCache() OVERRIDE {
     NOTIMPLEMENTED();

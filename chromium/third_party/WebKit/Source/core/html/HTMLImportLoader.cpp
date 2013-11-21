@@ -32,19 +32,21 @@
 #include "core/html/HTMLImportLoader.h"
 
 #include "core/dom/Document.h"
-#include "core/fetch/ResourceFetcher.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/HTMLImportLoaderClient.h"
 #include "core/loader/DocumentWriter.h"
+#include "core/loader/cache/ResourceFetcher.h"
 #include "core/page/ContentSecurityPolicyResponseHeaders.h"
 
 namespace WebCore {
 
-HTMLImportLoader::HTMLImportLoader(HTMLImport* parent, const KURL& url)
+HTMLImportLoader::HTMLImportLoader(HTMLImport* parent, const KURL& url, const ResourcePtr<RawResource>& resource)
     : m_parent(parent)
     , m_state(StateLoading)
+    , m_resource(resource)
     , m_url(url)
 {
+    m_resource->addClient(this);
 }
 
 HTMLImportLoader::~HTMLImportLoader()
@@ -54,12 +56,6 @@ HTMLImportLoader::~HTMLImportLoader()
     ASSERT(!m_importedDocument);
     if (m_resource)
         m_resource->removeClient(this);
-}
-
-void HTMLImportLoader::setResource(const ResourcePtr<RawResource>& resource)
-{
-    m_resource = resource;
-    m_resource->addClient(this);
 }
 
 void HTMLImportLoader::responseReceived(Resource*, const ResourceResponse& response)

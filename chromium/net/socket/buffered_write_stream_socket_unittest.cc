@@ -30,11 +30,10 @@ class BufferedWriteStreamSocketTest : public testing::Test {
     if (writes_count) {
       data_->StopAfter(writes_count);
     }
-    scoped_ptr<DeterministicMockTCPClientSocket> wrapped_socket(
-        new DeterministicMockTCPClientSocket(net_log_.net_log(), data_.get()));
+    DeterministicMockTCPClientSocket* wrapped_socket =
+        new DeterministicMockTCPClientSocket(net_log_.net_log(), data_.get());
     data_->set_delegate(wrapped_socket->AsWeakPtr());
-    socket_.reset(new BufferedWriteStreamSocket(
-        wrapped_socket.PassAs<StreamSocket>()));
+    socket_.reset(new BufferedWriteStreamSocket(wrapped_socket));
     socket_->Connect(callback_.callback());
   }
 

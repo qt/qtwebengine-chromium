@@ -60,9 +60,7 @@ public:
     bool getBoolean(const String& propertyName);
     String getString(const String& propertyName);
     long getLong(const String& propertyName);
-    long getLong(const String& propertyName, long defaultValue);
     double getDouble(const String& propertyName);
-    double getDouble(const String& propertyName, double defaultValue);
     PassRefPtr<JSONObject> getObject(const String& propertyName);
 
     void setBoolean(const String& propertyName, bool value) { setValue(propertyName, JSONBasicValue::create(value)); }

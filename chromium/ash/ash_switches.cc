@@ -159,10 +159,6 @@ const char kAshTouchHud[] = "ash-touch-hud";
 // crbug's [244983, 244990, 244994, 245005, 245012]
 const char kAshUseAlternateShelfLayout[] = "ash-use-alternate-shelf";
 
-// Flags explicitly show or hide the shelf alignment menu.
-const char kShowShelfAlignmentMenu[] = "show-launcher-alignment-menu";
-const char kHideShelfAlignmentMenu[] = "hide-launcher-alignment-menu";
-
 // Uses the 1st display in --ash-host-window-bounds as internal display.
 // This is for debugging on linux desktop.
 const char kAshUseFirstDisplayAsInternal[] =
@@ -191,12 +187,7 @@ const char kForcedMaximizeMode[] = "forced-maximize-mode";
 
 bool UseAlternateShelfLayout() {
   return CommandLine::ForCurrentProcess()->
-      HasSwitch(ash::switches::kAshUseAlternateShelfLayout);
-}
-
-bool ShowShelfAlignmentMenu() {
-  return CommandLine::ForCurrentProcess()->
-      HasSwitch(switches::kShowShelfAlignmentMenu);
+        HasSwitch(ash::switches::kAshUseAlternateShelfLayout);
 }
 
 #if defined(OS_CHROMEOS)
@@ -207,7 +198,7 @@ bool ShowAudioDeviceMenu() {
 
 bool UseUsbChargerNotification() {
   return !CommandLine::ForCurrentProcess()->
-      HasSwitch(ash::switches::kAshDisableUsbChargerNotification);
+        HasSwitch(ash::switches::kAshDisableUsbChargerNotification);
 }
 #endif
 

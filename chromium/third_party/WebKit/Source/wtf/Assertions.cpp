@@ -60,7 +60,6 @@
 
 #if OS(WINDOWS)
 #include <windows.h>
-#define HAVE_ISDEBUGGERPRESENT 1
 #endif
 
 #if (OS(DARWIN) || (OS(LINUX) && !defined(__UCLIBC__))) && !OS(ANDROID)

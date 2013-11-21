@@ -381,6 +381,7 @@ TEST(GeneratedMessageTest, StringCharStarLength) {
   EXPECT_EQ("wx", message.repeated_string(0));
 }
 
+
 TEST(GeneratedMessageTest, CopyFrom) {
   unittest::TestAllTypes message1, message2;
 
@@ -392,6 +393,7 @@ TEST(GeneratedMessageTest, CopyFrom) {
   message2.CopyFrom(message2);
   TestUtil::ExpectAllFieldsSet(message2);
 }
+
 
 TEST(GeneratedMessageTest, SwapWithEmpty) {
   unittest::TestAllTypes message1, message2;
@@ -491,8 +493,6 @@ TEST(GeneratedMessageTest, CopyAssignmentOperator) {
   TestUtil::ExpectAllFieldsSet(message2);
 }
 
-#if !defined(PROTOBUF_TEST_NO_DESCRIPTORS) || \
-    !defined(GOOGLE_PROTOBUF_NO_RTTI)
 TEST(GeneratedMessageTest, UpcastCopyFrom) {
   // Test the CopyFrom method that takes in the generic const Message&
   // parameter.
@@ -505,7 +505,6 @@ TEST(GeneratedMessageTest, UpcastCopyFrom) {
 
   TestUtil::ExpectAllFieldsSet(message2);
 }
-#endif
 
 #ifndef PROTOBUF_TEST_NO_DESCRIPTORS
 
@@ -557,9 +556,7 @@ TEST(GeneratedMessageTest, NonEmptyMergeFrom) {
   TestUtil::ExpectAllFieldsSet(message1);
 }
 
-#if !defined(PROTOBUF_TEST_NO_DESCRIPTORS) || \
-    !defined(GOOGLE_PROTOBUF_NO_RTTI)
-#ifdef PROTOBUF_HAS_DEATH_TEST
+#ifdef GTEST_HAS_DEATH_TEST
 
 TEST(GeneratedMessageTest, MergeFromSelf) {
   unittest::TestAllTypes message;
@@ -568,8 +565,7 @@ TEST(GeneratedMessageTest, MergeFromSelf) {
                "&from");
 }
 
-#endif  // PROTOBUF_HAS_DEATH_TEST
-#endif  // !PROTOBUF_TEST_NO_DESCRIPTORS || !GOOGLE_PROTOBUF_NO_RTTI
+#endif  // GTEST_HAS_DEATH_TEST
 
 // Test the generated SerializeWithCachedSizesToArray(),
 TEST(GeneratedMessageTest, SerializationToArray) {
@@ -1203,7 +1199,7 @@ TEST_F(GeneratedServiceTest, CallMethod) {
 TEST_F(GeneratedServiceTest, CallMethodTypeFailure) {
   // Verify death if we call Foo() with Bar's message types.
 
-#ifdef PROTOBUF_HAS_DEATH_TEST  // death tests do not work on Windows yet
+#ifdef GTEST_HAS_DEATH_TEST  // death tests do not work on Windows yet
   EXPECT_DEBUG_DEATH(
     mock_service_.CallMethod(foo_, &mock_controller_,
                              &foo_request_, &bar_response_, done_.get()),
@@ -1214,7 +1210,7 @@ TEST_F(GeneratedServiceTest, CallMethodTypeFailure) {
     mock_service_.CallMethod(foo_, &mock_controller_,
                              &bar_request_, &foo_response_, done_.get()),
     "dynamic_cast");
-#endif  // PROTOBUF_HAS_DEATH_TEST
+#endif  // GTEST_HAS_DEATH_TEST
 }
 
 TEST_F(GeneratedServiceTest, GetPrototypes) {

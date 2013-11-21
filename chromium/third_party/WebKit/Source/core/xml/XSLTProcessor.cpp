@@ -21,6 +21,7 @@
  */
 
 #include "config.h"
+
 #include "core/xml/XSLTProcessor.h"
 
 #include "core/dom/DOMImplementation.h"
@@ -32,8 +33,9 @@
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "weborigin/SecurityOrigin.h"
-#include "wtf/Assertions.h"
-#include "wtf/Vector.h"
+
+#include <wtf/Assertions.h>
+#include <wtf/Vector.h>
 
 namespace WebCore {
 

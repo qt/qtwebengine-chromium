@@ -161,7 +161,12 @@ void MediaDecoderJob::DecodeInternal(
   if (needs_flush) {
     DVLOG(1) << "DecodeInternal needs flush.";
     input_eos_encountered_ = false;
-    media_codec_bridge_->Reset();
+    int reset_status = media_codec_bridge_->Reset();
+    if (0 != reset_status) {
+      ui_loop_->PostTask(FROM_HERE, base::Bind(
+          callback, DECODE_FAILED, start_presentation_timestamp, 0));
+      return;
+    }
   }
 
   DecodeStatus decode_status = DECODE_INPUT_END_OF_STREAM;
@@ -847,11 +852,11 @@ void MediaSourcePlayer::ConfigureVideoDecoderJob() {
   if (video_decoder_job_ && !reconfig_video_decoder_)
     return;
 
-  base::android::ScopedJavaLocalRef<jobject> media_crypto;
+  base::android::ScopedJavaLocalRef<jobject> media_codec;
   if (is_video_encrypted_) {
     if (drm_bridge_) {
-      media_crypto = drm_bridge_->GetMediaCrypto();
-      DCHECK(!media_crypto.is_null());
+      media_codec = drm_bridge_->GetMediaCrypto();
+      DCHECK(!media_codec.is_null());
     } else {
       LOG(INFO) << "MediaDrmBridge is not available when creating decoder "
                 << "for encrypted video stream.";
@@ -865,7 +870,7 @@ void MediaSourcePlayer::ConfigureVideoDecoderJob() {
   // Create the new VideoDecoderJob.
   video_decoder_job_.reset(VideoDecoderJob::Create(
       video_codec_, gfx::Size(width_, height_), surface_.j_surface().obj(),
-      media_crypto.obj()));
+      media_codec.obj()));
   if (video_decoder_job_)
     reconfig_video_decoder_ = false;
 

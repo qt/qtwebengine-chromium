@@ -17,10 +17,10 @@ namespace cc {
 
 namespace {
 
-// kDoubleTickDivisor prevents ticks from running within the specified
+// kDoubleTickThreshold prevents ticks from running within the specified
 // fraction of an interval.  This helps account for jitter in the timebase as
 // well as quick timer reactivation.
-static const int kDoubleTickDivisor = 2;
+static const double kDoubleTickThreshold = 0.25;
 
 // kIntervalChangeThreshold is the fraction of the interval that will trigger an
 // immediate interval change.  kPhaseChangeThreshold is the fraction of the
@@ -42,42 +42,43 @@ scoped_refptr<DelayBasedTimeSource> DelayBasedTimeSource::Create(
 DelayBasedTimeSource::DelayBasedTimeSource(
     base::TimeDelta interval, base::SingleThreadTaskRunner* task_runner)
     : client_(NULL),
-      last_tick_time_(base::TimeTicks() - interval),
+      has_tick_target_(false),
       current_parameters_(interval, base::TimeTicks()),
       next_parameters_(interval, base::TimeTicks()),
-      active_(false),
+      state_(STATE_INACTIVE),
       task_runner_(task_runner),
       weak_factory_(this) {}
 
 DelayBasedTimeSource::~DelayBasedTimeSource() {}
 
-base::TimeTicks DelayBasedTimeSource::SetActive(bool active) {
+void DelayBasedTimeSource::SetActive(bool active) {
   TRACE_EVENT1("cc", "DelayBasedTimeSource::SetActive", "active", active);
-  if (active == active_)
-    return base::TimeTicks();
-  active_ = active;
-
-  if (!active_) {
+  if (!active) {
+    state_ = STATE_INACTIVE;
     weak_factory_.InvalidateWeakPtrs();
-    return base::TimeTicks();
+    return;
   }
+
+  if (state_ == STATE_STARTING || state_ == STATE_ACTIVE)
+    return;
+
+  if (!has_tick_target_) {
+    // Becoming active the first time is deferred: we post a 0-delay task.
+    // When it runs, we use that to establish the timebase, become truly
+    // active, and fire the first tick.
+    state_ = STATE_STARTING;
+    task_runner_->PostTask(FROM_HERE,
+                           base::Bind(&DelayBasedTimeSource::OnTimerFired,
+                                      weak_factory_.GetWeakPtr()));
+    return;
+  }
+
+  state_ = STATE_ACTIVE;
 
   PostNextTickTask(Now());
-
-  // Determine if there was a tick that was missed while not active.
-  base::TimeTicks last_tick_time_if_always_active =
-    current_parameters_.tick_target - current_parameters_.interval;
-  base::TimeTicks new_tick_time_threshold =
-    last_tick_time_ + current_parameters_.interval / kDoubleTickDivisor;
-  if (last_tick_time_if_always_active >  new_tick_time_threshold) {
-    last_tick_time_ = last_tick_time_if_always_active;
-    return last_tick_time_;
-  }
-
-  return base::TimeTicks();
 }
 
-bool DelayBasedTimeSource::Active() const { return active_; }
+bool DelayBasedTimeSource::Active() const { return state_ != STATE_INACTIVE; }
 
 base::TimeTicks DelayBasedTimeSource::LastTickTime() { return last_tick_time_; }
 
@@ -86,11 +87,17 @@ base::TimeTicks DelayBasedTimeSource::NextTickTime() {
 }
 
 void DelayBasedTimeSource::OnTimerFired() {
-  DCHECK(active_);
+  DCHECK(state_ != STATE_INACTIVE);
 
-  last_tick_time_ = current_parameters_.tick_target;
+  base::TimeTicks now = this->Now();
+  last_tick_time_ = now;
 
-  PostNextTickTask(Now());
+  if (state_ == STATE_STARTING) {
+    SetTimebaseAndInterval(now, current_parameters_.interval);
+    state_ = STATE_ACTIVE;
+  }
+
+  PostNextTickTask(now);
 
   // Fire the tick.
   if (client_)
@@ -105,8 +112,9 @@ void DelayBasedTimeSource::SetTimebaseAndInterval(base::TimeTicks timebase,
                                                   base::TimeDelta interval) {
   next_parameters_.interval = interval;
   next_parameters_.tick_target = timebase;
+  has_tick_target_ = true;
 
-  if (!active_) {
+  if (state_ != STATE_ACTIVE) {
     // If we aren't active, there's no need to reset the timer.
     return;
   }
@@ -117,8 +125,6 @@ void DelayBasedTimeSource::SetTimebaseAndInterval(base::TimeTicks timebase,
       std::abs((interval - current_parameters_.interval).InSecondsF());
   double interval_change = interval_delta / interval.InSecondsF();
   if (interval_change > kIntervalChangeThreshold) {
-    TRACE_EVENT_INSTANT0("cc", "DelayBasedTimeSource::IntervalChanged",
-                         TRACE_EVENT_SCOPE_THREAD);
     SetActive(false);
     SetActive(true);
     return;
@@ -136,8 +142,6 @@ void DelayBasedTimeSource::SetTimebaseAndInterval(base::TimeTicks timebase,
       fmod(target_delta, interval.InSecondsF()) / interval.InSecondsF();
   if (phase_change > kPhaseChangeThreshold &&
       phase_change < (1.0 - kPhaseChangeThreshold)) {
-    TRACE_EVENT_INSTANT0("cc", "DelayBasedTimeSource::PhaseChanged",
-                         TRACE_EVENT_SCOPE_THREAD);
     SetActive(false);
     SetActive(true);
     return;
@@ -203,32 +207,26 @@ base::TimeTicks DelayBasedTimeSource::Now() const {
 //      now=37   tick_target=16.667  new_target=50.000  -->
 //          tick(), PostDelayedTask(floor(50.000-37)) --> PostDelayedTask(13)
 base::TimeTicks DelayBasedTimeSource::NextTickTarget(base::TimeTicks now) {
-  const base::TimeDelta epsilon(base::TimeDelta::FromMicroseconds(1));
   base::TimeDelta new_interval = next_parameters_.interval;
-
-  // Integer division rounds towards 0, but we always want to round down the
-  // number of intervals_elapsed, so we need the extra condition here.
-  int intervals_elapsed;
-  if (next_parameters_.tick_target < now) {
-    intervals_elapsed =
-        (now - next_parameters_.tick_target + new_interval - epsilon) /
-        new_interval;
-  } else {
-    intervals_elapsed = (now - next_parameters_.tick_target) / new_interval;
-  }
-  base::TimeTicks new_tick_target =
+  int intervals_elapsed =
+      static_cast<int>(floor((now - next_parameters_.tick_target).InSecondsF() /
+                             new_interval.InSecondsF()));
+  base::TimeTicks last_effective_tick =
       next_parameters_.tick_target + new_interval * intervals_elapsed;
-  DCHECK(now <= new_tick_target)
+  base::TimeTicks new_tick_target = last_effective_tick + new_interval;
+  DCHECK(now < new_tick_target)
       << "now = " << now.ToInternalValue()
       << "; new_tick_target = " << new_tick_target.ToInternalValue()
       << "; new_interval = " << new_interval.InMicroseconds()
       << "; tick_target = " << next_parameters_.tick_target.ToInternalValue()
-      << "; intervals_elapsed = " << intervals_elapsed;
+      << "; intervals_elapsed = " << intervals_elapsed
+      << "; last_effective_tick = " << last_effective_tick.ToInternalValue();
 
   // Avoid double ticks when:
   // 1) Turning off the timer and turning it right back on.
   // 2) Jittery data is passed to SetTimebaseAndInterval().
-  if (new_tick_target - last_tick_time_ <= new_interval / kDoubleTickDivisor)
+  if (new_tick_target - last_tick_time_ <=
+      new_interval / static_cast<int>(1.0 / kDoubleTickThreshold))
     new_tick_target += new_interval;
 
   return new_tick_target;
@@ -238,9 +236,10 @@ void DelayBasedTimeSource::PostNextTickTask(base::TimeTicks now) {
   base::TimeTicks new_tick_target = NextTickTarget(now);
 
   // Post another task *before* the tick and update state
-  base::TimeDelta delay;
-  if (now <= new_tick_target)
-    delay = new_tick_target - now;
+  base::TimeDelta delay = new_tick_target - now;
+  DCHECK(delay.InMillisecondsF() <=
+         next_parameters_.interval.InMillisecondsF() *
+         (1.0 + kDoubleTickThreshold));
   task_runner_->PostDelayedTask(FROM_HERE,
                                 base::Bind(&DelayBasedTimeSource::OnTimerFired,
                                            weak_factory_.GetWeakPtr()),

@@ -72,14 +72,6 @@ struct DisplayInfoSortFunctor {
   }
 };
 
-struct ResolutionMatcher {
-  ResolutionMatcher(const gfx::Size& size) : size(size) {}
-  bool operator()(const Resolution& resolution) {
-    return resolution.size == size;
-  }
-  gfx::Size size;
-};
-
 struct ScaleComparator {
   ScaleComparator(float s) : scale(s) {}
 
@@ -93,12 +85,6 @@ struct ScaleComparator {
 gfx::Display& GetInvalidDisplay() {
   static gfx::Display* invalid_display = new gfx::Display();
   return *invalid_display;
-}
-
-void MaybeInitInternalDisplay(int64 id) {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kAshUseFirstDisplayAsInternal))
-    gfx::Display::SetInternalDisplayId(id);
 }
 
 // Scoped objects used to either create or close the mirror window
@@ -215,8 +201,9 @@ void DisplayManager::InitFromCommandLine() {
        iter != parts.end(); ++iter) {
     info_list.push_back(DisplayInfo::CreateFromSpec(*iter));
   }
-  if (info_list.size())
-    MaybeInitInternalDisplay(info_list[0].id());
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kAshUseFirstDisplayAsInternal))
+    gfx::Display::SetInternalDisplayId(info_list[0].id());
   OnNativeDisplaysChanged(info_list);
 }
 
@@ -247,38 +234,6 @@ bool DisplayManager::HasInternalDisplay() const {
 
 bool DisplayManager::IsInternalDisplayId(int64 id) const {
   return gfx::Display::InternalDisplayId() == id;
-}
-
-DisplayLayout DisplayManager::GetCurrentDisplayLayout() {
-  DCHECK_EQ(2U, num_connected_displays());
-  // Invert if the primary was swapped.
-  if (num_connected_displays() > 1) {
-    DisplayIdPair pair = GetCurrentDisplayIdPair();
-    return layout_store_->ComputeDisplayLayoutForDisplayIdPair(pair);
-  }
-  NOTREACHED() << "DisplayLayout is requested for single display";
-  // On release build, just fallback to default instead of blowing up.
-  DisplayLayout layout =
-      layout_store_->default_display_layout();
-  layout.primary_id = displays_[0].id();
-  return layout;
-}
-
-DisplayIdPair DisplayManager::GetCurrentDisplayIdPair() const {
-  if (IsMirrored()) {
-    int64 mirrored_id = mirrored_display().id();
-    return displays_[0].id() == mirrored_id ?
-        std::make_pair(displays_[1].id(), mirrored_id) :
-        std::make_pair(displays_[0].id(), mirrored_id);
-  } else {
-    int64 id_at_zero = displays_[0].id();
-    if (id_at_zero == gfx::Display::InternalDisplayId() ||
-        id_at_zero == first_display_id()) {
-      return std::make_pair(id_at_zero, displays_[1].id());
-    } else {
-      return std::make_pair(displays_[1].id(), id_at_zero);
-    }
-  }
 }
 
 const gfx::Display& DisplayManager::GetDisplayForId(int64 id) const {
@@ -371,23 +326,7 @@ void DisplayManager::SetDisplayResolution(int64 display_id,
   DCHECK_NE(gfx::Display::InternalDisplayId(), display_id);
   if (gfx::Display::InternalDisplayId() == display_id)
     return;
-  const DisplayInfo& display_info = GetDisplayInfo(display_id);
-  const std::vector<Resolution>& resolutions = display_info.resolutions();
-  DCHECK_NE(0u, resolutions.size());
-  std::vector<Resolution>::const_iterator iter =
-      std::find_if(resolutions.begin(),
-                   resolutions.end(),
-                   ResolutionMatcher(resolution));
-  if (iter == resolutions.end()) {
-    LOG(WARNING) << "Unsupported resolution was requested:"
-                 << resolution.ToString();
-    return;
-  } else if (iter == resolutions.begin()) {
-    // The best resolution was set, so forget it.
-    resolutions_.erase(display_id);
-  } else {
-    resolutions_[display_id] = resolution;
-  }
+  resolutions_[display_id] = resolution;
 #if defined(OS_CHROMEOS) && defined(USE_X11)
   if (base::chromeos::IsRunningOnChromeOS())
     Shell::GetInstance()->output_configurator()->ScheduleConfigureOutputs();
@@ -456,7 +395,6 @@ void DisplayManager::OnNativeDisplaysChanged(
     if (displays_.empty()) {
       std::vector<DisplayInfo> init_displays;
       init_displays.push_back(DisplayInfo::CreateFromSpec(std::string()));
-      MaybeInitInternalDisplay(init_displays[0].id());
       OnNativeDisplaysChanged(init_displays);
     } else {
       // Otherwise don't update the displays when all displays are disconnected.
@@ -704,13 +642,28 @@ const gfx::Display& DisplayManager::GetDisplayAt(size_t index) const {
   return displays_[index];
 }
 
-const gfx::Display& DisplayManager::GetPrimaryDisplayCandidate() const {
-  if (GetNumDisplays() == 1) {
-    return displays_[0];
+const gfx::Display* DisplayManager::GetPrimaryDisplayCandidate() const {
+  const gfx::Display* primary_candidate = &displays_[0];
+#if defined(OS_CHROMEOS)
+  if (base::chromeos::IsRunningOnChromeOS()) {
+    // On ChromeOS device, root windows are stacked vertically, and
+    // default primary is the one on top.
+    int count = GetNumDisplays();
+    int y = GetDisplayInfo(primary_candidate->id()).bounds_in_pixel().y();
+    for (int i = 1; i < count; ++i) {
+      const gfx::Display* display = &displays_[i];
+      const DisplayInfo& display_info = GetDisplayInfo(display->id());
+      if (display->IsInternal()) {
+        primary_candidate = display;
+        break;
+      } else if (display_info.bounds_in_pixel().y() < y) {
+        primary_candidate = display;
+        y = display_info.bounds_in_pixel().y();
+      }
+    }
   }
-  DisplayLayout layout = layout_store_->GetRegisteredDisplayLayout(
-      GetCurrentDisplayIdPair());
-  return GetDisplayForId(layout.primary_id);
+#endif
+  return primary_candidate;
 }
 
 size_t DisplayManager::GetNumDisplays() const {
@@ -780,7 +733,7 @@ void DisplayManager::SetMirrorMode(bool mirrored) {
 void DisplayManager::AddRemoveDisplay() {
   DCHECK(!displays_.empty());
   std::vector<DisplayInfo> new_display_info_list;
-  const DisplayInfo& first_display = GetDisplayInfo(displays_[0].id());
+  DisplayInfo first_display = GetDisplayInfo(displays_[0].id());
   new_display_info_list.push_back(first_display);
   // Add if there is only one display connected.
   if (num_connected_displays() == 1) {
@@ -899,9 +852,6 @@ bool DisplayManager::UpdateSecondaryDisplayBoundsForLayout(
       primary_index = 1;
       secondary_index = 0;
     }
-    // This function may be called before the secondary display is
-    // registered. The bounds is empty in that case and will
-    // return true.
     gfx::Rect bounds =
         GetDisplayForId(displays->at(secondary_index).id()).bounds();
     UpdateDisplayBoundsForLayout(

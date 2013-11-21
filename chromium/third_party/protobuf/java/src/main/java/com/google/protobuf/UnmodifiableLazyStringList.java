@@ -145,6 +145,7 @@ public class UnmodifiableLazyStringList extends AbstractList<String>
     };
   }
 
+  @Override
   public List<?> getUnderlyingElements() {
     // The returned value is already unmodifiable.
     return list.getUnderlyingElements();

@@ -4,9 +4,6 @@
 
 #include "base/command_line.h"
 #include "base/file_util.h"
-#include "base/logging.h"
-#include "base/process/kill.h"
-#include "base/process/launch.h"
 #include "base/strings/string_number_conversions.h"
 #include "build/build_config.h"
 #include "tools/gn/err.h"
@@ -23,13 +20,6 @@
 
 #include "base/win/scoped_handle.h"
 #include "base/win/scoped_process_information.h"
-#endif
-
-#if defined(OS_POSIX)
-#include <fcntl.h>
-#include <unistd.h>
-
-#include "base/posix/file_descriptor_shuffle.h"
 #endif
 
 namespace functions {
@@ -138,91 +128,7 @@ bool ExecProcess(const CommandLine& cmdline,
                  std::string* std_out,
                  std::string* std_err,
                  int* exit_code) {
-  *exit_code = EXIT_FAILURE;
-
-  std::vector<std::string> argv = cmdline.argv();
-
-  int pipe_fd[2];
-  pid_t pid;
-  base::InjectiveMultimap fd_shuffle1, fd_shuffle2;
-  scoped_ptr<char*[]> argv_cstr(new char*[argv.size() + 1]);
-
-  fd_shuffle1.reserve(3);
-  fd_shuffle2.reserve(3);
-
-  if (pipe(pipe_fd) < 0)
-    return false;
-
-  switch (pid = fork()) {
-    case -1:  // error
-      close(pipe_fd[0]);
-      close(pipe_fd[1]);
-      return false;
-    case 0:  // child
-      {
-#if defined(OS_MACOSX)
-        base::RestoreDefaultExceptionHandler();
-#endif
-        // DANGER: no calls to malloc are allowed from now on:
-        // http://crbug.com/36678
-
-        // Obscure fork() rule: in the child, if you don't end up doing exec*(),
-        // you call _exit() instead of exit(). This is because _exit() does not
-        // call any previously-registered (in the parent) exit handlers, which
-        // might do things like block waiting for threads that don't even exist
-        // in the child.
-        int dev_null = open("/dev/null", O_WRONLY);
-        if (dev_null < 0)
-          _exit(127);
-
-        fd_shuffle1.push_back(
-            base::InjectionArc(pipe_fd[1], STDOUT_FILENO, true));
-        fd_shuffle1.push_back(
-            base::InjectionArc(dev_null, STDERR_FILENO, true));
-        fd_shuffle1.push_back(
-            base::InjectionArc(dev_null, STDIN_FILENO, true));
-        // Adding another element here? Remeber to increase the argument to
-        // reserve(), above.
-
-        std::copy(fd_shuffle1.begin(), fd_shuffle1.end(),
-                  std::back_inserter(fd_shuffle2));
-
-        if (!ShuffleFileDescriptors(&fd_shuffle1))
-          _exit(127);
-
-        chdir(startup_dir.value().c_str());
-
-        // TODO(brettw) the base version GetAppOutput does a
-        // CloseSuperfluousFds call here. Do we need this?
-
-        for (size_t i = 0; i < argv.size(); i++)
-          argv_cstr[i] = const_cast<char*>(argv[i].c_str());
-        argv_cstr[argv.size()] = NULL;
-        execvp(argv_cstr[0], argv_cstr.get());
-        _exit(127);
-      }
-    default:  // parent
-      {
-        // Close our writing end of pipe now. Otherwise later read would not
-        // be able to detect end of child's output (in theory we could still
-        // write to the pipe).
-        close(pipe_fd[1]);
-
-        char buffer[256];
-        ssize_t bytes_read = 0;
-
-        while (true) {
-          bytes_read = HANDLE_EINTR(read(pipe_fd[0], buffer, sizeof(buffer)));
-          if (bytes_read <= 0)
-            break;
-          std_out->append(buffer, bytes_read);
-        }
-        close(pipe_fd[0]);
-
-        return base::WaitForExitCode(pid, exit_code);
-      }
-  }
-
+  //NOTREACHED() << "Implement me.";
   return false;
 }
 #endif
@@ -294,7 +200,7 @@ Value RunExecScript(Scope* scope,
 
   // Add all dependencies of this script, including the script itself, to the
   // build deps.
-  g_scheduler->AddGenDependency(script_path);
+  g_scheduler->AddGenDependency(script_source);
   if (args.size() == 4) {
     const Value& deps_value = args[3];
     if (!deps_value.VerifyTypeIs(Value::LIST, err))
@@ -303,9 +209,8 @@ Value RunExecScript(Scope* scope,
     for (size_t i = 0; i < deps_value.list_value().size(); i++) {
       if (!deps_value.list_value()[0].VerifyTypeIs(Value::STRING, err))
         return Value();
-      g_scheduler->AddGenDependency(
-          build_settings->GetFullPath(cur_dir.ResolveRelativeFile(
-              deps_value.list_value()[0].string_value())));
+      g_scheduler->AddGenDependency(cur_dir.ResolveRelativeFile(
+          deps_value.list_value()[0].string_value()));
     }
   }
 

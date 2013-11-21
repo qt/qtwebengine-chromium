@@ -161,7 +161,7 @@ inline void LineWidth::updateAvailableWidth(LayoutUnit replacedHeight)
 inline void LineWidth::shrinkAvailableWidthForNewFloatIfNeeded(RenderBlock::FloatingObject* newFloat)
 {
     LayoutUnit height = m_block->logicalHeight();
-    if (height < newFloat->logicalTop(m_block->isHorizontalWritingMode()) || height >= newFloat->logicalBottom(m_block->isHorizontalWritingMode()))
+    if (height < m_block->logicalTopForFloat(newFloat) || height >= m_block->logicalBottomForFloat(newFloat))
         return;
 
     // When floats with shape outside are stacked, the floats are positioned based on the margin box of the float,
@@ -179,7 +179,7 @@ inline void LineWidth::shrinkAvailableWidthForNewFloatIfNeeded(RenderBlock::Floa
         if (previousFloat != newFloat && previousFloat->type() == newFloat->type()) {
             previousShapeOutsideInfo = previousFloat->renderer()->shapeOutsideInfo();
             if (previousShapeOutsideInfo) {
-                previousShapeOutsideInfo->computeSegmentsForContainingBlockLine(m_block->logicalHeight(), previousFloat->logicalTop(m_block->isHorizontalWritingMode()), logicalHeightForLine(m_block, m_isFirstLine));
+                previousShapeOutsideInfo->computeSegmentsForContainingBlockLine(m_block->logicalHeight(), m_block->logicalTopForFloat(previousFloat), logicalHeightForLine(m_block, m_isFirstLine));
             }
             break;
         }
@@ -187,10 +187,10 @@ inline void LineWidth::shrinkAvailableWidthForNewFloatIfNeeded(RenderBlock::Floa
 
     ShapeOutsideInfo* shapeOutsideInfo = newFloat->renderer()->shapeOutsideInfo();
     if (shapeOutsideInfo)
-        shapeOutsideInfo->computeSegmentsForContainingBlockLine(m_block->logicalHeight(), newFloat->logicalTop(m_block->isHorizontalWritingMode()), logicalHeightForLine(m_block, m_isFirstLine));
+        shapeOutsideInfo->computeSegmentsForContainingBlockLine(m_block->logicalHeight(), m_block->logicalTopForFloat(newFloat), logicalHeightForLine(m_block, m_isFirstLine));
 
     if (newFloat->type() == RenderBlock::FloatingObject::FloatLeft) {
-        float newLeft = newFloat->logicalRight(m_block->isHorizontalWritingMode());
+        float newLeft = m_block->logicalRightForFloat(newFloat);
         if (previousShapeOutsideInfo)
             newLeft -= previousShapeOutsideInfo->rightSegmentMarginBoxDelta();
         if (shapeOutsideInfo)
@@ -200,7 +200,7 @@ inline void LineWidth::shrinkAvailableWidthForNewFloatIfNeeded(RenderBlock::Floa
             newLeft += floorToInt(m_block->textIndentOffset());
         m_left = max<float>(m_left, newLeft);
     } else {
-        float newRight = newFloat->logicalLeft(m_block->isHorizontalWritingMode());
+        float newRight = m_block->logicalLeftForFloat(newFloat);
         if (previousShapeOutsideInfo)
             newRight -= previousShapeOutsideInfo->leftSegmentMarginBoxDelta();
         if (shapeOutsideInfo)
@@ -1226,8 +1226,8 @@ inline BidiRun* RenderBlock::handleTrailingSpaces(BidiRunList<BidiRun>& bidiRuns
 
 void RenderBlock::appendFloatingObjectToLastLine(FloatingObject* floatingObject)
 {
-    ASSERT(!floatingObject->originatingLine());
-    floatingObject->setOriginatingLine(lastRootBox());
+    ASSERT(!floatingObject->m_originatingLine);
+    floatingObject->m_originatingLine = lastRootBox();
     lastRootBox()->appendFloat(floatingObject->renderer());
 }
 
@@ -1881,7 +1881,7 @@ void RenderBlock::layoutRunsAndFloatsInRange(LineLayoutState& layoutState, Inlin
             for (; it != end; ++it) {
                 FloatingObject* f = *it;
                 appendFloatingObjectToLastLine(f);
-                ASSERT(f->renderer() == layoutState.floats()[layoutState.floatIndex()].object);
+                ASSERT(f->m_renderer == layoutState.floats()[layoutState.floatIndex()].object);
                 // If a float's geometry has changed, give up on syncing with clean lines.
                 if (layoutState.floats()[layoutState.floatIndex()].rect != f->frameRect())
                     checkForEndLineMatch = false;
@@ -1975,8 +1975,8 @@ void RenderBlock::linkToEndLineIfNeeded(LineLayoutState& layoutState)
                     Vector<RenderBox*>::iterator end = cleanLineFloats->end();
                     for (Vector<RenderBox*>::iterator f = cleanLineFloats->begin(); f != end; ++f) {
                         FloatingObject* floatingObject = insertFloatingObject(*f);
-                        ASSERT(!floatingObject->originatingLine());
-                        floatingObject->setOriginatingLine(line);
+                        ASSERT(!floatingObject->m_originatingLine);
+                        floatingObject->m_originatingLine = line;
                         setLogicalHeight(logicalTopForChild(*f) - marginBeforeForChild(*f) + delta);
                         positionNewFloats();
                     }
@@ -2266,8 +2266,8 @@ RootInlineBox* RenderBlock::determineStartPosition(LineLayoutState& layoutState,
                 Vector<RenderBox*>::iterator end = cleanLineFloats->end();
                 for (Vector<RenderBox*>::iterator f = cleanLineFloats->begin(); f != end; ++f) {
                     FloatingObject* floatingObject = insertFloatingObject(*f);
-                    ASSERT(!floatingObject->originatingLine());
-                    floatingObject->setOriginatingLine(line);
+                    ASSERT(!floatingObject->m_originatingLine);
+                    floatingObject->m_originatingLine = line;
                     setLogicalHeight(logicalTopForChild(*f) - marginBeforeForChild(*f));
                     positionNewFloats();
                     ASSERT(layoutState.floats()[numCleanFloats].object == *f);
@@ -2374,7 +2374,7 @@ bool RenderBlock::checkPaginationAndFloatsAtEndLine(LineLayoutState& layoutState
     FloatingObjectSetIterator end = floatingObjectSet.end();
     for (FloatingObjectSetIterator it = floatingObjectSet.begin(); it != end; ++it) {
         FloatingObject* f = *it;
-        if (f->logicalBottom(isHorizontalWritingMode()) >= logicalTop && f->logicalBottom(isHorizontalWritingMode()) < logicalBottom)
+        if (logicalBottomForFloat(f) >= logicalTop && logicalBottomForFloat(f) < logicalBottom)
             return false;
     }
 
@@ -2832,7 +2832,7 @@ InlineIterator RenderBlock::LineBreaker::nextSegmentBreak(InlineBidiResolver& re
             // If it does, position it now, otherwise, position
             // it after moving to next line (in newLine() func)
             // FIXME: Bug 110372: Properly position multiple stacked floats with non-rectangular shape outside.
-            if (floatsFitOnLine && width.fitsOnLine(f->logicalWidth(m_block->isHorizontalWritingMode()))) {
+            if (floatsFitOnLine && width.fitsOnLine(m_block->logicalWidthForFloat(f))) {
                 m_block->positionNewFloatOnLine(f, lastFloatFromPreviousLine, lineInfo, width);
                 if (lBreak.m_obj == current.m_obj) {
                     ASSERT(!lBreak.m_pos);
@@ -3401,14 +3401,14 @@ bool RenderBlock::positionNewFloatOnLine(FloatingObject* newFloat, FloatingObjec
     // We only connect floats to lines for pagination purposes if the floats occur at the start of
     // the line and the previous line had a hard break (so this line is either the first in the block
     // or follows a <br>).
-    if (!newFloat->paginationStrut() || !lineInfo.previousLineBrokeCleanly() || !lineInfo.isEmpty())
+    if (!newFloat->m_paginationStrut || !lineInfo.previousLineBrokeCleanly() || !lineInfo.isEmpty())
         return true;
 
     const FloatingObjectSet& floatingObjectSet = m_floatingObjects->set();
     ASSERT(floatingObjectSet.last() == newFloat);
 
-    LayoutUnit floatLogicalTop = newFloat->logicalTop(isHorizontalWritingMode());
-    int paginationStrut = newFloat->paginationStrut();
+    LayoutUnit floatLogicalTop = logicalTopForFloat(newFloat);
+    int paginationStrut = newFloat->m_paginationStrut;
 
     if (floatLogicalTop - paginationStrut != logicalHeight() + lineInfo.floatPaginationStrut())
         return true;
@@ -3421,18 +3421,18 @@ bool RenderBlock::positionNewFloatOnLine(FloatingObject* newFloat, FloatingObjec
         FloatingObject* f = *it;
         if (f == lastFloatFromPreviousLine)
             break;
-        if (f->logicalTop(isHorizontalWritingMode()) == logicalHeight() + lineInfo.floatPaginationStrut()) {
-            f->setPaginationStrut(paginationStrut + f->paginationStrut());
-            RenderBox* o = f->renderer();
+        if (logicalTopForFloat(f) == logicalHeight() + lineInfo.floatPaginationStrut()) {
+            f->m_paginationStrut += paginationStrut;
+            RenderBox* o = f->m_renderer;
             setLogicalTopForChild(o, logicalTopForChild(o) + marginBeforeForChild(o) + paginationStrut);
             if (o->isRenderBlock())
                 toRenderBlock(o)->setChildNeedsLayout(MarkOnlyThis);
             o->layoutIfNeeded();
             // Save the old logical top before calling removePlacedObject which will set
             // isPlaced to false. Otherwise it will trigger an assert in logicalTopForFloat.
-            LayoutUnit oldLogicalTop = f->logicalTop(isHorizontalWritingMode());
+            LayoutUnit oldLogicalTop = logicalTopForFloat(f);
             m_floatingObjects->removePlacedObject(f);
-            f->setLogicalTop(oldLogicalTop + paginationStrut, isHorizontalWritingMode());
+            setLogicalTopForFloat(f, oldLogicalTop + paginationStrut);
             m_floatingObjects->addPlacedObject(f);
         }
     }

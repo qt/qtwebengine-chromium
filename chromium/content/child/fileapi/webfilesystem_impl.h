@@ -9,7 +9,6 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "third_party/WebKit/public/platform/WebFileSystem.h"
-#include "webkit/child/worker_task_runner.h"
 
 namespace base {
 class MessageLoopProxy;
@@ -23,35 +22,12 @@ class WebFileWriterClient;
 
 namespace content {
 
-class WebFileSystemImpl
-    : public WebKit::WebFileSystem,
-      public webkit_glue::WorkerTaskRunner::Observer {
+class WebFileSystemImpl : public WebKit::WebFileSystem {
  public:
-  // Returns thread-specific instance.
-  static WebFileSystemImpl* ThreadSpecificInstance(
-      base::MessageLoopProxy* main_thread_loop);
-
-  // Deletes thread-specific instance (if exists). For workers it deletes
-  // itself in OnWorkerRunLoopStopped(), but for an instance created on the
-  // main thread this method must be called.
-  static void DeleteThreadSpecificInstance();
-
   explicit WebFileSystemImpl(base::MessageLoopProxy* main_thread_loop);
   virtual ~WebFileSystemImpl();
 
-  // webkit_glue::WorkerTaskRunner::Observer implementation.
-  virtual void OnWorkerRunLoopStopped() OVERRIDE;
-
   // WebFileSystem implementation.
-  virtual void openFileSystem(
-      const WebKit::WebURL& storage_partition,
-      const WebKit::WebFileSystemType type,
-      bool create,
-      WebKit::WebFileSystemCallbacks*);
-  virtual void deleteFileSystem(
-      const WebKit::WebURL& storage_partition,
-      const WebKit::WebFileSystemType type,
-      WebKit::WebFileSystemCallbacks*);
   virtual void move(
       const WebKit::WebURL& src_path,
       const WebKit::WebURL& dest_path,

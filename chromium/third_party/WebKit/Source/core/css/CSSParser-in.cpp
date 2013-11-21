@@ -2402,16 +2402,6 @@ bool CSSParser::parseValue(CSSPropertyID propId, bool important)
         }
         return false;
     }
-    case CSSPropertyAnimationDelay:
-    case CSSPropertyAnimationDirection:
-    case CSSPropertyAnimationDuration:
-    case CSSPropertyAnimationFillMode:
-    case CSSPropertyAnimationName:
-    case CSSPropertyAnimationPlayState:
-    case CSSPropertyAnimationIterationCount:
-    case CSSPropertyAnimationTimingFunction:
-        if (!RuntimeEnabledFeatures::cssAnimationUnprefixedEnabled())
-            break;
     case CSSPropertyWebkitAnimationDelay:
     case CSSPropertyWebkitAnimationDirection:
     case CSSPropertyWebkitAnimationDuration:
@@ -2603,7 +2593,7 @@ bool CSSParser::parseValue(CSSPropertyID propId, bool important)
     case CSSPropertyBorder:
         // [ 'border-width' || 'border-style' || <color> ] | inherit
     {
-        if (parseShorthand(propId, parsingShorthandForProperty(CSSPropertyBorder), important)) {
+        if (parseShorthand(propId, borderShorthandForParsing(), important)) {
             // The CSS3 Borders and Backgrounds specification says that border also resets border-image. It's as
             // though a value of none was specified for the image.
             addExpandedPropertyForValue(CSSPropertyBorderImage, cssValuePool().createImplicitInitialValue(), important);
@@ -2667,11 +2657,8 @@ bool CSSParser::parseValue(CSSPropertyID propId, bool important)
         return parseShorthand(propId, webkitColumnRuleShorthand(), important);
     case CSSPropertyWebkitTextStroke:
         return parseShorthand(propId, webkitTextStrokeShorthand(), important);
-    case CSSPropertyAnimation:
-        if (!RuntimeEnabledFeatures::cssAnimationUnprefixedEnabled())
-            break;
     case CSSPropertyWebkitAnimation:
-        return parseAnimationShorthand(propId, important);
+        return parseAnimationShorthand(important);
     case CSSPropertyTransition:
     case CSSPropertyWebkitTransition:
         return parseTransitionShorthand(propId, important);
@@ -3086,18 +3073,18 @@ void CSSParser::addAnimationValue(RefPtr<CSSValue>& lval, PassRefPtr<CSSValue> r
         lval = rval;
 }
 
-bool CSSParser::parseAnimationShorthand(CSSPropertyID propId, bool important)
+bool CSSParser::parseAnimationShorthand(bool important)
 {
-    const StylePropertyShorthand& animationProperties = parsingShorthandForProperty(propId);
+    const StylePropertyShorthand& animationProperties = webkitAnimationShorthandForParsing();
     const unsigned numProperties = 7;
 
     // The list of properties in the shorthand should be the same
     // length as the list with animation name in last position, even though they are
     // in a different order.
-    ASSERT(numProperties == animationProperties.length());
-    ASSERT(numProperties == shorthandForProperty(propId).length());
+    ASSERT(numProperties == webkitAnimationShorthandForParsing().length());
+    ASSERT(numProperties == webkitAnimationShorthand().length());
 
-    ShorthandScope scope(this, propId);
+    ShorthandScope scope(this, CSSPropertyWebkitAnimation);
 
     bool parsedProperty[numProperties] = { false };
     AnimationParseContext context;
@@ -4463,7 +4450,6 @@ bool CSSParser::parseAnimationProperty(CSSPropertyID propId, RefPtr<CSSValue>& r
         }
         else {
             switch (propId) {
-                case CSSPropertyAnimationDelay:
                 case CSSPropertyWebkitAnimationDelay:
                 case CSSPropertyTransitionDelay:
                 case CSSPropertyWebkitTransitionDelay:
@@ -4471,13 +4457,11 @@ bool CSSParser::parseAnimationProperty(CSSPropertyID propId, RefPtr<CSSValue>& r
                     if (currValue)
                         m_valueList->next();
                     break;
-                case CSSPropertyAnimationDirection:
                 case CSSPropertyWebkitAnimationDirection:
                     currValue = parseAnimationDirection();
                     if (currValue)
                         m_valueList->next();
                     break;
-                case CSSPropertyAnimationDuration:
                 case CSSPropertyWebkitAnimationDuration:
                 case CSSPropertyTransitionDuration:
                 case CSSPropertyWebkitTransitionDuration:
@@ -4485,25 +4469,21 @@ bool CSSParser::parseAnimationProperty(CSSPropertyID propId, RefPtr<CSSValue>& r
                     if (currValue)
                         m_valueList->next();
                     break;
-                case CSSPropertyAnimationFillMode:
                 case CSSPropertyWebkitAnimationFillMode:
                     currValue = parseAnimationFillMode();
                     if (currValue)
                         m_valueList->next();
                     break;
-                case CSSPropertyAnimationIterationCount:
                 case CSSPropertyWebkitAnimationIterationCount:
                     currValue = parseAnimationIterationCount();
                     if (currValue)
                         m_valueList->next();
                     break;
-                case CSSPropertyAnimationName:
                 case CSSPropertyWebkitAnimationName:
                     currValue = parseAnimationName();
                     if (currValue)
                         m_valueList->next();
                     break;
-                case CSSPropertyAnimationPlayState:
                 case CSSPropertyWebkitAnimationPlayState:
                     currValue = parseAnimationPlayState();
                     if (currValue)
@@ -4517,7 +4497,6 @@ bool CSSParser::parseAnimationProperty(CSSPropertyID propId, RefPtr<CSSValue>& r
                     if (currValue)
                         m_valueList->next();
                     break;
-                case CSSPropertyAnimationTimingFunction:
                 case CSSPropertyWebkitAnimationTimingFunction:
                 case CSSPropertyTransitionTimingFunction:
                 case CSSPropertyWebkitTransitionTimingFunction:
@@ -10226,7 +10205,7 @@ inline void CSSParser::detectAtToken(int length, bool hasEscape)
     --length;
 
     // charset, font-face, import, media, namespace, page, supports,
-    // -webkit-keyframes, keyframes, and -webkit-mediaquery are not affected by hasEscape.
+    // -webkit-keyframes, and -webkit-mediaquery are not affected by hasEscape.
     SWITCH(name, length) {
         CASE("bottom-left") {
             if (LIKELY(!hasEscape))
@@ -10261,9 +10240,6 @@ inline void CSSParser::detectAtToken(int length, bool hasEscape)
         CASE("import") {
             m_parsingMode = MediaQueryMode;
             m_token = IMPORT_SYM;
-        }
-        CASE("keyframes") {
-            m_token = WEBKIT_KEYFRAMES_SYM;
         }
         CASE("left-top") {
             if (LIKELY(!hasEscape))
@@ -11508,7 +11484,7 @@ StyleKeyframe* CSSParser::createKeyframe(CSSParserValueList* keys)
     StringBuilder keyString;
     for (unsigned i = 0; i < keys->size(); ++i) {
         ASSERT(keys->valueAt(i)->unit == CSSPrimitiveValue::CSS_NUMBER);
-        double key = keys->valueAt(i)->fValue;
+        float key = static_cast<float>(keys->valueAt(i)->fValue);
         if (key < 0 || key > 100) {
             // As per http://www.w3.org/TR/css3-animations/#keyframes,
             // "If a keyframe selector specifies negative percentage values

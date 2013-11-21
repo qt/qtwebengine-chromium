@@ -19,7 +19,6 @@
     '../gm/blurs.cpp',
     '../gm/blurquickreject.cpp',
     '../gm/blurrect.cpp',
-    '../gm/canvasstate.cpp',
     '../gm/circles.cpp',
     '../gm/circularclips.cpp',
     '../gm/colorfilterimagefilter.cpp',

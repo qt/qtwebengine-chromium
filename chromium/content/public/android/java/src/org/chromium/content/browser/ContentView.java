@@ -101,6 +101,9 @@ public class ContentView extends FrameLayout
             setVerticalScrollBarEnabled(false);
         }
 
+        setFocusable(true);
+        setFocusableInTouchMode(true);
+
         mContentViewCore = new ContentViewCore(context);
         mContentViewCore.initialize(this, this, nativeWebContents, windowAndroid,
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN ?
@@ -438,6 +441,12 @@ public class ContentView extends FrameLayout
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect);
         mContentViewCore.onFocusChanged(gainFocus);
         TraceEvent.end();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasWindowFocus) {
+        super.onWindowFocusChanged(hasWindowFocus);
+        mContentViewCore.onWindowFocusChanged(hasWindowFocus);
     }
 
     @Override

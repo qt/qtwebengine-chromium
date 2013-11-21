@@ -55,8 +55,7 @@ protected:
         IteratingOverActiveDOMObjects,
         IteratingOverContextObservers,
         IteratingOverDocumentObservers,
-        IteratingOverPageObservers,
-        IteratingOverDOMWindowObservers
+        IteratingOverPageObservers
     };
 
     IterationType m_iterating;

@@ -28,7 +28,6 @@
 #define DeviceMotionController_h
 
 #include "core/dom/Event.h"
-#include "core/page/DOMWindowLifecycleObserver.h"
 #include "core/platform/Supplementable.h"
 #include "modules/device_orientation/DeviceSensorEventController.h"
 
@@ -36,7 +35,7 @@ namespace WebCore {
 
 class DeviceMotionData;
 
-class DeviceMotionController : public DeviceSensorEventController, public Supplement<ScriptExecutionContext>, public DOMWindowLifecycleObserver {
+class DeviceMotionController : public DeviceSensorEventController, public Supplement<ScriptExecutionContext> {
 
 public:
     virtual ~DeviceMotionController();
@@ -45,9 +44,6 @@ public:
     static DeviceMotionController* from(Document*);
 
     void didChangeDeviceMotion(DeviceMotionData*);
-
-    // Inherited from DOMWindowLifecycleObserver
-    virtual void removeAllEventListeners() OVERRIDE;
 
 private:
     explicit DeviceMotionController(Document*);

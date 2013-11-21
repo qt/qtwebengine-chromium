@@ -68,7 +68,7 @@ public:
     void loadSubimages(ResourceFetcher*);
 
 protected:
-    explicit CSSImageGeneratorValue(ClassType);
+    CSSImageGeneratorValue(ClassType);
 
     Image* getImage(RenderObject*, const IntSize&);
     void putImage(const IntSize&, PassRefPtr<Image>);

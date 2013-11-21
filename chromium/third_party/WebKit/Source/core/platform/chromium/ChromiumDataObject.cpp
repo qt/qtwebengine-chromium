@@ -90,24 +90,18 @@ void ChromiumDataObject::clearAll()
     m_itemList.clear();
 }
 
-PassRefPtr<ChromiumDataObjectItem> ChromiumDataObject::add(const String& data, const String& type, ExceptionState& es)
+void ChromiumDataObject::add(const String& data, const String& type, ExceptionState& es)
 {
-    RefPtr<ChromiumDataObjectItem> item = ChromiumDataObjectItem::createFromString(type, data);
-    if (!internalAddStringItem(item)) {
+    if (!internalAddStringItem(ChromiumDataObjectItem::createFromString(type, data)))
         es.throwDOMException(NotSupportedError);
-        return 0;
-    }
-    return item;
 }
 
-PassRefPtr<ChromiumDataObjectItem> ChromiumDataObject::add(PassRefPtr<File> file, ScriptExecutionContext* context)
+void ChromiumDataObject::add(PassRefPtr<File> file, ScriptExecutionContext* context)
 {
     if (!file)
-        return 0;
+        return;
 
-    RefPtr<ChromiumDataObjectItem> item = ChromiumDataObjectItem::createFromFile(file);
-    m_itemList.append(item);
-    return item;
+    m_itemList.append(ChromiumDataObjectItem::createFromFile(file));
 }
 
 void ChromiumDataObject::clearData(const String& type)

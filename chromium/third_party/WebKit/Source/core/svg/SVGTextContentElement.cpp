@@ -123,9 +123,6 @@ float SVGTextContentElement::getSubStringLength(unsigned charnum, unsigned nchar
         return 0.0f;
     }
 
-    if (nchars > numberOfChars - charnum)
-        nchars = numberOfChars - charnum;
-
     return SVGTextQuery(renderer()).subStringLength(charnum, nchars);
 }
 

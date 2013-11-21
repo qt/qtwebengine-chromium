@@ -20,9 +20,11 @@
 #include "google/cacheinvalidation/client.pb.h"
 #include "google/cacheinvalidation/client_protocol.pb.h"
 #include "google/cacheinvalidation/types.pb.h"
-#include "google/cacheinvalidation/impl/repeated-field-namespace-fix.h"
 
 namespace invalidation {
+
+using ::google::protobuf::RepeatedField;
+using ::google::protobuf::RepeatedPtrField;
 
 // Client
 using ::ipc::invalidation::PersistentStateBlob;

@@ -35,7 +35,7 @@ class CSSAnimationDataList {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     CSSAnimationDataList() { }
-    explicit CSSAnimationDataList(const CSSAnimationDataList&);
+    CSSAnimationDataList(const CSSAnimationDataList&);
 
     void fillUnsetProperties();
     bool operator==(const CSSAnimationDataList& o) const;

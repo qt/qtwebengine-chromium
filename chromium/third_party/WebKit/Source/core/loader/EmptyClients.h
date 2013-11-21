@@ -228,7 +228,8 @@ public:
 
     virtual void transitionToCommittedForNewPage() OVERRIDE { }
 
-    virtual void navigateBackForward(int offset) const OVERRIDE { }
+    virtual bool shouldGoToHistoryItem(HistoryItem*) const OVERRIDE { return false; }
+    virtual bool shouldStopLoadingForHistoryItem(HistoryItem*) const OVERRIDE { return false; }
     virtual void didDisplayInsecureContent() OVERRIDE { }
     virtual void didRunInsecureContent(SecurityOrigin*, const KURL&) OVERRIDE { }
     virtual void didDetectXSS(const KURL&, bool) OVERRIDE { }
@@ -323,7 +324,6 @@ public:
     EmptyContextMenuClient() { }
     virtual ~EmptyContextMenuClient() {  }
     virtual void showContextMenu(const ContextMenu*) OVERRIDE { }
-    virtual void clearContextMenu() OVERRIDE { }
 };
 
 class EmptyDragClient : public DragClient {
@@ -360,9 +360,13 @@ public:
 
 class EmptyBackForwardClient : public BackForwardClient {
 public:
-    virtual void didAddItem() OVERRIDE { }
+    virtual void addItem(PassRefPtr<HistoryItem>) OVERRIDE { }
+    virtual void goToItem(HistoryItem*) OVERRIDE { }
+    virtual HistoryItem* itemAtIndex(int) OVERRIDE { return 0; }
     virtual int backListCount() OVERRIDE { return 0; }
     virtual int forwardListCount() OVERRIDE { return 0; }
+    virtual bool isActive() OVERRIDE { return false; }
+    virtual void close() OVERRIDE { }
 };
 
 void fillWithEmptyClients(Page::PageClients&);

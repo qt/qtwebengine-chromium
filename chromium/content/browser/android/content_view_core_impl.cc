@@ -350,17 +350,17 @@ void ContentViewCoreImpl::OnTabCrashed() {
     return;
   Java_ContentViewCore_resetVSyncNotification(env, obj.obj());
 
-  // If |tab_crashed_| is already true, just return. e.g. if two tabs share the
-  // render process, this will be called for each tab when the render process
-  // crashed. If user reload one tab, a new render process is created. It can be
-  // shared by the other tab. But if user closes the tab before reload the other
+  // Note that we might reach this place multiple times while the
+  // ContentViewCore remains crashed. E.g. if two tabs share the render process
+  // and the process crashes, this will be called for each tab. If the user
+  // reload one tab, a new render process is created and it can be shared by the
+  // other tab. But if user closes the reloaded tab before reloading the other
   // tab, the new render process will be shut down. This will trigger the other
   // tab's OnTabCrashed() called again as two tabs share the same
-  // BrowserRenderProcessHost.
-  if (tab_crashed_)
-    return;
+  // BrowserRenderProcessHost. The Java side will distinguish this case using
+  // tab_crashed_ passed below.
+  Java_ContentViewCore_onTabCrash(env, obj.obj(), tab_crashed_);
   tab_crashed_ = true;
-  Java_ContentViewCore_onTabCrash(env, obj.obj());
 }
 
 // All positions and sizes are in CSS pixels.
@@ -800,12 +800,7 @@ jint ContentViewCoreImpl::GetCurrentRenderProcessId(JNIEnv* env, jobject obj) {
 
 ScopedJavaLocalRef<jstring> ContentViewCoreImpl::GetURL(
     JNIEnv* env, jobject) const {
-  // The current users of the Java API expect to use the active entry
-  // rather than the visible entry, which is exposed by WebContents::GetURL.
-  content::NavigationEntry* entry =
-      web_contents_->GetController().GetActiveEntry();
-  GURL url = entry ? entry->GetVirtualURL() : GURL::EmptyGURL();
-  return ConvertUTF8ToJavaString(env, url.spec());
+  return ConvertUTF8ToJavaString(env, GetWebContents()->GetURL().spec());
 }
 
 ScopedJavaLocalRef<jstring> ContentViewCoreImpl::GetTitle(
@@ -1431,7 +1426,7 @@ void ContentViewCoreImpl::GetDirectedNavigationHistory(JNIEnv* env,
 ScopedJavaLocalRef<jstring>
 ContentViewCoreImpl::GetOriginalUrlForActiveNavigationEntry(JNIEnv* env,
                                                             jobject obj) {
-  NavigationEntry* entry = web_contents_->GetController().GetActiveEntry();
+  NavigationEntry* entry = web_contents_->GetController().GetVisibleEntry();
   if (entry == NULL)
     return ScopedJavaLocalRef<jstring>(env, NULL);
   return ConvertUTF8ToJavaString(env, entry->GetOriginalRequestURL().spec());
@@ -1472,14 +1467,22 @@ void JavaScriptResultCallback(const ScopedJavaGlobalRef<jobject>& callback,
 void ContentViewCoreImpl::EvaluateJavaScript(JNIEnv* env,
                                              jobject obj,
                                              jstring script,
-                                             jobject callback) {
-  RenderViewHost* host = web_contents_->GetRenderViewHost();
-  DCHECK(host);
+                                             jobject callback,
+                                             jboolean start_renderer) {
+  RenderViewHost* rvh = web_contents_->GetRenderViewHost();
+  DCHECK(rvh);
+
+  if (start_renderer && !rvh->IsRenderViewLive()) {
+    if (!web_contents_->CreateRenderViewForInitialEmptyDocument()) {
+      LOG(ERROR) << "Failed to create RenderView in EvaluateJavaScript";
+      return;
+    }
+  }
 
   if (!callback) {
     // No callback requested.
-    host->ExecuteJavascriptInWebFrame(string16(),  // frame_xpath
-                                      ConvertJavaStringToUTF16(env, script));
+    rvh->ExecuteJavascriptInWebFrame(string16(),  // frame_xpath
+                                     ConvertJavaStringToUTF16(env, script));
     return;
   }
 
@@ -1490,7 +1493,7 @@ void ContentViewCoreImpl::EvaluateJavaScript(JNIEnv* env,
   content::RenderViewHost::JavascriptResultCallback c_callback =
       base::Bind(&JavaScriptResultCallback, j_callback);
 
-  host->ExecuteJavascriptInWebFrameCallbackResult(
+  rvh->ExecuteJavascriptInWebFrameCallbackResult(
       string16(),  // frame_xpath
       ConvertJavaStringToUTF16(env, script),
       c_callback);
@@ -1498,7 +1501,7 @@ void ContentViewCoreImpl::EvaluateJavaScript(JNIEnv* env,
 
 bool ContentViewCoreImpl::GetUseDesktopUserAgent(
     JNIEnv* env, jobject obj) {
-  NavigationEntry* entry = web_contents_->GetController().GetActiveEntry();
+  NavigationEntry* entry = web_contents_->GetController().GetVisibleEntry();
   return entry && entry->GetIsOverridingUserAgent();
 }
 
@@ -1547,7 +1550,7 @@ void ContentViewCoreImpl::SetUseDesktopUserAgent(
     return;
 
   // Make sure the navigation entry actually exists.
-  NavigationEntry* entry = web_contents_->GetController().GetActiveEntry();
+  NavigationEntry* entry = web_contents_->GetController().GetVisibleEntry();
   if (!entry)
     return;
 
@@ -1571,12 +1574,17 @@ void ContentViewCoreImpl::SetAccessibilityEnabled(JNIEnv* env, jobject obj,
     return;
   RenderWidgetHostImpl* host_impl = RenderWidgetHostImpl::From(
       host_view->GetRenderWidgetHost());
+  BrowserAccessibilityState* accessibility_state =
+      BrowserAccessibilityState::GetInstance();
   if (enabled) {
-    BrowserAccessibilityState::GetInstance()->EnableAccessibility();
-    if (host_impl)
+    // This enables accessibility globally unless it was explicitly disallowed
+    // by a command-line flag.
+    accessibility_state->OnScreenReaderDetected();
+    // If it was actually enabled globally, enable it for this RenderWidget now.
+    if (accessibility_state->IsAccessibleBrowser() && host_impl)
       host_impl->SetAccessibilityMode(AccessibilityModeComplete);
   } else {
-    BrowserAccessibilityState::GetInstance()->DisableAccessibility();
+    accessibility_state->DisableAccessibility();
     if (host_impl)
       host_impl->SetAccessibilityMode(AccessibilityModeOff);
   }

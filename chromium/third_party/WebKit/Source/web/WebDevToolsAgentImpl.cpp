@@ -46,9 +46,9 @@
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8Utilities.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/fetch/MemoryCache.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InspectorController.h"
+#include "core/loader/cache/MemoryCache.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "core/page/Page.h"
@@ -464,18 +464,10 @@ void WebDevToolsAgentImpl::webViewResized(const WebSize& size)
 
 bool WebDevToolsAgentImpl::handleInputEvent(WebCore::Page* page, const WebInputEvent& inputEvent)
 {
-    if (!m_attached)
-        return false;
-
     InspectorController* ic = inspectorController();
     if (!ic)
         return false;
 
-    if (WebInputEvent::isGestureEventType(inputEvent.type) && inputEvent.type == WebInputEvent::GestureTap) {
-        // Only let GestureTab in (we only need it and we know PlatformGestureEventBuilder supports it).
-        PlatformGestureEvent gestureEvent = PlatformGestureEventBuilder(page->mainFrame()->view(), *static_cast<const WebGestureEvent*>(&inputEvent));
-        return ic->handleGestureEvent(page->mainFrame(), gestureEvent);
-    }
     if (WebInputEvent::isMouseEventType(inputEvent.type) && inputEvent.type != WebInputEvent::MouseEnter) {
         // PlatformMouseEventBuilder does not work with MouseEnter type, so we filter it out manually.
         PlatformMouseEvent mouseEvent = PlatformMouseEventBuilder(page->mainFrame()->view(), *static_cast<const WebMouseEvent*>(&inputEvent));

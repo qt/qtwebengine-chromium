@@ -100,7 +100,8 @@ public:
     virtual void postProgressEstimateChangedNotification();
     virtual void postProgressFinishedNotification();
     virtual void loadURLExternally(const WebCore::ResourceRequest&, WebCore::NavigationPolicy, const String& suggestedName = String());
-    virtual void navigateBackForward(int offset) const;
+    virtual bool shouldGoToHistoryItem(WebCore::HistoryItem*) const;
+    virtual bool shouldStopLoadingForHistoryItem(WebCore::HistoryItem*) const;
     virtual void didAccessInitialDocument();
     virtual void didDisownOpener();
     virtual void didDisplayInsecureContent();

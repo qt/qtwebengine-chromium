@@ -287,11 +287,11 @@ int SSLConnectJob::DoSSLConnect() {
 
   connect_timing_.ssl_start = base::TimeTicks::Now();
 
-  ssl_socket_ = client_socket_factory_->CreateSSLClientSocket(
-      transport_socket_handle_.Pass(),
+  ssl_socket_.reset(client_socket_factory_->CreateSSLClientSocket(
+      transport_socket_handle_.release(),
       params_->host_and_port(),
       params_->ssl_config(),
-      context_);
+      context_));
   return ssl_socket_->Connect(callback_);
 }
 
@@ -410,7 +410,7 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
   }
 
   if (result == OK || IsCertificateError(result)) {
-    SetSocket(ssl_socket_.PassAs<StreamSocket>());
+    set_socket(ssl_socket_.release());
   } else if (result == ERR_SSL_CLIENT_AUTH_CERT_NEEDED) {
     error_response_info_.cert_request_info = new SSLCertRequestInfo;
     ssl_socket_->GetSSLCertRequestInfo(
@@ -527,16 +527,14 @@ SSLClientSocketPool::~SSLClientSocketPool() {
     ssl_config_service_->RemoveObserver(this);
 }
 
-scoped_ptr<ConnectJob>
-SSLClientSocketPool::SSLConnectJobFactory::NewConnectJob(
+ConnectJob* SSLClientSocketPool::SSLConnectJobFactory::NewConnectJob(
     const std::string& group_name,
     const PoolBase::Request& request,
     ConnectJob::Delegate* delegate) const {
-  return scoped_ptr<ConnectJob>(
-      new SSLConnectJob(group_name, request.params(), ConnectionTimeout(),
-                        transport_pool_, socks_pool_, http_proxy_pool_,
-                        client_socket_factory_, host_resolver_,
-                        context_, delegate, net_log_));
+  return new SSLConnectJob(group_name, request.params(), ConnectionTimeout(),
+                           transport_pool_, socks_pool_, http_proxy_pool_,
+                           client_socket_factory_, host_resolver_,
+                           context_, delegate, net_log_);
 }
 
 base::TimeDelta
@@ -574,9 +572,8 @@ void SSLClientSocketPool::CancelRequest(const std::string& group_name,
 }
 
 void SSLClientSocketPool::ReleaseSocket(const std::string& group_name,
-                                        scoped_ptr<StreamSocket> socket,
-                                        int id) {
-  base_.ReleaseSocket(group_name, socket.Pass(), id);
+                                        StreamSocket* socket, int id) {
+  base_.ReleaseSocket(group_name, socket, id);
 }
 
 void SSLClientSocketPool::FlushWithError(int error) {

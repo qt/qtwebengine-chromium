@@ -23,7 +23,6 @@
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/client_socket_pool_histograms.h"
 #include "net/socket/socket_test_util.h"
-#include "net/socket/ssl_client_socket.h"
 #include "net/socket/stream_socket.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -341,16 +340,16 @@ class MockClientSocketFactory : public ClientSocketFactory {
         delay_(base::TimeDelta::FromMilliseconds(
             ClientSocketPool::kMaxConnectRetryIntervalMs)) {}
 
-  virtual scoped_ptr<DatagramClientSocket> CreateDatagramClientSocket(
+  virtual DatagramClientSocket* CreateDatagramClientSocket(
       DatagramSocket::BindType bind_type,
       const RandIntCallback& rand_int_cb,
       NetLog* net_log,
       const NetLog::Source& source) OVERRIDE {
     NOTREACHED();
-    return scoped_ptr<DatagramClientSocket>();
+    return NULL;
   }
 
-  virtual scoped_ptr<StreamSocket> CreateTransportClientSocket(
+  virtual StreamSocket* CreateTransportClientSocket(
       const AddressList& addresses,
       NetLog* /* net_log */,
       const NetLog::Source& /* source */) OVERRIDE {
@@ -364,41 +363,34 @@ class MockClientSocketFactory : public ClientSocketFactory {
 
     switch (type) {
       case MOCK_CLIENT_SOCKET:
-        return scoped_ptr<StreamSocket>(
-            new MockClientSocket(addresses, net_log_));
+        return new MockClientSocket(addresses, net_log_);
       case MOCK_FAILING_CLIENT_SOCKET:
-        return scoped_ptr<StreamSocket>(
-            new MockFailingClientSocket(addresses, net_log_));
+        return new MockFailingClientSocket(addresses, net_log_);
       case MOCK_PENDING_CLIENT_SOCKET:
-        return scoped_ptr<StreamSocket>(
-            new MockPendingClientSocket(
-                addresses, true, false, base::TimeDelta(), net_log_));
+        return new MockPendingClientSocket(
+            addresses, true, false, base::TimeDelta(), net_log_);
       case MOCK_PENDING_FAILING_CLIENT_SOCKET:
-        return scoped_ptr<StreamSocket>(
-            new MockPendingClientSocket(
-                addresses, false, false, base::TimeDelta(), net_log_));
+        return new MockPendingClientSocket(
+            addresses, false, false, base::TimeDelta(), net_log_);
       case MOCK_DELAYED_CLIENT_SOCKET:
-        return scoped_ptr<StreamSocket>(
-            new MockPendingClientSocket(
-                addresses, true, false, delay_, net_log_));
+        return new MockPendingClientSocket(
+            addresses, true, false, delay_, net_log_);
       case MOCK_STALLED_CLIENT_SOCKET:
-        return scoped_ptr<StreamSocket>(
-            new MockPendingClientSocket(
-                addresses, true, true, base::TimeDelta(), net_log_));
+        return new MockPendingClientSocket(
+            addresses, true, true, base::TimeDelta(), net_log_);
       default:
         NOTREACHED();
-        return scoped_ptr<StreamSocket>(
-            new MockClientSocket(addresses, net_log_));
+        return new MockClientSocket(addresses, net_log_);
     }
   }
 
-  virtual scoped_ptr<SSLClientSocket> CreateSSLClientSocket(
-      scoped_ptr<ClientSocketHandle> transport_socket,
+  virtual SSLClientSocket* CreateSSLClientSocket(
+      ClientSocketHandle* transport_socket,
       const HostPortPair& host_and_port,
       const SSLConfig& ssl_config,
       const SSLClientSocketContext& context) OVERRIDE {
     NOTIMPLEMENTED();
-    return scoped_ptr<SSLClientSocket>();
+    return NULL;
   }
 
   virtual void ClearSSLSessionCache() OVERRIDE {

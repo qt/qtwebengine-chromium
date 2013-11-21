@@ -94,11 +94,6 @@ WebInspector.KeyboardShortcut.Keys = {
     H: { code: 72, name: "H" },
     Ctrl: { code: 17, name: "Ctrl" },
     Meta: { code: 91, name: "Meta" },
-    get CtrlOrMeta()
-    {
-        // "default" command/ctrl key for platform, Command on Mac, Ctrl on other platforms
-        return WebInspector.isMac() ? this.Meta : this.Ctrl;
-    },
 };
 
 /**

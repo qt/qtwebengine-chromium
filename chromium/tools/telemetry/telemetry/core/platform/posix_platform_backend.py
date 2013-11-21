@@ -4,8 +4,9 @@
 
 import subprocess
 
+from collections import defaultdict
+
 from telemetry.core.platform import desktop_platform_backend
-from telemetry.core.platform import proc_util
 
 
 class PosixPlatformBackend(desktop_platform_backend.DesktopPlatformBackend):
@@ -37,11 +38,23 @@ class PosixPlatformBackend(desktop_platform_backend.DesktopPlatformBackend):
 
   def GetChildPids(self, pid):
     """Returns a list of child pids of |pid|."""
-    ps_output = self._GetPsOutput(['pid', 'ppid', 'state'])
-    processes = []
-    for pid_ppid_state in ps_output:
-      processes.append(pid_ppid_state.split())
-    return proc_util.GetChildPids(processes, pid)
+    pid_ppid_state_list = self._GetPsOutput(['pid', 'ppid', 'state'])
+
+    child_dict = defaultdict(list)
+    for pid_ppid_state in pid_ppid_state_list:
+      curr_pid, curr_ppid, state = pid_ppid_state.split()
+      if 'Z' in state:
+        continue  # Ignore zombie processes
+      child_dict[int(curr_ppid)].append(int(curr_pid))
+    queue = [pid]
+    child_ids = []
+    while queue:
+      parent = queue.pop()
+      if parent in child_dict:
+        children = child_dict[parent]
+        queue.extend(children)
+        child_ids.extend(children)
+    return child_ids
 
   def GetCommandLine(self, pid):
     command = self._GetPsOutput(['command'], pid)

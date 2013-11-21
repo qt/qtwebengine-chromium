@@ -37,7 +37,6 @@ class DownloadItem;
 class JavaScriptDialogManager;
 class PageState;
 class RenderViewHost;
-class SessionStorageNamespace;
 class WebContents;
 class WebContentsImpl;
 struct ContextMenuParams;
@@ -301,8 +300,11 @@ class CONTENT_EXPORT WebContentsDelegate {
       WindowContainerType window_container_type,
       const string16& frame_name,
       const GURL& target_url,
-      const std::string& partition_id,
-      SessionStorageNamespace* session_storage_namespace);
+      const Referrer& referrer,
+      WindowOpenDisposition disposition,
+      const WebKit::WebWindowFeatures& features,
+      bool user_gesture,
+      bool opener_suppressed);
 
   // Notifies the delegate about the creation of a new WebContents. This
   // typically happens when popups are created.
@@ -422,7 +424,7 @@ class CONTENT_EXPORT WebContentsDelegate {
   virtual void RequestMediaAccessPermission(
       WebContents* web_contents,
       const MediaStreamRequest& request,
-      const MediaResponseCallback& callback) {}
+      const MediaResponseCallback& callback);
 
   // Requests permission to access the PPAPI broker. The delegate should return
   // true and call the passed in |callback| with the result, or return false

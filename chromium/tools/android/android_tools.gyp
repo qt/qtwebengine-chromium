@@ -5,7 +5,7 @@
 {
   'targets': [
     # Intermediate target grouping the android tools needed to run native
-    # unittests and instrumentation test apks.
+    # unittests apks.
     {
       'target_name': 'android_tools',
       'type': 'none',

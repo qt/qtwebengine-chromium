@@ -52,7 +52,6 @@
     "tc-webcore-events-related",
     "tc-webcore-document-write",
     "tc-webcore-node-create-renderer",
-    "tc-webcore-image-frame-generator",
     "tc-webcore-render-catch-all",
     "tc-webcore-setInnerHTML-except-node",
     "tc-wtf-StringImpl-user-catch-all",
@@ -412,11 +411,6 @@
     {
       "name": "tc-webcore-node-create-renderer",
       "stacktrace": ".*WebCore::Node::createRendererIfNeeded.*",
-      "allocator": "malloc"
-    },
-    {
-      "name": "tc-webcore-image-frame-generator",
-      "stacktrace": ".*WebCore::ImageFrameGenerator.*",
       "allocator": "malloc"
     },
     {

@@ -66,7 +66,8 @@ void OnConnectFailed(const std::string& service_path,
   if (error_name == NetworkConnectionHandler::kErrorConnectCanceled)
     return;
 
-  if (error_name == NetworkConnectionHandler::kErrorPassphraseRequired ||
+  if (error_name == flimflam::kErrorBadPassphrase ||
+      error_name == NetworkConnectionHandler::kErrorPassphraseRequired ||
       error_name == NetworkConnectionHandler::kErrorConfigurationRequired ||
       error_name == NetworkConnectionHandler::kErrorAuthenticationRequired) {
     ash::Shell::GetInstance()->system_tray_delegate()->ConfigureNetwork(
@@ -96,7 +97,7 @@ void OnConnectFailed(const std::string& service_path,
   ShowErrorNotification(error_name, service_path);
 
   // Show a configure dialog for ConnectFailed errors.
-  if (error_name != NetworkConnectionHandler::kErrorConnectFailed)
+  if (error_name != flimflam::kErrorConnectFailed)
     return;
 
   // If Shill reports an InProgress error, don't try to configure the network.
@@ -137,11 +138,10 @@ void CallConnectToNetwork(const std::string& service_path,
 }
 
 void OnActivateFailed(const std::string& service_path,
-                     const std::string& error_name,
+                      const std::string& error_name,
                       scoped_ptr<base::DictionaryValue> error_data) {
   NET_LOG_ERROR("Unable to activate network", service_path);
-  ShowErrorNotification(
-      NetworkConnectionHandler::kErrorActivateFailed, service_path);
+  ShowErrorNotification(network_connect::kErrorActivateFailed, service_path);
 }
 
 void OnActivateSucceeded(const std::string& service_path) {
@@ -246,6 +246,8 @@ void ConfigureSetProfileSucceeded(
 
 namespace network_connect {
 
+const char kErrorActivateFailed[] = "activate-failed";
+
 void ConnectToNetwork(const std::string& service_path,
                       gfx::NativeWindow owning_window) {
   const bool check_error_state = true;
@@ -254,25 +256,27 @@ void ConnectToNetwork(const std::string& service_path,
 
 void ActivateCellular(const std::string& service_path) {
   NET_LOG_USER("ActivateCellular", service_path);
+  const NetworkState* cellular =
+      NetworkHandler::Get()->network_state_handler()->
+      GetNetworkState(service_path);
+  if (!cellular || cellular->type() != flimflam::kTypeCellular) {
+    NET_LOG_ERROR("ActivateCellular with no Service", service_path);
+    return;
+  }
   const DeviceState* cellular_device =
       NetworkHandler::Get()->network_state_handler()->
-      GetDeviceStateByType(flimflam::kTypeCellular);
+      GetDeviceState(cellular->device_path());
   if (!cellular_device) {
     NET_LOG_ERROR("ActivateCellular with no Device", service_path);
     return;
   }
   if (!IsDirectActivatedCarrier(cellular_device->carrier())) {
     // For non direct activation, show the mobile setup dialog which can be
-    // used to activate the network.
-    ash::Shell::GetInstance()->system_tray_delegate()->ShowMobileSetup(
-        service_path);
-    return;
-  }
-  const NetworkState* cellular =
-      NetworkHandler::Get()->network_state_handler()->
-      GetNetworkState(service_path);
-  if (!cellular || cellular->type() != flimflam::kTypeCellular) {
-    NET_LOG_ERROR("ActivateCellular with no Service", service_path);
+    // used to activate the network. Only show the dialog, if an account
+    // management URL is available.
+    if (!cellular->payment_url().empty())
+      ash::Shell::GetInstance()->system_tray_delegate()->ShowMobileSetup(
+          service_path);
     return;
   }
   if (cellular->activation_state() == flimflam::kActivationStateActivated) {

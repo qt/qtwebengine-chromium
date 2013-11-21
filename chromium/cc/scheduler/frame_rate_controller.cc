@@ -70,16 +70,11 @@ BeginFrameArgs FrameRateController::SetActive(bool active) {
   if (active_ == active)
     return BeginFrameArgs();
   TRACE_EVENT1("cc", "FrameRateController::SetActive", "active", active);
+  bool just_activated = active && !active_;
   active_ = active;
 
   if (is_time_source_throttling_) {
-    base::TimeTicks missed_tick_time = time_source_->SetActive(active);
-    if (!missed_tick_time.is_null()) {
-      base::TimeTicks deadline = NextTickTime();
-      return BeginFrameArgs::Create(missed_tick_time,
-                                    deadline,
-                                    interval_);
-    }
+    time_source_->SetActive(active);
   } else {
     if (active)
       PostManualTick();
@@ -87,6 +82,12 @@ BeginFrameArgs FrameRateController::SetActive(bool active) {
       weak_factory_.InvalidateWeakPtrs();
   }
 
+  if (just_activated) {
+    // TODO(brianderson): Use an adaptive parent compositor deadline.
+    base::TimeTicks frame_time = NextTickTime() - interval_;
+    base::TimeTicks deadline = NextTickTime();
+    return BeginFrameArgs::Create(frame_time, deadline, interval_);
+  }
   return BeginFrameArgs();
 }
 

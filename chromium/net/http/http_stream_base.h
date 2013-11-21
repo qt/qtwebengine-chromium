@@ -141,9 +141,6 @@ class NET_EXPORT_PRIVATE HttpStreamBase {
   // draining is complete.
   virtual void Drain(HttpNetworkSession* session) = 0;
 
-  // Called when the priority of the parent transaction changes.
-  virtual void SetPriority(RequestPriority priority) = 0;
-
  private:
   DISALLOW_COPY_AND_ASSIGN(HttpStreamBase);
 };

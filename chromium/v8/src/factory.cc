@@ -1023,11 +1023,10 @@ Handle<GlobalObject> Factory::NewGlobalObject(
 
 
 Handle<JSObject> Factory::NewJSObjectFromMap(Handle<Map> map,
-                                             PretenureFlag pretenure,
-                                             bool alloc_props) {
+                                             PretenureFlag pretenure) {
   CALL_HEAP_FUNCTION(
       isolate(),
-      isolate()->heap()->AllocateJSObjectFromMap(*map, pretenure, alloc_props),
+      isolate()->heap()->AllocateJSObjectFromMap(*map, pretenure),
       JSObject);
 }
 
@@ -1216,7 +1215,6 @@ Handle<SharedFunctionInfo> Factory::NewSharedFunctionInfo(
   shared->set_num_literals(literals_array_size);
   if (is_generator) {
     shared->set_instance_class_name(isolate()->heap()->Generator_string());
-    shared->DisableOptimization(kGenerator);
   }
   return shared;
 }
@@ -1393,10 +1391,8 @@ Handle<JSFunction> Factory::CreateApiFunction(
         Smi::cast(instance_template->internal_field_count())->value();
   }
 
-  // TODO(svenpanne) Kill ApiInstanceType and refactor things by generalizing
-  // JSObject::GetHeaderSize.
   int instance_size = kPointerSize * internal_field_count;
-  InstanceType type;
+  InstanceType type = INVALID_TYPE;
   switch (instance_type) {
     case JavaScriptObject:
       type = JS_OBJECT_TYPE;
@@ -1411,10 +1407,9 @@ Handle<JSFunction> Factory::CreateApiFunction(
       instance_size += JSGlobalProxy::kSize;
       break;
     default:
-      UNREACHABLE();
-      type = JS_OBJECT_TYPE;  // Keep the compiler happy.
       break;
   }
+  ASSERT(type != INVALID_TYPE);
 
   Handle<JSFunction> result =
       NewFunction(Factory::empty_string(),

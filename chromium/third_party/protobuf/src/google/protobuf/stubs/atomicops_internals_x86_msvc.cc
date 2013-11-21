@@ -32,7 +32,7 @@
 // Therefore we move the code depending on windows.h to this separate cc file.
 
 // Don't compile this file for people not concerned about thread safety.
-#ifndef GOOGLE_PROTOBUF_NO_THREAD_SAFETY
+#ifndef GOOGLE_PROTOBUF_NO_THREADSAFETY
 
 #include <google/protobuf/stubs/atomicops.h>
 
@@ -109,4 +109,4 @@ Atomic64 Barrier_AtomicIncrement(volatile Atomic64* ptr,
 }  // namespace google
 
 #endif  // GOOGLE_PROTOBUF_ATOMICOPS_INTERNALS_X86_MSVC_H_
-#endif  // GOOGLE_PROTOBUF_NO_THREAD_SAFETY
+#endif  // GOOGLE_PROTOBUF_NO_THREADSAFETY

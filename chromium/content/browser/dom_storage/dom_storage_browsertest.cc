@@ -25,8 +25,7 @@ class DOMStorageBrowserTest : public ContentBrowserTest {
     // a #pass or #fail ref.
     Shell* the_browser = incognito ? CreateOffTheRecordBrowser() : shell();
     NavigateToURLBlockUntilNavigationsComplete(the_browser, test_url, 2);
-    std::string result =
-        the_browser->web_contents()->GetLastCommittedURL().ref();
+    std::string result = the_browser->web_contents()->GetURL().ref();
     if (result != "pass") {
       std::string js_result;
       ASSERT_TRUE(ExecuteScriptAndExtractString(

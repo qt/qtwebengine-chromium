@@ -10,9 +10,7 @@
 
 #include "ash/ash_switches.h"
 #include "ash/popup_message.h"
-#include "ash/root_window_controller.h"
 #include "ash/session_state_delegate.h"
-#include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
 #include "ash/system/tray/system_tray.h"
@@ -1172,7 +1170,7 @@ void TrayUser::UpdateAfterLoginStatusChange(user::LoginStatus status) {
       need_label = true;
       break;
     case user::LOGGED_IN_GUEST:
-      need_label = true;
+      need_avatar = true;
       break;
     case user::LOGGED_IN_RETAIL_MODE:
     case user::LOGGED_IN_KIOSK_APP:
@@ -1202,8 +1200,6 @@ void TrayUser::UpdateAfterLoginStatusChange(user::LoginStatus status) {
   if (status == user::LOGGED_IN_LOCALLY_MANAGED) {
     label_->SetText(
         bundle.GetLocalizedString(IDS_ASH_STATUS_TRAY_LOCALLY_MANAGED_LABEL));
-  } else if (status == user::LOGGED_IN_GUEST) {
-    label_->SetText(bundle.GetLocalizedString(IDS_ASH_STATUS_TRAY_GUEST_LABEL));
   }
 
   if (avatar_ && ash::switches::UseAlternateShelfLayout()) {
@@ -1214,12 +1210,6 @@ void TrayUser::UpdateAfterLoginStatusChange(user::LoginStatus status) {
     avatar_->set_border(NULL);
   }
   UpdateAvatarImage(status);
-
-  // Update layout after setting label_ and avatar_ with new login status.
-  if (Shell::GetPrimaryRootWindowController()->shelf())
-    UpdateAfterShelfAlignmentChange(
-        Shell::GetPrimaryRootWindowController()->GetShelfLayoutManager()->
-            GetAlignment());
 }
 
 void TrayUser::UpdateAfterShelfAlignmentChange(ShelfAlignment alignment) {
@@ -1286,10 +1276,19 @@ void TrayUser::UpdateAvatarImage(user::LoginStatus status) {
   int icon_size = ash::switches::UseAlternateShelfLayout() ?
       kUserIconLargeSize : kUserIconSize;
 
-  avatar_->SetImage(
-      ash::Shell::GetInstance()->session_state_delegate()->GetUserImage(
-          multiprofile_index_),
-      gfx::Size(icon_size, icon_size));
+  if (status == user::LOGGED_IN_GUEST) {
+    int image_name = ash::switches::UseAlternateShelfLayout() ?
+        IDR_AURA_UBER_TRAY_GUEST_ICON_LARGE :
+        IDR_AURA_UBER_TRAY_GUEST_ICON;
+    avatar_->SetImage(*ui::ResourceBundle::GetSharedInstance().
+        GetImageNamed(image_name).ToImageSkia(),
+        gfx::Size(icon_size, icon_size));
+  } else {
+    avatar_->SetImage(
+        ash::Shell::GetInstance()->session_state_delegate()->GetUserImage(
+            multiprofile_index_),
+        gfx::Size(icon_size, icon_size));
+  }
 }
 
 }  // namespace internal

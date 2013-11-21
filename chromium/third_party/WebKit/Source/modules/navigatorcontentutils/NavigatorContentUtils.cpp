@@ -62,7 +62,7 @@ static void initProtocolHandlerWhitelist()
         "tel",
         "urn",
         "webcal",
-        "wtai",
+        "webtai",
         "xmpp",
     };
     for (size_t i = 0; i < WTF_ARRAY_LENGTH(protocols); ++i)
@@ -106,8 +106,7 @@ static bool isProtocolWhitelisted(const String& scheme)
 static bool verifyProtocolHandlerScheme(const String& scheme, ExceptionState& es)
 {
     if (scheme.startsWith("web+")) {
-        // The specification requires that the length of scheme is at least five characteres (including 'web+' prefix).
-        if (scheme.length() >= 5 && isValidProtocol(scheme))
+        if (isValidProtocol(scheme))
             return true;
         es.throwDOMException(SecurityError);
         return false;

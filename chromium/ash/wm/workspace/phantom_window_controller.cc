@@ -8,7 +8,6 @@
 #include "ash/shell_window_ids.h"
 #include "ash/wm/coordinate_conversion.h"
 #include "third_party/skia/include/core/SkCanvas.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/compositor/layer.h"
@@ -92,56 +91,25 @@ void EdgePainter::Paint(gfx::Canvas* canvas, const gfx::Size& size) {
 PhantomWindowController::PhantomWindowController(aura::Window* window)
     : window_(window),
       phantom_below_window_(NULL),
-      phantom_widget_(NULL),
-      phantom_widget_start_(NULL) {
+      phantom_widget_(NULL) {
 }
 
 PhantomWindowController::~PhantomWindowController() {
   Hide();
 }
 
-void PhantomWindowController::Show(const gfx::Rect& bounds_in_screen) {
-  if (bounds_in_screen == bounds_in_screen_)
+void PhantomWindowController::Show(const gfx::Rect& bounds) {
+  if (bounds == bounds_)
     return;
-  bounds_in_screen_ = bounds_in_screen;
-  aura::RootWindow* target_root = wm::GetRootWindowMatching(bounds_in_screen);
-  // Show the phantom at the current bounds of the window. We'll animate to the
-  // target bounds. If phantom exists, update the start bounds.
-  if (!phantom_widget_)
+  bounds_ = bounds;
+  if (!phantom_widget_) {
+    // Show the phantom at the bounds of the window. We'll animate to the target
+    // bounds.
     start_bounds_ = window_->GetBoundsInScreen();
-  else
+    CreatePhantomWidget(start_bounds_);
+  } else {
     start_bounds_ = phantom_widget_->GetWindowBoundsInScreen();
-  if (phantom_widget_ &&
-      phantom_widget_->GetNativeWindow()->GetRootWindow() != target_root) {
-    phantom_widget_->Close();
-    phantom_widget_ = NULL;
   }
-  if (!phantom_widget_)
-    phantom_widget_ = CreatePhantomWidget(target_root, start_bounds_);
-
-  // Create a secondary widget in a second screen if start_bounds_ lie at least
-  // partially in that other screen. This allows animations to start or restart
-  // in one root window and progress into another root.
-  aura::RootWindow* start_root = wm::GetRootWindowMatching(start_bounds_);
-  if (start_root == target_root) {
-    Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
-    for (size_t i = 0; i < root_windows.size(); ++i) {
-      if (root_windows[i] != target_root &&
-          root_windows[i]->GetBoundsInScreen().Intersects(start_bounds_)) {
-        start_root = root_windows[i];
-        break;
-      }
-    }
-  }
-  if (phantom_widget_start_ &&
-      (phantom_widget_start_->GetNativeWindow()->GetRootWindow() != start_root
-       || start_root == target_root)) {
-    phantom_widget_start_->Close();
-    phantom_widget_start_ = NULL;
-  }
-  if (!phantom_widget_start_ && start_root != target_root)
-    phantom_widget_start_ = CreatePhantomWidget(start_root, start_bounds_);
-
   animation_.reset(new ui::SlideAnimation(this));
   animation_->SetTweenType(ui::Tween::EASE_IN);
   const int kAnimationDurationMS = 200;
@@ -153,9 +121,6 @@ void PhantomWindowController::Hide() {
   if (phantom_widget_)
     phantom_widget_->Close();
   phantom_widget_ = NULL;
-  if (phantom_widget_start_)
-    phantom_widget_start_->Close();
-  phantom_widget_start_ = NULL;
 }
 
 bool PhantomWindowController::IsShowing() const {
@@ -164,50 +129,45 @@ bool PhantomWindowController::IsShowing() const {
 
 void PhantomWindowController::AnimationProgressed(
     const ui::Animation* animation) {
-  const gfx::Rect current_bounds =
-      animation->CurrentValueBetween(start_bounds_, bounds_in_screen_);
-  if (phantom_widget_start_)
-    phantom_widget_start_->SetBounds(current_bounds);
-  phantom_widget_->SetBounds(current_bounds);
+  phantom_widget_->SetBounds(
+      animation->CurrentValueBetween(start_bounds_, bounds_));
 }
 
-views::Widget* PhantomWindowController::CreatePhantomWidget(
-    aura::RootWindow* root_window,
-    const gfx::Rect& bounds_in_screen) {
-  views::Widget* phantom_widget = new views::Widget;
+void PhantomWindowController::CreatePhantomWidget(const gfx::Rect& bounds) {
+  DCHECK(!phantom_widget_);
+  phantom_widget_ = new views::Widget;
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   // PhantomWindowController is used by FrameMaximizeButton to highlight the
   // launcher button. Put the phantom in the same window as the launcher so that
   // the phantom is visible.
-  params.parent = Shell::GetContainer(root_window,
+  params.parent = Shell::GetContainer(wm::GetRootWindowMatching(bounds),
                                       kShellWindowId_ShelfContainer);
   params.can_activate = false;
   params.keep_on_top = true;
-  phantom_widget->set_focus_on_creation(false);
-  phantom_widget->Init(params);
-  phantom_widget->SetVisibilityChangedAnimationsEnabled(false);
-  phantom_widget->GetNativeWindow()->SetName("PhantomWindow");
-  phantom_widget->GetNativeWindow()->set_id(kShellWindowId_PhantomWindow);
+  phantom_widget_->set_focus_on_creation(false);
+  phantom_widget_->Init(params);
+  phantom_widget_->SetVisibilityChangedAnimationsEnabled(false);
+  phantom_widget_->GetNativeWindow()->SetName("PhantomWindow");
+  phantom_widget_->GetNativeWindow()->set_id(kShellWindowId_PhantomWindow);
   views::View* content_view = new views::View;
   content_view->set_background(
       views::Background::CreateBackgroundPainter(true, new EdgePainter));
-  phantom_widget->SetContentsView(content_view);
-  phantom_widget->SetBounds(bounds_in_screen);
+  phantom_widget_->SetContentsView(content_view);
+  phantom_widget_->SetBounds(bounds);
   if (phantom_below_window_)
-    phantom_widget->StackBelow(phantom_below_window_);
+    phantom_widget_->StackBelow(phantom_below_window_);
   else
-    phantom_widget->StackAbove(window_);
+    phantom_widget_->StackAbove(window_);
 
   // Show the widget after all the setups.
-  phantom_widget->Show();
+  phantom_widget_->Show();
 
   // Fade the window in.
-  ui::Layer* widget_layer = phantom_widget->GetNativeWindow()->layer();
+  ui::Layer* widget_layer = phantom_widget_->GetNativeWindow()->layer();
   widget_layer->SetOpacity(0);
   ui::ScopedLayerAnimationSettings scoped_setter(widget_layer->GetAnimator());
   widget_layer->SetOpacity(1);
-  return phantom_widget;
 }
 
 }  // namespace internal

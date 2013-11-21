@@ -29,6 +29,7 @@ class MediaCodecBridge {
 
     // Error code for MediaCodecBridge. Keep this value in sync with
     // INFO_MEDIA_CODEC_ERROR in media_codec_bridge.h.
+    private static final int MEDIA_CODEC_OK = 0;
     private static final int MEDIA_CODEC_ERROR = -1000;
 
     // After a flush(), dequeueOutputBuffer() can often produce empty presentation timestamps
@@ -115,12 +116,18 @@ class MediaCodecBridge {
     }
 
     @CalledByNative
-    private void flush() {
-        mMediaCodec.flush();
-        mFlushed = true;
-        if (mAudioTrack != null) {
-            mAudioTrack.flush();
+    private int flush() {
+        try {
+            mFlushed = true;
+            if (mAudioTrack != null) {
+                mAudioTrack.flush();
+            }
+            mMediaCodec.flush();
+        } catch(IllegalStateException e) {
+            Log.e(TAG, "Failed to flush MediaCodec " + e.toString());
+            return MEDIA_CODEC_ERROR;
         }
+        return MEDIA_CODEC_OK;
     }
 
     @CalledByNative
@@ -230,7 +237,7 @@ class MediaCodecBridge {
     }
 
     @CalledByNative
-    private static void setCodecSpecificData(MediaFormat format, int index, ByteBuffer bytes) {
+    private static void setCodecSpecificData(MediaFormat format, int index, byte[] bytes) {
         String name = null;
         if (index == 0) {
             name = "csd-0";
@@ -238,7 +245,7 @@ class MediaCodecBridge {
             name = "csd-1";
         }
         if (name != null) {
-            format.setByteBuffer(name, bytes);
+            format.setByteBuffer(name, ByteBuffer.wrap(bytes));
         }
     }
 

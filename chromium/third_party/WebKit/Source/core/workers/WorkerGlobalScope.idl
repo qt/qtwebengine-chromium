@@ -37,7 +37,7 @@
     attribute EventHandler onerror;
 
     // WorkerUtils
-    [RaisesException] void importScripts(DOMString... urls);
+    [Custom] void importScripts(/*[Variadic] in DOMString urls */);
     [Replaceable] readonly attribute WorkerNavigator navigator;
 
     // Additional constructors

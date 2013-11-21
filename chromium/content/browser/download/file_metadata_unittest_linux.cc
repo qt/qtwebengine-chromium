@@ -30,8 +30,7 @@ class FileMetadataLinuxTest : public testing::Test {
  public:
   FileMetadataLinuxTest()
       : source_url_("http://www.source.com"),
-        referrer_url_("http://www.referrer.com"),
-        is_xattr_supported_(false) {}
+        referrer_url_("http://www.referrer.com") {}
 
   const base::FilePath& test_file() const {
     return test_file_;

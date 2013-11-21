@@ -179,7 +179,6 @@ class NativeTextfieldViewsTest : public ViewsTestBase,
 
     textfield_view_ = static_cast<NativeTextfieldViews*>(
         textfield_->GetNativeWrapperForTesting());
-    DCHECK(textfield_view_);
     textfield_view_->SetBoundsRect(params.bounds);
     textfield_->set_id(1);
 
@@ -189,6 +188,7 @@ class NativeTextfieldViewsTest : public ViewsTestBase,
       textfield->set_id(i + 1);
     }
 
+    DCHECK(textfield_view_);
     model_ = textfield_view_->model_.get();
     model_->ClearEditHistory();
 
@@ -784,6 +784,7 @@ TEST_F(NativeTextfieldViewsTest, FocusTraversalTest) {
 
 TEST_F(NativeTextfieldViewsTest, ContextMenuDisplayTest) {
   InitTextfield(Textfield::STYLE_DEFAULT);
+  EXPECT_TRUE(textfield_->context_menu_controller());
   textfield_->SetText(ASCIIToUTF16("hello world"));
   EXPECT_TRUE(GetContextMenuModel());
   VerifyTextfieldContextMenuContents(false, GetContextMenuModel());

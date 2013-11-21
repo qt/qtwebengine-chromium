@@ -13,8 +13,6 @@
 #include "tools/gn/config_values.h"
 #include "tools/gn/target.h"
 
-struct EscapeOptions;
-
 template<typename T, class Writer>
 inline void ConfigValuesToStream(
     const ConfigValues& values,
@@ -52,7 +50,6 @@ inline void RecursiveTargetConfigToStream(
 void RecursiveTargetConfigStringsToStream(
     const Target* target,
     const std::vector<std::string>& (ConfigValues::* getter)() const,
-    const EscapeOptions& escape_options,
     std::ostream& out);
 
 #endif  // TOOLS_GN_CONFIG_VALUES_EXTRACTORS_H_

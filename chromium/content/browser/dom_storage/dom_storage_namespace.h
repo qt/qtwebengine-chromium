@@ -13,8 +13,6 @@
 #include "content/common/content_export.h"
 #include "url/gurl.h"
 
-class GURL;
-
 namespace content {
 
 class DOMStorageArea;

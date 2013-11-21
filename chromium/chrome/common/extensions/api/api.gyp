@@ -39,7 +39,6 @@
           'cookies.json',
           'debugger.json',
           'developer_private.idl',
-          'desktop_capture.idl',
           'diagnostics.idl',
           'dial.idl',
           'downloads.idl',

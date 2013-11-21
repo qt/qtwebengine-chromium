@@ -11,7 +11,6 @@
 #include "ash/shell_delegate.h"
 #include "ash/shell_window_ids.h"
 #include "ash/system/bluetooth/bluetooth_observer.h"
-#include "ash/system/logout_button/logout_button_tray.h"
 #include "ash/system/status_area_widget_delegate.h"
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_delegate.h"
@@ -31,7 +30,6 @@ StatusAreaWidget::StatusAreaWidget(aura::Window* status_container)
     : status_area_widget_delegate_(new internal::StatusAreaWidgetDelegate),
       system_tray_(NULL),
       web_notification_tray_(NULL),
-      logout_button_tray_(NULL),
       login_status_(user::LOGGED_IN_NONE) {
   views::Widget::InitParams params(
       views::Widget::InitParams::TYPE_WINDOW_FRAMELESS);
@@ -50,7 +48,6 @@ StatusAreaWidget::~StatusAreaWidget() {
 void StatusAreaWidget::CreateTrayViews() {
   AddSystemTray();
   AddWebNotificationTray();
-  AddLogoutButtonTray();
   SystemTrayDelegate* delegate =
       ash::Shell::GetInstance()->system_tray_delegate();
   DCHECK(delegate);
@@ -59,8 +56,6 @@ void StatusAreaWidget::CreateTrayViews() {
     system_tray_->InitializeTrayItems(delegate);
   if (web_notification_tray_)
     web_notification_tray_->Initialize();
-  if (logout_button_tray_)
-    logout_button_tray_->Initialize();
   UpdateAfterLoginStatusChange(delegate->GetUserLoginStatus());
 }
 
@@ -68,8 +63,6 @@ void StatusAreaWidget::Shutdown() {
   // Destroy the trays early, causing them to be removed from the view
   // hierarchy. Do not used scoped pointers since we don't want to destroy them
   // in the destructor if Shutdown() is not called (e.g. in tests).
-  delete logout_button_tray_;
-  logout_button_tray_ = NULL;
   delete web_notification_tray_;
   web_notification_tray_ = NULL;
   delete system_tray_;
@@ -114,19 +107,12 @@ void StatusAreaWidget::AddWebNotificationTray() {
   status_area_widget_delegate_->AddTray(web_notification_tray_);
 }
 
-void StatusAreaWidget::AddLogoutButtonTray() {
-  logout_button_tray_ = new LogoutButtonTray(this);
-  status_area_widget_delegate_->AddTray(logout_button_tray_);
-}
-
 void StatusAreaWidget::SetShelfAlignment(ShelfAlignment alignment) {
   status_area_widget_delegate_->set_alignment(alignment);
   if (system_tray_)
     system_tray_->SetShelfAlignment(alignment);
   if (web_notification_tray_)
     web_notification_tray_->SetShelfAlignment(alignment);
-  if (logout_button_tray_)
-    logout_button_tray_->SetShelfAlignment(alignment);
   status_area_widget_delegate_->UpdateLayout();
 }
 
@@ -148,8 +134,6 @@ void StatusAreaWidget::UpdateAfterLoginStatusChange(
     system_tray_->UpdateAfterLoginStatusChange(login_status);
   if (web_notification_tray_)
     web_notification_tray_->UpdateAfterLoginStatusChange(login_status);
-  if (logout_button_tray_)
-    logout_button_tray_->UpdateAfterLoginStatusChange(login_status);
 }
 
 }  // namespace internal

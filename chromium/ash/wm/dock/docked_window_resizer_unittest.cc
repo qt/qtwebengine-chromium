@@ -63,6 +63,11 @@ class DockedWindowResizerTest
     DOCKED_EDGE_RIGHT,
   };
 
+  enum DockedState {
+    UNDOCKED,
+    DOCKED,
+  };
+
   aura::Window* CreateTestWindow(const gfx::Rect& bounds) {
     aura::Window* window = CreateTestWindowInShellWithDelegateAndType(
         &delegate_,
@@ -140,12 +145,15 @@ class DockedWindowResizerTest
   }
 
   // Panels are parented by panel container during drags.
-  // All other windows that are tested here are parented by dock container
-  // during drags.
-  int CorrectContainerIdDuringDrag() {
+  // Docked windows are parented by dock container during drags.
+  // All other windows that we are testing here have default container as a
+  // parent.
+  int CorrectContainerIdDuringDrag(DockedState is_docked) {
     if (window_type_ == aura::client::WINDOW_TYPE_PANEL)
       return internal::kShellWindowId_PanelContainer;
-    return internal::kShellWindowId_DockedContainer;
+    if (is_docked == DOCKED)
+      return internal::kShellWindowId_DockedContainer;
+    return internal::kShellWindowId_DefaultContainer;
   }
 
   // Test dragging the window vertically (to detach if it is a panel) and then
@@ -190,7 +198,7 @@ class DockedWindowResizerTest
       // Drag enough to detach since our tests assume panels to be initially
       // detached.
       DragMove(0, dy);
-      EXPECT_EQ(CorrectContainerIdDuringDrag(), window->parent()->id());
+      EXPECT_EQ(CorrectContainerIdDuringDrag(UNDOCKED), window->parent()->id());
       EXPECT_EQ(initial_bounds.x(), window->GetBoundsInScreen().x());
       EXPECT_EQ(initial_bounds.y() + dy, window->GetBoundsInScreen().y());
 
@@ -212,7 +220,7 @@ class DockedWindowResizerTest
     else if (edge == DOCKED_EDGE_RIGHT)
       dx += window->GetRootWindow()->bounds().right() - initial_bounds.right();
     DragMove(dx, window_type_ == aura::client::WINDOW_TYPE_PANEL ? 0 : dy);
-    EXPECT_EQ(CorrectContainerIdDuringDrag(), window->parent()->id());
+    EXPECT_EQ(CorrectContainerIdDuringDrag(UNDOCKED), window->parent()->id());
     // Release the mouse and the panel should be attached to the dock.
     DragEnd();
 
@@ -381,10 +389,9 @@ TEST_P(DockedWindowResizerTest, AttachTryDetach) {
             window->GetBoundsInScreen().right());
   EXPECT_EQ(internal::kShellWindowId_DockedContainer, window->parent()->id());
 
-  // Try to detach by dragging left less than kSnapToDockDistance.
-  // The window should stay docked.
+  // Try to detach by dragging left a bit (should stay docked)
   ASSERT_NO_FATAL_FAILURE(DragStart(window.get()));
-  DragMove(-4, -10);
+  DragMove(-10, -10);
   // Release the mouse and the window should be still attached to the dock.
   DragEnd();
 
@@ -393,8 +400,7 @@ TEST_P(DockedWindowResizerTest, AttachTryDetach) {
             window->GetBoundsInScreen().right());
   EXPECT_EQ(internal::kShellWindowId_DockedContainer, window->parent()->id());
 
-  // Try to detach by dragging left by kSnapToDockDistance or more.
-  // The window should get undocked.
+  // Try to detach by dragging left a bit more (should get undocked)
   ASSERT_NO_FATAL_FAILURE(DragStart(window.get()));
   DragMove(-32, -10);
   // Release the mouse and the window should be no longer attached to the dock.
@@ -539,7 +545,7 @@ TEST_P(DockedWindowResizerTest, DragAcrossDisplays) {
   // but not enough to land in the other screen
   ASSERT_NO_FATAL_FAILURE(DragStart(window.get()));
   DragMove(70, 0);
-  EXPECT_EQ(CorrectContainerIdDuringDrag(), window->parent()->id());
+  EXPECT_EQ(CorrectContainerIdDuringDrag(DOCKED), window->parent()->id());
   DragEnd();
   EXPECT_NE(window->GetRootWindow()->bounds().right(),
             window->GetBoundsInScreen().right());
@@ -550,7 +556,7 @@ TEST_P(DockedWindowResizerTest, DragAcrossDisplays) {
   // Move back left - should dock again.
   ASSERT_NO_FATAL_FAILURE(DragStart(window.get()));
   DragMove(-70, 0);
-  EXPECT_EQ(CorrectContainerIdDuringDrag(), window->parent()->id());
+  EXPECT_EQ(CorrectContainerIdDuringDrag(UNDOCKED), window->parent()->id());
   DragEnd();
   EXPECT_EQ(window->GetRootWindow()->bounds().right(),
             window->GetBoundsInScreen().right());
@@ -566,7 +572,7 @@ TEST_P(DockedWindowResizerTest, DragAcrossDisplays) {
       window->bounds().width()/2 + 10,
       0));
   DragMove(window->bounds().width()/2 - 5, 0);
-  EXPECT_EQ(CorrectContainerIdDuringDrag(), window->parent()->id());
+  EXPECT_EQ(CorrectContainerIdDuringDrag(DOCKED), window->parent()->id());
   DragEnd();
   EXPECT_NE(window->GetRootWindow()->bounds().right(),
             window->GetBoundsInScreen().right());
@@ -583,7 +589,7 @@ TEST_P(DockedWindowResizerTest, DragAcrossDisplays) {
   DragMove(window->GetRootWindow()->GetBoundsInScreen().x() -
            window->GetBoundsInScreen().x(),
            0);
-  EXPECT_EQ(CorrectContainerIdDuringDrag(), window->parent()->id());
+  EXPECT_EQ(CorrectContainerIdDuringDrag(UNDOCKED), window->parent()->id());
   DragEnd();
   EXPECT_EQ(window->GetRootWindow()->GetBoundsInScreen().x(),
             window->GetBoundsInScreen().x());
@@ -614,7 +620,7 @@ TEST_P(DockedWindowResizerTest, AttachTwoWindowsDetachOne)
   EXPECT_EQ(DOCKED_ALIGNMENT_RIGHT, manager->alignment_);
   EXPECT_EQ(w1->bounds().width(), manager->docked_width_);
 
-  DragToVerticalPositionRelativeToEdge(DOCKED_EDGE_RIGHT, w2.get(), 0, 100);
+  DragToVerticalPositionRelativeToEdge(DOCKED_EDGE_RIGHT, w2.get(), 0, 50);
   // Both windows should now be attached and snapped to the right edge.
   EXPECT_EQ(w2->GetRootWindow()->bounds().right(),
             w2->GetBoundsInScreen().right());
@@ -721,11 +727,12 @@ TEST_P(DockedWindowResizerTest, AttachWindowMaximizeOther)
   ASSERT_NO_FATAL_FAILURE(DragStart(w1.get()));
   EXPECT_EQ(DOCKED_ALIGNMENT_RIGHT, manager->alignment_);
   DragMove(-35, 10);
-  // Alignment is set to "NONE" when drag starts.
-  EXPECT_EQ(DOCKED_ALIGNMENT_NONE, manager->alignment_);
+  // For NORMAL windows alignment is set to "RIGHT" until the drag is completed.
+  // For PANEL windows alignment is set to "NONE" when drag starts.
+  EXPECT_EQ(test_panels() ? DOCKED_ALIGNMENT_NONE : DOCKED_ALIGNMENT_RIGHT,
+            manager->alignment_);
   // Release the mouse and the window should be no longer attached to the edge.
   DragEnd();
-  EXPECT_EQ(DOCKED_ALIGNMENT_NONE, manager->alignment_);
   // Dock should get shrunk and desktop should get expanded.
   EXPECT_EQ(internal::kShellWindowId_DefaultContainer, w1->parent()->id());
   EXPECT_EQ(internal::kShellWindowId_DefaultContainer, w2->parent()->id());
@@ -817,7 +824,7 @@ TEST_P(DockedWindowResizerTest, AttachOneTestSticky)
 
   // Drag w2 by a bit more - it should resist the drag (stuck edges)
   int start_x = w2->bounds().x();
-  ASSERT_NO_FATAL_FAILURE(DragStartAtOffsetFromwindowOrigin(w2.get(), 100, 5));
+  ASSERT_NO_FATAL_FAILURE(DragStart(w2.get()));
   DragMove(-2, 0);
   // Window should not actually move.
   EXPECT_EQ(start_x, w2->bounds().x());
@@ -881,7 +888,7 @@ TEST_P(DockedWindowResizerTest, ResizeTwoWindows)
   EXPECT_EQ(DOCKED_ALIGNMENT_RIGHT, manager->alignment_);
   EXPECT_EQ(w1->bounds().width(), manager->docked_width_);
 
-  DragToVerticalPositionRelativeToEdge(DOCKED_EDGE_RIGHT, w2.get(), 0, 100);
+  DragToVerticalPositionRelativeToEdge(DOCKED_EDGE_RIGHT, w2.get(), 0, 50);
   // Both windows should now be attached and snapped to the right edge.
   EXPECT_EQ(w2->GetRootWindow()->bounds().right(),
             w2->GetBoundsInScreen().right());
@@ -1024,11 +1031,12 @@ TEST_P(DockedWindowResizerTest, DragToShelf)
   // Detach and drag down to shelf.
   ASSERT_NO_FATAL_FAILURE(DragStart(w1.get()));
   DragMove(-40, 0);
-  // Alignment is set to "NONE" when drag starts.
-  EXPECT_EQ(DOCKED_ALIGNMENT_NONE, manager->alignment_);
+  // For NORMAL windows alignment is set to "RIGHT" until the drag is completed.
+  // For PANEL windows alignment is set to "NONE" when drag starts.
+  EXPECT_EQ(test_panels() ? DOCKED_ALIGNMENT_NONE : DOCKED_ALIGNMENT_RIGHT,
+            manager->alignment_);
   // Release the mouse and the window should be no longer attached to the edge.
   DragEnd();
-  EXPECT_EQ(DOCKED_ALIGNMENT_NONE, manager->alignment_);
 
   // Drag down almost to shelf. A panel will snap, a regular window won't.
   ShelfWidget* shelf = Launcher::ForPrimaryDisplay()->shelf_widget();

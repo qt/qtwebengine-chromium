@@ -34,13 +34,13 @@
 
 #include "core/dom/IconURL.h"
 #include "core/dom/SecurityContext.h"
-#include "core/fetch/CachePolicy.h"
-#include "core/fetch/ResourceLoadNotifier.h"
-#include "core/fetch/ResourceLoaderOptions.h"
 #include "core/loader/FrameLoaderStateMachine.h"
 #include "core/loader/FrameLoaderTypes.h"
 #include "core/loader/HistoryController.h"
 #include "core/loader/MixedContentChecker.h"
+#include "core/loader/ResourceLoadNotifier.h"
+#include "core/loader/ResourceLoaderOptions.h"
+#include "core/loader/cache/CachePolicy.h"
 #include "core/page/LayoutMilestones.h"
 #include "core/platform/Timer.h"
 #include "wtf/Forward.h"
@@ -109,7 +109,7 @@ public:
     void stopAllLoaders(ClearProvisionalItemPolicy = ShouldClearProvisionalItem);
     void stopForUserCancel(bool deferCheckLoadComplete = false);
     void stop();
-    void stopLoading();
+    void stopLoading(UnloadEventPolicy);
     bool closeURL();
     void cancelAndClear();
     // FIXME: clear() is trying to do too many things. We should break it down into smaller functions (ideally with fewer raw Boolean parameters).
@@ -142,6 +142,7 @@ public:
     bool isLoadingMainFrame() const;
 
     bool subframeIsLoading() const;
+    void didChangeTitle(DocumentLoader*);
 
     bool shouldTreatURLAsSrcdocDocument(const KURL&) const;
 
@@ -201,6 +202,8 @@ public:
 
     bool isComplete() const;
 
+    void setTitle(const StringWithDirection&);
+
     void commitProvisionalLoad();
 
     FrameLoaderStateMachine* stateMachine() const { return &m_stateMachine; }
@@ -224,6 +227,14 @@ public:
     bool containsPlugins() const { return m_containsPlugins; }
     bool allowPlugins(ReasonForCallingAllowPlugins);
 
+    enum PageDismissalType {
+        NoDismissal = 0,
+        BeforeUnloadDismissal = 1,
+        PageHideDismissal = 2,
+        UnloadDismissal = 3
+    };
+    PageDismissalType pageDismissalEventBeingDispatched() const { return m_pageDismissalEventBeingDispatched; }
+
     void updateForSameDocumentNavigation(const KURL&, SameDocumentNavigationSource, PassRefPtr<SerializedScriptValue>, const String& title);
 
 private:
@@ -240,6 +251,11 @@ private:
     FrameLoadType determineFrameLoadType(const FrameLoadRequest&);
 
     SubstituteData defaultSubstituteDataForURL(const KURL&);
+
+    bool fireBeforeUnloadEvent(Chrome&, FrameLoader*);
+    bool hasAllowedNavigationViaBeforeUnloadConfirmationPanel() const { return m_hasAllowedNavigationViaBeforeUnloadConfirmationPanel; }
+    void didAllowNavigationViaBeforeUnloadConfirmationPanel() { m_hasAllowedNavigationViaBeforeUnloadConfirmationPanel = true; }
+    void clearAllowNavigationViaBeforeUnloadConfirmationPanel() { m_hasAllowedNavigationViaBeforeUnloadConfirmationPanel = false; }
 
     void checkNavigationPolicyAndContinueFragmentScroll(const NavigationAction&, bool isNewNavigation);
     void checkNewWindowPolicyAndContinue(PassRefPtr<FormState>, const String& frameName, const NavigationAction&);
@@ -300,6 +316,7 @@ private:
 
     String m_outgoingReferrer;
 
+    PageDismissalType m_pageDismissalEventBeingDispatched;
     bool m_isComplete;
 
     bool m_needsClear;
@@ -320,6 +337,8 @@ private:
     bool m_startingClientRedirect;
 
     SandboxFlags m_forcedSandboxFlags;
+
+    bool m_hasAllowedNavigationViaBeforeUnloadConfirmationPanel;
 
     RefPtr<HistoryItem> m_requestedHistoryItem;
 };

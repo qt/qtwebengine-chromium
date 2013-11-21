@@ -36,20 +36,20 @@
 #include "core/dom/Document.h"
 #include "core/dom/DocumentParser.h"
 #include "core/dom/Event.h"
-#include "core/fetch/MemoryCache.h"
-#include "core/fetch/ResourceFetcher.h"
-#include "core/fetch/ResourceLoader.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/DocumentWriter.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
+#include "core/loader/ResourceLoader.h"
 #include "core/loader/SinkDocument.h"
 #include "core/loader/TextResourceDecoder.h"
 #include "core/loader/UniqueIdentifier.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
 #include "core/loader/archive/ArchiveResourceCollection.h"
 #include "core/loader/archive/MHTMLArchive.h"
+#include "core/loader/cache/MemoryCache.h"
+#include "core/loader/cache/ResourceFetcher.h"
 #include "core/page/DOMWindow.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameTree.h"
@@ -240,7 +240,7 @@ void DocumentLoader::stopLoading()
         Document* doc = m_frame->document();
 
         if (loading || doc->parsing())
-            m_frame->loader()->stopLoading();
+            m_frame->loader()->stopLoading(UnloadEventPolicyNone);
     }
 
     // Always cancel multipart loaders
@@ -805,6 +805,15 @@ bool DocumentLoader::scheduleArchiveLoad(Resource* cachedResource, const Resourc
         cachedResource->appendData(data->data(), data->size());
     cachedResource->finish();
     return true;
+}
+
+void DocumentLoader::setTitle(const StringWithDirection& title)
+{
+    if (m_pageTitle == title)
+        return;
+
+    m_pageTitle = title;
+    frameLoader()->didChangeTitle(this);
 }
 
 KURL DocumentLoader::urlForHistory() const

@@ -27,10 +27,10 @@
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentStyleSheetCollection.h"
-#include "core/fetch/CSSStyleSheetResource.h"
-#include "core/fetch/FetchRequest.h"
-#include "core/fetch/ResourceFetcher.h"
-#include "core/fetch/XSLStyleSheetResource.h"
+#include "core/loader/cache/CSSStyleSheetResource.h"
+#include "core/loader/cache/FetchRequest.h"
+#include "core/loader/cache/ResourceFetcher.h"
+#include "core/loader/cache/XSLStyleSheetResource.h"
 #include "core/xml/XSLStyleSheet.h"
 #include "core/xml/parser/XMLDocumentParser.h" // for parseAttributes()
 
@@ -170,7 +170,7 @@ void ProcessingInstruction::checkStyleSheet()
             else {
                 // The request may have been denied if (for example) the stylesheet is local and the document is remote.
                 m_loading = false;
-                document()->styleSheetCollection()->removePendingSheet(this);
+                document()->styleSheetCollection()->removePendingSheet();
             }
         }
     }
@@ -188,7 +188,7 @@ bool ProcessingInstruction::isLoading() const
 bool ProcessingInstruction::sheetLoaded()
 {
     if (!isLoading()) {
-        document()->styleSheetCollection()->removePendingSheet(this);
+        document()->styleSheetCollection()->removePendingSheet();
         return true;
     }
     return false;

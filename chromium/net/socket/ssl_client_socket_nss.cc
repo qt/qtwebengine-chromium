@@ -2598,7 +2598,7 @@ int SSLClientSocketNSS::Core::DoGetDomainBoundCert(const std::string& host) {
 
   weak_net_log_->BeginEvent(NetLog::TYPE_SSL_GET_DOMAIN_BOUND_CERT);
 
-  int rv = server_bound_cert_service_->GetOrCreateDomainBoundCert(
+  int rv = server_bound_cert_service_->GetDomainBoundCert(
       host,
       &domain_bound_private_key_,
       &domain_bound_cert_,
@@ -2751,12 +2751,12 @@ void SSLClientSocketNSS::Core::SetChannelIDProvided() {
 
 SSLClientSocketNSS::SSLClientSocketNSS(
     base::SequencedTaskRunner* nss_task_runner,
-    scoped_ptr<ClientSocketHandle> transport_socket,
+    ClientSocketHandle* transport_socket,
     const HostPortPair& host_and_port,
     const SSLConfig& ssl_config,
     const SSLClientSocketContext& context)
     : nss_task_runner_(nss_task_runner),
-      transport_(transport_socket.Pass()),
+      transport_(transport_socket),
       host_and_port_(host_and_port),
       ssl_config_(ssl_config),
       cert_verifier_(context.cert_verifier),
@@ -2765,7 +2765,7 @@ SSLClientSocketNSS::SSLClientSocketNSS(
       completed_handshake_(false),
       next_handshake_state_(STATE_NONE),
       nss_fd_(NULL),
-      net_log_(transport_->socket()->NetLog()),
+      net_log_(transport_socket->socket()->NetLog()),
       transport_security_state_(context.transport_security_state),
       valid_thread_id_(base::kInvalidThreadId) {
   EnterFunction("");
@@ -3141,8 +3141,7 @@ int SSLClientSocketNSS::InitializeSSLOptions() {
         net_log_, "SSL_OptionSet", "SSL_ENABLE_SESSION_TICKETS");
   }
 
-  rv = SSL_OptionSet(nss_fd_, SSL_ENABLE_FALSE_START,
-                     ssl_config_.false_start_enabled);
+  rv = SSL_OptionSet(nss_fd_, SSL_ENABLE_FALSE_START, PR_FALSE);
   if (rv != SECSuccess)
     LogFailedNSSFunction(net_log_, "SSL_OptionSet", "SSL_ENABLE_FALSE_START");
 

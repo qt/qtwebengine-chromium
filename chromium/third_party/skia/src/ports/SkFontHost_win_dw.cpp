@@ -725,6 +725,9 @@ void SkDWriteFontFromTypeface(const SkTypeface* face, IDWriteFont** font) {
         *font = SkRefComPtr(static_cast<const DWriteFontTypeface*>(face)->fDWriteFont.get());
     }
 }
+static DWriteFontTypeface* GetDWriteFontByID(SkFontID fontID) {
+    return static_cast<DWriteFontTypeface*>(SkTypefaceCache::FindByID(fontID));
+}
 
 SkScalerContext_DW::SkScalerContext_DW(DWriteFontTypeface* typeface,
                                                  const SkDescriptor* desc)

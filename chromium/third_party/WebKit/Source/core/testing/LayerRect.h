@@ -36,7 +36,6 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
-#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -44,25 +43,22 @@ class Node;
 
 class LayerRect : public RefCounted<LayerRect> {
 public:
-    static PassRefPtr<LayerRect> create(PassRefPtr<Node> node, const String& layerType, PassRefPtr<ClientRect> rect)
+    static PassRefPtr<LayerRect> create(PassRefPtr<Node> node, PassRefPtr<ClientRect> rect)
     {
-        return adoptRef(new LayerRect(node, layerType, rect));
+        return adoptRef(new LayerRect(node, rect));
     }
 
     Node* layerRootNode() const { return m_layerRootNode.get(); }
-    String layerType() const { return m_layerType; }
     ClientRect* layerRelativeRect() const { return m_rect.get(); }
 
 private:
-    LayerRect(PassRefPtr<Node> node, const String& layerName, PassRefPtr<ClientRect> rect)
+    LayerRect(PassRefPtr<Node> node, PassRefPtr<ClientRect> rect)
         : m_layerRootNode(node)
-        , m_layerType(layerName)
         , m_rect(rect)
     {
     }
 
     RefPtr<Node> m_layerRootNode;
-    String m_layerType;
     RefPtr<ClientRect> m_rect;
 };
 

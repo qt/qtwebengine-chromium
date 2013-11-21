@@ -361,15 +361,6 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWordWrap:
     case CSSPropertyWritingMode:
         return true;
-    case CSSPropertyAnimation:
-    case CSSPropertyAnimationDelay:
-    case CSSPropertyAnimationDirection:
-    case CSSPropertyAnimationDuration:
-    case CSSPropertyAnimationFillMode:
-    case CSSPropertyAnimationIterationCount:
-    case CSSPropertyAnimationName:
-    case CSSPropertyAnimationPlayState:
-    case CSSPropertyAnimationTimingFunction:
     case CSSPropertyAlignmentBaseline:
     case CSSPropertyBackground:
     case CSSPropertyBackgroundAttachment:

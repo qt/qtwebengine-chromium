@@ -114,6 +114,10 @@ base::HourClockType TestSystemTrayDelegate::GetHourClockType() const {
 void TestSystemTrayDelegate::ShowSettings() {
 }
 
+bool TestSystemTrayDelegate::ShouldShowSettings() {
+  return true;
+}
+
 void TestSystemTrayDelegate::ShowDateSettings() {
 }
 
@@ -252,6 +256,15 @@ bool TestSystemTrayDelegate::GetBluetoothAvailable() {
 
 bool TestSystemTrayDelegate::GetBluetoothEnabled() {
   return bluetooth_enabled_;
+}
+
+bool TestSystemTrayDelegate::GetCellularCarrierInfo(std::string* carrier_id,
+                                                    std::string* topup_url,
+                                                    std::string* setup_url) {
+  return false;
+}
+
+void TestSystemTrayDelegate::ShowCellularURL(const std::string& url) {
 }
 
 void TestSystemTrayDelegate::ChangeProxySettings() {

@@ -27,11 +27,6 @@ void QuicCryptoStream::OnError(CryptoFramer* framer) {
   session()->ConnectionClose(framer->error(), false);
 }
 
-void QuicCryptoStream::OnHandshakeMessage(
-    const CryptoHandshakeMessage& message) {
-  session()->OnCryptoHandshakeMessageReceived(message);
-}
-
 uint32 QuicCryptoStream::ProcessData(const char* data,
                                      uint32 data_len) {
   // Do not process handshake messages after the handshake is confirmed.
@@ -57,7 +52,6 @@ void QuicCryptoStream::CloseConnectionWithDetails(QuicErrorCode error,
 
 void QuicCryptoStream::SendHandshakeMessage(
     const CryptoHandshakeMessage& message) {
-  session()->OnCryptoHandshakeMessageSent(message);
   const QuicData& data = message.GetSerialized();
   // TODO(wtc): check the return value.
   WriteData(string(data.data(), data.length()), false);

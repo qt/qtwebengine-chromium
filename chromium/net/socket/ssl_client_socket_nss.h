@@ -59,7 +59,7 @@ class SSLClientSocketNSS : public SSLClientSocket {
   // behaviour is desired, for performance or compatibility, the current task
   // runner should be supplied instead.
   SSLClientSocketNSS(base::SequencedTaskRunner* nss_task_runner,
-                     scoped_ptr<ClientSocketHandle> transport_socket,
+                     ClientSocketHandle* transport_socket,
                      const HostPortPair& host_and_port,
                      const SSLConfig& ssl_config,
                      const SSLClientSocketContext& context);

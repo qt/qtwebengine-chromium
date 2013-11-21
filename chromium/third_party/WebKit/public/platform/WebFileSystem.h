@@ -37,9 +37,6 @@
 
 namespace WebKit {
 
-// FIXME: Delete this flag after we complete switching to the new code.
-#define USE_THREADLOCAL_WEBFILESYSTEM
-
 // FIXME: Move these classes into platform.
 class WebFileSystemCallbacks;
 class WebFileWriter;

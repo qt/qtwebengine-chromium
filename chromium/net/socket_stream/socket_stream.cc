@@ -33,7 +33,6 @@
 #include "net/http/http_transaction_factory.h"
 #include "net/http/http_util.h"
 #include "net/socket/client_socket_factory.h"
-#include "net/socket/client_socket_handle.h"
 #include "net/socket/socks5_client_socket.h"
 #include "net/socket/socks_client_socket.h"
 #include "net/socket/ssl_client_socket.h"
@@ -97,7 +96,6 @@ SocketStream::SocketStream(const GURL& url, Delegate* delegate)
       proxy_mode_(kDirectConnection),
       proxy_url_(url),
       pac_request_(NULL),
-      connection_(new ClientSocketHandle),
       privacy_mode_(kPrivacyModeDisabled),
       // Unretained() is required; without it, Bind() creates a circular
       // dependency and the SocketStream object will not be freed.
@@ -207,10 +205,8 @@ bool SocketStream::SendData(const char* data, int len) {
       << "The current base::MessageLoop must be TYPE_IO";
   DCHECK_GT(len, 0);
 
-  if (!connection_->socket() ||
-      !connection_->socket()->IsConnected() || next_state_ == STATE_NONE) {
+  if (!socket_.get() || !socket_->IsConnected() || next_state_ == STATE_NONE)
     return false;
-  }
 
   int total_buffered_bytes = len;
   if (current_write_buf_.get()) {
@@ -268,7 +264,7 @@ void SocketStream::RestartWithAuth(const AuthCredentials& credentials) {
   DCHECK_EQ(base::MessageLoop::TYPE_IO, base::MessageLoop::current()->type())
       << "The current base::MessageLoop must be TYPE_IO";
   DCHECK(proxy_auth_controller_.get());
-  if (!connection_->socket()) {
+  if (!socket_.get()) {
     DVLOG(1) << "Socket is closed before restarting with auth.";
     return;
   }
@@ -373,7 +369,7 @@ void SocketStream::Finish(int result) {
 }
 
 int SocketStream::DidEstablishConnection() {
-  if (!connection_->socket() || !connection_->socket()->IsConnected()) {
+  if (!socket_.get() || !socket_->IsConnected()) {
     next_state_ = STATE_CLOSE;
     return ERR_CONNECTION_FAILED;
   }
@@ -734,12 +730,11 @@ int SocketStream::DoTcpConnect(int result) {
   }
   next_state_ = STATE_TCP_CONNECT_COMPLETE;
   DCHECK(factory_);
-  connection_->SetSocket(
-      factory_->CreateTransportClientSocket(addresses_,
-                                            net_log_.net_log(),
-                                            net_log_.source()));
+  socket_.reset(factory_->CreateTransportClientSocket(addresses_,
+                                                      net_log_.net_log(),
+                                                      net_log_.source()));
   metrics_->OnStartConnection();
-  return connection_->socket()->Connect(io_callback_);
+  return socket_->Connect(io_callback_);
 }
 
 int SocketStream::DoTcpConnectComplete(int result) {
@@ -824,8 +819,7 @@ int SocketStream::DoWriteTunnelHeaders() {
   int buf_len = static_cast<int>(tunnel_request_headers_->headers_.size() -
                                  tunnel_request_headers_bytes_sent_);
   DCHECK_GT(buf_len, 0);
-  return connection_->socket()->Write(
-      tunnel_request_headers_.get(), buf_len, io_callback_);
+  return socket_->Write(tunnel_request_headers_.get(), buf_len, io_callback_);
 }
 
 int SocketStream::DoWriteTunnelHeadersComplete(int result) {
@@ -868,8 +862,7 @@ int SocketStream::DoReadTunnelHeaders() {
   tunnel_response_headers_->SetDataOffset(tunnel_response_headers_len_);
   CHECK(tunnel_response_headers_->data());
 
-  return connection_->socket()->Read(
-      tunnel_response_headers_.get(), buf_len, io_callback_);
+  return socket_->Read(tunnel_response_headers_.get(), buf_len, io_callback_);
 }
 
 int SocketStream::DoReadTunnelHeadersComplete(int result) {
@@ -960,20 +953,17 @@ int SocketStream::DoSOCKSConnect() {
 
   next_state_ = STATE_SOCKS_CONNECT_COMPLETE;
 
+  StreamSocket* s = socket_.release();
   HostResolver::RequestInfo req_info(HostPortPair::FromURL(url_));
 
   DCHECK(!proxy_info_.is_empty());
-  scoped_ptr<StreamSocket> s;
-  if (proxy_info_.proxy_server().scheme() == ProxyServer::SCHEME_SOCKS5) {
-    s.reset(new SOCKS5ClientSocket(connection_.Pass(), req_info));
-  } else {
-    s.reset(new SOCKSClientSocket(
-        connection_.Pass(), req_info, context_->host_resolver()));
-  }
-  connection_.reset(new ClientSocketHandle);
-  connection_->SetSocket(s.Pass());
+  if (proxy_info_.proxy_server().scheme() == ProxyServer::SCHEME_SOCKS5)
+    s = new SOCKS5ClientSocket(s, req_info);
+  else
+    s = new SOCKSClientSocket(s, req_info, context_->host_resolver());
+  socket_.reset(s);
   metrics_->OnCountConnectionType(SocketStreamMetrics::SOCKS_CONNECTION);
-  return connection_->socket()->Connect(io_callback_);
+  return socket_->Connect(io_callback_);
 }
 
 int SocketStream::DoSOCKSConnectComplete(int result) {
@@ -996,16 +986,14 @@ int SocketStream::DoSecureProxyConnect() {
   ssl_context.cert_verifier = context_->cert_verifier();
   ssl_context.transport_security_state = context_->transport_security_state();
   ssl_context.server_bound_cert_service = context_->server_bound_cert_service();
-  scoped_ptr<StreamSocket> socket(factory_->CreateSSLClientSocket(
-      connection_.Pass(),
+  socket_.reset(factory_->CreateSSLClientSocket(
+      socket_.release(),
       proxy_info_.proxy_server().host_port_pair(),
       proxy_ssl_config_,
       ssl_context));
-  connection_.reset(new ClientSocketHandle);
-  connection_->SetSocket(socket.Pass());
   next_state_ = STATE_SECURE_PROXY_CONNECT_COMPLETE;
   metrics_->OnCountConnectionType(SocketStreamMetrics::SECURE_PROXY_CONNECTION);
-  return connection_->socket()->Connect(io_callback_);
+  return socket_->Connect(io_callback_);
 }
 
 int SocketStream::DoSecureProxyConnectComplete(int result) {
@@ -1037,7 +1025,7 @@ int SocketStream::DoSecureProxyHandleCertError(int result) {
 int SocketStream::DoSecureProxyHandleCertErrorComplete(int result) {
   DCHECK_EQ(STATE_NONE, next_state_);
   if (result == OK) {
-    if (!connection_->socket()->IsConnectedAndIdle())
+    if (!socket_->IsConnectedAndIdle())
       return AllowCertErrorForReconnection(&proxy_ssl_config_);
     next_state_ = STATE_GENERATE_PROXY_AUTH_TOKEN;
   } else {
@@ -1052,16 +1040,13 @@ int SocketStream::DoSSLConnect() {
   ssl_context.cert_verifier = context_->cert_verifier();
   ssl_context.transport_security_state = context_->transport_security_state();
   ssl_context.server_bound_cert_service = context_->server_bound_cert_service();
-  scoped_ptr<StreamSocket> socket(
-      factory_->CreateSSLClientSocket(connection_.Pass(),
-                                      HostPortPair::FromURL(url_),
-                                      server_ssl_config_,
-                                      ssl_context));
-  connection_.reset(new ClientSocketHandle);
-  connection_->SetSocket(socket.Pass());
+  socket_.reset(factory_->CreateSSLClientSocket(socket_.release(),
+                                                HostPortPair::FromURL(url_),
+                                                server_ssl_config_,
+                                                ssl_context));
   next_state_ = STATE_SSL_CONNECT_COMPLETE;
   metrics_->OnCountConnectionType(SocketStreamMetrics::SSL_CONNECTION);
-  return connection_->socket()->Connect(io_callback_);
+  return socket_->Connect(io_callback_);
 }
 
 int SocketStream::DoSSLConnectComplete(int result) {
@@ -1097,7 +1082,7 @@ int SocketStream::DoSSLHandleCertErrorComplete(int result) {
   // we should take care of TLS NPN extension here.
 
   if (result == OK) {
-    if (!connection_->socket()->IsConnectedAndIdle())
+    if (!socket_->IsConnectedAndIdle())
       return AllowCertErrorForReconnection(&server_ssl_config_);
     result = DidEstablishConnection();
   } else {
@@ -1111,7 +1096,7 @@ int SocketStream::DoReadWrite(int result) {
     next_state_ = STATE_CLOSE;
     return result;
   }
-  if (!connection_->socket() || !connection_->socket()->IsConnected()) {
+  if (!socket_.get() || !socket_->IsConnected()) {
     next_state_ = STATE_CLOSE;
     return ERR_CONNECTION_CLOSED;
   }
@@ -1120,7 +1105,7 @@ int SocketStream::DoReadWrite(int result) {
   // let's close the socket.
   // We don't care about receiving data after the socket is closed.
   if (closing_ && !current_write_buf_.get() && pending_write_bufs_.empty()) {
-    connection_->socket()->Disconnect();
+    socket_->Disconnect();
     next_state_ = STATE_CLOSE;
     return OK;
   }
@@ -1132,7 +1117,7 @@ int SocketStream::DoReadWrite(int result) {
     if (!read_buf_.get()) {
       // No read pending and server didn't close the socket.
       read_buf_ = new IOBuffer(kReadBufferSize);
-      result = connection_->socket()->Read(
+      result = socket_->Read(
           read_buf_.get(),
           kReadBufferSize,
           base::Bind(&SocketStream::OnReadCompleted, base::Unretained(this)));
@@ -1171,7 +1156,7 @@ int SocketStream::DoReadWrite(int result) {
     pending_write_bufs_.pop_front();
   }
 
-  result = connection_->socket()->Write(
+  result = socket_->Write(
       current_write_buf_.get(),
       current_write_buf_->BytesRemaining(),
       base::Bind(&SocketStream::OnWriteCompleted, base::Unretained(this)));
@@ -1203,10 +1188,10 @@ int SocketStream::HandleCertificateRequest(int result, SSLConfig* ssl_config) {
     return result;
   }
 
-  DCHECK(connection_->socket());
+  DCHECK(socket_.get());
   scoped_refptr<SSLCertRequestInfo> cert_request_info = new SSLCertRequestInfo;
   SSLClientSocket* ssl_socket =
-      static_cast<SSLClientSocket*>(connection_->socket());
+      static_cast<SSLClientSocket*>(socket_.get());
   ssl_socket->GetSSLCertRequestInfo(cert_request_info.get());
 
   HttpTransactionFactory* factory = context_->http_transaction_factory();
@@ -1252,8 +1237,7 @@ int SocketStream::AllowCertErrorForReconnection(SSLConfig* ssl_config) {
   // allowed bad certificates in |ssl_config|.
   // See also net/http/http_network_transaction.cc HandleCertificateError() and
   // RestartIgnoringLastError().
-  SSLClientSocket* ssl_socket =
-      static_cast<SSLClientSocket*>(connection_->socket());
+  SSLClientSocket* ssl_socket = static_cast<SSLClientSocket*>(socket_.get());
   SSLInfo ssl_info;
   ssl_socket->GetSSLInfo(&ssl_info);
   if (ssl_info.cert.get() == NULL ||
@@ -1275,8 +1259,8 @@ int SocketStream::AllowCertErrorForReconnection(SSLConfig* ssl_config) {
   bad_cert.cert_status = ssl_info.cert_status;
   ssl_config->allowed_bad_certs.push_back(bad_cert);
   // Restart connection ignoring the bad certificate.
-  connection_->socket()->Disconnect();
-  connection_->SetSocket(scoped_ptr<StreamSocket>());
+  socket_->Disconnect();
+  socket_.reset();
   next_state_ = STATE_TCP_CONNECT;
   return OK;
 }
@@ -1302,8 +1286,7 @@ void SocketStream::DoRestartWithAuth() {
 
 int SocketStream::HandleCertificateError(int result) {
   DCHECK(IsCertificateError(result));
-  SSLClientSocket* ssl_socket =
-      static_cast<SSLClientSocket*>(connection_->socket());
+  SSLClientSocket* ssl_socket = static_cast<SSLClientSocket*>(socket_.get());
   DCHECK(ssl_socket);
 
   if (!context_)

@@ -47,7 +47,7 @@ class InjectionDelegate {
 
 // An implementation of the InjectionDelegate interface using the file
 // descriptor table of the current process as the domain.
-class BASE_EXPORT FileDescriptorTableInjection : public InjectionDelegate {
+class FileDescriptorTableInjection : public InjectionDelegate {
   virtual bool Duplicate(int* result, int fd) OVERRIDE;
   virtual bool Move(int src, int dest) OVERRIDE;
   virtual void Close(int fd) OVERRIDE;

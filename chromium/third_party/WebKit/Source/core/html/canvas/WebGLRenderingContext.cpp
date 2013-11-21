@@ -29,7 +29,6 @@
 #include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/fetch/ImageResource.h"
 #include "core/html/HTMLCanvasElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLVideoElement.h"
@@ -67,6 +66,7 @@
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
+#include "core/loader/cache/ImageResource.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
@@ -553,8 +553,6 @@ WebGLRenderingContext::WebGLRenderingContext(HTMLCanvasElement* passedCanvas, Pa
     , m_numGLErrorsToConsoleAllowed(maxGLErrorsAllowedToConsole)
     , m_multisamplingAllowed(false)
     , m_multisamplingObserverRegistered(false)
-    , m_onePlusMaxEnabledAttribIndex(0)
-    , m_onePlusMaxNonDefaultTextureUnit(0)
 {
     ASSERT(m_context);
     ScriptWrappable::init(this);
@@ -578,31 +576,32 @@ WebGLRenderingContext::WebGLRenderingContext(HTMLCanvasElement* passedCanvas, Pa
     }
 
     // Register extensions.
+    static const char* unprefixed[] = { "", 0, };
     static const char* webkitPrefix[] = { "WEBKIT_", 0, };
     static const char* bothPrefixes[] = { "", "WEBKIT_", 0, };
 
-    registerExtension<ANGLEInstancedArrays>(m_angleInstancedArrays);
-    registerExtension<EXTTextureFilterAnisotropic>(m_extTextureFilterAnisotropic, PrefixedExtension, webkitPrefix);
-    registerExtension<OESElementIndexUint>(m_oesElementIndexUint);
-    registerExtension<OESStandardDerivatives>(m_oesStandardDerivatives);
-    registerExtension<OESTextureFloat>(m_oesTextureFloat);
-    registerExtension<OESTextureFloatLinear>(m_oesTextureFloatLinear);
-    registerExtension<OESTextureHalfFloat>(m_oesTextureHalfFloat);
-    registerExtension<OESTextureHalfFloatLinear>(m_oesTextureHalfFloatLinear);
-    registerExtension<OESVertexArrayObject>(m_oesVertexArrayObject);
-    registerExtension<WebGLCompressedTextureATC>(m_webglCompressedTextureATC, PrefixedExtension, webkitPrefix);
-    registerExtension<WebGLCompressedTexturePVRTC>(m_webglCompressedTexturePVRTC, PrefixedExtension, webkitPrefix);
-    registerExtension<WebGLCompressedTextureS3TC>(m_webglCompressedTextureS3TC, PrefixedExtension, bothPrefixes);
-    registerExtension<WebGLDepthTexture>(m_webglDepthTexture, PrefixedExtension, bothPrefixes);
-    registerExtension<WebGLLoseContext>(m_webglLoseContext, ApprovedExtension, bothPrefixes);
+    registerExtension<EXTTextureFilterAnisotropic>(m_extTextureFilterAnisotropic, false, false, true, webkitPrefix);
+    registerExtension<OESElementIndexUint>(m_oesElementIndexUint, false, false, false, unprefixed);
+    registerExtension<OESStandardDerivatives>(m_oesStandardDerivatives, false, false, false, unprefixed);
+    registerExtension<OESTextureFloat>(m_oesTextureFloat, false, false, false, unprefixed);
+    registerExtension<OESTextureFloatLinear>(m_oesTextureFloatLinear, false, false, false, unprefixed);
+    registerExtension<OESTextureHalfFloat>(m_oesTextureHalfFloat, false, false, false, unprefixed);
+    registerExtension<OESTextureHalfFloatLinear>(m_oesTextureHalfFloatLinear, false, false, false, unprefixed);
+    registerExtension<OESVertexArrayObject>(m_oesVertexArrayObject, false, false, false, unprefixed);
+    registerExtension<WebGLCompressedTextureATC>(m_webglCompressedTextureATC, false, false, true, webkitPrefix);
+    registerExtension<WebGLCompressedTexturePVRTC>(m_webglCompressedTexturePVRTC, false, false, true, webkitPrefix);
+    registerExtension<WebGLCompressedTextureS3TC>(m_webglCompressedTextureS3TC, false, false, true, bothPrefixes);
+    registerExtension<WebGLDepthTexture>(m_webglDepthTexture, false, false, true, bothPrefixes);
+    registerExtension<WebGLLoseContext>(m_webglLoseContext, false, false, false, bothPrefixes);
 
     // Register draft extensions.
-    registerExtension<EXTFragDepth>(m_extFragDepth, DraftExtension);
-    registerExtension<WebGLDrawBuffers>(m_webglDrawBuffers, DraftExtension);
+    registerExtension<ANGLEInstancedArrays>(m_angleInstancedArrays, false, true, false, unprefixed);
+    registerExtension<EXTFragDepth>(m_extFragDepth, false, true, false, unprefixed);
+    registerExtension<WebGLDrawBuffers>(m_webglDrawBuffers, false, true, false, unprefixed);
 
     // Register privileged extensions.
-    registerExtension<WebGLDebugRendererInfo>(m_webglDebugRendererInfo, PrivilegedExtension);
-    registerExtension<WebGLDebugShaders>(m_webglDebugShaders, PrivilegedExtension);
+    registerExtension<WebGLDebugRendererInfo>(m_webglDebugRendererInfo, true, false, false, unprefixed);
+    registerExtension<WebGLDebugShaders>(m_webglDebugShaders, true, false, false, unprefixed);
 }
 
 void WebGLRenderingContext::initializeNewContext()
@@ -1140,17 +1139,9 @@ void WebGLRenderingContext::bindTexture(GC3Denum target, WebGLTexture* texture)
         synthesizeGLError(GraphicsContext3D::INVALID_ENUM, "bindTexture", "invalid target");
         return;
     }
-
     m_context->bindTexture(target, objectOrZero(texture));
-    if (texture) {
+    if (texture)
         texture->setTarget(target, maxLevel);
-        m_onePlusMaxNonDefaultTextureUnit = max(m_activeTextureUnit + 1, m_onePlusMaxNonDefaultTextureUnit);
-    } else {
-        // If the disabled index is the current maximum, trace backwards to find the new max enabled texture index
-        if (m_onePlusMaxNonDefaultTextureUnit == m_activeTextureUnit + 1) {
-            findNewMaxNonDefaultTextureUnit();
-        }
-    }
 
     // Note: previously we used to automatically set the TEXTURE_WRAP_R
     // repeat mode to CLAMP_TO_EDGE for cube map textures, because OpenGL
@@ -1389,7 +1380,7 @@ void WebGLRenderingContext::compressedTexImage2D(GC3Denum target, GC3Dint level,
         synthesizeGLError(GraphicsContext3D::INVALID_VALUE, "compressedTexImage2D", "border not 0");
         return;
     }
-    if (!validateCompressedTexDimensions("compressedTexImage2D", NotTexSubImage2D, target, level, width, height, internalformat))
+    if (!validateCompressedTexDimensions("compressedTexImage2D", level, width, height, internalformat))
         return;
     if (!validateCompressedTexFuncData("compressedTexImage2D", width, height, internalformat, data))
         return;
@@ -1665,27 +1656,17 @@ void WebGLRenderingContext::deleteTexture(WebGLTexture* texture)
 {
     if (!deleteObject(texture))
         return;
-
-    int maxBoundTextureIndex = -1;
-    for (size_t i = 0; i < m_onePlusMaxNonDefaultTextureUnit; ++i) {
+    for (size_t i = 0; i < m_textureUnits.size(); ++i) {
         if (texture == m_textureUnits[i].m_texture2DBinding) {
             m_textureUnits[i].m_texture2DBinding = 0;
-            maxBoundTextureIndex = i;
             if (!i)
                 m_drawingBuffer->setTexture2DBinding(0);
         }
-        if (texture == m_textureUnits[i].m_textureCubeMapBinding) {
+        if (texture == m_textureUnits[i].m_textureCubeMapBinding)
             m_textureUnits[i].m_textureCubeMapBinding = 0;
-            maxBoundTextureIndex = i;
-        }
     }
     if (m_framebufferBinding)
         m_framebufferBinding->removeAttachmentFromBoundFramebuffer(texture);
-
-    // If the deleted was bound to the the current maximum index, trace backwards to find the new max texture index
-    if (m_onePlusMaxNonDefaultTextureUnit == maxBoundTextureIndex + 1) {
-        findNewMaxNonDefaultTextureUnit();
-    }
 }
 
 void WebGLRenderingContext::depthFunc(GC3Denum func)
@@ -1755,12 +1736,6 @@ void WebGLRenderingContext::disableVertexAttribArray(GC3Duint index)
 
     WebGLVertexArrayObjectOES::VertexAttribState& state = m_boundVertexArrayObject->getVertexAttribState(index);
     state.enabled = false;
-
-    // If the disabled index is the current maximum, trace backwards to find the new max enabled attrib index
-    if (m_onePlusMaxEnabledAttribIndex == index + 1) {
-        findNewMaxEnabledAttribIndex();
-    }
-
     m_context->disableVertexAttribArray(index);
 }
 
@@ -1770,7 +1745,7 @@ bool WebGLRenderingContext::validateRenderingState()
         return false;
 
     // Look in each enabled vertex attrib and check if they've been bound to a buffer.
-    for (unsigned i = 0; i < m_onePlusMaxEnabledAttribIndex; ++i) {
+    for (unsigned i = 0; i < m_maxVertexAttribs; ++i) {
         const WebGLVertexArrayObjectOES::VertexAttribState& state = m_boundVertexArrayObject->getVertexAttribState(i);
         if (state.enabled
             && (!state.bufferBinding || !state.bufferBinding->object()))
@@ -1878,8 +1853,6 @@ void WebGLRenderingContext::enableVertexAttribArray(GC3Duint index)
 
     WebGLVertexArrayObjectOES::VertexAttribState& state = m_boundVertexArrayObject->getVertexAttribState(index);
     state.enabled = true;
-
-    m_onePlusMaxEnabledAttribIndex = max(index + 1, m_onePlusMaxEnabledAttribIndex);
 
     m_context->enableVertexAttribArray(index);
 }
@@ -2137,9 +2110,7 @@ GC3Denum WebGLRenderingContext::getError()
 
 bool WebGLRenderingContext::ExtensionTracker::matchesNameWithPrefixes(const String& name) const
 {
-    static const char* unprefixed[] = { "", 0, };
-
-    const char** prefixes = m_prefixes ? m_prefixes : unprefixed;
+    const char** prefixes = m_prefixes;
     for (; *prefixes; ++prefixes) {
         String prefixedName = String(*prefixes) + getExtensionName();
         if (equalIgnoringCase(prefixedName, name)) {
@@ -4307,7 +4278,7 @@ void WebGLRenderingContext::handleTextureCompleteness(const char* functionName, 
     bool resetActiveUnit = false;
     WebGLTexture::TextureExtensionFlag flag = static_cast<WebGLTexture::TextureExtensionFlag>((m_oesTextureFloatLinear ? WebGLTexture::TextureFloatLinearExtensionEnabled : 0)
         | (m_oesTextureHalfFloatLinear ? WebGLTexture::TextureHalfFloatLinearExtensionEnabled : 0));
-    for (unsigned ii = 0; ii < m_onePlusMaxNonDefaultTextureUnit; ++ii) {
+    for (unsigned ii = 0; ii < m_textureUnits.size(); ++ii) {
         if ((m_textureUnits[ii].m_texture2DBinding.get() && m_textureUnits[ii].m_texture2DBinding->needToUseBlackTexture(flag))
             || (m_textureUnits[ii].m_textureCubeMapBinding.get() && m_textureUnits[ii].m_textureCubeMapBinding->needToUseBlackTexture(flag))) {
             if (ii != m_activeTextureUnit) {
@@ -4585,7 +4556,7 @@ bool WebGLRenderingContext::validateTexFuncLevel(const char* functionName, GC3De
     }
     switch (target) {
     case GraphicsContext3D::TEXTURE_2D:
-        if (level >= m_maxTextureLevel) {
+        if (level > m_maxTextureLevel) {
             synthesizeGLError(GraphicsContext3D::INVALID_VALUE, functionName, "level out of range");
             return false;
         }
@@ -4596,7 +4567,7 @@ bool WebGLRenderingContext::validateTexFuncLevel(const char* functionName, GC3De
     case GraphicsContext3D::TEXTURE_CUBE_MAP_NEGATIVE_Y:
     case GraphicsContext3D::TEXTURE_CUBE_MAP_POSITIVE_Z:
     case GraphicsContext3D::TEXTURE_CUBE_MAP_NEGATIVE_Z:
-        if (level >= m_maxCubeMapTextureLevel) {
+        if (level > m_maxCubeMapTextureLevel) {
             synthesizeGLError(GraphicsContext3D::INVALID_VALUE, functionName, "level out of range");
             return false;
         }
@@ -4607,9 +4578,19 @@ bool WebGLRenderingContext::validateTexFuncLevel(const char* functionName, GC3De
     return true;
 }
 
-bool WebGLRenderingContext::validateTexFuncDimensions(const char* functionName, TexFuncValidationFunctionType functionType,
-    GC3Denum target, GC3Dint level, GC3Dsizei width, GC3Dsizei height)
+bool WebGLRenderingContext::validateTexFuncParameters(const char* functionName,
+                                                      TexFuncValidationFunctionType functionType,
+                                                      GC3Denum target, GC3Dint level,
+                                                      GC3Denum internalformat,
+                                                      GC3Dsizei width, GC3Dsizei height, GC3Dint border,
+                                                      GC3Denum format, GC3Denum type)
 {
+    // We absolutely have to validate the format and type combination.
+    // The texImage2D entry points taking HTMLImage, etc. will produce
+    // temporary data based on this combination, so it must be legal.
+    if (!validateTexFuncFormatAndType(functionName, format, type, level) || !validateTexFuncLevel(functionName, target, level))
+        return false;
+
     if (width < 0 || height < 0) {
         synthesizeGLError(GraphicsContext3D::INVALID_VALUE, functionName, "width or height < 0");
         return false;
@@ -4617,7 +4598,7 @@ bool WebGLRenderingContext::validateTexFuncDimensions(const char* functionName, 
 
     switch (target) {
     case GraphicsContext3D::TEXTURE_2D:
-        if (width > (m_maxTextureSize >> level) || height > (m_maxTextureSize >> level)) {
+        if (width > m_maxTextureSize || height > m_maxTextureSize) {
             synthesizeGLError(GraphicsContext3D::INVALID_VALUE, functionName, "width or height out of range");
             return false;
         }
@@ -4634,7 +4615,7 @@ bool WebGLRenderingContext::validateTexFuncDimensions(const char* functionName, 
         }
         // No need to check height here. For texImage width == height.
         // For texSubImage that will be checked when checking yoffset + height is in range.
-        if (width > (m_maxCubeMapTextureSize >> level)) {
+        if (width > m_maxCubeMapTextureSize) {
             synthesizeGLError(GraphicsContext3D::INVALID_VALUE, functionName, "width or height out of range for cube map");
             return false;
         }
@@ -4643,20 +4624,6 @@ bool WebGLRenderingContext::validateTexFuncDimensions(const char* functionName, 
         synthesizeGLError(GraphicsContext3D::INVALID_ENUM, functionName, "invalid target");
         return false;
     }
-    return true;
-}
-
-bool WebGLRenderingContext::validateTexFuncParameters(const char* functionName, TexFuncValidationFunctionType functionType, GC3Denum target,
-    GC3Dint level, GC3Denum internalformat, GC3Dsizei width, GC3Dsizei height, GC3Dint border, GC3Denum format, GC3Denum type)
-{
-    // We absolutely have to validate the format and type combination.
-    // The texImage2D entry points taking HTMLImage, etc. will produce
-    // temporary data based on this combination, so it must be legal.
-    if (!validateTexFuncFormatAndType(functionName, format, type, level) || !validateTexFuncLevel(functionName, target, level))
-        return false;
-
-    if (!validateTexFuncDimensions(functionName, functionType, target, level, width, height))
-        return false;
 
     if (format != internalformat) {
         synthesizeGLError(GraphicsContext3D::INVALID_OPERATION, functionName, "format != internalformat");
@@ -4823,11 +4790,8 @@ bool WebGLRenderingContext::validateCompressedTexFuncData(const char* functionNa
     return true;
 }
 
-bool WebGLRenderingContext::validateCompressedTexDimensions(const char* functionName, TexFuncValidationFunctionType functionType, GC3Denum target, GC3Dint level, GC3Dsizei width, GC3Dsizei height, GC3Denum format)
+bool WebGLRenderingContext::validateCompressedTexDimensions(const char* functionName, GC3Dint level, GC3Dsizei width, GC3Dsizei height, GC3Denum format)
 {
-    if (!validateTexFuncDimensions(functionName, functionType, target, level, width, height))
-        return false;
-
     switch (format) {
     case Extensions3D::COMPRESSED_RGB_S3TC_DXT1_EXT:
     case Extensions3D::COMPRESSED_RGBA_S3TC_DXT1_EXT:
@@ -4872,7 +4836,7 @@ bool WebGLRenderingContext::validateCompressedTexSubDimensions(const char* funct
             synthesizeGLError(GraphicsContext3D::INVALID_OPERATION, functionName, "dimensions out of range");
             return false;
         }
-        return validateCompressedTexDimensions(functionName, TexSubImage2D, target, level, width, height, format);
+        return validateCompressedTexDimensions(functionName, level, width, height, format);
     }
     default:
         return false;
@@ -5233,7 +5197,7 @@ bool WebGLRenderingContext::validateDrawInstanced(const char* functionName, GC3D
     }
 
     // Ensure at least one enabled vertex attrib has a divisor of 0.
-    for (unsigned i = 0; i < m_onePlusMaxEnabledAttribIndex; ++i) {
+    for (unsigned i = 0; i < m_maxVertexAttribs; ++i) {
         const WebGLVertexArrayObjectOES::VertexAttribState& state = m_boundVertexArrayObject->getVertexAttribState(i);
         if (state.enabled && !state.divisor)
             return true;
@@ -5556,33 +5520,6 @@ void WebGLRenderingContext::multisamplingChanged(bool enabled)
         m_multisamplingAllowed = enabled;
         forceLostContext(WebGLRenderingContext::AutoRecoverSyntheticLostContext);
     }
-}
-
-void WebGLRenderingContext::findNewMaxEnabledAttribIndex()
-{
-    // Trace backwards from the current max to find the new max enabled attrib index
-    int startIndex = m_onePlusMaxEnabledAttribIndex - 1;
-    for (int i = startIndex; i >= 0; --i) {
-        if (m_boundVertexArrayObject->getVertexAttribState(i).enabled) {
-            m_onePlusMaxEnabledAttribIndex = i + 1;
-            return;
-        }
-    }
-    m_onePlusMaxEnabledAttribIndex = 0;
-}
-
-void WebGLRenderingContext::findNewMaxNonDefaultTextureUnit()
-{
-    // Trace backwards from the current max to find the new max non-default texture unit
-    int startIndex = m_onePlusMaxNonDefaultTextureUnit - 1;
-    for (int i = startIndex; i >= 0; --i) {
-        if (m_textureUnits[i].m_texture2DBinding
-            || m_textureUnits[i].m_textureCubeMapBinding) {
-            m_onePlusMaxNonDefaultTextureUnit = i + 1;
-            return;
-        }
-    }
-    m_onePlusMaxNonDefaultTextureUnit = 0;
 }
 
 } // namespace WebCore

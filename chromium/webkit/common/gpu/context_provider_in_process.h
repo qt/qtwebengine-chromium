@@ -19,21 +19,17 @@ class WebGraphicsContext3D;
 namespace webkit {
 namespace gpu {
 class GrContextForWebGraphicsContext3D;
-class WebGraphicsContext3DInProcessCommandBufferImpl;
 
 class WEBKIT_GPU_EXPORT ContextProviderInProcess
     : NON_EXPORTED_BASE(public cc::ContextProvider) {
  public:
-  typedef base::Callback<
-      scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>(void)>
-      CreateCallback;
-
-  static scoped_refptr<ContextProviderInProcess> Create(
-      const CreateCallback& create_callback);
-
-  // Calls Create() with a default factory method for creating an offscreen
-  // context.
-  static scoped_refptr<ContextProviderInProcess> CreateOffscreen();
+  static scoped_refptr<ContextProviderInProcess> Create() {
+    scoped_refptr<ContextProviderInProcess> provider =
+        new ContextProviderInProcess;
+    if (!provider->InitializeOnMainThread())
+      return NULL;
+    return provider;
+  }
 
   virtual bool BindToCurrentThread() OVERRIDE;
   virtual WebKit::WebGraphicsContext3D* Context3d() OVERRIDE;
@@ -47,8 +43,7 @@ class WEBKIT_GPU_EXPORT ContextProviderInProcess
   ContextProviderInProcess();
   virtual ~ContextProviderInProcess();
 
-  bool InitializeOnMainThread(
-      const CreateCallback& create_callback);
+  bool InitializeOnMainThread();
 
   void OnLostContext();
   void OnMemoryAllocationChanged(bool nonzero_allocation);

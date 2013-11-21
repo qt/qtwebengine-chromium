@@ -484,13 +484,12 @@ WebInspector.CanvasProfileView.prototype = {
     {
         var element = parentElement.createChild("span", "canvas-call-argument");
         element._argumentIndex = -1;
-        var description = callArgument.enumName || callArgument.description;
         if (callArgument.type === "string") {
             const maxStringLength = 150;
             element.createTextChild("\"");
-            element.createChild("span", "canvas-formatted-string").textContent = description.trimMiddle(maxStringLength);
+            element.createChild("span", "canvas-formatted-string").textContent = callArgument.description.trimMiddle(maxStringLength);
             element.createTextChild("\"");
-            element._suppressPopover = (description.length <= maxStringLength && !/[\r\n]/.test(description));
+            element._suppressPopover = (callArgument.description.length <= maxStringLength && !/[\r\n]/.test(callArgument.description));
         } else {
             var type = callArgument.subtype || callArgument.type;
             if (type) {
@@ -502,11 +501,11 @@ WebInspector.CanvasProfileView.prototype = {
                     element._suppressPopover = true;
                     break;
                 case "number":
-                    element._suppressPopover = !isNaN(description);
+                    element._suppressPopover = !isNaN(callArgument.description);
                     break;
                 }
             }
-            element.textContent = description;
+            element.textContent = callArgument.description;
         }
         if (callArgument.resourceId) {
             element.addStyleClass("canvas-formatted-resource");

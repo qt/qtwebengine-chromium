@@ -45,7 +45,6 @@ PassRefPtr<DocumentTimeline> DocumentTimeline::create(Document* document)
 DocumentTimeline::DocumentTimeline(Document* document)
     : m_currentTime(nullValue())
     , m_document(document)
-    , m_zeroTimeAsPerfTime(nullValue())
 {
     ASSERT(document);
 }
@@ -63,10 +62,7 @@ PassRefPtr<Player> DocumentTimeline::play(TimedItem* child)
 
 void DocumentTimeline::serviceAnimations(double monotonicAnimationStartTime)
 {
-    if (!isNull(m_zeroTimeAsPerfTime)) {
-        ASSERT((isNull(m_currentTime)) || (m_currentTime + m_zeroTimeAsPerfTime <= monotonicAnimationStartTime));
-        m_currentTime = monotonicAnimationStartTime - m_zeroTimeAsPerfTime;
-    }
+    m_currentTime = monotonicAnimationStartTime;
 
     for (int i = m_players.size() - 1; i >= 0; --i) {
         if (!m_players[i]->update())
@@ -79,12 +75,6 @@ void DocumentTimeline::serviceAnimations(double monotonicAnimationStartTime)
     dispatchEvents();
 }
 
-void DocumentTimeline::setZeroTimeAsPerfTime(double zeroTime)
-{
-    ASSERT(isNull(m_zeroTimeAsPerfTime));
-    m_zeroTimeAsPerfTime = zeroTime;
-}
-
 void DocumentTimeline::pauseAnimationsForTesting(double pauseTime)
 {
     for (size_t i = 0; i < m_players.size(); i++) {
@@ -95,17 +85,9 @@ void DocumentTimeline::pauseAnimationsForTesting(double pauseTime)
 
 void DocumentTimeline::dispatchEvents()
 {
-    Vector<EventToDispatch> events = m_events;
+    for (size_t i = 0; i < m_events.size(); i++)
+        m_events[i].target->dispatchEvent(m_events[i].event.release());
     m_events.clear();
-    for (size_t i = 0; i < events.size(); i++)
-        events[i].target->dispatchEvent(events[i].event.release());
-}
-
-size_t DocumentTimeline::numberOfActiveAnimationsForTesting() const
-{
-    // Includes all players whose directly associated timed items
-    // are current or in effect.
-    return isNull(m_currentTime) ? 0 : m_players.size();
 }
 
 } // namespace

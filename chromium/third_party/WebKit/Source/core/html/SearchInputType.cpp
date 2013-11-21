@@ -34,7 +34,6 @@
 #include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/KeyboardEvent.h"
-#include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/InputTypeNames.h"
 #include "core/html/shadow/ShadowElementNames.h"
@@ -151,7 +150,7 @@ bool SearchInputType::searchEventsShouldBeDispatched() const
 
 void SearchInputType::didSetValueByUserEdit(ValueChangeState state)
 {
-    if (element()->userAgentShadowRoot()->getElementById(ShadowElementNames::clearButton()))
+    if (element()->uaShadowElementById(ShadowElementNames::clearButton()))
         toRenderSearchField(element()->renderer())->updateCancelButtonVisibility();
 
     // If the incremental attribute is set, then dispatch the search event

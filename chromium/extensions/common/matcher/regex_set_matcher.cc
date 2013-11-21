@@ -53,6 +53,7 @@ bool RegexSetMatcher::Match(const std::string& text,
   std::vector<RE2ID> re2_ids;
   filtered_re2_->AllMatches(text, atoms, &re2_ids);
 
+  std::set<StringPattern::ID> matched_ids;
   for (size_t i = 0; i < re2_ids.size(); ++i) {
     StringPattern::ID id = re2_id_map_[re2_ids[i]];
     matches->insert(id);

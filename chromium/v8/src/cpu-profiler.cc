@@ -106,7 +106,7 @@ bool ProfilerEventsProcessor::ProcessCodeEvent() {
 
 bool ProfilerEventsProcessor::ProcessTicks() {
   while (true) {
-    while (!ticks_from_vm_buffer_.IsEmpty()
+    if (!ticks_from_vm_buffer_.IsEmpty()
         && ticks_from_vm_buffer_.Peek()->order ==
            last_processed_code_event_id_) {
       TickSampleEventRecord record;

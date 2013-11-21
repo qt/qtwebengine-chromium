@@ -39,37 +39,19 @@ StreamURLRequestJob::~StreamURLRequestJob() {
 void StreamURLRequestJob::OnDataAvailable(Stream* stream) {
   // Clear the IO_PENDING status.
   SetStatus(net::URLRequestStatus());
-  // Do nothing if pending_buffer_ is empty, i.e. there's no ReadRawData()
-  // operation waiting for IO completion.
-  if (!pending_buffer_.get())
-    return;
+  if (pending_buffer_.get()) {
+    int bytes_read;
+    stream_->ReadRawData(
+        pending_buffer_.get(), pending_buffer_size_, &bytes_read);
 
-  // pending_buffer_ is set to the IOBuffer instance provided to ReadRawData()
-  // by URLRequestJob.
+    // Clear the buffers before notifying the read is complete, so that it is
+    // safe for the observer to read.
+    pending_buffer_ = NULL;
+    pending_buffer_size_ = 0;
 
-  int bytes_read;
-  switch (stream_->ReadRawData(
-      pending_buffer_.get(), pending_buffer_size_, &bytes_read)) {
-    case Stream::STREAM_HAS_DATA:
-      DCHECK_GT(bytes_read, 0);
-      break;
-    case Stream::STREAM_COMPLETE:
-      // Ensure this. Calling NotifyReadComplete call with 0 signals
-      // completion.
-      bytes_read = 0;
-      break;
-    case Stream::STREAM_EMPTY:
-      NOTREACHED();
-      break;
+    total_bytes_read_ += bytes_read;
+    NotifyReadComplete(bytes_read);
   }
-
-  // Clear the buffers before notifying the read is complete, so that it is
-  // safe for the observer to read.
-  pending_buffer_ = NULL;
-  pending_buffer_size_ = 0;
-
-  total_bytes_read_ += bytes_read;
-  NotifyReadComplete(bytes_read);
 }
 
 // net::URLRequestJob methods.
@@ -92,7 +74,6 @@ bool StreamURLRequestJob::ReadRawData(net::IOBuffer* buf,
   if (request_failed_)
     return true;
 
-  DCHECK(buf);
   DCHECK(bytes_read);
   int to_read = buf_size;
   if (max_range_ && to_read) {
@@ -186,6 +167,7 @@ void StreamURLRequestJob::NotifyFailure(int error_code) {
 
   // TODO(zork): Share these with BlobURLRequestJob.
   net::HttpStatusCode status_code = net::HTTP_INTERNAL_SERVER_ERROR;
+  std::string status_txt;
   switch (error_code) {
     case net::ERR_ACCESS_DENIED:
       status_code = net::HTTP_FORBIDDEN;

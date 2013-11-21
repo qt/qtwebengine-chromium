@@ -149,8 +149,8 @@ StyleResolver::StyleResolver(Document* document, bool matchAuthorAndUserStyles)
             fontSelector()->addFontFaceRule((*it)->fontFaceRule());
     }
 #endif
-
-    styleSheetCollection->appendActiveAuthorStyleSheets(this);
+    m_styleTree.setBuildInDocumentOrder(!styleSheetCollection->hasScopedStyleSheet());
+    appendAuthorStyleSheets(0, styleSheetCollection->activeAuthorStyleSheets());
 }
 
 void StyleResolver::appendAuthorStyleSheets(unsigned firstNew, const Vector<RefPtr<CSSStyleSheet> >& styleSheets)
@@ -170,10 +170,7 @@ void StyleResolver::appendAuthorStyleSheets(unsigned firstNew, const Vector<RefP
         resolver->addRulesFromSheet(sheet, *m_medium, this);
         m_inspectorCSSOMWrappers.collectFromStyleSheetIfNeeded(cssSheet);
     }
-}
 
-void StyleResolver::finishAppendAuthorStyleSheets()
-{
     collectFeatures();
 
     if (document()->renderer() && document()->renderer()->style())
@@ -185,6 +182,7 @@ void StyleResolver::finishAppendAuthorStyleSheets()
 
 void StyleResolver::resetAuthorStyle(const ContainerNode* scopingNode)
 {
+    m_styleTree.clear();
     ScopedStyleResolver* resolver = scopingNode ? m_styleTree.scopedStyleResolverFor(scopingNode) : m_styleTree.scopedStyleResolverForDocument();
     if (!resolver)
         return;
@@ -192,13 +190,8 @@ void StyleResolver::resetAuthorStyle(const ContainerNode* scopingNode)
     m_ruleSets.shadowDistributedRules().reset(scopingNode);
 
     resolver->resetAuthorStyle();
-    if (!scopingNode)
-        return;
 
-    if (scopingNode->isShadowRoot())
-        resetAtHostRules(scopingNode);
-
-    if (!resolver->hasOnlyEmptyRuleSets())
+    if (!scopingNode || !resolver->hasOnlyEmptyRuleSets())
         return;
 
     m_styleTree.remove(scopingNode);
@@ -241,18 +234,6 @@ void StyleResolver::collectFeatures()
 
     m_siblingRuleSet = makeRuleSet(m_features.siblingRules);
     m_uncommonAttributeRuleSet = makeRuleSet(m_features.uncommonAttributeRules);
-}
-
-void StyleResolver::addToStyleSharingList(Element* element)
-{
-    if (m_styleSharingList.size() >= styleSharingListSize)
-        m_styleSharingList.remove(--m_styleSharingList.end());
-    m_styleSharingList.prepend(element);
-}
-
-void StyleResolver::clearStyleSharingList()
-{
-    m_styleSharingList.clear();
 }
 
 void StyleResolver::pushParentElement(Element* parent)
@@ -789,7 +770,7 @@ void StyleResolver::keyframeStylesForAnimation(Element* e, const RenderStyle* el
         keyframeValue.addProperties(keyframe->properties());
 
         // Add this keyframe style to all the indicated key times
-        Vector<double> keys;
+        Vector<float> keys;
         keyframe->getKeys(keys);
         for (size_t keyIndex = 0; keyIndex < keys.size(); ++keyIndex) {
             keyframeValue.setKey(keys[keyIndex]);
@@ -837,7 +818,7 @@ void StyleResolver::resolveKeyframes(Element* element, const RenderStyle* style,
     for (size_t i = 0; i < styleKeyframes.size(); ++i) {
         const StyleKeyframe* styleKeyframe = styleKeyframes[i].get();
         RefPtr<RenderStyle> keyframeStyle = styleForKeyframe(element, style, styleKeyframe);
-        Vector<double> offsets;
+        Vector<float> offsets;
         styleKeyframe->getKeys(offsets);
         RefPtr<Keyframe> firstOffsetKeyframe;
         for (size_t j = 0; j < offsets.size(); ++j) {
@@ -921,7 +902,7 @@ const StylePropertySet* StyleResolver::firstKeyframeStyles(const Element* elemen
     for (unsigned i = 0; i < styleKeyframes.size(); ++i) {
         const StyleKeyframe* styleKeyframe = styleKeyframes[i].get();
 
-        Vector<double> offsets;
+        Vector<float> offsets;
         styleKeyframe->getKeys(offsets);
         for (size_t j = 0; j < offsets.size(); ++j) {
             if (!offsets[j]) {

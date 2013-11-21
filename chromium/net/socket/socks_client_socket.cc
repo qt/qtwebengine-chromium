@@ -55,18 +55,31 @@ struct SOCKS4ServerResponse {
 COMPILE_ASSERT(sizeof(SOCKS4ServerResponse) == kReadHeaderSize,
                socks4_server_response_struct_wrong_size);
 
-SOCKSClientSocket::SOCKSClientSocket(
-    scoped_ptr<ClientSocketHandle> transport_socket,
-    const HostResolver::RequestInfo& req_info,
-    HostResolver* host_resolver)
-    : transport_(transport_socket.Pass()),
+SOCKSClientSocket::SOCKSClientSocket(ClientSocketHandle* transport_socket,
+                                     const HostResolver::RequestInfo& req_info,
+                                     HostResolver* host_resolver)
+    : transport_(transport_socket),
       next_state_(STATE_NONE),
       completed_handshake_(false),
       bytes_sent_(0),
       bytes_received_(0),
       host_resolver_(host_resolver),
       host_request_info_(req_info),
-      net_log_(transport_->socket()->NetLog()) {
+      net_log_(transport_socket->socket()->NetLog()) {
+}
+
+SOCKSClientSocket::SOCKSClientSocket(StreamSocket* transport_socket,
+                                     const HostResolver::RequestInfo& req_info,
+                                     HostResolver* host_resolver)
+    : transport_(new ClientSocketHandle()),
+      next_state_(STATE_NONE),
+      completed_handshake_(false),
+      bytes_sent_(0),
+      bytes_received_(0),
+      host_resolver_(host_resolver),
+      host_request_info_(req_info),
+      net_log_(transport_socket->NetLog()) {
+  transport_->set_socket(transport_socket);
 }
 
 SOCKSClientSocket::~SOCKSClientSocket() {

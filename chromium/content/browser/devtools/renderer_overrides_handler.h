@@ -26,8 +26,6 @@ class RendererOverridesHandler : public DevToolsProtocol::Handler {
   explicit RendererOverridesHandler(DevToolsAgentHost* agent);
   virtual ~RendererOverridesHandler();
 
-  void OnSwapCompositorFrame();
-
  private:
   scoped_refptr<DevToolsProtocol::Response>
       GrantPermissionsForSetFileInputFiles(
@@ -37,10 +35,6 @@ class RendererOverridesHandler : public DevToolsProtocol::Handler {
   scoped_refptr<DevToolsProtocol::Response> PageNavigate(
       scoped_refptr<DevToolsProtocol::Command> command);
   scoped_refptr<DevToolsProtocol::Response> PageCaptureScreenshot(
-      scoped_refptr<DevToolsProtocol::Command> command);
-  scoped_refptr<DevToolsProtocol::Response> PageStartScreencast(
-      scoped_refptr<DevToolsProtocol::Command> command);
-  scoped_refptr<DevToolsProtocol::Response> PageStopScreencast(
       scoped_refptr<DevToolsProtocol::Command> command);
 
   void ScreenshotCaptured(
@@ -53,7 +47,6 @@ class RendererOverridesHandler : public DevToolsProtocol::Handler {
 
   DevToolsAgentHost* agent_;
   base::WeakPtrFactory<RendererOverridesHandler> weak_factory_;
-  scoped_refptr<DevToolsProtocol::Command> screencast_command_;
   DISALLOW_COPY_AND_ASSIGN(RendererOverridesHandler);
 };
 

@@ -89,7 +89,7 @@ class SessionHistoryTest : public ContentBrowserTest {
   }
 
   GURL GetTabURL() {
-    return shell()->web_contents()->GetLastCommittedURL();
+    return shell()->web_contents()->GetURL();
   }
 
   GURL GetURL(const std::string file) {

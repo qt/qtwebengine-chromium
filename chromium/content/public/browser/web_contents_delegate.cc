@@ -127,8 +127,11 @@ bool WebContentsDelegate::ShouldCreateWebContents(
     WindowContainerType window_container_type,
     const string16& frame_name,
     const GURL& target_url,
-    const std::string& partition_id,
-    SessionStorageNamespace* session_storage_namespace) {
+    const Referrer& referrer,
+    WindowOpenDisposition disposition,
+    const WebKit::WebWindowFeatures& features,
+    bool user_gesture,
+    bool opener_suppressed) {
   return true;
 }
 
@@ -144,6 +147,13 @@ bool WebContentsDelegate::IsFullscreenForTabOrPending(
 content::ColorChooser* WebContentsDelegate::OpenColorChooser(
     WebContents* web_contents, SkColor color) {
   return NULL;
+}
+
+void WebContentsDelegate::RequestMediaAccessPermission(
+    WebContents* web_contents,
+    const MediaStreamRequest& request,
+    const MediaResponseCallback& callback) {
+  callback.Run(MediaStreamDevices(), scoped_ptr<MediaStreamUI>());
 }
 
 bool WebContentsDelegate::RequestPpapiBrokerPermission(

@@ -38,10 +38,7 @@
 #include <signal.h>
 #include <sys/time.h>
 #include <sys/syscall.h>
-// OpenBSD doesn't have <ucontext.h>. ucontext_t lives in <signal.h>
-// and is a typedef for struct sigcontext. There is no uc_mcontext.
-#if (!defined(__ANDROID__) || defined(__BIONIC_HAVE_UCONTEXT_T)) \
-    && !defined(__OpenBSD__)
+#if !defined(__ANDROID__) || defined(__BIONIC_HAVE_UCONTEXT_T)
 #include <ucontext.h>
 #endif
 #include <unistd.h>
@@ -333,9 +330,7 @@ void SignalHandler::HandleProfilerSignal(int signal, siginfo_t* info,
 #else
   // Extracting the sample from the context is extremely machine dependent.
   ucontext_t* ucontext = reinterpret_cast<ucontext_t*>(context);
-#if !defined(__OpenBSD__)
   mcontext_t& mcontext = ucontext->uc_mcontext;
-#endif
 #if defined(__linux__) || defined(__ANDROID__)
 #if V8_HOST_ARCH_IA32
   state.pc = reinterpret_cast<Address>(mcontext.gregs[REG_EIP]);
@@ -389,6 +384,7 @@ void SignalHandler::HandleProfilerSignal(int signal, siginfo_t* info,
   state.fp = reinterpret_cast<Address>(mcontext.__gregs[_REG_RBP]);
 #endif  // V8_HOST_ARCH_*
 #elif defined(__OpenBSD__)
+  USE(mcontext);
 #if V8_HOST_ARCH_IA32
   state.pc = reinterpret_cast<Address>(ucontext->sc_eip);
   state.sp = reinterpret_cast<Address>(ucontext->sc_esp);
@@ -619,7 +615,8 @@ DISABLE_ASAN void TickSample::Init(Isolate* isolate,
   // Avoid collecting traces while doing GC.
   if (state == GC) return;
 
-  Address js_entry_sp = isolate->js_entry_sp();
+  const Address js_entry_sp =
+      Isolate::js_entry_sp(isolate->thread_local_top());
   if (js_entry_sp == 0) {
     // Not executing JS now.
     return;

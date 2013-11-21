@@ -36,12 +36,13 @@ import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
 import java.io.ByteArrayInputStream;
 import java.nio.ByteBuffer;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
-import java.util.Stack;
 
 /**
  * Class to represent {@code ByteStrings} formed by concatenation of other
@@ -589,7 +590,8 @@ class RopeByteString extends ByteString {
     // Stack containing the part of the string, starting from the left, that
     // we've already traversed.  The final string should be the equivalent of
     // concatenating the strings on the stack from bottom to top.
-    private final Stack<ByteString> prefixesStack = new Stack<ByteString>();
+    private final Deque<ByteString> prefixesStack =
+        new ArrayDeque<ByteString>(minLengthByDepth.length);
 
     private ByteString balance(ByteString left, ByteString right) {
       doBalance(left);
@@ -701,8 +703,8 @@ class RopeByteString extends ByteString {
    */
   private static class PieceIterator implements Iterator<LiteralByteString> {
 
-    private final Stack<RopeByteString> breadCrumbs =
-        new Stack<RopeByteString>();
+    private final Deque<RopeByteString> breadCrumbs =
+        new ArrayDeque<RopeByteString>(minLengthByDepth.length);
     private LiteralByteString next;
 
     private PieceIterator(ByteString root) {

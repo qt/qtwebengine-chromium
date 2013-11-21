@@ -45,6 +45,8 @@ class WEBKIT_GLUE_EXPORT SimpleWebMimeRegistryImpl :
   virtual WebKit::WebString wellKnownMimeTypeForExtension(
       const WebKit::WebString&);
   virtual WebKit::WebString mimeTypeFromFile(const WebKit::WebString&);
+  virtual WebKit::WebString preferredExtensionForMIMEType(
+      const WebKit::WebString&);
 };
 
 }  // namespace webkit_glue

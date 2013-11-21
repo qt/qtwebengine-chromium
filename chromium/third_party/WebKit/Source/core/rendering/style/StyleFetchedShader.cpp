@@ -32,7 +32,7 @@
 #include "core/rendering/style/StyleFetchedShader.h"
 
 #include "core/css/CSSPrimitiveValue.h"
-#include "core/fetch/ShaderResource.h"
+#include "core/loader/cache/ShaderResource.h"
 
 namespace WebCore {
 

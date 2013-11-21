@@ -26,7 +26,7 @@
 #ifndef CSSFontSelector_h
 #define CSSFontSelector_h
 
-#include "core/fetch/ResourcePtr.h"
+#include "core/loader/cache/ResourcePtr.h"
 #include "core/platform/Timer.h"
 #include "core/platform/graphics/FontSelector.h"
 #include "wtf/Forward.h"
@@ -74,7 +74,7 @@ public:
     void beginLoadingFontSoon(FontResource*);
 
 private:
-    explicit CSSFontSelector(Document*);
+    CSSFontSelector(Document*);
 
     void dispatchInvalidationCallbacks();
 

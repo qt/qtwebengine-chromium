@@ -8,7 +8,6 @@
 #include <iterator>
 
 #include "base/debug/trace_event.h"
-#include "cc/animation/animation_id_provider.h"
 #include "ui/compositor/layer_animation_delegate.h"
 #include "ui/compositor/layer_animation_element.h"
 #include "ui/compositor/layer_animation_observer.h"
@@ -77,10 +76,8 @@ void LayerAnimationSequence::Progress(base::TimeTicks now,
   }
 
   if (is_cyclic_ || last_element_ < elements_.size()) {
-    if (!elements_[current_index]->Started()) {
-      animation_group_id_ = cc::AnimationIdProvider::NextGroupId();
+    if (!elements_[current_index]->Started())
       elements_[current_index]->Start(delegate, animation_group_id_);
-    }
     if (elements_[current_index]->Progress(now, delegate))
       redraw_required = true;
     last_progressed_fraction_ =

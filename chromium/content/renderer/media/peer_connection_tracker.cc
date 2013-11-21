@@ -161,9 +161,15 @@ static base::DictionaryValue* GetDictValueStats(
     return NULL;
 
   DictionaryValue* dict = new base::DictionaryValue();
+  if (!dict)
+    return NULL;
   dict->SetDouble("timestamp", report.timestamp);
 
   base::ListValue* values = new base::ListValue();
+  if (!values) {
+    delete dict;
+    return NULL;
+  }
   dict->Set("values", values);
 
   for (size_t i = 0; i < report.values.size(); ++i) {
@@ -183,10 +189,14 @@ static base::DictionaryValue* GetDictValue(const webrtc::StatsReport& report) {
     return NULL;
 
   result.reset(new base::DictionaryValue());
+  if (!result)
+    return NULL;
+
   // Note:
   // The format must be consistent with what webrtc_internals.js expects.
   // If you change it here, you must change webrtc_internals.js as well.
-  result->Set("stats", stats.release());
+  if (stats)
+    result->Set("stats", stats.release());
   result->SetString("id", report.id);
   result->SetString("type", report.type);
 

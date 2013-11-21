@@ -58,6 +58,10 @@ namespace ash {
 namespace internal {
 namespace {
 
+const int kWebNotificationIconSize = 31;
+// Height of the art assets used in alternate shelf layout,
+// see ash/ash_switches.h:UseAlternateShelfLayout.
+const int kWebNotificationAlternateSize = 38;
 const SkColor kWebNotificationColorNoUnread = SkColorSetA(SK_ColorWHITE, 128);
 const SkColor kWebNotificationColorWithUnread = SK_ColorWHITE;
 
@@ -106,15 +110,6 @@ WorkAreaObserver::~WorkAreaObserver() {
 
 void WorkAreaObserver::SetSystemTrayHeight(int height) {
   system_tray_height_ = height;
-
-  // If the shelf is shown during auto-hide state, the distance from the edge
-  // should be reduced by the height of shelf's shown height.
-  if (shelf_->visibility_state() == SHELF_AUTO_HIDE &&
-      shelf_->auto_hide_state() == SHELF_AUTO_HIDE_SHOWN) {
-    system_tray_height_ -= ShelfLayoutManager::GetPreferredShelfSize() -
-        ShelfLayoutManager::kAutoHideSize;
-  }
-
   if (system_tray_height_ > 0 && ash::switches::UseAlternateShelfLayout())
     system_tray_height_ += message_center::kMarginBetweenItems;
 
@@ -132,23 +127,43 @@ void WorkAreaObserver::OnAutoHideStateChanged(ShelfAutoHideState new_state) {
       shelf_->shelf_widget()->GetNativeView());
   gfx::Rect work_area = display.work_area();
   int width = 0;
-  if ((shelf_->visibility_state() == SHELF_AUTO_HIDE) &&
-      new_state == SHELF_AUTO_HIDE_SHOWN) {
-    // Since the work_area is already reduced by kAutoHideSize, the inset width
-    // should be just the difference.
-    width = ShelfLayoutManager::GetPreferredShelfSize() -
-        ShelfLayoutManager::kAutoHideSize;
+  if (shelf_->auto_hide_behavior() != SHELF_AUTO_HIDE_BEHAVIOR_NEVER) {
+    width = (new_state == SHELF_AUTO_HIDE_HIDDEN) ?
+        ShelfLayoutManager::kAutoHideSize :
+        ShelfLayoutManager::GetPreferredShelfSize();
   }
-  work_area.Inset(shelf_->SelectValueForShelfAlignment(
-      gfx::Insets(0, 0, width, 0),
-      gfx::Insets(0, width, 0, 0),
-      gfx::Insets(0, 0, 0, width),
-      gfx::Insets(width, 0, 0, 0)));
-  if (system_tray_height_ > 0) {
-    work_area.set_height(
-        std::max(0, work_area.height() - system_tray_height_));
-    if (shelf_->GetAlignment() == SHELF_ALIGNMENT_TOP)
-      work_area.set_y(work_area.y() + system_tray_height_);
+  switch (shelf_->GetAlignment()) {
+    case SHELF_ALIGNMENT_BOTTOM:
+      work_area.Inset(0, 0, 0, width);
+      if (system_tray_height_ > 0) {
+        work_area.set_height(
+            std::max(0, work_area.height() - system_tray_height_));
+      }
+      break;
+    case SHELF_ALIGNMENT_LEFT:
+      work_area.Inset(width, 0, 0, 0);
+      // Popups appear on the left bottom only when UI is RTL.
+      if (base::i18n::IsRTL() && system_tray_height_ > 0) {
+        work_area.set_height(
+            std::max(0, work_area.height() - system_tray_height_));
+      }
+      break;
+    case SHELF_ALIGNMENT_RIGHT:
+      work_area.Inset(0, 0, width, 0);
+      // Popups appear on the right bottom only when UI isn't RTL.
+      if (!base::i18n::IsRTL() && system_tray_height_ > 0) {
+        work_area.set_height(
+            std::max(0, work_area.height() - system_tray_height_));
+      }
+      break;
+    case SHELF_ALIGNMENT_TOP:
+      work_area.Inset(0, width, 0, 0);
+      if (system_tray_height_ > 0) {
+        work_area.set_y(work_area.y() + system_tray_height_);
+        work_area.set_height(
+            std::max(0, work_area.height() - system_tray_height_));
+      }
+      break;
   }
   collection_->SetDisplayInfo(work_area, display.bounds());
 }
@@ -226,12 +241,10 @@ class WebNotificationButton : public views::CustomButton {
  protected:
   // Overridden from views::ImageButton:
   virtual gfx::Size GetPreferredSize() OVERRIDE {
-    const int notification_item_size = GetShelfItemHeight();
-    return gfx::Size(notification_item_size, notification_item_size);
-  }
-
-  virtual int GetHeightForWidth(int width) OVERRIDE {
-    return GetPreferredSize().height();
+    if (ash::switches::UseAlternateShelfLayout())
+      return gfx::Size(kWebNotificationAlternateSize,
+                       kWebNotificationAlternateSize);
+    return gfx::Size(kWebNotificationIconSize, kWebNotificationIconSize);
   }
 
  private:

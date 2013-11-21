@@ -4,8 +4,6 @@
 
 #include "printing/image.h"
 
-#include "base/logging.h"
-
 namespace printing {
 
 bool Image::LoadMetafile(const Metafile& metafile) {

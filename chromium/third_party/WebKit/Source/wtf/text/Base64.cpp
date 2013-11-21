@@ -128,7 +128,7 @@ void base64Encode(const char* data, unsigned len, Vector<char>& out, Base64Encod
     }
 }
 
-bool base64Decode(const Vector<char>& in, Vector<char>& out, Base64DecodePolicy policy)
+bool base64Decode(const Vector<char>& in, Vector<char>& out, Base64InvalidCharactersPolicy charactersPolicy, Base64PaddingValidationPolicy paddingPolicy)
 {
     out.clear();
 
@@ -136,40 +136,48 @@ bool base64Decode(const Vector<char>& in, Vector<char>& out, Base64DecodePolicy 
     if (in.size() > UINT_MAX)
         return false;
 
-    return base64Decode(in.data(), in.size(), out, policy);
+    return base64Decode(in.data(), in.size(), out, charactersPolicy, paddingPolicy);
 }
 
 template<typename T>
-static inline bool base64DecodeInternal(const T* data, unsigned length, Vector<char>& out, Base64DecodePolicy policy)
+static inline bool base64DecodeInternal(const T* data, unsigned length, Vector<char>& out, Base64InvalidCharactersPolicy charactersPolicy, Base64PaddingValidationPolicy paddingPolicy)
 {
     out.clear();
     if (!length)
         return true;
 
+    unsigned dataLength = length;
+    if (paddingPolicy == Base64StrictPaddingValidation) {
+        if (!(dataLength % 4)) {
+            // There may be 2 = padding max.
+            while (data[dataLength - 1] == '=' && dataLength >= (length - 2))
+                --dataLength;
+        }
+        if (dataLength % 4 == 1)
+            return false;
+    }
+
     out.grow(length);
 
-    unsigned equalsSignCount = 0;
+    bool sawEqualsSign = false;
     unsigned outLength = 0;
     for (unsigned idx = 0; idx < length; ++idx) {
         unsigned ch = data[idx];
         if (ch == '=') {
-            ++equalsSignCount;
-            // There should be no padding if length is a multiple of 4, and there
-            // should never be more than 2 padding characters.
-            if (policy == Base64FailOnInvalidCharacterOrExcessPadding && (length % 4 || equalsSignCount > 2))
+            sawEqualsSign = true;
+            if (paddingPolicy == Base64StrictPaddingValidation && idx < dataLength)
                 return false;
         } else if (('0' <= ch && ch <= '9') || ('A' <= ch && ch <= 'Z') || ('a' <= ch && ch <= 'z') || ch == '+' || ch == '/') {
-            if (equalsSignCount)
+            if (sawEqualsSign)
                 return false;
             out[outLength] = base64DecMap[ch];
             ++outLength;
-        } else if (policy == Base64FailOnInvalidCharacterOrExcessPadding || policy == Base64FailOnInvalidCharacter || (policy == Base64IgnoreWhitespace && !isSpaceOrNewline(ch))) {
+        } else if (charactersPolicy == Base64FailOnInvalidCharacter || (charactersPolicy == Base64IgnoreWhitespace && !isSpaceOrNewline(ch)))
             return false;
-        }
     }
 
     if (!outLength)
-        return !equalsSignCount;
+        return !sawEqualsSign;
 
     // Valid data is (n * 4 + [0,2,3]) characters long.
     if ((outLength % 4) == 1)
@@ -204,18 +212,18 @@ static inline bool base64DecodeInternal(const T* data, unsigned length, Vector<c
     return true;
 }
 
-bool base64Decode(const char* data, unsigned length, Vector<char>& out, Base64DecodePolicy policy)
+bool base64Decode(const char* data, unsigned length, Vector<char>& out, Base64InvalidCharactersPolicy charactersPolicy, Base64PaddingValidationPolicy paddingPolicy)
 {
-    return base64DecodeInternal<LChar>(reinterpret_cast<const LChar*>(data), length, out, policy);
+    return base64DecodeInternal<LChar>(reinterpret_cast<const LChar*>(data), length, out, charactersPolicy, paddingPolicy);
 }
 
-bool base64Decode(const String& in, Vector<char>& out, Base64DecodePolicy policy)
+bool base64Decode(const String& in, Vector<char>& out, Base64InvalidCharactersPolicy charactersPolicy, Base64PaddingValidationPolicy paddingPolicy)
 {
     if (in.isEmpty())
-        return base64DecodeInternal<LChar>(0, 0, out, policy);
+        return base64DecodeInternal<LChar>(0, 0, out, charactersPolicy, paddingPolicy);
     if (in.is8Bit())
-        return base64DecodeInternal<LChar>(in.characters8(), in.length(), out, policy);
-    return base64DecodeInternal<UChar>(in.characters16(), in.length(), out, policy);
+        return base64DecodeInternal<LChar>(in.characters8(), in.length(), out, charactersPolicy, paddingPolicy);
+    return base64DecodeInternal<UChar>(in.characters16(), in.length(), out, charactersPolicy, paddingPolicy);
 }
 
 } // namespace WTF

@@ -70,7 +70,7 @@ class SynchronousCompositorFactoryImpl : public SynchronousCompositorFactory {
     if (!offscreen_context_for_main_thread_.get() ||
         offscreen_context_for_main_thread_->DestroyedOnMainThread()) {
       offscreen_context_for_main_thread_ =
-          webkit::gpu::ContextProviderInProcess::CreateOffscreen();
+          webkit::gpu::ContextProviderInProcess::Create();
       if (offscreen_context_for_main_thread_.get() &&
           !offscreen_context_for_main_thread_->BindToCurrentThread())
         offscreen_context_for_main_thread_ = NULL;
@@ -90,7 +90,7 @@ class SynchronousCompositorFactoryImpl : public SynchronousCompositorFactory {
     if (!offscreen_context_for_compositor_thread_.get() ||
         offscreen_context_for_compositor_thread_->DestroyedOnMainThread()) {
       offscreen_context_for_compositor_thread_ =
-          webkit::gpu::ContextProviderInProcess::CreateOffscreen();
+          webkit::gpu::ContextProviderInProcess::Create();
     }
     return offscreen_context_for_compositor_thread_;
   }
@@ -228,7 +228,8 @@ void SynchronousCompositorImpl::SetInputHandler(
 void SynchronousCompositorImpl::DidOverscroll(
     const cc::DidOverscrollParams& params) {
   if (compositor_client_) {
-    compositor_client_->DidOverscroll(params.latest_overscroll_delta,
+    compositor_client_->DidOverscroll(params.accumulated_overscroll,
+                                      params.latest_overscroll_delta,
                                       params.current_fling_velocity);
   }
 }

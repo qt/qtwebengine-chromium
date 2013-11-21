@@ -127,7 +127,7 @@ class BrowserPluginGuest::GeolocationRequest : public PermissionRequest {
               // in the fact whether the embedder/app has geolocation
               // permission. Therefore we use an invalid |bridge_id|.
               -1 /* bridge_id */,
-              web_contents->GetLastCommittedURL(),
+              web_contents->GetURL(),
               geolocation_callback);
           return;
         }
@@ -348,7 +348,7 @@ BrowserPluginGuest::BrowserPluginGuest(
       embedder_visible_(true),
       next_permission_request_id_(browser_plugin::kInvalidPermissionRequestID),
       has_render_view_(has_render_view),
-      last_seen_auto_size_enabled_(false) {
+      is_in_destruction_(false) {
   DCHECK(web_contents);
   web_contents->SetDelegate(this);
   if (opener)
@@ -422,6 +422,7 @@ int BrowserPluginGuest::RequestPermission(
 }
 
 void BrowserPluginGuest::Destroy() {
+  is_in_destruction_ = true;
   if (!attached() && opener())
     opener()->pending_new_windows_.erase(this);
   DestroyUnattachedWindows();
@@ -765,10 +766,6 @@ WebContentsImpl* BrowserPluginGuest::GetWebContents() {
 
 base::SharedMemory* BrowserPluginGuest::GetDamageBufferFromEmbedder(
     const BrowserPluginHostMsg_ResizeGuest_Params& params) {
-  if (!attached()) {
-    LOG(WARNING) << "Attempting to map a damage buffer prior to attachment.";
-    return NULL;
-  }
 #if defined(OS_WIN)
   base::ProcessHandle handle =
       embedder_web_contents_->GetRenderProcessHost()->GetHandle();
@@ -1264,7 +1261,7 @@ void BrowserPluginGuest::OnLockMouse(bool user_gesture,
                    base::Value::CreateBooleanValue(last_unlocked_by_target));
   request_info.Set(browser_plugin::kURL,
                    base::Value::CreateStringValue(
-                       web_contents()->GetLastCommittedURL().spec()));
+                       web_contents()->GetURL().spec()));
 
   RequestPermission(BROWSER_PLUGIN_PERMISSION_TYPE_POINTER_LOCK,
                     new PointerLockRequest(this),
@@ -1320,13 +1317,6 @@ void BrowserPluginGuest::OnResizeGuest(
       guest_device_scale_factor_ = params.scale_factor;
       render_widget_host->NotifyScreenInfoChanged();
     }
-  }
-  // When autosize is turned off and as a result there is a layout change, we
-  // send a sizechanged event.
-  if (!auto_size_enabled_ && last_seen_auto_size_enabled_ &&
-      !params.view_rect.size().IsEmpty() && delegate_) {
-    delegate_->SizeChanged(last_seen_view_size_, params.view_rect.size());
-    last_seen_auto_size_enabled_ = false;
   }
   // Invalid damage buffer means we are in HW compositing mode,
   // so just resize the WebContents and repaint if needed.
@@ -1589,16 +1579,6 @@ void BrowserPluginGuest::OnUpdateRect(
   relay_params.is_resize_ack = ViewHostMsg_UpdateRect_Flags::is_resize_ack(
       params.flags);
   relay_params.needs_ack = params.needs_ack;
-
-  bool size_changed = last_seen_view_size_ != params.view_size;
-  gfx::Size old_size = last_seen_view_size_;
-  last_seen_view_size_ = params.view_size;
-
-  if ((auto_size_enabled_ || last_seen_auto_size_enabled_) &&
-      size_changed && delegate_) {
-    delegate_->SizeChanged(old_size, last_seen_view_size_);
-  }
-  last_seen_auto_size_enabled_ = auto_size_enabled_;
 
   // HW accelerated case, acknowledge resize only
   if (!params.needs_ack || !damage_buffer_) {

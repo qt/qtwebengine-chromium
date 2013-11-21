@@ -391,7 +391,6 @@
           'sources': [
             'browser/chromeos/cros/cros_in_process_browser_test.cc',
             'browser/chromeos/cros/cros_in_process_browser_test.h',
-            'browser/chromeos/input_method/keyboard_browsertest.cc',
             'browser/chromeos/input_method/textinput_browsertest.cc',
             'browser/chromeos/input_method/textinput_surroundingtext_browsertest.cc',
             'browser/chromeos/input_method/textinput_test_helper.cc',
@@ -1210,8 +1209,11 @@
         'browser/chromeos/login/existing_user_controller_browsertest.cc',
         'browser/chromeos/login/kiosk_browsertest.cc',
         'browser/chromeos/login/login_utils_browsertest.cc',
+        'browser/chromeos/login/login_manager_test.cc',
+        'browser/chromeos/login/login_manager_test.h',
         'browser/chromeos/login/mock_authenticator.cc',
         'browser/chromeos/login/mock_authenticator.h',
+        'browser/chromeos/login/session_login_browsertest.cc',
         'browser/chromeos/login/screen_locker_tester.cc',
         'browser/chromeos/login/screen_locker_tester.h',
         'browser/chromeos/login/screens/mock_error_screen.cc',
@@ -2088,11 +2090,6 @@
             ['exclude', '^test/data/webui/print_preview.h'],
             ['exclude', '^test/data/webui/print_preview.js'],
           ],
-        }],
-        ['enable_mdns==1', {
-          'sources' : [
-            'browser/ui/webui/local_discovery/local_discovery_ui_browsertest.cc',
-          ]
         }],
       ],  # conditions
     },  # target browser_tests
@@ -3276,6 +3273,7 @@
             '../base/base.gyp:base_java_test_support',
             '../content/content.gyp:content_java_test_support',
             '../sync/sync.gyp:sync_javatests',
+            '../tools/android/forwarder/forwarder.gyp:forwarder',
           ],
           'variables': {
             'apk_name': 'ChromiumTestShellTest',
