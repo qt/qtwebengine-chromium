@@ -44,8 +44,8 @@
 
 namespace WebCore {
 
-V8WorkerGlobalScopeEventListener::V8WorkerGlobalScopeEventListener(v8::Local<v8::Object> listener, bool isInline)
-    : V8EventListener(listener, isInline)
+V8WorkerGlobalScopeEventListener::V8WorkerGlobalScopeEventListener(v8::Local<v8::Object> listener, bool isInline, v8::Isolate* isolate)
+    : V8EventListener(listener, isInline, isolate)
 {
 }
 
@@ -58,7 +58,8 @@ void V8WorkerGlobalScopeEventListener::handleEvent(ScriptExecutionContext* conte
     // See issue 889829.
     RefPtr<V8AbstractEventListener> protect(this);
 
-    v8::HandleScope handleScope;
+    v8::Isolate* isolate = toIsolate(context);
+    v8::HandleScope handleScope(isolate);
 
     WorkerScriptController* script = toWorkerGlobalScope(context)->script();
     if (!script)
@@ -72,7 +73,6 @@ void V8WorkerGlobalScopeEventListener::handleEvent(ScriptExecutionContext* conte
     v8::Context::Scope scope(v8Context);
 
     // Get the V8 wrapper for the event object.
-    v8::Isolate* isolate = v8Context->GetIsolate();
     v8::Handle<v8::Value> jsEvent = toV8(event, v8::Handle<v8::Object>(), isolate);
 
     invokeEventHandler(context, event, v8::Local<v8::Value>::New(isolate, jsEvent));
@@ -97,8 +97,9 @@ v8::Local<v8::Value> V8WorkerGlobalScopeEventListener::callListenerFunction(Scri
         cookie = InspectorInstrumentation::willCallFunction(context, resourceName, lineNumber);
     }
 
+    v8::Isolate* isolate = toIsolate(context);
     v8::Handle<v8::Value> parameters[1] = { jsEvent };
-    v8::Local<v8::Value> result = V8ScriptRunner::callFunction(handlerFunction, context, receiver, WTF_ARRAY_LENGTH(parameters), parameters);
+    v8::Local<v8::Value> result = V8ScriptRunner::callFunction(handlerFunction, context, receiver, WTF_ARRAY_LENGTH(parameters), parameters, isolate);
 
     InspectorInstrumentation::didCallFunction(cookie);
 
@@ -113,10 +114,11 @@ v8::Local<v8::Object> V8WorkerGlobalScopeEventListener::getReceiverObject(Script
         return listener;
 
     EventTarget* target = event->currentTarget();
-    v8::Handle<v8::Value> value = toV8(target, v8::Handle<v8::Object>(), toV8Context(context, world())->GetIsolate());
+    v8::Isolate* isolate = toIsolate(context);
+    v8::Handle<v8::Value> value = toV8(target, v8::Handle<v8::Object>(), isolate);
     if (value.IsEmpty())
         return v8::Local<v8::Object>();
-    return v8::Local<v8::Object>::New(v8::Handle<v8::Object>::Cast(value));
+    return v8::Local<v8::Object>::New(isolate, v8::Handle<v8::Object>::Cast(value));
 }
 
 } // namespace WebCore

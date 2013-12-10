@@ -26,6 +26,7 @@
 #ifndef CSSSegmentedFontFace_h
 #define CSSSegmentedFontFace_h
 
+#include "core/platform/graphics/FontTraitsMask.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -37,20 +38,27 @@ class CSSFontFace;
 class CSSFontSelector;
 class FontData;
 class FontDescription;
+class FontFace;
 class SegmentedFontData;
 
 class CSSSegmentedFontFace : public RefCounted<CSSSegmentedFontFace> {
 public:
-    static PassRefPtr<CSSSegmentedFontFace> create(CSSFontSelector* selector) { return adoptRef(new CSSSegmentedFontFace(selector)); }
+    static PassRefPtr<CSSSegmentedFontFace> create(CSSFontSelector* selector, FontTraitsMask traitsMask, bool isLocalFallback) { return adoptRef(new CSSSegmentedFontFace(selector, traitsMask, isLocalFallback)); }
     ~CSSSegmentedFontFace();
 
     CSSFontSelector* fontSelector() const { return m_fontSelector; }
+    FontTraitsMask traitsMask() const { return m_traitsMask; }
+    bool isLocalFallback() const { return m_isLocalFallback; }
 
     void fontLoaded(CSSFontFace*);
 
     void appendFontFace(PassRefPtr<CSSFontFace>);
 
     PassRefPtr<FontData> getFontData(const FontDescription&);
+
+#if ENABLE(SVG_FONTS)
+    bool hasSVGFontFaceSource() const;
+#endif
 
     class LoadFontCallback : public RefCounted<LoadFontCallback> {
     public:
@@ -61,15 +69,19 @@ public:
 
     bool checkFont() const;
     void loadFont(const FontDescription&, PassRefPtr<LoadFontCallback> loadCallback);
+    Vector<RefPtr<FontFace> > fontFaces() const;
+    void willUseFontData(const FontDescription&);
 
 private:
-    CSSSegmentedFontFace(CSSFontSelector*);
+    CSSSegmentedFontFace(CSSFontSelector*, FontTraitsMask, bool isLocalFallback);
 
     void pruneTable();
     bool isValid() const;
     bool isLoading() const;
 
     CSSFontSelector* m_fontSelector;
+    FontTraitsMask m_traitsMask;
+    bool m_isLocalFallback;
     HashMap<unsigned, RefPtr<SegmentedFontData> > m_fontDataTable;
     Vector<RefPtr<CSSFontFace>, 1> m_fontFaces;
     Vector<RefPtr<LoadFontCallback> > m_callbacks;

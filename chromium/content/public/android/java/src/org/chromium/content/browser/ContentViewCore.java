@@ -5,8 +5,10 @@
 package org.chromium.content.browser;
 
 import android.app.Activity;
+import android.app.SearchManager;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
@@ -21,9 +23,11 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.ResultReceiver;
+import android.provider.Browser;
 import android.provider.Settings;
 import android.provider.Settings.Secure;
 import android.text.Editable;
+import android.text.TextUtils;
 import android.util.Log;
 import android.util.Pair;
 import android.view.ActionMode;
@@ -615,6 +619,8 @@ import java.util.Map;
                                     // If OSK is newly shown, delay the form focus until
                                     // the onSizeChanged (in order to adjust relative to the
                                     // new size).
+                                    // TODO(jdduke): We should not assume that onSizeChanged will
+                                    // always be called, crbug.com/294908.
                                     getContainerView().getWindowVisibleDisplayFrame(
                                             mFocusPreOSKViewportRect);
                                 } else if (resultCode ==
@@ -1171,6 +1177,20 @@ import java.util.Map;
     }
 
     /**
+     * Loads the current navigation if there is a pending lazy load (after tab restore).
+     */
+    public void loadIfNecessary() {
+        if (mNativeContentViewCore != 0) nativeLoadIfNecessary(mNativeContentViewCore);
+    }
+
+    /**
+     * Requests the current navigation to be loaded upon the next call to loadIfNecessary().
+     */
+    public void requestRestoreLoad() {
+        if (mNativeContentViewCore != 0) nativeRequestRestoreLoad(mNativeContentViewCore);
+    }
+
+    /**
      * Reload the current page.
      */
     public void reload() {
@@ -1260,17 +1280,11 @@ import java.util.Map;
     }
 
     @Override
-    public boolean sendGesture(int type, long timeMs, int x, int y, boolean lastInputEventForVSync,
-                               Bundle b) {
+    public boolean sendGesture(int type, long timeMs, int x, int y, Bundle b) {
         if (offerGestureToEmbedder(type)) return false;
         if (mNativeContentViewCore == 0) return false;
         updateTextHandlesForGesture(type);
         updateGestureStateListener(type, b);
-        if (lastInputEventForVSync && isVSyncNotificationEnabled()) {
-            assert type == ContentViewGestureHandler.GESTURE_SCROLL_BY ||
-                    type == ContentViewGestureHandler.GESTURE_PINCH_BY;
-            mDidSignalVSyncUsingInputEvent = true;
-        }
         switch (type) {
             case ContentViewGestureHandler.GESTURE_SHOW_PRESSED_STATE:
                 nativeShowPressState(mNativeContentViewCore, timeMs, x, y);
@@ -1303,8 +1317,7 @@ import java.util.Map;
             case ContentViewGestureHandler.GESTURE_SCROLL_BY: {
                 int dx = b.getInt(ContentViewGestureHandler.DISTANCE_X);
                 int dy = b.getInt(ContentViewGestureHandler.DISTANCE_Y);
-                nativeScrollBy(mNativeContentViewCore, timeMs, x, y, dx, dy,
-                        lastInputEventForVSync);
+                nativeScrollBy(mNativeContentViewCore, timeMs, x, y, dx, dy);
                 return true;
             }
             case ContentViewGestureHandler.GESTURE_SCROLL_END:
@@ -1323,14 +1336,23 @@ import java.util.Map;
                 return true;
             case ContentViewGestureHandler.GESTURE_PINCH_BY:
                 nativePinchBy(mNativeContentViewCore, timeMs, x, y,
-                        b.getFloat(ContentViewGestureHandler.DELTA, 0),
-                        lastInputEventForVSync);
+                        b.getFloat(ContentViewGestureHandler.DELTA, 0));
                 return true;
             case ContentViewGestureHandler.GESTURE_PINCH_END:
                 nativePinchEnd(mNativeContentViewCore, timeMs);
                 return true;
             default:
                 return false;
+        }
+    }
+
+    @Override
+    public void onSentLastGestureForVSync(long eventTimeMs) {
+        if (isVSyncNotificationEnabled()) {
+            mDidSignalVSyncUsingInputEvent = true;
+        }
+        if (mNativeContentViewCore != 0) {
+            nativeOnVSync(mNativeContentViewCore, eventTimeMs * 1000);
         }
     }
 
@@ -1375,11 +1397,9 @@ import java.util.Map;
      *                 result will be json encoded and passed as the parameter, and the call
      *                 will be made on the main thread.
      *                 If no result is required, pass null.
-     * @throws IllegalStateException If the ContentView has been destroyed.
      */
-    public void evaluateJavaScript(
-            String script, JavaScriptCallback callback) throws IllegalStateException {
-        checkIsAlive();
+    public void evaluateJavaScript(String script, JavaScriptCallback callback) {
+        if (mNativeContentViewCore == 0) return;
         nativeEvaluateJavaScript(mNativeContentViewCore, script, callback, false);
     }
 
@@ -1388,11 +1408,9 @@ import java.util.Map;
      * If there is no page existing, a new one will be created.
      *
      * @param script The Javascript to execute.
-     * @throws IllegalStateException If the ContentView has been destroyed.
      */
-    public void evaluateJavaScriptEvenIfNotYetNavigated(String script)
-            throws IllegalStateException {
-        checkIsAlive();
+    public void evaluateJavaScriptEvenIfNotYetNavigated(String script) {
+        if (mNativeContentViewCore == 0) return;
         nativeEvaluateJavaScript(mNativeContentViewCore, script, null, true);
     }
 
@@ -1481,12 +1499,12 @@ import java.util.Map;
         mAttachedToWindow = true;
         if (mNativeContentViewCore != 0) {
             assert mPid == nativeGetCurrentRenderProcessId(mNativeContentViewCore);
-            ChildProcessLauncher.bindAsHighPriority(mPid);
+            ChildProcessLauncher.getBindingManager().bindAsHighPriority(mPid);
             // Normally the initial binding is removed in onRenderProcessSwap(), but it is possible
             // to construct WebContents and spawn the renderer before passing it to ContentViewCore.
             // In this case there will be no onRenderProcessSwap() call and the initial binding will
             // be removed here.
-            ChildProcessLauncher.removeInitialBinding(mPid);
+            ChildProcessLauncher.getBindingManager().removeInitialBinding(mPid);
         }
         setAccessibilityState(mAccessibilityManager.isEnabled());
     }
@@ -1499,7 +1517,7 @@ import java.util.Map;
         mAttachedToWindow = false;
         if (mNativeContentViewCore != 0) {
             assert mPid == nativeGetCurrentRenderProcessId(mNativeContentViewCore);
-            ChildProcessLauncher.unbindAsHighPriority(mPid);
+            ChildProcessLauncher.getBindingManager().unbindAsHighPriority(mPid);
         }
         setInjectedAccessibility(false);
         hidePopupDialog();
@@ -1617,7 +1635,10 @@ import java.util.Map;
             Rect rect = new Rect();
             getContainerView().getWindowVisibleDisplayFrame(rect);
             if (!rect.equals(mFocusPreOSKViewportRect)) {
-                scrollFocusedEditableNodeIntoView();
+                // Only assume the OSK triggered the onSizeChanged if width was preserved.
+                if (rect.width() == mFocusPreOSKViewportRect.width()) {
+                    scrollFocusedEditableNodeIntoView();
+                }
                 mFocusPreOSKViewportRect.setEmpty();
             }
         } else if (mUnfocusOnNextSizeChanged) {
@@ -1788,7 +1809,7 @@ import java.util.Map;
     public void scrollBy(int xPix, int yPix) {
         if (mNativeContentViewCore != 0) {
             nativeScrollBy(mNativeContentViewCore,
-                    System.currentTimeMillis(), 0, 0, xPix, yPix, false);
+                    System.currentTimeMillis(), 0, 0, xPix, yPix);
         }
     }
 
@@ -1805,7 +1826,7 @@ import java.util.Map;
             long time = System.currentTimeMillis();
             nativeScrollBegin(mNativeContentViewCore, time, xCurrentPix, yCurrentPix);
             nativeScrollBy(mNativeContentViewCore,
-                    time, xCurrentPix, yCurrentPix, dxPix, dyPix, false);
+                    time, xCurrentPix, yCurrentPix, dxPix, dyPix);
             nativeScrollEnd(mNativeContentViewCore, time);
         }
     }
@@ -1902,7 +1923,8 @@ import java.util.Map;
     private void onTabCrash(boolean alreadyCrashed) {
         assert mPid != 0;
         if (!alreadyCrashed) {
-            getContentViewClient().onRendererCrash(ChildProcessLauncher.isOomProtected(mPid));
+            getContentViewClient().onRendererCrash(
+                    ChildProcessLauncher.getBindingManager().isOomProtected(mPid));
         }
         mPid = 0;
     }
@@ -2113,23 +2135,66 @@ import java.util.Map;
         SelectActionModeCallback.ActionHandler actionHandler =
                 new SelectActionModeCallback.ActionHandler() {
             @Override
-            public boolean selectAll() {
-                return mImeAdapter.selectAll();
+            public void selectAll() {
+                mImeAdapter.selectAll();
             }
 
             @Override
-            public boolean cut() {
-                return mImeAdapter.cut();
+            public void cut() {
+                mImeAdapter.cut();
             }
 
             @Override
-            public boolean copy() {
-                return mImeAdapter.copy();
+            public void copy() {
+                mImeAdapter.copy();
             }
 
             @Override
-            public boolean paste() {
-                return mImeAdapter.paste();
+            public void paste() {
+                mImeAdapter.paste();
+            }
+
+            @Override
+            public void share() {
+                final String query = getSelectedText();
+                if (TextUtils.isEmpty(query)) return;
+
+                Intent send = new Intent(Intent.ACTION_SEND);
+                send.setType("text/plain");
+                send.putExtra(Intent.EXTRA_TEXT, query);
+                try {
+                    Intent i = Intent.createChooser(send, getContext().getString(
+                            R.string.actionbar_share));
+                    i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    getContext().startActivity(i);
+                } catch (android.content.ActivityNotFoundException ex) {
+                    // If no app handles it, do nothing.
+                }
+            }
+
+            @Override
+            public void search() {
+                final String query = getSelectedText();
+                if (TextUtils.isEmpty(query)) return;
+
+                // See if ContentViewClient wants to override
+                if (getContentViewClient().doesPerformWebSearch()) {
+                    getContentViewClient().performWebSearch(query);
+                    return;
+                }
+
+                Intent i = new Intent(Intent.ACTION_WEB_SEARCH);
+                i.putExtra(SearchManager.EXTRA_NEW_SEARCH, true);
+                i.putExtra(SearchManager.QUERY, query);
+                i.putExtra(Browser.EXTRA_APPLICATION_ID, getContext().getPackageName());
+                if (!(getContext() instanceof Activity)) {
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                }
+                try {
+                    getContext().startActivity(i);
+                } catch (android.content.ActivityNotFoundException ex) {
+                    // If no app handles it, do nothing.
+                }
             }
 
             @Override
@@ -2138,15 +2203,27 @@ import java.util.Map;
             }
 
             @Override
-            public String getSelectedText() {
-                return ContentViewCore.this.getSelectedText();
-            }
-
-            @Override
             public void onDestroyActionMode() {
                 mActionMode = null;
                 if (mUnselectAllOnActionModeDismiss) mImeAdapter.unselect();
                 getContentViewClient().onContextualActionBarHidden();
+            }
+
+            @Override
+            public boolean isShareAvailable() {
+                Intent intent = new Intent(Intent.ACTION_SEND);
+                intent.setType("text/plain");
+                return getContext().getPackageManager().queryIntentActivities(intent,
+                        PackageManager.MATCH_DEFAULT_ONLY).size() > 0;
+            }
+
+            @Override
+            public boolean isWebSearchAvailable() {
+                if (getContentViewClient().doesPerformWebSearch()) return true;
+                Intent intent = new Intent(Intent.ACTION_WEB_SEARCH);
+                intent.putExtra(SearchManager.EXTRA_NEW_SEARCH, true);
+                return getContext().getPackageManager().queryIntentActivities(intent,
+                        PackageManager.MATCH_DEFAULT_ONLY).size() > 0;
             }
         };
         mActionMode = null;
@@ -2415,9 +2492,18 @@ import java.util.Map;
 
     @SuppressWarnings("unused")
     @CalledByNative
-    private SmoothScroller createSmoothScroller(boolean scrollDown, int mouseEventX,
-            int mouseEventY) {
-        return new SmoothScroller(this, scrollDown, mouseEventX, mouseEventY);
+    private GenericTouchGesture createOnePointTouchGesture(int startX,
+            int startY, int deltaX, int deltaY) {
+        return new GenericTouchGesture(this, startX, startY, deltaX, deltaY);
+    }
+
+    @SuppressWarnings("unused")
+    @CalledByNative
+    private GenericTouchGesture createTwoPointTouchGesture(
+            int startX0, int startY0, int deltaX0, int deltaY0,
+            int startX1, int startY1, int deltaX1, int deltaY1) {
+        return new GenericTouchGesture(this, startX0, startY0, deltaX0, deltaY0,
+                startX1, startY1, deltaX1, deltaY1);
     }
 
     @SuppressWarnings("unused")
@@ -2514,13 +2600,13 @@ import java.util.Map;
     private void onRenderProcessSwap(int oldPid, int newPid) {
         assert mPid == oldPid || mPid == newPid;
         if (mAttachedToWindow && oldPid != newPid) {
-            ChildProcessLauncher.unbindAsHighPriority(oldPid);
-            ChildProcessLauncher.bindAsHighPriority(newPid);
+            ChildProcessLauncher.getBindingManager().unbindAsHighPriority(oldPid);
+            ChildProcessLauncher.getBindingManager().bindAsHighPriority(newPid);
         }
 
         // We want to remove the initial binding even if the ContentView is not attached, so that
         // renderers for ContentViews loading in background do not retain the high priority.
-        ChildProcessLauncher.removeInitialBinding(newPid);
+        ChildProcessLauncher.getBindingManager().removeInitialBinding(newPid);
         mPid = newPid;
     }
 
@@ -2948,7 +3034,7 @@ import java.util.Map;
      * Inform WebKit that Fullscreen mode has been exited by the user.
      */
     public void exitFullscreen() {
-        nativeExitFullscreen(mNativeContentViewCore);
+        if (mNativeContentViewCore != 0) nativeExitFullscreen(mNativeContentViewCore);
     }
 
     /**
@@ -2960,7 +3046,10 @@ import java.util.Map;
      */
     public void updateTopControlsState(boolean enableHiding, boolean enableShowing,
             boolean animate) {
-        nativeUpdateTopControlsState(mNativeContentViewCore, enableHiding, enableShowing, animate);
+        if (mNativeContentViewCore != 0) {
+            nativeUpdateTopControlsState(
+                    mNativeContentViewCore, enableHiding, enableShowing, animate);
+        }
     }
 
     /**
@@ -3114,7 +3203,7 @@ import java.util.Map;
 
     private native void nativeScrollBy(
             int nativeContentViewCoreImpl, long timeMs, float x, float y,
-            float deltaX, float deltaY, boolean lastInputEventForVSync);
+            float deltaX, float deltaY);
 
     private native void nativeFlingStart(
             int nativeContentViewCoreImpl, long timeMs, float x, float y, float vx, float vy);
@@ -3148,7 +3237,7 @@ import java.util.Map;
     private native void nativePinchEnd(int nativeContentViewCoreImpl, long timeMs);
 
     private native void nativePinchBy(int nativeContentViewCoreImpl, long timeMs,
-            float anchorX, float anchorY, float deltaScale, boolean lastInputEventForVSync);
+            float anchorX, float anchorY, float deltaScale);
 
     private native void nativeSelectBetweenCoordinates(
             int nativeContentViewCoreImpl, float x1, float y1, float x2, float y2);
@@ -3162,6 +3251,8 @@ import java.util.Map;
     private native void nativeGoForward(int nativeContentViewCoreImpl);
     private native void nativeGoToOffset(int nativeContentViewCoreImpl, int offset);
     private native void nativeGoToNavigationIndex(int nativeContentViewCoreImpl, int index);
+    private native void nativeLoadIfNecessary(int nativeContentViewCoreImpl);
+    private native void nativeRequestRestoreLoad(int nativeContentViewCoreImpl);
 
     private native void nativeStopLoading(int nativeContentViewCoreImpl);
 

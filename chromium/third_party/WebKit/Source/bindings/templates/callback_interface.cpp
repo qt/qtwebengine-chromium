@@ -43,7 +43,7 @@ namespace WebCore {
 
 {{v8_class_name}}::{{v8_class_name}}(v8::Handle<v8::Object> callback, ScriptExecutionContext* context)
     : ActiveDOMCallback(context)
-    , m_callback(callback)
+    , m_callback(toIsolate(context), callback)
     , m_world(DOMWrapperWorld::current())
 {
 }
@@ -54,7 +54,7 @@ namespace WebCore {
 
 {% for method in methods %}
 {% if not method.custom %}
-{{method.return_cpp_type}} {{v8_class_name}}::{{method.name}}({{method.argument_declaration}})
+{{method.return_cpp_type}} {{v8_class_name}}::{{method.name}}({{method.argument_declarations | join(', ')}})
 {
     if (!canInvokeCallback())
         return true;
@@ -69,21 +69,21 @@ namespace WebCore {
     v8::Context::Scope scope(v8Context);
 
 {% for argument in method.arguments %}
-    {{argument.cpp_to_js_conversion | indent(4)}}
+    {{argument.cpp_to_v8_conversion | indent}}
     if ({{argument.name}}Handle.IsEmpty()) {
         if (!isScriptControllerTerminating())
             CRASH();
         return true;
     }
 {% endfor %}
-{% if method.arguments | length > 0 %}
-    v8::Handle<v8::Value> argv[] = { {{method.handles}} };
+{% if method.arguments %}
+    v8::Handle<v8::Value> argv[] = { {{method.handles | join(', ')}} };
 {% else %}
     v8::Handle<v8::Value> *argv = 0;
 {% endif %}
 
     bool callbackReturnValue = false;
-    return !invokeCallback(m_callback.newLocal(isolate), {{method.arguments | length}}, argv, callbackReturnValue, scriptExecutionContext());
+    return !invokeCallback(m_callback.newLocal(isolate), {{method.arguments | length}}, argv, callbackReturnValue, scriptExecutionContext(), isolate);
 }
 
 {% endif %}

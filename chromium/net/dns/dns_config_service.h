@@ -59,6 +59,10 @@ struct NET_EXPORT_PRIVATE DnsConfig {
 
   DnsHosts hosts;
 
+  // True if there are options set in the system configuration that are not yet
+  // supported by DnsClient.
+  bool unhandled_options;
+
   // AppendToMultiLabelName: is suffix search performed for multi-label names?
   // True, except on Windows where it can be configured.
   bool append_to_multi_label_name;
@@ -79,6 +83,11 @@ struct NET_EXPORT_PRIVATE DnsConfig {
   bool rotate;
   // Enable EDNS0 extensions.
   bool edns0;
+
+  // Indicates system configuration uses local IPv6 connectivity, e.g.,
+  // DirectAccess. This is exposed for HostResolver to skip IPv6 probes,
+  // as it may cause them to return incorrect results.
+  bool use_local_ipv6;
 };
 
 

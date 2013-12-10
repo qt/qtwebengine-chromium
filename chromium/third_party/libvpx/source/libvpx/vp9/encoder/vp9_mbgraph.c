@@ -15,6 +15,7 @@
 #include <vp9/encoder/vp9_rdopt.h>
 #include <vp9/common/vp9_blockd.h>
 #include <vp9/common/vp9_reconinter.h>
+#include <vp9/common/vp9_reconintra.h>
 #include <vp9/common/vp9_systemdependent.h>
 #include <vp9/encoder/vp9_segmentation.h>
 
@@ -35,17 +36,19 @@ static unsigned int do_16x16_motion_iteration(VP9_COMP *cpi,
   int_mv ref_full;
 
   // Further step/diamond searches as necessary
-  int step_param = cpi->sf.first_step +
+  int step_param = cpi->sf.reduce_first_step_size +
       (cpi->speed < 8 ? (cpi->speed > 5 ? 1 : 0) : 2);
+  step_param = MIN(step_param, (cpi->sf.max_step_search_steps - 2));
 
-  vp9_clamp_mv_min_max(x, ref_mv);
+  vp9_clamp_mv_min_max(x, &ref_mv->as_mv);
 
   ref_full.as_mv.col = ref_mv->as_mv.col >> 3;
   ref_full.as_mv.row = ref_mv->as_mv.row >> 3;
 
   /*cpi->sf.search_method == HEX*/
-  best_err = vp9_hex_search(x, &ref_full, dst_mv, step_param, x->errorperbit,
-                            &v_fn_ptr, NULL, NULL, NULL, NULL, ref_mv);
+  best_err = vp9_hex_search(x, &ref_full, step_param, x->errorperbit,
+                            0, &v_fn_ptr,
+                            0, ref_mv, dst_mv);
 
   // Try sub-pixel MC
   // if (bestsme > error_thresh && bestsme < INT_MAX)
@@ -56,12 +59,12 @@ static unsigned int do_16x16_motion_iteration(VP9_COMP *cpi,
         x,
         dst_mv, ref_mv,
         x->errorperbit, &v_fn_ptr,
-        NULL, NULL,
+        0, cpi->sf.subpel_iters_per_step, NULL, NULL,
         & distortion, &sse);
   }
 
   vp9_set_mbmode_and_mvs(x, NEWMV, dst_mv);
-  vp9_build_inter_predictors_sby(xd, mb_row, mb_col, BLOCK_SIZE_MB16X16);
+  vp9_build_inter_predictors_sby(xd, mb_row, mb_col, BLOCK_16X16);
   best_err = vp9_sad16x16(x->plane[0].src.buf, x->plane[0].src.stride,
                           xd->plane[0].dst.buf, xd->plane[0].dst.stride,
                           INT_MAX);
@@ -75,9 +78,7 @@ static unsigned int do_16x16_motion_iteration(VP9_COMP *cpi,
   return best_err;
 }
 
-static int do_16x16_motion_search(VP9_COMP *cpi,
-                                  int_mv *ref_mv, int_mv *dst_mv,
-                                  int buf_mb_y_offset, int mb_y_offset,
+static int do_16x16_motion_search(VP9_COMP *cpi, int_mv *ref_mv, int_mv *dst_mv,
                                   int mb_row, int mb_col) {
   MACROBLOCK *const x = &cpi->mb;
   MACROBLOCKD *const xd = &x->e_mbd;
@@ -116,9 +117,7 @@ static int do_16x16_motion_search(VP9_COMP *cpi,
   return err;
 }
 
-static int do_16x16_zerozero_search(VP9_COMP *cpi,
-                                    int_mv *dst_mv,
-                                    int buf_mb_y_offset, int mb_y_offset) {
+static int do_16x16_zerozero_search(VP9_COMP *cpi, int_mv *dst_mv) {
   MACROBLOCK *const x = &cpi->mb;
   MACROBLOCKD *const xd = &x->e_mbd;
   unsigned int err;
@@ -145,16 +144,11 @@ static int find_best_16x16_intra(VP9_COMP *cpi,
   // we're intentionally not doing 4x4, we just want a rough estimate
   for (mode = DC_PRED; mode <= TM_PRED; mode++) {
     unsigned int err;
-    const int bwl = b_width_log2(BLOCK_SIZE_MB16X16),  bw = 4 << bwl;
-    const int bhl = b_height_log2(BLOCK_SIZE_MB16X16), bh = 4 << bhl;
 
-    xd->mode_info_context->mbmi.mode = mode;
-    vp9_build_intra_predictors(x->plane[0].src.buf, x->plane[0].src.stride,
-                               xd->plane[0].dst.buf, xd->plane[0].dst.stride,
-                               xd->mode_info_context->mbmi.mode,
-                               bw, bh,
-                               xd->up_available, xd->left_available,
-                               xd->right_available);
+    xd->this_mi->mbmi.mode = mode;
+    vp9_predict_intra_block(xd, 0, 2, TX_16X16, mode,
+                            x->plane[0].src.buf, x->plane[0].src.stride,
+                            xd->plane[0].dst.buf, xd->plane[0].dst.stride);
     err = vp9_sad16x16(x->plane[0].src.buf, x->plane[0].src.stride,
                        xd->plane[0].dst.buf, xd->plane[0].dst.stride, best_err);
 
@@ -213,7 +207,6 @@ static void update_mbgraph_mb_stats
     g_motion_error = do_16x16_motion_search(cpi,
                                             prev_golden_ref_mv,
                                             &stats->ref[GOLDEN_FRAME].m.mv,
-                                            mb_y_offset, gld_y_offset,
                                             mb_row, mb_col);
     stats->ref[GOLDEN_FRAME].err = g_motion_error;
   } else {
@@ -227,8 +220,7 @@ static void update_mbgraph_mb_stats
     xd->plane[0].pre[0].buf = alt_ref->y_buffer + mb_y_offset;
     xd->plane[0].pre[0].stride = alt_ref->y_stride;
     a_motion_error = do_16x16_zerozero_search(cpi,
-                                              &stats->ref[ALTREF_FRAME].m.mv,
-                                              mb_y_offset, arf_y_offset);
+                                              &stats->ref[ALTREF_FRAME].m.mv);
 
     stats->ref[ALTREF_FRAME].err = a_motion_error;
   } else {
@@ -249,10 +241,7 @@ static void update_mbgraph_frame_stats(VP9_COMP *cpi,
   int mb_col, mb_row, offset = 0;
   int mb_y_offset = 0, arf_y_offset = 0, gld_y_offset = 0;
   int_mv arf_top_mv, gld_top_mv;
-  MODE_INFO mi_local;
-
-  // Make sure the mi context starts in a consistent state.
-  memset(&mi_local, 0, sizeof(mi_local));
+  MODE_INFO mi_local = { { 0 } };
 
   // Set up limit values for motion vectors to prevent them extending outside the UMV borders
   arf_top_mv.as_int = 0;
@@ -264,8 +253,8 @@ static void update_mbgraph_frame_stats(VP9_COMP *cpi,
   xd->plane[0].dst.stride  = buf->y_stride;
   xd->plane[0].pre[0].stride  = buf->y_stride;
   xd->plane[1].dst.stride = buf->uv_stride;
-  xd->mode_info_context = &mi_local;
-  mi_local.mbmi.sb_type = BLOCK_SIZE_MB16X16;
+  xd->this_mi = &mi_local;
+  mi_local.mbmi.sb_type = BLOCK_16X16;
   mi_local.mbmi.ref_frame[0] = LAST_FRAME;
   mi_local.mbmi.ref_frame[1] = NONE;
 
@@ -318,13 +307,14 @@ static void update_mbgraph_frame_stats(VP9_COMP *cpi,
 static void separate_arf_mbs(VP9_COMP *cpi) {
   VP9_COMMON *const cm = &cpi->common;
   int mb_col, mb_row, offset, i;
-  int ncnt[4];
+  int ncnt[4] = { 0 };
   int n_frames = cpi->mbgraph_n_frames;
 
   int *arf_not_zz;
 
-  CHECK_MEM_ERROR(arf_not_zz,
-                  vpx_calloc(cm->mb_rows * cm->mb_cols * sizeof(*arf_not_zz), 1));
+  CHECK_MEM_ERROR(cm, arf_not_zz,
+                  vpx_calloc(cm->mb_rows * cm->mb_cols * sizeof(*arf_not_zz),
+                             1));
 
   // We are not interested in results beyond the alt ref itself.
   if (n_frames > cpi->frames_till_gf_update_due)
@@ -353,7 +343,6 @@ static void separate_arf_mbs(VP9_COMP *cpi) {
     }
   }
 
-  vpx_memset(ncnt, 0, sizeof(ncnt));
   for (offset = 0, mb_row = 0; mb_row < cm->mb_rows;
        offset += cm->mb_cols, mb_row++) {
     for (mb_col = 0; mb_col < cm->mb_cols; mb_col++) {
@@ -408,8 +397,8 @@ void vp9_update_mbgraph_stats(VP9_COMP *cpi) {
   // being a GF - so exit if we don't look ahead beyond that
   if (n_frames <= cpi->frames_till_gf_update_due)
     return;
-  if (n_frames > (int)cpi->common.frames_till_alt_ref_frame)
-    n_frames = cpi->common.frames_till_alt_ref_frame;
+  if (n_frames > (int)cpi->frames_till_alt_ref_frame)
+    n_frames = cpi->frames_till_alt_ref_frame;
   if (n_frames > MAX_LAG_BUFFERS)
     n_frames = MAX_LAG_BUFFERS;
 

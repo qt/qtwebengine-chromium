@@ -38,7 +38,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-BreakBlockquoteCommand::BreakBlockquoteCommand(Document *document)
+BreakBlockquoteCommand::BreakBlockquoteCommand(Document& document)
     : CompositeEditCommand(document)
 {
 }

@@ -30,8 +30,8 @@
 #include "core/inspector/NetworkResourcesData.h"
 
 #include "core/dom/DOMImplementation.h"
-#include "core/loader/TextResourceDecoder.h"
-#include "core/loader/cache/Resource.h"
+#include "core/fetch/Resource.h"
+#include "core/fetch/TextResourceDecoder.h"
 #include "core/platform/SharedBuffer.h"
 #include "core/platform/network/ResourceResponse.h"
 
@@ -308,6 +308,14 @@ void NetworkResourcesData::reuseXHRReplayData(const String& requestId, const Str
     }
 
     resourceData->setXHRReplayData(reusedResourceData->xhrReplayData());
+}
+
+Vector<NetworkResourcesData::ResourceData*> NetworkResourcesData::resources()
+{
+    Vector<ResourceData*> result;
+    for (ResourceDataMap::iterator it = m_requestIdToResourceDataMap.begin(); it != m_requestIdToResourceDataMap.end(); ++it)
+        result.append(it->value);
+    return result;
 }
 
 Vector<String> NetworkResourcesData::removeResource(Resource* cachedResource)

@@ -34,8 +34,8 @@
 #include "FetchInitiatorTypeNames.h"
 #include "core/css/CSSParser.h"
 #include "core/dom/Document.h"
-#include "core/loader/cache/FetchRequest.h"
-#include "core/loader/cache/ResourceFetcher.h"
+#include "core/fetch/FetchRequest.h"
+#include "core/fetch/ResourceFetcher.h"
 #include "core/rendering/style/StyleFetchedShader.h"
 #include "core/rendering/style/StylePendingShader.h"
 #include "wtf/text/StringBuilder.h"
@@ -66,7 +66,7 @@ StyleFetchedShader* CSSShaderValue::resource(ResourceFetcher* loader)
         m_accessedShader = true;
 
         FetchRequest request(ResourceRequest(completeURL(loader)), FetchInitiatorTypeNames::css);
-        if (ResourcePtr<ShaderResource> resource = loader->requestShader(request))
+        if (ResourcePtr<ShaderResource> resource = loader->fetchShader(request))
             m_shader = StyleFetchedShader::create(resource.get());
     }
 

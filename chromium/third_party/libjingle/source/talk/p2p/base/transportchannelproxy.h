@@ -63,12 +63,16 @@ class TransportChannelProxy : public TransportChannel,
 
   // Implementation of the TransportChannel interface.  These simply forward to
   // the implementation.
-  virtual int SendPacket(const char* data, size_t len, int flags);
+  virtual int SendPacket(const char* data, size_t len,
+                         talk_base::DiffServCodePoint dscp,
+                         int flags);
   virtual int SetOption(talk_base::Socket::Option opt, int value);
   virtual int GetError();
   virtual IceRole GetIceRole() const;
   virtual bool GetStats(ConnectionInfos* infos);
   virtual bool IsDtlsActive() const;
+  virtual bool GetSslRole(talk_base::SSLRole* role) const;
+  virtual bool SetSslRole(talk_base::SSLRole role);
   virtual bool SetSrtpCiphers(const std::vector<std::string>& ciphers);
   virtual bool GetSrtpCipher(std::string* cipher);
   virtual bool ExportKeyingMaterial(const std::string& label,

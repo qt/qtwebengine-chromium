@@ -348,11 +348,10 @@ WARN_UNUSED_RESULT static bool GetMaxObjectStoreId(
 
 class DefaultLevelDBFactory : public LevelDBFactory {
  public:
-  virtual leveldb::Status OpenLevelDB(
-      const base::FilePath& file_name,
-      const LevelDBComparator* comparator,
-      scoped_ptr<LevelDBDatabase>* db,
-      bool* is_disk_full) OVERRIDE {
+  virtual leveldb::Status OpenLevelDB(const base::FilePath& file_name,
+                                      const LevelDBComparator* comparator,
+                                      scoped_ptr<LevelDBDatabase>* db,
+                                      bool* is_disk_full) OVERRIDE {
     return LevelDBDatabase::Open(file_name, comparator, db, is_disk_full);
   }
   virtual bool DestroyLevelDB(const base::FilePath& file_name) OVERRIDE {
@@ -406,6 +405,7 @@ enum IndexedDBLevelDBBackingStoreOpenResult {
   INDEXED_DB_LEVEL_DB_BACKING_STORE_OPEN_MAX,
 };
 
+// TODO(dgrogan): Move to leveldb_env.
 bool RecoveryCouldBeFruitful(leveldb::Status status) {
   leveldb_env::MethodID method;
   int error = -1;
@@ -445,13 +445,15 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
     const std::string& origin_identifier,
     const base::FilePath& path_base,
     const std::string& file_identifier,
-    WebKit::WebIDBCallbacks::DataLoss* data_loss) {
+    WebKit::WebIDBCallbacks::DataLoss* data_loss,
+    bool* disk_full) {
   *data_loss = WebKit::WebIDBCallbacks::DataLossNone;
   DefaultLevelDBFactory leveldb_factory;
   return IndexedDBBackingStore::Open(origin_identifier,
                                      path_base,
                                      file_identifier,
                                      data_loss,
+                                     disk_full,
                                      &leveldb_factory);
 }
 
@@ -460,10 +462,12 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
     const base::FilePath& path_base,
     const std::string& file_identifier,
     WebKit::WebIDBCallbacks::DataLoss* data_loss,
+    bool* is_disk_full,
     LevelDBFactory* leveldb_factory) {
   IDB_TRACE("IndexedDBBackingStore::Open");
   DCHECK(!path_base.empty());
   *data_loss = WebKit::WebIDBCallbacks::DataLossNone;
+  *is_disk_full = false;
 
   scoped_ptr<LevelDBComparator> comparator(new Comparator());
 
@@ -529,10 +533,14 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
 
   base::FilePath file_path = path_base.Append(identifier_path);
 
-  bool is_disk_full = false;
   scoped_ptr<LevelDBDatabase> db;
   leveldb::Status status = leveldb_factory->OpenLevelDB(
-      file_path, comparator.get(), &db, &is_disk_full);
+      file_path, comparator.get(), &db, is_disk_full);
+
+  if (!status.ok() && leveldb_env::IndicatesDiskFull(status)) {
+    DCHECK(!db);
+    *is_disk_full = true;
+  }
 
   if (db) {
     bool known = false;
@@ -569,15 +577,6 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
                                 INDEXED_DB_LEVEL_DB_BACKING_STORE_OPEN_MAX + 1,
                                 base::HistogramBase::kUmaTargetedHistogramFlag)
         ->Add(INDEXED_DB_LEVEL_DB_BACKING_STORE_OPEN_SUCCESS);
-  } else if (is_disk_full) {
-    LOG(ERROR) << "Unable to open backing store - disk is full.";
-    base::Histogram::FactoryGet("WebCore.IndexedDB.BackingStore.OpenStatus",
-                                1,
-                                INDEXED_DB_LEVEL_DB_BACKING_STORE_OPEN_MAX,
-                                INDEXED_DB_LEVEL_DB_BACKING_STORE_OPEN_MAX + 1,
-                                base::HistogramBase::kUmaTargetedHistogramFlag)
-        ->Add(INDEXED_DB_LEVEL_DB_BACKING_STORE_OPEN_DISK_FULL);
-    return scoped_refptr<IndexedDBBackingStore>();
   } else if (!RecoveryCouldBeFruitful(status)) {
     LOG(ERROR) << "Unable to open backing store, not trying to recover - "
                << status.ToString();
@@ -587,6 +586,15 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
                                 INDEXED_DB_LEVEL_DB_BACKING_STORE_OPEN_MAX + 1,
                                 base::HistogramBase::kUmaTargetedHistogramFlag)
         ->Add(INDEXED_DB_LEVEL_DB_BACKING_STORE_OPEN_NO_RECOVERY);
+    return scoped_refptr<IndexedDBBackingStore>();
+  } else if (*is_disk_full) {
+    LOG(ERROR) << "Unable to open backing store - disk is full.";
+    base::Histogram::FactoryGet("WebCore.IndexedDB.BackingStore.OpenStatus",
+                                1,
+                                INDEXED_DB_LEVEL_DB_BACKING_STORE_OPEN_MAX,
+                                INDEXED_DB_LEVEL_DB_BACKING_STORE_OPEN_MAX + 1,
+                                base::HistogramBase::kUmaTargetedHistogramFlag)
+        ->Add(INDEXED_DB_LEVEL_DB_BACKING_STORE_OPEN_DISK_FULL);
     return scoped_refptr<IndexedDBBackingStore>();
   } else {
     LOG(ERROR) << "IndexedDB backing store open failed, attempting cleanup";
@@ -968,10 +976,10 @@ bool IndexedDBBackingStore::GetObjectStores(
 
     it->Next();
     if (!CheckObjectStoreAndMetaDataType(
-            it.get(),
-            stop_key,
-            object_store_id,
-            ObjectStoreMetaDataKey::AUTO_INCREMENT)) {
+             it.get(),
+             stop_key,
+             object_store_id,
+             ObjectStoreMetaDataKey::AUTO_INCREMENT)) {
       INTERNAL_CONSISTENCY_ERROR(GET_OBJECT_STORES);
       break;
     }
@@ -993,20 +1001,20 @@ bool IndexedDBBackingStore::GetObjectStores(
 
     it->Next();  // Last version.
     if (!CheckObjectStoreAndMetaDataType(
-            it.get(),
-            stop_key,
-            object_store_id,
-            ObjectStoreMetaDataKey::LAST_VERSION)) {
+             it.get(),
+             stop_key,
+             object_store_id,
+             ObjectStoreMetaDataKey::LAST_VERSION)) {
       INTERNAL_CONSISTENCY_ERROR(GET_OBJECT_STORES);
       break;
     }
 
     it->Next();  // Maximum index id allocated.
     if (!CheckObjectStoreAndMetaDataType(
-            it.get(),
-            stop_key,
-            object_store_id,
-            ObjectStoreMetaDataKey::MAX_INDEX_ID)) {
+             it.get(),
+             stop_key,
+             object_store_id,
+             ObjectStoreMetaDataKey::MAX_INDEX_ID)) {
       INTERNAL_CONSISTENCY_ERROR(GET_OBJECT_STORES);
       break;
     }
@@ -1542,7 +1550,7 @@ bool IndexedDBBackingStore::GetIndexes(
 
     it->Next();  // unique flag
     if (!CheckIndexAndMetaDataKey(
-            it.get(), stop_key, index_id, IndexMetaDataKey::UNIQUE)) {
+             it.get(), stop_key, index_id, IndexMetaDataKey::UNIQUE)) {
       INTERNAL_CONSISTENCY_ERROR(GET_INDEXES);
       break;
     }
@@ -1555,7 +1563,7 @@ bool IndexedDBBackingStore::GetIndexes(
 
     it->Next();  // key_path
     if (!CheckIndexAndMetaDataKey(
-            it.get(), stop_key, index_id, IndexMetaDataKey::KEY_PATH)) {
+             it.get(), stop_key, index_id, IndexMetaDataKey::KEY_PATH)) {
       INTERNAL_CONSISTENCY_ERROR(GET_INDEXES);
       break;
     }
@@ -1623,7 +1631,7 @@ bool IndexedDBBackingStore::CreateIndex(
   LevelDBTransaction* leveldb_transaction =
       IndexedDBBackingStore::Transaction::LevelDBTransactionFrom(transaction);
   if (!SetMaxIndexId(
-          leveldb_transaction, database_id, object_store_id, index_id))
+           leveldb_transaction, database_id, object_store_id, index_id))
     return false;
 
   const std::string name_key = IndexMetaDataKey::Encode(
@@ -2402,8 +2410,9 @@ bool ObjectStoreCursorOptions(
       cursor_options->high_open = true;  // Not included.
     } else {
       // We need a key that exists.
-      if (!FindGreatestKeyLessThanOrEqual(
-              transaction, cursor_options->high_key, &cursor_options->high_key))
+      if (!FindGreatestKeyLessThanOrEqual(transaction,
+                                          cursor_options->high_key,
+                                          &cursor_options->high_key))
         return false;
       cursor_options->high_open = false;
     }
@@ -2416,7 +2425,7 @@ bool ObjectStoreCursorOptions(
       // For reverse cursors, we need a key that exists.
       std::string found_high_key;
       if (!FindGreatestKeyLessThanOrEqual(
-              transaction, cursor_options->high_key, &found_high_key))
+               transaction, cursor_options->high_key, &found_high_key))
         return false;
 
       // If the target key should not be included, but we end up with a smaller
@@ -2472,8 +2481,9 @@ bool IndexCursorOptions(
     cursor_options->high_open = false;  // Included.
 
     if (!cursor_options->forward) {  // We need a key that exists.
-      if (!FindGreatestKeyLessThanOrEqual(
-              transaction, cursor_options->high_key, &cursor_options->high_key))
+      if (!FindGreatestKeyLessThanOrEqual(transaction,
+                                          cursor_options->high_key,
+                                          &cursor_options->high_key))
         return false;
       cursor_options->high_open = false;
     }
@@ -2485,7 +2495,7 @@ bool IndexCursorOptions(
     std::string found_high_key;
     // Seek to the *last* key in the set of non-unique keys
     if (!FindGreatestKeyLessThanOrEqual(
-            transaction, cursor_options->high_key, &found_high_key))
+             transaction, cursor_options->high_key, &found_high_key))
       return false;
 
     // If the target key should not be included, but we end up with a smaller

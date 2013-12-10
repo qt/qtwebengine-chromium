@@ -1,3 +1,7 @@
+# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
 # =============================================================================
 # BUILD FLAGS
 # =============================================================================
@@ -13,14 +17,33 @@
 # Use "is_*" names for intrinsic platform descriptions and build modes, and
 # "use_*" names for optional features libraries, and configurations.
 declare_args() {
-  is_android = 0
-  is_component_build = 1
-  is_chromeos = 0
-  is_debug = 1
-  is_ios = 0
-  use_ash = 0
-  use_aura = 0
-  use_ozone = 0
+  # Set to build the Android version.
+  is_android = false
+  # Component build.
+  is_component_build = true
+  # ChromeOS build.
+  is_chromeos = false
+  # Debug build.
+  is_debug = true
+  # IOS build.
+  is_ios = false
+
+  # Set when building with the "untrusted" Native Client toolchain.
+  #
+  # Do not set directly, this will be set automatically when compiling targets
+  # with a NaCl toolchain.
+  is_nacl = false
+
+  # Set to true when compiling with the Clang compiler. Typically this is used
+  # to configure warnings.
+  is_clang = false
+
+  # ASH is enabled.
+  use_ash = false
+  # Aura is enabled.
+  use_aura = false
+  # Ozone is enabled.
+  use_ozone = false
 }
 
 # =============================================================================
@@ -81,6 +104,8 @@ linux_sources_filters = [
   "*_linux_unittest.h",
   "*_linux_unittest.cc",
   "*\blinux/*",
+  "*_x11.cc",
+  "*_x11.h",
 ]
 android_sources_filters = [
   "*_android.h",
@@ -124,12 +149,6 @@ if (!is_android) {
 set_sources_assignment_filter(sources_assignment_filter)
 
 # =============================================================================
-# SYSTEM CONFIG
-# =============================================================================
-
-is_nacl = 0
-
-# =============================================================================
 # BUILD OPTIONS
 # =============================================================================
 
@@ -138,6 +157,8 @@ if (is_component_build) {
 } else {
   component_mode = "static_library"
 }
+
+toolkit_uses_gtk = is_linux
 
 # =============================================================================
 # TARGET DEFAULTS
@@ -177,6 +198,8 @@ set_defaults("executable") {
   configs = native_compiler_configs
   if (is_mac) {
     configs += "//build/config/mac:mac_dynamic_flags"
+  } else if (is_linux) {
+    configs += "//build/config/linux:executable_ldconfig"
   }
 }
 
@@ -196,7 +219,9 @@ set_defaults("shared_library") {
 # ==============================================================================
 
 if (is_win) {
-  set_default_toolchain("//build/config/win:32")
+  set_default_toolchain("//build/toolchain/win:32")
+} else if (is_linux) {
+  set_default_toolchain("//build/toolchain/linux:gcc")
 } else if (is_mac) {
-  set_default_toolchain("//build/config/mac:clang")
+  set_default_toolchain("//build/toolchain/mac:clang")
 }

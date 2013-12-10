@@ -29,7 +29,7 @@
 #include "core/dom/Event.h"
 #include "core/html/HTMLFormControlElementWithState.h"
 #include "core/html/HTMLOptionsCollection.h"
-#include "core/html/TypeAhead.h"
+#include "core/html/forms/TypeAhead.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
@@ -39,8 +39,8 @@ class HTMLOptionElement;
 
 class HTMLSelectElement FINAL : public HTMLFormControlElementWithState, public TypeAheadDataSource {
 public:
-    static PassRefPtr<HTMLSelectElement> create(Document*);
-    static PassRefPtr<HTMLSelectElement> create(const QualifiedName&, Document*, HTMLFormElement*, bool createdByParser);
+    static PassRefPtr<HTMLSelectElement> create(Document&);
+    static PassRefPtr<HTMLSelectElement> create(const QualifiedName&, Document&, HTMLFormElement*, bool createdByParser);
 
     int selectedIndex() const;
     void setSelectedIndex(int);
@@ -61,6 +61,8 @@ public:
     bool usesMenuList() const;
 
     void add(HTMLElement*, HTMLElement* beforeElement, ExceptionState&);
+
+    using Node::remove;
     void remove(int index);
     void remove(HTMLOptionElement*);
 
@@ -113,7 +115,7 @@ public:
     bool anonymousIndexedSetterRemove(unsigned, ExceptionState&);
 
 protected:
-    HTMLSelectElement(const QualifiedName&, Document*, HTMLFormElement*, bool createdByParser);
+    HTMLSelectElement(const QualifiedName&, Document&, HTMLFormElement*, bool createdByParser);
 
 private:
     virtual const AtomicString& formControlType() const;
@@ -126,6 +128,7 @@ private:
     virtual bool canStartSelection() const { return false; }
 
     virtual bool isEnumeratable() const { return true; }
+    virtual bool isInteractiveContent() const OVERRIDE;
     virtual bool supportLabels() const OVERRIDE { return true; }
 
     virtual FormControlState saveFormControlState() const OVERRIDE;
@@ -134,7 +137,7 @@ private:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
 
-    virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const OVERRIDE;
+    virtual bool childShouldCreateRenderer(const Node& child) const OVERRIDE;
     virtual RenderObject* createRenderer(RenderStyle *);
     virtual bool appendFormData(FormDataList&, bool);
 

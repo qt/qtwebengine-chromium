@@ -35,8 +35,8 @@ class HTMLImageLoader;
 
 class HTMLVideoElement FINAL : public HTMLMediaElement {
 public:
-    static PassRefPtr<HTMLVideoElement> create(Document* document) { return create(HTMLNames::videoTag, document, false); }
-    static PassRefPtr<HTMLVideoElement> create(const QualifiedName&, Document*, bool);
+    static PassRefPtr<HTMLVideoElement> create(Document& document) { return create(HTMLNames::videoTag, document, false); }
+    static PassRefPtr<HTMLVideoElement> create(const QualifiedName&, Document&, bool);
 
     unsigned width() const;
     unsigned height() const;
@@ -71,9 +71,9 @@ public:
     KURL posterImageURL() const;
 
 private:
-    HTMLVideoElement(const QualifiedName&, Document*, bool);
+    HTMLVideoElement(const QualifiedName&, Document&, bool);
 
-    virtual bool rendererIsNeeded(const NodeRenderingContext&);
+    virtual bool rendererIsNeeded(const RenderStyle&);
     virtual RenderObject* createRenderer(RenderStyle*);
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
@@ -83,7 +83,7 @@ private:
     virtual bool hasVideo() const { return player() && player()->hasVideo(); }
     virtual bool supportsFullscreen() const;
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
-    virtual const AtomicString& imageSourceURL() const OVERRIDE;
+    virtual const AtomicString imageSourceURL() const OVERRIDE;
 
     virtual bool hasAvailableVideoFrame() const;
     virtual void updateDisplayState();

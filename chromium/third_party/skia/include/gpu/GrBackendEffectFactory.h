@@ -11,7 +11,7 @@
 #include "GrTypes.h"
 #include "SkTemplates.h"
 #include "SkThread_platform.h"
-#include "GrNoncopyable.h"
+#include "SkTypes.h"
 
 /** Given a GrEffect of a particular type, creates the corresponding graphics-backend-specific
     effect object. Also tracks equivalence of shaders generated via a key. Each factory instance
@@ -28,7 +28,7 @@ class GrGLEffect;
 class GrGLCaps;
 class GrDrawEffect;
 
-class GrBackendEffectFactory : public GrNoncopyable {
+class GrBackendEffectFactory : public SkNoncopyable {
 public:
     typedef uint32_t EffectKey;
     enum {
@@ -67,13 +67,13 @@ protected:
     virtual ~GrBackendEffectFactory() {}
 
     static EffectKey GenID() {
-        GR_DEBUGCODE(static const int32_t kClassIDBits = 8 * sizeof(EffectKey) -
+        SkDEBUGCODE(static const int32_t kClassIDBits = 8 * sizeof(EffectKey) -
                            kTextureKeyBits - kEffectKeyBits - kAttribKeyBits);
         // fCurrEffectClassID has been initialized to kIllegalEffectClassID. The
         // atomic inc returns the old value not the incremented value. So we add
         // 1 to the returned value.
         int32_t id = sk_atomic_inc(&fCurrEffectClassID) + 1;
-        GrAssert(id < (1 << kClassIDBits));
+        SkASSERT(id < (1 << kClassIDBits));
         return static_cast<EffectKey>(id);
     }
 

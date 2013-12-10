@@ -30,16 +30,17 @@
 #include "CSSPropertyNames.h"
 #include "HTMLNames.h"
 #include "RuntimeEnabledFeatures.h"
+#include "core/fetch/ImageResource.h"
 #include "core/html/HTMLIFrameElement.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/loader/cache/ImageResource.h"
 #include "core/page/Chrome.h"
 #include "core/page/FrameView.h"
 #include "core/page/Settings.h"
 #include "core/page/animation/AnimationController.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
+#include "core/platform/animation/KeyframeValueList.h"
 #include "core/platform/graphics/FontCache.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/GraphicsLayer.h"
@@ -159,9 +160,9 @@ RenderLayerBacking::RenderLayerBacking(RenderLayer* layer)
     , m_backgroundLayerPaintsFixedRootBackground(false)
 {
     if (layer->isRootLayer()) {
-        Frame* frame = toRenderView(renderer())->frameView()->frame();
-        Page* page = frame ? frame->page() : 0;
-        if (page && frame && page->mainFrame() == frame) {
+        Frame& frame = toRenderView(renderer())->frameView()->frame();
+        Page* page = frame.page();
+        if (page && page->mainFrame() == &frame) {
             m_isMainFrameRenderViewLayer = true;
         }
     }
@@ -180,19 +181,13 @@ RenderLayerBacking::~RenderLayerBacking()
     destroyGraphicsLayers();
 }
 
-PassOwnPtr<GraphicsLayer> RenderLayerBacking::createGraphicsLayer(const String& name, CompositingReasons reasons)
+PassOwnPtr<GraphicsLayer> RenderLayerBacking::createGraphicsLayer(CompositingReasons reasons)
 {
     GraphicsLayerFactory* graphicsLayerFactory = 0;
     if (Page* page = renderer()->frame()->page())
-        graphicsLayerFactory = page->chrome().client()->graphicsLayerFactory();
+        graphicsLayerFactory = page->chrome().client().graphicsLayerFactory();
 
     OwnPtr<GraphicsLayer> graphicsLayer = GraphicsLayer::create(graphicsLayerFactory, this);
-
-#ifndef NDEBUG
-    graphicsLayer->setName(name);
-#else
-    UNUSED_PARAM(name);
-#endif
 
     graphicsLayer->setCompositingReasons(reasons);
 
@@ -201,12 +196,7 @@ PassOwnPtr<GraphicsLayer> RenderLayerBacking::createGraphicsLayer(const String& 
 
 void RenderLayerBacking::createPrimaryGraphicsLayer()
 {
-    String layerName;
-#ifndef NDEBUG
-    layerName = m_owningLayer->debugName();
-#endif
-
-    m_graphicsLayer = createGraphicsLayer(layerName, m_owningLayer->compositingReasons());
+    m_graphicsLayer = createGraphicsLayer(m_owningLayer->compositingReasons());
 
 #if !OS(ANDROID)
     if (m_isMainFrameRenderViewLayer)
@@ -429,7 +419,15 @@ bool RenderLayerBacking::updateGraphicsLayerConfiguration()
     if (m_owningLayer->needsCompositedScrolling())
         needsDescendentsClippingLayer = false;
 
-    if (updateClippingLayers(compositor->clippedByAncestor(m_owningLayer), needsDescendentsClippingLayer))
+    RenderLayer* scrollParent = m_owningLayer->scrollParent();
+    bool needsAncestorClip = compositor->clippedByAncestor(m_owningLayer);
+    if (scrollParent) {
+        // If our containing block is our ancestor scrolling layer, then we'll already be clipped
+        // to it via our scroll parent and we don't need an ancestor clipping layer.
+        if (m_owningLayer->renderer()->containingBlock()->enclosingLayer() == m_owningLayer->ancestorScrollingLayer())
+            needsAncestorClip = false;
+    }
+    if (updateClippingLayers(needsAncestorClip, needsDescendentsClippingLayer))
         layerConfigChanged = true;
 
     if (updateOverflowControlsLayers(requiresHorizontalScrollbarLayer(), requiresVerticalScrollbarLayer(), requiresScrollCornerLayer()))
@@ -437,6 +435,9 @@ bool RenderLayerBacking::updateGraphicsLayerConfiguration()
 
     if (updateScrollingLayers(m_owningLayer->needsCompositedScrolling()))
         layerConfigChanged = true;
+
+    updateScrollParent(scrollParent);
+    updateClipParent(m_owningLayer->clipParent());
 
     if (layerConfigChanged)
         updateInternalHierarchy();
@@ -461,7 +462,7 @@ bool RenderLayerBacking::updateGraphicsLayerConfiguration()
         PluginView* pluginView = toPluginView(toRenderWidget(renderer)->widget());
         m_graphicsLayer->setContentsToMedia(pluginView->platformLayer());
     } else if (renderer->isVideo()) {
-        HTMLMediaElement* mediaElement = toMediaElement(renderer->node());
+        HTMLMediaElement* mediaElement = toHTMLMediaElement(renderer->node());
         m_graphicsLayer->setContentsToMedia(mediaElement->platformLayer());
     } else if (isAcceleratedCanvas(renderer)) {
         HTMLCanvasElement* canvas = toHTMLCanvasElement(renderer->node());
@@ -512,7 +513,13 @@ void RenderLayerBacking::updateGraphicsLayerGeometry()
     // m_graphicsLayer is the corresponding GraphicsLayer for this RenderLayer and its non-compositing
     // descendants. So, the visibility flag for m_graphicsLayer should be true if there are any
     // non-compositing visible layers.
-    m_graphicsLayer->setContentsVisible(m_owningLayer->hasVisibleContent() || hasVisibleNonCompositingDescendantLayers());
+    bool contentsVisible = m_owningLayer->hasVisibleContent() || hasVisibleNonCompositingDescendantLayers();
+    if (RuntimeEnabledFeatures::overlayFullscreenVideoEnabled() && renderer()->isVideo()) {
+        HTMLMediaElement* mediaElement = toHTMLMediaElement(renderer()->node());
+        if (mediaElement->isFullscreen())
+            contentsVisible = false;
+    }
+    m_graphicsLayer->setContentsVisible(contentsVisible);
 
     RenderStyle* style = renderer()->style();
     // FIXME: reflections should force transform-style to be flat in the style: https://bugs.webkit.org/show_bug.cgi?id=106959
@@ -826,8 +833,7 @@ void RenderLayerBacking::updateDrawsContent(bool isSimpleContainer)
 
     bool hasPaintedContent = containsPaintedContent(isSimpleContainer);
     if (hasPaintedContent && isAcceleratedCanvas(renderer())) {
-        HTMLCanvasElement* canvas = static_cast<HTMLCanvasElement*>(renderer()->node());
-        CanvasRenderingContext* context = canvas->renderingContext();
+        CanvasRenderingContext* context = toHTMLCanvasElement(renderer()->node())->renderingContext();
         // Content layer may be null if context is lost.
         if (WebKit::WebLayer* contentLayer = context->platformLayer()) {
             Color bgColor;
@@ -855,7 +861,7 @@ bool RenderLayerBacking::updateClippingLayers(bool needsAncestorClip, bool needs
 
     if (needsAncestorClip) {
         if (!m_ancestorClippingLayer) {
-            m_ancestorClippingLayer = createGraphicsLayer("Ancestor clipping Layer", CompositingReasonLayerForClip);
+            m_ancestorClippingLayer = createGraphicsLayer(CompositingReasonLayerForClip);
             m_ancestorClippingLayer->setMasksToBounds(true);
             layersChanged = true;
         }
@@ -869,7 +875,7 @@ bool RenderLayerBacking::updateClippingLayers(bool needsAncestorClip, bool needs
         // We don't need a child containment layer if we're the main frame render view
         // layer. It's redundant as the frame clip above us will handle this clipping.
         if (!m_childContainmentLayer && !m_isMainFrameRenderViewLayer) {
-            m_childContainmentLayer = createGraphicsLayer("Child clipping Layer", CompositingReasonLayerForClip);
+            m_childContainmentLayer = createGraphicsLayer(CompositingReasonLayerForClip);
             m_childContainmentLayer->setMasksToBounds(true);
             layersChanged = true;
         }
@@ -892,7 +898,7 @@ bool RenderLayerBacking::updateOverflowControlsLayers(bool needsHorizontalScroll
     bool horizontalScrollbarLayerChanged = false;
     if (needsHorizontalScrollbarLayer) {
         if (!m_layerForHorizontalScrollbar) {
-            m_layerForHorizontalScrollbar = createGraphicsLayer("horizontal scrollbar", CompositingReasonLayerForScrollbar);
+            m_layerForHorizontalScrollbar = createGraphicsLayer(CompositingReasonLayerForScrollbar);
             horizontalScrollbarLayerChanged = true;
         }
     } else if (m_layerForHorizontalScrollbar) {
@@ -903,7 +909,7 @@ bool RenderLayerBacking::updateOverflowControlsLayers(bool needsHorizontalScroll
     bool verticalScrollbarLayerChanged = false;
     if (needsVerticalScrollbarLayer) {
         if (!m_layerForVerticalScrollbar) {
-            m_layerForVerticalScrollbar = createGraphicsLayer("vertical scrollbar", CompositingReasonLayerForScrollbar);
+            m_layerForVerticalScrollbar = createGraphicsLayer(CompositingReasonLayerForScrollbar);
             verticalScrollbarLayerChanged = true;
         }
     } else if (m_layerForVerticalScrollbar) {
@@ -914,7 +920,7 @@ bool RenderLayerBacking::updateOverflowControlsLayers(bool needsHorizontalScroll
     bool scrollCornerLayerChanged = false;
     if (needsScrollCornerLayer) {
         if (!m_layerForScrollCorner) {
-            m_layerForScrollCorner = createGraphicsLayer("scroll corner", CompositingReasonLayerForScrollbar);
+            m_layerForScrollCorner = createGraphicsLayer(CompositingReasonLayerForScrollbar);
             scrollCornerLayerChanged = true;
         }
     } else if (m_layerForScrollCorner) {
@@ -924,9 +930,9 @@ bool RenderLayerBacking::updateOverflowControlsLayers(bool needsHorizontalScroll
 
     if (ScrollingCoordinator* scrollingCoordinator = scrollingCoordinatorFromLayer(m_owningLayer)) {
         if (horizontalScrollbarLayerChanged)
-            scrollingCoordinator->scrollableAreaScrollbarLayerDidChange(m_owningLayer, HorizontalScrollbar);
+            scrollingCoordinator->scrollableAreaScrollbarLayerDidChange(m_owningLayer->scrollableArea(), HorizontalScrollbar);
         if (verticalScrollbarLayerChanged)
-            scrollingCoordinator->scrollableAreaScrollbarLayerDidChange(m_owningLayer, VerticalScrollbar);
+            scrollingCoordinator->scrollableAreaScrollbarLayerDidChange(m_owningLayer->scrollableArea(), VerticalScrollbar);
     }
 
     return horizontalScrollbarLayerChanged || verticalScrollbarLayerChanged || scrollCornerLayerChanged;
@@ -987,11 +993,7 @@ bool RenderLayerBacking::updateForegroundLayer(bool needsForegroundLayer)
     bool layerChanged = false;
     if (needsForegroundLayer) {
         if (!m_foregroundLayer) {
-            String layerName;
-#ifndef NDEBUG
-            layerName = m_owningLayer->debugName() + " (foreground)";
-#endif
-            m_foregroundLayer = createGraphicsLayer(layerName, CompositingReasonLayerForForeground);
+            m_foregroundLayer = createGraphicsLayer(CompositingReasonLayerForForeground);
             m_foregroundLayer->setDrawsContent(true);
             m_foregroundLayer->setPaintingPhase(GraphicsLayerPaintForeground);
             layerChanged = true;
@@ -1013,11 +1015,7 @@ bool RenderLayerBacking::updateBackgroundLayer(bool needsBackgroundLayer)
     bool layerChanged = false;
     if (needsBackgroundLayer) {
         if (!m_backgroundLayer) {
-            String layerName;
-#ifndef NDEBUG
-            layerName = m_owningLayer->debugName() + " (background)";
-#endif
-            m_backgroundLayer = createGraphicsLayer(layerName, CompositingReasonLayerForBackground);
+            m_backgroundLayer = createGraphicsLayer(CompositingReasonLayerForBackground);
             m_backgroundLayer->setDrawsContent(true);
             m_backgroundLayer->setAnchorPoint(FloatPoint3D());
             m_backgroundLayer->setPaintingPhase(GraphicsLayerPaintBackground);
@@ -1049,7 +1047,7 @@ bool RenderLayerBacking::updateMaskLayer(bool needsMaskLayer)
     bool layerChanged = false;
     if (needsMaskLayer) {
         if (!m_maskLayer) {
-            m_maskLayer = createGraphicsLayer("Mask", CompositingReasonLayerForMask);
+            m_maskLayer = createGraphicsLayer(CompositingReasonLayerForMask);
             m_maskLayer->setDrawsContent(true);
             m_maskLayer->setPaintingPhase(GraphicsLayerPaintMask);
             layerChanged = true;
@@ -1073,12 +1071,12 @@ bool RenderLayerBacking::updateScrollingLayers(bool needsScrollingLayers)
     if (needsScrollingLayers) {
         if (!m_scrollingLayer) {
             // Outer layer which corresponds with the scroll view.
-            m_scrollingLayer = createGraphicsLayer("Scrolling container", CompositingReasonLayerForClip);
+            m_scrollingLayer = createGraphicsLayer(CompositingReasonLayerForClip);
             m_scrollingLayer->setDrawsContent(false);
             m_scrollingLayer->setMasksToBounds(true);
 
             // Inner layer which renders the content that scrolls.
-            m_scrollingContentsLayer = createGraphicsLayer("Scrolled Contents", CompositingReasonLayerForScrollingContainer);
+            m_scrollingContentsLayer = createGraphicsLayer(CompositingReasonLayerForScrollingContainer);
             m_scrollingContentsLayer->setDrawsContent(true);
             GraphicsLayerPaintingPhase paintPhase = GraphicsLayerPaintOverflowContents | GraphicsLayerPaintCompositedScroll;
             if (!m_foregroundLayer)
@@ -1088,14 +1086,14 @@ bool RenderLayerBacking::updateScrollingLayers(bool needsScrollingLayers)
 
             layerChanged = true;
             if (scrollingCoordinator)
-                scrollingCoordinator->scrollableAreaScrollLayerDidChange(m_owningLayer);
+                scrollingCoordinator->scrollableAreaScrollLayerDidChange(m_owningLayer->scrollableArea());
         }
     } else if (m_scrollingLayer) {
         m_scrollingLayer = nullptr;
         m_scrollingContentsLayer = nullptr;
         layerChanged = true;
         if (scrollingCoordinator)
-            scrollingCoordinator->scrollableAreaScrollLayerDidChange(m_owningLayer);
+            scrollingCoordinator->scrollableAreaScrollLayerDidChange(m_owningLayer->scrollableArea());
     }
 
     if (layerChanged) {
@@ -1107,6 +1105,18 @@ bool RenderLayerBacking::updateScrollingLayers(bool needsScrollingLayers)
     }
 
     return layerChanged;
+}
+
+void RenderLayerBacking::updateScrollParent(RenderLayer* scrollParent)
+{
+    if (ScrollingCoordinator* scrollingCoordinator = scrollingCoordinatorFromLayer(m_owningLayer))
+        scrollingCoordinator->updateScrollParentForLayer(m_owningLayer, scrollParent);
+}
+
+void RenderLayerBacking::updateClipParent(RenderLayer* clipParent)
+{
+    if (ScrollingCoordinator* scrollingCoordinator = scrollingCoordinatorFromLayer(m_owningLayer))
+        scrollingCoordinator->updateClipParentForLayer(m_owningLayer, clipParent);
 }
 
 GraphicsLayerPaintingPhase RenderLayerBacking::paintingPhaseForPrimaryLayer() const
@@ -1123,6 +1133,9 @@ GraphicsLayerPaintingPhase RenderLayerBacking::paintingPhaseForPrimaryLayer() co
         phase &= ~GraphicsLayerPaintForeground;
         phase |= GraphicsLayerPaintCompositedScroll;
     }
+
+    if (m_owningLayer->compositingReasons() & CompositingReasonOverflowScrollingParent)
+        phase |= GraphicsLayerPaintCompositedScroll;
 
     return static_cast<GraphicsLayerPaintingPhase>(phase);
 }
@@ -1238,7 +1251,7 @@ bool RenderLayerBacking::isSimpleContainerCompositingLayer() const
 
     if (renderObject->node() && renderObject->node()->isDocumentNode()) {
         // Look to see if the root object has a non-simple background
-        RenderObject* rootObject = renderObject->document()->documentElement() ? renderObject->document()->documentElement()->renderer() : 0;
+        RenderObject* rootObject = renderObject->document().documentElement() ? renderObject->document().documentElement()->renderer() : 0;
         if (!rootObject)
             return false;
 
@@ -1250,7 +1263,7 @@ bool RenderLayerBacking::isSimpleContainerCompositingLayer() const
             return false;
 
         // Now look at the body's renderer.
-        HTMLElement* body = renderObject->document()->body();
+        HTMLElement* body = renderObject->document().body();
         RenderObject* bodyObject = (body && body->hasLocalName(bodyTag)) ? body->renderer() : 0;
         if (!bodyObject)
             return false;
@@ -1588,6 +1601,10 @@ void RenderLayerBacking::doPaintTask(GraphicsLayerPaintInfo& paintInfo, Graphics
     if (!(paintInfo.paintingPhase & GraphicsLayerPaintOverflowContents))
         dirtyRect.intersect(paintInfo.compositedBounds);
 
+#ifndef NDEBUG
+    paintInfo.renderLayer->renderer()->assertSubtreeIsLaidOut();
+#endif
+
     // FIXME: GraphicsLayers need a way to split for RenderRegions.
     RenderLayer::LayerPaintingInfo paintingInfo(paintInfo.renderLayer, dirtyRect, PaintBehaviorNormal, LayoutSize());
     paintInfo.renderLayer->paintLayerContents(context, paintingInfo, paintFlags);
@@ -1708,13 +1725,13 @@ bool RenderLayerBacking::startAnimation(double timeOffset, const CSSAnimationDat
     for (size_t i = 0; i < numKeyframes; ++i) {
         const KeyframeValue& currentKeyframe = keyframes[i];
         const RenderStyle* keyframeStyle = currentKeyframe.style();
-        float key = currentKeyframe.key();
+        double key = currentKeyframe.key();
 
         if (!keyframeStyle)
             continue;
 
         // Get timing function.
-        RefPtr<TimingFunction> tf = keyframeStyle->hasAnimations() ? (*keyframeStyle->animations()).animation(0)->timingFunction() : 0;
+        RefPtr<TimingFunction> tf = KeyframeValue::timingFunction(currentKeyframe.style(), keyframes.animationName());
 
         bool isFirstOrLastKeyframe = key == 0 || key == 1;
         if ((hasTransform && isFirstOrLastKeyframe) || currentKeyframe.containsProperty(CSSPropertyWebkitTransform))
@@ -1920,6 +1937,38 @@ double RenderLayerBacking::backingStoreMemoryEstimate() const
         backingMemory += m_layerForScrollCorner->backingStoreMemoryEstimate();
 
     return backingMemory;
+}
+
+String RenderLayerBacking::debugName(const GraphicsLayer* graphicsLayer)
+{
+    String name;
+    if (graphicsLayer == m_graphicsLayer.get()) {
+        name = m_owningLayer->debugName();
+    } else if (graphicsLayer == m_ancestorClippingLayer.get()) {
+        name = "Ancestor Clipping Layer";
+    } else if (graphicsLayer == m_foregroundLayer.get()) {
+        name = m_owningLayer->debugName() + " (foreground) Layer";
+    } else if (graphicsLayer == m_backgroundLayer.get()) {
+        name = m_owningLayer->debugName() + " (background) Layer";
+    } else if (graphicsLayer == m_childContainmentLayer.get()) {
+        name = "Child Containment Layer";
+    } else if (graphicsLayer == m_maskLayer.get()) {
+        name = "Mask Layer";
+    } else if (graphicsLayer == m_layerForHorizontalScrollbar.get()) {
+        name = "Horizontal Scrollbar Layer";
+    } else if (graphicsLayer == m_layerForVerticalScrollbar.get()) {
+        name = "Vertical Scrollbar Layer";
+    } else if (graphicsLayer == m_layerForScrollCorner.get()) {
+        name = "Scroll Corner Layer";
+    } else if (graphicsLayer == m_scrollingLayer.get()) {
+        name = "Scrolling Layer";
+    } else if (graphicsLayer == m_scrollingContentsLayer.get()) {
+        name = "Scrolling Contents Layer";
+    } else {
+        ASSERT_NOT_REACHED();
+    }
+
+    return name;
 }
 
 } // namespace WebCore

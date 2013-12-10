@@ -8,7 +8,6 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/platform/graphics/Image.h"
-#include "core/platform/graphics/ImageBuffer.h"
 #include "core/platform/graphics/IntRect.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -27,6 +26,7 @@ public:
     static PassRefPtr<ImageBitmap> create(HTMLCanvasElement*, const IntRect&);
     static PassRefPtr<ImageBitmap> create(ImageData*, const IntRect&);
     static PassRefPtr<ImageBitmap> create(ImageBitmap*, const IntRect&);
+    static PassRefPtr<ImageBitmap> create(Image*, const IntRect&);
 
     PassRefPtr<Image> bitmapImage() const;
     PassRefPtr<HTMLImageElement> imageElement() const { return m_imageElement; }
@@ -46,6 +46,7 @@ private:
     ImageBitmap(HTMLCanvasElement*, const IntRect&);
     ImageBitmap(ImageData*, const IntRect&);
     ImageBitmap(ImageBitmap*, const IntRect&);
+    ImageBitmap(Image*, const IntRect&);
 
     // ImageLoaderClient
     virtual void notifyImageSourceChanged();
@@ -55,7 +56,6 @@ private:
     // the image source changes.
     RefPtr<HTMLImageElement> m_imageElement;
     RefPtr<Image> m_bitmap;
-    OwnPtr<ImageBuffer> m_buffer;
 
     IntRect m_bitmapRect; // The rect where the underlying Image should be placed in reference to the ImageBitmap.
     IntRect m_cropRect;

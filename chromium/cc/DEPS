@@ -6,11 +6,10 @@ include_rules = [
   "+third_party/skia/include",
   "+third_party/khronos/GLES2/gl2.h",
   "+third_party/khronos/GLES2/gl2ext.h",
-  "+ui/base",
+  "+ui/events/latency_info.h",
   "+ui/gfx",
   "+ui/gl",
   # DO NOT ADD ANY NEW WEBKIT HEADERS TO THIS LIST.
   # TODO(danakj): Drop dependencies on WebKit Platform API from cc.
   "+third_party/WebKit/public/platform/WebGraphicsContext3D.h",
-  "+third_party/WebKit/public/platform/WebGraphicsMemoryAllocation.h",
 ]

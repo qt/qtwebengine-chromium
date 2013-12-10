@@ -33,35 +33,37 @@
 
 namespace WebCore {
 
-struct MaskerData {
-    OwnPtr<ImageBuffer> maskImage;
-};
-
 class RenderSVGResourceMasker FINAL : public RenderSVGResourceContainer {
 public:
-    RenderSVGResourceMasker(SVGMaskElement*);
+    explicit RenderSVGResourceMasker(SVGMaskElement*);
     virtual ~RenderSVGResourceMasker();
 
     virtual const char* renderName() const { return "RenderSVGResourceMasker"; }
 
     virtual void removeAllClientsFromCache(bool markForInvalidation = true);
     virtual void removeClientFromCache(RenderObject*, bool markForInvalidation = true);
-    virtual bool applyResource(RenderObject*, RenderStyle*, GraphicsContext*&, unsigned short resourceMode);
+    virtual bool applyResource(RenderObject*, RenderStyle*, GraphicsContext*&, unsigned short resourceMode) OVERRIDE;
+    virtual void postApplyResource(RenderObject*, GraphicsContext*&, unsigned short, const Path*, const RenderSVGShape*) OVERRIDE;
     virtual FloatRect resourceBoundingBox(RenderObject*);
 
-    SVGUnitTypes::SVGUnitType maskUnits() const { return toSVGMaskElement(node())->maskUnitsCurrentValue(); }
-    SVGUnitTypes::SVGUnitType maskContentUnits() const { return toSVGMaskElement(node())->maskContentUnitsCurrentValue(); }
+    SVGUnitTypes::SVGUnitType maskUnits() const { return toSVGMaskElement(element())->maskUnitsCurrentValue(); }
+    SVGUnitTypes::SVGUnitType maskContentUnits() const { return toSVGMaskElement(element())->maskContentUnitsCurrentValue(); }
 
     virtual RenderSVGResourceType resourceType() const { return s_resourceType; }
     static RenderSVGResourceType s_resourceType;
 
 private:
-    bool drawContentIntoMaskImage(MaskerData*, ColorSpace, const SVGMaskElement*, RenderObject*);
     void calculateMaskContentRepaintRect();
+    void drawMaskContent(GraphicsContext*, const FloatRect& targetBoundingBox);
 
     FloatRect m_maskContentBoundaries;
-    HashMap<RenderObject*, MaskerData*> m_masker;
 };
+
+inline RenderSVGResourceMasker* toRenderSVGResourceMasker(RenderSVGResource* resource)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!resource || resource->resourceType() == MaskerResourceType);
+    return static_cast<RenderSVGResourceMasker*>(resource);
+}
 
 }
 

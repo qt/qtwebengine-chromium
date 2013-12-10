@@ -8,10 +8,11 @@
 
 #include "ash/ash_constants.h"
 #include "ash/root_window_controller.h"
+#include "ash/root_window_settings.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
-#include "ash/wm/property_util.h"
-#include "ash/wm/window_properties.h"
+#include "ash/wm/caption_buttons/frame_caption_button_container_view.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "base/logging.h"  // DCHECK
 #include "grit/ash_resources.h"
@@ -23,17 +24,16 @@
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
-#include "ui/base/animation/slide_animation.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/theme_provider.h"
+#include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/skia_util.h"
-#include "ui/views/controls/button/image_button.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 
@@ -63,13 +63,6 @@ const SkColor kMaximizedWindowTitleTextColor = SK_ColorWHITE;
 const int kHeaderContentSeparatorSize = 1;
 // Color of header bottom edge line.
 const SkColor kHeaderContentSeparatorColor = SkColorSetRGB(128, 128, 128);
-// Space between close button and right edge of window.
-const int kCloseButtonOffsetX = 0;
-// Space between close button and top edge of window.
-const int kCloseButtonOffsetY = 0;
-// The size and close buttons are designed to slightly overlap in order
-// to do fancy hover highlighting.
-const int kSizeButtonOffsetX = -1;
 // In the pre-Ash era the web content area had a frame along the left edge, so
 // user-generated theme images for the new tab page assume they are shifted
 // right relative to the header.  Now that we have removed the left edge frame
@@ -81,6 +74,9 @@ const int kThemeFrameImageInsetX = 5;
 const int kActivationCrossfadeDurationMs = 200;
 // Alpha/opacity value for fully-opaque headers.
 const int kFullyOpaque = 255;
+
+// A flag to enable/disable solo window header.
+bool solo_window_header_enabled = true;
 
 // Tiles an image into an area, rounding the top corners. Samples |image|
 // starting |image_inset_x| pixels from the left of the image.
@@ -215,10 +211,8 @@ int FramePainter::kSoloWindowOpacity = 77;  // 0.3
 FramePainter::FramePainter()
     : frame_(NULL),
       window_icon_(NULL),
-      size_button_(NULL),
-      close_button_(NULL),
+      caption_button_container_(NULL),
       window_(NULL),
-      button_separator_(NULL),
       top_left_corner_(NULL),
       top_edge_(NULL),
       top_right_corner_(NULL),
@@ -229,35 +223,29 @@ FramePainter::FramePainter()
       previous_opacity_(0),
       crossfade_theme_frame_id_(0),
       crossfade_theme_frame_overlay_id_(0),
-      crossfade_opacity_(0),
-      size_button_behavior_(SIZE_BUTTON_MAXIMIZES) {}
+      crossfade_opacity_(0) {}
 
 FramePainter::~FramePainter() {
   // Sometimes we are destroyed before the window closes, so ensure we clean up.
   if (window_) {
     window_->RemoveObserver(this);
+    wm::GetWindowState(window_)->RemoveObserver(this);
   }
 }
 
-void FramePainter::Init(views::Widget* frame,
-                        views::View* window_icon,
-                        views::ImageButton* size_button,
-                        views::ImageButton* close_button,
-                        SizeButtonBehavior behavior) {
+void FramePainter::Init(
+    views::Widget* frame,
+    views::View* window_icon,
+    FrameCaptionButtonContainerView* caption_button_container) {
   DCHECK(frame);
   // window_icon may be NULL.
-  DCHECK(size_button);
-  DCHECK(close_button);
+  DCHECK(caption_button_container);
   frame_ = frame;
   window_icon_ = window_icon;
-  size_button_ = size_button;
-  close_button_ = close_button;
-  size_button_behavior_ = behavior;
+  caption_button_container_ = caption_button_container;
 
   // Window frame image parts.
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  button_separator_ =
-      rb.GetImageNamed(IDR_AURA_WINDOW_BUTTON_SEPARATOR).ToImageSkia();
   top_left_corner_ =
       rb.GetImageNamed(IDR_AURA_WINDOW_HEADER_SHADE_TOP_LEFT).ToImageSkia();
   top_edge_ =
@@ -285,9 +273,15 @@ void FramePainter::Init(views::Widget* frame,
   // itself in OnWindowDestroying() below, or in the destructor if we go away
   // before the window.
   window_->AddObserver(this);
+  wm::GetWindowState(window_)->AddObserver(this);
 
   // Solo-window header updates are handled by the workspace controller when
   // this window is added to the desktop.
+}
+
+// static
+void FramePainter::SetSoloWindowHeadersEnabled(bool enabled) {
+  solo_window_header_enabled = enabled;
 }
 
 // static
@@ -328,8 +322,6 @@ int FramePainter::NonClientHitTest(views::NonClientFrameView* view,
   if (!expanded_bounds.Contains(point))
     return HTNOWHERE;
 
-  // No avatar button.
-
   // Check the frame first, as we allow a small area overlapping the contents
   // to be used for resize handles.
   bool can_ever_resize = frame_->widget_delegate() ?
@@ -353,13 +345,15 @@ int FramePainter::NonClientHitTest(views::NonClientFrameView* view,
   if (client_component != HTNOWHERE)
     return client_component;
 
-  // Then see if the point is within any of the window controls.
-  if (close_button_->visible() &&
-      close_button_->GetMirroredBounds().Contains(point))
-    return HTCLOSE;
-  if (size_button_->visible() &&
-      size_button_->GetMirroredBounds().Contains(point))
-    return HTMAXBUTTON;
+  if (caption_button_container_->visible()) {
+    gfx::Point point_in_caption_button_container(point);
+    views::View::ConvertPointToTarget(view, caption_button_container_,
+        &point_in_caption_button_container);
+    client_component = caption_button_container_->NonClientHitTest(
+        point_in_caption_button_container);
+    if (client_component != HTNOWHERE)
+      return client_component;
+  }
 
   // Caption is a safe default.
   return HTCAPTION;
@@ -373,8 +367,7 @@ gfx::Size FramePainter::GetMinimumSize(views::NonClientFrameView* view) {
   // Ensure we have enough space for the window icon and buttons.  We allow
   // the title string to collapse to zero width.
   int title_width = GetTitleOffsetX() +
-      size_button_->width() + kSizeButtonOffsetX +
-      close_button_->width() + kCloseButtonOffsetX;
+      caption_button_container_->GetMinimumSize().width();
   if (title_width > min_size.width())
     min_size.set_width(title_width);
   return min_size;
@@ -385,11 +378,7 @@ gfx::Size FramePainter::GetMaximumSize(views::NonClientFrameView* view) {
 }
 
 int FramePainter::GetRightInset() const {
-  gfx::Size close_size = close_button_->GetPreferredSize();
-  gfx::Size size_button_size = size_button_->GetPreferredSize();
-  int inset = close_size.width() + kCloseButtonOffsetX +
-      size_button_size.width() + kSizeButtonOffsetX;
-  return inset;
+  return caption_button_container_->GetPreferredSize().width();
 }
 
 int FramePainter::GetThemeBackgroundXInset() const {
@@ -402,9 +391,9 @@ bool FramePainter::ShouldUseMinimalHeaderStyle(Themed header_themed) const {
   // - If the user has installed a theme with custom images for the header.
   // - For windows which are not tracked by the workspace code (which are used
   //   for tab dragging).
-  return ((frame_->IsMaximized() || frame_->IsFullscreen()) &&
+  return (frame_->IsMaximized() || frame_->IsFullscreen()) &&
       header_themed == THEMED_NO &&
-      GetTrackedByWorkspace(frame_->GetNativeWindow()));
+      wm::GetWindowState(frame_->GetNativeWindow())->tracked_by_workspace();
 }
 
 void FramePainter::PaintHeader(views::NonClientFrameView* view,
@@ -428,7 +417,7 @@ void FramePainter::PaintHeader(views::NonClientFrameView* view,
          parent->layer()->GetAnimator()->IsAnimatingProperty(
              ui::LayerAnimationElement::VISIBILITY));
     if (!parent_animating) {
-      crossfade_animation_.reset(new ui::SlideAnimation(this));
+      crossfade_animation_.reset(new gfx::SlideAnimation(this));
       crossfade_theme_frame_id_ = previous_theme_frame_id_;
       crossfade_theme_frame_overlay_id_ = previous_theme_frame_overlay_id_;
       crossfade_opacity_ = previous_opacity_;
@@ -503,14 +492,6 @@ void FramePainter::PaintHeader(views::NonClientFrameView* view,
   previous_theme_frame_id_ = theme_frame_id;
   previous_theme_frame_overlay_id_ = theme_frame_overlay_id;
   previous_opacity_ = opacity;
-
-  // Separator between the maximize and close buttons.  It overlaps the left
-  // edge of the close button.
-  gfx::Rect divider(close_button_->x(), close_button_->y(),
-                    button_separator_->width(), close_button_->height());
-  canvas->DrawImageInt(*button_separator_,
-                       view->GetMirroredXForRect(divider),
-                       close_button_->y());
 
   // We don't need the extra lightness in the edges when we're at the top edge
   // of the screen or when the header's corners are not rounded.
@@ -595,72 +576,24 @@ void FramePainter::PaintTitleBar(views::NonClientFrameView* view,
 
 void FramePainter::LayoutHeader(views::NonClientFrameView* view,
                                 bool shorter_layout) {
-  // The new assets only make sense if the window is actually maximized or
-  // fullscreen.
-  if (shorter_layout &&
-      (frame_->IsMaximized() || frame_->IsFullscreen()) &&
-      GetTrackedByWorkspace(frame_->GetNativeWindow())) {
-    SetButtonImages(close_button_,
-                    IDR_AURA_WINDOW_MAXIMIZED_CLOSE2,
-                    IDR_AURA_WINDOW_MAXIMIZED_CLOSE2_H,
-                    IDR_AURA_WINDOW_MAXIMIZED_CLOSE2_P);
-    // The chat window cannot be restored but only minimized.
-    if (size_button_behavior_ == SIZE_BUTTON_MINIMIZES) {
-      SetButtonImages(size_button_,
-                      IDR_AURA_WINDOW_MINIMIZE_SHORT,
-                      IDR_AURA_WINDOW_MINIMIZE_SHORT_H,
-                      IDR_AURA_WINDOW_MINIMIZE_SHORT_P);
-    } else {
-      SetButtonImages(size_button_,
-                      IDR_AURA_WINDOW_MAXIMIZED_RESTORE2,
-                      IDR_AURA_WINDOW_MAXIMIZED_RESTORE2_H,
-                      IDR_AURA_WINDOW_MAXIMIZED_RESTORE2_P);
-    }
-  } else if (shorter_layout) {
-    SetButtonImages(close_button_,
-                    IDR_AURA_WINDOW_MAXIMIZED_CLOSE,
-                    IDR_AURA_WINDOW_MAXIMIZED_CLOSE_H,
-                    IDR_AURA_WINDOW_MAXIMIZED_CLOSE_P);
-    // The chat window cannot be restored but only minimized.
-    if (size_button_behavior_ == SIZE_BUTTON_MINIMIZES) {
-      SetButtonImages(size_button_,
-                      IDR_AURA_WINDOW_MINIMIZE_SHORT,
-                      IDR_AURA_WINDOW_MINIMIZE_SHORT_H,
-                      IDR_AURA_WINDOW_MINIMIZE_SHORT_P);
-    } else {
-      SetButtonImages(size_button_,
-                      IDR_AURA_WINDOW_MAXIMIZED_RESTORE,
-                      IDR_AURA_WINDOW_MAXIMIZED_RESTORE_H,
-                      IDR_AURA_WINDOW_MAXIMIZED_RESTORE_P);
-    }
-  } else {
-    SetButtonImages(close_button_,
-                    IDR_AURA_WINDOW_CLOSE,
-                    IDR_AURA_WINDOW_CLOSE_H,
-                    IDR_AURA_WINDOW_CLOSE_P);
-    SetButtonImages(size_button_,
-                    IDR_AURA_WINDOW_MAXIMIZE,
-                    IDR_AURA_WINDOW_MAXIMIZE_H,
-                    IDR_AURA_WINDOW_MAXIMIZE_P);
-  }
+  caption_button_container_->set_header_style(shorter_layout ?
+      FrameCaptionButtonContainerView::HEADER_STYLE_SHORT :
+      FrameCaptionButtonContainerView::HEADER_STYLE_TALL);
+  caption_button_container_->Layout();
 
-  gfx::Size close_size = close_button_->GetPreferredSize();
-  close_button_->SetBounds(
-      view->width() - close_size.width() - kCloseButtonOffsetX,
-      kCloseButtonOffsetY,
-      close_size.width(),
-      close_size.height());
-
-  gfx::Size size_button_size = size_button_->GetPreferredSize();
-  size_button_->SetBounds(
-      close_button_->x() - size_button_size.width() - kSizeButtonOffsetX,
-      close_button_->y(),
-      size_button_size.width(),
-      size_button_size.height());
+  gfx::Size caption_button_container_size =
+      caption_button_container_->GetPreferredSize();
+  caption_button_container_->SetBounds(
+      view->width() - caption_button_container_size.width(),
+      0,
+      caption_button_container_size.width(),
+      caption_button_container_size.height());
 
   if (window_icon_) {
-    // Vertically center the window icon with respect to the close button.
-    int icon_offset_y = GetCloseButtonCenterY() - window_icon_->height() / 2;
+    // Vertically center the window icon with respect to the caption button
+    // container.
+    int icon_offset_y =
+        GetCaptionButtonContainerCenterY() - window_icon_->height() / 2;
     window_icon_->SetBounds(kIconOffsetX, icon_offset_y, kIconSize, kIconSize);
   }
 }
@@ -685,27 +618,29 @@ void FramePainter::OnThemeChanged() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// WindowState::Observer overrides:
+void FramePainter::OnTrackedByWorkspaceChanged(aura::Window* window,
+                                               bool old) {
+  // When 'TrackedByWorkspace' changes, we are going to paint the header
+  // differently. Schedule a paint to ensure everything is updated correctly.
+  if (wm::GetWindowState(window)->tracked_by_workspace())
+    frame_->non_client_view()->SchedulePaint();
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // aura::WindowObserver overrides:
 
 void FramePainter::OnWindowPropertyChanged(aura::Window* window,
                                            const void* key,
                                            intptr_t old) {
-  // When 'kWindowTrackedByWorkspaceKey' changes, we are going to paint the
-  // header differently. Schedule a paint to ensure everything is updated
-  // correctly.
-  if (key == internal::kWindowTrackedByWorkspaceKey &&
-      GetTrackedByWorkspace(window)) {
-    frame_->non_client_view()->SchedulePaint();
-  }
-
   if (key != aura::client::kShowStateKey)
     return;
 
   // Maximized and fullscreen windows don't want resize handles overlapping the
   // content area, because when the user moves the cursor to the right screen
   // edge we want them to be able to hit the scroll bar.
-  if (ash::wm::IsWindowMaximized(window) ||
-      ash::wm::IsWindowFullscreen(window)) {
+  wm::WindowState* window_state = wm::GetWindowState(window);
+  if (window_state->IsMaximizedOrFullscreen()) {
     window->set_hit_test_bounds_override_inner(gfx::Insets());
   } else {
     window->set_hit_test_bounds_override_inner(
@@ -731,6 +666,7 @@ void FramePainter::OnWindowDestroying(aura::Window* destroying) {
   // Must be removed here and not in the destructor, as the aura::Window is
   // already destroyed when our destructor runs.
   window_->RemoveObserver(this);
+  wm::GetWindowState(window_)->RemoveObserver(this);
 
   // If we have two or more windows open and we close this one, we might trigger
   // the solo window appearance for another window.
@@ -765,40 +701,14 @@ void FramePainter::OnWindowRemovingFromRootWindow(aura::Window* window) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// ui::AnimationDelegate overrides:
+// gfx::AnimationDelegate overrides:
 
-void FramePainter::AnimationProgressed(const ui::Animation* animation) {
+void FramePainter::AnimationProgressed(const gfx::Animation* animation) {
   frame_->non_client_view()->SchedulePaintInRect(header_frame_bounds_);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // FramePainter, private:
-
-void FramePainter::SetButtonImages(views::ImageButton* button,
-                                   int normal_image_id,
-                                   int hot_image_id,
-                                   int pushed_image_id) {
-  ui::ThemeProvider* theme_provider = frame_->GetThemeProvider();
-  button->SetImage(views::CustomButton::STATE_NORMAL,
-                   theme_provider->GetImageSkiaNamed(normal_image_id));
-  button->SetImage(views::CustomButton::STATE_HOVERED,
-                   theme_provider->GetImageSkiaNamed(hot_image_id));
-  button->SetImage(views::CustomButton::STATE_PRESSED,
-                   theme_provider->GetImageSkiaNamed(pushed_image_id));
-}
-
-void FramePainter::SetToggledButtonImages(views::ToggleImageButton* button,
-                                          int normal_image_id,
-                                          int hot_image_id,
-                                          int pushed_image_id) {
-  ui::ThemeProvider* theme_provider = frame_->GetThemeProvider();
-  button->SetToggledImage(views::CustomButton::STATE_NORMAL,
-                          theme_provider->GetImageSkiaNamed(normal_image_id));
-  button->SetToggledImage(views::CustomButton::STATE_HOVERED,
-                          theme_provider->GetImageSkiaNamed(hot_image_id));
-  button->SetToggledImage(views::CustomButton::STATE_PRESSED,
-                          theme_provider->GetImageSkiaNamed(pushed_image_id));
-}
 
 int FramePainter::GetTitleOffsetX() const {
   return window_icon_ ?
@@ -806,8 +716,9 @@ int FramePainter::GetTitleOffsetX() const {
       kTitleNoIconOffsetX;
 }
 
-int FramePainter::GetCloseButtonCenterY() const {
-  return close_button_->y() + close_button_->height() / 2;
+int FramePainter::GetCaptionButtonContainerCenterY() const {
+  return caption_button_container_->y() +
+      caption_button_container_->height() / 2;
 }
 
 int FramePainter::GetHeaderCornerRadius() const {
@@ -815,7 +726,7 @@ int FramePainter::GetHeaderCornerRadius() const {
   // tracked by the workspace code. (Windows which are not tracked by the
   // workspace code are used for tab dragging.)
   bool square_corners = ((frame_->IsMaximized() || frame_->IsFullscreen())) &&
-      GetTrackedByWorkspace(frame_->GetNativeWindow());
+      wm::GetWindowState(frame_->GetNativeWindow())->tracked_by_workspace();
   const int kCornerRadius = 2;
   return square_corners ? 0 : kCornerRadius;
 }
@@ -847,15 +758,15 @@ int FramePainter::GetHeaderOpacity(
 }
 
 bool FramePainter::UseSoloWindowHeader() const {
+  if (!solo_window_header_enabled)
+    return false;
   // Don't use transparent headers for panels, pop-ups, etc.
   if (!IsSoloWindowHeaderCandidate(window_))
     return false;
   aura::RootWindow* root = window_->GetRootWindow();
-  if (!root || root->GetProperty(internal::kIgnoreSoloWindowFramePainterPolicy))
-    return false;
   // Don't recompute every time, as it would require many window property
   // lookups.
-  return root->GetProperty(internal::kSoloWindowHeaderKey);
+  return internal::GetRootWindowSettings(root)->solo_window_header;
 }
 
 // static
@@ -872,7 +783,7 @@ bool FramePainter::UseSoloWindowHeaderInRoot(RootWindow* root_window,
         !IsSoloWindowHeaderCandidate(window) ||
         !IsVisibleToRoot(window))
       continue;
-    if (wm::IsWindowMaximized(window))
+    if (wm::GetWindowState(window)->IsMaximized())
       return false;
     ++visible_window_count;
     if (visible_window_count > 1)
@@ -894,11 +805,14 @@ void FramePainter::UpdateSoloWindowInRoot(RootWindow* root,
 #endif
   if (!root)
     return;
-  bool old_solo_header = root->GetProperty(internal::kSoloWindowHeaderKey);
+  internal::RootWindowSettings* root_window_settings =
+      internal::GetRootWindowSettings(root);
+  bool old_solo_header = root_window_settings->solo_window_header;
   bool new_solo_header = UseSoloWindowHeaderInRoot(root, ignore_window);
   if (old_solo_header == new_solo_header)
     return;
-  root->SetProperty(internal::kSoloWindowHeaderKey, new_solo_header);
+  root_window_settings->solo_window_header = new_solo_header;
+
   // Invalidate all the window frames in the desktop. There should only be
   // a few.
   std::vector<Window*> windows = GetWindowsForSoloHeaderUpdate(root);
@@ -921,14 +835,14 @@ void FramePainter::SchedulePaintForHeader() {
 
 gfx::Rect FramePainter::GetTitleBounds(const gfx::Font& title_font) {
   int title_x = GetTitleOffsetX();
-  // Center the text with respect to the close button. This way it adapts to
-  // the caption height and aligns exactly with the window icon. Don't use
-  // |window_icon_| for this computation as it may be NULL.
-  int title_y = GetCloseButtonCenterY() - title_font.GetHeight() / 2;
+  // Center the text with respect to the caption button container. This way it
+  // adapts to the caption button height and aligns exactly with the window
+  // icon. Don't use |window_icon_| for this computation as it may be NULL.
+  int title_y = GetCaptionButtonContainerCenterY() - title_font.GetHeight() / 2;
   return gfx::Rect(
       title_x,
       std::max(0, title_y),
-      std::max(0, size_button_->x() - kTitleLogoSpacing - title_x),
+      std::max(0, caption_button_container_->x() - kTitleLogoSpacing - title_x),
       title_font.GetHeight());
 }
 

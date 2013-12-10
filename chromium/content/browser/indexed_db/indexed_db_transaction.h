@@ -12,6 +12,7 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/time/time.h"
 #include "content/browser/indexed_db/indexed_db_backing_store.h"
 #include "content/browser/indexed_db/indexed_db_database.h"
 #include "content/browser/indexed_db/indexed_db_database_error.h"
@@ -23,6 +24,8 @@ class IndexedDBDatabaseCallbacks;
 
 class IndexedDBTransaction : public base::RefCounted<IndexedDBTransaction> {
  public:
+  typedef base::Callback<void(IndexedDBTransaction*)> Operation;
+
   IndexedDBTransaction(int64 id,
                        scoped_refptr<IndexedDBDatabaseCallbacks> callbacks,
                        const std::set<int64>& object_store_ids,
@@ -32,29 +35,16 @@ class IndexedDBTransaction : public base::RefCounted<IndexedDBTransaction> {
   virtual void Abort();
   void Commit();
 
-  class Operation {
-   public:
-    Operation() {}
-    virtual ~Operation() {}
-    virtual void Perform(IndexedDBTransaction* transaction) = 0;
-  };
-
   void Abort(const IndexedDBDatabaseError& error);
   void Run();
   indexed_db::TransactionMode mode() const { return mode_; }
   const std::set<int64>& scope() const { return object_store_ids_; }
-  void ScheduleTask(Operation* task) {
-    ScheduleTask(IndexedDBDatabase::NORMAL_TASK, task, NULL);
+  void ScheduleTask(Operation task) {
+    ScheduleTask(IndexedDBDatabase::NORMAL_TASK, task);
   }
-  void ScheduleTask(Operation* task, Operation* abort_task) {
-    ScheduleTask(IndexedDBDatabase::NORMAL_TASK, task, abort_task);
-  }
-  void ScheduleTask(IndexedDBDatabase::TaskType task_type, Operation* task) {
-    ScheduleTask(task_type, task, NULL);
-  }
-  void ScheduleTask(IndexedDBDatabase::TaskType task_type,
-                    Operation* task,
-                    Operation* abort_task);
+
+  void ScheduleTask(Operation task, Operation abort_task);
+  void ScheduleTask(IndexedDBDatabase::TaskType, Operation task);
   void RegisterOpenCursor(IndexedDBCursor* cursor);
   void UnregisterOpenCursor(IndexedDBCursor* cursor);
   void AddPreemptiveEvent() { pending_preemptive_events_++; }
@@ -71,6 +61,20 @@ class IndexedDBTransaction : public base::RefCounted<IndexedDBTransaction> {
   IndexedDBDatabaseCallbacks* connection() const { return callbacks_; }
   bool IsRunning() const { return state_ == RUNNING; }
 
+  // The following types/accessors are for diagnostics only.
+  enum QueueStatus {
+    CREATED,
+    BLOCKED,
+    UNBLOCKED,
+  };
+
+  QueueStatus queue_status() const { return queue_status_; }
+  void set_queue_status(QueueStatus status) { queue_status_ = status; }
+  base::Time creation_time() const { return creation_time_; }
+  base::Time start_time() const { return start_time_; }
+  int tasks_scheduled() const { return tasks_scheduled_; }
+  int tasks_completed() const { return tasks_completed_; }
+
  protected:
   virtual ~IndexedDBTransaction();
   friend class base::RefCounted<IndexedDBTransaction>;
@@ -84,6 +88,7 @@ class IndexedDBTransaction : public base::RefCounted<IndexedDBTransaction> {
     FINISHED,       // Either aborted or committed.
   };
 
+  void EnsureTasksRunning();
   void Start();
 
   bool IsTaskQueueEmpty() const;
@@ -106,12 +111,12 @@ class IndexedDBTransaction : public base::RefCounted<IndexedDBTransaction> {
     TaskQueue();
     ~TaskQueue();
     bool empty() const { return queue_.empty(); }
-    void push(Operation* task) { queue_.push(task); }
-    scoped_ptr<Operation> pop();
+    void push(Operation task) { queue_.push(task); }
+    Operation pop();
     void clear();
 
    private:
-    std::queue<Operation*> queue_;
+    std::queue<Operation> queue_;
   };
 
   class TaskStack {
@@ -119,12 +124,12 @@ class IndexedDBTransaction : public base::RefCounted<IndexedDBTransaction> {
     TaskStack();
     ~TaskStack();
     bool empty() const { return stack_.empty(); }
-    void push(Operation* task) { stack_.push(task); }
-    scoped_ptr<Operation> pop();
+    void push(Operation task) { stack_.push(task); }
+    Operation pop();
     void clear();
 
    private:
-    std::stack<Operation*> stack_;
+    std::stack<Operation> stack_;
   };
 
   TaskQueue task_queue_;
@@ -137,6 +142,13 @@ class IndexedDBTransaction : public base::RefCounted<IndexedDBTransaction> {
   int pending_preemptive_events_;
 
   std::set<IndexedDBCursor*> open_cursors_;
+
+  // The following members are for diagnostics only.
+  QueueStatus queue_status_;
+  base::Time creation_time_;
+  base::Time start_time_;
+  int tasks_scheduled_;
+  int tasks_completed_;
 };
 
 }  // namespace content

@@ -9,6 +9,7 @@
 #include "ash/root_window_controller.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
+#include "ash/system/system_notifier.h"
 #include "ash/system/tray/hover_highlight_view.h"
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_delegate.h"
@@ -218,6 +219,7 @@ void TrayIME::UpdateOrCreateNotification() {
   IMEInfo current;
   delegate->GetCurrentIME(&current);
 
+  ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
   scoped_ptr<Notification> notification(new Notification(
       message_center::NOTIFICATION_TYPE_SIMPLE,
       kIMENotificationId,
@@ -227,9 +229,9 @@ void TrayIME::UpdateOrCreateNotification() {
           IDS_ASH_STATUS_TRAY_IME_TURNED_ON_BUBBLE,
           current.medium_name),
       base::string16(),  // message
-      gfx::Image(),  // icon
+      bundle.GetImageNamed(IDR_AURA_UBER_TRAY_IME),
       base::string16(),  // display_source
-      "",  // extension_id
+      message_center::NotifierId(system_notifier::NOTIFIER_INPUT_METHOD),
       message_center::RichNotificationData(),
       new message_center::HandleNotificationClickedDelegate(
           base::Bind(&TrayIME::PopupDetailedView,
@@ -285,6 +287,7 @@ void TrayIME::UpdateAfterLoginStatusChange(user::LoginStatus status) {
 
 void TrayIME::UpdateAfterShelfAlignmentChange(ShelfAlignment alignment) {
   SetTrayLabelItemBorder(tray_label_, alignment);
+  tray_label_->Layout();
 }
 
 void TrayIME::OnIMERefresh(bool show_message) {

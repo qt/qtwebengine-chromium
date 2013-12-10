@@ -19,6 +19,9 @@
         'chrome_android_auxiliary',
         'chromium_testshell_jni_headers',
         'chrome.gyp:browser_ui',
+        '../content/content.gyp:content_app_browser',
+        # TODO(miguelg): This should be indirect, see http://crbug.com/280695 .
+        '../skia/skia.gyp:skia',
       ],
       'sources': [
         # This file must always be included in the shared_library step to ensure
@@ -105,6 +108,7 @@
         'chrome.gyp:renderer',
         'chrome.gyp:utility',
         '../content/content.gyp:content',
+        '../content/content.gyp:content_app_browser',
       ],
       'include_dirs': [
         '..',

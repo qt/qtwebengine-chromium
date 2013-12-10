@@ -24,6 +24,7 @@ struct PlatformFileInfo;
 
 namespace fileapi {
 struct DirectoryEntry;
+struct FileSystemInfo;
 }
 
 class GURL;
@@ -49,6 +50,10 @@ class FileSystemDispatcher : public IPC::Listener {
       const std::string& name,
       const GURL& root)> OpenFileSystemCallback;
   typedef base::Callback<void(
+      const fileapi::FileSystemInfo& info,
+      const base::FilePath& file_path,
+      bool is_directory)> ResolveURLCallback;
+  typedef base::Callback<void(
       int64 bytes,
       bool complete)> WriteCallback;
   typedef base::Callback<void(
@@ -68,6 +73,9 @@ class FileSystemDispatcher : public IPC::Listener {
                       bool create,
                       const OpenFileSystemCallback& success_callback,
                       const StatusCallback& error_callback);
+  void ResolveURL(const GURL& filesystem_url,
+                  const ResolveURLCallback& success_callback,
+                  const StatusCallback& error_callback);
   void DeleteFileSystem(const GURL& origin_url,
                         fileapi::FileSystemType type,
                         const StatusCallback& callback);
@@ -100,8 +108,15 @@ class FileSystemDispatcher : public IPC::Listener {
                 int64 offset,
                 int* request_id_out,
                 const StatusCallback& callback);
+  void WriteDeprecated(
+      const GURL& path,
+      const GURL& blob_url,
+      int64 offset,
+      int* request_id_out,
+      const WriteCallback& success_callback,
+      const StatusCallback& error_callback);
   void Write(const GURL& path,
-             const GURL& blob_url,
+             const std::string& blob_id,
              int64 offset,
              int* request_id_out,
              const WriteCallback& success_callback,
@@ -115,10 +130,10 @@ class FileSystemDispatcher : public IPC::Listener {
 
   // This returns a raw open PlatformFile, unlike the above, which are
   // self-contained operations.
-  void OpenFile(const GURL& file_path,
-                int file_flags,  // passed to FileUtilProxy::CreateOrOpen
-                const OpenFileCallback& success_callback,
-                const StatusCallback& error_callback);
+  void OpenPepperFile(const GURL& file_path,
+                      int pp_open_flags,
+                      const OpenFileCallback& success_callback,
+                      const StatusCallback& error_callback);
   // This must be paired with OpenFile, and called after finished using the
   // raw PlatformFile returned from OpenFile.
   void NotifyCloseFile(int file_open_id);
@@ -137,6 +152,10 @@ class FileSystemDispatcher : public IPC::Listener {
   void OnDidOpenFileSystem(int request_id,
                            const std::string& name,
                            const GURL& root);
+  void OnDidResolveURL(int request_id,
+                       const fileapi::FileSystemInfo& info,
+                       const base::FilePath& file_path,
+                       bool is_directory);
   void OnDidSucceed(int request_id);
   void OnDidReadMetadata(int request_id,
                          const base::PlatformFileInfo& file_info);

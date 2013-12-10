@@ -35,6 +35,7 @@
 #include "base/memory/singleton.h"
 #include "content/browser/renderer_host/render_sandbox_host_linux.h"
 #include "content/browser/zygote_host/zygote_host_impl_linux.h"
+#include "content/common/child_process_sandbox_support_impl_linux.h"
 #endif
 
 #if defined(OS_POSIX)
@@ -74,7 +75,7 @@ class ChildProcessLauncher::Context
       int ipcfd,
 #elif defined(OS_POSIX)
       bool use_zygote,
-      const base::EnvironmentVector& environ,
+      const base::EnvironmentMap& environ,
       int ipcfd,
 #endif
       CommandLine* cmd_line,
@@ -186,7 +187,7 @@ class ChildProcessLauncher::Context
       int ipcfd,
 #elif defined(OS_POSIX)
       bool use_zygote,
-      const base::EnvironmentVector& env,
+      const base::EnvironmentMap& env,
       int ipcfd,
 #endif
       CommandLine* cmd_line) {
@@ -256,13 +257,13 @@ class ChildProcessLauncher::Context
             RenderSandboxHostLinux::GetInstance()->GetRendererSocket();
         fds_to_map.push_back(std::make_pair(
             sandbox_fd,
-            kSandboxIPCChannel + base::GlobalDescriptors::kBaseDescriptor));
+            GetSandboxFD()));
       }
 #endif  // defined(OS_MACOSX)
 
       // Actually launch the app.
       base::LaunchOptions options;
-      options.environ = &env;
+      options.environ = env;
       options.fds_to_remap = &fds_to_map;
 
 #if defined(OS_MACOSX)
@@ -414,7 +415,7 @@ ChildProcessLauncher::ChildProcessLauncher(
     SandboxedProcessLauncherDelegate* delegate,
 #elif defined(OS_POSIX)
     bool use_zygote,
-    const base::EnvironmentVector& environ,
+    const base::EnvironmentMap& environ,
     int ipcfd,
 #endif
     CommandLine* cmd_line,
@@ -463,6 +464,11 @@ base::TerminationStatus ChildProcessLauncher::GetChildTerminationStatus(
   if (context_->zygote_) {
     context_->termination_status_ = ZygoteHostImpl::GetInstance()->
         GetTerminationStatus(handle, known_dead, &context_->exit_code_);
+  } else
+#elif defined(OS_MACOSX)
+  if (known_dead) {
+    context_->termination_status_ =
+        base::GetKnownDeadTerminationStatus(handle, &context_->exit_code_);
   } else
 #endif
   {

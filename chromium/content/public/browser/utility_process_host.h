@@ -5,7 +5,9 @@
 #ifndef CONTENT_PUBLIC_BROWSER_UTILITY_PROCESS_HOST_H_
 #define CONTENT_PUBLIC_BROWSER_UTILITY_PROCESS_HOST_H_
 
+#include "base/environment.h"
 #include "base/process/launch.h"
+#include "base/threading/thread.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_sender.h"
 
@@ -17,6 +19,9 @@ class SequencedTaskRunner;
 namespace content {
 class UtilityProcessHostClient;
 struct ChildProcessData;
+
+typedef base::Thread* (*UtilityMainThreadFactoryFunction)(
+    const std::string& id);
 
 // This class acts as the browser-side host to a utility child process.  A
 // utility process is a short-lived process that is created to run a specific
@@ -64,8 +69,11 @@ class UtilityProcessHost : public IPC::Sender,
   virtual const ChildProcessData& GetData() = 0;
 
 #if defined(OS_POSIX)
-  virtual void SetEnv(const base::EnvironmentVector& env) = 0;
+  virtual void SetEnv(const base::EnvironmentMap& env) = 0;
 #endif
+
+  CONTENT_EXPORT static void RegisterUtilityMainThreadFactory(
+      UtilityMainThreadFactoryFunction create);
 };
 
 };  // namespace content

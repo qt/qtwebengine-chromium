@@ -32,6 +32,7 @@
 #include "lithium-allocator-inl.h"
 #include "ia32/lithium-ia32.h"
 #include "ia32/lithium-codegen-ia32.h"
+#include "hydrogen-osr.h"
 
 namespace v8 {
 namespace internal {
@@ -290,6 +291,14 @@ void LTypeofIsAndBranch::PrintDataTo(StringStream* stream) {
 }
 
 
+void LStoreCodeEntry::PrintDataTo(StringStream* stream) {
+  stream->Add(" = ");
+  function()->PrintTo(stream);
+  stream->Add(".code_entry = ");
+  code_object()->PrintTo(stream);
+}
+
+
 void LInnerAllocatedObject::PrintDataTo(StringStream* stream) {
   stream->Add(" = ");
   base_object()->PrintTo(stream);
@@ -475,6 +484,14 @@ LPlatformChunk* LChunkBuilder::Build() {
     USE(alignment_state_index);
   }
 
+  // If compiling for OSR, reserve space for the unoptimized frame,
+  // which will be subsumed into this frame.
+  if (graph()->has_osr()) {
+    for (int i = graph()->osr()->UnoptimizedFrameSlots(); i > 0; i--) {
+      chunk_->GetNextSpillIndex(false);
+    }
+  }
+
   const ZoneList<HBasicBlock*>* blocks = graph()->blocks();
   for (int i = 0; i < blocks->length(); i++) {
     HBasicBlock* next = NULL;
@@ -487,7 +504,7 @@ LPlatformChunk* LChunkBuilder::Build() {
 }
 
 
-void LChunkBuilder::Abort(const char* reason) {
+void LChunkBuilder::Abort(BailoutReason reason) {
   info()->set_bailout_reason(reason);
   status_ = ABORTED;
 }
@@ -645,8 +662,10 @@ LInstruction* LChunkBuilder::DefineFixedDouble(
 LInstruction* LChunkBuilder::AssignEnvironment(LInstruction* instr) {
   HEnvironment* hydrogen_env = current_block_->last_environment();
   int argument_index_accumulator = 0;
+  ZoneList<HValue*> objects_to_materialize(0, zone());
   instr->set_environment(CreateEnvironment(hydrogen_env,
-                                           &argument_index_accumulator));
+                                           &argument_index_accumulator,
+                                           &objects_to_materialize));
   return instr;
 }
 
@@ -698,7 +717,7 @@ LUnallocated* LChunkBuilder::TempRegister() {
       new(zone()) LUnallocated(LUnallocated::MUST_HAVE_REGISTER);
   int vreg = allocator_->GetVirtualRegister();
   if (!allocator_->AllocationOk()) {
-    Abort("Out of virtual registers while trying to allocate temp register.");
+    Abort(kOutOfVirtualRegistersWhileTryingToAllocateTempRegister);
     vreg = 0;
   }
   operand->set_virtual_register(vreg);
@@ -770,12 +789,7 @@ LInstruction* LChunkBuilder::DoShift(Token::Value op,
     // Left shifts can deoptimize if we shift by > 0 and the result cannot be
     // truncated to smi.
     if (instr->representation().IsSmi() && constant_value > 0) {
-      for (HUseIterator it(instr->uses()); !it.Done(); it.Advance()) {
-        if (!it.value()->CheckFlag(HValue::kTruncatingToSmi)) {
-          does_deopt = true;
-          break;
-        }
-      }
+      does_deopt = !instr->CheckUsesForFlag(HValue::kTruncatingToSmi);
     }
   } else {
     right = UseFixed(right_value, ecx);
@@ -787,12 +801,7 @@ LInstruction* LChunkBuilder::DoShift(Token::Value op,
     if (FLAG_opt_safe_uint32_operations) {
       does_deopt = !instr->CheckFlag(HInstruction::kUint32);
     } else {
-      for (HUseIterator it(instr->uses()); !it.Done(); it.Advance()) {
-        if (!it.value()->CheckFlag(HValue::kTruncatingToInt32)) {
-          does_deopt = true;
-          break;
-        }
-      }
+      does_deopt = !instr->CheckUsesForFlag(HValue::kTruncatingToInt32);
     }
   }
 
@@ -938,11 +947,22 @@ void LChunkBuilder::VisitInstruction(HInstruction* current) {
     }
 #endif
 
+    instr->set_position(position_);
     if (FLAG_stress_pointer_maps && !instr->HasPointerMap()) {
       instr = AssignPointerMap(instr);
     }
     if (FLAG_stress_environments && !instr->HasEnvironment()) {
       instr = AssignEnvironment(instr);
+    }
+    if (!CpuFeatures::IsSafeForSnapshot(SSE2) && instr->IsGoto() &&
+        LGoto::cast(instr)->jumps_to_join()) {
+      // TODO(olivf) Since phis of spilled values are joined as registers
+      // (not in the stack slot), we need to allow the goto gaps to keep one
+      // x87 register alive. To ensure all other values are still spilled, we
+      // insert a fpu register barrier right before.
+      LClobberDoubles* clobber = new(zone()) LClobberDoubles();
+      clobber->set_hydrogen_value(current);
+      chunk_->AddInstruction(clobber, current_block_);
     }
     instr->set_hydrogen_value(current);
     chunk_->AddInstruction(instr, current_block_);
@@ -953,11 +973,13 @@ void LChunkBuilder::VisitInstruction(HInstruction* current) {
 
 LEnvironment* LChunkBuilder::CreateEnvironment(
     HEnvironment* hydrogen_env,
-    int* argument_index_accumulator) {
+    int* argument_index_accumulator,
+    ZoneList<HValue*>* objects_to_materialize) {
   if (hydrogen_env == NULL) return NULL;
 
-  LEnvironment* outer =
-      CreateEnvironment(hydrogen_env->outer(), argument_index_accumulator);
+  LEnvironment* outer = CreateEnvironment(hydrogen_env->outer(),
+                                          argument_index_accumulator,
+                                          objects_to_materialize);
   BailoutId ast_id = hydrogen_env->ast_id();
   ASSERT(!ast_id.IsNone() ||
          hydrogen_env->frame_type() != JS_FUNCTION);
@@ -972,16 +994,16 @@ LEnvironment* LChunkBuilder::CreateEnvironment(
                                outer,
                                hydrogen_env->entry(),
                                zone());
-  bool needs_arguments_object_materialization = false;
   int argument_index = *argument_index_accumulator;
+  int object_index = objects_to_materialize->length();
   for (int i = 0; i < hydrogen_env->length(); ++i) {
     if (hydrogen_env->is_special_index(i)) continue;
 
+    LOperand* op;
     HValue* value = hydrogen_env->values()->at(i);
-    LOperand* op = NULL;
-    if (value->IsArgumentsObject()) {
-      needs_arguments_object_materialization = true;
-      op = NULL;
+    if (value->IsArgumentsObject() || value->IsCapturedObject()) {
+      objects_to_materialize->Add(value, zone());
+      op = LEnvironment::materialization_marker();
     } else if (value->IsPushArgument()) {
       op = new(zone()) LArgument(argument_index++);
     } else {
@@ -992,15 +1014,33 @@ LEnvironment* LChunkBuilder::CreateEnvironment(
                      value->CheckFlag(HInstruction::kUint32));
   }
 
-  if (needs_arguments_object_materialization) {
-    HArgumentsObject* arguments = hydrogen_env->entry() == NULL
-        ? graph()->GetArgumentsObject()
-        : hydrogen_env->entry()->arguments_object();
-    ASSERT(arguments->IsLinked());
-    for (int i = 1; i < arguments->arguments_count(); ++i) {
-      HValue* value = arguments->arguments_values()->at(i);
-      ASSERT(!value->IsArgumentsObject() && !value->IsPushArgument());
-      LOperand* op = UseAny(value);
+  for (int i = object_index; i < objects_to_materialize->length(); ++i) {
+    HValue* object_to_materialize = objects_to_materialize->at(i);
+    int previously_materialized_object = -1;
+    for (int prev = 0; prev < i; ++prev) {
+      if (objects_to_materialize->at(prev) == objects_to_materialize->at(i)) {
+        previously_materialized_object = prev;
+        break;
+      }
+    }
+    int length = object_to_materialize->OperandCount();
+    bool is_arguments = object_to_materialize->IsArgumentsObject();
+    if (previously_materialized_object >= 0) {
+      result->AddDuplicateObject(previously_materialized_object);
+      continue;
+    } else {
+      result->AddNewObject(is_arguments ? length - 1 : length, is_arguments);
+    }
+    for (int i = is_arguments ? 1 : 0; i < length; ++i) {
+      LOperand* op;
+      HValue* value = object_to_materialize->OperandAt(i);
+      if (value->IsArgumentsObject() || value->IsCapturedObject()) {
+        objects_to_materialize->Add(value, zone());
+        op = LEnvironment::materialization_marker();
+      } else {
+        ASSERT(!value->IsPushArgument());
+        op = UseAny(value);
+      }
       result->AddValue(op,
                        value->representation(),
                        value->CheckFlag(HInstruction::kUint32));
@@ -1016,7 +1056,7 @@ LEnvironment* LChunkBuilder::CreateEnvironment(
 
 
 LInstruction* LChunkBuilder::DoGoto(HGoto* instr) {
-  return new(zone()) LGoto(instr->FirstSuccessor()->block_id());
+  return new(zone()) LGoto(instr->FirstSuccessor());
 }
 
 
@@ -1028,7 +1068,7 @@ LInstruction* LChunkBuilder::DoBranch(HBranch* instr) {
     HBasicBlock* successor = HConstant::cast(value)->BooleanValue()
         ? instr->FirstSuccessor()
         : instr->SecondSuccessor();
-    return new(zone()) LGoto(successor->block_id());
+    return new(zone()) LGoto(successor);
   }
 
   ToBooleanStub::Types expected = instr->expected_input_types();
@@ -1134,6 +1174,14 @@ LInstruction* LChunkBuilder::DoPushArgument(HPushArgument* instr) {
   ++argument_count_;
   LOperand* argument = UseAny(instr->argument());
   return new(zone()) LPushArgument(argument);
+}
+
+
+LInstruction* LChunkBuilder::DoStoreCodeEntry(
+    HStoreCodeEntry* store_code_entry) {
+  LOperand* function = UseRegister(store_code_entry->function());
+  LOperand* code_object = UseTempRegister(store_code_entry->code_object());
+  return new(zone()) LStoreCodeEntry(function, code_object);
 }
 
 
@@ -1392,9 +1440,8 @@ LInstruction* LChunkBuilder::DoShl(HShl* instr) {
 
 LInstruction* LChunkBuilder::DoBitwise(HBitwise* instr) {
   if (instr->representation().IsSmiOrInteger32()) {
-    ASSERT(instr->left()->representation().IsSmiOrInteger32());
-    ASSERT(instr->right()->representation().Equals(
-        instr->left()->representation()));
+    ASSERT(instr->left()->representation().Equals(instr->representation()));
+    ASSERT(instr->right()->representation().Equals(instr->representation()));
 
     LOperand* left = UseRegisterAtStart(instr->BetterLeftOperand());
     LOperand* right = UseOrConstantAtStart(instr->BetterRightOperand());
@@ -1411,16 +1458,6 @@ LInstruction* LChunkBuilder::DoBitwise(HBitwise* instr) {
         new(zone()) LArithmeticT(instr->op(), context, left, right);
     return MarkAsCall(DefineFixed(result, eax), instr);
   }
-}
-
-
-LInstruction* LChunkBuilder::DoBitNot(HBitNot* instr) {
-  ASSERT(instr->value()->representation().IsInteger32());
-  ASSERT(instr->representation().IsInteger32());
-  if (instr->HasNoUses()) return NULL;
-  LOperand* input = UseRegisterAtStart(instr->value());
-  LBitNotI* result = new(zone()) LBitNotI(input);
-  return DefineSameAsFirst(result);
 }
 
 
@@ -1512,8 +1549,8 @@ LInstruction* LChunkBuilder::DoMod(HMod* instr) {
   HValue* left = instr->left();
   HValue* right = instr->right();
   if (instr->representation().IsSmiOrInteger32()) {
-    ASSERT(left->representation().IsSmiOrInteger32());
-    ASSERT(right->representation().Equals(left->representation()));
+    ASSERT(instr->left()->representation().Equals(instr->representation()));
+    ASSERT(instr->right()->representation().Equals(instr->representation()));
 
     if (instr->HasPowerOf2Divisor()) {
       ASSERT(!right->CanBeZero());
@@ -1589,9 +1626,8 @@ LInstruction* LChunkBuilder::DoMul(HMul* instr) {
 
 LInstruction* LChunkBuilder::DoSub(HSub* instr) {
   if (instr->representation().IsSmiOrInteger32()) {
-    ASSERT(instr->left()->representation().IsSmiOrInteger32());
-    ASSERT(instr->right()->representation().Equals(
-        instr->left()->representation()));
+    ASSERT(instr->left()->representation().Equals(instr->representation()));
+    ASSERT(instr->right()->representation().Equals(instr->representation()));
     LOperand* left = UseRegisterAtStart(instr->left());
     LOperand* right = UseOrConstantAtStart(instr->right());
     LSubI* sub = new(zone()) LSubI(left, right);
@@ -1611,9 +1647,8 @@ LInstruction* LChunkBuilder::DoSub(HSub* instr) {
 
 LInstruction* LChunkBuilder::DoAdd(HAdd* instr) {
   if (instr->representation().IsSmiOrInteger32()) {
-    ASSERT(instr->left()->representation().IsSmiOrInteger32());
-    ASSERT(instr->right()->representation().Equals(
-        instr->left()->representation()));
+    ASSERT(instr->left()->representation().Equals(instr->representation()));
+    ASSERT(instr->right()->representation().Equals(instr->representation()));
     // Check to see if it would be advantageous to use an lea instruction rather
     // than an add. This is the case when no overflow check is needed and there
     // are multiple uses of the add's inputs, so using a 3-register add will
@@ -1646,9 +1681,8 @@ LInstruction* LChunkBuilder::DoMathMinMax(HMathMinMax* instr) {
   LOperand* left = NULL;
   LOperand* right = NULL;
   if (instr->representation().IsSmiOrInteger32()) {
-    ASSERT(instr->left()->representation().IsSmiOrInteger32());
-    ASSERT(instr->right()->representation().Equals(
-        instr->left()->representation()));
+    ASSERT(instr->left()->representation().Equals(instr->representation()));
+    ASSERT(instr->right()->representation().Equals(instr->representation()));
     left = UseRegisterAtStart(instr->BetterLeftOperand());
     right = UseOrConstantAtStart(instr->BetterRightOperand());
   } else {
@@ -1681,10 +1715,14 @@ LInstruction* LChunkBuilder::DoPower(HPower* instr) {
 
 LInstruction* LChunkBuilder::DoRandom(HRandom* instr) {
   ASSERT(instr->representation().IsDouble());
-  ASSERT(instr->global_object()->representation().IsSmiOrTagged());
-  LOperand* global_object = UseFixed(instr->global_object(), eax);
-  LRandom* result = new(zone()) LRandom(global_object);
-  return MarkAsCall(DefineFixedDouble(result, xmm1), instr);
+  ASSERT(instr->global_object()->representation().IsTagged());
+  LOperand* global_object = UseTempRegister(instr->global_object());
+  LOperand* scratch = TempRegister();
+  LOperand* scratch2 = TempRegister();
+  LOperand* scratch3 = TempRegister();
+  LRandom* result = new(zone()) LRandom(
+      global_object, scratch, scratch2, scratch3);
+  return DefineFixedDouble(result, xmm1);
 }
 
 
@@ -1703,9 +1741,8 @@ LInstruction* LChunkBuilder::DoCompareNumericAndBranch(
     HCompareNumericAndBranch* instr) {
   Representation r = instr->representation();
   if (r.IsSmiOrInteger32()) {
-    ASSERT(instr->left()->representation().IsSmiOrInteger32());
-    ASSERT(instr->left()->representation().Equals(
-        instr->right()->representation()));
+    ASSERT(instr->left()->representation().Equals(r));
+    ASSERT(instr->right()->representation().Equals(r));
     LOperand* left = UseRegisterOrConstantAtStart(instr->left());
     LOperand* right = UseOrConstantAtStart(instr->right());
     return new(zone()) LCompareNumericAndBranch(left, right);
@@ -1732,6 +1769,13 @@ LInstruction* LChunkBuilder::DoCompareObjectEqAndBranch(
   LOperand* left = UseRegisterAtStart(instr->left());
   LOperand* right = UseOrConstantAtStart(instr->right());
   return new(zone()) LCmpObjectEqAndBranch(left, right);
+}
+
+
+LInstruction* LChunkBuilder::DoCompareHoleAndBranch(
+    HCompareHoleAndBranch* instr) {
+  LOperand* object = UseRegisterAtStart(instr->object());
+  return new(zone()) LCmpHoleAndBranch(object);
 }
 
 
@@ -1851,17 +1895,6 @@ LInstruction* LChunkBuilder::DoSeqStringSetChar(HSeqStringSetChar* instr) {
 }
 
 
-LInstruction* LChunkBuilder::DoNumericConstraint(HNumericConstraint* instr) {
-  return NULL;
-}
-
-
-LInstruction* LChunkBuilder::DoInductionVariableAnnotation(
-    HInductionVariableAnnotation* instr) {
-  return NULL;
-}
-
-
 LInstruction* LChunkBuilder::DoBoundsCheck(HBoundsCheck* instr) {
   return AssignEnvironment(new(zone()) LBoundsCheck(
       UseRegisterOrConstantAtStart(instr->index()),
@@ -1872,13 +1905,6 @@ LInstruction* LChunkBuilder::DoBoundsCheck(HBoundsCheck* instr) {
 LInstruction* LChunkBuilder::DoBoundsCheckBaseIndexInformation(
     HBoundsCheckBaseIndexInformation* instr) {
   UNREACHABLE();
-  return NULL;
-}
-
-
-LInstruction* LChunkBuilder::DoAbnormalExit(HAbnormalExit* instr) {
-  // The control instruction marking the end of a block that completed
-  // abruptly (e.g., threw an exception).  There is nothing specific to do.
   return NULL;
 }
 
@@ -1921,9 +1947,7 @@ LInstruction* LChunkBuilder::DoChange(HChange* instr) {
       info()->MarkAsDeferredCalling();
       LOperand* value = UseRegister(instr->value());
       // Temp register only necessary for minus zero check.
-      LOperand* temp = instr->deoptimize_on_minus_zero()
-                       ? TempRegister()
-                       : NULL;
+      LOperand* temp = TempRegister();
       LNumberUntagD* res = new(zone()) LNumberUntagD(value, temp);
       return AssignEnvironment(DefineAsRegister(res));
     } else if (to.IsSmi()) {
@@ -1935,26 +1959,17 @@ LInstruction* LChunkBuilder::DoChange(HChange* instr) {
       return AssignEnvironment(DefineSameAsFirst(new(zone()) LCheckSmi(value)));
     } else {
       ASSERT(to.IsInteger32());
-      if (instr->value()->type().IsSmi()) {
-        LOperand* value = UseRegister(instr->value());
+      HValue* val = instr->value();
+      if (val->type().IsSmi() || val->representation().IsSmi()) {
+        LOperand* value = UseRegister(val);
         return DefineSameAsFirst(new(zone()) LSmiUntag(value, false));
       } else {
         bool truncating = instr->CanTruncateToInt32();
-        if (CpuFeatures::IsSafeForSnapshot(SSE2)) {
-          LOperand* value = UseRegister(instr->value());
-          LOperand* xmm_temp =
-              (truncating && CpuFeatures::IsSupported(SSE3))
-              ? NULL
-              : FixedTemp(xmm1);
-          LTaggedToI* res = new(zone()) LTaggedToI(value, xmm_temp);
-          return AssignEnvironment(DefineSameAsFirst(res));
-        } else {
-          LOperand* value = UseFixed(instr->value(), ecx);
-          LTaggedToINoSSE2* res =
-              new(zone()) LTaggedToINoSSE2(value, TempRegister(),
-                                           TempRegister(), TempRegister());
-          return AssignEnvironment(DefineFixed(res, ecx));
-        }
+        LOperand* xmm_temp =
+            (CpuFeatures::IsSafeForSnapshot(SSE2) && !truncating)
+                ? FixedTemp(xmm1) : NULL;
+        LTaggedToI* res = new(zone()) LTaggedToI(UseRegister(val), xmm_temp);
+        return AssignEnvironment(DefineSameAsFirst(res));
       }
     }
   } else if (from.IsDouble()) {
@@ -1974,7 +1989,7 @@ LInstruction* LChunkBuilder::DoChange(HChange* instr) {
     } else {
       ASSERT(to.IsInteger32());
       bool truncating = instr->CanTruncateToInt32();
-      bool needs_temp = truncating && !CpuFeatures::IsSupported(SSE3);
+      bool needs_temp = CpuFeatures::IsSafeForSnapshot(SSE2) && !truncating;
       LOperand* value = needs_temp ?
           UseTempRegister(instr->value()) : UseRegister(instr->value());
       LOperand* temp = needs_temp ? TempRegister() : NULL;
@@ -2000,8 +2015,9 @@ LInstruction* LChunkBuilder::DoChange(HChange* instr) {
     } else if (to.IsSmi()) {
       HValue* val = instr->value();
       LOperand* value = UseRegister(val);
-      LInstruction* result =
-          DefineSameAsFirst(new(zone()) LInteger32ToSmi(value));
+      LInstruction* result = val->CheckFlag(HInstruction::kUint32)
+           ? DefineSameAsFirst(new(zone()) LUint32ToSmi(value))
+           : DefineSameAsFirst(new(zone()) LInteger32ToSmi(value));
       if (val->HasRange() && val->range()->IsInSmiRange()) {
         return result;
       }
@@ -2049,32 +2065,29 @@ LInstruction* LChunkBuilder::DoCheckInstanceType(HCheckInstanceType* instr) {
 }
 
 
-LInstruction* LChunkBuilder::DoCheckPrototypeMaps(HCheckPrototypeMaps* instr) {
-  LUnallocated* temp = NULL;
-  if (!instr->CanOmitPrototypeChecks()) temp = TempRegister();
-  LCheckPrototypeMaps* result = new(zone()) LCheckPrototypeMaps(temp);
-  if (instr->CanOmitPrototypeChecks()) return result;
-  return AssignEnvironment(result);
-}
-
-
-LInstruction* LChunkBuilder::DoCheckFunction(HCheckFunction* instr) {
-  // If the target is in new space, we'll emit a global cell compare and so
-  // want the value in a register.  If the target gets promoted before we
+LInstruction* LChunkBuilder::DoCheckValue(HCheckValue* instr) {
+  // If the object is in new space, we'll emit a global cell compare and so
+  // want the value in a register.  If the object gets promoted before we
   // emit code, we will still get the register but will do an immediate
   // compare instead of the cell compare.  This is safe.
-  LOperand* value = instr->target_in_new_space()
+  LOperand* value = instr->object_in_new_space()
       ? UseRegisterAtStart(instr->value()) : UseAtStart(instr->value());
-  return AssignEnvironment(new(zone()) LCheckFunction(value));
+  return AssignEnvironment(new(zone()) LCheckValue(value));
 }
 
 
 LInstruction* LChunkBuilder::DoCheckMaps(HCheckMaps* instr) {
   LOperand* value = NULL;
-  if (!instr->CanOmitMapChecks()) value = UseRegisterAtStart(instr->value());
+  if (!instr->CanOmitMapChecks()) {
+    value = UseRegisterAtStart(instr->value());
+    if (instr->has_migration_target()) info()->MarkAsDeferredCalling();
+  }
   LCheckMaps* result = new(zone()) LCheckMaps(value);
-  if (instr->CanOmitMapChecks()) return result;
-  return AssignEnvironment(result);
+  if (!instr->CanOmitMapChecks()) {
+    AssignEnvironment(result);
+    if (instr->has_migration_target()) return AssignPointerMap(result);
+  }
+  return result;
 }
 
 
@@ -2203,25 +2216,6 @@ LInstruction* LChunkBuilder::DoLoadNamedField(HLoadNamedField* instr) {
       ? UseRegisterOrConstantAtStart(instr->object())
       : UseRegisterAtStart(instr->object());
   return DefineAsRegister(new(zone()) LLoadNamedField(obj));
-}
-
-
-LInstruction* LChunkBuilder::DoLoadNamedFieldPolymorphic(
-    HLoadNamedFieldPolymorphic* instr) {
-  ASSERT(instr->representation().IsTagged());
-  if (instr->need_generic()) {
-    LOperand* context = UseFixed(instr->context(), esi);
-    LOperand* obj = UseFixed(instr->object(), edx);
-    LLoadNamedFieldPolymorphic* result =
-        new(zone()) LLoadNamedFieldPolymorphic(context, obj);
-    return MarkAsCall(DefineFixed(result, eax), instr);
-  } else {
-    LOperand* context = UseAny(instr->context());  // Not actually used.
-    LOperand* obj = UseRegisterAtStart(instr->object());
-    LLoadNamedFieldPolymorphic* result =
-        new(zone()) LLoadNamedFieldPolymorphic(context, obj);
-    return AssignEnvironment(DefineAsRegister(result));
-  }
 }
 
 
@@ -2418,7 +2412,7 @@ LInstruction* LChunkBuilder::DoStoreNamedField(HStoreNamedField* instr) {
   bool is_external_location = instr->access().IsExternalMemory() &&
       instr->access().offset() == 0;
   bool needs_write_barrier = instr->NeedsWriteBarrier();
-  bool needs_write_barrier_for_map = !instr->transition().is_null() &&
+  bool needs_write_barrier_for_map = instr->has_transition() &&
       instr->NeedsWriteBarrierForMap();
 
   LOperand* obj;
@@ -2565,10 +2559,23 @@ LInstruction* LChunkBuilder::DoParameter(HParameter* instr) {
 
 
 LInstruction* LChunkBuilder::DoUnknownOSRValue(HUnknownOSRValue* instr) {
-  int spill_index = chunk()->GetNextSpillIndex(false);  // Not double-width.
-  if (spill_index > LUnallocated::kMaxFixedSlotIndex) {
-    Abort("Too many spill slots needed for OSR");
-    spill_index = 0;
+  // Use an index that corresponds to the location in the unoptimized frame,
+  // which the optimized frame will subsume.
+  int env_index = instr->index();
+  int spill_index = 0;
+  if (instr->environment()->is_parameter_index(env_index)) {
+    spill_index = chunk()->GetParameterStackSlot(env_index);
+  } else {
+    spill_index = env_index - instr->environment()->first_local_index();
+    if (spill_index > LUnallocated::kMaxFixedSlotIndex) {
+      Abort(kNotEnoughSpillSlotsForOsr);
+      spill_index = 0;
+    }
+    if (spill_index == 0) {
+      // The dynamic frame alignment state overwrites the first local.
+      // The first local is saved at the end of the unoptimized frame.
+      spill_index = graph()->osr()->UnoptimizedFrameSlots();
+    }
   }
   return DefineAsSpilled(new(zone()) LUnknownOSRValue, spill_index);
 }
@@ -2587,6 +2594,14 @@ LInstruction* LChunkBuilder::DoArgumentsObject(HArgumentsObject* instr) {
   // arguments.length and element access are supported directly on
   // stack arguments, and any real arguments object use causes a bailout.
   // So this value is never used.
+  return NULL;
+}
+
+
+LInstruction* LChunkBuilder::DoCapturedObject(HCapturedObject* instr) {
+  instr->ReplayEnvironment(current_block_->last_environment());
+
+  // There are no real uses of a captured object.
   return NULL;
 }
 
@@ -2634,20 +2649,7 @@ LInstruction* LChunkBuilder::DoIsConstructCallAndBranch(
 
 
 LInstruction* LChunkBuilder::DoSimulate(HSimulate* instr) {
-  HEnvironment* env = current_block_->last_environment();
-  ASSERT(env != NULL);
-
-  env->set_ast_id(instr->ast_id());
-
-  env->Drop(instr->pop_count());
-  for (int i = instr->values()->length() - 1; i >= 0; --i) {
-    HValue* value = instr->values()->at(i);
-    if (instr->HasAssignedIndexAt(i)) {
-      env->Bind(instr->GetAssignedIndexAt(i), value);
-    } else {
-      env->Push(value);
-    }
-  }
+  instr->ReplayEnvironment(current_block_->last_environment());
 
   // If there is an instruction pending deoptimization environment create a
   // lazy bailout instruction to capture the environment.

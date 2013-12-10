@@ -21,17 +21,24 @@
 #ifndef SVGPolylineElement_h
 #define SVGPolylineElement_h
 
+#include "SVGNames.h"
 #include "core/svg/SVGPolyElement.h"
 
 namespace WebCore {
 
 class SVGPolylineElement FINAL : public SVGPolyElement {
 public:
-    static PassRefPtr<SVGPolylineElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGPolylineElement> create(const QualifiedName&, Document&);
 
 private:
-    SVGPolylineElement(const QualifiedName&, Document*);
+    SVGPolylineElement(const QualifiedName&, Document&);
 };
+
+inline SVGPolylineElement* toSVGPolylineElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::polylineTag));
+    return static_cast<SVGPolylineElement*>(node);
+}
 
 } // namespace WebCore
 

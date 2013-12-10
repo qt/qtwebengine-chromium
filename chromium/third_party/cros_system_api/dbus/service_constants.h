@@ -87,6 +87,10 @@ const char kCryptohomeInstallAttributesIsInvalid[] =
     "InstallAttributesIsInvalid";
 const char kCryptohomeInstallAttributesIsFirstInstall[] =
     "InstallAttributesIsFirstInstall";
+const char kCryptohomeStoreEnrollmentState[] =
+    "StoreEnrollmentState";
+const char kCryptohomeLoadEnrollmentState[] =
+    "LoadEnrollmentState";
 const char kCryptohomeTpmIsAttestationPrepared[] = "TpmIsAttestationPrepared";
 const char kCryptohomeTpmIsAttestationEnrolled[] = "TpmIsAttestationEnrolled";
 const char kCryptohomeAsyncTpmAttestationCreateEnrollRequest[] =
@@ -94,6 +98,8 @@ const char kCryptohomeAsyncTpmAttestationCreateEnrollRequest[] =
 const char kCryptohomeAsyncTpmAttestationEnroll[] = "AsyncTpmAttestationEnroll";
 const char kCryptohomeAsyncTpmAttestationCreateCertRequest[] =
     "AsyncTpmAttestationCreateCertRequest";
+const char kCryptohomeAsyncTpmAttestationCreateCertRequestByProfile[] =
+    "AsyncTpmAttestationCreateCertRequestByProfile";
 const char kCryptohomeAsyncTpmAttestationFinishCertRequest[] =
     "AsyncTpmAttestationFinishCertRequest";
 const char kCryptohomeTpmAttestationDoesKeyExist[] =
@@ -175,7 +181,6 @@ const char kSessionManagerStopSessionService[] = "StopSessionService";
 const char kSessionManagerStartDeviceWipe[] = "StartDeviceWipe";
 const char kSessionManagerLockScreen[] = "LockScreen";
 const char kSessionManagerHandleLockScreenShown[] = "HandleLockScreenShown";
-const char kSessionManagerUnlockScreen[] = "UnlockScreen";
 const char kSessionManagerHandleLockScreenDismissed[] =
     "HandleLockScreenDismissed";
 const char kSessionManagerHandleLivenessConfirmed[] = "HandleLivenessConfirmed";
@@ -210,7 +215,6 @@ namespace chromium {
 const char kChromiumInterface[] = "org.chromium.Chromium";
 // ScreenLock signals.
 const char kLockScreenSignal[] = "LockScreen";
-const char kUnlockScreenSignal[] = "UnlockScreen";
 // Text-to-speech service signals.
 const char kTTSReadySignal[] = "TTSReady";
 const char kTTSFailedSignal[] = "TTSFailed";
@@ -292,7 +296,8 @@ enum DisplayPowerState {
 };
 }  // namespace chromeos
 
-namespace flimflam {
+// TODO(benchan): Reorganize shill constants and remove deprecated ones.
+namespace shill {
 // Flimflam D-Bus service identifiers.
 const char kFlimflamManagerInterface[] = "org.chromium.flimflam.Manager";
 const char kFlimflamServiceName[] = "org.chromium.flimflam";
@@ -691,9 +696,7 @@ const char kErrorPinBlockedMsg[] = "org.chromium.flimflam.Error.PinBlocked";
 const char kErrorPinRequiredMsg[] = "org.chromium.flimflam.Error.PinRequired";
 
 const char kUnknownString[] = "UNKNOWN";
-}  // namespace flimflam
 
-namespace shill {
 // Function names.
 const char kSetPropertiesFunction[] = "SetProperties";
 const char kClearPropertiesFunction[] = "ClearProperties";
@@ -826,6 +829,10 @@ const char kGeoSignalToNoiseRatioProperty[] = "signalToNoiseRatio";
 const char kGeoAgeProperty[] = "age";
 const char kGeoSignalStrengthProperty[] = "signalStrength";
 }  // namespace shill
+
+// TODO(benchan): Remove this namespace alias once we finish replacing flimflam
+// namespace with shill namespace in shill and Chrome code.
+namespace flimflam = shill;
 
 namespace modemmanager {
 // ModemManager D-Bus service identifiers
@@ -1232,9 +1239,7 @@ const char kUpdateEngineServiceName[] = "org.chromium.UpdateEngine";
 // Methods.
 const char kAttemptUpdate[] = "AttemptUpdate";
 const char kGetStatus[] = "GetStatus";
-const char kGetTrack[] = "GetTrack";
 const char kRebootIfNeeded[] = "RebootIfNeeded";
-const char kSetTrack[] = "SetTrack";
 const char kSetChannel[] = "SetChannel";
 const char kGetChannel[] = "GetChannel";
 
@@ -1305,6 +1310,7 @@ const char kGetVolumeState[] = "GetVolumeState";
 const char kGetNodes[] = "GetNodes";
 const char kSetActiveOutputNode[] = "SetActiveOutputNode";
 const char kSetActiveInputNode[] = "SetActiveInputNode";
+const char kGetNumberOfActiveStreams[] = "GetNumberOfActiveStreams";
 
 // Names of properties returned by GetNodes()
 const char kIsInputProperty[] = "IsInput";
@@ -1323,6 +1329,7 @@ const char kInputMuteChanged[] = "InputMuteChanged";
 const char kNodesChanged[] = "NodesChanged";
 const char kActiveOutputNodeChanged[] = "ActiveOutputNodeChanged";
 const char kActiveInputNodeChanged[] = "ActiveInputNodeChanged";
+const char kNumberOfActiveStreamsChanged[] = "NumberOfActiveStreamsChanged";
 }  // namespace cras
 
 #endif  // DBUS_SERVICE_CONSTANTS_H_

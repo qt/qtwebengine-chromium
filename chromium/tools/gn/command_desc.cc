@@ -27,11 +27,17 @@ struct CompareTargetLabel {
   }
 };
 
+void RecursiveCollectChildDeps(const Target* target, std::set<Label>* result);
+
 void RecursiveCollectDeps(const Target* target, std::set<Label>* result) {
   if (result->find(target->label()) != result->end())
     return;  // Already did this target.
   result->insert(target->label());
 
+  RecursiveCollectChildDeps(target, result);
+}
+
+void RecursiveCollectChildDeps(const Target* target, std::set<Label>* result) {
   const std::vector<const Target*>& deps = target->deps();
   for (size_t i = 0; i < deps.size(); i++)
     RecursiveCollectDeps(deps[i], result);
@@ -78,7 +84,7 @@ void PrintDeps(const Target* target, bool display_header) {
       OutputString("\nAll recursive dependencies:\n");
 
     std::set<Label> all_deps;
-    RecursiveCollectDeps(target, &all_deps);
+    RecursiveCollectChildDeps(target, &all_deps);
     for (std::set<Label>::iterator i = all_deps.begin();
          i != all_deps.end(); ++i)
       deps.push_back(*i);
@@ -100,6 +106,21 @@ void PrintDeps(const Target* target, bool display_header) {
   std::sort(deps.begin(), deps.end());
   for (size_t i = 0; i < deps.size(); i++)
     OutputString("  " + deps[i].GetUserVisibleName(toolchain_label) + "\n");
+}
+
+// Ldflags are special in that they're inherited. We don't currently implement
+// a blame feature for this since the bottom-up inheritance makes this
+// difficult.
+void PrintLdflags(const Target* target, bool display_header) {
+  const OrderedSet<std::string>& ldflags = target->all_ldflags();
+  if (ldflags.empty())
+    return;
+
+  if (display_header)
+    OutputString("ldflags\n");
+
+  for (size_t i = 0; i < ldflags.size(); i++)
+    OutputString("  " + ldflags[i] + "\n");
 }
 
 void PrintConfigs(const Target* target, bool display_header) {
@@ -137,7 +158,7 @@ void OutputSourceOfDep(const Target* target,
   ItemTree& item_tree = target->settings()->build_settings()->item_tree();
   base::AutoLock lock(item_tree.lock());
 
-  ItemNode* target_node = item_tree.GetExistingNodeLocked(target->label());
+  const ItemNode* target_node = target->item_node();
   CHECK(target_node);
   ItemNode* dep_node = item_tree.GetExistingNodeLocked(dep_label);
   CHECK(dep_node);
@@ -181,6 +202,27 @@ template<typename T> void OutputRecursiveTargetConfig(
   DescValueWriter<T> writer;
   std::ostringstream out;
 
+  for (ConfigValuesIterator iter(target); !iter.done(); iter.Next()) {
+    if ((iter.cur().*getter)().empty())
+      continue;
+
+    // Optional blame sub-head.
+    if (display_blame) {
+      const Config* config = iter.GetCurrentConfig();
+      if (config) {
+        // Source of this value is a config.
+        out << "  From " << config->label().GetUserVisibleName(false) << "\n";
+      } else {
+        // Source of this value is the target itself.
+        out << "  From " << target->label().GetUserVisibleName(false) << "\n";
+      }
+      OutputSourceOfDep(target, config->label(), out);
+    }
+
+    // Actual values.
+    ConfigValuesToStream(iter.cur(), getter, writer, out);
+  }
+
   // First write the values from the config itself.
   if (!(target->config_values().*getter)().empty()) {
     if (display_blame)
@@ -206,7 +248,7 @@ template<typename T> void OutputRecursiveTargetConfig(
 
   std::string out_str = out.str();
   if (!out_str.empty()) {
-    OutputString(std::string(header_name) + "\n");
+    OutputString("\n" + std::string(header_name) + "\n");
     OutputString(out_str);
   }
 }
@@ -273,6 +315,9 @@ const char kDesc_Help[] =
     "      Shows defines set for the //base:base target, annotated by where\n"
     "      each one was set from.\n";
 
+#define OUTPUT_CONFIG_VALUE(name, type) \
+    OutputRecursiveTargetConfig<type>(target, #name, &ConfigValues::name);
+
 int RunDesc(const std::vector<std::string>& args) {
   if (args.size() != 1 && args.size() != 2) {
     Err(Location(), "You're holding it wrong.",
@@ -284,9 +329,8 @@ int RunDesc(const std::vector<std::string>& args) {
   if (!target)
     return 1;
 
-#define CONFIG_VALUE_HANDLER(name) \
-    } else if (what == #name) { \
-      OutputRecursiveTargetConfig(target, #name, &ConfigValues::name);
+#define CONFIG_VALUE_HANDLER(name, type) \
+    } else if (what == #name) { OUTPUT_CONFIG_VALUE(name, type)
 
   if (args.size() == 2) {
     // User specified one thing to display.
@@ -297,13 +341,16 @@ int RunDesc(const std::vector<std::string>& args) {
       PrintSources(target, false);
     } else if (what == "deps") {
       PrintDeps(target, false);
+    } else if (what == "ldflags") {
+      PrintLdflags(target, false);
 
-    CONFIG_VALUE_HANDLER(defines)
-    CONFIG_VALUE_HANDLER(includes)
-    CONFIG_VALUE_HANDLER(cflags)
-    CONFIG_VALUE_HANDLER(cflags_c)
-    CONFIG_VALUE_HANDLER(cflags_cc)
-    CONFIG_VALUE_HANDLER(ldflags)
+    CONFIG_VALUE_HANDLER(defines, std::string)
+    CONFIG_VALUE_HANDLER(includes, SourceDir)
+    CONFIG_VALUE_HANDLER(cflags, std::string)
+    CONFIG_VALUE_HANDLER(cflags_c, std::string)
+    CONFIG_VALUE_HANDLER(cflags_cc, std::string)
+    CONFIG_VALUE_HANDLER(cflags_objc, std::string)
+    CONFIG_VALUE_HANDLER(cflags_objcc, std::string)
 
     } else {
       OutputString("Don't know how to display \"" + what + "\".\n");
@@ -322,20 +369,26 @@ int RunDesc(const std::vector<std::string>& args) {
   Label target_toolchain = target->label().GetToolchainLabel();
 
   // Header.
-  std::string title_target =
-      "Target: " + target->label().GetUserVisibleName(false);
-  std::string title_toolchain =
-      "Toolchain: " + target_toolchain.GetUserVisibleName(false);
-  OutputString(title_target + "\n", DECORATION_YELLOW);
-  OutputString(title_toolchain + "\n", DECORATION_YELLOW);
+  OutputString("Target: ", DECORATION_YELLOW);
+  OutputString(target->label().GetUserVisibleName(false) + "\n");
+  OutputString("Type: ", DECORATION_YELLOW);
   OutputString(std::string(
-      std::max(title_target.size(), title_toolchain.size()), '=') + "\n");
+      Target::GetStringForOutputType(target->output_type())) + "\n");
+  OutputString("Toolchain: ", DECORATION_YELLOW);
+  OutputString(target_toolchain.GetUserVisibleName(false) + "\n");
 
   PrintSources(target, true);
   PrintConfigs(target, true);
-  OutputString("\n  (Use \"gn desc <label> <thing you want to see>\" to show "
-               "the actual values\n   applied by the different configs. "
-               "See \"gn help desc\" for more.)\n");
+
+  OUTPUT_CONFIG_VALUE(defines, std::string)
+  OUTPUT_CONFIG_VALUE(includes, SourceDir)
+  OUTPUT_CONFIG_VALUE(cflags, std::string)
+  OUTPUT_CONFIG_VALUE(cflags_c, std::string)
+  OUTPUT_CONFIG_VALUE(cflags_cc, std::string)
+  OUTPUT_CONFIG_VALUE(cflags_objc, std::string)
+  OUTPUT_CONFIG_VALUE(cflags_objcc, std::string)
+  PrintLdflags(target, true);
+
   PrintDeps(target, true);
 
   return 0;

@@ -32,6 +32,13 @@ bool DummyInputMethod::OnUntranslatedIMEMessage(const base::NativeEvent& event,
 void DummyInputMethod::SetFocusedTextInputClient(TextInputClient* client) {
 }
 
+void DummyInputMethod::SetStickyFocusedTextInputClient(
+    TextInputClient* client) {
+}
+
+void DummyInputMethod::DetachTextInputClient(TextInputClient* client) {
+}
+
 TextInputClient* DummyInputMethod::GetTextInputClient() const {
   return NULL;
 }
@@ -70,6 +77,10 @@ bool DummyInputMethod::IsActive() {
 
 TextInputType DummyInputMethod::GetTextInputType() const {
   return TEXT_INPUT_TYPE_NONE;
+}
+
+TextInputMode DummyInputMethod::GetTextInputMode() const {
+  return TEXT_INPUT_MODE_DEFAULT;
 }
 
 bool DummyInputMethod::CanComposeInline() const {

@@ -6,7 +6,7 @@
 
 #include <algorithm>
 
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/controls/button/blue_button.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/layout/layout_constants.h"
@@ -207,7 +207,7 @@ void DialogClientView::Layout() {
   }
 
   // Layout the row containing the buttons and the extra view.
-  if (has_dialog_buttons() || extra_view_) {
+  if (has_dialog_buttons() || ShouldShow(extra_view_)) {
     bounds.Inset(GetButtonRowInsets());
     const int height = GetButtonsAndExtraViewRowHeight();
     gfx::Rect row_bounds(bounds.x(), bounds.bottom() - height,
@@ -280,6 +280,17 @@ void DialogClientView::ViewHierarchyChanged(
       ok_button_ = NULL;
     if (details.child == cancel_button_)
       cancel_button_ = NULL;
+  }
+}
+
+void DialogClientView::NativeViewHierarchyChanged() {
+  FocusManager* focus_manager = GetFocusManager();
+  if (focus_manager_ != focus_manager) {
+    if (focus_manager_)
+      focus_manager_->RemoveFocusChangeListener(this);
+    focus_manager_ = focus_manager;
+    if (focus_manager_)
+      focus_manager_->AddFocusChangeListener(this);
   }
 }
 

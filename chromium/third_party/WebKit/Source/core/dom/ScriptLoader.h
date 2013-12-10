@@ -21,8 +21,8 @@
 #ifndef ScriptLoader_h
 #define ScriptLoader_h
 
-#include "core/loader/cache/ResourceClient.h"
-#include "core/loader/cache/ResourcePtr.h"
+#include "core/fetch/ResourceClient.h"
+#include "core/fetch/ResourcePtr.h"
 #include "wtf/text/TextPosition.h"
 #include "wtf/text/WTFString.h"
 
@@ -67,7 +67,7 @@ public:
     bool forceAsync() const { return m_forceAsync; }
 
     // Helper functions used by our parent classes.
-    void insertedInto(ContainerNode*);
+    void didNotifySubtreeInsertionsToDocument();
     void childrenChanged();
     void handleSourceAttribute(const String& sourceUrl);
     void handleAsyncAttribute();
@@ -78,11 +78,10 @@ private:
     bool ignoresLoadRequest() const;
     bool isScriptForEventSupported() const;
 
-    bool requestScript(const String& sourceUrl);
+    bool fetchScript(const String& sourceUrl);
     void stopLoadRequest();
 
     ScriptLoaderClient* client() const;
-    Document* executingDocument() const;
 
     // ResourceClient
     virtual void notifyFinished(Resource*) OVERRIDE;

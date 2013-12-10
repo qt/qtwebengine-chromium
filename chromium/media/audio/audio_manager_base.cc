@@ -34,19 +34,23 @@ static const int kMaxInputChannels = 2;
 
 const char AudioManagerBase::kDefaultDeviceName[] = "Default";
 const char AudioManagerBase::kDefaultDeviceId[] = "default";
+const char AudioManagerBase::kLoopbackInputDeviceId[] = "loopback";
 
 struct AudioManagerBase::DispatcherParams {
   DispatcherParams(const AudioParameters& input,
                    const AudioParameters& output,
-                   const std::string& device_id)
+                   const std::string& output_device_id,
+                   const std::string& input_device_id)
       : input_params(input),
         output_params(output),
-        input_device_id(device_id) {}
+        input_device_id(input_device_id),
+        output_device_id(output_device_id) {}
   ~DispatcherParams() {}
 
   const AudioParameters input_params;
   const AudioParameters output_params;
   const std::string input_device_id;
+  const std::string output_device_id;
   scoped_refptr<AudioOutputDispatcher> dispatcher;
 
  private:
@@ -65,6 +69,7 @@ class AudioManagerBase::CompareByParams {
     //    of the existing dispatcher are the same as the request dispatcher.
     return (dispatcher_->input_params == dispatcher_in->input_params &&
             dispatcher_->output_params == dispatcher_in->output_params &&
+            dispatcher_->output_device_id == dispatcher_in->output_device_id &&
             (!dispatcher_->input_params.input_channels() ||
              dispatcher_->input_device_id == dispatcher_in->input_device_id));
   }
@@ -134,6 +139,7 @@ scoped_refptr<base::MessageLoopProxy> AudioManagerBase::GetWorkerLoop() {
 
 AudioOutputStream* AudioManagerBase::MakeAudioOutputStream(
     const AudioParameters& params,
+    const std::string& device_id,
     const std::string& input_device_id) {
   // TODO(miu): Fix ~50 call points across several unit test modules to call
   // this method on the audio thread, then uncomment the following:
@@ -159,10 +165,12 @@ AudioOutputStream* AudioManagerBase::MakeAudioOutputStream(
   AudioOutputStream* stream;
   switch (params.format()) {
     case AudioParameters::AUDIO_PCM_LINEAR:
+      DCHECK(device_id.empty())
+          << "AUDIO_PCM_LINEAR supports only the default device.";
       stream = MakeLinearOutputStream(params);
       break;
     case AudioParameters::AUDIO_PCM_LOW_LATENCY:
-      stream = MakeLowLatencyOutputStream(params, input_device_id);
+      stream = MakeLowLatencyOutputStream(params, device_id, input_device_id);
       break;
     case AudioParameters::AUDIO_FAKE:
       stream = FakeAudioOutputStream::MakeFakeStream(this, params);
@@ -180,7 +188,8 @@ AudioOutputStream* AudioManagerBase::MakeAudioOutputStream(
 }
 
 AudioInputStream* AudioManagerBase::MakeAudioInputStream(
-    const AudioParameters& params, const std::string& device_id) {
+    const AudioParameters& params,
+    const std::string& device_id) {
   // TODO(miu): Fix ~20 call points across several unit test modules to call
   // this method on the audio thread, then uncomment the following:
   // DCHECK(message_loop_->BelongsToCurrentThread());
@@ -222,19 +231,26 @@ AudioInputStream* AudioManagerBase::MakeAudioInputStream(
 }
 
 AudioOutputStream* AudioManagerBase::MakeAudioOutputStreamProxy(
-    const AudioParameters& params, const std::string& input_device_id) {
-#if defined(OS_IOS)
-  // IOS implements audio input only.
-  NOTIMPLEMENTED();
-  return NULL;
-#else
+    const AudioParameters& params,
+    const std::string& device_id,
+    const std::string& input_device_id) {
   DCHECK(message_loop_->BelongsToCurrentThread());
+
+  // If the caller supplied an empty device id to select the default device,
+  // we fetch the actual device id of the default device so that the lookup
+  // will find the correct device regardless of whether it was opened as
+  // "default" or via the specific id.
+  // NOTE: Implementations that don't yet support opening non-default output
+  // devices may return an empty string from GetDefaultOutputDeviceID().
+  std::string output_device_id = device_id.empty() ?
+      GetDefaultOutputDeviceID() : device_id;
 
   // If we're not using AudioOutputResampler our output parameters are the same
   // as our input parameters.
   AudioParameters output_params = params;
   if (params.format() == AudioParameters::AUDIO_PCM_LOW_LATENCY) {
-    output_params = GetPreferredOutputStreamParameters(params);
+    output_params =
+        GetPreferredOutputStreamParameters(output_device_id, params);
 
     // Ensure we only pass on valid output parameters.
     if (!output_params.IsValid()) {
@@ -257,7 +273,8 @@ AudioOutputStream* AudioManagerBase::MakeAudioOutputStreamProxy(
   }
 
   DispatcherParams* dispatcher_params =
-      new DispatcherParams(params, output_params, input_device_id);
+      new DispatcherParams(params, output_params, output_device_id,
+          input_device_id);
 
   AudioOutputDispatchers::iterator it =
       std::find_if(output_dispatchers_.begin(), output_dispatchers_.end(),
@@ -272,23 +289,28 @@ AudioOutputStream* AudioManagerBase::MakeAudioOutputStreamProxy(
   scoped_refptr<AudioOutputDispatcher> dispatcher;
   if (output_params.format() != AudioParameters::AUDIO_FAKE) {
     dispatcher = new AudioOutputResampler(this, params, output_params,
-                                          input_device_id, kCloseDelay);
+                                          output_device_id, input_device_id,
+                                          kCloseDelay);
   } else {
     dispatcher = new AudioOutputDispatcherImpl(this, output_params,
+                                               output_device_id,
                                                input_device_id, kCloseDelay);
   }
 
   dispatcher_params->dispatcher = dispatcher;
   output_dispatchers_.push_back(dispatcher_params);
   return new AudioOutputProxy(dispatcher.get());
-#endif  // defined(OS_IOS)
 }
 
 void AudioManagerBase::ShowAudioInputSettings() {
 }
 
 void AudioManagerBase::GetAudioInputDeviceNames(
-    media::AudioDeviceNames* device_names) {
+    AudioDeviceNames* device_names) {
+}
+
+void AudioManagerBase::GetAudioOutputDeviceNames(
+    AudioDeviceNames* device_names) {
 }
 
 void AudioManagerBase::ReleaseOutputStream(AudioOutputStream* stream) {
@@ -333,10 +355,6 @@ void AudioManagerBase::Shutdown() {
 }
 
 void AudioManagerBase::ShutdownOnAudioThread() {
-// IOS implements audio input only.
-#if defined(OS_IOS)
-  return;
-#else
   // This should always be running on the audio thread, but since we've cleared
   // the audio_thread_ member pointer when we get here, we can't verify exactly
   // what thread we're running on.  The method is not public though and only
@@ -357,7 +375,6 @@ void AudioManagerBase::ShutdownOnAudioThread() {
   }
 
   output_dispatchers_.clear();
-#endif  // defined(OS_IOS)
 }
 
 void AudioManagerBase::AddOutputDeviceChangeListener(
@@ -379,13 +396,31 @@ void AudioManagerBase::NotifyAllOutputDeviceChangeListeners() {
 }
 
 AudioParameters AudioManagerBase::GetDefaultOutputStreamParameters() {
-  return GetPreferredOutputStreamParameters(AudioParameters());
+  return GetPreferredOutputStreamParameters(GetDefaultOutputDeviceID(),
+      AudioParameters());
+}
+
+AudioParameters AudioManagerBase::GetOutputStreamParameters(
+    const std::string& device_id) {
+  return GetPreferredOutputStreamParameters(device_id,
+      AudioParameters());
 }
 
 AudioParameters AudioManagerBase::GetInputStreamParameters(
     const std::string& device_id) {
   NOTREACHED();
   return AudioParameters();
+}
+
+std::string AudioManagerBase::GetAssociatedOutputDeviceID(
+    const std::string& input_device_id) {
+  NOTIMPLEMENTED();
+  return "";
+}
+
+std::string AudioManagerBase::GetDefaultOutputDeviceID() {
+  NOTIMPLEMENTED();
+  return "";
 }
 
 }  // namespace media

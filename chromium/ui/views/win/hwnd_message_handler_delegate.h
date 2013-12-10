@@ -153,6 +153,10 @@ class VIEWS_EXPORT HWNDMessageHandlerDelegate {
   // Called when the system's work area has changed.
   virtual void HandleWorkAreaChanged() = 0;
 
+  // Called when the window's visibility is changing. |visible| holds the new
+  // state.
+  virtual void HandleVisibilityChanging(bool visible) = 0;
+
   // Called when the window's visibility changed. |visible| holds the new state.
   virtual void HandleVisibilityChanged(bool visible) = 0;
 
@@ -181,9 +185,8 @@ class VIEWS_EXPORT HWNDMessageHandlerDelegate {
   // translation). Returns true if the event was sent to the input method.
   virtual bool HandleUntranslatedKeyEvent(const ui::KeyEvent& event) = 0;
 
-  // Called when a touch event is received. Returns true if the event was
-  // handled by the delegate.
-  virtual bool HandleTouchEvent(const ui::TouchEvent& event) = 0;
+  // Called when a touch event is received.
+  virtual void HandleTouchEvent(const ui::TouchEvent& event) = 0;
 
   // Called when an IME message needs to be processed by the delegate. Returns
   // true if the event was handled and no default processing should be

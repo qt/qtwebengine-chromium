@@ -46,10 +46,12 @@
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
 #include "core/dom/Document.h"
+#include "core/dom/DocumentMarkerController.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/KeyboardEvent.h"
 #include "core/editing/Editor.h"
-#include "core/editing/SpellChecker.h"
+#include "core/editing/SpellCheckRequester.h"
+#include "core/editing/TextCheckingHelper.h"
 #include "core/editing/UndoStep.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/page/EventHandler.h"
@@ -86,14 +88,14 @@ EditorClientImpl::~EditorClientImpl()
 bool EditorClientImpl::smartInsertDeleteEnabled()
 {
     if (m_webView->page())
-        return m_webView->page()->settings()->smartInsertDeleteEnabled();
+        return m_webView->page()->settings().smartInsertDeleteEnabled();
     return false;
 }
 
 bool EditorClientImpl::isSelectTrailingWhitespaceEnabled()
 {
     if (m_webView->page())
-        return m_webView->page()->settings()->selectTrailingWhitespaceEnabled();
+        return m_webView->page()->settings().selectTrailingWhitespaceEnabled();
     return false;
 }
 
@@ -104,10 +106,8 @@ bool EditorClientImpl::shouldSpellcheckByDefault()
     const Frame* frame = m_webView->focusedWebCoreFrame();
     if (!frame)
         return false;
-    const Editor* editor = frame->editor();
-    if (!editor)
-        return false;
-    if (editor->isSpellCheckingEnabledInFocusedNode())
+    const Editor& editor = frame->editor();
+    if (editor.isSpellCheckingEnabledInFocusedNode())
         return true;
     const Document* document = frame->document();
     if (!document)
@@ -139,10 +139,23 @@ bool EditorClientImpl::isContinuousSpellCheckingEnabled()
 
 void EditorClientImpl::toggleContinuousSpellChecking()
 {
-    if (isContinuousSpellCheckingEnabled())
+    if (isContinuousSpellCheckingEnabled()) {
         m_spellCheckThisFieldStatus = SpellCheckForcedOff;
-    else
+        if (Page* page = m_webView->page()) {
+            for (Frame* frame = page->mainFrame(); frame && frame->document(); frame = frame->tree()->traverseNext()) {
+                frame->document()->markers()->removeMarkers(DocumentMarker::MisspellingMarkers());
+            }
+        }
+    } else {
         m_spellCheckThisFieldStatus = SpellCheckForcedOn;
+        if (Frame* frame = m_webView->focusedWebCoreFrame()) {
+            VisibleSelection frameSelection = frame->selection().selection();
+            // If a selection is in an editable element spell check its content.
+            if (Element* rootEditableElement = frameSelection.rootEditableElement()) {
+                frame->editor().elementDidBeginEditing(rootEditableElement);
+            }
+        }
+    }
 }
 
 bool EditorClientImpl::isGrammarCheckingEnabled()
@@ -229,7 +242,7 @@ void EditorClientImpl::didBeginEditing()
 void EditorClientImpl::respondToChangedSelection(Frame* frame)
 {
     if (m_webView->client() && frame)
-        m_webView->client()->didChangeSelection(!frame->selection()->isRange());
+        m_webView->client()->didChangeSelection(!frame->selection().isRange());
 }
 
 void EditorClientImpl::respondToChangedContents()
@@ -266,6 +279,7 @@ void EditorClientImpl::registerRedoStep(PassRefPtr<UndoStep> step)
 
 void EditorClientImpl::clearUndoRedoOperations()
 {
+    NoEventDispatchAssertion assertNoEventDispatch;
     m_undoStack.clear();
     m_redoStack.clear();
 }
@@ -328,7 +342,7 @@ static const unsigned CtrlKey = 1 << 0;
 static const unsigned AltKey = 1 << 1;
 static const unsigned ShiftKey = 1 << 2;
 static const unsigned MetaKey = 1 << 3;
-#if OS(DARWIN)
+#if OS(MACOSX)
 // Aliases for the generic key defintions to make kbd shortcuts definitions more
 // readable on OS X.
 static const unsigned OptionKey  = AltKey;
@@ -358,7 +372,7 @@ struct KeyPressEntry {
 static const KeyDownEntry keyDownEntries[] = {
     { VKEY_LEFT,   0,                  "MoveLeft"                             },
     { VKEY_LEFT,   ShiftKey,           "MoveLeftAndModifySelection"           },
-#if OS(DARWIN)
+#if OS(MACOSX)
     { VKEY_LEFT,   OptionKey,          "MoveWordLeft"                         },
     { VKEY_LEFT,   OptionKey | ShiftKey,
         "MoveWordLeftAndModifySelection"                                      },
@@ -369,7 +383,7 @@ static const KeyDownEntry keyDownEntries[] = {
 #endif
     { VKEY_RIGHT,  0,                  "MoveRight"                            },
     { VKEY_RIGHT,  ShiftKey,           "MoveRightAndModifySelection"          },
-#if OS(DARWIN)
+#if OS(MACOSX)
     { VKEY_RIGHT,  OptionKey,          "MoveWordRight"                        },
     { VKEY_RIGHT,  OptionKey | ShiftKey,
       "MoveWordRightAndModifySelection"                                       },
@@ -384,7 +398,7 @@ static const KeyDownEntry keyDownEntries[] = {
     { VKEY_DOWN,   0,                  "MoveDown"                             },
     { VKEY_DOWN,   ShiftKey,           "MoveDownAndModifySelection"           },
     { VKEY_NEXT,   ShiftKey,           "MovePageDownAndModifySelection"       },
-#if !OS(DARWIN)
+#if !OS(MACOSX)
     { VKEY_UP,     CtrlKey,            "MoveParagraphBackward"                },
     { VKEY_UP,     CtrlKey | ShiftKey, "MoveParagraphBackwardAndModifySelection" },
     { VKEY_DOWN,   CtrlKey,            "MoveParagraphForward"                },
@@ -395,14 +409,14 @@ static const KeyDownEntry keyDownEntries[] = {
     { VKEY_HOME,   0,                  "MoveToBeginningOfLine"                },
     { VKEY_HOME,   ShiftKey,
         "MoveToBeginningOfLineAndModifySelection"                             },
-#if OS(DARWIN)
+#if OS(MACOSX)
     { VKEY_LEFT,   CommandKey,         "MoveToBeginningOfLine"                },
     { VKEY_LEFT,   CommandKey | ShiftKey,
       "MoveToBeginningOfLineAndModifySelection"                               },
     { VKEY_PRIOR,  OptionKey,          "MovePageUp"                           },
     { VKEY_NEXT,   OptionKey,          "MovePageDown"                         },
 #endif
-#if OS(DARWIN)
+#if OS(MACOSX)
     { VKEY_UP,     CommandKey,         "MoveToBeginningOfDocument"            },
     { VKEY_UP,     CommandKey | ShiftKey,
         "MoveToBeginningOfDocumentAndModifySelection"                         },
@@ -413,7 +427,7 @@ static const KeyDownEntry keyDownEntries[] = {
 #endif
     { VKEY_END,    0,                  "MoveToEndOfLine"                      },
     { VKEY_END,    ShiftKey,           "MoveToEndOfLineAndModifySelection"    },
-#if OS(DARWIN)
+#if OS(MACOSX)
     { VKEY_DOWN,   CommandKey,         "MoveToEndOfDocument"                  },
     { VKEY_DOWN,   CommandKey | ShiftKey,
         "MoveToEndOfDocumentAndModifySelection"                               },
@@ -422,7 +436,7 @@ static const KeyDownEntry keyDownEntries[] = {
     { VKEY_END,    CtrlKey | ShiftKey,
         "MoveToEndOfDocumentAndModifySelection"                               },
 #endif
-#if OS(DARWIN)
+#if OS(MACOSX)
     { VKEY_RIGHT,  CommandKey,         "MoveToEndOfLine"                      },
     { VKEY_RIGHT,  CommandKey | ShiftKey,
         "MoveToEndOfLineAndModifySelection"                                   },
@@ -430,7 +444,7 @@ static const KeyDownEntry keyDownEntries[] = {
     { VKEY_BACK,   0,                  "DeleteBackward"                       },
     { VKEY_BACK,   ShiftKey,           "DeleteBackward"                       },
     { VKEY_DELETE, 0,                  "DeleteForward"                        },
-#if OS(DARWIN)
+#if OS(MACOSX)
     { VKEY_BACK,   OptionKey,          "DeleteWordBackward"                   },
     { VKEY_DELETE, OptionKey,          "DeleteWordForward"                    },
 #else
@@ -452,7 +466,7 @@ static const KeyDownEntry keyDownEntries[] = {
     { VKEY_INSERT, CtrlKey,            "Copy"                                 },
     { VKEY_INSERT, ShiftKey,           "Paste"                                },
     { VKEY_DELETE, ShiftKey,           "Cut"                                  },
-#if !OS(DARWIN)
+#if !OS(MACOSX)
     // On OS X, we pipe these back to the browser, so that it can do menu item
     // blinking.
     { 'C',         CtrlKey,            "Copy"                                 },
@@ -527,12 +541,12 @@ bool EditorClientImpl::handleEditingKeyboardEvent(KeyboardEvent* evt)
     if (!keyEvent || keyEvent->isSystemKey())
         return false;
 
-    Frame* frame = evt->target()->toNode()->document()->frame();
+    Frame* frame = evt->target()->toNode()->document().frame();
     if (!frame)
         return false;
 
     String commandName = interpretKeyEvent(evt);
-    Editor::Command command = frame->editor()->command(commandName);
+    Editor::Command command = frame->editor().command(commandName);
 
     if (keyEvent->type() == PlatformEvent::RawKeyDown) {
         // WebKit doesn't have enough information about mode to decide how
@@ -580,13 +594,13 @@ bool EditorClientImpl::handleEditingKeyboardEvent(KeyboardEvent* evt)
         // unexpected behaviour
         if (ch < ' ')
             return false;
-#if !OS(WINDOWS)
+#if !OS(WIN)
         // Don't insert ASCII character if ctrl w/o alt or meta is on.
         // On Mac, we should ignore events when meta is on (Command-<x>).
         if (ch < 0x80) {
             if (evt->keyEvent()->ctrlKey() && !evt->keyEvent()->altKey())
                 return false;
-#if OS(DARWIN)
+#if OS(MACOSX)
             if (evt->keyEvent()->metaKey())
             return false;
 #endif
@@ -594,10 +608,10 @@ bool EditorClientImpl::handleEditingKeyboardEvent(KeyboardEvent* evt)
 #endif
     }
 
-    if (!frame->editor()->canEdit())
+    if (!frame->editor().canEdit())
         return false;
 
-    return frame->editor()->insertText(evt->keyEvent()->text(), evt);
+    return frame->editor().insertText(evt->keyEvent()->text(), evt);
 }
 
 void EditorClientImpl::handleKeyboardEvent(KeyboardEvent* evt)
@@ -756,10 +770,10 @@ bool EditorClientImpl::spellingUIIsShowing()
 
 bool EditorClientImpl::supportsGlobalSelection()
 {
-#if OS(UNIX) && !OS(DARWIN)
-    return true;
-#else
+#if OS(WIN) || OS(MACOSX)
     return false;
+#else
+    return true;
 #endif
 }
 

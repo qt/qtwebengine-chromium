@@ -21,25 +21,18 @@
  */
 
 #include "config.h"
-
 #include "core/xml/XSLTProcessor.h"
 
-#include <libxslt/imports.h>
-#include <libxslt/security.h>
-#include <libxslt/variables.h>
-#include <libxslt/xsltutils.h>
-#include <wtf/Assertions.h>
-#include <wtf/text/CString.h>
-#include <wtf/text/StringBuffer.h>
-#include <wtf/unicode/UTF8.h>
-#include <wtf/Vector.h>
+#include "FetchInitiatorTypeNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/TransformSource.h"
 #include "core/editing/markup.h"
-#include "core/loader/cache/ResourceFetcher.h"
+#include "core/fetch/Resource.h"
+#include "core/fetch/ResourceFetcher.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/PageConsole.h"
+#include "core/platform/SharedBuffer.h"
 #include "core/platform/network/ResourceError.h"
 #include "core/platform/network/ResourceRequest.h"
 #include "core/platform/network/ResourceResponse.h"
@@ -48,6 +41,15 @@
 #include "core/xml/XSLTUnicodeSort.h"
 #include "core/xml/parser/XMLDocumentParser.h"
 #include "weborigin/SecurityOrigin.h"
+#include "wtf/Assertions.h"
+#include "wtf/Vector.h"
+#include "wtf/text/CString.h"
+#include "wtf/text/StringBuffer.h"
+#include "wtf/unicode/UTF8.h"
+#include <libxslt/imports.h>
+#include <libxslt/security.h>
+#include <libxslt/variables.h>
+#include <libxslt/xsltutils.h>
 
 namespace WebCore {
 
@@ -98,31 +100,25 @@ static xmlDocPtr docLoaderFunc(const xmlChar* uri,
         xmlChar* base = xmlNodeGetBase(context->document->doc, context->node);
         KURL url(KURL(ParsedURLString, reinterpret_cast<const char*>(base)), reinterpret_cast<const char*>(uri));
         xmlFree(base);
-        ResourceError error;
-        ResourceResponse response;
 
-        Vector<char> data;
-
-        bool requestAllowed = globalResourceFetcher->frame() && globalResourceFetcher->document()->securityOrigin()->canRequest(url);
-        if (requestAllowed) {
-            globalResourceFetcher->frame()->loader()->loadResourceSynchronously(url, AllowStoredCredentials, error, response, data);
-            requestAllowed = globalResourceFetcher->document()->securityOrigin()->canRequest(response.url());
-        }
-        if (!requestAllowed) {
-            data.clear();
-            globalResourceFetcher->printAccessDeniedMessage(url);
-        }
+        ResourceLoaderOptions fetchOptions(ResourceFetcher::defaultResourceOptions());
+        fetchOptions.requestOriginPolicy = RestrictToSameOrigin;
+        FetchRequest request(ResourceRequest(url), FetchInitiatorTypeNames::xml, fetchOptions);
+        ResourcePtr<Resource> resource = globalResourceFetcher->fetchSynchronously(request);
+        if (!resource || !globalProcessor)
+            return 0;
 
         PageConsole* console = 0;
         Frame* frame = globalProcessor->xslStylesheet()->ownerDocument()->frame();
         if (frame && frame->page())
-            console = frame->page()->console();
+            console = &frame->page()->console();
         xmlSetStructuredErrorFunc(console, XSLTProcessor::parseErrorFunc);
         xmlSetGenericErrorFunc(console, XSLTProcessor::genericErrorFunc);
 
         // We don't specify an encoding here. Neither Gecko nor WinIE respects
         // the encoding specified in the HTTP headers.
-        xmlDocPtr doc = xmlReadMemory(data.data(), data.size(), (const char*)uri, 0, options);
+        SharedBuffer* data = resource->resourceBuffer();
+        xmlDocPtr doc = data ? xmlReadMemory(data->data(), data->size(), (const char*)uri, 0, options) : 0;
 
         xmlSetStructuredErrorFunc(0, 0);
         xmlSetGenericErrorFunc(0, 0);
@@ -227,8 +223,8 @@ static xsltStylesheetPtr xsltStylesheetPointer(RefPtr<XSLStyleSheet>& cachedStyl
 {
     if (!cachedStylesheet && stylesheetRootNode) {
         cachedStylesheet = XSLStyleSheet::createForXSLTProcessor(stylesheetRootNode->parentNode() ? stylesheetRootNode->parentNode() : stylesheetRootNode,
-            stylesheetRootNode->document()->url().string(),
-            stylesheetRootNode->document()->url()); // FIXME: Should we use baseURL here?
+            stylesheetRootNode->document().url().string(),
+            stylesheetRootNode->document().url()); // FIXME: Should we use baseURL here?
 
         // According to Mozilla documentation, the node must be a Document node, an xsl:stylesheet or xsl:transform element.
         // But we just use text content regardless of node type.
@@ -243,7 +239,7 @@ static xsltStylesheetPtr xsltStylesheetPointer(RefPtr<XSLStyleSheet>& cachedStyl
 
 static inline xmlDocPtr xmlDocPtrFromNode(Node* sourceNode, bool& shouldDelete)
 {
-    RefPtr<Document> ownerDocument = sourceNode->document();
+    RefPtr<Document> ownerDocument = &sourceNode->document();
     bool sourceIsDocument = (sourceNode == ownerDocument.get());
 
     xmlDocPtr sourceDoc = 0;
@@ -278,7 +274,7 @@ static inline String resultMIMEType(xmlDocPtr resultDoc, xsltStylesheetPtr sheet
 
 bool XSLTProcessor::transformToString(Node* sourceNode, String& mimeType, String& resultString, String& resultEncoding)
 {
-    RefPtr<Document> ownerDocument = sourceNode->document();
+    RefPtr<Document> ownerDocument = &sourceNode->document();
 
     setXSLTLoadCallBack(docLoaderFunc, this, ownerDocument->fetcher());
     xsltStylesheetPtr sheet = xsltStylesheetPointer(m_stylesheet, m_stylesheetRootNode.get());

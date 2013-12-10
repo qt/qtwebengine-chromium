@@ -92,8 +92,13 @@ SyncAPIServerConnectionManager::SyncAPIServerConnectionManager(
     int port,
     bool use_ssl,
     bool use_oauth2_token,
-    HttpPostProviderFactory* factory)
-    : ServerConnectionManager(server, port, use_ssl, use_oauth2_token),
+    HttpPostProviderFactory* factory,
+    CancelationSignal* cancelation_signal)
+    : ServerConnectionManager(server,
+                              port,
+                              use_ssl,
+                              use_oauth2_token,
+                              cancelation_signal),
       post_provider_factory_(factory) {
   DCHECK(post_provider_factory_.get());
 }

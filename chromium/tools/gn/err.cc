@@ -161,18 +161,13 @@ void Err::InternalPrintToStdout(bool is_sub_err) const {
 
   // File name and location.
   const InputFile* input_file = location_.file();
-  std::string loc_str;
-  if (input_file) {
-    std::string path8;
-    path8.assign(input_file->name().value());
-
+  std::string loc_str = location_.Describe(true);
+  if (!loc_str.empty()) {
     if (is_sub_err)
-      loc_str = "See ";
+      loc_str.insert(0, "See ");
     else
-      loc_str = "at ";
-    loc_str += path8 + ": " +
-        base::IntToString(location_.line_number()) + ":" +
-        base::IntToString(location_.char_offset()) + ": ";
+      loc_str.insert(0, "at ");
+    loc_str.append(": ");
   }
   OutputString(loc_str + message_ + "\n");
 
@@ -181,7 +176,7 @@ void Err::InternalPrintToStdout(bool is_sub_err) const {
     std::string line = GetNthLine(input_file->contents(),
                                   location_.line_number());
     if (!ContainsOnlyWhitespaceASCII(line)) {
-      OutputString(line + "\n", DECORATION_BOLD);
+      OutputString(line + "\n", DECORATION_DIM);
       OutputHighlighedPosition(location_, ranges_, line.size());
     }
   }

@@ -32,7 +32,7 @@ class PageCyclerIntlArFaHe(test.Test):
 
 class PageCyclerIntlEsFrPtBr(test.Test):
   test = page_cycler.PageCycler
-  page_set = 'page_sets/intel_es_fr_pt-BR.json'
+  page_set = 'page_sets/intl_es_fr_pt-BR.json'
   options = {'pageset_repeat_iters': 10}
 
 
@@ -56,7 +56,7 @@ class PageCyclerIntlKoThVi(test.Test):
 
 class PageCyclerMorejs(test.Test):
   test = page_cycler.PageCycler
-  page_set = 'page_sets/morejs.json'
+  page_set = 'page_sets/page_cycler/morejs.json'
   options = {'pageset_repeat_iters': 10}
 
 
@@ -66,11 +66,13 @@ class PageCyclerMoz(test.Test):
   options = {'pageset_repeat_iters': 10}
 
 
-class PageCyclerNetsimTop25(test.Test):
-  """Measures load time of the top 25 sites under simulated cable network."""
+class PageCyclerNetsimTop10(test.Test):
+  """Measures load time of the top 10 sites under simulated cable network."""
+  tag = 'netsim'
   test = page_cycler.PageCycler
-  page_set = 'tools/perf/page_sets/top_25.json'
+  page_set = 'page_sets/top_10.json'
   options = {
+    'cold_load_percent': 100,
     'extra_wpr_args': [
       '--shaping_type=proxy',
       '--net=cable'
@@ -79,10 +81,16 @@ class PageCyclerNetsimTop25(test.Test):
     }
 
   def __init__(self):
-    super(PageCyclerNetsimTop25, self).__init__()
+    super(PageCyclerNetsimTop10, self).__init__()
     # TODO: This isn't quite right.
     # This option will still apply to page cyclers that run after this one.
     self.test.clear_cache_before_each_run = True
+
+
+class PageCyclerToughLayoutCases(test.Test):
+  test = page_cycler.PageCycler
+  page_set = 'page_sets/tough_layout_cases.json'
+  options = {'pageset_repeat_iters': 10}
 
 
 class PageCyclerTypical25(test.Test):

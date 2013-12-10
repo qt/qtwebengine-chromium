@@ -787,10 +787,6 @@ class FakeWebRtcVideoEngine
   // Not using WEBRTC_STUB due to bool return value
   virtual bool IsIPv6Enabled(int channel) { return true; }
   WEBRTC_STUB(SetMTU, (int, unsigned int));
-  WEBRTC_STUB(SetPacketTimeoutNotification, (const int, bool, int));
-  WEBRTC_STUB(RegisterObserver, (const int, webrtc::ViENetworkObserver&));
-  WEBRTC_STUB(SetPeriodicDeadOrAliveStatus, (const int, const bool,
-    const unsigned int));
 
   // webrtc::ViERender
   WEBRTC_STUB(RegisterVideoRenderModule, (webrtc::VideoRender&));

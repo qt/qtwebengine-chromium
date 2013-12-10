@@ -11,8 +11,8 @@
 #include "base/compiler_specific.h"
 #include "base/strings/string16.h"
 #include "ui/aura/root_window_host.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_constants.h"
+#include "ui/events/event.h"
+#include "ui/events/event_constants.h"
 #include "ui/gfx/native_widget_types.h"
 
 namespace base {
@@ -86,17 +86,23 @@ AURA_EXPORT void HandleSelectFolder(const base::string16& title,
 // frontend process, which forwards input events to this class.
 class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
  public:
+  // Returns the only RemoteRootWindowHostWin, if this is the first time
+  // this function is called, it will call Create() wiht empty bounds.
   static RemoteRootWindowHostWin* Instance();
   static RemoteRootWindowHostWin* Create(const gfx::Rect& bounds);
 
   // Called when the remote process has established its IPC connection.
-  // The |host| can be used when we need to send a message to it.
-  void Connected(IPC::Sender* host);
+  // The |host| can be used when we need to send a message to it and
+  // |remote_window| is the actual window owned by the viewer process.
+  void Connected(IPC::Sender* host, HWND remote_window);
   // Called when the remote process has closed its IPC connection.
   void Disconnected();
 
   // Called when we have a message from the remote process.
   bool OnMessageReceived(const IPC::Message& message);
+
+  void HandleOpenURLOnDesktop(const base::FilePath& shortcut,
+                              const base::string16& url);
 
   void HandleOpenFile(const base::string16& title,
                       const base::FilePath& default_path,
@@ -159,7 +165,6 @@ class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
   void OnMultiFileOpenDone(bool success,
                            const std::vector<base::FilePath>& files);
   void OnSelectFolderDone(bool success, const base::FilePath& folder);
-  void OnWindowActivated(bool active);
   void OnSetCursorPosAck();
   void OnWindowSizeChanged(uint32 width, uint32 height);
 
@@ -184,9 +189,6 @@ class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
   virtual void OnCursorVisibilityChanged(bool show) OVERRIDE;
   virtual void MoveCursorTo(const gfx::Point& location) OVERRIDE;
   virtual void SetFocusWhenShown(bool focus_when_shown) OVERRIDE;
-  virtual bool CopyAreaToSkCanvas(const gfx::Rect& source_bounds,
-                                  const gfx::Point& dest_offset,
-                                  SkCanvas* canvas) OVERRIDE;
   virtual void PostNativeEvent(const base::NativeEvent& native_event) OVERRIDE;
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
   virtual void PrepareForShutdown() OVERRIDE;
@@ -203,6 +205,7 @@ class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
                                uint32 flags,
                                bool is_character);
 
+  HWND remote_window_;
   RootWindowHostDelegate* delegate_;
   IPC::Sender* host_;
   scoped_ptr<ui::ViewProp> prop_;

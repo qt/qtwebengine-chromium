@@ -27,14 +27,14 @@
 
 namespace WebCore {
 
-inline SVGAltGlyphItemElement::SVGAltGlyphItemElement(const QualifiedName& tagName, Document* document)
+inline SVGAltGlyphItemElement::SVGAltGlyphItemElement(const QualifiedName& tagName, Document& document)
     : SVGElement(tagName, document)
 {
     ASSERT(hasTagName(SVGNames::altGlyphItemTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGAltGlyphItemElement> SVGAltGlyphItemElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<SVGAltGlyphItemElement> SVGAltGlyphItemElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new SVGAltGlyphItemElement(tagName, document));
 }
@@ -52,7 +52,7 @@ bool SVGAltGlyphItemElement::hasValidGlyphElements(Vector<String>& glyphNames) c
     for (Node* child = firstChild(); child; child = child->nextSibling()) {
         if (child->hasTagName(SVGNames::glyphRefTag)) {
             String referredGlyphName;
-            if (static_cast<SVGGlyphRefElement*>(child)->hasValidGlyphElement(referredGlyphName))
+            if (toSVGGlyphRefElement(child)->hasValidGlyphElement(referredGlyphName))
                 glyphNames.append(referredGlyphName);
             else {
                 glyphNames.clear();

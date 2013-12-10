@@ -16,7 +16,8 @@ base.exportTo('tracing.tracks', function() {
     INSTANT_EVENT: 2,
     BACKGROUND: 3,
     GRID: 4,
-    FLOW_ARROWS: 5
+    FLOW_ARROWS: 5,
+    MARKERS: 6
   };
 
   var DrawingContainer = ui.define('drawing-container', tracing.tracks.Track);
@@ -70,30 +71,32 @@ base.exportTo('tracing.tracks', function() {
     drawTrackContents_: function() {
       this.ctx_.clearRect(0, 0, this.canvas_.width, this.canvas_.height);
 
-      var types = [
+      var typesToDraw = [
         DrawType.BACKGROUND,
         DrawType.GRID,
         DrawType.INSTANT_EVENT,
         DrawType.SLICE,
-        DrawType.FLOW_ARROWS
+        DrawType.MARKERS
       ];
+      if (this.viewport.showFlowEvents)
+        typesToDraw.push(DrawType.FLOW_ARROWS);
 
-      for (var idx in types) {
+      for (var idx in typesToDraw) {
         for (var i = 0; i < this.children.length; ++i) {
           if (!(this.children[i] instanceof tracing.tracks.Track))
             continue;
-          this.children[i].drawTrack(types[idx]);
+          this.children[i].drawTrack(typesToDraw[idx]);
         }
       }
 
       var pixelRatio = window.devicePixelRatio || 1;
       var bounds = this.canvas_.getBoundingClientRect();
-      var viewLWorld = this.viewport.xViewToWorld(0);
-      var viewRWorld = this.viewport.xViewToWorld(
+      var dt = this.viewport.currentDisplayTransform;
+      var viewLWorld = dt.xViewToWorld(0);
+      var viewRWorld = dt.xViewToWorld(
           bounds.width * pixelRatio);
 
       this.viewport.drawGridLines(this.ctx_, viewLWorld, viewRWorld);
-      this.viewport.drawMarkerLines(this.ctx_, viewLWorld, viewRWorld);
     },
 
     updateCanvasSizeIfNeeded_: function() {
@@ -132,6 +135,32 @@ base.exportTo('tracing.tracks', function() {
       if (!(element instanceof tracing.tracks.Track))
         return false;
       return window.getComputedStyle(element).display !== 'none';
+    },
+
+    addClosestEventToSelection: function(
+        worldX, worldMaxDist, loY, hiY, selection) {
+      for (var i = 0; i < this.children.length; ++i) {
+        if (!(this.children[i] instanceof tracing.tracks.Track))
+          continue;
+        var trackClientRect = this.children[i].getBoundingClientRect();
+        var a = Math.max(loY, trackClientRect.top);
+        var b = Math.min(hiY, trackClientRect.bottom);
+        if (a <= b) {
+          this.children[i].addClosestEventToSelection(
+              worldX, worldMaxDist, loY, hiY, selection);
+        }
+      }
+
+      tracing.tracks.Track.prototype.addClosestEventToSelection.
+          apply(this, arguments);
+    },
+
+    addEventsToTrackMap: function(eventToTrackMap) {
+      for (var i = 0; i < this.children.length; ++i) {
+        if (!(this.children[i] instanceof tracing.tracks.Track))
+          continue;
+        this.children[i].addEventsToTrackMap(eventToTrackMap);
+      }
     }
   };
 

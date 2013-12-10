@@ -4,9 +4,15 @@
 
 #include "cc/trees/layer_tree_host.h"
 
+#include "base/bind.h"
+#include "base/callback.h"
+#include "base/location.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "base/time/time.h"
 #include "cc/test/fake_content_layer.h"
 #include "cc/test/fake_content_layer_client.h"
-#include "cc/test/fake_scrollbar_layer.h"
+#include "cc/test/fake_painted_scrollbar_layer.h"
+#include "cc/test/fake_picture_layer.h"
 #include "cc/test/layer_tree_test.h"
 #include "cc/trees/damage_tracker.h"
 #include "cc/trees/layer_tree_impl.h"
@@ -16,6 +22,225 @@ namespace {
 
 // These tests deal with damage tracking.
 class LayerTreeHostDamageTest : public LayerTreeTest {};
+
+// Changing visibility alone does not cause drawing.
+class LayerTreeHostDamageTestSetVisibleDoesNotDraw
+    : public LayerTreeHostDamageTest {
+  virtual void BeginTest() OVERRIDE {
+    step_ = 0;
+    PostSetNeedsCommitToMainThread();
+  }
+
+  virtual void SetupTree() OVERRIDE {
+    // Viewport is 10x10.
+    scoped_refptr<FakeContentLayer> root = FakeContentLayer::Create(&client_);
+    root->SetBounds(gfx::Size(10, 10));
+
+    layer_tree_host()->SetRootLayer(root);
+    LayerTreeHostDamageTest::SetupTree();
+  }
+
+  virtual bool PrepareToDrawOnThread(LayerTreeHostImpl* impl,
+                                     LayerTreeHostImpl::FrameData* frame_data,
+                                     bool result) OVERRIDE {
+    EXPECT_TRUE(result);
+
+    RenderSurfaceImpl* root_surface =
+        impl->active_tree()->root_layer()->render_surface();
+    gfx::RectF root_damage =
+        root_surface->damage_tracker()->current_damage_rect();
+
+    switch (step_) {
+      case 0:
+        // The first frame has full damage.
+        EXPECT_EQ(gfx::RectF(10.f, 10.f).ToString(), root_damage.ToString());
+
+        // No evictions when we become not-visible.
+        impl->SetMemoryPolicy(ManagedMemoryPolicy(
+            1000 * 1000 * 1000,
+            ManagedMemoryPolicy::CUTOFF_ALLOW_EVERYTHING,
+            1000 * 1000 * 1000,
+            ManagedMemoryPolicy::CUTOFF_ALLOW_EVERYTHING,
+            ManagedMemoryPolicy::kDefaultNumResourcesLimit));
+
+        PostSetVisibleToMainThread(false);
+        break;
+      case 1:
+        // The compositor has been set not-visible.
+        EXPECT_FALSE(impl->visible());
+        // This frame not visible, so not drawn.
+        NOTREACHED();
+        break;
+      case 2:
+        // The compositor has been set visible again.
+        EXPECT_TRUE(impl->visible());
+        // But it still does not draw.
+        NOTREACHED();
+        break;
+      case 3:
+        // Finally we force a draw, but it will have no damage.
+        EXPECT_EQ(gfx::RectF().ToString(), root_damage.ToString());
+        EndTest();
+        break;
+      case 4:
+        NOTREACHED();
+    }
+    return result;
+  }
+
+  virtual void DidSetVisibleOnImplTree(LayerTreeHostImpl* impl,
+                                       bool visible) OVERRIDE {
+    if (!visible) {
+      EXPECT_EQ(0, step_);
+      PostSetVisibleToMainThread(true);
+    } else {
+      EXPECT_EQ(1, step_);
+
+      base::MessageLoopProxy::current()->PostDelayedTask(
+          FROM_HERE,
+          base::Bind(&LayerTreeHostDamageTestSetVisibleDoesNotDraw::Redraw,
+                     base::Unretained(this),
+                     impl),
+          base::TimeDelta::FromMilliseconds(10));
+    }
+    ++step_;
+  }
+
+  void Redraw(LayerTreeHostImpl* impl) {
+    EXPECT_EQ(2, step_);
+    impl->SetNeedsRedraw();
+    ++step_;
+  }
+
+  virtual void AfterTest() OVERRIDE {}
+
+  int step_;
+  FakeContentLayerClient client_;
+};
+
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDamageTestSetVisibleDoesNotDraw);
+
+// LayerTreeHost::SetNeedsRedraw should damage the whole viewport.
+class LayerTreeHostDamageTestSetNeedsRedraw
+    : public LayerTreeHostDamageTest {
+  virtual void SetupTree() OVERRIDE {
+    // Viewport is 10x10.
+    scoped_refptr<FakeContentLayer> root = FakeContentLayer::Create(&client_);
+    root->SetBounds(gfx::Size(10, 10));
+
+    layer_tree_host()->SetRootLayer(root);
+    LayerTreeHostDamageTest::SetupTree();
+  }
+
+  virtual void BeginTest() OVERRIDE {
+    draw_count_ = 0;
+    PostSetNeedsCommitToMainThread();
+  }
+
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
+    switch (layer_tree_host()->source_frame_number()) {
+      case 1:
+        layer_tree_host()->SetNeedsRedraw();
+        break;
+    }
+  }
+
+  virtual bool PrepareToDrawOnThread(LayerTreeHostImpl* impl,
+                                     LayerTreeHostImpl::FrameData* frame_data,
+                                     bool result) OVERRIDE {
+    EXPECT_TRUE(result);
+
+    RenderSurfaceImpl* root_surface =
+        impl->active_tree()->root_layer()->render_surface();
+    gfx::RectF root_damage =
+        root_surface->damage_tracker()->current_damage_rect();
+
+    switch (draw_count_) {
+      case 0:
+        // The first frame has full damage.
+        EXPECT_EQ(gfx::RectF(10.f, 10.f).ToString(), root_damage.ToString());
+        break;
+      case 1:
+        // The second frame has full damage.
+        EXPECT_EQ(gfx::RectF(10.f, 10.f).ToString(), root_damage.ToString());
+        EndTest();
+        break;
+      case 2:
+        NOTREACHED();
+    }
+
+    ++draw_count_;
+    return result;
+  }
+
+  virtual void AfterTest() OVERRIDE {}
+
+  int draw_count_;
+  FakeContentLayerClient client_;
+};
+
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDamageTestSetNeedsRedraw);
+
+// LayerTreeHost::SetViewportSize should damage the whole viewport.
+class LayerTreeHostDamageTestSetViewportSize
+    : public LayerTreeHostDamageTest {
+  virtual void SetupTree() OVERRIDE {
+    // Viewport is 10x10.
+    scoped_refptr<FakeContentLayer> root = FakeContentLayer::Create(&client_);
+    root->SetBounds(gfx::Size(10, 10));
+
+    layer_tree_host()->SetRootLayer(root);
+    LayerTreeHostDamageTest::SetupTree();
+  }
+
+  virtual void BeginTest() OVERRIDE {
+    draw_count_ = 0;
+    PostSetNeedsCommitToMainThread();
+  }
+
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
+    switch (layer_tree_host()->source_frame_number()) {
+      case 1:
+        layer_tree_host()->SetViewportSize(gfx::Size(15, 15));
+        break;
+    }
+  }
+
+  virtual bool PrepareToDrawOnThread(LayerTreeHostImpl* impl,
+                                     LayerTreeHostImpl::FrameData* frame_data,
+                                     bool result) OVERRIDE {
+    EXPECT_TRUE(result);
+
+    RenderSurfaceImpl* root_surface =
+        impl->active_tree()->root_layer()->render_surface();
+    gfx::RectF root_damage =
+        root_surface->damage_tracker()->current_damage_rect();
+
+    switch (draw_count_) {
+      case 0:
+        // The first frame has full damage.
+        EXPECT_EQ(gfx::RectF(10.f, 10.f).ToString(), root_damage.ToString());
+        break;
+      case 1:
+        // The second frame has full damage.
+        EXPECT_EQ(gfx::RectF(15.f, 15.f).ToString(), root_damage.ToString());
+        EndTest();
+        break;
+      case 2:
+        NOTREACHED();
+    }
+
+    ++draw_count_;
+    return result;
+  }
+
+  virtual void AfterTest() OVERRIDE {}
+
+  int draw_count_;
+  FakeContentLayerClient client_;
+};
+
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDamageTestSetViewportSize);
 
 class LayerTreeHostDamageTestNoDamageDoesNotSwap
     : public LayerTreeHostDamageTest {
@@ -286,16 +511,10 @@ class LayerTreeHostDamageTestForcedFullDamage : public LayerTreeHostDamageTest {
 
 SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDamageTestForcedFullDamage);
 
-class LayerTreeHostDamageTestScrollbarDoesDamage
-    : public LayerTreeHostDamageTest {
-  virtual void BeginTest() OVERRIDE {
-    did_swaps_ = 0;
-    PostSetNeedsCommitToMainThread();
-  }
-
+class LayerTreeHostScrollbarDamageTest : public LayerTreeHostDamageTest {
   virtual void SetupTree() OVERRIDE {
     scoped_refptr<Layer> root_layer = Layer::Create();
-    root_layer->SetBounds(gfx::Size(400,400));
+    root_layer->SetBounds(gfx::Size(400, 400));
     layer_tree_host()->SetRootLayer(root_layer);
 
     scoped_refptr<Layer> content_layer = FakeContentLayer::Create(&client_);
@@ -306,7 +525,7 @@ class LayerTreeHostDamageTestScrollbarDoesDamage
     root_layer->AddChild(content_layer);
 
     scoped_refptr<Layer> scrollbar_layer =
-        FakeScrollbarLayer::Create(false, true, content_layer->id());
+        FakePaintedScrollbarLayer::Create(false, true, content_layer->id());
     scrollbar_layer->SetPosition(gfx::Point(300, 300));
     scrollbar_layer->SetBounds(gfx::Size(10, 100));
     root_layer->AddChild(scrollbar_layer);
@@ -318,6 +537,17 @@ class LayerTreeHostDamageTestScrollbarDoesDamage
     EXPECT_FALSE(content_rect.Intersects(scrollbar_rect));
 
     LayerTreeHostDamageTest::SetupTree();
+  }
+
+ private:
+  FakeContentLayerClient client_;
+};
+
+class LayerTreeHostDamageTestScrollbarDoesDamage
+    : public LayerTreeHostScrollbarDamageTest {
+  virtual void BeginTest() OVERRIDE {
+    did_swaps_ = 0;
+    PostSetNeedsCommitToMainThread();
   }
 
   virtual bool PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
@@ -334,16 +564,16 @@ class LayerTreeHostDamageTestScrollbarDoesDamage
         // The first frame has damage, so we should draw and swap.
         break;
       case 1:
-        // The second frame should damage the scrollbars.
-        EXPECT_TRUE(root_damage.Contains(gfx::Rect(300, 300, 10, 100)));
+        // The second frame should not damage the scrollbars.
+        EXPECT_FALSE(root_damage.Intersects(gfx::Rect(300, 300, 10, 100)));
         break;
       case 2:
         // The third frame should damage the scrollbars.
         EXPECT_TRUE(root_damage.Contains(gfx::Rect(300, 300, 10, 100)));
         break;
       case 3:
-        // The fourth frame should not damage the scrollbars.
-        EXPECT_FALSE(root_damage.Intersects(gfx::Rect(300, 300, 10, 100)));
+        // The fourth frame should damage the scrollbars.
+        EXPECT_TRUE(root_damage.Contains(gfx::Rect(300, 300, 10, 100)));
         EndTest();
         break;
     }
@@ -358,34 +588,204 @@ class LayerTreeHostDamageTestScrollbarDoesDamage
     LayerImpl* scroll_layer = root->children()[0];
     switch (did_swaps_) {
       case 1:
-        host_impl->ScrollBegin(gfx::Point(1,1), InputHandler::Wheel);
-        EXPECT_TRUE(host_impl->ScrollBy(gfx::Point(),
-                                        gfx::Vector2dF(10.0, 10.0)));
-        break;
-      case 2:
-        scroll_layer->SetMaxScrollOffset(gfx::Vector2d(60, 100));
-        host_impl->SetNeedsRedraw();
-        break;
-      case 3:
         // Test that modifying the position of the content layer (not
         // scrolling) won't damage the scrollbar.
-        scroll_layer->SetPosition(gfx::Point(1,1));
+        scroll_layer->SetPosition(gfx::Point(1, 1));
         scroll_layer->SetScrollOffset(scroll_layer->scroll_offset());
         host_impl->SetNeedsRedraw();
         break;
+      case 2:
+        scroll_layer->ScrollBy(gfx::Vector2dF(10.f, 10.f));
+        host_impl->SetNeedsRedraw();
+        break;
+      case 3:
+        scroll_layer->SetMaxScrollOffset(gfx::Vector2d(60, 100));
+        host_impl->SetNeedsRedraw();
+        break;
     }
-
   }
 
   virtual void AfterTest() OVERRIDE {
     EXPECT_EQ(4, did_swaps_);
   }
 
-  FakeContentLayerClient client_;
   int did_swaps_;
 };
 
 MULTI_THREAD_TEST_F(LayerTreeHostDamageTestScrollbarDoesDamage);
+
+class DISABLED_LayerTreeHostDamageTestScrollbarCommitDoesNoDamage
+    : public LayerTreeHostScrollbarDamageTest {
+  virtual void BeginTest() OVERRIDE {
+    did_swaps_ = 0;
+    PostSetNeedsCommitToMainThread();
+  }
+
+  virtual bool PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
+                                     LayerTreeHostImpl::FrameData* frame_data,
+                                     bool result) OVERRIDE {
+    EXPECT_TRUE(result);
+    RenderSurfaceImpl* root_surface =
+        host_impl->active_tree()->root_layer()->render_surface();
+    gfx::RectF root_damage =
+        root_surface->damage_tracker()->current_damage_rect();
+    root_damage.Intersect(root_surface->content_rect());
+    int frame = host_impl->active_tree()->source_frame_number();
+    switch (did_swaps_) {
+      case 0:
+        // The first frame has damage, so we should draw and swap.
+        EXPECT_EQ(0, frame);
+        break;
+      case 1:
+        // The second frame has scrolled, so the scrollbar should be damaged.
+        EXPECT_EQ(0, frame);
+        EXPECT_TRUE(root_damage.Contains(gfx::Rect(300, 300, 10, 100)));
+        break;
+      case 2:
+        // The third frame (after the commit) has no changes, so it shouldn't.
+        EXPECT_EQ(1, frame);
+        EXPECT_FALSE(root_damage.Intersects(gfx::Rect(300, 300, 10, 100)));
+        break;
+      default:
+        NOTREACHED();
+        break;
+    }
+    return result;
+  }
+
+  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
+                                   bool result) OVERRIDE {
+    ++did_swaps_;
+    EXPECT_TRUE(result);
+    LayerImpl* root = host_impl->active_tree()->root_layer();
+    LayerImpl* scroll_layer = root->children()[0];
+    switch (did_swaps_) {
+      case 1:
+        // Scroll on the thread.  This should damage the scrollbar for the
+        // next draw on the thread.
+        scroll_layer->ScrollBy(gfx::Vector2dF(10.f, 10.f));
+        host_impl->SetNeedsRedraw();
+        break;
+      case 2:
+        // Forcibly send the scroll to the main thread.
+        PostSetNeedsCommitToMainThread();
+        break;
+      case 3:
+        // First swap after second commit.
+        EndTest();
+        break;
+      default:
+        NOTREACHED();
+        break;
+    }
+  }
+
+  virtual void AfterTest() OVERRIDE {
+    EXPECT_EQ(3, did_swaps_);
+  }
+
+  int did_swaps_;
+};
+
+MULTI_THREAD_TEST_F(
+    DISABLED_LayerTreeHostDamageTestScrollbarCommitDoesNoDamage);
+
+class LayerTreeHostDamageTestVisibleTilesStillTriggerDraws
+    : public LayerTreeHostDamageTest {
+
+  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
+    settings->impl_side_painting = true;
+  }
+
+  virtual void BeginTest() OVERRIDE {
+    PostSetNeedsCommitToMainThread();
+  }
+
+  virtual void SetupTree() OVERRIDE {
+    scoped_refptr<FakePictureLayer> root = FakePictureLayer::Create(&client_);
+    root->SetBounds(gfx::Size(500, 500));
+    layer_tree_host()->SetRootLayer(root);
+    LayerTreeHostDamageTest::SetupTree();
+
+    swap_count_ = 0;
+    prepare_to_draw_count_ = 0;
+    update_visible_tile_count_ = 0;
+  }
+
+  virtual bool PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
+                                     LayerTreeHostImpl::FrameData* frame_data,
+                                     bool result) OVERRIDE {
+    EXPECT_TRUE(result);
+    prepare_to_draw_count_++;
+    switch (prepare_to_draw_count_) {
+      case 1:
+        // Detect that we have an incomplete tile, during the first frame.
+        // The first frame should have damage.
+        frame_data->contains_incomplete_tile = true;
+        DCHECK(!frame_data->has_no_damage);
+        break;
+      case 2:
+        // Make a no-damage frame. We early out and can't detect
+        // incomplete tiles, even if they still exist.
+        frame_data->contains_incomplete_tile = false;
+        frame_data->has_no_damage = true;
+        break;
+      case 3:
+        // Trigger the last swap for the completed tile.
+        frame_data->contains_incomplete_tile = false;
+        frame_data->has_no_damage = false;
+        EndTest();
+        break;
+      default:
+        NOTREACHED();
+        break;
+    }
+
+    return result;
+  }
+
+  virtual void UpdateVisibleTilesOnThread(
+      LayerTreeHostImpl* host_impl) OVERRIDE {
+    // Simulate creating some visible tiles (that trigger prepare-to-draws).
+    // The first we make into a no-damage-frame during prepare-to-draw (see
+    // above). This is to ensure we still get UpdateVisibleTiles calls after
+    // a no-damage or aborted frame.
+    update_visible_tile_count_++;
+    switch (update_visible_tile_count_) {
+      case 3:
+      case 6:
+        host_impl->DidInitializeVisibleTileForTesting();
+        break;
+      case 7:
+        NOTREACHED();
+        break;
+    }
+  }
+
+  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
+                                   bool didSwap) OVERRIDE {
+    if (!didSwap)
+      return;
+    ++swap_count_;
+  }
+
+  virtual void AfterTest() OVERRIDE {
+    // We should keep getting update-visible-tiles calls
+    // until we report there are no more incomplete-tiles.
+    EXPECT_EQ(update_visible_tile_count_, 6);
+    // First frame, plus two triggered by DidInitializeVisibleTile()
+    EXPECT_EQ(prepare_to_draw_count_, 3);
+    // First swap, plus final swap (contained damage).
+    EXPECT_EQ(swap_count_, 2);
+  }
+
+  FakeContentLayerClient client_;
+  int swap_count_;
+  int prepare_to_draw_count_;
+  int update_visible_tile_count_;
+};
+
+MULTI_THREAD_TEST_F(LayerTreeHostDamageTestVisibleTilesStillTriggerDraws);
 
 }  // namespace
 }  // namespace cc

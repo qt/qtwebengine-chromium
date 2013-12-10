@@ -53,8 +53,8 @@ class NET_EXPORT HostResolver {
     bool enable_caching;
   };
 
-  // The parameters for doing a Resolve(). A hostname and port are required,
-  // the rest are optional (and have reasonable defaults).
+  // The parameters for doing a Resolve(). A hostname and port are
+  // required; the rest are optional (and have reasonable defaults).
   class NET_EXPORT RequestInfo {
    public:
     explicit RequestInfo(const HostPortPair& host_port_pair);
@@ -85,9 +85,6 @@ class NET_EXPORT HostResolver {
     bool is_speculative() const { return is_speculative_; }
     void set_is_speculative(bool b) { is_speculative_ = b; }
 
-    RequestPriority priority() const { return priority_; }
-    void set_priority(RequestPriority priority) { priority_ = priority; }
-
    private:
     // The hostname to resolve, and the port to use in resulting sockaddrs.
     HostPortPair host_port_pair_;
@@ -103,9 +100,6 @@ class NET_EXPORT HostResolver {
 
     // Whether this request was started by the DNS prefetcher.
     bool is_speculative_;
-
-    // The priority for the request.
-    RequestPriority priority_;
   };
 
   // Opaque type used to cancel a request.
@@ -144,6 +138,7 @@ class NET_EXPORT HostResolver {
   //
   // Profiling information for the request is saved to |net_log| if non-NULL.
   virtual int Resolve(const RequestInfo& info,
+                      RequestPriority priority,
                       AddressList* addresses,
                       const CompletionCallback& callback,
                       RequestHandle* out_req,

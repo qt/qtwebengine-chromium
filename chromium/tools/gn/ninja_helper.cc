@@ -78,6 +78,7 @@ OutputFile NinjaHelper::GetOutputFileForSource(
     case SOURCE_CC:
     case SOURCE_M:
     case SOURCE_MM:
+    case SOURCE_S:
       name.append(target->settings()->IsWin() ? "obj" : "o");
       break;
 
@@ -93,7 +94,10 @@ OutputFile NinjaHelper::GetOutputFileForSource(
 
   // Use the scheme <path>/<target>.<name>.<extension> so that all output
   // names are unique to different targets.
-  OutputFile ret(kObjectDirNoSlash);
+
+  // This will look like "obj" or "toolchain_name/obj".
+  OutputFile ret(target->settings()->toolchain_output_subdir());
+  ret.value().append(kObjectDirNoSlash);
 
   // Find the directory, assume it starts with two slashes, and trim to one.
   base::StringPiece dir = FindDir(&source.value());
@@ -109,22 +113,25 @@ OutputFile NinjaHelper::GetOutputFileForSource(
 
 OutputFile NinjaHelper::GetTargetOutputFile(const Target* target) const {
   OutputFile ret;
-  if (target->output_type() == Target::NONE) {
-    NOTREACHED();
-    return ret;
-  }
 
-  // This is prepended to the output file name.
+  // Use the output name if given, fall back to target name if not.
+  const std::string& name = target->output_name().empty() ?
+      target->label().name() : target->output_name();
+
+  // This is prepended to the output file name. Some platforms get "lib"
+  // prepended to library names. but be careful not to make a duplicate (e.g.
+  // some targets like "libxml" already have the "lib" in the name).
   const char* prefix;
   if (!target->settings()->IsWin() &&
       (target->output_type() == Target::SHARED_LIBRARY ||
-       target->output_type() == Target::STATIC_LIBRARY))
+       target->output_type() == Target::STATIC_LIBRARY) &&
+      name.compare(0, 3, "lib") != 0)
     prefix = "lib";
   else
     prefix = "";
 
   const char* extension;
-  if (target->output_type() == Target::NONE ||
+  if (target->output_type() == Target::GROUP ||
       target->output_type() == Target::COPY_FILES ||
       target->output_type() == Target::CUSTOM) {
     extension = "stamp";
@@ -139,7 +146,6 @@ OutputFile NinjaHelper::GetTargetOutputFile(const Target* target) const {
 
   // Binaries and loadable libraries go into the toolchain root.
   if (target->output_type() == Target::EXECUTABLE ||
-      target->output_type() == Target::LOADABLE_MODULE ||
       (target->settings()->IsMac() &&
           (target->output_type() == Target::SHARED_LIBRARY ||
            target->output_type() == Target::STATIC_LIBRARY)) ||
@@ -147,7 +153,7 @@ OutputFile NinjaHelper::GetTargetOutputFile(const Target* target) const {
        target->output_type() == Target::SHARED_LIBRARY)) {
     // Generate a name like "<toolchain>/<prefix><name>.<extension>".
     ret.value().append(prefix);
-    ret.value().append(target->label().name());
+    ret.value().append(name);
     if (extension[0]) {
       ret.value().push_back('.');
       ret.value().append(extension);
@@ -160,7 +166,7 @@ OutputFile NinjaHelper::GetTargetOutputFile(const Target* target) const {
   if (target->output_type() == Target::SHARED_LIBRARY) {
     ret.value().append(kLibDirWithSlash);
     ret.value().append(prefix);
-    ret.value().append(target->label().name());
+    ret.value().append(name);
     if (extension[0]) {
       ret.value().push_back('.');
       ret.value().append(extension);
@@ -173,10 +179,71 @@ OutputFile NinjaHelper::GetTargetOutputFile(const Target* target) const {
   ret.value().append(kObjectDirNoSlash);
   AppendStringPiece(&ret.value(),
                     target->label().dir().SourceAbsoluteWithOneSlash());
-  ret.value().append(target->label().name());
+  ret.value().append(prefix);
+  ret.value().append(name);
   if (extension[0]) {
     ret.value().push_back('.');
     ret.value().append(extension);
   }
   return ret;
+}
+
+std::string NinjaHelper::GetRulePrefix(const Toolchain* toolchain) const {
+  // This code doesn't prefix the default toolchain commands. This is disabled
+  // so we can coexist with GYP's commands (which aren't prefixed). If we don't
+  // need to coexist with GYP anymore, we can uncomment this to make things a
+  // bit prettier.
+  //if (toolchain->is_default())
+  //  return std::string();  // Default toolchain has no prefix.
+  return toolchain->label().name() + "_";
+}
+
+std::string NinjaHelper::GetRuleForSourceType(const Settings* settings,
+                                              const Toolchain* toolchain,
+                                              SourceFileType type) const {
+  // This function may be hot since it will be called for every source file
+  // in the tree. We could cache the results to avoid making a string for
+  // every invocation.
+  std::string prefix = GetRulePrefix(toolchain);
+
+  if (type == SOURCE_C)
+    return prefix + "cc";
+  if (type == SOURCE_CC)
+    return prefix + "cxx";
+
+  // TODO(brettw) asm files.
+
+  if (settings->IsMac()) {
+    if (type == SOURCE_M)
+      return prefix + "objc";
+    if (type == SOURCE_MM)
+      return prefix + "objcxx";
+  }
+
+  if (settings->IsWin()) {
+    if (type == SOURCE_RC)
+      return prefix + "rc";
+  } else {
+    if (type == SOURCE_S)
+      return prefix + "cc";  // Assembly files just get compiled by CC.
+  }
+
+  return std::string();
+}
+
+std::string NinjaHelper::GetRuleForTargetType(
+    const Toolchain* toolchain,
+    Target::OutputType target_type) const {
+  std::string prefix = GetRulePrefix(toolchain);
+
+  if (target_type == Target::STATIC_LIBRARY) {
+    // TODO(brettw) stuff about standalong static libraryes on Unix in
+    // WriteTarget in the Python one, and lots of postbuild steps.
+    return prefix + "alink";
+  }
+
+  if (target_type == Target::SHARED_LIBRARY)
+    return prefix + "solink";
+
+  return prefix + "link";
 }

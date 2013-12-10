@@ -34,9 +34,8 @@ class RenderTextControlSingleLine : public RenderTextControl {
 public:
     RenderTextControlSingleLine(HTMLInputElement*);
     virtual ~RenderTextControlSingleLine();
-    // FIXME: Move create*Style() to their classes.
+    // FIXME: Move createInnerTextStyle() to TextControlInnerTextElement.
     virtual PassRefPtr<RenderStyle> createInnerTextStyle(const RenderStyle* startStyle) const;
-    PassRefPtr<RenderStyle> createInnerBlockStyle(const RenderStyle* startStyle) const;
 
     void capsLockStateMayHaveChanged();
 
@@ -44,7 +43,7 @@ protected:
     virtual void centerContainerIfNeeded(RenderBox*) const { }
     virtual LayoutUnit computeLogicalHeightLimit() const;
     HTMLElement* containerElement() const;
-    HTMLElement* innerBlockElement() const;
+    Element* editingViewPortElement() const;
     HTMLInputElement* inputElement() const;
     virtual void updateFromElement() OVERRIDE;
 
@@ -67,8 +66,6 @@ private:
     virtual int scrollHeight() const;
     virtual void setScrollLeft(int);
     virtual void setScrollTop(int);
-    virtual bool scroll(ScrollDirection, ScrollGranularity, float multiplier = 1, Node** stopNode = 0);
-    virtual bool logicalScroll(ScrollLogicalDirection, ScrollGranularity, float multiplier = 1, Node** stopNode = 0);
 
     int textBlockWidth() const;
     virtual float getAvgCharWidth(AtomicString family);
@@ -92,11 +89,6 @@ inline HTMLElement* RenderTextControlSingleLine::containerElement() const
     return inputElement()->containerElement();
 }
 
-inline HTMLElement* RenderTextControlSingleLine::innerBlockElement() const
-{
-    return inputElement()->innerBlockElement();
-}
-
 inline RenderTextControlSingleLine* toRenderTextControlSingleLine(RenderObject* object)
 {
     ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isTextField());
@@ -108,12 +100,19 @@ void toRenderTextControlSingleLine(const RenderTextControlSingleLine*);
 
 // ----------------------------
 
-class RenderTextControlInnerBlock : public RenderBlock {
+class RenderTextControlInnerBlock : public RenderBlockFlow {
 public:
-    RenderTextControlInnerBlock(Element* element) : RenderBlock(element) { }
+    RenderTextControlInnerBlock(Element* element) : RenderBlockFlow(element) { }
+    virtual int inlineBlockBaseline(LineDirectionMode direction) const OVERRIDE { return lastLineBoxBaseline(direction); }
 
 private:
-    virtual bool hasLineIfEmpty() const { return true; }
+    virtual bool isIntristicallyScrollable(ScrollbarOrientation orientation) const OVERRIDE
+    {
+        return orientation == HorizontalScrollbar;
+    }
+    virtual bool scrollsOverflowX() const OVERRIDE { return hasOverflowClip(); }
+    virtual bool scrollsOverflowY() const OVERRIDE { return false; }
+    virtual bool hasLineIfEmpty() const OVERRIDE { return true; }
 };
 
 }

@@ -337,8 +337,6 @@ void BackendImpl::CleanupCache() {
       // This is a net_unittest, verify that we are not 'leaking' entries.
       File::WaitForPendingIO(&num_pending_io_);
       DCHECK(!num_refs_);
-    } else {
-      File::DropPendingIO();
     }
   }
   block_files_.CloseFiles();
@@ -869,7 +867,7 @@ int32 BackendImpl::GetCurrentEntryId() const {
 }
 
 int BackendImpl::MaxFileSize() const {
-  return max_size_ / 8;
+  return cache_type() == net::PNACL_CACHE ? max_size_ : max_size_ / 8;
 }
 
 void BackendImpl::ModifyStorageSize(int32 old_size, int32 new_size) {

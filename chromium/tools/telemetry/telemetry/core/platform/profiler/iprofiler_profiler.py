@@ -11,8 +11,7 @@ from telemetry.core import util
 from telemetry.core.platform import profiler
 
 # pexpect is not available on all platforms so use the third_party version.
-sys.path.append(os.path.join(
-    util.GetChromiumSrcDir(), 'third_party', 'pexpect'))
+util.AddDirToPythonPath(util.GetChromiumSrcDir(), 'third_party', 'pexpect')
 try:
   import pexpect  # pylint: disable=F0401
 except ImportError:
@@ -85,13 +84,13 @@ class IprofilerProfiler(profiler.Profiler):
     return 'iprofiler'
 
   @classmethod
-  def is_supported(cls, options):
+  def is_supported(cls, browser_type):
     if sys.platform != 'darwin':
       return False
-    if not options:
+    if browser_type == 'any':
       return True
-    return (not options.browser_type.startswith('android') and
-            not options.browser_type.startswith('cros'))
+    return (not browser_type.startswith('android') and
+            not browser_type.startswith('cros'))
 
   def CollectProfile(self):
     output_files = []

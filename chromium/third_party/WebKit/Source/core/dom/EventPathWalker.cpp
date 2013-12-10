@@ -27,7 +27,7 @@
 #include "config.h"
 #include "core/dom/EventPathWalker.h"
 
-#include "core/dom/shadow/ContentDistributor.h"
+#include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/InsertionPoint.h"
 #include "core/dom/shadow/ShadowRoot.h"
 
@@ -39,11 +39,7 @@ EventPathWalker::EventPathWalker(const Node* node)
     , m_isVisitingInsertionPointInReprojection(false)
 {
     ASSERT(node);
-    // FIXME: It's not clear if we need this document check, but I think we do
-    // since DocType nodes from document.implementation.createDocumentType
-    // don't have a document().
-    if (Document* document = node->document())
-        document->updateDistributionForNodeIfNeeded(const_cast<Node*>(node));
+    node->document().updateDistributionForNodeIfNeeded(const_cast<Node*>(node));
 }
 
 Node* EventPathWalker::parent(const Node* node)
@@ -58,7 +54,7 @@ void EventPathWalker::moveToParent()
     ASSERT(m_node);
     ASSERT(m_distributedNode);
     if (ElementShadow* shadow = shadowOfParent(m_node)) {
-        if (InsertionPoint* insertionPoint = shadow->distributor().findInsertionPointFor(m_distributedNode)) {
+        if (InsertionPoint* insertionPoint = shadow->findInsertionPointFor(m_distributedNode)) {
             m_node = insertionPoint;
             m_isVisitingInsertionPointInReprojection = true;
             return;

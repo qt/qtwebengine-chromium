@@ -18,7 +18,7 @@
 #include "ui/base/l10n/l10n_util.h"
 
 #if !defined(OS_WIN) && (defined(USE_AURA) || defined(OS_MACOSX))
-#include "ui/base/keycodes/keyboard_code_conversion.h"
+#include "ui/events/keycodes/keyboard_code_conversion.h"
 #endif
 
 namespace ui {
@@ -154,6 +154,18 @@ base::string16 Accelerator::GetShortcutText() const {
       break;
     case ui::VKEY_OEM_PERIOD:
       string_id = IDS_APP_PERIOD_KEY;
+      break;
+    case ui::VKEY_MEDIA_NEXT_TRACK:
+      string_id = IDS_APP_MEDIA_NEXT_TRACK_KEY;
+      break;
+    case ui::VKEY_MEDIA_PLAY_PAUSE:
+      string_id = IDS_APP_MEDIA_PLAY_PAUSE_KEY;
+      break;
+    case ui::VKEY_MEDIA_PREV_TRACK:
+      string_id = IDS_APP_MEDIA_PREV_TRACK_KEY;
+      break;
+    case ui::VKEY_MEDIA_STOP:
+      string_id = IDS_APP_MEDIA_STOP_KEY;
       break;
     default:
       break;

@@ -6,6 +6,7 @@
 #define CC_TREES_LAYER_TREE_HOST_IMPL_H_
 
 #include <list>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -46,26 +47,25 @@ class PaintTimeCounter;
 class MemoryHistory;
 class RenderingStatsInstrumentation;
 class RenderPassDrawQuad;
+class TextureMailboxDeleter;
 class TopControlsManager;
 class UIResourceBitmap;
+class UIResourceRequest;
 struct RendererCapabilities;
-struct UIResourceRequest;
 
 // LayerTreeHost->Proxy callback interface.
 class LayerTreeHostImplClient {
  public:
-  virtual void DidTryInitializeRendererOnImplThread(
-      bool success,
-      scoped_refptr<ContextProvider> offscreen_context_provider) = 0;
   virtual void DidLoseOutputSurfaceOnImplThread() = 0;
   virtual void OnSwapBuffersCompleteOnImplThread() = 0;
   virtual void BeginFrameOnImplThread(const BeginFrameArgs& args) = 0;
   virtual void OnCanDrawStateChanged(bool can_draw) = 0;
-  virtual void OnHasPendingTreeStateChanged(bool has_pending_tree) = 0;
+  virtual void NotifyReadyToActivate() = 0;
   virtual void SetNeedsRedrawOnImplThread() = 0;
   virtual void SetNeedsRedrawRectOnImplThread(gfx::Rect damage_rect) = 0;
   virtual void DidInitializeVisibleTileOnImplThread() = 0;
   virtual void SetNeedsCommitOnImplThread() = 0;
+  virtual void SetNeedsManageTilesOnImplThread() = 0;
   virtual void PostAnimationEventsToMainThreadOnImplThread(
       scoped_ptr<AnimationEventsVector> events,
       base::Time wall_clock_time) = 0;
@@ -123,7 +123,6 @@ class CC_EXPORT LayerTreeHostImpl
   virtual void StartPageScaleAnimation(gfx::Vector2d target_offset,
                                        bool anchor_point,
                                        float page_scale,
-                                       base::TimeTicks start_time,
                                        base::TimeDelta duration) OVERRIDE;
   virtual void ScheduleAnimation() OVERRIDE;
   virtual bool HaveTouchEventHandlersAt(gfx::Point viewport_port) OVERRIDE;
@@ -163,7 +162,7 @@ class CC_EXPORT LayerTreeHostImpl
   void UpdateBackgroundAnimateTicking(bool should_background_tick);
   void SetViewportDamage(gfx::Rect damage_rect);
 
-  void ManageTiles();
+  virtual void ManageTiles();
 
   // Returns false if problems occured preparing the frame, and we should try
   // to avoid displaying the frame. If PrepareToDraw is called, DidDrawAllLayers
@@ -177,25 +176,39 @@ class CC_EXPORT LayerTreeHostImpl
 
   const LayerTreeSettings& settings() const { return settings_; }
 
-  // Returns the currently visible viewport size in DIP. This value excludes
-  // the URL bar and non-overlay scrollbars.
-  gfx::SizeF VisibleViewportSize() const;
-
   // Evict all textures by enforcing a memory policy with an allocation of 0.
   void EvictTexturesForTesting();
 
+  // When blocking, this prevents client_->NotifyReadyToActivate() from being
+  // called. When disabled, it calls client_->NotifyReadyToActivate()
+  // immediately if any notifications had been blocked while blocking.
+  virtual void BlockNotifyReadyToActivateForTesting(bool block);
+
+  // This allows us to inject DidInitializeVisibleTile events for testing.
+  void DidInitializeVisibleTileForTesting();
+
+  bool device_viewport_valid_for_tile_management() const {
+    return device_viewport_valid_for_tile_management_;
+  }
+
+  // Viewport size in draw space: this size is in physical pixels and is used
+  // for draw properties, tilings, quads and render passes.
+  gfx::Size DrawViewportSize() const;
+
+  // Viewport size for scrolling and fixed-position compensation. This value
+  // excludes the URL bar and non-overlay scrollbars and is in DIP (and
+  // invariant relative to page scale).
+  gfx::SizeF UnscaledScrollableViewportSize() const;
+
   // RendererClient implementation
+
+  // Viewport rectangle and clip in nonflipped window space.  These rects
+  // should only be used by Renderer subclasses to populate glViewport/glClip
+  // and their software-mode equivalents.
   virtual gfx::Rect DeviceViewport() const OVERRIDE;
- private:
-  virtual float DeviceScaleFactor() const OVERRIDE;
-  virtual const LayerTreeSettings& Settings() const OVERRIDE;
- public:
+  virtual gfx::Rect DeviceClip() const OVERRIDE;
   virtual void SetFullRootLayerDamage() OVERRIDE;
-  virtual bool HasImplThread() const OVERRIDE;
-  virtual bool ShouldClearRootRenderPass() const OVERRIDE;
   virtual CompositorFrameMetadata MakeCompositorFrameMetadata() const OVERRIDE;
-  virtual bool AllowPartialSwap() const OVERRIDE;
-  virtual bool ExternalStencilTestEnabled() const OVERRIDE;
 
   // TileManagerClient implementation.
   virtual void NotifyReadyToActivate() OVERRIDE;
@@ -206,11 +219,14 @@ class CC_EXPORT LayerTreeHostImpl
   virtual void ReleaseGL() OVERRIDE;
   virtual void SetNeedsRedrawRect(gfx::Rect rect) OVERRIDE;
   virtual void BeginFrame(const BeginFrameArgs& args) OVERRIDE;
-  virtual void SetExternalDrawConstraints(const gfx::Transform& transform,
-                                          gfx::Rect viewport) OVERRIDE;
-  virtual void SetExternalStencilTest(bool enabled) OVERRIDE;
+  virtual void SetExternalDrawConstraints(
+      const gfx::Transform& transform,
+      gfx::Rect viewport,
+      gfx::Rect clip,
+      bool valid_for_tile_management) OVERRIDE;
   virtual void DidLoseOutputSurface() OVERRIDE;
-  virtual void OnSwapBuffersComplete(const CompositorFrameAck* ack) OVERRIDE;
+  virtual void OnSwapBuffersComplete() OVERRIDE;
+  virtual void ReclaimResources(const CompositorFrameAck* ack) OVERRIDE;
   virtual void SetMemoryPolicy(const ManagedMemoryPolicy& policy) OVERRIDE;
   virtual void SetDiscardBackBufferWhenNotVisible(bool discard) OVERRIDE;
   virtual void SetTreeActivationCallback(const base::Closure& callback)
@@ -219,9 +235,15 @@ class CC_EXPORT LayerTreeHostImpl
   // Called from LayerTreeImpl.
   void OnCanDrawStateChangedForTree();
 
-  // Implementation
+  // Implementation.
   bool CanDraw() const;
   OutputSurface* output_surface() const { return output_surface_.get(); }
+
+  void SetOffscreenContextProvider(
+      const scoped_refptr<ContextProvider>& offscreen_context_provider);
+  ContextProvider* offscreen_context_provider() const {
+    return offscreen_context_provider_.get();
+  }
 
   std::string LayerTreeAsJson() const;
 
@@ -236,7 +258,7 @@ class CC_EXPORT LayerTreeHostImpl
 
   virtual bool SwapBuffers(const FrameData& frame);
   void SetNeedsBeginFrame(bool enable);
-  void SetNeedsManageTiles() { manage_tiles_needed_ = true; }
+  void DidModifyTilePriorities();
 
   void Readback(void* pixels, gfx::Rect rect_in_device_viewport);
 
@@ -246,8 +268,8 @@ class CC_EXPORT LayerTreeHostImpl
   const LayerTreeImpl* pending_tree() const { return pending_tree_.get(); }
   const LayerTreeImpl* recycle_tree() const { return recycle_tree_.get(); }
   virtual void CreatePendingTree();
-  void UpdateVisibleTiles();
-  virtual void ActivatePendingTreeIfNeeded();
+  virtual void UpdateVisibleTiles();
+  virtual void ActivatePendingTree();
 
   // Shortcuts to layers on the active tree.
   LayerImpl* RootLayer() const;
@@ -263,17 +285,20 @@ class CC_EXPORT LayerTreeHostImpl
   ManagedMemoryPolicy ActualManagedMemoryPolicy() const;
 
   size_t memory_allocation_limit_bytes() const;
+  int memory_allocation_priority_cutoff() const;
 
   void SetViewportSize(gfx::Size device_viewport_size);
-  gfx::Size device_viewport_size() const { return device_viewport_size_; }
 
   void SetOverdrawBottomHeight(float overdraw_bottom_height);
   float overdraw_bottom_height() const { return overdraw_bottom_height_; }
 
+  void SetOverhangUIResource(UIResourceId overhang_ui_resource_id,
+                             gfx::Size overhang_ui_resource_size);
+
   void SetDeviceScaleFactor(float device_scale_factor);
   float device_scale_factor() const { return device_scale_factor_; }
 
-  const gfx::Transform& DeviceTransform() const;
+  const gfx::Transform& DrawTransform() const;
 
   scoped_ptr<ScrollAndScaleSet> ProcessScrollDeltas();
 
@@ -367,7 +392,7 @@ class CC_EXPORT LayerTreeHostImpl
   void SetTreePriority(TreePriority priority);
 
   void ResetCurrentFrameTimeForNextFrame();
-  base::TimeTicks CurrentFrameTimeTicks();
+  virtual base::TimeTicks CurrentFrameTimeTicks();
   base::Time CurrentFrameTime();
 
   virtual base::TimeTicks CurrentPhysicalTimeTicks() const;
@@ -378,12 +403,15 @@ class CC_EXPORT LayerTreeHostImpl
 
   bool page_scale_animation_active() const { return !!page_scale_animation_; }
 
-  void CreateUIResource(UIResourceId uid,
-                        scoped_refptr<UIResourceBitmap> bitmap);
+  virtual void CreateUIResource(UIResourceId uid,
+                                const UIResourceBitmap& bitmap);
   // Deletes a UI resource.  May safely be called more than once.
-  void DeleteUIResource(UIResourceId uid);
+  virtual void DeleteUIResource(UIResourceId uid);
+  void EvictAllUIResources();
+  bool EvictedUIResourcesExist() const;
 
-  ResourceProvider::ResourceId ResourceIdForUIResource(UIResourceId uid) const;
+  virtual ResourceProvider::ResourceId ResourceIdForUIResource(
+      UIResourceId uid) const;
 
  protected:
   LayerTreeHostImpl(
@@ -391,7 +419,6 @@ class CC_EXPORT LayerTreeHostImpl
       LayerTreeHostImplClient* client,
       Proxy* proxy,
       RenderingStatsInstrumentation* rendering_stats_instrumentation);
-  virtual void ActivatePendingTree();
 
   // Virtual for testing.
   virtual void AnimateLayers(base::TimeTicks monotonic_time,
@@ -405,14 +432,18 @@ class CC_EXPORT LayerTreeHostImpl
     return animation_registrar_->active_animation_controllers();
   }
 
+  bool manage_tiles_needed() const { return tile_priorities_dirty_; }
+
   LayerTreeHostImplClient* client_;
   Proxy* proxy_;
 
  private:
-  void CreateAndSetRenderer(OutputSurface* output_surface,
-                            ResourceProvider* resource_provider,
-                            bool skip_gl_renderer);
+  void CreateAndSetRenderer(
+      OutputSurface* output_surface,
+      ResourceProvider* resource_provider,
+      bool skip_gl_renderer);
   void CreateAndSetTileManager(ResourceProvider* resource_provider,
+                               ContextProvider* context_provider,
                                bool using_map_image);
   void ReleaseTreeResources();
   void EnforceZeroBudget(bool zero_budget);
@@ -455,11 +486,19 @@ class CC_EXPORT LayerTreeHostImpl
 
   void DidInitializeVisibleTile();
 
+  void MarkUIResourceNotEvicted(UIResourceId uid);
+
   typedef base::hash_map<UIResourceId, ResourceProvider::ResourceId>
       UIResourceMap;
   UIResourceMap ui_resource_map_;
 
+  // Resources that were evicted by EvictAllUIResources. Resources are removed
+  // from this when they are touched by a create or destroy from the UI resource
+  // request queue.
+  std::set<UIResourceId> evicted_ui_resources_;
+
   scoped_ptr<OutputSurface> output_surface_;
+  scoped_refptr<ContextProvider> offscreen_context_provider_;
 
   // |resource_provider_| and |tile_manager_| can be NULL, e.g. when using tile-
   // free rendering - see OutputSurface::ForcedDrawToSoftwareDevice().
@@ -471,7 +510,7 @@ class CC_EXPORT LayerTreeHostImpl
   scoped_ptr<LayerTreeImpl> active_tree_;
 
   // In impl-side painting mode, tree with possibly incomplete rasterized
-  // content. May be promoted to active by ActivatePendingTreeIfNeeded().
+  // content. May be promoted to active by ActivatePendingTree().
   scoped_ptr<LayerTreeImpl> pending_tree_;
 
   // In impl-side painting mode, inert tree with layers that can be recycled
@@ -483,7 +522,7 @@ class CC_EXPORT LayerTreeHostImpl
   bool should_bubble_scrolls_;
   bool wheel_scrolling_;
 
-  bool manage_tiles_needed_;
+  bool tile_priorities_dirty_;
 
   // The optional delegate for the root layer scroll offset.
   LayerScrollOffsetDelegate* root_layer_scroll_offset_delegate_;
@@ -514,6 +553,8 @@ class CC_EXPORT LayerTreeHostImpl
   scoped_ptr<MemoryHistory> memory_history_;
   scoped_ptr<DebugRectHistory> debug_rect_history_;
 
+  scoped_ptr<TextureMailboxDeleter> texture_mailbox_deleter_;
+
   // The maximum memory that would be used by the prioritized resource
   // manager, if there were no limit on memory usage.
   size_t max_memory_needed_bytes_;
@@ -523,12 +564,19 @@ class CC_EXPORT LayerTreeHostImpl
   size_t last_sent_memory_use_bytes_;
   bool zero_budget_;
 
-  // Viewport size passed in from the main thread, in physical pixels.
+  // Viewport size passed in from the main thread, in physical pixels.  This
+  // value is the default size for all concepts of physical viewport (draw
+  // viewport, scrolling viewport and device viewport), but it can be
+  // overridden.
   gfx::Size device_viewport_size_;
 
   // Conversion factor from CSS pixels to physical pixels when
   // pageScaleFactor=1.
   float device_scale_factor_;
+
+  // UI resource to use for drawing overhang gutters.
+  UIResourceId overhang_ui_resource_id_;
+  gfx::Size overhang_ui_resource_size_;
 
   // Vertical amount of the viewport size that's known to covered by a
   // browser-side UI element, such as an on-screen-keyboard.  This affects
@@ -536,12 +584,18 @@ class CC_EXPORT LayerTreeHostImpl
   // the page when the keyboard is up.
   float overdraw_bottom_height_;
 
-  // Optional top-level constraints that can be set by the OutputSurface.  The
-  // external_viewport_'s size takes precedence over device_viewport_size_ for
-  // DrawQuad generation and Renderer; however, device_viewport_size_ is still
-  // used for scrollable size.
+  // Optional top-level constraints that can be set by the OutputSurface.
+  // - external_transform_ applies a transform above the root layer
+  // - external_viewport_ is used DrawProperties, tile management and
+  // glViewport/window projection matrix.
+  // - external_clip_ specifies a top-level clip rect
+  // - external_stencil_test_enabled_ tells CC to respect existing stencil bits
+  // (When these are specified, device_viewport_size_ remains used only for
+  // scrollable size.)
   gfx::Transform external_transform_;
   gfx::Rect external_viewport_;
+  gfx::Rect external_clip_;
+  bool device_viewport_valid_for_tile_management_;
   bool external_stencil_test_enabled_;
 
   gfx::Rect viewport_damage_rect_;

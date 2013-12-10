@@ -137,7 +137,7 @@ class BinaryOpNode : public ParseNode {
 class BlockNode : public ParseNode {
  public:
   // Set has_scope if this block introduces a nested scope.
-  BlockNode(bool has_scope);
+  explicit BlockNode(bool has_scope);
   virtual ~BlockNode();
 
   virtual const BlockNode* AsBlock() const OVERRIDE;
@@ -148,8 +148,8 @@ class BlockNode : public ParseNode {
       const std::string& help = std::string()) const OVERRIDE;
   virtual void Print(std::ostream& out, int indent) const OVERRIDE;
 
-  void set_begin_token(const Token* t) { begin_token_ = t; }
-  void set_end_token(const Token* t) { end_token_ = t; }
+  void set_begin_token(const Token& t) { begin_token_ = t; }
+  void set_end_token(const Token& t) { end_token_ = t; }
 
   const std::vector<ParseNode*>& statements() const { return statements_; }
   void append_statement(scoped_ptr<ParseNode> s) {
@@ -163,8 +163,8 @@ class BlockNode : public ParseNode {
   bool has_scope_;
 
   // Tokens corresponding to { and }, if any (may be NULL).
-  const Token* begin_token_;
-  const Token* end_token_;
+  Token begin_token_;
+  Token end_token_;
 
   // Owning pointers, use unique_ptr when we can use C++11.
   std::vector<ParseNode*> statements_;
@@ -295,7 +295,7 @@ class ListNode : public ParseNode {
   void append_item(scoped_ptr<ParseNode> s) {
     contents_.push_back(s.release());
   }
-  const std::vector<ParseNode*>& contents() const { return contents_; }
+  const std::vector<const ParseNode*>& contents() const { return contents_; }
 
  private:
   // Tokens corresponding to the [ and ].
@@ -303,7 +303,7 @@ class ListNode : public ParseNode {
   Token end_token_;
 
   // Owning pointers, use unique_ptr when we can use C++11.
-  std::vector<ParseNode*> contents_;
+  std::vector<const ParseNode*> contents_;
 
   DISALLOW_COPY_AND_ASSIGN(ListNode);
 };

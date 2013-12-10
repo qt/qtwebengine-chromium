@@ -27,6 +27,7 @@
 {% for filename in header_includes %}
 #include "{{filename}}"
 {% endfor %}
+
 namespace WebCore {
 
 class {{v8_class_name}} {
@@ -40,9 +41,7 @@ public:
     }
     static void derefObject(void*);
     static WrapperTypeInfo info;
-
     static const int internalFieldCount = v8DefaultWrapperInternalFieldCount + 0;
-
     static inline void* toInternalPointer({{cpp_class_name}}* impl)
     {
         return impl;
@@ -52,14 +51,12 @@ public:
     {
         return static_cast<{{cpp_class_name}}*>(object);
     }
-
     static void installPerContextProperties(v8::Handle<v8::Object>, {{cpp_class_name}}*, v8::Isolate*) { }
     static void installPerContextPrototypeProperties(v8::Handle<v8::Object>, v8::Isolate*) { }
 
 private:
     friend v8::Handle<v8::Object> wrap({{cpp_class_name}}*, v8::Handle<v8::Object> creationContext, v8::Isolate*);
     static v8::Handle<v8::Object> createWrapper(PassRefPtr<{{cpp_class_name}}>, v8::Handle<v8::Object> creationContext, v8::Isolate*);
-
 };
 
 template<>
@@ -71,7 +68,7 @@ public:
 inline v8::Handle<v8::Object> wrap({{cpp_class_name}}* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
     ASSERT(impl);
-    ASSERT(DOMDataStore::getWrapper<{{v8_class_name}}>(impl, isolate).IsEmpty());
+    ASSERT(!DOMDataStore::containsWrapper<{{v8_class_name}}>(impl, isolate));
     return {{v8_class_name}}::createWrapper(impl, creationContext, isolate);
 }
 
@@ -85,49 +82,72 @@ inline v8::Handle<v8::Value> toV8({{cpp_class_name}}* impl, v8::Handle<v8::Objec
     return wrap(impl, creationContext, isolate);
 }
 
-inline v8::Handle<v8::Value> toV8ForMainWorld({{cpp_class_name}}* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+template<typename CallbackInfo>
+inline void v8SetReturnValue(const CallbackInfo& callbackInfo, {{cpp_class_name}}* impl, v8::Handle<v8::Object> creationContext)
 {
-    ASSERT(worldType(isolate) == MainWorld);
-    if (UNLIKELY(!impl))
-        return v8::Null(isolate);
-    v8::Handle<v8::Value> wrapper = DOMDataStore::getWrapperForMainWorld<{{v8_class_name}}>(impl);
-    if (!wrapper.IsEmpty())
-        return wrapper;
-    return wrap(impl, creationContext, isolate);
+    if (UNLIKELY(!impl)) {
+        v8SetReturnValueNull(callbackInfo);
+        return;
+    }
+    if (DOMDataStore::setReturnValueFromWrapper<{{v8_class_name}}>(callbackInfo.GetReturnValue(), impl))
+        return;
+    v8::Handle<v8::Object> wrapper = wrap(impl, creationContext, callbackInfo.GetIsolate());
+    v8SetReturnValue(callbackInfo, wrapper);
+}
+
+template<typename CallbackInfo>
+inline void v8SetReturnValueForMainWorld(const CallbackInfo& callbackInfo, {{cpp_class_name}}* impl, v8::Handle<v8::Object> creationContext)
+{
+    ASSERT(worldType(callbackInfo.GetIsolate()) == MainWorld);
+    if (UNLIKELY(!impl)) {
+        v8SetReturnValueNull(callbackInfo);
+        return;
+    }
+    if (DOMDataStore::setReturnValueFromWrapperForMainWorld<{{v8_class_name}}>(callbackInfo.GetReturnValue(), impl))
+        return;
+    v8::Handle<v8::Value> wrapper = wrap(impl, creationContext, callbackInfo.GetIsolate());
+    v8SetReturnValue(callbackInfo, wrapper);
 }
 
 template<class CallbackInfo, class Wrappable>
-inline v8::Handle<v8::Value> toV8Fast({{cpp_class_name}}* impl, const CallbackInfo& callbackInfo, Wrappable* wrappable)
+inline void v8SetReturnValueFast(const CallbackInfo& callbackInfo, {{cpp_class_name}}* impl, Wrappable* wrappable)
 {
-    if (UNLIKELY(!impl))
-        return v8::Null(callbackInfo.GetIsolate());
-    v8::Handle<v8::Object> wrapper = DOMDataStore::getWrapperFast<{{v8_class_name}}>(impl, callbackInfo, wrappable);
-    if (!wrapper.IsEmpty())
-        return wrapper;
-    return wrap(impl, callbackInfo.Holder(), callbackInfo.GetIsolate());
+    if (UNLIKELY(!impl)) {
+        v8SetReturnValueNull(callbackInfo);
+        return;
+    }
+    if (DOMDataStore::setReturnValueFromWrapperFast<{{v8_class_name}}>(callbackInfo.GetReturnValue(), impl, callbackInfo.Holder(), wrappable))
+        return;
+    v8::Handle<v8::Object> wrapper = wrap(impl, callbackInfo.Holder(), callbackInfo.GetIsolate());
+    v8SetReturnValue(callbackInfo, wrapper);
 }
 
-inline v8::Handle<v8::Value> toV8ForMainWorld(PassRefPtr< {{cpp_class_name}} > impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
-{
-    return toV8ForMainWorld(impl.get(), creationContext, isolate);
-}
-
-
-template<class CallbackInfo, class Wrappable>
-inline v8::Handle<v8::Value> toV8Fast(PassRefPtr< {{cpp_class_name}} > impl, const CallbackInfo& callbackInfo, Wrappable* wrappable)
-{
-    return toV8Fast(impl.get(), callbackInfo, wrappable);
-}
-
-inline v8::Handle<v8::Value> toV8(PassRefPtr< {{cpp_class_name}} > impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+inline v8::Handle<v8::Value> toV8(PassRefPtr<{{cpp_class_name}} > impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
     return toV8(impl.get(), creationContext, isolate);
 }
 
-
+template<class CallbackInfo>
+inline void v8SetReturnValue(const CallbackInfo& callbackInfo, PassRefPtr<{{cpp_class_name}} > impl, v8::Handle<v8::Object> creationContext)
+{
+    v8SetReturnValue(callbackInfo, impl.get(), creationContext);
 }
 
+template<class CallbackInfo>
+inline void v8SetReturnValueForMainWorld(const CallbackInfo& callbackInfo, PassRefPtr<{{cpp_class_name}} > impl, v8::Handle<v8::Object> creationContext)
+{
+    v8SetReturnValueForMainWorld(callbackInfo, impl.get(), creationContext);
+}
+
+template<class CallbackInfo, class Wrappable>
+inline void v8SetReturnValueFast(const CallbackInfo& callbackInfo, PassRefPtr<{{cpp_class_name}} > impl, Wrappable* wrappable)
+{
+    v8SetReturnValueFast(callbackInfo, impl.get(), wrappable);
+}
+
+}
 {% if conditional_string %}
+
 #endif // {{conditional_string}}
 {% endif %}
 

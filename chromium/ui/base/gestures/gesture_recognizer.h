@@ -8,9 +8,9 @@
 #include <vector>
 
 #include "base/memory/scoped_vector.h"
-#include "ui/base/events/event_constants.h"
 #include "ui/base/gestures/gesture_types.h"
 #include "ui/base/ui_export.h"
+#include "ui/events/event_constants.h"
 
 namespace ui {
 // A GestureRecognizer is an abstract base class for conversion of touch events
@@ -25,7 +25,7 @@ class UI_EXPORT GestureRecognizer {
   virtual ~GestureRecognizer() {}
 
   // Invoked for each touch event that could contribute to the current gesture.
-  // Returns list of  zero or more GestureEvents identified after processing
+  // Returns list of zero or more GestureEvents identified after processing
   // TouchEvent.
   // Caller would be responsible for freeing up Gestures.
   virtual Gestures* ProcessTouchEventForGesture(const TouchEvent& event,

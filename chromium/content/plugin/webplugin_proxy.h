@@ -19,6 +19,7 @@
 #include "base/timer/timer.h"
 #include "content/child/npapi/webplugin.h"
 #include "ipc/ipc_message.h"
+#include "ipc/ipc_sender.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "url/gurl.h"
@@ -27,6 +28,8 @@
 #endif
 #include "ui/gl/gpu_preference.h"
 #include "ui/surface/transport_dib.h"
+
+struct PluginMsg_FetchURL_Params;
 
 namespace content {
 class PluginChannel;
@@ -38,7 +41,8 @@ class WebPluginAcceleratedSurfaceProxy;
 
 // This is an implementation of WebPlugin that proxies all calls to the
 // renderer.
-class WebPluginProxy : public WebPlugin {
+class WebPluginProxy : public WebPlugin,
+                       public IPC::Sender {
  public:
   // Creates a new proxy for WebPlugin, using the given sender to send the
   // marshalled WebPlugin calls.
@@ -52,16 +56,8 @@ class WebPluginProxy : public WebPlugin {
 
   // WebPlugin overrides
   virtual void SetWindow(gfx::PluginWindowHandle window) OVERRIDE;
-
-  // Whether input events should be sent to the delegate.
   virtual void SetAcceptsInputEvents(bool accepts) OVERRIDE;
-
   virtual void WillDestroyWindow(gfx::PluginWindowHandle window) OVERRIDE;
-#if defined(OS_WIN)
-  void SetWindowlessData(HANDLE pump_messages_event,
-                         gfx::NativeViewId dummy_activation_window);
-#endif
-
   virtual void CancelResource(unsigned long id) OVERRIDE;
   virtual void Invalidate() OVERRIDE;
   virtual void InvalidateRect(const gfx::Rect& rect) OVERRIDE;
@@ -74,6 +70,49 @@ class WebPluginProxy : public WebPlugin {
                          const std::string& cookie) OVERRIDE;
   virtual std::string GetCookies(const GURL& url,
                                  const GURL& first_party_for_cookies) OVERRIDE;
+  virtual void HandleURLRequest(const char* url,
+                                const char* method,
+                                const char* target,
+                                const char* buf,
+                                unsigned int len,
+                                int notify_id,
+                                bool popups_allowed,
+                                bool notify_redirects) OVERRIDE;
+  void UpdateGeometry(const gfx::Rect& window_rect,
+                      const gfx::Rect& clip_rect,
+                      const TransportDIB::Handle& windowless_buffer0,
+                      const TransportDIB::Handle& windowless_buffer1,
+                      int windowless_buffer_index);
+  virtual void CancelDocumentLoad() OVERRIDE;
+  virtual void InitiateHTTPRangeRequest(
+      const char* url, const char* range_info, int range_request_id) OVERRIDE;
+  virtual void DidStartLoading() OVERRIDE;
+  virtual void DidStopLoading() OVERRIDE;
+  virtual void SetDeferResourceLoading(unsigned long resource_id,
+                                       bool defer) OVERRIDE;
+  virtual bool IsOffTheRecord() OVERRIDE;
+  virtual void ResourceClientDeleted(
+      WebPluginResourceClient* resource_client) OVERRIDE;
+  virtual void URLRedirectResponse(bool allow, int resource_id) OVERRIDE;
+  virtual bool CheckIfRunInsecureContent(const GURL& url) OVERRIDE;
+#if defined(OS_WIN)
+  void SetWindowlessData(HANDLE pump_messages_event,
+                         gfx::NativeViewId dummy_activation_window);
+#endif
+#if defined(OS_MACOSX)
+  virtual void FocusChanged(bool focused) OVERRIDE;
+  virtual void StartIme() OVERRIDE;
+  virtual WebPluginAcceleratedSurface*
+      GetAcceleratedSurface(gfx::GpuPreference gpu_preference) OVERRIDE;
+  virtual void AcceleratedPluginEnabledRendering() OVERRIDE;
+  virtual void AcceleratedPluginAllocatedIOSurface(int32 width,
+                                                   int32 height,
+                                                   uint32 surface_id) OVERRIDE;
+  virtual void AcceleratedPluginSwappedIOSurface() OVERRIDE;
+#endif
+
+  // IPC::Sender implementation.
+  virtual bool Send(IPC::Message* msg) OVERRIDE;
 
   // class-specific methods
 
@@ -98,51 +137,6 @@ class WebPluginProxy : public WebPlugin {
   // Notification received on a plugin issued resource request creation.
   void OnResourceCreated(int resource_id, WebPluginResourceClient* client);
 
-  virtual void HandleURLRequest(const char* url,
-                                const char* method,
-                                const char* target,
-                                const char* buf,
-                                unsigned int len,
-                                int notify_id,
-                                bool popups_allowed,
-                                bool notify_redirects) OVERRIDE;
-  void UpdateGeometry(const gfx::Rect& window_rect,
-                      const gfx::Rect& clip_rect,
-                      const TransportDIB::Handle& windowless_buffer0,
-                      const TransportDIB::Handle& windowless_buffer1,
-                      int windowless_buffer_index);
-  virtual void CancelDocumentLoad() OVERRIDE;
-  virtual void InitiateHTTPRangeRequest(
-      const char* url, const char* range_info, int range_request_id) OVERRIDE;
-  virtual void SetDeferResourceLoading(unsigned long resource_id,
-                                       bool defer) OVERRIDE;
-  virtual bool IsOffTheRecord() OVERRIDE;
-  virtual void ResourceClientDeleted(
-      WebPluginResourceClient* resource_client) OVERRIDE;
-
-#if defined(OS_MACOSX)
-  virtual void FocusChanged(bool focused) OVERRIDE;
-  virtual void StartIme() OVERRIDE;
-  virtual WebPluginAcceleratedSurface*
-      GetAcceleratedSurface(gfx::GpuPreference gpu_preference) OVERRIDE;
-
-  //----------------------------------------------------------------------
-  // Accelerated plugin implementation which renders via the compositor.
-
-  // Tells the renderer, and from there the GPU process, that the plugin
-  // is using accelerated rather than software rendering.
-  virtual void AcceleratedPluginEnabledRendering() OVERRIDE;
-
-  // Tells the renderer, and from there the GPU process, that the plugin
-  // allocated the given IOSurface to be used as its backing store.
-  virtual void AcceleratedPluginAllocatedIOSurface(int32 width,
-                                                   int32 height,
-                                                   uint32 surface_id) OVERRIDE;
-  virtual void AcceleratedPluginSwappedIOSurface() OVERRIDE;
-#endif
-
-  virtual void URLRedirectResponse(bool allow, int resource_id) OVERRIDE;
-
 #if defined(OS_WIN) && !defined(USE_AURA)
   // Retrieves the IME status from a windowless plug-in and sends it to a
   // renderer process. A renderer process will convert the coordinates from
@@ -162,8 +156,6 @@ class WebPluginProxy : public WebPlugin {
 
     scoped_ptr<TransportDIB> dib_;
   };
-
-  bool Send(IPC::Message* msg);
 
   // Handler for sending over the paint event to the plugin.
   void OnPaint(const gfx::Rect& damaged_rect);

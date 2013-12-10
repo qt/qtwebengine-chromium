@@ -61,12 +61,12 @@ InternalSettings::Backup::Backup(Settings* settings)
     , m_originalAuthorShadowDOMForAnyElementEnabled(RuntimeEnabledFeatures::authorShadowDOMForAnyElementEnabled())
     , m_originalExperimentalWebSocketEnabled(settings->experimentalWebSocketEnabled())
     , m_originalStyleScoped(RuntimeEnabledFeatures::styleScopedEnabled())
+    , m_originalOverlayScrollbarsEnabled(RuntimeEnabledFeatures::overlayScrollbarsEnabled())
     , m_originalEditingBehavior(settings->editingBehaviorType())
     , m_originalTextAutosizingEnabled(settings->textAutosizingEnabled())
     , m_originalTextAutosizingWindowSizeOverride(settings->textAutosizingWindowSizeOverride())
     , m_originalTextAutosizingFontScaleFactor(settings->textAutosizingFontScaleFactor())
     , m_originalMediaTypeOverride(settings->mediaTypeOverride())
-    , m_originalLazyLayoutEnabled(RuntimeEnabledFeatures::lazyLayoutEnabled())
     , m_originalMockScrollbarsEnabled(settings->mockScrollbarsEnabled())
     , m_langAttributeAwareFormControlUIEnabled(RuntimeEnabledFeatures::langAttributeAwareFormControlUIEnabled())
     , m_imagesEnabled(settings->areImagesEnabled())
@@ -74,6 +74,7 @@ InternalSettings::Backup::Backup(Settings* settings)
     , m_shouldDisplayCaptions(settings->shouldDisplayCaptions())
     , m_shouldDisplayTextDescriptions(settings->shouldDisplayTextDescriptions())
     , m_defaultVideoPosterURL(settings->defaultVideoPosterURL())
+    , m_originalCompositorDrivenAcceleratedScrollEnabled(settings->isCompositorDrivenAcceleratedScrollingEnabled())
 {
 }
 
@@ -83,12 +84,12 @@ void InternalSettings::Backup::restoreTo(Settings* settings)
     RuntimeEnabledFeatures::setAuthorShadowDOMForAnyElementEnabled(m_originalAuthorShadowDOMForAnyElementEnabled);
     settings->setExperimentalWebSocketEnabled(m_originalExperimentalWebSocketEnabled);
     RuntimeEnabledFeatures::setStyleScopedEnabled(m_originalStyleScoped);
+    RuntimeEnabledFeatures::setOverlayScrollbarsEnabled(m_originalOverlayScrollbarsEnabled);
     settings->setEditingBehaviorType(m_originalEditingBehavior);
     settings->setTextAutosizingEnabled(m_originalTextAutosizingEnabled);
     settings->setTextAutosizingWindowSizeOverride(m_originalTextAutosizingWindowSizeOverride);
     settings->setTextAutosizingFontScaleFactor(m_originalTextAutosizingFontScaleFactor);
     settings->setMediaTypeOverride(m_originalMediaTypeOverride);
-    RuntimeEnabledFeatures::setLazyLayoutEnabled(m_originalLazyLayoutEnabled);
     settings->setMockScrollbarsEnabled(m_originalMockScrollbarsEnabled);
     RuntimeEnabledFeatures::setLangAttributeAwareFormControlUIEnabled(m_langAttributeAwareFormControlUIEnabled);
     settings->setImagesEnabled(m_imagesEnabled);
@@ -96,6 +97,7 @@ void InternalSettings::Backup::restoreTo(Settings* settings)
     settings->setShouldDisplayCaptions(m_shouldDisplayCaptions);
     settings->setShouldDisplayTextDescriptions(m_shouldDisplayTextDescriptions);
     settings->setDefaultVideoPosterURL(m_defaultVideoPosterURL);
+    settings->setCompositorDrivenAcceleratedScrollingEnabled(m_originalCompositorDrivenAcceleratedScrollEnabled);
 }
 
 // We can't use RefCountedSupplement because that would try to make InternalSettings RefCounted
@@ -134,7 +136,7 @@ InternalSettings::~InternalSettings()
 InternalSettings::InternalSettings(Page* page)
     : InternalSettingsGenerated(page)
     , m_page(page)
-    , m_backup(page->settings())
+    , m_backup(&page->settings())
 {
 }
 
@@ -152,7 +154,7 @@ Settings* InternalSettings::settings() const
 {
     if (!page())
         return 0;
-    return page()->settings();
+    return &page()->settings();
 }
 
 void InternalSettings::setMockScrollbarsEnabled(bool enabled, ExceptionState& es)
@@ -176,10 +178,21 @@ void InternalSettings::setStyleScopedEnabled(bool enabled)
     RuntimeEnabledFeatures::setStyleScopedEnabled(enabled);
 }
 
+void InternalSettings::setOverlayScrollbarsEnabled(bool enabled)
+{
+    RuntimeEnabledFeatures::setOverlayScrollbarsEnabled(enabled);
+}
+
 void InternalSettings::setTouchEventEmulationEnabled(bool enabled, ExceptionState& es)
 {
     InternalSettingsGuardForSettings();
     settings()->setTouchEventEmulationEnabled(enabled);
+}
+
+void InternalSettings::setViewportEnabled(bool enabled, ExceptionState& es)
+{
+    InternalSettingsGuardForSettings();
+    settings()->setViewportEnabled(enabled);
 }
 
 // FIXME: This is a temporary flag and should be removed once accelerated
@@ -282,11 +295,6 @@ void InternalSettings::setEditingBehavior(const String& editingBehavior, Excepti
         settings()->setEditingBehaviorType(EditingAndroidBehavior);
     else
         es.throwDOMException(SyntaxError);
-}
-
-void InternalSettings::setLazyLayoutEnabled(bool enabled)
-{
-    RuntimeEnabledFeatures::setLazyLayoutEnabled(enabled);
 }
 
 void InternalSettings::setLangAttributeAwareFormControlUIEnabled(bool enabled)

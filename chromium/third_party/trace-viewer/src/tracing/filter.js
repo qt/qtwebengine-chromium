@@ -5,31 +5,6 @@
 'use strict';
 
 base.exportTo('tracing', function() {
-
-  function filterSliceArray(filter, slices) {
-    if (filter === undefined)
-      return slices;
-
-    var matched = [];
-    for (var i = 0; i < slices.length; ++i) {
-      if (filter.matchSlice(slices[i]))
-        matched.push(slices[i]);
-    }
-    return matched;
-  }
-
-  function filterCounterArray(filter, counters) {
-    if (filter === undefined)
-      return counters;
-
-    var matched = [];
-    for (var i = 0; i < counters.length; ++i) {
-      if (filter.matchCounter(counters[i]))
-        matched.push(counters[i]);
-    }
-    return matched;
-  }
-
   /**
    * @constructor The generic base class for filtering a TraceModel based on
    * various rules. The base class returns true for everything.
@@ -68,21 +43,14 @@ base.exportTo('tracing', function() {
   function TitleFilter(text) {
     Filter.call(this);
     this.text_ = text.toLowerCase();
+
+    if (!text.length)
+      throw new Error('Filter text is empty.');
   }
   TitleFilter.prototype = {
     __proto__: Filter.prototype,
 
-    matchCounter: function(counter) {
-      if (this.text_.length === 0)
-        return false;
-      if (counter.name === undefined)
-        return false;
-      return counter.name.toLowerCase().indexOf(this.text_) !== -1;
-    },
-
     matchSlice: function(slice) {
-      if (this.text_.length === 0)
-        return false;
       if (slice.title === undefined)
         return false;
       return slice.title.toLowerCase().indexOf(this.text_) !== -1;
@@ -90,42 +58,25 @@ base.exportTo('tracing', function() {
   };
 
   /**
-   * @constructor A filter that filters objects by their category.
-   * Objects match if they are NOT in the list of categories
-   * @param {Array<string>=} opt_categories Categories to blacklist.
+   * @constructor A filter that matches objects with the exact given title.
    */
-  function CategoryFilter(opt_categories) {
+  function ExactTitleFilter(text) {
     Filter.call(this);
-    this.categories_ = {};
-    var cats = opt_categories || [];
-    for (var i = 0; i < cats.length; i++)
-      this.addCategory(cats[i]);
+    this.text_ = text;
+
+    if (!text.length)
+      throw new Error('Filter text is empty.');
   }
-  CategoryFilter.prototype = {
+  ExactTitleFilter.prototype = {
     __proto__: Filter.prototype,
 
-    addCategory: function(cat) {
-      this.categories_[cat] = true;
-    },
-
-    matchCounter: function(counter) {
-      if (!counter.category)
-        return true;
-      return !this.categories_[counter.category];
-    },
-
     matchSlice: function(slice) {
-      if (!slice.category)
-        return true;
-      return !this.categories_[slice.category];
+      return slice.title === this.text_;
     }
   };
 
   return {
-    filterCounterArray: filterCounterArray,
-    filterSliceArray: filterSliceArray,
-    Filter: Filter,
     TitleFilter: TitleFilter,
-    CategoryFilter: CategoryFilter
+    ExactTitleFilter: ExactTitleFilter
   };
 });

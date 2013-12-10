@@ -73,9 +73,12 @@ class WebGraphicsContext3DSwapBuffersClient {
 class WebGraphicsContext3DErrorMessageCallback;
 
 class WebGraphicsContext3DCommandBufferImpl
-    : public WebKit::WebGraphicsContext3D,
-      public base::SupportsWeakPtr<WebGraphicsContext3DCommandBufferImpl> {
+    : public WebKit::WebGraphicsContext3D {
  public:
+  enum MappedMemoryReclaimLimit {
+    kNoLimit = 0,
+  };
+
   WebGraphicsContext3DCommandBufferImpl(
       int surface_id,
       const GURL& active_url,
@@ -90,7 +93,8 @@ class WebGraphicsContext3DCommandBufferImpl
                   size_t command_buffer_size,
                   size_t start_transfer_buffer_size,
                   size_t min_transfer_buffer_size,
-                  size_t max_transfer_buffer_size);
+                  size_t max_transfer_buffer_size,
+                  size_t mapped_memory_reclaim_limit);
 
   bool InitializeWithDefaultBufferSizes(const Attributes& attributes,
                                         bool bind_generates_resources,
@@ -126,6 +130,10 @@ class WebGraphicsContext3DCommandBufferImpl
           const WebGraphicsContext3D::Attributes& attributes,
           const GURL& active_url);
 
+  size_t GetMappedMemoryLimit() {
+    return mapped_memory_limit_;
+  }
+
   //----------------------------------------------------------------------
   // WebGraphicsContext3D methods
 
@@ -133,6 +141,8 @@ class WebGraphicsContext3DCommandBufferImpl
   // Permanently binds to the first calling thread. Returns false if the
   // graphics context fails to create. Do not call from more than one thread.
   virtual bool makeContextCurrent();
+
+  virtual uint32_t lastFlushID();
 
   virtual int width();
   virtual int height();
@@ -666,11 +676,9 @@ class WebGraphicsContext3DCommandBufferImpl
   // and subsequent calls are ignored. Must be called from the thread that is
   // going to use this object to issue GL commands (which might not be the main
   // thread).
-  bool MaybeInitializeGL(const char* allowed_extensions);
+  bool MaybeInitializeGL();
 
-  bool InitializeCommandBuffer(
-      bool onscreen,
-      const char* allowed_extensions);
+  bool InitializeCommandBuffer(bool onscreen);
 
   void Destroy();
 
@@ -687,8 +695,7 @@ class WebGraphicsContext3DCommandBufferImpl
   // allocate both fake PluginWindowHandles and NativeViewIds and map
   // from fake NativeViewIds to PluginWindowHandles, but this seems like
   // unnecessary complexity at the moment.
-  bool CreateContext(bool onscreen,
-                     const char* allowed_extensions);
+  bool CreateContext(bool onscreen);
 
   // SwapBuffers callback.
   void OnSwapBuffersComplete();
@@ -757,6 +764,9 @@ class WebGraphicsContext3DCommandBufferImpl
   size_t start_transfer_buffer_size_;
   size_t min_transfer_buffer_size_;
   size_t max_transfer_buffer_size_;
+  size_t mapped_memory_limit_;
+
+  uint32_t flush_id_;
 };
 
 }  // namespace content

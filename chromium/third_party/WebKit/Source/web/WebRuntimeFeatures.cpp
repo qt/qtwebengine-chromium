@@ -96,6 +96,16 @@ bool WebRuntimeFeatures::isDeviceOrientationEnabled()
     return RuntimeEnabledFeatures::deviceOrientationEnabled();
 }
 
+void WebRuntimeFeatures::enableDialogElement(bool enable)
+{
+    RuntimeEnabledFeatures::setDialogElementEnabled(enable);
+}
+
+bool WebRuntimeFeatures::isDialogElementEnabled()
+{
+    return RuntimeEnabledFeatures::dialogElementEnabled();
+}
+
 void WebRuntimeFeatures::enableEncryptedMedia(bool enable)
 {
     RuntimeEnabledFeatures::setEncryptedMediaEnabled(enable);
@@ -176,12 +186,7 @@ bool WebRuntimeFeatures::isGeolocationEnabled()
 
 void WebRuntimeFeatures::enableLazyLayout(bool enable)
 {
-    RuntimeEnabledFeatures::setLazyLayoutEnabled(enable);
-}
-
-bool WebRuntimeFeatures::isLazyLayoutEnabled()
-{
-    return RuntimeEnabledFeatures::lazyLayoutEnabled();
+    // FIXME: Remove this once Chromium stops calling this.
 }
 
 void WebRuntimeFeatures::enableLocalStorage(bool enable)
@@ -214,6 +219,16 @@ bool WebRuntimeFeatures::isWebKitMediaSourceEnabled()
     return RuntimeEnabledFeatures::webKitMediaSourceEnabled();
 }
 
+void WebRuntimeFeatures::enableMediaSource(bool enable)
+{
+    RuntimeEnabledFeatures::setMediaSourceEnabled(enable);
+}
+
+bool WebRuntimeFeatures::isMediaSourceEnabled()
+{
+    return RuntimeEnabledFeatures::mediaSourceEnabled();
+}
+
 void WebRuntimeFeatures::enableMediaStream(bool enable)
 {
     RuntimeEnabledFeatures::setMediaStreamEnabled(enable);
@@ -226,18 +241,12 @@ bool WebRuntimeFeatures::isMediaStreamEnabled()
 
 void WebRuntimeFeatures::enableNotifications(bool enable)
 {
-#if ENABLE(NOTIFICATIONS) || ENABLE(LEGACY_NOTIFICATIONS)
     RuntimeEnabledFeatures::setNotificationsEnabled(enable);
-#endif
 }
 
 bool WebRuntimeFeatures::isNotificationsEnabled()
 {
-#if ENABLE(NOTIFICATIONS) || ENABLE(LEGACY_NOTIFICATIONS)
     return RuntimeEnabledFeatures::notificationsEnabled();
-#else
-    return false;
-#endif
 }
 
 void WebRuntimeFeatures::enablePagePopup(bool enable)
@@ -382,14 +391,24 @@ bool WebRuntimeFeatures::isHTMLImportsEnabled()
     return RuntimeEnabledFeatures::htmlImportsEnabled();
 }
 
-void WebRuntimeFeatures::enableCustomElements(bool enable)
+void WebRuntimeFeatures::enableEmbedderCustomElements(bool enable)
 {
-    RuntimeEnabledFeatures::setCustomDOMElementsEnabled(enable);
+    RuntimeEnabledFeatures::setEmbedderCustomElementsEnabled(enable);
 }
 
 void WebRuntimeFeatures::enableOverlayScrollbars(bool enable)
 {
     RuntimeEnabledFeatures::setOverlayScrollbarsEnabled(enable);
+}
+
+void WebRuntimeFeatures::enableInputModeAttribute(bool enable)
+{
+    RuntimeEnabledFeatures::setInputModeAttributeEnabled(enable);
+}
+
+void WebRuntimeFeatures::enableOverlayFullscreenVideo(bool enable)
+{
+    RuntimeEnabledFeatures::setOverlayFullscreenVideoEnabled(enable);
 }
 
 } // namespace WebKit

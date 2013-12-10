@@ -246,6 +246,121 @@ class ChromeHtmlUnittest(unittest.TestCase):
       '''))
     tmp_dir.CleanUp()
 
+  def testFileResourcesMultipleBackgrounds(self):
+    '''Tests inlined image file resources with two url()s.'''
+
+    tmp_dir = util.TempDir({
+      'test.css': '''
+      .image {
+        background: url(test.png), url(test.png);
+      }
+      ''',
+
+      'test.png': 'PNG DATA',
+
+      '2x/test.png': '2x PNG DATA',
+    })
+
+    html = chrome_html.ChromeHtml(tmp_dir.GetPath('test.css'))
+    html.SetDefines({'scale_factors': '2x'})
+    html.SetAttributes({'flattenhtml': 'true'})
+    html.Parse()
+    self.failUnlessEqual(StandardizeHtml(html.GetData('en', 'utf-8')),
+                         StandardizeHtml('''
+      .image {
+        background: -webkit-image-set(url(data:image/png;base64,UE5HIERBVEE=) 1x, url(data:image/png;base64,MnggUE5HIERBVEE=) 2x), -webkit-image-set(url(data:image/png;base64,UE5HIERBVEE=) 1x, url(data:image/png;base64,MnggUE5HIERBVEE=) 2x);
+      }
+      '''))
+    tmp_dir.CleanUp()
+
+  def testFileResourcesMultipleBackgroundsWithNewline1(self):
+    '''Tests inlined image file resources with line break after first url().'''
+
+    tmp_dir = util.TempDir({
+      'test.css': '''
+      .image {
+        background: url(test.png),
+                    url(test.png);
+      }
+      ''',
+
+      'test.png': 'PNG DATA',
+
+      '2x/test.png': '2x PNG DATA',
+    })
+
+    html = chrome_html.ChromeHtml(tmp_dir.GetPath('test.css'))
+    html.SetDefines({'scale_factors': '2x'})
+    html.SetAttributes({'flattenhtml': 'true'})
+    html.Parse()
+    self.failUnlessEqual(StandardizeHtml(html.GetData('en', 'utf-8')),
+                         StandardizeHtml('''
+      .image {
+        background: -webkit-image-set(url(data:image/png;base64,UE5HIERBVEE=) 1x, url(data:image/png;base64,MnggUE5HIERBVEE=) 2x),
+                    -webkit-image-set(url(data:image/png;base64,UE5HIERBVEE=) 1x, url(data:image/png;base64,MnggUE5HIERBVEE=) 2x);
+      }
+      '''))
+    tmp_dir.CleanUp()
+
+  def testFileResourcesMultipleBackgroundsWithNewline2(self):
+    '''Tests inlined image file resources with line break before first url()
+    and before second url().'''
+
+    tmp_dir = util.TempDir({
+      'test.css': '''
+      .image {
+        background:
+          url(test.png),
+          url(test.png);
+      }
+      ''',
+
+      'test.png': 'PNG DATA',
+
+      '2x/test.png': '2x PNG DATA',
+    })
+
+    html = chrome_html.ChromeHtml(tmp_dir.GetPath('test.css'))
+    html.SetDefines({'scale_factors': '2x'})
+    html.SetAttributes({'flattenhtml': 'true'})
+    html.Parse()
+    self.failUnlessEqual(StandardizeHtml(html.GetData('en', 'utf-8')),
+                         StandardizeHtml('''
+      .image {
+        background: -webkit-image-set(url(data:image/png;base64,UE5HIERBVEE=) 1x, url(data:image/png;base64,MnggUE5HIERBVEE=) 2x),
+          -webkit-image-set(url(data:image/png;base64,UE5HIERBVEE=) 1x, url(data:image/png;base64,MnggUE5HIERBVEE=) 2x);
+      }
+      '''))
+    tmp_dir.CleanUp()
+
+  def testFileResourcesCRLF(self):
+    '''Tests inlined image file resource when url() is preceded by a Windows
+    style line break.'''
+
+    tmp_dir = util.TempDir({
+      'test.css': '''
+      .image {
+        background:\r\nurl(test.png);
+      }
+      ''',
+
+      'test.png': 'PNG DATA',
+
+      '2x/test.png': '2x PNG DATA',
+    })
+
+    html = chrome_html.ChromeHtml(tmp_dir.GetPath('test.css'))
+    html.SetDefines({'scale_factors': '2x'})
+    html.SetAttributes({'flattenhtml': 'true'})
+    html.Parse()
+    self.failUnlessEqual(StandardizeHtml(html.GetData('en', 'utf-8')),
+                         StandardizeHtml('''
+      .image {
+        background: -webkit-image-set(url(data:image/png;base64,UE5HIERBVEE=) 1x, url(data:image/png;base64,MnggUE5HIERBVEE=) 2x);
+      }
+      '''))
+    tmp_dir.CleanUp()
+
   def testThemeResources(self):
     '''Tests inserting high DPI chrome://theme references.'''
 

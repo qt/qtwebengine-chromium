@@ -19,8 +19,6 @@ class ScreenPositionClient;
 }
 
 namespace views {
-class DesktopActivationClient;
-class DesktopCaptureClient;
 class DesktopCursorClient;
 class DesktopDispatcherClient;
 class DesktopDragDropClientWin;
@@ -94,9 +92,9 @@ class VIEWS_EXPORT DesktopRootWindowHostWin
                               const gfx::ImageSkia& app_icon) OVERRIDE;
   virtual void InitModalType(ui::ModalType modal_type) OVERRIDE;
   virtual void FlashFrame(bool flash_frame) OVERRIDE;
+  virtual void OnRootViewLayout() const OVERRIDE;
   virtual void OnNativeWidgetFocus() OVERRIDE;
   virtual void OnNativeWidgetBlur() OVERRIDE;
-  virtual void SetInactiveRenderingDisabled(bool disable_inactive) OVERRIDE;
 
   // Overridden from aura::RootWindowHost:
   virtual void SetDelegate(aura::RootWindowHostDelegate* delegate) OVERRIDE;
@@ -119,9 +117,6 @@ class VIEWS_EXPORT DesktopRootWindowHostWin
   virtual void OnCursorVisibilityChanged(bool show) OVERRIDE;
   virtual void MoveCursorTo(const gfx::Point& location) OVERRIDE;
   virtual void SetFocusWhenShown(bool focus_when_shown) OVERRIDE;
-  virtual bool CopyAreaToSkCanvas(const gfx::Rect& source_bounds,
-                                  const gfx::Point& dest_offset,
-                                  SkCanvas* canvas) OVERRIDE;
   virtual void PostNativeEvent(const base::NativeEvent& native_event) OVERRIDE;
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
   virtual void PrepareForShutdown() OVERRIDE;
@@ -175,6 +170,7 @@ class VIEWS_EXPORT DesktopRootWindowHostWin
   virtual void HandleEndWMSizeMove() OVERRIDE;
   virtual void HandleMove() OVERRIDE;
   virtual void HandleWorkAreaChanged() OVERRIDE;
+  virtual void HandleVisibilityChanging(bool visible) OVERRIDE;
   virtual void HandleVisibilityChanged(bool visible) OVERRIDE;
   virtual void HandleClientSizeChanged(const gfx::Size& new_size) OVERRIDE;
   virtual void HandleFrameChanged() OVERRIDE;
@@ -183,7 +179,7 @@ class VIEWS_EXPORT DesktopRootWindowHostWin
   virtual bool HandleMouseEvent(const ui::MouseEvent& event) OVERRIDE;
   virtual bool HandleKeyEvent(const ui::KeyEvent& event) OVERRIDE;
   virtual bool HandleUntranslatedKeyEvent(const ui::KeyEvent& event) OVERRIDE;
-  virtual bool HandleTouchEvent(const ui::TouchEvent& event) OVERRIDE;
+  virtual void HandleTouchEvent(const ui::TouchEvent& event) OVERRIDE;
   virtual bool HandleIMEMessage(UINT message,
                                 WPARAM w_param,
                                 LPARAM l_param,
@@ -211,15 +207,14 @@ class VIEWS_EXPORT DesktopRootWindowHostWin
   HWND GetHWND() const;
 
  private:
+  void SetWindowTransparency();
+
   // We are owned by the RootWindow, but we have to have a back pointer to it.
   aura::RootWindow* root_window_;
 
   scoped_ptr<HWNDMessageHandler> message_handler_;
-  scoped_ptr<DesktopCaptureClient> capture_client_;
   scoped_ptr<DesktopDispatcherClient> dispatcher_client_;
   scoped_ptr<aura::client::FocusClient> focus_client_;
-  // Depends on focus_manager_.
-  scoped_ptr<DesktopActivationClient> activation_client_;
 
   // TODO(beng): Consider providing an interface to DesktopNativeWidgetAura
   //             instead of providing this route back to Widget.

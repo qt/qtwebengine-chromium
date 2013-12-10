@@ -29,19 +29,19 @@
 
 #include "core/html/track/TextTrackCue.h"
 #include "core/html/track/TextTrackCueGeneric.h"
+#include "core/rendering/RenderView.h"
 
 namespace WebCore {
 
 RenderTextTrackCue::RenderTextTrackCue(TextTrackCueBox* element)
-    : RenderBlock(element)
+    : RenderBlockFlow(element)
     , m_cue(element->getCue())
 {
 }
 
 void RenderTextTrackCue::layout()
 {
-    StackStats::LayoutCheckPoint layoutCheckPoint;
-    RenderBlock::layout();
+    RenderBlockFlow::layout();
 
 #if ENABLE(WEBVTT_REGIONS)
     // If WebVTT Regions are used, the regular WebVTT layout algorithm is no

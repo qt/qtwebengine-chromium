@@ -14,7 +14,6 @@
 #include "ash/shell.h"
 #include "ash/shell_factory.h"
 #include "ash/shell_window_ids.h"
-#include "ash/wm/property_util.h"
 #include "ash/wm/root_window_layout_manager.h"
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -115,7 +114,7 @@ class DesktopBackgroundController::WallpaperLoader
   static scoped_ptr<SkBitmap> LoadSkBitmapFromJPEGFile(
       const base::FilePath& path) {
     std::string data;
-    if (!file_util::ReadFileToString(path, &data)) {
+    if (!base::ReadFileToString(path, &data)) {
       LOG(ERROR) << "Unable to read data from " << path.value();
       return scoped_ptr<SkBitmap>();
     }
@@ -175,7 +174,6 @@ DesktopBackgroundController::DesktopBackgroundController()
     : command_line_for_testing_(NULL),
       locked_(false),
       desktop_background_mode_(BACKGROUND_NONE),
-      background_color_(kTransparentColor),
       current_default_wallpaper_resource_id_(-1),
       weak_ptr_factory_(this) {
 }
@@ -297,14 +295,6 @@ void DesktopBackgroundController::CancelPendingWallpaperOperation() {
   weak_ptr_factory_.InvalidateWeakPtrs();
 }
 
-void DesktopBackgroundController::SetDesktopBackgroundSolidColorMode(
-    SkColor color) {
-  background_color_ = color;
-  desktop_background_mode_ = BACKGROUND_SOLID_COLOR;
-
-  InstallDesktopControllerForAllWindows();
-}
-
 void DesktopBackgroundController::CreateEmptyWallpaper() {
   current_wallpaper_.reset(NULL);
   SetDesktopBackgroundImageMode();
@@ -379,18 +369,6 @@ void DesktopBackgroundController::OnDefaultWallpaperLoadCompleted(
   wallpaper_loader_ = NULL;
 }
 
-ui::Layer* DesktopBackgroundController::SetColorLayerForContainer(
-    SkColor color,
-    aura::RootWindow* root_window,
-    int container_id) {
-  ui::Layer* background_layer = new ui::Layer(ui::LAYER_SOLID_COLOR);
-  background_layer->SetColor(color);
-
-  Shell::GetContainer(root_window,container_id)->
-      layer()->Add(background_layer);
-  return background_layer;
-}
-
 void DesktopBackgroundController::InstallDesktopController(
     aura::RootWindow* root_window) {
   internal::DesktopBackgroundWidgetController* component = NULL;
@@ -403,21 +381,15 @@ void DesktopBackgroundController::InstallDesktopController(
       component = new internal::DesktopBackgroundWidgetController(widget);
       break;
     }
-    case BACKGROUND_SOLID_COLOR: {
-      ui::Layer* layer = SetColorLayerForContainer(background_color_,
-                                                   root_window,
-                                                   container_id);
-      component = new internal::DesktopBackgroundWidgetController(layer);
-      break;
-    }
     case BACKGROUND_NONE:
       NOTREACHED();
       return;
   }
-  GetRootWindowController(root_window)->SetAnimatingWallpaperController(
-      new internal::AnimatingDesktopController(component));
+  internal::GetRootWindowController(root_window)->
+      SetAnimatingWallpaperController(
+          new internal::AnimatingDesktopController(component));
 
-  component->StartAnimating(GetRootWindowController(root_window));
+  component->StartAnimating(internal::GetRootWindowController(root_window));
 }
 
 void DesktopBackgroundController::InstallDesktopControllerForAllWindows() {

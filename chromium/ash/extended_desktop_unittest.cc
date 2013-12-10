@@ -11,7 +11,6 @@
 #include "ash/system/tray/system_tray.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/wm/coordinate_conversion.h"
-#include "ash/wm/property_util.h"
 #include "ash/wm/window_cycle_controller.h"
 #include "ash/wm/window_properties.h"
 #include "ash/wm/window_util.h"
@@ -25,7 +24,7 @@
 #include "ui/aura/test/window_test_api.h"
 #include "ui/aura/window.h"
 #include "ui/base/cursor/cursor.h"
-#include "ui/base/events/event_handler.h"
+#include "ui/events/event_handler.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/controls/textfield/textfield.h"
@@ -36,11 +35,11 @@ namespace ash {
 namespace {
 
 void SetSecondaryDisplayLayout(DisplayLayout::Position position) {
-  DisplayController* display_controller =
-      Shell::GetInstance()->display_controller();
-  DisplayLayout layout = display_controller->GetCurrentDisplayLayout();
+  DisplayLayout layout =
+      Shell::GetInstance()->display_manager()->GetCurrentDisplayLayout();
   layout.position = position;
-  display_controller->SetLayoutForCurrentDisplays(layout);
+  Shell::GetInstance()->display_controller()->
+      SetLayoutForCurrentDisplays(layout);
 }
 
 internal::DisplayManager* GetDisplayManager() {
@@ -168,7 +167,7 @@ TEST_F(ExtendedDesktopTest, Basic) {
   ASSERT_EQ(2U, root_windows.size());
   for (Shell::RootWindowList::const_iterator iter = root_windows.begin();
        iter != root_windows.end(); ++iter) {
-    EXPECT_TRUE(GetRootWindowController(*iter) != NULL);
+    EXPECT_TRUE(internal::GetRootWindowController(*iter) != NULL);
   }
   // Make sure root windows share the same controllers.
   EXPECT_EQ(aura::client::GetFocusClient(root_windows[0]),
@@ -223,7 +222,7 @@ TEST_F(ExtendedDesktopTest, SystemModal) {
   views::Widget* widget_on_1st = CreateTestWidget(gfx::Rect(10, 10, 100, 100));
   EXPECT_TRUE(wm::IsActiveWindow(widget_on_1st->GetNativeView()));
   EXPECT_EQ(root_windows[0], widget_on_1st->GetNativeView()->GetRootWindow());
-  EXPECT_EQ(root_windows[0], Shell::GetActiveRootWindow());
+  EXPECT_EQ(root_windows[0], Shell::GetTargetRootWindow());
 
   // Open system modal. Make sure it's on 2nd root window and active.
   views::Widget* modal_widget = views::Widget::CreateWindowWithContextAndBounds(
@@ -233,7 +232,7 @@ TEST_F(ExtendedDesktopTest, SystemModal) {
   modal_widget->Show();
   EXPECT_TRUE(wm::IsActiveWindow(modal_widget->GetNativeView()));
   EXPECT_EQ(root_windows[1], modal_widget->GetNativeView()->GetRootWindow());
-  EXPECT_EQ(root_windows[1], Shell::GetActiveRootWindow());
+  EXPECT_EQ(root_windows[1], Shell::GetTargetRootWindow());
 
   aura::test::EventGenerator& event_generator(GetEventGenerator());
 
@@ -241,14 +240,14 @@ TEST_F(ExtendedDesktopTest, SystemModal) {
   event_generator.MoveMouseToCenterOf(widget_on_1st->GetNativeView());
   event_generator.ClickLeftButton();
   EXPECT_TRUE(wm::IsActiveWindow(modal_widget->GetNativeView()));
-  EXPECT_EQ(root_windows[1], Shell::GetActiveRootWindow());
+  EXPECT_EQ(root_windows[1], Shell::GetTargetRootWindow());
 
   // Close system modal and so clicking a widget should work now.
   modal_widget->Close();
   event_generator.MoveMouseToCenterOf(widget_on_1st->GetNativeView());
   event_generator.ClickLeftButton();
   EXPECT_TRUE(wm::IsActiveWindow(widget_on_1st->GetNativeView()));
-  EXPECT_EQ(root_windows[0], Shell::GetActiveRootWindow());
+  EXPECT_EQ(root_windows[0], Shell::GetTargetRootWindow());
 }
 
 TEST_F(ExtendedDesktopTest, TestCursor) {

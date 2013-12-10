@@ -871,6 +871,7 @@ class PipelineTeardownTest : public PipelineTest {
   enum StopOrError {
     kStop,
     kError,
+    kErrorAndStop,
   };
 
   PipelineTeardownTest() {}
@@ -1136,13 +1137,24 @@ class PipelineTeardownTest : public PipelineTest {
     EXPECT_CALL(*audio_renderer_, Stop(_)).WillOnce(RunClosure<0>());
     EXPECT_CALL(*video_renderer_, Stop(_)).WillOnce(RunClosure<0>());
 
-    if (stop_or_error == kStop) {
-      EXPECT_CALL(callbacks_, OnStop());
-      pipeline_->Stop(base::Bind(
-          &CallbackHelper::OnStop, base::Unretained(&callbacks_)));
-    } else {
-      EXPECT_CALL(callbacks_, OnError(PIPELINE_ERROR_READ));
-      pipeline_->SetErrorForTesting(PIPELINE_ERROR_READ);
+    switch (stop_or_error) {
+      case kStop:
+        EXPECT_CALL(callbacks_, OnStop());
+        pipeline_->Stop(base::Bind(
+            &CallbackHelper::OnStop, base::Unretained(&callbacks_)));
+        break;
+
+      case kError:
+        EXPECT_CALL(callbacks_, OnError(PIPELINE_ERROR_READ));
+        pipeline_->SetErrorForTesting(PIPELINE_ERROR_READ);
+        break;
+
+      case kErrorAndStop:
+        EXPECT_CALL(callbacks_, OnStop());
+        pipeline_->SetErrorForTesting(PIPELINE_ERROR_READ);
+        pipeline_->Stop(base::Bind(
+            &CallbackHelper::OnStop, base::Unretained(&callbacks_)));
+        break;
     }
 
     message_loop_.RunUntilIdle();
@@ -1175,5 +1187,7 @@ INSTANTIATE_TEARDOWN_TEST(Error, Seeking);
 INSTANTIATE_TEARDOWN_TEST(Error, Prerolling);
 INSTANTIATE_TEARDOWN_TEST(Error, Starting);
 INSTANTIATE_TEARDOWN_TEST(Error, Playing);
+
+INSTANTIATE_TEARDOWN_TEST(ErrorAndStop, Playing);
 
 }  // namespace media

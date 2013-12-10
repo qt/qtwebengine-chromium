@@ -23,21 +23,20 @@
 #include "core/svg/SVGTextElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/NodeRenderingContext.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/RenderSVGText.h"
 #include "core/svg/SVGElementInstance.h"
 
 namespace WebCore {
 
-inline SVGTextElement::SVGTextElement(const QualifiedName& tagName, Document* doc)
+inline SVGTextElement::SVGTextElement(const QualifiedName& tagName, Document& doc)
     : SVGTextPositioningElement(tagName, doc)
 {
     ASSERT(hasTagName(SVGNames::textTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGTextElement> SVGTextElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<SVGTextElement> SVGTextElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new SVGTextElement(tagName, document));
 }
@@ -72,16 +71,15 @@ RenderObject* SVGTextElement::createRenderer(RenderStyle*)
     return new RenderSVGText(this);
 }
 
-bool SVGTextElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
+bool SVGTextElement::childShouldCreateRenderer(const Node& child) const
 {
-    if (childContext.node()->isTextNode()
-        || childContext.node()->hasTagName(SVGNames::aTag)
+    if (child.isTextNode()
+        || child.hasTagName(SVGNames::aTag)
 #if ENABLE(SVG_FONTS)
-        || childContext.node()->hasTagName(SVGNames::altGlyphTag)
+        || child.hasTagName(SVGNames::altGlyphTag)
 #endif
-        || childContext.node()->hasTagName(SVGNames::textPathTag)
-        || childContext.node()->hasTagName(SVGNames::trefTag)
-        || childContext.node()->hasTagName(SVGNames::tspanTag))
+        || child.hasTagName(SVGNames::textPathTag)
+        || child.hasTagName(SVGNames::tspanTag))
         return true;
 
     return false;

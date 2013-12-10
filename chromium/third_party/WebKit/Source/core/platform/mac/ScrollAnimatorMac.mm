@@ -32,12 +32,12 @@
 #include "core/platform/ScrollView.h"
 #include "core/platform/ScrollableArea.h"
 #include "core/platform/ScrollbarTheme.h"
+#include "core/platform/ScrollbarThemeMacCommon.h"
+#include "core/platform/ScrollbarThemeMacOverlayAPI.h"
 #include "core/platform/graphics/FloatPoint.h"
 #include "core/platform/mac/BlockExceptions.h"
 #include "core/platform/mac/EmptyProtocolDefinitions.h"
 #include "core/platform/mac/NSScrollerImpDetails.h"
-#include "core/platform/mac/ScrollbarThemeMac.h"
-#include "core/platform/mac/ScrollbarThemeMacOverlayAPI.h"
 #include "wtf/MainThread.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/UnusedParam.h"
@@ -600,7 +600,7 @@ ScrollAnimatorMac::ScrollAnimatorMac(ScrollableArea* scrollableArea)
     : ScrollAnimator(scrollableArea)
     , m_initialScrollbarPaintTimer(this, &ScrollAnimatorMac::initialScrollbarPaintTimerFired)
     , m_sendContentAreaScrolledTimer(this, &ScrollAnimatorMac::sendContentAreaScrolledTimerFired)
-#if ENABLE(RUBBER_BANDING)
+#if USE(RUBBER_BANDING)
     , m_scrollElasticityController(this)
     , m_snapRubberBandTimer(this, &ScrollAnimatorMac::snapRubberBandTimerFired)
 #endif
@@ -639,7 +639,7 @@ static bool scrollAnimationEnabledForSystem()
     return enabled;
 }
 
-#if ENABLE(RUBBER_BANDING)
+#if USE(RUBBER_BANDING)
 static bool rubberBandingEnabledForSystem()
 {
     static bool initialized = false;
@@ -720,7 +720,7 @@ void ScrollAnimatorMac::immediateScrollTo(const FloatPoint& newPosition)
 
 bool ScrollAnimatorMac::isRubberBandInProgress() const
 {
-#if !ENABLE(RUBBER_BANDING)
+#if !USE(RUBBER_BANDING)
     return false;
 #else
     return m_scrollElasticityController.isRubberBandInProgress();
@@ -1006,7 +1006,7 @@ void ScrollAnimatorMac::handleWheelEventPhase(PlatformWheelEventPhase phase)
         mayBeginScrollGesture();
 }
 
-#if ENABLE(RUBBER_BANDING)
+#if USE(RUBBER_BANDING)
 bool ScrollAnimatorMac::handleWheelEvent(const PlatformWheelEvent& wheelEvent)
 {
     m_haveScrolledSincePageLoad = true;

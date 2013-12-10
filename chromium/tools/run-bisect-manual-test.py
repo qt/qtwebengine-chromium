@@ -3,7 +3,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Run Manual Test Bisect Tool"""
+"""Run Manual Test Bisect Tool
+
+An example usage:
+tools/run-bisect-manual-test.py -g 201281 -b 201290
+
+On Linux platform, follow the instructions in this document
+https://code.google.com/p/chromium/wiki/LinuxSUIDSandboxDevelopment
+to setup the sandbox manually before running the script. Otherwise the script
+fails to launch Chrome and exits with an error.
+
+"""
 
 import os
 import subprocess
@@ -27,7 +37,7 @@ def _RunBisectionScript(options):
   Returns:
     0 on success, otherwise 1.
   """
-  test_command = 'python %s --browser=%s' %\
+  test_command = 'python %s --browser=%s --chrome-root=.' %\
       (os.path.join(_DIR_TOOLS_ROOT, 'bisect-manual-test.py'),
        options.browser_type)
 
@@ -39,7 +49,8 @@ def _RunBisectionScript(options):
          '-r', '1',
          '--working_directory', options.working_directory,
          '--build_preference', 'ninja',
-         '--use_goma']
+         '--use_goma',
+         '--no_custom_deps']
 
   if 'cros' in options.browser_type:
     cmd.extend(['--target_platform', 'cros'])
@@ -71,7 +82,7 @@ def main():
   usage = ('%prog [options]\n'
            'Used to run the bisection script with a manual test.')
 
-  options = browser_options.BrowserOptions()
+  options = browser_options.BrowserFinderOptions('release')
   parser = options.CreateParser(usage)
 
   parser.add_option('-b', '--bad_revision',
@@ -86,16 +97,13 @@ def main():
                     'bad revision. May be either a git or svn revision.')
   parser.add_option('-w', '--working_directory',
                     type='str',
+                    default='..',
                     help='A working directory to supply to the bisection '
                     'script, which will use it as the location to checkout '
                     'a copy of the chromium depot.')
-  options, args = parser.parse_args()
 
+  options, args = parser.parse_args()
   error_msg = ''
-  if not options.browser_type:
-    error_msg += 'Error: missing required parameter: --browser\n'
-  if not options.working_directory:
-    error_msg += 'Error: missing required parameter: --working_directory\n'
   if not options.good_revision:
     error_msg += 'Error: missing required parameter: --good_revision\n'
   if not options.bad_revision:
@@ -105,6 +113,13 @@ def main():
     print error_msg
     parser.print_help()
     return 1
+
+  if sys.platform.startswith('linux'):
+    if not os.environ.get('CHROME_DEVEL_SANDBOX'):
+      print 'SUID sandbox has not been setup.'\
+            ' See https://code.google.com/p/chromium/wiki/'\
+            'LinuxSUIDSandboxDevelopment for more information.'
+      return 1
 
   return _RunBisectionScript(options)
 

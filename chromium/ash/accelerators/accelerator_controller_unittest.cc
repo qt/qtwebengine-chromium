@@ -17,12 +17,13 @@
 #include "ash/test/display_manager_test_api.h"
 #include "ash/test/test_shell_delegate.h"
 #include "ash/volume_control_delegate.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
-#include "ui/base/events/event.h"
+#include "ui/events/event.h"
 
 #if defined(USE_X11)
 #include <X11/Xlib.h>
@@ -498,7 +499,9 @@ TEST_F(AcceleratorControllerTest, WindowSnap) {
       CreateTestWindowInShellWithBounds(gfx::Rect(5, 5, 20, 20)));
   const ui::Accelerator dummy;
 
-  wm::ActivateWindow(window.get());
+  wm::WindowState* window_state = wm::GetWindowState(window.get());
+
+  window_state->Activate();
 
   {
     GetController()->PerformAction(WINDOW_SNAP_LEFT, dummy);
@@ -528,32 +531,32 @@ TEST_F(AcceleratorControllerTest, WindowSnap) {
     gfx::Rect normal_bounds = window->bounds();
 
     GetController()->PerformAction(TOGGLE_MAXIMIZED, dummy);
-    EXPECT_TRUE(wm::IsWindowMaximized(window.get()));
+    EXPECT_TRUE(window_state->IsMaximized());
     EXPECT_NE(normal_bounds.ToString(), window->bounds().ToString());
 
     GetController()->PerformAction(TOGGLE_MAXIMIZED, dummy);
-    EXPECT_FALSE(wm::IsWindowMaximized(window.get()));
+    EXPECT_FALSE(window_state->IsMaximized());
     EXPECT_EQ(normal_bounds.ToString(), window->bounds().ToString());
 
     GetController()->PerformAction(TOGGLE_MAXIMIZED, dummy);
     GetController()->PerformAction(WINDOW_SNAP_LEFT, dummy);
-    EXPECT_FALSE(wm::IsWindowMaximized(window.get()));
+    EXPECT_FALSE(window_state->IsMaximized());
 
     GetController()->PerformAction(TOGGLE_MAXIMIZED, dummy);
     GetController()->PerformAction(WINDOW_SNAP_RIGHT, dummy);
-    EXPECT_FALSE(wm::IsWindowMaximized(window.get()));
+    EXPECT_FALSE(window_state->IsMaximized());
 
     GetController()->PerformAction(TOGGLE_MAXIMIZED, dummy);
-    EXPECT_TRUE(wm::IsWindowMaximized(window.get()));
+    EXPECT_TRUE(window_state->IsMaximized());
     GetController()->PerformAction(WINDOW_MINIMIZE, dummy);
-    EXPECT_FALSE(wm::IsWindowMaximized(window.get()));
-    EXPECT_TRUE(wm::IsWindowMinimized(window.get()));
-    wm::RestoreWindow(window.get());
-    wm::ActivateWindow(window.get());
+    EXPECT_FALSE(window_state->IsMaximized());
+    EXPECT_TRUE(window_state->IsMinimized());
+    window_state->Restore();
+    window_state->Activate();
   }
   {
     GetController()->PerformAction(WINDOW_MINIMIZE, dummy);
-    EXPECT_TRUE(wm::IsWindowMinimized(window.get()));
+    EXPECT_TRUE(window_state->IsMinimized());
   }
 }
 
@@ -598,19 +601,21 @@ TEST_F(AcceleratorControllerTest, SuppressToggleMaximized) {
   const ui::Accelerator accelerator(ui::VKEY_A, ui::EF_NONE);
   const ui::Accelerator empty_accelerator;
 
+  wm::WindowState* window_state = wm::GetWindowState(window.get());
+
   // Toggling not suppressed.
   GetController()->context()->UpdateContext(accelerator);
   GetController()->PerformAction(TOGGLE_MAXIMIZED, accelerator);
-  EXPECT_TRUE(wm::IsWindowMaximized(window.get()));
+  EXPECT_TRUE(window_state->IsMaximized());
 
   // The same accelerator - toggling suppressed.
   GetController()->context()->UpdateContext(accelerator);
   GetController()->PerformAction(TOGGLE_MAXIMIZED, accelerator);
-  EXPECT_TRUE(wm::IsWindowMaximized(window.get()));
+  EXPECT_TRUE(window_state->IsMaximized());
 
   // Suppressed but not for gesture events.
   GetController()->PerformAction(TOGGLE_MAXIMIZED, empty_accelerator);
-  EXPECT_FALSE(wm::IsWindowMaximized(window.get()));
+  EXPECT_FALSE(window_state->IsMaximized());
 }
 
 #if defined(OS_WIN) || defined(USE_X11)
@@ -668,14 +673,11 @@ TEST_F(AcceleratorControllerTest, GlobalAccelerators) {
   // CycleForward
   EXPECT_TRUE(ProcessWithContext(
       ui::Accelerator(ui::VKEY_TAB, ui::EF_ALT_DOWN)));
-#if defined(OS_CHROMEOS)
-  // CycleBackward
-  EXPECT_TRUE(ProcessWithContext(
-      ui::Accelerator(ui::VKEY_MEDIA_LAUNCH_APP1, ui::EF_SHIFT_DOWN)));
-  // CycleForward
+  // CycleLinear
   EXPECT_TRUE(ProcessWithContext(
       ui::Accelerator(ui::VKEY_MEDIA_LAUNCH_APP1, ui::EF_NONE)));
 
+#if defined(OS_CHROMEOS)
   // Take screenshot / partial screenshot
   // True should always be returned regardless of the existence of the delegate.
   {

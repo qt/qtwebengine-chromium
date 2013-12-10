@@ -19,6 +19,11 @@
     "mmap-v8-heap-coderange",
     "mmap-v8-heap-pagedspace",
     "mmap-v8-other",
+    "mmap-gpu-mappedmemorymanager",
+    "mmap-gpu-command-ringbuffer",
+    "mmap-gpu-transfer-ringbuffer",
+    "mmap-gpu-gles2-createbuffer",
+    "mmap-skia-font",
     "mmap-catch-all",
     "tc-webcore-fontcache",
     "tc-skia",
@@ -163,6 +168,31 @@
     {
       "name": "mmap-v8-other",
       "stacktrace": ".*v8::.*",
+      "allocator": "mmap"
+    },
+    {
+      "name": "mmap-gpu-mappedmemorymanager",
+      "stacktrace": ".*gpu::MappedMemoryManager::Alloc.*",
+      "allocator": "mmap"
+    },
+    {
+      "name": "mmap-gpu-command-ringbuffer",
+      "stacktrace": ".*gpu::CommandBufferHelper::AllocateRingBuffer.*",
+      "allocator": "mmap"
+    },
+    {
+      "name": "mmap-gpu-transfer-ringbuffer",
+      "stacktrace": ".*gpu::TransferBuffer::AllocateRingBuffer.*",
+      "allocator": "mmap"
+    },
+    {
+      "name": "mmap-gpu-gles2-createbuffer",
+      "stacktrace": ".*gpu::gles2::BufferTracker::CreateBuffer.*",
+      "allocator": "mmap"
+    },
+    {
+      "name": "mmap-skia-font",
+      "stacktrace": ".*SkTypeface::openStream.*",
       "allocator": "mmap"
     },
     {

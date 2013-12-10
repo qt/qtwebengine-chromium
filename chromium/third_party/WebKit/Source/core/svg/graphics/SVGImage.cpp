@@ -29,7 +29,11 @@
 
 #include "core/svg/graphics/SVGImage.h"
 
+#include "core/dom/NodeTraversal.h"
+#include "core/dom/shadow/ComposedTreeWalker.h"
 #include "core/loader/DocumentLoader.h"
+#include "core/page/Chrome.h"
+#include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "core/page/Settings.h"
 #include "core/platform/graphics/GraphicsContextStateSaver.h"
@@ -39,6 +43,8 @@
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/svg/RenderSVGRoot.h"
 #include "core/svg/SVGDocument.h"
+#include "core/svg/SVGFEImageElement.h"
+#include "core/svg/SVGImageElement.h"
 #include "core/svg/SVGSVGElement.h"
 #include "core/svg/graphics/SVGImageChromeClient.h"
 #include "wtf/PassRefPtr.h"
@@ -60,6 +66,48 @@ SVGImage::~SVGImage()
 
     // Verify that page teardown destroyed the Chrome
     ASSERT(!m_chromeClient || !m_chromeClient->image());
+}
+
+bool SVGImage::isInSVGImage(const Element* element)
+{
+    ASSERT(element);
+
+    Page* page = element->document().page();
+    if (!page)
+        return false;
+
+    return page->chrome().client().isSVGImageChromeClient();
+}
+
+bool SVGImage::currentFrameHasSingleSecurityOrigin() const
+{
+    if (!m_page)
+        return true;
+
+    Frame* frame = m_page->mainFrame();
+
+    RELEASE_ASSERT(frame->document()->loadEventFinished());
+
+    SVGSVGElement* rootElement = toSVGDocument(frame->document())->rootElement();
+    if (!rootElement)
+        return true;
+
+    // Don't allow foreignObject elements or images that are not known to be
+    // single-origin since these can leak cross-origin information.
+    ComposedTreeWalker walker(rootElement);
+    while (Node* node = walker.get()) {
+        if (node->hasTagName(SVGNames::foreignObjectTag))
+            return false;
+        if (node->hasTagName(SVGNames::imageTag))
+            return toSVGImageElement(node)->currentFrameHasSingleSecurityOrigin();
+        if (node->hasTagName(SVGNames::feImageTag))
+            return toSVGFEImageElement(node)->currentFrameHasSingleSecurityOrigin();
+        walker.next();
+    }
+
+    // Because SVG image rendering disallows external resources and links, these
+    // images effectively are restricted to a single security origin.
+    return true;
 }
 
 void SVGImage::setContainerSize(const IntSize& size)
@@ -121,11 +169,8 @@ void SVGImage::drawForContainer(GraphicsContext* context, const FloatSize contai
     if (!m_page)
         return;
 
-    ImageObserver* observer = imageObserver();
-    ASSERT(observer);
-
-    // Temporarily reset image observer, we don't want to receive any changeInRect() calls due to this relayout.
-    setImageObserver(0);
+    // Temporarily disable the image observer to prevent changeInRect() calls due re-laying out the image.
+    ImageObserverDisabler imageObserverDisabler(this);
 
     IntSize roundedContainerSize = roundedIntSize(containerSize);
     setContainerSize(roundedContainerSize);
@@ -139,8 +184,6 @@ void SVGImage::drawForContainer(GraphicsContext* context, const FloatSize contai
     scaledSrc.setSize(adjustedSrcSize);
 
     draw(context, dstRect, scaledSrc, compositeOp, blendMode);
-
-    setImageObserver(observer);
 }
 
 PassRefPtr<NativeImageSkia> SVGImage::nativeImageForCurrentFrame()
@@ -194,8 +237,6 @@ void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const Fl
     if (!m_page)
         return;
 
-    FrameView* view = frameView();
-
     GraphicsContextStateSaver stateSaver(*context);
     context->setCompositeOperation(compositeOp, blendMode);
     context->clip(enclosingIntRect(dstRect));
@@ -212,6 +253,7 @@ void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const Fl
     context->translate(destOffset.x(), destOffset.y());
     context->scale(scale);
 
+    FrameView* view = frameView();
     view->resize(containerSize());
 
     if (view->needsLayout())
@@ -220,7 +262,7 @@ void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const Fl
     view->paint(context, enclosingIntRect(srcRect));
 
     if (compositeOp != CompositeSourceOver)
-        context->endTransparencyLayer();
+        context->endLayer();
 
     stateSaver.restore();
 
@@ -338,10 +380,10 @@ bool SVGImage::dataChanged(bool allDataReceived)
         // SVGImage objects, but we're safe now, because SVGImage can only be
         // loaded by a top-level document.
         m_page = adoptPtr(new Page(pageClients));
-        m_page->settings()->setMediaEnabled(false);
-        m_page->settings()->setScriptEnabled(false);
-        m_page->settings()->setPluginsEnabled(false);
-        m_page->settings()->setAcceleratedCompositingEnabled(false);
+        m_page->settings().setMediaEnabled(false);
+        m_page->settings().setScriptEnabled(false);
+        m_page->settings().setPluginsEnabled(false);
+        m_page->settings().setAcceleratedCompositingEnabled(false);
 
         RefPtr<Frame> frame = Frame::create(m_page.get(), 0, dummyFrameLoaderClient);
         frame->setView(FrameView::create(frame.get()));
@@ -370,4 +412,3 @@ String SVGImage::filenameExtension() const
 }
 
 }
-

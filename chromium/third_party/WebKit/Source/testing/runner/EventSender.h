@@ -52,11 +52,12 @@ struct WebContextMenuData;
 
 namespace WebTestRunner {
 
+class TestInterfaces;
 class WebTestDelegate;
 
 class EventSender : public CppBoundClass {
 public:
-    EventSender();
+    explicit EventSender(TestInterfaces*);
     ~EventSender();
 
     void setDelegate(WebTestDelegate* delegate) { m_delegate = delegate; }
@@ -89,6 +90,10 @@ public:
     void setPageScaleFactor(const CppArgumentList&, CppVariant*);
 
     void mouseDragBegin(const CppArgumentList&, CppVariant*);
+    void mouseDragEnd(const CppArgumentList&, CppVariant*);
+    void mouseMomentumBegin(const CppArgumentList&, CppVariant*);
+    void mouseMomentumScrollBy(const CppArgumentList&, CppVariant*);
+    void mouseMomentumEnd(const CppArgumentList&, CppVariant*);
     void mouseScrollBy(const CppArgumentList&, CppVariant*);
     void continuousMouseScrollBy(const CppArgumentList&, CppVariant*);
     void scheduleAsynchronousClick(const CppArgumentList&, CppVariant*);
@@ -177,11 +182,12 @@ private:
     // Compose a touch event from the current touch points and send it.
     void sendCurrentTouchEvent(const WebKit::WebInputEvent::Type);
 
-    // Handle a request to send a wheel event.
-    void handleMouseWheel(const CppArgumentList&, CppVariant*, bool continuous);
+    // Init a mouse wheel event from the given args.
+    void initMouseWheelEvent(const CppArgumentList&, CppVariant*, bool continuous, WebKit::WebMouseWheelEvent*);
 
     WebTaskList m_taskList;
 
+    TestInterfaces* m_testInterfaces;
     WebTestDelegate* m_delegate;
     WebKit::WebView* m_webView;
 

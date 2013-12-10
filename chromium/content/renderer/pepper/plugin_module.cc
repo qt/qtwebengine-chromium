@@ -13,6 +13,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
 #include "content/common/view_messages.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/pepper/common.h"
@@ -21,7 +22,6 @@
 #include "content/renderer/pepper/pepper_hung_plugin_filter.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/pepper/pepper_plugin_registry.h"
-#include "content/renderer/pepper/ppb_gpu_blacklist_private_impl.h"
 #include "content/renderer/pepper/ppb_image_data_impl.h"
 #include "content/renderer/pepper/ppb_proxy_impl.h"
 #include "content/renderer/pepper/ppb_scrollbar_impl.h"
@@ -79,6 +79,8 @@
 #include "ppapi/c/ppb_mouse_cursor.h"
 #include "ppapi/c/ppb_mouse_lock.h"
 #include "ppapi/c/ppb_net_address.h"
+#include "ppapi/c/ppb_network_list.h"
+#include "ppapi/c/ppb_network_monitor.h"
 #include "ppapi/c/ppb_network_proxy.h"
 #include "ppapi/c/ppb_opengles2.h"
 #include "ppapi/c/ppb_tcp_socket.h"
@@ -107,11 +109,8 @@
 #include "ppapi/c/private/ppb_flash_menu.h"
 #include "ppapi/c/private/ppb_flash_message_loop.h"
 #include "ppapi/c/private/ppb_flash_print.h"
-#include "ppapi/c/private/ppb_gpu_blacklist_private.h"
 #include "ppapi/c/private/ppb_host_resolver_private.h"
 #include "ppapi/c/private/ppb_instance_private.h"
-#include "ppapi/c/private/ppb_network_list_private.h"
-#include "ppapi/c/private/ppb_network_monitor_private.h"
 #include "ppapi/c/private/ppb_pdf.h"
 #include "ppapi/c/private/ppb_proxy_private.h"
 #include "ppapi/c/private/ppb_talk_private.h"
@@ -138,6 +137,10 @@
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_graphics_2d_api.h"
 #include "ppapi/thunk/thunk.h"
+
+#if defined(OS_CHROMEOS)
+#include "ppapi/c/private/ppb_platform_verification_private.h"
+#endif
 
 using ppapi::InputEventData;
 using ppapi::PpapiGlobals;

@@ -24,6 +24,7 @@
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui_controller.h"
@@ -83,7 +84,7 @@ void RenderViewHostManager::Init(BrowserContext* browser_context,
   render_view_host_ = static_cast<RenderViewHostImpl*>(
       RenderViewHostFactory::Create(
           site_instance, render_view_delegate_, render_widget_delegate_,
-          routing_id, main_frame_routing_id, false));
+          routing_id, main_frame_routing_id, false, delegate_->IsHidden()));
 
   // Keep track of renderer processes as they start to shut down or are
   // crashed/killed.
@@ -199,6 +200,10 @@ void RenderViewHostManager::SetIsLoading(bool is_loading) {
 bool RenderViewHostManager::ShouldCloseTabOnUnresponsiveRenderer() {
   if (!cross_navigation_pending_)
     return true;
+
+  // We should always have a pending RVH when there's a cross-process navigation
+  // in progress.  Sanity check this for http://crbug.com/276333.
+  CHECK(pending_render_view_host_);
 
   // If the tab becomes unresponsive during {before}unload while doing a
   // cross-site navigation, proceed with the navigation.  (This assumes that
@@ -381,6 +386,14 @@ void RenderViewHostManager::SwapOutOldPage() {
   if (!cross_navigation_pending_)
     return;
   DCHECK(pending_render_view_host_);
+
+  // First close any modal dialogs that would prevent us from swapping out.
+  // TODO(creis): This is not a guarantee.  The renderer could immediately
+  // create another dialog in a loop, potentially causing a renderer crash when
+  // we tell it to swap out with a nested message loop and PageGroupLoadDeferrer
+  // on the stack.  We should prevent the renderer from showing more dialogs
+  // until the SwapOut.  See http://crbug.com/312490.
+  delegate_->CancelModalDialogsForRenderManager();
 
   // Tell the old renderer it is being swapped out.  This will fire the unload
   // handler (without firing the beforeunload handler a second time).  When the
@@ -642,8 +655,10 @@ SiteInstance* RenderViewHostManager::GetSiteInstanceForEntry(
 int RenderViewHostManager::CreateRenderView(
     SiteInstance* instance,
     int opener_route_id,
-    bool swapped_out) {
+    bool swapped_out,
+    bool hidden) {
   CHECK(instance);
+  DCHECK(!swapped_out || hidden); // Swapped out views should always be hidden.
 
   // Check if we've already created an RVH for this SiteInstance.  If so, try
   // to re-use the existing one, which has already been initialized.  We'll
@@ -662,7 +677,8 @@ int RenderViewHostManager::CreateRenderView(
                                       render_widget_delegate_,
                                       MSG_ROUTING_NONE,
                                       MSG_ROUTING_NONE,
-                                      swapped_out));
+                                      swapped_out,
+                                      hidden));
 
     // If the new RVH is swapped out already, store it.  Otherwise prevent the
     // process from exiting while we're trying to navigate in it.
@@ -690,9 +706,9 @@ int RenderViewHostManager::CreateRenderView(
 
 bool RenderViewHostManager::InitRenderView(RenderViewHost* render_view_host,
                                            int opener_route_id) {
-  // If the pending navigation is to a WebUI, tell the RenderView about any
-  // bindings it will need enabled.
-  if (pending_web_ui())
+  // If the pending navigation is to a WebUI and the RenderView is not in a
+  // guest process, tell the RenderView about any bindings it will need enabled.
+  if (pending_web_ui() && !render_view_host->GetProcess()->IsGuest())
     render_view_host->AllowBindings(pending_web_ui()->GetBindings());
 
   return delegate_->CreateRenderViewForRenderManager(render_view_host,
@@ -705,6 +721,14 @@ void RenderViewHostManager::CommitPending() {
   // committed yet, so if we've already cleared |pending_web_ui_| the call chain
   // this triggers won't be able to figure out what's going on.
   bool will_focus_location_bar = delegate_->FocusLocationBarByDefault();
+
+  // We currently can't guarantee that the renderer isn't showing a new modal
+  // dialog, even though we canceled them in SwapOutOldPage.  (It may have
+  // created another in the meantime.)  Make sure we run and reset the callback
+  // now before we delete its RVH below.
+  // TODO(creis): Remove this if we can guarantee that no new dialogs will be
+  // shown after SwapOutOldPage.  See http://crbug.com/312490.
+  delegate_->CancelModalDialogsForRenderManager();
 
   // Next commit the Web UI, if any. Either replace |web_ui_| with
   // |pending_web_ui_|, or clear |web_ui_| if there is no pending WebUI, or
@@ -740,10 +764,10 @@ void RenderViewHostManager::CommitPending() {
   // If the view is gone, then this RenderViewHost died while it was hidden.
   // We ignored the RenderProcessGone call at the time, so we should send it now
   // to make sure the sad tab shows up, etc.
-  if (render_view_host_->GetView())
-    render_view_host_->GetView()->Show();
-  else
+  if (!render_view_host_->GetView())
     delegate_->RenderProcessGoneFromRenderManager(render_view_host_);
+  else if (!delegate_->IsHidden())
+    render_view_host_->GetView()->Show();
 
   // Hide the old view now that the new one is visible.
   if (old_render_view_host->GetView()) {
@@ -816,33 +840,16 @@ void RenderViewHostManager::ShutdownRenderViewHostsInSiteInstance(
   // list.
   swapped_out_hosts_.erase(site_instance_id);
 
-  RenderWidgetHost::List widgets =
-      RenderWidgetHostImpl::GetAllRenderWidgetHosts();
-
-  // Here deleting a RWH in widgets can possibly cause another RWH in
-  // the list to be deleted.  This can result in leaving a dangling
-  // pointer in the widgets list. Our assumption is that a widget
-  // deleted as that sort of side-effect should not be directly
-  // deleted here. Therefore, we first gather only widgets directly to
-  // be deleted so that we don't hit any future dangling pointers in
-  // widgets.
-  std::vector<RenderViewHostImpl*> rvhs_to_be_deleted;
-
-  for (size_t i = 0; i < widgets.size(); ++i) {
-    if (!widgets[i]->IsRenderView())
+  scoped_ptr<RenderWidgetHostIterator> widgets(
+      RenderWidgetHostImpl::GetAllRenderWidgetHosts());
+  while (RenderWidgetHost* widget = widgets->GetNextHost()) {
+    if (!widget->IsRenderView())
       continue;
     RenderViewHostImpl* rvh =
-        static_cast<RenderViewHostImpl*>(RenderViewHost::From(widgets[i]));
-    if (site_instance_id == rvh->GetSiteInstance()->GetId()) {
-      DCHECK(rvh->is_swapped_out());
-      rvhs_to_be_deleted.push_back(rvh);
-    }
+        static_cast<RenderViewHostImpl*>(RenderViewHost::From(widget));
+    if (site_instance_id == rvh->GetSiteInstance()->GetId())
+      rvh->Shutdown();
   }
-
-  // Finally we delete the gathered RVHs, which should not indirectly
-  // delete each other.
-  for (size_t i = 0; i < rvhs_to_be_deleted.size(); ++i)
-    rvhs_to_be_deleted[i]->Shutdown();
 }
 
 RenderViewHostImpl* RenderViewHostManager::UpdateRendererStateForNavigate(
@@ -894,7 +901,8 @@ RenderViewHostImpl* RenderViewHostManager::UpdateRendererStateForNavigate(
 
     // Create a non-swapped-out pending RVH with the given opener and navigate
     // it.
-    int route_id = CreateRenderView(new_instance, opener_route_id, false);
+    int route_id = CreateRenderView(new_instance, opener_route_id, false,
+                                    delegate_->IsHidden());
     if (route_id == MSG_ROUTING_NONE)
       return NULL;
 

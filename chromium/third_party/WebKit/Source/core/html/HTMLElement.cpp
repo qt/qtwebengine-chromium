@@ -45,6 +45,7 @@
 #include "core/editing/markup.h"
 #include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLFormElement.h"
+#include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTemplateElement.h"
 #include "core/html/HTMLTextFormControlElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
@@ -63,7 +64,7 @@ using namespace WTF;
 using std::min;
 using std::max;
 
-PassRefPtr<HTMLElement> HTMLElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLElement> HTMLElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLElement(tagName, document));
 }
@@ -73,7 +74,7 @@ String HTMLElement::nodeName() const
     // FIXME: Would be nice to have an atomicstring lookup based off uppercase
     // chars that does not have to copy the string on a hit in the hash.
     // FIXME: We should have a way to detect XHTML elements and replace the hasPrefix() check with it.
-    if (document()->isHTMLDocument() && !tagQName().hasPrefix())
+    if (document().isHTMLDocument() && !tagQName().hasPrefix())
         return tagQName().localNameUpper();
     return Element::nodeName();
 }
@@ -201,6 +202,9 @@ AtomicString HTMLElement::eventNameForAttributeName(const QualifiedName& attrNam
     typedef HashMap<AtomicString, AtomicString> StringToStringMap;
     DEFINE_STATIC_LOCAL(StringToStringMap, attributeNameToEventNameMap, ());
     if (!attributeNameToEventNameMap.size()) {
+        attributeNameToEventNameMap.set(onanimationstartAttr.localName(), eventNames().animationstartEvent);
+        attributeNameToEventNameMap.set(onanimationiterationAttr.localName(), eventNames().animationiterationEvent);
+        attributeNameToEventNameMap.set(onanimationendAttr.localName(), eventNames().animationendEvent);
         attributeNameToEventNameMap.set(onclickAttr.localName(), eventNames().clickEvent);
         attributeNameToEventNameMap.set(oncontextmenuAttr.localName(), eventNames().contextmenuEvent);
         attributeNameToEventNameMap.set(ondblclickAttr.localName(), eventNames().dblclickEvent);
@@ -212,6 +216,7 @@ AtomicString HTMLElement::eventNameForAttributeName(const QualifiedName& attrNam
         attributeNameToEventNameMap.set(onmouseoverAttr.localName(), eventNames().mouseoverEvent);
         attributeNameToEventNameMap.set(onmouseupAttr.localName(), eventNames().mouseupEvent);
         attributeNameToEventNameMap.set(onmousewheelAttr.localName(), eventNames().mousewheelEvent);
+        attributeNameToEventNameMap.set(onwheelAttr.localName(), eventNames().wheelEvent);
         attributeNameToEventNameMap.set(onfocusAttr.localName(), eventNames().focusEvent);
         attributeNameToEventNameMap.set(onfocusinAttr.localName(), eventNames().focusinEvent);
         attributeNameToEventNameMap.set(onfocusoutAttr.localName(), eventNames().focusoutEvent);
@@ -290,10 +295,10 @@ void HTMLElement::parseAttribute(const QualifiedName& name, const AtomicString& 
         int tabindex = 0;
         if (value.isEmpty()) {
             clearTabIndexExplicitlyIfNeeded();
-            if (treeScope()->adjustedFocusedElement() == this) {
+            if (treeScope().adjustedFocusedElement() == this) {
                 // We might want to call blur(), but it's dangerous to dispatch
                 // events here.
-                document()->setNeedsFocusedElementCheck();
+                document().setNeedsFocusedElementCheck();
             }
         } else if (parseHTMLInteger(value, tabindex)) {
             // Clamp tabindex to the range of 'short' to match Firefox's behavior.
@@ -499,7 +504,7 @@ Node* HTMLElement::insertAdjacent(const String& where, Node* newChild, Exception
 
     if (equalIgnoringCase(where, "beforeBegin")) {
         if (ContainerNode* parent = this->parentNode()) {
-            parent->insertBefore(newChild, this, es, AttachLazily);
+            parent->insertBefore(newChild, this, es);
             if (!es.hadException())
                 return newChild;
         }
@@ -507,18 +512,18 @@ Node* HTMLElement::insertAdjacent(const String& where, Node* newChild, Exception
     }
 
     if (equalIgnoringCase(where, "afterBegin")) {
-        insertBefore(newChild, firstChild(), es, AttachLazily);
+        insertBefore(newChild, firstChild(), es);
         return es.hadException() ? 0 : newChild;
     }
 
     if (equalIgnoringCase(where, "beforeEnd")) {
-        appendChild(newChild, es, AttachLazily);
+        appendChild(newChild, es);
         return es.hadException() ? 0 : newChild;
     }
 
     if (equalIgnoringCase(where, "afterEnd")) {
         if (ContainerNode* parent = this->parentNode()) {
-            parent->insertBefore(newChild, nextSibling(), es, AttachLazily);
+            parent->insertBefore(newChild, nextSibling(), es);
             if (!es.hadException())
                 return newChild;
         }
@@ -572,7 +577,7 @@ void HTMLElement::insertAdjacentHTML(const String& where, const String& markup, 
 
 void HTMLElement::insertAdjacentText(const String& where, const String& text, ExceptionState& es)
 {
-    RefPtr<Text> textNode = document()->createTextNode(text);
+    RefPtr<Text> textNode = document().createTextNode(text);
     insertAdjacent(where, textNode.get(), es);
 }
 
@@ -624,7 +629,7 @@ bool HTMLElement::supportsSpatialNavigationFocus() const
     // This is the way to make it possible to navigate to (focus) elements
     // which web designer meant for being active (made them respond to click events).
 
-    if (!document()->settings() || !document()->settings()->spatialNavigationEnabled())
+    if (!document().settings() || !document().settings()->spatialNavigationEnabled())
         return false;
     EventTarget* target = const_cast<HTMLElement*>(this);
     return target->hasEventListeners(eventNames().clickEvent)
@@ -740,7 +745,7 @@ bool HTMLElement::translate() const
 {
     for (const Node* n = this; n; n = n->parentNode()) {
         if (n->isHTMLElement()) {
-            TranslateAttributeMode mode = static_cast<const HTMLElement*>(n)->translateAttributeMode();
+            TranslateAttributeMode mode = toHTMLElement(n)->translateAttributeMode();
             if (mode != TranslateAttributeInherit) {
                 ASSERT(mode == TranslateAttributeYes || mode == TranslateAttributeNo);
                 return mode == TranslateAttributeYes;
@@ -757,18 +762,18 @@ void HTMLElement::setTranslate(bool enable)
     setAttribute(translateAttr, enable ? "yes" : "no");
 }
 
-bool HTMLElement::rendererIsNeeded(const NodeRenderingContext& context)
+bool HTMLElement::rendererIsNeeded(const RenderStyle& style)
 {
     if (hasLocalName(noscriptTag)) {
-        Frame* frame = document()->frame();
+        Frame* frame = document().frame();
         if (frame && frame->script()->canExecuteScripts(NotAboutToExecuteScript))
             return false;
     } else if (hasLocalName(noembedTag)) {
-        Frame* frame = document()->frame();
+        Frame* frame = document().frame();
         if (frame && frame->loader()->allowPlugins(NotAboutToInstantiatePlugin))
             return false;
     }
-    return Element::rendererIsNeeded(context);
+    return Element::rendererIsNeeded(style);
 }
 
 RenderObject* HTMLElement::createRenderer(RenderStyle* style)
@@ -845,12 +850,12 @@ TextDirection HTMLElement::directionalityIfhasDirAutoAttribute(bool& isAuto) con
 
 TextDirection HTMLElement::directionality(Node** strongDirectionalityTextNode) const
 {
-    if (isHTMLTextFormControlElement(this)) {
-        HTMLTextFormControlElement* textElement = toHTMLTextFormControlElement(const_cast<HTMLElement*>(this));
+    if (hasTagName(inputTag)) {
+        HTMLInputElement* inputElement = toHTMLInputElement(const_cast<HTMLElement*>(this));
         bool hasStrongDirectionality;
-        Unicode::Direction textDirection = textElement->value().defaultWritingDirection(&hasStrongDirectionality);
+        Unicode::Direction textDirection = inputElement->value().defaultWritingDirection(&hasStrongDirectionality);
         if (strongDirectionalityTextNode)
-            *strongDirectionalityTextNode = hasStrongDirectionality ? textElement : 0;
+            *strongDirectionalityTextNode = hasStrongDirectionality ? inputElement : 0;
         return (textDirection == Unicode::LeftToRight) ? LTR : RTL;
     }
 
@@ -927,7 +932,7 @@ void HTMLElement::calculateAndAdjustDirectionality()
 
 void HTMLElement::adjustDirectionalityIfNeededAfterChildrenChanged(Node* beforeChange, int childCountDelta)
 {
-    if ((!document() || document()->renderer()) && childCountDelta < 0) {
+    if (document().renderer() && childCountDelta < 0) {
         Node* node = beforeChange ? NodeTraversal::nextSkippingChildren(beforeChange) : 0;
         for (int counter = 0; node && counter < childCountDelta; counter++, node = NodeTraversal::nextSkippingChildren(node)) {
             if (elementAffectsDirectionality(node))
@@ -1058,11 +1063,16 @@ void HTMLElement::addHTMLColorToStyle(MutableStylePropertySet* style, CSSPropert
         return;
 
     // If the string is a named CSS color or a 3/6-digit hex color, use that.
-    StyleColor parsedColor(colorString);
+    Color parsedColor(colorString);
     if (!parsedColor.isValid())
-        parsedColor = parseColorStringWithCrazyLegacyRules(colorString);
+        parsedColor.setRGB(parseColorStringWithCrazyLegacyRules(colorString));
 
     style->setProperty(propertyID, cssValuePool().createColorValue(parsedColor.rgb()));
+}
+
+bool HTMLElement::isInteractiveContent() const
+{
+    return false;
 }
 
 void HTMLElement::defaultEventHandler(Event* event)
@@ -1078,7 +1088,12 @@ void HTMLElement::defaultEventHandler(Event* event)
 
 void HTMLElement::handleKeypressEvent(KeyboardEvent* event)
 {
-    if (!document()->settings() || !document()->settings()->spatialNavigationEnabled() || !supportsFocus())
+    if (!document().settings() || !document().settings()->spatialNavigationEnabled() || !supportsFocus())
+        return;
+    // if the element is a text form control (like <input type=text> or <textarea>)
+    // or has contentEditable attribute on, we should enter a space or newline
+    // even in spatial navigation mode instead of handling it as a "click" action.
+    if (isTextFormControl() || isContentEditable())
         return;
     int charCode = event->charCode();
     if (charCode == '\r' || charCode == ' ') {

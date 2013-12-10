@@ -54,16 +54,19 @@
     this.element.addEventListener('willSeek', function (e) {
         metric.onWillSeek(e);
       }, false);
+    this.element.addEventListener('willLoop', function (e) {
+        metric.onWillLoop(e);
+      }, false);
   }
 
   HTMLMediaMetric.prototype = new MediaMetricBase();
   HTMLMediaMetric.prototype.constructor = HTMLMediaMetric;
 
   HTMLMediaMetric.prototype.setID = function() {
-    if (this.element.src)
-      this.id = this.element.src.substring(this.element.src.lastIndexOf("/")+1);
-    else if (this.element.id)
+    if (this.element.id)
       this.id = this.element.id;
+    else if (this.element.src)
+      this.id = this.element.src.substring(this.element.src.lastIndexOf("/")+1);
     else
       this.id = 'media_' + window.__globalCounter++;
   };
@@ -85,6 +88,20 @@
     this.element.addEventListener('seeked', onSeeked);
   };
 
+  HTMLMediaMetric.prototype.onWillLoop = function(e) {
+    var loopTimer = new Timer();
+    var metric = this;
+    var loopCount = e.loopCount;
+    var onEndLoop = function(e) {
+        var actualDuration = loopTimer.stop();
+        var idealDuration = metric.element.duration * loopCount;
+        var avg_loop_time = (actualDuration - idealDuration) / loopCount;
+        metric.metrics['avg_loop_time'] = avg_loop_time.toFixed(3);
+        e.target.removeEventListener('endLoop', onEndLoop);
+      };
+    this.element.addEventListener('endLoop', onEndLoop);
+  };
+
   HTMLMediaMetric.prototype.appendMetric = function(metric, value) {
     if (!this.metrics[metric])
       this.metrics[metric] = [];
@@ -98,7 +115,11 @@
   };
 
   HTMLMediaMetric.prototype.onEnded = function(event) {
-    this.metrics['playback_time'] = this.playbackTimer.stop();
+    var time_to_end = this.playbackTimer.stop() - this.metrics['time_to_play'];
+    // TODO(shadi): Measure buffering time more accurately using events such as
+    // stalled, waiting, progress, etc. This works only when continuous playback
+    // is used.
+    this.metrics['buffering_time'] = time_to_end - this.element.duration * 1000;
   };
 
   HTMLMediaMetric.prototype.getMetrics = function() {
@@ -128,8 +149,8 @@
     },
 
     stop: function() {
-      // Return delta time since start in secs.
-      return ((getCurrentTime() - this.start_) / 1000).toFixed(3);
+      // Return delta time since start in millisecs.
+      return ((getCurrentTime() - this.start_)).toFixed(3);
     }
   };
 

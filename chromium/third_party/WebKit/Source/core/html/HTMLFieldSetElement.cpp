@@ -26,7 +26,7 @@
 #include "core/html/HTMLFieldSetElement.h"
 
 #include "HTMLNames.h"
-#include "core/dom/NodeTraversal.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/HTMLLegendElement.h"
 #include "core/html/HTMLObjectElement.h"
@@ -37,7 +37,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLFieldSetElement::HTMLFieldSetElement(const QualifiedName& tagName, Document* document, HTMLFormElement* form)
+inline HTMLFieldSetElement::HTMLFieldSetElement(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
     : HTMLFormControlElement(tagName, document, form)
     , m_documentVersion(0)
 {
@@ -45,7 +45,7 @@ inline HTMLFieldSetElement::HTMLFieldSetElement(const QualifiedName& tagName, Do
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLFieldSetElement> HTMLFieldSetElement::create(const QualifiedName& tagName, Document* document, HTMLFormElement* form)
+PassRefPtr<HTMLFieldSetElement> HTMLFieldSetElement::create(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
 {
     return adoptRef(new HTMLFieldSetElement(tagName, document, form));
 }
@@ -94,7 +94,7 @@ HTMLLegendElement* HTMLFieldSetElement::legend() const
 {
     for (Element* child = ElementTraversal::firstWithin(this); child; child = ElementTraversal::nextSkippingChildren(child, this)) {
         if (child->hasTagName(legendTag))
-            return static_cast<HTMLLegendElement*>(child);
+            return toHTMLLegendElement(child);
     }
     return 0;
 }
@@ -106,7 +106,7 @@ PassRefPtr<HTMLCollection> HTMLFieldSetElement::elements()
 
 void HTMLFieldSetElement::refreshElementsIfNeeded() const
 {
-    uint64_t docVersion = document()->domTreeVersion();
+    uint64_t docVersion = document().domTreeVersion();
     if (m_documentVersion == docVersion)
         return;
 
@@ -116,7 +116,7 @@ void HTMLFieldSetElement::refreshElementsIfNeeded() const
 
     for (Element* element = ElementTraversal::firstWithin(this); element; element = ElementTraversal::next(element, this)) {
         if (element->hasTagName(objectTag)) {
-            m_associatedElements.append(static_cast<HTMLObjectElement*>(element));
+            m_associatedElements.append(toHTMLObjectElement(element));
             continue;
         }
 

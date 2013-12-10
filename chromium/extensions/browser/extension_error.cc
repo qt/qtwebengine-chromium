@@ -4,7 +4,6 @@
 
 #include "extensions/browser/extension_error.h"
 
-#include "base/json/json_reader.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
@@ -12,161 +11,216 @@
 #include "url/gurl.h"
 
 using base::string16;
+using base::DictionaryValue;
 
 namespace extensions {
 
-namespace {
+////////////////////////////////////////////////////////////////////////////////
+// ExtensionError
 
-const char kLineNumberKey[] = "lineNumber";
-const char kColumnNumberKey[] = "columnNumber";
-const char kURLKey[] = "url";
-const char kFunctionNameKey[] = "functionName";
-const char kExecutionContextURLKey[] = "executionContextURL";
-const char kStackTraceKey[] = "stackTrace";
-
-// Try to retrieve an extension ID from a |url|. On success, returns true and
-// populates |extension_id| with the ID. On failure, returns false and leaves
-// extension_id untouched.
-bool GetExtensionIDFromGURL(const GURL& url, std::string* extension_id) {
-  if (url.SchemeIs(kExtensionScheme)) {
-    *extension_id = url.host();
-    return true;
-  }
-  return false;
-}
-
-}  // namespace
+// Static JSON keys.
+const char ExtensionError::kExtensionIdKey[] = "extensionId";
+const char ExtensionError::kFromIncognitoKey[] = "fromIncognito";
+const char ExtensionError::kLevelKey[] = "level";
+const char ExtensionError::kMessageKey[] = "message";
+const char ExtensionError::kSourceKey[] = "source";
+const char ExtensionError::kTypeKey[] = "type";
 
 ExtensionError::ExtensionError(Type type,
                                const std::string& extension_id,
                                bool from_incognito,
+                               logging::LogSeverity level,
                                const string16& source,
                                const string16& message)
     : type_(type),
       extension_id_(extension_id),
       from_incognito_(from_incognito),
+      level_(level),
       source_(source),
-      message_(message) {
+      message_(message),
+      occurrences_(1u) {
 }
 
 ExtensionError::~ExtensionError() {
 }
 
+scoped_ptr<DictionaryValue> ExtensionError::ToValue() const {
+  // TODO(rdevlin.cronin): Use ValueBuilder when it's moved from
+  // chrome/common/extensions.
+  scoped_ptr<DictionaryValue> value(new DictionaryValue);
+  value->SetInteger(kTypeKey, static_cast<int>(type_));
+  value->SetString(kExtensionIdKey, extension_id_);
+  value->SetBoolean(kFromIncognitoKey, from_incognito_);
+  value->SetInteger(kLevelKey, static_cast<int>(level_));
+  value->SetString(kSourceKey, source_);
+  value->SetString(kMessageKey, message_);
+
+  return value.Pass();
+}
+
 std::string ExtensionError::PrintForTest() const {
   return std::string("Extension Error:") +
          "\n  OTR:     " + std::string(from_incognito_ ? "true" : "false") +
+         "\n  Level:   " + base::IntToString(static_cast<int>(level_)) +
          "\n  Source:  " + base::UTF16ToUTF8(source_) +
          "\n  Message: " + base::UTF16ToUTF8(message_) +
          "\n  ID:      " + extension_id_;
 }
 
-ManifestParsingError::ManifestParsingError(const std::string& extension_id,
-                                           const string16& message)
-    : ExtensionError(ExtensionError::MANIFEST_PARSING_ERROR,
+bool ExtensionError::IsEqual(const ExtensionError* rhs) const {
+  // We don't check |source_| or |level_| here, since they are constant for
+  // manifest errors. Check them in RuntimeError::IsEqualImpl() instead.
+  return type_ == rhs->type_ &&
+         extension_id_ == rhs->extension_id_ &&
+         message_ == rhs->message_ &&
+         IsEqualImpl(rhs);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// ManifestError
+
+// Static JSON keys.
+const char ManifestError::kManifestKeyKey[] = "manifestKey";
+const char ManifestError::kManifestSpecificKey[] = "manifestSpecific";
+
+ManifestError::ManifestError(const std::string& extension_id,
+                             const string16& message,
+                             const string16& manifest_key,
+                             const string16& manifest_specific)
+    : ExtensionError(ExtensionError::MANIFEST_ERROR,
                      extension_id,
                      false,  // extensions can't be installed while incognito.
+                     logging::LOG_WARNING,  // All manifest errors are warnings.
                      base::FilePath(kManifestFilename).AsUTF16Unsafe(),
-                     message) {
+                     message),
+      manifest_key_(manifest_key),
+      manifest_specific_(manifest_specific) {
 }
 
-ManifestParsingError::~ManifestParsingError() {
+ManifestError::~ManifestError() {
 }
 
-std::string ManifestParsingError::PrintForTest() const {
+scoped_ptr<DictionaryValue> ManifestError::ToValue() const {
+  scoped_ptr<DictionaryValue> value = ExtensionError::ToValue();
+  if (!manifest_key_.empty())
+    value->SetString(kManifestKeyKey, manifest_key_);
+  if (!manifest_specific_.empty())
+    value->SetString(kManifestSpecificKey, manifest_specific_);
+  return value.Pass();
+}
+
+std::string ManifestError::PrintForTest() const {
   return ExtensionError::PrintForTest() +
-         "\n  Type:    ManifestParsingError";
+         "\n  Type:    ManifestError";
 }
 
-JavascriptRuntimeError::StackFrame::StackFrame() : line_number(-1),
-                                                   column_number(-1) {
+bool ManifestError::IsEqualImpl(const ExtensionError* rhs) const {
+  // If two manifest errors have the same extension id and message (which are
+  // both checked in ExtensionError::IsEqual), then they are equal.
+  return true;
 }
 
-JavascriptRuntimeError::StackFrame::StackFrame(size_t frame_line,
-                                               size_t frame_column,
-                                               const string16& frame_url,
-                                               const string16& frame_function)
-    : line_number(frame_line),
-      column_number(frame_column),
-      url(frame_url),
-      function(frame_function) {
-}
+////////////////////////////////////////////////////////////////////////////////
+// RuntimeError
 
-JavascriptRuntimeError::StackFrame::~StackFrame() {
-}
+// Static JSON keys.
+const char RuntimeError::kColumnNumberKey[] = "columnNumber";
+const char RuntimeError::kContextUrlKey[] = "contextUrl";
+const char RuntimeError::kFunctionNameKey[] = "functionName";
+const char RuntimeError::kLineNumberKey[] = "lineNumber";
+const char RuntimeError::kStackTraceKey[] = "stackTrace";
+const char RuntimeError::kUrlKey[] = "url";
 
-JavascriptRuntimeError::JavascriptRuntimeError(bool from_incognito,
-                                               const string16& source,
-                                               const string16& message,
-                                               logging::LogSeverity level,
-                                               const string16& details)
-    : ExtensionError(ExtensionError::JAVASCRIPT_RUNTIME_ERROR,
-                     std::string(),  // We don't know the id yet.
+RuntimeError::RuntimeError(const std::string& extension_id,
+                           bool from_incognito,
+                           const string16& source,
+                           const string16& message,
+                           const StackTrace& stack_trace,
+                           const GURL& context_url,
+                           logging::LogSeverity level)
+    : ExtensionError(ExtensionError::RUNTIME_ERROR,
+                     !extension_id.empty() ? extension_id : GURL(source).host(),
                      from_incognito,
+                     level,
                      source,
                      message),
-      level_(level) {
-  ParseDetails(details);
-  DetermineExtensionID();
+      context_url_(context_url),
+      stack_trace_(stack_trace) {
+  CleanUpInit();
 }
 
-JavascriptRuntimeError::~JavascriptRuntimeError() {
+RuntimeError::~RuntimeError() {
 }
 
-std::string JavascriptRuntimeError::PrintForTest() const {
+scoped_ptr<DictionaryValue> RuntimeError::ToValue() const {
+  scoped_ptr<DictionaryValue> value = ExtensionError::ToValue();
+  value->SetString(kContextUrlKey, context_url_.spec());
+
+  ListValue* trace_value = new ListValue;
+  for (StackTrace::const_iterator iter = stack_trace_.begin();
+       iter != stack_trace_.end(); ++iter) {
+    DictionaryValue* frame_value = new DictionaryValue;
+    frame_value->SetInteger(kLineNumberKey, iter->line_number);
+    frame_value->SetInteger(kColumnNumberKey, iter->column_number);
+    frame_value->SetString(kUrlKey, iter->source);
+    frame_value->SetString(kFunctionNameKey, iter->function);
+    trace_value->Append(frame_value);
+  }
+
+  value->Set(kStackTraceKey, trace_value);
+
+  return value.Pass();
+}
+
+std::string RuntimeError::PrintForTest() const {
   std::string result = ExtensionError::PrintForTest() +
-         "\n  Type:    JavascriptRuntimeError"
-         "\n  Context: " + base::UTF16ToUTF8(execution_context_url_) +
+         "\n  Type:    RuntimeError"
+         "\n  Context: " + context_url_.spec() +
          "\n  Stack Trace: ";
   for (StackTrace::const_iterator iter = stack_trace_.begin();
        iter != stack_trace_.end(); ++iter) {
     result += "\n    {"
               "\n      Line:     " + base::IntToString(iter->line_number) +
               "\n      Column:   " + base::IntToString(iter->column_number) +
-              "\n      URL:      " + base::UTF16ToUTF8(iter->url) +
+              "\n      URL:      " + base::UTF16ToUTF8(iter->source) +
               "\n      Function: " + base::UTF16ToUTF8(iter->function) +
               "\n    }";
   }
   return result;
 }
 
-void JavascriptRuntimeError::ParseDetails(const string16& details) {
-  scoped_ptr<base::Value> value(
-      base::JSONReader::Read(base::UTF16ToUTF8(details)));
-  const base::DictionaryValue* details_value;
-  const base::ListValue* trace_value = NULL;
+bool RuntimeError::IsEqualImpl(const ExtensionError* rhs) const {
+  const RuntimeError* error = static_cast<const RuntimeError*>(rhs);
 
-  // The |details| value should contain an execution context url and a stack
-  // trace.
-  if (!value.get() ||
-      !value->GetAsDictionary(&details_value) ||
-      !details_value->GetString(kExecutionContextURLKey,
-                                &execution_context_url_) ||
-      !details_value->GetList(kStackTraceKey, &trace_value)) {
-    NOTREACHED();
-    return;
-  }
-
-  int line = 0;
-  int column = 0;
-  string16 url;
-
-  for (size_t i = 0; i < trace_value->GetSize(); ++i) {
-    const base::DictionaryValue* frame_value = NULL;
-    CHECK(trace_value->GetDictionary(i, &frame_value));
-
-    frame_value->GetInteger(kLineNumberKey, &line);
-    frame_value->GetInteger(kColumnNumberKey, &column);
-    frame_value->GetString(kURLKey, &url);
-
-    string16 function;
-    frame_value->GetString(kFunctionNameKey, &function);  // This can be empty.
-    stack_trace_.push_back(StackFrame(line, column, url, function));
-  }
+  // Only look at the first frame of a stack trace to save time and group
+  // nearly-identical errors. The most recent error is kept, so there's no risk
+  // of displaying an old and inaccurate stack trace.
+  return level_ == error->level_ &&
+         source_ == error->source_ &&
+         context_url_ == error->context_url_ &&
+         stack_trace_.size() == error->stack_trace_.size() &&
+         (stack_trace_.empty() || stack_trace_[0] == error->stack_trace_[0]);
 }
 
-void JavascriptRuntimeError::DetermineExtensionID() {
-  if (!GetExtensionIDFromGURL(GURL(source_), &extension_id_))
-    GetExtensionIDFromGURL(GURL(execution_context_url_), &extension_id_);
+void RuntimeError::CleanUpInit() {
+  // If the error came from a generated background page, the "context" is empty
+  // because there's no visible URL. We should set context to be the generated
+  // background page in this case.
+  GURL source_url = GURL(source_);
+  if (context_url_.is_empty() &&
+      source_url.path() ==
+          std::string("/") + kGeneratedBackgroundPageFilename) {
+    context_url_ = source_url;
+  }
+
+  // In some instances (due to the fact that we're reusing error reporting from
+  // other systems), the source won't match up with the final entry in the stack
+  // trace. (For instance, in a browser action error, the source is the page -
+  // sometimes the background page - but the error is thrown from the script.)
+  // Make the source match the stack trace, since that is more likely the cause
+  // of the error.
+  if (!stack_trace_.empty() && source_ != stack_trace_[0].source)
+    source_ = stack_trace_[0].source;
 }
 
 }  // namespace extensions

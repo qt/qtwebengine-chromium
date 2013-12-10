@@ -92,6 +92,9 @@ class WebContents : public PageNavigator,
     // Initial size of the new WebContent's view. Can be (0, 0) if not needed.
     gfx::Size initial_size;
 
+    // True if the contents should be initially hidden.
+    bool initially_hidden;
+
     // Used to specify the location context which display the new view should
     // belong. This can be NULL if not needed.
     gfx::NativeView context;
@@ -193,7 +196,11 @@ class WebContents : public PageNavigator,
 
   // Returns the currently active RenderWidgetHostView. This may change over
   // time and can be NULL (during setup and teardown).
-  virtual content::RenderWidgetHostView* GetRenderWidgetHostView() const = 0;
+  virtual RenderWidgetHostView* GetRenderWidgetHostView() const = 0;
+
+  // Returns the currently active fullscreen widget. If there is none, returns
+  // NULL.
+  virtual RenderWidgetHostView* GetFullscreenRenderWidgetHostView() const = 0;
 
   // The WebContentsView will never change and is guaranteed non-NULL.
   virtual WebContentsView* GetView() const = 0;
@@ -349,7 +356,6 @@ class WebContents : public PageNavigator,
   virtual void GenerateMHTML(
       const base::FilePath& file,
       const base::Callback<void(
-          const base::FilePath& /* path to the MHTML file */,
           int64 /* size of the file */)>& callback) = 0;
 
   // Returns true if the active NavigationEntry's page_id equals page_id.
@@ -434,26 +440,29 @@ class WebContents : public PageNavigator,
   // Does this have an opener associated with it?
   virtual bool HasOpener() const = 0;
 
-  typedef base::Callback<void(int, /* id */
-                              int, /* HTTP status code */
-                              const GURL&, /* image_url */
-                              int,  /* requested_size */
-                              const std::vector<SkBitmap>& /* bitmaps*/)>
-      ImageDownloadCallback;
+  typedef base::Callback<void(
+      int, /* id */
+      int, /* HTTP status code */
+      const GURL&, /* image_url */
+      const std::vector<SkBitmap>&, /* bitmaps */
+      /* The sizes in pixel of the bitmaps before they were resized due to the
+         max bitmap size passed to DownloadImage(). Each entry in the bitmaps
+         vector corresponds to an entry in the sizes vector. If a bitmap was
+         resized, there should be a single returned bitmap. */
+      const std::vector<gfx::Size>&)>
+          ImageDownloadCallback;
 
   // Sends a request to download the given image |url| and returns the unique
   // id of the download request. When the download is finished, |callback| will
   // be called with the bitmaps received from the renderer. If |is_favicon| is
-  // true, the cookies are not sent and not accepted during download. Note that
-  // |preferred_image_size| is a hint for images with multiple sizes. The
-  // downloaded image is not resized to the given image_size. If 0 is passed,
-  // the first frame of the image is returned.
-  // |max_image_size| is the maximal size of the returned image. It will be
-  // resized if needed. If 0 is passed, the maximal size is unlimited.
+  // true, the cookies are not sent and not accepted during download.
+  // Bitmaps with pixel sizes larger than |max_bitmap_size| are filtered out
+  // from the bitmap results. If there are no bitmap results <=
+  // |max_bitmap_size|, the smallest bitmap is resized to |max_bitmap_size| and
+  // is the only result. A |max_bitmap_size| of 0 means unlimited.
   virtual int DownloadImage(const GURL& url,
                             bool is_favicon,
-                            uint32_t preferred_image_size,
-                            uint32_t max_image_size,
+                            uint32_t max_bitmap_size,
                             const ImageDownloadCallback& callback) = 0;
 
  private:

@@ -169,6 +169,9 @@ novalidate
 nowrap
 object
 onabort
+onanimationstart
+onanimationiteration
+onanimationend
 onautocomplete
 onautocompleteerror
 onbeforecopy
@@ -265,6 +268,7 @@ onwebkitsourceclose
 onwebkitsourceended
 onwebkitsourceopen
 onwebkittransitionend
+onwheel
 open
 optimum
 part
@@ -312,6 +316,7 @@ x-webkit-speech
 x-webkit-grammar
 spellcheck
 src
+srcset
 srcdoc
 srclang
 standby

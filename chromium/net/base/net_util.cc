@@ -83,6 +83,8 @@ namespace net {
 
 namespace {
 
+typedef std::vector<size_t> Offsets;
+
 // what we prepend to get a file URL
 static const base::FilePath::CharType kFileURLPrefix[] =
     FILE_PATH_LITERAL("file:///");
@@ -445,8 +447,7 @@ bool IDNToUnicodeOneComponent(const base::char16* comp,
 }
 
 // Clamps the offsets in |offsets_for_adjustment| to the length of |str|.
-void LimitOffsets(const base::string16& str,
-                  std::vector<size_t>* offsets_for_adjustment) {
+void LimitOffsets(const base::string16& str, Offsets* offsets_for_adjustment) {
   if (offsets_for_adjustment) {
     std::for_each(offsets_for_adjustment->begin(),
                   offsets_for_adjustment->end(),
@@ -461,10 +462,9 @@ void LimitOffsets(const base::string16& str,
 //
 // We may want to skip this step in the case of file URLs to allow unicode
 // UNC hostnames regardless of encodings.
-base::string16 IDNToUnicodeWithOffsets(
-    const std::string& host,
-    const std::string& languages,
-    std::vector<size_t>* offsets_for_adjustment) {
+base::string16 IDNToUnicodeWithOffsets(const std::string& host,
+                                       const std::string& languages,
+                                       Offsets* offsets_for_adjustment) {
   // Convert the ASCII input to a base::string16 for ICU.
   base::string16 input16;
   input16.reserve(host.length());
@@ -508,52 +508,48 @@ base::string16 IDNToUnicodeWithOffsets(
   return out16;
 }
 
-// Transforms |original_offsets| by subtracting |component_begin| from all
-// offsets.  Any offset which was not at least this large to begin with is set
-// to std::string::npos.
-std::vector<size_t> OffsetsIntoComponent(
-    const std::vector<size_t>& original_offsets,
-    size_t component_begin) {
-  DCHECK_NE(std::string::npos, component_begin);
-  std::vector<size_t> offsets_into_component(original_offsets);
-  for (std::vector<size_t>::iterator i(offsets_into_component.begin());
-       i != offsets_into_component.end(); ++i) {
-    if (*i != std::string::npos)
-      *i = (*i < component_begin) ? std::string::npos : (*i - component_begin);
-  }
-  return offsets_into_component;
-}
-
-// Called after we transform a component and append it to an output string.
-// Maps |transformed_offsets|, which represent offsets into the transformed
-// component itself, into appropriate offsets for the output string, by adding
-// |output_component_begin| to each.  Determines which offsets need mapping by
-// checking to see which of the |original_offsets| were within the designated
-// original component, using its provided endpoints.
-void AdjustForComponentTransform(
-    const std::vector<size_t>& original_offsets,
-    size_t original_component_begin,
-    size_t original_component_end,
-    const std::vector<size_t>& transformed_offsets,
-    size_t output_component_begin,
-    std::vector<size_t>* offsets_for_adjustment) {
+// Called after transforming a component to set all affected elements in
+// |offsets_for_adjustment| to the correct new values.  |original_offsets|
+// represents the offsets before the transform; |original_component_begin| and
+// |original_component_end| represent the pre-transform boundaries of the
+// affected component.  |transformed_offsets| should be a vector created by
+// adjusting |original_offsets| to be relative to the beginning of the component
+// in question (via an OffsetAdjuster) and then transformed along with the
+// component.  Note that any elements in this vector which didn't originally
+// point into the component may contain arbitrary values and should be ignored.
+// |transformed_component_begin| and |transformed_component_end| are the
+// endpoints of the transformed component and are used in combination with the
+// two offset vectors to calculate the resulting absolute offsets, which are
+// stored in |offsets_for_adjustment|.
+void AdjustForComponentTransform(const Offsets& original_offsets,
+                                 size_t original_component_begin,
+                                 size_t original_component_end,
+                                 const Offsets& transformed_offsets,
+                                 size_t transformed_component_begin,
+                                 size_t transformed_component_end,
+                                 Offsets* offsets_for_adjustment) {
   if (!offsets_for_adjustment)
-    return;
+    return;  // Nothing to do.
 
-  DCHECK_NE(std::string::npos, original_component_begin);
-  DCHECK_NE(std::string::npos, original_component_end);
-  DCHECK_NE(base::string16::npos, output_component_begin);
-  size_t offsets_size = offsets_for_adjustment->size();
-  DCHECK_EQ(offsets_size, original_offsets.size());
-  DCHECK_EQ(offsets_size, transformed_offsets.size());
-  for (size_t i = 0; i < offsets_size; ++i) {
+  for (size_t i = 0; i < original_offsets.size(); ++i) {
     size_t original_offset = original_offsets[i];
     if ((original_offset >= original_component_begin) &&
         (original_offset < original_component_end)) {
+      // This offset originally pointed into the transformed component.
+      // Adjust the transformed relative offset by the new beginning point of
+      // the transformed component.
       size_t transformed_offset = transformed_offsets[i];
       (*offsets_for_adjustment)[i] =
           (transformed_offset == base::string16::npos) ?
-          base::string16::npos : (output_component_begin + transformed_offset);
+              base::string16::npos :
+              (transformed_offset + transformed_component_begin);
+    } else if ((original_offset >= original_component_end) &&
+               (original_offset != std::string::npos)) {
+      // This offset pointed after the transformed component.  Adjust the
+      // original absolute offset by the difference between the new and old
+      // component lengths.
+      (*offsets_for_adjustment)[i] =
+          original_offset - original_component_end + transformed_component_end;
     }
   }
 }
@@ -568,7 +564,7 @@ void AdjustComponent(int delta, url_parse::Component* component) {
 }
 
 // Adjusts all the components of |parsed| by |delta|, except for the scheme.
-void AdjustComponents(int delta, url_parse::Parsed* parsed) {
+void AdjustAllComponentsButScheme(int delta, url_parse::Parsed* parsed) {
   AdjustComponent(delta, &(parsed->username));
   AdjustComponent(delta, &(parsed->password));
   AdjustComponent(delta, &(parsed->host));
@@ -579,27 +575,36 @@ void AdjustComponents(int delta, url_parse::Parsed* parsed) {
 }
 
 // Helper for FormatUrlWithOffsets().
-base::string16 FormatViewSourceUrl(
-    const GURL& url,
-    const std::vector<size_t>& original_offsets,
-    const std::string& languages,
-    FormatUrlTypes format_types,
-    UnescapeRule::Type unescape_rules,
-    url_parse::Parsed* new_parsed,
-    size_t* prefix_end,
-    std::vector<size_t>* offsets_for_adjustment) {
+base::string16 FormatViewSourceUrl(const GURL& url,
+                                   const Offsets& original_offsets,
+                                   const std::string& languages,
+                                   FormatUrlTypes format_types,
+                                   UnescapeRule::Type unescape_rules,
+                                   url_parse::Parsed* new_parsed,
+                                   size_t* prefix_end,
+                                   Offsets* offsets_for_adjustment) {
   DCHECK(new_parsed);
   const char kViewSource[] = "view-source:";
   const size_t kViewSourceLength = arraysize(kViewSource) - 1;
-  std::vector<size_t> offsets_into_url(
-      OffsetsIntoComponent(original_offsets, kViewSourceLength));
 
-  GURL real_url(url.possibly_invalid_spec().substr(kViewSourceLength));
+  // Format the underlying URL and adjust offsets.
+  const std::string& url_str(url.possibly_invalid_spec());
+  Offsets offsets_into_underlying_url(original_offsets);
+  {
+    base::OffsetAdjuster adjuster(&offsets_into_underlying_url);
+    adjuster.Add(base::OffsetAdjuster::Adjustment(0, kViewSourceLength, 0));
+  }
   base::string16 result(ASCIIToUTF16(kViewSource) +
-      FormatUrlWithOffsets(real_url, languages, format_types, unescape_rules,
-                           new_parsed, prefix_end, &offsets_into_url));
+      FormatUrlWithOffsets(GURL(url_str.substr(kViewSourceLength)), languages,
+                           format_types, unescape_rules, new_parsed, prefix_end,
+                           &offsets_into_underlying_url));
+  AdjustForComponentTransform(original_offsets, kViewSourceLength,
+                              url_str.length(), offsets_into_underlying_url,
+                              kViewSourceLength, result.length(),
+                              offsets_for_adjustment);
+  LimitOffsets(result, offsets_for_adjustment);
 
-  // Adjust position values.
+  // Adjust positions of the parsed components.
   if (new_parsed->scheme.is_nonempty()) {
     // Assume "view-source:real-scheme" as a scheme.
     new_parsed->scheme.len += kViewSourceLength;
@@ -607,13 +612,11 @@ base::string16 FormatViewSourceUrl(
     new_parsed->scheme.begin = 0;
     new_parsed->scheme.len = kViewSourceLength - 1;
   }
-  AdjustComponents(kViewSourceLength, new_parsed);
+  AdjustAllComponentsButScheme(kViewSourceLength, new_parsed);
+
   if (prefix_end)
     *prefix_end += kViewSourceLength;
-  AdjustForComponentTransform(original_offsets, kViewSourceLength,
-      url.possibly_invalid_spec().length(), offsets_into_url, kViewSourceLength,
-      offsets_for_adjustment);
-  LimitOffsets(result, offsets_for_adjustment);
+
   return result;
 }
 
@@ -622,9 +625,8 @@ class AppendComponentTransform {
   AppendComponentTransform() {}
   virtual ~AppendComponentTransform() {}
 
-  virtual base::string16 Execute(
-      const std::string& component_text,
-      std::vector<size_t>* offsets_into_component) const = 0;
+  virtual base::string16 Execute(const std::string& component_text,
+                                 Offsets* offsets_into_component) const = 0;
 
   // NOTE: No DISALLOW_COPY_AND_ASSIGN here, since gcc < 4.3.0 requires an
   // accessible copy constructor in order to call AppendFormattedComponent()
@@ -640,7 +642,7 @@ class HostComponentTransform : public AppendComponentTransform {
  private:
   virtual base::string16 Execute(
       const std::string& component_text,
-      std::vector<size_t>* offsets_into_component) const OVERRIDE {
+      Offsets* offsets_into_component) const OVERRIDE {
     return IDNToUnicodeWithOffsets(component_text, languages_,
                                    offsets_into_component);
   }
@@ -657,7 +659,7 @@ class NonHostComponentTransform : public AppendComponentTransform {
  private:
   virtual base::string16 Execute(
       const std::string& component_text,
-      std::vector<size_t>* offsets_into_component) const OVERRIDE {
+      Offsets* offsets_into_component) const OVERRIDE {
     return (unescape_rules_ == UnescapeRule::NONE) ?
         base::UTF8ToUTF16AndAdjustOffsets(component_text,
                                           offsets_into_component) :
@@ -668,34 +670,46 @@ class NonHostComponentTransform : public AppendComponentTransform {
   const UnescapeRule::Type unescape_rules_;
 };
 
+// Transforms the portion of |spec| covered by |original_component| according to
+// |transform|.  Appends the result to |output|.  If |output_component| is
+// non-NULL, its start and length are set to the transformed component's new
+// start and length.  For each element in |original_offsets| which is at least
+// as large as original_component.begin, the corresponding element of
+// |offsets_for_adjustment| is transformed appropriately.
 void AppendFormattedComponent(const std::string& spec,
                               const url_parse::Component& original_component,
-                              const std::vector<size_t>& original_offsets,
+                              const Offsets& original_offsets,
                               const AppendComponentTransform& transform,
                               base::string16* output,
                               url_parse::Component* output_component,
-                              std::vector<size_t>* offsets_for_adjustment) {
+                              Offsets* offsets_for_adjustment) {
   DCHECK(output);
   if (original_component.is_nonempty()) {
     size_t original_component_begin =
         static_cast<size_t>(original_component.begin);
     size_t output_component_begin = output->length();
-    if (output_component)
-      output_component->begin = static_cast<int>(output_component_begin);
+    std::string component_str(spec, original_component_begin,
+                              static_cast<size_t>(original_component.len));
 
-    std::vector<size_t> offsets_into_component =
-        OffsetsIntoComponent(original_offsets, original_component_begin);
-    output->append(transform.Execute(std::string(spec, original_component_begin,
-        static_cast<size_t>(original_component.len)), &offsets_into_component));
-
-    if (output_component) {
-      output_component->len =
-          static_cast<int>(output->length() - output_component_begin);
+    // Transform |component_str| and adjust the offsets accordingly.
+    Offsets offsets_into_component(original_offsets);
+    {
+      base::OffsetAdjuster adjuster(&offsets_into_component);
+      adjuster.Add(base::OffsetAdjuster::Adjustment(0, original_component_begin,
+                                                    0));
     }
+    output->append(transform.Execute(component_str, &offsets_into_component));
     AdjustForComponentTransform(original_offsets, original_component_begin,
                                 static_cast<size_t>(original_component.end()),
                                 offsets_into_component, output_component_begin,
-                                offsets_for_adjustment);
+                                output->length(), offsets_for_adjustment);
+
+    // Set positions of the parsed component.
+    if (output_component) {
+      output_component->begin = static_cast<int>(output_component_begin);
+      output_component->len =
+          static_cast<int>(output->length() - output_component_begin);
+    }
   } else if (output_component) {
     output_component->reset();
   }
@@ -897,6 +911,28 @@ bool FilePathToString16(const base::FilePath& path, base::string16* converted) {
   return !component8.empty() &&
          UTF8ToUTF16(component8.c_str(), component8.size(), converted);
 #endif
+}
+
+bool IPNumberPrefixCheck(const IPAddressNumber& ip_number,
+                         const unsigned char* ip_prefix,
+                         size_t prefix_length_in_bits) {
+  // Compare all the bytes that fall entirely within the prefix.
+  int num_entire_bytes_in_prefix = prefix_length_in_bits / 8;
+  for (int i = 0; i < num_entire_bytes_in_prefix; ++i) {
+    if (ip_number[i] != ip_prefix[i])
+      return false;
+  }
+
+  // In case the prefix was not a multiple of 8, there will be 1 byte
+  // which is only partially masked.
+  int remaining_bits = prefix_length_in_bits % 8;
+  if (remaining_bits != 0) {
+    unsigned char mask = 0xFF << (8 - remaining_bits);
+    int i = num_entire_bytes_in_prefix;
+    if ((ip_number[i] & mask) != (ip_prefix[i] & mask))
+      return false;
+  }
+  return true;
 }
 
 }  // namespace
@@ -1130,12 +1166,8 @@ bool IsSafePortablePathComponent(const base::FilePath& component) {
          FilePathToString16(component, &component16) &&
          file_util::IsFilenameLegal(component16) &&
          !IsShellIntegratedExtension(extension) &&
-         (sanitized == component.value());
-}
-
-bool IsSafePortableBasename(const base::FilePath& filename) {
-  return IsSafePortablePathComponent(filename) &&
-         !IsReservedName(filename.value());
+         (sanitized == component.value()) &&
+         !IsReservedName(component.value());
 }
 
 bool IsSafePortableRelativePath(const base::FilePath& path) {
@@ -1149,7 +1181,7 @@ bool IsSafePortableRelativePath(const base::FilePath& path) {
     if (!IsSafePortablePathComponent(base::FilePath(components[i])))
       return false;
   }
-  return IsSafePortableBasename(path.BaseName());
+  return IsSafePortablePathComponent(path.BaseName());
 }
 
 void GenerateSafeFileName(const std::string& mime_type,
@@ -1391,7 +1423,6 @@ std::string GetHostAndOptionalPort(const GURL& url) {
   return url.host();
 }
 
-// static
 bool IsHostnameNonUnique(const std::string& hostname) {
   // CanonicalizeHost requires surrounding brackets to parse an IPv6 address.
   const std::string host_or_ip = hostname.find(':') != std::string::npos ?
@@ -1404,11 +1435,24 @@ bool IsHostnameNonUnique(const std::string& hostname) {
   if (canonical_name.empty())
     return false;
 
-  // If |hostname| is an IP address, presume it's unique.
-  // TODO(rsleevi): In the future, this should also reject IP addresses in
-  // IANA-reserved ranges.
-  if (host_info.IsIPAddress())
-    return false;
+  // If |hostname| is an IP address, check to see if it's in an IANA-reserved
+  // range.
+  if (host_info.IsIPAddress()) {
+    IPAddressNumber host_addr;
+    if (!ParseIPLiteralToNumber(hostname.substr(host_info.out_host.begin,
+                                                host_info.out_host.len),
+                                &host_addr)) {
+      return false;
+    }
+    switch (host_info.family) {
+      case url_canon::CanonHostInfo::IPV4:
+      case url_canon::CanonHostInfo::IPV6:
+        return IsIPAddressReserved(host_addr);
+      case url_canon::CanonHostInfo::NEUTRAL:
+      case url_canon::CanonHostInfo::BROKEN:
+        return false;
+    }
+  }
 
   // Check for a registry controlled portion of |hostname|, ignoring private
   // registries, as they already chain to ICANN-administered registries,
@@ -1423,6 +1467,57 @@ bool IsHostnameNonUnique(const std::string& hostname) {
                   canonical_name,
                   registry_controlled_domains::EXCLUDE_UNKNOWN_REGISTRIES,
                   registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
+}
+
+// Don't compare IPv4 and IPv6 addresses (they have different range
+// reservations). Keep separate reservation arrays for each IP type, and
+// consolidate adjacent reserved ranges within a reservation array when
+// possible.
+// Sources for info:
+// www.iana.org/assignments/ipv4-address-space/ipv4-address-space.xhtml
+// www.iana.org/assignments/ipv6-address-space/ipv6-address-space.xhtml
+// They're formatted here with the prefix as the last element. For example:
+// 10.0.0.0/8 becomes 10,0,0,0,8 and fec0::/10 becomes 0xfe,0xc0,0,0,0...,10.
+bool IsIPAddressReserved(const IPAddressNumber& host_addr) {
+  static const unsigned char kReservedIPv4[][5] = {
+      { 0,0,0,0,8 }, { 10,0,0,0,8 }, { 100,64,0,0,10 }, { 127,0,0,0,8 },
+      { 169,254,0,0,16 }, { 172,16,0,0,12 }, { 192,0,2,0,24 },
+      { 192,88,99,0,24 }, { 192,168,0,0,16 }, { 198,18,0,0,15 },
+      { 198,51,100,0,24 }, { 203,0,113,0,24 }, { 224,0,0,0,3 }
+  };
+  static const unsigned char kReservedIPv6[][17] = {
+      { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,8 },
+      { 0x40,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2 },
+      { 0x80,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2 },
+      { 0xc0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3 },
+      { 0xe0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4 },
+      { 0xf0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5 },
+      { 0xf8,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,6 },
+      { 0xfc,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,7 },
+      { 0xfe,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,9 },
+      { 0xfe,0x80,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10 },
+      { 0xfe,0xc0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10 },
+  };
+  size_t array_size = 0;
+  const unsigned char* array = NULL;
+  switch (host_addr.size()) {
+    case kIPv4AddressSize:
+      array_size = arraysize(kReservedIPv4);
+      array = kReservedIPv4[0];
+      break;
+    case kIPv6AddressSize:
+      array_size = arraysize(kReservedIPv6);
+      array = kReservedIPv6[0];
+      break;
+  }
+  if (!array)
+    return false;
+  size_t width = host_addr.size() + 1;
+  for (size_t i = 0; i < array_size; ++i, array += width) {
+    if (IPNumberPrefixCheck(host_addr, array, array[width-1]))
+      return true;
+  }
+  return false;
 }
 
 // Extracts the address and port portions of a sockaddr.
@@ -1521,6 +1616,11 @@ std::string IPAddressToStringWithPort(const IPAddressNumber& addr,
   return IPAddressToStringWithPort(&addr.front(), addr.size(), port);
 }
 
+std::string IPAddressToPackedString(const IPAddressNumber& addr) {
+  return std::string(reinterpret_cast<const char *>(&addr.front()),
+                     addr.size());
+}
+
 std::string GetHostName() {
 #if defined(OS_WIN)
   EnsureWinsockInit();
@@ -1552,7 +1652,7 @@ std::string GetHostOrSpecFromURL(const GURL& url) {
 void AppendFormattedHost(const GURL& url,
                          const std::string& languages,
                          base::string16* output) {
-  std::vector<size_t> offsets;
+  Offsets offsets;
   AppendFormattedComponent(url.possibly_invalid_spec(),
       url.parsed_for_possibly_invalid_spec().host, offsets,
       HostComponentTransform(languages), output, NULL, NULL);
@@ -1565,13 +1665,13 @@ base::string16 FormatUrlWithOffsets(
     UnescapeRule::Type unescape_rules,
     url_parse::Parsed* new_parsed,
     size_t* prefix_end,
-    std::vector<size_t>* offsets_for_adjustment) {
+    Offsets* offsets_for_adjustment) {
   url_parse::Parsed parsed_temp;
   if (!new_parsed)
     new_parsed = &parsed_temp;
   else
     *new_parsed = url_parse::Parsed();
-  std::vector<size_t> original_offsets;
+  Offsets original_offsets;
   if (offsets_for_adjustment)
     original_offsets = *offsets_for_adjustment;
 
@@ -1583,7 +1683,8 @@ base::string16 FormatUrlWithOffsets(
   if (url.SchemeIs(kViewSource) &&
       !StartsWithASCII(url.possibly_invalid_spec(), kViewSourceTwice, false)) {
     return FormatViewSourceUrl(url, original_offsets, languages, format_types,
-        unescape_rules, new_parsed, prefix_end, offsets_for_adjustment);
+                               unescape_rules, new_parsed, prefix_end,
+                               offsets_for_adjustment);
   }
 
   // We handle both valid and invalid URLs (this will give us the spec
@@ -1641,32 +1742,13 @@ base::string16 FormatUrlWithOffsets(
     AppendFormattedComponent(spec, parsed.username, original_offsets,
         NonHostComponentTransform(unescape_rules), &url_string,
         &new_parsed->username, offsets_for_adjustment);
-    if (parsed.password.is_valid()) {
-      size_t colon = parsed.username.end();
-      DCHECK_EQ(static_cast<size_t>(parsed.password.begin - 1), colon);
-      std::vector<size_t>::const_iterator colon_iter =
-          std::find(original_offsets.begin(), original_offsets.end(), colon);
-      if (colon_iter != original_offsets.end()) {
-        (*offsets_for_adjustment)[colon_iter - original_offsets.begin()] =
-            url_string.length();
-      }
+    if (parsed.password.is_valid())
       url_string.push_back(':');
-    }
     AppendFormattedComponent(spec, parsed.password, original_offsets,
         NonHostComponentTransform(unescape_rules), &url_string,
         &new_parsed->password, offsets_for_adjustment);
-    if (parsed.username.is_valid() || parsed.password.is_valid()) {
-      size_t at_sign = (parsed.password.is_valid() ?
-          parsed.password : parsed.username).end();
-      DCHECK_EQ(static_cast<size_t>(parsed.host.begin - 1), at_sign);
-      std::vector<size_t>::const_iterator at_sign_iter =
-          std::find(original_offsets.begin(), original_offsets.end(), at_sign);
-      if (at_sign_iter != original_offsets.end()) {
-        (*offsets_for_adjustment)[at_sign_iter - original_offsets.begin()] =
-            url_string.length();
-      }
+    if (parsed.username.is_valid() || parsed.password.is_valid())
       url_string.push_back('@');
-    }
   }
   if (prefix_end)
     *prefix_end = static_cast<size_t>(url_string.length());
@@ -1694,6 +1776,10 @@ base::string16 FormatUrlWithOffsets(
     AppendFormattedComponent(spec, parsed.path, original_offsets,
         NonHostComponentTransform(unescape_rules), &url_string,
         &new_parsed->path, offsets_for_adjustment);
+  } else {
+    base::OffsetAdjuster offset_adjuster(offsets_for_adjustment);
+    offset_adjuster.Add(base::OffsetAdjuster::Adjustment(
+        url_string.length(), parsed.path.len, 0));
   }
   if (parsed.query.is_valid())
     url_string.push_back('?');
@@ -1702,26 +1788,11 @@ base::string16 FormatUrlWithOffsets(
       &new_parsed->query, offsets_for_adjustment);
 
   // Ref.  This is valid, unescaped UTF-8, so we can just convert.
-  if (parsed.ref.is_valid()) {
+  if (parsed.ref.is_valid())
     url_string.push_back('#');
-    size_t original_ref_begin = static_cast<size_t>(parsed.ref.begin);
-    size_t output_ref_begin = url_string.length();
-    new_parsed->ref.begin = static_cast<int>(output_ref_begin);
-
-    std::vector<size_t> offsets_into_ref(
-        OffsetsIntoComponent(original_offsets, original_ref_begin));
-    if (parsed.ref.len > 0) {
-      url_string.append(base::UTF8ToUTF16AndAdjustOffsets(
-          spec.substr(original_ref_begin, static_cast<size_t>(parsed.ref.len)),
-          &offsets_into_ref));
-    }
-
-    new_parsed->ref.len =
-        static_cast<int>(url_string.length() - new_parsed->ref.begin);
-    AdjustForComponentTransform(original_offsets, original_ref_begin,
-        static_cast<size_t>(parsed.ref.end()), offsets_into_ref,
-        output_ref_begin, offsets_for_adjustment);
-  }
+  AppendFormattedComponent(spec, parsed.ref, original_offsets,
+      NonHostComponentTransform(UnescapeRule::NONE), &url_string,
+      &new_parsed->ref, offsets_for_adjustment);
 
   // If we need to strip out http do it after the fact. This way we don't need
   // to worry about how offset_for_adjustment is interpreted.
@@ -1739,7 +1810,7 @@ base::string16 FormatUrlWithOffsets(
     DCHECK(new_parsed->scheme.is_valid());
     int delta = -(new_parsed->scheme.len + 3);  // +3 for ://.
     new_parsed->scheme.reset();
-    AdjustComponents(delta, new_parsed);
+    AdjustAllComponentsButScheme(delta, new_parsed);
   }
 
   LimitOffsets(url_string, offsets_for_adjustment);
@@ -1753,7 +1824,7 @@ base::string16 FormatUrl(const GURL& url,
                          url_parse::Parsed* new_parsed,
                          size_t* prefix_end,
                          size_t* offset_for_adjustment) {
-  std::vector<size_t> offsets;
+  Offsets offsets;
   if (offset_for_adjustment)
     offsets.push_back(*offset_for_adjustment);
   base::string16 result = FormatUrlWithOffsets(url, languages, format_types,
@@ -1884,6 +1955,19 @@ AddressFamily GetAddressFamily(const IPAddressNumber& address) {
   }
 }
 
+int ConvertAddressFamily(AddressFamily address_family) {
+  switch (address_family) {
+    case ADDRESS_FAMILY_UNSPECIFIED:
+      return AF_UNSPEC;
+    case ADDRESS_FAMILY_IPV4:
+      return AF_INET;
+    case ADDRESS_FAMILY_IPV6:
+      return AF_INET6;
+  }
+  NOTREACHED();
+  return AF_UNSPEC;
+}
+
 bool ParseIPLiteralToNumber(const std::string& ip_literal,
                             IPAddressNumber* ip_number) {
   // |ip_literal| could be either a IPv4 or an IPv6 literal. If it contains
@@ -1996,25 +2080,7 @@ bool IPNumberMatchesPrefix(const IPAddressNumber& ip_number,
                                  96 + prefix_length_in_bits);
   }
 
-  // Otherwise we are comparing two IPv4 addresses, or two IPv6 addresses.
-  // Compare all the bytes that fall entirely within the prefix.
-  int num_entire_bytes_in_prefix = prefix_length_in_bits / 8;
-  for (int i = 0; i < num_entire_bytes_in_prefix; ++i) {
-    if (ip_number[i] != ip_prefix[i])
-      return false;
-  }
-
-  // In case the prefix was not a multiple of 8, there will be 1 byte
-  // which is only partially masked.
-  int remaining_bits = prefix_length_in_bits % 8;
-  if (remaining_bits != 0) {
-    unsigned char mask = 0xFF << (8 - remaining_bits);
-    int i = num_entire_bytes_in_prefix;
-    if ((ip_number[i] & mask) != (ip_prefix[i] & mask))
-      return false;
-  }
-
-  return true;
+  return IPNumberPrefixCheck(ip_number, &ip_prefix[0], prefix_length_in_bits);
 }
 
 const uint16* GetPortFieldFromSockaddr(const struct sockaddr* address,

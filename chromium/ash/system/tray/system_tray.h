@@ -36,7 +36,6 @@ class UpdateObserver;
 class UserObserver;
 #if defined(OS_CHROMEOS)
 class NetworkObserver;
-class SmsObserver;
 #endif
 
 class SystemTrayItem;
@@ -139,6 +138,7 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
   virtual void SetShelfAlignment(ShelfAlignment alignment) OVERRIDE;
   virtual void AnchorUpdated() OVERRIDE;
   virtual base::string16 GetAccessibleNameForTray() OVERRIDE;
+  virtual void BubbleResized(const views::TrayBubbleView* bubble_view) OVERRIDE;
   virtual void HideBubbleWithView(
       const views::TrayBubbleView* bubble_view) OVERRIDE;
   virtual bool ClickedOutsideBubble() OVERRIDE;
@@ -156,9 +156,6 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
   internal::TrayAccessibility* GetTrayAccessibilityForTest() {
     return tray_accessibility_;
   }
-
-  // Overridden from TrayBackgroundView.
-  virtual bool IsPressed() OVERRIDE;
 
  private:
   // Creates the default set of items for the sytem tray.

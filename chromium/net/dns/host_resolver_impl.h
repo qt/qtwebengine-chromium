@@ -131,6 +131,7 @@ class NET_EXPORT HostResolverImpl
 
   // HostResolver methods:
   virtual int Resolve(const RequestInfo& info,
+                      RequestPriority priority,
                       AddressList* addresses,
                       const CompletionCallback& callback,
                       RequestHandle* out_req,
@@ -155,6 +156,10 @@ class NET_EXPORT HostResolverImpl
   typedef HostCache::Key Key;
   typedef std::map<Key, Job*> JobMap;
   typedef ScopedVector<Request> RequestsList;
+
+  // Number of consecutive failures of DnsTask (with successful fallback to
+  // ProcTask) before the DnsClient is disabled until the next DNS change.
+  static const unsigned kMaximumDnsFailures;
 
   // Helper used by |Resolve()| and |ResolveFromCache()|.  Performs IP
   // literal, cache and HOSTS lookup (if enabled), returns OK if successful,
@@ -207,6 +212,11 @@ class NET_EXPORT HostResolverImpl
   // requests. Might start new jobs.
   void AbortAllInProgressJobs();
 
+  // Aborts all in progress DnsTasks. In-progress jobs will fall back to
+  // ProcTasks. Might start new jobs, if any jobs were taking up two dispatcher
+  // slots.
+  void AbortDnsTasks();
+
   // Attempts to serve each Job in |jobs_| from the HOSTS file if we have
   // a DnsClient with a valid DnsConfig.
   void TryServingAllJobsFromHosts();
@@ -224,8 +234,10 @@ class NET_EXPORT HostResolverImpl
   // and resulted in |net_error|.
   void OnDnsTaskResolve(int net_error);
 
-  // Allows the tests to catch slots leaking out of the dispatcher.
-  size_t num_running_jobs_for_tests() const {
+  // Allows the tests to catch slots leaking out of the dispatcher.  One
+  // HostResolverImpl::Job could occupy multiple PrioritizedDispatcher job
+  // slots.
+  size_t num_running_dispatcher_jobs_for_tests() const {
     return dispatcher_.num_running_jobs();
   }
 
@@ -266,6 +278,10 @@ class NET_EXPORT HostResolverImpl
   // True if probing is done for each Request to set address family. When false,
   // explicit setting in |default_address_family_| is used.
   bool probe_ipv6_support_;
+
+  // True if DnsConfigService detected that system configuration depends on
+  // local IPv6 connectivity. Disables probing.
+  bool use_local_ipv6_;
 
   // True iff ProcTask has successfully resolved a hostname known to have IPv6
   // addresses using ADDRESS_FAMILY_UNSPECIFIED. Reset on IP address change.

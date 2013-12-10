@@ -105,13 +105,7 @@ bool BitmapImage::isBitmapImage() const
     return true;
 }
 
-bool BitmapImage::hasSingleSecurityOrigin() const
-{
-    return true;
-}
-
-
-void BitmapImage::destroyDecodedData()
+void BitmapImage::destroyDecodedData(bool destroyAll)
 {
     for (size_t i = 0; i < m_frames.size(); ++i) {
         // The underlying frame isn't actually changing (we're just trying to
@@ -120,7 +114,7 @@ void BitmapImage::destroyDecodedData()
         m_frames[i].clear(false);
     }
 
-    destroyMetadataAndNotify(m_source.clearCacheExceptFrame(m_currentFrame));
+    destroyMetadataAndNotify(m_source.clearCacheExceptFrame(destroyAll ? kNotFound : m_currentFrame));
 }
 
 void BitmapImage::destroyDecodedDataIfNecessary()
@@ -133,7 +127,7 @@ void BitmapImage::destroyDecodedDataIfNecessary()
         allFrameBytes += m_frames[i].m_frameBytes;
 
     if (allFrameBytes > cLargeAnimationCutoff)
-        destroyDecodedData();
+        destroyDecodedData(false);
 }
 
 void BitmapImage::destroyMetadataAndNotify(size_t frameBytesCleared)

@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "base/strings/string_util.h"
-#include "ui/base/text/text_elider.h"
+#include "ui/gfx/text_elider.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/link.h"
@@ -82,7 +82,8 @@ bool StyledLabel::StyleRange::operator<(
 
 StyledLabel::StyledLabel(const string16& text, StyledLabelListener* listener)
     : listener_(listener),
-      displayed_on_background_color_set_(false) {
+      displayed_on_background_color_set_(false),
+      auto_color_readability_enabled_(true) {
   TrimWhitespace(text, TRIM_TRAILING, &text_);
 }
 
@@ -95,11 +96,11 @@ void StyledLabel::SetText(const string16& text) {
   PreferredSizeChanged();
 }
 
-void StyledLabel::AddStyleRange(const ui::Range& range,
+void StyledLabel::AddStyleRange(const gfx::Range& range,
                                 const RangeStyleInfo& style_info) {
   DCHECK(!range.is_reversed());
   DCHECK(!range.is_empty());
-  DCHECK(ui::Range(0, text_.size()).Contains(range));
+  DCHECK(gfx::Range(0, text_.size()).Contains(range));
 
   style_ranges_.push(StyleRange(range, style_info));
 
@@ -172,7 +173,7 @@ int StyledLabel::CalculateAndDoLayout(int width, bool dry_run) {
     if (x == 0 && line > 0)
       TrimWhitespace(remaining_string, TRIM_LEADING, &remaining_string);
 
-    ui::Range range(ui::Range::InvalidRange());
+    gfx::Range range(gfx::Range::InvalidRange());
     if (!style_ranges.empty())
       range = style_ranges.top().range;
 
@@ -188,11 +189,11 @@ int StyledLabel::CalculateAndDoLayout(int width, bool dry_run) {
       text_font =
           text_font.DeriveFont(0, style_ranges.top().style_info.font_style);
     }
-    ui::ElideRectangleText(remaining_string,
+    gfx::ElideRectangleText(remaining_string,
                            text_font,
                            chunk_bounds.width(),
                            chunk_bounds.height(),
-                           ui::IGNORE_LONG_WORDS,
+                           gfx::IGNORE_LONG_WORDS,
                            &substrings);
 
     DCHECK(!substrings.empty());
@@ -246,6 +247,7 @@ int StyledLabel::CalculateAndDoLayout(int width, bool dry_run) {
 
     if (displayed_on_background_color_set_)
       label->SetBackgroundColor(displayed_on_background_color_);
+    label->SetAutoColorReadabilityEnabled(auto_color_readability_enabled_);
 
     // Lay out the views to overlap by 1 pixel to compensate for their border
     // spacing. Otherwise, "<a>link</a>," will render as "link ,".

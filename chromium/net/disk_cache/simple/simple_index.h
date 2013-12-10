@@ -6,7 +6,6 @@
 #define NET_DISK_CACHE_SIMPLE_SIMPLE_INDEX_H_
 
 #include <list>
-#include <string>
 #include <vector>
 
 #include "base/basictypes.h"
@@ -21,6 +20,7 @@
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "net/base/cache_type.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
 
@@ -33,23 +33,31 @@ class PickleIterator;
 
 namespace disk_cache {
 
+class SimpleIndexDelegate;
 class SimpleIndexFile;
 struct SimpleIndexLoadResult;
 
 class NET_EXPORT_PRIVATE EntryMetadata {
  public:
   EntryMetadata();
-  EntryMetadata(base::Time last_used_time, uint64 entry_size);
+  EntryMetadata(base::Time last_used_time, int entry_size);
 
   base::Time GetLastUsedTime() const;
   void SetLastUsedTime(const base::Time& last_used_time);
 
-  uint64 GetEntrySize() const { return entry_size_; }
-  void SetEntrySize(uint64 entry_size) { entry_size_ = entry_size; }
+  int GetEntrySize() const { return entry_size_; }
+  void SetEntrySize(int entry_size) { entry_size_ = entry_size; }
 
   // Serialize the data into the provided pickle.
   void Serialize(Pickle* pickle) const;
   bool Deserialize(PickleIterator* it);
+
+  static base::TimeDelta GetLowerEpsilonForTimeComparisons() {
+    return base::TimeDelta::FromSeconds(1);
+  }
+  static base::TimeDelta GetUpperEpsilonForTimeComparisons() {
+    return base::TimeDelta();
+  }
 
  private:
   friend class SimpleIndexFileTest;
@@ -57,14 +65,11 @@ class NET_EXPORT_PRIVATE EntryMetadata {
   // When adding new members here, you should update the Serialize() and
   // Deserialize() methods.
 
-  // This is the serialized format from Time::ToInternalValue().
-  // If you want to make calculations/comparisons, you should use the
-  // base::Time() class. Use the GetLastUsedTime() method above.
-  // TODO(felipeg): Use Time() here.
-  int64 last_used_time_;
+  uint32 last_used_time_seconds_since_epoch_;
 
-  uint64 entry_size_;  // Storage size in bytes.
+  int32 entry_size_;  // Storage size in bytes.
 };
+COMPILE_ASSERT(sizeof(EntryMetadata) == 8, metadata_size);
 
 // This class is not Thread-safe.
 class NET_EXPORT_PRIVATE SimpleIndex
@@ -73,7 +78,8 @@ class NET_EXPORT_PRIVATE SimpleIndex
   typedef std::vector<uint64> HashList;
 
   SimpleIndex(base::SingleThreadTaskRunner* io_thread,
-              const base::FilePath& cache_directory,
+              SimpleIndexDelegate* delegate,
+              net::CacheType cache_type,
               scoped_ptr<SimpleIndexFile> simple_index_file);
 
   virtual ~SimpleIndex();
@@ -83,38 +89,38 @@ class NET_EXPORT_PRIVATE SimpleIndex
   bool SetMaxSize(int max_bytes);
   int max_size() const { return max_size_; }
 
-  void Insert(const std::string& key);
-  void Remove(const std::string& key);
+  void Insert(uint64 entry_hash);
+  void Remove(uint64 entry_hash);
 
   // Check whether the index has the entry given the hash of its key.
-  bool Has(uint64 hash) const;
+  bool Has(uint64 entry_hash) const;
 
   // Update the last used time of the entry with the given key and return true
   // iff the entry exist in the index.
-  bool UseIfExists(const std::string& key);
+  bool UseIfExists(uint64 entry_hash);
 
   void WriteToDisk();
 
   // Update the size (in bytes) of an entry, in the metadata stored in the
   // index. This should be the total disk-file size including all streams of the
   // entry.
-  bool UpdateEntrySize(const std::string& key, uint64 entry_size);
+  bool UpdateEntrySize(uint64 entry_hash, int entry_size);
 
   typedef base::hash_map<uint64, EntryMetadata> EntrySet;
 
-  static void InsertInEntrySet(uint64 hash_key,
+  static void InsertInEntrySet(uint64 entry_hash,
                                const EntryMetadata& entry_metadata,
                                EntrySet* entry_set);
 
   // Executes the |callback| when the index is ready. Allows multiple callbacks.
   int ExecuteWhenReady(const net::CompletionCallback& callback);
 
-  // Takes out entries from the index that have last accessed time matching the
+  // Returns entries from the index that have last accessed time matching the
   // range between |initial_time| and |end_time| where open intervals are
   // possible according to the definition given in |DoomEntriesBetween()| in the
-  // disk cache backend interface. Returns the set of hashes taken out.
-  scoped_ptr<HashList> RemoveEntriesBetween(const base::Time initial_time,
-                                            const base::Time end_time);
+  // disk cache backend interface.
+  scoped_ptr<HashList> GetEntriesBetween(const base::Time initial_time,
+                                         const base::Time end_time);
 
   // Returns the list of all entries key hash.
   scoped_ptr<HashList> GetAllHashes();
@@ -137,7 +143,7 @@ class NET_EXPORT_PRIVATE SimpleIndex
 
   void PostponeWritingToDisk();
 
-  void UpdateEntryIteratorSize(EntrySet::iterator* it, uint64 entry_size);
+  void UpdateEntryIteratorSize(EntrySet::iterator* it, int entry_size);
 
   // Must run on IO Thread.
   void MergeInitializingSet(scoped_ptr<SimpleIndexLoadResult> load_result);
@@ -148,12 +154,12 @@ class NET_EXPORT_PRIVATE SimpleIndex
   scoped_ptr<base::android::ActivityStatus::Listener> activity_status_listener_;
 #endif
 
-  scoped_ptr<HashList> ExtractEntriesBetween(const base::Time initial_time,
-                                             const base::Time end_time,
-                                             bool delete_entries);
+  // The owner of |this| must ensure the |delegate_| outlives |this|.
+  SimpleIndexDelegate* delegate_;
 
   EntrySet entries_set_;
 
+  const net::CacheType cache_type_;
   uint64 cache_size_;  // Total cache storage size in bytes.
   uint64 max_size_;
   uint64 high_watermark_;
@@ -161,12 +167,11 @@ class NET_EXPORT_PRIVATE SimpleIndex
   bool eviction_in_progress_;
   base::TimeTicks eviction_start_time_;
 
-  // This stores all the hash_key of entries that are removed during
+  // This stores all the entry_hash of entries that are removed during
   // initialization.
   base::hash_set<uint64> removed_entries_;
   bool initialized_;
 
-  const base::FilePath& cache_directory_;
   scoped_ptr<SimpleIndexFile> index_file_;
 
   scoped_refptr<base::SingleThreadTaskRunner> io_thread_;

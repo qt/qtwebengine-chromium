@@ -64,6 +64,7 @@ WebMClusterParser::WebMClusterParser(
       block_duration_(-1),
       block_add_id_(-1),
       block_additional_data_size_(-1),
+      discard_padding_(-1),
       cluster_timecode_(-1),
       cluster_start_time_(kNoTimestamp()),
       cluster_ended_(false),
@@ -137,6 +138,8 @@ WebMParserClient* WebMClusterParser::OnListStart(int id) {
     block_data_.reset();
     block_data_size_ = -1;
     block_duration_ = -1;
+    discard_padding_ = -1;
+    discard_padding_set_ = false;
   } else if (id == kWebMIdBlockAdditions) {
     block_add_id_ = -1;
     block_additional_data_.reset();
@@ -158,13 +161,16 @@ bool WebMClusterParser::OnListEnd(int id) {
 
   bool result = ParseBlock(false, block_data_.get(), block_data_size_,
                            block_additional_data_.get(),
-                           block_additional_data_size_, block_duration_);
+                           block_additional_data_size_, block_duration_,
+                           discard_padding_set_ ? discard_padding_ : 0);
   block_data_.reset();
   block_data_size_ = -1;
   block_duration_ = -1;
   block_add_id_ = -1;
   block_additional_data_.reset();
   block_additional_data_size_ = -1;
+  discard_padding_ = -1;
+  discard_padding_set_ = false;
   return result;
 }
 
@@ -180,6 +186,12 @@ bool WebMClusterParser::OnUInt(int id, int64 val) {
     case kWebMIdBlockAddID:
       dst = &block_add_id_;
       break;
+    case kWebMIdDiscardPadding:
+      if (discard_padding_set_)
+        return false;
+      discard_padding_set_ = true;
+      discard_padding_ = val;
+      return true;
     default:
       return true;
   }
@@ -191,7 +203,8 @@ bool WebMClusterParser::OnUInt(int id, int64 val) {
 
 bool WebMClusterParser::ParseBlock(bool is_simple_block, const uint8* buf,
                                    int size, const uint8* additional,
-                                   int additional_size, int duration) {
+                                   int additional_size, int duration,
+                                   int64 discard_padding) {
   if (size < 4)
     return false;
 
@@ -214,18 +227,19 @@ bool WebMClusterParser::ParseBlock(bool is_simple_block, const uint8* buf,
 
   // Sign extend negative timecode offsets.
   if (timecode & 0x8000)
-    timecode |= (-1 << 16);
+    timecode |= ~0xffff;
 
   const uint8* frame_data = buf + 4;
   int frame_size = size - (frame_data - buf);
   return OnBlock(is_simple_block, track_num, timecode, duration, flags,
-                 frame_data, frame_size, additional, additional_size);
+                 frame_data, frame_size, additional, additional_size,
+                 discard_padding);
 }
 
 bool WebMClusterParser::OnBinary(int id, const uint8* data, int size) {
   switch (id) {
     case kWebMIdSimpleBlock:
-      return ParseBlock(true, data, size, NULL, -1, -1);
+      return ParseBlock(true, data, size, NULL, -1, -1, 0);
 
     case kWebMIdBlock:
       if (block_data_) {
@@ -270,13 +284,16 @@ bool WebMClusterParser::OnBlock(bool is_simple_block, int track_num,
                                 int  block_duration,
                                 int flags,
                                 const uint8* data, int size,
-                                const uint8* additional, int additional_size) {
+                                const uint8* additional, int additional_size,
+                                int64 discard_padding) {
   DCHECK_GE(size, 0);
   if (cluster_timecode_ == -1) {
     MEDIA_LOG(log_cb_) << "Got a block before cluster timecode.";
     return false;
   }
 
+  // TODO(acolwell): Should relative negative timecode offsets be rejected?  Or
+  // only when the absolute timecode is negative?  See http://crbug.com/271794
   if (timecode < 0) {
     MEDIA_LOG(log_cb_) << "Got a block with negative timecode offset "
                        << timecode;
@@ -346,6 +363,11 @@ bool WebMClusterParser::OnBlock(bool is_simple_block, int track_num,
   if (block_duration >= 0) {
     buffer->set_duration(base::TimeDelta::FromMicroseconds(
         block_duration * timecode_multiplier_));
+  }
+
+  if (discard_padding != 0) {
+    buffer->set_discard_padding(base::TimeDelta::FromMicroseconds(
+                                    discard_padding / 1000));
   }
 
   return track->AddBuffer(buffer);

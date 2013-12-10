@@ -119,12 +119,11 @@ void RenderSVGForeignObject::computeLogicalHeight(LayoutUnit, LayoutUnit logical
 
 void RenderSVGForeignObject::layout()
 {
-    StackStats::LayoutCheckPoint layoutCheckPoint;
     ASSERT(needsLayout());
     ASSERT(!view()->layoutStateEnabled()); // RenderSVGRoot disables layoutState for the SVG rendering tree.
 
     LayoutRepainter repainter(*this, SVGRenderSupport::checkForSVGRepaintDuringLayout(this));
-    SVGForeignObjectElement* foreign = static_cast<SVGForeignObjectElement*>(node());
+    SVGForeignObjectElement* foreign = toSVGForeignObjectElement(node());
 
     bool updateCachedBoundariesInParents = false;
     if (m_needsTransformUpdate) {

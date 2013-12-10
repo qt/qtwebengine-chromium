@@ -65,6 +65,7 @@ grid-auto-flow type_name=GridAutoFlow
 height type_name=Length, initial=initialSize, converter=convertLengthSizing
 justify-content
 image-rendering
+isolation
 left type_name=Length, initial=initialOffset, converter=convertLengthOrAuto
 letter-spacing type_name=float, initial=initialLetterWordSpacing, converter=convertSpacing
 line-height getter=specifiedLineHeight, custom_value
@@ -75,11 +76,14 @@ margin-bottom type_name=Length, initial=initialMargin, converter=convertLengthOr
 margin-left type_name=Length, initial=initialMargin, converter=convertLengthOrAuto
 margin-right type_name=Length, initial=initialMargin, converter=convertLengthOrAuto
 margin-top type_name=Length, initial=initialMargin, converter=convertLengthOrAuto
+mask-source-type custom_all
 max-height type_name=Length, initial=initialMaxSize, converter=convertLengthMaxSizing
 max-width type_name=Length, initial=initialMaxSize, converter=convertLengthMaxSizing
 min-height type_name=Length, initial=initialMinSize, converter=convertLengthSizing
 min-width type_name=Length, initial=initialMinSize, converter=convertLengthSizing
 mix-blend-mode type_name=BlendMode, name_for_methods=BlendMode
+object-fit type_name=ObjectFit
+object-position type_name=LengthPoint, initial=initialObjectPosition, converter=convertLengthPoint
 opacity type_name=float
 order type_name=int
 orphans type_name=short, custom_all
@@ -187,11 +191,11 @@ z-index type_name=int, custom_all
 -webkit-margin-before-collapse type_name=EMarginCollapse
 -webkit-margin-bottom-collapse type_name=EMarginCollapse, name_for_methods=MarginAfterCollapse
 -webkit-margin-top-collapse type_name=EMarginCollapse, name_for_methods=MarginBeforeCollapse
--webkit-marquee-direction
--webkit-marquee-increment custom_value
--webkit-marquee-repetition type_name=int, name_for_methods=MarqueeLoopCount, custom_value
--webkit-marquee-speed custom_value
--webkit-marquee-style name_for_methods=MarqueeBehavior
+-internal-marquee-direction type_name=EMarqueeDirection, name_for_methods=MarqueeDirection
+-internal-marquee-increment custom_value, name_for_methods=MarqueeIncrement
+-internal-marquee-repetition type_name=int, name_for_methods=MarqueeLoopCount, custom_value
+-internal-marquee-speed custom_value, name_for_methods=MarqueeSpeed
+-internal-marquee-style name_for_methods=MarqueeBehavior
 -webkit-mask-box-image initial=initialNinePieceImage, custom_value
 -webkit-mask-box-image-outset custom_all
 -webkit-mask-box-image-repeat custom_all

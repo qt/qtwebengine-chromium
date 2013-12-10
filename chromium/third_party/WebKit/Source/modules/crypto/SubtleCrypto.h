@@ -31,7 +31,7 @@
 #ifndef SubtleCrypto_h
 #define SubtleCrypto_h
 
-#include "bindings/v8/ScriptObject.h"
+#include "bindings/v8/ScriptPromise.h"
 #include "bindings/v8/ScriptWrappable.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
@@ -39,7 +39,6 @@
 
 namespace WebCore {
 
-class CryptoOperation;
 class Dictionary;
 class ExceptionState;
 class Key;
@@ -48,15 +47,16 @@ class SubtleCrypto : public ScriptWrappable, public RefCounted<SubtleCrypto> {
 public:
     static PassRefPtr<SubtleCrypto> create() { return adoptRef(new SubtleCrypto()); }
 
-    PassRefPtr<CryptoOperation> encrypt(const Dictionary&, Key*, ExceptionState&);
-    PassRefPtr<CryptoOperation> decrypt(const Dictionary&, Key*, ExceptionState&);
-    PassRefPtr<CryptoOperation> sign(const Dictionary&, Key*, ExceptionState&);
+    ScriptPromise encrypt(const Dictionary&, Key*, ArrayBufferView* data, ExceptionState&);
+    ScriptPromise decrypt(const Dictionary&, Key*, ArrayBufferView* data, ExceptionState&);
+    ScriptPromise sign(const Dictionary&, Key*, ArrayBufferView* data, ExceptionState&);
     // Note that this is not named "verify" because when compiling on Mac that expands to a macro and breaks.
-    PassRefPtr<CryptoOperation> verifySignature(const Dictionary&, Key*, ArrayBufferView* signature, ExceptionState&);
-    PassRefPtr<CryptoOperation> digest(const Dictionary&, ExceptionState&);
+    ScriptPromise verifySignature(const Dictionary&, Key*, ArrayBufferView* signature, ArrayBufferView* data, ExceptionState&);
+    ScriptPromise digest(const Dictionary&, ArrayBufferView* data, ExceptionState&);
 
-    ScriptObject generateKey(const Dictionary&, bool extractable, const Vector<String>& keyUsages, ExceptionState&);
-    ScriptObject importKey(const String&, ArrayBufferView*, const Dictionary&, bool extractable, const Vector<String>& keyUsages, ExceptionState&);
+    ScriptPromise generateKey(const Dictionary&, bool extractable, const Vector<String>& keyUsages, ExceptionState&);
+    ScriptPromise importKey(const String&, ArrayBufferView*, const Dictionary&, bool extractable, const Vector<String>& keyUsages, ExceptionState&);
+    ScriptPromise exportKey(const String&, Key*, ExceptionState&);
 
 private:
     SubtleCrypto();

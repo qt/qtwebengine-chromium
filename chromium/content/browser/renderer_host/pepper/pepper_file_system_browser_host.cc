@@ -58,16 +58,17 @@ PepperFileSystemBrowserHost::PepperFileSystemBrowserHost(BrowserPpapiHost* host,
                                                          PP_FileSystemType type)
     : ResourceHost(host->GetPpapiHost(), instance, resource),
       browser_ppapi_host_(host),
-      weak_factory_(this),
       type_(type),
       opened_(false),
       fs_context_(NULL),
-      called_open_(false) {
+      called_open_(false),
+      weak_factory_(this) {
 }
 
 PepperFileSystemBrowserHost::~PepperFileSystemBrowserHost() {
-  if (fs_context_.get())
-    fs_context_->operation_runner()->Shutdown();
+  // TODO(teravest): Create a FileSystemOperationRunner
+  // per-PepperFileSystemBrowserHost, force users of this FileSystem to use it,
+  // and call Shutdown() on it here.
 }
 
 int32_t PepperFileSystemBrowserHost::OnResourceMessageReceived(
@@ -151,6 +152,18 @@ void PepperFileSystemBrowserHost::GotFileSystemContext(
   fs_context_ = fs_context;
 }
 
+void PepperFileSystemBrowserHost::GotIsolatedFileSystemContext(
+    ppapi::host::ReplyMessageContext reply_context,
+    scoped_refptr<fileapi::FileSystemContext> fs_context) {
+  fs_context_ = fs_context;
+  if (fs_context.get())
+    reply_context.params.set_result(PP_OK);
+  else
+    reply_context.params.set_result(PP_ERROR_FAILED);
+  host()->SendReply(reply_context,
+                    PpapiPluginMsg_FileSystem_InitIsolatedFileSystemReply());
+}
+
 void PepperFileSystemBrowserHost::OpenFileSystemComplete(
     ppapi::host::ReplyMessageContext reply_context,
     base::PlatformFileError error,
@@ -177,7 +190,22 @@ int32_t PepperFileSystemBrowserHost::OnHostMsgInitIsolatedFileSystem(
   root_url_ = GURL(fileapi::GetIsolatedFileSystemRootURIString(
       url.GetOrigin(), fsid, "crxfs"));
   opened_ = true;
-  return PP_OK;
+
+  int render_process_id = 0;
+  int unused;
+  if (!browser_ppapi_host_->GetRenderViewIDsForInstance(pp_instance(),
+                                                        &render_process_id,
+                                                        &unused)) {
+    return PP_ERROR_FAILED;
+  }
+  BrowserThread::PostTaskAndReplyWithResult(
+      BrowserThread::UI,
+      FROM_HERE,
+      base::Bind(&GetFileSystemContextFromRenderId, render_process_id),
+      base::Bind(&PepperFileSystemBrowserHost::GotIsolatedFileSystemContext,
+                 weak_factory_.GetWeakPtr(),
+                 context->MakeReplyMessageContext()));
+  return PP_OK_COMPLETIONPENDING;
 }
 
 }  // namespace content

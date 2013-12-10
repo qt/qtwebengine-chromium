@@ -158,7 +158,6 @@ bool ResizeBuffer(int requested_size, scoped_ptr_malloc<BYTE>* buffer);
 bool GetSystemDirectory(string16* path);
 }  // namespace
 
-template<>
 WifiDataProviderImplBase* WifiDataProvider::DefaultFactoryFunction() {
   return new Win32WifiDataProvider();
 }
@@ -179,11 +178,11 @@ WifiDataProviderCommon::WlanApiInterface* Win32WifiDataProvider::NewWlanApi() {
   return WindowsNdisApi::Create();
 }
 
-PollingPolicyInterface* Win32WifiDataProvider::NewPollingPolicy() {
-  return new GenericPollingPolicy<kDefaultPollingInterval,
-                                  kNoChangePollingInterval,
-                                  kTwoNoChangePollingInterval,
-                                  kNoWifiPollingIntervalMilliseconds>;
+WifiPollingPolicy* Win32WifiDataProvider::NewPollingPolicy() {
+  return new GenericWifiPollingPolicy<kDefaultPollingInterval,
+                                      kNoChangePollingInterval,
+                                      kTwoNoChangePollingInterval,
+                                      kNoWifiPollingIntervalMilliseconds>;
 }
 
 // Local classes and functions

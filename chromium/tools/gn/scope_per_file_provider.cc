@@ -11,10 +11,8 @@
 #include "tools/gn/value.h"
 #include "tools/gn/variables.h"
 
-ScopePerFileProvider::ScopePerFileProvider(Scope* scope,
-                                           const SourceFile& source_file)
-    : ProgrammaticProvider(scope),
-      source_file_(source_file) {
+ScopePerFileProvider::ScopePerFileProvider(Scope* scope)
+    : ProgrammaticProvider(scope) {
 }
 
 ScopePerFileProvider::~ScopePerFileProvider() {
@@ -29,14 +27,16 @@ const Value* ScopePerFileProvider::GetProgrammaticValue(
   if (ident == variables::kPythonPath)
     return GetPythonPath();
 
-  if (ident == variables::kRelativeRootOutputDir)
-    return GetRelativeRootOutputDir();
-  if (ident == variables::kRelativeRootGenDir)
-    return GetRelativeRootGenDir();
-  if (ident == variables::kRelativeTargetOutputDir)
-    return GetRelativeTargetOutputDir();
-  if (ident == variables::kRelativeTargetGenDir)
-    return GetRelativeTargetGenDir();
+  if (ident == variables::kRootBuildDir)
+    return GetRootBuildDir();
+  if (ident == variables::kRootGenDir)
+    return GetRootGenDir();
+  if (ident == variables::kRootOutDir)
+    return GetRootOutDir();
+  if (ident == variables::kTargetGenDir)
+    return GetTargetGenDir();
+  if (ident == variables::kTargetOutDir)
+    return GetTargetOutDir();
   return NULL;
 }
 
@@ -67,42 +67,48 @@ const Value* ScopePerFileProvider::GetPythonPath() {
   return python_path_.get();
 }
 
-const Value* ScopePerFileProvider::GetRelativeRootOutputDir() {
-  if (!relative_root_output_dir_) {
-    relative_root_output_dir_.reset(new Value(NULL,
-        GetRelativeRootWithNoLastSlash() +
-        GetRootOutputDirWithNoLastSlash(scope_->settings())));
+const Value* ScopePerFileProvider::GetRootBuildDir() {
+  if (!root_build_dir_) {
+    root_build_dir_.reset(new Value(NULL,
+        "/" + GetRootOutputDirWithNoLastSlash(scope_->settings())));
   }
-  return relative_root_output_dir_.get();
+  return root_build_dir_.get();
 }
 
-const Value* ScopePerFileProvider::GetRelativeRootGenDir() {
-  if (!relative_root_gen_dir_) {
-    relative_root_gen_dir_.reset(new Value(NULL,
-        GetRelativeRootWithNoLastSlash() +
-        GetRootGenDirWithNoLastSlash(scope_->settings())));
+const Value* ScopePerFileProvider::GetRootGenDir() {
+  if (!root_gen_dir_) {
+    root_gen_dir_.reset(new Value(NULL,
+        "/" + GetToolchainGenDirWithNoLastSlash(scope_->settings())));
   }
-  return relative_root_gen_dir_.get();
+  return root_gen_dir_.get();
 }
 
-const Value* ScopePerFileProvider::GetRelativeTargetOutputDir() {
-  if (!relative_target_output_dir_) {
-    relative_target_output_dir_.reset(new Value(NULL,
-        GetRelativeRootWithNoLastSlash() +
-        GetRootOutputDirWithNoLastSlash(scope_->settings()) + "obj/" +
+const Value* ScopePerFileProvider::GetRootOutDir() {
+  if (!root_out_dir_) {
+    root_out_dir_.reset(new Value(NULL,
+        "/" + GetToolchainOutputDirWithNoLastSlash(scope_->settings())));
+  }
+  return root_out_dir_.get();
+}
+
+const Value* ScopePerFileProvider::GetTargetGenDir() {
+  if (!target_gen_dir_) {
+    target_gen_dir_.reset(new Value(NULL,
+        "/" +
+        GetToolchainGenDirWithNoLastSlash(scope_->settings()) +
         GetFileDirWithNoLastSlash()));
   }
-  return relative_target_output_dir_.get();
+  return target_gen_dir_.get();
 }
 
-const Value* ScopePerFileProvider::GetRelativeTargetGenDir() {
-  if (!relative_target_gen_dir_) {
-    relative_target_gen_dir_.reset(new Value(NULL,
-        GetRelativeRootWithNoLastSlash() +
-        GetRootGenDirWithNoLastSlash(scope_->settings()) +
+const Value* ScopePerFileProvider::GetTargetOutDir() {
+  if (!target_out_dir_) {
+    target_out_dir_.reset(new Value(NULL,
+        "/" +
+        GetToolchainOutputDirWithNoLastSlash(scope_->settings()) + "/obj" +
         GetFileDirWithNoLastSlash()));
   }
-  return relative_target_gen_dir_.get();
+  return target_out_dir_.get();
 }
 
 // static
@@ -110,24 +116,49 @@ std::string ScopePerFileProvider::GetRootOutputDirWithNoLastSlash(
     const Settings* settings) {
   const std::string& output_dir =
       settings->build_settings()->build_dir().value();
-  CHECK(!output_dir.empty());
-  return output_dir.substr(1, output_dir.size() - 1);
+
+  if (output_dir == "//")
+    return "//.";
+
+  // Trim off a leading and trailing slash. So "//foo/bar/" -> /foo/bar".
+  DCHECK(output_dir.size() > 2 && output_dir[0] == '/' &&
+         output_dir[output_dir.size() - 1] == '/');
+  return output_dir.substr(1, output_dir.size() - 2);
 }
 
 // static
-std::string ScopePerFileProvider::GetRootGenDirWithNoLastSlash(
+std::string ScopePerFileProvider::GetToolchainOutputDirWithNoLastSlash(
     const Settings* settings) {
-  return GetRootOutputDirWithNoLastSlash(settings) + "/gen";
+  const OutputFile& toolchain_subdir = settings->toolchain_output_subdir();
+
+  std::string result;
+  if (toolchain_subdir.value().empty()) {
+    result = GetRootOutputDirWithNoLastSlash(settings);
+  } else {
+    // The toolchain subdir ends in a slash, trim it.
+    result = GetRootOutputDirWithNoLastSlash(settings) + "/" +
+        toolchain_subdir.value();
+    DCHECK(toolchain_subdir.value()[toolchain_subdir.value().size() - 1] ==
+           '/');
+    result.resize(result.size() - 1);
+  }
+  return result;
+}
+
+// static
+std::string ScopePerFileProvider::GetToolchainGenDirWithNoLastSlash(
+    const Settings* settings) {
+  return GetToolchainOutputDirWithNoLastSlash(settings) + "/gen";
 }
 
 std::string ScopePerFileProvider::GetFileDirWithNoLastSlash() const {
-  std::string dir_value = source_file_.GetDir().value();
-  return dir_value.substr(0, dir_value.size() - 1);
-}
+  const std::string& dir_value = scope_->GetSourceDir().value();
 
-std::string ScopePerFileProvider::GetRelativeRootWithNoLastSlash() const {
-  std::string inverted = InvertDir(source_file_.GetDir());
-  if (inverted.empty())
-    return ".";
-  return inverted.substr(0, inverted.size() - 1);
+  if (dir_value == "//")
+    return "//.";
+
+  // Trim off a leading and trailing slash. So "//foo/bar/" -> /foo/bar".
+  DCHECK(dir_value.size() > 2 && dir_value[0] == '/' &&
+         dir_value[dir_value.size() - 1] == '/');
+  return dir_value.substr(1, dir_value.size() - 2);
 }

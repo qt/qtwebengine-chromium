@@ -158,6 +158,50 @@ base.unittest.testSuite('tracing.trace_model', function() {
     assertEquals('taskB', t3.sliceGroup.slices[0].title);
   });
 
+  test('traceModelCanImportSubtracesRecursively', function() {
+    var systraceLines = [
+      'SurfaceFlinger-2  [001] ...1 1000.0: 0: B|1|taskA',
+      'SurfaceFlinger-2  [001] ...1 2000.0: 0: E'
+    ];
+    var outerTraceEvents = [
+      {ts: 1000, pid: 1, tid: 3, ph: 'B', cat: 'c', name: 'taskB', args: {
+        my_object: {id_ref: '0x1000'}
+      }}
+    ];
+
+    var innerTraceEvents = [
+      {ts: 2000, pid: 1, tid: 3, ph: 'E', cat: 'c', name: 'taskB', args: {}}
+    ];
+
+    var innerTrace = JSON.stringify({
+      traceEvents: innerTraceEvents,
+      systemTraceEvents: systraceLines.join('\n')
+    });
+
+    var outerTrace = JSON.stringify({
+      traceEvents: outerTraceEvents,
+      systemTraceEvents: innerTrace
+    });
+
+    var m = new TraceModel();
+    m.importTraces([outerTrace]);
+    assertEquals(1, base.dictionaryValues(m.processes).length);
+
+    var p1 = m.processes[1];
+    assertNotUndefined(p1);
+
+    var t2 = p1.threads[2];
+    var t3 = p1.threads[3];
+    assertNotUndefined(t2);
+    assertNotUndefined(t3);
+
+    assertEquals(1, t2.sliceGroup.length, 1);
+    assertEquals('taskA', t2.sliceGroup.slices[0].title);
+
+    assertEquals(1, t3.sliceGroup.length);
+    assertEquals('taskB', t3.sliceGroup.slices[0].title);
+  });
+
   test('traceModelWithImportFailure', function() {
     var malformed = '{traceEvents: [{garbage';
     var m = new TraceModel();
@@ -168,8 +212,6 @@ base.unittest.testSuite('tracing.trace_model', function() {
 
   test('titleFilter', function() {
     var s0 = tracing.test_utils.newSlice(1, 3);
-    assertFalse(new TitleFilter('').matchSlice(s0));
-
     assertTrue(new TitleFilter('a').matchSlice(s0));
     assertFalse(new TitleFilter('x').matchSlice(s0));
 
@@ -206,5 +248,15 @@ base.unittest.testSuite('tracing.trace_model', function() {
     t.sliceGroup.pushSlice(new ThreadSlice('', 'a', 0, 1, {}, 3));
     m.updateCategories_();
     assertArrayEquals(['categoryA', 'categoryB'], m.categories);
+  });
+
+  test('traceModel_iterateAllEvents', function() {
+    var m = createTraceModelWithOneOfEverything();
+    var wasCalled = false;
+    m.iterateAllEvents(function(event) {
+      assertTrue(event instanceof tracing.trace_model.Event);
+      wasCalled = true;
+    });
+    assertTrue(wasCalled);
   });
 });

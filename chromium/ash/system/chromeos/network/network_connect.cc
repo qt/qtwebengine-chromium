@@ -5,8 +5,8 @@
 #include "ash/system/chromeos/network/network_connect.h"
 
 #include "ash/shell.h"
-#include "ash/system/chromeos/network/network_observer.h"
 #include "ash/system/chromeos/network/network_state_notifier.h"
+#include "ash/system/system_notifier.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/system_tray_notifier.h"
 #include "base/bind.h"
@@ -15,6 +15,7 @@
 #include "base/values.h"
 #include "chromeos/login/login_state.h"
 #include "chromeos/network/device_state.h"
+#include "chromeos/network/network_activation_handler.h"
 #include "chromeos/network/network_configuration_handler.h"
 #include "chromeos/network/network_connection_handler.h"
 #include "chromeos/network/network_event_log.h"
@@ -23,9 +24,14 @@
 #include "chromeos/network/network_profile_handler.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
+#include "chromeos/network/shill_property_util.h"
+#include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/resource/resource_bundle.h"
+#include "ui/message_center/message_center.h"
+#include "ui/message_center/notification.h"
 
 using chromeos::DeviceState;
 using chromeos::NetworkConfigurationHandler;
@@ -34,6 +40,8 @@ using chromeos::NetworkHandler;
 using chromeos::NetworkProfile;
 using chromeos::NetworkProfileHandler;
 using chromeos::NetworkState;
+using chromeos::NetworkStateHandler;
+using chromeos::NetworkTypePattern;
 
 namespace ash {
 
@@ -50,10 +58,11 @@ bool IsDirectActivatedCarrier(const std::string& carrier) {
   return false;
 }
 
-void ShowErrorNotification(const std::string& error,
+void ShowErrorNotification(const std::string& error_name,
+                           const std::string& shill_error,
                            const std::string& service_path) {
   Shell::GetInstance()->system_tray_notifier()->network_state_notifier()->
-      ShowNetworkConnectError(error, service_path);
+      ShowNetworkConnectError(error_name, shill_error, service_path);
 }
 
 void OnConnectFailed(const std::string& service_path,
@@ -61,6 +70,9 @@ void OnConnectFailed(const std::string& service_path,
                      const std::string& error_name,
                      scoped_ptr<base::DictionaryValue> error_data) {
   NET_LOG_ERROR("Connect Failed: " + error_name, service_path);
+
+  if (!ash::Shell::HasInstance())
+    return;
 
   // If a new connect attempt canceled this connect, no need to notify the user.
   if (error_name == NetworkConnectionHandler::kErrorConnectCanceled)
@@ -88,13 +100,15 @@ void OnConnectFailed(const std::string& service_path,
 
   if (error_name == NetworkConnectionHandler::kErrorConnected ||
       error_name == NetworkConnectionHandler::kErrorConnecting) {
-    ash::Shell::GetInstance()->system_tray_delegate()->ShowNetworkSettings(
-        service_path);
+    network_connect::ShowNetworkSettings(service_path);
     return;
   }
 
   // ConnectFailed or unknown error; show a notification.
-  ShowErrorNotification(error_name, service_path);
+  std::string shill_error;
+  error_data.get()->GetString(
+      chromeos::network_handler::kErrorDetail, &shill_error);
+  ShowErrorNotification(error_name, shill_error, service_path);
 
   // Show a configure dialog for ConnectFailed errors.
   if (error_name != flimflam::kErrorConnectFailed)
@@ -113,8 +127,10 @@ void OnConnectFailed(const std::string& service_path,
 
 void OnConnectSucceeded(const std::string& service_path) {
   NET_LOG_USER("Connect Succeeded", service_path);
-  ash::Shell::GetInstance()->system_tray_notifier()->NotifyClearNetworkMessage(
-      NetworkObserver::ERROR_CONNECT_FAILED);
+  if (!ash::Shell::HasInstance())
+    return;
+  message_center::MessageCenter::Get()->RemoveNotification(
+      network_connect::kNetworkConnectNotificationId, false /* not by user */);
 }
 
 // If |check_error_state| is true, error state for the network is checked,
@@ -125,10 +141,10 @@ void OnConnectSucceeded(const std::string& service_path) {
 void CallConnectToNetwork(const std::string& service_path,
                           bool check_error_state,
                           gfx::NativeWindow owning_window) {
-  NET_LOG_USER("ConnectToNetwork", service_path);
-
-  ash::Shell::GetInstance()->system_tray_notifier()->NotifyClearNetworkMessage(
-      NetworkObserver::ERROR_CONNECT_FAILED);
+  if (!ash::Shell::HasInstance())
+    return;
+  message_center::MessageCenter::Get()->RemoveNotification(
+      network_connect::kNetworkConnectNotificationId, false /* not by user */);
 
   NetworkHandler::Get()->network_connection_handler()->ConnectToNetwork(
       service_path,
@@ -141,7 +157,8 @@ void OnActivateFailed(const std::string& service_path,
                       const std::string& error_name,
                       scoped_ptr<base::DictionaryValue> error_data) {
   NET_LOG_ERROR("Unable to activate network", service_path);
-  ShowErrorNotification(network_connect::kErrorActivateFailed, service_path);
+  ShowErrorNotification(
+      network_connect::kErrorActivateFailed, "", service_path);
 }
 
 void OnActivateSucceeded(const std::string& service_path) {
@@ -151,7 +168,8 @@ void OnActivateSucceeded(const std::string& service_path) {
 void OnConfigureFailed(const std::string& error_name,
                        scoped_ptr<base::DictionaryValue> error_data) {
   NET_LOG_ERROR("Unable to configure network", "");
-  ShowErrorNotification(NetworkConnectionHandler::kErrorConfigureFailed, "");
+  ShowErrorNotification(
+      NetworkConnectionHandler::kErrorConfigureFailed, "", "");
 }
 
 void OnConfigureSucceeded(const std::string& service_path) {
@@ -168,7 +186,7 @@ void SetPropertiesFailed(const std::string& desc,
                          scoped_ptr<base::DictionaryValue> error_data) {
   NET_LOG_ERROR(desc + ": Failed: " + config_error_name, service_path);
   ShowErrorNotification(
-      NetworkConnectionHandler::kErrorConfigureFailed, service_path);
+      NetworkConnectionHandler::kErrorConfigureFailed, "", service_path);
 }
 
 void SetPropertiesToClear(base::DictionaryValue* properties_to_set,
@@ -246,12 +264,80 @@ void ConfigureSetProfileSucceeded(
 
 namespace network_connect {
 
+const char kNetworkConnectNotificationId[] =
+    "chrome://settings/internet/connect";
+const char kNetworkActivateNotificationId[] =
+    "chrome://settings/internet/activate";
+
 const char kErrorActivateFailed[] = "activate-failed";
 
 void ConnectToNetwork(const std::string& service_path,
                       gfx::NativeWindow owning_window) {
+  NET_LOG_USER("ConnectToNetwork", service_path);
+  const NetworkState* network =
+      NetworkHandler::Get()->network_state_handler()->
+      GetNetworkState(service_path);
+  if (network && !network->error().empty()) {
+    NET_LOG_USER("Configure: " + network->error(), service_path);
+    // If the network is in an error state, show the configuration UI directly
+    // to avoid a spurious notification.
+    ash::Shell::GetInstance()->system_tray_delegate()->ConfigureNetwork(
+        service_path);
+    return;
+  }
   const bool check_error_state = true;
   CallConnectToNetwork(service_path, check_error_state, owning_window);
+}
+
+void SetTechnologyEnabled(const NetworkTypePattern& technology,
+                          bool enabled_state) {
+  std::string log_string =
+      base::StringPrintf("technology %s, target state: %s",
+                         technology.ToDebugString().c_str(),
+                         (enabled_state ? "ENABLED" : "DISABLED"));
+  NET_LOG_USER("SetTechnologyEnabled", log_string);
+  NetworkStateHandler* handler = NetworkHandler::Get()->network_state_handler();
+  bool enabled = handler->IsTechnologyEnabled(technology);
+  if (enabled_state == enabled) {
+    NET_LOG_USER("Technology already in target state.", log_string);
+    return;
+  }
+  if (enabled) {
+    // User requested to disable the technology.
+    handler->SetTechnologyEnabled(
+        technology, false, chromeos::network_handler::ErrorCallback());
+    return;
+  }
+  // If we're dealing with a mobile network, then handle SIM lock here.
+  // SIM locking only applies to cellular, so the code below won't execute
+  // if |technology| has been explicitly set to WiMAX.
+  if (technology.MatchesPattern(NetworkTypePattern::Mobile())) {
+    const DeviceState* mobile = handler->GetDeviceStateByType(technology);
+    if (!mobile) {
+      NET_LOG_ERROR("SetTechnologyEnabled with no device", log_string);
+      return;
+    }
+    // The following only applies to cellular.
+    if (mobile->type() == flimflam::kTypeCellular) {
+      if (mobile->IsSimAbsent()) {
+        // If this is true, then we have a cellular device with no SIM inserted.
+        // TODO(armansito): Chrome should display a notification here, prompting
+        // the user to insert a SIM card and restart the device to enable
+        // cellular. See crbug.com/125171.
+        NET_LOG_USER("Cannot enable cellular device without SIM.", log_string);
+        return;
+      }
+      if (!mobile->sim_lock_type().empty()) {
+        // A SIM has been inserted, but it is locked. Let the user unlock it
+        // via the dialog.
+        ash::Shell::GetInstance()->system_tray_delegate()->
+            ShowMobileSimDialog();
+        return;
+      }
+    }
+  }
+  handler->SetTechnologyEnabled(
+    technology, true, chromeos::network_handler::ErrorCallback());
 }
 
 void ActivateCellular(const std::string& service_path) {
@@ -272,11 +358,8 @@ void ActivateCellular(const std::string& service_path) {
   }
   if (!IsDirectActivatedCarrier(cellular_device->carrier())) {
     // For non direct activation, show the mobile setup dialog which can be
-    // used to activate the network. Only show the dialog, if an account
-    // management URL is available.
-    if (!cellular->payment_url().empty())
-      ash::Shell::GetInstance()->system_tray_delegate()->ShowMobileSetup(
-          service_path);
+    // used to activate the network.
+    ShowMobileSetup(service_path);
     return;
   }
   if (cellular->activation_state() == flimflam::kActivationStateActivated) {
@@ -284,11 +367,38 @@ void ActivateCellular(const std::string& service_path) {
     return;
   }
 
-  NetworkHandler::Get()->network_connection_handler()->ActivateNetwork(
+  NetworkHandler::Get()->network_activation_handler()->Activate(
       service_path,
       "",  // carrier
       base::Bind(&OnActivateSucceeded, service_path),
       base::Bind(&OnActivateFailed, service_path));
+}
+
+void ShowMobileSetup(const std::string& service_path) {
+  NetworkStateHandler* handler = NetworkHandler::Get()->network_state_handler();
+  const NetworkState* cellular = handler->GetNetworkState(service_path);
+  if (!cellular || cellular->type() != flimflam::kTypeCellular) {
+    NET_LOG_ERROR("ShowMobileSetup without Cellular network", service_path);
+    return;
+  }
+  if (cellular->activation_state() != flimflam::kActivationStateActivated &&
+      cellular->activate_over_non_cellular_networks() &&
+      !handler->DefaultNetwork()) {
+    message_center::MessageCenter::Get()->AddNotification(
+        message_center::Notification::CreateSystemNotification(
+            kNetworkActivateNotificationId,
+            l10n_util::GetStringUTF16(IDS_NETWORK_ACTIVATION_ERROR_TITLE),
+            l10n_util::GetStringFUTF16(IDS_NETWORK_ACTIVATION_NEEDS_CONNECTION,
+                                       UTF8ToUTF16(cellular->name())),
+            ui::ResourceBundle::GetSharedInstance().GetImageNamed(
+                IDR_AURA_UBER_TRAY_CELLULAR_NETWORK_FAILED),
+            ash::system_notifier::NOTIFIER_NETWORK,
+            base::Bind(&ash::network_connect::ShowNetworkSettings,
+                       service_path)));
+    return;
+  }
+  ash::Shell::GetInstance()->system_tray_delegate()->ShowMobileSetupDialog(
+      service_path);
 }
 
 void ConfigureNetworkAndConnect(const std::string& service_path,
@@ -301,7 +411,7 @@ void ConfigureNetworkAndConnect(const std::string& service_path,
   std::string profile_path;
   if (!GetNetworkProfilePath(shared, &profile_path)) {
     ShowErrorNotification(
-        NetworkConnectionHandler::kErrorConfigureFailed, service_path);
+        NetworkConnectionHandler::kErrorConfigureFailed, "", service_path);
     return;
   }
   NetworkHandler::Get()->network_configuration_handler()->SetNetworkProfile(
@@ -317,7 +427,8 @@ void CreateConfigurationAndConnect(base::DictionaryValue* properties,
   NET_LOG_USER("CreateConfigurationAndConnect", "");
   std::string profile_path;
   if (!GetNetworkProfilePath(shared, &profile_path)) {
-    ShowErrorNotification(NetworkConnectionHandler::kErrorConfigureFailed, "");
+    ShowErrorNotification(
+        NetworkConnectionHandler::kErrorConfigureFailed, "", "");
     return;
   }
   properties->SetStringWithoutPathExpansion(
@@ -395,6 +506,13 @@ string16 ErrorString(const std::string& error) {
   }
   return l10n_util::GetStringFUTF16(IDS_NETWORK_UNRECOGNIZED_ERROR,
                                     UTF8ToUTF16(error));
+}
+
+void ShowNetworkSettings(const std::string& service_path) {
+  if (!ash::Shell::HasInstance())
+    return;
+  ash::Shell::GetInstance()->system_tray_delegate()->ShowNetworkSettings(
+      service_path);
 }
 
 }  // network_connect

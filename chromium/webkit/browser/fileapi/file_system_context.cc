@@ -27,6 +27,7 @@
 #include "webkit/browser/fileapi/test_file_system_backend.h"
 #include "webkit/browser/quota/quota_manager.h"
 #include "webkit/browser/quota/special_storage_policy.h"
+#include "webkit/common/fileapi/file_system_info.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
 using quota::QuotaClient;
@@ -47,6 +48,19 @@ void DidOpenFileSystem(
     const std::string& filesystem_name,
     base::PlatformFileError error) {
   callback.Run(error, filesystem_name, filesystem_root);
+}
+
+void DidGetMetadataForResolveURL(
+    const base::FilePath& path,
+    const FileSystemContext::ResolveURLCallback& callback,
+    const FileSystemInfo& info,
+    base::PlatformFileError error,
+    const base::PlatformFileInfo& file_info) {
+  if (error != base::PLATFORM_FILE_OK) {
+    callback.Run(error, FileSystemInfo(), base::FilePath(), false);
+    return;
+  }
+  callback.Run(error, info, path, file_info.is_directory);
 }
 
 }  // namespace
@@ -108,24 +122,20 @@ FileSystemContext::FileSystemContext(
     : io_task_runner_(io_task_runner),
       default_file_task_runner_(file_task_runner),
       quota_manager_proxy_(quota_manager_proxy),
-      sandbox_context_(new SandboxContext(
+      sandbox_delegate_(new SandboxFileSystemBackendDelegate(
           quota_manager_proxy,
           file_task_runner,
           partition_path,
           special_storage_policy,
           options)),
       sandbox_backend_(new SandboxFileSystemBackend(
-          sandbox_context_.get())),
+          sandbox_delegate_.get())),
       isolated_backend_(new IsolatedFileSystemBackend()),
       additional_backends_(additional_backends.Pass()),
       external_mount_points_(external_mount_points),
       partition_path_(partition_path),
+      is_incognito_(options.is_incognito()),
       operation_runner_(new FileSystemOperationRunner(this)) {
-  if (quota_manager_proxy) {
-    quota_manager_proxy->RegisterClient(CreateQuotaClient(
-            this, options.is_incognito()));
-  }
-
   RegisterBackend(sandbox_backend_.get());
   RegisterBackend(isolated_backend_.get());
 
@@ -133,6 +143,12 @@ FileSystemContext::FileSystemContext(
           additional_backends_.begin();
        iter != additional_backends_.end(); ++iter) {
     RegisterBackend(*iter);
+  }
+
+  if (quota_manager_proxy) {
+    // Quota client assumes all backends have registered.
+    quota_manager_proxy->RegisterClient(CreateQuotaClient(
+            this, options.is_incognito()));
   }
 
   sandbox_backend_->Initialize(this);
@@ -200,14 +216,6 @@ AsyncFileUtil* FileSystemContext::GetAsyncFileUtil(
   return backend->GetAsyncFileUtil(type);
 }
 
-FileSystemFileUtil* FileSystemContext::GetFileUtil(
-    FileSystemType type) const {
-  FileSystemBackend* backend = GetFileSystemBackend(type);
-  if (!backend)
-    return NULL;
-  return backend->GetFileUtil(type);
-}
-
 CopyOrMoveFileValidatorFactory*
 FileSystemContext::GetCopyOrMoveFileValidatorFactory(
     FileSystemType type, base::PlatformFileError* error_code) const {
@@ -230,7 +238,8 @@ FileSystemBackend* FileSystemContext::GetFileSystemBackend(
 }
 
 bool FileSystemContext::IsSandboxFileSystem(FileSystemType type) const {
-  return GetQuotaUtil(type) != NULL;
+  FileSystemBackendMap::const_iterator found = backend_map_.find(type);
+  return found != backend_map_.end() && found->second->GetQuotaUtil();
 }
 
 const UpdateObserverList* FileSystemContext::GetUpdateObservers(
@@ -278,6 +287,26 @@ void FileSystemContext::OpenFileSystem(
 
   backend->OpenFileSystem(origin_url, type, mode,
                           base::Bind(&DidOpenFileSystem, callback));
+}
+
+void FileSystemContext::ResolveURL(
+    const FileSystemURL& url,
+    const ResolveURLCallback& callback) {
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
+  DCHECK(!callback.is_null());
+
+  FileSystemBackend* backend = GetFileSystemBackend(url.type());
+  if (!backend) {
+    callback.Run(base::PLATFORM_FILE_ERROR_SECURITY,
+                 FileSystemInfo(), base::FilePath(), false);
+    return;
+  }
+
+  backend->OpenFileSystem(
+      url.origin(), url.type(),
+      OPEN_FILE_SYSTEM_FAIL_IF_NONEXISTENT,
+      base::Bind(&FileSystemContext::DidOpenFileSystemForResolveURL,
+                 this, url, callback));
 }
 
 void FileSystemContext::DeleteFileSystem(
@@ -355,6 +384,16 @@ void FileSystemContext::EnableTemporaryFileSystemInIncognito() {
 }
 #endif
 
+bool FileSystemContext::CanServeURLRequest(const FileSystemURL& url) const {
+#if defined(OS_CHROMEOS) && defined(GOOGLE_CHROME_BUILD)
+  if (url.type() == kFileSystemTypeTemporary &&
+      sandbox_backend_->enable_temporary_file_system_in_incognito()) {
+    return true;
+  }
+#endif
+  return !is_incognito_ || !FileSystemContext::IsSandboxFileSystem(url.type());
+}
+
 FileSystemContext::~FileSystemContext() {
 }
 
@@ -417,8 +456,7 @@ FileSystemURL FileSystemContext::CrackFileSystemURL(
   return current;
 }
 
-void FileSystemContext::RegisterBackend(
-    FileSystemBackend* backend) {
+void FileSystemContext::RegisterBackend(FileSystemBackend* backend) {
   const FileSystemType mount_types[] = {
     kFileSystemTypeTemporary,
     kFileSystemTypePersistent,
@@ -443,6 +481,37 @@ void FileSystemContext::RegisterBackend(
       DCHECK(inserted);
     }
   }
+}
+
+void FileSystemContext::DidOpenFileSystemForResolveURL(
+    const FileSystemURL& url,
+    const FileSystemContext::ResolveURLCallback& callback,
+    const GURL& filesystem_root,
+    const std::string& filesystem_name,
+    base::PlatformFileError error) {
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
+
+  if (error != base::PLATFORM_FILE_OK) {
+    callback.Run(error, FileSystemInfo(), base::FilePath(), false);
+    return;
+  }
+
+  fileapi::FileSystemInfo info(
+      filesystem_name, filesystem_root, url.mount_type());
+
+  // Extract the virtual path not containing a filesystem type part from |url|.
+  base::FilePath parent =
+      base::FilePath::FromUTF8Unsafe(filesystem_root.path());
+  base::FilePath child = base::FilePath::FromUTF8Unsafe(url.ToGURL().path());
+  base::FilePath path;
+
+  if (parent != child) {
+    bool result = parent.AppendRelativePath(child, &path);
+    DCHECK(result);
+  }
+
+  operation_runner()->GetMetadata(
+      url, base::Bind(&DidGetMetadataForResolveURL, path, callback, info));
 }
 
 }  // namespace fileapi

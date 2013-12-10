@@ -5,6 +5,7 @@
 #include "ash/display/mouse_cursor_event_filter.h"
 
 #include "ash/display/display_controller.h"
+#include "ash/display/display_manager.h"
 #include "ash/display/mirror_window_controller.h"
 #include "ash/display/shared_display_edge_indicator.h"
 #include "ash/screen_ash.h"
@@ -14,9 +15,9 @@
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
-#include "ui/base/events/event.h"
 #include "ui/base/layout.h"
 #include "ui/compositor/dip_util.h"
+#include "ui/events/event.h"
 #include "ui/gfx/screen.h"
 
 namespace ash {
@@ -37,6 +38,7 @@ const int kIndicatorThickness = 1;
 
 MouseCursorEventFilter::MouseCursorEventFilter()
     : mouse_warp_mode_(WARP_ALWAYS),
+      was_mouse_warped_(false),
       drag_source_root_(NULL),
       shared_display_edge_indicator_(new SharedDisplayEdgeIndicator) {
 }
@@ -57,7 +59,7 @@ void MouseCursorEventFilter::ShowSharedEdgeIndicator(
   drag_source_root_ = from;
 
   DisplayLayout::Position position = Shell::GetInstance()->
-      display_controller()->GetCurrentDisplayLayout().position;
+      display_manager()->GetCurrentDisplayLayout().position;
   if (position == DisplayLayout::TOP || position == DisplayLayout::BOTTOM)
     UpdateHorizontalIndicatorWindowBounds();
   else
@@ -95,6 +97,17 @@ bool MouseCursorEventFilter::WarpMouseCursorIfNecessary(
   if (Shell::GetScreen()->GetNumDisplays() <= 1 ||
       mouse_warp_mode_ == WARP_NONE)
     return false;
+
+  // Do not warp again right after the cursor was warped. Sometimes the offset
+  // is not long enough and the cursor moves at the edge of the destination
+  // display. See crbug.com/278885
+  // TODO(mukai): simplify the offset calculation below, it would not be
+  // necessary anymore with this flag.
+  if (was_mouse_warped_) {
+    was_mouse_warped_ = false;
+    return false;
+  }
+
   const float scale_at_target = ui::GetDeviceScaleFactor(target_root->layer());
 
   aura::RootWindow* root_at_point = wm::GetRootWindowAt(point_in_screen);
@@ -144,6 +157,7 @@ bool MouseCursorEventFilter::WarpMouseCursorIfNecessary(
 
   if (dst_root->bounds().Contains(point_in_dst_screen)) {
     DCHECK_NE(dst_root, root_at_point);
+    was_mouse_warped_ = true;
     dst_root->MoveCursorTo(point_in_dst_screen);
     return true;
   }
@@ -158,7 +172,7 @@ void MouseCursorEventFilter::UpdateHorizontalIndicatorWindowBounds() {
       Shell::GetScreen()->GetPrimaryDisplay().bounds();
   const gfx::Rect secondary_bounds = ScreenAsh::GetSecondaryDisplay().bounds();
   DisplayLayout::Position position = Shell::GetInstance()->
-      display_controller()->GetCurrentDisplayLayout().position;
+      display_manager()->GetCurrentDisplayLayout().position;
 
   src_indicator_bounds_.set_x(
       std::max(primary_bounds.x(), secondary_bounds.x()));
@@ -187,7 +201,7 @@ void MouseCursorEventFilter::UpdateVerticalIndicatorWindowBounds() {
       Shell::GetScreen()->GetPrimaryDisplay().bounds();
   const gfx::Rect secondary_bounds = ScreenAsh::GetSecondaryDisplay().bounds();
   DisplayLayout::Position position = Shell::GetInstance()->
-      display_controller()->GetCurrentDisplayLayout().position;
+      display_manager()->GetCurrentDisplayLayout().position;
 
   int upper_shared_y = std::max(primary_bounds.y(), secondary_bounds.y());
   int lower_shared_y = std::min(primary_bounds.bottom(),

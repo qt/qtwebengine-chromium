@@ -8,9 +8,8 @@
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/wm/base_layout_manager.h"
-#include "ash/wm/property_util.h"
 #include "ash/wm/window_animations.h"
-#include "ash/wm/window_properties.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "ash/wm/workspace/workspace_event_handler.h"
 #include "ash/wm/workspace/workspace_layout_manager.h"
@@ -39,8 +38,6 @@ WorkspaceController::WorkspaceController(aura::Window* viewport)
       event_handler_(new WorkspaceEventHandler(viewport_)) {
   SetWindowVisibilityAnimationTransition(
       viewport_, views::corewm::ANIMATE_NONE);
-  // Do this so when animating out windows don't extend beyond the bounds.
-  viewport_->layer()->SetMasksToBounds(true);
 
   // The layout-manager cannot be created in the initializer list since it
   // depends on the window to have been initialized.
@@ -67,16 +64,17 @@ WorkspaceWindowState WorkspaceController::GetWindowState() const {
   bool has_maximized_window = false;
   for (aura::Window::Windows::const_iterator i = windows.begin();
        i != windows.end(); ++i) {
-    if (GetIgnoredByShelf(*i))
+    wm::WindowState* window_state = wm::GetWindowState(*i);
+    if (window_state->ignored_by_shelf())
       continue;
     ui::Layer* layer = (*i)->layer();
     if (!layer->GetTargetVisibility() || layer->GetTargetOpacity() == 0.0f)
       continue;
-    if (wm::IsWindowMaximized(*i)) {
+    if (window_state->IsMaximized()) {
       // An untracked window may still be fullscreen so we keep iterating when
       // we hit a maximized window.
       has_maximized_window = true;
-    } else if (wm::IsWindowFullscreen(*i)) {
+    } else if (window_state->IsFullscreen()) {
       return WORKSPACE_WINDOW_STATE_FULL_SCREEN;
     }
     if (!window_overlaps_launcher && (*i)->bounds().Intersects(shelf_bounds))
@@ -118,7 +116,7 @@ void WorkspaceController::DoInitialAnimation() {
         ui::LayerAnimationElement::VISIBILITY,
         -1);
 
-    settings.SetTweenType(ui::Tween::EASE_OUT);
+    settings.SetTweenType(gfx::Tween::EASE_OUT);
     settings.SetTransitionDuration(
         base::TimeDelta::FromMilliseconds(kCrossFadeDurationMS));
     viewport_->layer()->SetTransform(gfx::Transform());

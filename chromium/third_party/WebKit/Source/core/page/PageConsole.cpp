@@ -36,8 +36,10 @@
 #include "core/inspector/ScriptCallStack.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
+#include "core/page/ConsoleBase.h"
 #include "core/page/ConsoleTypes.h"
 #include "core/page/Page.h"
+#include "wtf/text/StringBuilder.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -55,18 +57,9 @@ PageConsole::PageConsole(Page* page)
 
 PageConsole::~PageConsole() { }
 
-void PageConsole::addMessage(MessageSource source, MessageLevel level, const String& message, unsigned long requestIdentifier, Document* document)
+void PageConsole::addMessage(MessageSource source, MessageLevel level, const String& message)
 {
-    String url;
-    if (document)
-        url = document->url().string();
-    unsigned line = 0;
-    if (document && document->parsing() && !document->isInDocumentWrite() && document->scriptableDocumentParser()) {
-        ScriptableDocumentParser* parser = document->scriptableDocumentParser();
-        if (!parser->isWaitingForScripts() && !parser->isExecutingScript())
-            line = parser->lineNumber().oneBasedInt();
-    }
-    addMessage(source, level, message, url, line, 0, 0, 0, requestIdentifier);
+    addMessage(source, level, message, String(), 0, 0, 0, 0, 0);
 }
 
 void PageConsole::addMessage(MessageSource source, MessageLevel level, const String& message, PassRefPtr<ScriptCallStack> callStack)
@@ -79,28 +72,52 @@ void PageConsole::addMessage(MessageSource source, MessageLevel level, const Str
     if (muteCount && source != ConsoleAPIMessageSource)
         return;
 
-    Page* page = this->page();
-    if (!page)
+    ScriptExecutionContext* context = m_page->mainFrame()->document();
+    if (!context)
         return;
 
-    if (callStack)
-        InspectorInstrumentation::addMessageToConsole(page, source, LogMessageType, level, message, callStack, requestIdentifier);
-    else
-        InspectorInstrumentation::addMessageToConsole(page, source, LogMessageType, level, message, url, lineNumber, columnNumber, state, requestIdentifier);
+    String messageURL;
+    if (callStack) {
+        messageURL = callStack->at(0).sourceURL();
+        InspectorInstrumentation::addMessageToConsole(context, source, LogMessageType, level, message, callStack, requestIdentifier);
+    } else {
+        messageURL = url;
+        InspectorInstrumentation::addMessageToConsole(context, source, LogMessageType, level, message, url, lineNumber, columnNumber, state, requestIdentifier);
+    }
 
     if (source == CSSMessageSource)
         return;
 
-    page->chrome().client()->addMessageToConsole(source, level, message, lineNumber, url);
+    String stackTrace;
+    if (callStack && m_page->chrome().client().shouldReportDetailedMessageForSource(messageURL))
+        stackTrace = PageConsole::formatStackTraceString(message, callStack);
+
+    m_page->chrome().client().addMessageToConsole(source, level, message, lineNumber, messageURL, stackTrace);
 }
 
-// static
+String PageConsole::formatStackTraceString(const String& originalMessage, PassRefPtr<ScriptCallStack> callStack)
+{
+    StringBuilder stackTrace;
+    for (size_t i = 0; i < callStack->size(); ++i) {
+        const ScriptCallFrame& frame = callStack->at(i);
+        stackTrace.append("\n    at " + (frame.functionName().length() ? frame.functionName() : "(anonymous function)"));
+        stackTrace.append(" (");
+        stackTrace.append(frame.sourceURL());
+        stackTrace.append(':');
+        stackTrace.append(String::number(frame.lineNumber()));
+        stackTrace.append(':');
+        stackTrace.append(String::number(frame.columnNumber()));
+        stackTrace.append(')');
+    }
+
+    return stackTrace.toString();
+}
+
 void PageConsole::mute()
 {
     muteCount++;
 }
 
-// static
 void PageConsole::unmute()
 {
     ASSERT(muteCount > 0);

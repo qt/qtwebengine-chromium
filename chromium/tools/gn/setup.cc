@@ -4,17 +4,28 @@
 
 #include "tools/gn/setup.h"
 
+#include <stdlib.h>
+
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "build/build_config.h"
 #include "tools/gn/filesystem_utils.h"
 #include "tools/gn/input_file.h"
 #include "tools/gn/parse_tree.h"
 #include "tools/gn/parser.h"
 #include "tools/gn/source_dir.h"
 #include "tools/gn/source_file.h"
+#include "tools/gn/standard_out.h"
 #include "tools/gn/tokenizer.h"
+#include "tools/gn/trace.h"
 #include "tools/gn/value.h"
+
+#if defined(OS_WIN)
+#include <windows.h>
+#endif
 
 extern const char kDotfile_Help[] =
     ".gn file\n"
@@ -28,7 +39,8 @@ extern const char kDotfile_Help[] =
     "  same as a buildfile, but with very limited build setup-specific\n"
     "  meaning.\n"
     "\n"
-    "Variables:\n"
+    "Variables\n"
+    "\n"
     "  buildconfig [required]\n"
     "      Label of the build config file. This file will be used to setup\n"
     "      the build file execution environment for each toolchain.\n"
@@ -45,7 +57,7 @@ extern const char kDotfile_Help[] =
     "\n"
     "      The secondary source root must be inside the main source tree.\n"
     "\n"
-    "Example .gn file contents:\n"
+    "Example .gn file contents\n"
     "\n"
     "  buildconfig = \"//build/config/BUILDCONFIG.gn\"\n"
     "\n"
@@ -56,7 +68,20 @@ namespace {
 // More logging.
 const char kSwitchVerbose[] = "v";
 
+// Set build args.
+const char kSwitchArgs[] = "args";
+
+// Set root dir.
 const char kSwitchRoot[] = "root";
+
+// Enable timing.
+const char kTimeSwitch[] = "time";
+
+const char kTracelogSwitch[] = "tracelog";
+
+// Set build output directory.
+const char kSwitchBuildOutput[] = "output";
+
 const char kSecondarySource[] = "secondary";
 
 const base::FilePath::CharType kGnFile[] = FILE_PATH_LITERAL(".gn");
@@ -74,13 +99,65 @@ base::FilePath FindDotFile(const base::FilePath& current_dir) {
   return FindDotFile(up_one_dir);
 }
 
+// Searches the list of strings, and returns the FilePat corresponding to the
+// one ending in the given substring, or the empty path if none match.
+base::FilePath GetPathEndingIn(
+    const std::vector<base::FilePath::StringType>& list,
+    const base::FilePath::StringType ending_in) {
+  for (size_t i = 0; i < list.size(); i++) {
+    if (EndsWith(list[i], ending_in, true))
+      return base::FilePath(list[i]);
+  }
+  return base::FilePath();
+}
+
+// Fins the depot tools directory in the path environment variable and returns
+// its value. Returns an empty file path if not found.
+//
+// We detect the depot_tools path by looking for a directory with depot_tools
+// at the end (optionally followed by a separator).
+base::FilePath ExtractDepotToolsFromPath() {
+#if defined(OS_WIN)
+  static const wchar_t kPathVarName[] = L"Path";
+  DWORD env_buf_size = GetEnvironmentVariable(kPathVarName, NULL, 0);
+  if (env_buf_size == 0)
+    return base::FilePath();
+  base::string16 path;
+  path.resize(env_buf_size);
+  GetEnvironmentVariable(kPathVarName, &path[0],
+                         static_cast<DWORD>(path.size()));
+  path.resize(path.size() - 1);  // Trim off null.
+
+  std::vector<base::string16> components;
+  base::SplitString(path, ';', &components);
+
+  base::string16 ending_in1 = L"depot_tools\\";
+#else
+  static const char kPathVarName[] = "PATH";
+  const char* path = getenv(kPathVarName);
+  if (!path)
+    return base::FilePath();
+
+  std::vector<std::string> components;
+  base::SplitString(path, ':', &components);
+
+  std::string ending_in1 = "depot_tools/";
+#endif
+  base::FilePath::StringType ending_in2 = FILE_PATH_LITERAL("depot_tools");
+
+  base::FilePath found = GetPathEndingIn(components, ending_in1);
+  if (!found.empty())
+    return found;
+  return GetPathEndingIn(components, ending_in2);
+}
+
 }  // namespace
 
 Setup::Setup()
-    : dotfile_toolchain_(Label()),
-      dotfile_settings_(&dotfile_build_settings_, &dotfile_toolchain_,
-                        std::string()),
-      dotfile_scope_(&dotfile_settings_) {
+    : check_for_bad_items_(true),
+      empty_toolchain_(Label()),
+      empty_settings_(&empty_build_settings_, &empty_toolchain_, std::string()),
+      dotfile_scope_(&empty_settings_) {
 }
 
 Setup::~Setup() {
@@ -90,23 +167,32 @@ bool Setup::DoSetup() {
   CommandLine* cmdline = CommandLine::ForCurrentProcess();
 
   scheduler_.set_verbose_logging(cmdline->HasSwitch(kSwitchVerbose));
+  if (cmdline->HasSwitch(kTimeSwitch) ||
+      cmdline->HasSwitch(kTracelogSwitch))
+    EnableTracing();
 
+  if (!FillArguments(*cmdline))
+    return false;
   if (!FillSourceDir(*cmdline))
     return false;
   if (!RunConfigFile())
     return false;
   if (!FillOtherConfig(*cmdline))
     return false;
+  FillPythonPath();
 
-  // FIXME(brettw) get python path!
-#if defined(OS_WIN)
-  build_settings_.set_python_path(
-      base::FilePath(FILE_PATH_LITERAL("cmd.exe /c python")));
-#else
-  build_settings_.set_python_path(base::FilePath(FILE_PATH_LITERAL("python")));
-#endif
-
-  build_settings_.SetBuildDir(SourceDir("//out/gn/"));
+  base::FilePath build_path = cmdline->GetSwitchValuePath(kSwitchBuildOutput);
+  if (!build_path.empty()) {
+    // We accept either repo paths "//out/Debug" or raw source-root-relative
+    // paths "out/Debug".
+    std::string build_path_8 = FilePathToUTF8(build_path);
+    if (build_path_8.compare(0, 2, "//") != 0)
+      build_path_8.insert(0, "//");
+    build_settings_.SetBuildDir(SourceDir(build_path_8));
+  } else {
+    // Default output dir.
+    build_settings_.SetBuildDir(SourceDir("//out/gn/"));
+  }
 
   return true;
 }
@@ -118,11 +204,63 @@ bool Setup::Run() {
   if (!scheduler_.Run())
     return false;
 
-  Err err = build_settings_.item_tree().CheckForBadItems();
+  Err err;
+  if (check_for_bad_items_) {
+    err = build_settings_.item_tree().CheckForBadItems();
+    if (err.has_error()) {
+      err.PrintToStdout();
+      return false;
+    }
+  }
+
+  if (!build_settings_.build_args().VerifyAllOverridesUsed(&err)) {
+    err.PrintToStdout();
+    return false;
+  }
+
+  // Write out tracing and timing if requested.
+  const CommandLine* cmdline = CommandLine::ForCurrentProcess();
+  if (cmdline->HasSwitch(kTimeSwitch))
+    PrintLongHelp(SummarizeTraces());
+  if (cmdline->HasSwitch(kTracelogSwitch))
+    SaveTraces(cmdline->GetSwitchValuePath(kTracelogSwitch));
+
+  return true;
+}
+
+bool Setup::FillArguments(const CommandLine& cmdline) {
+  std::string args = cmdline.GetSwitchValueASCII(kSwitchArgs);
+  if (args.empty())
+    return true;  // Nothing to set.
+
+  args_input_file_.reset(new InputFile(SourceFile()));
+  args_input_file_->SetContents(args);
+  args_input_file_->set_friendly_name("the command-line \"--args\" settings");
+
+  Err err;
+  args_tokens_ = Tokenizer::Tokenize(args_input_file_.get(), &err);
   if (err.has_error()) {
     err.PrintToStdout();
     return false;
   }
+
+  args_root_ = Parser::Parse(args_tokens_, &err);
+  if (err.has_error()) {
+    err.PrintToStdout();
+    return false;
+  }
+
+  Scope arg_scope(&empty_settings_);
+  args_root_->AsBlock()->ExecuteBlockInScope(&arg_scope, &err);
+  if (err.has_error()) {
+    err.PrintToStdout();
+    return false;
+  }
+
+  // Save the result of the command args.
+  Scope::KeyValueMap overrides;
+  arg_scope.GetCurrentScopeValues(&overrides);
+  build_settings_.build_args().AddArgOverrides(overrides);
   return true;
 }
 
@@ -151,9 +289,36 @@ bool Setup::FillSourceDir(const CommandLine& cmdline) {
 
   if (scheduler_.verbose_logging())
     scheduler_.Log("Using source root", FilePathToUTF8(root_path));
-  build_settings_.set_root_path(root_path);
+  build_settings_.SetRootPath(root_path);
 
   return true;
+}
+
+void Setup::FillPythonPath() {
+#if defined(OS_WIN)
+  // We use python from the depot tools which should be on the path. If we
+  // converted the python_path to a python_command_line then we could
+  // potentially use "cmd.exe /c python.exe" and remove this.
+  static const wchar_t kPythonName[] = L"python.exe";
+  base::FilePath depot_tools = ExtractDepotToolsFromPath();
+  if (!depot_tools.empty()) {
+    base::FilePath python =
+        depot_tools.Append(L"python_bin").Append(kPythonName);
+    if (scheduler_.verbose_logging())
+      scheduler_.Log("Using python", FilePathToUTF8(python));
+    build_settings_.set_python_path(python);
+    return;
+  }
+
+  if (scheduler_.verbose_logging()) {
+    scheduler_.Log("WARNING", "Could not find depot_tools on path, using "
+        "just " + FilePathToUTF8(kPythonName));
+  }
+#else
+  static const char kPythonName[] = "python";
+#endif
+
+  build_settings_.set_python_path(base::FilePath(kPythonName));
 }
 
 bool Setup::RunConfigFile() {

@@ -23,18 +23,18 @@
 
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/svg/RenderSVGRoot.h"
 #include "core/rendering/svg/SVGRenderingContext.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
 #include "core/svg/SVGGraphicsElement.h"
 
+#include "wtf/TemporaryChange.h"
+
 namespace WebCore {
 
-static inline SVGDocumentExtensions* svgExtensionsFromNode(Node* node)
+static inline SVGDocumentExtensions* svgExtensionsFromElement(SVGElement* element)
 {
-    ASSERT(node);
-    ASSERT(node->document());
-    return node->document()->accessSVGExtensions();
+    ASSERT(element);
+    return element->document().accessSVGExtensions();
 }
 
 RenderSVGResourceContainer::RenderSVGResourceContainer(SVGElement* node)
@@ -42,21 +42,27 @@ RenderSVGResourceContainer::RenderSVGResourceContainer(SVGElement* node)
     , m_id(node->getIdAttribute())
     , m_registered(false)
     , m_isInvalidating(false)
+    , m_isInLayout(false)
 {
 }
 
 RenderSVGResourceContainer::~RenderSVGResourceContainer()
 {
     if (m_registered)
-        svgExtensionsFromNode(node())->removeResource(m_id);
+        svgExtensionsFromElement(element())->removeResource(m_id);
 }
 
 void RenderSVGResourceContainer::layout()
 {
-    StackStats::LayoutCheckPoint layoutCheckPoint;
+    ASSERT(needsLayout());
+    if (m_isInLayout)
+        return;
+
+    TemporaryChange<bool> inLayoutChange(m_isInLayout, true);
+
     // Invalidate all resources if our layout changed.
     if (everHadLayout() && selfNeedsLayout())
-        RenderSVGRoot::addResourceForClientInvalidation(this);
+        removeAllClientsFromCache();
 
     RenderSVGHiddenContainer::layout();
 }
@@ -83,9 +89,9 @@ void RenderSVGResourceContainer::idChanged()
     removeAllClientsFromCache();
 
     // Remove old id, that is guaranteed to be present in cache.
-    SVGDocumentExtensions* extensions = svgExtensionsFromNode(node());
+    SVGDocumentExtensions* extensions = svgExtensionsFromElement(element());
     extensions->removeResource(m_id);
-    m_id = toElement(node())->getIdAttribute();
+    m_id = element()->getIdAttribute();
 
     registerResource();
 }
@@ -157,6 +163,14 @@ void RenderSVGResourceContainer::removeClient(RenderObject* client)
     m_clients.remove(client);
 }
 
+void RenderSVGResourceContainer::addClientRenderLayer(Node* node)
+{
+    ASSERT(node);
+    if (!node->renderer() || !node->renderer()->hasLayer())
+        return;
+    m_clientLayers.add(toRenderLayerModelObject(node->renderer())->layer());
+}
+
 void RenderSVGResourceContainer::addClientRenderLayer(RenderLayer* client)
 {
     ASSERT(client);
@@ -171,7 +185,7 @@ void RenderSVGResourceContainer::removeClientRenderLayer(RenderLayer* client)
 
 void RenderSVGResourceContainer::registerResource()
 {
-    SVGDocumentExtensions* extensions = svgExtensionsFromNode(node());
+    SVGDocumentExtensions* extensions = svgExtensionsFromElement(element());
     if (!extensions->hasPendingResource(m_id)) {
         extensions->addResource(m_id, this);
         return;

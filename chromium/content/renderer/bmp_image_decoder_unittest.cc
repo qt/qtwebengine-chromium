@@ -25,6 +25,12 @@ TEST_F(BMPImageDecoderTest, DecodingFast) {
   TestDecoding(TEST_SMALLER, kThresholdSize);
 }
 
-TEST_F(BMPImageDecoderTest, DecodingSlow) {
+#if defined(THREAD_SANITIZER)
+// BMPImageDecoderTest.DecodingSlow als times out under ThreadSanitizer v2.
+#define MAYBE_DecodingSlow DISABLED_DecodingSlow
+#else
+#define MAYBE_DecodingSlow DecodingSlow
+#endif
+TEST_F(BMPImageDecoderTest, MAYBE_DecodingSlow) {
   TestDecoding(TEST_BIGGER, kThresholdSize);
 }

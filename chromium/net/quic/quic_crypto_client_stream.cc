@@ -85,6 +85,8 @@ QuicCryptoClientStream::~QuicCryptoClientStream() {
 
 void QuicCryptoClientStream::OnHandshakeMessage(
     const CryptoHandshakeMessage& message) {
+  QuicCryptoStream::OnHandshakeMessage(message);
+
   DoHandshakeLoop(&message);
 }
 
@@ -150,7 +152,7 @@ void QuicCryptoClientStream::DoHandshakeLoop(
       crypto_config_->LookupOrCreate(server_hostname_);
 
   if (in != NULL) {
-    DVLOG(1) << "Client received: " << in->DebugString();
+    DVLOG(1) << "Client: Received " << in->DebugString();
   }
 
   for (;;) {
@@ -170,7 +172,7 @@ void QuicCryptoClientStream::DoHandshakeLoop(
           crypto_config_->FillInchoateClientHello(
               server_hostname_, cached, &crypto_negotiated_params_, &out);
           next_state_ = STATE_RECV_REJ;
-          DVLOG(1) << "Client Sending: " << out.DebugString();
+          DVLOG(1) << "Client: Sending " << out.DebugString();
           SendHandshakeMessage(out);
           return;
         }
@@ -198,7 +200,7 @@ void QuicCryptoClientStream::DoHandshakeLoop(
           cert_verify_result_.reset();
         }
         next_state_ = STATE_RECV_SHLO;
-        DVLOG(1) << "Client Sending: " << out.DebugString();
+        DVLOG(1) << "Client: Sending " << out.DebugString();
         SendHandshakeMessage(out);
         // Be prepared to decrypt with the new server write key.
         session()->connection()->SetAlternativeDecrypter(
@@ -232,7 +234,7 @@ void QuicCryptoClientStream::DoHandshakeLoop(
           return;
         }
         error = crypto_config_->ProcessRejection(
-            cached, *in, session()->connection()->clock()->WallNow(),
+            *in, session()->connection()->clock()->WallNow(), cached,
             &crypto_negotiated_params_, &error_details);
         if (error != QUIC_NO_ERROR) {
           CloseConnectionWithDetails(error, error_details);
@@ -262,7 +264,6 @@ void QuicCryptoClientStream::DoHandshakeLoop(
         verify_ok_ = false;
 
         ProofVerifier::Status status = verifier->VerifyProof(
-            session()->connection()->version(),
             server_hostname_,
             cached->server_config(),
             cached->certs(),
@@ -332,8 +333,8 @@ void QuicCryptoClientStream::DoHandshakeLoop(
           return;
         }
         error = crypto_config_->ProcessServerHello(
-            *in, session()->connection()->guid(), &crypto_negotiated_params_,
-            &error_details);
+            *in, session()->connection()->guid(), cached,
+            &crypto_negotiated_params_, &error_details);
         if (error != QUIC_NO_ERROR) {
           CloseConnectionWithDetails(
               error, "Server hello invalid: " + error_details);

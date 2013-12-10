@@ -31,33 +31,24 @@
 #include "config.h"
 #include "V8InspectorFrontendHost.h"
 
+#include "V8MouseEvent.h"
+#include "bindings/v8/V8Binding.h"
 #include "core/inspector/InspectorController.h"
 #include "core/inspector/InspectorFrontendClient.h"
 #include "core/inspector/InspectorFrontendHost.h"
 #include "core/platform/HistogramSupport.h"
 #include "wtf/text/WTFString.h"
 
-#include "V8MouseEvent.h"
-#include "bindings/v8/V8Binding.h"
-
 namespace WebCore {
 
 void V8InspectorFrontendHost::platformMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
-#if OS(DARWIN)
+#if OS(MACOSX)
     v8SetReturnValue(args, v8::String::NewSymbol("mac"));
-#elif OS(LINUX)
-    v8SetReturnValue(args, v8::String::NewSymbol("linux"));
-#elif OS(FREEBSD)
-    v8SetReturnValue(args, v8::String::NewSymbol("freebsd"));
-#elif OS(OPENBSD)
-    v8SetReturnValue(args, v8::String::NewSymbol("openbsd"));
-#elif OS(SOLARIS)
-    v8SetReturnValue(args, v8::String::NewSymbol("solaris"));
-#elif OS(WINDOWS)
+#elif OS(WIN)
     v8SetReturnValue(args, v8::String::NewSymbol("windows"));
-#else
-    v8SetReturnValue(args, v8::String::NewSymbol("unknown"));
+#else // Unix-like systems
+    v8SetReturnValue(args, v8::String::NewSymbol("linux"));
 #endif
 }
 
@@ -77,7 +68,7 @@ static void populateContextMenuItems(v8::Local<v8::Array>& itemArray, ContextMen
         v8::Local<v8::Value> subItems = item->Get(v8::String::NewSymbol("subItems"));
         if (!type->IsString())
             continue;
-        String typeString = toWebCoreStringWithNullCheck(type);
+        String typeString = toWebCoreStringWithNullCheck(type.As<v8::String>());
         if (typeString == "separator") {
             ContextMenuItem item(ContextMenuItem(SeparatorType,
                                  ContextMenuItemCustomTagNoAction,

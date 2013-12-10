@@ -80,6 +80,21 @@ WalletItems::MaskedInstrument::Status
   return WalletItems::MaskedInstrument::INAPPLICABLE;
 }
 
+base::string16 DisplayStringFromType(WalletItems::MaskedInstrument::Type type) {
+  switch (type) {
+    case WalletItems::MaskedInstrument::AMEX:
+      return CreditCard::TypeForDisplay(kAmericanExpressCard);
+    case WalletItems::MaskedInstrument::DISCOVER:
+      return CreditCard::TypeForDisplay(kDiscoverCard);
+    case WalletItems::MaskedInstrument::MASTER_CARD:
+      return CreditCard::TypeForDisplay(kMasterCard);
+    case WalletItems::MaskedInstrument::VISA:
+      return CreditCard::TypeForDisplay(kVisaCard);
+    default:
+      return CreditCard::TypeForDisplay(kGenericCard);
+  }
+}
+
 }  // anonymous namespace
 
 WalletItems::MaskedInstrument::MaskedInstrument(
@@ -261,21 +276,9 @@ base::string16 WalletItems::MaskedInstrument::DisplayNameDetail() const {
 }
 
 base::string16 WalletItems::MaskedInstrument::TypeAndLastFourDigits() const {
-  base::string16 display_type;
-
-  if (type_ == AMEX)
-    display_type = CreditCard::TypeForDisplay(kAmericanExpressCard);
-  else if (type_ == DISCOVER)
-    display_type = CreditCard::TypeForDisplay(kDiscoverCard);
-  else if (type_ == MASTER_CARD)
-    display_type = CreditCard::TypeForDisplay(kMasterCard);
-  else if (type_ == VISA)
-    display_type = CreditCard::TypeForDisplay(kVisaCard);
-  else
-    display_type = CreditCard::TypeForDisplay(kGenericCard);
-
   // TODO(dbeam): i18n.
-  return display_type + ASCIIToUTF16(" - ") + last_four_digits();
+  return DisplayStringFromType(type_) + ASCIIToUTF16(" - ") +
+         last_four_digits();
 }
 
 const gfx::Image& WalletItems::MaskedInstrument::CardIcon() const {
@@ -326,6 +329,9 @@ base::string16 WalletItems::MaskedInstrument::GetInfo(
 
     case CREDIT_CARD_VERIFICATION_CODE:
       break;
+
+    case CREDIT_CARD_TYPE:
+      return DisplayStringFromType(type_);
 
     default:
       NOTREACHED();
@@ -386,12 +392,14 @@ WalletItems::WalletItems(const std::vector<RequiredAction>& required_actions,
                          const std::string& google_transaction_id,
                          const std::string& default_instrument_id,
                          const std::string& default_address_id,
-                         const std::string& obfuscated_gaia_id)
+                         const std::string& obfuscated_gaia_id,
+                         AmexPermission amex_permission)
     : required_actions_(required_actions),
       google_transaction_id_(google_transaction_id),
       default_instrument_id_(default_instrument_id),
       default_address_id_(default_address_id),
-      obfuscated_gaia_id_(obfuscated_gaia_id) {}
+      obfuscated_gaia_id_(obfuscated_gaia_id),
+      amex_permission_(amex_permission) {}
 
 WalletItems::~WalletItems() {}
 
@@ -435,11 +443,18 @@ scoped_ptr<WalletItems>
   if (!dictionary.GetString("obfuscated_gaia_id", &obfuscated_gaia_id))
     DVLOG(1) << "Response from Google wallet missing obfuscated gaia id";
 
+  bool amex_disallowed = true;
+  if (!dictionary.GetBoolean("amex_disallowed", &amex_disallowed))
+    DVLOG(1) << "Response from Google wallet missing the amex_disallowed field";
+  AmexPermission amex_permission =
+      amex_disallowed ? AMEX_DISALLOWED : AMEX_ALLOWED;
+
   scoped_ptr<WalletItems> wallet_items(new WalletItems(required_action,
                                                        google_transaction_id,
                                                        default_instrument_id,
                                                        default_address_id,
-                                                       obfuscated_gaia_id));
+                                                       obfuscated_gaia_id,
+                                                       amex_permission));
 
   const ListValue* legal_docs;
   if (dictionary.GetList("required_legal_document", &legal_docs)) {

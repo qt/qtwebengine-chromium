@@ -15,41 +15,26 @@
 #include "vp9/common/vp9_onyxc_int.h"
 
 struct subpix_fn_table;
-void vp9_build_inter_predictors_sby(MACROBLOCKD *xd,
-                                    int mb_row,
-                                    int mb_col,
-                                    BLOCK_SIZE_TYPE bsize);
+void vp9_build_inter_predictors_sby(MACROBLOCKD *xd, int mi_row, int mi_col,
+                                    BLOCK_SIZE bsize);
 
-void vp9_build_inter_predictors_sbuv(MACROBLOCKD *xd,
-                                     int mb_row,
-                                     int mb_col,
-                                     BLOCK_SIZE_TYPE bsize);
+void vp9_build_inter_predictors_sbuv(MACROBLOCKD *xd, int mi_row, int mi_col,
+                                     BLOCK_SIZE bsize);
 
-void vp9_build_inter_predictors_sb(MACROBLOCKD *mb,
-                                   int mb_row, int mb_col,
-                                   BLOCK_SIZE_TYPE bsize);
+void vp9_build_inter_predictors_sb(MACROBLOCKD *xd, int mi_row, int mi_col,
+                                   BLOCK_SIZE bsize);
 
 void vp9_setup_interp_filters(MACROBLOCKD *xd,
                               INTERPOLATIONFILTERTYPE filter,
                               VP9_COMMON *cm);
 
-void vp9_setup_scale_factors_for_frame(struct scale_factors *scale,
-                                       int other_w, int other_h,
-                                       int this_w, int this_h);
-
 void vp9_build_inter_predictor(const uint8_t *src, int src_stride,
                                uint8_t *dst, int dst_stride,
-                               const int_mv *mv_q3,
+                               const MV *mv_q3,
                                const struct scale_factors *scale,
                                int w, int h, int do_avg,
-                               const struct subpix_fn_table *subpix);
-
-void vp9_build_inter_predictor_q4(const uint8_t *src, int src_stride,
-                                  uint8_t *dst, int dst_stride,
-                                  const int_mv *mv_q4,
-                                  const struct scale_factors *scale,
-                                  int w, int h, int do_avg,
-                                  const struct subpix_fn_table *subpix);
+                               const struct subpix_fn_table *subpix,
+                               enum mv_precision precision);
 
 static int scaled_buffer_offset(int x_offset, int y_offset, int stride,
                                 const struct scale_factors *scale) {
@@ -86,43 +71,29 @@ static void setup_dst_planes(MACROBLOCKD *xd,
   }
 }
 
-static void setup_pre_planes(MACROBLOCKD *xd,
-                             const YV12_BUFFER_CONFIG *src0,
-                             const YV12_BUFFER_CONFIG *src1,
+static void setup_pre_planes(MACROBLOCKD *xd, int i,
+                             const YV12_BUFFER_CONFIG *src,
                              int mi_row, int mi_col,
-                             const struct scale_factors *scale,
-                             const struct scale_factors *scale_uv) {
-  const YV12_BUFFER_CONFIG *srcs[2] = {src0, src1};
-  int i, j;
+                             const struct scale_factors *sf) {
+  if (src) {
+    int j;
+    uint8_t* buffers[4] = {src->y_buffer, src->u_buffer, src->v_buffer,
+                           src->alpha_buffer};
+    int strides[4] = {src->y_stride, src->uv_stride, src->uv_stride,
+                      src->alpha_stride};
 
-  for (i = 0; i < 2; ++i) {
-    const YV12_BUFFER_CONFIG *src = srcs[i];
-    if (src) {
-      uint8_t* buffers[4] = {src->y_buffer, src->u_buffer, src->v_buffer,
-                             src->alpha_buffer};
-      int strides[4] = {src->y_stride, src->uv_stride, src->uv_stride,
-                        src->alpha_stride};
-
-      for (j = 0; j < MAX_MB_PLANE; ++j) {
-        struct macroblockd_plane *pd = &xd->plane[j];
-        const struct scale_factors *sf = j ? scale_uv : scale;
-        setup_pred_plane(&pd->pre[i],
-                         buffers[j], strides[j],
-                         mi_row, mi_col, sf ? &sf[i] : NULL,
-                         pd->subsampling_x, pd->subsampling_y);
-      }
+    for (j = 0; j < MAX_MB_PLANE; ++j) {
+      struct macroblockd_plane *pd = &xd->plane[j];
+      setup_pred_plane(&pd->pre[i], buffers[j], strides[j],
+                     mi_row, mi_col, sf, pd->subsampling_x, pd->subsampling_y);
     }
   }
 }
 
-static void set_scale_factors(MACROBLOCKD *xd,
-    int ref0, int ref1,
-    struct scale_factors scale_factor[MAX_REF_FRAMES]) {
-
-  xd->scale_factor[0] = scale_factor[ref0 >= 0 ? ref0 : 0];
-  xd->scale_factor[1] = scale_factor[ref1 >= 0 ? ref1 : 0];
-  xd->scale_factor_uv[0] = xd->scale_factor[0];
-  xd->scale_factor_uv[1] = xd->scale_factor[1];
+static void set_scale_factors(MACROBLOCKD *xd, int ref0, int ref1,
+                              struct scale_factors sf[MAX_REF_FRAMES]) {
+  xd->scale_factor[0] = sf[ref0 >= 0 ? ref0 : 0];
+  xd->scale_factor[1] = sf[ref1 >= 0 ? ref1 : 0];
 }
 
 void vp9_setup_scale_factors(VP9_COMMON *cm, int i);

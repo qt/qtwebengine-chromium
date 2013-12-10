@@ -139,10 +139,7 @@ void BinaryOpNode::Print(std::ostream& out, int indent) const {
 
 // BlockNode ------------------------------------------------------------------
 
-BlockNode::BlockNode(bool has_scope)
-    : has_scope_(has_scope),
-      begin_token_(NULL),
-      end_token_(NULL) {
+BlockNode::BlockNode(bool has_scope) : has_scope_(has_scope) {
 }
 
 BlockNode::~BlockNode() {
@@ -168,18 +165,19 @@ Value BlockNode::Execute(Scope* containing_scope, Err* err) const {
 }
 
 LocationRange BlockNode::GetRange() const {
-  if (begin_token_ && end_token_) {
-    return begin_token_->range().Union(end_token_->range());
+  if (begin_token_.type() != Token::INVALID &&
+      end_token_.type() != Token::INVALID) {
+    return begin_token_.range().Union(end_token_.range());
+  } else if (!statements_.empty()) {
+    return statements_[0]->GetRange().Union(
+        statements_[statements_.size() - 1]->GetRange());
   }
-  return LocationRange();  // TODO(brettw) indicate the entire file somehow.
+  return LocationRange();
 }
 
 Err BlockNode::MakeErrorDescribing(const std::string& msg,
                                    const std::string& help) const {
-  if (begin_token_)
-    return Err(*begin_token_, msg, help);
-  // TODO(brettw) this should have the beginning of the file in it or something.
-  return Err(Location(NULL, 1, 1), msg, help);
+  return Err(GetRange(), msg, help);
 }
 
 void BlockNode::Print(std::ostream& out, int indent) const {
@@ -220,15 +218,17 @@ Value ConditionNode::Execute(Scope* scope, Err* err) const {
   Value condition_result = condition_->Execute(scope, err);
   if (err->has_error())
     return Value();
-  if (condition_result.type() == Value::NONE) {
+  if (condition_result.type() != Value::BOOLEAN) {
     *err = condition_->MakeErrorDescribing(
-        "This does not evaluate to a value.",
-        "Please give me something to work with for the if statement.");
+        "Condition does not evaluate to a boolean value.",
+        std::string("This is a value of type \"") +
+            Value::DescribeType(condition_result.type()) +
+            "\" instead.");
     err->AppendRange(if_token_.range());
     return Value();
   }
 
-  if (condition_result.InterpretAsInt()) {
+  if (condition_result.boolean_value()) {
     if_true_->ExecuteBlockInScope(scope, err);
   } else if (if_false_) {
     // The else block is optional. It's either another condition (for an
@@ -277,11 +277,7 @@ const FunctionCallNode* FunctionCallNode::AsFunctionCall() const {
 }
 
 Value FunctionCallNode::Execute(Scope* scope, Err* err) const {
-  Value args = args_->Execute(scope, err);
-  if (err->has_error())
-    return Value();
-  return functions::RunFunction(scope, this, args.list_value(), block_.get(),
-                                err);
+  return functions::RunFunction(scope, this, args_.get(), block_.get(), err);
 }
 
 LocationRange FunctionCallNode::GetRange() const {
@@ -404,6 +400,10 @@ const LiteralNode* LiteralNode::AsLiteral() const {
 
 Value LiteralNode::Execute(Scope* scope, Err* err) const {
   switch (value_.type()) {
+    case Token::TRUE_TOKEN:
+      return Value(this, true);
+    case Token::FALSE_TOKEN:
+      return Value(this, false);
     case Token::INTEGER: {
       int64 result_int;
       if (!base::StringToInt64(value_.value(), &result_int)) {
@@ -413,9 +413,6 @@ Value LiteralNode::Execute(Scope* scope, Err* err) const {
       return Value(this, result_int);
     }
     case Token::STRING: {
-      // TODO(brettw) Unescaping probably needs to be moved & improved.
-      // The input value includes the quotes around the string, strip those
-      // off and unescape.
       Value v(this, Value::STRING);
       ExpandStringLiteral(scope, value_, &v, err);
       return v;

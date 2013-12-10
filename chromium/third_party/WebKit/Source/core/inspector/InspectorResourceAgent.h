@@ -88,11 +88,13 @@ public:
 
     ~InspectorResourceAgent();
 
+    // Called from instrumentation.
     void willSendRequest(unsigned long identifier, DocumentLoader*, ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo&);
     void markResourceAsCached(unsigned long identifier);
     void didReceiveResourceResponse(unsigned long identifier, DocumentLoader*, const ResourceResponse&, ResourceLoader*);
     void didReceiveData(unsigned long identifier, const char* data, int dataLength, int encodedDataLength);
     void didFinishLoading(unsigned long identifier, DocumentLoader*, double monotonicFinishTime);
+    void didReceiveCORSRedirectResponse(unsigned long identifier, DocumentLoader*, const ResourceResponse&, ResourceLoader*);
     void didFailLoading(unsigned long identifier, DocumentLoader*, const ResourceError&);
     void didCommitLoad(Frame*, DocumentLoader*);
     void scriptImported(unsigned long identifier, const String& sourceString);
@@ -103,17 +105,18 @@ public:
     void didFailXHRLoading(ThreadableLoaderClient*);
     void didFinishXHRLoading(ThreadableLoaderClient*, unsigned long identifier, ScriptString sourceString, const String&, const String&, unsigned);
     void didReceiveXHRResponse(unsigned long identifier);
-    void willLoadXHRSynchronously();
-    void didLoadXHRSynchronously();
 
     void willDestroyResource(Resource*);
 
     void applyUserAgentOverride(String* userAgent);
 
-    // FIXME: InspectorResourceAgent should now be aware of style recalculation.
+    // FIXME: InspectorResourceAgent should not be aware of style recalculation.
     void willRecalculateStyle(Document*);
     void didRecalculateStyle();
     void didScheduleStyleRecalculation(Document*);
+
+    void frameScheduledNavigation(Frame*, double);
+    void frameClearedScheduledNavigation(Frame*);
 
     PassRefPtr<TypeBuilder::Network::Initiator> buildInitiatorObject(Document*, const FetchInitiatorInfo&);
 
@@ -145,6 +148,9 @@ public:
 
     virtual void loadResourceForFrontend(ErrorString*, const String& frameId, const String& url, const RefPtr<JSONObject>* requestHeaders, PassRefPtr<LoadResourceForFrontendCallback>);
 
+    // Called from other agents.
+    bool fetchResourceContent(Frame*, const KURL&, String* content, bool* base64Encoded);
+
 private:
     InspectorResourceAgent(InstrumentingAgents*, InspectorPageAgent*, InspectorClient*, InspectorCompositeState*, InspectorOverlay*);
 
@@ -156,10 +162,13 @@ private:
     InspectorFrontend::Network* m_frontend;
     String m_userAgentOverride;
     OwnPtr<NetworkResourcesData> m_resourcesData;
-    bool m_loadingXHRSynchronously;
 
     typedef HashMap<ThreadableLoaderClient*, RefPtr<XHRReplayData> > PendingXHRReplayDataMap;
     PendingXHRReplayDataMap m_pendingXHRReplayData;
+
+    typedef HashMap<String, RefPtr<TypeBuilder::Network::Initiator> > FrameNavigationInitiatorMap;
+    FrameNavigationInitiatorMap m_frameNavigationInitiatorMap;
+
     // FIXME: InspectorResourceAgent should now be aware of style recalculation.
     RefPtr<TypeBuilder::Network::Initiator> m_styleRecalculationInitiator;
     bool m_isRecalculatingStyle;

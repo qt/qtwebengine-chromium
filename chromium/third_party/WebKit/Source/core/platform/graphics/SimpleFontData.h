@@ -41,12 +41,13 @@
 #include "wtf/text/StringHash.h"
 #include "wtf/UnusedParam.h"
 
-#if OS(DARWIN)
+#if OS(MACOSX)
 #include "wtf/RetainPtr.h"
 #endif
 
 namespace WebCore {
 
+class CSSFontFaceSource;
 class FontDescription;
 class SharedBuffer;
 struct WidthIterator;
@@ -68,9 +69,9 @@ public:
     };
 
     // Used to create platform fonts.
-    static PassRefPtr<SimpleFontData> create(const FontPlatformData& platformData, bool isCustomFont = false, bool isLoading = false, bool isTextOrientationFallback = false)
+    static PassRefPtr<SimpleFontData> create(const FontPlatformData& platformData, bool isCustomFont = false, bool isLoadingFallback = false, bool isTextOrientationFallback = false)
     {
-        return adoptRef(new SimpleFontData(platformData, isCustomFont, isLoading, isTextOrientationFallback));
+        return adoptRef(new SimpleFontData(platformData, isCustomFont, isLoadingFallback, isTextOrientationFallback));
     }
 
     // Used to create SVG Fonts.
@@ -134,7 +135,7 @@ public:
     float adjustedSpaceWidth() const { return m_adjustedSpaceWidth; }
     void setSpaceWidth(float spaceWidth) { m_spaceWidth = spaceWidth; }
 
-#if OS(DARWIN)
+#if OS(MACOSX)
     float syntheticBoldOffset() const { return m_syntheticBoldOffset; }
 #endif
 
@@ -156,28 +157,31 @@ public:
 
     AdditionalFontData* fontData() const { return m_fontData.get(); }
     bool isSVGFont() const { return m_fontData; }
+    bool isLoadingFallback() const { return m_customFontData.isLoadingFallback; }
 
-    virtual bool isCustomFont() const { return m_isCustomFont; }
-    virtual bool isLoading() const { return m_isLoading; }
+    virtual bool isCustomFont() const { return m_customFontData.isCustomFont; }
+    virtual bool isLoading() const { return m_customFontData.isLoadingFallback && m_customFontData.isUsed; }
     virtual bool isSegmented() const;
 
     const GlyphData& missingGlyphData() const { return m_missingGlyphData; }
     void setMissingGlyphData(const GlyphData& glyphData) { m_missingGlyphData = glyphData; }
 
+    void beginLoadIfNeeded() const;
+
 #ifndef NDEBUG
     virtual String description() const;
 #endif
 
-#if OS(DARWIN)
+#if OS(MACOSX)
     const SimpleFontData* getCompositeFontReferenceFontData(NSFont *key) const;
     NSFont* getNSFont() const { return m_platformData.font(); }
 #endif
 
-#if OS(DARWIN)
+#if OS(MACOSX)
     CFDictionaryRef getCFStringAttributes(TypesettingFeatures, FontOrientation) const;
 #endif
 
-#if OS(DARWIN) || USE(HARFBUZZ)
+#if OS(MACOSX) || USE(HARFBUZZ)
     bool canRenderCombiningCharacterSequence(const UChar*, size_t) const;
 #endif
 
@@ -190,8 +194,11 @@ public:
         return false;
     }
 
+    void setCSSFontFaceSource(CSSFontFaceSource* source) { m_customFontData.fontFaceSource = source; }
+    void clearCSSFontFaceSource() { m_customFontData.fontFaceSource = 0; }
+
 private:
-    SimpleFontData(const FontPlatformData&, bool isCustomFont = false, bool isLoading = false, bool isTextOrientationFallback = false);
+    SimpleFontData(const FontPlatformData&, bool isCustomFont = false, bool isLoadingFallback = false, bool isTextOrientationFallback = false);
 
     SimpleFontData(PassOwnPtr<AdditionalFontData> , float fontSize, bool syntheticBold, bool syntheticItalic);
 
@@ -216,8 +223,6 @@ private:
     mutable GlyphMetricsMap<float> m_glyphToWidthMap;
 
     bool m_treatAsFixedPitch;
-    bool m_isCustomFont;  // Whether or not we are custom font loaded via @font-face
-    bool m_isLoading; // Whether or not this custom font is still in the act of loading.
 
     bool m_isTextOrientationFallback;
     bool m_isBrokenIdeographFallback;
@@ -245,7 +250,7 @@ private:
         RefPtr<SimpleFontData> brokenIdeograph;
         RefPtr<SimpleFontData> verticalRightOrientation;
         RefPtr<SimpleFontData> uprightOrientation;
-#if OS(DARWIN)
+#if OS(MACOSX)
         mutable RetainPtr<CFMutableDictionaryRef> compositeFontReferences;
 #endif
 
@@ -258,13 +263,28 @@ private:
 
     mutable OwnPtr<DerivedFontData> m_derivedFontData;
 
-#if OS(DARWIN)
+    struct CustomFontData {
+        CustomFontData(bool isCustomFont, bool isLoadingFallback)
+            : isCustomFont(isCustomFont)
+            , isLoadingFallback(isLoadingFallback)
+            , isUsed(false)
+            , fontFaceSource(0)
+        {
+        }
+        bool isCustomFont; // Whether or not we are custom font loaded via @font-face
+        bool isLoadingFallback; // Whether or not this is a temporary font data for a custom font which is not yet loaded.
+        mutable bool isUsed;
+        CSSFontFaceSource* fontFaceSource;
+    };
+    CustomFontData m_customFontData;
+
+#if OS(MACOSX)
     float m_syntheticBoldOffset;
 
     mutable HashMap<unsigned, RetainPtr<CFDictionaryRef> > m_CFStringAttributes;
 #endif
 
-#if OS(DARWIN) || USE(HARFBUZZ)
+#if OS(MACOSX) || USE(HARFBUZZ)
     mutable OwnPtr<HashMap<String, bool> > m_combiningCharacterSequenceSupport;
 #endif
 };
@@ -301,7 +321,7 @@ ALWAYS_INLINE float SimpleFontData::widthForGlyph(Glyph glyph) const
         width = m_fontData->widthForSVGGlyph(glyph, m_platformData.size());
 #if ENABLE(OPENTYPE_VERTICAL)
     else if (m_verticalData)
-#if OS(DARWIN)
+#if OS(MACOSX)
         width = m_verticalData->advanceHeight(this, glyph) + m_syntheticBoldOffset;
 #else
         width = m_verticalData->advanceHeight(this, glyph);

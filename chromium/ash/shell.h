@@ -18,8 +18,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "ui/aura/client/activation_change_observer.h"
-#include "ui/base/events/event_target.h"
 #include "ui/base/ui_base_types.h"
+#include "ui/events/event_target.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size.h"
@@ -75,6 +75,7 @@ class DisplayController;
 class HighContrastController;
 class Launcher;
 class LauncherDelegate;
+class LauncherItemDelegateManager;
 class LauncherModel;
 class MagnificationController;
 class MruWindowTracker;
@@ -99,10 +100,10 @@ class WindowSelectorController;
 
 namespace internal {
 class AcceleratorFilter;
-class ActivationController;
 class AppListController;
+class AppListShelfItemDelegate;
 class CaptureController;
-class DisplayChangeObserverX11;
+class DisplayChangeObserver;
 class DisplayErrorObserver;
 class DisplayManager;
 class DragDropController;
@@ -183,8 +184,7 @@ class ASH_EXPORT Shell
   // be overridden by using ScopedTargetRootWindow().
   // If you want to get a RootWindow of the active window, just use
   // |wm::GetActiveWindow()->GetRootWindow()|.
-  // TODO(oshima): Rename to GetTargetRootWindow() crbug.com/266378.
-  static aura::RootWindow* GetActiveRootWindow();
+  static aura::RootWindow* GetTargetRootWindow();
 
   // Returns the global Screen object that's always active in ash.
   static gfx::Screen* GetScreen();
@@ -208,7 +208,7 @@ class ASH_EXPORT Shell
   // application windows to be maximized only.
   static bool IsForcedMaximizeMode();
 
-  void set_active_root_window(aura::RootWindow* target_root_window) {
+  void set_target_root_window(aura::RootWindow* target_root_window) {
     target_root_window_ = target_root_window;
   }
 
@@ -275,11 +275,9 @@ class ASH_EXPORT Shell
   void AddShellObserver(ShellObserver* observer);
   void RemoveShellObserver(ShellObserver* observer);
 
-#if !defined(OS_MACOSX)
   AcceleratorController* accelerator_controller() {
     return accelerator_controller_.get();
   }
-#endif  // !defined(OS_MACOSX)
 
   internal::DisplayManager* display_manager() {
     return display_manager_.get();
@@ -364,6 +362,10 @@ class ASH_EXPORT Shell
   }
   aura::client::ActivationClient* activation_client() {
     return activation_client_;
+  }
+
+  LauncherItemDelegateManager* launcher_item_delegate_manager() {
+    return launcher_item_delegate_manager_.get();
   }
 
   ScreenAsh* screen() { return screen_; }
@@ -528,12 +530,8 @@ class ASH_EXPORT Shell
 
   std::vector<WindowAndBoundsPair> to_restore_;
 
-#if !defined(OS_MACOSX)
   scoped_ptr<NestedDispatcherController> nested_dispatcher_controller_;
-
   scoped_ptr<AcceleratorController> accelerator_controller_;
-#endif  // !defined(OS_MACOSX)
-
   scoped_ptr<ShellDelegate> delegate_;
   scoped_ptr<SystemTrayDelegate> system_tray_delegate_;
   scoped_ptr<SystemTrayNotifier> system_tray_notifier_;
@@ -541,13 +539,14 @@ class ASH_EXPORT Shell
   scoped_ptr<CapsLockDelegate> caps_lock_delegate_;
   scoped_ptr<SessionStateDelegate> session_state_delegate_;
   scoped_ptr<LauncherDelegate> launcher_delegate_;
+  scoped_ptr<LauncherItemDelegateManager> launcher_item_delegate_manager_;
+  scoped_ptr<internal::AppListShelfItemDelegate>
+      app_list_shelf_item_delegate_;
 
   scoped_ptr<LauncherModel> launcher_model_;
 
   scoped_ptr<internal::AppListController> app_list_controller_;
 
-  scoped_ptr<internal::ActivationController> activation_controller_;
-  scoped_ptr<internal::CaptureController> capture_controller_;
   scoped_ptr<internal::DragDropController> drag_drop_controller_;
   scoped_ptr<internal::ResizeShadowController> resize_shadow_controller_;
   scoped_ptr<views::corewm::ShadowController> shadow_controller_;
@@ -589,10 +588,8 @@ class ASH_EXPORT Shell
   // An event filter which handles system level gestures
   scoped_ptr<internal::SystemGestureEventFilter> system_gesture_filter_;
 
-#if !defined(OS_MACOSX)
   // An event filter that pre-handles global accelerators.
   scoped_ptr<internal::AcceleratorFilter> accelerator_filter_;
-#endif
 
   // An event filter that pre-handles all key events to send them to an IME.
   scoped_ptr<views::corewm::InputMethodEventFilter> input_method_filter_;
@@ -609,8 +606,8 @@ class ASH_EXPORT Shell
       output_configurator_animation_;
   scoped_ptr<internal::DisplayErrorObserver> display_error_observer_;
 
-  // Receives output change events and udpates the display manager.
-  scoped_ptr<internal::DisplayChangeObserverX11> display_change_observer_;
+  // Listens for output changes and updates the display manager.
+  scoped_ptr<internal::DisplayChangeObserver> display_change_observer_;
 #endif  // defined(OS_CHROMEOS) && defined(USE_X11)
 
   scoped_ptr<internal::ResolutionNotificationController>

@@ -16,6 +16,7 @@
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/system_wrappers/interface/clock.h"
 #include "webrtc/video_engine/include/vie_render.h"
+#include "webrtc/video_engine/internal/transport_adapter.h"
 #include "webrtc/video_engine/new_include/video_receive_stream.h"
 
 namespace webrtc {
@@ -23,18 +24,18 @@ namespace webrtc {
 class VideoEngine;
 class ViEBase;
 class ViECodec;
+class ViEExternalCodec;
 class ViENetwork;
 class ViERender;
 class ViERTP_RTCP;
 
 namespace internal {
 
-class VideoReceiveStream : public newapi::VideoReceiveStream,
-                           public webrtc::ExternalRenderer,
-                           public webrtc::Transport {
+class VideoReceiveStream : public webrtc::VideoReceiveStream,
+                           public webrtc::ExternalRenderer {
  public:
   VideoReceiveStream(webrtc::VideoEngine* video_engine,
-                     const newapi::VideoReceiveStream::Config& config,
+                     const VideoReceiveStream::Config& config,
                      newapi::Transport* transport);
   virtual ~VideoReceiveStream();
 
@@ -50,22 +51,18 @@ class VideoReceiveStream : public newapi::VideoReceiveStream,
 
   virtual bool IsTextureSupported() OVERRIDE;
 
-  virtual int SendPacket(int /*channel*/, const void* packet, int length)
-      OVERRIDE;
-  virtual int SendRTCPPacket(int /*channel*/, const void* packet, int length)
-      OVERRIDE;
-
  public:
   virtual bool DeliverRtcp(const uint8_t* packet, size_t length);
   virtual bool DeliverRtp(const uint8_t* packet, size_t length);
 
  private:
-  newapi::Transport* transport_;
-  newapi::VideoReceiveStream::Config config_;
+  TransportAdapter transport_adapter_;
+  VideoReceiveStream::Config config_;
   Clock* clock_;
 
   ViEBase* video_engine_base_;
   ViECodec* codec_;
+  ViEExternalCodec* external_codec_;
   ViENetwork* network_;
   ViERender* render_;
   ViERTP_RTCP* rtp_rtcp_;

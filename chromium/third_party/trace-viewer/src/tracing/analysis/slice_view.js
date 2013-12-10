@@ -22,11 +22,15 @@ base.exportTo('tracing.analysis', function() {
       this.objectInstance_ = undefined;
     },
 
-    set modelObject(obj) {
+    get requiresTallView() {
+      return false;
+    },
+
+    set modelEvent(obj) {
       this.slice = obj;
     },
 
-    get modelObject() {
+    get modelEvent() {
       return this.slice;
     },
 

@@ -35,6 +35,7 @@
 #include "content/public/browser/web_drag_dest_delegate.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/drop_data.h"
+#include "net/base/net_util.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/drag_drop_client.h"
@@ -48,11 +49,11 @@
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/drag_utils.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_utils.h"
 #include "ui/base/hit_test.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/events/event.h"
+#include "ui/events/event_utils.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_png_rep.h"
@@ -235,9 +236,34 @@ class WebDragSourceAura : public base::MessageLoopForUI::Observer,
   DISALLOW_COPY_AND_ASSIGN(WebDragSourceAura);
 };
 
+#if defined(OS_WIN)
+// Fill out the OSExchangeData with a file contents, synthesizing a name if
+// necessary.
+void PrepareDragForFileContents(const DropData& drop_data,
+                                ui::OSExchangeData::Provider* provider) {
+  base::FilePath file_name(drop_data.file_description_filename);
+  // Images without ALT text will only have a file extension so we need to
+  // synthesize one from the provided extension and URL.
+  if (file_name.BaseName().RemoveExtension().empty()) {
+    const string16 extension = file_name.Extension();
+    // Retrieve the name from the URL.
+    file_name = base::FilePath(net::GetSuggestedFilename(
+        drop_data.url, "", "", "", "", "")).ReplaceExtension(extension);
+  }
+  provider->SetFileContents(file_name, drop_data.file_contents);
+}
+#endif
+
 // Utility to fill a ui::OSExchangeDataProvider object from DropData.
 void PrepareDragData(const DropData& drop_data,
                      ui::OSExchangeData::Provider* provider) {
+#if defined(OS_WIN)
+  // We set the file contents before the URL because the URL also sets file
+  // contents (to a .URL shortcut).  We want to prefer file content data over
+  // a shortcut so we add it first.
+  if (!drop_data.file_contents.empty())
+    PrepareDragForFileContents(drop_data, provider);
+#endif
   if (!drop_data.text.string().empty())
     provider->SetString(drop_data.text.string());
   if (drop_data.url.is_valid())
@@ -909,7 +935,7 @@ void WebContentsViewAura::ResetOverscrollTransform() {
     ui::ScopedLayerAnimationSettings settings(target->layer()->GetAnimator());
     settings.SetPreemptionStrategy(
         ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
-    settings.SetTweenType(ui::Tween::EASE_OUT);
+    settings.SetTweenType(gfx::Tween::EASE_OUT);
     settings.AddObserver(this);
     target->SetTransform(gfx::Transform());
   }
@@ -917,7 +943,7 @@ void WebContentsViewAura::ResetOverscrollTransform() {
     ui::ScopedLayerAnimationSettings settings(target->layer()->GetAnimator());
     settings.SetPreemptionStrategy(
         ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
-    settings.SetTweenType(ui::Tween::EASE_OUT);
+    settings.SetTweenType(gfx::Tween::EASE_OUT);
     UpdateOverscrollWindowBrightness(0.f);
   }
 }
@@ -942,7 +968,7 @@ void WebContentsViewAura::CompleteOverscrollNavigation(OverscrollMode mode) {
   ui::ScopedLayerAnimationSettings settings(target->layer()->GetAnimator());
   settings.SetPreemptionStrategy(
       ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
-  settings.SetTweenType(ui::Tween::EASE_OUT);
+  settings.SetTweenType(gfx::Tween::EASE_OUT);
   settings.AddObserver(this);
   gfx::Transform transform;
   int content_width =
@@ -1169,13 +1195,15 @@ RenderWidgetHostView* WebContentsViewAura::CreateViewForWidget(
     navigation_overlay_->StartObservingView(ToRenderWidgetHostViewAura(view));
   }
 
-  view->Show();
+  RenderWidgetHostImpl* host_impl =
+      RenderWidgetHostImpl::From(render_widget_host);
+
+  if (!host_impl->is_hidden())
+    view->Show();
 
   // We listen to drag drop events in the newly created view's window.
   aura::client::SetDragDropDelegate(view->GetNativeView(), this);
 
-  RenderWidgetHostImpl* host_impl =
-      RenderWidgetHostImpl::From(render_widget_host);
   if (host_impl->overscroll_controller() &&
       (!web_contents_->GetDelegate() ||
        web_contents_->GetDelegate()->CanOverscrollContent())) {
@@ -1227,11 +1255,12 @@ void WebContentsViewAura::SetOverscrollControllerEnabled(bool enabled) {
 // WebContentsViewAura, RenderViewHostDelegateView implementation:
 
 void WebContentsViewAura::ShowContextMenu(const ContextMenuParams& params) {
-  if (delegate_)
-    delegate_->ShowContextMenu(params);
   if (touch_editable_)
     touch_editable_->EndTouchEditing();
-
+  if (delegate_) {
+    delegate_->ShowContextMenu(params);
+    // WARNING: we may have been deleted during the call to ShowContextMenu().
+  }
 }
 
 void WebContentsViewAura::ShowPopupMenu(const gfx::Rect& bounds,
@@ -1507,11 +1536,8 @@ bool WebContentsViewAura::HasHitTestMask() const {
 void WebContentsViewAura::GetHitTestMask(gfx::Path* mask) const {
 }
 
-scoped_refptr<ui::Texture> WebContentsViewAura::CopyTexture() {
-  // The layer we create doesn't have an external texture, so this should never
-  // get invoked.
-  NOTREACHED();
-  return scoped_refptr<ui::Texture>();
+void WebContentsViewAura::DidRecreateLayer(ui::Layer *old_layer,
+                                           ui::Layer *new_layer) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////

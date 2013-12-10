@@ -31,16 +31,28 @@ class ScriptExecutionContext;
 
 class Comment FINAL : public CharacterData {
 public:
-    static PassRefPtr<Comment> create(Document*, const String&);
+    static PassRefPtr<Comment> create(Document&, const String&);
 
 private:
-    Comment(Document*, const String&);
+    Comment(Document&, const String&);
 
     virtual String nodeName() const;
     virtual NodeType nodeType() const;
     virtual PassRefPtr<Node> cloneNode(bool deep = true);
     virtual bool childTypeAllowed(NodeType) const;
 };
+
+inline Comment* toComment(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->nodeType() == Node::COMMENT_NODE);
+    return static_cast<Comment*>(node);
+}
+
+inline const Comment* toComment(const Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->nodeType() == Node::COMMENT_NODE);
+    return static_cast<const Comment*>(node);
+}
 
 } // namespace WebCore
 

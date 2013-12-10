@@ -43,7 +43,7 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGScriptElement)
     REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGScriptElement::SVGScriptElement(const QualifiedName& tagName, Document* document, bool wasInsertedByParser, bool alreadyStarted)
+inline SVGScriptElement::SVGScriptElement(const QualifiedName& tagName, Document& document, bool wasInsertedByParser, bool alreadyStarted)
     : SVGElement(tagName, document)
     , m_svgLoadEventTimer(this, &SVGElement::svgLoadEventTimerFired)
     , m_loader(ScriptLoader::create(this, wasInsertedByParser, alreadyStarted))
@@ -53,7 +53,7 @@ inline SVGScriptElement::SVGScriptElement(const QualifiedName& tagName, Document
     registerAnimatedPropertiesForSVGScriptElement();
 }
 
-PassRefPtr<SVGScriptElement> SVGScriptElement::create(const QualifiedName& tagName, Document* document, bool insertedByParser)
+PassRefPtr<SVGScriptElement> SVGScriptElement::create(const QualifiedName& tagName, Document& document, bool insertedByParser)
 {
     return adoptRef(new SVGScriptElement(tagName, document, insertedByParser, false));
 }
@@ -121,10 +121,13 @@ void SVGScriptElement::svgAttributeChanged(const QualifiedName& attrName)
 Node::InsertionNotificationRequest SVGScriptElement::insertedInto(ContainerNode* rootParent)
 {
     SVGElement::insertedInto(rootParent);
-    m_loader->insertedInto(rootParent);
-    if (rootParent->inDocument())
-        SVGExternalResourcesRequired::insertedIntoDocument(this);
-    return InsertionDone;
+    return InsertionShouldCallDidNotifySubtreeInsertions;
+}
+
+void SVGScriptElement::didNotifySubtreeInsertionsToDocument()
+{
+    m_loader->didNotifySubtreeInsertionsToDocument();
+    SVGExternalResourcesRequired::insertedIntoDocument(this);
 }
 
 void SVGScriptElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
@@ -158,7 +161,7 @@ void SVGScriptElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) cons
 {
     SVGElement::addSubresourceAttributeURLs(urls);
 
-    addSubresourceURL(urls, document()->completeURL(hrefCurrentValue()));
+    addSubresourceURL(urls, document().completeURL(hrefCurrentValue()));
 }
 
 String SVGScriptElement::sourceAttributeValue() const

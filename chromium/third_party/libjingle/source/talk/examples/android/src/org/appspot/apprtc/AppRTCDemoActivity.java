@@ -62,6 +62,8 @@ import org.webrtc.VideoTrack;
 import java.util.EnumSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Main Activity of the AppRTCDemo Android app demonstrating interoperability
@@ -71,6 +73,8 @@ import java.util.List;
 public class AppRTCDemoActivity extends Activity
     implements AppRTCClient.IceServersObserver {
   private static final String TAG = "AppRTCDemoActivity";
+  private PeerConnectionFactory factory;
+  private VideoSource videoSource;
   private PeerConnection pc;
   private final PCObserver pcObserver = new PCObserver();
   private final SDPObserver sdpObserver = new SDPObserver();
@@ -183,8 +187,7 @@ public class AppRTCDemoActivity extends Activity
 
   @Override
   public void onIceServers(List<PeerConnection.IceServer> iceServers) {
-    PeerConnectionFactory factory = new PeerConnectionFactory();
-
+    factory = new PeerConnectionFactory();
     pc = factory.createPeerConnection(
         iceServers, appRtcClient.pcConstraints(), pcObserver);
 
@@ -217,7 +220,7 @@ public class AppRTCDemoActivity extends Activity
     {
       logAndToast("Creating local video source...");
       VideoCapturer capturer = getVideoCapturer();
-      VideoSource videoSource = factory.createVideoSource(
+      videoSource = factory.createVideoSource(
           capturer, appRtcClient.videoConstraints());
       MediaStream lMS = factory.createLocalMediaStream("ARDAMS");
       VideoTrack videoTrack = factory.createVideoTrack("ARDAMSv0", videoSource);
@@ -288,6 +291,55 @@ public class AppRTCDemoActivity extends Activity
     }
   }
 
+  // Mangle SDP to prefer ISAC/16000 over any other audio codec.
+  private String preferISAC(String sdpDescription) {
+    String[] lines = sdpDescription.split("\n");
+    int mLineIndex = -1;
+    String isac16kRtpMap = null;
+    Pattern isac16kPattern =
+        Pattern.compile("^a=rtpmap:(\\d+) ISAC/16000[\r]?$");
+    for (int i = 0;
+         (i < lines.length) && (mLineIndex == -1 || isac16kRtpMap == null);
+         ++i) {
+      if (lines[i].startsWith("m=audio ")) {
+        mLineIndex = i;
+        continue;
+      }
+      Matcher isac16kMatcher = isac16kPattern.matcher(lines[i]);
+      if (isac16kMatcher.matches()) {
+        isac16kRtpMap = isac16kMatcher.group(1);
+        continue;
+      }
+    }
+    if (mLineIndex == -1) {
+      Log.d(TAG, "No m=audio line, so can't prefer iSAC");
+      return sdpDescription;
+    }
+    if (isac16kRtpMap == null) {
+      Log.d(TAG, "No ISAC/16000 line, so can't prefer iSAC");
+      return sdpDescription;
+    }
+    String[] origMLineParts = lines[mLineIndex].split(" ");
+    StringBuilder newMLine = new StringBuilder();
+    int origPartIndex = 0;
+    // Format is: m=<media> <port> <proto> <fmt> ...
+    newMLine.append(origMLineParts[origPartIndex++]).append(" ");
+    newMLine.append(origMLineParts[origPartIndex++]).append(" ");
+    newMLine.append(origMLineParts[origPartIndex++]).append(" ");
+    newMLine.append(isac16kRtpMap).append(" ");
+    for (; origPartIndex < origMLineParts.length; ++origPartIndex) {
+      if (!origMLineParts[origPartIndex].equals(isac16kRtpMap)) {
+        newMLine.append(origMLineParts[origPartIndex]).append(" ");
+      }
+    }
+    lines[mLineIndex] = newMLine.toString();
+    StringBuilder newSdpDescription = new StringBuilder();
+    for (String line : lines) {
+      newSdpDescription.append(line).append("\n");
+    }
+    return newSdpDescription.toString();
+  }
+
   // Implementation detail: observe ICE & stream changes and react accordingly.
   private class PCObserver implements PeerConnection.Observer {
     @Override public void onIceCandidate(final IceCandidate candidate){
@@ -326,11 +378,13 @@ public class AppRTCDemoActivity extends Activity
     @Override public void onAddStream(final MediaStream stream){
       runOnUiThread(new Runnable() {
           public void run() {
-            abortUnless(stream.audioTracks.size() == 1 &&
-                stream.videoTracks.size() == 1,
+            abortUnless(stream.audioTracks.size() <= 1 &&
+                stream.videoTracks.size() <= 1,
                 "Weird-looking stream: " + stream);
-            stream.videoTracks.get(0).addRenderer(new VideoRenderer(
-                new VideoCallbacks(vsv, VideoStreamsView.Endpoint.REMOTE)));
+            if (stream.videoTracks.size() == 1) {
+              stream.videoTracks.get(0).addRenderer(new VideoRenderer(
+                  new VideoCallbacks(vsv, VideoStreamsView.Endpoint.REMOTE)));
+            }
           }
         });
     }
@@ -357,10 +411,12 @@ public class AppRTCDemoActivity extends Activity
   // Implementation detail: handle offer creation/signaling and answer setting,
   // as well as adding remote ICE candidates once the answer SDP is set.
   private class SDPObserver implements SdpObserver {
-    @Override public void onCreateSuccess(final SessionDescription sdp) {
+    @Override public void onCreateSuccess(final SessionDescription origSdp) {
       runOnUiThread(new Runnable() {
           public void run() {
-            logAndToast("Sending " + sdp.type);
+            logAndToast("Sending " + origSdp.type);
+            SessionDescription sdp = new SessionDescription(
+                origSdp.type, preferISAC(origSdp.description));
             JSONObject json = new JSONObject();
             jsonPut(json, "type", sdp.type.canonicalForm());
             jsonPut(json, "sdp", sdp.description);
@@ -446,7 +502,7 @@ public class AppRTCDemoActivity extends Activity
         } else if (type.equals("answer") || type.equals("offer")) {
           SessionDescription sdp = new SessionDescription(
               SessionDescription.Type.fromCanonicalForm(type),
-              (String) json.get("sdp"));
+              preferISAC((String) json.get("sdp")));
           pc.setRemoteDescription(sdpObserver, sdp);
         } else if (type.equals("bye")) {
           logAndToast("Remote end hung up; dropping PeerConnection");
@@ -484,6 +540,14 @@ public class AppRTCDemoActivity extends Activity
         appRtcClient.sendMessage("{\"type\": \"bye\"}");
         appRtcClient.disconnect();
         appRtcClient = null;
+      }
+      if (videoSource != null) {
+        videoSource.dispose();
+        videoSource = null;
+      }
+      if (factory != null) {
+        factory.dispose();
+        factory = null;
       }
       finish();
     }

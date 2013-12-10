@@ -109,7 +109,7 @@ RenderObject* RenderObjectChildList::removeChildNode(RenderObject* owner, Render
     if (!owner->documentBeingDestroyed())
         RenderCounter::rendererRemovedFromTree(oldChild);
 
-    if (AXObjectCache* cache = owner->document()->existingAXObjectCache())
+    if (AXObjectCache* cache = owner->document().existingAXObjectCache())
         cache->childrenChanged(owner);
 
     return oldChild;
@@ -118,7 +118,7 @@ RenderObject* RenderObjectChildList::removeChildNode(RenderObject* owner, Render
 void RenderObjectChildList::insertChildNode(RenderObject* owner, RenderObject* newChild, RenderObject* beforeChild, bool notifyRenderer)
 {
     ASSERT(!newChild->parent());
-    ASSERT(!owner->isBlockFlow() || (!newChild->isTableSection() && !newChild->isTableRow() && !newChild->isTableCell()));
+    ASSERT(!owner->isRenderBlockFlow() || (!newChild->isTableSection() && !newChild->isTableRow() && !newChild->isTableCell()));
 
     while (beforeChild && beforeChild->parent() && beforeChild->parent() != owner)
         beforeChild = beforeChild->parent();
@@ -161,7 +161,7 @@ void RenderObjectChildList::insertChildNode(RenderObject* owner, RenderObject* n
     if (!owner->normalChildNeedsLayout())
         owner->setChildNeedsLayout(); // We may supply the static position for an absolute positioned child.
 
-    if (AXObjectCache* cache = owner->document()->axObjectCache())
+    if (AXObjectCache* cache = owner->document().axObjectCache())
         cache->childrenChanged(owner);
 }
 

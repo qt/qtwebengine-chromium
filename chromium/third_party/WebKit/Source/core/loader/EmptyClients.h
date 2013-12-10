@@ -84,7 +84,7 @@ public:
     virtual void takeFocus(FocusDirection) OVERRIDE { }
 
     virtual void focusedNodeChanged(Node*) OVERRIDE { }
-    virtual Page* createWindow(Frame*, const FrameLoadRequest&, const WindowFeatures&, const NavigationAction&, NavigationPolicy) OVERRIDE { return 0; }
+    virtual Page* createWindow(Frame*, const FrameLoadRequest&, const WindowFeatures&, NavigationPolicy) OVERRIDE { return 0; }
     virtual void show(NavigationPolicy) OVERRIDE { }
 
     virtual bool canRunModal() OVERRIDE { return false; }
@@ -104,7 +104,8 @@ public:
 
     virtual void setResizable(bool) OVERRIDE { }
 
-    virtual void addMessageToConsole(MessageSource, MessageLevel, const String&, unsigned, const String&) OVERRIDE { }
+    virtual bool shouldReportDetailedMessageForSource(const String&) OVERRIDE { return false; }
+    virtual void addMessageToConsole(MessageSource, MessageLevel, const String&, unsigned, const String&, const String&) OVERRIDE { }
 
     virtual bool canRunBeforeUnloadConfirmPanel() OVERRIDE { return false; }
     virtual bool runBeforeUnloadConfirmPanel(const String&, Frame*) OVERRIDE { return true; }
@@ -192,13 +193,13 @@ public:
     virtual void dispatchWillSendRequest(DocumentLoader*, unsigned long, ResourceRequest&, const ResourceResponse&) OVERRIDE { }
     virtual void dispatchDidReceiveResponse(DocumentLoader*, unsigned long, const ResourceResponse&) OVERRIDE { }
     virtual void dispatchDidFinishLoading(DocumentLoader*, unsigned long) OVERRIDE { }
-    virtual void dispatchDidLoadResourceFromMemoryCache(DocumentLoader*, const ResourceRequest&, const ResourceResponse&, int) OVERRIDE { }
+    virtual void dispatchDidLoadResourceFromMemoryCache(const ResourceRequest&, const ResourceResponse&) OVERRIDE { }
 
     virtual void dispatchDidHandleOnloadEvents() OVERRIDE { }
     virtual void dispatchDidReceiveServerRedirectForProvisionalLoad() OVERRIDE { }
     virtual void dispatchWillClose() OVERRIDE { }
     virtual void dispatchDidStartProvisionalLoad() OVERRIDE { }
-    virtual void dispatchDidReceiveTitle(const StringWithDirection&) OVERRIDE { }
+    virtual void dispatchDidReceiveTitle(const String&) OVERRIDE { }
     virtual void dispatchDidChangeIcons(IconType) OVERRIDE { }
     virtual void dispatchDidCommitLoad() OVERRIDE { }
     virtual void dispatchDidFailProvisionalLoad(const ResourceError&) OVERRIDE { }
@@ -207,7 +208,7 @@ public:
     virtual void dispatchDidFinishLoad() OVERRIDE { }
     virtual void dispatchDidLayout(LayoutMilestones) OVERRIDE { }
 
-    virtual NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, NavigationType, NavigationPolicy, bool isRedirect) OVERRIDE;
+    virtual NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy) OVERRIDE;
 
     virtual void dispatchWillSendSubmitEvent(PassRefPtr<FormState>) OVERRIDE;
     virtual void dispatchWillSubmitForm(PassRefPtr<FormState>) OVERRIDE;
@@ -218,8 +219,6 @@ public:
 
     virtual void loadURLExternally(const ResourceRequest&, NavigationPolicy, const String& = String()) OVERRIDE { }
 
-    virtual ResourceError interruptedForPolicyChangeError(const ResourceRequest&) OVERRIDE { return ResourceError("", 0, "", ""); }
-
     virtual PassRefPtr<DocumentLoader> createDocumentLoader(const ResourceRequest&, const SubstituteData&) OVERRIDE;
 
     virtual String userAgent(const KURL&) OVERRIDE { return ""; }
@@ -228,13 +227,12 @@ public:
 
     virtual void transitionToCommittedForNewPage() OVERRIDE { }
 
-    virtual bool shouldGoToHistoryItem(HistoryItem*) const OVERRIDE { return false; }
-    virtual bool shouldStopLoadingForHistoryItem(HistoryItem*) const OVERRIDE { return false; }
+    virtual void navigateBackForward(int offset) const OVERRIDE { }
     virtual void didDisplayInsecureContent() OVERRIDE { }
     virtual void didRunInsecureContent(SecurityOrigin*, const KURL&) OVERRIDE { }
     virtual void didDetectXSS(const KURL&, bool) OVERRIDE { }
     virtual void didDispatchPingLoader(const KURL&) OVERRIDE { }
-    virtual PassRefPtr<Frame> createFrame(const KURL&, const String&, HTMLFrameOwnerElement*, const String&, bool, int, int) OVERRIDE;
+    virtual PassRefPtr<Frame> createFrame(const KURL&, const String&, const String&, HTMLFrameOwnerElement*) OVERRIDE;
     virtual PassRefPtr<Widget> createPlugin(const IntSize&, HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool) OVERRIDE;
     virtual PassRefPtr<Widget> createJavaAppletWidget(const IntSize&, HTMLAppletElement*, const KURL&, const Vector<String>&, const Vector<String>&) OVERRIDE;
 
@@ -250,6 +248,7 @@ public:
     virtual WebKit::WebCookieJar* cookieJar() const { return 0; }
 
     virtual void didRequestAutocomplete(PassRefPtr<FormState>) OVERRIDE;
+    virtual WebKit::WebServiceWorkerRegistry* serviceWorkerRegistry() OVERRIDE { return 0; }
 };
 
 class EmptyTextCheckerClient : public TextCheckerClient {
@@ -306,7 +305,7 @@ public:
     virtual void textDidChangeInTextField(Element*) OVERRIDE { }
     virtual bool doTextFieldCommandFromEvent(Element*, KeyboardEvent*) OVERRIDE { return false; }
 
-    TextCheckerClient* textChecker() { return &m_textCheckerClient; }
+    TextCheckerClient& textChecker() { return m_textCheckerClient; }
 
     virtual void updateSpellingUIWithMisspelledWord(const String&) OVERRIDE { }
     virtual void showSpellingUI(bool) OVERRIDE { }
@@ -324,6 +323,7 @@ public:
     EmptyContextMenuClient() { }
     virtual ~EmptyContextMenuClient() {  }
     virtual void showContextMenu(const ContextMenu*) OVERRIDE { }
+    virtual void clearContextMenu() OVERRIDE { }
 };
 
 class EmptyDragClient : public DragClient {
@@ -360,13 +360,9 @@ public:
 
 class EmptyBackForwardClient : public BackForwardClient {
 public:
-    virtual void addItem(PassRefPtr<HistoryItem>) OVERRIDE { }
-    virtual void goToItem(HistoryItem*) OVERRIDE { }
-    virtual HistoryItem* itemAtIndex(int) OVERRIDE { return 0; }
+    virtual void didAddItem() OVERRIDE { }
     virtual int backListCount() OVERRIDE { return 0; }
     virtual int forwardListCount() OVERRIDE { return 0; }
-    virtual bool isActive() OVERRIDE { return false; }
-    virtual void close() OVERRIDE { }
 };
 
 void fillWithEmptyClients(Page::PageClients&);

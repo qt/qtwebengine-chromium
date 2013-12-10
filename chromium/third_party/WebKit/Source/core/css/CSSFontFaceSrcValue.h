@@ -27,7 +27,7 @@
 #define CSSFontFaceSrcValue_h
 
 #include "core/css/CSSValue.h"
-#include "core/loader/cache/ResourcePtr.h"
+#include "core/fetch/ResourcePtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
 
@@ -94,6 +94,12 @@ private:
     SVGFontFaceElement* m_svgFontFaceElement;
 #endif
 };
+
+inline CSSFontFaceSrcValue* toCSSFontFaceSrcValue(CSSValue* value)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!value || value->isFontFaceSrcValue());
+    return static_cast<CSSFontFaceSrcValue*>(value);
+}
 
 }
 

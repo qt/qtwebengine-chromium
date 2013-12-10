@@ -28,8 +28,8 @@
 
 #include <limits>
 #include "core/dom/Document.h"
+#include "core/fetch/ResourceFetcher.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/loader/cache/ResourceFetcher.h"
 #include "core/page/Chrome.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameTree.h"
@@ -44,8 +44,8 @@ namespace WebCore {
 static void setImageLoadingSettings(Page* page)
 {
     for (Frame* frame = page->mainFrame(); frame; frame = frame->tree()->traverseNext()) {
-        frame->document()->fetcher()->setImagesEnabled(page->settings()->areImagesEnabled());
-        frame->document()->fetcher()->setAutoLoadImages(page->settings()->loadsImagesAutomatically());
+        frame->document()->fetcher()->setImagesEnabled(page->settings().areImagesEnabled());
+        frame->document()->fetcher()->setAutoLoadImages(page->settings().loadsImagesAutomatically());
     }
 }
 
@@ -77,7 +77,6 @@ static inline const AtomicString& getGenericFontFamilyForScript(const ScriptFont
 }
 
 bool Settings::gMockScrollbarsEnabled = false;
-bool Settings::gUsesOverlayScrollbars = false;
 
 // NOTEs
 //  1) EditingMacBehavior comprises builds on Mac;
@@ -88,28 +87,25 @@ bool Settings::gUsesOverlayScrollbars = false;
 static EditingBehaviorType editingBehaviorTypeForPlatform()
 {
     return
-#if OS(DARWIN)
+#if OS(MACOSX)
     EditingMacBehavior
-#elif OS(WINDOWS)
+#elif OS(WIN)
     EditingWindowsBehavior
 #elif OS(ANDROID)
     EditingAndroidBehavior
-#elif OS(UNIX)
+#else // Rest of the UNIX-like systems
     EditingUnixBehavior
-#else
-    // Fallback
-    EditingMacBehavior
 #endif
     ;
 }
 
 static const bool defaultUnifiedTextCheckerEnabled = false;
-#if OS(DARWIN)
+#if OS(MACOSX)
 static const bool defaultSmartInsertDeleteEnabled = true;
 #else
 static const bool defaultSmartInsertDeleteEnabled = false;
 #endif
-#if OS(WINDOWS)
+#if OS(WIN)
 static const bool defaultSelectTrailingWhitespaceEnabled = true;
 #else
 static const bool defaultSelectTrailingWhitespaceEnabled = false;
@@ -137,7 +133,10 @@ Settings::Settings(Page* page)
     , m_cssStickyPositionEnabled(true)
     , m_dnsPrefetchingEnabled(false)
     , m_touchEventEmulationEnabled(false)
+    , m_openGLMultisamplingEnabled(false)
+    , m_viewportEnabled(false)
     , m_setImageLoadingSettingsTimer(this, &Settings::imageLoadingSettingsTimerFired)
+    , m_compositorDrivenAcceleratedScrollingEnabled(false)
 {
     m_page = page; // Page is not yet fully initialized wen constructing Settings, so keeping m_page null over initializeDefaultFontFamilies() call.
 }
@@ -356,16 +355,6 @@ bool Settings::mockScrollbarsEnabled()
     return gMockScrollbarsEnabled;
 }
 
-void Settings::setUsesOverlayScrollbars(bool flag)
-{
-    gUsesOverlayScrollbars = flag;
-}
-
-bool Settings::usesOverlayScrollbars()
-{
-    return gUsesOverlayScrollbars;
-}
-
 void Settings::setOpenGLMultisamplingEnabled(bool flag)
 {
     if (m_openGLMultisamplingEnabled == flag)
@@ -378,6 +367,16 @@ void Settings::setOpenGLMultisamplingEnabled(bool flag)
 bool Settings::openGLMultisamplingEnabled()
 {
     return m_openGLMultisamplingEnabled;
+}
+
+void Settings::setViewportEnabled(bool enabled)
+{
+    if (m_viewportEnabled == enabled)
+        return;
+
+    m_viewportEnabled = enabled;
+    if (m_page->mainFrame())
+        m_page->mainFrame()->document()->updateViewportArguments();
 }
 
 } // namespace WebCore

@@ -6,9 +6,10 @@
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_AUTOFILL_POPUP_DELEGATE_H_
 
 #include "base/strings/string16.h"
+#include "content/public/browser/render_view_host.h"
 
-namespace content {
-class KeyboardListener;
+namespace ui {
+class MouseEvent;
 }
 
 namespace autofill {
@@ -17,13 +18,19 @@ namespace autofill {
 // of events by the controller.
 class AutofillPopupDelegate {
  public:
-  // Called when the Autofill popup is shown. |listener| may be used to pass
+  // Called when the Autofill popup is shown. |callback| may be used to pass
   // keyboard events to the popup.
-  virtual void OnPopupShown(content::KeyboardListener* listener) = 0;
+  virtual void OnPopupShown(
+      content::RenderWidgetHost::KeyPressEventCallback* callback) = 0;
 
-  // Called when the Autofill popup is hidden. |listener| must be unregistered
+  // Called when the Autofill popup is hidden. |callback| must be unregistered
   // if it was registered in OnPopupShown.
-  virtual void OnPopupHidden(content::KeyboardListener* listener) = 0;
+  virtual void OnPopupHidden(
+      content::RenderWidgetHost::KeyPressEventCallback* callback) = 0;
+
+  // Called when the Autofill popup recieves a click outside of the popup view
+  // to determine if the event should be reposted to the native window manager.
+  virtual bool ShouldRepostEvent(const ui::MouseEvent& event) = 0;
 
   // Called when the autofill suggestion indicated by |identifier| has been
   // temporarily selected (e.g., hovered).

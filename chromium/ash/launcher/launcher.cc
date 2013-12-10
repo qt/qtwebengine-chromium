@@ -9,6 +9,8 @@
 
 #include "ash/focus_cycler.h"
 #include "ash/launcher/launcher_delegate.h"
+#include "ash/launcher/launcher_item_delegate.h"
+#include "ash/launcher/launcher_item_delegate_manager.h"
 #include "ash/launcher/launcher_model.h"
 #include "ash/launcher/launcher_navigator.h"
 #include "ash/launcher/launcher_view.h"
@@ -19,7 +21,6 @@
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
 #include "ash/shell_window_ids.h"
-#include "ash/wm/property_util.h"
 #include "ash/wm/window_properties.h"
 #include "grit/ash_resources.h"
 #include "ui/aura/client/activation_client.h"
@@ -106,9 +107,9 @@ void Launcher::ActivateLauncherItem(int index) {
                      ui::EF_NONE,
                      false);
 
-  const ash::LauncherItems& items =
-      launcher_view_->model()->items();
-  delegate_->ItemSelected(items[index], event);
+  const ash::LauncherItem& item = launcher_view_->model()->items()[index];
+  Shell::GetInstance()->launcher_item_delegate_manager()->
+      GetLauncherItemDelegate(item.type)->ItemSelected(item, event);
 }
 
 void Launcher::CycleWindowLinear(CycleDirection direction) {
@@ -169,17 +170,10 @@ void Launcher::LaunchAppIndexAt(int item_index) {
   // There are two ways how found_index can be valid: a.) the nth item was
   // found (which is true when indexes_left is -1) or b.) the last item was
   // requested (which is true when index was passed in as a negative number).
-  if (found_index >= 0 && (indexes_left == -1 || item_index < 0) &&
-      (delegate_->IsPerAppLauncher() ||
-       (items[found_index].status == ash::STATUS_RUNNING ||
-        items[found_index].status == ash::STATUS_CLOSED))) {
+  if (found_index >= 0 && (indexes_left == -1 || item_index < 0)) {
     // Then set this one as active (or advance to the next item of its kind).
     ActivateLauncherItem(found_index);
   }
-}
-
-internal::LauncherView* Launcher::GetLauncherViewForTest() {
-  return launcher_view_;
 }
 
 void Launcher::SetLauncherViewBounds(gfx::Rect bounds) {

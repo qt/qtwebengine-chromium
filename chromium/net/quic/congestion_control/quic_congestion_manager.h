@@ -1,7 +1,3 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
-
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -50,7 +46,8 @@ class NET_EXPORT_PRIVATE QuicCongestionManager {
   virtual void SentPacket(QuicPacketSequenceNumber sequence_number,
                           QuicTime sent_time,
                           QuicByteCount bytes,
-                          Retransmission retransmission);
+                          Retransmission retransmission,
+                          HasRetransmittableData has_retransmittable_data);
 
   // Called when a packet is timed out.
   virtual void AbandoningPacket(QuicPacketSequenceNumber sequence_number);
@@ -84,6 +81,9 @@ class NET_EXPORT_PRIVATE QuicCongestionManager {
                                     bool revived);
 
   const QuicTime::Delta DefaultRetransmissionTime();
+
+  // Returns amount of time for delayed ack timer.
+  const QuicTime::Delta DelayedAckTime();
 
   const QuicTime::Delta GetRetransmissionDelay(
       size_t unacked_packets_count,

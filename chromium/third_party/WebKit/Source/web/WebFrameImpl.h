@@ -188,9 +188,8 @@ public:
     virtual void moveCaretSelectionTowardsWindowPoint(const WebPoint&);
     virtual void moveRangeSelection(const WebPoint& base, const WebPoint& extent);
     virtual void moveCaretSelection(const WebPoint&);
-    virtual int printBegin(const WebPrintParams&,
-                           const WebNode& constrainToNode,
-                           bool* useBrowserOverlays);
+    virtual void setCaretVisible(bool);
+    virtual int printBegin(const WebPrintParams&, const WebNode& constrainToNode);
     virtual float printPage(int pageToPrint, WebCanvas*);
     virtual float getPrintPageShrink(int page);
     virtual void printEnd();
@@ -497,6 +496,19 @@ private:
     // from HistoryItems
     bool m_inSameDocumentHistoryLoad;
 };
+
+inline WebFrameImpl* toWebFrameImpl(WebFrame* webFrame)
+{
+    return static_cast<WebFrameImpl*>(webFrame);
+}
+
+inline const WebFrameImpl* toWebFrameImpl(const WebFrame* webFrame)
+{
+    return static_cast<const WebFrameImpl*>(webFrame);
+}
+
+// This will catch anyone doing an unnecessary cast.
+void toWebFrameImpl(const WebFrameImpl*);
 
 } // namespace WebKit
 

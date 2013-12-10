@@ -49,12 +49,12 @@ class Text;
 
 class Range : public RefCounted<Range>, public ScriptWrappable {
 public:
-    static PassRefPtr<Range> create(PassRefPtr<Document>);
-    static PassRefPtr<Range> create(PassRefPtr<Document>, PassRefPtr<Node> startContainer, int startOffset, PassRefPtr<Node> endContainer, int endOffset);
-    static PassRefPtr<Range> create(PassRefPtr<Document>, const Position&, const Position&);
+    static PassRefPtr<Range> create(Document&);
+    static PassRefPtr<Range> create(Document&, Node* startContainer, int startOffset, Node* endContainer, int endOffset);
+    static PassRefPtr<Range> create(Document&, const Position&, const Position&);
     ~Range();
 
-    Document* ownerDocument() const { return m_ownerDocument.get(); }
+    Document& ownerDocument() const { ASSERT(m_ownerDocument); return *m_ownerDocument.get(); }
     Node* startContainer() const { return m_start.container(); }
     int startOffset() const { return m_start.offset(); }
     Node* endContainer() const { return m_end.container(); }
@@ -101,7 +101,7 @@ public:
     void selectNode(Node*, ExceptionState& = ASSERT_NO_EXCEPTION);
     void selectNodeContents(Node*, ExceptionState&);
     void surroundContents(PassRefPtr<Node>, ExceptionState&);
-    void setStartBefore(Node*, ExceptionState&);
+    void setStartBefore(Node*, ExceptionState& = ASSERT_NO_EXCEPTION);
 
     const Position startPosition() const { return m_start.toPosition(); }
     const Position endPosition() const { return m_end.toPosition(); }
@@ -132,10 +132,10 @@ public:
     void nodeChildrenWillBeRemoved(ContainerNode*);
     void nodeWillBeRemoved(Node*);
 
-    void textInserted(Node*, unsigned offset, unsigned length);
-    void textRemoved(Node*, unsigned offset, unsigned length);
-    void textNodesMerged(NodeWithIndex& oldNode, unsigned offset);
-    void textNodeSplit(Text* oldNode);
+    void didInsertText(Node*, unsigned offset, unsigned length);
+    void didRemoveText(Node*, unsigned offset, unsigned length);
+    void didMergeTextNodes(NodeWithIndex& oldNode, unsigned offset);
+    void didSplitTextNode(Text* oldNode);
 
     // Expand range to a unit (word or sentence or block or document) boundary.
     // Please refer to https://bugs.webkit.org/show_bug.cgi?id=27632 comment #5
@@ -150,13 +150,13 @@ public:
 #endif
 
 private:
-    explicit Range(PassRefPtr<Document>);
-    Range(PassRefPtr<Document>, PassRefPtr<Node> startContainer, int startOffset, PassRefPtr<Node> endContainer, int endOffset);
+    explicit Range(Document&);
+    Range(Document&, Node* startContainer, int startOffset, Node* endContainer, int endOffset);
 
-    void setDocument(Document*);
+    void setDocument(Document&);
 
     Node* checkNodeWOffset(Node*, int offset, ExceptionState&) const;
-    void checkNodeBA(Node*, ExceptionState&) const;
+    void checkNodeBA(Node*, ExceptionState&, const char* methodName) const;
     void checkDeleteExtract(ExceptionState&);
     int maxStartOffset() const;
     int maxEndOffset() const;
@@ -168,7 +168,7 @@ private:
     enum ContentsProcessDirection { ProcessContentsForward, ProcessContentsBackward };
     static PassRefPtr<Node> processAncestorsAndTheirSiblings(ActionType, Node* container, ContentsProcessDirection, PassRefPtr<Node> clonedContainer, Node* commonRoot, ExceptionState&);
 
-    RefPtr<Document> m_ownerDocument;
+    RefPtr<Document> m_ownerDocument; // Cannot be null.
     RangeBoundaryPoint m_start;
     RangeBoundaryPoint m_end;
 };

@@ -31,6 +31,7 @@ class HangingHostResolver : public HostResolver {
   }
 
   virtual int Resolve(const RequestInfo& info,
+                      RequestPriority priority,
                       AddressList* addresses,
                       const CompletionCallback& callback,
                       RequestHandle* out_req,
@@ -77,7 +78,7 @@ TEST(SingleRequestHostResolverTest, NormalResolve) {
   TestCompletionCallback callback;
   HostResolver::RequestInfo request(HostPortPair("watsup", 90));
   int rv = single_request_resolver.Resolve(
-      request, &addrlist, callback.callback(), BoundNetLog());
+      request, DEFAULT_PRIORITY, &addrlist, callback.callback(), BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_EQ(OK, callback.WaitForResult());
 
@@ -97,8 +98,11 @@ TEST(SingleRequestHostResolverTest, Cancel) {
     AddressList addrlist;
     TestCompletionCallback callback;
     HostResolver::RequestInfo request(HostPortPair("watsup", 90));
-    int rv = single_request_resolver.Resolve(
-        request, &addrlist, callback.callback(), BoundNetLog());
+    int rv = single_request_resolver.Resolve(request,
+                                             DEFAULT_PRIORITY,
+                                             &addrlist,
+                                             callback.callback(),
+                                             BoundNetLog());
     EXPECT_EQ(ERR_IO_PENDING, rv);
     EXPECT_TRUE(resolver.has_outstanding_request());
   }

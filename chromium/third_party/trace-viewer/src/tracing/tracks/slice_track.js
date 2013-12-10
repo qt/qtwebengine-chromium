@@ -9,20 +9,16 @@ base.requireStylesheet('tracing.tracks.slice_track');
 base.require('base.sorted_array_utils');
 base.require('tracing.tracks.heading_track');
 base.require('tracing.fast_rect_renderer');
-base.require('tracing.color_scheme');
 base.require('tracing.draw_helpers');
 base.require('ui');
 
 base.exportTo('tracing.tracks', function() {
-
-  var palette = tracing.getColorPalette();
 
   /**
    * A track that displays an array of Slice objects.
    * @constructor
    * @extends {HeadingTrack}
    */
-
   var SliceTrack = ui.define(
       'slice-track', tracing.tracks.HeadingTrack);
 
@@ -77,17 +73,15 @@ base.exportTo('tracing.tracks', function() {
       var ctx = this.context();
 
       ctx.save();
-      if (this.asyncStyle_)
-        ctx.globalAlpha = 0.25;
-
       var bounds = this.getBoundingClientRect();
       tracing.drawSlices(
           ctx,
-          this.viewport,
+          this.viewport.currentDisplayTransform,
           viewLWorld,
           viewRWorld,
           bounds.height,
-          this.slices_);
+          this.slices_,
+          this.asyncStyle_);
       ctx.restore();
 
       if (bounds.height <= 8)
@@ -95,33 +89,32 @@ base.exportTo('tracing.tracks', function() {
 
       tracing.drawLabels(
           ctx,
-          this.viewport,
+          this.viewport.currentDisplayTransform,
           viewLWorld,
           viewRWorld,
-          this.slices_);
+          this.slices_,
+          this.asyncStyle_);
     },
 
-    memoizeSlices_: function() {
+    addEventsToTrackMap: function(eventToTrackMap) {
       if (this.slices_ === undefined || this.slices_ === null)
         return;
 
-      var vp = this.viewport_;
       this.slices_.forEach(function(slice) {
-        vp.sliceMemoization(slice, this);
-      }.bind(this));
+        eventToTrackMap.addEvent(slice, this);
+      }, this);
     },
 
     addIntersectingItemsInRangeToSelectionInWorldSpace: function(
         loWX, hiWX, viewPixWidthWorld, selection) {
-      function onPickHit(slice) {
-        var hit = selection.addSlice(this, slice);
-        this.decorateHit(hit);
+      function onSlice(slice) {
+        selection.push(slice);
       }
       base.iterateOverIntersectingIntervals(this.slices_,
           function(x) { return x.start; },
           function(x) { return x.duration; },
           loWX, hiWX,
-          onPickHit.bind(this));
+          onSlice);
     },
 
     /**
@@ -142,20 +135,17 @@ base.exportTo('tracing.tracks', function() {
     },
 
     /**
-     * Add the item to the left or right of the provided hit, if any, to the
+     * Add the item to the left or right of the provided event, if any, to the
      * selection.
      * @param {slice} The current slice.
-     * @param {Number} offset Number of slices away from the hit to look.
-     * @param {Selection} selection The selection to add a hit to,
+     * @param {Number} offset Number of slices away from the event to look.
+     * @param {Selection} selection The selection to add an event to,
      * if found.
-     * @return {boolean} Whether a hit was found.
+     * @return {boolean} Whether an event was found.
      * @private
      */
-    addItemNearToProvidedHitToSelection: function(hit, offset, selection) {
-      if (!hit.slice)
-        return false;
-
-      var index = this.indexOfSlice_(hit.slice);
+    addItemNearToProvidedEventToSelection: function(event, offset, selection) {
+      var index = this.indexOfSlice_(event);
       if (index === undefined)
         return false;
 
@@ -163,18 +153,28 @@ base.exportTo('tracing.tracks', function() {
       if (newIndex < 0 || newIndex >= this.slices_.length)
         return false;
 
-      var hit = selection.addSlice(this, this.slices_[newIndex]);
-      this.decorateHit(hit);
+      selection.push(this.slices_[newIndex]);
       return true;
     },
 
     addAllObjectsMatchingFilterToSelection: function(filter, selection) {
       for (var i = 0; i < this.slices_.length; ++i) {
-        if (filter.matchSlice(this.slices_[i])) {
-          var hit = selection.addSlice(this, this.slices_[i]);
-          this.decorateHit(hit);
-        }
+        if (filter.matchSlice(this.slices_[i]))
+          selection.push(this.slices_[i]);
       }
+    },
+
+    addClosestEventToSelection: function(worldX, worldMaxDist, loY, hiY,
+                                         selection) {
+      var slice = base.findClosestIntervalInSortedIntervals(
+          this.slices_,
+          function(x) { return x.start; },
+          function(x) { return x.end; },
+          worldX,
+          worldMaxDist);
+
+      if (slice)
+        selection.push(slice);
     }
   };
 

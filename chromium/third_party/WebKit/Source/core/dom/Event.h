@@ -76,9 +76,25 @@ public:
     {
         return adoptRef(new Event);
     }
-    static PassRefPtr<Event> create(const AtomicString& type, bool canBubble, bool cancelable)
+
+    // A factory for a simple event. The event doesn't bubble, and isn't
+    // cancelable.
+    // http://www.whatwg.org/specs/web-apps/current-work/multipage/webappapis.html#fire-a-simple-event
+    static PassRefPtr<Event> create(const AtomicString& type)
     {
-        return adoptRef(new Event(type, canBubble, cancelable));
+        return adoptRef(new Event(type, false, false));
+    }
+    static PassRefPtr<Event> createCancelable(const AtomicString& type)
+    {
+        return adoptRef(new Event(type, false, true));
+    }
+    static PassRefPtr<Event> createBubble(const AtomicString& type)
+    {
+        return adoptRef(new Event(type, true, false));
+    }
+    static PassRefPtr<Event> createCancelableBubble(const AtomicString& type)
+    {
+        return adoptRef(new Event(type, true, true));
     }
 
     static PassRefPtr<Event> create(const AtomicString& type, const EventInit& initializer)
@@ -112,8 +128,8 @@ public:
     // IE Extensions
     EventTarget* srcElement() const { return target(); } // MSIE extension - "the object that fired the event"
 
-    bool returnValue() const { return !defaultPrevented(); }
-    void setReturnValue(bool returnValue) { setDefaultPrevented(!returnValue); }
+    bool legacyReturnValue() const { return !defaultPrevented(); }
+    void setLegacyReturnValue(bool returnValue) { setDefaultPrevented(!returnValue); }
 
     Clipboard* clipboardData() const { return isClipboardEvent() ? clipboard() : 0; }
 
@@ -126,6 +142,7 @@ public:
     virtual bool isFocusEvent() const;
     virtual bool isKeyboardEvent() const;
     virtual bool isTouchEvent() const;
+    virtual bool isGestureEvent() const;
 
     // Drag events are a subset of mouse events.
     virtual bool isDragEvent() const;
@@ -133,6 +150,8 @@ public:
     // These events lack a DOM interface.
     virtual bool isClipboardEvent() const;
     virtual bool isBeforeTextInsertedEvent() const;
+
+    virtual bool isBeforeUnloadEvent() const;
 
     bool propagationStopped() const { return m_propagationStopped || m_immediatePropagationStopped; }
     bool immediatePropagationStopped() const { return m_immediatePropagationStopped; }
@@ -156,9 +175,6 @@ public:
 
     EventPath& eventPath() { return m_eventPath; }
     PassRefPtr<NodeList> path() const;
-
-    virtual bool storesResultAsString() const;
-    virtual void storeResult(const String&);
 
     virtual Clipboard* clipboard() const { return 0; }
 

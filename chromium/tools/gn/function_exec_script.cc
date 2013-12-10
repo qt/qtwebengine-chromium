@@ -4,7 +4,12 @@
 
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/logging.h"
+#include "base/process/kill.h"
+#include "base/process/launch.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
 #include "tools/gn/err.h"
 #include "tools/gn/filesystem_utils.h"
@@ -13,6 +18,7 @@
 #include "tools/gn/input_file.h"
 #include "tools/gn/parse_tree.h"
 #include "tools/gn/scheduler.h"
+#include "tools/gn/trace.h"
 #include "tools/gn/value.h"
 
 #if defined(OS_WIN)
@@ -22,9 +28,18 @@
 #include "base/win/scoped_process_information.h"
 #endif
 
+#if defined(OS_POSIX)
+#include <fcntl.h>
+#include <unistd.h>
+
+#include "base/posix/file_descriptor_shuffle.h"
+#endif
+
 namespace functions {
 
 namespace {
+
+const char kNoExecSwitch[] = "no-exec";
 
 #if defined(OS_WIN)
 bool ExecProcess(const CommandLine& cmdline,
@@ -128,7 +143,91 @@ bool ExecProcess(const CommandLine& cmdline,
                  std::string* std_out,
                  std::string* std_err,
                  int* exit_code) {
-  //NOTREACHED() << "Implement me.";
+  *exit_code = EXIT_FAILURE;
+
+  std::vector<std::string> argv = cmdline.argv();
+
+  int pipe_fd[2];
+  pid_t pid;
+  base::InjectiveMultimap fd_shuffle1, fd_shuffle2;
+  scoped_ptr<char*[]> argv_cstr(new char*[argv.size() + 1]);
+
+  fd_shuffle1.reserve(3);
+  fd_shuffle2.reserve(3);
+
+  if (pipe(pipe_fd) < 0)
+    return false;
+
+  switch (pid = fork()) {
+    case -1:  // error
+      close(pipe_fd[0]);
+      close(pipe_fd[1]);
+      return false;
+    case 0:  // child
+      {
+#if defined(OS_MACOSX)
+        base::RestoreDefaultExceptionHandler();
+#endif
+        // DANGER: no calls to malloc are allowed from now on:
+        // http://crbug.com/36678
+
+        // Obscure fork() rule: in the child, if you don't end up doing exec*(),
+        // you call _exit() instead of exit(). This is because _exit() does not
+        // call any previously-registered (in the parent) exit handlers, which
+        // might do things like block waiting for threads that don't even exist
+        // in the child.
+        int dev_null = open("/dev/null", O_WRONLY);
+        if (dev_null < 0)
+          _exit(127);
+
+        fd_shuffle1.push_back(
+            base::InjectionArc(pipe_fd[1], STDOUT_FILENO, true));
+        fd_shuffle1.push_back(
+            base::InjectionArc(dev_null, STDERR_FILENO, true));
+        fd_shuffle1.push_back(
+            base::InjectionArc(dev_null, STDIN_FILENO, true));
+        // Adding another element here? Remeber to increase the argument to
+        // reserve(), above.
+
+        std::copy(fd_shuffle1.begin(), fd_shuffle1.end(),
+                  std::back_inserter(fd_shuffle2));
+
+        if (!ShuffleFileDescriptors(&fd_shuffle1))
+          _exit(127);
+
+        file_util::SetCurrentDirectory(startup_dir);
+
+        // TODO(brettw) the base version GetAppOutput does a
+        // CloseSuperfluousFds call here. Do we need this?
+
+        for (size_t i = 0; i < argv.size(); i++)
+          argv_cstr[i] = const_cast<char*>(argv[i].c_str());
+        argv_cstr[argv.size()] = NULL;
+        execvp(argv_cstr[0], argv_cstr.get());
+        _exit(127);
+      }
+    default:  // parent
+      {
+        // Close our writing end of pipe now. Otherwise later read would not
+        // be able to detect end of child's output (in theory we could still
+        // write to the pipe).
+        close(pipe_fd[1]);
+
+        char buffer[256];
+        ssize_t bytes_read = 0;
+
+        while (true) {
+          bytes_read = HANDLE_EINTR(read(pipe_fd[0], buffer, sizeof(buffer)));
+          if (bytes_read <= 0)
+            break;
+          std_out->append(buffer, bytes_read);
+        }
+        close(pipe_fd[0]);
+
+        return base::WaitForExitCode(pid, exit_code);
+      }
+  }
+
   return false;
 }
 #endif
@@ -146,10 +245,16 @@ const char kExecScript_Help[] =
     "  generation will fail if the script does not exist or returns a nonzero\n"
     "  exit code.\n"
     "\n"
+    "  The current directory when executing the script will be the root\n"
+    "  build directory. If you are passing file names, you will want to use\n"
+    "  the to_build_dir() function to make file names relative to this\n"
+    "  path (see \"gn help to_build_dir\").\n"
+    "\n"
     "Arguments:\n"
     "\n"
     "  filename:\n"
-    "      File name of python script to execute, relative to the build file.\n"
+    "      File name of python script to execute. Non-absolute names will\n"
+    "      be treated as relative to the current build file.\n"
     "\n"
     "  arguments:\n"
     "      A list of strings to be passed to the script as arguments.\n"
@@ -170,7 +275,7 @@ const char kExecScript_Help[] =
     "Example:\n"
     "\n"
     "  all_lines = exec_script(\"myscript.py\", [some_input], \"list lines\",\n"
-    "                          [\"data_file.txt\"])\n";
+    "                          [ to_build_dir(\"data_file.txt\") ])\n";
 
 Value RunExecScript(Scope* scope,
                     const FunctionCallNode* function,
@@ -184,7 +289,7 @@ Value RunExecScript(Scope* scope,
 
   const Settings* settings = scope->settings();
   const BuildSettings* build_settings = settings->build_settings();
-  const SourceDir& cur_dir = SourceDirForFunctionCall(function);
+  const SourceDir& cur_dir = scope->GetSourceDir();
 
   // Find the python script to run.
   if (!args[0].VerifyTypeIs(Value::STRING, err))
@@ -198,9 +303,12 @@ Value RunExecScript(Scope* scope,
     script_path = build_settings->GetFullPathSecondary(script_source);
   }
 
+  ScopedTrace trace(TraceItem::TRACE_SCRIPT_EXECUTE, script_source.value());
+  trace.SetToolchain(settings->toolchain()->label());
+
   // Add all dependencies of this script, including the script itself, to the
   // build deps.
-  g_scheduler->AddGenDependency(script_source);
+  g_scheduler->AddGenDependency(script_path);
   if (args.size() == 4) {
     const Value& deps_value = args[3];
     if (!deps_value.VerifyTypeIs(Value::LIST, err))
@@ -209,8 +317,9 @@ Value RunExecScript(Scope* scope,
     for (size_t i = 0; i < deps_value.list_value().size(); i++) {
       if (!deps_value.list_value()[0].VerifyTypeIs(Value::STRING, err))
         return Value();
-      g_scheduler->AddGenDependency(cur_dir.ResolveRelativeFile(
-          deps_value.list_value()[0].string_value()));
+      g_scheduler->AddGenDependency(
+          build_settings->GetFullPath(cur_dir.ResolveRelativeFile(
+              deps_value.list_value()[0].string_value())));
     }
   }
 
@@ -228,23 +337,46 @@ Value RunExecScript(Scope* scope,
     cmdline.AppendArg(script_args.list_value()[i].string_value());
   }
 
+  // Log command line for debugging help.
+  trace.SetCommandLine(cmdline);
+  base::TimeTicks begin_exec;
+  if (g_scheduler->verbose_logging()) {
+#if defined(OS_WIN)
+    g_scheduler->Log("Pythoning", UTF16ToUTF8(cmdline.GetCommandLineString()));
+#else
+    g_scheduler->Log("Pythoning", cmdline.GetCommandLineString());
+#endif
+    begin_exec = base::TimeTicks::Now();
+  }
+
+  base::FilePath startup_dir =
+      build_settings->GetFullPath(build_settings->build_dir());
+
   // Execute the process.
   // TODO(brettw) set the environment block.
   std::string output;
   std::string stderr_output;  // TODO(brettw) not hooked up, see above.
   int exit_code = 0;
-  if (!ExecProcess(cmdline, build_settings->GetFullPath(cur_dir),
-                   &output, &stderr_output, &exit_code)) {
-    *err = Err(function->function(), "Could not execute python.",
-        "I was trying to execute \"" + FilePathToUTF8(python_path) + "\".");
-    return Value();
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(kNoExecSwitch)) {
+    if (!ExecProcess(cmdline, startup_dir,
+                     &output, &stderr_output, &exit_code)) {
+      *err = Err(function->function(), "Could not execute python.",
+          "I was trying to execute \"" + FilePathToUTF8(python_path) + "\".");
+      return Value();
+    }
+  }
+  if (g_scheduler->verbose_logging()) {
+    g_scheduler->Log("Pythoning", script_source.value() + " took " +
+        base::Int64ToString(
+            (base::TimeTicks::Now() - begin_exec).InMilliseconds()) +
+        "ms");
   }
 
   // TODO(brettw) maybe we need stderr also for reasonable stack dumps.
   if (exit_code != 0) {
-    std::string msg =
-        std::string("I was running \"") + FilePathToUTF8(script_path) + "\"\n"
-        "and it returned " + base::IntToString(exit_code);
+    std::string msg = "Current dir: " + FilePathToUTF8(startup_dir) +
+        "\nCommand: " + FilePathToUTF8(cmdline.GetCommandLineString()) +
+        "\nReturned " + base::IntToString(exit_code);
     if (!output.empty())
       msg += " and printed out:\n\n" + output;
     else

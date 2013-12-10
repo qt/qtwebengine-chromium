@@ -23,6 +23,7 @@ namespace test {
 class QuicPacketCreatorPeer;
 }
 
+class QuicAckNotifier;
 class QuicRandom;
 
 class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
@@ -34,7 +35,7 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
           random_reorder(false),
           max_packets_per_fec_group(0),
           send_guid_length(PACKET_8BYTE_GUID),
-          send_sequence_number_length(PACKET_6BYTE_SEQUENCE_NUMBER) {
+          send_sequence_number_length(PACKET_1BYTE_SEQUENCE_NUMBER) {
     }
 
     size_t max_packet_length;
@@ -69,6 +70,12 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
   // Makes the framer not serialize the protocol version in sent packets.
   void StopSendingVersion();
 
+  // Update the sequence number length to use in future packets as soon as it
+  // can be safely changed.
+  void UpdateSequenceNumberLength(
+      QuicPacketSequenceNumber least_packet_awaited_by_peer,
+      QuicByteCount bytes_per_second);
+
   // The overhead the framing will add for a packet with one frame.
   static size_t StreamFramePacketOverhead(
       QuicVersion version,
@@ -89,17 +96,36 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
                            bool fin,
                            QuicFrame* frame);
 
+  // As above, but keeps track of an QuicAckNotifier that should be called when
+  // the packet that contains this stream frame is ACKed.
+  // The |notifier| is not owned by the QuicPacketGenerator and must outlive the
+  // generated packet.
+  size_t CreateStreamFrameWithNotifier(QuicStreamId id,
+                                       base::StringPiece data,
+                                       QuicStreamOffset offset,
+                                       bool fin,
+                                       QuicAckNotifier* notifier,
+                                       QuicFrame* frame);
+
   // Serializes all frames into a single packet. All frames must fit into a
   // single packet. Also, sets the entropy hash of the serialized packet to a
   // random bool and returns that value as a member of SerializedPacket.
   // Never returns a RetransmittableFrames in SerializedPacket.
   SerializedPacket SerializeAllFrames(const QuicFrames& frames);
 
+  // Re-serializes frames with the original packet's sequence number length.
+  // Used for retransmitting packets to ensure they aren't too long.
+  SerializedPacket ReserializeAllFrames(
+      const QuicFrames& frames, QuicSequenceNumberLength original_length);
+
   // Returns true if there are frames pending to be serialized.
   bool HasPendingFrames();
 
   // Returns the number of bytes which are free to frames in the current packet.
   size_t BytesFree() const;
+
+  // Returns the number of bytes in the current packet, including the header.
+  size_t PacketSize() const;
 
   // Adds |frame| to the packet creator's list of frames to be serialized.
   // Returns false if the frame doesn't fit into the current packet.
@@ -132,6 +158,8 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
   QuicEncryptedPacket* SerializeVersionNegotiationPacket(
       const QuicVersionVector& supported_versions);
 
+  // Sequence number of the last created packet, or 0 if no packets have been
+  // created.
   QuicPacketSequenceNumber sequence_number() const {
     return sequence_number_;
   }
@@ -170,7 +198,13 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
   // Controls whether protocol version should be included while serializing the
   // packet.
   bool send_version_in_packet_;
-  size_t packet_size_;
+  // The sequence number length for the current packet and the current FEC group
+  // if FEC is enabled.
+  // Mutable so PacketSize() can adjust it when the packet is empty.
+  mutable QuicSequenceNumberLength sequence_number_length_;
+  // packet_size_ is mutable because it's just a cache of the current size.
+  // packet_size should never be read directly, use PacketSize() instead.
+  mutable size_t packet_size_;
   QuicFrames queued_frames_;
   scoped_ptr<RetransmittableFrames> queued_retransmittable_frames_;
 

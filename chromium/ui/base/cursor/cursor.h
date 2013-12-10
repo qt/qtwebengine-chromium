@@ -82,6 +82,11 @@ const int kCursorGrab = 42;
 const int kCursorGrabbing = 43;
 const int kCursorCustom = 44;
 
+enum CursorSetType {
+  CURSOR_SET_NORMAL,
+  CURSOR_SET_LARGE
+};
+
 // Ref-counted cursor that supports both default and custom cursors.
 class UI_EXPORT Cursor {
  public:

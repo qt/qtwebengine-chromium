@@ -31,7 +31,7 @@
 
 #include "core/platform/audio/AudioArray.h"
 
-#if OS(DARWIN) && !USE(WEBAUDIO_FFMPEG)
+#if OS(MACOSX) && !USE(WEBAUDIO_FFMPEG)
 #define USE_ACCELERATE_FFT 1
 #else
 #define USE_ACCELERATE_FFT 0
@@ -44,7 +44,6 @@
 #if !USE_ACCELERATE_FFT
 
 #if USE(WEBAUDIO_OPENMAX_DL_FFT)
-#include "dl/sp/api/armSP.h"
 #include "dl/sp/api/omxSP.h"
 #elif USE(WEBAUDIO_FFMPEG)
 struct RDFTContext;

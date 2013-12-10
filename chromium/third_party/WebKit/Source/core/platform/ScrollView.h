@@ -50,6 +50,7 @@ public:
     virtual bool isScrollCornerVisible() const OVERRIDE;
     virtual void scrollbarStyleChanged(int newStyle, bool forceUpdate) OVERRIDE;
     virtual bool userInputScrollable(ScrollbarOrientation) const OVERRIDE;
+    virtual bool shouldPlaceVerticalScrollbarOnLeft() const OVERRIDE;
 
     virtual void notifyPageThatContentAreaWillPaint() const;
 
@@ -262,6 +263,7 @@ public:
     virtual IntPoint convertFromContainingViewToScrollbar(const Scrollbar*, const IntPoint&) const OVERRIDE;
 
     void calculateAndPaintOverhangAreas(GraphicsContext*, const IntRect& dirtyRect);
+    void calculateAndPaintOverhangBackground(GraphicsContext*, const IntRect& dirtyRect);
 
     virtual bool isScrollView() const OVERRIDE { return true; }
 

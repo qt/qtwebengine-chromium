@@ -14,12 +14,12 @@
 #include "ui/aura/root_window_transformer.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_property.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_handler.h"
 #include "ui/compositor/dip_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/events/event.h"
+#include "ui/events/event_handler.h"
 #include "ui/gfx/point3_f.h"
 #include "ui/gfx/point_conversions.h"
 #include "ui/gfx/point_f.h"
@@ -44,7 +44,7 @@ const int kPanningMergin = 100;
 void MoveCursorTo(aura::RootWindow* root_window,
                   const gfx::Point& root_location) {
   gfx::Point3F host_location_3f(root_location);
-  root_window->GetRootTransform().TransformPoint(host_location_3f);
+  root_window->GetRootTransform().TransformPoint(&host_location_3f);
   root_window->MoveCursorToHostLocation(
       gfx::ToCeiledPoint(host_location_3f.AsPointF()));
 }
@@ -265,7 +265,7 @@ bool MagnificationControllerImpl::RedrawDIP(const gfx::PointF& position_in_dip,
   settings.AddObserver(this);
   settings.SetPreemptionStrategy(
       ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
-  settings.SetTweenType(ui::Tween::EASE_OUT);
+  settings.SetTweenType(gfx::Tween::EASE_OUT);
   settings.SetTransitionDuration(
       base::TimeDelta::FromMilliseconds(animate ? 100 : 0));
 
@@ -456,14 +456,14 @@ void MagnificationControllerImpl::OnWindowDestroying(
     // destroyed before the root windows get destroyed.
     DCHECK(root_window);
 
-    aura::RootWindow* active_root_window = Shell::GetActiveRootWindow();
-    CHECK(active_root_window);
+    aura::RootWindow* target_root_window = Shell::GetTargetRootWindow();
+    CHECK(target_root_window);
 
-    // The destroyed root window must not be active.
-    CHECK_NE(active_root_window, root_window);
+    // The destroyed root window must not be target.
+    CHECK_NE(target_root_window, root_window);
     // Don't redraw the old root window as it's being destroyed.
-    SwitchTargetRootWindow(active_root_window, false);
-    point_of_interest_ = active_root_window->bounds().CenterPoint();
+    SwitchTargetRootWindow(target_root_window, false);
+    point_of_interest_ = target_root_window->bounds().CenterPoint();
   }
 }
 

@@ -17,6 +17,7 @@
 #include "tools/gn/input_file_manager.h"
 #include "tools/gn/scheduler.h"
 #include "tools/gn/target.h"
+#include "tools/gn/trace.h"
 
 #if defined(OS_WIN)
 #include <windows.h>
@@ -62,11 +63,13 @@ NinjaBuildWriter::NinjaBuildWriter(
     const BuildSettings* build_settings,
     const std::vector<const Settings*>& all_settings,
     const std::vector<const Target*>& default_toolchain_targets,
-    std::ostream& out)
+    std::ostream& out,
+    std::ostream& dep_out)
     : build_settings_(build_settings),
       all_settings_(all_settings),
       default_toolchain_targets_(default_toolchain_targets),
       out_(out),
+      dep_out_(dep_out),
       path_output_(build_settings->build_dir(), ESCAPE_NINJA, true),
       helper_(build_settings) {
 }
@@ -85,6 +88,8 @@ bool NinjaBuildWriter::RunAndWriteFile(
     const BuildSettings* build_settings,
     const std::vector<const Settings*>& all_settings,
     const std::vector<const Target*>& default_toolchain_targets) {
+  ScopedTrace trace(TraceItem::TRACE_FILE_WRITE, "build.ninja");
+
   base::FilePath ninja_file(build_settings->GetFullPath(
       SourceFile(build_settings->build_dir().value() + "build.ninja")));
   file_util::CreateDirectory(ninja_file.DirName());
@@ -95,8 +100,14 @@ bool NinjaBuildWriter::RunAndWriteFile(
   if (file.fail())
     return false;
 
+  std::ofstream depfile;
+  depfile.open((FilePathToUTF8(ninja_file) + ".d").c_str(),
+               std::ios_base::out | std::ios_base::binary);
+  if (depfile.fail())
+    return false;
+
   NinjaBuildWriter gen(build_settings, all_settings,
-                       default_toolchain_targets, file);
+                       default_toolchain_targets, file, depfile);
   gen.Run();
   return true;
 }
@@ -106,24 +117,25 @@ void NinjaBuildWriter::WriteNinjaRules() {
   out_ << "  command = " << GetSelfInvocationCommand(build_settings_) << "\n";
   out_ << "  description = GN the world\n\n";
 
-  out_ << "build build.ninja: gn";
+  out_ << "build build.ninja: gn\n"
+       << "  depfile = build.ninja.d\n";
 
-  // Input build files.
+  // Input build files. These go in the ".d" file. If we write them as
+  // dependencies in the .ninja file itself, ninja will expect the files to
+  // exist and will error if they don't. When files are listed in a depfile,
+  // missing files are ignored.
+  dep_out_ << "build.ninja:";
   std::vector<base::FilePath> input_files;
   g_scheduler->input_file_manager()->GetAllPhysicalInputFileNames(&input_files);
-  EscapeOptions ninja_options;
-  ninja_options.mode = ESCAPE_NINJA;
   for (size_t i = 0; i < input_files.size(); i++)
-    out_ << " " << EscapeString(FilePathToUTF8(input_files[i]), ninja_options);
+    dep_out_ << " " << FilePathToUTF8(input_files[i]);
 
   // Other files read by the build.
-  std::vector<SourceFile> other_files = g_scheduler->GetGenDependencies();
-  for (size_t i = 0; i < other_files.size(); i++) {
-    out_ << " ";
-    path_output_.WriteFile(out_, other_files[i]);
-  }
+  std::vector<base::FilePath> other_files = g_scheduler->GetGenDependencies();
+  for (size_t i = 0; i < other_files.size(); i++)
+    dep_out_ << " " << FilePathToUTF8(other_files[i]);
 
-  out_ << std::endl << std::endl;
+  out_ << std::endl;
 }
 
 void NinjaBuildWriter::WriteSubninjas() {
@@ -143,8 +155,6 @@ void NinjaBuildWriter::WritePhonyAndAllRules() {
   // we'll get naming conflicts).
   for (size_t i = 0; i < default_toolchain_targets_.size(); i++) {
     const Target* target = default_toolchain_targets_[i];
-    if (target->output_type() == Target::NONE)
-      continue;  // Nothing to generate.
 
     OutputFile target_file = helper_.GetTargetOutputFile(target);
     if (target_file.value() != target->label().name()) {

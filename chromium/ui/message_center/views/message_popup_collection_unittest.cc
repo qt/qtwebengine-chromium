@@ -10,8 +10,8 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_constants.h"
+#include "ui/events/event.h"
+#include "ui/events/event_constants.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/rect.h"
 #include "ui/message_center/fake_message_center.h"
@@ -90,7 +90,7 @@ class MessagePopupCollectionTest : public views::ViewsTestBase {
                          UTF8ToUTF16("test message"),
                          gfx::Image(),
                          string16() /* display_source */,
-                         "" /* extension_id */,
+                         NotifierId(),
                          message_center::RichNotificationData(),
                          NULL /* delegate */));
     MessageCenter::Get()->AddNotification(notification.Pass());
@@ -377,6 +377,29 @@ TEST_F(MessagePopupCollectionTest, DetectMouseHover) {
 
 // TODO(dimich): Test repositioning - both normal one and when user is closing
 // the toasts.
+TEST_F(MessagePopupCollectionTest, DetectMouseHoverWithUserClose) {
+  std::string id0 = AddNotification();
+  std::string id1 = AddNotification();
+  WaitForTransitionsDone();
+
+  views::WidgetDelegateView* toast0 = GetToast(id0);
+  EXPECT_TRUE(toast0 != NULL);
+  views::WidgetDelegateView* toast1 = GetToast(id1);
+  ASSERT_TRUE(toast1 != NULL);
+
+  ui::MouseEvent event(ui::ET_MOUSE_MOVED, gfx::Point(), gfx::Point(), 0);
+  toast1->OnMouseEntered(event);
+  static_cast<MessageCenterObserver*>(collection())->OnNotificationRemoved(
+      id1, true);
+
+  EXPECT_FALSE(MouseInCollection());
+  std::string id2 = AddNotification();
+
+  WaitForTransitionsDone();
+  views::WidgetDelegateView* toast2 = GetToast(id2);
+  EXPECT_TRUE(toast2 != NULL);
+}
+
 
 }  // namespace test
 }  // namespace message_center

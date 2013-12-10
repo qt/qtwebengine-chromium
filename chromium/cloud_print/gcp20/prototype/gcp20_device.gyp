@@ -48,8 +48,13 @@
         'dns_response_builder.h',
         'dns_sd_server.cc',
         'dns_sd_server.h',
+        'local_settings.h',
+        'local_print_job.cc',
+        'local_print_job.h',
         'print_job_handler.cc',
         'print_job_handler.h',
+        'printer_state.cc',
+        'printer_state.h',
         'printer.cc',
         'printer.h',
         'privet_http_server.cc',
@@ -86,6 +91,7 @@
       'target_name': 'gcp20_device_unittests',
       'type': 'executable',
       'sources': [
+        'printer_unittest.cc',
         'x_privet_token_unittest.cc',
       ],
       'dependencies': [

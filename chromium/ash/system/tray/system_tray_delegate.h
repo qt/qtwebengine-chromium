@@ -111,7 +111,7 @@ typedef std::vector<IMEInfo> IMEInfoList;
 
 class VolumeControlDelegate;
 
-class SystemTrayDelegate {
+class ASH_EXPORT SystemTrayDelegate {
  public:
   virtual ~SystemTrayDelegate() {}
 
@@ -255,7 +255,8 @@ class SystemTrayDelegate {
   virtual void GetDriveOperationStatusList(
       DriveOperationStatusList* list) = 0;
 
-  // Shows UI to configure or activate the network specified by |network_id|.
+  // Shows UI to configure or activate the network specified by |network_id|,
+  // which may include showing Payment or Portal UI when appropriate.
   virtual void ConfigureNetwork(const std::string& network_id) = 0;
 
   // Shows UI to enroll the network specified by |network_id| if appropriate,
@@ -274,7 +275,7 @@ class SystemTrayDelegate {
   virtual void ShowMobileSimDialog() = 0;
 
   // Shows UI to setup a mobile network.
-  virtual void ShowMobileSetup(const std::string& network_id) = 0;
+  virtual void ShowMobileSetupDialog(const std::string& service_path) = 0;
 
   // Shows UI to connect to an unlisted wifi network.
   virtual void ShowOtherWifi() = 0;
@@ -290,16 +291,6 @@ class SystemTrayDelegate {
 
   // Returns whether bluetooth is enabled.
   virtual bool GetBluetoothEnabled() = 0;
-
-  // Retrieves information about the carrier and locale specific |setup_url|.
-  // If none of the carrier info/setup URL cannot be retrieved, returns false.
-  // Note: |setup_url| is returned when carrier is not defined (no SIM card).
-  virtual bool GetCellularCarrierInfo(std::string* carrier_id,
-                                      std::string* topup_url,
-                                      std::string* setup_url) = 0;
-
-  // Opens the cellular network specific URL.
-  virtual void ShowCellularURL(const std::string& url) = 0;
 
   // Shows UI for changing proxy settings.
   virtual void ChangeProxySettings() = 0;
@@ -320,17 +311,8 @@ class SystemTrayDelegate {
   // Get the system tray menu size in pixels (dependent on the language).
   virtual int GetSystemTrayMenuWidth() = 0;
 
-  // Returns the duration formatted as a localized string.
-  // TODO(stevenjb): Move TimeFormat from src/chrome to src/ui so that it can be
-  // accessed without going through the delegate. crbug.com/222697
-  virtual base::string16 FormatTimeDuration(
-      const base::TimeDelta& delta) const = 0;
-
   // Speaks the given text if spoken feedback is enabled.
   virtual void MaybeSpeak(const std::string& utterance) const = 0;
-
-  // Creates a dummy delegate for testing.
-  static SystemTrayDelegate* CreateDummyDelegate();
 };
 
 }  // namespace ash

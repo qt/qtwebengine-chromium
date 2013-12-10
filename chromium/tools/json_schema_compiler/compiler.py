@@ -25,7 +25,7 @@ from cpp_generator import CppGenerator
 from cpp_type_generator import CppTypeGenerator
 from dart_generator import DartGenerator
 import json_schema
-from model import Model, UnixName
+from model import Model
 from schema_loader import SchemaLoader
 
 # Names of supported code generators, as specified on the command-line.
@@ -78,10 +78,6 @@ def GenerateSchema(generator,
       sys.exit("Filename %s is illegal. Name files using unix_hacker style." %
                schema_filename)
 
-    # The output filename must match the input filename for gyp to deal with it
-    # properly.
-    out_file = namespace.unix_name
-
   # Construct the type generator with all the namespaces in this model.
   type_generator = CppTypeGenerator(api_model,
                                     schema_loader,
@@ -124,13 +120,14 @@ def GenerateSchema(generator,
 
   return '\n'.join(output_code)
 
+
 if __name__ == '__main__':
   parser = optparse.OptionParser(
       description='Generates a C++ model of an API from JSON schema',
       usage='usage: %prog [option]... schema')
   parser.add_option('-r', '--root', default='.',
       help='logical include root directory. Path to schema files from specified'
-      'dir will be the include path.')
+      ' dir will be the include path.')
   parser.add_option('-d', '--destdir',
       help='root directory to output generated files.')
   parser.add_option('-n', '--namespace', default='generated_api_schemas',

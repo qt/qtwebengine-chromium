@@ -135,6 +135,8 @@ WebInspector.TimelinePanel = function()
 
     this._model.addEventListener(WebInspector.TimelineModel.Events.RecordAdded, this._onTimelineEventRecorded, this);
     this._model.addEventListener(WebInspector.TimelineModel.Events.RecordsCleared, this._onRecordsCleared, this);
+    this._model.addEventListener(WebInspector.TimelineModel.Events.RecordingStarted, this._onRecordingStarted, this);
+    this._model.addEventListener(WebInspector.TimelineModel.Events.RecordingStopped, this._onRecordingStopped, this);
 
     this._registerShortcuts();
 
@@ -268,17 +270,12 @@ WebInspector.TimelinePanel.prototype = {
             var category = categories[categoryName];
             if (category.overviewStripGroupIndex < 0)
                 continue;
-            this._statusBarFilters.appendChild(this._createTimelineCategoryStatusBarCheckbox(category, this._onCategoryCheckboxClicked.bind(this, category)));
+            this._statusBarFilters.appendChild(this._createTimelineCategoryStatusBarCheckbox(category));
         }
 
-        var statsContainer = this._statusBarFilters.createChild("div");
-        statsContainer.className = "timeline-records-stats-container";
-
-        this.recordsCounter = statsContainer.createChild("div");
-        this.recordsCounter.className = "timeline-records-stats";
-
-        this.frameStatistics = statsContainer.createChild("div");
-        this.frameStatistics.className = "timeline-records-stats hidden";
+        var statsContainer = this._statusBarFilters.createChild("div", "timeline-records-stats-container");
+        this.recordsCounter = statsContainer.createChild("div", "timeline-records-stats");
+        this.frameStatistics = statsContainer.createChild("div", "timeline-records-stats hidden");
 
         function getAnchor()
         {
@@ -287,40 +284,36 @@ WebInspector.TimelinePanel.prototype = {
         this._frameStatisticsPopoverHelper = new WebInspector.PopoverHelper(this.frameStatistics, getAnchor.bind(this), this._showFrameStatistics.bind(this));
     },
 
-    _createTimelineCategoryStatusBarCheckbox: function(category, onCheckboxClicked)
+    /**
+     * @param {WebInspector.TimelineCategory} category
+     */
+    _createTimelineCategoryStatusBarCheckbox: function(category)
     {
         var labelContainer = document.createElement("div");
         labelContainer.addStyleClass("timeline-category-statusbar-item");
         labelContainer.addStyleClass("timeline-category-" + category.name);
         labelContainer.addStyleClass("status-bar-item");
 
-        var label = document.createElement("label");
+        var label = labelContainer.createChild("label");
         var checkBorder = label.createChild("div", "timeline-category-checkbox");
         var checkElement = checkBorder.createChild("div", "timeline-category-checkbox-check timeline-category-checkbox-checked");
         checkElement.type = "checkbox";
         checkElement.checked = true;
-        checkElement.addEventListener("click", listener, false);
+        labelContainer.addEventListener("click", listener.bind(this), false);
 
         function listener(event)
         {
-            checkElement.checked = !checkElement.checked;
+            var checked = !checkElement.checked;
+            checkElement.checked = checked;
+            category.hidden = !checked;
             checkElement.enableStyleClass("timeline-category-checkbox-checked", checkElement.checked);
-            onCheckboxClicked(event);
+            this._invalidateAndScheduleRefresh(true, true);
         }
 
-        var typeElement = document.createElement("span");
-        typeElement.className = "type";
+        var typeElement = label.createChild("span", "type");
         typeElement.textContent = category.title;
-        label.appendChild(typeElement);
 
-        labelContainer.appendChild(label);
         return labelContainer;
-    },
-
-    _onCategoryCheckboxClicked: function(category, event)
-    {
-        category.hidden = !event.target.checked;
-        this._invalidateAndScheduleRefresh(true, true);
     },
 
     /**
@@ -413,7 +406,7 @@ WebInspector.TimelinePanel.prototype = {
             return null;
         if (this.toggleTimelineButton.toggled) {
             this.toggleTimelineButton.toggled = false;
-            this._model.stopRecord();
+            this._model.stopRecording();
         }
         var progressIndicator = new WebInspector.ProgressIndicator();
         progressIndicator.addEventListener(WebInspector.ProgressIndicator.Events.Done, this._setOperationInProgress.bind(this, null));
@@ -577,14 +570,11 @@ WebInspector.TimelinePanel.prototype = {
         if (this._operationInProgress)
             return true;
         if (this.toggleTimelineButton.toggled) {
-            this._model.stopRecord();
-            this.toggleTimelineButton.title = WebInspector.UIString("Record");
+            this._model.stopRecording();
         } else {
-            this._model.startRecord(this._includeDomCounters);
-            this.toggleTimelineButton.title = WebInspector.UIString("Stop");
+            this._model.startRecording(this._includeDomCounters);
             WebInspector.userMetrics.TimelineStarted.record();
         }
-        this.toggleTimelineButton.toggled = !this.toggleTimelineButton.toggled;
         return true;
     },
 
@@ -623,10 +613,13 @@ WebInspector.TimelinePanel.prototype = {
 
     _onTimelineEventRecorded: function(event)
     {
-        if (this._innerAddRecordToTimeline(event.data))
+        if (this._innerAddRecordToTimeline(/** @type {TimelineAgent.TimelineEvent} */(event.data)))
             this._invalidateAndScheduleRefresh(false, false);
     },
 
+    /**
+     * @param {TimelineAgent.TimelineEvent} record
+     */
     _innerAddRecordToTimeline: function(record)
     {
         if (record.type === WebInspector.TimelineModel.RecordType.Program) {
@@ -674,9 +667,9 @@ WebInspector.TimelinePanel.prototype = {
     _resize: function(sidebarWidth)
     {
         this._closeRecordDetails();
-        this._scheduleRefresh(false, true);
         this._graphRowsElementWidth = this._graphRowsElement.offsetWidth;
         this._containerElementHeight = this._containerElement.clientHeight;
+        this._scheduleRefresh(false, true);
         var lastItemElement = this._statusBarItems[this._statusBarItems.length - 1].element;
         var minFloatingStatusBarItemsOffset = lastItemElement.totalOffsetLeft() + lastItemElement.offsetWidth;
         this._timelineGrid.gridHeaderElement.style.width = this._itemsGraphsElement.offsetWidth + "px";
@@ -692,6 +685,18 @@ WebInspector.TimelinePanel.prototype = {
     {
         this._resetPanel();
         this._invalidateAndScheduleRefresh(true, true);
+    },
+
+    _onRecordingStarted: function()
+    {
+        this.toggleTimelineButton.title = WebInspector.UIString("Stop");
+        this.toggleTimelineButton.toggled = true;
+    },
+
+    _onRecordingStopped: function()
+    {
+        this.toggleTimelineButton.title = WebInspector.UIString("Record");
+        this.toggleTimelineButton.toggled = false;
     },
 
     _resetPanel: function()
@@ -1249,12 +1254,19 @@ WebInspector.TimelinePanel.prototype = {
 
     performFilter: function(searchQuery)
     {
-        this._presentationModel.removeFilter(this._searchFilter);
+        this._presentationModel.setSearchFilter(null);
         delete this._searchFilter;
+
+        function cleanRecord(record)
+        {
+            delete record.clicked;
+        }
+        WebInspector.TimelinePresentationModel.forAllRecords(this._presentationModel.rootRecord().children, cleanRecord);
+
         this.searchCanceled();
         if (searchQuery) {
             this._searchFilter = new WebInspector.TimelineSearchFilter(createPlainTextSearchRegex(searchQuery, "i"));
-            this._presentationModel.addFilter(this._searchFilter);
+            this._presentationModel.setSearchFilter(this._searchFilter);
         }
         this._invalidateAndScheduleRefresh(true, true);
     },
@@ -1496,6 +1508,7 @@ WebInspector.TimelineRecordGraphRow.prototype = {
     _onClick: function(event)
     {
         this._record.collapsed = !this._record.collapsed;
+        this._record.clicked = true;
         this._scheduleRefresh(false, true);
     },
 
@@ -1520,7 +1533,7 @@ WebInspector.TimelineExpandableElement.prototype = {
     _update: function(record, index, left, width)
     {
         const rowHeight = WebInspector.TimelinePanel.rowHeight;
-        if (record.visibleChildrenCount || record.invisibleChildrenCount) {
+        if (record.visibleChildrenCount || record.expandable) {
             this._element.style.top = index * rowHeight + "px";
             this._element.style.left = left + "px";
             this._element.style.width = Math.max(12, width + 25) + "px";

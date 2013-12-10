@@ -1,13 +1,14 @@
 # Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
 import logging
-import os
 import time
 
 from telemetry.core import util
 from telemetry.core import exceptions
 from telemetry.unittest import tab_test_case
+from telemetry.unittest import DisabledTest
 
 
 def _IsDocumentVisible(tab):
@@ -19,16 +20,12 @@ def _IsDocumentVisible(tab):
 
 class TabTest(tab_test_case.TabTestCase):
   def testNavigateAndWaitToForCompleteState(self):
-    unittest_data_dir = os.path.join(os.path.dirname(__file__),
-                                     '..', '..', 'unittest_data')
-    self._browser.SetHTTPServerDirectories(unittest_data_dir)
+    self._browser.SetHTTPServerDirectories(util.GetUnittestDataDir())
     self._tab.Navigate(self._browser.http_server.UrlOf('blank.html'))
     self._tab.WaitForDocumentReadyStateToBeComplete()
 
   def testNavigateAndWaitToForInteractiveState(self):
-    unittest_data_dir = os.path.join(os.path.dirname(__file__),
-                                     '..', '..', 'unittest_data')
-    self._browser.SetHTTPServerDirectories(unittest_data_dir)
+    self._browser.SetHTTPServerDirectories(util.GetUnittestDataDir())
     self._tab.Navigate(self._browser.http_server.UrlOf('blank.html'))
     self._tab.WaitForDocumentReadyStateToBeInteractiveOrBetter()
 
@@ -59,14 +56,13 @@ class GpuTabTest(tab_test_case.TabTestCase):
     self._extra_browser_args = ['--enable-gpu-benchmarking']
     super(GpuTabTest, self).setUp()
 
+  @DisabledTest
   def testScreenshot(self):
     if not self._tab.screenshot_supported:
       logging.warning('Browser does not support screenshots, skipping test.')
       return
 
-    unittest_data_dir = os.path.join(os.path.dirname(__file__),
-                                     '..', '..', 'unittest_data')
-    self._browser.SetHTTPServerDirectories(unittest_data_dir)
+    self._browser.SetHTTPServerDirectories(util.GetUnittestDataDir())
     self._tab.Navigate(
       self._browser.http_server.UrlOf('green_rect.html'))
     self._tab.WaitForDocumentReadyStateToBeComplete()

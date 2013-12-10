@@ -35,12 +35,12 @@
 #include "core/dom/ScriptRunner.h"
 #include "core/dom/ScriptableDocumentParser.h"
 #include "core/dom/Text.h"
+#include "core/fetch/FetchRequest.h"
+#include "core/fetch/ResourceFetcher.h"
+#include "core/fetch/ScriptResource.h"
 #include "core/html/HTMLImport.h"
 #include "core/html/HTMLScriptElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/loader/cache/FetchRequest.h"
-#include "core/loader/cache/ResourceFetcher.h"
-#include "core/loader/cache/ScriptResource.h"
 #include "core/page/ContentSecurityPolicy.h"
 #include "core/page/Frame.h"
 #include "core/platform/MIMETypeRegistry.h"
@@ -68,8 +68,8 @@ ScriptLoader::ScriptLoader(Element* element, bool parserInserted, bool alreadySt
     , m_willExecuteInOrder(false)
 {
     ASSERT(m_element);
-    if (parserInserted && element->document()->scriptableDocumentParser() && !element->document()->isInDocumentWrite())
-        m_startLineNumber = element->document()->scriptableDocumentParser()->lineNumber();
+    if (parserInserted && element->document().scriptableDocumentParser() && !element->document().isInDocumentWrite())
+        m_startLineNumber = element->document().scriptableDocumentParser()->lineNumber();
 }
 
 ScriptLoader::~ScriptLoader()
@@ -77,9 +77,9 @@ ScriptLoader::~ScriptLoader()
     stopLoadRequest();
 }
 
-void ScriptLoader::insertedInto(ContainerNode* insertionPoint)
+void ScriptLoader::didNotifySubtreeInsertionsToDocument()
 {
-    if (insertionPoint->inDocument() && !m_parserInserted)
+    if (!m_parserInserted)
         prepareScript(); // FIXME: Provide a real starting line number here.
 }
 
@@ -135,7 +135,7 @@ static bool isLegacySupportedJavaScriptLanguage(const String& language)
 
 void ScriptLoader::dispatchErrorEvent()
 {
-    m_element->dispatchEvent(Event::create(eventNames().errorEvent, false, false));
+    m_element->dispatchEvent(Event::create(eventNames().errorEvent));
 }
 
 void ScriptLoader::dispatchLoadEvent()
@@ -164,14 +164,6 @@ bool ScriptLoader::isScriptTypeSupported(LegacyTypeSupport supportLegacyTypes) c
     }
 
     return false;
-}
-
-Document* ScriptLoader::executingDocument() const
-{
-    Document* document = m_element->document();
-    if (!document->import())
-        return document;
-    return document->import()->master();
 }
 
 // http://dev.w3.org/html5/spec/Overview.html#prepare-a-script
@@ -211,16 +203,10 @@ bool ScriptLoader::prepareScript(const TextPosition& scriptStartPosition, Legacy
     m_alreadyStarted = true;
 
     // FIXME: If script is parser inserted, verify it's still in the original document.
-    Document* executingDocument = this->executingDocument();
-    Document* elementDocument = m_element->document();
+    Document& elementDocument = m_element->document();
+    Document* contextDocument = elementDocument.contextDocument().get();
 
-    // FIXME: Eventually we'd like to evaluate scripts which are inserted into a
-    // viewless document but this'll do for now.
-    // See http://bugs.webkit.org/show_bug.cgi?id=5727
-    if (!executingDocument->frame())
-        return false;
-
-    if (!executingDocument->frame()->script()->canExecuteScripts(AboutToExecuteScript))
+    if (!contextDocument || !contextDocument->allowExecutingScripts(m_element))
         return false;
 
     if (!isScriptForEventSupported())
@@ -229,10 +215,10 @@ bool ScriptLoader::prepareScript(const TextPosition& scriptStartPosition, Legacy
     if (!client->charsetAttributeValue().isEmpty())
         m_characterEncoding = client->charsetAttributeValue();
     else
-        m_characterEncoding = elementDocument->charset();
+        m_characterEncoding = elementDocument.charset();
 
     if (client->hasSourceAttribute()) {
-        if (!requestScript(client->sourceAttributeValue()))
+        if (!fetchScript(client->sourceAttributeValue()))
             return false;
     }
 
@@ -241,34 +227,34 @@ bool ScriptLoader::prepareScript(const TextPosition& scriptStartPosition, Legacy
         m_willBeParserExecuted = true;
     } else if (client->hasSourceAttribute() && m_parserInserted && !client->asyncAttributeValue()) {
         m_willBeParserExecuted = true;
-    } else if (!client->hasSourceAttribute() && m_parserInserted && !elementDocument->haveStylesheetsAndImportsLoaded()) {
+    } else if (!client->hasSourceAttribute() && m_parserInserted && !elementDocument.haveStylesheetsAndImportsLoaded()) {
         m_willBeParserExecuted = true;
         m_readyToBeParserExecuted = true;
     } else if (client->hasSourceAttribute() && !client->asyncAttributeValue() && !m_forceAsync) {
         m_willExecuteInOrder = true;
-        executingDocument->scriptRunner()->queueScriptForExecution(this, m_resource, ScriptRunner::IN_ORDER_EXECUTION);
+        contextDocument->scriptRunner()->queueScriptForExecution(this, m_resource, ScriptRunner::IN_ORDER_EXECUTION);
         m_resource->addClient(this);
     } else if (client->hasSourceAttribute()) {
-        executingDocument->scriptRunner()->queueScriptForExecution(this, m_resource, ScriptRunner::ASYNC_EXECUTION);
+        contextDocument->scriptRunner()->queueScriptForExecution(this, m_resource, ScriptRunner::ASYNC_EXECUTION);
         m_resource->addClient(this);
     } else {
         // Reset line numbering for nested writes.
-        TextPosition position = elementDocument->isInDocumentWrite() ? TextPosition() : scriptStartPosition;
-        KURL scriptURL = (!elementDocument->isInDocumentWrite() && m_parserInserted) ? elementDocument->url() : KURL();
+        TextPosition position = elementDocument.isInDocumentWrite() ? TextPosition() : scriptStartPosition;
+        KURL scriptURL = (!elementDocument.isInDocumentWrite() && m_parserInserted) ? elementDocument.url() : KURL();
         executeScript(ScriptSourceCode(scriptContent(), scriptURL, position));
     }
 
     return true;
 }
 
-bool ScriptLoader::requestScript(const String& sourceUrl)
+bool ScriptLoader::fetchScript(const String& sourceUrl)
 {
     ASSERT(m_element);
 
-    RefPtr<Document> elementDocument = m_element->document();
+    RefPtr<Document> elementDocument = &m_element->document();
     if (!m_element->dispatchBeforeLoadEvent(sourceUrl))
         return false;
-    if (!m_element->inDocument() || m_element->document() != elementDocument)
+    if (!m_element->inDocument() || &m_element->document() != elementDocument)
         return false;
 
     ASSERT(!m_resource);
@@ -286,7 +272,7 @@ bool ScriptLoader::requestScript(const String& sourceUrl)
         if (isValidScriptNonce)
             request.setContentSecurityCheck(DoNotCheckContentSecurityPolicy);
 
-        m_resource = elementDocument->fetcher()->requestScript(request);
+        m_resource = elementDocument->fetcher()->fetchScript(request);
         m_isExternalScript = true;
     }
 
@@ -315,9 +301,12 @@ void ScriptLoader::executeScript(const ScriptSourceCode& sourceCode)
     if (sourceCode.isEmpty())
         return;
 
-    RefPtr<Document> executingDocument = this->executingDocument();
-    RefPtr<Document> elementDocument = m_element->document();
-    Frame* frame = executingDocument->frame();
+    RefPtr<Document> elementDocument = &m_element->document();
+    RefPtr<Document> contextDocument = elementDocument->contextDocument().get();
+    if (!contextDocument)
+        return;
+
+    Frame* frame = contextDocument->frame();
 
     bool shouldBypassMainWorldContentSecurityPolicy = (frame && frame->script()->shouldBypassMainWorldContentSecurityPolicy()) || elementDocument->contentSecurityPolicy()->allowScriptNonce(m_element->fastGetAttribute(HTMLNames::nonceAttr));
 
@@ -325,18 +314,18 @@ void ScriptLoader::executeScript(const ScriptSourceCode& sourceCode)
         return;
 
     if (m_isExternalScript && m_resource && !m_resource->mimeTypeAllowedByNosniff()) {
-        executingDocument->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, "Refused to execute script from '" + m_resource->url().elidedString() + "' because its MIME type ('" + m_resource->mimeType() + "') is not executable, and strict MIME type checking is enabled.");
+        contextDocument->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, "Refused to execute script from '" + m_resource->url().elidedString() + "' because its MIME type ('" + m_resource->mimeType() + "') is not executable, and strict MIME type checking is enabled.");
         return;
     }
 
     if (frame) {
-        IgnoreDestructiveWriteCountIncrementer ignoreDesctructiveWriteCountIncrementer(m_isExternalScript ? executingDocument.get() : 0);
+        IgnoreDestructiveWriteCountIncrementer ignoreDesctructiveWriteCountIncrementer(m_isExternalScript ? contextDocument.get() : 0);
 
         if (isHTMLScriptLoader(m_element))
-            executingDocument->pushCurrentScript(toHTMLScriptElement(m_element));
+            contextDocument->pushCurrentScript(toHTMLScriptElement(m_element));
 
         AccessControlStatus corsCheck = NotSharableCrossOrigin;
-        if (sourceCode.resource() && sourceCode.resource()->passesAccessControlCheck(m_element->document()->securityOrigin()))
+        if (sourceCode.resource() && sourceCode.resource()->passesAccessControlCheck(m_element->document().securityOrigin()))
             corsCheck = SharableCrossOrigin;
 
         // Create a script from the script element node, using the script
@@ -345,8 +334,8 @@ void ScriptLoader::executeScript(const ScriptSourceCode& sourceCode)
         frame->script()->executeScriptInMainWorld(sourceCode, corsCheck);
 
         if (isHTMLScriptLoader(m_element)) {
-            ASSERT(executingDocument->currentScript() == m_element);
-            executingDocument->popCurrentScript();
+            ASSERT(contextDocument->currentScript() == m_element);
+            contextDocument->popCurrentScript();
         }
     }
 }
@@ -377,8 +366,10 @@ void ScriptLoader::notifyFinished(Resource* resource)
 {
     ASSERT(!m_willBeParserExecuted);
 
-    RefPtr<Document> executingDocument = this->executingDocument();
-    RefPtr<Document> elementDocument = m_element->document();
+    RefPtr<Document> elementDocument = &m_element->document();
+    RefPtr<Document> contextDocument = elementDocument->contextDocument().get();
+    if (!contextDocument)
+        return;
 
     // Resource possibly invokes this notifyFinished() more than
     // once because ScriptLoader doesn't unsubscribe itself from
@@ -393,9 +384,9 @@ void ScriptLoader::notifyFinished(Resource* resource)
     }
 
     if (m_willExecuteInOrder)
-        executingDocument->scriptRunner()->notifyScriptReady(this, ScriptRunner::IN_ORDER_EXECUTION);
+        contextDocument->scriptRunner()->notifyScriptReady(this, ScriptRunner::IN_ORDER_EXECUTION);
     else
-        executingDocument->scriptRunner()->notifyScriptReady(this, ScriptRunner::ASYNC_EXECUTION);
+        contextDocument->scriptRunner()->notifyScriptReady(this, ScriptRunner::ASYNC_EXECUTION);
 
     m_resource = 0;
 }

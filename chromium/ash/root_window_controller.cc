@@ -13,6 +13,7 @@
 #include "ash/desktop_background/user_wallpaper_delegate.h"
 #include "ash/display/display_manager.h"
 #include "ash/focus_cycler.h"
+#include "ash/root_window_settings.h"
 #include "ash/session_state_delegate.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_types.h"
@@ -28,11 +29,9 @@
 #include "ash/touch/touch_observer_hud.h"
 #include "ash/wm/always_on_top_controller.h"
 #include "ash/wm/base_layout_manager.h"
-#include "ash/wm/boot_splash_screen.h"
 #include "ash/wm/dock/docked_window_layout_manager.h"
 #include "ash/wm/panels/panel_layout_manager.h"
 #include "ash/wm/panels/panel_window_event_handler.h"
-#include "ash/wm/property_util.h"
 #include "ash/wm/root_window_layout_manager.h"
 #include "ash/wm/screen_dimmer.h"
 #include "ash/wm/stacking_controller.h"
@@ -41,6 +40,7 @@
 #include "ash/wm/system_modal_container_layout_manager.h"
 #include "ash/wm/toplevel_window_event_handler.h"
 #include "ash/wm/window_properties.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "ash/wm/workspace_controller.h"
 #include "base/command_line.h"
@@ -55,22 +55,30 @@
 #include "ui/aura/window_tracker.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/models/menu_model.h"
+#include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
 #include "ui/keyboard/keyboard_controller.h"
 #include "ui/keyboard/keyboard_util.h"
 #include "ui/views/controls/menu/menu_runner.h"
+#include "ui/views/corewm/capture_controller.h"
 #include "ui/views/corewm/visibility_controller.h"
 #include "ui/views/view_model.h"
 #include "ui/views/view_model_utils.h"
 
+#if defined(OS_CHROMEOS)
+#include "ash/wm/boot_splash_screen_chromeos.h"
+#endif
+
 namespace ash {
 namespace {
 
+#if defined(OS_CHROMEOS)
 // Duration for the animation that hides the boot splash screen, in
 // milliseconds.  This should be short enough in relation to
 // wm/window_animation.cc's brightness/grayscale fade animation that the login
 // background image animation isn't hidden by the splash screen animation.
 const int kBootSplashScreenHideDurationMs = 500;
+#endif
 
 // Creates a new window for use as a container.
 aura::Window* CreateContainer(int window_id,
@@ -89,10 +97,14 @@ aura::Window* CreateContainer(int window_id,
 // Reparents |window| to |new_parent|.
 void ReparentWindow(aura::Window* window, aura::Window* new_parent) {
   // Update the restore bounds to make it relative to the display.
-  gfx::Rect restore_bounds(GetRestoreBoundsInParent(window));
+  wm::WindowState* state = wm::GetWindowState(window);
+  gfx::Rect restore_bounds;
+  bool has_restore_bounds = state->HasRestoreBounds();
+  if (has_restore_bounds)
+    restore_bounds = state->GetRestoreBoundsInParent();
   new_parent->AddChild(window);
-  if (!restore_bounds.IsEmpty())
-    SetRestoreBoundsInParent(window, restore_bounds);
+  if (has_restore_bounds)
+    state->SetRestoreBoundsInParent(restore_bounds);
 }
 
 // Reparents the appropriate set of windows from |src| to |dst|.
@@ -191,10 +203,8 @@ class EmptyWindowDelegate : public aura::WindowDelegate {
     return false;
   }
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE {}
-  virtual scoped_refptr<ui::Texture> CopyTexture() OVERRIDE {
-    NOTREACHED();
-    return scoped_refptr<ui::Texture>();
-  }
+  virtual void DidRecreateLayer(ui::Layer* old_layer,
+                                ui::Layer* new_layer) OVERRIDE {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(EmptyWindowDelegate);
@@ -211,16 +221,20 @@ RootWindowController::RootWindowController(aura::RootWindow* root_window)
       panel_layout_manager_(NULL),
       touch_hud_debug_(NULL),
       touch_hud_projection_(NULL) {
-  SetRootWindowController(root_window, this);
+  GetRootWindowSettings(root_window)->controller = this;
   screen_dimmer_.reset(new ScreenDimmer(root_window));
 
   stacking_controller_.reset(new StackingController);
   aura::client::SetStackingClient(root_window, stacking_controller_.get());
+  capture_client_.reset(new views::corewm::ScopedCaptureClient(root_window));
 }
 
 RootWindowController::~RootWindowController() {
   Shutdown();
   root_window_.reset();
+  // The CaptureClient needs to be around for as long as the RootWindow is
+  // valid.
+  capture_client_.reset();
 }
 
 // static
@@ -235,8 +249,8 @@ RootWindowController* RootWindowController::ForWindow(
 }
 
 // static
-RootWindowController* RootWindowController::ForActiveRootWindow() {
-  return GetRootWindowController(Shell::GetActiveRootWindow());
+RootWindowController* RootWindowController::ForTargetRootWindow() {
+  return internal::GetRootWindowController(Shell::GetTargetRootWindow());
 }
 
 void RootWindowController::SetWallpaperController(
@@ -259,23 +273,24 @@ void RootWindowController::Shutdown() {
   wallpaper_controller_.reset();
   animating_wallpaper_controller_.reset();
 
-  // Change the active root window before closing child windows. If any child
+  // Change the target root window before closing child windows. If any child
   // being removed triggers a relayout of the shelf it will try to build a
-  // window list adding windows from the active root window's containers which
+  // window list adding windows from the target root window's containers which
   // may have already gone away.
-  if (Shell::GetActiveRootWindow() == root_window_) {
-    Shell::GetInstance()->set_active_root_window(
+  if (Shell::GetTargetRootWindow() == root_window_) {
+    Shell::GetInstance()->set_target_root_window(
         Shell::GetPrimaryRootWindow() == root_window_.get() ?
         NULL : Shell::GetPrimaryRootWindow());
   }
 
   CloseChildWindows();
-  SetRootWindowController(root_window_.get(), NULL);
+  GetRootWindowSettings(root_window_.get())->controller = NULL;
   screen_dimmer_.reset();
   workspace_controller_.reset();
   // Forget with the display ID so that display lookup
   // ends up with invalid display.
-  root_window_->ClearProperty(kDisplayIdKey);
+  internal::GetRootWindowSettings(root_window_.get())->display_id =
+      gfx::Display::kInvalidDisplayID;
   // And this root window should no longer process events.
   root_window_->PrepareForShutdown();
 
@@ -353,6 +368,7 @@ void RootWindowController::UpdateAfterLoginStatusChange(
 }
 
 void RootWindowController::HandleInitialDesktopBackgroundAnimationStarted() {
+#if defined(OS_CHROMEOS)
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kAshAnimateFromBootSplashScreen) &&
       boot_splash_screen_.get()) {
@@ -361,12 +377,15 @@ void RootWindowController::HandleInitialDesktopBackgroundAnimationStarted() {
     boot_splash_screen_->StartHideAnimation(
         base::TimeDelta::FromMilliseconds(kBootSplashScreenHideDurationMs));
   }
+#endif
 }
 
 void RootWindowController::OnWallpaperAnimationFinished(views::Widget* widget) {
   // Make sure the wallpaper is visible.
   system_background_->SetColor(SK_ColorBLACK);
+#if defined(OS_CHROMEOS)
   boot_splash_screen_.reset();
+#endif
 
   Shell::GetInstance()->user_wallpaper_delegate()->
       OnWallpaperAnimationFinished();
@@ -489,12 +508,13 @@ void RootWindowController::UpdateShelfVisibility() {
   shelf_->shelf_layout_manager()->UpdateVisibilityState();
 }
 
-const aura::Window* RootWindowController::GetFullscreenWindow() const {
-  const aura::Window* container = GetContainer(kShellWindowId_DefaultContainer);
-  for (size_t i = 0; i < container->children().size(); ++i) {
-    aura::Window* child = container->children()[i];
-    if (wm::IsWindowFullscreen(child))
-      return child;
+const aura::Window* RootWindowController::GetTopmostFullscreenWindow() const {
+  const aura::Window::Windows& windows =
+      GetContainer(kShellWindowId_DefaultContainer)->children();
+  for (aura::Window::Windows::const_reverse_iterator iter = windows.rbegin();
+       iter != windows.rend(); ++iter) {
+    if (wm::GetWindowState(*iter)->IsFullscreen())
+      return *iter;
   }
   return NULL;
 }
@@ -513,6 +533,7 @@ void RootWindowController::InitKeyboard() {
 
     aura::Window* keyboard_container =
         keyboard_controller_->GetContainerWindow();
+    keyboard_container->set_id(kShellWindowId_VirtualKeyboardContainer);
     parent->AddChild(keyboard_container);
     keyboard_container->SetBounds(parent->bounds());
   }
@@ -677,6 +698,7 @@ void RootWindowController::CreateContainersInRootWindow(
       kShellWindowId_DockedContainer,
       "DockedContainer",
       non_lock_screen_containers);
+  views::corewm::SetChildWindowVisibilityChangesAnimated(docked_container);
   SetUsesScreenCoordinates(docked_container);
 
   aura::Window* panel_container = CreateContainer(
@@ -798,6 +820,11 @@ void RootWindowController::OnTouchHudProjectionToggled(bool enabled) {
     EnableTouchHudProjection();
   else
     DisableTouchHudProjection();
+}
+
+RootWindowController* GetRootWindowController(
+    const aura::RootWindow* root_window) {
+  return root_window ? GetRootWindowSettings(root_window)->controller : NULL;
 }
 
 }  // namespace internal

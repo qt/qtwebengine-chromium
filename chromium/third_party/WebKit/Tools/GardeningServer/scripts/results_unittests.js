@@ -29,6 +29,8 @@ var unittest = unittest || {};
 
 module("results");
 
+var MockResultsBaseURL = 'https://storage.googleapis.com/chromium-layout-test-archives/Mock_Builder/results/layout-test-results';
+
 unittest.kExampleResultsJSON = {
     "tests": {
         "scrollbars": {
@@ -254,7 +256,8 @@ test("walkHistory", 5, function() {
                     "userscripts": {
                         "another-test.html": {
                             "expected": "PASS",
-                            "actual": "TEXT"
+                            "actual": "TEXT",
+                            "is_unexpected": true
                         }
                     },
                 },
@@ -266,10 +269,12 @@ test("walkHistory", 5, function() {
                         "user-script-video-document.html": {
                             "expected": "FAIL",
                             "actual": "TEXT"
+                            "is_unexpected": false
                         },
                         "another-test.html": {
                             "expected": "PASS",
-                            "actual": "TEXT"
+                            "actual": "TEXT",
+                            "is_unexpected": true
                         }
                     },
                 },
@@ -280,7 +285,8 @@ test("walkHistory", 5, function() {
                     "userscripts": {
                         "another-test.html": {
                             "expected": "PASS",
-                            "actual": "TEXT"
+                            "actual": "TEXT",
+                            "is_unexpected": true
                         }
                     },
                 },
@@ -292,6 +298,7 @@ test("walkHistory", 5, function() {
                         "user-script-video-document.html": {
                             "expected": "FAIL",
                             "actual": "TEXT"
+                            "is_unexpected": false
                         },
                     },
                 },
@@ -304,7 +311,8 @@ test("walkHistory", 5, function() {
                     "userscripts": {
                         "another-test.html": {
                             "expected": "PASS",
-                            "actual": "TEXT"
+                            "actual": "TEXT",
+                            "is_unexpected": true
                         }
                     },
                 },
@@ -328,9 +336,25 @@ test("walkHistory", 5, function() {
     simulator.get = function(url, callback) {
         simulator.scheduleCallback(function() {
             if (/Mock_Builder/.test(url))
-                callback('<a href="11101/"></a><a href="11102/"></a><a href="11103/"></a><a href="11104/"></a><a href="11105/"></a><a href="11106/"></a><a href="11107/"></a><a href="11108/"></a>');
+                callback('<ListBucketResult>' +
+                         '<Prefix>Mock_Builder/11101/</Prefix>' +
+                         '<Prefix>Mock_Builder/11102/</Prefix>' +
+                         '<Prefix>Mock_Builder/11103/</Prefix>' +
+                         '<Prefix>Mock_Builder/11104/</Prefix>' +
+                         '<Prefix>Mock_Builder/11105/</Prefix>' +
+                         '<Prefix>Mock_Builder/11106/</Prefix>' +
+                         '<Prefix>Mock_Builder/11107/</Prefix>' +
+                         '<Prefix>Mock_Builder/11108/</Prefix>' +
+                         '</ListBucketResult>');
             else if (/Another_Builder/.test(url))
-                callback('<a href="22201/"></a><a href="22202/"></a>');
+                callback('<ListBucketResult>' +
+                         '<Prefix>Another_Builder/22201/</Prefix>' +
+                         '<Prefix>Another_Builder/22202/</Prefix>' +
+                         '</ListBucketResult>');
+            else if (/Mock Builder/.test(url))
+                callback({cachedBuilds: [11101, 11102, 11103, 11104, 11105, 11106, 11107, 11108]});
+            else if (/Another Builder/.test(url))
+                callback({cachedBuilds: [22201, 22202]});
             else
                 ok(false, 'Unexpected URL: ' + url);
         });
@@ -464,7 +488,7 @@ test("fetchResultsURLs", 5, function() {
             'failureTypeList': ['IMAGE', 'CRASH'],
         }, function(resultURLs) {
             deepEqual(resultURLs, [
-                "http://build.chromium.org/f/chromium/layout_test_results/Mock_Builder/results/layout-test-results/userscripts/another-test-crash-log.txt"
+                MockResultsBaseURL + "/userscripts/another-test-crash-log.txt"
             ]);
         });
         results.fetchResultsURLs({
@@ -480,27 +504,27 @@ test("fetchResultsURLs", 5, function() {
             'failureTypeList': ['IMAGE', 'IMAGE+TEXT'],
         }, function(resultURLs) {
             deepEqual(resultURLs, [
-                "http://build.chromium.org/f/chromium/layout_test_results/Mock_Builder/results/layout-test-results/userscripts/taco-expected.png",
-                "http://build.chromium.org/f/chromium/layout_test_results/Mock_Builder/results/layout-test-results/userscripts/taco-actual.png",
-                "http://build.chromium.org/f/chromium/layout_test_results/Mock_Builder/results/layout-test-results/userscripts/taco-diff.png",
-                "http://build.chromium.org/f/chromium/layout_test_results/Mock_Builder/results/layout-test-results/userscripts/taco-expected.txt",
-                "http://build.chromium.org/f/chromium/layout_test_results/Mock_Builder/results/layout-test-results/userscripts/taco-actual.txt",
-                "http://build.chromium.org/f/chromium/layout_test_results/Mock_Builder/results/layout-test-results/userscripts/taco-diff.txt",
+                MockResultsBaseURL + "/userscripts/taco-expected.png",
+                MockResultsBaseURL + "/userscripts/taco-actual.png",
+                MockResultsBaseURL + "/userscripts/taco-diff.png",
+                MockResultsBaseURL + "/userscripts/taco-expected.txt",
+                MockResultsBaseURL + "/userscripts/taco-actual.txt",
+                MockResultsBaseURL + "/userscripts/taco-diff.txt",
             ]);
         });
     });
 
     deepEqual(probedURLs, [
-        "http://build.chromium.org/f/chromium/layout_test_results/Mock_Builder/results/layout-test-results/userscripts/another-test-expected.png",
-        "http://build.chromium.org/f/chromium/layout_test_results/Mock_Builder/results/layout-test-results/userscripts/another-test-actual.png",
-        "http://build.chromium.org/f/chromium/layout_test_results/Mock_Builder/results/layout-test-results/userscripts/another-test-diff.png",
-        "http://build.chromium.org/f/chromium/layout_test_results/Mock_Builder/results/layout-test-results/userscripts/another-test-crash-log.txt",
-        "http://build.chromium.org/f/chromium/layout_test_results/Mock_Builder/results/layout-test-results/userscripts/taco-expected.png",
-        "http://build.chromium.org/f/chromium/layout_test_results/Mock_Builder/results/layout-test-results/userscripts/taco-actual.png",
-        "http://build.chromium.org/f/chromium/layout_test_results/Mock_Builder/results/layout-test-results/userscripts/taco-diff.png",
-        "http://build.chromium.org/f/chromium/layout_test_results/Mock_Builder/results/layout-test-results/userscripts/taco-actual.txt",
-        "http://build.chromium.org/f/chromium/layout_test_results/Mock_Builder/results/layout-test-results/userscripts/taco-expected.txt",
-        "http://build.chromium.org/f/chromium/layout_test_results/Mock_Builder/results/layout-test-results/userscripts/taco-diff.txt",
+        MockResultsBaseURL + "/userscripts/another-test-expected.png",
+        MockResultsBaseURL + "/userscripts/another-test-actual.png",
+        MockResultsBaseURL + "/userscripts/another-test-diff.png",
+        MockResultsBaseURL + "/userscripts/another-test-crash-log.txt",
+        MockResultsBaseURL + "/userscripts/taco-expected.png",
+        MockResultsBaseURL + "/userscripts/taco-actual.png",
+        MockResultsBaseURL + "/userscripts/taco-diff.png",
+        MockResultsBaseURL + "/userscripts/taco-actual.txt",
+        MockResultsBaseURL + "/userscripts/taco-expected.txt",
+        MockResultsBaseURL + "/userscripts/taco-diff.txt",
     ]);
 });
 
@@ -526,8 +550,8 @@ test("fetchResultsByBuilder", 3, function() {
     });
 
     deepEqual(probedURLs, [
-        "http://build.chromium.org/f/chromium/layout_test_results/MockBuilder1/results/layout-test-results/failing_results.json",
-        "http://build.chromium.org/f/chromium/layout_test_results/MockBuilder2/results/layout-test-results/failing_results.json"
+        MockResultsBaseURL.replace('Mock_Builder', 'MockBuilder1') + "/failing_results.json",
+        MockResultsBaseURL.replace('Mock_Builder', 'MockBuilder2') + "/failing_results.json"
     ]);
 
 });

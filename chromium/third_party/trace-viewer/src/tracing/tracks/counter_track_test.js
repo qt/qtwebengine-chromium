@@ -49,7 +49,9 @@ base.unittest.testSuite('tracing.tracks.counter_track', function() {
 
     track.heading = ctr.name;
     track.counter = ctr;
-    track.viewport.xSetWorldBounds(0, 10, track.clientWidth * pixelRatio);
+    var dt = new tracing.TimelineDisplayTransform();
+    dt.xSetWorldBounds(0, 10, track.clientWidth * pixelRatio);
+    track.viewport.setDisplayTransformImmediately(dt);
 
     testFn(ctr, drawingContainer, track);
   };
@@ -87,7 +89,9 @@ base.unittest.testSuite('tracing.tracks.counter_track', function() {
 
     track.heading = ctr.name;
     track.counter = ctr;
-    track.viewport.xSetWorldBounds(0, 7.7, track.clientWidth);
+    var dt = new tracing.TimelineDisplayTransform();
+    dt.xSetWorldBounds(0, 7.7, track.clientWidth);
+    track.viewport.setDisplayTransformImmediately(dt);
   });
 
   test('basicCounterXPointPicking', function() {
@@ -104,10 +108,14 @@ base.unittest.testSuite('tracing.tracks.counter_track', function() {
       var x = 0.15 * clientRect.width;
       track.addIntersectingItemsInRangeToSelection(x, x + 1, y75, y75 + 1, sel);
 
-      assertEquals(1, sel.length);
-      assertEquals(track, sel[0].track);
-      assertEquals(ctr, sel[0].counter);
-      assertEquals(1, sel[0].sampleIndex);
+      assertEquals(2, sel.length);
+      assertEquals(ctr, sel[0].series.counter);
+      assertEquals(1, sel[0].getSampleIndex());
+      assertEquals(0, sel[0].series.seriesIndex);
+
+      assertEquals(ctr, sel[1].series.counter);
+      assertEquals(1, sel[1].getSampleIndex());
+      assertEquals(1, sel[1].series.seriesIndex);
 
       // Outside bounds.
       sel = new tracing.Selection();
@@ -118,6 +126,55 @@ base.unittest.testSuite('tracing.tracks.counter_track', function() {
       sel = new tracing.Selection();
       var x = 0.8 * clientRect.width;
       track.addIntersectingItemsInRangeToSelection(x, x + 1, y75, y75 + 1, sel);
+      assertEquals(0, sel.length);
+    });
+  });
+
+  test('counterTrackAddClosestEventToSelection', function() {
+    var timestamps = [0, 1, 2, 3, 4, 5, 6, 7];
+    var samples = [[0, 4, 1, 2, 3, 1, 3, 3.1],
+                   [5, 3, 1, 1.1, 0, 7, 0, 0.5]];
+
+    runTest.call(this, timestamps, samples, function(ctr, container, track) {
+      // Before with not range.
+      var sel = new tracing.Selection();
+      track.addClosestEventToSelection(-1, 0, 0, 0, sel);
+      assertEquals(0, sel.length);
+
+      // Before with negative range.
+      var sel = new tracing.Selection();
+      track.addClosestEventToSelection(-1, -10, 0, 0, sel);
+      assertEquals(0, sel.length);
+
+      // Before first sample.
+      var sel = new tracing.Selection();
+      track.addClosestEventToSelection(-1, 1, 0, 0, sel);
+      assertEquals(2, sel.length);
+      assertEquals(0, sel[0].getSampleIndex());
+
+      // Between and closer to sample before.
+      var sel = new tracing.Selection();
+      track.addClosestEventToSelection(1.3, 1, 0, 0, sel);
+      assertEquals(1, sel[0].getSampleIndex());
+
+      // Between samples with bad range.
+      var sel = new tracing.Selection();
+      track.addClosestEventToSelection(1.45, 0.25, 0, 0, sel);
+      assertEquals(0, sel.length);
+
+      // Between and closer to next sample.
+      var sel = new tracing.Selection();
+      track.addClosestEventToSelection(4.7, 6, 0, 0, sel);
+      assertEquals(5, sel[0].getSampleIndex());
+
+      // After last sample with good range.
+      var sel = new tracing.Selection();
+      track.addClosestEventToSelection(8.5, 2, 0, 0, sel);
+      assertEquals(7, sel[0].getSampleIndex());
+
+      // After last sample with bad range.
+      var sel = new tracing.Selection();
+      track.addClosestEventToSelection(10, 1, 0, 0, sel);
       assertEquals(0, sel.length);
     });
   });

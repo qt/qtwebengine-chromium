@@ -13,6 +13,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "tools/gn/err.h"
 #include "tools/gn/pattern.h"
+#include "tools/gn/source_dir.h"
 #include "tools/gn/value.h"
 
 class FunctionCallNode;
@@ -34,7 +35,7 @@ class TargetManager;
 // variables. So you should use a non-const containing scope whenever possible.
 class Scope {
  public:
-  typedef std::vector<std::pair<base::StringPiece, Value> > KeyValueVector;
+  typedef base::hash_map<base::StringPiece, Value> KeyValueMap;
 
   // Allows code to provide values for built-in variables. This class will
   // automatically register itself on construction and deregister itself on
@@ -126,7 +127,7 @@ class Scope {
 
   // Returns all values set in the current scope, without going to the parent
   // scopes.
-  void GetCurrentScopeValues(KeyValueVector* output) const;
+  void GetCurrentScopeValues(KeyValueMap* output) const;
 
   // Copies this scope's values into the destination. Values from the
   // containing scope(s) (normally shadowed into the current one) will not be
@@ -188,6 +189,12 @@ class Scope {
   void ClearProcessingImport();
   bool IsProcessingImport() const;
 
+  // The source directory associated with this scope. This will check embedded
+  // scopes until it finds a nonempty source directory. This will default to
+  // an empty dir if no containing scope has a source dir set.
+  const SourceDir& GetSourceDir() const;
+  void set_source_dir(const SourceDir& d) { source_dir_ = d; }
+
   // Properties are opaque pointers that code can use to set state on a Scope
   // that it can retrieve later.
   //
@@ -248,11 +255,14 @@ class Scope {
   typedef std::map<std::string, const FunctionCallNode*> TemplateMap;
   TemplateMap templates_;
 
+  // Opaque pointers. See SetProperty() above.
   typedef std::map<const void*, void*> PropertyMap;
   PropertyMap properties_;
 
   typedef std::set<ProgrammaticProvider*> ProviderSet;
   ProviderSet programmatic_providers_;
+
+  SourceDir source_dir_;
 
   DISALLOW_COPY_AND_ASSIGN(Scope);
 };

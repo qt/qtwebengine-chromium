@@ -7,8 +7,8 @@
 
 #include "base/basictypes.h"
 #include "net/base/ip_endpoint.h"
+#include "net/quic/quic_connection_stats.h"
 #include "net/quic/quic_protocol.h"
-#include "net/quic/quic_stats.h"
 
 namespace net {
 
@@ -77,6 +77,9 @@ class QuicConnectionPeer {
 
   static void SetSelfAddress(QuicConnection* connection,
                              const IPEndPoint& self_address);
+
+  static void SetPeerAddress(QuicConnection* connection,
+                             const IPEndPoint& peer_address);
 
   static void SwapCrypters(QuicConnection* connection, QuicFramer* framer);
 

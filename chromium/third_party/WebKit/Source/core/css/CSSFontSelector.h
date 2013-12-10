@@ -26,7 +26,7 @@
 #ifndef CSSFontSelector_h
 #define CSSFontSelector_h
 
-#include "core/loader/cache/ResourcePtr.h"
+#include "core/fetch/ResourcePtr.h"
 #include "core/platform/Timer.h"
 #include "core/platform/graphics/FontSelector.h"
 #include "wtf/Forward.h"
@@ -56,6 +56,7 @@ public:
 
     virtual PassRefPtr<FontData> getFontData(const FontDescription&, const AtomicString&);
     CSSSegmentedFontFace* getFontFace(const FontDescription&, const AtomicString& family);
+    virtual void willUseFontData(const FontDescription&, const AtomicString& family) OVERRIDE;
 
     void clearDocument();
 
@@ -74,15 +75,15 @@ public:
     void beginLoadingFontSoon(FontResource*);
 
 private:
-    CSSFontSelector(Document*);
+    explicit CSSFontSelector(Document*);
 
     void dispatchInvalidationCallbacks();
 
     void beginLoadTimerFired(Timer<CSSFontSelector>*);
 
     Document* m_document;
-    HashMap<String, OwnPtr<Vector<RefPtr<CSSFontFace> > >, CaseFoldingHash> m_fontFaces;
-    HashMap<String, OwnPtr<Vector<RefPtr<CSSFontFace> > >, CaseFoldingHash> m_locallyInstalledFontFaces;
+    HashMap<String, OwnPtr<HashMap<unsigned, RefPtr<CSSSegmentedFontFace> > >, CaseFoldingHash> m_fontFaces;
+    HashMap<String, OwnPtr<Vector<RefPtr<CSSSegmentedFontFace> > >, CaseFoldingHash> m_locallyInstalledFontFaces;
     HashMap<String, OwnPtr<HashMap<unsigned, RefPtr<CSSSegmentedFontFace> > >, CaseFoldingHash> m_fonts;
     HashSet<FontSelectorClient*> m_clients;
 

@@ -22,23 +22,21 @@
 #ifndef ProcessingInstruction_h
 #define ProcessingInstruction_h
 
-#include "core/dom/Node.h"
-#include "core/loader/cache/ResourcePtr.h"
-#include "core/loader/cache/StyleSheetResourceClient.h"
+#include "core/dom/CharacterData.h"
+#include "core/fetch/ResourcePtr.h"
+#include "core/fetch/StyleSheetResourceClient.h"
 
 namespace WebCore {
 
 class StyleSheet;
 class CSSStyleSheet;
 
-class ProcessingInstruction FINAL : public Node, private StyleSheetResourceClient {
+class ProcessingInstruction FINAL : public CharacterData, private StyleSheetResourceClient {
 public:
-    static PassRefPtr<ProcessingInstruction> create(Document*, const String& target, const String& data);
+    static PassRefPtr<ProcessingInstruction> create(Document&, const String& target, const String& data);
     virtual ~ProcessingInstruction();
 
     const String& target() const { return m_target; }
-    const String& data() const { return m_data; }
-    void setData(const String&);
 
     void setCreatedByParser(bool createdByParser) { m_createdByParser = createdByParser; }
 
@@ -54,15 +52,12 @@ public:
     bool isLoading() const;
 
 private:
-    ProcessingInstruction(Document*, const String& target, const String& data);
+    friend class CharacterData;
+    ProcessingInstruction(Document&, const String& target, const String& data);
 
     virtual String nodeName() const;
     virtual NodeType nodeType() const;
-    virtual String nodeValue() const;
-    virtual void setNodeValue(const String&);
     virtual PassRefPtr<Node> cloneNode(bool deep = true);
-    virtual bool offsetInCharacters() const;
-    virtual int maxCharacterOffset() const;
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
@@ -78,7 +73,6 @@ private:
     void parseStyleSheet(const String& sheet);
 
     String m_target;
-    String m_data;
     String m_localHref;
     String m_title;
     String m_media;
@@ -91,6 +85,18 @@ private:
     bool m_isXSL;
 };
 
-} //namespace
+inline ProcessingInstruction* toProcessingInstruction(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->nodeType() == Node::PROCESSING_INSTRUCTION_NODE);
+    return static_cast<ProcessingInstruction*>(node);
+}
+
+inline const ProcessingInstruction* toProcessingInstruction(const Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->nodeType() == Node::PROCESSING_INSTRUCTION_NODE);
+    return static_cast<const ProcessingInstruction*>(node);
+}
+
+} // namespace WebCore
 
 #endif

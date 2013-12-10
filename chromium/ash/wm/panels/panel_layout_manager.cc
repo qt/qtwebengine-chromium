@@ -15,9 +15,8 @@
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/wm/frame_painter.h"
-#include "ash/wm/property_util.h"
 #include "ash/wm/window_animations.h"
-#include "ash/wm/window_properties.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "base/auto_reset.h"
 #include "base/bind.h"
@@ -330,6 +329,15 @@ void PanelLayoutManager::ToggleMinimize(aura::Window* panel) {
   }
 }
 
+views::Widget* PanelLayoutManager::GetCalloutWidgetForPanel(
+    aura::Window* panel) {
+  DCHECK(panel->parent() == panel_container_);
+  PanelList::iterator found =
+      std::find(panel_windows_.begin(), panel_windows_.end(), panel);
+  DCHECK(found != panel_windows_.end());
+  return found->callout_widget;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // PanelLayoutManager, aura::LayoutManager implementation:
 void PanelLayoutManager::OnWindowResized() {
@@ -342,7 +350,7 @@ void PanelLayoutManager::OnWindowAddedToLayout(aura::Window* child) {
   if (in_add_window_)
     return;
   base::AutoReset<bool> auto_reset_in_add_window(&in_add_window_, true);
-  if (!child->GetProperty(kPanelAttachedKey)) {
+  if (!wm::GetWindowState(child)->panel_attached()) {
     // This should only happen when a window is added to panel container as a
     // result of bounds change from within the application during a drag.
     // If so we have already stopped the drag and should reparent the panel
@@ -832,7 +840,8 @@ void PanelLayoutManager::UpdateCallouts() {
     ui::Layer* layer = callout_widget->GetNativeWindow()->layer();
     // If the panel is not over the callout position or has just become visible
     // then fade in the callout.
-    if (distance_until_over_panel > 0 || layer->GetTargetOpacity() < 1) {
+    if ((distance_until_over_panel > 0 || layer->GetTargetOpacity() < 1) &&
+        panel->layer()->GetTargetTransform().IsIdentity()) {
       if (distance_until_over_panel > 0 &&
           slide_distance >= distance_until_over_panel) {
         layer->SetOpacity(0);

@@ -57,6 +57,9 @@ public:
     WEBKIT_EXPORT static void enableDeviceOrientation(bool);
     WEBKIT_EXPORT static bool isDeviceOrientationEnabled();
 
+    WEBKIT_EXPORT static void enableDialogElement(bool);
+    WEBKIT_EXPORT static bool isDialogElementEnabled();
+
     WEBKIT_EXPORT static void enableEncryptedMedia(bool);
     WEBKIT_EXPORT static bool isEncryptedMediaEnabled();
 
@@ -79,7 +82,6 @@ public:
     WEBKIT_EXPORT static bool isGeolocationEnabled();
 
     WEBKIT_EXPORT static void enableLazyLayout(bool);
-    WEBKIT_EXPORT static bool isLazyLayoutEnabled();
 
     WEBKIT_EXPORT static void enableLocalStorage(bool);
     WEBKIT_EXPORT static bool isLocalStorageEnabled();
@@ -89,6 +91,9 @@ public:
 
     WEBKIT_EXPORT static void enableWebKitMediaSource(bool);
     WEBKIT_EXPORT static bool isWebKitMediaSourceEnabled();
+
+    WEBKIT_EXPORT static void enableMediaSource(bool);
+    WEBKIT_EXPORT static bool isMediaSourceEnabled();
 
     WEBKIT_EXPORT static void enableMediaStream(bool);
     WEBKIT_EXPORT static bool isMediaStreamEnabled();
@@ -138,9 +143,13 @@ public:
     WEBKIT_EXPORT static void enableHTMLImports(bool);
     WEBKIT_EXPORT static bool isHTMLImportsEnabled();
 
-    WEBKIT_EXPORT static void enableCustomElements(bool);
+    WEBKIT_EXPORT static void enableEmbedderCustomElements(bool);
 
     WEBKIT_EXPORT static void enableOverlayScrollbars(bool);
+
+    WEBKIT_EXPORT static void enableInputModeAttribute(bool);
+
+    WEBKIT_EXPORT static void enableOverlayFullscreenVideo(bool);
 
 private:
     WebRuntimeFeatures();

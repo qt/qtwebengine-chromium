@@ -14,12 +14,11 @@
 #include "ash/wm/gestures/long_press_affordance_handler.h"
 #include "ash/wm/gestures/system_pinch_handler.h"
 #include "ash/wm/gestures/two_finger_drag_handler.h"
-#include "ash/wm/property_util.h"
 #include "ash/wm/window_util.h"
 #include "base/command_line.h"
 #include "ui/aura/root_window.h"
-#include "ui/base/events/event.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/events/event.h"
 
 #if defined(OS_CHROMEOS)
 #include "ui/base/touch/touch_factory_x11.h"

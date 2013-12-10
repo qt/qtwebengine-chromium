@@ -19,6 +19,11 @@ namespace commands {
 
 typedef int (*CommandRunner)(const std::vector<std::string>&);
 
+extern const char kArgs[];
+extern const char kArgs_HelpShort[];
+extern const char kArgs_Help[];
+int RunArgs(const std::vector<std::string>& args);
+
 extern const char kDesc[];
 extern const char kDesc_HelpShort[];
 extern const char kDesc_Help[];
@@ -29,10 +34,20 @@ extern const char kGen_HelpShort[];
 extern const char kGen_Help[];
 int RunGen(const std::vector<std::string>& args);
 
+extern const char kGyp[];
+extern const char kGyp_HelpShort[];
+extern const char kGyp_Help[];
+int RunGyp(const std::vector<std::string>& args);
+
 extern const char kHelp[];
 extern const char kHelp_HelpShort[];
 extern const char kHelp_Help[];
 int RunHelp(const std::vector<std::string>& args);
+
+extern const char kRefs[];
+extern const char kRefs_HelpShort[];
+extern const char kRefs_Help[];
+int RunRefs(const std::vector<std::string>& args);
 
 // -----------------------------------------------------------------------------
 

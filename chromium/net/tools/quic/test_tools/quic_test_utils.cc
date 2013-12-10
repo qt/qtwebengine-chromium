@@ -50,6 +50,13 @@ void MockConnection::AdvanceTime(QuicTime::Delta delta) {
   static_cast<MockHelper*>(helper())->AdvanceTime(delta);
 }
 
+
+MockQuicSessionOwner::MockQuicSessionOwner() {
+}
+
+MockQuicSessionOwner::~MockQuicSessionOwner() {
+}
+
 bool TestDecompressorVisitor::OnDecompressedData(StringPiece data) {
   data.AppendToString(&data_);
   return true;
@@ -74,6 +81,18 @@ void TestSession::SetCryptoStream(QuicCryptoStream* stream) {
 
 QuicCryptoStream* TestSession::GetCryptoStream() {
   return crypto_stream_;
+}
+
+MockAckNotifierDelegate::MockAckNotifierDelegate() {
+}
+
+MockAckNotifierDelegate::~MockAckNotifierDelegate() {
+}
+
+MockPacketWriter::MockPacketWriter() {
+}
+
+MockPacketWriter::~MockPacketWriter() {
 }
 
 }  // namespace test

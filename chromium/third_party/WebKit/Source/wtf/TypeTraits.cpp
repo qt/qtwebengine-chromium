@@ -100,6 +100,12 @@ COMPILE_ASSERT(!IsConvertibleToInteger<const char*>::value, WTF_IsConvertibleToI
 COMPILE_ASSERT(!IsConvertibleToInteger<volatile char*>::value, WTF_IsConvertibleToInteger_volatile_char_pointer_false);
 COMPILE_ASSERT(!IsConvertibleToInteger<IsConvertibleToInteger<bool> >::value, WTF_IsConvertibleToInteger_struct_false);
 
+COMPILE_ASSERT((IsPointerConvertible<int, int>::Value), WTF_IsPointerConvertible_same_type_true);
+COMPILE_ASSERT((!IsPointerConvertible<int, unsigned>::Value), WTF_IsPointerConvertible_int_to_unsigned_false);
+COMPILE_ASSERT((IsPointerConvertible<int, const int>::Value), WTF_IsPointerConvertible_int_to_const_int_true);
+COMPILE_ASSERT((!IsPointerConvertible<const int, int>::Value), WTF_IsPointerConvertible_const_int_to_int_false);
+COMPILE_ASSERT((IsPointerConvertible<int, volatile int>::Value), WTF_IsPointerConvertible_int_to_volatile_int_true);
+
 COMPILE_ASSERT((IsSameType<bool, bool>::value), WTF_IsSameType_bool_true);
 COMPILE_ASSERT((IsSameType<int*, int*>::value), WTF_IsSameType_int_pointer_true);
 COMPILE_ASSERT((!IsSameType<int, int*>::value), WTF_IsSameType_int_int_pointer_false);
@@ -118,7 +124,8 @@ COMPILE_ASSERT((!IsSubclass<TestBaseClass<int>, TestDerivedClass>::value), WTF_T
 COMPILE_ASSERT((IsSubclassOfTemplate<TestDerivedClass, TestBaseClass>::value), WTF_Test_IsSubclassOfTemplate_Base_From_Derived);
 COMPILE_ASSERT((IsSameType<RemoveTemplate<TestBaseClass<int>, TestBaseClass>::Type, int>::value), WTF_Test_RemoveTemplate);
 COMPILE_ASSERT((IsSameType<RemoveTemplate<int, TestBaseClass>::Type, int>::value), WTF_Test_RemoveTemplate_WithoutTemplate);
-
+COMPILE_ASSERT((IsPointerConvertible<TestDerivedClass, TestBaseClass<int> >::Value), WTF_Test_IsPointerConvertible_Derived_To_Base);
+COMPILE_ASSERT((!IsPointerConvertible<TestBaseClass<int>, TestDerivedClass>::Value), WTF_Test_IsPointerConvertible_Base_To_Derived);
 
 COMPILE_ASSERT((IsSameType<bool, RemoveConst<const bool>::Type>::value), WTF_test_RemoveConst_const_bool);
 COMPILE_ASSERT((!IsSameType<bool, RemoveConst<volatile bool>::Type>::value), WTF_test_RemoveConst_volatile_bool);
@@ -148,8 +155,5 @@ COMPILE_ASSERT((IsArray<IntArraySized>::value), WTF_Test_IsArray_int_sized_array
 
 COMPILE_ASSERT((IsSameType<int, RemoveExtent<IntArray>::Type>::value), WTF_Test_RemoveExtent_int_array);
 COMPILE_ASSERT((IsSameType<int, RemoveExtent<IntArraySized>::Type>::value), WTF_Test_RemoveReference_int_sized_array);
-
-COMPILE_ASSERT((IsSameType<int*, DecayArray<IntArray>::Type>::value), WTF_Test_DecayArray_int_array);
-COMPILE_ASSERT((IsSameType<int*, DecayArray<IntArraySized>::Type>::value), WTF_Test_DecayArray_int_sized_array);
 
 } // namespace WTF

@@ -44,18 +44,20 @@ base.unittest.testSuite('tracing.tracks.thread_track', function() {
     var h = track.getBoundingClientRect().height;
     var wW = 10;
     var vW = drawingContainer.canvas.getBoundingClientRect().width;
-    track.viewport.xSetWorldBounds(0, wW, vW);
+    var dt = new tracing.TimelineDisplayTransform();
+    dt.xSetWorldBounds(0, wW, vW);
+    track.viewport.setDisplayTransformImmediately(dt);
 
     var selection = new Selection();
     var x = (1.5 / wW) * vW;
     track.addIntersectingItemsInRangeToSelection(x, x + 1, y, y + 1, selection);
-    assertEquals(t1.sliceGroup.slices[0], selection[0].slice);
+    assertEquals(t1.sliceGroup.slices[0], selection[0]);
 
     var selection = new Selection();
     track.addIntersectingItemsInRangeToSelection(
         (1.5 / wW) * vW, (1.8 / wW) * vW,
         y, y + h, selection);
-    assertEquals(t1.sliceGroup.slices[0], selection[0].slice);
+    assertEquals(t1.sliceGroup.slices[0], selection[0]);
   });
 
   test('filterThreadSlices', function() {
@@ -68,13 +70,6 @@ base.unittest.testSuite('tracing.tracks.thread_track', function() {
     t.thread = thread;
 
     assertEquals(t.tracks_.length, 2);
-    assertTrue(t.tracks_[0] instanceof tracing.tracks.AsyncSliceGroupTrack);
-    assertTrue(t.tracks_[1] instanceof tracing.tracks.SliceGroupTrack);
-
-    t.categoryFilter = new tracing.TitleFilter('x');
-    assertEquals(0, t.tracks_.length);
-
-    t.categoryFilter = new tracing.TitleFilter('a');
     assertTrue(t.tracks_[0] instanceof tracing.tracks.AsyncSliceGroupTrack);
     assertTrue(t.tracks_[1] instanceof tracing.tracks.SliceGroupTrack);
   });

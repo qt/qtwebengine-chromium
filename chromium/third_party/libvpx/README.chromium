@@ -5,9 +5,9 @@ License: BSD
 License File: source/libvpx/LICENSE
 Security Critical: yes
 
-Date: Tuesday July 16 2013
-Branch: m29-baseline
-Commit: 33149cbb4c106495d3b99716f8fc32bb41ddfce1
+Date: Wednesday September 18 2013
+Branch: master
+Commit: a7b7f94ae8c4208d447413f466f5ff8b177695bf
 
 Description:
 Contains the sources used to compile libvpx binaries used by Google Chrome and
@@ -20,7 +20,7 @@ Notes on updating libvpx source code.
 
 Please follow these steps to update libvpx source code:
 
-1. Update libvpx source tree. Look for "Current Head: <hash>" output to update
+1. Update libvpx source tree. Look for "Current HEAD: <hash>" output to update
    README.chromium. Look for "git log from upstream: <git log>" output to add
    to the commit message.
 

@@ -25,15 +25,6 @@
         '<(webrtc_root)/modules/modules.gyp:webrtc_utility',
         '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
       ],
-      'include_dirs': [
-        'include',
-        '<(webrtc_root)/modules/audio_device',
-      ],
-      'direct_dependent_settings': {
-        'include_dirs': [
-          'include',
-        ],
-      },
       'sources': [
         '../common_types.h',
         '../engine_configurations.h',
@@ -57,8 +48,6 @@
         'channel.h',
         'channel_manager.cc',
         'channel_manager.h',
-        'channel_manager_base.cc',
-        'channel_manager_base.h',
         'dtmf_inband.cc',
         'dtmf_inband.h',
         'dtmf_inband_queue.cc',
@@ -138,9 +127,6 @@
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
             '<(webrtc_root)/test/test.gyp:test_support_main',
           ],
-          'include_dirs': [
-            'include',
-          ],
           'sources': [
             'channel_unittest.cc',
             'output_mixer_unittest.cc',
@@ -166,21 +152,12 @@
             'voice_engine',
             '<(DEPTH)/testing/gmock.gyp:gmock',
             '<(DEPTH)/testing/gtest.gyp:gtest',
-            '<(DEPTH)/third_party/google-gflags/google-gflags.gyp:google-gflags',
+            '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
             '<(webrtc_root)/test/libtest/libtest.gyp:libtest',
             '<(webrtc_root)/test/test.gyp:channel_transport',
             '<(webrtc_root)/test/test.gyp:test_support',
            ],
-          'include_dirs': [
-            'auto_test',
-            'auto_test/fixtures',
-            '<(webrtc_root)/modules/interface',
-            # TODO(phoglund): We only depend on voice_engine_defines.h here -
-            # move that file to interface and then remove this dependency.
-            '<(webrtc_root)/voice_engine',
-            '<(webrtc_root)/modules/audio_device/main/interface',
-          ],
           'sources': [
             'test/auto_test/automated_mode.cc',
             'test/auto_test/extended/agc_config_test.cc',
@@ -273,9 +250,6 @@
                 '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
                 '<(webrtc_root)/test/test.gyp:test_support',
               ],
-              'include_dirs': [
-                'win_test',
-              ],
               'sources': [
                 'test/win_test/Resource.h',
                 'test/win_test/WinTest.cc',
@@ -318,6 +292,38 @@
               'type': 'none',
               'dependencies': [
                 '<(apk_tests_path):voice_engine_unittests_apk',
+              ],
+            },
+          ],
+        }],
+        ['test_isolation_mode != "noop"', {
+          'targets': [
+            {
+              'target_name': 'voice_engine_unittests_run',
+              'type': 'none',
+              'dependencies': [
+                '<(import_isolate_path):import_isolate_gypi',
+                'voice_engine_unittests',
+              ],
+              'includes': [
+                'voice_engine_unittests.isolate',
+              ],
+              'sources': [
+                'voice_engine_unittests.isolate',
+              ],
+            },
+            {
+              'target_name': 'voe_auto_test_run',
+              'type': 'none',
+              'dependencies': [
+                '<(import_isolate_path):import_isolate_gypi',
+                'voe_auto_test',
+              ],
+              'includes': [
+                'voe_auto_test.isolate',
+              ],
+              'sources': [
+                'voe_auto_test.isolate',
               ],
             },
           ],

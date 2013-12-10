@@ -12,7 +12,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
-#include "content/shell/shell.h"
+#include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
@@ -76,7 +76,6 @@ class GpuMemoryTest : public ContentBrowserTest {
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     command_line->AppendSwitch(switches::kEnableLogging);
-    command_line->AppendSwitch(switches::kForceCompositingMode);
     command_line->AppendSwitchASCII(switches::kForceGpuMemAvailableMb,
                                     kMemoryLimitMBSwitch);
     // Only run this on GPU bots for now. These tests should work with
@@ -217,15 +216,18 @@ class GpuMemoryTest : public ContentBrowserTest {
 
 #if defined(OS_LINUX) && !defined(NDEBUG)
 // http://crbug.com/254724
-#define IF_NOT_DEBUG_LINUX(x) DISABLED_ ## x
+#define MAYBE(x) DISABLED_ ## x
+#elif defined(OS_WIN) && defined(USE_AURA)
+// http://crbug.com/292882
+#define MAYBE(x) DISABLED_ ## x
 #else
-#define IF_NOT_DEBUG_LINUX(x) x
+#define MAYBE(x) x
 #endif
 
 // When trying to load something that doesn't fit into our total GPU memory
 // limit, we shouldn't exceed that limit.
 IN_PROC_BROWSER_TEST_F(GpuMemoryTest,
-                       IF_NOT_DEBUG_LINUX(SingleWindowDoesNotExceedLimit)) {
+                       MAYBE(SingleWindowDoesNotExceedLimit)) {
   if (!AllowTestsToRun())
     return;
 

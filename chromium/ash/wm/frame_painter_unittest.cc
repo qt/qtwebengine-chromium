@@ -5,11 +5,12 @@
 #include "ash/wm/frame_painter.h"
 
 #include "ash/ash_constants.h"
+#include "ash/root_window_settings.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/test/ash_test_base.h"
-#include "ash/wm/property_util.h"
-#include "ash/wm/window_properties.h"
+#include "ash/wm/caption_buttons/frame_caption_button_container_view.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
@@ -19,38 +20,18 @@
 #include "ui/aura/root_window.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/hit_test.h"
-#include "ui/base/theme_provider.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/screen.h"
-#include "ui/views/controls/button/button.h"
-#include "ui/views/controls/button/image_button.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/widget_observer.h"
 #include "ui/views/window/non_client_view.h"
 
 using ash::FramePainter;
-using ui::ThemeProvider;
-using views::Button;
-using views::ImageButton;
 using views::NonClientFrameView;
-using views::ToggleImageButton;
 using views::Widget;
 
 namespace {
-
-bool ImagesMatch(ImageButton* button,
-                 int normal_image_id,
-                 int hovered_image_id,
-                 int pressed_image_id) {
-  ThemeProvider* theme = button->GetWidget()->GetThemeProvider();
-  gfx::ImageSkia* normal = theme->GetImageSkiaNamed(normal_image_id);
-  gfx::ImageSkia* hovered = theme->GetImageSkiaNamed(hovered_image_id);
-  gfx::ImageSkia* pressed = theme->GetImageSkiaNamed(pressed_image_id);
-  return button->GetImage(Button::STATE_NORMAL).BackedBySameObjectAs(*normal) &&
-      button->GetImage(Button::STATE_HOVERED).BackedBySameObjectAs(*hovered) &&
-      button->GetImage(Button::STATE_PRESSED).BackedBySameObjectAs(*pressed);
-}
 
 class ResizableWidgetDelegate : public views::WidgetDelegate {
  public:
@@ -135,18 +116,15 @@ class ScopedOpacityConstantModifier {
 // Creates a new FramePainter with empty buttons. Caller owns the memory.
 FramePainter* CreateTestPainter(Widget* widget) {
   FramePainter* painter = new FramePainter();
-  ImageButton* size_button = new ImageButton(NULL);
-  ImageButton* close_button = new ImageButton(NULL);
-  // Add the buttons to the widget's non-client frame view so they will be
-  // deleted when the widget is destroyed.
   NonClientFrameView* frame_view = widget->non_client_view()->frame_view();
-  frame_view->AddChildView(size_button);
-  frame_view->AddChildView(close_button);
-  painter->Init(widget,
-                NULL,
-                size_button,
-                close_button,
-                FramePainter::SIZE_BUTTON_MAXIMIZES);
+  ash::FrameCaptionButtonContainerView* container =
+      new ash::FrameCaptionButtonContainerView(
+          widget,
+          ash::FrameCaptionButtonContainerView::MINIMIZE_ALLOWED);
+  // Add the container to the widget's non-client frame view so that it will be
+  // deleted when the widget is destroyed.
+  frame_view->AddChildView(container);
+  painter->Init(widget, NULL, container);
   return painter;
 }
 
@@ -229,7 +207,7 @@ class FramePainterTest : public ash::test::AshTestBase {
 TEST_F(FramePainterTest, CreateAndDeleteSingleWindow) {
   // Ensure that creating/deleting a window works well and doesn't cause
   // crashes.  See crbug.com/155634
-  aura::RootWindow* root = Shell::GetActiveRootWindow();
+  aura::RootWindow* root = Shell::GetTargetRootWindow();
 
   scoped_ptr<Widget> widget(CreateTestWidget());
   scoped_ptr<FramePainter> painter(CreateTestPainter(widget.get()));
@@ -237,81 +215,18 @@ TEST_F(FramePainterTest, CreateAndDeleteSingleWindow) {
 
   // We only have one window, so it should use a solo header.
   EXPECT_TRUE(painter->UseSoloWindowHeader());
-  EXPECT_TRUE(root->GetProperty(internal::kSoloWindowHeaderKey));
+  EXPECT_TRUE(internal::GetRootWindowSettings(root)->solo_window_header);
 
   // Close the window.
   widget.reset();
-  EXPECT_FALSE(root->GetProperty(internal::kSoloWindowHeaderKey));
+  EXPECT_FALSE(internal::GetRootWindowSettings(root)->solo_window_header);
 
   // Recreate another window again.
   widget.reset(CreateTestWidget());
   painter.reset(CreateTestPainter(widget.get()));
   widget->Show();
   EXPECT_TRUE(painter->UseSoloWindowHeader());
-  EXPECT_TRUE(root->GetProperty(internal::kSoloWindowHeaderKey));
-}
-
-TEST_F(FramePainterTest, LayoutHeader) {
-  scoped_ptr<Widget> widget(CreateTestWidget());
-  ImageButton size_button(NULL);
-  ImageButton close_button(NULL);
-  NonClientFrameView* frame_view = widget->non_client_view()->frame_view();
-  frame_view->AddChildView(&size_button);
-  frame_view->AddChildView(&close_button);
-  scoped_ptr<FramePainter> painter(new FramePainter);
-  painter->Init(widget.get(),
-                NULL,
-                &size_button,
-                &close_button,
-                FramePainter::SIZE_BUTTON_MAXIMIZES);
-  widget->Show();
-
-  // Basic layout.
-  painter->LayoutHeader(frame_view, false);
-  EXPECT_TRUE(ImagesMatch(&close_button,
-                          IDR_AURA_WINDOW_CLOSE,
-                          IDR_AURA_WINDOW_CLOSE_H,
-                          IDR_AURA_WINDOW_CLOSE_P));
-  EXPECT_TRUE(ImagesMatch(&size_button,
-                          IDR_AURA_WINDOW_MAXIMIZE,
-                          IDR_AURA_WINDOW_MAXIMIZE_H,
-                          IDR_AURA_WINDOW_MAXIMIZE_P));
-
-  // Shorter layout.
-  painter->LayoutHeader(frame_view, true);
-  EXPECT_TRUE(ImagesMatch(&close_button,
-                          IDR_AURA_WINDOW_MAXIMIZED_CLOSE,
-                          IDR_AURA_WINDOW_MAXIMIZED_CLOSE_H,
-                          IDR_AURA_WINDOW_MAXIMIZED_CLOSE_P));
-  EXPECT_TRUE(ImagesMatch(&size_button,
-                          IDR_AURA_WINDOW_MAXIMIZED_RESTORE,
-                          IDR_AURA_WINDOW_MAXIMIZED_RESTORE_H,
-                          IDR_AURA_WINDOW_MAXIMIZED_RESTORE_P));
-
-  // Maximized shorter layout.
-  widget->Maximize();
-  painter->LayoutHeader(frame_view, true);
-  EXPECT_TRUE(ImagesMatch(&close_button,
-                          IDR_AURA_WINDOW_MAXIMIZED_CLOSE2,
-                          IDR_AURA_WINDOW_MAXIMIZED_CLOSE2_H,
-                          IDR_AURA_WINDOW_MAXIMIZED_CLOSE2_P));
-  EXPECT_TRUE(ImagesMatch(&size_button,
-                          IDR_AURA_WINDOW_MAXIMIZED_RESTORE2,
-                          IDR_AURA_WINDOW_MAXIMIZED_RESTORE2_H,
-                          IDR_AURA_WINDOW_MAXIMIZED_RESTORE2_P));
-
-  // Fullscreen can show the buttons during an immersive reveal, so it should
-  // use the same images as maximized.
-  widget->SetFullscreen(true);
-  painter->LayoutHeader(frame_view, true);
-  EXPECT_TRUE(ImagesMatch(&close_button,
-                          IDR_AURA_WINDOW_MAXIMIZED_CLOSE2,
-                          IDR_AURA_WINDOW_MAXIMIZED_CLOSE2_H,
-                          IDR_AURA_WINDOW_MAXIMIZED_CLOSE2_P));
-  EXPECT_TRUE(ImagesMatch(&size_button,
-                          IDR_AURA_WINDOW_MAXIMIZED_RESTORE2,
-                          IDR_AURA_WINDOW_MAXIMIZED_RESTORE2_H,
-                          IDR_AURA_WINDOW_MAXIMIZED_RESTORE2_P));
+  EXPECT_TRUE(internal::GetRootWindowSettings(root)->solo_window_header);
 }
 
 TEST_F(FramePainterTest, UseSoloWindowHeader) {
@@ -566,7 +481,7 @@ TEST_F(FramePainterTest, MAYBE_UseSoloWindowHeaderMultiDisplay) {
   EXPECT_TRUE(checker1.IsPaintScheduledAndReset());
 
   // Change the w3 state to maximize.  Doesn't affect to w1.
-  wm::MaximizeWindow(w3->GetNativeWindow());
+  wm::GetWindowState(w3->GetNativeWindow())->Maximize();
   EXPECT_TRUE(p1->UseSoloWindowHeader());
   EXPECT_FALSE(p2->UseSoloWindowHeader());
   EXPECT_FALSE(p3->UseSoloWindowHeader());
@@ -626,7 +541,7 @@ TEST_F(FramePainterTest, GetHeaderOpacity) {
                                  0));
 
   // Regular maximized windows are fully opaque.
-  ash::wm::MaximizeWindow(w1->GetNativeWindow());
+  wm::GetWindowState(w1->GetNativeWindow())->Maximize();
   EXPECT_EQ(255,
             p1->GetHeaderOpacity(FramePainter::ACTIVE,
                                  IDR_AURA_WINDOW_HEADER_BASE_ACTIVE,
@@ -651,24 +566,20 @@ TEST_F(FramePainterTest, MinimalHeaderStyle) {
   // style.
   EXPECT_FALSE(p->ShouldUseMinimalHeaderStyle(FramePainter::THEMED_YES));
 
-  SetTrackedByWorkspace(w->GetNativeWindow(), false);
+  wm::GetWindowState(w->GetNativeWindow())->SetTrackedByWorkspace(false);
   EXPECT_FALSE(p->ShouldUseMinimalHeaderStyle(FramePainter::THEMED_NO));
-  SetTrackedByWorkspace(w->GetNativeWindow(), true);
+  wm::GetWindowState(w->GetNativeWindow())->SetTrackedByWorkspace(true);
 }
 
 // Ensure the title text is vertically aligned with the window icon.
 TEST_F(FramePainterTest, TitleIconAlignment) {
   scoped_ptr<Widget> w(CreateTestWidget());
   FramePainter p;
-  ImageButton size(NULL);
-  ImageButton close(NULL);
+  ash::FrameCaptionButtonContainerView container(w.get(),
+      ash::FrameCaptionButtonContainerView::MINIMIZE_ALLOWED);
   views::View window_icon;
   window_icon.SetBounds(0, 0, 16, 16);
-  p.Init(w.get(),
-         &window_icon,
-         &size,
-         &close,
-         FramePainter::SIZE_BUTTON_MAXIMIZES);
+  p.Init(w.get(), &window_icon, &container);
   w->SetBounds(gfx::Rect(0, 0, 500, 500));
   w->Show();
 

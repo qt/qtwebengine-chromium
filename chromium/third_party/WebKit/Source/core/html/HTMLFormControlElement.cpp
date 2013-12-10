@@ -27,13 +27,14 @@
 
 #include "core/dom/Event.h"
 #include "core/dom/EventNames.h"
+#include "core/dom/PostAttachCallbacks.h"
 #include "core/html/HTMLFieldSetElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLLegendElement.h"
 #include "core/html/HTMLTextAreaElement.h"
-#include "core/html/ValidationMessage.h"
 #include "core/html/ValidityState.h"
+#include "core/html/forms/ValidationMessage.h"
 #include "core/page/UseCounter.h"
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/RenderTheme.h"
@@ -44,7 +45,7 @@ namespace WebCore {
 using namespace HTMLNames;
 using namespace std;
 
-HTMLFormControlElement::HTMLFormControlElement(const QualifiedName& tagName, Document* document, HTMLFormElement* form)
+HTMLFormControlElement::HTMLFormControlElement(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
     : LabelableElement(tagName, document)
     , m_disabled(false)
     , m_isReadOnly(false)
@@ -65,6 +66,7 @@ HTMLFormControlElement::HTMLFormControlElement(const QualifiedName& tagName, Doc
 
 HTMLFormControlElement::~HTMLFormControlElement()
 {
+    setForm(0);
 }
 
 String HTMLFormControlElement::formEnctype() const
@@ -106,7 +108,7 @@ void HTMLFormControlElement::updateAncestorDisabledState() const
         if (!legendAncestor && ancestor->hasTagName(legendTag))
             legendAncestor = ancestor;
         if (ancestor->hasTagName(fieldsetTag)) {
-            fieldSetAncestor = static_cast<HTMLFieldSetElement*>(ancestor);
+            fieldSetAncestor = toHTMLFieldSetElement(ancestor);
             break;
         }
     }
@@ -123,7 +125,7 @@ void HTMLFormControlElement::parseAttribute(const QualifiedName& name, const Ato
 {
     if (name == formAttr) {
         formAttributeChanged();
-        UseCounter::count(document(), UseCounter::FormAttribute);
+        UseCounter::count(&document(), UseCounter::FormAttribute);
     } else if (name == disabledAttr) {
         bool oldDisabled = m_disabled;
         m_disabled = !value.isNull();
@@ -136,17 +138,17 @@ void HTMLFormControlElement::parseAttribute(const QualifiedName& name, const Ato
             setNeedsWillValidateCheck();
             setNeedsStyleRecalc();
             if (renderer() && renderer()->style()->hasAppearance())
-                renderer()->theme()->stateChanged(renderer(), ReadOnlyState);
+                RenderTheme::theme().stateChanged(renderer(), ReadOnlyState);
         }
     } else if (name == requiredAttr) {
         bool wasRequired = m_isRequired;
         m_isRequired = !value.isNull();
         if (wasRequired != m_isRequired)
             requiredAttributeChanged();
-        UseCounter::count(document(), UseCounter::RequiredAttribute);
+        UseCounter::count(&document(), UseCounter::RequiredAttribute);
     } else if (name == autofocusAttr) {
         HTMLElement::parseAttribute(name, value);
-        UseCounter::count(document(), UseCounter::AutoFocusAttribute);
+        UseCounter::count(&document(), UseCounter::AutoFocusAttribute);
     } else
         HTMLElement::parseAttribute(name, value);
 }
@@ -156,11 +158,11 @@ void HTMLFormControlElement::disabledAttributeChanged()
     setNeedsWillValidateCheck();
     didAffectSelector(AffectedSelectorDisabled | AffectedSelectorEnabled);
     if (renderer() && renderer()->style()->hasAppearance())
-        renderer()->theme()->stateChanged(renderer(), EnabledState);
-    if (isDisabledFormControl() && treeScope()->adjustedFocusedElement() == this) {
+        RenderTheme::theme().stateChanged(renderer(), EnabledState);
+    if (isDisabledFormControl() && treeScope().adjustedFocusedElement() == this) {
         // We might want to call blur(), but it's dangerous to dispatch events
         // here.
-        document()->setNeedsFocusedElementCheck();
+        document().setNeedsFocusedElementCheck();
     }
 }
 
@@ -178,11 +180,11 @@ static bool shouldAutofocus(HTMLFormControlElement* element)
         return false;
     if (!element->renderer())
         return false;
-    if (element->document()->ignoreAutofocus())
+    if (element->document().ignoreAutofocus())
         return false;
-    if (element->document()->isSandboxed(SandboxAutomaticFeatures)) {
+    if (element->document().isSandboxed(SandboxAutomaticFeatures)) {
         // FIXME: This message should be moved off the console once a solution to https://bugs.webkit.org/show_bug.cgi?id=103274 exists.
-        element->document()->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, "Blocked autofocusing on a form control because the form's frame is sandboxed and the 'allow-scripts' permission is not set.");
+        element->document().addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, "Blocked autofocusing on a form control because the form's frame is sandboxed and the 'allow-scripts' permission is not set.");
         return false;
     }
     if (element->hasAutofocused())
@@ -212,8 +214,6 @@ static void focusPostAttach(Node* element)
 
 void HTMLFormControlElement::attach(const AttachContext& context)
 {
-    PostAttachCallbackDisabler disabler(this);
-
     HTMLElement::attach(context);
 
     // The call to updateFromElement() needs to go after the call through
@@ -225,7 +225,7 @@ void HTMLFormControlElement::attach(const AttachContext& context)
     if (shouldAutofocus(this)) {
         setAutofocused();
         ref();
-        queuePostAttachCallback(focusPostAttach, this);
+        PostAttachCallbacks::queueCallback(focusPostAttach, this);
     }
 }
 
@@ -299,26 +299,17 @@ static void updateFromElementCallback(Node* node)
         renderer->updateFromElement();
 }
 
-void HTMLFormControlElement::didRecalcStyle(StyleChange)
+void HTMLFormControlElement::didRecalcStyle(StyleRecalcChange)
 {
     // updateFromElement() can cause the selection to change, and in turn
     // trigger synchronous layout, so it must not be called during style recalc.
     if (renderer())
-        queuePostAttachCallback(updateFromElementCallback, this);
+        PostAttachCallbacks::queueCallback(updateFromElementCallback, this);
 }
 
 bool HTMLFormControlElement::supportsFocus() const
 {
     return !isDisabledFormControl();
-}
-
-bool HTMLFormControlElement::rendererIsFocusable() const
-{
-    // If there's a renderer, make sure the size isn't empty, but if there's no renderer,
-    // it might still be focusable if it's in a canvas subtree (handled in Element::rendererIsFocusable).
-    if (renderer() && (!renderer()->isBox() || toRenderBox(renderer())->size().isEmpty()))
-        return false;
-    return HTMLElement::rendererIsFocusable();
 }
 
 bool HTMLFormControlElement::isKeyboardFocusable() const
@@ -334,7 +325,8 @@ bool HTMLFormControlElement::shouldShowFocusRingOnMouseFocus() const
 
 void HTMLFormControlElement::dispatchFocusEvent(Element* oldFocusedElement, FocusDirection direction)
 {
-    m_wasFocusedByMouse = direction == FocusDirectionMouse;
+    if (direction != FocusDirectionPage)
+        m_wasFocusedByMouse = direction == FocusDirectionMouse;
     HTMLElement::dispatchFocusEvent(oldFocusedElement, direction);
 }
 
@@ -411,7 +403,7 @@ void HTMLFormControlElement::setNeedsWillValidateCheck()
 
 void HTMLFormControlElement::updateVisibleValidationMessage()
 {
-    Page* page = document()->page();
+    Page* page = document().page();
     if (!page)
         return;
     String message;
@@ -436,9 +428,9 @@ bool HTMLFormControlElement::checkValidity(Vector<RefPtr<FormAssociatedElement> 
         return false;
     // An event handler can deref this object.
     RefPtr<HTMLFormControlElement> protector(this);
-    RefPtr<Document> originalDocument(document());
-    bool needsDefaultAction = dispatchEvent(Event::create(eventNames().invalidEvent, false, true));
-    if (needsDefaultAction && unhandledInvalidControls && inDocument() && originalDocument == document())
+    RefPtr<Document> originalDocument(&document());
+    bool needsDefaultAction = dispatchEvent(Event::createCancelable(eventNames().invalidEvent));
+    if (needsDefaultAction && unhandledInvalidControls && inDocument() && originalDocument == &document())
         unhandledInvalidControls->append(this);
     return false;
 }

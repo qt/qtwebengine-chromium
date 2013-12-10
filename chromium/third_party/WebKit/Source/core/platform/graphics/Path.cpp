@@ -3,6 +3,7 @@
  *                     2006 Rob Buis <buis@kde.org>
  * Copyright (C) 2007 Eric Seidel <eric@webkit.org>
  * Copyright (C) 2013 Google Inc. All rights reserved.
+ * Copyright (C) 2013 Intel Corporation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -276,39 +277,41 @@ void Path::closeSubpath()
     m_path.close();
 }
 
-void Path::addArc(const FloatPoint& p, float r, float sa, float ea, bool anticlockwise)
+void Path::addArc(const FloatPoint& p, float radius, float startAngle, float endAngle, bool anticlockwise)
 {
+    ASSERT(std::abs(endAngle - startAngle) < 4 * piFloat);
+    ASSERT(startAngle >= 0 && startAngle < 2 * piFloat);
+    ASSERT((anticlockwise && (startAngle - endAngle) >= 0) || (!anticlockwise && (endAngle - startAngle) >= 0));
+
     SkScalar cx = WebCoreFloatToSkScalar(p.x());
     SkScalar cy = WebCoreFloatToSkScalar(p.y());
-    SkScalar radius = WebCoreFloatToSkScalar(r);
+    SkScalar radiusScalar = WebCoreFloatToSkScalar(radius);
     SkScalar s360 = SkIntToScalar(360);
 
     SkRect oval;
-    oval.set(cx - radius, cy - radius, cx + radius, cy + radius);
+    oval.set(cx - radiusScalar, cy - radiusScalar, cx + radiusScalar, cy + radiusScalar);
 
-    float sweep = ea - sa;
-    SkScalar startDegrees = WebCoreFloatToSkScalar(sa * 180 / piFloat);
+    float sweep = endAngle - startAngle;
+    SkScalar startDegrees = WebCoreFloatToSkScalar(startAngle * 180 / piFloat);
     SkScalar sweepDegrees = WebCoreFloatToSkScalar(sweep * 180 / piFloat);
-    // Check for a circle.
-    if (sweepDegrees >= s360 || sweepDegrees <= -s360) {
-        // Move to the start position (0 sweep means we add a single point).
-        m_path.arcTo(oval, startDegrees, 0, false);
-        // Draw the circle.
-        m_path.addOval(oval, anticlockwise ?
-            SkPath::kCCW_Direction : SkPath::kCW_Direction);
-        // Force a moveTo the end position.
-        m_path.arcTo(oval, startDegrees + sweepDegrees, 0, true);
+
+    // We can't use SkPath::addOval(), because addOval() makes new sub-path. addOval() calls moveTo() and close() internally.
+
+    // Use s180, not s360, because SkPath::arcTo(oval, angle, s360, false) draws nothing.
+    SkScalar s180 = SkIntToScalar(180);
+    if (sweepDegrees >= s360) {
+        // SkPath::arcTo can't handle the sweepAngle that is equal to or greater than 2Pi.
+        m_path.arcTo(oval, startDegrees, s180, false);
+        m_path.arcTo(oval, startDegrees + s180, s180, false);
+        m_path.arcTo(oval, startDegrees + s360, sweepDegrees - s360, false);
         return;
     }
-
-    // Counterclockwise arcs should be drawn with negative sweeps, while
-    // clockwise arcs should be drawn with positive sweeps. Check to see
-    // if the situation is reversed and correct it by adding or subtracting
-    // a full circle
-    if (anticlockwise && sweepDegrees > 0)
-        sweepDegrees -= s360;
-    else if (!anticlockwise && sweepDegrees < 0)
-        sweepDegrees += s360;
+    if (sweepDegrees <= -s360) {
+        m_path.arcTo(oval, startDegrees, -s180, false);
+        m_path.arcTo(oval, startDegrees - s180, -s180, false);
+        m_path.arcTo(oval, startDegrees - s360, sweepDegrees + s360, false);
+        return;
+    }
 
     m_path.arcTo(oval, startDegrees, sweepDegrees, false);
 }
@@ -316,6 +319,36 @@ void Path::addArc(const FloatPoint& p, float r, float sa, float ea, bool anticlo
 void Path::addRect(const FloatRect& rect)
 {
     m_path.addRect(rect);
+}
+
+void Path::addEllipse(const FloatPoint& p, float radiusX, float radiusY, float rotation, float startAngle, float endAngle, bool anticlockwise)
+{
+    ASSERT(std::abs(endAngle - startAngle) < 4 * piFloat);
+    ASSERT(startAngle >= 0 && startAngle < 2 * piFloat);
+    ASSERT((anticlockwise && (startAngle - endAngle) >= 0) || (!anticlockwise && (endAngle - startAngle) >= 0));
+
+    // Optimize the common case of an entire ellipse.
+    SkScalar twoPiScalar = WebCoreFloatToSkScalar(2 * piFloat);
+    SkScalar endAngleScalar = WebCoreFloatToSkScalar(endAngle);
+    if (!rotation && !startAngle && SkScalarNearlyEqual(twoPiScalar, SkScalarAbs(endAngleScalar))) {
+        FloatRect boundingRect(p - FloatSize(radiusX, radiusY), FloatSize(2 * radiusX, 2 * radiusY));
+        if (anticlockwise && SkScalarNearlyEqual(twoPiScalar, -endAngleScalar)) {
+            m_path.addOval(boundingRect, SkPath::kCCW_Direction);
+            return;
+        }
+        if (!anticlockwise && SkScalarNearlyEqual(twoPiScalar, endAngleScalar)) {
+            m_path.addOval(boundingRect);
+            return;
+        }
+    }
+
+    // Add an arc after the relevant transform.
+    AffineTransform ellipseTransform = AffineTransform::translation(p.x(), p.y()).rotate(rad2deg(rotation)).scale(radiusX, radiusY);
+    ASSERT(ellipseTransform.isInvertible());
+    AffineTransform inverseEllipseTransform = ellipseTransform.inverse();
+    transform(inverseEllipseTransform);
+    addArc(FloatPoint::zero(), 1 /* unit circle */, startAngle, endAngle, anticlockwise);
+    transform(ellipseTransform);
 }
 
 void Path::addEllipse(const FloatRect& rect)

@@ -20,7 +20,10 @@ bool IsVideoMediaType(MediaStreamType type) {
           type == content::MEDIA_DESKTOP_VIDEO_CAPTURE);
 }
 
-MediaStreamDevice::MediaStreamDevice() : type(MEDIA_NO_SERVICE) {}
+MediaStreamDevice::MediaStreamDevice()
+    : type(MEDIA_NO_SERVICE),
+      video_facing(MEDIA_VIDEO_FACING_NONE) {
+}
 
 MediaStreamDevice::MediaStreamDevice(
     MediaStreamType type,
@@ -28,9 +31,15 @@ MediaStreamDevice::MediaStreamDevice(
     const std::string& name)
     : type(type),
       id(id),
-      name(name),
-      sample_rate(0),
-      channel_layout(0) {
+      video_facing(MEDIA_VIDEO_FACING_NONE),
+      name(name) {
+#if defined(OS_ANDROID)
+  if (name.find("front") != std::string::npos) {
+    video_facing = MEDIA_VIDEO_FACING_USER;
+  } else if (name.find("back") != std::string::npos) {
+    video_facing = MEDIA_VIDEO_FACING_ENVIRONMENT;
+  }
+#endif
 }
 
 MediaStreamDevice::MediaStreamDevice(
@@ -38,12 +47,13 @@ MediaStreamDevice::MediaStreamDevice(
     const std::string& id,
     const std::string& name,
     int sample_rate,
-    int channel_layout)
+    int channel_layout,
+    int frames_per_buffer)
     : type(type),
       id(id),
+      video_facing(MEDIA_VIDEO_FACING_NONE),
       name(name),
-      sample_rate(sample_rate),
-      channel_layout(channel_layout) {
+      input(sample_rate, channel_layout, frames_per_buffer) {
 }
 
 MediaStreamDevice::~MediaStreamDevice() {}

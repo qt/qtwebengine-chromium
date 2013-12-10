@@ -43,7 +43,7 @@
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
-#include "core/loader/appcache/DOMApplicationCache.h"
+#include "core/loader/appcache/ApplicationCache.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
@@ -110,7 +110,7 @@ void ApplicationCacheHost::selectCacheWithManifest(const KURL& manifestURL)
             // see WebCore::ApplicationCacheGroup::selectCache()
             Frame* frame = m_documentLoader->frame();
             frame->navigationScheduler()->scheduleLocationChange(frame->document()->securityOrigin(),
-                frame->document()->url(), frame->loader()->referrer());
+                frame->document()->url(), frame->document()->referrer());
         }
     }
 }
@@ -150,21 +150,13 @@ void ApplicationCacheHost::willStartLoadingResource(ResourceRequest& request)
     }
 }
 
-void ApplicationCacheHost::willStartLoadingSynchronously(ResourceRequest& request)
-{
-    if (m_internal) {
-        WrappedResourceRequest wrapped(request);
-        m_internal->m_outerHost->willStartSubResourceRequest(wrapped);
-    }
-}
-
-void ApplicationCacheHost::setDOMApplicationCache(DOMApplicationCache* domApplicationCache)
+void ApplicationCacheHost::setApplicationCache(ApplicationCache* domApplicationCache)
 {
     ASSERT(!m_domApplicationCache || !domApplicationCache);
     m_domApplicationCache = domApplicationCache;
 }
 
-void ApplicationCacheHost::notifyDOMApplicationCache(EventID id, int total, int done)
+void ApplicationCacheHost::notifyApplicationCache(EventID id, int total, int done)
 {
     if (id != PROGRESS_EVENT)
         InspectorInstrumentation::updateApplicationCacheStatus(m_documentLoader->frame());
@@ -215,12 +207,12 @@ void ApplicationCacheHost::stopDeferringEvents()
 void ApplicationCacheHost::dispatchDOMEvent(EventID id, int total, int done)
 {
     if (m_domApplicationCache) {
-        const AtomicString& eventType = DOMApplicationCache::toEventType(id);
+        const AtomicString& eventType = ApplicationCache::toEventType(id);
         RefPtr<Event> event;
         if (id == PROGRESS_EVENT)
             event = ProgressEvent::create(eventType, true, done, total);
         else
-            event = Event::create(eventType, false, false);
+            event = Event::create(eventType);
         m_domApplicationCache->dispatchEvent(event, ASSERT_NO_EXCEPTION);
     }
 }

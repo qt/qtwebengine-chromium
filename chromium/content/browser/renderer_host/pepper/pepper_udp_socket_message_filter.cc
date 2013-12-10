@@ -28,8 +28,8 @@
 #include "ppapi/shared_impl/private/net_address_private_impl.h"
 #include "ppapi/shared_impl/socket_option_data.h"
 
-using ppapi::host::NetErrorToPepperError;
 using ppapi::NetAddressPrivateImpl;
+using ppapi::host::NetErrorToPepperError;
 
 namespace {
 
@@ -173,7 +173,7 @@ int32_t PepperUDPSocketMessageFilter::OnMsgBind(
       pepper_socket_utils::CreateSocketPermissionRequest(
           SocketPermissionRequest::UDP_BIND, addr);
   if (!pepper_socket_utils::CanUseSocketAPIs(external_plugin_, private_api_,
-                                             request, render_process_id_,
+                                             &request, render_process_id_,
                                              render_view_id_)) {
     return PP_ERROR_NOACCESS;
   }
@@ -236,7 +236,7 @@ int32_t PepperUDPSocketMessageFilter::OnMsgSendTo(
       pepper_socket_utils::CreateSocketPermissionRequest(
           SocketPermissionRequest::UDP_SEND_TO, addr);
   if (!pepper_socket_utils::CanUseSocketAPIs(external_plugin_, private_api_,
-                                             request, render_process_id_,
+                                             &request, render_process_id_,
                                              render_view_id_)) {
     return PP_ERROR_NOACCESS;
   }

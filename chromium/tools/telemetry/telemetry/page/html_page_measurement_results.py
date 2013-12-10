@@ -7,14 +7,11 @@ import json
 import logging
 import os
 import re
-import sys
 
 from telemetry.core import util
 from telemetry.page import buildbot_page_measurement_results
 
-# Get build/util scripts into our path.
-sys.path.append(os.path.abspath(os.path.join(
-    util.GetChromiumSrcDir(), 'build', 'util')))
+util.AddDirToPythonPath(util.GetChromiumSrcDir(), 'build', 'util')
 import lastchange  # pylint: disable=F0401
 
 
@@ -30,12 +27,10 @@ _UNIT_JSON = ('tools', 'perf', 'unit-info.json')
 
 class HtmlPageMeasurementResults(
     buildbot_page_measurement_results.BuildbotPageMeasurementResults):
-  def __init__(self, output_stream, test_name, reset_results, browser_type,
-               trace_tag=''):
+  def __init__(self, output_stream, test_name, browser_type, trace_tag=''):
     super(HtmlPageMeasurementResults, self).__init__(trace_tag)
 
     self._output_stream = output_stream
-    self._reset_results = reset_results
     self._test_name = test_name
     self._result_json = {
         'buildTime': self._GetBuildTime(),
@@ -66,7 +61,7 @@ class HtmlPageMeasurementResults(
 
   def _GetResultsJson(self):
     results_html = self._output_stream.read()
-    if self._reset_results or not results_html:
+    if not results_html:
       return []
     m = re.search(
         '^<script id="results-json" type="application/json">(.*?)</script>$',
@@ -74,7 +69,7 @@ class HtmlPageMeasurementResults(
     if not m:
       logging.warn('Failed to extract previous results from HTML output')
       return []
-    return json.loads(m.group(1))
+    return json.loads(m.group(1))[:512]
 
   def _SaveResults(self, results):
     self._output_stream.seek(0)

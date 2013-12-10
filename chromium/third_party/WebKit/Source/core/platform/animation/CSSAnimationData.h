@@ -118,7 +118,7 @@ public:
     const String& name() const { return m_name; }
     EAnimPlayState playState() const { return static_cast<EAnimPlayState>(m_playState); }
     CSSPropertyID property() const { return m_property; }
-    const PassRefPtr<TimingFunction> timingFunction() const { return m_timingFunction; }
+    TimingFunction* timingFunction() const { return m_timingFunction.get(); }
     AnimationMode animationMode() const { return m_mode; }
 
     void setDelay(double c) { m_delay = c; m_delaySet = true; }
@@ -136,9 +136,6 @@ public:
 
     CSSAnimationData& operator=(const CSSAnimationData& o);
 
-    // return true if all members of this class match (excluding m_next)
-    bool animationsMatch(const CSSAnimationData*, bool matchPlayStates = true) const;
-
     // return true every CSSAnimationData in the chain (defined by m_next) match
     bool operator==(const CSSAnimationData& o) const { return animationsMatch(&o); }
     bool operator!=(const CSSAnimationData& o) const { return !(*this == o); }
@@ -148,7 +145,10 @@ public:
 
 private:
     CSSAnimationData();
-    CSSAnimationData(const CSSAnimationData& o);
+    explicit CSSAnimationData(const CSSAnimationData&);
+
+    // return true if all members of this class match (excluding m_next)
+    bool animationsMatch(const CSSAnimationData*, bool matchPlayStates = true) const;
 
     AtomicString m_name;
     CSSPropertyID m_property;

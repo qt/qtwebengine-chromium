@@ -4,19 +4,19 @@
 
 #include "ash/wm/panels/panel_frame_view.h"
 
+#include "ash/wm/caption_buttons/frame_caption_button_container_view.h"
 #include "ash/wm/frame_painter.h"
 #include "grit/ash_resources.h"
-#include "grit/ui_strings.h"  // Accessibility names
 #include "third_party/skia/include/core/SkPaint.h"
-#include "ui/base/animation/throb_animation.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/animation/throb_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/image/image.h"
-#include "ui/views/controls/button/image_button.h"
+#include "ui/views/controls/image_view.h"
 #include "ui/views/widget/native_widget_aura.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
@@ -24,12 +24,11 @@
 namespace ash {
 
 // static
-const char PanelFrameView::kViewClassName[] = "ash/wm/panels/PanelFrameView";
+const char PanelFrameView::kViewClassName[] = "PanelFrameView";
 
 PanelFrameView::PanelFrameView(views::Widget* frame, FrameType frame_type)
     : frame_(frame),
-      close_button_(NULL),
-      minimize_button_(NULL),
+      caption_button_container_(NULL),
       window_icon_(NULL),
       title_font_(gfx::Font(views::NativeWidgetAura::GetWindowTitleFont())) {
   if (frame_type != FRAME_NONE)
@@ -46,23 +45,16 @@ const char* PanelFrameView::GetClassName() const {
 void PanelFrameView::InitFramePainter() {
   frame_painter_.reset(new FramePainter);
 
-  close_button_ = new views::ImageButton(this);
-  close_button_->SetAccessibleName(
-      l10n_util::GetStringUTF16(IDS_APP_ACCNAME_CLOSE));
-  AddChildView(close_button_);
-
-  minimize_button_ = new views::ImageButton(this);
-  minimize_button_->SetAccessibleName(
-      l10n_util::GetStringUTF16(IDS_APP_ACCNAME_MINIMIZE));
-  AddChildView(minimize_button_);
+  caption_button_container_ = new FrameCaptionButtonContainerView(frame_,
+      FrameCaptionButtonContainerView::MINIMIZE_ALLOWED);
+  AddChildView(caption_button_container_);
 
   if (frame_->widget_delegate()->ShouldShowWindowIcon()) {
-    window_icon_ = new views::ImageButton(this);
+    window_icon_ = new views::ImageView();
     AddChildView(window_icon_);
   }
 
-  frame_painter_->Init(frame_, window_icon_, minimize_button_, close_button_,
-                       FramePainter::SIZE_BUTTON_MINIMIZES);
+  frame_painter_->Init(frame_, window_icon_, caption_button_container_);
 }
 
 gfx::Size PanelFrameView::GetMinimumSize() {
@@ -85,10 +77,8 @@ void PanelFrameView::UpdateWindowIcon() {
   if (!window_icon_)
     return;
   views::WidgetDelegate* delegate = frame_->widget_delegate();
-  if (delegate) {
-    gfx::ImageSkia image = delegate->GetWindowIcon();
-    window_icon_->SetImage(views::CustomButton::STATE_NORMAL, &image);
-  }
+  if (delegate)
+    window_icon_->SetImage(delegate->GetWindowIcon());
   window_icon_->SchedulePaint();
 }
 
@@ -134,7 +124,7 @@ gfx::Rect PanelFrameView::GetBoundsForClientView() const {
   if (!frame_painter_)
     return bounds();
   return frame_painter_->GetBoundsForClientView(
-      close_button_->bounds().bottom(),
+      caption_button_container_->bounds().bottom(),
       bounds());
 }
 
@@ -143,15 +133,7 @@ gfx::Rect PanelFrameView::GetWindowBoundsForClientBounds(
   if (!frame_painter_)
     return client_bounds;
   return frame_painter_->GetWindowBoundsForClientBounds(
-      close_button_->bounds().bottom(), client_bounds);
-}
-
-void PanelFrameView::ButtonPressed(views::Button* sender,
-                                   const ui::Event& event) {
-  if (sender == close_button_)
-    GetWidget()->Close();
-  if (sender == minimize_button_)
-    GetWidget()->Minimize();
+      caption_button_container_->bounds().bottom(), client_bounds);
 }
 
 }  // namespace ash

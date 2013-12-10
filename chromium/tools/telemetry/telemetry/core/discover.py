@@ -1,10 +1,13 @@
 # Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
 import fnmatch
 import inspect
 import os
 import re
+
+from telemetry.core import camel_case
 
 
 def DiscoverModules(start_dir, top_level_dir, pattern='*'):
@@ -47,6 +50,8 @@ def DiscoverClasses(start_dir, top_level_dir, base_class, pattern='*',
                     index_by_class_name=False):
   """Discover all classes in |start_dir| which subclass |base_class|.
 
+  Base classes that contain subclasses are ignored by default.
+
   Args:
     start_dir: The directory to recursively search.
     top_level_dir: The top level of the package, for importing.
@@ -63,9 +68,10 @@ def DiscoverClasses(start_dir, top_level_dir, base_class, pattern='*',
   for module in modules:
     for _, obj in inspect.getmembers(module):
       if (inspect.isclass(obj) and obj is not base_class and
-          issubclass(obj, base_class)):
+          issubclass(obj, base_class) and obj.__module__ == module.__name__
+          and len(obj.__subclasses__()) == 0):
         if index_by_class_name:
-          key_name = re.sub('(?!^)([A-Z]+)', r'_\1', obj.__name__).lower()
+          key_name = camel_case.ToUnderscore(obj.__name__)
         else:
           key_name = module.__name__.split('.')[-1]
         classes[key_name] = obj

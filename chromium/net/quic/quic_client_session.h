@@ -13,6 +13,7 @@
 #include <string>
 
 #include "base/containers/hash_tables.h"
+#include "base/memory/scoped_ptr.h"
 #include "net/base/completion_callback.h"
 #include "net/quic/quic_connection_logger.h"
 #include "net/quic/quic_crypto_client_stream.h"
@@ -74,7 +75,7 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicSession {
   // not |stream_factory|, which must outlive this session.
   // TODO(rch): decouple the factory from the session via a Delegate interface.
   QuicClientSession(QuicConnection* connection,
-                    DatagramClientSocket* socket,
+                    scoped_ptr<DatagramClientSocket> socket,
                     QuicStreamFactory* stream_factory,
                     QuicCryptoClientStreamFactory* crypto_client_stream_factory,
                     const std::string& server_hostname,
@@ -101,14 +102,23 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicSession {
   virtual QuicReliableClientStream* CreateOutgoingReliableStream() OVERRIDE;
   virtual QuicCryptoClientStream* GetCryptoStream() OVERRIDE;
   virtual void CloseStream(QuicStreamId stream_id) OVERRIDE;
+  virtual void SendRstStream(QuicStreamId id,
+                             QuicRstStreamErrorCode error) OVERRIDE;
   virtual void OnCryptoHandshakeEvent(CryptoHandshakeEvent event) OVERRIDE;
+  virtual void OnCryptoHandshakeMessageSent(
+      const CryptoHandshakeMessage& message) OVERRIDE;
+  virtual void OnCryptoHandshakeMessageReceived(
+      const CryptoHandshakeMessage& message) OVERRIDE;
   virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
 
   // QuicConnectionVisitorInterface methods:
   virtual void ConnectionClose(QuicErrorCode error, bool from_peer) OVERRIDE;
+  virtual void OnSuccessfulVersionNegotiation(
+      const QuicVersion& version) OVERRIDE;
 
   // Performs a crypto handshake with the server.
-  int CryptoConnect(const CompletionCallback& callback);
+  int CryptoConnect(bool require_confirmation,
+                    const CompletionCallback& callback);
 
   // Causes the QuicConnectionHelper to start reading from the socket
   // and passing the data along to the QuicConnection.
@@ -124,6 +134,11 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicSession {
 
   base::WeakPtr<QuicClientSession> GetWeakPtr();
 
+  // Returns the number of client hello messages that have been sent on the
+  // crypto stream. If the handshake has completed then this is one greater
+  // than the number of round-trips needed for the handshake.
+  int GetNumSentClientHellos() const;
+
  protected:
   // QuicSession methods:
   virtual ReliableQuicStream* CreateIncomingReliableStream(
@@ -138,7 +153,9 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicSession {
   // A completion callback invoked when a read completes.
   void OnReadComplete(int result);
 
-  void CloseSessionOnErrorInner(int error);
+  void OnClosedStream();
+
+  void CloseSessionOnErrorInner(int net_error, QuicErrorCode quic_error);
 
   // Posts a task to notify the factory that this session has been closed.
   void NotifyFactoryOfSessionCloseLater();
@@ -147,7 +164,7 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicSession {
   // delete |this|.
   void NotifyFactoryOfSessionClose();
 
-  base::WeakPtrFactory<QuicClientSession> weak_factory_;
+  bool require_confirmation_;
   scoped_ptr<QuicCryptoClientStream> crypto_stream_;
   QuicStreamFactory* stream_factory_;
   scoped_ptr<DatagramClientSocket> socket_;
@@ -158,6 +175,7 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicSession {
   size_t num_total_streams_;
   BoundNetLog net_log_;
   QuicConnectionLogger logger_;
+  base::WeakPtrFactory<QuicClientSession> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicClientSession);
 };

@@ -44,7 +44,7 @@ class SVGSVGElement FINAL : public SVGGraphicsElement,
                             public SVGFitToViewBox,
                             public SVGZoomAndPan {
 public:
-    static PassRefPtr<SVGSVGElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGSVGElement> create(const QualifiedName&, Document&);
 
     using SVGGraphicsElement::ref;
     using SVGGraphicsElement::deref;
@@ -133,14 +133,14 @@ public:
     bool hasEmptyViewBox() const { return viewBoxIsValid() && viewBoxCurrentValue().isEmpty(); }
 
 private:
-    SVGSVGElement(const QualifiedName&, Document*);
+    SVGSVGElement(const QualifiedName&, Document&);
     virtual ~SVGSVGElement();
 
     virtual bool isSVGSVGElement() const OVERRIDE { return true; }
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
 
-    virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE;
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
     virtual RenderObject* createRenderer(RenderStyle*);
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
@@ -180,9 +180,14 @@ private:
 
 inline SVGSVGElement* toSVGSVGElement(Node* node)
 {
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isSVGElement());
     ASSERT_WITH_SECURITY_IMPLICATION(!node || toSVGElement(node)->isSVGSVGElement());
     return static_cast<SVGSVGElement*>(node);
+}
+
+inline const SVGSVGElement* toSVGSVGElement(const Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || toSVGElement(node)->isSVGSVGElement());
+    return static_cast<const SVGSVGElement*>(node);
 }
 
 } // namespace WebCore

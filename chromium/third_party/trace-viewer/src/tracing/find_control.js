@@ -7,58 +7,53 @@
 /**
  * @fileoverview FindControl and FindController.
  */
+base.requireTemplate('tracing.find_control');
+
 base.require('tracing.timeline_track_view');
 base.require('tracing.filter');
-base.require('ui.overlay');
 base.exportTo('tracing', function() {
 
   /**
    * FindControl
    * @constructor
-   * @extends {ui.Overlay}
    */
-  var FindControl = ui.define('div');
+  var FindControl = ui.define('find-control');
 
   FindControl.prototype = {
-    __proto__: ui.Overlay.prototype,
+    __proto__: HTMLUnknownElement.prototype,
 
     decorate: function() {
-      ui.Overlay.prototype.decorate.call(this);
+      var shadow = this.webkitCreateShadowRoot();
+      shadow.applyAuthorStyles = true;
+      shadow.resetStyleInheritance = true;
 
-      this.className = 'find-control';
+      shadow.appendChild(base.instantiateTemplate('#find-control-template'));
 
-      this.hitCountEl_ = document.createElement('div');
-      this.hitCountEl_.className = 'hit-count-label';
-      this.hitCountEl_.textContent = '1 of 7';
+      this.hitCountEl_ = shadow.querySelector('.hit-count-label');
 
-      var findPreviousBn = document.createElement('div');
-      findPreviousBn.className = 'button find-previous';
-      findPreviousBn.textContent = '\u2190';
-      findPreviousBn.addEventListener('click', this.findPrevious_.bind(this));
+      shadow.querySelector('.find-previous')
+          .addEventListener('click', this.findPrevious_.bind(this));
 
-      var findNextBn = document.createElement('div');
-      findNextBn.className = 'button find-next';
-      findNextBn.textContent = '\u2192';
-      findNextBn.addEventListener('click', this.findNext_.bind(this));
+      shadow.querySelector('.find-next')
+          .addEventListener('click', this.findNext_.bind(this));
 
-      // Filter input element.
-      this.filterEl_ = document.createElement('input');
-      this.filterEl_.type = 'input';
-
+      this.filterEl_ = shadow.querySelector('#find-control-filter');
       this.filterEl_.addEventListener('input',
           this.filterTextChanged_.bind(this));
 
       this.filterEl_.addEventListener('keydown', function(e) {
+        e.stopPropagation();
         if (e.keyCode == 13) {
           if (e.shiftKey)
             this.findPrevious_();
           else
             this.findNext_();
-        } else if (e.keyCode == 27) {
-          this.filterEl_.blur();
-          this.updateHitCountEl_();
         }
       }.bind(this));
+
+      this.filterEl_.addEventListener('keypress', function(e) {
+        e.stopPropagation();
+      });
 
       this.filterEl_.addEventListener('blur', function(e) {
         this.updateHitCountEl_();
@@ -76,13 +71,6 @@ base.exportTo('tracing', function() {
         e.preventDefault();
       });
 
-      // Attach everything.
-      this.appendChild(this.filterEl_);
-
-      this.appendChild(findPreviousBn);
-      this.appendChild(findNextBn);
-      this.appendChild(this.hitCountEl_);
-
       this.updateHitCountEl_();
     },
 
@@ -97,6 +85,10 @@ base.exportTo('tracing', function() {
 
     focus: function() {
       this.filterEl_.focus();
+    },
+
+    hasFocus: function() {
+      return this === document.activeElement;
     },
 
     filterTextChanged_: function() {
@@ -117,7 +109,7 @@ base.exportTo('tracing', function() {
     },
 
     updateHitCountEl_: function() {
-      if (!this.controller || document.activeElement != this.filterEl_) {
+      if (!this.controller || !this.hasFocus()) {
         this.hitCountEl_.textContent = '';
         return;
       }
@@ -160,13 +152,17 @@ base.exportTo('tracing', function() {
         return;
       this.filterText_ = f;
       this.filterHitsDirty_ = true;
-      this.showHits_(this.filterHits);
+
+      if (!this.timeline)
+        return;
+
+      this.timeline.setHighlightAndClearSelection(this.filterHits);
     },
 
     get filterHits() {
       if (this.filterHitsDirty_) {
         this.filterHitsDirty_ = false;
-        this.filterHits_.clear();
+        this.filterHits_ = new tracing.Selection();
         this.currentHitIndex_ = -1;
 
         if (this.timeline_ && this.filterText.length) {
@@ -182,18 +178,6 @@ base.exportTo('tracing', function() {
       return this.currentHitIndex_;
     },
 
-    showHits_: function(selection, zoom, pan) {
-      if (!this.timeline)
-        return;
-
-      this.timeline.selection = selection;
-
-      if (zoom)
-        this.timeline.zoomToSelection();
-      else if (pan)
-        this.timeline.panToSelection();
-    },
-
     find_: function(dir) {
       var firstHit = this.currentHitIndex_ === -1;
       if (firstHit && dir < 0)
@@ -202,12 +186,11 @@ base.exportTo('tracing', function() {
       var N = this.filterHits.length;
       this.currentHitIndex_ = (this.currentHitIndex_ + dir + N) % N;
 
-      // We allow the zoom level to change only on the first hit. But, when
-      // then cycling through subsequent changes, restrict it to panning.
-      var zoom = firstHit;
-      var pan = true;
-      var subSelection = this.filterHits.subSelection(this.currentHitIndex_);
-      this.showHits_(subSelection, zoom, pan);
+      if (!this.timeline)
+        return;
+
+      this.timeline.selection =
+          this.filterHits.subSelection(this.currentHitIndex_, 1);
     },
 
     findNext: function() {

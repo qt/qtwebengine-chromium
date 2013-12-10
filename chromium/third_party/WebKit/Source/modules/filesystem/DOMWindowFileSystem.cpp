@@ -29,7 +29,6 @@
 #include "core/dom/Document.h"
 #include "core/fileapi/FileError.h"
 #include "core/page/DOMWindow.h"
-#include "core/platform/AsyncFileSystem.h"
 #include "modules/filesystem/DOMFileSystem.h"
 #include "modules/filesystem/EntryCallback.h"
 #include "modules/filesystem/ErrorCallback.h"
@@ -69,7 +68,7 @@ void DOMWindowFileSystem::webkitRequestFileSystem(DOMWindow* window, int type, l
         return;
     }
 
-    LocalFileSystem::from(document)->requestFileSystem(document, fileSystemType, size, FileSystemCallbacks::create(successCallback, errorCallback, document, fileSystemType), AsynchronousFileSystem);
+    LocalFileSystem::from(document)->requestFileSystem(document, fileSystemType, size, FileSystemCallbacks::create(successCallback, errorCallback, document, fileSystemType));
 }
 
 void DOMWindowFileSystem::webkitResolveLocalFileSystemURL(DOMWindow* window, const String& url, PassRefPtr<EntryCallback> successCallback, PassRefPtr<ErrorCallback> errorCallback)

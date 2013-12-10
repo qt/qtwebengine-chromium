@@ -118,9 +118,6 @@ private:
 GrGLMagnifierEffect::GrGLMagnifierEffect(const GrBackendEffectFactory& factory,
                                          const GrDrawEffect& drawEffect)
     : INHERITED(factory)
-    , fOffsetVar(GrGLUniformManager::kInvalidUniformHandle)
-    , fZoomVar(GrGLUniformManager::kInvalidUniformHandle)
-    , fInsetVar(GrGLUniformManager::kInvalidUniformHandle)
     , fEffectMatrix(drawEffect.castEffect<GrMagnifierEffect>().coordsType()) {
 }
 
@@ -130,25 +127,25 @@ void GrGLMagnifierEffect::emitCode(GrGLShaderBuilder* builder,
                                    const char* outputColor,
                                    const char* inputColor,
                                    const TextureSamplerArray& samplers) {
-    const char* coords;
+    SkString coords;
     fEffectMatrix.emitCodeMakeFSCoords2D(builder, key, &coords);
     fOffsetVar = builder->addUniform(
-        GrGLShaderBuilder::kFragment_ShaderType |
-        GrGLShaderBuilder::kVertex_ShaderType,
+        GrGLShaderBuilder::kFragment_Visibility |
+        GrGLShaderBuilder::kVertex_Visibility,
         kVec2f_GrSLType, "uOffset");
     fZoomVar = builder->addUniform(
-        GrGLShaderBuilder::kFragment_ShaderType |
-        GrGLShaderBuilder::kVertex_ShaderType,
+        GrGLShaderBuilder::kFragment_Visibility |
+        GrGLShaderBuilder::kVertex_Visibility,
         kVec2f_GrSLType, "uZoom");
     fInsetVar = builder->addUniform(
-        GrGLShaderBuilder::kFragment_ShaderType |
-        GrGLShaderBuilder::kVertex_ShaderType,
+        GrGLShaderBuilder::kFragment_Visibility |
+        GrGLShaderBuilder::kVertex_Visibility,
         kVec2f_GrSLType, "uInset");
 
-    builder->fsCodeAppendf("\t\tvec2 coord = %s;\n", coords);
+    builder->fsCodeAppendf("\t\tvec2 coord = %s;\n", coords.c_str());
     builder->fsCodeAppendf("\t\tvec2 zoom_coord = %s + %s / %s;\n",
                            builder->getUniformCStr(fOffsetVar),
-                            coords,
+                           coords.c_str(),
                            builder->getUniformCStr(fZoomVar));
 
     builder->fsCodeAppend("\t\tvec2 delta = min(coord, vec2(1.0, 1.0) - coord);\n");
@@ -168,7 +165,7 @@ void GrGLMagnifierEffect::emitCode(GrGLShaderBuilder* builder,
 
     builder->fsCodeAppend("\t\tvec2 mix_coord = mix(coord, zoom_coord, weight);\n");
     builder->fsCodeAppend("\t\tvec4 output_color = ");
-    builder->appendTextureLookup(GrGLShaderBuilder::kFragment_ShaderType, samplers[0], "mix_coord");
+    builder->fsAppendTextureLookup(samplers[0], "mix_coord");
     builder->fsCodeAppend(";\n");
 
     builder->fsCodeAppendf("\t\t%s = output_color;", outputColor);
@@ -199,7 +196,7 @@ GrGLEffect::EffectKey GrGLMagnifierEffect::GenKey(const GrDrawEffect& drawEffect
 
 GR_DEFINE_EFFECT_TEST(GrMagnifierEffect);
 
-GrEffectRef* GrMagnifierEffect::TestCreate(SkMWCRandom* random,
+GrEffectRef* GrMagnifierEffect::TestCreate(SkRandom* random,
                                            GrContext* context,
                                            const GrDrawTargetCaps&,
                                            GrTexture** textures) {
@@ -218,8 +215,8 @@ GrEffectRef* GrMagnifierEffect::TestCreate(SkMWCRandom* random,
                                  SkIntToScalar(width), SkIntToScalar(height)),
                 inset));
     GrEffectRef* effect;
-    filter->asNewEffect(&effect, textures[0], SkIPoint::Make(0, 0));
-    GrAssert(NULL != effect);
+    filter->asNewEffect(&effect, textures[0], SkMatrix::I());
+    SkASSERT(NULL != effect);
     return effect;
 }
 
@@ -264,7 +261,7 @@ SkMagnifierImageFilter::SkMagnifierImageFilter(SkRect srcRect, SkScalar inset)
 }
 
 #if SK_SUPPORT_GPU
-bool SkMagnifierImageFilter::asNewEffect(GrEffectRef** effect, GrTexture* texture, const SkIPoint&) const {
+bool SkMagnifierImageFilter::asNewEffect(GrEffectRef** effect, GrTexture* texture, const SkMatrix&) const {
     if (effect) {
         *effect = GrMagnifierEffect::Create(texture,
                                             fSrcRect.x() / texture->width(),

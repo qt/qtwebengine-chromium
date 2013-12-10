@@ -92,7 +92,7 @@ static const String& verticalGrowingRightKeyword()
 
 // ----------------------------
 
-TextTrackCueBox::TextTrackCueBox(Document* document, TextTrackCue* cue)
+TextTrackCueBox::TextTrackCueBox(Document& document, TextTrackCue* cue)
     : HTMLDivElement(divTag, document)
     , m_cue(cue)
 {
@@ -204,7 +204,7 @@ TextTrackCue::TextTrackCue(ScriptExecutionContext* context, double start, double
     , m_isActive(false)
     , m_pauseOnExit(false)
     , m_snapToLines(true)
-    , m_cueBackgroundBox(HTMLDivElement::create(toDocument(context)))
+    , m_cueBackgroundBox(HTMLDivElement::create(*toDocument(context)))
     , m_displayTreeShouldChange(true)
     , m_displayDirection(CSSValueLtr)
 {
@@ -228,7 +228,8 @@ TextTrackCue::~TextTrackCue()
 
 PassRefPtr<TextTrackCueBox> TextTrackCue::createDisplayTree()
 {
-    return TextTrackCueBox::create(ownerDocument(), this);
+    ASSERT(ownerDocument());
+    return TextTrackCueBox::create(*ownerDocument(), this);
 }
 
 PassRefPtr<TextTrackCueBox> TextTrackCue::displayTreeInternal()
@@ -506,7 +507,7 @@ void TextTrackCue::copyWebVTTNodeToDOMTree(ContainerNode* webVTTNode, ContainerN
             clonedNode = toWebVTTElement(node)->createEquivalentHTMLElement(ownerDocument());
         else
             clonedNode = node->cloneNode(false);
-        parent->appendChild(clonedNode, ASSERT_NO_EXCEPTION);
+        parent->appendChild(clonedNode);
         if (node->isContainerNode())
             copyWebVTTNodeToDOMTree(toContainerNode(node), toContainerNode(clonedNode.get()));
     }
@@ -515,7 +516,7 @@ void TextTrackCue::copyWebVTTNodeToDOMTree(ContainerNode* webVTTNode, ContainerN
 PassRefPtr<DocumentFragment> TextTrackCue::getCueAsHTML()
 {
     createWebVTTNodeTree();
-    RefPtr<DocumentFragment> clonedFragment = DocumentFragment::create(ownerDocument());
+    RefPtr<DocumentFragment> clonedFragment = DocumentFragment::create(*ownerDocument());
     copyWebVTTNodeToDOMTree(m_webVTTNodeTree.get(), clonedFragment.get());
     return clonedFragment.release();
 }
@@ -524,7 +525,7 @@ PassRefPtr<DocumentFragment> TextTrackCue::createCueRenderingTree()
 {
     RefPtr<DocumentFragment> clonedFragment;
     createWebVTTNodeTree();
-    clonedFragment = DocumentFragment::create(ownerDocument());
+    clonedFragment = DocumentFragment::create(*ownerDocument());
     m_webVTTNodeTree->cloneChildNodes(clonedFragment.get());
     return clonedFragment.release();
 }
@@ -780,7 +781,7 @@ void TextTrackCue::updateDisplayTree(double movieTime)
     // Update the two sets containing past and future WebVTT objects.
     RefPtr<DocumentFragment> referenceTree = createCueRenderingTree();
     markFutureAndPastNodes(referenceTree.get(), startTime(), movieTime);
-    m_cueBackgroundBox->appendChild(referenceTree);
+    m_cueBackgroundBox->appendChild(referenceTree, ASSERT_NO_EXCEPTION);
 }
 
 PassRefPtr<TextTrackCueBox> TextTrackCue::getDisplayTree(const IntSize& videoSize)
@@ -805,7 +806,7 @@ PassRefPtr<TextTrackCueBox> TextTrackCue::getDisplayTree(const IntSize& videoSiz
 
     // Note: This is contained by default in m_cueBackgroundBox.
     m_cueBackgroundBox->setPart(cueShadowPseudoId());
-    displayTree->appendChild(m_cueBackgroundBox, ASSERT_NO_EXCEPTION, AttachLazily);
+    displayTree->appendChild(m_cueBackgroundBox);
 
     // FIXME(BUG 79916): Runs of children of WebVTT Ruby Objects that are not
     // WebVTT Ruby Text Objects must be wrapped in anonymous boxes whose
@@ -930,7 +931,7 @@ void TextTrackCue::setCueSettings(const String& input)
         String setting = WebVTTParser::collectWord(input, &endOfSetting);
         CueSetting name;
         size_t colonOffset = setting.find(':', 1);
-        if (colonOffset == notFound || colonOffset == 0 || colonOffset == setting.length() - 1)
+        if (colonOffset == kNotFound || !colonOffset || colonOffset == setting.length() - 1)
             goto NextSetting;
 
         // 2. Let name be the leading substring of setting up to and excluding the first U+003A COLON character (:) in that string.
@@ -977,7 +978,7 @@ void TextTrackCue::setCueSettings(const String& input)
             // 4. If any character in value other than the last character is a U+0025 PERCENT SIGN character (%), then
             //    jump to the step labeled next setting.
             String linePosition = linePositionBuilder.toString();
-            if (linePosition.find('-', 1) != notFound || linePosition.reverseFind("%", linePosition.length() - 2) != notFound)
+            if (linePosition.find('-', 1) != kNotFound || linePosition.reverseFind("%", linePosition.length() - 2) != kNotFound)
                 break;
 
             // 5. If the first character in value is a U+002D HYPHEN-MINUS character (-) and the last character in value is a

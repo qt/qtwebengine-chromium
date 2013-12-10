@@ -25,11 +25,13 @@
             'build_with_libjingle': 1,
             'webrtc_root%': '<(DEPTH)/third_party/webrtc',
             'apk_tests_path%': '<(DEPTH)/third_party/webrtc/build/apk_tests.gyp',
+            'import_isolate_path%': '<(DEPTH)/third_party/webrtc/build/import_isolate_chromium.gyp',
             'modules_java_gyp_path%': '<(DEPTH)/third_party/webrtc/modules/modules_java_chromium.gyp',
           }, {
             'build_with_libjingle%': 0,
             'webrtc_root%': '<(DEPTH)/webrtc',
             'apk_tests_path%': '<(DEPTH)/webrtc/build/apk_test_noop.gyp',
+            'import_isolate_path%': '<(DEPTH)/webrtc/build/import_isolate_webrtc.gyp',
             'modules_java_gyp_path%': '<(DEPTH)/webrtc/modules/modules_java.gyp',
           }],
         ],
@@ -38,6 +40,7 @@
       'build_with_libjingle%': '<(build_with_libjingle)',
       'webrtc_root%': '<(webrtc_root)',
       'apk_tests_path%': '<(apk_tests_path)',
+      'import_isolate_path%': '<(import_isolate_path)',
       'modules_java_gyp_path%': '<(modules_java_gyp_path)',
 
       'webrtc_vp8_dir%': '<(webrtc_root)/modules/video_coding/codecs/vp8',
@@ -48,6 +51,7 @@
     'build_with_libjingle%': '<(build_with_libjingle)',
     'webrtc_root%': '<(webrtc_root)',
     'apk_tests_path%': '<(apk_tests_path)',
+    'import_isolate_path%': '<(import_isolate_path)',
     'modules_java_gyp_path%': '<(modules_java_gyp_path)',
     'webrtc_vp8_dir%': '<(webrtc_vp8_dir)',
     'include_opus%': '<(include_opus)',
@@ -133,13 +137,11 @@
         'enable_android_opensl%': 0,
       }],
       ['OS=="ios"', {
-        'enable_video%': 0,
-        'enable_protobuf%': 0,
         'build_libjpeg%': 0,
-        'build_libyuv%': 0,
+        'enable_protobuf%': 0,
         'include_tests%': 0,
       }],
-      ['target_arch=="arm"', {
+      ['target_arch=="arm" or target_arch=="armv7"', {
         'prefer_fixed_point%': 1,
       }],
     ], # conditions
@@ -193,7 +195,7 @@
           }],
         ],
       }],
-      ['target_arch=="arm"', {
+      ['target_arch=="arm" or target_arch=="armv7"', {
         'defines': [
           'WEBRTC_ARCH_ARM',
         ],

@@ -15,7 +15,6 @@
 #include "ash/system/date/tray_date.h"
 #include "ash/system/drive/tray_drive.h"
 #include "ash/system/ime/tray_ime.h"
-#include "ash/system/logout_button/tray_logout_button.h"
 #include "ash/system/monitor/tray_monitor.h"
 #include "ash/system/session_length_limit/tray_session_length_limit.h"
 #include "ash/system/status_area_widget.h"
@@ -35,9 +34,9 @@
 #include "base/timer/timer.h"
 #include "grit/ash_strings.h"
 #include "ui/aura/root_window.h"
-#include "ui/base/events/event_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/compositor/layer.h"
+#include "ui/events/event_constants.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/skia_util.h"
@@ -147,7 +146,6 @@ void SystemTray::InitializeTrayItems(SystemTrayDelegate* delegate) {
 void SystemTray::CreateItems(SystemTrayDelegate* delegate) {
 #if !defined(OS_WIN)
   AddTrayItem(new internal::TraySessionLengthLimit(this));
-  AddTrayItem(new internal::TrayLogoutButton(this));
   // In multi-profile user mode we can have multiple user tiles.
   ash::Shell* shell = ash::Shell::GetInstance();
   int maximum_user_profiles =
@@ -322,16 +320,6 @@ bool SystemTray::HasNotificationBubble() const {
   return notification_bubble_.get() != NULL;
 }
 
-bool SystemTray::IsPressed() {
-  // Only when a full system tray bubble gets shown true will be returned.
-  // Small bubbles (like audio modifications via keyboard) should return false.
-  // Since showing the e.g. network portion of the system tray menu will convert
-  // the |system_bubble_| from type |BUBBLE_TYPE_DEFAULT| into
-  // |BUBBLE_TYPE_DETAILED| the full tray cannot reliably be checked trhough the
-  // type. As such |full_system_tray_menu_| gets checked here.
-  return HasSystemBubble() && full_system_tray_menu_;
-}
-
 internal::SystemTrayBubble* SystemTray::GetSystemBubble() {
   if (!system_bubble_)
     return NULL;
@@ -377,6 +365,12 @@ void SystemTray::DestroySystemBubble() {
   system_bubble_.reset();
   detailed_item_ = NULL;
   UpdateWebNotifications();
+  // When closing a system bubble with the alternate shelf layout, we need to
+  // turn off the active tinting of the shelf.
+  if (full_system_tray_menu_) {
+    SetDrawBackgroundAsActive(false);
+    full_system_tray_menu_ = false;
+  }
 }
 
 void SystemTray::DestroyNotificationBubble() {
@@ -484,6 +478,11 @@ void SystemTray::ShowItems(const std::vector<SystemTrayItem*>& items,
   if (!notification_bubble_)
     UpdateWebNotifications();
   GetShelfLayoutManager()->UpdateAutoHideState();
+
+  // When we show the system menu in our alternate shelf layout, we need to
+  // tint the background.
+  if (full_system_tray_menu_)
+    SetDrawBackgroundAsActive(true);
 }
 
 void SystemTray::UpdateNotificationBubble() {
@@ -586,6 +585,10 @@ void SystemTray::AnchorUpdated() {
 
 base::string16 SystemTray::GetAccessibleNameForTray() {
   return l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_ACCESSIBLE_NAME);
+}
+
+void SystemTray::BubbleResized(const TrayBubbleView* bubble_view) {
+  UpdateWebNotifications();
 }
 
 void SystemTray::HideBubbleWithView(const TrayBubbleView* bubble_view) {

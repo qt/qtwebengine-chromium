@@ -29,6 +29,7 @@
 #include "content/browser/renderer_host/gtk_im_context_wrapper.h"
 #include "content/browser/renderer_host/gtk_key_bindings_handler.h"
 #include "content/browser/renderer_host/gtk_window_utils.h"
+#include "content/browser/renderer_host/input/web_input_event_builders_gtk.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/common/gpu/gpu_messages.h"
@@ -40,17 +41,15 @@
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "third_party/WebKit/public/web/WebScreenInfo.h"
-#include "third_party/WebKit/public/web/gtk/WebInputEventFactory.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
-#include "ui/base/gtk/gtk_compat.h"
-#include "ui/base/text/text_elider.h"
 #include "ui/base/x/active_window_watcher_x.h"
 #include "ui/base/x/x11_util.h"
+#include "ui/gfx/gtk_compat.h"
 #include "ui/gfx/gtk_native_view_id_manager.h"
 #include "ui/gfx/gtk_preserve_window.h"
+#include "ui/gfx/text_elider.h"
 #include "webkit/common/cursors/webcursor_gtk_data.h"
 
-using WebKit::WebInputEventFactory;
 using WebKit::WebMouseWheelEvent;
 using WebKit::WebScreenInfo;
 
@@ -69,10 +68,6 @@ namespace {
 // people's monitor setups are actually exceeding that these days.
 const int kMaxWindowWidth = 10000;
 const int kMaxWindowHeight = 10000;
-
-// See WebInputEventFactor.cpp for a reason for this being the default
-// scroll size for linux.
-const float kDefaultScrollPixelsPerTick = 160.0f / 3.0f;
 
 const GdkColor kBGColor =
 #if defined(NDEBUG)
@@ -354,7 +349,7 @@ class RenderWidgetHostViewGtkWidget {
     RenderWidgetHostImpl* widget_host =
         RenderWidgetHostImpl::From(host_view->GetRenderWidgetHost());
     if (widget_host)
-      widget_host->ForwardMouseEvent(WebInputEventFactory::mouseEvent(event));
+      widget_host->ForwardMouseEvent(WebMouseEventBuilder::Build(event));
 
     // Although we did handle the mouse event, we need to let other handlers
     // run (in particular the one installed by WebContentsViewGtk).
@@ -380,8 +375,7 @@ class RenderWidgetHostViewGtkWidget {
 
     host_view->ModifyEventForEdgeDragging(widget, event);
 
-    WebKit::WebMouseEvent mouse_event =
-        WebInputEventFactory::mouseEvent(event);
+    WebKit::WebMouseEvent mouse_event = WebMouseEventBuilder::Build(event);
 
     if (host_view->mouse_locked_) {
       gfx::Point center = host_view->GetWidgetCenter();
@@ -431,8 +425,7 @@ class RenderWidgetHostViewGtkWidget {
     // additionally send this crossing event with the state indicating the
     // button is down, it causes problems with drag and drop in WebKit.)
     if (!(event->state & any_button_mask)) {
-      WebKit::WebMouseEvent mouse_event =
-          WebInputEventFactory::mouseEvent(event);
+      WebKit::WebMouseEvent mouse_event = WebMouseEventBuilder::Build(event);
       host_view->ModifyEventMovementAndCoords(&mouse_event);
       // When crossing out and back into a render view the movement values
       // must represent the instantaneous movement of the mouse, not the jump
@@ -500,7 +493,7 @@ class RenderWidgetHostViewGtkWidget {
       gdk_event_put(event);
       gdk_event_free(event);
     }
-    return num_clicks * kDefaultScrollPixelsPerTick;
+    return num_clicks * WebMouseWheelEventBuilder::ScrollbarPixelsPerTick();
   }
 
   static gboolean OnMouseScrollEvent(GtkWidget* widget,
@@ -518,21 +511,23 @@ class RenderWidgetHostViewGtkWidget {
         event->direction = GDK_SCROLL_RIGHT;
     }
 
-    WebMouseWheelEvent web_event = WebInputEventFactory::mouseWheelEvent(event);
+    WebMouseWheelEvent web_event = WebMouseWheelEventBuilder::Build(event);
+    const float pixelsPerTick =
+        WebMouseWheelEventBuilder::ScrollbarPixelsPerTick();
     // We  peek ahead at the top of the queue to look for additional pending
     // scroll events.
     if (event->direction == GDK_SCROLL_UP ||
         event->direction == GDK_SCROLL_DOWN) {
       if (event->direction == GDK_SCROLL_UP)
-        web_event.deltaY = kDefaultScrollPixelsPerTick;
+        web_event.deltaY = pixelsPerTick;
       else
-        web_event.deltaY = -kDefaultScrollPixelsPerTick;
+        web_event.deltaY = -pixelsPerTick;
       web_event.deltaY += GetPendingScrollDelta(true, event->state);
     } else {
       if (event->direction == GDK_SCROLL_LEFT)
-        web_event.deltaX = kDefaultScrollPixelsPerTick;
+        web_event.deltaX = pixelsPerTick;
       else
-        web_event.deltaX = -kDefaultScrollPixelsPerTick;
+        web_event.deltaX = -pixelsPerTick;
       web_event.deltaX += GetPendingScrollDelta(false, event->state);
     }
     RenderWidgetHostImpl::From(
@@ -546,7 +541,7 @@ class RenderWidgetHostViewGtkWidget {
 RenderWidgetHostViewGtk::RenderWidgetHostViewGtk(RenderWidgetHost* widget_host)
     : host_(RenderWidgetHostImpl::From(widget_host)),
       about_to_validate_and_paint_(false),
-      is_hidden_(false),
+      is_hidden_(host_->is_hidden()),
       is_loading_(false),
       parent_(NULL),
       is_popup_first_mouse_release_(true),
@@ -686,17 +681,18 @@ RenderWidgetHost* RenderWidgetHostViewGtk::GetRenderWidgetHost() const {
 }
 
 void RenderWidgetHostViewGtk::WasShown() {
-  if (!is_hidden_)
+  if (!host_ || !is_hidden_)
     return;
 
   if (web_contents_switch_paint_time_.is_null())
     web_contents_switch_paint_time_ = base::TimeTicks::Now();
   is_hidden_ = false;
+
   host_->WasShown();
 }
 
 void RenderWidgetHostViewGtk::WasHidden() {
-  if (is_hidden_)
+  if (!host_ || is_hidden_)
     return;
 
   // If we receive any more paint messages while we are hidden, we want to
@@ -795,10 +791,12 @@ bool RenderWidgetHostViewGtk::IsSurfaceAvailableForCopy() const {
 
 void RenderWidgetHostViewGtk::Show() {
   gtk_widget_show(view_.get());
+  WasShown();
 }
 
 void RenderWidgetHostViewGtk::Hide() {
   gtk_widget_hide(view_.get());
+  WasHidden();
 }
 
 bool RenderWidgetHostViewGtk::IsShowing() {
@@ -837,8 +835,8 @@ void RenderWidgetHostViewGtk::SetIsLoading(bool is_loading) {
 
 void RenderWidgetHostViewGtk::TextInputTypeChanged(
     ui::TextInputType type,
-    bool can_compose_inline,
-    ui::TextInputMode input_mode) {
+    ui::TextInputMode input_mode,
+    bool can_compose_inline) {
   im_context_->UpdateInputMethodState(type, can_compose_inline);
 }
 
@@ -936,7 +934,7 @@ void RenderWidgetHostViewGtk::SetTooltipText(const string16& tooltip_text) {
   // this itself).
   // I filed https://bugzilla.gnome.org/show_bug.cgi?id=604641 upstream.
   const string16 clamped_tooltip =
-      ui::TruncateString(tooltip_text, kMaxTooltipLength);
+      gfx::TruncateString(tooltip_text, kMaxTooltipLength);
 
   if (clamped_tooltip.empty()) {
     gtk_widget_set_has_tooltip(view_.get(), FALSE);
@@ -948,7 +946,7 @@ void RenderWidgetHostViewGtk::SetTooltipText(const string16& tooltip_text) {
 
 void RenderWidgetHostViewGtk::SelectionChanged(const string16& text,
                                                size_t offset,
-                                               const ui::Range& range) {
+                                               const gfx::Range& range) {
   RenderWidgetHostViewBase::SelectionChanged(text, offset, range);
 
   if (text.empty() || range.is_empty())
@@ -1542,8 +1540,8 @@ void RenderWidgetHostViewGtk::FatalAccessibilityTreeError() {
   }
 }
 
-void RenderWidgetHostViewGtk::OnAccessibilityNotifications(
-    const std::vector<AccessibilityHostMsg_NotificationParams>& params) {
+void RenderWidgetHostViewGtk::OnAccessibilityEvents(
+    const std::vector<AccessibilityHostMsg_EventParams>& params) {
   if (!GetBrowserAccessibilityManager()) {
     GtkWidget* parent = gtk_widget_get_parent(view_.get());
     SetBrowserAccessibilityManager(
@@ -1552,7 +1550,7 @@ void RenderWidgetHostViewGtk::OnAccessibilityNotifications(
             BrowserAccessibilityManagerGtk::GetEmptyDocument(),
             this));
   }
-  GetBrowserAccessibilityManager()->OnAccessibilityNotifications(params);
+  GetBrowserAccessibilityManager()->OnAccessibilityEvents(params);
 }
 
 AtkObject* RenderWidgetHostViewGtk::GetAccessible() {

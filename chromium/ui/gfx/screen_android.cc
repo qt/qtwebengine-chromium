@@ -19,7 +19,13 @@ class ScreenAndroid : public Screen {
 
   virtual gfx::Point GetCursorScreenPoint() OVERRIDE { return gfx::Point(); }
 
-  virtual gfx::NativeWindow GetWindowAtCursorScreenPoint() OVERRIDE {
+  virtual gfx::NativeWindow GetWindowUnderCursor() OVERRIDE {
+    NOTIMPLEMENTED();
+    return NULL;
+  }
+
+  virtual gfx::NativeWindow GetWindowAtScreenPoint(const gfx::Point& point)
+      OVERRIDE {
     NOTIMPLEMENTED();
     return NULL;
   }
@@ -50,7 +56,11 @@ class ScreenAndroid : public Screen {
     return GetPrimaryDisplay();
   }
 
-  virtual int GetNumDisplays() OVERRIDE { return 1; }
+  virtual int GetNumDisplays() const OVERRIDE { return 1; }
+
+  virtual std::vector<gfx::Display> GetAllDisplays() const OVERRIDE {
+    return std::vector<gfx::Display>(1, GetPrimaryDisplay());
+  }
 
   virtual gfx::Display GetDisplayMatching(
       const gfx::Rect& match_rect) const OVERRIDE {

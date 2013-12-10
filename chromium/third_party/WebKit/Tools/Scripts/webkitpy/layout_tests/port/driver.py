@@ -256,11 +256,6 @@ class Driver(object):
             self._run_post_start_tasks()
 
     def _setup_environ_for_driver(self, environment):
-        environment['DYLD_LIBRARY_PATH'] = self._port._build_path()
-        environment['DYLD_FRAMEWORK_PATH'] = self._port._build_path()
-        environment['LOCAL_RESOURCE_ROOT'] = self._port.layout_tests_dir()
-        if 'WEBKITOUTPUTDIR' in os.environ:
-            environment['WEBKITOUTPUTDIR'] = os.environ['WEBKITOUTPUTDIR']
         if self._profiler:
             environment = self._profiler.adjusted_environment(environment)
         return environment
@@ -274,7 +269,7 @@ class Driver(object):
         self._crashed_process_name = None
         self._crashed_pid = None
         cmd_line = self.cmd_line(pixel_tests, per_test_args)
-        self._server_process = self._port._server_process_constructor(self._port, server_name, cmd_line, environment)
+        self._server_process = self._port._server_process_constructor(self._port, server_name, cmd_line, environment, logging=self._port.get_option("driver_logging"))
         self._server_process.start()
         self._current_cmd_line = cmd_line
 
@@ -399,6 +394,9 @@ class Driver(object):
     def _strip_eof(self, line):
         if line and line.endswith("#EOF\n"):
             return line[:-5], True
+        if line and line.endswith("#EOF\r\n"):
+            _log.error("Got a CRLF-terminated #EOF - this is a driver bug.")
+            return line[:-6], True
         return line, False
 
     def _read_block(self, deadline, wait_for_stderr_eof=False):

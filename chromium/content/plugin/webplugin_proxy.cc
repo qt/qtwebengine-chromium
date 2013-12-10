@@ -14,6 +14,7 @@
 #include "content/child/npapi/npobject_proxy.h"
 #include "content/child/npapi/npobject_util.h"
 #include "content/child/npapi/webplugin_delegate_impl.h"
+#include "content/child/npapi/webplugin_resource_client.h"
 #include "content/child/plugin_messages.h"
 #include "content/plugin/plugin_channel.h"
 #include "content/plugin/plugin_thread.h"
@@ -74,7 +75,7 @@ WebPluginProxy::WebPluginProxy(
   // If the X server supports SHM pixmaps
   // and the color depth and masks match,
   // then consider using SHM pixmaps for windowless plugin painting.
-  Display* display = ui::GetXDisplay();
+  XDisplay* display = gfx::GetXDisplay();
   if (ui::QuerySharedMemorySupport(display) == ui::SHARED_MEMORY_PIXMAP &&
       ui::BitsPerPixelForPixmapDepth(
           display, DefaultDepth(display, DefaultScreen(display))) == 32) {
@@ -91,9 +92,9 @@ WebPluginProxy::WebPluginProxy(
 WebPluginProxy::~WebPluginProxy() {
 #if defined(USE_X11)
   if (windowless_shm_pixmaps_[0] != None)
-    XFreePixmap(ui::GetXDisplay(), windowless_shm_pixmaps_[0]);
+    XFreePixmap(gfx::GetXDisplay(), windowless_shm_pixmaps_[0]);
   if (windowless_shm_pixmaps_[1] != None)
-    XFreePixmap(ui::GetXDisplay(), windowless_shm_pixmaps_[1]);
+    XFreePixmap(gfx::GetXDisplay(), windowless_shm_pixmaps_[1]);
 #endif
 
 #if defined(OS_MACOSX)
@@ -320,8 +321,8 @@ void WebPluginProxy::HandleURLRequest(const char* url,
     if (delegate_->GetQuirks() &
         WebPluginDelegateImpl::PLUGIN_QUIRK_BLOCK_NONSTANDARD_GETURL_REQUESTS) {
       GURL request_url(url);
-      if (!request_url.SchemeIs(chrome::kHttpScheme) &&
-          !request_url.SchemeIs(chrome::kHttpsScheme) &&
+      if (!request_url.SchemeIs(kHttpScheme) &&
+          !request_url.SchemeIs(kHttpsScheme) &&
           !request_url.SchemeIs(chrome::kFtpScheme)) {
         return;
       }
@@ -556,7 +557,7 @@ void WebPluginProxy::CreateShmPixmapFromDIB(
     const gfx::Rect& window_rect,
     XID* pixmap_out) {
   if (dib) {
-    Display* display = ui::GetXDisplay();
+    XDisplay* display = gfx::GetXDisplay();
     XID root_window = ui::GetX11RootWindow();
     XShmSegmentInfo shminfo = {0};
 
@@ -619,6 +620,14 @@ void WebPluginProxy::InitiateHTTPRangeRequest(
       route_id_, url, range_info, range_request_id));
 }
 
+void WebPluginProxy::DidStartLoading() {
+  Send(new PluginHostMsg_DidStartLoading(route_id_));
+}
+
+void WebPluginProxy::DidStopLoading() {
+  Send(new PluginHostMsg_DidStopLoading(route_id_));
+}
+
 void WebPluginProxy::SetDeferResourceLoading(unsigned long resource_id,
                                              bool defer) {
   Send(new PluginHostMsg_DeferResourceLoading(route_id_, resource_id, defer));
@@ -676,12 +685,14 @@ bool WebPluginProxy::IsOffTheRecord() {
 
 void WebPluginProxy::ResourceClientDeleted(
     WebPluginResourceClient* resource_client) {
+  // resource_client->ResourceId() is 0 at this point, so can't use it as an
+  // index into the map.
   ResourceClientMap::iterator index = resource_clients_.begin();
   while (index != resource_clients_.end()) {
     WebPluginResourceClient* client = (*index).second;
-
     if (client == resource_client) {
-      resource_clients_.erase(index++);
+      resource_clients_.erase(index);
+      return;
     } else {
       index++;
     }
@@ -690,6 +701,13 @@ void WebPluginProxy::ResourceClientDeleted(
 
 void WebPluginProxy::URLRedirectResponse(bool allow, int resource_id) {
   Send(new PluginHostMsg_URLRedirectResponse(route_id_, allow, resource_id));
+}
+
+bool WebPluginProxy::CheckIfRunInsecureContent(const GURL& url) {
+  bool result = true;
+  Send(new PluginHostMsg_CheckIfRunInsecureContent(
+      host_render_view_routing_id_, url, &result));
+  return result;
 }
 
 #if defined(OS_WIN) && !defined(USE_AURA)

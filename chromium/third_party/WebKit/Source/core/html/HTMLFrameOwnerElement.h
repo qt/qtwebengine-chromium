@@ -22,6 +22,7 @@
 #define HTMLFrameOwnerElement_h
 
 #include "core/html/HTMLElement.h"
+#include "wtf/HashCountedSet.h"
 
 namespace WebCore {
 
@@ -58,15 +59,15 @@ public:
     virtual bool loadedNonEmptyDocument() const { return false; }
     virtual void didLoadNonEmptyDocument() { }
 
+    virtual void renderFallbackContent() { }
+
+    virtual bool isObjectElement() const { return false; }
+
 protected:
-    HTMLFrameOwnerElement(const QualifiedName& tagName, Document*);
+    HTMLFrameOwnerElement(const QualifiedName& tagName, Document&);
     void setSandboxFlags(SandboxFlags);
 
     bool loadOrRedirectSubframe(const KURL&, const AtomicString& frameName, bool lockBackForwardList);
-
-    virtual bool allowScrollingInContentFrame() { return true; }
-    virtual int marginWidth() const { return -1; }
-    virtual int marginHeight() const { return -1; }
 
 private:
     virtual bool isKeyboardFocusable() const OVERRIDE;
@@ -76,10 +77,16 @@ private:
     SandboxFlags m_sandboxFlags;
 };
 
-inline HTMLFrameOwnerElement* toFrameOwnerElement(Node* node)
+inline HTMLFrameOwnerElement* toHTMLFrameOwnerElement(Node* node)
 {
     ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isFrameOwnerElement());
     return static_cast<HTMLFrameOwnerElement*>(node);
+}
+
+inline const HTMLFrameOwnerElement* toHTMLFrameOwnerElement(const Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isFrameOwnerElement());
+    return static_cast<const HTMLFrameOwnerElement*>(node);
 }
 
 class SubframeLoadingDisabler {
@@ -105,9 +112,9 @@ public:
     }
 
 private:
-    static HashSet<Node*>& disabledSubtreeRoots()
+    static HashCountedSet<Node*>& disabledSubtreeRoots()
     {
-        DEFINE_STATIC_LOCAL(HashSet<Node*>, nodes, ());
+        DEFINE_STATIC_LOCAL(HashCountedSet<Node*>, nodes, ());
         return nodes;
     }
 

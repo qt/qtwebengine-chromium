@@ -47,6 +47,7 @@
 namespace WebCore {
 
 namespace ProfilerAgentState {
+static const char samplingInterval[] = "samplingInterval";
 static const char userInitiatedProfiling[] = "userInitiatedProfiling";
 static const char profilerEnabled[] = "profilerEnabled";
 static const char profileHeadersRequested[] = "profileHeadersRequested";
@@ -69,7 +70,7 @@ InspectorProfilerAgent::InspectorProfilerAgent(InstrumentingAgents* instrumentin
     , m_currentUserInitiatedProfileNumber(-1)
     , m_nextUserInitiatedProfileNumber(1)
     , m_profileNameIdleTimeMap(ScriptProfiler::currentProfileNameIdleTimeMap())
-    , m_previousTaskEndTime(0.0)
+    , m_idleStartTime(0.0)
 {
 }
 
@@ -101,13 +102,6 @@ void InspectorProfilerAgent::addProfileFinishedMessageToConsole(PassRefPtr<Scrip
     m_consoleAgent->addMessageToConsole(ConsoleAPIMessageSource, ProfileEndMessageType, DebugMessageLevel, message, sourceURL, lineNumber);
 }
 
-void InspectorProfilerAgent::addStartProfilingMessageToConsole(const String& title, unsigned lineNumber, const String& sourceURL)
-{
-    if (!m_frontend)
-        return;
-    m_consoleAgent->addMessageToConsole(ConsoleAPIMessageSource, ProfileMessageType, DebugMessageLevel, title, sourceURL, lineNumber);
-}
-
 PassRefPtr<TypeBuilder::Profiler::ProfileHeader> InspectorProfilerAgent::createProfileHeader(const ScriptProfile& profile)
 {
     return TypeBuilder::Profiler::ProfileHeader::create()
@@ -132,6 +126,16 @@ void InspectorProfilerAgent::disable(ErrorString*)
 bool InspectorProfilerAgent::enabled()
 {
     return m_state->getBoolean(ProfilerAgentState::profilerEnabled);
+}
+
+void InspectorProfilerAgent::setSamplingInterval(ErrorString* error, int interval)
+{
+    if (m_recordingCPUProfile) {
+        *error = "Cannot change sampling interval when profiling.";
+        return;
+    }
+    m_state->setLong(ProfilerAgentState::samplingInterval, interval);
+    ScriptProfiler::setSamplingInterval(interval);
 }
 
 String InspectorProfilerAgent::getCurrentUserInitiatedProfileName(bool incrementProfileNumber)
@@ -162,7 +166,6 @@ void InspectorProfilerAgent::getCPUProfile(ErrorString* errorString, int rawUid,
     }
     profileObject = TypeBuilder::Profiler::CPUProfile::create()
         .setHead(it->value->buildInspectorObjectForHead())
-        .setIdleTime(it->value->idleTime())
         .setStartTime(it->value->startTime())
         .setEndTime(it->value->endTime());
     profileObject->setSamples(it->value->buildInspectorObjectForSamples());
@@ -213,6 +216,8 @@ void InspectorProfilerAgent::clearFrontend()
 void InspectorProfilerAgent::restore()
 {
     resetFrontendProfiles();
+    if (long interval = m_state->getLong(ProfilerAgentState::samplingInterval, 0))
+        ScriptProfiler::setSamplingInterval(interval);
     if (m_state->getBoolean(ProfilerAgentState::userInitiatedProfiling))
         start();
 }
@@ -228,7 +233,6 @@ void InspectorProfilerAgent::start(ErrorString*)
     m_recordingCPUProfile = true;
     String title = getCurrentUserInitiatedProfileName(true);
     ScriptProfiler::start(title);
-    addStartProfilingMessageToConsole(title, 0, String());
     toggleRecordButton(true);
     m_state->setBoolean(ProfilerAgentState::userInitiatedProfiling, true);
 }
@@ -265,25 +269,47 @@ void InspectorProfilerAgent::toggleRecordButton(bool isProfiling)
         m_frontend->setRecordingProfile(isProfiling);
 }
 
-void InspectorProfilerAgent::willProcessTask()
+void InspectorProfilerAgent::idleFinished()
 {
     if (!m_profileNameIdleTimeMap || !m_profileNameIdleTimeMap->size())
         return;
-    if (!m_previousTaskEndTime)
+    ScriptProfiler::setIdle(false);
+    if (!m_idleStartTime)
         return;
 
-    double idleTime = WTF::monotonicallyIncreasingTime() - m_previousTaskEndTime;
-    m_previousTaskEndTime = 0.0;
+    double idleTime = WTF::monotonicallyIncreasingTime() - m_idleStartTime;
+    m_idleStartTime = 0.0;
     ProfileNameIdleTimeMap::iterator end = m_profileNameIdleTimeMap->end();
     for (ProfileNameIdleTimeMap::iterator it = m_profileNameIdleTimeMap->begin(); it != end; ++it)
         it->value += idleTime;
 }
 
-void InspectorProfilerAgent::didProcessTask()
+void InspectorProfilerAgent::idleStarted()
 {
     if (!m_profileNameIdleTimeMap || !m_profileNameIdleTimeMap->size())
         return;
-    m_previousTaskEndTime = WTF::monotonicallyIncreasingTime();
+    m_idleStartTime = WTF::monotonicallyIncreasingTime();
+    ScriptProfiler::setIdle(true);
+}
+
+void InspectorProfilerAgent::willProcessTask()
+{
+    idleFinished();
+}
+
+void InspectorProfilerAgent::didProcessTask()
+{
+    idleStarted();
+}
+
+void InspectorProfilerAgent::willEnterNestedRunLoop()
+{
+    idleStarted();
+}
+
+void InspectorProfilerAgent::didLeaveNestedRunLoop()
+{
+    idleFinished();
 }
 
 } // namespace WebCore

@@ -31,7 +31,7 @@
 #ifndef RenderRubyRun_h
 #define RenderRubyRun_h
 
-#include "core/rendering/RenderBlock.h"
+#include "core/rendering/RenderBlockFlow.h"
 
 namespace WebCore {
 
@@ -41,7 +41,7 @@ class RenderRubyText;
 // RenderRubyRun are 'inline-block/table' like objects,and wrap a single pairing of a ruby base with its ruby text(s).
 // See RenderRuby.h for further comments on the structure
 
-class RenderRubyRun FINAL : public RenderBlock {
+class RenderRubyRun FINAL : public RenderBlockFlow {
 public:
     virtual ~RenderRubyRun();
 
@@ -52,7 +52,7 @@ public:
     RenderRubyBase* rubyBase() const;
     RenderRubyBase* rubyBaseSafe(); // creates the base if it doesn't already exist
 
-    virtual RenderObject* layoutSpecialExcludedChild(bool relayoutChildren);
+    virtual RenderObject* layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope&);
     virtual void layout();
 
     virtual bool isChildAllowed(RenderObject*, RenderStyle*) const;
@@ -74,6 +74,7 @@ private:
 
     virtual bool isRubyRun() const { return true; }
     virtual const char* renderName() const { return "RenderRubyRun (anonymous)"; }
+    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
     virtual bool createsAnonymousWrapper() const { return true; }
     virtual void removeLeftoverAnonymousBlock(RenderBlock*) { }
 };

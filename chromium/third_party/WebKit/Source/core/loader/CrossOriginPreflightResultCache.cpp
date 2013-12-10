@@ -27,7 +27,7 @@
 #include "config.h"
 #include "core/loader/CrossOriginPreflightResultCache.h"
 
-#include "core/loader/CrossOriginAccessControl.h"
+#include "core/fetch/CrossOriginAccessControl.h"
 #include "core/platform/network/ResourceResponse.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/MainThread.h"
@@ -76,7 +76,7 @@ static bool parseAccessControlAllowList(const String& string, HashSet<String, Ha
 {
     unsigned start = 0;
     size_t end;
-    while ((end = string.find(',', start)) != notFound) {
+    while ((end = string.find(',', start)) != kNotFound) {
         if (start != end)
             addToAccessControlAllowList(string, start, end - 1, set);
         start = end + 1;

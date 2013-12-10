@@ -145,13 +145,12 @@ int main(int argc, char* argv[]) {
   webrtc::Trace::CreateTrace();
   webrtc::Trace::SetTraceFile((webrtc::test::OutputPath() +
       "neteq_trace.txt").c_str());
-  webrtc::Trace::SetLevelFilter(webrtc::kTraceAll);
+  webrtc::Trace::set_level_filter(webrtc::kTraceAll);
 
   // Initialize NetEq instance.
   int sample_rate_hz = 16000;
   NetEq* neteq = NetEq::Create(sample_rate_hz);
   RegisterPayloadTypes(neteq);
-  neteq->EnableDtmf();
 
   // Read first packet.
   NETEQTEST_RTPpacket *rtp;

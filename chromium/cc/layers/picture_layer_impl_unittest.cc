@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "cc/debug/test_web_graphics_context_3d.h"
 #include "cc/layers/append_quads_data.h"
 #include "cc/layers/picture_layer.h"
 #include "cc/test/fake_content_layer_client.h"
@@ -19,7 +20,7 @@
 #include "cc/test/mock_quad_culler.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/skia/include/core/SkDevice.h"
+#include "third_party/skia/include/core/SkBitmapDevice.h"
 #include "ui/gfx/rect_conversions.h"
 
 namespace cc {
@@ -27,7 +28,7 @@ namespace {
 
 class MockCanvas : public SkCanvas {
  public:
-  explicit MockCanvas(SkDevice* device) : SkCanvas(device) {}
+  explicit MockCanvas(SkBaseDevice* device) : SkCanvas(device) {}
 
   virtual void drawRect(const SkRect& rect, const SkPaint& paint) OVERRIDE {
     // Capture calls before SkCanvas quickReject() kicks in.
@@ -40,12 +41,20 @@ class MockCanvas : public SkCanvas {
 class PictureLayerImplTest : public testing::Test {
  public:
   PictureLayerImplTest()
-      : host_impl_(ImplSidePaintingSettings(), &proxy_),
-        id_(7) {
-    host_impl_.InitializeRenderer(CreateFakeOutputSurface());
-  }
+      : host_impl_(ImplSidePaintingSettings(), &proxy_), id_(7) {}
+
+  explicit PictureLayerImplTest(const LayerTreeSettings& settings)
+      : host_impl_(settings, &proxy_), id_(7) {}
 
   virtual ~PictureLayerImplTest() {
+  }
+
+  virtual void SetUp() OVERRIDE {
+    InitializeRenderer();
+  }
+
+  virtual void InitializeRenderer() {
+    host_impl_.InitializeRenderer(CreateFakeOutputSurface());
   }
 
   void SetupDefaultTrees(gfx::Size layer_bounds) {
@@ -69,7 +78,6 @@ class PictureLayerImplTest : public testing::Test {
         host_impl_.active_tree()->LayerById(id_));
 
     SetupPendingTree(pending_pile);
-    pending_layer_->UpdateTwinLayer();
   }
 
   void AddDefaultTilingsWithInvalidation(const Region& invalidation) {
@@ -79,7 +87,6 @@ class PictureLayerImplTest : public testing::Test {
     for (size_t i = 0; i < active_layer_->tilings()->num_tilings(); ++i)
       active_layer_->tilings()->tiling_at(i)->CreateAllTilesForTesting();
     pending_layer_->set_invalidation(invalidation);
-    pending_layer_->SyncFromActiveLayer();
     for (size_t i = 0; i < pending_layer_->tilings()->num_tilings(); ++i)
       pending_layer_->tilings()->tiling_at(i)->CreateAllTilesForTesting();
   }
@@ -98,6 +105,7 @@ class PictureLayerImplTest : public testing::Test {
 
     pending_layer_ = static_cast<FakePictureLayerImpl*>(
         host_impl_.pending_tree()->LayerById(id_));
+    pending_layer_->DoPostCommitInitializationIfNeeded();
   }
 
   static void VerifyAllTilesExistAndHavePile(
@@ -180,7 +188,7 @@ class PictureLayerImplTest : public testing::Test {
 
     SkBitmap store;
     store.setConfig(SkBitmap::kNo_Config, 1000, 1000);
-    SkDevice device(store);
+    SkBitmapDevice device(store);
 
     std::vector<SkRect>::const_iterator rect_iter = rects.begin();
     for (tile_iter = tiles.begin(); tile_iter < tiles.end(); tile_iter++) {
@@ -239,6 +247,62 @@ TEST_F(PictureLayerImplTest, CloneNoInvalidation) {
   EXPECT_GT(tilings->num_tilings(), 0u);
   for (size_t i = 0; i < tilings->num_tilings(); ++i)
     VerifyAllTilesExistAndHavePile(tilings->tiling_at(i), active_pile.get());
+}
+
+TEST_F(PictureLayerImplTest, SuppressUpdateTilePriorities) {
+  base::TimeTicks time_ticks;
+  host_impl_.SetCurrentFrameTimeTicks(time_ticks);
+
+  gfx::Size tile_size(100, 100);
+  gfx::Size layer_bounds(400, 400);
+
+  scoped_refptr<FakePicturePileImpl> pending_pile =
+      FakePicturePileImpl::CreateFilledPile(tile_size, layer_bounds);
+  scoped_refptr<FakePicturePileImpl> active_pile =
+      FakePicturePileImpl::CreateFilledPile(tile_size, layer_bounds);
+
+  SetupTrees(pending_pile, active_pile);
+
+  Region invalidation;
+  AddDefaultTilingsWithInvalidation(invalidation);
+  float dummy_contents_scale_x;
+  float dummy_contents_scale_y;
+  gfx::Size dummy_content_bounds;
+  active_layer_->CalculateContentsScale(1.f,
+                                        1.f,
+                                        1.f,
+                                        false,
+                                        &dummy_contents_scale_x,
+                                        &dummy_contents_scale_y,
+                                        &dummy_content_bounds);
+
+  EXPECT_TRUE(host_impl_.manage_tiles_needed());
+  active_layer_->UpdateTilePriorities();
+  host_impl_.ManageTiles();
+  EXPECT_FALSE(host_impl_.manage_tiles_needed());
+
+  time_ticks += base::TimeDelta::FromMilliseconds(200);
+  host_impl_.SetCurrentFrameTimeTicks(time_ticks);
+
+  // Setting this boolean should cause an early out in UpdateTilePriorities.
+  bool valid_for_tile_management = false;
+  host_impl_.SetExternalDrawConstraints(gfx::Transform(),
+                                        gfx::Rect(layer_bounds),
+                                        gfx::Rect(layer_bounds),
+                                        valid_for_tile_management);
+  active_layer_->UpdateTilePriorities();
+  EXPECT_FALSE(host_impl_.manage_tiles_needed());
+
+  time_ticks += base::TimeDelta::FromMilliseconds(200);
+  host_impl_.SetCurrentFrameTimeTicks(time_ticks);
+
+  valid_for_tile_management = true;
+  host_impl_.SetExternalDrawConstraints(gfx::Transform(),
+                                        gfx::Rect(layer_bounds),
+                                        gfx::Rect(layer_bounds),
+                                        valid_for_tile_management);
+  active_layer_->UpdateTilePriorities();
+  EXPECT_TRUE(host_impl_.manage_tiles_needed());
 }
 
 TEST_F(PictureLayerImplTest, ClonePartialInvalidation) {
@@ -822,7 +886,7 @@ TEST_F(PictureLayerImplTest, ClampTilesToToMaxTileSize) {
       TestWebGraphicsContext3D::Create();
   context->set_max_texture_size(140);
   host_impl_.InitializeRenderer(FakeOutputSurface::Create3d(
-      context.PassAs<WebKit::WebGraphicsContext3D>()).PassAs<OutputSurface>());
+      context.Pass()).PassAs<OutputSurface>());
 
   pending_layer_->CalculateContentsScale(
       1.f, 1.f, 1.f, false, &result_scale_x, &result_scale_y, &result_bounds);
@@ -873,7 +937,7 @@ TEST_F(PictureLayerImplTest, ClampSingleTileToToMaxTileSize) {
       TestWebGraphicsContext3D::Create();
   context->set_max_texture_size(140);
   host_impl_.InitializeRenderer(FakeOutputSurface::Create3d(
-      context.PassAs<WebKit::WebGraphicsContext3D>()).PassAs<OutputSurface>());
+      context.Pass()).PassAs<OutputSurface>());
 
   pending_layer_->CalculateContentsScale(
       1.f, 1.f, 1.f, false, &result_scale_x, &result_scale_y, &result_bounds);
@@ -1005,6 +1069,99 @@ TEST_F(PictureLayerImplTest, MarkRequiredOffscreenTiles) {
 
   EXPECT_GT(num_visible, 0);
   EXPECT_GT(num_offscreen, 0);
+}
+
+TEST_F(PictureLayerImplTest, ActivateUninitializedLayer) {
+  gfx::Size tile_size(100, 100);
+  gfx::Size layer_bounds(400, 400);
+  scoped_refptr<FakePicturePileImpl> pending_pile =
+      FakePicturePileImpl::CreateFilledPile(tile_size, layer_bounds);
+
+  host_impl_.CreatePendingTree();
+  LayerTreeImpl* pending_tree = host_impl_.pending_tree();
+
+  scoped_ptr<FakePictureLayerImpl> pending_layer =
+      FakePictureLayerImpl::CreateWithPile(pending_tree, id_, pending_pile);
+  pending_layer->SetDrawsContent(true);
+  pending_tree->SetRootLayer(pending_layer.PassAs<LayerImpl>());
+
+  pending_layer_ = static_cast<FakePictureLayerImpl*>(
+      host_impl_.pending_tree()->LayerById(id_));
+
+  // Set some state on the pending layer, make sure it is not clobbered
+  // by a sync from the active layer.  This could happen because if the
+  // pending layer has not been post-commit initialized it will attempt
+  // to sync from the active layer.
+  bool default_lcd_text_setting = pending_layer_->is_using_lcd_text();
+  pending_layer_->force_set_lcd_text(!default_lcd_text_setting);
+  EXPECT_TRUE(pending_layer_->needs_post_commit_initialization());
+
+  host_impl_.ActivatePendingTree();
+
+  active_layer_ = static_cast<FakePictureLayerImpl*>(
+      host_impl_.active_tree()->LayerById(id_));
+
+  EXPECT_EQ(0u, active_layer_->num_tilings());
+  EXPECT_EQ(!default_lcd_text_setting, active_layer_->is_using_lcd_text());
+  EXPECT_FALSE(active_layer_->needs_post_commit_initialization());
+}
+
+// Solid color scrollbar setting is required for deferred initialization.
+class ImplSidePaintingSolidColorScrollbarSettings
+    : public ImplSidePaintingSettings {
+ public:
+  ImplSidePaintingSolidColorScrollbarSettings() {
+    solid_color_scrollbars = true;
+  }
+};
+
+class DeferredInitPictureLayerImplTest : public PictureLayerImplTest {
+ public:
+  DeferredInitPictureLayerImplTest()
+      : PictureLayerImplTest(ImplSidePaintingSolidColorScrollbarSettings()) {}
+
+  virtual void InitializeRenderer() OVERRIDE {
+    host_impl_.InitializeRenderer(FakeOutputSurface::CreateDeferredGL(
+        scoped_ptr<SoftwareOutputDevice>(new SoftwareOutputDevice))
+                                      .PassAs<OutputSurface>());
+  }
+
+  virtual void SetUp() OVERRIDE {
+    PictureLayerImplTest::SetUp();
+
+    // Create some default active and pending trees.
+    gfx::Size tile_size(100, 100);
+    gfx::Size layer_bounds(400, 400);
+
+    scoped_refptr<FakePicturePileImpl> pending_pile =
+        FakePicturePileImpl::CreateFilledPile(tile_size, layer_bounds);
+    scoped_refptr<FakePicturePileImpl> active_pile =
+        FakePicturePileImpl::CreateFilledPile(tile_size, layer_bounds);
+
+    SetupTrees(pending_pile, active_pile);
+  }
+};
+
+// This test is really a LayerTreeHostImpl test, in that it makes sure
+// that trees need update draw properties after deferred initialization.
+// However, this is also a regression test for PictureLayerImpl in that
+// not having this update will cause a crash.
+TEST_F(DeferredInitPictureLayerImplTest,
+       PreventUpdateTilePrioritiesDuringLostContext) {
+  host_impl_.pending_tree()->UpdateDrawProperties();
+  host_impl_.active_tree()->UpdateDrawProperties();
+  EXPECT_FALSE(host_impl_.pending_tree()->needs_update_draw_properties());
+  EXPECT_FALSE(host_impl_.active_tree()->needs_update_draw_properties());
+
+  FakeOutputSurface* fake_output_surface =
+      static_cast<FakeOutputSurface*>(host_impl_.output_surface());
+  ASSERT_TRUE(fake_output_surface->InitializeAndSetContext3d(
+      TestContextProvider::Create(), NULL));
+
+  // These will crash PictureLayerImpl if this is not true.
+  ASSERT_TRUE(host_impl_.pending_tree()->needs_update_draw_properties());
+  ASSERT_TRUE(host_impl_.active_tree()->needs_update_draw_properties());
+  host_impl_.active_tree()->UpdateDrawProperties();
 }
 
 }  // namespace

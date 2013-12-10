@@ -59,23 +59,23 @@ PassRefPtr<SerializedScriptValue> ScriptValue::serialize(ScriptState* scriptStat
 ScriptValue ScriptValue::deserialize(ScriptState* scriptState, SerializedScriptValue* value)
 {
     ScriptScope scope(scriptState);
-    return ScriptValue(value->deserialize());
+    return ScriptValue(value->deserialize(), scriptState->isolate());
 }
 
-bool ScriptValue::getString(String& result, v8::Isolate* isolate) const
+bool ScriptValue::getString(String& result) const
 {
     if (hasNoValue())
         return false;
 
-    v8::HandleScope handleScope(isolate);
+    v8::HandleScope handleScope(m_isolate);
     v8::Handle<v8::Value> string = v8Value();
     if (string.IsEmpty() || !string->IsString())
         return false;
-    result = toWebCoreString(string);
+    result = toWebCoreString(string.As<v8::String>());
     return true;
 }
 
-String ScriptValue::toString(ScriptState*) const
+String ScriptValue::toString() const
 {
     v8::TryCatch block;
     v8::Handle<v8::String> string = v8Value()->ToString();
@@ -84,7 +84,7 @@ String ScriptValue::toString(ScriptState*) const
     return v8StringToWebCoreString<String>(string, DoNotExternalize);
 }
 
-static PassRefPtr<JSONValue> v8ToJSONValue(v8::Handle<v8::Value> value, int maxDepth)
+static PassRefPtr<JSONValue> v8ToJSONValue(v8::Handle<v8::Value> value, int maxDepth, v8::Isolate* isolate)
 {
     if (value.IsEmpty()) {
         ASSERT_NOT_REACHED();
@@ -102,14 +102,14 @@ static PassRefPtr<JSONValue> v8ToJSONValue(v8::Handle<v8::Value> value, int maxD
     if (value->IsNumber())
         return JSONBasicValue::create(value->NumberValue());
     if (value->IsString())
-        return JSONString::create(toWebCoreString(value));
+        return JSONString::create(toWebCoreString(value.As<v8::String>()));
     if (value->IsArray()) {
         v8::Handle<v8::Array> array = v8::Handle<v8::Array>::Cast(value);
         RefPtr<JSONArray> inspectorArray = JSONArray::create();
         uint32_t length = array->Length();
         for (uint32_t i = 0; i < length; i++) {
-            v8::Local<v8::Value> value = array->Get(v8::Int32::New(i));
-            RefPtr<JSONValue> element = v8ToJSONValue(value, maxDepth);
+            v8::Local<v8::Value> value = array->Get(v8::Int32::New(i, isolate));
+            RefPtr<JSONValue> element = v8ToJSONValue(value, maxDepth, isolate);
             if (!element)
                 return 0;
             inspectorArray->pushValue(element);
@@ -122,11 +122,11 @@ static PassRefPtr<JSONValue> v8ToJSONValue(v8::Handle<v8::Value> value, int maxD
         v8::Local<v8::Array> propertyNames = object->GetPropertyNames();
         uint32_t length = propertyNames->Length();
         for (uint32_t i = 0; i < length; i++) {
-            v8::Local<v8::Value> name = propertyNames->Get(v8::Int32::New(i));
+            v8::Local<v8::Value> name = propertyNames->Get(v8::Int32::New(i, isolate));
             // FIXME(yurys): v8::Object should support GetOwnPropertyNames
             if (name->IsString() && !object->HasRealNamedProperty(v8::Handle<v8::String>::Cast(name)))
                 continue;
-            RefPtr<JSONValue> propertyValue = v8ToJSONValue(object->Get(name), maxDepth);
+            RefPtr<JSONValue> propertyValue = v8ToJSONValue(object->Get(name), maxDepth, isolate);
             if (!propertyValue)
                 return 0;
             jsonObject->setValue(toWebCoreStringWithNullCheck(name), propertyValue);
@@ -142,7 +142,7 @@ PassRefPtr<JSONValue> ScriptValue::toJSONValue(ScriptState* scriptState) const
     v8::HandleScope handleScope(scriptState->isolate());
     // v8::Object::GetPropertyNames() expects current context to be not null.
     v8::Context::Scope contextScope(scriptState->context());
-    return v8ToJSONValue(v8Value(), JSONValue::maxDepth);
+    return v8ToJSONValue(v8Value(), JSONValue::maxDepth, scriptState->isolate());
 }
 
 } // namespace WebCore

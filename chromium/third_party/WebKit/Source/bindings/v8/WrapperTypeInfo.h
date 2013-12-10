@@ -144,14 +144,14 @@ namespace WebCore {
     {
         // This would be unsafe, but InternalFieldCount and GetAlignedPointerFromInternalField are guaranteed not to allocate
         const v8::Handle<v8::Object>& object = reinterpret_cast<const v8::Handle<v8::Object>&>(persistent);
-        ASSERT(object->InternalFieldCount() >= offset);
+        ASSERT(offset < object->InternalFieldCount());
         return static_cast<T*>(object->GetAlignedPointerFromInternalField(offset));
     }
 
     template<typename T, int offset>
     inline T* getInternalField(v8::Handle<v8::Object> object)
     {
-        ASSERT(object->InternalFieldCount() >= offset);
+        ASSERT(offset < object->InternalFieldCount());
         return static_cast<T*>(object->GetAlignedPointerFromInternalField(offset));
     }
 
@@ -181,11 +181,11 @@ namespace WebCore {
             Dependent, Independent
         };
 
-        void configureWrapper(v8::Persistent<v8::Object>* wrapper, v8::Isolate* isolate) const
+        void configureWrapper(v8::Persistent<v8::Object>* wrapper) const
         {
-            wrapper->SetWrapperClassId(isolate, classId);
+            wrapper->SetWrapperClassId(classId);
             if (lifetime == Independent)
-                wrapper->MarkIndependent(isolate);
+                wrapper->MarkIndependent();
         }
 
         const uint16_t classId;

@@ -27,7 +27,7 @@
 #define DateTimeSymbolicFieldElement_h
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
-#include "core/html/TypeAhead.h"
+#include "core/html/forms/TypeAhead.h"
 #include "core/html/shadow/DateTimeFieldElement.h"
 
 namespace WebCore {
@@ -38,7 +38,7 @@ class DateTimeSymbolicFieldElement : public DateTimeFieldElement, public TypeAhe
     WTF_MAKE_NONCOPYABLE(DateTimeSymbolicFieldElement);
 
 protected:
-    DateTimeSymbolicFieldElement(Document*, FieldOwner&, const Vector<String>&, int minimum, int maximum);
+    DateTimeSymbolicFieldElement(Document&, FieldOwner&, const Vector<String>&, int minimum, int maximum);
     size_t symbolsSize() const { return m_symbols.size(); }
     virtual bool hasValue() const OVERRIDE FINAL;
     void initialize(const AtomicString& pseudo, const String& axHelpText);

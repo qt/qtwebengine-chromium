@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@ import android.content.Context;
 import android.test.suitebuilder.annotation.MediumTest;
 import android.test.suitebuilder.annotation.SmallTest;
 import android.text.TextUtils;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 
@@ -61,7 +62,7 @@ public class ImeTest extends ContentShellTestBase {
         mContentView = getActivity().getActiveContentView();
         mCallbackContainer = new TestCallbackHelperContainer(mContentView);
         // TODO(aurimas) remove this wait once crbug.com/179511 is fixed.
-        assertWaitForPageScaleFactor(1);
+        assertWaitForPageScaleFactorMatch(1);
         DOMUtils.clickNode(this, mContentView, mCallbackContainer, "input_text");
         assertWaitForKeyboardStatus(true);
 
@@ -202,15 +203,17 @@ public class ImeTest extends ContentShellTestBase {
         mConnection.setComposingText("h", 1);
         waitAndVerifyEditableCallback(mConnection.mImeUpdateQueue, 1, "h", 1, 1, 0, 1);
         assertTrue(mConnection.isIgnoringTextInputStateUpdates());
+        assertEquals(0, mInputMethodManagerWrapper.getUpdateSelectionCounter());
 
         mConnection.setComposingText("he", 1);
         waitAndVerifyEditableCallback(mConnection.mImeUpdateQueue, 2, "he", 2, 2, 0, 2);
         assertTrue(mConnection.isIgnoringTextInputStateUpdates());
+        assertEquals(0, mInputMethodManagerWrapper.getUpdateSelectionCounter());
 
         mConnection.setComposingText("hel", 1);
         waitAndVerifyEditableCallback(mConnection.mImeUpdateQueue, 3, "hel", 3, 3, 0, 3);
 
-        assertEquals(0, mConnection.mUpdateSelectionCounter);
+        assertEquals(0, mInputMethodManagerWrapper.getUpdateSelectionCounter());
         assertTrue(mConnection.isIgnoringTextInputStateUpdates());
         mConnection.endBatchEdit();
         assertWaitForSetIgnoreUpdates(false, mConnection);
@@ -265,6 +268,39 @@ public class ImeTest extends ContentShellTestBase {
         waitAndVerifyEditableCallback(mConnection.mImeUpdateQueue, 6, "h\nllo ", 2, 2, -1, -1);
     }
 
+    @SmallTest
+    @Feature({"TextInput", "Main"})
+    public void testEnterKeyEventWhileComposingText() throws Throwable {
+        // Focus the textarea. We need to do the following steps because we are focusing using JS.
+        DOMUtils.focusNode(this, mContentView, mCallbackContainer, "input_radio");
+        assertWaitForKeyboardStatus(false);
+        DOMUtils.focusNode(this, mContentView, mCallbackContainer, "textarea");
+        assertWaitForKeyboardStatus(false);
+        performShowImeIfNeeded();
+        assertWaitForKeyboardStatus(true);
+
+        mConnection = (TestAdapterInputConnection) getAdapterInputConnection();
+        waitAndVerifyEditableCallback(mConnection.mImeUpdateQueue, 0, "", 0, 0, -1, -1);
+
+        mConnection.setComposingText("hello", 1);
+        waitAndVerifyEditableCallback(mConnection.mImeUpdateQueue, 1, "hello", 5, 5, 0, 5);
+
+        getInstrumentation().runOnMainSync(new Runnable() {
+            @Override
+            public void run() {
+                mConnection.sendKeyEvent(
+                        new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
+                mConnection.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER));
+            }
+        });
+
+        // TODO(aurimas): remove this workaround when crbug.com/278584 is fixed.
+        waitAndVerifyEditableCallback(mConnection.mImeUpdateQueue, 2, "hello", 5, 5, -1, -1);
+        // The second new line is not a user visible/editable one, it is a side-effect of Blink
+        // using <br> internally.
+        waitAndVerifyEditableCallback(mConnection.mImeUpdateQueue, 3, "hello\n\n", 6, 6, -1, -1);
+    }
+
     private void performShowImeIfNeeded() {
         ThreadUtils.runOnUiThreadBlocking(new Runnable() {
             @Override
@@ -284,17 +320,6 @@ public class ImeTest extends ContentShellTestBase {
                         inputConnection.performEditorAction(EditorInfo.IME_ACTION_GO);
                     }
                 });
-    }
-
-
-
-    private void assertWaitForPageScaleFactor(final float scale) throws InterruptedException {
-        assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
-            @Override
-            public boolean isSatisfied() {
-                return getContentViewCore().getScale() == scale;
-            }
-        }));
     }
 
     private void assertWaitForKeyboardStatus(final boolean show) throws InterruptedException {
@@ -368,7 +393,6 @@ public class ImeTest extends ContentShellTestBase {
     }
 
     private static class TestAdapterInputConnection extends AdapterInputConnection {
-        private int mUpdateSelectionCounter = 0;
         private ArrayList<TestImeState> mImeUpdateQueue = new ArrayList<ImeTest.TestImeState>();
 
         public TestAdapterInputConnection(View view, ImeAdapter imeAdapter, EditorInfo outAttrs) {
@@ -382,13 +406,6 @@ public class ImeTest extends ContentShellTestBase {
                     compositionStart, compositionEnd));
             super.setEditableText(
                     text, selectionStart, selectionEnd, compositionStart, compositionEnd);
-        }
-
-        @Override
-        protected void updateSelection(
-                int selectionStart, int selectionEnd,
-                int compositionStart, int compositionEnd) {
-            mUpdateSelectionCounter++;
         }
     }
 

@@ -46,6 +46,7 @@ importScript("cm/coffeescript.js");
 importScript("cm/php.js");
 importScript("cm/python.js");
 importScript("cm/shell.js");
+importScript("CodeMirrorUtils.js");
 
 /**
  * @constructor
@@ -134,6 +135,7 @@ WebInspector.CodeMirrorTextEditor = function(url, delegate)
     this._codeMirror.setOption("flattenSpans", false);
     this._codeMirror.setOption("maxHighlightLength", 1000);
     this._codeMirror.setOption("mode", null);
+    this._codeMirror.setOption("crudeMeasuringFrom", 1000);
 
     this._shouldClearHistory = true;
     this._lineSeparator = "\n";
@@ -150,7 +152,7 @@ WebInspector.CodeMirrorTextEditor = function(url, delegate)
     this._codeMirror.on("scroll", this._scroll.bind(this));
     this._codeMirror.on("focus", this._focus.bind(this));
     this._codeMirror.on("blur", this._blur.bind(this));
-    this.element.addEventListener("contextmenu", this._contextMenu.bind(this));
+    this.element.addEventListener("contextmenu", this._contextMenu.bind(this), false);
 
     this.element.addStyleClass("fill");
     this.element.style.overflow = "hidden";
@@ -162,10 +164,6 @@ WebInspector.CodeMirrorTextEditor = function(url, delegate)
     this.element.addEventListener("focus", this._handleElementFocus.bind(this), false);
     this.element.addEventListener("keydown", this._handleKeyDown.bind(this), true);
     this.element.tabIndex = 0;
-
-    this._overrideModeWithPrefixedTokens("css-base", "css-");
-    this._overrideModeWithPrefixedTokens("javascript", "js-");
-    this._overrideModeWithPrefixedTokens("xml", "xml-");
 
     this._setupSelectionColor();
     this._setupWhitespaceHighlight();
@@ -453,17 +451,6 @@ WebInspector.CodeMirrorTextEditor.prototype = {
         return this._toRange(coords, coords);
     },
 
-    _convertTokenType: function(tokenType)
-    {
-        if (tokenType.startsWith("js-variable") || tokenType.startsWith("js-property") || tokenType === "js-def")
-            return "javascript-ident";
-        if (tokenType === "js-string-2")
-            return "javascript-regexp";
-        if (tokenType === "js-number" || tokenType === "js-comment" || tokenType === "js-string" || tokenType === "js-keyword")
-            return "javascript-" + tokenType.substring("js-".length);
-        return null;
-    },
-
     /**
      * @param {number} lineNumber
      * @param {number} column
@@ -476,7 +463,7 @@ WebInspector.CodeMirrorTextEditor.prototype = {
         var token = this._codeMirror.getTokenAt(new CodeMirror.Pos(lineNumber, (column || 0) + 1));
         if (!token || !token.type)
             return null;
-        var convertedType = this._convertTokenType(token.type);
+        var convertedType = WebInspector.CodeMirrorUtils.convertTokenType(token.type);
         if (!convertedType)
             return null;
         return {
@@ -492,7 +479,7 @@ WebInspector.CodeMirrorTextEditor.prototype = {
      */
     copyRange: function(textRange)
     {
-        var pos = this._toPos(textRange);
+        var pos = this._toPos(textRange.normalize());
         return this._codeMirror.getRange(pos.start, pos.end);
     },
 
@@ -555,38 +542,6 @@ WebInspector.CodeMirrorTextEditor.prototype = {
         }
         CodeMirror.defineMode(modeName, modeConstructor);
         return modeName;
-    },
-
-    /**
-     * @param {string} modeName
-     * @param {string} tokenPrefix
-     */
-    _overrideModeWithPrefixedTokens: function(modeName, tokenPrefix)
-    {
-        var oldModeName = modeName + "-old";
-        if (CodeMirror.modes[oldModeName])
-            return;
-
-        CodeMirror.defineMode(oldModeName, CodeMirror.modes[modeName]);
-        CodeMirror.defineMode(modeName, modeConstructor);
-
-        function modeConstructor(config, parserConfig)
-        {
-            var innerConfig = {};
-            for (var i in parserConfig)
-                innerConfig[i] = parserConfig[i];
-            innerConfig.name = oldModeName;
-            var codeMirrorMode = CodeMirror.getMode(config, innerConfig);
-            codeMirrorMode.name = modeName;
-            codeMirrorMode.token = tokenOverride.bind(this, codeMirrorMode.token);
-            return codeMirrorMode;
-        }
-
-        function tokenOverride(superToken, stream, state)
-        {
-            var token = superToken(stream, state);
-            return token ? tokenPrefix + token : token;
-        }
     },
 
     _enableLongLinesMode: function()
@@ -856,6 +811,10 @@ WebInspector.CodeMirrorTextEditor.prototype = {
     {
     },
 
+    /**
+     * @param {number} width
+     * @param {number} height
+     */
     _updatePaddingBottom: function(width, height)
     {
         var scrollInfo = this._codeMirror.getScrollInfo();
@@ -873,9 +832,12 @@ WebInspector.CodeMirrorTextEditor.prototype = {
 
     _resizeEditor: function()
     {
+        var parentElement = this.element.parentElement;
+        if (!parentElement || !this.isShowing())
+            return;
         var scrollInfo = this._codeMirror.getScrollInfo();
-        var width = this.element.parentElement.offsetWidth;
-        var height = this.element.parentElement.offsetHeight;
+        var width = parentElement.offsetWidth;
+        var height = parentElement.offsetHeight;
         this._codeMirror.setSize(width, height);
         this._updatePaddingBottom(width, height);
         this._codeMirror.scrollTo(scrollInfo.left, scrollInfo.top);
@@ -883,13 +845,7 @@ WebInspector.CodeMirrorTextEditor.prototype = {
 
     onResize: function()
     {
-        if (WebInspector.experimentsSettings.scrollBeyondEndOfFile.isEnabled())
-            this._resizeEditor();
-        else {
-            var width = this.element.parentElement.offsetWidth;
-            var height = this.element.parentElement.offsetHeight;
-            this._codeMirror.setSize(width, height);
-        }
+        this._resizeEditor();
     },
 
     /**
@@ -945,12 +901,11 @@ WebInspector.CodeMirrorTextEditor.prototype = {
      */
     _change: function(codeMirror, changeObject)
     {
-        if (WebInspector.experimentsSettings.scrollBeyondEndOfFile.isEnabled()) {
-            var hasOneLine = this._codeMirror.lineCount() === 1;
-            if (hasOneLine !== this._hasOneLine)
-                this._resizeEditor();
-            this._hasOneLine = hasOneLine;
-        }
+        // We do not show "scroll beyond end of file" span for one line documents, so we need to check if "document has one line" changed.
+        var hasOneLine = this._codeMirror.lineCount() === 1;
+        if (hasOneLine !== this._hasOneLine)
+            this._resizeEditor();
+        this._hasOneLine = hasOneLine;
         var widgets = this._elementToWidget.values();
         for (var i = 0; i < widgets.length; ++i)
             this._codeMirror.removeLineWidget(widgets[i]);

@@ -60,6 +60,11 @@ bool ContentBrowserClient::CanCommitURL(RenderProcessHost* process_host,
   return true;
 }
 
+bool ContentBrowserClient::ShouldAllowOpenURL(SiteInstance* site_instance,
+                                              const GURL& url) {
+  return true;
+}
+
 bool ContentBrowserClient::IsSuitableHost(RenderProcessHost* process_host,
                                           const GURL& site_url) {
   return true;
@@ -270,7 +275,7 @@ bool ContentBrowserClient::AllowPepperSocketAPI(
     BrowserContext* browser_context,
     const GURL& url,
     bool private_api,
-    const SocketPermissionRequest& params) {
+    const SocketPermissionRequest* params) {
   return false;
 }
 

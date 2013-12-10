@@ -12,12 +12,12 @@
 #include "grit/ash_resources.h"
 #include "skia/ext/image_operations.h"
 #include "ui/base/accessibility/accessible_view_state.h"
-#include "ui/base/animation/animation_delegate.h"
-#include "ui/base/animation/throb_animation.h"
-#include "ui/base/events/event_constants.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/events/event_constants.h"
+#include "ui/gfx/animation/animation_delegate.h"
+#include "ui/gfx/animation/throb_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia_operations.h"
@@ -34,6 +34,7 @@ const int kIconSize = 32;
 const int kHopSpacing = 2;
 const int kIconPad = 8;
 const int kAlternateIconPad = 5;
+const int kAlternateIconPadVertical = 6;
 const int kHopUpMS = 0;
 const int kHopDownMS = 200;
 const int kAttentionThrobDurationMS = 800;
@@ -46,7 +47,7 @@ bool ShouldHop(int state) {
 
 // Simple AnimationDelegate that owns a single ThrobAnimation instance to
 // keep all Draw Attention animations in sync.
-class LauncherButtonAnimation : public ui::AnimationDelegate {
+class LauncherButtonAnimation : public gfx::AnimationDelegate {
  public:
   class Observer {
    public:
@@ -67,7 +68,7 @@ class LauncherButtonAnimation : public ui::AnimationDelegate {
 
   void RemoveObserver(Observer* observer) {
     observers_.RemoveObserver(observer);
-    if (observers_.size() == 0)
+    if (!observers_.might_have_observers())
       animation_.Stop();
   }
 
@@ -83,13 +84,13 @@ class LauncherButtonAnimation : public ui::AnimationDelegate {
   LauncherButtonAnimation()
       : animation_(this) {
     animation_.SetThrobDuration(kAttentionThrobDurationMS);
-    animation_.SetTweenType(ui::Tween::SMOOTH_IN_OUT);
+    animation_.SetTweenType(gfx::Tween::SMOOTH_IN_OUT);
   }
 
   virtual ~LauncherButtonAnimation() {
   }
 
-  ui::ThrobAnimation& GetThrobAnimation() {
+  gfx::ThrobAnimation& GetThrobAnimation() {
     if (!animation_.is_animating()) {
       animation_.Reset();
       animation_.StartThrobbing(-1 /*throb indefinitely*/);
@@ -97,8 +98,8 @@ class LauncherButtonAnimation : public ui::AnimationDelegate {
     return animation_;
   }
 
-  // ui::AnimationDelegate
-  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE {
+  // gfx::AnimationDelegate
+  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE {
     if (animation != &animation_)
       return;
     if (!animation_.is_animating())
@@ -106,7 +107,7 @@ class LauncherButtonAnimation : public ui::AnimationDelegate {
     FOR_EACH_OBSERVER(Observer, observers_, AnimationProgressed());
   }
 
-  ui::ThrobAnimation animation_;
+  gfx::ThrobAnimation animation_;
   ObserverList<Observer> observers_;
 
   DISALLOW_COPY_AND_ASSIGN(LauncherButtonAnimation);
@@ -293,6 +294,10 @@ void LauncherButton::SetImage(const gfx::ImageSkia& image) {
       skia::ImageOperations::RESIZE_BEST, gfx::Size(width, height)));
 }
 
+const gfx::ImageSkia& LauncherButton::GetImage() const {
+  return icon_view_->GetImage();
+}
+
 void LauncherButton::AddState(State state) {
   if (!(state_ & state)) {
     if (!ash::switches::UseAlternateShelfLayout() &&
@@ -315,7 +320,7 @@ void LauncherButton::ClearState(State state) {
         (!ShouldHop(state) || ShouldHop(state_))) {
       ui::ScopedLayerAnimationSettings scoped_setter(
           icon_view_->layer()->GetAnimator());
-      scoped_setter.SetTweenType(ui::Tween::LINEAR);
+      scoped_setter.SetTweenType(gfx::Tween::LINEAR);
       scoped_setter.SetTransitionDuration(
           base::TimeDelta::FromMilliseconds(kHopDownMS));
     }
@@ -396,8 +401,12 @@ void LauncherButton::GetAccessibleState(ui::AccessibleViewState* state) {
 
 void LauncherButton::Layout() {
   const gfx::Rect button_bounds(GetContentsBounds());
-  int icon_pad = ash::switches::UseAlternateShelfLayout() ?
-      kAlternateIconPad : kIconPad;
+  int icon_pad = kIconPad;
+  if (ash::switches::UseAlternateShelfLayout()) {
+      icon_pad =
+          shelf_layout_manager_->GetAlignment() != SHELF_ALIGNMENT_BOTTOM ?
+          kAlternateIconPadVertical : kAlternateIconPad;
+  }
   int x_offset = shelf_layout_manager_->PrimaryAxisValue(0, icon_pad);
   int y_offset = shelf_layout_manager_->PrimaryAxisValue(icon_pad, 0);
 
@@ -438,6 +447,12 @@ void LauncherButton::Layout() {
       button_bounds.y() + y_offset,
       icon_width,
       icon_height));
+
+  // Icon size has been incorrect when running
+  // PanelLayoutManagerTest.PanelAlignmentSecondDisplay on valgrind bot, see
+  // http://crbug.com/234854.
+  DCHECK_LE(icon_width, kIconSize);
+  DCHECK_LE(icon_height, kIconSize);
 
   bar_->SetBarBoundsRect(button_bounds);
 
@@ -505,8 +520,23 @@ bool LauncherButton::IsShelfHorizontal() const {
 }
 
 void LauncherButton::UpdateState() {
-  // Even if not shown, the activation state image has an influence on the
-  // layout. To avoid any odd movement we assign a bitmap here.
+  UpdateBar();
+
+  icon_view_->SetHorizontalAlignment(
+      shelf_layout_manager_->PrimaryAxisValue(views::ImageView::CENTER,
+                                              views::ImageView::LEADING));
+  icon_view_->SetVerticalAlignment(
+      shelf_layout_manager_->PrimaryAxisValue(views::ImageView::LEADING,
+                                              views::ImageView::CENTER));
+  SchedulePaint();
+}
+
+void LauncherButton::UpdateBar() {
+  if (state_ & STATE_HIDDEN) {
+    bar_->SetVisible(false);
+    return;
+  }
+
   int bar_id = 0;
   if (ash::switches::UseAlternateShelfLayout()) {
     if (state_ & STATE_ACTIVE)
@@ -551,14 +581,6 @@ void LauncherButton::UpdateState() {
   }
 
   bar_->SetVisible(bar_id != 0 && state_ != STATE_NORMAL);
-
-  icon_view_->SetHorizontalAlignment(
-      shelf_layout_manager_->PrimaryAxisValue(views::ImageView::CENTER,
-                                              views::ImageView::LEADING));
-  icon_view_->SetVerticalAlignment(
-      shelf_layout_manager_->PrimaryAxisValue(views::ImageView::LEADING,
-                                              views::ImageView::CENTER));
-  SchedulePaint();
 }
 
 }  // namespace internal

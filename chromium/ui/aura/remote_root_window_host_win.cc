@@ -15,8 +15,8 @@
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/base/cursor/cursor_loader_win.h"
-#include "ui/base/events/event_utils.h"
-#include "ui/base/keycodes/keyboard_code_conversion_win.h"
+#include "ui/events/event_utils.h"
+#include "ui/events/keycodes/keyboard_code_conversion_win.h"
 #include "ui/base/view_prop.h"
 #include "ui/gfx/insets.h"
 #include "ui/metro_viewer/metro_viewer_messages.h"
@@ -108,33 +108,39 @@ void HandleSelectFolder(const base::string16& title,
 RemoteRootWindowHostWin* g_instance = NULL;
 
 RemoteRootWindowHostWin* RemoteRootWindowHostWin::Instance() {
-  return g_instance;
+  if (g_instance)
+    return g_instance;
+  return Create(gfx::Rect());
 }
 
 RemoteRootWindowHostWin* RemoteRootWindowHostWin::Create(
     const gfx::Rect& bounds) {
-  g_instance = new RemoteRootWindowHostWin(bounds);
+  g_instance = g_instance ? g_instance : new RemoteRootWindowHostWin(bounds);
   return g_instance;
 }
 
 RemoteRootWindowHostWin::RemoteRootWindowHostWin(const gfx::Rect& bounds)
-    : delegate_(NULL),
+    : remote_window_(NULL),
+      delegate_(NULL),
       host_(NULL),
       ignore_mouse_moves_until_set_cursor_ack_(false) {
   prop_.reset(new ui::ViewProp(NULL, kRootWindowHostWinKey, this));
 }
 
 RemoteRootWindowHostWin::~RemoteRootWindowHostWin() {
+  g_instance = NULL;
 }
 
-void RemoteRootWindowHostWin::Connected(IPC::Sender* host) {
+void RemoteRootWindowHostWin::Connected(IPC::Sender* host, HWND remote_window) {
   CHECK(host_ == NULL);
   host_ = host;
+  remote_window_ = remote_window;
 }
 
 void RemoteRootWindowHostWin::Disconnected() {
   CHECK(host_ != NULL);
   host_ = NULL;
+  remote_window_ = NULL;
 }
 
 bool RemoteRootWindowHostWin::OnMessageReceived(const IPC::Message& message) {
@@ -161,8 +167,6 @@ bool RemoteRootWindowHostWin::OnMessageReceived(const IPC::Message& message) {
                         OnMultiFileOpenDone)
     IPC_MESSAGE_HANDLER(MetroViewerHostMsg_SelectFolderDone,
                         OnSelectFolderDone)
-    IPC_MESSAGE_HANDLER(MetroViewerHostMsg_WindowActivated,
-                        OnWindowActivated)
     IPC_MESSAGE_HANDLER(MetroViewerHostMsg_SetCursorPosAck,
                         OnSetCursorPosAck)
     IPC_MESSAGE_HANDLER(MetroViewerHostMsg_WindowSizeChanged,
@@ -170,6 +174,14 @@ bool RemoteRootWindowHostWin::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
+}
+
+void RemoteRootWindowHostWin::HandleOpenURLOnDesktop(
+    const base::FilePath& shortcut,
+    const base::string16& url) {
+  if (!host_)
+    return;
+  host_->Send(new MetroViewerHostMsg_OpenURLOnDesktop(shortcut, url));
 }
 
 void RemoteRootWindowHostWin::HandleOpenFile(
@@ -271,10 +283,9 @@ RootWindow* RemoteRootWindowHostWin::GetRootWindow() {
 }
 
 gfx::AcceleratedWidget RemoteRootWindowHostWin::GetAcceleratedWidget() {
-  // TODO(cpu): This is bad. Chrome's compositor needs a valid window
-  // initially and then later on we swap it. Since the compositor never
-  // uses this initial window we tell ourselves this hack is ok to get
-  // thing off the ground.
+  if (remote_window_)
+    return remote_window_;
+  // Getting here should only happen for ash_unittests.exe and related code.
   return ::GetDesktopWindow();
 }
 
@@ -337,13 +348,6 @@ bool RemoteRootWindowHostWin::QueryMouseLocation(gfx::Point* location_return) {
 
 bool RemoteRootWindowHostWin::ConfineCursorToRootWindow() {
   return true;
-}
-
-bool RemoteRootWindowHostWin::CopyAreaToSkCanvas(const gfx::Rect& source_bounds,
-                                                 const gfx::Point& dest_offset,
-                                                 SkCanvas* canvas) {
-  NOTIMPLEMENTED();
-  return false;
 }
 
 void RemoteRootWindowHostWin::UnConfineCursor() {
@@ -536,10 +540,6 @@ void RemoteRootWindowHostWin::OnSelectFolderDone(
     failure_callback_.Run(NULL);
   select_folder_completion_callback_.Reset();
   failure_callback_.Reset();
-}
-
-void RemoteRootWindowHostWin::OnWindowActivated(bool active) {
-  active ? GetRootWindow()->Focus() : GetRootWindow()->Blur();
 }
 
 void RemoteRootWindowHostWin::OnSetCursorPosAck() {

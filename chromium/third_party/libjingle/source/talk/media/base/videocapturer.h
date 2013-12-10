@@ -236,11 +236,18 @@ class VideoCapturer
   bool enable_camera_list() {
     return enable_camera_list_;
   }
+
+  // Enable scaling to ensure square pixels.
+  void set_square_pixel_aspect_ratio(bool square_pixel_aspect_ratio) {
+    square_pixel_aspect_ratio_ = square_pixel_aspect_ratio;
+  }
+  bool square_pixel_aspect_ratio() {
+    return square_pixel_aspect_ratio_;
+  }
+
   // Signal all capture state changes that are not a direct result of calling
   // Start().
   sigslot::signal2<VideoCapturer*, CaptureState> SignalStateChange;
-  // TODO(hellner): rename |SignalFrameCaptured| to something like
-  //                |SignalRawFrame| or |SignalNativeFrame|.
   // Frame callbacks are multithreaded to allow disconnect and connect to be
   // called concurrently. It also ensures that it is safe to call disconnect
   // at any time which is needed since the signal may be called from an
@@ -253,6 +260,17 @@ class VideoCapturer
                    sigslot::multi_threaded_local> SignalVideoFrame;
 
   const VideoProcessors& video_processors() const { return video_processors_; }
+
+  // If 'screencast_max_pixels' is set greater than zero, screencasts will be
+  // scaled to be no larger than this value.
+  // If set to zero, the max pixels will be limited to
+  // Retina MacBookPro 15" resolution of 2880 x 1800.
+  // For high fps, maximum pixels limit is set based on common 24" monitor
+  // resolution of 2048 x 1280.
+  int screencast_max_pixels() const { return screencast_max_pixels_; }
+  void set_screencast_max_pixels(int p) {
+    screencast_max_pixels_ = talk_base::_max(0, p);
+  }
 
  protected:
   // Callback attached to SignalFrameCaptured where SignalVideoFrames is called.
@@ -311,8 +329,10 @@ class VideoCapturer
   int ratio_w_;  // View resolution. e.g. 1280 x 720.
   int ratio_h_;
   bool enable_camera_list_;
+  bool square_pixel_aspect_ratio_;  // Enable scaling to square pixels.
   int scaled_width_;  // Current output size from ComputeScale.
   int scaled_height_;
+  int screencast_max_pixels_;  // Downscale screencasts further if requested.
   bool muted_;
   int black_frame_count_down_;
 

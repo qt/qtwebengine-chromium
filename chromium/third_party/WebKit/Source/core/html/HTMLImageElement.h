@@ -35,9 +35,9 @@ class HTMLFormElement;
 class HTMLImageElement FINAL : public HTMLElement {
     friend class HTMLFormElement;
 public:
-    static PassRefPtr<HTMLImageElement> create(Document*);
-    static PassRefPtr<HTMLImageElement> create(const QualifiedName&, Document*, HTMLFormElement*);
-    static PassRefPtr<HTMLImageElement> createForJSConstructor(Document*, const int* optionalWidth, const int* optionalHeight);
+    static PassRefPtr<HTMLImageElement> create(Document&);
+    static PassRefPtr<HTMLImageElement> create(const QualifiedName&, Document&, HTMLFormElement*);
+    static PassRefPtr<HTMLImageElement> createForJSConstructor(Document&, const int* optionalWidth, const int* optionalHeight);
 
     virtual ~HTMLImageElement();
 
@@ -79,8 +79,10 @@ public:
     void addClient(ImageLoaderClient* client) { m_imageLoader.addClient(client); }
     void removeClient(ImageLoaderClient* client) { m_imageLoader.removeClient(client); }
 
+    virtual const AtomicString imageSourceURL() const OVERRIDE;
+
 protected:
-    HTMLImageElement(const QualifiedName&, Document*, HTMLFormElement* = 0);
+    HTMLImageElement(const QualifiedName&, Document&, HTMLFormElement* = 0);
 
     virtual void didMoveToNewDocument(Document* oldDocument) OVERRIDE;
 
@@ -106,12 +108,13 @@ private:
     virtual void removedFrom(ContainerNode*) OVERRIDE;
     virtual bool shouldRegisterAsNamedItem() const OVERRIDE { return true; }
     virtual bool shouldRegisterAsExtraNamedItem() const OVERRIDE { return true; }
-
+    virtual bool isInteractiveContent() const OVERRIDE;
     virtual Image* imageContents() OVERRIDE;
 
     HTMLImageLoader m_imageLoader;
     HTMLFormElement* m_form;
     CompositeOperator m_compositeOperator;
+    AtomicString m_bestFitImageURL;
 };
 
 inline HTMLImageElement* toHTMLImageElement(Node* node)

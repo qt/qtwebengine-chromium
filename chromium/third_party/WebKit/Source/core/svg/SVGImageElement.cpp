@@ -53,7 +53,7 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGImageElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGImageElement::SVGImageElement(const QualifiedName& tagName, Document* document)
+inline SVGImageElement::SVGImageElement(const QualifiedName& tagName, Document& document)
     : SVGGraphicsElement(tagName, document)
     , m_x(LengthModeWidth)
     , m_y(LengthModeHeight)
@@ -66,9 +66,21 @@ inline SVGImageElement::SVGImageElement(const QualifiedName& tagName, Document* 
     registerAnimatedPropertiesForSVGImageElement();
 }
 
-PassRefPtr<SVGImageElement> SVGImageElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<SVGImageElement> SVGImageElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new SVGImageElement(tagName, document));
+}
+
+bool SVGImageElement::currentFrameHasSingleSecurityOrigin() const
+{
+    if (RenderSVGImage* renderSVGImage = toRenderSVGImage(renderer())) {
+        if (renderSVGImage->imageResource()->hasImage()) {
+            if (Image* image = renderSVGImage->imageResource()->cachedImage()->image())
+                return image->currentFrameHasSingleSecurityOrigin();
+        }
+    }
+
+    return true;
 }
 
 bool SVGImageElement::isSupportedAttribute(const QualifiedName& attrName)
@@ -214,16 +226,16 @@ Node::InsertionNotificationRequest SVGImageElement::insertedInto(ContainerNode* 
     return InsertionDone;
 }
 
-const AtomicString& SVGImageElement::imageSourceURL() const
+const AtomicString SVGImageElement::imageSourceURL() const
 {
-    return getAttribute(XLinkNames::hrefAttr);
+    return hrefCurrentValue();
 }
 
 void SVGImageElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) const
 {
     SVGGraphicsElement::addSubresourceAttributeURLs(urls);
 
-    addSubresourceURL(urls, document()->completeURL(hrefCurrentValue()));
+    addSubresourceURL(urls, document().completeURL(hrefCurrentValue()));
 }
 
 void SVGImageElement::didMoveToNewDocument(Document* oldDocument)

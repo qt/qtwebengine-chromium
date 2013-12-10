@@ -50,7 +50,11 @@ public:
     bool cookieEnabled() const;
     bool javaEnabled() const;
 
-    virtual String userAgent() const;
+    String productSub() const;
+    String vendor() const;
+    String vendorSub() const;
+
+    virtual String userAgent() const OVERRIDE;
 
     // Relinquishes the storage lock, if one exists.
     void getStorageUpdates();

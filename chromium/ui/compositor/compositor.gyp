@@ -30,8 +30,6 @@
         'compositor_observer.h',
         'compositor_switches.cc',
         'compositor_switches.h',
-        'context_provider_from_context_factory.cc',
-        'context_provider_from_context_factory.h',
         'debug_utils.cc',
         'debug_utils.h',
         'dip_util.cc',
@@ -58,9 +56,6 @@
         'scoped_animation_duration_scale_mode.h',
         'scoped_layer_animation_settings.cc',
         'scoped_layer_animation_settings.h',
-        # UI tests need TestWebGraphicsContext3D, so we always build it.
-        'test_web_graphics_context_3d.cc',
-        'test_web_graphics_context_3d.h',
         'transform_animation_curve_adapter.cc',
         'transform_animation_curve_adapter.h',
       ],
@@ -128,6 +123,7 @@
         'test/test_layer_animation_observer.h',
         'test/test_utils.cc',
         'test/test_utils.h',
+        'transform_animation_curve_adapter_unittest.cc',
       ],
       'conditions': [
         # osmesa GL implementation is used on linux.

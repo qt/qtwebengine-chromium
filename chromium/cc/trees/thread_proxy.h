@@ -52,6 +52,7 @@ class ThreadProxy : public Proxy,
   virtual void SetNeedsUpdateLayers() OVERRIDE;
   virtual void SetNeedsCommit() OVERRIDE;
   virtual void SetNeedsRedraw(gfx::Rect damage_rect) OVERRIDE;
+  virtual void SetNextCommitWaitsForActivation() OVERRIDE;
   virtual void NotifyInputThrottledUntilCommit() OVERRIDE;
   virtual void SetDeferCommits(bool defer_commits) OVERRIDE;
   virtual bool CommitRequested() const OVERRIDE;
@@ -63,19 +64,18 @@ class ThreadProxy : public Proxy,
   virtual void ForceSerializeOnSwapBuffers() OVERRIDE;
   virtual scoped_ptr<base::Value> AsValue() const OVERRIDE;
   virtual bool CommitPendingForTesting() OVERRIDE;
-  virtual std::string SchedulerStateAsStringForTesting() OVERRIDE;
+  virtual scoped_ptr<base::Value> SchedulerStateAsValueForTesting() OVERRIDE;
 
   // LayerTreeHostImplClient implementation
-  virtual void DidTryInitializeRendererOnImplThread(
-      bool success,
-      scoped_refptr<ContextProvider> offscreen_context_provider) OVERRIDE;
   virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE;
   virtual void OnSwapBuffersCompleteOnImplThread() OVERRIDE;
   virtual void BeginFrameOnImplThread(const BeginFrameArgs& args) OVERRIDE;
+  virtual void DidBeginFrameDeadlineOnImplThread() OVERRIDE;
   virtual void OnCanDrawStateChanged(bool can_draw) OVERRIDE;
-  virtual void OnHasPendingTreeStateChanged(bool has_pending_tree) OVERRIDE;
+  virtual void NotifyReadyToActivate() OVERRIDE;
   virtual void SetNeedsRedrawOnImplThread() OVERRIDE;
   virtual void SetNeedsRedrawRectOnImplThread(gfx::Rect dirty_rect) OVERRIDE;
+  virtual void SetNeedsManageTilesOnImplThread() OVERRIDE;
   virtual void DidInitializeVisibleTileOnImplThread() OVERRIDE;
   virtual void SetNeedsCommitOnImplThread() OVERRIDE;
   virtual void PostAnimationEventsToMainThreadOnImplThread(
@@ -95,19 +95,22 @@ class ThreadProxy : public Proxy,
   // SchedulerClient implementation
   virtual void SetNeedsBeginFrameOnImplThread(bool enable) OVERRIDE;
   virtual void ScheduledActionSendBeginFrameToMainThread() OVERRIDE;
-  virtual ScheduledActionDrawAndSwapResult
-      ScheduledActionDrawAndSwapIfPossible() OVERRIDE;
-  virtual ScheduledActionDrawAndSwapResult ScheduledActionDrawAndSwapForced()
+  virtual DrawSwapReadbackResult ScheduledActionDrawAndSwapIfPossible()
       OVERRIDE;
+  virtual DrawSwapReadbackResult ScheduledActionDrawAndSwapForced() OVERRIDE;
+  virtual DrawSwapReadbackResult ScheduledActionDrawAndReadback() OVERRIDE;
   virtual void ScheduledActionCommit() OVERRIDE;
   virtual void ScheduledActionUpdateVisibleTiles() OVERRIDE;
-  virtual void ScheduledActionActivatePendingTreeIfNeeded() OVERRIDE;
+  virtual void ScheduledActionActivatePendingTree() OVERRIDE;
   virtual void ScheduledActionBeginOutputSurfaceCreation() OVERRIDE;
   virtual void ScheduledActionAcquireLayerTexturesForMainThread() OVERRIDE;
+  virtual void ScheduledActionManageTiles() OVERRIDE;
   virtual void DidAnticipatedDrawTimeChange(base::TimeTicks time) OVERRIDE;
   virtual base::TimeDelta DrawDurationEstimate() OVERRIDE;
   virtual base::TimeDelta BeginFrameToCommitDurationEstimate() OVERRIDE;
   virtual base::TimeDelta CommitToActivateDurationEstimate() OVERRIDE;
+  virtual void PostBeginFrameDeadline(const base::Closure& closure,
+                                      base::TimeTicks deadline) OVERRIDE;
 
   // ResourceUpdateControllerClient implementation
   virtual void ReadyToFinalizeTextureUpdates() OVERRIDE;
@@ -123,6 +126,8 @@ class ThreadProxy : public Proxy,
     base::TimeTicks monotonic_frame_begin_time;
     scoped_ptr<ScrollAndScaleSet> scroll_info;
     size_t memory_allocation_limit_bytes;
+    int memory_allocation_priority_cutoff;
+    bool evicted_ui_resources;
   };
 
   // Called on main thread.
@@ -144,7 +149,9 @@ class ThreadProxy : public Proxy,
   struct CommitPendingRequest;
   struct SchedulerStateRequest;
 
-  void ForceCommitOnImplThread(CompletionEvent* completion);
+  void ForceCommitForReadbackOnImplThread(
+      CompletionEvent* begin_frame_sent_completion,
+      ReadbackRequest* request);
   void StartCommitOnImplThread(
       CompletionEvent* completion,
       ResourceUpdateQueue* queue,
@@ -155,6 +162,7 @@ class ThreadProxy : public Proxy,
   void InitializeImplOnImplThread(CompletionEvent* completion);
   void SetLayerTreeHostClientReadyOnImplThread();
   void SetVisibleOnImplThread(CompletionEvent* completion, bool visible);
+  void UpdateBackgroundAnimateTicking();
   void HasInitializedOutputSurfaceOnImplThread(
       CompletionEvent* completion,
       bool* has_initialized_output_surface);
@@ -168,17 +176,18 @@ class ThreadProxy : public Proxy,
   void LayerTreeHostClosedOnImplThread(CompletionEvent* completion);
   void AcquireLayerTexturesForMainThreadOnImplThread(
       CompletionEvent* completion);
-  ScheduledActionDrawAndSwapResult ScheduledActionDrawAndSwapInternal(
-      bool forced_draw);
+  DrawSwapReadbackResult DrawSwapReadbackInternal(bool forced_draw,
+                                                  bool swap_requested,
+                                                  bool readback_requested);
   void ForceSerializeOnSwapBuffersOnImplThread(CompletionEvent* completion);
   void CheckOutputSurfaceStatusOnImplThread();
   void CommitPendingOnImplThreadForTesting(CommitPendingRequest* request);
-  void SchedulerStateAsStringOnImplThreadForTesting(
+  void SchedulerStateAsValueOnImplThreadForTesting(
       SchedulerStateRequest* request);
   void AsValueOnImplThread(CompletionEvent* completion,
                            base::DictionaryValue* state) const;
   void RenewTreePriorityOnImplThread();
-  void DidSwapUseIncompleteTileOnImplThread();
+  void SetSwapUsedIncompleteTileOnImplThread(bool used_incomplete_tile);
   void StartScrollbarAnimationOnImplThread();
   void MainThreadHasStoppedFlingingOnImplThread();
   void SetInputThrottledUntilCommitOnImplThread(bool is_throttled);
@@ -205,6 +214,10 @@ class ThreadProxy : public Proxy,
   // Holds the first output surface passed from Start. Should not be used for
   // anything else.
   scoped_ptr<OutputSurface> first_output_surface_;
+
+  // Accessed on the main thread, or when main thread is blocked.
+  bool commit_waits_for_activation_;
+  bool inside_commit_;
 
   base::WeakPtrFactory<ThreadProxy> weak_factory_on_impl_thread_;
 

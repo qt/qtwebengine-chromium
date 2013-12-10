@@ -122,17 +122,27 @@ class AppsGridControllerTest : public AppsGridControllerTestHelper {
 
 class AppListItemWithMenu : public AppListItemModel {
  public:
-  AppListItemWithMenu(const std::string& title) : menu_model_(NULL) {
-    SetTitle(title);
+  AppListItemWithMenu(const std::string& title)
+      : menu_model_(NULL),
+        menu_ready_(true) {
+    SetTitleAndFullName(title, title);
     menu_model_.AddItem(0, UTF8ToUTF16("Menu For: " + title));
   }
 
+  void SetMenuReadyForTesting(bool ready) {
+    menu_ready_ = ready;
+  }
+
   virtual ui::MenuModel* GetContextMenuModel() OVERRIDE {
+    if (!menu_ready_)
+      return NULL;
+
     return &menu_model_;
   }
 
  private:
   ui::SimpleMenuModel menu_model_;
+  bool menu_ready_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListItemWithMenu);
 };
@@ -424,7 +434,7 @@ TEST_F(AppsGridControllerTest, ModelUpdates) {
 
   // Update the title via the ItemModelObserver.
   app_list::AppListItemModel* item_model = model()->apps()->GetItemAt(2);
-  item_model->SetTitle("UpdatedItem");
+  item_model->SetTitleAndFullName("UpdatedItem", "UpdatedItem");
   EXPECT_NSEQ(@"UpdatedItem", [button title]);
   EXPECT_EQ(std::string("|Item 0,Item 1,UpdatedItem|"), GetViewContent());
 
@@ -457,7 +467,7 @@ TEST_F(AppsGridControllerTest, ModelUpdates) {
   EXPECT_EQ(std::string("|Item 0,Item 2|"), GetViewContent());
 
   // Test inserting in the middle.
-  model()->apps()->AddAt(1, model()->CreateItem("Item One"));
+  model()->apps()->AddAt(1, model()->CreateItem("Item One", "Item One"));
   EXPECT_EQ(3u, [apps_grid_controller_ itemCount]);
   EXPECT_EQ(std::string("|Item 0,Item One,Item 2|"), GetViewContent());
 
@@ -891,8 +901,9 @@ TEST_F(AppsGridControllerTest, ScrollingWhileDragging) {
 }
 
 TEST_F(AppsGridControllerTest, ContextMenus) {
+  AppListItemWithMenu* item_two_model = new AppListItemWithMenu("Item Two");
   model()->apps()->AddAt(0, new AppListItemWithMenu("Item One"));
-  model()->apps()->AddAt(1, new AppListItemWithMenu("Item Two"));
+  model()->apps()->AddAt(1, item_two_model);
   EXPECT_EQ(2u, [apps_grid_controller_ itemCount]);
 
   NSCollectionView* page = [apps_grid_controller_ collectionViewAtPageIndex:0];
@@ -903,54 +914,15 @@ TEST_F(AppsGridControllerTest, ContextMenus) {
   EXPECT_EQ(1, [menu numberOfItems]);
   EXPECT_NSEQ(@"Menu For: Item One", [[menu itemAtIndex:0] title]);
 
+  // Test a context menu request while the item is still installing.
+  item_two_model->SetMenuReadyForTesting(false);
+  menu = [page menuForEvent:mouse_at_cell_1];
+  EXPECT_EQ(nil, menu);
+
+  item_two_model->SetMenuReadyForTesting(true);
   menu = [page menuForEvent:mouse_at_cell_1];
   EXPECT_EQ(1, [menu numberOfItems]);
   EXPECT_NSEQ(@"Menu For: Item Two", [[menu itemAtIndex:0] title]);
-}
-
-TEST_F(AppsGridControllerTest, HighlightedOnFirstShow) {
-  scoped_ptr<AppListTestModel> test_model(new AppListTestModel);
-  test_model->PopulateApps(kItemsPerPage * 3);
-
-  // Manipulate the second item on the second page.
-  const size_t kTestItemIndex = kItemsPerPage + 1;
-
-  // When shown for the first time during an in-progress install, item should be
-  // visible, but not selected.
-  AppListItemModel* test_item = test_model->apps()->GetItemAt(kTestItemIndex);
-  test_item->SetHighlighted(true);
-  test_item->SetIsInstalling(true);
-  EXPECT_EQ(0u, [apps_grid_controller_ visiblePage]);
-  ResetModel(test_model.PassAs<AppListModel>());
-  EXPECT_EQ(3u, [apps_grid_controller_ pageCount]);
-  EXPECT_EQ(1u, [apps_grid_controller_ visiblePage]);
-  EXPECT_EQ(NSNotFound, [apps_grid_controller_ selectedItemIndex]);
-
-  // Updating download progress should add a progress bar lazily.
-  NSView* containerView = [GetItemViewAt(kTestItemIndex) superview];
-  EXPECT_EQ(1u, [[containerView subviews] count]);
-  test_item->SetPercentDownloaded(50);
-  EXPECT_EQ(2u, [[containerView subviews] count]);
-
-  // Completing install should remove the progress bar, and select the item.
-  test_item->SetIsInstalling(false);
-  EXPECT_EQ(1u, [[containerView subviews] count]);
-  EXPECT_EQ(kTestItemIndex, [apps_grid_controller_ selectedItemIndex]);
-
-  // Reset to unconstructed state.
-  ResetModel(scoped_ptr<AppListModel>());
-  EXPECT_EQ(0u, [apps_grid_controller_ visiblePage]);
-  EXPECT_EQ(1u, [apps_grid_controller_ pageCount]);
-  EXPECT_EQ(NSNotFound, [apps_grid_controller_ selectedItemIndex]);
-
-  // If shown after install completes, item should also be selected.
-  test_model.reset(new AppListTestModel);
-  test_model->PopulateApps(kItemsPerPage * 3);
-  test_model->apps()->GetItemAt(kTestItemIndex)->SetHighlighted(true);
-  ResetModel(test_model.PassAs<AppListModel>());
-  EXPECT_EQ(3u, [apps_grid_controller_ pageCount]);
-  EXPECT_EQ(1u, [apps_grid_controller_ visiblePage]);
-  EXPECT_EQ(kTestItemIndex, [apps_grid_controller_ selectedItemIndex]);
 }
 
 }  // namespace test

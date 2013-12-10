@@ -1,0 +1,88 @@
+# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Instantiate grit. This will produce a script target to run grit, and a
+# static library that compiles the .cc files.
+#
+# Example:
+#   grit("my_resources") {
+#     source = "myfile.grd"  # source is required.
+#     grit_flags = [ "-E", "foo=bar" ]  # Optional extra flags.
+#     # You can also put deps here if the grit source depends on generated
+#     # files.
+#   }
+template("grit") {
+  assert(defined(source),
+         "\"source\" must be defined for the grit template $target_name")
+  assert(!defined(sources) && !defined(outputs),
+         "Neither \"sources\" nor \"outputs\" can be defined for the grit " +
+         "template $target_name")
+
+  grit_info_script = "//tools/grit/grit_info.py"
+
+  # These are all passed as arguments to the script so have to be relative to
+  # the build directory.
+  resource_ids =
+    rebase_path("//tools/gritsettings/resource_ids", ".", root_build_dir)
+  output_dir = rebase_path(target_gen_dir, ".", root_build_dir)
+  source_path = rebase_path(source, ".", root_build_dir)
+
+  if (!defined(grit_flags)) {
+    grit_flags = []  # These are optional so default to empty list.
+  }
+
+  grit_inputs_build_rel = exec_script(grit_info_script,
+    [ "--inputs", source_path, "-f", resource_ids] + grit_flags, "list lines")
+  # The inputs are relative to the current (build) directory, rebase to
+  # the current one.
+  grit_inputs = rebase_path(grit_inputs_build_rel, root_build_dir, ".")
+
+  grit_outputs_build_rel = exec_script(grit_info_script,
+    [ "--outputs", "$output_dir", source_path, "-f", resource_ids ] +
+    grit_flags,
+    "list lines")
+  # The inputs are relative to the current (build) directory, rebase to
+  # the current one.
+  grit_outputs = rebase_path(grit_outputs_build_rel, root_build_dir, ".")
+
+  # The current grit setup makes an file in $target_gen_dir/grit/foo.h that
+  # the source code expects to include via "grit/foo.h". It would be nice to
+  # change this to including absolute paths relative to the root gen directory
+  # (like "mycomponent/foo.h"). This config sets up the include path.
+  grit_config = target_name + "_grit_config"
+  config(grit_config) {
+    includes = [ target_gen_dir ]
+  }
+
+  grit_custom_target = target_name + "_grit"
+  custom(grit_custom_target) {
+    script = "//tools/grit/grit.py"
+    source_prereqs = grit_inputs
+    outputs = grit_outputs
+
+    # TODO(brettw) grit_defines.
+    args = [
+      "-i", source_path, "build",
+      "-f", resource_ids,
+      "-o", output_dir,
+    ] + grit_flags
+
+    # Inherit deps from template invocation if any.
+  }
+
+  # This is the thing that people actually link with, it must be named the
+  # same as the argument the template was invoked with.
+  static_library(target_name) {
+    # Since we generate a file, we need to be run before the targets that
+    # depend on us.
+    hard_dep = true
+    sources = grit_outputs
+
+    # Deps set on the template invocation will go on the grit script running
+    # target rather than this library.
+    deps = []
+    deps = [ ":$grit_custom_target" ]
+    direct_dependent_configs = [ ":$grit_config" ]
+  }
+}

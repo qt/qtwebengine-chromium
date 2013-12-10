@@ -44,6 +44,15 @@ const char kAshDefaultGuestWallpaperSmall[] =
 const char kAshDefaultWallpaperLarge[] = "ash-default-wallpaper-large";
 const char kAshDefaultWallpaperSmall[] = "ash-default-wallpaper-small";
 
+// Use the normal visual style for the caption buttons (minimize, maximize,
+// restore, close).
+const char kAshDisableAlternateFrameCaptionButtonStyle[] =
+    "ash-disable-alternate-caption-button";
+
+// Disable the alternate shelf layout.
+const char kAshDisableAlternateShelfLayout[] =
+    "ash-disable-alternate-shelf-layout";
+
 #if defined(OS_CHROMEOS)
 // Disable the status tray volume menu for allowing the user to choose an audio
 // input and output device.
@@ -54,10 +63,6 @@ const char kAshDisableAudioDeviceMenu[] =
 // Disable auto window maximization logic.
 const char kAshDisableAutoMaximizing[] = "ash-disable-auto-maximizing";
 
-// Disable support for auto window placement.
-const char kAshDisableAutoWindowPlacement[] =
-    "ash-enable-auto-window-placement";
-
 // Disables the limitter to throttle how quickly a user
 // can change display settings.
 const char kAshDisableDisplayChangeLimiter[] =
@@ -66,18 +71,9 @@ const char kAshDisableDisplayChangeLimiter[] =
 // If present new lock animations are enabled.
 const char kAshDisableNewLockAnimations[] = "ash-disable-new-lock-animations";
 
-// Disable the per application grouping version of the launcher.
-const char kAshDisablePerAppLauncher[] = "ash-disable-per-app-launcher";
-
-// Disables display rotation.
-const char kAshDisableDisplayRotation[] = "ash-disable-display-rotation";
-
 // Disable immersive fullscreen mode, regardless of default setting.
 const char kAshDisableImmersiveFullscreen[] =
     "ash-disable-immersive-fullscreen";
-
-// Disables ui scaling.
-const char kAshDisableUIScaling[] = "ash-disable-ui-scaling";
 
 #if defined(OS_CHROMEOS)
 // Disable compositor based mirroring.
@@ -96,12 +92,24 @@ const char kAshEnableAudioDeviceMenu[] = "ash-enable-audio-device-menu";
 // Enable advanced gestures (e.g. for window management).
 const char kAshEnableAdvancedGestures[] = "ash-enable-advanced-gestures";
 
+// Use alternate visual style for the caption buttons (minimize, maximize,
+// restore, close). The alternate style:
+// - Adds a dedicated button for minimize.
+// - Increases the height of the maximized header.
+// - Removes the maximize button's help bubble.
+// - Switches snapping a window left/right to be always 50%.
+const char kAshEnableAlternateFrameCaptionButtonStyle[] =
+    "ash-enable-alternate-caption-button";
+
 // Always enable brightness control. Used by machines that don't report their
 // main monitor as internal.
 const char kAshEnableBrightnessControl[] = "ash-enable-brightness-control";
 
 // Enable the dock area on a desktop.
 const char kAshEnableDockedWindows[] = "ash-enable-docked-windows";
+
+// Disable dragging items off the shelf to unpin them.
+const char kAshDisableDragOffShelf[] = "ash-disable-drag-off-shelf";
 
 // Enable immersive fullscreen mode, regardless of default setting.
 const char kAshEnableImmersiveFullscreen[] = "ash-enable-immersive-fullscreen";
@@ -110,12 +118,18 @@ const char kAshEnableImmersiveFullscreen[] = "ash-enable-immersive-fullscreen";
 // Enable memory monitoring.
 const char kAshEnableMemoryMonitor[] = "ash-enable-memory-monitor";
 #endif
-
+#if defined(OS_CHROMEOS)
+// Enable the shelf menu for multi profile usage.
+const char kAshEnableMultiProfileShelfMenu[] = "ash-enable-multi-profile-shelf";
+#endif
 // Enables the Oak tree viewer.
 const char kAshEnableOak[] = "ash-enable-oak";
 
 // Enables overview mode for window switching.
 const char kAshEnableOverviewMode[] = "ash-enable-overview-mode";
+
+// Enables software based mirroring.
+const char kAshEnableSoftwareMirroring[] = "ash-enable-software-mirroring";
 
 // Enables "sticky" edges instead of "snap-to-edge"
 const char kAshEnableStickyEdges[] = "ash-enable-sticky-edges";
@@ -159,6 +173,10 @@ const char kAshTouchHud[] = "ash-touch-hud";
 // crbug's [244983, 244990, 244994, 245005, 245012]
 const char kAshUseAlternateShelfLayout[] = "ash-use-alternate-shelf";
 
+// Flags explicitly show or hide the shelf alignment menu.
+const char kShowShelfAlignmentMenu[] = "show-launcher-alignment-menu";
+const char kHideShelfAlignmentMenu[] = "hide-launcher-alignment-menu";
+
 // Uses the 1st display in --ash-host-window-bounds as internal display.
 // This is for debugging on linux desktop.
 const char kAshUseFirstDisplayAsInternal[] =
@@ -185,20 +203,45 @@ const char kAshDisableDragAndDropAppListToLauncher[] =
 // in maximized mode.
 const char kForcedMaximizeMode[] = "forced-maximize-mode";
 
-bool UseAlternateShelfLayout() {
+bool UseAlternateFrameCaptionButtonStyle() {
   return CommandLine::ForCurrentProcess()->
-        HasSwitch(ash::switches::kAshUseAlternateShelfLayout);
+      HasSwitch(kAshEnableAlternateFrameCaptionButtonStyle);
+}
+
+bool UseAlternateShelfLayout() {
+  return !CommandLine::ForCurrentProcess()->
+      HasSwitch(kAshDisableAlternateShelfLayout);
+}
+
+bool UseDragOffShelf() {
+  return !CommandLine::ForCurrentProcess()->
+      HasSwitch(kAshDisableDragOffShelf);
+}
+
+bool ShowShelfAlignmentMenu() {
+  return !CommandLine::ForCurrentProcess()->
+      HasSwitch(kHideShelfAlignmentMenu);
+}
+
+// Returns true if the MultiProfile shelf menu should be shown.
+bool ShowMultiProfileShelfMenu() {
+#if defined(OS_CHROMEOS)
+  return CommandLine::ForCurrentProcess()->
+      HasSwitch(kAshEnableMultiProfileShelfMenu);
+#else
+  return false;
+#endif
 }
 
 #if defined(OS_CHROMEOS)
 bool ShowAudioDeviceMenu() {
   return !CommandLine::ForCurrentProcess()->
-      HasSwitch(ash::switches::kAshDisableAudioDeviceMenu);
+      HasSwitch(kAshDisableAudioDeviceMenu);
 }
 
 bool UseUsbChargerNotification() {
   return !CommandLine::ForCurrentProcess()->
-        HasSwitch(ash::switches::kAshDisableUsbChargerNotification);
+      HasSwitch(kAshDisableUsbChargerNotification);
 }
 #endif
 

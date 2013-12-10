@@ -33,6 +33,8 @@
 
 #include "TestCommon.h"
 #include "public/platform/WebMIDIAccessor.h"
+#include "public/platform/WebNonCopyable.h"
+#include "public/testing/WebTask.h"
 
 namespace WebKit {
 class WebMIDIAccessorClient;
@@ -40,9 +42,11 @@ class WebMIDIAccessorClient;
 
 namespace WebTestRunner {
 
-class MockWebMIDIAccessor : public WebKit::WebMIDIAccessor {
+class TestInterfaces;
+
+class MockWebMIDIAccessor : public WebKit::WebMIDIAccessor, public WebKit::WebNonCopyable {
 public:
-    explicit MockWebMIDIAccessor(WebKit::WebMIDIAccessorClient*);
+    explicit MockWebMIDIAccessor(WebKit::WebMIDIAccessorClient*, TestInterfaces*);
     virtual ~MockWebMIDIAccessor();
 
     // WebKit::WebMIDIAccessor implementation.
@@ -53,8 +57,13 @@ public:
         size_t length,
         double timestamp) OVERRIDE { }
 
+    // WebTask related methods
+    WebTaskList* taskList() { return &m_taskList; }
+
 private:
     WebKit::WebMIDIAccessorClient* m_client;
+    WebTaskList m_taskList;
+    TestInterfaces* m_interfaces;
 };
 
 } // namespace WebTestRunner

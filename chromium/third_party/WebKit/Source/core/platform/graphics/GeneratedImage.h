@@ -34,7 +34,7 @@ namespace WebCore {
 
 class GeneratedImage : public Image {
 public:
-    virtual bool hasSingleSecurityOrigin() const OVERRIDE { return true; }
+    virtual bool currentFrameHasSingleSecurityOrigin() const OVERRIDE { return true; }
 
     virtual void setContainerSize(const IntSize& size) OVERRIDE { m_size = size; }
     virtual bool usesContainerSize() const OVERRIDE { return true; }
@@ -45,7 +45,7 @@ public:
     virtual IntSize size() const OVERRIDE { return m_size; }
 
     // Assume that generated content has no decoded data we need to worry about
-    virtual void destroyDecodedData() OVERRIDE { }
+    virtual void destroyDecodedData(bool) OVERRIDE { }
     virtual unsigned decodedSize() const OVERRIDE { return 0; }
 
 protected:

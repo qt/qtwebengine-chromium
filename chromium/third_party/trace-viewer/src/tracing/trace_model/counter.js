@@ -26,6 +26,7 @@ base.exportTo('tracing.trace_model', function() {
     this.name = name;
 
     this.series_ = [];
+    this.totals = [];
     this.bounds = new base.Range();
   }
 
@@ -72,7 +73,10 @@ base.exportTo('tracing.trace_model', function() {
     },
 
     addSeries: function(series) {
+      series.counter = this;
+      series.seriesIndex = this.series_.length;
       this.series_.push(series);
+      return series;
     },
 
     getSeries: function(idx) {
@@ -161,8 +165,12 @@ base.exportTo('tracing.trace_model', function() {
 
         this.maxTotal = Math.max(total, this.maxTotal);
       }
-    }
+    },
 
+    iterateAllEvents: function(callback) {
+      for (var i = 0; i < this.series_.length; i++)
+        this.series_[i].iterateAllEvents(callback);
+    }
   };
 
   /**

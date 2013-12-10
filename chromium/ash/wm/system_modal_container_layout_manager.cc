@@ -15,11 +15,11 @@
 #include "ui/aura/client/capture_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
-#include "ui/base/events/event.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animator.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/events/event.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/corewm/compound_event_filter.h"
 #include "ui/views/view.h"
@@ -155,8 +155,7 @@ void SystemModalContainerLayoutManager::CreateModalBackground() {
     modal_background_->GetNativeView()->SetName(
         "SystemModalContainerLayoutManager.ModalBackground");
     views::View* contents_view = new views::View();
-    // TODO(jamescook): This could also be SK_ColorWHITE if using the new
-    // dialog style via switches::IsNewDialogStyleEnabled().
+    // TODO(jamescook): This could be SK_ColorWHITE for the new dialog style.
     contents_view->set_background(
         views::Background::CreateSolidBackground(SK_ColorBLACK));
     modal_background_->SetContentsView(contents_view);

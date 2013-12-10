@@ -4,11 +4,20 @@
 
 #include "tools/gn/functions.h"
 
+#include "tools/gn/config_values_generator.h"
 #include "tools/gn/err.h"
 #include "tools/gn/parse_tree.h"
 #include "tools/gn/scope.h"
 #include "tools/gn/target_generator.h"
 #include "tools/gn/value.h"
+#include "tools/gn/variables.h"
+
+#define DEPENDENT_CONFIG_VARS \
+    "  Dependent configs: all_dependent_configs, direct_dependent_configs\n"
+#define DEPS_VARS \
+    "  Deps: data, datadeps, deps, forward_dependent_configs_from, hard_dep\n"
+#define GENERAL_TARGET_VARS \
+    "  General: configs, external, source_prereqs, sources\n"
 
 namespace functions {
 
@@ -45,7 +54,20 @@ Value ExecuteGenericTarget(const char* target_type,
 
 const char kComponent[] = "component";
 const char kComponent_Help[] =
-    "TODO(brettw) write this.";
+    "component: Declare a component target.\n"
+    "\n"
+    "  A component is either a shared library or a static library depending\n"
+    "  on the component mode. This allows a project to separate out a build\n"
+    "  into shared libraries for faster devlopment (link time is reduced)\n"
+    "  but to switch to a static build for releases (for better performance).\n"
+    "\n"
+    "  To use this function you must set the value of the \"component_mode\n"
+    "  variable to the string \"shared_library\" or \"static_library\". It is\n"
+    "  an error to call \"component\" without defining the mode (typically\n"
+    "  this is done in the master build configuration file).\n"
+    "\n"
+    "  See \"gn help shared_library\" and \"gn help static_library\" for\n"
+    "  more details.\n";
 
 Value RunComponent(Scope* scope,
                    const FunctionCallNode* function,
@@ -54,7 +76,8 @@ Value RunComponent(Scope* scope,
                    Err* err) {
   // A component is either a shared or static library, depending on the value
   // of |component_mode|.
-  const Value* component_mode_value = scope->GetValue("component_mode");
+  const Value* component_mode_value =
+      scope->GetValue(variables::kComponentMode);
 
   static const char helptext[] =
       "You're declaring a component here but have not defined "
@@ -91,7 +114,43 @@ Value RunComponent(Scope* scope,
 
 const char kCopy[] = "copy";
 const char kCopy_Help[] =
-    "TODO(brettw) write this.";
+    "copy: Declare a target that copies files.\n"
+    "\n"
+    "File name handling\n"
+    "\n"
+    "  All output files must be inside the output directory of the build.\n"
+    "  You would generally use |$target_out_dir| or |$target_gen_dir| to\n"
+    "  reference the output or generated intermediate file directories,\n"
+    "  respectively.\n"
+    "\n"
+    "  Both \"sources\" and \"outputs\" must be specified. Sources can\n"
+    "  as many files as you want, but there can only be one item in the\n"
+    "  outputs list (plural is used for the name for consistency with\n"
+    "  other target types).\n"
+    "\n"
+    "  If there is more than one source file, your output name should specify\n"
+    "  a mapping from each source files to output file names using source\n"
+    "  expansion (see \"gn help source_expansion\"). The placeholders will\n"
+    "  will look like \"{{source_name_part}}\", for example.\n"
+    "\n"
+    "Examples\n"
+    "\n"
+    "  # Write a rule that copies a checked-in DLL to the output directory.\n"
+    "  copy(\"mydll\") {\n"
+    "    sources = [ \"mydll.dll\" ]\n"
+    "    outputs = [ \"$target_out_dir/mydll.dll\" ]\n"
+    "  }\n"
+    "\n"
+    "  # Write a rule to copy several files to the target generated files\n"
+    "  # directory.\n"
+    "  copy(\"myfiles\") {\n"
+    "    sources = [ \"data1.dat\", \"data2.dat\", \"data3.dat\" ]\n"
+    "\n"
+    "    # Use source expansion to generate output files with the\n"
+    "    # corresponding file names in the gen dir. This will just copy each\n"
+    "    # file.\n"
+    "    outputs = [ \"$target_gen_dir/{{source_file_part}}\" ]\n"
+    "  }\n";
 
 Value RunCopy(const FunctionCallNode* function,
               const std::vector<Value>& args,
@@ -115,7 +174,11 @@ const char kCustom_Help[] =
     "  files and generate a set of output files.\n"
     "\n"
     "  The script will be executed with the given arguments with the current\n"
-    "  directory being that of the current BUILD file.\n"
+    "  directory being that of the root build directory. If you pass\n"
+    "  to your script, see \"gn help to_build_path\" for how to convert\n"
+    "  file names to be relative to the build directory (file names in the\n"
+    "  sources, outputs, and source_prereqs will be all treated as relative\n"
+    "  to the current build file and converted as needed automatically).\n"
     "\n"
     "  There are two modes. The first mode is the \"per-file\" mode where you\n"
     "  specify a list of sources and the script is run once for each one as a\n"
@@ -123,56 +186,58 @@ const char kCustom_Help[] =
     "  variable must be unique when applied to each source file (normally you\n"
     "  would reference |{{source_name_part}}| from within each one) or the\n"
     "  build system will get confused about how to build those files. You\n"
-    "  should use the |data| variable to list all additional dependencies of\n"
-    "  your script: these will be added as dependencies for each build step.\n"
+    "  should use the |source_prereqs| variable to list all additional\n"
+    "  dependencies of your script: these will be added as dependencies for\n"
+    "  each build step.\n"
     "\n"
     "  The second mode is when you just want to run a script once rather than\n"
     "  as a general rule over a set of files. In this case you don't list any\n"
-    "  sources. Dependencies of your script are specified only in the |data|\n"
-    "  variable and your |outputs| variable should just list all outputs.\n"
+    "  sources. Dependencies of your script are specified only in the\n"
+    "  |source_prereqs| variable and your |outputs| variable should just list\n"
+    "  all outputs.\n"
     "\n"
-    "Variables:\n"
+    "File name handling\n"
     "\n"
-    "  args, data, deps, outputs, script*, sources\n"
-    "  * = required\n"
-    "\n"
-    "  There are some special substrings that will be searched for when\n"
-    "  processing some variables:\n"
-    "\n"
-    "    {{source}}\n"
-    "        Expanded in |args|, this is the name of the source file relative\n"
-    "        to the current directory when running the script. This is how\n"
-    "        you specify the current input file to your script.\n"
-    "\n"
-    "    {{source_name_part}}\n"
-    "        Expanded in |args| and |outputs|, this is just the filename part\n"
-    "        of the current source file with no directory or extension. This\n"
-    "        is how you specify a name transformation to the output. Normally\n"
-    "        you would write an output as\n"
-    "        \"$target_output_dir/{{source_name_part}}.o\".\n"
-    "\n"
-    "  All |outputs| files must be inside the output directory of the build.\n"
-    "  You would generally use |$target_output_dir| or |$target_gen_dir| to\n"
+    "  All output files must be inside the output directory of the build.\n"
+    "  You would generally use |$target_out_dir| or |$target_gen_dir| to\n"
     "  reference the output or generated intermediate file directories,\n"
     "  respectively.\n"
     "\n"
-    "Examples:\n"
+    "  You can specify a mapping from source files to output files using\n"
+    "  source expansion (see \"gn help source_expansion\"). The placeholders\n"
+    "  will look like \"{{source}}\", for example, and can appear in\n"
+    "  either the outputs or the args lists.\n"
     "\n"
+    "Variables\n"
+    "\n"
+    "  args, deps, outputs, script*, source_prereqs, sources\n"
+    "  * = required\n"
+    "\n"
+    "Examples\n"
+    "\n"
+    "  # Runs the script over each IDL file. The IDL script will generate\n"
+    "  # both a .cc and a .h file for each input.\n"
     "  custom(\"general_rule\") {\n"
-    "    script = \"do_processing.py\"\n"
-    "    sources = [ \"foo.idl\" ]\n"
-    "    data = [ \"my_configuration.txt\" ]\n"
-    "    outputs = [ \"$target_gen_dir/{{source_name_part}}.h\" ]\n"
+    "    script = \"idl_processor.py\"\n"
+    "    sources = [ \"foo.idl\", \"bar.idl\" ]\n"
+    "    source_prereqs = [ \"my_configuration.txt\" ]\n"
+    "    outputs = [ \"$target_gen_dir/{{source_name_part}}.h\",\n"
+    "                \"$target_gen_dir/{{source_name_part}}.cc\" ]\n"
+    "\n"
+    "    # Note that since \"args\" is opaque to GN, if you specify paths\n"
+    "    # here, you will need to convert it to be relative to the build\n"
+    "    # directory using \"to_build_path()\".\n"
     "    args = [ \"{{source}}\",\n"
     "             \"-o\",\n"
-    "             \"$relative_target_gen_dir/{{source_name_part}}.h\" ]\n"
+    "             to_build_path(relative_target_gen_dir) + \"/\" +\n"
+    "                 {{source_name_part}}.h\" ]\n"
     "  }\n"
     "\n"
     "  custom(\"just_run_this_guy_once\") {\n"
     "    script = \"doprocessing.py\"\n"
-    "    data = [ \"my_configuration.txt\" ]\n"
+    "    source_prereqs = [ \"my_configuration.txt\" ]\n"
     "    outputs = [ \"$target_gen_dir/insightful_output.txt\" ]\n"
-    "    args = [ \"--output_dir\", $target_gen_dir ]\n"
+    "    args = [ \"--output_dir\", to_build_path(target_gen_dir) ]\n"
     "  }\n";
 
 Value RunCustom(Scope* scope,
@@ -188,7 +253,14 @@ Value RunCustom(Scope* scope,
 
 const char kExecutable[] = "executable";
 const char kExecutable_Help[] =
-    "TODO(brettw) write this.";
+    "executable: Declare an executable target.\n"
+    "\n"
+    "Variables\n"
+    "\n"
+    CONFIG_VALUES_VARS_HELP
+    DEPS_VARS
+    DEPENDENT_CONFIG_VARS
+    GENERAL_TARGET_VARS;
 
 Value RunExecutable(Scope* scope,
                     const FunctionCallNode* function,
@@ -206,19 +278,28 @@ const char kGroup_Help[] =
     "group: Declare a named group of targets.\n"
     "\n"
     "  This target type allows you to create meta-targets that just collect a\n"
-    "  set of dependencies into one named target.\n"
+    "  set of dependencies into one named target. Groups can additionally\n"
+    "  specify configs that apply to their dependents.\n"
     "\n"
-    "Variables:\n"
+    "  Depending on a group is exactly like depending directly on that\n"
+    "  group's deps. Direct dependent configs will get automatically fowarded\n"
+    "  through the group so you shouldn't need to use\n"
+    "  \"forward_dependent_configs_from.\n"
     "\n"
-    "  deps\n"
+    "Variables\n"
     "\n"
-    "Example:\n"
+    DEPS_VARS
+    DEPENDENT_CONFIG_VARS
+    "  Other variables: external\n"
+    "\n"
+    "Example\n"
+    "\n"
     "  group(\"all\") {\n"
     "    deps = [\n"
     "      \"//project:runner\",\n"
     "      \"//project:unit_tests\",\n"
-    "      ]\n"
-    "    }";
+    "    ]\n"
+    "  }\n";
 
 Value RunGroup(Scope* scope,
                const FunctionCallNode* function,
@@ -233,7 +314,19 @@ Value RunGroup(Scope* scope,
 
 const char kSharedLibrary[] = "shared_library";
 const char kSharedLibrary_Help[] =
-    "TODO(brettw) write this.";
+    "shared_library: Declare a shared library target.\n"
+    "\n"
+    "  A shared library will be specified on the linker line for targets\n"
+    "  listing the shared library in its \"deps\". If you don't want this\n"
+    "  (say you dynamically load the library at runtime), then you should\n"
+    "  depend on the shared library via \"datadeps\" instead.\n"
+    "\n"
+    "Variables\n"
+    "\n"
+    CONFIG_VALUES_VARS_HELP
+    DEPS_VARS
+    DEPENDENT_CONFIG_VARS
+    GENERAL_TARGET_VARS;
 
 Value RunSharedLibrary(Scope* scope,
                        const FunctionCallNode* function,
@@ -248,7 +341,14 @@ Value RunSharedLibrary(Scope* scope,
 
 const char kStaticLibrary[] = "static_library";
 const char kStaticLibrary_Help[] =
-    "TODO(brettw) write this.";
+    "static_library: Declare a static library target.\n"
+    "\n"
+    "Variables\n"
+    "\n"
+    CONFIG_VALUES_VARS_HELP
+    DEPS_VARS
+    DEPENDENT_CONFIG_VARS
+    GENERAL_TARGET_VARS;
 
 Value RunStaticLibrary(Scope* scope,
                        const FunctionCallNode* function,
@@ -263,7 +363,14 @@ Value RunStaticLibrary(Scope* scope,
 
 const char kTest[] = "test";
 const char kTest_Help[] =
-    "TODO(brettw) write this.";
+    "test: Declares a test target.\n"
+    "\n"
+    "  This is like an executable target, but is named differently to make\n"
+    "  the purpose of the target more obvious. It's possible in the future\n"
+    "  we can do some enhancements like \"list all of the tests in a given\n"
+    "  directory\".\n"
+    "\n"
+    "  See \"gn help executable\" for usage.\n";
 
 Value RunTest(Scope* scope,
               const FunctionCallNode* function,

@@ -35,14 +35,17 @@
     [Replaceable] readonly attribute WorkerLocation location;
     void close();
     attribute EventHandler onerror;
+    [Replaceable] readonly attribute WorkerConsole console;
+
 
     // WorkerUtils
-    [Custom] void importScripts(/*[Variadic] in DOMString urls */);
+    [RaisesException] void importScripts(DOMString... urls);
     [Replaceable] readonly attribute WorkerNavigator navigator;
 
     // Additional constructors
     attribute URLConstructor webkitURL; // FIXME: deprecate this.
 };
 
+WorkerGlobalScope implements ImageBitmapFactories;
 WorkerGlobalScope implements WindowBase64;
 WorkerGlobalScope implements WindowTimers;

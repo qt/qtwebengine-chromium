@@ -98,7 +98,8 @@ class MockExecutive(object):
                     return_exit_code=False,
                     return_stderr=True,
                     decode_output=False,
-                    env=None):
+                    env=None,
+                    debug_logging=False):
 
         self.calls.append(args)
 
@@ -147,6 +148,8 @@ class MockExecutive(object):
         _log.info('Mock call: %s' % args)
 
     def run_in_parallel(self, commands):
+        assert len(commands)
+
         num_previous_calls = len(self.calls)
         command_outputs = []
         for cmd_line, cwd in commands:
@@ -177,7 +180,8 @@ class MockExecutive2(MockExecutive):
                     return_exit_code=False,
                     return_stderr=True,
                     decode_output=False,
-                    env=None):
+                    env=None,
+                    debug_logging=False):
         self.calls.append(args)
         assert(isinstance(args, list) or isinstance(args, tuple))
         if self._exception:

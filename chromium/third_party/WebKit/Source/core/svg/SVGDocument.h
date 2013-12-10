@@ -26,8 +26,6 @@
 
 namespace WebCore {
 
-class DOMImplementation;
-class SVGElement;
 class SVGSVGElement;
 
 class SVGDocument FINAL : public Document {
@@ -47,12 +45,10 @@ public:
     void startPan(const FloatPoint& start);
     void updatePan(const FloatPoint& pos) const;
 
-    virtual PassRefPtr<Document> cloneDocumentWithoutChildren() OVERRIDE FINAL;
-
 private:
-    SVGDocument(const DocumentInit&);
+    explicit SVGDocument(const DocumentInit&);
 
-    virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const;
+    virtual bool childShouldCreateRenderer(const Node& child) const;
 
     FloatPoint m_translate;
 };

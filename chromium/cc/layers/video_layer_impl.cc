@@ -13,6 +13,7 @@
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/quads/yuv_video_draw_quad.h"
 #include "cc/resources/resource_provider.h"
+#include "cc/resources/single_release_callback.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/proxy.h"
 #include "media/base/video_frame.h"
@@ -93,8 +94,11 @@ bool VideoLayerImpl::WillDraw(DrawMode draw_mode,
   if (!LayerImpl::WillDraw(draw_mode, resource_provider))
     return false;
 
-  if (!updater_)
-    updater_.reset(new VideoResourceUpdater(resource_provider));
+  if (!updater_) {
+    updater_.reset(
+        new VideoResourceUpdater(layer_tree_impl()->context_provider(),
+                                 layer_tree_impl()->resource_provider()));
+  }
 
   VideoFrameExternalResources external_resources =
       updater_->CreateExternalResourcesFromVideoFrame(frame_);
@@ -108,10 +112,13 @@ bool VideoLayerImpl::WillDraw(DrawMode draw_mode,
     return true;
   }
 
+  DCHECK_EQ(external_resources.mailboxes.size(),
+            external_resources.release_callbacks.size());
   for (size_t i = 0; i < external_resources.mailboxes.size(); ++i) {
-    frame_resources_.push_back(
-        resource_provider->CreateResourceFromTextureMailbox(
-            external_resources.mailboxes[i]));
+    unsigned resource_id = resource_provider->CreateResourceFromTextureMailbox(
+        external_resources.mailboxes[i],
+        SingleReleaseCallback::Create(external_resources.release_callbacks[i]));
+    frame_resources_.push_back(resource_id);
   }
 
   return true;

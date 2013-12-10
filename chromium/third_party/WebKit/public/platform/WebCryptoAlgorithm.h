@@ -44,6 +44,7 @@ enum WebCryptoAlgorithmId {
     WebCryptoAlgorithmIdAesCbc,
     WebCryptoAlgorithmIdHmac,
     WebCryptoAlgorithmIdRsaSsaPkcs1v1_5,
+    WebCryptoAlgorithmIdRsaEsPkcs1v1_5,
     WebCryptoAlgorithmIdSha1,
     WebCryptoAlgorithmIdSha224,
     WebCryptoAlgorithmIdSha256,
@@ -59,6 +60,7 @@ enum WebCryptoAlgorithmParamsType {
     WebCryptoAlgorithmParamsTypeAesCbcParams,
     WebCryptoAlgorithmParamsTypeAesKeyGenParams,
     WebCryptoAlgorithmParamsTypeHmacParams,
+    WebCryptoAlgorithmParamsTypeHmacKeyParams,
     WebCryptoAlgorithmParamsTypeRsaSsaParams,
     WebCryptoAlgorithmParamsTypeRsaKeyGenParams,
 };
@@ -66,6 +68,7 @@ enum WebCryptoAlgorithmParamsType {
 class WebCryptoAesCbcParams;
 class WebCryptoAesKeyGenParams;
 class WebCryptoHmacParams;
+class WebCryptoHmacKeyParams;
 class WebCryptoRsaSsaParams;
 class WebCryptoRsaKeyGenParams;
 
@@ -80,10 +83,10 @@ class WebCryptoAlgorithm {
 public:
 #if WEBKIT_IMPLEMENTATION
     WebCryptoAlgorithm() { }
-    WebCryptoAlgorithm(WebCryptoAlgorithmId, const char* name, PassOwnPtr<WebCryptoAlgorithmParams>);
+    WebCryptoAlgorithm(WebCryptoAlgorithmId, PassOwnPtr<WebCryptoAlgorithmParams>);
 #endif
 
-    WEBKIT_EXPORT static WebCryptoAlgorithm adoptParamsAndCreate(WebCryptoAlgorithmId, const char* name, WebCryptoAlgorithmParams*);
+    WEBKIT_EXPORT static WebCryptoAlgorithm adoptParamsAndCreate(WebCryptoAlgorithmId, WebCryptoAlgorithmParams*);
 
     ~WebCryptoAlgorithm() { reset(); }
 
@@ -95,17 +98,17 @@ public:
     }
 
     WEBKIT_EXPORT WebCryptoAlgorithmId id() const;
-    WEBKIT_EXPORT const char* name() const;
 
     WEBKIT_EXPORT WebCryptoAlgorithmParamsType paramsType() const;
 
     // Retrieves the type-specific parameters. The algorithm contains at most 1
     // type of parameters. Retrieving an invalid parameter will return 0.
-    WEBKIT_EXPORT WebCryptoAesCbcParams* aesCbcParams() const;
-    WEBKIT_EXPORT WebCryptoAesKeyGenParams* aesKeyGenParams() const;
-    WEBKIT_EXPORT WebCryptoHmacParams* hmacParams() const;
-    WEBKIT_EXPORT WebCryptoRsaSsaParams* rsaSsaParams() const;
-    WEBKIT_EXPORT WebCryptoRsaKeyGenParams* rsaKeyGenParams() const;
+    WEBKIT_EXPORT const WebCryptoAesCbcParams* aesCbcParams() const;
+    WEBKIT_EXPORT const WebCryptoAesKeyGenParams* aesKeyGenParams() const;
+    WEBKIT_EXPORT const WebCryptoHmacParams* hmacParams() const;
+    WEBKIT_EXPORT const WebCryptoHmacKeyParams* hmacKeyParams() const;
+    WEBKIT_EXPORT const WebCryptoRsaSsaParams* rsaSsaParams() const;
+    WEBKIT_EXPORT const WebCryptoRsaKeyGenParams* rsaKeyGenParams() const;
 
 private:
     WEBKIT_EXPORT void assign(const WebCryptoAlgorithm& other);

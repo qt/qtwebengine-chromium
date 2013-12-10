@@ -60,15 +60,18 @@ void FixRateSender::OnIncomingLoss(QuicTime /*ack_receive_time*/) {
   // Ignore losses for fix rate sender.
 }
 
-void FixRateSender::SentPacket(QuicTime sent_time,
-                               QuicPacketSequenceNumber /*sequence_number*/,
-                               QuicByteCount bytes,
-                               Retransmission is_retransmission) {
+bool FixRateSender::SentPacket(
+    QuicTime sent_time,
+    QuicPacketSequenceNumber /*sequence_number*/,
+    QuicByteCount bytes,
+    Retransmission is_retransmission,
+    HasRetransmittableData /*has_retransmittable_data*/) {
   fix_rate_leaky_bucket_.Add(sent_time, bytes);
   paced_sender_.SentPacket(sent_time, bytes);
   if (is_retransmission == NOT_RETRANSMISSION) {
     data_in_flight_ += bytes;
   }
+  return true;
 }
 
 void FixRateSender::AbandoningPacket(
@@ -80,7 +83,7 @@ QuicTime::Delta FixRateSender::TimeUntilSend(
     QuicTime now,
     Retransmission /*is_retransmission*/,
     HasRetransmittableData /*has_retransmittable_data*/,
-    IsHandshake /* handshake */) {
+    IsHandshake /*handshake*/) {
   if (CongestionWindow() > fix_rate_leaky_bucket_.BytesPending(now)) {
     if (CongestionWindow() <= data_in_flight_) {
       // We need an ack before we send more.

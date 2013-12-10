@@ -5,6 +5,7 @@
 #include "ui/message_center/notification.h"
 
 #include "base/logging.h"
+#include "ui/message_center/notification_delegate.h"
 #include "ui/message_center/notification_types.h"
 
 namespace {
@@ -27,17 +28,21 @@ RichNotificationData::RichNotificationData()
     : priority(DEFAULT_PRIORITY),
       never_timeout(false),
       timestamp(base::Time::Now()),
-      progress(0) {}
+      progress(0),
+      should_make_spoken_feedback_for_popup_updates(true) {}
 
 RichNotificationData::RichNotificationData(const RichNotificationData& other)
     : priority(other.priority),
       never_timeout(other.never_timeout),
       timestamp(other.timestamp),
       expanded_message(other.expanded_message),
+      context_message(other.context_message),
       image(other.image),
       items(other.items),
       progress(other.progress),
-      buttons(other.buttons) {}
+      buttons(other.buttons),
+      should_make_spoken_feedback_for_popup_updates(
+          other.should_make_spoken_feedback_for_popup_updates) {}
 
 RichNotificationData::~RichNotificationData() {}
 
@@ -47,7 +52,7 @@ Notification::Notification(NotificationType type,
                            const string16& message,
                            const gfx::Image& icon,
                            const string16& display_source,
-                           const std::string& extension_id,
+                           const NotifierId& notifier_id,
                            const RichNotificationData& optional_fields,
                            NotificationDelegate* delegate)
     : type_(type),
@@ -56,7 +61,7 @@ Notification::Notification(NotificationType type,
       message_(message),
       icon_(icon),
       display_source_(display_source),
-      extension_id_(extension_id),
+      notifier_id_(notifier_id),
       serial_number_(g_next_serial_number_++),
       optional_fields_(optional_fields),
       shown_as_popup_(false),
@@ -71,7 +76,7 @@ Notification::Notification(const Notification& other)
       message_(other.message_),
       icon_(other.icon_),
       display_source_(other.display_source_),
-      extension_id_(other.extension_id_),
+      notifier_id_(other.notifier_id_),
       serial_number_(other.serial_number_),
       optional_fields_(other.optional_fields_),
       shown_as_popup_(other.shown_as_popup_),
@@ -86,7 +91,7 @@ Notification& Notification::operator=(const Notification& other) {
   message_ = other.message_;
   icon_ = other.icon_;
   display_source_ = other.display_source_;
-  extension_id_ = other.extension_id_;
+  notifier_id_ = other.notifier_id_;
   serial_number_ = other.serial_number_;
   optional_fields_ = other.optional_fields_;
   shown_as_popup_ = other.shown_as_popup_;
@@ -117,6 +122,29 @@ void Notification::SetButtonIcon(size_t index, const gfx::Image& icon) {
 void Notification::SetSystemPriority() {
   optional_fields_.priority = SYSTEM_PRIORITY;
   optional_fields_.never_timeout = true;
+}
+
+// static
+scoped_ptr<Notification> Notification::CreateSystemNotification(
+    const std::string& notification_id,
+    const base::string16& title,
+    const base::string16& message,
+    const gfx::Image& icon,
+    int system_component_id,
+    const base::Closure& click_callback) {
+  scoped_ptr<Notification> notification(
+      new Notification(
+          NOTIFICATION_TYPE_SIMPLE,
+          notification_id,
+          title,
+          message,
+          icon,
+          base::string16()  /* display_source */,
+          NotifierId(system_component_id),
+          RichNotificationData(),
+          new HandleNotificationClickedDelegate(click_callback)));
+  notification->SetSystemPriority();
+  return notification.Pass();
 }
 
 }  // namespace message_center

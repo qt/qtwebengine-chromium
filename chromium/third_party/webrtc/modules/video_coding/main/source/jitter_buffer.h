@@ -175,10 +175,9 @@ class VCMJitterBuffer {
   // Returns a list of the sequence numbers currently missing.
   uint16_t* GetNackList(uint16_t* nack_list_size, bool* request_key_frame);
 
-  // Enable/disable decoding with errors.
-  // TODO(agalusza): Add logic for handling kSelectiveErrors.
-  void DecodeErrorMode(VCMDecodeErrorMode error_mode)
-    {decode_error_mode_ = error_mode;}
+  // Set decode error mode - Should not be changed in the middle of the
+  // session. Changes will not influence frames already in the buffer.
+  void SetDecodeErrorMode(VCMDecodeErrorMode error_mode);
   int64_t LastDecodedTimestamp() const;
   VCMDecodeErrorMode decode_error_mode() const {return decode_error_mode_;}
 
@@ -245,6 +244,8 @@ class VCMJitterBuffer {
   bool RecycleFramesUntilKeyFrame();
 
   // Updates the frame statistics.
+  // Counts only complete frames, so decodable incomplete frames will not be
+  // counted.
   void CountFrame(const VCMFrameBuffer& frame);
 
   // Update rolling average of packets per frame.
@@ -296,7 +297,6 @@ class VCMJitterBuffer {
   bool first_packet_since_reset_;
 
   // Statistics.
-  int num_not_decodable_packets_;
   // Frame counter for each type (key, delta, golden, key-delta).
   unsigned int receive_statistics_[4];
   // Latest calculated frame rates of incoming stream.

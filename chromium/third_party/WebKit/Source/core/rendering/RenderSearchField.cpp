@@ -24,6 +24,7 @@
 #include "config.h"
 #include "core/rendering/RenderSearchField.h"
 
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
 
@@ -47,12 +48,12 @@ RenderSearchField::~RenderSearchField()
 
 inline Element* RenderSearchField::searchDecorationElement() const
 {
-    return inputElement()->uaShadowElementById(ShadowElementNames::searchDecoration());
+    return inputElement()->userAgentShadowRoot()->getElementById(ShadowElementNames::searchDecoration());
 }
 
 inline Element* RenderSearchField::cancelButtonElement() const
 {
-    return inputElement()->uaShadowElementById(ShadowElementNames::clearButton());
+    return inputElement()->userAgentShadowRoot()->getElementById(ShadowElementNames::clearButton());
 }
 
 LayoutUnit RenderSearchField::computeControlLogicalHeight(LayoutUnit lineHeight, LayoutUnit nonContentHeight) const
@@ -71,35 +72,6 @@ LayoutUnit RenderSearchField::computeControlLogicalHeight(LayoutUnit lineHeight,
     }
 
     return lineHeight + nonContentHeight;
-}
-
-void RenderSearchField::updateFromElement()
-{
-    RenderTextControlSingleLine::updateFromElement();
-
-    if (cancelButtonElement())
-        updateCancelButtonVisibility();
-}
-
-void RenderSearchField::updateCancelButtonVisibility() const
-{
-    RenderObject* cancelButtonRenderer = cancelButtonElement()->renderer();
-    if (!cancelButtonRenderer)
-        return;
-
-    const RenderStyle* curStyle = cancelButtonRenderer->style();
-    EVisibility buttonVisibility = visibilityForCancelButton();
-    if (curStyle->visibility() == buttonVisibility)
-        return;
-
-    RefPtr<RenderStyle> cancelButtonStyle = RenderStyle::clone(curStyle);
-    cancelButtonStyle->setVisibility(buttonVisibility);
-    cancelButtonRenderer->setStyle(cancelButtonStyle);
-}
-
-EVisibility RenderSearchField::visibilityForCancelButton() const
-{
-    return (style()->visibility() == HIDDEN || inputElement()->value().isEmpty()) ? HIDDEN : VISIBLE;
 }
 
 LayoutUnit RenderSearchField::computeLogicalHeightLimit() const

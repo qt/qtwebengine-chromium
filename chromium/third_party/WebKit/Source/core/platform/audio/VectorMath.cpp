@@ -27,10 +27,11 @@
 #if ENABLE(WEB_AUDIO)
 
 #include "core/platform/audio/VectorMath.h"
-
 #include "wtf/Assertions.h"
+#include "wtf/CPU.h"
+#include <stdint.h>
 
-#if OS(DARWIN)
+#if OS(MACOSX)
 #include <Accelerate/Accelerate.h>
 #endif
 
@@ -49,14 +50,14 @@ namespace WebCore {
 
 namespace VectorMath {
 
-#if OS(DARWIN)
+#if OS(MACOSX)
 // On the Mac we use the highly optimized versions in Accelerate.framework
 // In 32-bit mode (__ppc__ or __i386__) <Accelerate/Accelerate.h> includes <vecLib/vDSP_translate.h> which defines macros of the same name as
 // our namespaced function names, so we must handle this case differently. Other architectures (64bit, ARM, etc.) do not include this header file.
 
 void vsmul(const float* sourceP, int sourceStride, const float* scale, float* destP, int destStride, size_t framesToProcess)
 {
-#if defined(__ppc__) || defined(__i386__)
+#if CPU(X86)
     ::vsmul(sourceP, sourceStride, scale, destP, destStride, framesToProcess);
 #else
     vDSP_vsmul(sourceP, sourceStride, scale, destP, destStride, framesToProcess);
@@ -65,7 +66,7 @@ void vsmul(const float* sourceP, int sourceStride, const float* scale, float* de
 
 void vadd(const float* source1P, int sourceStride1, const float* source2P, int sourceStride2, float* destP, int destStride, size_t framesToProcess)
 {
-#if defined(__ppc__) || defined(__i386__)
+#if CPU(X86)
     ::vadd(source1P, sourceStride1, source2P, sourceStride2, destP, destStride, framesToProcess);
 #else
     vDSP_vadd(source1P, sourceStride1, source2P, sourceStride2, destP, destStride, framesToProcess);
@@ -74,7 +75,7 @@ void vadd(const float* source1P, int sourceStride1, const float* source2P, int s
 
 void vmul(const float* source1P, int sourceStride1, const float* source2P, int sourceStride2, float* destP, int destStride, size_t framesToProcess)
 {
-#if defined(__ppc__) || defined(__i386__)
+#if CPU(X86)
     ::vmul(source1P, sourceStride1, source2P, sourceStride2, destP, destStride, framesToProcess);
 #else
     vDSP_vmul(source1P, sourceStride1, source2P, sourceStride2, destP, destStride, framesToProcess);
@@ -92,7 +93,7 @@ void zvmul(const float* real1P, const float* imag1P, const float* real2P, const 
     sc2.imagp = const_cast<float*>(imag2P);
     dest.realp = realDestP;
     dest.imagp = imagDestP;
-#if defined(__ppc__) || defined(__i386__)
+#if CPU(X86)
     ::zvmul(&sc1, 1, &sc2, 1, &dest, 1, framesToProcess, 1);
 #else
     vDSP_zvmul(&sc1, 1, &sc2, 1, &dest, 1, framesToProcess, 1);
@@ -680,7 +681,7 @@ void vclip(const float* sourceP, int sourceStride, const float* lowThresholdP, c
     }
 }
 
-#endif // OS(DARWIN)
+#endif // OS(MACOSX)
 
 } // namespace VectorMath
 

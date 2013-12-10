@@ -198,7 +198,7 @@ void RenderSVGText::subtreeChildWasAdded(RenderObject* child)
     SVGTextLayoutAttributes* attributes = 0;
     for (size_t i = 0; i < size; ++i) {
         attributes = newLayoutAttributes[i];
-        if (m_layoutAttributes.find(attributes) == notFound) {
+        if (m_layoutAttributes.find(attributes) == kNotFound) {
             // Every time this is invoked, there's only a single new entry in the newLayoutAttributes list, compared to the old in m_layoutAttributes.
             bool stopAfterNext = false;
             SVGTextLayoutAttributes* previous = 0;
@@ -218,7 +218,7 @@ void RenderSVGText::subtreeChildWasAdded(RenderObject* child)
 #ifndef NDEBUG
     // Verify that m_layoutAttributes only differs by a maximum of one entry.
     for (size_t i = 0; i < size; ++i)
-        ASSERT(m_layoutAttributes.find(newLayoutAttributes[i]) != notFound || newLayoutAttributes[i] == attributes);
+        ASSERT(m_layoutAttributes.find(newLayoutAttributes[i]) != kNotFound || newLayoutAttributes[i] == attributes);
 #endif
 
     m_layoutAttributes = newLayoutAttributes;
@@ -272,7 +272,7 @@ void RenderSVGText::subtreeChildWillBeRemoved(RenderObject* child, Vector<SVGTex
         affectedAttributes.append(next);
 
     size_t position = m_layoutAttributes.find(text->layoutAttributes());
-    ASSERT(position != notFound);
+    ASSERT(position != kNotFound);
     m_layoutAttributes.remove(position);
 }
 
@@ -345,14 +345,12 @@ static inline void updateFontInAllDescendants(RenderObject* start, SVGTextLayout
 
 void RenderSVGText::layout()
 {
-    StackStats::LayoutCheckPoint layoutCheckPoint;
     ASSERT(needsLayout());
     LayoutRepainter repainter(*this, SVGRenderSupport::checkForSVGRepaintDuringLayout(this));
 
     bool updateCachedBoundariesInParents = false;
     if (m_needsTransformUpdate) {
-        SVGTextElement* text = static_cast<SVGTextElement*>(node());
-        m_localTransform = text->animatedLocalTransform();
+        m_localTransform = toSVGTextElement(node())->animatedLocalTransform();
         m_needsTransformUpdate = false;
         updateCachedBoundariesInParents = true;
     }
@@ -470,11 +468,10 @@ PositionWithAffinity RenderSVGText::positionForPoint(const LayoutPoint& pointInC
     if (!rootBox)
         return createPositionWithAffinity(0, DOWNSTREAM);
 
-    ASSERT_WITH_SECURITY_IMPLICATION(rootBox->isSVGRootInlineBox());
     ASSERT(!rootBox->nextRootBox());
     ASSERT(childrenInline());
 
-    InlineBox* closestBox = static_cast<SVGRootInlineBox*>(rootBox)->closestLeafChildForPosition(pointInContents);
+    InlineBox* closestBox = toSVGRootInlineBox(rootBox)->closestLeafChildForPosition(pointInContents);
     if (!closestBox)
         return createPositionWithAffinity(0, DOWNSTREAM);
 

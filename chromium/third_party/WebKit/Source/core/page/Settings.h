@@ -142,14 +142,14 @@ public:
     static void setMockScrollbarsEnabled(bool flag);
     static bool mockScrollbarsEnabled();
 
-    static void setUsesOverlayScrollbars(bool flag);
-    static bool usesOverlayScrollbars();
-
     void setTouchEventEmulationEnabled(bool enabled) { m_touchEventEmulationEnabled = enabled; }
     bool isTouchEventEmulationEnabled() const { return m_touchEventEmulationEnabled; }
 
     void setOpenGLMultisamplingEnabled(bool flag);
     bool openGLMultisamplingEnabled();
+
+    void setViewportEnabled(bool);
+    bool viewportEnabled() const { return m_viewportEnabled; }
 
     // FIXME: This is a temporary flag and should be removed once accelerated
     // overflow scroll is ready (crbug.com/254111).
@@ -189,6 +189,7 @@ private:
 
     bool m_touchEventEmulationEnabled : 1;
     bool m_openGLMultisamplingEnabled : 1;
+    bool m_viewportEnabled : 1;
 
     // FIXME: This is a temporary flag and should be removed once accelerated
     // overflow scroll is ready (crbug.com/254111).
@@ -198,7 +199,6 @@ private:
     void imageLoadingSettingsTimerFired(Timer<Settings>*);
 
     static bool gMockScrollbarsEnabled;
-    static bool gUsesOverlayScrollbars;
 };
 
 } // namespace WebCore

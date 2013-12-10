@@ -23,7 +23,7 @@ struct TextRun {
   TextRun();
   ~TextRun();
 
-  ui::Range range;
+  Range range;
   Font font;
   // A gfx::Font::FontStyle flag to specify bold and italic styles.
   // Supersedes |font.GetFontStyle()|. Stored separately to avoid calling
@@ -76,8 +76,8 @@ class RenderTextWin : public RenderText {
   virtual SelectionModel AdjacentWordSelectionModel(
       const SelectionModel& selection,
       VisualCursorDirection direction) OVERRIDE;
-  virtual ui::Range GetGlyphBounds(size_t index) OVERRIDE;
-  virtual std::vector<Rect> GetSubstringBounds(const ui::Range& range) OVERRIDE;
+  virtual Range GetGlyphBounds(size_t index) OVERRIDE;
+  virtual std::vector<Rect> GetSubstringBounds(const Range& range) OVERRIDE;
   virtual size_t TextIndexToLayoutIndex(size_t index) const OVERRIDE;
   virtual size_t LayoutIndexToTextIndex(size_t index) const OVERRIDE;
   virtual bool IsCursorablePosition(size_t position) OVERRIDE;
@@ -86,7 +86,10 @@ class RenderTextWin : public RenderText {
   virtual void DrawVisualText(Canvas* canvas) OVERRIDE;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Win_BreakRunsByUnicodeBlocks);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Win_LogicalClusters);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_MinWidth);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_NormalWidth);
 
   void ItemizeLogicalText();
   void LayoutVisualText();
@@ -121,11 +124,12 @@ class RenderTextWin : public RenderText {
   SCRIPT_STATE script_state_;
 
   ScopedVector<internal::TextRun> runs_;
-  Size string_size_;
 
-  // A common vertical baseline for all the text runs. This is computed as the
-  // largest baseline over all the runs' fonts.
-  int common_baseline_;
+  // Single line width of the layout text.
+  int string_width_;
+
+  // Wrapped multiline size of the layout text.
+  Size multiline_string_size_;
 
   scoped_ptr<int[]> visual_to_logical_;
   scoped_ptr<int[]> logical_to_visual_;

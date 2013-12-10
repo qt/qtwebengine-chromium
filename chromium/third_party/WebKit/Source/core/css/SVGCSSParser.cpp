@@ -24,6 +24,7 @@
 
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
+#include "RuntimeEnabledFeatures.h"
 #include "core/css/CSSParser.h"
 #include "core/css/CSSValueList.h"
 #include "core/rendering/RenderTheme.h"
@@ -188,7 +189,7 @@ bool CSSParser::parseSVGValue(CSSPropertyID propId, bool important)
             else if (id == CSSValueCurrentcolor)
                 parsedValue = SVGPaint::createCurrentColor();
             else if (isSystemColor(id))
-                parsedValue = SVGPaint::createColor(RenderTheme::defaultTheme()->systemColor(id));
+                parsedValue = SVGPaint::createColor(RenderTheme::theme().systemColor(id));
             else if (value->unit == CSSPrimitiveValue::CSS_URI) {
                 RGBA32 c = Color::transparent;
                 if (m_valueList->next()) {
@@ -211,7 +212,7 @@ bool CSSParser::parseSVGValue(CSSPropertyID propId, bool important)
     case CSSPropertyFloodColor:
     case CSSPropertyLightingColor:
         if (isSystemColor(id))
-            parsedValue = SVGColor::createFromColor(RenderTheme::defaultTheme()->systemColor(id));
+            parsedValue = SVGColor::createFromColor(RenderTheme::theme().systemColor(id));
         else if ((id >= CSSValueAqua && id <= CSSValueTransparent) ||
                 (id >= CSSValueAliceblue && id <= CSSValueYellowgreen) || id == CSSValueGrey)
             parsedValue = SVGColor::createFromString(value->string);
@@ -223,6 +224,16 @@ bool CSSParser::parseSVGValue(CSSPropertyID propId, bool important)
         if (parsedValue)
             m_valueList->next();
 
+        break;
+
+    case CSSPropertyPaintOrder:
+        if (!RuntimeEnabledFeatures::svgPaintOrderEnabled())
+            return false;
+
+        if (m_valueList->size() == 1 && id == CSSValueNormal)
+            valid_primitive = true;
+        else if ((parsedValue = parsePaintOrder()))
+            m_valueList->next();
         break;
 
     case CSSPropertyVectorEffect: // none | non-scaling-stroke | inherit
@@ -353,6 +364,64 @@ PassRefPtr<CSSValue> CSSParser::parseSVGColor()
     if (!parseColorFromValue(m_valueList->current(), c))
         return 0;
     return SVGColor::createFromColor(Color(c));
+}
+
+// normal | [ fill || stroke || markers ]
+PassRefPtr<CSSValue> CSSParser::parsePaintOrder() const
+{
+    if (m_valueList->size() > 3)
+        return 0;
+
+    CSSParserValue* value = m_valueList->current();
+    if (!value)
+        return 0;
+
+    RefPtr<CSSValueList> parsedValues = CSSValueList::createSpaceSeparated();
+
+    // The default paint-order is: Fill, Stroke, Markers.
+    bool seenFill = false,
+         seenStroke = false,
+         seenMarkers = false;
+
+    do {
+        switch (value->id) {
+        case CSSValueNormal:
+            // normal inside [fill || stroke || markers] not valid
+            return 0;
+        case CSSValueFill:
+            if (seenFill)
+                return 0;
+
+            seenFill = true;
+            break;
+        case CSSValueStroke:
+            if (seenStroke)
+                return 0;
+
+            seenStroke = true;
+            break;
+        case CSSValueMarkers:
+            if (seenMarkers)
+                return 0;
+
+            seenMarkers = true;
+            break;
+        default:
+            return 0;
+        }
+
+        parsedValues->append(CSSPrimitiveValue::createIdentifier(value->id));
+    } while ((value = m_valueList->next()));
+
+    // fill out the rest of the paint order
+    if (!seenFill)
+        parsedValues->append(CSSPrimitiveValue::createIdentifier(CSSValueFill));
+    if (!seenStroke)
+        parsedValues->append(CSSPrimitiveValue::createIdentifier(CSSValueStroke));
+    if (!seenMarkers)
+        parsedValues->append(CSSPrimitiveValue::createIdentifier(CSSValueMarkers));
+
+    return parsedValues.release();
 }
 
 }

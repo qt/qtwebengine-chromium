@@ -28,10 +28,10 @@
 #include "config.h"
 #include "modules/filesystem/WorkerGlobalScopeFileSystem.h"
 
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/fileapi/FileError.h"
-#include "core/platform/AsyncFileSystem.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "modules/filesystem/DOMFileSystemBase.h"
 #include "modules/filesystem/DOMFileSystemSync.h"
@@ -61,28 +61,28 @@ void WorkerGlobalScopeFileSystem::webkitRequestFileSystem(WorkerGlobalScope* wor
         return;
     }
 
-    WorkerLocalFileSystem::from(worker)->requestFileSystem(worker, fileSystemType, size, FileSystemCallbacks::create(successCallback, errorCallback, worker, fileSystemType), AsynchronousFileSystem);
+    WorkerLocalFileSystem::from(worker)->requestFileSystem(worker, fileSystemType, size, FileSystemCallbacks::create(successCallback, errorCallback, worker, fileSystemType));
 }
 
 PassRefPtr<DOMFileSystemSync> WorkerGlobalScopeFileSystem::webkitRequestFileSystemSync(WorkerGlobalScope* worker, int type, long long size, ExceptionState& es)
 {
     ScriptExecutionContext* secureContext = worker->scriptExecutionContext();
     if (!secureContext->securityOrigin()->canAccessFileSystem()) {
-        es.throwDOMException(SecurityError, FileError::securityErrorMessage);
+        es.throwSecurityError(ExceptionMessages::failedToExecute("webkitRequestFileSystemSync", "WorkerGlobalScopeFileSystem", FileError::securityErrorMessage));
         return 0;
     }
 
     FileSystemType fileSystemType = static_cast<FileSystemType>(type);
     if (!DOMFileSystemBase::isValidType(fileSystemType)) {
-        es.throwDOMException(InvalidModificationError);
+        es.throwDOMException(InvalidModificationError, ExceptionMessages::failedToExecute("webkitRequestFileSystemSync", "WorkerGlobalScopeFileSystem", "the type must be TEMPORARY or PERSISTENT."));
         return 0;
     }
 
     FileSystemSyncCallbackHelper helper;
-    OwnPtr<FileSystemCallbacks> callbacks = FileSystemCallbacks::create(helper.successCallback(), helper.errorCallback(), worker, fileSystemType);
+    OwnPtr<AsyncFileSystemCallbacks> callbacks = FileSystemCallbacks::create(helper.successCallback(), helper.errorCallback(), worker, fileSystemType);
     callbacks->setShouldBlockUntilCompletion(true);
 
-    WorkerLocalFileSystem::from(worker)->requestFileSystem(worker, fileSystemType, size, callbacks.release(), SynchronousFileSystem);
+    WorkerLocalFileSystem::from(worker)->requestFileSystem(worker, fileSystemType, size, callbacks.release());
     return helper.getResult(es);
 }
 
@@ -110,19 +110,22 @@ PassRefPtr<EntrySync> WorkerGlobalScopeFileSystem::webkitResolveLocalFileSystemS
     KURL completedURL = worker->completeURL(url);
     ScriptExecutionContext* secureContext = worker->scriptExecutionContext();
     if (!secureContext->securityOrigin()->canAccessFileSystem() || !secureContext->securityOrigin()->canRequest(completedURL)) {
-        es.throwDOMException(SecurityError, FileError::securityErrorMessage);
+        es.throwSecurityError(ExceptionMessages::failedToExecute("webkitResolveLocalFileSystemSyncURL", "WorkerGlobalScopeFileSystem", FileError::securityErrorMessage));
         return 0;
     }
 
     FileSystemType type;
     String filePath;
     if (!completedURL.isValid() || !DOMFileSystemBase::crackFileSystemURL(completedURL, type, filePath)) {
-        es.throwDOMException(EncodingError);
+        es.throwDOMException(EncodingError, ExceptionMessages::failedToExecute("webkitResolveLocalFileSystemSyncURL", "WorkerGlobalScopeFileSystem", "the URL '" + url + "' is invalid."));
         return 0;
     }
 
     FileSystemSyncCallbackHelper readFileSystemHelper;
-    WorkerLocalFileSystem::from(worker)->readFileSystem(worker, type, FileSystemCallbacks::create(readFileSystemHelper.successCallback(), readFileSystemHelper.errorCallback(), worker, type), SynchronousFileSystem);
+    OwnPtr<AsyncFileSystemCallbacks> callbacks = FileSystemCallbacks::create(readFileSystemHelper.successCallback(), readFileSystemHelper.errorCallback(), worker, type);
+    callbacks->setShouldBlockUntilCompletion(true);
+
+    WorkerLocalFileSystem::from(worker)->readFileSystem(worker, type, callbacks.release());
     RefPtr<DOMFileSystemSync> fileSystem = readFileSystemHelper.getResult(es);
     if (!fileSystem)
         return 0;

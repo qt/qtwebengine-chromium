@@ -94,6 +94,63 @@ const GritResourceMap kTheRcHeader[] = {
 };
 const size_t kTheRcHeaderSize = arraysize(kTheRcHeader);''', output)
 
+  def testFormatStringResourceMap(self):
+    grd = grd_reader.Parse(StringIO.StringIO(
+      '''<?xml version="1.0" encoding="UTF-8"?>
+      <grit latest_public_release="2" source_lang_id="en" current_release="3"
+            base_dir=".">
+        <outputs>
+          <output type="rc_header" filename="the_rc_header.h" />
+          <output type="resource_map_header" filename="the_rc_map_header.h" />
+          <output type="resource_map_source" filename="the_rc_map_source.cc" />
+        </outputs>
+        <release seq="1" allow_pseudo="false">
+          <messages fallback_to_english="true">
+            <message name="IDS_PRODUCT_NAME" desc="The application name">
+              Application
+            </message>
+            <if expr="1">
+              <message name="IDS_DEFAULT_TAB_TITLE_TITLE_CASE"
+                  desc="In Title Case: The default title in a tab.">
+                New Tab
+              </message>
+            </if>
+            <if expr="0">
+              <message name="IDS_DEFAULT_TAB_TITLE"
+                  desc="The default title in a tab.">
+                New tab
+              </message>
+            </if>
+          </messages>
+        </release>
+      </grit>'''), util.PathFromRoot('.'))
+    grd.SetOutputLanguage('en')
+    grd.RunGatherers()
+    output = util.StripBlankLinesAndComments(''.join(
+        resource_map.GetFormatter('resource_map_header')(grd, 'en', '.')))
+    self.assertEqual('''\
+#include <stddef.h>
+#ifndef GRIT_RESOURCE_MAP_STRUCT_
+#define GRIT_RESOURCE_MAP_STRUCT_
+struct GritResourceMap {
+  const char* const name;
+  int value;
+};
+#endif // GRIT_RESOURCE_MAP_STRUCT_
+extern const GritResourceMap kTheRcHeader[];
+extern const size_t kTheRcHeaderSize;''', output)
+    output = util.StripBlankLinesAndComments(''.join(
+        resource_map.GetFormatter('resource_map_source')(grd, 'en', '.')))
+    self.assertEqual('''\
+#include "the_rc_map_header.h"
+#include "base/basictypes.h"
+#include "the_rc_header.h"
+const GritResourceMap kTheRcHeader[] = {
+  {"IDS_PRODUCT_NAME", IDS_PRODUCT_NAME},
+  {"IDS_DEFAULT_TAB_TITLE_TITLE_CASE", IDS_DEFAULT_TAB_TITLE_TITLE_CASE},
+};
+const size_t kTheRcHeaderSize = arraysize(kTheRcHeader);''', output)
+
 
 if __name__ == '__main__':
   unittest.main()

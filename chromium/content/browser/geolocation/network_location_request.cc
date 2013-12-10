@@ -70,10 +70,10 @@ int NetworkLocationRequest::url_fetcher_id_for_tests = 0;
 NetworkLocationRequest::NetworkLocationRequest(
     net::URLRequestContextGetter* context,
     const GURL& url,
-    ListenerInterface* listener)
-        : url_context_(context), listener_(listener),
+    LocationResponseCallback callback)
+        : url_context_(context),
+          callback_(callback),
           url_(url) {
-  DCHECK(listener);
 }
 
 NetworkLocationRequest::~NetworkLocationRequest() {
@@ -139,10 +139,8 @@ void NetworkLocationRequest::OnURLFetchComplete(
         100);
   }
 
-  DCHECK(listener_);
-  DVLOG(1) << "NetworkLocationRequest::Run() : Calling listener with position.";
-  listener_->LocationResponseAvailable(position, server_error, access_token,
-                                       wifi_data_);
+  DVLOG(1) << "NetworkLocationRequest::OnURLFetchComplete() : run callback.";
+  callback_.Run(position, server_error, access_token, wifi_data_);
 }
 
 // Local functions.
@@ -156,7 +154,7 @@ struct AccessPointLess {
 };
 
 GURL FormRequestURL(const GURL& url) {
-  if (url == GeolocationArbitratorImpl::DefaultNetworkProviderURL()) {
+  if (url == LocationArbitratorImpl::DefaultNetworkProviderURL()) {
     std::string api_key = google_apis::GetAPIKey();
     if (!api_key.empty()) {
       std::string query(url.query());
@@ -273,7 +271,7 @@ void GetLocationFromResponse(bool http_post_result,
     FormatPositionError(server_url, message, position);
     return;
   }
-  // We use the timestamp from the device data that was used to generate
+  // We use the timestamp from the wifi data that was used to generate
   // this position fix.
   if (!ParseServerResponse(response_body, timestamp, position, access_token)) {
     // We failed to parse the repsonse.

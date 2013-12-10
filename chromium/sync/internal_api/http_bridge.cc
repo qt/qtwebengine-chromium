@@ -19,6 +19,7 @@
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_status.h"
+#include "sync/internal_api/public/base/cancelation_signal.h"
 
 namespace syncer {
 
@@ -58,18 +59,45 @@ HttpBridge::RequestContextGetter::GetNetworkTaskRunner() const {
 
 HttpBridgeFactory::HttpBridgeFactory(
     net::URLRequestContextGetter* baseline_context_getter,
-    const std::string& user_agent,
-    const NetworkTimeUpdateCallback& network_time_update_callback)
-    : request_context_getter_(
-        new HttpBridge::RequestContextGetter(
-            baseline_context_getter, user_agent)),
-      network_time_update_callback_(network_time_update_callback) {
+    const NetworkTimeUpdateCallback& network_time_update_callback,
+    CancelationSignal* cancelation_signal)
+    : baseline_request_context_getter_(baseline_context_getter),
+      network_time_update_callback_(network_time_update_callback),
+      cancelation_signal_(cancelation_signal) {
+  // Registration should never fail.  This should happen on the UI thread during
+  // init.  It would be impossible for a shutdown to have been requested at this
+  // point.
+  bool result = cancelation_signal_->TryRegisterHandler(this);
+  DCHECK(result);
 }
 
 HttpBridgeFactory::~HttpBridgeFactory() {
+  cancelation_signal_->UnregisterHandler(this);
+}
+
+void HttpBridgeFactory::Init(const std::string& user_agent) {
+  base::AutoLock lock(context_getter_lock_);
+
+  if (!baseline_request_context_getter_.get()) {
+    // Uh oh.  We've been aborted before we finished initializing.  There's no
+    // point in initializating further; let's just return right away.
+    return;
+  }
+
+  request_context_getter_ =
+      new HttpBridge::RequestContextGetter(
+          baseline_request_context_getter_, user_agent);
 }
 
 HttpPostProviderInterface* HttpBridgeFactory::Create() {
+  base::AutoLock lock(context_getter_lock_);
+
+  // If we've been asked to shut down (something which may happen asynchronously
+  // and at pretty much any time), then we won't have a request_context_getter_.
+  // Some external mechanism must ensure that this function is not called after
+  // we've been asked to shut down.
+  CHECK(request_context_getter_.get());
+
   HttpBridge* http = new HttpBridge(request_context_getter_.get(),
                                     network_time_update_callback_);
   http->AddRef();
@@ -78,6 +106,16 @@ HttpPostProviderInterface* HttpBridgeFactory::Create() {
 
 void HttpBridgeFactory::Destroy(HttpPostProviderInterface* http) {
   static_cast<HttpBridge*>(http)->Release();
+}
+
+void HttpBridgeFactory::OnSignalReceived() {
+  base::AutoLock lock(context_getter_lock_);
+  // Release |baseline_request_context_getter_| as soon as possible so that it
+  // is destroyed in the right order on its network task runner.  The
+  // |request_context_getter_| has a reference to the baseline, so we must
+  // drop our reference to it, too.
+  baseline_request_context_getter_ = NULL;
+  request_context_getter_ = NULL;
 }
 
 HttpBridge::RequestContext::RequestContext(
@@ -137,11 +175,11 @@ HttpBridge::URLFetchState::~URLFetchState() {}
 HttpBridge::HttpBridge(
     HttpBridge::RequestContextGetter* context_getter,
     const NetworkTimeUpdateCallback& network_time_update_callback)
-    : context_getter_for_request_(context_getter),
+    : created_on_loop_(base::MessageLoop::current()),
+      http_post_completed_(false, false),
+      context_getter_for_request_(context_getter),
       network_task_runner_(
           context_getter_for_request_->GetNetworkTaskRunner()),
-      created_on_loop_(base::MessageLoop::current()),
-      http_post_completed_(false, false),
       network_time_update_callback_(network_time_update_callback) {
 }
 
@@ -226,6 +264,7 @@ void HttpBridge::MakeAsynchronousPost() {
   if (fetch_state_.aborted)
     return;
 
+  DCHECK(context_getter_for_request_.get());
   fetch_state_.url_poster = net::URLFetcher::Create(
       url_for_request_, net::URLFetcher::POST, this);
   fetch_state_.url_poster->SetRequestContext(context_getter_for_request_.get());
@@ -264,6 +303,11 @@ const std::string HttpBridge::GetResponseHeaderValue(
 
 void HttpBridge::Abort() {
   base::AutoLock lock(fetch_state_lock_);
+
+  // Release |request_context_getter_| as soon as possible so that it is
+  // destroyed in the right order on its network task runner.
+  context_getter_for_request_ = NULL;
+
   DCHECK(!fetch_state_.aborted);
   if (fetch_state_.aborted || fetch_state_.request_completed)
     return;
@@ -323,6 +367,7 @@ void HttpBridge::OnURLFetchComplete(const net::URLFetcher* source) {
 
 net::URLRequestContextGetter* HttpBridge::GetRequestContextGetterForTest()
     const {
+  base::AutoLock lock(fetch_state_lock_);
   return context_getter_for_request_.get();
 }
 

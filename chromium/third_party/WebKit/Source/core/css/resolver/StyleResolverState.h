@@ -24,6 +24,7 @@
 
 #include "CSSPropertyNames.h"
 
+#include "core/animation/css/CSSAnimations.h"
 #include "core/css/CSSSVGDocumentValue.h"
 #include "core/css/CSSToStyleMap.h"
 #include "core/css/resolver/ElementResolveContext.h"
@@ -42,12 +43,12 @@ class RenderRegion;
 class StyleResolverState {
 WTF_MAKE_NONCOPYABLE(StyleResolverState);
 public:
-    StyleResolverState(Document*, Element*, RenderStyle* parentStyle = 0, RenderRegion* regionForStyling = 0);
+    StyleResolverState(Document&, Element*, RenderStyle* parentStyle = 0, RenderRegion* regionForStyling = 0);
     ~StyleResolverState();
 
-    // In FontLoader and CanvasRenderingContext2D, we don't have an element to grab the document from.
+    // In FontFaceSet and CanvasRenderingContext2D, we don't have an element to grab the document from.
     // This is why we have to store the document separately.
-    Document* document() const { return m_document; }
+    Document& document() const { return m_document; }
     // These are all just pass-through methods to ElementResolveContext.
     Element* element() const { return m_elementContext.element(); }
     const ContainerNode* parentNode() const { return m_elementContext.parentNode(); }
@@ -61,6 +62,10 @@ public:
     const RenderStyle* style() const { return m_style.get(); }
     RenderStyle* style() { return m_style.get(); }
     PassRefPtr<RenderStyle> takeStyle() { return m_style.release(); }
+
+    void setAnimationUpdate(PassOwnPtr<CSSAnimationUpdate> update) { m_animationUpdate = update; }
+    const CSSAnimationUpdate* animationUpdate() { return m_animationUpdate.get(); }
+    PassOwnPtr<CSSAnimationUpdate> takeAnimationUpdate() { return m_animationUpdate.release(); }
 
     void setParentStyle(PassRefPtr<RenderStyle> parentStyle) { m_parentStyle = parentStyle; }
     const RenderStyle* parentStyle() const { return m_parentStyle.get(); }
@@ -96,7 +101,7 @@ public:
     // sites are extremely verbose.
     PassRefPtr<StyleImage> styleImage(CSSPropertyID propertyId, CSSValue* value)
     {
-        return m_elementStyleResources.styleImage(document()->textLinkColors(), propertyId, value);
+        return m_elementStyleResources.styleImage(document().textLinkColors(), style()->visitedDependentColor(CSSPropertyColor), propertyId, value);
     }
 
     FontBuilder& fontBuilder() { return m_fontBuilder; }
@@ -126,8 +131,8 @@ private:
 
     void initElement(Element*);
 
-    Document* m_document;
     ElementResolveContext m_elementContext;
+    Document& m_document;
 
     // m_style is the primary output for each element's style resolve.
     RefPtr<RenderStyle> m_style;
@@ -135,6 +140,8 @@ private:
     // m_parentStyle is not always just element->parentNode()->style()
     // so we keep it separate from m_elementContext.
     RefPtr<RenderStyle> m_parentStyle;
+
+    OwnPtr<CSSAnimationUpdate> m_animationUpdate;
 
     // Required to ASSERT in applyProperties.
     // FIXME: Regions should not need special state on StyleResolverState

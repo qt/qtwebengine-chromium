@@ -46,6 +46,7 @@
 #include "SkLayerRasterizer.h"
 #include "SkLerpXfermode.h"
 #include "SkLightingImageFilter.h"
+#include "SkLumaXfermode.h"
 #include "SkMagnifierImageFilter.h"
 #include "SkMatrixConvolutionImageFilter.h"
 #include "SkMergeImageFilter.h"
@@ -53,6 +54,7 @@
 #include "SkOffsetImageFilter.h"
 #include "SkPerlinNoiseShader.h"
 #include "SkPixelXorXfermode.h"
+#include "SkRectShaderImageFilter.h"
 #include "SkStippleMaskFilter.h"
 #include "SkTableColorFilter.h"
 #include "SkTestImageFilters.h"
@@ -92,6 +94,7 @@ void SkFlattenable::InitializeFlattenables() {
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkPath2DPathEffect)
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkPerlinNoiseShader)
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkPixelXorXfermode)
+    SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkRectShaderImageFilter)
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkStippleMaskFilter)
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkSumPathEffect)
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkXfermodeImageFilter)
@@ -111,6 +114,7 @@ void SkFlattenable::InitializeFlattenables() {
     SkGradientShader::InitializeFlattenables();
     SkImages::InitializeFlattenables();
     SkLightingImageFilter::InitializeFlattenables();
+    SkLumaMaskXfermode::InitializeFlattenables();
     SkTableColorFilter::InitializeFlattenables();
     SkXfermode::InitializeFlattenables();
 }

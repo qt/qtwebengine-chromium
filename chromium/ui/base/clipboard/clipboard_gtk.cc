@@ -20,10 +20,10 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/clipboard/custom_data_helper.h"
 #include "ui/base/gtk/gtk_signal.h"
-#include "ui/base/gtk/scoped_gobject.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/gtk_util.h"
+#include "ui/gfx/scoped_gobject.h"
 #include "ui/gfx/size.h"
 
 namespace ui {
@@ -62,9 +62,9 @@ SelectionChangeObserver::SelectionChangeObserver()
       clipboard_sequence_number_(0),
       primary_sequence_number_(0) {
   int ignored;
-  if (XFixesQueryExtension(GetXDisplay(), &event_base_, &ignored)) {
-    clipboard_atom_ = XInternAtom(GetXDisplay(), "CLIPBOARD", false);
-    XFixesSelectSelectionInput(GetXDisplay(), GetX11RootWindow(),
+  if (XFixesQueryExtension(gfx::GetXDisplay(), &event_base_, &ignored)) {
+    clipboard_atom_ = XInternAtom(gfx::GetXDisplay(), "CLIPBOARD", false);
+    XFixesSelectSelectionInput(gfx::GetXDisplay(), GetX11RootWindow(),
                                clipboard_atom_,
                                XFixesSetSelectionOwnerNotifyMask |
                                XFixesSelectionWindowDestroyNotifyMask |
@@ -72,7 +72,7 @@ SelectionChangeObserver::SelectionChangeObserver()
     // This seems to be semi-optional. For some reason, registering for any
     // selection notify events seems to subscribe us to events for both the
     // primary and the clipboard buffers. Register anyway just to be safe.
-    XFixesSelectSelectionInput(GetXDisplay(), GetX11RootWindow(),
+    XFixesSelectSelectionInput(gfx::GetXDisplay(), GetX11RootWindow(),
                                XA_PRIMARY,
                                XFixesSetSelectionOwnerNotifyMask |
                                XFixesSelectionWindowDestroyNotifyMask |

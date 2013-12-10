@@ -3,10 +3,8 @@
 # found in the LICENSE file.
 import os
 import re
-import time
 import urlparse
 
-from telemetry.core import util
 
 def _UrlPathJoin(*args):
   """Joins each path in |args| for insertion into a URL path.
@@ -54,6 +52,7 @@ class Page(object):
     # These attributes can be set dynamically by the page.
     self.credentials = None
     self.disabled = False
+    self.name = None
     self.script_to_evaluate_on_commit = None
 
     if attributes:
@@ -90,14 +89,16 @@ class Page(object):
 
     return os.path.split(path)
 
-  # A version of this page's URL that's safe to use as a filename.
   @property
-  def url_as_file_safe_name(self):
+  def file_safe_name(self):
+    """A version of display_name that's safe to use as a filename."""
     # Just replace all special characters in the url with underscore.
-    return re.sub('[^a-zA-Z0-9]', '_', self.display_url)
+    return re.sub('[^a-zA-Z0-9]', '_', self.display_name)
 
   @property
-  def display_url(self):
+  def display_name(self):
+    if self.name:
+      return self.name
     if not self.is_local:
       return self.url
     url_paths = ['/'.join(p.url.strip('/').split('/')[:-1])
@@ -111,30 +112,3 @@ class Page(object):
 
   def __str__(self):
     return self.url
-
-  def WaitToLoad(self, tab, timeout, poll_interval=0.1):
-    Page.WaitForPageToLoad(self, tab, timeout, poll_interval)
-
-  # TODO(dtu): Remove this method when no page sets use a click interaction
-  # with a wait condition. crbug.com/168431
-  @staticmethod
-  def WaitForPageToLoad(obj, tab, timeout, poll_interval=0.1):
-    """Waits for various wait conditions present in obj."""
-    if hasattr(obj, 'wait_seconds'):
-      time.sleep(obj.wait_seconds)
-    if hasattr(obj, 'wait_for_element_with_text'):
-      callback_code = 'function(element) { return element != null; }'
-      util.WaitFor(
-          lambda: util.FindElementAndPerformAction(
-              tab, obj.wait_for_element_with_text, callback_code),
-          timeout, poll_interval)
-    if hasattr(obj, 'wait_for_element_with_selector'):
-      util.WaitFor(lambda: tab.EvaluateJavaScript(
-           'document.querySelector(\'' + obj.wait_for_element_with_selector +
-           '\') != null'), timeout, poll_interval)
-    if hasattr(obj, 'post_navigate_javascript_to_execute'):
-      tab.EvaluateJavaScript(obj.post_navigate_javascript_to_execute)
-    if hasattr(obj, 'wait_for_javascript_expression'):
-      util.WaitFor(
-          lambda: tab.EvaluateJavaScript(obj.wait_for_javascript_expression),
-          timeout, poll_interval)

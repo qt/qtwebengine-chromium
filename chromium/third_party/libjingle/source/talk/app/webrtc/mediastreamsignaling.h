@@ -159,7 +159,8 @@ class MediaStreamSignalingObserver {
 class MediaStreamSignaling {
  public:
   MediaStreamSignaling(talk_base::Thread* signaling_thread,
-                       MediaStreamSignalingObserver* stream_observer);
+                       MediaStreamSignalingObserver* stream_observer,
+                       cricket::ChannelManager* channel_manager);
   virtual ~MediaStreamSignaling();
 
   // Notify all referenced objects that MediaStreamSignaling will be teared
@@ -187,6 +188,8 @@ class MediaStreamSignaling {
   // be offered in a SessionDescription.
   void RemoveLocalStream(MediaStreamInterface* local_stream);
 
+  // Checks if any data channel has been added.
+  bool HasDataChannels() const;
   // Adds |data_channel| to the collection of DataChannels that will be
   // be offered in a SessionDescription.
   bool AddDataChannel(DataChannel* data_channel);

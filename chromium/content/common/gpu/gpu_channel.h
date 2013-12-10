@@ -11,6 +11,7 @@
 #include "base/id_map.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/process/process.h"
 #include "build/build_config.h"
@@ -49,9 +50,10 @@ class StreamTextureManagerAndroid;
 
 namespace content {
 class GpuChannelManager;
-struct GpuRenderingStats;
-class GpuWatchdog;
 class GpuChannelMessageFilter;
+struct GpuRenderingStats;
+class GpuVideoEncodeAccelerator;
+class GpuWatchdog;
 
 // Encapsulates an IPC channel between the GPU process and one renderer
 // process. On the renderer side there's a corresponding GpuChannelHost.
@@ -83,6 +85,10 @@ class GpuChannel : public IPC::Listener,
 #endif  // defined(OS_POSIX)
 
   base::ProcessId renderer_pid() const { return channel_->peer_pid(); }
+
+  scoped_refptr<base::MessageLoopProxy> io_message_loop() const {
+    return io_message_loop_;
+  }
 
   // IPC::Listener implementation:
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
@@ -154,6 +160,9 @@ class GpuChannel : public IPC::Listener,
 
   void CacheShader(const std::string& key, const std::string& shader);
 
+  void AddFilter(IPC::ChannelProxy::MessageFilter* filter);
+  void RemoveFilter(IPC::ChannelProxy::MessageFilter* filter);
+
  protected:
   virtual ~GpuChannel();
 
@@ -173,6 +182,8 @@ class GpuChannel : public IPC::Listener,
       const GPUCreateCommandBufferConfig& init_params,
       int32* route_id);
   void OnDestroyCommandBuffer(int32 route_id);
+  void OnCreateVideoEncoder(int32* route_id);
+  void OnDestroyVideoEncoder(int32 route_id);
 
 #if defined(OS_ANDROID)
   // Register the StreamTextureProxy class with the gpu process so that all
@@ -237,6 +248,9 @@ class GpuChannel : public IPC::Listener,
   typedef IDMap<GpuCommandBufferStub, IDMapOwnPointer> StubMap;
   StubMap stubs_;
 #endif  // defined (ENABLE_GPU)
+
+  typedef IDMap<GpuVideoEncodeAccelerator, IDMapOwnPointer> EncoderMap;
+  EncoderMap video_encoders_;
 
   bool log_messages_;  // True if we should log sent and received messages.
   gpu::gles2::DisallowedFeatures disallowed_features_;

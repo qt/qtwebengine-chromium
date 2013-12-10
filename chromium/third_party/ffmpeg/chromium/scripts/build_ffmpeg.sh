@@ -19,9 +19,10 @@ if [ "$3" = "" ]; then
   echo "Usage:"
   echo "  $0 [TARGET_OS] [TARGET_ARCH] [path/to/ffmpeg] [config-only]"
   echo
-  echo "Valid combinations are linux [ia32|x64|mipsel|arm|arm-neon]"
-  echo "                       win   [ia32|x64]"
-  echo "                       mac   [ia32|x64]"
+  echo "Valid combinations are linux       [ia32|x64|mipsel|arm|arm-neon]"
+  echo "                       win         [ia32|x64]"
+  echo "                       win-vs2013  [ia32|x64]"
+  echo "                       mac         [ia32|x64]"
   echo
   echo " linux ia32/x64 - script can be run on a normal Ubuntu box."
   echo " linux mipsel - script can be run on a normal Ubuntu box with MIPS"
@@ -55,8 +56,9 @@ CONFIG_ONLY=$4
 # Check TARGET_OS (TARGET_ARCH is checked during configuration).
 if [[ "$TARGET_OS" != "linux" &&
       "$TARGET_OS" != "mac" &&
-      "$TARGET_OS" != "win" ]]; then
-  echo "Valid target OSes are: linux, mac, win"
+      "$TARGET_OS" != "win" &&
+      "$TARGET_OS" != "win-vs2013" ]]; then
+  echo "Valid target OSes are: linux, mac, win, win-vs2013"
   exit 1
 fi
 
@@ -124,7 +126,7 @@ if ld --version | grep -q gold; then
 fi
 
 # We want to use a sufficiently recent version of yasm on Windows.
-if [ "$TARGET_OS" == "win" ]; then
+if [[ "$TARGET_OS" == "win" || "$TARGET_OS" == "win-vs2013" ]]; then
   if !(which yasm 2>&1 > /dev/null); then
     echo "Could not find yasm in \$PATH"
     exit 1
@@ -275,7 +277,7 @@ fi
 # Common codecs.
 add_flag_common --enable-decoder=theora,vorbis,vp8
 add_flag_common --enable-decoder=pcm_u8,pcm_s16le,pcm_s24le,pcm_f32le
-add_flag_common --enable-decoder=pcm_s16be,pcm_s24be
+add_flag_common --enable-decoder=pcm_s16be,pcm_s24be,pcm_mulaw,pcm_alaw
 add_flag_common --enable-demuxer=ogg,matroska,wav
 add_flag_common --enable-parser=vp3,vorbis,vp8
 
@@ -364,6 +366,16 @@ if [ "$TARGET_OS" = "win" ]; then
     echo "merge of config files with new linux ia32 config.h by hand."
     exit 1
   fi
+elif [ "$TARGET_OS" = "win-vs2013" ]; then
+  if [ "$HOST_OS" = "win" ]; then
+    add_flag_common --toolchain=msvc2013
+    add_flag_common --enable-yasm
+    add_flag_common --extra-cflags=-I$FFMPEG_PATH/chromium/include/win
+  else
+    echo "Script should be run on Windows host. If this is not possible try a "
+    echo "merge of config files with new linux ia32 config.h by hand."
+    exit 1
+  fi
 else
   add_flag_common --enable-pic
 fi
@@ -425,7 +437,6 @@ add_flag_chromeos --enable-demuxer=flac
 add_flag_chromeos --enable-decoder=flac
 add_flag_chromeos --enable-parser=flac
 # Wav files for playing phone messages.
-add_flag_chromeos --enable-decoder=pcm_mulaw
 add_flag_chromeos --enable-decoder=gsm_ms
 add_flag_chromeos --enable-demuxer=gsm
 add_flag_chromeos --enable-parser=gsm

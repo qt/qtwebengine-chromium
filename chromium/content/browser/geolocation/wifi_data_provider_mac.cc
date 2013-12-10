@@ -158,7 +158,6 @@ bool Apple80211Api::GetAccessPointData(WifiData::AccessPointDataSet* data) {
 }  // namespace
 
 // static
-template<>
 WifiDataProviderImplBase* WifiDataProvider::DefaultFactoryFunction() {
   return new MacWifiDataProvider();
 }
@@ -185,11 +184,11 @@ MacWifiDataProvider::WlanApiInterface* MacWifiDataProvider::NewWlanApi() {
   return NULL;
 }
 
-PollingPolicyInterface* MacWifiDataProvider::NewPollingPolicy() {
-  return new GenericPollingPolicy<kDefaultPollingInterval,
-                                  kNoChangePollingInterval,
-                                  kTwoNoChangePollingInterval,
-                                  kNoWifiPollingIntervalMilliseconds>;
+WifiPollingPolicy* MacWifiDataProvider::NewPollingPolicy() {
+  return new GenericWifiPollingPolicy<kDefaultPollingInterval,
+                                      kNoChangePollingInterval,
+                                      kTwoNoChangePollingInterval,
+                                      kNoWifiPollingIntervalMilliseconds>;
 }
 
 }  // namespace content

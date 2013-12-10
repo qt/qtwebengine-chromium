@@ -6,7 +6,8 @@
 #define CONTENT_BROWSER_GEOLOCATION_WIFI_DATA_PROVIDER_CHROMEOS_H_
 
 #include "base/compiler_specific.h"
-#include "content/browser/geolocation/wifi_data_provider_common.h"
+#include "content/browser/geolocation/wifi_data_provider.h"
+#include "content/browser/geolocation/wifi_polling_policy.h"
 
 namespace content {
 
@@ -16,7 +17,7 @@ class CONTENT_EXPORT WifiDataProviderChromeOs
   WifiDataProviderChromeOs();
 
   // WifiDataProviderImplBase
-  virtual bool StartDataProvider() OVERRIDE;
+  virtual void StartDataProvider() OVERRIDE;
   virtual void StopDataProvider() OVERRIDE;
   virtual bool GetData(WifiData* data) OVERRIDE;
 
@@ -31,7 +32,6 @@ class CONTENT_EXPORT WifiDataProviderChromeOs
   // Client thread
   void DidWifiScanTaskNoResults();
   void DidWifiScanTask(const WifiData& new_data);
-  void MaybeNotifyListeners(bool update_available);
 
   // Will schedule a scan; i.e. enqueue DoWifiScanTask deferred task.
   void ScheduleNextScan(int interval);
@@ -45,11 +45,8 @@ class CONTENT_EXPORT WifiDataProviderChromeOs
   // Get access point data from chromeos.
   bool GetAccessPointData(WifiData::AccessPointDataSet* data);
 
-  // Underlying OS wifi API. (UI thread)
-  scoped_ptr<WifiDataProviderCommon::WlanApiInterface> wlan_api_;
-
   // Controls the polling update interval. (client thread)
-  scoped_ptr<PollingPolicyInterface> polling_policy_;
+  scoped_ptr<WifiPollingPolicy> polling_policy_;
 
   // The latest wifi data. (client thread)
   WifiData wifi_data_;

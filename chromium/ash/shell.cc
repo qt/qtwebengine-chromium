@@ -7,7 +7,10 @@
 #include <algorithm>
 #include <string>
 
+#include "ash/accelerators/accelerator_controller.h"
+#include "ash/accelerators/accelerator_filter.h"
 #include "ash/accelerators/focus_manager_factory.h"
+#include "ash/accelerators/nested_dispatcher_controller.h"
 #include "ash/ash_switches.h"
 #include "ash/caps_lock_delegate.h"
 #include "ash/desktop_background/desktop_background_controller.h"
@@ -24,12 +27,15 @@
 #include "ash/high_contrast/high_contrast_controller.h"
 #include "ash/host/root_window_host_factory.h"
 #include "ash/launcher/launcher_delegate.h"
+#include "ash/launcher/launcher_item_delegate.h"
+#include "ash/launcher/launcher_item_delegate_manager.h"
 #include "ash/launcher/launcher_model.h"
 #include "ash/magnifier/magnification_controller.h"
 #include "ash/magnifier/partial_magnification_controller.h"
 #include "ash/root_window_controller.h"
 #include "ash/screen_ash.h"
 #include "ash/session_state_delegate.h"
+#include "ash/shelf/app_list_shelf_item_delegate.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell_delegate.h"
@@ -39,13 +45,10 @@
 #include "ash/system/status_area_widget.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/system_tray_notifier.h"
-#include "ash/wm/activation_controller.h"
 #include "ash/wm/app_list_controller.h"
-#include "ash/wm/ash_activation_controller.h"
 #include "ash/wm/ash_focus_rules.h"
 #include "ash/wm/ash_native_cursor_manager.h"
 #include "ash/wm/base_layout_manager.h"
-#include "ash/wm/capture_controller.h"
 #include "ash/wm/coordinate_conversion.h"
 #include "ash/wm/custom_frame_view_ash.h"
 #include "ash/wm/event_client_impl.h"
@@ -54,8 +57,8 @@
 #include "ash/wm/lock_state_controller_impl2.h"
 #include "ash/wm/mru_window_tracker.h"
 #include "ash/wm/overlay_event_filter.h"
+#include "ash/wm/overview/window_selector_controller.h"
 #include "ash/wm/power_button_controller.h"
-#include "ash/wm/property_util.h"
 #include "ash/wm/resize_shadow_controller.h"
 #include "ash/wm/root_window_layout_manager.h"
 #include "ash/wm/screen_dimmer.h"
@@ -68,12 +71,12 @@
 #include "ash/wm/window_animations.h"
 #include "ash/wm/window_cycle_controller.h"
 #include "ash/wm/window_properties.h"
-#include "ash/wm/window_selector_controller.h"
 #include "ash/wm/window_util.h"
 #include "ash/wm/workspace_controller.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/leak_annotations.h"
+#include "base/debug/trace_event.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/user_action_client.h"
 #include "ui/aura/env.h"
@@ -103,23 +106,16 @@
 #include "ui/views/widget/native_widget_aura.h"
 #include "ui/views/widget/widget.h"
 
-#if !defined(OS_MACOSX)
-#include "ash/accelerators/accelerator_controller.h"
-#include "ash/accelerators/accelerator_filter.h"
-#include "ash/accelerators/nested_dispatcher_controller.h"
-#endif
-
 #if defined(OS_CHROMEOS)
 #if defined(USE_X11)
 #include "ash/ash_constants.h"
-#include "ash/display/display_change_observer_x11.h"
-#include "ash/display/display_error_observer.h"
+#include "ash/display/display_change_observer_chromeos.h"
+#include "ash/display/display_error_observer_chromeos.h"
 #include "ash/display/output_configurator_animation.h"
 #include "base/chromeos/chromeos_version.h"
-#include "base/message_loop/message_pump_aurax11.h"
+#include "base/message_loop/message_pump_x11.h"
 #include "chromeos/display/output_configurator.h"
 #include "content/public/browser/gpu_data_manager.h"
-#include "content/public/common/content_switches.h"
 #include "gpu/config/gpu_feature_type.h"
 #endif  // defined(USE_X11)
 #include "ash/system/chromeos/power/power_status.h"
@@ -227,17 +223,15 @@ Shell::Shell(ShellDelegate* delegate)
 #if defined(OS_CHROMEOS) && defined(USE_X11)
   bool is_panel_fitting_disabled =
       content::GpuDataManager::GetInstance()->IsFeatureBlacklisted(
-          gpu::GPU_FEATURE_TYPE_PANEL_FITTING) ||
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          ::switches::kDisablePanelFitting);
+          gpu::GPU_FEATURE_TYPE_PANEL_FITTING);
 
   output_configurator_->Init(!is_panel_fitting_disabled);
 
-  base::MessagePumpAuraX11::Current()->AddDispatcherForRootWindow(
+  base::MessagePumpX11::Current()->AddDispatcherForRootWindow(
       output_configurator());
   // We can't do this with a root window listener because XI_HierarchyChanged
   // messages don't have a target window.
-  base::MessagePumpAuraX11::Current()->AddObserver(output_configurator());
+  base::MessagePumpX11::Current()->AddObserver(output_configurator());
 #endif  // defined(OS_CHROMEOS)
   AddPreTargetHandler(this);
 
@@ -247,6 +241,8 @@ Shell::Shell(ShellDelegate* delegate)
 }
 
 Shell::~Shell() {
+  TRACE_EVENT0("shutdown", "ash::Shell::Destructor");
+
   views::FocusManagerFactory::Install(NULL);
 
   // Remove the focus from any window. This will prevent overhead and side
@@ -264,9 +260,7 @@ Shell::~Shell() {
     RemovePreTargetHandler(mouse_cursor_filter_.get());
   RemovePreTargetHandler(system_gesture_filter_.get());
   RemovePreTargetHandler(event_transformation_handler_.get());
-#if !defined(OS_MACOSX)
   RemovePreTargetHandler(accelerator_filter_.get());
-#endif
 
   // TooltipController is deleted with the Shell so removing its references.
   RemovePreTargetHandler(tooltip_controller_.get());
@@ -303,7 +297,6 @@ Shell::~Shell() {
   tooltip_controller_.reset();
   event_client_.reset();
   window_cycle_controller_.reset();
-  capture_controller_.reset();
   nested_dispatcher_controller_.reset();
   user_action_client_.reset();
   visibility_controller_.reset();
@@ -324,10 +317,6 @@ Shell::~Shell() {
   display_controller_.reset();
   screen_position_controller_.reset();
 
-  // Delete the activation controller after other controllers and launcher
-  // because they might have registered ActivationChangeObserver.
-  activation_controller_.reset();
-
 #if defined(OS_CHROMEOS) && defined(USE_X11)
    if (display_change_observer_)
     output_configurator_->RemoveObserver(display_change_observer_.get());
@@ -335,9 +324,9 @@ Shell::~Shell() {
     output_configurator_->RemoveObserver(output_configurator_animation_.get());
   if (display_error_observer_)
     output_configurator_->RemoveObserver(display_error_observer_.get());
-  base::MessagePumpAuraX11::Current()->RemoveDispatcherForRootWindow(
+  base::MessagePumpX11::Current()->RemoveDispatcherForRootWindow(
       output_configurator());
-  base::MessagePumpAuraX11::Current()->RemoveObserver(output_configurator());
+  base::MessagePumpX11::Current()->RemoveObserver(output_configurator());
   display_change_observer_.reset();
 #endif  // defined(OS_CHROMEOS)
 
@@ -376,7 +365,7 @@ void Shell::DeleteInstance() {
 
 // static
 internal::RootWindowController* Shell::GetPrimaryRootWindowController() {
-  return GetRootWindowController(GetPrimaryRootWindow());
+  return internal::GetRootWindowController(GetPrimaryRootWindow());
 }
 
 // static
@@ -391,7 +380,7 @@ aura::RootWindow* Shell::GetPrimaryRootWindow() {
 }
 
 // static
-aura::RootWindow* Shell::GetActiveRootWindow() {
+aura::RootWindow* Shell::GetTargetRootWindow() {
   Shell* shell = GetInstance();
   if (shell->scoped_target_root_window_)
     return shell->scoped_target_root_window_;
@@ -456,7 +445,7 @@ void Shell::Init() {
       new internal::OutputConfiguratorAnimation());
   output_configurator_->AddObserver(output_configurator_animation_.get());
   if (base::chromeos::IsRunningOnChromeOS()) {
-    display_change_observer_.reset(new internal::DisplayChangeObserverX11);
+    display_change_observer_.reset(new internal::DisplayChangeObserver);
     // Register |display_change_observer_| first so that the rest of
     // observer gets invoked after the root windows are configured.
     output_configurator_->AddObserver(display_change_observer_.get());
@@ -469,7 +458,7 @@ void Shell::Init() {
         delegate_->IsFirstRunAfterBoot() ? kChromeOsBootColor : 0);
     display_initialized = true;
   }
-#endif
+#endif  // defined(OS_CHROMEOS) && defined(USE_X11)
   if (!display_initialized)
     display_manager_->InitFromCommandLine();
 
@@ -484,22 +473,11 @@ void Shell::Init() {
   // initialized first by the ActivationController, but now that FocusController
   // no longer does this we need to do it explicitly.
   aura::Env::GetInstance();
-  if (views::corewm::UseFocusController()) {
-    views::corewm::FocusController* focus_controller =
-        new views::corewm::FocusController(new wm::AshFocusRules);
-    focus_client_.reset(focus_controller);
-    activation_client_ = focus_controller;
-    activation_client_->AddObserver(this);
-  } else {
-    focus_client_.reset(new aura::FocusManager);
-    activation_controller_.reset(
-        new internal::ActivationController(
-            focus_client_.get(),
-            new internal::AshActivationController));
-    activation_client_ = activation_controller_.get();
-    AddPreTargetHandler(activation_controller_.get());
-  }
-
+  views::corewm::FocusController* focus_controller =
+      new views::corewm::FocusController(new wm::AshFocusRules);
+  focus_client_.reset(focus_controller);
+  activation_client_ = focus_controller;
+  activation_client_->AddObserver(this);
   focus_cycler_.reset(new internal::FocusCycler());
 
   screen_position_controller_.reset(new internal::ScreenPositionController);
@@ -515,10 +493,8 @@ void Shell::Init() {
 
   cursor_manager_.SetDisplay(DisplayController::GetPrimaryDisplay());
 
-#if !defined(OS_MACOSX)
   nested_dispatcher_controller_.reset(new NestedDispatcherController);
   accelerator_controller_.reset(new AcceleratorController);
-#endif
 
   // The order in which event filters are added is significant.
   event_rewriter_filter_.reset(new internal::EventRewriterEventFilter);
@@ -537,18 +513,14 @@ void Shell::Init() {
                                  root_window->GetAcceleratedWidget()));
   AddPreTargetHandler(input_method_filter_.get());
 
-#if !defined(OS_MACOSX)
   accelerator_filter_.reset(new internal::AcceleratorFilter);
   AddPreTargetHandler(accelerator_filter_.get());
-#endif
 
   event_transformation_handler_.reset(new internal::EventTransformationHandler);
   AddPreTargetHandler(event_transformation_handler_.get());
 
   system_gesture_filter_.reset(new internal::SystemGestureEventFilter);
   AddPreTargetHandler(system_gesture_filter_.get());
-
-  capture_controller_.reset(new internal::CaptureController);
 
   // The keyboard system must be initialized before the RootWindowController is
   // created.
@@ -616,8 +588,7 @@ void Shell::Init() {
 
   // Initialize system_tray_delegate_ before initializing StatusAreaWidget.
   system_tray_delegate_.reset(delegate()->CreateSystemTrayDelegate());
-  if (!system_tray_delegate_)
-    system_tray_delegate_.reset(SystemTrayDelegate::CreateDummyDelegate());
+  DCHECK(system_tray_delegate_.get());
 
   internal::RootWindowController* root_window_controller =
       new internal::RootWindowController(root_window);
@@ -650,6 +621,14 @@ void Shell::Init() {
     // Let the first mouse event show the cursor.
     env_filter_->set_cursor_hidden_by_filter(true);
   }
+
+  // The compositor thread and main message loop have to be running in
+  // order to create mirror window. Run it after the main message loop
+  // is started.
+  base::MessageLoopForUI::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&internal::DisplayManager::CreateMirrorWindowIfAny,
+                 base::Unretained(display_manager_.get())));
 }
 
 void Shell::ShowContextMenu(const gfx::Point& location_in_screen,
@@ -667,7 +646,7 @@ void Shell::ShowContextMenu(const gfx::Point& location_in_screen,
   // NULL even for the out-of-bounds |location_in_screen| (It should
   // return the primary root). Investigate why/how this is
   // happening. crbug.com/165214.
-  internal::RootWindowController* rwc = GetRootWindowController(root);
+  internal::RootWindowController* rwc = internal::GetRootWindowController(root);
   CHECK(rwc) << "root=" << root
              << ", location:" << location_in_screen.ToString();
   if (rwc)
@@ -675,9 +654,9 @@ void Shell::ShowContextMenu(const gfx::Point& location_in_screen,
 }
 
 void Shell::ToggleAppList(aura::Window* window) {
-  // If the context window is not given, show it on the active root window.
+  // If the context window is not given, show it on the target root window.
   if (!window)
-    window = GetActiveRootWindow();
+    window = GetTargetRootWindow();
   if (!app_list_controller_)
     app_list_controller_.reset(new internal::AppListController);
   app_list_controller_->SetVisible(!app_list_controller_->IsVisible(), window);
@@ -817,7 +796,7 @@ void Shell::SetShelfAlignment(ShelfAlignment alignment,
 }
 
 ShelfAlignment Shell::GetShelfAlignment(aura::RootWindow* root_window) {
-  return GetRootWindowController(root_window)->
+  return internal::GetRootWindowController(root_window)->
       GetShelfLayoutManager()->GetAlignment();
 }
 
@@ -872,9 +851,13 @@ SystemTray* Shell::GetPrimarySystemTray() {
 
 LauncherDelegate* Shell::GetLauncherDelegate() {
   if (!launcher_delegate_) {
+    // Creates LauncherItemDelegateManager before LauncherDelegate.
+    launcher_item_delegate_manager_.reset(new LauncherItemDelegateManager);
     launcher_model_.reset(new LauncherModel);
     launcher_delegate_.reset(
         delegate_->CreateLauncherDelegate(launcher_model_.get()));
+    app_list_shelf_item_delegate_.reset(
+        new internal::AppListShelfItemDelegate);
   }
   return launcher_delegate_.get();
 }
@@ -922,20 +905,16 @@ void Shell::InitRootWindowController(
   DCHECK(activation_client_);
   DCHECK(visibility_controller_.get());
   DCHECK(drag_drop_controller_.get());
-  DCHECK(capture_controller_.get());
   DCHECK(window_cycle_controller_.get());
 
   aura::client::SetFocusClient(root_window, focus_client_.get());
   input_method_filter_->SetInputMethodPropertyInRootWindow(root_window);
   aura::client::SetActivationClient(root_window, activation_client_);
-  if (views::corewm::UseFocusController()) {
-    views::corewm::FocusController* controller =
-        static_cast<views::corewm::FocusController*>(activation_client_);
-    root_window->AddPreTargetHandler(controller);
-  }
+  views::corewm::FocusController* focus_controller =
+      static_cast<views::corewm::FocusController*>(activation_client_);
+  root_window->AddPreTargetHandler(focus_controller);
   aura::client::SetVisibilityClient(root_window, visibility_controller_.get());
   aura::client::SetDragDropClient(root_window, drag_drop_controller_.get());
-  aura::client::SetCaptureClient(root_window, capture_controller_.get());
   aura::client::SetScreenPositionClient(root_window,
                                         screen_position_controller_.get());
   aura::client::SetCursorClient(root_window, &cursor_manager_);
@@ -950,8 +929,6 @@ void Shell::InitRootWindowController(
     aura::client::SetUserActionClient(root_window, user_action_client_.get());
 
   controller->Init(first_run_after_boot);
-
-  mru_window_tracker_->OnRootWindowAdded(root_window);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

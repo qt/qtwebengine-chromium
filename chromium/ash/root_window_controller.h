@@ -33,6 +33,7 @@ class Widget;
 namespace corewm {
 class InputMethodEventFilter;
 class RootWindowEventFilter;
+class ScopedCaptureClient;
 }
 }
 
@@ -50,7 +51,6 @@ namespace internal {
 
 class AlwaysOnTopController;
 class AnimatingDesktopController;
-class BootSplashScreen;
 class DesktopBackgroundWidgetController;
 class DockedWindowLayoutManager;
 class PanelLayoutManager;
@@ -63,6 +63,10 @@ class SystemModalContainerLayoutManager;
 class TouchHudDebug;
 class TouchHudProjection;
 class WorkspaceController;
+
+#if defined(USE_X11)
+class BootSplashScreen;
+#endif
 
 // This class maintains the per root window state for ash. This class
 // owns the root window and other dependent objects that should be
@@ -83,8 +87,8 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
   // Returns a RootWindowController of the window's root window.
   static RootWindowController* ForWindow(const aura::Window* window);
 
-  // Returns the RootWindowController of the active root window.
-  static internal::RootWindowController* ForActiveRootWindow();
+  // Returns the RootWindowController of the target root window.
+  static internal::RootWindowController* ForTargetRootWindow();
 
   aura::RootWindow* root_window() { return root_window_.get(); }
 
@@ -96,6 +100,10 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
 
   AlwaysOnTopController* always_on_top_controller() {
     return always_on_top_controller_.get();
+  }
+
+  keyboard::KeyboardController* keyboard_controller() {
+    return keyboard_controller_.get();
   }
 
   ScreenDimmer* screen_dimmer() { return screen_dimmer_.get(); }
@@ -202,10 +210,9 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
   // Initialize touch HUDs if necessary.
   void InitTouchHuds();
 
-  // Returns the window, if any, which is in fullscreen mode in the active
-  // workspace. Exposed here so clients of Ash don't need to know the details
-  // of workspace management.
-  const aura::Window* GetFullscreenWindow() const;
+  // Returns the window, if any, which is in fullscreen mode. If multiple
+  // windows are in fullscreen state, the topmost one is preferred.
+  const aura::Window* GetTopmostFullscreenWindow() const;
 
  private:
   void InitLayoutManagers();
@@ -255,7 +262,9 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
   PanelLayoutManager* panel_layout_manager_;
 
   scoped_ptr<SystemBackgroundController> system_background_;
+#if defined(USE_X11)
   scoped_ptr<BootSplashScreen> boot_splash_screen_;
+#endif
 
   scoped_ptr<ScreenDimmer> screen_dimmer_;
   scoped_ptr<WorkspaceController> workspace_controller_;
@@ -276,9 +285,15 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
 
   scoped_ptr<DesktopBackgroundWidgetController> wallpaper_controller_;
   scoped_ptr<AnimatingDesktopController> animating_wallpaper_controller_;
+  scoped_ptr<views::corewm::ScopedCaptureClient> capture_client_;
 
   DISALLOW_COPY_AND_ASSIGN(RootWindowController);
 };
+
+
+// Gets the RootWindowController for |root_window|.
+ASH_EXPORT RootWindowController* GetRootWindowController(
+    const aura::RootWindow* root_window);
 
 }  // namespace internal
 }  // ash

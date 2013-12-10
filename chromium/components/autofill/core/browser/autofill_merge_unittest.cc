@@ -88,7 +88,8 @@ class PersonalDataManagerMock : public PersonalDataManager {
   void Reset();
 
   // PersonalDataManager:
-  virtual void SaveImportedProfile(const AutofillProfile& profile) OVERRIDE;
+  virtual std::string SaveImportedProfile(
+      const AutofillProfile& profile) OVERRIDE;
   virtual const std::vector<AutofillProfile*>& web_profiles() const OVERRIDE;
 
  private:
@@ -108,11 +109,14 @@ void PersonalDataManagerMock::Reset() {
   profiles_.clear();
 }
 
-void PersonalDataManagerMock::SaveImportedProfile(
+std::string PersonalDataManagerMock::SaveImportedProfile(
     const AutofillProfile& profile) {
   std::vector<AutofillProfile> profiles;
-  if (!MergeProfile(profile, profiles_.get(), "en-US", &profiles))
+  std::string merged_guid =
+      MergeProfile(profile, profiles_.get(), "en-US", &profiles);
+  if (merged_guid == profile.guid())
     profiles_.push_back(new AutofillProfile(profile));
+  return merged_guid;
 }
 
 const std::vector<AutofillProfile*>& PersonalDataManagerMock::web_profiles()
@@ -213,7 +217,7 @@ void AutofillMergeTest::MergeProfiles(const std::string& profiles,
     // followed by an explicit separator.
     if ((i > 0 && line == kProfileSeparator) || i == lines.size() - 1) {
       // Reached the end of a profile.  Try to import it.
-      FormStructure form_structure(form, std::string());
+      FormStructure form_structure(form);
       for (size_t i = 0; i < form_structure.field_count(); ++i) {
         // Set the heuristic type for each field, which is currently serialized
         // into the field's name.

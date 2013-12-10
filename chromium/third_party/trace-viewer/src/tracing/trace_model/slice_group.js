@@ -34,6 +34,7 @@ base.exportTo('tracing.trace_model', function() {
 
     this.slices = [];
     this.bounds = new base.Range();
+    this.topLevelSlices = [];
   }
 
   SliceGroup.prototype = {
@@ -77,6 +78,7 @@ base.exportTo('tracing.trace_model', function() {
      * Calls to beginSlice and
      * endSlice must be made with non-monotonically-decreasing timestamps.
      *
+     * @param {String} category Category name of the slice to add.
      * @param {String} title Title of the slice to add.
      * @param {Number} ts The timetsamp of the slice, in milliseconds.
      * @param {Object.<string, Object>=} opt_args Arguments associated with
@@ -143,6 +145,26 @@ base.exportTo('tracing.trace_model', function() {
     },
 
     /**
+     * Push a complete event as a Slice into the slice list.
+     * The timestamp can be in any order.
+     *
+     * @param {String} category Category name of the slice to add.
+     * @param {String} title Title of the slice to add.
+     * @param {Number} ts The timetsamp of the slice, in milliseconds.
+     * @param {Number} duration The duration of the slice, in milliseconds.
+     * @param {Object.<string, Object>=} opt_args Arguments associated with
+     * the slice.
+     */
+    pushCompleteSlice: function(category, title, ts, duration, opt_args) {
+      var colorId = tracing.getStringColorId(title);
+      var slice = new this.sliceConstructor(category, title, colorId, ts,
+                                            opt_args ? opt_args : {},
+                                            duration);
+      this.pushSlice(slice);
+      return slice;
+    },
+
+    /**
      * Closes any open slices.
      * @param {Number=} opt_maxTimestamp The end time to use for the closed
      * slices. If not provided,
@@ -197,6 +219,76 @@ base.exportTo('tracing.trace_model', function() {
           slice.args, slice.duration);
       newSlice.didNotFinish = slice.didNotFinish;
       return newSlice;
+    },
+
+    iterateAllEvents: function(callback) {
+      this.slices.forEach(callback);
+      this.openPartialSlices_.forEach(callback);
+    },
+
+    /**
+     * Construct subSlices for this group.
+     * Populate the group topLevelSlices, parent slices get a subSlices[]
+     * and a selfTime, child slices get a parentSlice reference.
+     */
+    createSubSlices: function() {
+      function addSliceIfBounds(root, child) {
+        // Because we know that the start time of child is >= the start time
+        // of all other slices seen so far, we can just check the last slice
+        // of each row for bounding.
+        if (child.start >= root.start && child.end <= root.end) {
+          if (root.subSlices && root.subSlices.length > 0) {
+            if (addSliceIfBounds(root.subSlices[root.subSlices.length - 1],
+                                 child))
+              return true;
+          }
+          if (!root.selfTime)
+            root.selfTime = root.duration;
+          child.parentSlice = root;
+          if (!root.subSlices)
+            root.subSlices = [];
+          root.subSlices.push(child);
+          root.selfTime -= child.duration;
+          return true;
+        }
+        return false;
+      }
+
+      if (!this.slices.length)
+        return;
+
+      var ops = [];
+      for (var i = 0; i < this.slices.length; i++) {
+        if (this.slices[i].subSlices)
+          this.slices[i].subSlices.splice(0,
+                                          this.slices[i].subSlices.length);
+        ops.push(i);
+      }
+
+      var groupSlices = this.slices;
+      ops.sort(function(ix, iy) {
+        var x = groupSlices[ix];
+        var y = groupSlices[iy];
+        if (x.start != y.start)
+          return x.start - y.start;
+
+        // Elements get inserted into the slices array in order of when the
+        // slices end.  Because slices must be properly nested, we break
+        // start-time ties by assuming that the elements appearing earlier
+        // in the slices array (and thus ending earlier) start later.
+        return iy - ix;
+      });
+
+      var rootSlice = this.slices[ops[0]];
+      this.topLevelSlices = [];
+      this.topLevelSlices.push(rootSlice);
+      for (var i = 1; i < ops.length; i++) {
+        var slice = this.slices[ops[i]];
+        if (!addSliceIfBounds(rootSlice, slice)) {
+          rootSlice = slice;
+          this.topLevelSlices.push(rootSlice);
+        }
+      }
     }
   };
 

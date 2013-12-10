@@ -31,6 +31,7 @@ Patches:
 
   * Add the SSL_PeerCertificateChain function
     patches/peercertchain.patch
+    patches/peercertchain2.patch
     https://bugzilla.mozilla.org/show_bug.cgi?id=731485
 
   * Add support for client auth with native crypto APIs on Mac and Windows
@@ -74,6 +75,8 @@ Patches:
     NSS that doesn't contain the CBC constant-time changes.
     patches/cbc.patch
     https://code.google.com/p/chromium/issues/detail?id=172658#c12
+    TODO(wtc): remove this patch now that NSS 3.14.3 is the minimum
+    compile-time and run-time version.
 
   * Change ssl3_SuiteBOnly to always return PR_TRUE. The softoken in NSS
     versions older than 3.15 report an EC key size range of 112 bits to 571
@@ -97,10 +100,44 @@ Patches:
     https://bugzilla.mozilla.org/show_bug.cgi?id=903565
     patches/sslsock_903565.patch
 
+  * Implement the AES GCM cipher suites.
+    https://bugzilla.mozilla.org/show_bug.cgi?id=880543
+    patches/aesgcm.patch
+
+  * Add Chromium-specific code to detect AES GCM support in the system NSS
+    libraries at run time.
+    patches/aesgcmchromium.patch
+
   * Prefer to generate SHA-1 signatures for TLS 1.2 client authentication if
     the client private key is in a CAPI service provider on Windows or if the
     client private key is a 1024-bit RSA or DSA key.
     patches/tls12backuphash.patch
+
+  * Support ChaCha20+Poly1305 ciphersuites
+    http://tools.ietf.org/html/draft-agl-tls-chacha20poly1305-01
+    patches/chacha20poly1305.patch
+
+  * Fix session cache lock creation race.
+    patches/cachelocks.patch
+    https://bugzilla.mozilla.org/show_bug.cgi?id=764646
+
+  * Don't advertise TLS 1.2-only cipher suites in a TLS 1.1 ClientHello.
+    https://bugzilla.mozilla.org/show_bug.cgi?id=919677
+    patches/ciphersuiteversion.patch
+
+  * Don't use record versions greater than 0x0301 in resumption ClientHello
+    records either.
+    https://bugzilla.mozilla.org/show_bug.cgi?id=923696
+    https://code.google.com/p/chromium/issues/detail?id=303398
+    patches/resumeclienthelloversion.patch
+
+  * Make SSL False Start work with asynchronous certificate validation.
+    https://bugzilla.mozilla.org/show_bug.cgi?id=713933
+    patches/canfalsestart.patch
+
+  * Have the Null Cipher limit output to the maximum allowed
+    https://bugzilla.mozilla.org/show_bug.cgi?id=934016
+    patches/nullcipher_934016.patch
 
 Apply the patches to NSS by running the patches/applypatches.sh script.  Read
 the comments at the top of patches/applypatches.sh for instructions.

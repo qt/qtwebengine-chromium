@@ -9,7 +9,7 @@
 #include "ash/shelf/shelf_layout_manager_observer.h"
 #include "ash/shell_observer.h"
 #include "ash/wm/dock/dock_types.h"
-#include "ash/wm/property_util.h"
+#include "ash/wm/workspace/snap_types.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
@@ -50,7 +50,9 @@ class ShelfLayoutManager;
 // its layout manager to this instance, e.g.:
 // dock_container->SetLayoutManager(
 //     new DockedWindowLayoutManager(dock_container));
-
+//
+// TODO(varkha): extend BaseLayoutManager instead of LayoutManager to inherit
+// common functionality.
 class ASH_EXPORT DockedWindowLayoutManager
     : public aura::LayoutManager,
       public ash::ShellObserver,
@@ -59,6 +61,9 @@ class ASH_EXPORT DockedWindowLayoutManager
       public keyboard::KeyboardControllerObserver,
       public ash::ShelfLayoutManagerObserver {
  public:
+  // Maximum width of the docked windows area.
+  static const int kMaxDockWidth;
+
   explicit DockedWindowLayoutManager(aura::Window* dock_container);
   virtual ~DockedWindowLayoutManager();
 
@@ -70,26 +75,42 @@ class ASH_EXPORT DockedWindowLayoutManager
   virtual void RemoveObserver(DockedWindowLayoutManagerObserver* observer);
 
   // Called by a DockedWindowResizer to update which window is being dragged.
+  // Starts observing the window unless it is a child.
   void StartDragging(aura::Window* window);
-  void FinishDragging();
 
-  // Returns true if a window is touching the side of the screen except 2 cases:
-  // when some other windows are already docked on the other side or
-  // when launcher (shelf) is aligned on the same side.
-  static bool ShouldWindowDock(aura::Window* window,
-                               const gfx::Point& location);
+  // Called by a DockedWindowResizer when a dragged window is docked.
+  void DockDraggedWindow(aura::Window* window);
+
+  // Called by a DockedWindowResizer when a dragged window is no longer docked.
+  void UndockDraggedWindow();
+
+  // Called by a DockedWindowResizer when a window is no longer being dragged.
+  // Stops observing the window unless it is a child.
+  void FinishDragging();
 
   ash::Launcher* launcher() { return launcher_; }
   void SetLauncher(ash::Launcher* launcher);
 
+  // Calculates if a window is touching the screen edges and returns edge.
+  DockedAlignment GetAlignmentOfWindow(const aura::Window* window) const;
+
   // Used to snap docked windows to the side of screen during drag.
   DockedAlignment CalculateAlignment() const;
+
+  // Returns true when a window can be docked. Windows cannot be docked at the
+  // edge used by the launcher shelf or the edge opposite from existing dock.
+  bool CanDockWindow(aura::Window* window, SnapType edge);
+
+  aura::Window* dock_container() const { return dock_container_; }
 
   // Returns current bounding rectangle of docked windows area.
   const gfx::Rect& docked_bounds() const { return docked_bounds_; }
 
-  // Currently dragged window should be able to dock on another screen
-  aura::Window* dragged_window() const { return dragged_window_;}
+  // Returns last known coordinates of |dragged_window_| after Relayout.
+  const gfx::Rect dragged_bounds() const { return dragged_bounds_;}
+
+  // Returns true if currently dragged window is docked at the screen edge.
+  bool is_dragged_window_docked() const { return is_dragged_window_docked_; }
 
   // aura::LayoutManager:
   virtual void OnWindowResized() OVERRIDE;
@@ -127,24 +148,31 @@ class ASH_EXPORT DockedWindowLayoutManager
   FRIEND_TEST_ALL_PREFIXES(DockedWindowResizerTest, AttachOneTestSticky);
   FRIEND_TEST_ALL_PREFIXES(DockedWindowResizerTest, ResizeTwoWindows);
   FRIEND_TEST_ALL_PREFIXES(DockedWindowResizerTest, DragToShelf);
+  FRIEND_TEST_ALL_PREFIXES(DockedWindowLayoutManagerTest, AutoPlacingLeft);
+  FRIEND_TEST_ALL_PREFIXES(DockedWindowLayoutManagerTest, AutoPlacingRight);
+  FRIEND_TEST_ALL_PREFIXES(DockedWindowLayoutManagerTest,
+                           AutoPlacingRightSecondScreen);
   friend class DockedWindowLayoutManagerTest;
   friend class DockedWindowResizerTest;
 
   // Minimum width of the docked windows area.
   static const int kMinDockWidth;
 
-  // Maximum width of the docked windows area.
-  static const int kMaxDockWidth;
-
   // Width of the gap between the docked windows and a workspace.
   static const int kMinDockGap;
 
   // Minimize / restore window and relayout.
-  void MinimizeWindow(aura::Window* window);
-  void RestoreWindow(aura::Window* window);
+  void MinimizeDockedWindow(aura::Window* window);
+  void RestoreDockedWindow(aura::Window* window);
 
-  // Calculates if a window is touching the screen edges and returns edge.
-  DockedAlignment AlignmentOfWindow(const aura::Window* window) const;
+  // Updates docked layout state when a window gets inside the dock.
+  void OnWindowDocked(aura::Window* window);
+
+  // Updates docked layout state when a window gets outside the dock.
+  void OnWindowUndocked();
+
+  // Returns true if there are any windows currently docked.
+  bool IsAnyWindowDocked();
 
   // Called whenever the window layout might change.
   void Relayout();
@@ -165,8 +193,21 @@ class ASH_EXPORT DockedWindowLayoutManager
   aura::Window* dock_container_;
   // Protect against recursive calls to Relayout().
   bool in_layout_;
-  // The docked window being dragged.
+
+  // A window that is being dragged (whether docked or not).
+  // Windows are tracked by docked layout manager only if they are docked;
+  // however we need to know if a window is being dragged in order to avoid
+  // positioning it or even considering it for layout.
   aura::Window* dragged_window_;
+
+  // True if the window being dragged is currently docked.
+  bool is_dragged_window_docked_;
+
+  // Previously docked windows use a more relaxed dragging sorting algorithm
+  // that uses assumption that a window starts being dragged out of position
+  // that was previously established in Relayout. This allows easier reordering.
+  bool is_dragged_from_dock_;
+
   // The launcher we are observing for launcher icon changes.
   Launcher* launcher_;
   // The shelf layout manager being observed for visibility changes.
@@ -179,6 +220,9 @@ class ASH_EXPORT DockedWindowLayoutManager
 
   // Last bounds that were sent to observers.
   gfx::Rect docked_bounds_;
+
+  // Target bounds of a docked window being dragged.
+  gfx::Rect dragged_bounds_;
 
   // Side of the screen that the dock is positioned at.
   DockedAlignment alignment_;

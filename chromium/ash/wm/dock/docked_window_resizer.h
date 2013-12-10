@@ -5,8 +5,11 @@
 #ifndef ASH_WM_DOCK_DOCK_WINDOW_RESIZER_H_
 #define ASH_WM_DOCK_DOCK_WINDOW_RESIZER_H_
 
+#include "ash/wm/dock/dock_types.h"
 #include "ash/wm/window_resizer.h"
 #include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 
 namespace gfx {
 class Point;
@@ -18,10 +21,9 @@ class RootWindow;
 }
 
 namespace ash {
-
 namespace internal {
+
 class DockedWindowLayoutManager;
-}
 
 // DockWindowResizer is used by ToplevelWindowEventFilter to handle dragging,
 // moving or resizing of a window while it is docked to the side of a screen.
@@ -62,7 +64,7 @@ class ASH_EXPORT DockedWindowResizer : public WindowResizer {
 
   // Informs the DockLayoutManager that the drag is complete if it was informed
   // of the drag start.
-  void FinishDragging();
+  void FinishedDragging();
 
   const Details details_;
 
@@ -73,6 +75,7 @@ class ASH_EXPORT DockedWindowResizer : public WindowResizer {
 
   // Dock container window.
   internal::DockedWindowLayoutManager* dock_layout_;
+  internal::DockedWindowLayoutManager* initial_dock_layout_;
 
   // Set to true once Drag() is invoked and the bounds of the window change.
   bool did_move_or_resize_;
@@ -80,13 +83,15 @@ class ASH_EXPORT DockedWindowResizer : public WindowResizer {
   // Set to true if the window that is being dragged was docked before drag.
   bool was_docked_;
 
-  // If non-NULL the destructor sets this to true. Used to determine if this has
-  // been deleted.
-  bool* destroyed_;
+  // True if the dragged window is docked during the drag.
+  bool is_docked_;
+
+  base::WeakPtrFactory<DockedWindowResizer> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DockedWindowResizer);
 };
 
+}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_WM_DOCK_DOCK_WINDOW_RESIZER_H_

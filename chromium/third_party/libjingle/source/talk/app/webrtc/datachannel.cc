@@ -98,6 +98,7 @@ bool DataChannel::HasNegotiationCompleted() {
 DataChannel::~DataChannel() {
   ClearQueuedReceivedData();
   ClearQueuedSendData();
+  ClearQueuedControlData();
 }
 
 void DataChannel::RegisterObserver(DataChannelObserver* observer) {
@@ -193,7 +194,8 @@ bool DataChannel::SendControl(const talk_base::Buffer* buffer) {
 void DataChannel::SetReceiveSsrc(uint32 receive_ssrc) {
   if (receive_ssrc_set_) {
     ASSERT(session_->data_channel_type() == cricket::DCT_RTP ||
-        receive_ssrc_ == send_ssrc_);
+           !send_ssrc_set_ ||
+           receive_ssrc_ == send_ssrc_);
     return;
   }
   receive_ssrc_ = receive_ssrc;
@@ -209,7 +211,8 @@ void DataChannel::RemotePeerRequestClose() {
 void DataChannel::SetSendSsrc(uint32 send_ssrc) {
   if (send_ssrc_set_) {
     ASSERT(session_->data_channel_type() == cricket::DCT_RTP ||
-        receive_ssrc_ == send_ssrc_);
+           !receive_ssrc_set_ ||
+           receive_ssrc_ == send_ssrc_);
     return;
   }
   send_ssrc_ = send_ssrc;
@@ -250,14 +253,16 @@ void DataChannel::OnChannelReady(bool writable) {
   if (!writable) {
     return;
   }
-  // Update the readyState if the channel is writable for the first time;
-  // otherwise it means the channel was blocked for sending and now unblocked,
-  // so send the queued data now.
+  // Update the readyState and send the queued control message if the channel
+  // is writable for the first time; otherwise it means the channel was blocked
+  // for sending and now unblocked, so send the queued data now.
   if (!was_ever_writable_) {
     was_ever_writable_ = true;
     UpdateState();
+    DeliverQueuedControlData();
+    ASSERT(queued_send_data_.empty());
   } else if (state_ == kOpen) {
-    SendQueuedSendData();
+    DeliverQueuedSendData();
   }
 }
 
@@ -321,15 +326,13 @@ void DataChannel::ConnectToDataSession() {
   data_session_->SignalDataReceived.connect(this, &DataChannel::OnDataReceived);
   cricket::StreamParams params =
     cricket::StreamParams::CreateLegacy(id());
-  data_session_->media_channel()->AddSendStream(params);
-  data_session_->media_channel()->AddRecvStream(params);
+  data_session_->AddRecvStream(params);
+  data_session_->AddSendStream(params);
 }
 
 void DataChannel::DisconnectFromDataSession() {
-  if (data_session_->media_channel() != NULL) {
-    data_session_->media_channel()->RemoveSendStream(id());
-    data_session_->media_channel()->RemoveRecvStream(id());
-  }
+  data_session_->RemoveSendStream(id());
+  data_session_->RemoveRecvStream(id());
   data_session_->SignalReadyToSendData.disconnect(this);
   data_session_->SignalDataReceived.disconnect(this);
   data_session_ = NULL;
@@ -356,7 +359,7 @@ void DataChannel::ClearQueuedReceivedData() {
   }
 }
 
-void DataChannel::SendQueuedSendData() {
+void DataChannel::DeliverQueuedSendData() {
   DeliverQueuedControlData();
   if (!was_ever_writable_) {
     return;
@@ -366,12 +369,20 @@ void DataChannel::SendQueuedSendData() {
     DataBuffer* buffer = queued_send_data_.front();
     cricket::SendDataResult send_result;
     if (!InternalSendWithoutQueueing(*buffer, &send_result)) {
-      LOG(LS_WARNING) << "SendQueuedSendData aborted due to send_result "
+      LOG(LS_WARNING) << "DeliverQueuedSendData aborted due to send_result "
                       << send_result;
       break;
     }
     queued_send_data_.pop_front();
     delete buffer;
+  }
+}
+
+void DataChannel::ClearQueuedControlData() {
+  while (!queued_control_data_.empty()) {
+    const talk_base::Buffer *buf = queued_control_data_.front();
+    queued_control_data_.pop();
+    delete buf;
   }
 }
 

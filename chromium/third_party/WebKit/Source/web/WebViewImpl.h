@@ -37,7 +37,6 @@
 #include "DragClientImpl.h"
 #include "EditorClientImpl.h"
 #include "InspectorClientImpl.h"
-#include "MIDIClientImpl.h"
 #include "NotificationPresenterImpl.h"
 #include "PageOverlayList.h"
 #include "PageWidgetDelegate.h"
@@ -45,9 +44,9 @@
 #include "WebInputEvent.h"
 #include "WebNavigationPolicy.h"
 #include "WebView.h"
-#include "WebViewBenchmarkSupportImpl.h"
 #include "core/page/PagePopupDriver.h"
 #include "core/page/PageScaleConstraintsSet.h"
+#include "core/platform/Timer.h"
 #include "core/platform/graphics/FloatSize.h"
 #include "core/platform/graphics/GraphicsContext3D.h"
 #include "core/platform/graphics/GraphicsLayer.h"
@@ -62,6 +61,7 @@
 #include "public/platform/WebString.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/RefCounted.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 class ChromiumDataObject;
@@ -95,13 +95,14 @@ class ContextMenuClientImpl;
 class DeviceOrientationClientProxy;
 class GeolocationClientProxy;
 class LinkHighlight;
+class MIDIClientProxy;
 class PinchViewports;
 class PrerendererClientImpl;
 class SpeechInputClientImpl;
 class SpeechRecognitionClientProxy;
 class UserMediaClientImpl;
 class ValidationMessageClientImpl;
-class WebAccessibilityObject;
+class WebAXObject;
 class WebActiveGestureAnimation;
 class WebCompositorImpl;
 class WebDevToolsAgentClient;
@@ -119,7 +120,6 @@ class WebPagePopupImpl;
 class WebPrerendererClient;
 class WebSettingsImpl;
 class WebTouchEvent;
-class WebViewBenchmarkSupport;
 class FullscreenController;
 
 class WebViewImpl : public WebView
@@ -218,9 +218,12 @@ public:
     virtual void zoomToFindInPageRect(const WebRect&);
     virtual void advanceFocus(bool reverse);
     virtual double zoomLevel();
+    virtual double setZoomLevel(double);
     virtual double setZoomLevel(bool textOnly, double zoomLevel);
     virtual void zoomLimitsChanged(double minimumZoomLevel,
                                    double maximumZoomLevel);
+    virtual float textZoomFactor();
+    virtual float setTextZoomFactor(float);
     virtual void setInitialPageScaleOverride(float);
     virtual bool zoomToMultipleTargetsRect(const WebRect&);
     virtual float pageScaleFactor() const;
@@ -287,7 +290,7 @@ public:
     virtual void setInspectorSetting(const WebString& key,
                                      const WebString& value);
     virtual WebDevToolsAgent* devToolsAgent();
-    virtual WebAccessibilityObject accessibilityObject();
+    virtual WebAXObject accessibilityObject();
     virtual void applyAutofillSuggestions(
         const WebNode&,
         const WebVector<WebString>& names,
@@ -309,7 +312,6 @@ public:
     virtual void addPageOverlay(WebPageOverlay*, int /* zOrder */);
     virtual void removePageOverlay(WebPageOverlay*);
     virtual void transferActiveWheelFlingAnimation(const WebActiveWheelFlingParameters&);
-    virtual WebViewBenchmarkSupport* benchmarkSupport();
     virtual void setShowPaintRects(bool);
     virtual void setShowDebugBorders(bool);
     virtual void setShowFPSCounter(bool);
@@ -373,8 +375,6 @@ public:
     {
         return m_page.get();
     }
-
-    WebCore::RenderTheme* theme() const;
 
     // Returns the main frame associated with this view. This may be null when
     // the page is shutting down, but will be valid at all other times.
@@ -444,17 +444,6 @@ public:
         return m_maxAutoSize;
     }
 
-    // Sets the emulated text zoom factor
-    // (may not be 1 in the device metrics emulation mode).
-    void setEmulatedTextZoomFactor(float);
-
-    // Returns the emulated text zoom factor
-    // (which may not be 1 in the device metrics emulation mode).
-    float emulatedTextZoomFactor() const
-    {
-        return m_emulatedTextZoomFactor;
-    }
-
     void updatePageDefinedPageScaleConstraints(const WebCore::ViewportArguments&);
 
     // Start a system drag and drop operation.
@@ -470,10 +459,8 @@ public:
         m_autofillPopupShowing = false;
     }
 
-#if ENABLE(NOTIFICATIONS) || ENABLE(LEGACY_NOTIFICATIONS)
     // Returns the provider of desktop notifications.
     NotificationPresenterImpl* notificationPresenterImpl();
-#endif
 
     // Tries to scroll a frame or any parent of a frame. Returns true if the view
     // was scrolled.
@@ -490,6 +477,7 @@ public:
 
     // Creates a Helper Plugin of |pluginType| for |hostDocument|.
     WebHelperPluginImpl* createHelperPlugin(const String& pluginType, const WebDocument& hostDocument);
+    void closeHelperPluginSoon(PassRefPtr<WebHelperPluginImpl>);
 
     // Returns the input event we're currently processing. This is used in some
     // cases where the WebCore DOM event doesn't have the information we need.
@@ -526,9 +514,10 @@ public:
     // a plugin can update its own zoom, say because of its own UI.
     void fullFramePluginZoomLevelChanged(double zoomLevel);
 
-    void computeScaleAndScrollForBlockRect(const WebRect& blockRect, float padding, float& scale, WebPoint& scroll, bool& doubleTapShouldZoomOut);
+    void computeScaleAndScrollForBlockRect(const WebPoint& hitPoint, const WebRect& blockRect, float padding, float defaultScaleWhenAlreadyLegible, float& scale, WebPoint& scroll);
     WebCore::Node* bestTapNode(const WebCore::PlatformGestureEvent& tapEvent);
-    void enableTapHighlight(const WebCore::PlatformGestureEvent& tapEvent);
+    void enableTapHighlightAtPoint(const WebCore::PlatformGestureEvent& tapEvent);
+    void enableTapHighlights(Vector<WebCore::Node*>&);
     void computeScaleAndScrollForFocusedNode(WebCore::Node* focusedNode, float& scale, WebCore::IntPoint& scroll, bool& needAnimation);
 
     void animateDoubleTapZoom(const WebCore::IntPoint&);
@@ -560,7 +549,8 @@ public:
     bool shouldDisableDesktopWorkarounds();
 
     // Exposed for tests.
-    LinkHighlight* linkHighlight() { return m_linkHighlight.get(); }
+    unsigned numLinkHighlights() { return m_linkHighlights.size(); }
+    LinkHighlight* linkHighlight(int i) { return m_linkHighlights[i].get(); }
 
     WebSettingsImpl* settingsImpl();
 
@@ -569,7 +559,13 @@ public:
 
     WebCore::IntPoint clampOffsetAtScale(const WebCore::IntPoint& offset, float scale);
 
+    // Exposed for tests.
+    WebVector<WebCompositionUnderline> compositionUnderlines() const;
+
+    WebLayerTreeView* layerTreeView() const { return m_layerTreeView; };
+
 private:
+    float legibleScale() const;
     void refreshPageScaleFactorAfterLayout();
     void setUserAgentPageScaleConstraints(WebCore::PageScaleConstraints newConstraints);
     float clampPageScaleFactorToLimits(float) const;
@@ -640,12 +636,15 @@ private:
     void pointerLockMouseEvent(const WebInputEvent&);
 
     // PageWidgetEventHandler functions
+    virtual void handleMouseLeave(WebCore::Frame&, const WebMouseEvent&) OVERRIDE;
     virtual void handleMouseDown(WebCore::Frame&, const WebMouseEvent&) OVERRIDE;
     virtual void handleMouseUp(WebCore::Frame&, const WebMouseEvent&) OVERRIDE;
     virtual bool handleMouseWheel(WebCore::Frame&, const WebMouseWheelEvent&) OVERRIDE;
     virtual bool handleGestureEvent(const WebGestureEvent&) OVERRIDE;
     virtual bool handleKeyEvent(const WebKeyboardEvent&) OVERRIDE;
     virtual bool handleCharEvent(const WebKeyboardEvent&) OVERRIDE;
+
+    void closePendingHelperPlugins(WebCore::Timer<WebViewImpl>*);
 
     WebViewClient* m_client; // Can be 0 (e.g. unittests, shared workers, etc.)
     WebAutofillClient* m_autofillClient;
@@ -661,6 +660,7 @@ private:
     BackForwardClientImpl m_backForwardClientImpl;
 
     WebSize m_size;
+    bool m_fixedLayoutSizeLock;
     // If true, automatically resize the render view around its content.
     bool m_shouldAutoResize;
     // The lower bound on the size when auto-resizing.
@@ -777,15 +777,11 @@ private:
     typedef HashMap<WTF::String, WTF::String> SettingsMap;
     OwnPtr<SettingsMap> m_inspectorSettingsMap;
 
-#if ENABLE(NOTIFICATIONS) || ENABLE(LEGACY_NOTIFICATIONS)
     // The provider of desktop notifications;
     NotificationPresenterImpl m_notificationPresenter;
-#endif
 
     // If set, the (plugin) node which has mouse capture.
     RefPtr<WebCore::Node> m_mouseCaptureNode;
-
-    WebViewBenchmarkSupportImpl m_benchmarkSupport;
 
     WebCore::IntRect m_rootLayerScrollDamage;
     WebLayerTreeView* m_layerTreeView;
@@ -808,10 +804,8 @@ private:
     OwnPtr<DeviceOrientationClientProxy> m_deviceOrientationClientProxy;
     OwnPtr<GeolocationClientProxy> m_geolocationClientProxy;
 
-    float m_emulatedTextZoomFactor;
-
     UserMediaClientImpl m_userMediaClientImpl;
-    MIDIClientImpl m_midiClientImpl;
+    OwnPtr<MIDIClientProxy> m_midiClientProxy;
 #if ENABLE(NAVIGATOR_CONTENT_UTILS)
     OwnPtr<NavigatorContentUtilsClientImpl> m_navigatorContentUtilsClient;
 #endif
@@ -820,7 +814,7 @@ private:
     WebPoint m_globalPositionOnFlingStart;
     int m_flingModifier;
     bool m_flingSourceDevice;
-    OwnPtr<LinkHighlight> m_linkHighlight;
+    Vector<OwnPtr<LinkHighlight> > m_linkHighlights;
     OwnPtr<ValidationMessageClientImpl> m_validationMessage;
     OwnPtr<FullscreenController> m_fullscreenController;
 
@@ -830,7 +824,17 @@ private:
     bool m_continuousPaintingEnabled;
     bool m_showScrollBottleneckRects;
     WebColor m_baseBackgroundColor;
+
+    WebCore::Timer<WebViewImpl> m_helperPluginCloseTimer;
+    Vector<RefPtr<WebHelperPluginImpl> > m_helperPluginsPendingClose;
 };
+
+inline WebViewImpl* toWebViewImpl(WebView* webView)
+{
+    // We have no ways to check if the specified WebView is an instance of
+    // WebViewImpl because WebViewImpl is the only implementation of WebView.
+    return static_cast<WebViewImpl*>(webView);
+}
 
 } // namespace WebKit
 

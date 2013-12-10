@@ -32,13 +32,14 @@
 #define WebFrameTestProxy_h
 
 #include "WebTestProxy.h"
+#include "public/platform/WebNonCopyable.h"
 
 namespace WebTestRunner {
 
 // Templetized wrapper around RenderFrameImpl objects, which implement
 // the WebFrameClient interface.
 template<class Base, typename P, typename R>
-class WebFrameTestProxy : public Base {
+class WebFrameTestProxy : public Base, public WebKit::WebNonCopyable {
 public:
     WebFrameTestProxy(P p, R r)
         : Base(p, r)
@@ -154,9 +155,9 @@ public:
     {
         Base::didFinishResourceLoad(frame, identifier);
     }
-    virtual WebKit::WebNavigationPolicy decidePolicyForNavigation(WebKit::WebFrame* frame, const WebKit::WebURLRequest& request, WebKit::WebNavigationType type, WebKit::WebNavigationPolicy defaultPolicy, bool isRedirect)
+    virtual WebKit::WebNavigationPolicy decidePolicyForNavigation(WebKit::WebFrame* frame, WebKit::WebDataSource::ExtraData* extraData, const WebKit::WebURLRequest& request, WebKit::WebNavigationType type, WebKit::WebNavigationPolicy defaultPolicy, bool isRedirect)
     {
-        return Base::decidePolicyForNavigation(frame, request, type, defaultPolicy, isRedirect);
+        return Base::decidePolicyForNavigation(frame, extraData, request, type, defaultPolicy, isRedirect);
     }
     virtual bool willCheckAndDispatchMessageEvent(WebKit::WebFrame* sourceFrame, WebKit::WebFrame* targetFrame, WebKit::WebSecurityOrigin target, WebKit::WebDOMMessageEvent event)
     {

@@ -68,11 +68,21 @@ TEST_F(AshNativeCursorManagerTest, LockCursor) {
   cursor_manager->SetDisplay(display);
   EXPECT_EQ(2.5f, test_api.GetCurrentScale());
   EXPECT_EQ(2.0f, test_api.GetDisplay().device_scale_factor());
+  EXPECT_EQ(ui::CURSOR_SET_NORMAL, test_api.GetCurrentCursorSet());
   EXPECT_EQ(gfx::Display::ROTATE_90, test_api.GetDisplay().rotation());
   EXPECT_TRUE(test_api.GetCurrentCursor().platform());
 
   cursor_manager->LockCursor();
-  EXPECT_TRUE(cursor_manager->is_cursor_locked());
+  EXPECT_TRUE(cursor_manager->IsCursorLocked());
+
+  // Cursor type does not change while cursor is locked.
+  EXPECT_EQ(ui::CURSOR_SET_NORMAL, test_api.GetCurrentCursorSet());
+  cursor_manager->SetCursorSet(ui::CURSOR_SET_NORMAL);
+  EXPECT_EQ(ui::CURSOR_SET_NORMAL, test_api.GetCurrentCursorSet());
+  cursor_manager->SetCursorSet(ui::CURSOR_SET_LARGE);
+  EXPECT_EQ(ui::CURSOR_SET_LARGE, test_api.GetCurrentCursorSet());
+  cursor_manager->SetCursorSet(ui::CURSOR_SET_NORMAL);
+  EXPECT_EQ(ui::CURSOR_SET_NORMAL, test_api.GetCurrentCursorSet());
 
   // Cusror scale does change even while cursor is locked.
   EXPECT_EQ(2.5f, test_api.GetCurrentScale());
@@ -93,7 +103,7 @@ TEST_F(AshNativeCursorManagerTest, LockCursor) {
   EXPECT_EQ(gfx::Display::ROTATE_180, test_api.GetDisplay().rotation());
 
   cursor_manager->UnlockCursor();
-  EXPECT_FALSE(cursor_manager->is_cursor_locked());
+  EXPECT_FALSE(cursor_manager->IsCursorLocked());
 
   // Cursor type changes to the one specified while cursor is locked.
   EXPECT_EQ(1.5f, test_api.GetCurrentScale());
@@ -114,6 +124,22 @@ TEST_F(AshNativeCursorManagerTest, SetCursor) {
   cursor_manager->SetCursor(ui::kCursorPointer);
   EXPECT_EQ(ui::kCursorPointer, test_api.GetCurrentCursor().native_type());
   EXPECT_TRUE(test_api.GetCurrentCursor().platform());
+}
+
+TEST_F(AshNativeCursorManagerTest, SetCursorSet) {
+  CursorManager* cursor_manager = Shell::GetInstance()->cursor_manager();
+  CursorManagerTestApi test_api(cursor_manager);
+
+  EXPECT_EQ(ui::CURSOR_SET_NORMAL, test_api.GetCurrentCursorSet());
+
+  cursor_manager->SetCursorSet(ui::CURSOR_SET_NORMAL);
+  EXPECT_EQ(ui::CURSOR_SET_NORMAL, test_api.GetCurrentCursorSet());
+
+  cursor_manager->SetCursorSet(ui::CURSOR_SET_LARGE);
+  EXPECT_EQ(ui::CURSOR_SET_LARGE, test_api.GetCurrentCursorSet());
+
+  cursor_manager->SetCursorSet(ui::CURSOR_SET_NORMAL);
+  EXPECT_EQ(ui::CURSOR_SET_NORMAL, test_api.GetCurrentCursorSet());
 }
 
 TEST_F(AshNativeCursorManagerTest, SetScale) {

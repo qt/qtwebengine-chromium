@@ -20,8 +20,8 @@
 #include "base/callback_forward.h"
 #include "content/common/content_export.h"
 #include "content/port/browser/render_widget_host_view_port.h"
-#include "ui/base/range/range.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/gfx/range/range.h"
 #include "ui/gfx/rect.h"
 
 namespace content {
@@ -48,7 +48,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
   virtual void SelectionChanged(const string16& text,
                                 size_t offset,
-                                const ui::Range& range) OVERRIDE;
+                                const gfx::Range& range) OVERRIDE;
   virtual void SetBackground(const SkBitmap& background) OVERRIDE;
   virtual const SkBitmap& GetBackground() OVERRIDE;
   virtual gfx::Size GetPhysicalBackingSize() const OVERRIDE;
@@ -69,9 +69,12 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
       GetBrowserAccessibilityManager() const OVERRIDE;
   virtual void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                                       InputEventAckState ack_result) OVERRIDE;
-  virtual SmoothScrollGesture* CreateSmoothScrollGesture(
+  virtual SyntheticGesture* CreateSmoothScrollGesture(
       bool scroll_down, int pixels_to_scroll, int mouse_event_x,
       int mouse_event_y) OVERRIDE;
+  virtual SyntheticGesture* CreatePinchGesture(
+      bool zoom_in, int pixels_to_move, int anchor_x,
+      int anchor_y) OVERRIDE;
   virtual bool CanSubscribeFrame() const OVERRIDE;
   virtual void BeginFrameSubscription(
       scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) OVERRIDE;
@@ -144,7 +147,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   size_t selection_text_offset_;
 
   // The current selection range relative to the start of the web page.
-  ui::Range selection_range_;
+  gfx::Range selection_range_;
 
 protected:
   // The scale factor of the display the renderer is currently on.

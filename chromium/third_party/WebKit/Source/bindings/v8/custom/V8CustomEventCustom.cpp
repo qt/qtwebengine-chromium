@@ -31,6 +31,7 @@
 #include "config.h"
 #include "V8CustomEvent.h"
 
+#include "RuntimeEnabledFeatures.h"
 #include "V8Event.h"
 #include "bindings/v8/Dictionary.h"
 #include "bindings/v8/ScriptState.h"
@@ -39,23 +40,21 @@
 #include "bindings/v8/V8DOMWrapper.h"
 #include "bindings/v8/V8HiddenPropertyName.h"
 #include "core/dom/ContextFeatures.h"
-#include "core/page/Frame.h"
-#include "RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 
-static v8::Handle<v8::Value> cacheState(v8::Handle<v8::Object> customEvent, v8::Handle<v8::Value> detail)
+static v8::Handle<v8::Value> cacheState(v8::Handle<v8::Object> customEvent, v8::Handle<v8::Value> detail, v8::Isolate* isolate)
 {
-    customEvent->SetHiddenValue(V8HiddenPropertyName::detail(), detail);
+    customEvent->SetHiddenValue(V8HiddenPropertyName::detail(isolate), detail);
     return detail;
 }
 
 
-void V8CustomEvent::detailAttrGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
+void V8CustomEvent::detailAttributeGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     CustomEvent* event = V8CustomEvent::toNative(info.Holder());
 
-    v8::Handle<v8::Value> result = info.Holder()->GetHiddenValue(V8HiddenPropertyName::detail());
+    v8::Handle<v8::Value> result = info.Holder()->GetHiddenValue(V8HiddenPropertyName::detail(info.GetIsolate()));
 
     if (!result.IsEmpty()) {
         v8SetReturnValue(info, result);
@@ -65,18 +64,18 @@ void V8CustomEvent::detailAttrGetterCustom(v8::Local<v8::String> name, const v8:
     if (!event->serializedDetail()) {
         // If we're in an isolated world and the event was created in the main world,
         // we need to find the 'detail' property on the main world wrapper and clone it.
-        v8::Local<v8::Value> mainWorldDetail = getHiddenValueFromMainWorldWrapper(info.GetIsolate(), event, V8HiddenPropertyName::detail());
+        v8::Local<v8::Value> mainWorldDetail = getHiddenValueFromMainWorldWrapper(info.GetIsolate(), event, V8HiddenPropertyName::detail(info.GetIsolate()));
         if (!mainWorldDetail.IsEmpty())
             event->setSerializedDetail(SerializedScriptValue::createAndSwallowExceptions(mainWorldDetail, info.GetIsolate()));
     }
 
     if (event->serializedDetail()) {
         result = event->serializedDetail()->deserialize();
-        v8SetReturnValue(info, cacheState(info.Holder(), result));
+        v8SetReturnValue(info, cacheState(info.Holder(), result, info.GetIsolate()));
         return;
     }
 
-    v8SetReturnValue(info, cacheState(info.Holder(), v8::Null(info.GetIsolate())));
+    v8SetReturnValue(info, cacheState(info.Holder(), v8::Null(info.GetIsolate()), info.GetIsolate()));
 }
 
 void V8CustomEvent::initCustomEventMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
@@ -92,7 +91,7 @@ void V8CustomEvent::initCustomEventMethodCustom(const v8::FunctionCallbackInfo<v
     event->initEvent(typeArg, canBubbleArg, cancelableArg);
 
     if (!detailsArg.IsEmpty()) {
-        args.Holder()->SetHiddenValue(V8HiddenPropertyName::detail(), detailsArg);
+        args.Holder()->SetHiddenValue(V8HiddenPropertyName::detail(args.GetIsolate()), detailsArg);
         if (isolatedWorldForIsolate(args.GetIsolate()))
             event->setSerializedDetail(SerializedScriptValue::createAndSwallowExceptions(detailsArg, args.GetIsolate()));
     }

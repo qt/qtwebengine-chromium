@@ -5,10 +5,11 @@
 #ifndef UI_GFX_QUAD_F_H_
 #define UI_GFX_QUAD_F_H_
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
 #include "ui/gfx/point_f.h"
 #include "ui/gfx/rect_f.h"
 

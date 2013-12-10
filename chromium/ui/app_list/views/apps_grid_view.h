@@ -135,7 +135,7 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   }
 
  private:
-  friend class app_list::test::AppsGridViewTestApi;
+  friend class test::AppsGridViewTestApi;
 
   // Represents the index to an item view in the grid.
   struct Index {
@@ -246,8 +246,10 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   virtual void OnAppListModelStatusChanged() OVERRIDE;
 
   // Hide a given view temporarily without losing (mouse) events and / or
-  // changing the size of it.
-  void HideView(views::View* view, bool hide);
+  // changing the size of it. If |immediate| is set the change will be
+  // immediately applied - otherwise it will change gradually.
+  // If |hide| is set the view will get hidden, otherwise it gets shown.
+  void SetViewHidden(views::View* view, bool hide, bool immediate);
 
   AppListModel* model_;  // Owned by AppListView.
   AppsGridViewDelegate* delegate_;

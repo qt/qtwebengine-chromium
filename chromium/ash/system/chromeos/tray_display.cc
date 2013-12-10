@@ -7,6 +7,7 @@
 #include "ash/display/display_controller.h"
 #include "ash/display/display_manager.h"
 #include "ash/shell.h"
+#include "ash/system/system_notifier.h"
 #include "ash/system/tray/actionable_view.h"
 #include "ash/system/tray/fixed_sized_image_view.h"
 #include "ash/system/tray/system_tray.h"
@@ -23,7 +24,6 @@
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/notification.h"
 #include "ui/message_center/notification_delegate.h"
-#include "ui/message_center/notification_list.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/box_layout.h"
@@ -33,8 +33,6 @@ using message_center::Notification;
 namespace ash {
 namespace internal {
 namespace {
-
-static const char kDisplayNotificationId[] = "chrome://settings/display";
 
 DisplayManager* GetDisplayManager() {
   return Shell::GetInstance()->display_manager();
@@ -144,7 +142,7 @@ base::string16 GetExternalDisplayName() {
   return name;
 }
 
-base::string16 GetTrayDisplayMessage() {
+base::string16 GetTrayDisplayMessage(base::string16* additional_message_out) {
   DisplayManager* display_manager = GetDisplayManager();
   if (display_manager->GetNumDisplays() > 1) {
     if (GetDisplayManager()->HasInternalDisplay()) {
@@ -167,13 +165,19 @@ base::string16 GetTrayDisplayMessage() {
   int64 first_id = display_manager->first_display_id();
   if (display_manager->HasInternalDisplay() &&
       !display_manager->IsInternalDisplayId(first_id)) {
+    if (additional_message_out) {
+      *additional_message_out = l10n_util::GetStringUTF16(
+          IDS_ASH_STATUS_TRAY_DISPLAY_DOCKED_DESCRIPTION);
+    }
     return l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_DISPLAY_DOCKED);
   }
 
   return base::string16();
 }
 
-void OpenSettings(user::LoginStatus login_status) {
+void OpenSettings() {
+  user::LoginStatus login_status =
+      Shell::GetInstance()->system_tray_delegate()->GetUserLoginStatus();
   if (login_status == ash::user::LOGGED_IN_USER ||
       login_status == ash::user::LOGGED_IN_OWNER ||
       login_status == ash::user::LOGGED_IN_GUEST) {
@@ -181,38 +185,13 @@ void OpenSettings(user::LoginStatus login_status) {
   }
 }
 
-void UpdateDisplayNotification(const base::string16& message) {
-  // Always remove the notification to make sure the notification appears
-  // as a popup in any situation.
-  message_center::MessageCenter::Get()->RemoveNotification(
-      kDisplayNotificationId, false /* by_user */);
-
-  if (message.empty())
-    return;
-
-  ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
-  scoped_ptr<Notification> notification(new Notification(
-      message_center::NOTIFICATION_TYPE_SIMPLE,
-      kDisplayNotificationId,
-      message,
-      base::string16(),  // body is intentionally empty, see crbug.com/265915
-      bundle.GetImageNamed(IDR_AURA_UBER_TRAY_DISPLAY),
-      base::string16(),  // display_source
-      "",  // extension_id
-      message_center::RichNotificationData(),
-      new message_center::HandleNotificationClickedDelegate(
-          base::Bind(&OpenSettings,
-                     Shell::GetInstance()->system_tray_delegate()->
-                     GetUserLoginStatus()))));
-  message_center::MessageCenter::Get()->AddNotification(notification.Pass());
-}
-
 }  // namespace
+
+const char TrayDisplay::kNotificationId[] = "chrome://settings/display";
 
 class DisplayView : public ash::internal::ActionableView {
  public:
-  explicit DisplayView(user::LoginStatus login_status)
-      : login_status_(login_status) {
+  explicit DisplayView() {
     SetLayoutManager(new views::BoxLayout(
         views::BoxLayout::kHorizontal,
         ash::kTrayPopupPaddingHorizontal, 0,
@@ -235,19 +214,20 @@ class DisplayView : public ash::internal::ActionableView {
   virtual ~DisplayView() {}
 
   void Update() {
-    base::string16 message = GetTrayDisplayMessage();
+    base::string16 message = GetTrayDisplayMessage(NULL);
     if (message.empty() && ShouldShowFirstDisplayInfo())
       message = GetDisplayInfoLine(GetDisplayManager()->first_display_id());
     SetVisible(!message.empty());
     label_->SetText(message);
+    Layout();
   }
 
-  views::Label* label() { return label_; }
+  const views::Label* label() const { return label_; }
 
   // Overridden from views::View.
   virtual bool GetTooltipText(const gfx::Point& p,
                               base::string16* tooltip) const OVERRIDE {
-    base::string16 tray_message = GetTrayDisplayMessage();
+    base::string16 tray_message = GetTrayDisplayMessage(NULL);
     base::string16 display_message = GetAllDisplayInfo();
     if (tray_message.empty() && display_message.empty())
       return false;
@@ -268,7 +248,7 @@ class DisplayView : public ash::internal::ActionableView {
 
   // Overridden from ActionableView.
   virtual bool PerformAction(const ui::Event& event) OVERRIDE {
-    OpenSettings(login_status_);
+    OpenSettings();
     return true;
   }
 
@@ -279,47 +259,10 @@ class DisplayView : public ash::internal::ActionableView {
     PreferredSizeChanged();
   }
 
-  user::LoginStatus login_status_;
   views::ImageView* image_;
   views::Label* label_;
 
   DISALLOW_COPY_AND_ASSIGN(DisplayView);
-};
-
-class DisplayNotificationView : public TrayNotificationView {
- public:
-  DisplayNotificationView(user::LoginStatus login_status,
-                          TrayDisplay* tray_item,
-                          const base::string16& message)
-      : TrayNotificationView(tray_item, IDR_AURA_UBER_TRAY_DISPLAY),
-        login_status_(login_status) {
-    StartAutoCloseTimer(kTrayPopupAutoCloseDelayForTextInSeconds);
-    Update(message);
-  }
-
-  virtual ~DisplayNotificationView() {}
-
-  void Update(const base::string16& message) {
-    if (message.empty()) {
-      owner()->HideNotificationView();
-    } else {
-      views::Label* label = new views::Label(message);
-      label->SetMultiLine(true);
-      label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-      UpdateView(label);
-      RestartAutoCloseTimer();
-    }
-  }
-
-  // Overridden from TrayNotificationView:
-  virtual void OnClickAction() OVERRIDE {
-    OpenSettings(login_status_);
-  }
-
- private:
-  user::LoginStatus login_status_;
-
-  DISALLOW_COPY_AND_ASSIGN(DisplayNotificationView);
 };
 
 TrayDisplay::TrayDisplay(SystemTray* system_tray)
@@ -346,12 +289,13 @@ void TrayDisplay::UpdateDisplayInfo(TrayDisplay::DisplayInfoMap* old_info) {
 }
 
 bool TrayDisplay::GetDisplayMessageForNotification(
-    base::string16* message,
-    const TrayDisplay::DisplayInfoMap& old_info) {
+    const TrayDisplay::DisplayInfoMap& old_info,
+    base::string16* message_out,
+    base::string16* additional_message_out) {
   // Display is added or removed. Use the same message as the one in
   // the system tray.
   if (display_info_.size() != old_info.size()) {
-    *message = GetTrayDisplayMessage();
+    *message_out = GetTrayDisplayMessage(additional_message_out);
     return true;
   }
 
@@ -362,12 +306,12 @@ bool TrayDisplay::GetDisplayMessageForNotification(
     // for the transition between docked mode and mirrored display. Falls back
     // to GetTrayDisplayMessage().
     if (old_iter == old_info.end()) {
-      *message = GetTrayDisplayMessage();
+      *message_out = GetTrayDisplayMessage(additional_message_out);
       return true;
     }
 
     if (iter->second.ui_scale() != old_iter->second.ui_scale()) {
-      *message = l10n_util::GetStringFUTF16(
+      *message_out = l10n_util::GetStringFUTF16(
           IDS_ASH_STATUS_TRAY_DISPLAY_RESOLUTION_CHANGED,
           GetDisplayName(iter->first),
           GetDisplaySize(iter->first));
@@ -389,7 +333,7 @@ bool TrayDisplay::GetDisplayMessageForNotification(
           rotation_text_id = IDS_ASH_STATUS_TRAY_DISPLAY_ORIENTATION_270;
           break;
       }
-      *message = l10n_util::GetStringFUTF16(
+      *message_out = l10n_util::GetStringFUTF16(
           IDS_ASH_STATUS_TRAY_DISPLAY_ROTATED,
           GetDisplayName(iter->first),
           l10n_util::GetStringUTF16(rotation_text_id));
@@ -401,9 +345,35 @@ bool TrayDisplay::GetDisplayMessageForNotification(
   return false;
 }
 
+void TrayDisplay::CreateOrUpdateNotification(
+    const base::string16& message,
+    const base::string16& additional_message) {
+  // Always remove the notification to make sure the notification appears
+  // as a popup in any situation.
+  message_center::MessageCenter::Get()->RemoveNotification(
+      kNotificationId, false /* by_user */);
+
+  if (message.empty())
+    return;
+
+  ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
+  scoped_ptr<Notification> notification(new Notification(
+      message_center::NOTIFICATION_TYPE_SIMPLE,
+      kNotificationId,
+      message,
+      additional_message,
+      bundle.GetImageNamed(IDR_AURA_UBER_TRAY_DISPLAY),
+      base::string16(),  // display_source
+      message_center::NotifierId(system_notifier::NOTIFIER_DISPLAY),
+      message_center::RichNotificationData(),
+      new message_center::HandleNotificationClickedDelegate(
+          base::Bind(&OpenSettings))));
+  message_center::MessageCenter::Get()->AddNotification(notification.Pass());
+}
+
 views::View* TrayDisplay::CreateDefaultView(user::LoginStatus status) {
   DCHECK(default_ == NULL);
-  default_ = new DisplayView(status);
+  default_ = new DisplayView();
   return default_;
 }
 
@@ -415,38 +385,25 @@ void TrayDisplay::OnDisplayConfigurationChanged() {
   DisplayInfoMap old_info;
   UpdateDisplayInfo(&old_info);
 
+  if (default_)
+    default_->Update();
+
   if (!Shell::GetInstance()->system_tray_delegate()->
           ShouldShowDisplayNotification()) {
     return;
   }
 
   base::string16 message;
-  if (GetDisplayMessageForNotification(&message, old_info))
-    UpdateDisplayNotification(message);
+  base::string16 additional_message;
+  if (GetDisplayMessageForNotification(old_info, &message, &additional_message))
+    CreateOrUpdateNotification(message, additional_message);
 }
 
-base::string16 TrayDisplay::GetDefaultViewMessage() {
+base::string16 TrayDisplay::GetDefaultViewMessage() const {
   if (!default_ || !default_->visible())
     return base::string16();
 
   return static_cast<DisplayView*>(default_)->label()->text();
-}
-
-base::string16 TrayDisplay::GetNotificationMessage() {
-  message_center::NotificationList::Notifications notifications =
-      message_center::MessageCenter::Get()->GetNotifications();
-  for (message_center::NotificationList::Notifications::const_iterator iter =
-           notifications.begin(); iter != notifications.end(); ++iter) {
-    if ((*iter)->id() == kDisplayNotificationId)
-      return (*iter)->title();
-  }
-
-  return base::string16();
-}
-
-void TrayDisplay::CloseNotificationForTest() {
-  message_center::MessageCenter::Get()->RemoveNotification(
-      kDisplayNotificationId, false);
 }
 
 }  // namespace internal

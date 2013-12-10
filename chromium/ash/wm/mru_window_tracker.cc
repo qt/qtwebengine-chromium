@@ -9,23 +9,17 @@
 #include "ash/session_state_delegate.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
-#include "ash/wm/activation_controller.h"
 #include "ash/wm/window_cycle_list.h"
 #include "ash/wm/window_util.h"
 #include "ash/wm/workspace_controller.h"
+#include "ui/aura/client/activation_client.h"
 #include "ui/aura/root_window.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_handler.h"
+#include "ui/events/event.h"
+#include "ui/events/event_handler.h"
 
 namespace ash {
 
 namespace {
-
-// List of containers whose children we will allow switching to.
-const int kContainerIds[] = {
-  internal::kShellWindowId_DefaultContainer,
-  internal::kShellWindowId_AlwaysOnTopContainer
-};
 
 // Adds the windows that can be cycled through for the specified window id to
 // |windows|.
@@ -35,6 +29,17 @@ void AddTrackedWindows(aura::RootWindow* root,
   aura::Window* container = Shell::GetContainer(root, container_id);
   const MruWindowTracker::WindowList& children(container->children());
   windows->insert(windows->end(), children.begin(), children.end());
+}
+
+// Returns true if |window| is a container whose windows can be cycled to.
+bool IsSwitchableContainer(aura::Window* window) {
+  if (!window)
+    return false;
+  for (size_t i = 0; i < kSwitchableWindowContainerIdsLength; ++i) {
+    if (window->id() == kSwitchableWindowContainerIds[i])
+      return true;
+  }
+  return false;
 }
 
 // Returns a list of windows ordered by their stacking order.
@@ -47,19 +52,19 @@ MruWindowTracker::WindowList BuildWindowListInternal(
   MruWindowTracker::WindowList windows;
   Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
 
-  aura::RootWindow* active_root = Shell::GetActiveRootWindow();
+  aura::RootWindow* active_root = Shell::GetTargetRootWindow();
   for (Shell::RootWindowList::const_iterator iter = root_windows.begin();
        iter != root_windows.end(); ++iter) {
     if (*iter == active_root)
       continue;
-    for (size_t i = 0; i < arraysize(kContainerIds); ++i)
-      AddTrackedWindows(*iter, kContainerIds[i], &windows);
+    for (size_t i = 0; i < kSwitchableWindowContainerIdsLength; ++i)
+      AddTrackedWindows(*iter, kSwitchableWindowContainerIds[i], &windows);
   }
 
   // Add windows in the active root windows last so that the topmost window
   // in the active root window becomes the front of the list.
-  for (size_t i = 0; i < arraysize(kContainerIds); ++i)
-    AddTrackedWindows(active_root, kContainerIds[i], &windows);
+  for (size_t i = 0; i < kSwitchableWindowContainerIdsLength; ++i)
+    AddTrackedWindows(active_root, kSwitchableWindowContainerIds[i], &windows);
 
   // Removes unfocusable windows.
   MruWindowTracker::WindowList::iterator last =
@@ -76,6 +81,13 @@ MruWindowTracker::WindowList BuildWindowListInternal(
     for (std::list<aura::Window*>::const_reverse_iterator ix =
          mru_windows->rbegin();
          ix != mru_windows->rend(); ++ix) {
+      // Exclude windows in non-switchable containers and those which cannot
+      // be activated.
+      if (!IsSwitchableContainer((*ix)->parent()) ||
+          !ash::wm::CanActivateWindow(*ix)) {
+        continue;
+      }
+
       MruWindowTracker::WindowList::iterator window =
           std::find(windows.begin(), windows.end(), *ix);
       if (window != windows.end()) {
@@ -94,6 +106,15 @@ MruWindowTracker::WindowList BuildWindowListInternal(
 
 }  // namespace
 
+const int kSwitchableWindowContainerIds[] = {
+  internal::kShellWindowId_DefaultContainer,
+  internal::kShellWindowId_AlwaysOnTopContainer,
+  internal::kShellWindowId_PanelContainer
+};
+
+const size_t kSwitchableWindowContainerIdsLength =
+    arraysize(kSwitchableWindowContainerIds);
+
 //////////////////////////////////////////////////////////////////////////////
 // MruWindowTracker, public:
 
@@ -105,14 +126,9 @@ MruWindowTracker::MruWindowTracker(
 }
 
 MruWindowTracker::~MruWindowTracker() {
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
-  for (Shell::RootWindowList::const_iterator iter = root_windows.begin();
-       iter != root_windows.end(); ++iter) {
-    for (size_t i = 0; i < arraysize(kContainerIds); ++i) {
-      aura::Window* container = Shell::GetContainer(*iter, kContainerIds[i]);
-      if (container)
-        container->RemoveObserver(this);
-    }
+  for (std::list<aura::Window*>::iterator iter = mru_windows_.begin();
+       iter != mru_windows_.end(); ++iter) {
+    (*iter)->RemoveObserver(this);
   }
 
   activation_client_->RemoveObserver(this);
@@ -128,54 +144,44 @@ MruWindowTracker::WindowList MruWindowTracker::BuildMruWindowList() {
   return BuildWindowListInternal(&mru_windows_, false);
 }
 
-void MruWindowTracker::OnRootWindowAdded(aura::RootWindow* root_window) {
-  for (size_t i = 0; i < arraysize(kContainerIds); ++i) {
-    aura::Window* container =
-        Shell::GetContainer(root_window, kContainerIds[i]);
-    container->AddObserver(this);
-  }
-}
-
 void MruWindowTracker::SetIgnoreActivations(bool ignore) {
   ignore_window_activations_ = ignore;
 
   // If no longer ignoring window activations, move currently active window
   // to front.
-  if (!ignore) {
-    aura::Window* active_window = wm::GetActiveWindow();
-    mru_windows_.remove(active_window);
-    mru_windows_.push_front(active_window);
-  }
+  if (!ignore)
+    SetActiveWindow(wm::GetActiveWindow());
 }
 
 //////////////////////////////////////////////////////////////////////////////
 // MruWindowTracker, private:
 
-// static
-bool MruWindowTracker::IsTrackedContainer(aura::Window* window) {
-  if (!window)
-    return false;
-  for (size_t i = 0; i < arraysize(kContainerIds); ++i) {
-    if (window->id() == kContainerIds[i])
-      return true;
-  }
-  return false;
+void MruWindowTracker::SetActiveWindow(aura::Window* active_window) {
+  if (!active_window)
+    return;
+
+  std::list<aura::Window*>::iterator iter =
+      std::find(mru_windows_.begin(), mru_windows_.end(), active_window);
+  // Observe all newly tracked windows.
+  if (iter == mru_windows_.end())
+    active_window->AddObserver(this);
+  else
+    mru_windows_.erase(iter);
+  // TODO(flackr): Remove this check if this doesn't fire for a while. This
+  // should verify that all tracked windows start with a layer, see
+  // http://crbug.com/291354.
+  CHECK(active_window->layer());
+  mru_windows_.push_front(active_window);
 }
 
 void MruWindowTracker::OnWindowActivated(aura::Window* gained_active,
                                          aura::Window* lost_active) {
-  if (gained_active && !ignore_window_activations_ &&
-      IsTrackedContainer(gained_active->parent())) {
-    mru_windows_.remove(gained_active);
-    mru_windows_.push_front(gained_active);
-  }
-}
-
-void MruWindowTracker::OnWillRemoveWindow(aura::Window* window) {
-  mru_windows_.remove(window);
+  if (!ignore_window_activations_)
+    SetActiveWindow(gained_active);
 }
 
 void MruWindowTracker::OnWindowDestroying(aura::Window* window) {
+  mru_windows_.remove(window);
   window->RemoveObserver(this);
 }
 

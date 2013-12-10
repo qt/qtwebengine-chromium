@@ -24,7 +24,7 @@ enum SourceFileType {
   SOURCE_H,
   SOURCE_M,
   SOURCE_MM,
-  //SOURCE_S,  // TODO(brettw) what is this?
+  SOURCE_S,
   SOURCE_RC,
 };
 
@@ -40,7 +40,10 @@ SourceFileType GetSourceFileType(const SourceFile& file,
 const char* GetExtensionForOutputType(Target::OutputType type,
                                       Settings::TargetOS os);
 
-std::string FilePathToUTF8(const base::FilePath& path);
+std::string FilePathToUTF8(const base::FilePath::StringType& str);
+inline std::string FilePathToUTF8(const base::FilePath& path) {
+  return FilePathToUTF8(path.value());
+}
 base::FilePath UTF8ToFilePath(const base::StringPiece& sp);
 
 // Extensions -----------------------------------------------------------------
@@ -99,6 +102,24 @@ bool EnsureStringIsInOutputDir(const SourceDir& dir,
 
 // ----------------------------------------------------------------------------
 
+// Returns true if the input string is absolute. Double-slashes at the
+// beginning are treated as source-relative paths. On Windows, this handles
+// paths of both the native format: "C:/foo" and ours "/C:/foo"
+bool IsPathAbsolute(const base::StringPiece& path);
+
+// Given an absolute path, checks to see if is it is inside the source root.
+// If it is, fills a source-absolute path into the given output and returns
+// true. If it isn't, clears the dest and returns false.
+//
+// The source_root should be a base::FilePath converted to UTF-8. On Windows,
+// it should begin with a "C:/" rather than being our SourceFile's style
+// ("/C:/"). The source root can end with a slash or not.
+//
+// Note that this does not attempt to normalize slashes in the output.
+bool MakeAbsolutePathRelativeIfPossible(const base::StringPiece& source_root,
+                                        const base::StringPiece& path,
+                                        std::string* dest);
+
 // Converts a directory to its inverse (e.g. "/foo/bar/" -> "../../").
 // This will be the empty string for the root directories ("/" and "//"), and
 // in all other cases, this is guaranteed to end in a slash.
@@ -111,5 +132,10 @@ void NormalizePath(std::string* path);
 // for other systems.
 void ConvertPathToSystem(std::string* path);
 std::string PathToSystem(const std::string& path);
+
+// Takes a source-absolute path (must begin with "//") and makes it relative
+// to the given directory, which also must be source-absolute.
+std::string RebaseSourceAbsolutePath(const std::string& input,
+                                     const SourceDir& dest_dir);
 
 #endif  // TOOLS_GN_FILESYSTEM_UTILS_H_

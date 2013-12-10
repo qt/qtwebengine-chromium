@@ -4,9 +4,8 @@
 
 #include "ash/wm/user_activity_detector.h"
 
-#include "ash/wm/property_util.h"
 #include "ash/wm/user_activity_observer.h"
-#include "ui/base/events/event.h"
+#include "ui/events/event.h"
 
 namespace ash {
 

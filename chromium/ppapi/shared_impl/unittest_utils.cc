@@ -8,8 +8,10 @@
 
 #include "base/containers/hash_tables.h"
 #include "base/logging.h"
+#include "ipc/ipc_message.h"
 #include "ppapi/shared_impl/array_var.h"
 #include "ppapi/shared_impl/dictionary_var.h"
+#include "ppapi/shared_impl/resource_var.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/shared_impl/var_tracker.h"
 
@@ -148,6 +150,42 @@ bool Equals(const PP_Var& expected,
                     visited_map)) {
           return false;
         }
+      }
+      return true;
+    }
+    case PP_VARTYPE_RESOURCE: {
+      ResourceVar* expected_var = ResourceVar::FromPPVar(expected);
+      ResourceVar* actual_var = ResourceVar::FromPPVar(actual);
+      DCHECK(expected_var && actual_var);
+      if (expected_var->GetPPResource() != actual_var->GetPPResource()) {
+        LOG(ERROR) << "expected: " << expected_var->GetPPResource()
+                   << " actual: " << actual_var->GetPPResource();
+        return false;
+      }
+
+      const IPC::Message* actual_message = actual_var->GetCreationMessage();
+      const IPC::Message* expected_message =
+          expected_var->GetCreationMessage();
+      if (expected_message->size() != actual_message->size()) {
+        LOG(ERROR) << "expected creation message size: "
+                   << expected_message->size() << " actual: "
+                   << actual_message->size();
+        return false;
+      }
+
+      // Set the upper 24 bits of actual creation_message flags to the same as
+      // expected. This is an unpredictable reference number that changes
+      // between serialization/deserialization, and we do not want it to cause
+      // the comparison to fail.
+      IPC::Message local_actual_message(*actual_message);
+      local_actual_message.SetHeaderValues(
+          actual_message->routing_id(), actual_message->type(),
+          (expected_message->flags() & 0xffffff00) |
+           (actual_message->flags() & 0xff));
+      if (memcmp(expected_message->data(), local_actual_message.data(),
+                 expected_message->size()) != 0) {
+        LOG(ERROR) << "expected creation message does not match actual.";
+        return false;
       }
       return true;
     }

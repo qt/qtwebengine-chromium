@@ -74,6 +74,8 @@ public:
     bool isCursorImageValue() const { return m_classType == CursorImageClass; }
     bool isFontFeatureValue() const { return m_classType == FontFeatureClass; }
     bool isFontValue() const { return m_classType == FontClass; }
+    bool isFontFaceSrcValue() const { return m_classType == FontFaceSrcClass; }
+    bool isFunctionValue() const { return m_classType == FunctionClass; }
     bool isImageGeneratorValue() const { return m_classType >= CanvasClass && m_classType <= RadialGradientClass; }
     bool isGradientValue() const { return m_classType >= LinearGradientClass && m_classType <= RadialGradientClass; }
     bool isImageSetValue() const { return m_classType == ImageSetClass; }
@@ -84,7 +86,6 @@ public:
     bool isReflectValue() const { return m_classType == ReflectClass; }
     bool isShadowValue() const { return m_classType == ShadowClass; }
     bool isCubicBezierTimingFunctionValue() const { return m_classType == CubicBezierTimingFunctionClass; }
-    bool isLinearTimingFunctionValue() const { return m_classType == LinearTimingFunctionClass; }
     bool isStepsTimingFunctionValue() const { return m_classType == StepsTimingFunctionClass; }
     bool isCSSTransformValue() const { return m_classType == CSSTransformClass; }
     bool isCSSLineBoxContainValue() const { return m_classType == LineBoxContainClass; }
@@ -131,7 +132,6 @@ protected:
 
         // Timing function classes.
         CubicBezierTimingFunctionClass,
-        LinearTimingFunctionClass,
         StepsTimingFunctionClass,
 
         // Other class types.

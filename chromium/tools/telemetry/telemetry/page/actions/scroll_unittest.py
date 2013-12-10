@@ -3,16 +3,19 @@
 # found in the LICENSE file.
 import os
 
+from telemetry.core import util
 from telemetry.page import page as page_module
 from telemetry.page.actions import scroll
 from telemetry.unittest import tab_test_case
 
 class ScrollActionTest(tab_test_case.TabTestCase):
+  def setUp(self):
+    self._extra_browser_args.append('--enable-gpu-benchmarking')
+    super(ScrollActionTest, self).setUp()
+
   def CreateAndNavigateToPageFromUnittestDataDir(
     self, filename, page_attributes):
-    unittest_data_dir = os.path.join(os.path.dirname(__file__),
-                                     '..', '..', '..', 'unittest_data')
-    self._browser.SetHTTPServerDirectories(unittest_data_dir)
+    self._browser.SetHTTPServerDirectories(util.GetUnittestDataDir())
     page = page_module.Page(
       self._browser.http_server.UrlOf(filename),
       None, # In this test, we don't need a page set.
@@ -60,9 +63,7 @@ class ScrollActionTest(tab_test_case.TabTestCase):
 
   def testBoundingClientRect(self):
     self.CreateAndNavigateToPageFromUnittestDataDir('blank.html', {})
-    with open(
-      os.path.join(os.path.dirname(__file__),
-                   'scroll.js')) as f:
+    with open(os.path.join(os.path.dirname(__file__), 'scroll.js')) as f:
       js = f.read()
       self._tab.ExecuteJavaScript(js)
 

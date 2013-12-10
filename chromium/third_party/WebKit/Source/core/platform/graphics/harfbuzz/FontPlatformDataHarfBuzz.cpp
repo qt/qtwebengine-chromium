@@ -31,6 +31,7 @@
 #include "config.h"
 #include "core/platform/graphics/harfbuzz/FontPlatformDataHarfBuzz.h"
 
+#include "RuntimeEnabledFeatures.h"
 #include "SkPaint.h"
 #include "SkTypeface.h"
 #include "core/platform/NotImplemented.h"
@@ -195,7 +196,7 @@ void FontPlatformData::setupPaint(SkPaint* paint) const
     paint->setHinting(static_cast<SkPaint::Hinting>(m_style.hintStyle));
     paint->setEmbeddedBitmapText(m_style.useBitmaps);
     paint->setAutohinted(m_style.useAutoHint);
-    paint->setSubpixelText(m_style.useSubpixelPositioning);
+    paint->setSubpixelText(m_style.useSubpixelPositioning || RuntimeEnabledFeatures::subpixelFontScalingEnabled());
     if (m_style.useAntiAlias)
         paint->setLCDRenderText(m_style.useSubpixelRendering);
 
@@ -209,6 +210,15 @@ void FontPlatformData::setupPaint(SkPaint* paint) const
 SkFontID FontPlatformData::uniqueID() const
 {
     return m_typeface->uniqueID();
+}
+
+String FontPlatformData::fontFamilyName() const
+{
+    SkTypeface::LocalizedStrings* fontFamilyIterator = this->typeface()->createFamilyNameIterator();
+    SkTypeface::LocalizedString localizedString;
+    while (fontFamilyIterator->next(&localizedString) && !localizedString.fString.size()) { }
+    fontFamilyIterator->unref();
+    return String(localizedString.fString.c_str());
 }
 
 bool FontPlatformData::operator==(const FontPlatformData& a) const

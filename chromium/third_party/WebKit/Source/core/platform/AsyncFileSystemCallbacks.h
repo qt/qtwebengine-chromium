@@ -34,7 +34,7 @@
 #include "core/platform/AsyncFileSystem.h"
 #include "core/platform/FileMetadata.h"
 #include "core/platform/network/BlobData.h"
-#include "modules/filesystem/AsyncFileWriter.h"
+#include "public/platform/WebFileWriter.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -42,13 +42,16 @@ namespace WebCore {
 class AsyncFileSystemCallbacks {
     WTF_MAKE_NONCOPYABLE(AsyncFileSystemCallbacks);
 public:
-    AsyncFileSystemCallbacks() { }
+    AsyncFileSystemCallbacks() : m_blockUntilCompletion(false) { }
 
     // Called when a requested operation is completed successfully.
     virtual void didSucceed() { ASSERT_NOT_REACHED(); }
 
     // Called when a requested file system is opened.
-    virtual void didOpenFileSystem(const String& name, const KURL& rootURL, PassOwnPtr<AsyncFileSystem>) { ASSERT_NOT_REACHED(); }
+    virtual void didOpenFileSystem(const String& name, const KURL& rootURL) { ASSERT_NOT_REACHED(); }
+
+    // Called when a filesystem URL is resolved.
+    virtual void didResolveURL(const String& name, const KURL& rootURL, FileSystemType, const String& filePath, bool isDirectory) { ASSERT_NOT_REACHED(); }
 
     // Called when a file metadata is read successfully.
     virtual void didReadMetadata(const FileMetadata&) { ASSERT_NOT_REACHED(); }
@@ -63,16 +66,27 @@ public:
     virtual void didReadDirectoryEntries(bool hasMore) { ASSERT_NOT_REACHED(); }
 
     // Called when an AsyncFileWrter has been created successfully.
-    virtual void didCreateFileWriter(PassOwnPtr<AsyncFileWriter>, long long length) { ASSERT_NOT_REACHED(); }
+    virtual void didCreateFileWriter(PassOwnPtr<WebKit::WebFileWriter>, long long length) { ASSERT_NOT_REACHED(); }
 
     // Called when there was an error.
     virtual void didFail(int code) = 0;
 
     // Returns true if the caller expects that the calling thread blocks
     // until completion.
-    virtual bool shouldBlockUntilCompletion() const { return false; }
+    virtual bool shouldBlockUntilCompletion() const
+    {
+        return m_blockUntilCompletion;
+    }
+
+    void setShouldBlockUntilCompletion(bool flag)
+    {
+        m_blockUntilCompletion = flag;
+    }
 
     virtual ~AsyncFileSystemCallbacks() { }
+
+private:
+    bool m_blockUntilCompletion;
 };
 
 } // namespace

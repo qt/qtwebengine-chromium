@@ -48,7 +48,9 @@
           'nacl_globals.c',
           'nacl_kernel_service.c',
           'nacl_resource.c',
+          'nacl_reverse_host_interface.c',
           'nacl_reverse_quota_interface.c',
+          'nacl_runtime_host_interface.c',
           'nacl_secure_service.c',
           'nacl_signal_common.c',
           'nacl_stack_safety.c',
@@ -69,7 +71,12 @@
           'sel_mem.c',
           'sel_qualify.c',
           'sel_validate_image.c',
+          'sys_exception.c',
+          'sys_fdio.c',
+          'sys_filename.c',
+          'sys_imc.c',
           'sys_list_mappings.c',
+          'sys_memory.c',
           'thread_suspension_common.c',
           'thread_suspension_unwind.c',
         ],
@@ -310,6 +317,7 @@
       ],
       'sources': [
         'nacl_test_injection_main.c',
+        'force_cpp.cc',
       ],
       'conditions': [
         ['OS=="linux"', {

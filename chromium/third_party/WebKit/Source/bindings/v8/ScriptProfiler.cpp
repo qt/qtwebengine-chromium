@@ -50,6 +50,14 @@ namespace WebCore {
 
 typedef HashMap<String, double> ProfileNameIdleTimeMap;
 
+void ScriptProfiler::setSamplingInterval(int intervalUs)
+{
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    v8::CpuProfiler* profiler = isolate->GetCpuProfiler();
+    if (profiler)
+        profiler->SetSamplingInterval(intervalUs);
+}
+
 void ScriptProfiler::start(const String& title)
 {
     ProfileNameIdleTimeMap* profileNameIdleTimeMap = ScriptProfiler::currentProfileNameIdleTimeMap();
@@ -301,6 +309,13 @@ ProfileNameIdleTimeMap* ScriptProfiler::currentProfileNameIdleTimeMap()
 {
     AtomicallyInitializedStatic(WTF::ThreadSpecific<ProfileNameIdleTimeMap>*, map = new WTF::ThreadSpecific<ProfileNameIdleTimeMap>);
     return *map;
+}
+
+void ScriptProfiler::setIdle(bool isIdle)
+{
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    if (v8::CpuProfiler* profiler = isolate->GetCpuProfiler())
+        profiler->SetIdle(isIdle);
 }
 
 } // namespace WebCore

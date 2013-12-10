@@ -121,7 +121,8 @@ class BuildbotPageMeasurementResultsTest(unittest.TestCase):
 
     measurement_results.PrintSummary()
     expected = ['RESULT a_by_url: http___www.foo.com_= [3,4] seconds\n' +
-                'Avg a_by_url: 3.500000seconds\nSd  a_by_url: 0.707107seconds']
+                'Avg a_by_url: 3.500000seconds\n' +
+                'Sd  a_by_url: 0.707107seconds']
     self.assertEquals(measurement_results.results, expected)
 
   def test_repeated_pageset(self):
@@ -146,11 +147,14 @@ class BuildbotPageMeasurementResultsTest(unittest.TestCase):
 
     measurement_results.PrintSummary()
     expected = ['RESULT a_by_url: http___www.foo.com_= [3,4] seconds\n' +
-                'Avg a_by_url: 3.500000seconds\nSd  a_by_url: 0.707107seconds',
+                'Avg a_by_url: 3.500000seconds\n' +
+                'Sd  a_by_url: 0.707107seconds',
                 'RESULT a_by_url: http___www.bar.com_= [7,8] seconds\n' +
-                'Avg a_by_url: 7.500000seconds\nSd  a_by_url: 0.707107seconds',
+                'Avg a_by_url: 7.500000seconds\n' +
+                'Sd  a_by_url: 0.707107seconds',
                 '*RESULT a: a= [3,7,4,8] seconds\n' +
-                'Avg a: 5.500000seconds\nSd  a: 2.380476seconds'
+                'Avg a: 5.500000seconds\n'
+                'Sd  a: 2.380476seconds'
                 ]
     self.assertEquals(
       measurement_results.results,
@@ -178,11 +182,14 @@ class BuildbotPageMeasurementResultsTest(unittest.TestCase):
 
     measurement_results.PrintSummary()
     expected = ['RESULT a_by_url: http___www.foo.com_= [3,4] seconds\n' +
-                'Avg a_by_url: 3.500000seconds\nSd  a_by_url: 0.707107seconds',
+                'Avg a_by_url: 3.500000seconds\n' +
+                'Sd  a_by_url: 0.707107seconds',
                 'RESULT a_by_url: http___www.bar.com_= [7,8] seconds\n' +
-                'Avg a_by_url: 7.500000seconds\nSd  a_by_url: 0.707107seconds',
+                'Avg a_by_url: 7.500000seconds\n' +
+                'Sd  a_by_url: 0.707107seconds',
                 '*RESULT a: a= [3,4,7,8] seconds\n' +
-                'Avg a: 5.500000seconds\nSd  a: 2.380476seconds'
+                'Avg a: 5.500000seconds\n' +
+                'Sd  a: 2.380476seconds'
                 ]
     self.assertEquals(
       measurement_results.results,
@@ -247,13 +254,13 @@ class BuildbotPageMeasurementResultsTest(unittest.TestCase):
 
     measurement_results = SummarySavingPageMeasurementResults()
     measurement_results.WillMeasurePage(test_page_set.pages[0])
-    measurement_results.Add('a', '',
+    measurement_results.Add('a', 'units',
                           '{"buckets": [{"low": 1, "high": 2, "count": 1}]}',
                           data_type='histogram')
     measurement_results.DidMeasurePage()
 
     measurement_results.WillMeasurePage(test_page_set.pages[1])
-    measurement_results.Add('a', '',
+    measurement_results.Add('a', 'units',
                           '{"buckets": [{"low": 2, "high": 3, "count": 1}]}',
                           data_type='histogram')
     measurement_results.DidMeasurePage()
@@ -262,9 +269,9 @@ class BuildbotPageMeasurementResultsTest(unittest.TestCase):
 
     expected = [
         'HISTOGRAM a_by_url: http___www.foo.com_= ' +
-        '{"buckets": [{"low": 1, "high": 2, "count": 1}]}\n' +
-        'Avg a_by_url: 1.500000',
+        '{"buckets": [{"low": 1, "high": 2, "count": 1}]} units\n' +
+        'Avg a_by_url: 1.500000units',
         'HISTOGRAM a_by_url: http___www.bar.com_= ' +
-        '{"buckets": [{"low": 2, "high": 3, "count": 1}]}\n' +
-        'Avg a_by_url: 2.500000']
+        '{"buckets": [{"low": 2, "high": 3, "count": 1}]} units\n' +
+        'Avg a_by_url: 2.500000units']
     self.assertEquals(measurement_results.results, expected)

@@ -42,7 +42,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLFrameElementBase::HTMLFrameElementBase(const QualifiedName& tagName, Document* document)
+HTMLFrameElementBase::HTMLFrameElementBase(const QualifiedName& tagName, Document& document)
     : HTMLFrameOwnerElement(tagName, document)
     , m_scrolling(ScrollbarAuto)
     , m_marginWidth(-1)
@@ -55,7 +55,7 @@ bool HTMLFrameElementBase::isURLAllowed() const
     if (m_URL.isEmpty())
         return true;
 
-    const KURL& completeURL = document()->completeURL(m_URL);
+    const KURL& completeURL = document().completeURL(m_URL);
 
     if (protocolIsJavaScript(completeURL)) {
         Document* contentDoc = this->contentDocument();
@@ -63,7 +63,7 @@ bool HTMLFrameElementBase::isURLAllowed() const
             return false;
     }
 
-    Frame* parentFrame = document()->frame();
+    Frame* parentFrame = document().frame();
     if (parentFrame)
         return parentFrame->isURLAllowed(completeURL);
 
@@ -78,13 +78,13 @@ void HTMLFrameElementBase::openURL(bool lockBackForwardList)
     if (m_URL.isEmpty())
         m_URL = blankURL().string();
 
-    Frame* parentFrame = document()->frame();
+    Frame* parentFrame = document().frame();
     if (!parentFrame)
         return;
 
     // Support for <frame src="javascript:string">
     KURL scriptURL;
-    KURL url = document()->completeURL(m_URL);
+    KURL url = document().completeURL(m_URL);
     if (protocolIsJavaScript(m_URL)) {
         scriptURL = url;
         url = blankURL();
@@ -145,31 +145,17 @@ void HTMLFrameElementBase::setNameAndOpenURL()
 Node::InsertionNotificationRequest HTMLFrameElementBase::insertedInto(ContainerNode* insertionPoint)
 {
     HTMLFrameOwnerElement::insertedInto(insertionPoint);
-    if (insertionPoint->inDocument())
-        return InsertionShouldCallDidNotifySubtreeInsertions;
-    return InsertionDone;
+    return InsertionShouldCallDidNotifySubtreeInsertions;
 }
 
-void HTMLFrameElementBase::didNotifySubtreeInsertions(ContainerNode*)
+void HTMLFrameElementBase::didNotifySubtreeInsertionsToDocument()
 {
-    if (!inDocument())
-        return;
-
-    // DocumentFragments don't kick of any loads.
-    if (!document()->frame())
+    if (!document().frame())
         return;
 
     if (!SubframeLoadingDisabler::canLoadFrame(this))
         return;
 
-    // JavaScript in src=javascript: and beforeonload can access the renderer
-    // during attribute parsing *before* the normal parser machinery would
-    // attach the element. To support this, we lazyAttach here, but only
-    // if we don't already have a renderer (if we're inserted
-    // as part of a DocumentFragment, insertedInto from an earlier element
-    // could have forced a style resolve and already attached us).
-    if (!renderer())
-        lazyAttach(DoNotSetAttached);
     setNameAndOpenURL();
 }
 
@@ -187,7 +173,7 @@ KURL HTMLFrameElementBase::location() const
 {
     if (fastHasAttribute(srcdocAttr))
         return KURL(ParsedURLString, "about:srcdoc");
-    return document()->completeURL(getAttribute(srcAttr));
+    return document().completeURL(getAttribute(srcAttr));
 }
 
 void HTMLFrameElementBase::setLocation(const String& str)
@@ -206,7 +192,7 @@ bool HTMLFrameElementBase::supportsFocus() const
 void HTMLFrameElementBase::setFocus(bool received)
 {
     HTMLFrameOwnerElement::setFocus(received);
-    if (Page* page = document()->page()) {
+    if (Page* page = document().page()) {
         if (received)
             page->focusController().setFocusedFrame(contentFrame());
         else if (page->focusController().focusedFrame() == contentFrame()) // Focus may have already been given to another frame, don't take it away.
@@ -226,7 +212,7 @@ bool HTMLFrameElementBase::isHTMLContentAttribute(const Attribute& attribute) co
 
 int HTMLFrameElementBase::width()
 {
-    document()->updateLayoutIgnorePendingStylesheets();
+    document().updateLayoutIgnorePendingStylesheets();
     if (!renderBox())
         return 0;
     return renderBox()->width();
@@ -234,7 +220,7 @@ int HTMLFrameElementBase::width()
 
 int HTMLFrameElementBase::height()
 {
-    document()->updateLayoutIgnorePendingStylesheets();
+    document().updateLayoutIgnorePendingStylesheets();
     if (!renderBox())
         return 0;
     return renderBox()->height();

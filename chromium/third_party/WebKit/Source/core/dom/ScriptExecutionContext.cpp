@@ -205,13 +205,13 @@ void ScriptExecutionContext::reportException(PassRefPtr<ErrorEvent> event, PassR
     if (m_inDispatchErrorEvent) {
         if (!m_pendingExceptions)
             m_pendingExceptions = adoptPtr(new Vector<OwnPtr<PendingException> >());
-        m_pendingExceptions->append(adoptPtr(new PendingException(errorEvent->message(), errorEvent->lineno(), errorEvent->colno(), errorEvent->filename(), callStack)));
+        m_pendingExceptions->append(adoptPtr(new PendingException(errorEvent->messageForConsole(), errorEvent->lineno(), errorEvent->colno(), errorEvent->filename(), callStack)));
         return;
     }
 
     // First report the original exception and only then all the nested ones.
     if (!dispatchErrorEvent(errorEvent, corsStatus))
-        logExceptionToConsole(errorEvent->message(), errorEvent->filename(), errorEvent->lineno(), errorEvent->colno(), callStack);
+        logExceptionToConsole(errorEvent->messageForConsole(), errorEvent->filename(), errorEvent->lineno(), errorEvent->colno(), callStack);
 
     if (!m_pendingExceptions)
         return;
@@ -223,9 +223,14 @@ void ScriptExecutionContext::reportException(PassRefPtr<ErrorEvent> event, PassR
     m_pendingExceptions.clear();
 }
 
-void ScriptExecutionContext::addConsoleMessage(MessageSource source, MessageLevel level, const String& message, const String& sourceURL, unsigned lineNumber, ScriptState* state, unsigned long requestIdentifier)
+void ScriptExecutionContext::addConsoleMessage(MessageSource source, MessageLevel level, const String& message, const String& sourceURL, unsigned lineNumber)
 {
-    addMessage(source, level, message, sourceURL, lineNumber, 0, state, requestIdentifier);
+    addMessage(source, level, message, sourceURL, lineNumber, 0);
+}
+
+void ScriptExecutionContext::addConsoleMessage(MessageSource source, MessageLevel level, const String& message, ScriptState* state)
+{
+    addMessage(source, level, message, String(), 0, state);
 }
 
 bool ScriptExecutionContext::dispatchErrorEvent(PassRefPtr<ErrorEvent> event, AccessControlStatus corsStatus)
@@ -236,7 +241,7 @@ bool ScriptExecutionContext::dispatchErrorEvent(PassRefPtr<ErrorEvent> event, Ac
 
     RefPtr<ErrorEvent> errorEvent = event;
     if (shouldSanitizeScriptError(errorEvent->filename(), corsStatus))
-        errorEvent = ErrorEvent::createSanitizedError();
+        errorEvent = ErrorEvent::createSanitizedError(errorEvent->world());
 
     ASSERT(!m_inDispatchErrorEvent);
     m_inDispatchErrorEvent = true;

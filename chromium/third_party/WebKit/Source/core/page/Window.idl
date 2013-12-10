@@ -143,10 +143,10 @@
     WebKitPoint webkitConvertPointFromNodeToPage([Default=Undefined] optional Node node,
                                                  [Default=Undefined] optional WebKitPoint p);
 
-    [EnabledAtRuntime, PerWorldBindings, ActivityLog=GetterForIsolatedWorlds] readonly attribute DOMApplicationCache applicationCache;
+    [EnabledAtRuntime=ApplicationCache, PerWorldBindings, ActivityLog=GetterForIsolatedWorlds] readonly attribute ApplicationCache applicationCache;
 
-    [EnabledAtRuntime, PerWorldBindings, ActivityLog=GetterForIsolatedWorlds, GetterRaisesException] readonly attribute Storage sessionStorage;
-    [EnabledAtRuntime, PerWorldBindings, ActivityLog=GetterForIsolatedWorlds, GetterRaisesException] readonly attribute Storage localStorage;
+    [EnabledAtRuntime=SessionStorage, PerWorldBindings, ActivityLog=GetterForIsolatedWorlds, GetterRaisesException] readonly attribute Storage sessionStorage;
+    [EnabledAtRuntime=LocalStorage, PerWorldBindings, ActivityLog=GetterForIsolatedWorlds, GetterRaisesException] readonly attribute Storage localStorage;
 
     // This is the interface orientation in degrees. Some examples are:
     //  0 is straight up; -90 is when the device is rotated 90 clockwise;
@@ -208,7 +208,8 @@
     [PerWorldBindings, ActivityLog=SetterForIsolatedWorlds] attribute EventHandler onmouseout;
     [PerWorldBindings, ActivityLog=SetterForIsolatedWorlds] attribute EventHandler onmouseover;
     [PerWorldBindings, ActivityLog=SetterForIsolatedWorlds] attribute EventHandler onmouseup;
-    [PerWorldBindings, ActivityLog=SetterForIsolatedWorlds] attribute EventHandler onmousewheel;
+    [PerWorldBindings, ActivityLog=SetterForIsolatedWorlds] attribute EventHandler onmousewheel; // Deprecated in favor of onwheel.
+    [PerWorldBindings, ActivityLog=SetterForIsolatedWorlds] attribute EventHandler onwheel;
     attribute EventHandler onoffline;
     attribute EventHandler ononline;
     attribute EventHandler onpagehide;
@@ -244,25 +245,29 @@
     // Webkit extensions
     attribute EventHandler onreset;
     attribute EventHandler onsearch;
+    [EnabledAtRuntime=CSSAnimationUnprefixed] attribute EventHandler onanimationend;
+    [EnabledAtRuntime=CSSAnimationUnprefixed] attribute EventHandler onanimationiteration;
+    [EnabledAtRuntime=CSSAnimationUnprefixed] attribute EventHandler onanimationstart;
     attribute EventHandler onwebkitanimationend;
     attribute EventHandler onwebkitanimationiteration;
     attribute EventHandler onwebkitanimationstart;
     attribute EventHandler onwebkittransitionend;
     attribute EventHandler ontransitionend;
     [Conditional=ORIENTATION_EVENTS] attribute EventHandler onorientationchange;
-    [EnabledAtRuntime=touch] attribute EventHandler ontouchstart;
-    [EnabledAtRuntime=touch] attribute EventHandler ontouchmove;
-    [EnabledAtRuntime=touch] attribute EventHandler ontouchend;
-    [EnabledAtRuntime=touch] attribute EventHandler ontouchcancel;
+    [EnabledAtRuntime=Touch] attribute EventHandler ontouchstart;
+    [EnabledAtRuntime=Touch] attribute EventHandler ontouchmove;
+    [EnabledAtRuntime=Touch] attribute EventHandler ontouchend;
+    [EnabledAtRuntime=Touch] attribute EventHandler ontouchcancel;
 
-    [EnabledAtRuntime=deviceMotion] attribute EventHandler ondevicemotion;
-    [EnabledAtRuntime=deviceOrientation] attribute EventHandler ondeviceorientation;
+    [EnabledAtRuntime=DeviceMotion] attribute EventHandler ondevicemotion;
+    [EnabledAtRuntime=DeviceOrientation] attribute EventHandler ondeviceorientation;
 
     [DeprecateAs=CaptureEvents] void captureEvents();
     [DeprecateAs=ReleaseEvents] void releaseEvents();
 
     // Additional constructors.
     attribute TransitionEventConstructor WebKitTransitionEvent;
+    [EnabledAtRuntime=CSSAnimationUnprefixed] attribute WebKitAnimationEventConstructor AnimationEvent;
     [CustomConstructor] attribute HTMLImageElementConstructorConstructor Image; // Usable with new operator
     // Mozilla has a separate XMLDocument object for XML documents.
     // We just use Document for this.
@@ -280,15 +285,15 @@
 
     // Constructors whose name does not match the interface name.
     // FIXME: Remove these once [ImplementedAs] is used and once constructor names match interface names.
-    [EnabledAtRuntime=mediaStream] attribute MediaStreamConstructor webkitMediaStream;
+    [EnabledAtRuntime=MediaStream] attribute MediaStreamConstructor webkitMediaStream;
     [Conditional=WEB_AUDIO, EnabledAtRuntime=WebAudio] attribute AudioContextConstructor webkitAudioContext;
     [Conditional=WEB_AUDIO, EnabledAtRuntime=WebAudio] attribute OfflineAudioContextConstructor webkitOfflineAudioContext;
-    [EnabledAtRuntime=peerConnection] attribute RTCPeerConnectionConstructor webkitRTCPeerConnection;
-    [EnabledAtRuntime=scriptedSpeech] attribute SpeechGrammarConstructor webkitSpeechGrammar;
-    [EnabledAtRuntime=scriptedSpeech] attribute SpeechGrammarListConstructor webkitSpeechGrammarList;
-    [EnabledAtRuntime=scriptedSpeech] attribute SpeechRecognitionConstructor webkitSpeechRecognition;
-    [EnabledAtRuntime=scriptedSpeech] attribute SpeechRecognitionErrorConstructor webkitSpeechRecognitionError;
-    [EnabledAtRuntime=scriptedSpeech] attribute SpeechRecognitionEventConstructor webkitSpeechRecognitionEvent;
+    [EnabledAtRuntime=PeerConnection] attribute RTCPeerConnectionConstructor webkitRTCPeerConnection;
+    [EnabledAtRuntime=ScriptedSpeech] attribute SpeechGrammarConstructor webkitSpeechGrammar;
+    [EnabledAtRuntime=ScriptedSpeech] attribute SpeechGrammarListConstructor webkitSpeechGrammarList;
+    [EnabledAtRuntime=ScriptedSpeech] attribute SpeechRecognitionConstructor webkitSpeechRecognition;
+    [EnabledAtRuntime=ScriptedSpeech] attribute SpeechRecognitionErrorConstructor webkitSpeechRecognitionError;
+    [EnabledAtRuntime=ScriptedSpeech] attribute SpeechRecognitionEventConstructor webkitSpeechRecognitionEvent;
     [Conditional=WEB_AUDIO] attribute PannerNodeConstructor webkitAudioPannerNode;
 
     // Prefixed ShadowRoot constructor should be phased out eventually, but for the moment it must be always exposed.

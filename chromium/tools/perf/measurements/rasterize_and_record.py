@@ -113,17 +113,18 @@ class RasterizeAndRecord(page_measurement.PageMeasurement):
                       '(must be long enough to render one frame)')
 
   def CustomizeBrowserOptions(self, options):
-    options.extra_browser_args.append('--enable-gpu-benchmarking')
+    smoothness.SmoothnessMetrics.CustomizeBrowserOptions(options)
     # Run each raster task N times. This allows us to report the time for the
     # best run, effectively excluding cache effects and time when the thread is
     # de-scheduled.
-    options.extra_browser_args.append(
-        '--slow-down-raster-scale-factor=' + str(options.raster_record_repeat))
-    # Enable impl-side-painting. Current version of benchmark only works for
-    # this mode.
-    options.extra_browser_args.append('--enable-impl-side-painting')
-    options.extra_browser_args.append('--force-compositing-mode')
-    options.extra_browser_args.append('--enable-threaded-compositing')
+    options.AppendExtraBrowserArgs([
+        '--slow-down-raster-scale-factor=%d' % options.raster_record_repeat,
+        # Enable impl-side-painting. Current version of benchmark only works for
+        # this mode.
+        '--enable-impl-side-painting',
+        '--force-compositing-mode',
+        '--enable-threaded-compositing'
+    ])
 
   def MeasurePage(self, page, tab, results):
     self._metrics = smoothness.SmoothnessMetrics(tab)
@@ -147,7 +148,7 @@ class RasterizeAndRecord(page_measurement.PageMeasurement):
         });
     """)
 
-    tab.browser.StartTracing('webkit,benchmark', 60)
+    tab.browser.StartTracing('webkit.console,benchmark', 60)
     self._metrics.Start()
 
     tab.ExecuteJavaScript("""
@@ -165,10 +166,9 @@ class RasterizeAndRecord(page_measurement.PageMeasurement):
     time.sleep(float(self.options.stop_wait_time))
     tab.ExecuteJavaScript('console.timeEnd("measureNextFrame")')
 
-    tab.browser.StopTracing()
     self._metrics.Stop()
+    timeline = tab.browser.StopTracing().AsTimelineModel()
 
-    timeline = tab.browser.GetTraceResultAndReset().AsTimelineModel()
     collector = StatsCollector(timeline)
     collector.GatherRenderingStats()
 

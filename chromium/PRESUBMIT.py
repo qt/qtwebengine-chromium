@@ -25,6 +25,7 @@ _EXCLUDED_PATHS = (
     r".*MakeFile$",
     r".+_autogen\.h$",
     r".+[\\\/]pnacl_shim\.c$",
+    r"^gpu[\\\/]config[\\\/].*_list_json\.cc$",
 )
 
 # Fragment of a regular expression that matches C++ and Objective-C++
@@ -156,7 +157,8 @@ _BANNED_CPP_FUNCTIONS = (
       ),
       True,
       (
-        r"^content[\\\/]shell[\\\/]shell_browser_main\.cc$",
+        r"^content[\\\/]shell[\\\/]browser[\\\/]shell_browser_main\.cc$",
+        r"^content[\\\/]shell[\\\/]browser[\\\/]shell_message_filter\.cc$",
         r"^net[\\\/]disk_cache[\\\/]cache_util\.cc$",
       ),
     ),
@@ -307,7 +309,7 @@ def _CheckNoNewWStrings(input_api, output_api):
   problems = []
   for f in input_api.AffectedFiles():
     if (not f.LocalPath().endswith(('.cc', '.h')) or
-        f.LocalPath().endswith('test.cc')):
+        f.LocalPath().endswith(('test.cc', '_win.cc', '_win.h'))):
       continue
 
     allowWString = False
@@ -569,9 +571,12 @@ def _CheckIncludeOrderInFile(input_api, f, changed_linenums):
   """Checks the #include order for the given file f."""
 
   system_include_pattern = input_api.re.compile(r'\s*#include \<.*')
-  # Exclude #include <.../...> includes from the check; e.g., <sys/...> includes
-  # often need to appear in a specific order.
-  excluded_include_pattern = input_api.re.compile(r'\s*#include \<.*/.*')
+  # Exclude the following includes from the check:
+  # 1) #include <.../...>, e.g., <sys/...> includes often need to appear in a
+  # specific order.
+  # 2) <atlbase.h>, "build/build_config.h"
+  excluded_include_pattern = input_api.re.compile(
+      r'\s*#include (\<.*/.*|\<atlbase\.h\>|"build/build_config.h")')
   custom_include_pattern = input_api.re.compile(r'\s*#include "(?P<FILE>.*)"')
   if_pattern = input_api.re.compile(
       r'\s*#\s*(if|elif|else|endif|define|undef).*')

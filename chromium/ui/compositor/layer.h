@@ -16,6 +16,7 @@
 #include "cc/animation/layer_animation_event_observer.h"
 #include "cc/base/scoped_ptr_vector.h"
 #include "cc/layers/content_layer_client.h"
+#include "cc/layers/layer_client.h"
 #include "cc/layers/texture_layer_client.h"
 #include "cc/resources/texture_mailbox.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -38,8 +39,8 @@ class Layer;
 class ResourceUpdateQueue;
 class SolidColorLayer;
 class TextureLayer;
-struct TransferableResource;
-typedef std::vector<TransferableResource> TransferableResourceArray;
+struct ReturnedResource;
+typedef std::vector<ReturnedResource> ReturnedResourceArray;
 }
 
 namespace ui {
@@ -62,6 +63,7 @@ class COMPOSITOR_EXPORT Layer
     : public LayerAnimationDelegate,
       NON_EXPORTED_BASE(public cc::ContentLayerClient),
       NON_EXPORTED_BASE(public cc::TextureLayerClient),
+      NON_EXPORTED_BASE(public cc::LayerClient),
       NON_EXPORTED_BASE(public cc::LayerAnimationEventObserver) {
  public:
   Layer();
@@ -254,7 +256,9 @@ class COMPOSITOR_EXPORT Layer
 
   // Set new TextureMailbox for this layer. Note that |mailbox| may hold a
   // shared memory resource or an actual mailbox for a texture.
-  void SetTextureMailbox(const cc::TextureMailbox& mailbox, float scale_factor);
+  void SetTextureMailbox(const cc::TextureMailbox& mailbox,
+                         scoped_ptr<cc::SingleReleaseCallback> release_callback,
+                         float scale_factor);
   cc::TextureMailbox GetTextureMailbox(float* scale_factor);
 
   // Sets a delegated frame, coming from a child compositor.
@@ -267,7 +271,7 @@ class COMPOSITOR_EXPORT Layer
 
   // Gets unused resources to recycle to the child compositor.
   void TakeUnusedResourcesForChildCompositor(
-      cc::TransferableResourceArray* array);
+      cc::ReturnedResourceArray* array);
 
   // Sets the layer's fill color.  May only be called for LAYER_SOLID_COLOR.
   void SetColor(SkColor color);
@@ -320,8 +324,10 @@ class COMPOSITOR_EXPORT Layer
   // TextureLayerClient
   virtual unsigned PrepareTexture() OVERRIDE;
   virtual WebKit::WebGraphicsContext3D* Context3d() OVERRIDE;
-  virtual bool PrepareTextureMailbox(cc::TextureMailbox* mailbox,
-                                     bool use_shared_memory) OVERRIDE;
+  virtual bool PrepareTextureMailbox(
+      cc::TextureMailbox* mailbox,
+      scoped_ptr<cc::SingleReleaseCallback>* release_callback,
+      bool use_shared_memory) OVERRIDE;
 
   float device_scale_factor() const { return device_scale_factor_; }
 
@@ -329,6 +335,9 @@ class COMPOSITOR_EXPORT Layer
   // impact, and is only used for benchmarking/testing purpose.
   void SetForceRenderSurface(bool force);
   bool force_render_surface() const { return force_render_surface_; }
+
+  // LayerClient
+  virtual std::string DebugName() OVERRIDE;
 
   // LayerAnimationEventObserver
   virtual void OnAnimationStarted(const cc::AnimationEvent& event) OVERRIDE;
@@ -471,7 +480,7 @@ class COMPOSITOR_EXPORT Layer
   cc::Layer* cc_layer_;
 
   // If true, the layer scales the canvas and the texture with the device scale
-  // factor as appropriate. When true, the texture size is in DIP.
+  // factor as apporpriate. When true, the texture size is in DIP.
   bool scale_content_;
 
   // A cached copy of |Compositor::device_scale_factor()|.

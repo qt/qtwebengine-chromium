@@ -29,6 +29,12 @@ void ContentLayerPainter::Paint(SkCanvas* canvas,
   base::TimeTicks paint_start = base::TimeTicks::HighResNow();
   client_->PaintContents(canvas, content_rect, opaque);
   base::TimeTicks paint_end = base::TimeTicks::HighResNow();
+  // The start and end times might be the same if the paint was very fast or if
+  // our timer granularity is poor. Treat this as a very short time duration
+  // instead of none to avoid dividing by zero.
+  if (paint_end == paint_start)
+    paint_end += base::TimeDelta::FromMicroseconds(1);
+
   double pixels_per_sec = (content_rect.width() * content_rect.height()) /
                           (paint_end - paint_start).InSecondsF();
   UMA_HISTOGRAM_CUSTOM_COUNTS("Renderer4.AccelContentPaintDurationMS",
@@ -121,9 +127,8 @@ void ContentLayer::CreateUpdaterIfNeeded() {
   }
   updater_->SetOpaque(contents_opaque());
 
-  unsigned texture_format =
-      layer_tree_host()->GetRendererCapabilities().best_texture_format;
-  SetTextureFormat(texture_format);
+  SetTextureFormat(
+      layer_tree_host()->GetRendererCapabilities().best_texture_format);
 }
 
 void ContentLayer::SetContentsOpaque(bool opaque) {
@@ -143,6 +148,21 @@ void ContentLayer::UpdateCanUseLCDText() {
 
 bool ContentLayer::SupportsLCDText() const {
   return true;
+}
+
+skia::RefPtr<SkPicture> ContentLayer::GetPicture() const {
+  if (!DrawsContent())
+    return skia::RefPtr<SkPicture>();
+
+  int width = bounds().width();
+  int height = bounds().height();
+  gfx::RectF opaque;
+
+  skia::RefPtr<SkPicture> picture = skia::AdoptRef(new SkPicture);
+  SkCanvas* canvas = picture->beginRecording(width, height);
+  client_->PaintContents(canvas, gfx::Rect(width, height), &opaque);
+  picture->endRecording();
+  return picture;
 }
 
 }  // namespace cc

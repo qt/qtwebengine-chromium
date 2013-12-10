@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 static_library("libevent") {
+  external = true
   sources = [
     "buffer.c",
     "epoll.c",
@@ -32,7 +33,8 @@ static_library("libevent") {
 
   if (is_mac) {
     includes = [ "mac" ]
-  } else {
+  } else if (is_linux) {
+    includes = [ "linux" ]
     sources -= [ "kqueue.c" ]
   }
 

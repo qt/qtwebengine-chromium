@@ -16,6 +16,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/time/time.h"
 #include "cc/layers/video_frame_provider.h"
+#include "content/common/media/media_player_messages_enums_android.h"
 #include "content/renderer/media/android/media_info_loader.h"
 #include "content/renderer/media/android/media_source_delegate.h"
 #include "content/renderer/media/android/stream_texture_factory_android.h"
@@ -87,14 +88,14 @@ class WebMediaPlayerAndroid
   virtual bool canEnterFullscreen() const;
 
   // Resource loading.
-  virtual void load(const WebKit::WebURL& url, CORSMode cors_mode);
-  virtual void load(const WebKit::WebURL& url,
-                    WebKit::WebMediaSource* media_source,
-                    CORSMode cors_mode);
+  virtual void load(LoadType load_type,
+                    const WebKit::WebURL& url,
+                    CORSMode cors_mode) OVERRIDE;
 
   // Playback controls.
   virtual void play();
   virtual void pause();
+  virtual void pause(bool is_media_related_action);
   virtual void seek(double seconds);
   virtual bool supportsFullscreen() const;
   virtual bool supportsSave() const;
@@ -156,20 +157,17 @@ class WebMediaPlayerAndroid
       OVERRIDE;
 
   // Media player callback handlers.
-  void OnMediaMetadataChanged(base::TimeDelta duration, int width,
+  void OnMediaMetadataChanged(const base::TimeDelta& duration, int width,
                               int height, bool success);
   void OnPlaybackComplete();
   void OnBufferingUpdate(int percentage);
-  void OnSeekComplete(base::TimeDelta current_time);
+  void OnSeekComplete(const base::TimeDelta& current_time);
   void OnMediaError(int error_type);
   void OnVideoSizeChanged(int width, int height);
-  void OnMediaSeekRequest(base::TimeDelta time_to_seek,
-                          unsigned seek_request_id);
-  void OnMediaConfigRequest();
-  void OnDurationChange(const base::TimeDelta& duration);
+  void OnDurationChanged(const base::TimeDelta& duration);
 
   // Called to update the current time.
-  void OnTimeUpdate(base::TimeDelta current_time);
+  void OnTimeUpdate(const base::TimeDelta& current_time);
 
   // Functions called when media player status changes.
   void OnMediaPlayerPlay();
@@ -221,19 +219,17 @@ class WebMediaPlayerAndroid
                     const std::vector<uint8>& message,
                     const std::string& destination_url);
 
+  void OnMediaSourceOpened(WebKit::WebMediaSource* web_media_source);
+
   void OnNeedKey(const std::string& type,
                  const std::string& session_id,
-                 scoped_ptr<uint8[]> init_data,
-                 int init_data_size);
+                 const std::vector<uint8>& init_data);
 
 #if defined(GOOGLE_TV)
   bool InjectMediaStream(MediaStreamClient* media_stream_client,
                          media::Demuxer* demuxer,
                          const base::Closure& destroy_demuxer_cb);
 #endif
-
-  // Called when DemuxerStreamPlayer needs to read data from ChunkDemuxer.
-  void OnReadFromDemuxer(media::DemuxerStream::Type type);
 
  protected:
   // Helper method to update the playing state.
@@ -249,8 +245,6 @@ class WebMediaPlayerAndroid
 
   // Requesting whether the surface texture peer needs to be reestablished.
   void SetNeedsEstablishPeer(bool needs_establish_peer);
-
-  void InitializeMediaPlayer(const WebKit::WebURL& url);
 
 #if defined(GOOGLE_TV)
   // Request external surface for out-of-band composition.
@@ -313,7 +307,7 @@ class WebMediaPlayerAndroid
   base::TimeDelta duration_;
 
   // Flag to remember if we have a trusted duration_ value provided by
-  // MediaSourceDelegate notifying OnDurationChange(). In this case, ignore
+  // MediaSourceDelegate notifying OnDurationChanged(). In this case, ignore
   // any subsequent duration value passed to OnMediaMetadataChange().
   bool ignore_metadata_duration_change_;
 
@@ -349,6 +343,9 @@ class WebMediaPlayerAndroid
 
   // Whether the mediaplayer is playing.
   bool is_playing_;
+
+  // Wether the mediaplayer has already started playing.
+  bool playing_started_;
 
   // Whether media player needs to re-establish the surface texture peer.
   bool needs_establish_peer_;
@@ -398,7 +395,11 @@ class WebMediaPlayerAndroid
   scoped_ptr<MediaSourceDelegate,
              MediaSourceDelegate::Destroyer> media_source_delegate_;
 
-  media::MediaPlayerAndroid::SourceType source_type_;
+  // Internal pending playback state.
+  // Store a playback request that cannot be started immediately.
+  bool pending_playback_;
+
+  MediaPlayerHostMsg_Initialize_Type player_type_;
 
   // Proxy object that delegates method calls on Render Thread.
   // This object is created on the Render Thread and is only called in the
@@ -424,6 +425,8 @@ class WebMediaPlayerAndroid
 
   // The decryptor that manages decryption keys and decrypts encrypted frames.
   scoped_ptr<ProxyDecryptor> decryptor_;
+
+  base::WeakPtrFactory<WebMediaPlayerAndroid> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(WebMediaPlayerAndroid);
 };

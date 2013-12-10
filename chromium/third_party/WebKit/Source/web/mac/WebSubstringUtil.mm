@@ -57,11 +57,11 @@ namespace WebKit {
 
 NSAttributedString* WebSubstringUtil::attributedSubstringInRange(WebFrame* webFrame, size_t location, size_t length)
 {
-    Frame* frame = static_cast<WebFrameImpl*>(webFrame)->frame();
+    Frame* frame = toWebFrameImpl(webFrame)->frame();
     if (frame->view()->needsLayout())
         frame->view()->layout();
 
-    RefPtr<Range> range(TextIterator::rangeFromLocationAndLength(frame->selection()->rootEditableElementOrDocumentElement(), location, length));
+    RefPtr<Range> range(TextIterator::rangeFromLocationAndLength(frame->selection().rootEditableElementOrDocumentElement(), location, length));
     if (!range)
         return nil;
 
@@ -91,11 +91,11 @@ NSAttributedString* WebSubstringUtil::attributedSubstringInRange(WebFrame* webFr
         [attrs setObject:font forKey:NSFontAttributeName];
 
         if (style->visitedDependentColor(CSSPropertyColor).alpha())
-            [attrs setObject:nsColor(renderer->resolveColor(CSSPropertyColor)) forKey:NSForegroundColorAttributeName];
+            [attrs setObject:nsColor(style->visitedDependentColor(CSSPropertyColor)) forKey:NSForegroundColorAttributeName];
         else
             [attrs removeObjectForKey:NSForegroundColorAttributeName];
         if (style->visitedDependentColor(CSSPropertyBackgroundColor).alpha())
-            [attrs setObject:nsColor(renderer->resolveColor(CSSPropertyBackgroundColor)) forKey:NSBackgroundColorAttributeName];
+            [attrs setObject:nsColor(style->visitedDependentColor(CSSPropertyBackgroundColor)) forKey:NSBackgroundColorAttributeName];
         else
             [attrs removeObjectForKey:NSBackgroundColorAttributeName];
 

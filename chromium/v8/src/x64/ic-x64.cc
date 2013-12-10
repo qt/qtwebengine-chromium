@@ -570,10 +570,10 @@ void KeyedLoadIC::GenerateIndexedInterceptor(MacroAssembler* masm) {
   __ j(not_zero, &slow);
 
   // Everything is fine, call runtime.
-  __ pop(rcx);
+  __ PopReturnAddressTo(rcx);
   __ push(rdx);  // receiver
   __ push(rax);  // key
-  __ push(rcx);  // return address
+  __ PushReturnAddressFrom(rcx);
 
   // Perform tail call to the entry.
   __ TailCallExternalReference(
@@ -822,8 +822,8 @@ void CallICBase::GenerateMonomorphicCacheProbe(MacroAssembler* masm,
                                          extra_state,
                                          Code::NORMAL,
                                          argc);
-  Isolate::Current()->stub_cache()->GenerateProbe(masm, flags, rdx, rcx, rbx,
-                                                  rax);
+  masm->isolate()->stub_cache()->GenerateProbe(
+      masm, flags, rdx, rcx, rbx, rax);
 
   // If the stub cache probing failed, the receiver might be a value.
   // For value objects, we use the map of the prototype objects for
@@ -859,8 +859,8 @@ void CallICBase::GenerateMonomorphicCacheProbe(MacroAssembler* masm,
 
   // Probe the stub cache for the value object.
   __ bind(&probe);
-  Isolate::Current()->stub_cache()->GenerateProbe(masm, flags, rdx, rcx, rbx,
-                                                  no_reg);
+  masm->isolate()->stub_cache()->GenerateProbe(
+      masm, flags, rdx, rcx, rbx, no_reg);
 
   __ bind(&miss);
 }
@@ -904,8 +904,8 @@ void CallICBase::GenerateNormal(MacroAssembler* masm, int argc) {
   // -----------------------------------
   Label miss;
 
-  // Get the receiver of the function from the stack.
-  __ movq(rdx, Operand(rsp, (argc + 1) * kPointerSize));
+  StackArgumentsAccessor args(rsp, argc);
+  __ movq(rdx, args.GetReceiverOperand());
 
   GenerateNameDictionaryReceiverCheck(masm, rdx, rax, rbx, &miss);
 
@@ -940,8 +940,8 @@ void CallICBase::GenerateMiss(MacroAssembler* masm,
     __ IncrementCounter(counters->keyed_call_miss(), 1);
   }
 
-  // Get the receiver of the function from the stack; 1 ~ return address.
-  __ movq(rdx, Operand(rsp, (argc + 1) * kPointerSize));
+  StackArgumentsAccessor args(rsp, argc);
+  __ movq(rdx, args.GetReceiverOperand());
 
   // Enter an internal frame.
   {
@@ -965,7 +965,7 @@ void CallICBase::GenerateMiss(MacroAssembler* masm,
   // This can happen only for regular CallIC but not KeyedCallIC.
   if (id == IC::kCallIC_Miss) {
     Label invoke, global;
-    __ movq(rdx, Operand(rsp, (argc + 1) * kPointerSize));  // receiver
+    __ movq(rdx, args.GetReceiverOperand());
     __ JumpIfSmi(rdx, &invoke);
     __ CmpObjectType(rdx, JS_GLOBAL_OBJECT_TYPE, rcx);
     __ j(equal, &global);
@@ -975,7 +975,7 @@ void CallICBase::GenerateMiss(MacroAssembler* masm,
     // Patch the receiver on the stack.
     __ bind(&global);
     __ movq(rdx, FieldOperand(rdx, GlobalObject::kGlobalReceiverOffset));
-    __ movq(Operand(rsp, (argc + 1) * kPointerSize), rdx);
+    __ movq(args.GetReceiverOperand(), rdx);
     __ bind(&invoke);
   }
 
@@ -1005,8 +1005,8 @@ void CallIC::GenerateMegamorphic(MacroAssembler* masm,
   // rsp[(argc + 1) * 8] : argument 0 = receiver
   // -----------------------------------
 
-  // Get the receiver of the function from the stack; 1 ~ return address.
-  __ movq(rdx, Operand(rsp, (argc + 1) * kPointerSize));
+  StackArgumentsAccessor args(rsp, argc);
+  __ movq(rdx, args.GetReceiverOperand());
   GenerateMonomorphicCacheProbe(masm, argc, Code::CALL_IC, extra_ic_state);
   GenerateMiss(masm, argc, extra_ic_state);
 }
@@ -1023,8 +1023,8 @@ void KeyedCallIC::GenerateMegamorphic(MacroAssembler* masm, int argc) {
   // rsp[(argc + 1) * 8] : argument 0 = receiver
   // -----------------------------------
 
-  // Get the receiver of the function from the stack; 1 ~ return address.
-  __ movq(rdx, Operand(rsp, (argc + 1) * kPointerSize));
+  StackArgumentsAccessor args(rsp, argc);
+  __ movq(rdx, args.GetReceiverOperand());
 
   Label do_call, slow_call, slow_load;
   Label check_number_dictionary, check_name, lookup_monomorphic_cache;
@@ -1302,7 +1302,8 @@ void KeyedCallIC::GenerateNonStrictArguments(MacroAssembler* masm,
   // rsp[(argc + 1) * 8] : argument 0 = receiver
   // -----------------------------------
   Label slow, notin;
-  __ movq(rdx, Operand(rsp, (argc + 1) * kPointerSize));
+  StackArgumentsAccessor args(rsp, argc);
+  __ movq(rdx, args.GetReceiverOperand());
   Operand mapped_location = GenerateMappedArgumentsLookup(
       masm, rdx, rcx, rbx, rax, r8, &notin, &slow);
   __ movq(rdi, mapped_location);
@@ -1331,7 +1332,7 @@ void LoadIC::GenerateMegamorphic(MacroAssembler* masm) {
   Code::Flags flags = Code::ComputeFlags(
       Code::STUB, MONOMORPHIC, Code::kNoExtraICState,
       Code::NORMAL, Code::LOAD_IC);
-  Isolate::Current()->stub_cache()->GenerateProbe(
+  masm->isolate()->stub_cache()->GenerateProbe(
       masm, flags, rax, rcx, rbx, rdx);
 
   GenerateMiss(masm);
@@ -1369,10 +1370,10 @@ void LoadIC::GenerateMiss(MacroAssembler* masm) {
   Counters* counters = masm->isolate()->counters();
   __ IncrementCounter(counters->load_miss(), 1);
 
-  __ pop(rbx);
+  __ PopReturnAddressTo(rbx);
   __ push(rax);  // receiver
   __ push(rcx);  // name
-  __ push(rbx);  // return address
+  __ PushReturnAddressFrom(rbx);
 
   // Perform tail call to the entry.
   ExternalReference ref =
@@ -1388,10 +1389,10 @@ void LoadIC::GenerateRuntimeGetProperty(MacroAssembler* masm) {
   //  -- rsp[0] : return address
   // -----------------------------------
 
-  __ pop(rbx);
+  __ PopReturnAddressTo(rbx);
   __ push(rax);  // receiver
   __ push(rcx);  // name
-  __ push(rbx);  // return address
+  __ PushReturnAddressFrom(rbx);
 
   // Perform tail call to the entry.
   __ TailCallRuntime(Runtime::kGetProperty, 2, 1);
@@ -1408,10 +1409,10 @@ void KeyedLoadIC::GenerateMiss(MacroAssembler* masm, ICMissMode miss_mode) {
   Counters* counters = masm->isolate()->counters();
   __ IncrementCounter(counters->keyed_load_miss(), 1);
 
-  __ pop(rbx);
+  __ PopReturnAddressTo(rbx);
   __ push(rdx);  // receiver
   __ push(rax);  // name
-  __ push(rbx);  // return address
+  __ PushReturnAddressFrom(rbx);
 
   // Perform tail call to the entry.
   ExternalReference ref = miss_mode == MISS_FORCE_GENERIC
@@ -1429,10 +1430,10 @@ void KeyedLoadIC::GenerateRuntimeGetProperty(MacroAssembler* masm) {
   //  -- rsp[0] : return address
   // -----------------------------------
 
-  __ pop(rbx);
+  __ PopReturnAddressTo(rbx);
   __ push(rdx);  // receiver
   __ push(rax);  // name
-  __ push(rbx);  // return address
+  __ PushReturnAddressFrom(rbx);
 
   // Perform tail call to the entry.
   __ TailCallRuntime(Runtime::kKeyedGetProperty, 2, 1);
@@ -1452,8 +1453,8 @@ void StoreIC::GenerateMegamorphic(MacroAssembler* masm,
   Code::Flags flags = Code::ComputeFlags(
       Code::STUB, MONOMORPHIC, strict_mode,
       Code::NORMAL, Code::STORE_IC);
-  Isolate::Current()->stub_cache()->GenerateProbe(masm, flags, rdx, rcx, rbx,
-                                                  no_reg);
+  masm->isolate()->stub_cache()->GenerateProbe(
+      masm, flags, rdx, rcx, rbx, no_reg);
 
   // Cache miss: Jump to runtime.
   GenerateMiss(masm);
@@ -1468,11 +1469,11 @@ void StoreIC::GenerateMiss(MacroAssembler* masm) {
   //  -- rsp[0] : return address
   // -----------------------------------
 
-  __ pop(rbx);
+  __ PopReturnAddressTo(rbx);
   __ push(rdx);  // receiver
   __ push(rcx);  // name
   __ push(rax);  // value
-  __ push(rbx);  // return address
+  __ PushReturnAddressFrom(rbx);
 
   // Perform tail call to the entry.
   ExternalReference ref =
@@ -1512,13 +1513,13 @@ void StoreIC::GenerateRuntimeSetProperty(MacroAssembler* masm,
   //  -- rdx    : receiver
   //  -- rsp[0] : return address
   // -----------------------------------
-  __ pop(rbx);
+  __ PopReturnAddressTo(rbx);
   __ push(rdx);
   __ push(rcx);
   __ push(rax);
   __ Push(Smi::FromInt(NONE));  // PropertyAttributes
   __ Push(Smi::FromInt(strict_mode));
-  __ push(rbx);  // return address
+  __ PushReturnAddressFrom(rbx);
 
   // Do tail-call to runtime routine.
   __ TailCallRuntime(Runtime::kSetProperty, 5, 1);
@@ -1534,13 +1535,13 @@ void KeyedStoreIC::GenerateRuntimeSetProperty(MacroAssembler* masm,
   //  -- rsp[0] : return address
   // -----------------------------------
 
-  __ pop(rbx);
+  __ PopReturnAddressTo(rbx);
   __ push(rdx);  // receiver
   __ push(rcx);  // key
   __ push(rax);  // value
   __ Push(Smi::FromInt(NONE));          // PropertyAttributes
   __ Push(Smi::FromInt(strict_mode));   // Strict mode.
-  __ push(rbx);  // return address
+  __ PushReturnAddressFrom(rbx);
 
   // Do tail-call to runtime routine.
   __ TailCallRuntime(Runtime::kSetProperty, 5, 1);
@@ -1555,11 +1556,11 @@ void StoreIC::GenerateSlow(MacroAssembler* masm) {
   //  -- rsp[0] : return address
   // -----------------------------------
 
-  __ pop(rbx);
+  __ PopReturnAddressTo(rbx);
   __ push(rdx);  // receiver
   __ push(rcx);  // key
   __ push(rax);  // value
-  __ push(rbx);  // return address
+  __ PushReturnAddressFrom(rbx);
 
   // Do tail-call to runtime routine.
   ExternalReference ref(IC_Utility(kStoreIC_Slow), masm->isolate());
@@ -1575,11 +1576,11 @@ void KeyedStoreIC::GenerateSlow(MacroAssembler* masm) {
   //  -- rsp[0] : return address
   // -----------------------------------
 
-  __ pop(rbx);
+  __ PopReturnAddressTo(rbx);
   __ push(rdx);  // receiver
   __ push(rcx);  // key
   __ push(rax);  // value
-  __ push(rbx);  // return address
+  __ PushReturnAddressFrom(rbx);
 
   // Do tail-call to runtime routine.
   ExternalReference ref(IC_Utility(kKeyedStoreIC_Slow), masm->isolate());
@@ -1595,11 +1596,11 @@ void KeyedStoreIC::GenerateMiss(MacroAssembler* masm, ICMissMode miss_mode) {
   //  -- rsp[0] : return address
   // -----------------------------------
 
-  __ pop(rbx);
+  __ PopReturnAddressTo(rbx);
   __ push(rdx);  // receiver
   __ push(rcx);  // key
   __ push(rax);  // value
-  __ push(rbx);  // return address
+  __ PushReturnAddressFrom(rbx);
 
   // Do tail-call to runtime routine.
   ExternalReference ref = miss_mode == MISS_FORCE_GENERIC

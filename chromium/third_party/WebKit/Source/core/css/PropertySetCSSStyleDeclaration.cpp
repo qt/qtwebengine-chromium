@@ -91,8 +91,8 @@ public:
         PropertySetCSSStyleDeclaration* localCopyStyleDecl = s_currentDecl;
         s_currentDecl = 0;
         s_shouldNotifyInspector = false;
-        if (localCopyStyleDecl->parentElement() && localCopyStyleDecl->parentElement()->document())
-            InspectorInstrumentation::didInvalidateStyleAttr(localCopyStyleDecl->parentElement()->document(), localCopyStyleDecl->parentElement());
+        if (localCopyStyleDecl->parentElement())
+            InspectorInstrumentation::didInvalidateStyleAttr(&localCopyStyleDecl->parentElement()->document(), localCopyStyleDecl->parentElement());
     }
 
     void enqueueMutationRecord()
@@ -212,7 +212,7 @@ void PropertySetCSSStyleDeclaration::setProperty(const String& propertyName, con
     if (!propertyID)
         return;
 
-    bool important = priority.find("important", 0, false) != notFound;
+    bool important = priority.find("important", 0, false) != kNotFound;
 
     willMutate();
 
@@ -418,7 +418,7 @@ void InlineCSSStyleDeclaration::didMutate(MutationType type)
 
 CSSStyleSheet* InlineCSSStyleDeclaration::parentStyleSheet() const
 {
-    return m_parentElement ? m_parentElement->document()->elementSheet() : 0;
+    return m_parentElement ? m_parentElement->document().elementSheet() : 0;
 }
 
 } // namespace WebCore

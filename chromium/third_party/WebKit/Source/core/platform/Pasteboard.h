@@ -26,6 +26,7 @@
 #ifndef Pasteboard_h
 #define Pasteboard_h
 
+#include "public/platform/WebClipboard.h"
 #include "wtf/Forward.h"
 #include "wtf/HashSet.h"
 #include "wtf/Noncopyable.h"
@@ -39,7 +40,7 @@
 namespace WebCore {
 
 class ArchiveResource;
-class Clipboard;
+class ChromiumDataObject;
 class DocumentFragment;
 class Frame;
 class HitTestResult;
@@ -47,8 +48,6 @@ class KURL;
 class Node;
 class Range;
 class SharedBuffer;
-
-enum ShouldSerializeSelectedTextForClipboard { DefaultSelectedTextType, IncludeImageAltTextForClipboard };
 
 class Pasteboard {
     WTF_MAKE_NONCOPYABLE(Pasteboard); WTF_MAKE_FAST_ALLOCATED;
@@ -59,15 +58,14 @@ public:
     };
 
     static Pasteboard* generalPasteboard();
-    void writeSelection(Range*, bool canSmartCopyOrDelete, Frame*, ShouldSerializeSelectedTextForClipboard = DefaultSelectedTextType);
+    void writeSelection(Range*, bool canSmartCopyOrDelete, const String& text);
     void writePlainText(const String&, SmartReplaceOption);
-    void writeURL(const KURL&, const String&, Frame* = 0);
+    void writeURL(const KURL&, const String&);
     void writeImage(Node*, const KURL&, const String& title);
-    void writeClipboard(Clipboard*);
-    void clear();
+    void writeDataObject(PassRefPtr<ChromiumDataObject>);
     bool canSmartReplace();
     PassRefPtr<DocumentFragment> documentFragment(Frame*, PassRefPtr<Range>, bool allowPlainText, bool& chosePlainText);
-    String plainText(Frame* = 0);
+    String plainText();
 
     bool isSelectionMode() const;
     void setSelectionMode(bool);
@@ -75,7 +73,7 @@ public:
 private:
     Pasteboard();
 
-    bool m_selectionMode;
+    WebKit::WebClipboard::Buffer m_buffer;
 };
 
 } // namespace WebCore

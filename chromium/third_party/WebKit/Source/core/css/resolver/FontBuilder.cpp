@@ -65,13 +65,13 @@ FontBuilder::FontBuilder()
 {
 }
 
-void FontBuilder::initForStyleResolve(const Document* document, RenderStyle* style, bool useSVGZoomRules)
+void FontBuilder::initForStyleResolve(const Document& document, RenderStyle* style, bool useSVGZoomRules)
 {
     // All documents need to be in a frame (and thus have access to Settings)
     // for style-resolution to make sense.
     // Unfortunately SVG Animations currently violate this: crbug.com/260966
     // ASSERT(m_document->frame());
-    m_document = document;
+    m_document = &document;
     m_useSVGZoomRules = useSVGZoomRules;
     m_style = style;
     m_fontDirty = false;
@@ -121,7 +121,7 @@ void FontBuilder::fromSystemFont(CSSValueID valueId, float effectiveZoom)
     FontDescriptionChangeScope scope(this);
 
     FontDescription fontDescription;
-    RenderTheme::defaultTheme()->systemFont(valueId, fontDescription);
+    RenderTheme::theme().systemFont(valueId, fontDescription);
 
     // Double-check and see if the theme did anything. If not, don't bother updating the font.
     if (!fontDescription.isAbsoluteSize())
