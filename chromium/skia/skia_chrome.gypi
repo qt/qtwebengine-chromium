@@ -63,6 +63,8 @@
     'ext/recursive_gaussian_convolution.cc',
     'ext/recursive_gaussian_convolution.h',
     'ext/refptr.h',
+    'ext/SkDiscardableMemory_chrome.h',
+    'ext/SkDiscardableMemory_chrome.cc',
     'ext/SkMemory_new_handler.cpp',
     'ext/skia_trace_shim.h',
     'ext/skia_utils_base.cc',
@@ -80,7 +82,6 @@
     'ext/vector_platform_device_skia.cc',
     'ext/vector_platform_device_skia.h',
   ],
-  
   'conditions': [
     # For POSIX platforms, prefer the Mutex implementation provided by Skia
     # since it does not generate static initializers.
@@ -92,6 +93,7 @@
     }],
     [ 'OS == "android" and enable_printing == 0', {
       'sources!': [
+        'ext/skia_utils_base.cc',
         'ext/vector_platform_device_skia.cc',
       ],
     }],

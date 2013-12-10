@@ -7,8 +7,6 @@
 
 #include <vector>
 
-#include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
 #include "cc/resources/managed_tile_state.h"
 
@@ -22,14 +20,16 @@ class CC_EXPORT PrioritizedTileSet {
 
   void InsertTile(Tile* tile, ManagedTileBin bin);
   void Clear();
-  void Sort();
 
-  class CC_EXPORT PriorityIterator {
+  class CC_EXPORT Iterator {
    public:
-    explicit PriorityIterator(PrioritizedTileSet* set);
-    ~PriorityIterator();
+    Iterator(PrioritizedTileSet* set, bool use_priority_ordering);
 
-    PriorityIterator& operator++();
+    ~Iterator();
+
+    void DisablePriorityOrdering();
+
+    Iterator& operator++();
     Tile* operator->() { return *(*this); }
     Tile* operator*();
     operator bool() const {
@@ -41,14 +41,17 @@ class CC_EXPORT PrioritizedTileSet {
 
     PrioritizedTileSet* tile_set_;
     ManagedTileBin current_bin_;
-    std::vector<scoped_refptr<Tile> >::iterator iterator_;
+    std::vector<Tile*>::iterator iterator_;
+    bool use_priority_ordering_;
   };
 
  private:
-  friend class PriorityIterator;
+  friend class Iterator;
 
-  typedef scoped_refptr<Tile> TileRef;
-  std::vector<TileRef> tiles_[NUM_BINS];
+  void SortBinIfNeeded(ManagedTileBin bin);
+
+  std::vector<Tile*> tiles_[NUM_BINS];
+  bool bin_sorted_[NUM_BINS];
 };
 
 }  // namespace cc

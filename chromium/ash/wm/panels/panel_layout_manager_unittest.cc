@@ -17,6 +17,7 @@
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/test/ash_test_base.h"
+#include "ash/test/launcher_test_api.h"
 #include "ash/test/launcher_view_test_api.h"
 #include "ash/test/shell_test_api.h"
 #include "ash/test/test_launcher_delegate.h"
@@ -50,7 +51,7 @@ class PanelLayoutManagerTest : public test::AshTestBase {
     ASSERT_TRUE(test::TestLauncherDelegate::instance());
 
     launcher_view_test_.reset(new test::LauncherViewTestAPI(
-        Launcher::ForPrimaryDisplay()->GetLauncherViewForTest()));
+        GetLauncherView(Launcher::ForPrimaryDisplay())));
     launcher_view_test_->SetAnimationDuration(1);
   }
 
@@ -128,6 +129,8 @@ class PanelLayoutManagerTest : public test::AshTestBase {
     ASSERT_FALSE(icon_bounds.width() == 0 && icon_bounds.height() == 0);
 
     gfx::Rect window_bounds = panel->GetBoundsInScreen();
+    ASSERT_LT(icon_bounds.width(), window_bounds.width());
+    ASSERT_LT(icon_bounds.height(), window_bounds.height());
     gfx::Rect launcher_bounds = launcher->shelf_widget()->
         GetWindowBoundsInScreen();
     ShelfAlignment alignment = GetAlignment(panel->GetRootWindow());
@@ -249,8 +252,7 @@ class PanelLayoutManagerTest : public test::AshTestBase {
         RootWindowController::ForWindow(window)->shelf()->
         shelf_layout_manager();
     shelf->SetAutoHideBehavior(behavior);
-    LauncherView* launcher_view =
-        Launcher::ForWindow(window)->GetLauncherViewForTest();
+    LauncherView* launcher_view = GetLauncherView(Launcher::ForWindow(window));
     test::LauncherViewTestAPI test_api(launcher_view);
     test_api.RunMessageLoopUntilAnimationsDone();
   }
@@ -261,6 +263,10 @@ class PanelLayoutManagerTest : public test::AshTestBase {
         RootWindowController::ForWindow(window)->shelf()->
         shelf_layout_manager();
     shelf->SetState(visibility_state);
+  }
+
+  internal::LauncherView* GetLauncherView(Launcher* launcher) {
+    return test::LauncherTestAPI(launcher).launcher_view();
   }
 
  private:
@@ -444,8 +450,7 @@ TEST_F(PanelLayoutManagerTest, MultiplePanelCallout) {
   wm::ActivateWindow(w3.get());
   EXPECT_NO_FATAL_FAILURE(IsCalloutAboveLauncherIcon(w3.get()));
   w3.reset();
-  if (views::corewm::UseFocusController())
-    EXPECT_NO_FATAL_FAILURE(IsCalloutAboveLauncherIcon(w2.get()));
+  EXPECT_NO_FATAL_FAILURE(IsCalloutAboveLauncherIcon(w2.get()));
 }
 
 // Tests removing panels.
@@ -606,9 +611,9 @@ TEST_F(PanelLayoutManagerTest, PanelMoveBetweenMultipleDisplays) {
   scoped_ptr<aura::Window> p2_d2(CreatePanelWindow(gfx::Rect(600, 0, 50, 50)));
 
   LauncherView* launcher_view_1st =
-      Launcher::ForPrimaryDisplay()->GetLauncherViewForTest();
+      GetLauncherView(Launcher::ForPrimaryDisplay());
   LauncherView* launcher_view_2nd =
-      Launcher::ForWindow(root_windows[1])->GetLauncherViewForTest();
+      GetLauncherView(Launcher::ForWindow(root_windows[1]));
 
   EXPECT_EQ(root_windows[0], p1_d1->GetRootWindow());
   EXPECT_EQ(root_windows[0], p2_d1->GetRootWindow());

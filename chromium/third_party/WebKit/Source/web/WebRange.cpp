@@ -116,8 +116,8 @@ WebRange WebRange::expandedToParagraph() const
 // static
 WebRange WebRange::fromDocumentRange(WebFrame* frame, int start, int length)
 {
-    WebCore::Frame* webFrame = static_cast<WebFrameImpl*>(frame)->frame();
-    Element* selectionRoot = webFrame->selection()->rootEditableElement();
+    WebCore::Frame* webFrame = toWebFrameImpl(frame)->frame();
+    Element* selectionRoot = webFrame->selection().rootEditableElement();
     ContainerNode* scope = selectionRoot ? selectionRoot : webFrame->document()->documentElement();
     return TextIterator::rangeFromLocationAndLength(scope, start, length);
 }
@@ -127,7 +127,7 @@ WebVector<WebFloatQuad> WebRange::textQuads() const
     if (isNull())
         return WebVector<WebFloatQuad>();
 
-    Frame* frame = m_private->ownerDocument() ? m_private->ownerDocument()->frame() : 0;
+    Frame* frame = m_private->ownerDocument().frame();
     if (!frame)
         return WebVector<WebFloatQuad>();
 

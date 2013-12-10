@@ -4,10 +4,13 @@
 
 #include "ash/shell/launcher_delegate_impl.h"
 
+#include "ash/launcher/launcher_item_delegate_manager.h"
 #include "ash/launcher/launcher_util.h"
+#include "ash/shell.h"
 #include "ash/shell/toplevel_window.h"
 #include "ash/shell/window_watcher.h"
 #include "ash/wm/window_util.h"
+#include "base/strings/string_util.h"
 #include "grit/ash_resources.h"
 #include "ui/aura/window.h"
 
@@ -16,6 +19,10 @@ namespace shell {
 
 LauncherDelegateImpl::LauncherDelegateImpl(WindowWatcher* watcher)
     : watcher_(watcher) {
+  ash::LauncherItemDelegateManager* manager =
+      ash::Shell::GetInstance()->launcher_item_delegate_manager();
+  manager->RegisterLauncherItemDelegate(ash::TYPE_APP_PANEL, this);
+  manager->RegisterLauncherItemDelegate(ash::TYPE_PLATFORM_APP, this);
 }
 
 LauncherDelegateImpl::~LauncherDelegateImpl() {
@@ -64,13 +71,13 @@ void LauncherDelegateImpl::OnLauncherCreated(Launcher* launcher) {
 void LauncherDelegateImpl::OnLauncherDestroyed(Launcher* launcher) {
 }
 
-bool LauncherDelegateImpl::IsPerAppLauncher() {
-  return false;
-}
-
 LauncherID LauncherDelegateImpl::GetLauncherIDForAppID(
     const std::string& app_id) {
   return 0;
+}
+
+const std::string& LauncherDelegateImpl::GetAppIDForLauncherID(LauncherID id) {
+  return EmptyString();
 }
 
 void LauncherDelegateImpl::PinAppWithID(const std::string& app_id) {
@@ -80,7 +87,11 @@ bool LauncherDelegateImpl::IsAppPinned(const std::string& app_id) {
   return false;
 }
 
-void LauncherDelegateImpl::UnpinAppsWithID(const std::string& app_id) {
+bool LauncherDelegateImpl::CanPin() const {
+  return false;
+}
+
+void LauncherDelegateImpl::UnpinAppWithID(const std::string& app_id) {
 }
 
 }  // namespace shell

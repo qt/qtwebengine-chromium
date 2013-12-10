@@ -11,6 +11,7 @@
 #include "base/android/scoped_java_ref.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
+#include "base/time/time.h"
 #include "media/base/media_export.h"
 #include "media/video/capture/video_capture_device.h"
 
@@ -20,7 +21,7 @@ namespace media {
 // by VideoCaptureManager on its own thread, while OnFrameAvailable is called
 // on JAVA thread (i.e., UI thread). Both will access |state_| and |observer_|,
 // but only VideoCaptureManager would change their value.
-class MEDIA_EXPORT VideoCaptureDeviceAndroid : public VideoCaptureDevice {
+class MEDIA_EXPORT VideoCaptureDeviceAndroid : public VideoCaptureDevice1 {
  public:
   virtual ~VideoCaptureDeviceAndroid();
 
@@ -53,14 +54,25 @@ class MEDIA_EXPORT VideoCaptureDeviceAndroid : public VideoCaptureDevice {
     kError  // Hit error. User needs to recover by destroying the object.
   };
 
+  // Automatically generated enum to interface with Java world.
+  enum AndroidImageFormat {
+#define DEFINE_ANDROID_IMAGEFORMAT(name, value) name = value,
+#include "media/video/capture/android/imageformat_list.h"
+#undef DEFINE_ANDROID_IMAGEFORMAT
+  };
+
   explicit VideoCaptureDeviceAndroid(const Name& device_name);
   bool Init();
+  VideoPixelFormat GetColorspace();
   void SetErrorState(const std::string& reason);
 
   // Prevent racing on accessing |state_| and |observer_| since both could be
   // accessed from different threads.
   base::Lock lock_;
   InternalState state_;
+  bool got_first_frame_;
+  base::TimeTicks expected_next_frame_time_;
+  base::TimeDelta frame_interval_;
   VideoCaptureDevice::EventHandler* observer_;
 
   Name device_name_;

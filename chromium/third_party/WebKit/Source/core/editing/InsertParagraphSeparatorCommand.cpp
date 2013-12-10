@@ -58,7 +58,7 @@ static Element* highestVisuallyEquivalentDivBelowRoot(Element* startBlock)
     return curBlock;
 }
 
-InsertParagraphSeparatorCommand::InsertParagraphSeparatorCommand(Document *document, bool mustUseDefaultParagraphElement, bool pasteBlockqutoeIntoUnquotedArea)
+InsertParagraphSeparatorCommand::InsertParagraphSeparatorCommand(Document& document, bool mustUseDefaultParagraphElement, bool pasteBlockqutoeIntoUnquotedArea)
     : CompositeEditCommand(document)
     , m_mustUseDefaultParagraphElement(mustUseDefaultParagraphElement)
     , m_pasteBlockqutoeIntoUnquotedArea(pasteBlockqutoeIntoUnquotedArea)
@@ -81,7 +81,7 @@ void InsertParagraphSeparatorCommand::calculateStyleBeforeInsertion(const Positi
 
     ASSERT(pos.isNotNull());
     m_style = EditingStyle::create(pos);
-    m_style->mergeTypingStyle(pos.anchorNode()->document());
+    m_style->mergeTypingStyle(pos.document());
 }
 
 void InsertParagraphSeparatorCommand::applyStyleAfterInsertion(Node* originalEnclosingBlock)
@@ -164,6 +164,8 @@ void InsertParagraphSeparatorCommand::doApply()
 
     // FIXME: The parentAnchoredEquivalent conversion needs to be moved into enclosingBlock.
     RefPtr<Element> startBlock = enclosingBlock(insertionPosition.parentAnchoredEquivalent().containerNode());
+    Node* listChildNode = enclosingListChild(insertionPosition.parentAnchoredEquivalent().containerNode());
+    RefPtr<Element> listChild = listChildNode && listChildNode->isHTMLElement() ? toHTMLElement(listChildNode) : 0;
     Position canonicalPos = VisiblePosition(insertionPosition).deepEquivalent();
     if (!startBlock
         || !startBlock->nonShadowBoundaryParentNode()
@@ -203,10 +205,11 @@ void InsertParagraphSeparatorCommand::doApply()
     if (startBlock->isRootEditableElement()) {
         blockToInsert = createDefaultParagraphElement(document());
         nestNewBlock = true;
-    } else if (shouldUseDefaultParagraphElement(startBlock.get()))
+    } else if (shouldUseDefaultParagraphElement(startBlock.get())) {
         blockToInsert = createDefaultParagraphElement(document());
-    else
+    } else {
         blockToInsert = startBlock->cloneElementWithoutChildren();
+    }
 
     //---------------------------------------------------------------------
     // Handle case when position is in the last visible position in its block,
@@ -229,12 +232,18 @@ void InsertParagraphSeparatorCommand::doApply()
                     startBlock = toElement(highestBlockquote);
             }
 
-            // Most of the time we want to stay at the nesting level of the startBlock (e.g., when nesting within lists).  However,
-            // for div nodes, this can result in nested div tags that are hard to break out of.
-            Element* siblingNode = startBlock.get();
-            if (blockToInsert->hasTagName(divTag))
-                siblingNode = highestVisuallyEquivalentDivBelowRoot(startBlock.get());
-            insertNodeAfter(blockToInsert, siblingNode);
+            if (listChild && listChild != startBlock) {
+                RefPtr<Element> listChildToInsert = listChild->cloneElementWithoutChildren();
+                appendNode(blockToInsert, listChildToInsert.get());
+                insertNodeAfter(listChildToInsert.get(), listChild);
+            } else {
+                // Most of the time we want to stay at the nesting level of the startBlock (e.g., when nesting within lists). However,
+                // for div nodes, this can result in nested div tags that are hard to break out of.
+                Element* siblingNode = startBlock.get();
+                if (blockToInsert->hasTagName(divTag))
+                    siblingNode = highestVisuallyEquivalentDivBelowRoot(startBlock.get());
+                insertNodeAfter(blockToInsert, siblingNode);
+            }
         }
 
         // Recreate the same structure in the new paragraph.
@@ -254,13 +263,18 @@ void InsertParagraphSeparatorCommand::doApply()
     // Handle case when position is in the first visible position in its block, and
     // similar case where previous position is in another, presumeably nested, block.
     if (isFirstInBlock || !inSameBlock(visiblePos, visiblePos.previous())) {
-        Node *refNode;
-
+        Node* refNode = 0;
         insertionPosition = positionOutsideTabSpan(insertionPosition);
 
-        if (isFirstInBlock && !nestNewBlock)
-            refNode = startBlock.get();
-        else if (isFirstInBlock && nestNewBlock) {
+        if (isFirstInBlock && !nestNewBlock) {
+            if (listChild && listChild != startBlock) {
+                RefPtr<Element> listChildToInsert = listChild->cloneElementWithoutChildren();
+                appendNode(blockToInsert, listChildToInsert.get());
+                insertNodeBefore(listChildToInsert.get(), listChild);
+            } else {
+                refNode = startBlock.get();
+            }
+        } else if (isFirstInBlock && nestNewBlock) {
             // startBlock should always have children, otherwise isLastInBlock would be true and it's handled above.
             ASSERT(startBlock->firstChild());
             refNode = startBlock->firstChild();
@@ -274,7 +288,8 @@ void InsertParagraphSeparatorCommand::doApply()
         // find ending selection position easily before inserting the paragraph
         insertionPosition = insertionPosition.downstream();
 
-        insertNodeBefore(blockToInsert, refNode);
+        if (refNode)
+            insertNodeBefore(blockToInsert, refNode);
 
         // Recreate the same structure in the new paragraph.
 
@@ -354,12 +369,17 @@ void InsertParagraphSeparatorCommand::doApply()
         return;
 
     // Put the added block in the tree.
-    if (nestNewBlock)
+    if (nestNewBlock) {
         appendNode(blockToInsert.get(), startBlock);
-    else
+    } else if (listChild && listChild != startBlock) {
+        RefPtr<Element> listChildToInsert = listChild->cloneElementWithoutChildren();
+        appendNode(blockToInsert.get(), listChildToInsert.get());
+        insertNodeAfter(listChildToInsert.get(), listChild);
+    } else {
         insertNodeAfter(blockToInsert.get(), startBlock);
+    }
 
-    document()->updateLayoutIgnorePendingStylesheets();
+    document().updateLayoutIgnorePendingStylesheets();
 
     // If the paragraph separator was inserted at the end of a paragraph, an empty line must be
     // created.  All of the nodes, starting at visiblePos, are about to be added to the new paragraph
@@ -391,7 +411,7 @@ void InsertParagraphSeparatorCommand::doApply()
 
     // Handle whitespace that occurs after the split
     if (positionAfterSplit.isNotNull()) {
-        document()->updateLayoutIgnorePendingStylesheets();
+        document().updateLayoutIgnorePendingStylesheets();
         if (!positionAfterSplit.isRenderedCharacter()) {
             // Clear out all whitespace and insert one non-breaking space
             ASSERT(!positionAfterSplit.containerNode()->renderer() || positionAfterSplit.containerNode()->renderer()->style()->collapseWhiteSpace());

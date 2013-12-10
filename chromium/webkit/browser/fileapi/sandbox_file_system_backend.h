@@ -14,7 +14,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "webkit/browser/fileapi/file_system_backend.h"
 #include "webkit/browser/fileapi/file_system_quota_util.h"
-#include "webkit/browser/fileapi/sandbox_context.h"
+#include "webkit/browser/fileapi/sandbox_file_system_backend_delegate.h"
 #include "webkit/browser/fileapi/task_runner_bound_observer_list.h"
 #include "webkit/browser/quota/special_storage_policy.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
@@ -27,10 +27,9 @@ namespace fileapi {
 // This interface also lets one enumerate and remove storage for the origins
 // that use the filesystem.
 class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackend
-    : public FileSystemBackend,
-      public FileSystemQuotaUtil {
+    : public FileSystemBackend {
  public:
-  explicit SandboxFileSystemBackend(SandboxContext* sandbox_context);
+  explicit SandboxFileSystemBackend(SandboxFileSystemBackendDelegate* delegate);
   virtual ~SandboxFileSystemBackend();
 
   // FileSystemBackend overrides.
@@ -41,7 +40,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackend
       FileSystemType type,
       OpenFileSystemMode mode,
       const OpenFileSystemCallback& callback) OVERRIDE;
-  virtual FileSystemFileUtil* GetFileUtil(FileSystemType type) OVERRIDE;
   virtual AsyncFileUtil* GetAsyncFileUtil(FileSystemType type) OVERRIDE;
   virtual CopyOrMoveFileValidatorFactory* GetCopyOrMoveFileValidatorFactory(
       FileSystemType type,
@@ -63,63 +61,20 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackend
 
   // Returns an origin enumerator of this backend.
   // This method can only be called on the file thread.
-  SandboxContext::OriginEnumerator* CreateOriginEnumerator();
-
-  // FileSystemQuotaUtil overrides.
-  virtual base::PlatformFileError DeleteOriginDataOnFileThread(
-      FileSystemContext* context,
-      quota::QuotaManagerProxy* proxy,
-      const GURL& origin_url,
-      FileSystemType type) OVERRIDE;
-  virtual void GetOriginsForTypeOnFileThread(
-      FileSystemType type,
-      std::set<GURL>* origins) OVERRIDE;
-  virtual void GetOriginsForHostOnFileThread(
-      FileSystemType type,
-      const std::string& host,
-      std::set<GURL>* origins) OVERRIDE;
-  virtual int64 GetOriginUsageOnFileThread(
-      FileSystemContext* context,
-      const GURL& origin_url,
-      FileSystemType type) OVERRIDE;
-  virtual void InvalidateUsageCache(
-      const GURL& origin_url,
-      FileSystemType type) OVERRIDE;
-  virtual void StickyInvalidateUsageCache(
-      const GURL& origin_url,
-      FileSystemType type) OVERRIDE;
-  virtual void AddFileUpdateObserver(
-      FileSystemType type,
-      FileUpdateObserver* observer,
-      base::SequencedTaskRunner* task_runner) OVERRIDE;
-  virtual void AddFileChangeObserver(
-      FileSystemType type,
-      FileChangeObserver* observer,
-      base::SequencedTaskRunner* task_runner) OVERRIDE;
-  virtual void AddFileAccessObserver(
-      FileSystemType type,
-      FileAccessObserver* observer,
-      base::SequencedTaskRunner* task_runner) OVERRIDE;
-  virtual const UpdateObserverList* GetUpdateObservers(
-      FileSystemType type) const OVERRIDE;
-  virtual const ChangeObserverList* GetChangeObservers(
-      FileSystemType type) const OVERRIDE;
-  virtual const AccessObserverList* GetAccessObservers(
-      FileSystemType type) const OVERRIDE;
+  SandboxFileSystemBackendDelegate::OriginEnumerator* CreateOriginEnumerator();
 
   void set_enable_temporary_file_system_in_incognito(bool enable) {
     enable_temporary_file_system_in_incognito_ = enable;
   }
+  bool enable_temporary_file_system_in_incognito() const {
+    return enable_temporary_file_system_in_incognito_;
+  }
+
 
  private:
-  SandboxContext* sandbox_context_;  // Not owned.
+  SandboxFileSystemBackendDelegate* delegate_;  // Not owned.
 
   bool enable_temporary_file_system_in_incognito_;
-
-  // Observers.
-  UpdateObserverList update_observers_;
-  ChangeObserverList change_observers_;
-  AccessObserverList access_observers_;
 
   DISALLOW_COPY_AND_ASSIGN(SandboxFileSystemBackend);
 };

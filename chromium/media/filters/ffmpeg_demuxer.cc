@@ -287,7 +287,7 @@ base::TimeDelta FFmpegDemuxerStream::ConvertStreamTimestamp(
 FFmpegDemuxer::FFmpegDemuxer(
     const scoped_refptr<base::MessageLoopProxy>& message_loop,
     DataSource* data_source,
-    const FFmpegNeedKeyCB& need_key_cb,
+    const NeedKeyCB& need_key_cb,
     const scoped_refptr<MediaLog>& media_log)
     : host_(NULL),
       message_loop_(message_loop),
@@ -316,12 +316,7 @@ void FFmpegDemuxer::Stop(const base::Closure& callback) {
   data_source_->Stop(BindToCurrentLoop(base::Bind(
       &FFmpegDemuxer::OnDataSourceStopped, weak_this_,
       BindToCurrentLoop(callback))));
-
-  // TODO(scherkus): Reenable after figuring why Stop() gets called multiple
-  // times, see http://crbug.com/235933
-#if 0
   data_source_ = NULL;
-#endif
 }
 
 void FFmpegDemuxer::Seek(base::TimeDelta time, const PipelineStatusCB& cb) {
@@ -476,7 +471,7 @@ void FFmpegDemuxer::OnOpenContextDone(const PipelineStatusCB& status_cb,
 void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
                                          int result) {
   DCHECK(message_loop_->BelongsToCurrentThread());
-  if (!blocking_thread_.IsRunning()) {
+  if (!blocking_thread_.IsRunning() || !data_source_) {
     status_cb.Run(PIPELINE_ERROR_ABORT);
     return;
   }
@@ -595,10 +590,11 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
 
     media_log_->SetStringProperty("audio_sample_format", sample_name);
 
-    media_log_->SetStringProperty("audio_codec_name",
-                                  audio_codec->codec_name);
-    media_log_->SetIntegerProperty("audio_sample_rate",
-                                   audio_codec->sample_rate);
+    AVCodec* codec = avcodec_find_decoder(audio_codec->codec_id);
+    if (codec) {
+      media_log_->SetStringProperty("audio_codec_name", codec->name);
+    }
+
     media_log_->SetIntegerProperty("audio_channels_count",
                                    audio_codec->channels);
     media_log_->SetIntegerProperty("audio_samples_per_second",
@@ -611,7 +607,12 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
   if (video_stream) {
     AVCodecContext* video_codec = video_stream->codec;
     media_log_->SetBooleanProperty("found_video_stream", true);
-    media_log_->SetStringProperty("video_codec_name", video_codec->codec_name);
+
+    AVCodec* codec = avcodec_find_decoder(video_codec->codec_id);
+    if (codec) {
+      media_log_->SetStringProperty("video_codec_name", codec->name);
+    }
+
     media_log_->SetIntegerProperty("width", video_codec->width);
     media_log_->SetIntegerProperty("height", video_codec->height);
     media_log_->SetIntegerProperty("coded_width",
@@ -634,8 +635,6 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
 
   media_log_->SetDoubleProperty("max_duration", max_duration.InSecondsF());
   media_log_->SetDoubleProperty("start_time", start_time_.InSecondsF());
-  media_log_->SetDoubleProperty("filesize_in_bytes",
-                                static_cast<double>(filesize_in_bytes));
   media_log_->SetIntegerProperty("bitrate", bitrate_);
 
   status_cb.Run(PIPELINE_OK);
@@ -809,10 +808,9 @@ void FFmpegDemuxer::StreamHasEnded() {
 
 void FFmpegDemuxer::FireNeedKey(const std::string& init_data_type,
                                 const std::string& encryption_key_id) {
-  int key_id_size = encryption_key_id.size();
-  scoped_ptr<uint8[]> key_id_local(new uint8[key_id_size]);
-  memcpy(key_id_local.get(), encryption_key_id.data(), key_id_size);
-  need_key_cb_.Run(init_data_type, key_id_local.Pass(), key_id_size);
+  std::vector<uint8> key_id_local(encryption_key_id.begin(),
+                                  encryption_key_id.end());
+  need_key_cb_.Run(init_data_type, key_id_local);
 }
 
 void FFmpegDemuxer::NotifyCapacityAvailable() {

@@ -9,30 +9,35 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "content/browser/renderer_host/pepper/pepper_message_filter.h"
 #include "content/common/content_export.h"
+#include "net/base/ip_endpoint.h"
+#include "net/socket/tcp_socket.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/host/resource_message_filter.h"
 
 struct PP_NetAddress_Private;
 
-namespace net {
-class ServerSocket;
-class StreamSocket;
+namespace ppapi {
+namespace host {
+class PpapiHost;
+}
 }
 
 namespace content {
 
 class BrowserPpapiHostImpl;
+class ContentBrowserPepperHostFactory;
 
+// TODO(yzshen): Remove this class entirely and let
+// TCPServerSocketPrivateResource inherit TCPSocketResourceBase.
 class CONTENT_EXPORT PepperTCPServerSocketMessageFilter
     : public ppapi::host::ResourceMessageFilter {
  public:
   PepperTCPServerSocketMessageFilter(
+      ContentBrowserPepperHostFactory* factory,
       BrowserPpapiHostImpl* host,
       PP_Instance instance,
-      bool private_api,
-      const scoped_refptr<PepperMessageFilter>& pepper_message_filter);
+      bool private_api);
 
   static size_t GetNumInstances();
 
@@ -58,8 +63,7 @@ class CONTENT_EXPORT PepperTCPServerSocketMessageFilter
   int32_t OnMsgListen(const ppapi::host::HostMessageContext* context,
                       const PP_NetAddress_Private& addr,
                       int32_t backlog);
-  int32_t OnMsgAccept(const ppapi::host::HostMessageContext* context,
-                      uint32 plugin_dispatcher_id);
+  int32_t OnMsgAccept(const ppapi::host::HostMessageContext* context);
   int32_t OnMsgStopListening(const ppapi::host::HostMessageContext* context);
 
   void DoListen(const ppapi::host::ReplyMessageContext& context,
@@ -69,7 +73,6 @@ class CONTENT_EXPORT PepperTCPServerSocketMessageFilter
   void OnListenCompleted(const ppapi::host::ReplyMessageContext& context,
                          int net_result);
   void OnAcceptCompleted(const ppapi::host::ReplyMessageContext& context,
-                         uint32 plugin_dispatcher_id,
                          int net_result);
 
   void SendListenReply(const ppapi::host::ReplyMessageContext& context,
@@ -79,17 +82,23 @@ class CONTENT_EXPORT PepperTCPServerSocketMessageFilter
                        int32_t pp_result);
   void SendAcceptReply(const ppapi::host::ReplyMessageContext& context,
                        int32_t pp_result,
-                       uint32 accepted_socket_id,
+                       int pending_resource_id,
                        const PP_NetAddress_Private& local_addr,
                        const PP_NetAddress_Private& remote_addr);
   void SendAcceptError(const ppapi::host::ReplyMessageContext& context,
                        int32_t pp_result);
 
   // Following fields are initialized and used only on the IO thread.
+  // Non-owning ptr.
+  ppapi::host::PpapiHost* ppapi_host_;
+  // Non-owning ptr.
+  ContentBrowserPepperHostFactory* factory_;
+  PP_Instance instance_;
+
   State state_;
-  scoped_ptr<net::ServerSocket> socket_;
-  scoped_ptr<net::StreamSocket> socket_buffer_;
-  scoped_refptr<PepperMessageFilter> pepper_message_filter_;
+  scoped_ptr<net::TCPSocket> socket_;
+  scoped_ptr<net::TCPSocket> accepted_socket_;
+  net::IPEndPoint accepted_address_;
 
   // Following fields are initialized on the IO thread but used only
   // on the UI thread.

@@ -8,6 +8,7 @@
 #include "cc/base/cc_export.h"
 #include "cc/layers/contents_scaling_layer.h"
 #include "cc/resources/layer_tiling_data.h"
+#include "cc/resources/resource_format.h"
 
 namespace cc {
 class LayerUpdater;
@@ -26,7 +27,6 @@ class CC_EXPORT TiledLayer : public ContentsScalingLayer {
   // Layer implementation.
   virtual void SetIsMask(bool is_mask) OVERRIDE;
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
-  virtual bool BlocksPendingCommit() const OVERRIDE;
   virtual bool DrawsContent() const OVERRIDE;
   virtual void ReduceMemoryUsage() OVERRIDE;
   virtual void SetNeedsDisplayRect(const gfx::RectF& dirty_rect) OVERRIDE;
@@ -46,7 +46,7 @@ class CC_EXPORT TiledLayer : public ContentsScalingLayer {
 
   // Exposed to subclasses for testing.
   void SetTileSize(gfx::Size size);
-  void SetTextureFormat(unsigned texture_format) {
+  void SetTextureFormat(ResourceFormat texture_format) {
     texture_format_ = texture_format;
   }
   void SetBorderTexelOption(LayerTilingData::BorderTexelOption option);
@@ -68,7 +68,7 @@ class CC_EXPORT TiledLayer : public ContentsScalingLayer {
   bool SkipsDraw() const { return skips_draw_; }
 
   // Virtual for testing
-  virtual PrioritizedResourceManager* ResourceManager() const;
+  virtual PrioritizedResourceManager* ResourceManager();
   const LayerTilingData* TilerForTesting() const { return tiler_.get(); }
   const PrioritizedResource* ResourceAtForTesting(int i, int j) const;
 
@@ -121,7 +121,7 @@ class CC_EXPORT TiledLayer : public ContentsScalingLayer {
 
   bool IsSmallAnimatedLayer() const;
 
-  unsigned texture_format_;
+  ResourceFormat texture_format_;
   bool skips_draw_;
   bool failed_update_;
 

@@ -35,8 +35,6 @@ class ExceptionState;
 class FloatPoint;
 class HTMLCollection;
 
-typedef void (*NodeCallback)(Node*);
-
 namespace Private {
     template<class GenericNode, class GenericNodeContainer>
     void addChildNodesToDeletionQueue(GenericNode*& head, GenericNode*& tail, GenericNodeContainer*);
@@ -79,13 +77,15 @@ private:
 };
 
 class ContainerNode : public Node {
-    friend class PostAttachCallbackDisabler;
 public:
     virtual ~ContainerNode();
 
     Node* firstChild() const { return m_firstChild; }
     Node* lastChild() const { return m_lastChild; }
     bool hasChildNodes() const { return m_firstChild; }
+
+    bool hasOneChild() const { return m_firstChild && !m_firstChild->nextSibling(); }
+    bool hasOneTextChild() const { return hasOneChild() && m_firstChild->isTextNode(); }
 
     // ParentNode interface API
     PassRefPtr<HTMLCollection> children();
@@ -96,10 +96,10 @@ public:
     unsigned childNodeCount() const;
     Node* childNode(unsigned index) const;
 
-    void insertBefore(PassRefPtr<Node> newChild, Node* refChild, ExceptionState& = ASSERT_NO_EXCEPTION, AttachBehavior = AttachNow);
-    void replaceChild(PassRefPtr<Node> newChild, Node* oldChild, ExceptionState& = ASSERT_NO_EXCEPTION, AttachBehavior = AttachNow);
+    void insertBefore(PassRefPtr<Node> newChild, Node* refChild, ExceptionState& = ASSERT_NO_EXCEPTION);
+    void replaceChild(PassRefPtr<Node> newChild, Node* oldChild, ExceptionState& = ASSERT_NO_EXCEPTION);
     void removeChild(Node* child, ExceptionState& = ASSERT_NO_EXCEPTION);
-    void appendChild(PassRefPtr<Node> newChild, ExceptionState& = ASSERT_NO_EXCEPTION, AttachBehavior = AttachNow);
+    void appendChild(PassRefPtr<Node> newChild, ExceptionState& = ASSERT_NO_EXCEPTION);
 
     // These methods are only used during parsing.
     // They don't send DOM mutation events or handle reparenting.
@@ -129,13 +129,10 @@ public:
 
     void disconnectDescendantFrames();
 
-    virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const { return true; }
+    virtual bool childShouldCreateRenderer(const Node& child) const { return true; }
 
 protected:
     ContainerNode(TreeScope*, ConstructionType = CreateContainer);
-
-    static void queuePostAttachCallback(NodeCallback, Node*);
-    static bool postAttachCallbacksAreSuspended();
 
     template<class GenericNode, class GenericNodeContainer>
     friend void appendChildToContainer(GenericNode* child, GenericNodeContainer*);
@@ -153,11 +150,6 @@ private:
 
     void attachChildren(const AttachContext& = AttachContext());
     void detachChildren(const AttachContext& = AttachContext());
-
-    static void dispatchPostAttachCallbacks();
-
-    void suspendPostAttachCallbacks();
-    void resumePostAttachCallbacks();
 
     bool getUpperLeftCorner(FloatPoint&) const;
     bool getLowerRightCorner(FloatPoint&) const;
@@ -326,24 +318,6 @@ private:
     unsigned m_currentIndex;
     OwnPtr<Vector<RefPtr<Node> > > m_childNodes; // Lazily instantiated.
     ChildNodesLazySnapshot* m_nextSnapshot;
-};
-
-class PostAttachCallbackDisabler {
-public:
-    PostAttachCallbackDisabler(ContainerNode* node)
-        : m_node(node)
-    {
-        ASSERT(m_node);
-        m_node->suspendPostAttachCallbacks();
-    }
-
-    ~PostAttachCallbackDisabler()
-    {
-        m_node->resumePostAttachCallbacks();
-    }
-
-private:
-    ContainerNode* m_node;
 };
 
 } // namespace WebCore

@@ -6,6 +6,7 @@
 
 #include <vector>
 
+#include "base/callback_helpers.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/sha1.h"
@@ -244,7 +245,6 @@ TEST_F(CertVerifyProcTest, MAYBE_IntermediateCARequireExplicitPolicy) {
   EXPECT_EQ(OK, error);
   EXPECT_EQ(0u, verify_result.cert_status);
 }
-
 
 // Test for bug 58437.
 // This certificate will expire on 2011-12-21. The test will still
@@ -692,11 +692,19 @@ TEST_F(CertVerifyProcTest, VerifyReturnChainBasic) {
                                             certs[2]->os_cert_handle()));
 }
 
+#if defined(OS_ANDROID)
+// TODO(ppi): Disabled because is_issued_by_known_root is incorrect on Android.
+// Once this is fixed, re-enable this check for android. crbug.com/116838
+#define MAYBE_IntranetHostsRejected DISABLED_IntranetHostsRejected
+#else
+#define MAYBE_IntranetHostsRejected IntranetHostsRejected
+#endif
+
 // Test that certificates issued for 'intranet' names (that is, containing no
 // known public registry controlled domain information) issued by well-known
 // CAs are flagged appropriately, while certificates that are issued by
 // internal CAs are not flagged.
-TEST_F(CertVerifyProcTest, IntranetHostsRejected) {
+TEST_F(CertVerifyProcTest, MAYBE_IntranetHostsRejected) {
   CertificateList cert_list = CreateCertificateListFromFile(
       GetTestCertsDirectory(), "ok_cert.pem",
       X509Certificate::FORMAT_AUTO);
@@ -1355,5 +1363,70 @@ WRAPPED_INSTANTIATE_TEST_CASE_P(
     MAYBE_VerifyMixed,
     CertVerifyProcWeakDigestTest,
     testing::ValuesIn(kVerifyMixedTestData));
+
+// For the list of valid hostnames, see
+// net/cert/data/ssl/certificates/subjectAltName_sanity_check.pem
+static const struct CertVerifyProcNameData {
+  const char* hostname;
+  bool valid;  // Whether or not |hostname| matches a subjectAltName.
+} kVerifyNameData[] = {
+  { "127.0.0.1", false },  // Don't match the common name
+  { "127.0.0.2", true },  // Matches the iPAddress SAN (IPv4)
+  { "FE80:0:0:0:0:0:0:1", true },  // Matches the iPAddress SAN (IPv6)
+  { "[FE80:0:0:0:0:0:0:1]", false },  // Should not match the iPAddress SAN
+  { "FE80::1", true },  // Compressed form matches the iPAddress SAN (IPv6)
+  { "::127.0.0.2", false },  // IPv6 mapped form should NOT match iPAddress SAN
+  { "test.example", true },  // Matches the dNSName SAN
+  { "test.example.", true },  // Matches the dNSName SAN (trailing . ignored)
+  { "www.test.example", false },  // Should not match the dNSName SAN
+  { "test..example", false },  // Should not match the dNSName SAN
+  { "test.example..", false },  // Should not match the dNSName SAN
+  { ".test.example.", false },  // Should not match the dNSName SAN
+  { ".test.example", false },  // Should not match the dNSName SAN
+};
+
+// GTest 'magic' pretty-printer, so that if/when a test fails, it knows how
+// to output the parameter that was passed. Without this, it will simply
+// attempt to print out the first twenty bytes of the object, which depending
+// on platform and alignment, may result in an invalid read.
+void PrintTo(const CertVerifyProcNameData& data, std::ostream* os) {
+  *os << "Hostname: " << data.hostname << "; valid=" << data.valid;
+}
+
+class CertVerifyProcNameTest
+    : public CertVerifyProcTest,
+      public testing::WithParamInterface<CertVerifyProcNameData> {
+ public:
+  CertVerifyProcNameTest() {}
+  virtual ~CertVerifyProcNameTest() {}
+};
+
+TEST_P(CertVerifyProcNameTest, VerifyCertName) {
+  CertVerifyProcNameData data = GetParam();
+
+  CertificateList cert_list = CreateCertificateListFromFile(
+      GetTestCertsDirectory(), "subjectAltName_sanity_check.pem",
+      X509Certificate::FORMAT_AUTO);
+  ASSERT_EQ(1U, cert_list.size());
+  scoped_refptr<X509Certificate> cert(cert_list[0]);
+
+  ScopedTestRoot scoped_root(cert.get());
+
+  CertVerifyResult verify_result;
+  int error = Verify(cert.get(), data.hostname, 0, NULL, empty_cert_list_,
+                     &verify_result);
+  if (data.valid) {
+    EXPECT_EQ(OK, error);
+    EXPECT_FALSE(verify_result.cert_status & CERT_STATUS_COMMON_NAME_INVALID);
+  } else {
+    EXPECT_EQ(ERR_CERT_COMMON_NAME_INVALID, error);
+    EXPECT_TRUE(verify_result.cert_status & CERT_STATUS_COMMON_NAME_INVALID);
+  }
+}
+
+WRAPPED_INSTANTIATE_TEST_CASE_P(
+    VerifyName,
+    CertVerifyProcNameTest,
+    testing::ValuesIn(kVerifyNameData));
 
 }  // namespace net

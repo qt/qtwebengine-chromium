@@ -12,6 +12,7 @@
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_settings.h"
 #include "third_party/WebKit/public/platform/WebLayerTreeView.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/rect.h"
 
 namespace ui {
@@ -20,6 +21,7 @@ struct LatencyInfo;
 
 namespace cc {
 class InputHandler;
+class Layer;
 class LayerTreeHost;
 }
 
@@ -51,6 +53,7 @@ class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
   void SetLatencyInfo(const ui::LatencyInfo& latency_info);
   int GetLayerTreeId() const;
   void NotifyInputThrottledUntilCommit();
+  const cc::Layer* GetRootLayer() const;
 
   // WebLayerTreeView implementation.
   virtual void setSurfaceReady();
@@ -67,6 +70,7 @@ class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
   virtual float deviceScaleFactor() const;
   virtual void setBackgroundColor(WebKit::WebColor color);
   virtual void setHasTransparentBackground(bool transparent);
+  virtual void setOverhangBitmap(const SkBitmap& bitmap);
   virtual void setVisible(bool visible);
   virtual void setPageScaleFactorAndLimits(float page_scale_factor,
                                            float minimum,
@@ -83,6 +87,11 @@ class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
   virtual void finishAllRendering();
   virtual void setDeferCommits(bool defer_commits);
   virtual void registerForAnimations(WebKit::WebLayer* layer);
+  virtual void registerViewportLayers(
+      const WebKit::WebLayer* pageScaleLayer,
+      const WebKit::WebLayer* innerViewportScrollLayer,
+      const WebKit::WebLayer* outerViewportScrollLayer) OVERRIDE;
+  virtual void clearViewportLayers() OVERRIDE;
   virtual void renderingStats(WebKit::WebRenderingStats& stats) const {}
   virtual void setShowFPSCounter(bool show);
   virtual void setShowPaintRects(bool show);

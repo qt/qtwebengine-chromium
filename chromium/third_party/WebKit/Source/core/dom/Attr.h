@@ -42,8 +42,8 @@ class MutableStylePropertySet;
 
 class Attr FINAL : public ContainerNode {
 public:
-    static PassRefPtr<Attr> create(Element*, const QualifiedName&);
-    static PassRefPtr<Attr> create(Document*, const QualifiedName&, const AtomicString& value);
+    static PassRefPtr<Attr> create(Element&, const QualifiedName&);
+    static PassRefPtr<Attr> create(Document&, const QualifiedName&, const AtomicString& value);
     virtual ~Attr();
 
     String name() const { return qualifiedName().toString(); }
@@ -63,20 +63,20 @@ public:
     void attachToElement(Element*);
     void detachFromElementWithValue(const AtomicString&);
 
+    virtual const AtomicString& localName() const OVERRIDE { return m_name.localName(); }
+    virtual const AtomicString& namespaceURI() const OVERRIDE { return m_name.namespaceURI(); }
+    virtual const AtomicString& prefix() const OVERRIDE { return m_name.prefix(); }
+
+    virtual void setPrefix(const AtomicString&, ExceptionState&) OVERRIDE;
+
 private:
-    Attr(Element*, const QualifiedName&);
-    Attr(Document*, const QualifiedName&, const AtomicString& value);
+    Attr(Element&, const QualifiedName&);
+    Attr(Document&, const QualifiedName&, const AtomicString& value);
 
     void createTextChild();
 
     virtual String nodeName() const OVERRIDE { return name(); }
     virtual NodeType nodeType() const OVERRIDE { return ATTRIBUTE_NODE; }
-
-    virtual const AtomicString& localName() const OVERRIDE { return m_name.localName(); }
-    virtual const AtomicString& namespaceURI() const OVERRIDE { return m_name.namespaceURI(); }
-    virtual const AtomicString& prefix() const OVERRIDE { return m_name.prefix(); }
-
-    virtual void setPrefix(const AtomicString&, ExceptionState&);
 
     virtual String nodeValue() const OVERRIDE { return value(); }
     virtual void setNodeValue(const String&);

@@ -484,7 +484,7 @@ public:
                           const TextureSamplerArray&) SK_OVERRIDE;
 
     static EffectKey GenKey(const GrDrawEffect& drawEffect, const GrGLCaps&) {
-        return GenMatrixKey(drawEffect);
+        return GenBaseGradientKey(drawEffect);
     }
 
 private:
@@ -531,7 +531,7 @@ private:
 
 GR_DEFINE_EFFECT_TEST(GrRadialGradient);
 
-GrEffectRef* GrRadialGradient::TestCreate(SkMWCRandom* random,
+GrEffectRef* GrRadialGradient::TestCreate(SkRandom* random,
                                           GrContext* context,
                                           const GrDrawTargetCaps&,
                                           GrTexture**) {
@@ -558,13 +558,13 @@ void GrGLRadialGradient::emitCode(GrGLShaderBuilder* builder,
                                   const char* outputColor,
                                   const char* inputColor,
                                   const TextureSamplerArray& samplers) {
-    this->emitYCoordUniform(builder);
-    const char* coords;
+    this->emitUniforms(builder, key);
+    SkString coords;
     this->setupMatrix(builder, key, &coords);
     SkString t("length(");
     t.append(coords);
     t.append(")");
-    this->emitColorLookup(builder, t.c_str(), outputColor, inputColor, samplers[0]);
+    this->emitColor(builder, t.c_str(), key, outputColor, inputColor, samplers);
 }
 
 /////////////////////////////////////////////////////////////////////

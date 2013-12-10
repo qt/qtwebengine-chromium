@@ -7,6 +7,7 @@
 #include "ash/display/display_controller.h"
 #include "ash/display/display_manager.h"
 #include "ash/shell.h"
+#include "ash/system/system_notifier.h"
 #include "base/strings/utf_string_conversions.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
@@ -191,7 +192,8 @@ bool ResolutionNotificationController::DoesNotificationTimeout() {
   return change_info_ && change_info_->timeout_count > 0;
 }
 
-void ResolutionNotificationController::CreateOrUpdateNotification() {
+void ResolutionNotificationController::CreateOrUpdateNotification(
+    bool enable_spoken_feedback) {
   message_center::MessageCenter* message_center =
       message_center::MessageCenter::Get();
   if (!change_info_) {
@@ -212,6 +214,8 @@ void ResolutionNotificationController::CreateOrUpdateNotification() {
   data.buttons.push_back(message_center::ButtonInfo(
         l10n_util::GetStringUTF16(IDS_ASH_DISPLAY_RESOLUTION_CHANGE_REVERT)));
 
+  data.should_make_spoken_feedback_for_popup_updates = enable_spoken_feedback;
+
   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
   scoped_ptr<Notification> notification(new Notification(
       message_center::NOTIFICATION_TYPE_SIMPLE,
@@ -224,7 +228,8 @@ void ResolutionNotificationController::CreateOrUpdateNotification() {
       timeout_message,
       bundle.GetImageNamed(IDR_AURA_UBER_TRAY_DISPLAY),
       base::string16() /* display_source */,
-      std::string() /* extension_id */,
+      message_center::NotifierId(
+          system_notifier::NOTIFIER_DISPLAY_RESOLUTION_CHANGE),
       data,
       new ResolutionChangeNotificationDelegate(
           this, change_info_->timeout_count > 0)));
@@ -240,7 +245,7 @@ void ResolutionNotificationController::OnTimerTick() {
   if (change_info_->timeout_count == 0)
     RevertResolutionChange();
   else
-    CreateOrUpdateNotification();
+    CreateOrUpdateNotification(false);
 }
 
 void ResolutionNotificationController::AcceptResolutionChange(
@@ -282,7 +287,7 @@ void ResolutionNotificationController::OnDisplayConfigurationChanged() {
   if (!change_info_)
     return;
 
-  CreateOrUpdateNotification();
+  CreateOrUpdateNotification(true);
   if (g_use_timer && change_info_->timeout_count > 0) {
     change_info_->timer.Start(FROM_HERE,
                               base::TimeDelta::FromSeconds(1),

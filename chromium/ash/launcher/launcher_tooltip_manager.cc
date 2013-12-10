@@ -15,8 +15,8 @@
 #include "base/timer/timer.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_constants.h"
+#include "ui/events/event.h"
+#include "ui/events/event_constants.h"
 #include "ui/gfx/insets.h"
 #include "ui/views/bubble/bubble_delegate.h"
 #include "ui/views/bubble/bubble_frame_view.h"
@@ -255,6 +255,12 @@ void LauncherTooltipManager::OnMouseEvent(ui::MouseEvent* event) {
 
   DCHECK(view_);
   DCHECK(launcher_view_);
+
+  // Pressing the mouse button anywhere should close the tooltip.
+  if (event->type() == ui::ET_MOUSE_PRESSED) {
+    CloseSoon();
+    return;
+  }
 
   aura::Window* target = static_cast<aura::Window*>(event->target());
   if (widget_->GetNativeWindow()->GetRootWindow() != target->GetRootWindow()) {

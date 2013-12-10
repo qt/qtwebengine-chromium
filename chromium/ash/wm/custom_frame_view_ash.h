@@ -12,7 +12,6 @@
 
 namespace ash {
 class FramePainter;
-class FrameMaximizeButton;
 }
 namespace gfx {
 class Font;
@@ -24,10 +23,15 @@ class Widget;
 
 namespace ash {
 
+class FrameCaptionButtonContainerView;
+
+namespace test {
+class CustomFrameViewAshTest;
+}
+
 // A NonClientFrameView used for dialogs and other non-browser windows.
 // See also views::CustomFrameView and BrowserNonClientFrameViewAsh.
-class ASH_EXPORT CustomFrameViewAsh : public views::NonClientFrameView,
-                                      public views::ButtonListener {
+class ASH_EXPORT CustomFrameViewAsh : public views::NonClientFrameView {
  public:
   // Internal class name.
   static const char kViewClassName[];
@@ -35,24 +39,7 @@ class ASH_EXPORT CustomFrameViewAsh : public views::NonClientFrameView,
   CustomFrameViewAsh();
   virtual ~CustomFrameViewAsh();
 
-  // For testing.
-  class TestApi {
-    public:
-     explicit TestApi(CustomFrameViewAsh* frame) : frame_(frame) {
-     }
-
-     ash::FrameMaximizeButton* maximize_button() const {
-       return frame_->maximize_button_;
-     }
-
-    private:
-     TestApi();
-     CustomFrameViewAsh* frame_;
-  };
-
   void Init(views::Widget* frame);
-
-  views::ImageButton* close_button() { return close_button_; }
 
   // views::NonClientFrameView overrides:
   virtual gfx::Rect GetBoundsForClientView() const OVERRIDE;
@@ -73,10 +60,6 @@ class ASH_EXPORT CustomFrameViewAsh : public views::NonClientFrameView,
   virtual gfx::Size GetMinimumSize() OVERRIDE;
   virtual gfx::Size GetMaximumSize() OVERRIDE;
 
-  // views::ButtonListener overrides:
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE;
-
  private:
   // Height from top of window to top of client area.
   int NonClientTopBorderHeight() const;
@@ -84,9 +67,8 @@ class ASH_EXPORT CustomFrameViewAsh : public views::NonClientFrameView,
   // Not owned.
   views::Widget* frame_;
 
-  ash::FrameMaximizeButton* maximize_button_;
-  views::ImageButton* close_button_;
-  views::ImageButton* window_icon_;
+  // View which contains the window controls.
+  FrameCaptionButtonContainerView* caption_button_container_;
 
   scoped_ptr<FramePainter> frame_painter_;
 

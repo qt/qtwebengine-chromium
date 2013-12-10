@@ -142,7 +142,7 @@ SVGElement* SVGViewSpec::viewTarget() const
 {
     if (!m_contextElement)
         return 0;
-    Element* element = m_contextElement->treeScope()->getElementById(m_viewTargetString);
+    Element* element = m_contextElement->treeScope().getElementById(m_viewTargetString);
     if (!element || !element->isSVGElement())
         return 0;
     return toSVGElement(element);
@@ -224,7 +224,7 @@ bool SVGViewSpec::parseViewSpecInternal(const CharType* ptr, const CharType* end
                     return false;
                 ptr++;
                 FloatRect viewBox;
-                if (!SVGFitToViewBox::parseViewBox(m_contextElement->document(), ptr, end, viewBox, false))
+                if (!SVGFitToViewBox::parseViewBox(&m_contextElement->document(), ptr, end, viewBox, false))
                     return false;
                 setViewBoxBaseValue(viewBox);
                 if (ptr >= end || *ptr != ')')

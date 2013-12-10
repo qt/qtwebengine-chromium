@@ -23,38 +23,25 @@ CFTypeID SecTrustedApplicationGetTypeID();
 namespace base {
 namespace mac {
 
-static bool g_override_am_i_bundled = false;
-static bool g_override_am_i_bundled_value = false;
+namespace {
 
-// Adapted from http://developer.apple.com/carbon/tipsandtricks.html#AmIBundled
-static bool UncachedAmIBundled() {
+bool g_override_am_i_bundled = false;
+bool g_override_am_i_bundled_value = false;
+
+bool UncachedAmIBundled() {
 #if defined(OS_IOS)
-  // All apps are bundled on iOS
+  // All apps are bundled on iOS.
   return true;
 #else
   if (g_override_am_i_bundled)
     return g_override_am_i_bundled_value;
 
-  ProcessSerialNumber psn = {0, kCurrentProcess};
-
-  FSRef fsref;
-  OSStatus pbErr;
-  if ((pbErr = GetProcessBundleLocation(&psn, &fsref)) != noErr) {
-    OSSTATUS_DLOG(ERROR, pbErr) << "GetProcessBundleLocation failed";
-    return false;
-  }
-
-  FSCatalogInfo info;
-  OSErr fsErr;
-  if ((fsErr = FSGetCatalogInfo(&fsref, kFSCatInfoNodeFlags, &info,
-                                NULL, NULL, NULL)) != noErr) {
-    OSSTATUS_DLOG(ERROR, fsErr) << "FSGetCatalogInfo failed";
-    return false;
-  }
-
-  return info.nodeFlags & kFSNodeIsDirectoryMask;
+  // Yes, this is cheap.
+  return [[base::mac::OuterBundle() bundlePath] hasSuffix:@".app"];
 #endif
 }
+
+}  // namespace
 
 bool AmIBundled() {
   // If the return value is not cached, this function will return different

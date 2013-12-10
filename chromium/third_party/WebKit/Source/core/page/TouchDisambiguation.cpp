@@ -51,7 +51,7 @@ namespace WebCore {
 
 static IntRect boundingBoxForEventNodes(Node* eventNode)
 {
-    if (!eventNode->document()->view())
+    if (!eventNode->document().view())
         return IntRect();
 
     IntRect result;
@@ -65,7 +65,7 @@ static IntRect boundingBoxForEventNodes(Node* eventNode)
         result.unite(node->pixelSnappedBoundingBox());
         node = NodeTraversal::next(node, eventNode);
     }
-    return eventNode->document()->view()->contentsToWindow(result);
+    return eventNode->document().view()->contentsToWindow(result);
 }
 
 static float scoreTouchTarget(IntPoint touchPoint, int padding, IntRect boundingBox)
@@ -88,7 +88,7 @@ struct TouchTargetData {
     float score;
 };
 
-void findGoodTouchTargets(const IntRect& touchBox, Frame* mainFrame, Vector<IntRect>& goodTargets)
+void findGoodTouchTargets(const IntRect& touchBox, Frame* mainFrame, Vector<IntRect>& goodTargets, Vector<Node*>& highlightNodes)
 {
     goodTargets.clear();
 
@@ -144,6 +144,7 @@ void findGoodTouchTargets(const IntRect& touchBox, Frame* mainFrame, Vector<IntR
         if (it->value.score < bestScore * 0.5)
             continue;
         goodTargets.append(it->value.windowBoundingBox);
+        highlightNodes.append(it->key);
     }
 }
 

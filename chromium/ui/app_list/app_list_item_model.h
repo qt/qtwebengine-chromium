@@ -31,8 +31,10 @@ class APP_LIST_EXPORT AppListItemModel {
   const gfx::ImageSkia& icon() const { return icon_; }
   bool has_shadow() const { return has_shadow_; }
 
-  void SetTitle(const std::string& title);
+  void SetTitleAndFullName(const std::string& title,
+                           const std::string& full_name);
   const std::string& title() const { return title_; }
+  const std::string& full_name() const { return full_name_; }
 
   void SetHighlighted(bool highlighted);
   bool highlighted() const { return highlighted_; }
@@ -49,7 +51,8 @@ class APP_LIST_EXPORT AppListItemModel {
   void AddObserver(AppListItemModelObserver* observer);
   void RemoveObserver(AppListItemModelObserver* observer);
 
-  // Returns the context menu model for this item.
+  // Returns the context menu model for this item, or NULL if there is currently
+  // no menu for the item (e.g. during install).
   // Note the returned menu model is owned by this item.
   virtual ui::MenuModel* GetContextMenuModel();
 
@@ -57,6 +60,7 @@ class APP_LIST_EXPORT AppListItemModel {
   gfx::ImageSkia icon_;
   bool has_shadow_;
   std::string title_;
+  std::string full_name_;
   bool highlighted_;
   bool is_installing_;
   int percent_downloaded_;

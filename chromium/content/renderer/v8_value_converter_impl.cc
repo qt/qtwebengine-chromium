@@ -17,8 +17,11 @@
 namespace content {
 
 namespace {
-const int kMaxRecursionDepth = 10;
-}
+
+// For the sake of the storage API, make this quite large.
+const int kMaxRecursionDepth = 100;
+
+}  // namespace
 
 // The state of a call to FromV8Value.
 class V8ValueConverterImpl::FromV8ValueState {
@@ -112,7 +115,7 @@ void V8ValueConverterImpl::SetStrategy(Strategy* strategy) {
 v8::Handle<v8::Value> V8ValueConverterImpl::ToV8Value(
     const base::Value* value, v8::Handle<v8::Context> context) const {
   v8::Context::Scope context_scope(context);
-  v8::HandleScope handle_scope;
+  v8::HandleScope handle_scope(context->GetIsolate());
   return handle_scope.Close(ToV8ValueImpl(value));
 }
 
@@ -120,7 +123,7 @@ Value* V8ValueConverterImpl::FromV8Value(
     v8::Handle<v8::Value> val,
     v8::Handle<v8::Context> context) const {
   v8::Context::Scope context_scope(context);
-  v8::HandleScope handle_scope;
+  v8::HandleScope handle_scope(context->GetIsolate());
   FromV8ValueState state(avoid_identity_hash_for_testing_);
   return FromV8ValueImpl(val, &state);
 }
@@ -382,6 +385,19 @@ base::Value* V8ValueConverterImpl::FromV8Object(
       return out;
   }
 
+  // Don't consider DOM objects. This check matches isHostObject() in Blink's
+  // bindings/v8/V8Binding.h used in structured cloning. It reads:
+  //
+  // If the object has any internal fields, then we won't be able to serialize
+  // or deserialize them; conveniently, this is also a quick way to detect DOM
+  // wrapper objects, because the mechanism for these relies on data stored in
+  // these fields.
+  //
+  // NOTE: check this after |strategy_| so that callers have a chance to
+  // do something else, such as convert to the node's name rather than NULL.
+  if (val->InternalFieldCount())
+    return NULL;
+
   scoped_ptr<base::DictionaryValue> result(new base::DictionaryValue());
   v8::Handle<v8::Array> property_names(val->GetOwnPropertyNames());
 
@@ -402,8 +418,8 @@ base::Value* V8ValueConverterImpl::FromV8Object(
     v8::Handle<v8::Value> child_v8 = val->Get(key);
 
     if (try_catch.HasCaught()) {
-      LOG(ERROR) << "Getter for property " << *name_utf8
-                 << " threw an exception.";
+      LOG(WARNING) << "Getter for property " << *name_utf8
+                   << " threw an exception.";
       child_v8 = v8::Null();
     }
 

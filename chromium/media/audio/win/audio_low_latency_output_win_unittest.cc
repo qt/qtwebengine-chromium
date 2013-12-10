@@ -234,7 +234,7 @@ class AudioOutputStreamWrapper {
     AudioOutputStream* aos = audio_man_->MakeAudioOutputStream(
         AudioParameters(format_, channel_layout_, sample_rate_,
                         bits_per_sample_, samples_per_packet_),
-        std::string());
+        std::string(), std::string());
     EXPECT_TRUE(aos);
     return aos;
   }
@@ -268,7 +268,7 @@ TEST(WASAPIAudioOutputStreamTest, HardwareSampleRate) {
   // Default device intended for games, system notification sounds,
   // and voice commands.
   int fs = static_cast<int>(
-      WASAPIAudioOutputStream::HardwareSampleRate());
+      WASAPIAudioOutputStream::HardwareSampleRate(std::string()));
   EXPECT_GE(fs, 0);
 }
 

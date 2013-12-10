@@ -37,6 +37,7 @@
 #include "V8WorkerGlobalScope.h"
 #include "bindings/v8/ScriptSourceCode.h"
 #include "bindings/v8/ScriptValue.h"
+#include "bindings/v8/V8ErrorHandler.h"
 #include "bindings/v8/V8GCController.h"
 #include "bindings/v8/V8Initializer.h"
 #include "bindings/v8/V8ObjectConstructor.h"
@@ -153,7 +154,7 @@ ScriptValue WorkerScriptController::evaluate(const String& script, const String&
 
     v8::Handle<v8::String> scriptString = v8String(script, m_isolate);
     v8::Handle<v8::Script> compiledScript = V8ScriptRunner::compileScript(scriptString, fileName, scriptStartPosition, 0, m_isolate);
-    v8::Local<v8::Value> result = V8ScriptRunner::runCompiledScript(compiledScript, m_workerGlobalScope);
+    v8::Local<v8::Value> result = V8ScriptRunner::runCompiledScript(compiledScript, m_workerGlobalScope, m_isolate);
 
     if (!block.CanContinue()) {
         m_workerGlobalScope->script()->forbidExecution();
@@ -167,6 +168,7 @@ ScriptValue WorkerScriptController::evaluate(const String& script, const String&
         state->lineNumber = message->GetLineNumber();
         state->columnNumber = message->GetStartColumn();
         state->sourceURL = toWebCoreString(message->GetScriptResourceName());
+        state->exception = ScriptValue(block.Exception(), m_isolate);
         block.Reset();
     } else
         state->hadException = false;
@@ -174,7 +176,7 @@ ScriptValue WorkerScriptController::evaluate(const String& script, const String&
     if (result.IsEmpty() || result->IsUndefined())
         return ScriptValue();
 
-    return ScriptValue(result);
+    return ScriptValue(result, m_isolate);
 }
 
 void WorkerScriptController::evaluate(const ScriptSourceCode& sourceCode, RefPtr<ErrorEvent>* errorEvent)
@@ -187,11 +189,11 @@ void WorkerScriptController::evaluate(const ScriptSourceCode& sourceCode, RefPtr
     if (state.hadException) {
         if (errorEvent) {
             *errorEvent = m_workerGlobalScope->shouldSanitizeScriptError(state.sourceURL, NotSharableCrossOrigin) ?
-                ErrorEvent::createSanitizedError() : ErrorEvent::create(state.errorMessage, state.sourceURL, state.lineNumber, state.columnNumber);
+                ErrorEvent::createSanitizedError(0) : ErrorEvent::create(state.errorMessage, state.sourceURL, state.lineNumber, state.columnNumber, 0);
+            V8ErrorHandler::storeExceptionOnErrorEventWrapper(errorEvent->get(), state.exception.v8Value(), m_isolate);
         } else {
             ASSERT(!m_workerGlobalScope->shouldSanitizeScriptError(state.sourceURL, NotSharableCrossOrigin));
-            RefPtr<ErrorEvent> event = m_errorEventFromImportedScript ? m_errorEventFromImportedScript.release() : ErrorEvent::create(state.errorMessage, state.sourceURL, state.lineNumber, state.columnNumber);
-            m_errorEventFromImportedScript.clear();
+            RefPtr<ErrorEvent> event = m_errorEventFromImportedScript ? m_errorEventFromImportedScript.release() : ErrorEvent::create(state.errorMessage, state.sourceURL, state.lineNumber, state.columnNumber, 0);
             m_workerGlobalScope->reportException(event, 0, NotSharableCrossOrigin);
         }
     }
@@ -236,7 +238,7 @@ void WorkerScriptController::disableEval(const String& errorMessage)
 void WorkerScriptController::rethrowExceptionFromImportedScript(PassRefPtr<ErrorEvent> errorEvent)
 {
     m_errorEventFromImportedScript = errorEvent;
-    throwError(V8ThrowException::createError(v8GeneralError, m_errorEventFromImportedScript->message(), m_isolate));
+    throwError(V8ThrowException::createError(v8GeneralError, m_errorEventFromImportedScript->message(), m_isolate), m_isolate);
 }
 
 WorkerScriptController* WorkerScriptController::controllerForContext()

@@ -28,12 +28,11 @@
  * @constructor
  * @extends {WebInspector.View}
  */
-WebInspector.DOMStorageItemsView = function(domStorage, domStorageModel)
+WebInspector.DOMStorageItemsView = function(domStorage)
 {
     WebInspector.View.call(this);
 
     this.domStorage = domStorage;
-    this.domStorageModel = domStorageModel;
 
     this.element.addStyleClass("storage-view");
     this.element.addStyleClass("table");
@@ -45,10 +44,10 @@ WebInspector.DOMStorageItemsView = function(domStorage, domStorageModel)
     this.refreshButton = new WebInspector.StatusBarButton(WebInspector.UIString("Refresh"), "refresh-storage-status-bar-item");
     this.refreshButton.addEventListener("click", this._refreshButtonClicked, this);
 
-    this.domStorageModel.addEventListener(WebInspector.DOMStorageModel.Events.DOMStorageItemsCleared, this._domStorageItemsCleared, this);
-    this.domStorageModel.addEventListener(WebInspector.DOMStorageModel.Events.DOMStorageItemRemoved, this._domStorageItemRemoved, this);
-    this.domStorageModel.addEventListener(WebInspector.DOMStorageModel.Events.DOMStorageItemAdded, this._domStorageItemAdded, this);
-    this.domStorageModel.addEventListener(WebInspector.DOMStorageModel.Events.DOMStorageItemUpdated, this._domStorageItemUpdated, this);
+    this.domStorage.addEventListener(WebInspector.DOMStorage.Events.DOMStorageItemsCleared, this._domStorageItemsCleared, this);
+    this.domStorage.addEventListener(WebInspector.DOMStorage.Events.DOMStorageItemRemoved, this._domStorageItemRemoved, this);
+    this.domStorage.addEventListener(WebInspector.DOMStorage.Events.DOMStorageItemAdded, this._domStorageItemAdded, this);
+    this.domStorage.addEventListener(WebInspector.DOMStorage.Events.DOMStorageItemUpdated, this._domStorageItemUpdated, this);
 }
 
 WebInspector.DOMStorageItemsView.prototype = {
@@ -65,26 +64,6 @@ WebInspector.DOMStorageItemsView.prototype = {
     willHide: function()
     {
         this.deleteButton.visible = false;
-    },
-
-    /**
-     * @param {KeyboardEvent} event
-     */
-    handleShortcut: function(event)
-    {
-        if (WebInspector.KeyboardShortcut.eventHasCtrlOrMeta(event) && !event.shiftKey && event.keyIdentifier === "U+005A") { // Z key
-            this.domStorage.undo();
-            event.handled = true;
-            return;
-        }
-
-        var isRedoKey = WebInspector.isMac() ? event.metaKey && event.shiftKey && event.keyIdentifier === "U+005A" : // Z key
-                                               event.ctrlKey && event.keyIdentifier === "U+0059"; // Y key
-        if (isRedoKey) {
-            this.domStorage.redo();
-            event.handled = true;
-            return;
-        }
     },
 
     /**
@@ -144,7 +123,7 @@ WebInspector.DOMStorageItemsView.prototype = {
             if (children[i].data.key === storageData.key)
                 return;
 
-        var childNode = new WebInspector.DataGridNode({key: storageData.key, value: storageData.newValue}, false);
+        var childNode = new WebInspector.DataGridNode({key: storageData.key, value: storageData.value}, false);
         rootNode.insertChild(childNode, children.length - 1);
     },
 
@@ -171,8 +150,8 @@ WebInspector.DOMStorageItemsView.prototype = {
                     return;
                 }
                 keyFound = true;
-                if (childNode.data.value !== storageData.newValue) {
-                    childNode.data.value = storageData.newValue;
+                if (childNode.data.value !== storageData.value) {
+                    childNode.data.value = storageData.value;
                     childNode.refresh();
                     childNode.select();
                     childNode.reveal();

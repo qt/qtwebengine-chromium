@@ -73,7 +73,7 @@ SkGrFontScaler::SkGrFontScaler(SkGlyphCache* strike) {
 }
 
 SkGrFontScaler::~SkGrFontScaler() {
-    GrSafeUnref(fKey);
+    SkSafeUnref(fKey);
 }
 
 GrMaskFormat SkGrFontScaler::getMaskFormat() {
@@ -88,7 +88,7 @@ GrMaskFormat SkGrFontScaler::getMaskFormat() {
         case SkMask::kLCD32_Format:
             return kA888_GrMaskFormat;
         default:
-            GrAssert(!"unsupported SkMask::Format");
+            SkDEBUGFAIL("unsupported SkMask::Format");
             return kA8_GrMaskFormat;
     }
 }
@@ -142,8 +142,8 @@ bool SkGrFontScaler::getPackedGlyphImage(GrGlyph::PackedID packed,
     const SkGlyph& glyph = fStrike->getGlyphIDMetrics(GrGlyph::UnpackID(packed),
                                               GrGlyph::UnpackFixedX(packed),
                                               GrGlyph::UnpackFixedY(packed));
-    GrAssert(glyph.fWidth == width);
-    GrAssert(glyph.fHeight == height);
+    SkASSERT(glyph.fWidth == width);
+    SkASSERT(glyph.fHeight == height);
     const void* src = fStrike->findImage(glyph);
     if (NULL == src) {
         return false;

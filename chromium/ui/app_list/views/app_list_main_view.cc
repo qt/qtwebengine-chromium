@@ -6,8 +6,10 @@
 
 #include <algorithm>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/files/file_path.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/app_list_item_model.h"
@@ -77,13 +79,14 @@ class AppListMainView::IconLoader : public AppListItemModelObserver {
 AppListMainView::AppListMainView(AppListViewDelegate* delegate,
                                  AppListModel* model,
                                  PaginationModel* pagination_model,
-                                 views::View* anchor)
+                                 gfx::NativeView parent)
     : delegate_(delegate),
       model_(model),
       search_box_view_(NULL),
-      contents_view_(NULL) {
+      contents_view_(NULL),
+      weak_ptr_factory_(this) {
   // Starts icon loading early.
-  PreloadIcons(pagination_model, anchor);
+  PreloadIcons(pagination_model, parent);
 
   SetLayoutManager(new views::BoxLayout(views::BoxLayout::kVertical,
                                         kInnerPadding,
@@ -127,6 +130,7 @@ void AppListMainView::ShowAppListWhenReady() {
 
 void AppListMainView::Close() {
   icon_loading_wait_timer_.Stop();
+  contents_view_->CancelDrag();
 }
 
 void AppListMainView::Prerender() {
@@ -134,17 +138,15 @@ void AppListMainView::Prerender() {
 }
 
 void AppListMainView::SetDragAndDropHostOfCurrentAppList(
-    app_list::ApplicationDragAndDropHost* drag_and_drop_host) {
+    ApplicationDragAndDropHost* drag_and_drop_host) {
   contents_view_->SetDragAndDropHostOfCurrentAppList(drag_and_drop_host);
 }
 
 void AppListMainView::PreloadIcons(PaginationModel* pagination_model,
-                                   views::View* anchor) {
+                                   gfx::NativeView parent) {
   ui::ScaleFactor scale_factor = ui::SCALE_FACTOR_100P;
-  if (anchor && anchor->GetWidget()) {
-    scale_factor = ui::GetScaleFactorForNativeView(
-        anchor->GetWidget()->GetNativeView());
-  }
+  if (parent)
+    scale_factor = ui::GetScaleFactorForNativeView(parent);
 
   // |pagination_model| could have -1 as the initial selected page and
   // assumes first page (i.e. index 0) will be used in this case.
@@ -230,7 +232,13 @@ void AppListMainView::OnResultInstalled(SearchResult* result) {
 }
 
 void AppListMainView::OnResultUninstalled(SearchResult* result) {
-  QueryChanged(search_box_view_);
+  // Resubmit the query via a posted task so that all observers for the
+  // uninstall notification are notified.
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&AppListMainView::QueryChanged,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 search_box_view_));
 }
 
 }  // namespace app_list

@@ -34,8 +34,8 @@
 #include "core/dom/TreeScope.h"
 #include "core/xml/XPathUtil.h"
 #include "core/xml/XPathValue.h"
-#include <wtf/MathExtras.h>
-#include <wtf/text/StringBuilder.h>
+#include "wtf/MathExtras.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 namespace XPath {
@@ -330,7 +330,7 @@ Value FunId::evaluate() const
         idList.append(str);
     }
 
-    TreeScope* contextScope = evaluationContext().node->treeScope();
+    TreeScope& contextScope = evaluationContext().node->treeScope();
     NodeSet result;
     HashSet<Node*> resultSet;
 
@@ -349,7 +349,7 @@ Value FunId::evaluate() const
 
         // If there are several nodes with the same id, id() should return the first one.
         // In WebKit, getElementById behaves so, too, although its behavior in this case is formally undefined.
-        Node* node = contextScope->getElementById(idList.substring(startPos, endPos - startPos));
+        Node* node = contextScope.getElementById(idList.substring(startPos, endPos - startPos));
         if (node && resultSet.add(node).isNewEntry)
             result.append(node);
 
@@ -366,7 +366,7 @@ static inline String expandedNameLocalPart(Node* node)
     // The local part of an XPath expanded-name matches DOM local name for most node types, except for namespace nodes and processing instruction nodes.
     ASSERT(node->nodeType() != Node::XPATH_NAMESPACE_NODE); // Not supported yet.
     if (node->nodeType() == Node::PROCESSING_INSTRUCTION_NODE)
-        return static_cast<ProcessingInstruction*>(node)->target();
+        return toProcessingInstruction(node)->target();
     return node->localName().string();
 }
 
@@ -478,7 +478,7 @@ Value FunSubstringBefore::evaluate() const
 
     size_t i = s1.find(s2);
 
-    if (i == notFound)
+    if (i == kNotFound)
         return "";
 
     return s1.left(i);
@@ -490,7 +490,7 @@ Value FunSubstringAfter::evaluate() const
     String s2 = arg(1)->evaluate().toString();
 
     size_t i = s1.find(s2);
-    if (i == notFound)
+    if (i == kNotFound)
         return "";
 
     return s1.substring(i + s2.length());
@@ -556,7 +556,7 @@ Value FunTranslate::evaluate() const
         UChar ch = s1[i1];
         size_t i2 = s2.find(ch);
 
-        if (i2 == notFound)
+        if (i2 == kNotFound)
             result.append(ch);
         else if (i2 < s3.length())
             result.append(s3[i2]);
@@ -607,7 +607,7 @@ Value FunLang::evaluate() const
 
         // Remove suffixes one by one.
         size_t index = langValue.reverseFind('-');
-        if (index == notFound)
+        if (index == kNotFound)
             break;
         langValue = langValue.left(index);
     }

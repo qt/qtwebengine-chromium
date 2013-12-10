@@ -361,6 +361,15 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWordWrap:
     case CSSPropertyWritingMode:
         return true;
+    case CSSPropertyAnimation:
+    case CSSPropertyAnimationDelay:
+    case CSSPropertyAnimationDirection:
+    case CSSPropertyAnimationDuration:
+    case CSSPropertyAnimationFillMode:
+    case CSSPropertyAnimationIterationCount:
+    case CSSPropertyAnimationName:
+    case CSSPropertyAnimationPlayState:
+    case CSSPropertyAnimationTimingFunction:
     case CSSPropertyAlignmentBaseline:
     case CSSPropertyBackground:
     case CSSPropertyBackgroundAttachment:
@@ -428,6 +437,7 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyFloodOpacity:
     case CSSPropertyFontStretch:
     case CSSPropertyHeight:
+    case CSSPropertyIsolation:
     case CSSPropertyLeft:
     case CSSPropertyLightingColor:
     case CSSPropertyMargin:
@@ -437,11 +447,14 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyMarginTop:
     case CSSPropertyMask:
     case CSSPropertyMaskType:
+    case CSSPropertyMaskSourceType:
     case CSSPropertyMaxHeight:
     case CSSPropertyMaxWidth:
     case CSSPropertyMinHeight:
     case CSSPropertyMinWidth:
     case CSSPropertyMixBlendMode:
+    case CSSPropertyObjectFit:
+    case CSSPropertyObjectPosition:
     case CSSPropertyOpacity:
     case CSSPropertyOutline:
     case CSSPropertyOutlineColor:
@@ -461,6 +474,7 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyPageBreakAfter:
     case CSSPropertyPageBreakBefore:
     case CSSPropertyPageBreakInside:
+    case CSSPropertyPaintOrder:
     case CSSPropertyPosition:
     case CSSPropertyRight:
     case CSSPropertySize:
@@ -593,13 +607,12 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitMarginEnd:
     case CSSPropertyWebkitMarginStart:
     case CSSPropertyWebkitMarginTopCollapse:
-    case CSSPropertyWebkitMarquee:
-    case CSSPropertyWebkitMarqueeDirection:
-    case CSSPropertyWebkitMarqueeIncrement:
-    case CSSPropertyWebkitMarqueeRepetition:
-    case CSSPropertyWebkitMarqueeSpeed:
+    case CSSPropertyInternalMarqueeDirection:
+    case CSSPropertyInternalMarqueeIncrement:
+    case CSSPropertyInternalMarqueeRepetition:
+    case CSSPropertyInternalMarqueeSpeed:
     case CSSPropertyOrder:
-    case CSSPropertyWebkitMarqueeStyle:
+    case CSSPropertyInternalMarqueeStyle:
     case CSSPropertyWebkitMask:
     case CSSPropertyWebkitMaskBoxImage:
     case CSSPropertyWebkitMaskBoxImageOutset:

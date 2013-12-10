@@ -36,12 +36,13 @@
 #include "wtf/CurrentTime.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebString.h"
+#include "public/web/WebViewClient.h"
 
 using namespace WebCore;
 
 namespace WebKit {
 
-ValidationMessageClientImpl::ValidationMessageClientImpl(WebViewImpl& webView, WebValidationMessageClient& client)
+ValidationMessageClientImpl::ValidationMessageClientImpl(WebViewImpl& webView, WebValidationMessageClient* client)
     : m_webView(webView)
     , m_client(client)
     , m_currentAnchor(0)
@@ -51,7 +52,7 @@ ValidationMessageClientImpl::ValidationMessageClientImpl(WebViewImpl& webView, W
 {
 }
 
-PassOwnPtr<ValidationMessageClientImpl> ValidationMessageClientImpl::create(WebViewImpl& webView, WebValidationMessageClient& client)
+PassOwnPtr<ValidationMessageClientImpl> ValidationMessageClientImpl::create(WebViewImpl& webView, WebValidationMessageClient* client)
 {
     return adoptPtr(new ValidationMessageClientImpl(webView, client));
 }
@@ -64,7 +65,7 @@ ValidationMessageClientImpl::~ValidationMessageClientImpl()
 
 FrameView* ValidationMessageClientImpl::currentView()
 {
-    return m_currentAnchor->document()->view();
+    return m_currentAnchor->document().view();
 }
 
 void ValidationMessageClientImpl::showValidationMessage(const Element& anchor, const String& message)
@@ -85,7 +86,9 @@ void ValidationMessageClientImpl::showValidationMessage(const Element& anchor, c
 
     WebTextDirection dir = m_currentAnchor->renderer()->style()->direction() == RTL ? WebTextDirectionRightToLeft : WebTextDirectionLeftToRight;
     AtomicString title = m_currentAnchor->fastGetAttribute(HTMLNames::titleAttr);
-    m_client.showValidationMessage(anchorInRootView, m_message, title, dir);
+    if (m_client)
+        m_client->showValidationMessage(anchorInRootView, m_message, title, dir);
+    m_webView.client()->showValidationMessage(anchorInRootView, m_message, title, dir);
 
     const double minimumSecondToShowValidationMessage = 5.0;
     const double secondPerCharacter = 0.05;
@@ -104,7 +107,9 @@ void ValidationMessageClientImpl::hideValidationMessage(const Element& anchor)
     m_currentAnchor = 0;
     m_message = String();
     m_finishTime = 0;
-    m_client.hideValidationMessage();
+    if (m_client)
+        m_client->hideValidationMessage();
+    m_webView.client()->hideValidationMessage();
 }
 
 bool ValidationMessageClientImpl::isValidationMessageVisible(const Element& anchor)
@@ -114,7 +119,7 @@ bool ValidationMessageClientImpl::isValidationMessageVisible(const Element& anch
 
 void ValidationMessageClientImpl::documentDetached(const Document& document)
 {
-    if (m_currentAnchor && m_currentAnchor->document() == &document)
+    if (m_currentAnchor && &m_currentAnchor->document() == &document)
         hideValidationMessage(*m_currentAnchor);
 }
 
@@ -140,7 +145,9 @@ void ValidationMessageClientImpl::checkAnchorStatus(Timer<ValidationMessageClien
         return;
     m_lastAnchorRectInScreen = newAnchorRectInScreen;
     m_lastPageScaleFactor = m_webView.pageScaleFactor();
-    m_client.moveValidationMessage(newAnchorRect);
+    if (m_client)
+        m_client->moveValidationMessage(newAnchorRect);
+    m_webView.client()->moveValidationMessage(newAnchorRect);
 }
 
 }

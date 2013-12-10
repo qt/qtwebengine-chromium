@@ -38,10 +38,10 @@ WebInspector.TimelineModel = function()
     this._stringPool = new StringPool();
     this._minimumRecordTime = -1;
     this._maximumRecordTime = -1;
-    this._collectionEnabled = false;
 
     WebInspector.timelineManager.addEventListener(WebInspector.TimelineManager.EventTypes.TimelineEventRecorded, this._onRecordAdded, this);
-    WebInspector.timelineManager.addEventListener(WebInspector.TimelineManager.EventTypes.TimelineStartEvent, this._onTimelineStarted, this);
+    WebInspector.timelineManager.addEventListener(WebInspector.TimelineManager.EventTypes.TimelineStarted, this._onStarted, this);
+    WebInspector.timelineManager.addEventListener(WebInspector.TimelineManager.EventTypes.TimelineStopped, this._onStopped, this);
 }
 
 WebInspector.TimelineModel.TransferChunkLengthBytes = 5000000;
@@ -102,7 +102,9 @@ WebInspector.TimelineModel.RecordType = {
 
 WebInspector.TimelineModel.Events = {
     RecordAdded: "RecordAdded",
-    RecordsCleared: "RecordsCleared"
+    RecordsCleared: "RecordsCleared",
+    RecordingStarted: "RecordingStarted",
+    RecordingStopped: "RecordingStopped"
 }
 
 WebInspector.TimelineModel.startTimeInSeconds = function(record)
@@ -151,22 +153,29 @@ WebInspector.TimelineModel.prototype = {
     /**
      * @param {boolean=} includeDomCounters
      */
-    startRecord: function(includeDomCounters)
+    startRecording: function(includeDomCounters)
     {
-        if (this._collectionEnabled)
-            return;
+        this._clientInitiatedRecording = true;
         this.reset();
         var maxStackFrames = WebInspector.settings.timelineLimitStackFramesFlag.get() ? WebInspector.settings.timelineStackFramesToCapture.get() : 30;
-        WebInspector.timelineManager.start(maxStackFrames, includeDomCounters);
-        this._collectionEnabled = true;
+        WebInspector.timelineManager.start(maxStackFrames, includeDomCounters, false, this._fireRecordingStarted.bind(this));
     },
 
-    stopRecord: function()
+    stopRecording: function()
     {
-        if (!this._collectionEnabled)
+        if (!this._clientInitiatedRecording) {
+            // Console started this one and we are just sniffing it. Initiate recording so that we
+            // could stop it.
+            function stopTimeline()
+            {
+                WebInspector.timelineManager.stop(this._fireRecordingStopped.bind(this));
+            }
+
+            WebInspector.timelineManager.start(undefined, undefined, undefined, stopTimeline.bind(this));
             return;
-        WebInspector.timelineManager.stop();
-        this._collectionEnabled = false;
+        }
+        this._clientInitiatedRecording = false;
+        WebInspector.timelineManager.stop(this._fireRecordingStopped.bind(this));
     },
 
     get records()
@@ -174,12 +183,52 @@ WebInspector.TimelineModel.prototype = {
         return this._records;
     },
 
+    /**
+     * @param {WebInspector.Event} event
+     */
     _onRecordAdded: function(event)
     {
         if (this._collectionEnabled)
-            this._addRecord(event.data);
+            this._addRecord(/** @type {TimelineAgent.TimelineEvent} */(event.data));
     },
 
+    /**
+     * @param {WebInspector.Event} event
+     */
+    _onStarted: function(event)
+    {
+        if (event.data) {
+            // Started from console.
+            this._fireRecordingStarted();
+        }
+    },
+
+    /**
+     * @param {WebInspector.Event} event
+     */
+    _onStopped: function(event)
+    {
+        if (event.data) {
+            // Stopped from console.
+            this._fireRecordingStopped();
+        }
+    },
+
+    _fireRecordingStarted: function()
+    {
+        this._collectionEnabled = true;
+        this.dispatchEventToListeners(WebInspector.TimelineModel.Events.RecordingStarted);
+    },
+
+    _fireRecordingStopped: function()
+    {
+        this._collectionEnabled = false;
+        this.dispatchEventToListeners(WebInspector.TimelineModel.Events.RecordingStopped);
+    },
+
+    /**
+     * @param {TimelineAgent.TimelineEvent} record
+     */
     _addRecord: function(record)
     {
         this._stringPool.internObjectStrings(record);
@@ -253,6 +302,9 @@ WebInspector.TimelineModel.prototype = {
         return this._maximumRecordTime;
     },
 
+    /**
+     * @param {TimelineAgent.TimelineEvent} record
+     */
     _updateBoundaries: function(record)
     {
         var startTime = WebInspector.TimelineModel.startTimeInSeconds(record);
@@ -262,14 +314,6 @@ WebInspector.TimelineModel.prototype = {
             this._minimumRecordTime = startTime;
         if (this._maximumRecordTime === -1 || endTime > this._maximumRecordTime)
             this._maximumRecordTime = endTime;
-    },
-
-    _onTimelineStarted: function(event)
-    {
-        if (event.data.timestampsBase)
-            this._timestampsBase = event.data.timestampsBase;
-        if (event.data.startTime)
-            this._startTime = event.data.startTime;
     },
 
     /**

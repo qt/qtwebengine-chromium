@@ -10,33 +10,61 @@
 
 #include "base/compiler_specific.h"
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
+#include "extensions/common/stack_frame.h"
+#include "url/gurl.h"
+
+namespace base {
+class DictionaryValue;
+}
 
 namespace extensions {
 
 class ExtensionError {
  public:
   enum Type {
-    MANIFEST_PARSING_ERROR,
-    JAVASCRIPT_RUNTIME_ERROR
+    MANIFEST_ERROR,
+    RUNTIME_ERROR
   };
 
   virtual ~ExtensionError();
 
+  // Serializes the ExtensionError into JSON format.
+  virtual scoped_ptr<base::DictionaryValue> ToValue() const;
+
   virtual std::string PrintForTest() const;
 
+  // Return true if this error and |rhs| are considered equal, and should be
+  // grouped together.
+  bool IsEqual(const ExtensionError* rhs) const;
+
   Type type() const { return type_; }
-  const base::string16& source() const { return source_; }
-  const base::string16& message() const { return message_; }
   const std::string& extension_id() const { return extension_id_; }
   bool from_incognito() const { return from_incognito_; }
+  logging::LogSeverity level() const { return level_; }
+  const base::string16& source() const { return source_; }
+  const base::string16& message() const { return message_; }
+  size_t occurrences() const { return occurrences_; }
+  void set_occurrences(size_t occurrences) { occurrences_ = occurrences; }
+
+  // Keys used for retrieving JSON values.
+  static const char kExtensionIdKey[];
+  static const char kFromIncognitoKey[];
+  static const char kLevelKey[];
+  static const char kMessageKey[];
+  static const char kSourceKey[];
+  static const char kTypeKey[];
 
  protected:
   ExtensionError(Type type,
                  const std::string& extension_id,
                  bool from_incognito,
+                 logging::LogSeverity level,
                  const base::string16& source,
                  const base::string16& message);
+
+  virtual bool IsEqualImpl(const ExtensionError* rhs) const = 0;
 
   // Which type of error this is.
   Type type_;
@@ -44,76 +72,90 @@ class ExtensionError {
   std::string extension_id_;
   // Whether or not the error was caused while incognito.
   bool from_incognito_;
+  // The severity level of the error.
+  logging::LogSeverity level_;
   // The source for the error; this can be a script, web page, or manifest file.
   // This is stored as a string (rather than a url) since it can be a Chrome
   // script file (e.g., event_bindings.js).
   base::string16 source_;
   // The error message itself.
   base::string16 message_;
+  // The number of times this error has occurred.
+  size_t occurrences_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionError);
 };
 
-class ManifestParsingError : public ExtensionError {
+class ManifestError : public ExtensionError {
  public:
-  ManifestParsingError(const std::string& extension_id,
-                       const base::string16& message);
-  virtual ~ManifestParsingError();
+  ManifestError(const std::string& extension_id,
+                const base::string16& message,
+                const base::string16& manifest_key,
+                const base::string16& manifest_specific);
+  virtual ~ManifestError();
+
+  virtual scoped_ptr<base::DictionaryValue> ToValue() const OVERRIDE;
 
   virtual std::string PrintForTest() const OVERRIDE;
+
+  const base::string16& manifest_key() const { return manifest_key_; }
+  const base::string16& manifest_specific() const { return manifest_specific_; }
+
+  // Keys used for retrieving JSON values.
+  static const char kManifestKeyKey[];
+  static const char kManifestSpecificKey[];
+
  private:
-  DISALLOW_COPY_AND_ASSIGN(ManifestParsingError);
+  virtual bool IsEqualImpl(const ExtensionError* rhs) const OVERRIDE;
+
+  // If present, this indicates the feature in the manifest which caused the
+  // error.
+  base::string16 manifest_key_;
+  // If present, this is a more-specific location of the error - for instance,
+  // a specific permission which is incorrect, rather than simply "permissions".
+  base::string16 manifest_specific_;
+
+  DISALLOW_COPY_AND_ASSIGN(ManifestError);
 };
 
-class JavascriptRuntimeError : public ExtensionError {
+class RuntimeError : public ExtensionError {
  public:
-  struct StackFrame {
-    size_t line_number;
-    size_t column_number;
-    // This is stored as a string (rather than a url) since it can be a
-    // Chrome script file (e.g., event_bindings.js).
-    base::string16 url;
-    base::string16 function;  // optional
+  RuntimeError(const std::string& extension_id,  // optional, sometimes unknown.
+               bool from_incognito,
+               const base::string16& source,
+               const base::string16& message,
+               const StackTrace& stack_trace,
+               const GURL& context_url,
+               logging::LogSeverity level);
+  virtual ~RuntimeError();
 
-    // STL-Required constructor
-    StackFrame();
-
-    StackFrame(size_t frame_line,
-               size_t frame_column,
-               const base::string16& frame_url,
-               const base::string16& frame_function  /* can be empty */);
-
-    ~StackFrame();
-  };
-  typedef std::vector<StackFrame> StackTrace;
-
-  JavascriptRuntimeError(bool from_incognito,
-                         const base::string16& source,
-                         const base::string16& message,
-                         logging::LogSeverity level,
-                         const base::string16& details);
-  virtual ~JavascriptRuntimeError();
+  virtual scoped_ptr<base::DictionaryValue> ToValue() const OVERRIDE;
 
   virtual std::string PrintForTest() const OVERRIDE;
 
-  logging::LogSeverity level() const { return level_; }
-  const base::string16& execution_context_url() const {
-      return execution_context_url_;
-  }
+  const GURL& context_url() const { return context_url_; }
   const StackTrace& stack_trace() const { return stack_trace_; }
- private:
-  // Parse the JSON |details| passed to the error. This includes a stack trace
-  // and an execution context url.
-  void ParseDetails(const base::string16& details);
-  // Try to determine the ID of the extension. This may be obtained through the
-  // reported source, or through the execution context url.
-  void DetermineExtensionID();
 
-  logging::LogSeverity level_;
-  base::string16 execution_context_url_;
+  // Keys used for retrieving JSON values.
+  static const char kColumnNumberKey[];
+  static const char kContextUrlKey[];
+  static const char kFunctionNameKey[];
+  static const char kLineNumberKey[];
+  static const char kStackTraceKey[];
+  static const char kUrlKey[];
+
+ private:
+  virtual bool IsEqualImpl(const ExtensionError* rhs) const OVERRIDE;
+
+  // Since we piggy-back onto other error reporting systems (like V8 and
+  // WebKit), the reported information may need to be cleaned up in order to be
+  // in a consistent format.
+  void CleanUpInit();
+
+  GURL context_url_;
   StackTrace stack_trace_;
 
-  DISALLOW_COPY_AND_ASSIGN(JavascriptRuntimeError);
+  DISALLOW_COPY_AND_ASSIGN(RuntimeError);
 };
 
 }  // namespace extensions

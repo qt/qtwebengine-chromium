@@ -38,10 +38,12 @@
 #include "core/inspector/ScriptProfile.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
+#include "core/page/ConsoleBase.h"
 #include "core/page/ConsoleTypes.h"
 #include "core/page/Frame.h"
 #include "core/page/MemoryInfo.h"
 #include "core/page/Page.h"
+#include "core/page/PageConsole.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
 
@@ -59,167 +61,26 @@ Console::~Console()
 {
 }
 
-static void internalAddMessage(Page* page, MessageType type, MessageLevel level, ScriptState* state, PassRefPtr<ScriptArguments> prpArguments, bool acceptNoArguments = false, bool printTrace = false)
+ScriptExecutionContext* Console::context()
 {
-    RefPtr<ScriptArguments> arguments = prpArguments;
-
-    if (!page)
-        return;
-
-    if (!acceptNoArguments && !arguments->argumentCount())
-        return;
-
-    size_t stackSize = printTrace ? ScriptCallStack::maxCallStackSizeToCapture : 1;
-    RefPtr<ScriptCallStack> callStack(createScriptCallStack(state, stackSize));
-    const ScriptCallFrame& lastCaller = callStack->at(0);
-
-    String message;
-    bool gotMessage = arguments->getFirstArgumentAsString(message);
-    InspectorInstrumentation::addMessageToConsole(page, ConsoleAPIMessageSource, type, level, message, state, arguments);
-
-    if (gotMessage)
-        page->chrome().client()->addMessageToConsole(ConsoleAPIMessageSource, type, level, message, lastCaller.lineNumber(), lastCaller.sourceURL());
+    if (!m_frame)
+        return 0;
+    return m_frame->document();
 }
 
-void Console::debug(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
+void Console::reportMessageToClient(MessageLevel level, const String& message, PassRefPtr<ScriptCallStack> callStack)
 {
-    internalAddMessage(page(), LogMessageType, DebugMessageLevel, state, arguments);
+    String stackTrace;
+    if (m_frame->page()->chrome().client().shouldReportDetailedMessageForSource(callStack->at(0).sourceURL())) {
+        RefPtr<ScriptCallStack> fullStack = createScriptCallStack(ScriptCallStack::maxCallStackSizeToCapture);
+        stackTrace = PageConsole::formatStackTraceString(message, fullStack);
+    }
+    m_frame->page()->chrome().client().addMessageToConsole(ConsoleAPIMessageSource, level, message, callStack->at(0).lineNumber(), callStack->at(0).sourceURL(), stackTrace);
 }
 
-void Console::error(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
+bool Console::profilerEnabled()
 {
-    internalAddMessage(page(), LogMessageType, ErrorMessageLevel, state, arguments);
-}
-
-void Console::info(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
-{
-    log(state, arguments);
-}
-
-void Console::log(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
-{
-    internalAddMessage(page(), LogMessageType, LogMessageLevel, state, arguments);
-}
-
-void Console::warn(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
-{
-    internalAddMessage(page(), LogMessageType, WarningMessageLevel, state, arguments);
-}
-
-void Console::dir(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
-{
-    internalAddMessage(page(), DirMessageType, LogMessageLevel, state, arguments);
-}
-
-void Console::dirxml(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
-{
-    internalAddMessage(page(), DirXMLMessageType, LogMessageLevel, state, arguments);
-}
-
-void Console::table(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
-{
-    internalAddMessage(page(), TableMessageType, LogMessageLevel, state, arguments);
-}
-
-void Console::clear(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
-{
-    internalAddMessage(page(), ClearMessageType, LogMessageLevel, state, arguments, true);
-}
-
-void Console::trace(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
-{
-    internalAddMessage(page(), TraceMessageType, LogMessageLevel, state, arguments, true, true);
-}
-
-void Console::assertCondition(ScriptState* state, PassRefPtr<ScriptArguments> arguments, bool condition)
-{
-    if (condition)
-        return;
-
-    internalAddMessage(page(), AssertMessageType, ErrorMessageLevel, state, arguments, true);
-}
-
-void Console::count(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
-{
-    InspectorInstrumentation::consoleCount(page(), state, arguments);
-}
-
-void Console::markTimeline(PassRefPtr<ScriptArguments> arguments)
-{
-    InspectorInstrumentation::consoleTimeStamp(m_frame, arguments);
-}
-
-
-void Console::profile(ScriptState* state, const String& title)
-{
-    Page* page = this->page();
-    if (!page)
-        return;
-
-    // FIXME: log a console message when profiling is disabled.
-    if (!InspectorInstrumentation::profilerEnabled(page))
-        return;
-
-    String resolvedTitle = title;
-    if (title.isNull()) // no title so give it the next user initiated profile title.
-        resolvedTitle = InspectorInstrumentation::getCurrentUserInitiatedProfileName(page, true);
-
-    ScriptProfiler::start(resolvedTitle);
-
-    RefPtr<ScriptCallStack> callStack(createScriptCallStack(state, 1));
-    const ScriptCallFrame& lastCaller = callStack->at(0);
-    InspectorInstrumentation::addStartProfilingMessageToConsole(page, resolvedTitle, lastCaller.lineNumber(), lastCaller.sourceURL());
-}
-
-void Console::profileEnd(ScriptState* state, const String& title)
-{
-    Page* page = this->page();
-    if (!page)
-        return;
-
-    if (!InspectorInstrumentation::profilerEnabled(page))
-        return;
-
-    RefPtr<ScriptProfile> profile = ScriptProfiler::stop(title);
-    if (!profile)
-        return;
-
-    RefPtr<ScriptCallStack> callStack(createScriptCallStack(state, 1));
-    InspectorInstrumentation::addProfile(page, profile, callStack);
-}
-
-
-void Console::time(const String& title)
-{
-    InspectorInstrumentation::startConsoleTiming(m_frame, title);
-    TRACE_EVENT_COPY_ASYNC_BEGIN0("webkit", title.utf8().data(), this);
-}
-
-void Console::timeEnd(ScriptState* state, const String& title)
-{
-    TRACE_EVENT_COPY_ASYNC_END0("webkit", title.utf8().data(), this);
-    RefPtr<ScriptCallStack> callStack(createScriptCallStackForConsole(state));
-    InspectorInstrumentation::stopConsoleTiming(m_frame, title, callStack.release());
-}
-
-void Console::timeStamp(PassRefPtr<ScriptArguments> arguments)
-{
-    InspectorInstrumentation::consoleTimeStamp(m_frame, arguments);
-}
-
-void Console::group(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
-{
-    InspectorInstrumentation::addMessageToConsole(page(), ConsoleAPIMessageSource, StartGroupMessageType, LogMessageLevel, String(), state, arguments);
-}
-
-void Console::groupCollapsed(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
-{
-    InspectorInstrumentation::addMessageToConsole(page(), ConsoleAPIMessageSource, StartGroupCollapsedMessageType, LogMessageLevel, String(), state, arguments);
-}
-
-void Console::groupEnd()
-{
-    InspectorInstrumentation::addMessageToConsole(page(), ConsoleAPIMessageSource, EndGroupMessageType, LogMessageLevel, String(), String(), 0, 0);
+    return InspectorInstrumentation::profilerEnabled(m_frame->page());
 }
 
 PassRefPtr<MemoryInfo> Console::memory() const
@@ -227,13 +88,6 @@ PassRefPtr<MemoryInfo> Console::memory() const
     // FIXME: Because we create a new object here each time,
     // console.memory !== console.memory, which seems wrong.
     return MemoryInfo::create(m_frame);
-}
-
-Page* Console::page() const
-{
-    if (!m_frame)
-        return 0;
-    return m_frame->page();
 }
 
 } // namespace WebCore

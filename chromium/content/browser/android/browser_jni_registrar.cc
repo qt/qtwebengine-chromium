@@ -8,8 +8,7 @@
 #include "base/android/jni_registrar.h"
 #include "content/browser/accessibility/browser_accessibility_android.h"
 #include "content/browser/accessibility/browser_accessibility_manager_android.h"
-#include "content/browser/android/android_browser_process.h"
-#include "content/browser/android/browser_startup_config.h"
+#include "content/browser/android/browser_startup_controller.h"
 #include "content/browser/android/child_process_launcher_android.h"
 #include "content/browser/android/content_settings.h"
 #include "content/browser/android/content_video_view.h"
@@ -20,7 +19,6 @@
 #include "content/browser/android/download_controller_android_impl.h"
 #include "content/browser/android/interstitial_page_delegate_android.h"
 #include "content/browser/android/load_url_params.h"
-#include "content/browser/android/media_resource_getter_impl.h"
 #include "content/browser/android/surface_texture_peer_browser_impl.h"
 #include "content/browser/android/touch_point.h"
 #include "content/browser/android/tracing_intent_handler.h"
@@ -28,6 +26,8 @@
 #include "content/browser/android/web_contents_observer_android.h"
 #include "content/browser/device_orientation/data_fetcher_impl_android.h"
 #include "content/browser/geolocation/location_api_adapter_android.h"
+#include "content/browser/media/android/media_drm_credential_manager.h"
+#include "content/browser/media/android/media_resource_getter_impl.h"
 #include "content/browser/power_save_blocker_android.h"
 #include "content/browser/renderer_host/ime_adapter_android.h"
 #include "content/browser/renderer_host/java/java_bound_object.h"
@@ -39,10 +39,9 @@ namespace {
 base::android::RegistrationMethod kContentRegisteredMethods[] = {
     {"AndroidLocationApiAdapter",
      content::AndroidLocationApiAdapter::RegisterGeolocationService},
-    {"AndroidBrowserProcess", content::RegisterAndroidBrowserProcess},
     {"BrowserAccessibilityManager",
      content::RegisterBrowserAccessibilityManager},
-    {"BrowserStartupConfiguration", content::RegisterBrowserStartupConfig},
+    {"BrowserStartupController", content::RegisterBrowserStartupController},
     {"ChildProcessLauncher", content::RegisterChildProcessLauncher},
     {"ContentSettings", content::ContentSettings::RegisterContentSettings},
     {"ContentViewRenderView",
@@ -56,6 +55,8 @@ base::android::RegistrationMethod kContentRegisteredMethods[] = {
     {"InterstitialPageDelegateAndroid",
      content::InterstitialPageDelegateAndroid::
          RegisterInterstitialPageDelegateAndroid},
+    {"MediaDrmCredentialManager",
+     content::MediaDrmCredentialManager::RegisterMediaDrmCredentialManager},
     {"MediaResourceGetterImpl",
      content::MediaResourceGetterImpl::RegisterMediaResourceGetter},
     {"LoadUrlParams", content::RegisterLoadUrlParams},

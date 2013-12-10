@@ -8,11 +8,11 @@
 
 #include "ash/shelf/shelf_types.h"
 #include "ash/shell.h"
+#include "ash/system/system_notifier.h"
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/system_tray_notifier.h"
 #include "ash/system/tray/tray_constants.h"
-#include "ash/system/tray/tray_notification_view.h"
 #include "ash/system/tray/tray_utils.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -23,13 +23,18 @@
 #include "grit/ash_strings.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/l10n/time_format.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/font.h"
-#include "ui/gfx/text_constants.h"
+#include "ui/message_center/message_center.h"
+#include "ui/message_center/notification.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/view.h"
+
+using message_center::Notification;
 
 namespace ash {
 namespace internal {
@@ -44,6 +49,8 @@ const int kExpiringSoonThresholdInSeconds = 5 * 60;  // 5 minutes.
 const SkColor kRemainingTimeColor = SK_ColorWHITE;
 // Color in which the remaining session time is shown when it is expiring soon.
 const SkColor kRemainingTimeExpiringSoonColor = SK_ColorRED;
+
+const char kSessionLengthTimeoutNotificationId[] = "chrome://session/timeout";
 
 views::Label* CreateAndSetupLabel() {
   views::Label* label = new views::Label;
@@ -66,29 +73,46 @@ base::string16 FormatRemainingSessionTimeNotification(
     const base::TimeDelta& remaining_session_time) {
   return l10n_util::GetStringFUTF16(
       IDS_ASH_STATUS_TRAY_REMAINING_SESSION_TIME_NOTIFICATION,
-      Shell::GetInstance()->system_tray_delegate()->
-          FormatTimeDuration(remaining_session_time));
+      ui::TimeFormat::TimeDurationLong(remaining_session_time));
+}
+
+// Creates, or updates the notification for session length timeout with
+// |remaining_time|.  |state_changed| is true when its internal state has been
+// changed from another.
+void CreateOrUpdateNotification(const base::TimeDelta& remaining_time,
+                                bool state_changed) {
+  message_center::MessageCenter* message_center =
+      message_center::MessageCenter::Get();
+
+  // Do not create a new notification if no state has changed. It may happen
+  // when the notification is already closed by the user, see crbug.com/285941.
+  if (!state_changed &&
+      !message_center->HasNotification(kSessionLengthTimeoutNotificationId)) {
+    return;
+  }
+
+  ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
+  message_center::RichNotificationData data;
+  // Makes the spoken feedback only when the state has been changed.
+  data.should_make_spoken_feedback_for_popup_updates = state_changed;
+  scoped_ptr<Notification> notification(new Notification(
+      message_center::NOTIFICATION_TYPE_SIMPLE,
+      kSessionLengthTimeoutNotificationId,
+      FormatRemainingSessionTimeNotification(remaining_time),
+      base::string16() /* message */,
+      bundle.GetImageNamed(IDR_AURA_UBER_TRAY_SESSION_LENGTH_LIMIT_TIMER),
+      base::string16() /* display_source */,
+      message_center::NotifierId(
+          system_notifier::NOTIFIER_SESSION_LENGTH_TIMEOUT),
+      data,
+      NULL /* delegate */));
+  notification->SetSystemPriority();
+  message_center::MessageCenter::Get()->AddNotification(notification.Pass());
 }
 
 }  // namespace
 
 namespace tray {
-
-class RemainingSessionTimeNotificationView : public TrayNotificationView {
- public:
-  explicit RemainingSessionTimeNotificationView(TraySessionLengthLimit* owner);
-  virtual ~RemainingSessionTimeNotificationView();
-
-  // TrayNotificationView:
-  virtual void ChildPreferredSizeChanged(views::View* child) OVERRIDE;
-
-  void Update();
-
- private:
-  views::Label* label_;
-
-  DISALLOW_COPY_AND_ASSIGN(RemainingSessionTimeNotificationView);
-};
 
 class RemainingSessionTimeTrayView : public views::View {
  public:
@@ -114,31 +138,6 @@ class RemainingSessionTimeTrayView : public views::View {
 
   DISALLOW_COPY_AND_ASSIGN(RemainingSessionTimeTrayView);
 };
-
-RemainingSessionTimeNotificationView::RemainingSessionTimeNotificationView(
-    TraySessionLengthLimit* owner)
-    : TrayNotificationView(owner,
-                           IDR_AURA_UBER_TRAY_SESSION_LENGTH_LIMIT_TIMER) {
-  label_ = new views::Label;
-  label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  label_->SetMultiLine(true);
-  Update();
-  InitView(label_);
-}
-
-RemainingSessionTimeNotificationView::~RemainingSessionTimeNotificationView() {
-}
-
-void RemainingSessionTimeNotificationView::ChildPreferredSizeChanged(
-    views::View* child) {
-  PreferredSizeChanged();
-}
-
-void RemainingSessionTimeNotificationView::Update() {
-  label_->SetText(FormatRemainingSessionTimeNotification(
-      reinterpret_cast<TraySessionLengthLimit*>(owner())->
-          GetRemainingSessionTime()));
-}
 
 RemainingSessionTimeTrayView::RemainingSessionTimeTrayView(
     const TraySessionLengthLimit* owner,
@@ -202,7 +201,7 @@ void RemainingSessionTimeTrayView::UpdateClockLayout(
                        0, views::GridLayout::USE_PREF, 0, 0);
     columns->AddColumn(views::GridLayout::CENTER, views::GridLayout::CENTER,
                        0, views::GridLayout::USE_PREF, 0, 0);
-    layout->AddPaddingRow(0, kTrayLabelItemVerticalPaddingVeriticalAlignment);
+    layout->AddPaddingRow(0, kTrayLabelItemVerticalPaddingVerticalAlignment);
     layout->StartRow(0, 0);
     layout->AddView(vertical_layout_label_hours_left_);
     layout->AddView(vertical_layout_label_hours_right_);
@@ -212,7 +211,7 @@ void RemainingSessionTimeTrayView::UpdateClockLayout(
     layout->StartRow(0, 0);
     layout->AddView(vertical_layout_label_seconds_left_);
     layout->AddView(vertical_layout_label_seconds_right_);
-    layout->AddPaddingRow(0, kTrayLabelItemVerticalPaddingVeriticalAlignment);
+    layout->AddPaddingRow(0, kTrayLabelItemVerticalPaddingVerticalAlignment);
   }
   Update();
 }
@@ -281,7 +280,6 @@ void RemainingSessionTimeTrayView::SetBorder(ShelfAlignment shelf_alignment) {
 TraySessionLengthLimit::TraySessionLengthLimit(SystemTray* system_tray)
     : SystemTrayItem(system_tray),
       tray_view_(NULL),
-      notification_view_(NULL),
       limit_state_(LIMIT_NONE) {
   Shell::GetInstance()->system_tray_notifier()->
       AddSessionLengthLimitObserver(this);
@@ -300,19 +298,8 @@ views::View* TraySessionLengthLimit::CreateTrayView(user::LoginStatus status) {
   return tray_view_;
 }
 
-views::View* TraySessionLengthLimit::CreateNotificationView(
-    user::LoginStatus status) {
-  CHECK(notification_view_ == NULL);
-  notification_view_ = new tray::RemainingSessionTimeNotificationView(this);
-  return notification_view_;
-}
-
 void TraySessionLengthLimit::DestroyTrayView() {
   tray_view_ = NULL;
-}
-
-void TraySessionLengthLimit::DestroyNotificationView() {
-  notification_view_ = NULL;
 }
 
 void TraySessionLengthLimit::UpdateAfterShelfAlignmentChange(
@@ -336,12 +323,6 @@ TraySessionLengthLimit::LimitState
 
 base::TimeDelta TraySessionLengthLimit::GetRemainingSessionTime() const {
   return remaining_session_time_;
-}
-
-void TraySessionLengthLimit::ShowAndSpeakNotification() {
-  ShowNotificationView();
-  Shell::GetInstance()->system_tray_delegate()->MaybeSpeak(UTF16ToUTF8(
-      FormatRemainingSessionTimeNotification(remaining_session_time_)));
 }
 
 void TraySessionLengthLimit::Update() {
@@ -369,22 +350,21 @@ void TraySessionLengthLimit::Update() {
     }
   }
 
-  if (notification_view_)
-    notification_view_->Update();
-
   switch (limit_state_) {
     case LIMIT_NONE:
-      HideNotificationView();
+      message_center::MessageCenter::Get()->RemoveNotification(
+          kSessionLengthTimeoutNotificationId, false /* by_user */);
       break;
     case LIMIT_SET:
-      if (previous_limit_state == LIMIT_NONE)
-        ShowAndSpeakNotification();
+      CreateOrUpdateNotification(
+          remaining_session_time_,
+          previous_limit_state == LIMIT_NONE);
       break;
     case LIMIT_EXPIRING_SOON:
-      if (previous_limit_state == LIMIT_NONE ||
-          previous_limit_state == LIMIT_SET) {
-        ShowAndSpeakNotification();
-      }
+      CreateOrUpdateNotification(
+          remaining_session_time_,
+          previous_limit_state == LIMIT_NONE ||
+          previous_limit_state == LIMIT_SET);
       break;
   }
 

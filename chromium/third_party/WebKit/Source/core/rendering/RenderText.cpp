@@ -27,7 +27,7 @@
 
 #include "core/accessibility/AXObjectCache.h"
 #include "core/dom/Text.h"
-#include "core/loader/TextResourceDecoder.h"
+#include "core/fetch/TextResourceDecoder.h"
 #include "core/page/FrameView.h"
 #include "core/page/Settings.h"
 #include "core/platform/graphics/FloatQuad.h"
@@ -74,7 +74,7 @@ public:
     void restartWithNewText(unsigned lastTypedCharacterOffset)
     {
         m_lastTypedCharacterOffset = lastTypedCharacterOffset;
-        if (Settings* settings = m_renderText->document()->settings())
+        if (Settings* settings = m_renderText->document().settings())
             startOneShot(settings->passwordEchoDurationInSeconds());
     }
     void invalidate() { m_lastTypedCharacterOffset = -1; }
@@ -186,7 +186,7 @@ bool RenderText::isWordBreak() const
 
 void RenderText::updateNeedsTranscoding()
 {
-    const WTF::TextEncoding* encoding = document()->decoder() ? &document()->decoder()->encoding() : 0;
+    const WTF::TextEncoding* encoding = document().decoder() ? &document().decoder()->encoding() : 0;
     m_needsTranscoding = fontTranscoder().needsTranscoding(style()->font().fontDescription(), encoding);
 }
 
@@ -215,6 +215,9 @@ void RenderText::styleDidChange(StyleDifference diff, const RenderStyle* oldStyl
     ETextSecurity oldSecurity = oldStyle ? oldStyle->textSecurity() : TSNONE;
     if (needsResetText || oldTransform != newStyle->textTransform() || oldSecurity != newStyle->textSecurity())
         transformText();
+
+    if (!text().containsOnlyWhitespace())
+        newStyle->font().willUseFontData();
 }
 
 void RenderText::removeAndDestroyTextBoxes()
@@ -1104,7 +1107,7 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
         m_lastLineLineMinWidth = currMaxWidth;
     }
 
-    setPreferredLogicalWidthsDirty(false);
+    clearPreferredLogicalWidthsDirty();
 }
 
 bool RenderText::isAllCollapsibleWhitespace() const
@@ -1326,7 +1329,7 @@ void RenderText::setTextInternal(PassRefPtr<StringImpl> text)
     ASSERT(text);
     m_text = text;
     if (m_needsTranscoding) {
-        const WTF::TextEncoding* encoding = document()->decoder() ? &document()->decoder()->encoding() : 0;
+        const WTF::TextEncoding* encoding = document().decoder() ? &document().decoder()->encoding() : 0;
         fontTranscoder().convert(m_text, style()->font().fontDescription(), encoding);
     }
     ASSERT(m_text);
@@ -1390,7 +1393,7 @@ void RenderText::setText(PassRefPtr<StringImpl> text, bool force)
     setNeedsLayoutAndPrefWidthsRecalc();
     m_knownToHaveNoOverflowAndNoFallbackFonts = false;
 
-    if (AXObjectCache* cache = document()->existingAXObjectCache())
+    if (AXObjectCache* cache = document().existingAXObjectCache())
         cache->textChanged(this);
 }
 
@@ -1668,7 +1671,7 @@ int RenderText::previousOffset(int current) const
     return result;
 }
 
-#if OS(DARWIN)
+#if OS(MACOSX)
 
 #define HANGUL_CHOSEONG_START (0x1100)
 #define HANGUL_CHOSEONG_END (0x115F)
@@ -1710,7 +1713,7 @@ inline bool isRegionalIndicator(UChar32 c)
 
 int RenderText::previousOffsetForBackwardDeletion(int current) const
 {
-#if OS(DARWIN)
+#if OS(MACOSX)
     ASSERT(m_text);
     StringImpl& text = *m_text.impl();
     UChar32 character;

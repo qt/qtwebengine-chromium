@@ -96,6 +96,7 @@ class NET_EXPORT_PRIVATE HttpProxySocketParams
 class HttpProxyConnectJob : public ConnectJob {
  public:
   HttpProxyConnectJob(const std::string& group_name,
+                      RequestPriority priority,
                       const scoped_refptr<HttpProxySocketParams>& params,
                       const base::TimeDelta& timeout_duration,
                       TransportClientSocketPool* transport_pool,
@@ -174,8 +175,10 @@ class HttpProxyConnectJob : public ConnectJob {
 
 class NET_EXPORT_PRIVATE HttpProxyClientSocketPool
     : public ClientSocketPool,
-      public LayeredPool {
+      public HigherLayeredPool {
  public:
+  typedef HttpProxySocketParams SocketParams;
+
   HttpProxyClientSocketPool(
       int max_sockets,
       int max_sockets_per_group,
@@ -204,12 +207,10 @@ class NET_EXPORT_PRIVATE HttpProxyClientSocketPool
                              ClientSocketHandle* handle) OVERRIDE;
 
   virtual void ReleaseSocket(const std::string& group_name,
-                             StreamSocket* socket,
+                             scoped_ptr<StreamSocket> socket,
                              int id) OVERRIDE;
 
   virtual void FlushWithError(int error) OVERRIDE;
-
-  virtual bool IsStalled() const OVERRIDE;
 
   virtual void CloseIdleSockets() OVERRIDE;
 
@@ -222,10 +223,6 @@ class NET_EXPORT_PRIVATE HttpProxyClientSocketPool
       const std::string& group_name,
       const ClientSocketHandle* handle) const OVERRIDE;
 
-  virtual void AddLayeredPool(LayeredPool* layered_pool) OVERRIDE;
-
-  virtual void RemoveLayeredPool(LayeredPool* layered_pool) OVERRIDE;
-
   virtual base::DictionaryValue* GetInfoAsValue(
       const std::string& name,
       const std::string& type,
@@ -235,7 +232,14 @@ class NET_EXPORT_PRIVATE HttpProxyClientSocketPool
 
   virtual ClientSocketPoolHistograms* histograms() const OVERRIDE;
 
-  // LayeredPool implementation.
+  // LowerLayeredPool implementation.
+  virtual bool IsStalled() const OVERRIDE;
+
+  virtual void AddHigherLayeredPool(HigherLayeredPool* higher_pool) OVERRIDE;
+
+  virtual void RemoveHigherLayeredPool(HigherLayeredPool* higher_pool) OVERRIDE;
+
+  // HigherLayeredPool implementation.
   virtual bool CloseOneIdleConnection() OVERRIDE;
 
  private:
@@ -250,7 +254,7 @@ class NET_EXPORT_PRIVATE HttpProxyClientSocketPool
         NetLog* net_log);
 
     // ClientSocketPoolBase::ConnectJobFactory methods.
-    virtual ConnectJob* NewConnectJob(
+    virtual scoped_ptr<ConnectJob> NewConnectJob(
         const std::string& group_name,
         const PoolBase::Request& request,
         ConnectJob::Delegate* delegate) const OVERRIDE;
@@ -273,9 +277,6 @@ class NET_EXPORT_PRIVATE HttpProxyClientSocketPool
 
   DISALLOW_COPY_AND_ASSIGN(HttpProxyClientSocketPool);
 };
-
-REGISTER_SOCKET_PARAMS_FOR_POOL(HttpProxyClientSocketPool,
-                                HttpProxySocketParams);
 
 }  // namespace net
 

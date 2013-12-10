@@ -27,11 +27,12 @@
 
 #include "HTMLNames.h"
 #include "core/dom/Document.h"
-#include "core/loader/cache/ImageResource.h"
+#include "core/fetch/ImageResource.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderTableCell.h"
 #include "core/rendering/RenderView.h"
+#include "core/rendering/SubtreeLayoutScope.h"
 #include "core/rendering/style/StyleInheritedData.h"
 
 namespace WebCore {
@@ -84,7 +85,7 @@ void RenderTableRow::styleDidChange(StyleDifference diff, const RenderStyle* old
             for (RenderBox* childBox = firstChildBox(); childBox; childBox = childBox->nextSiblingBox()) {
                 if (!childBox->isTableCell())
                     continue;
-                childBox->setChildNeedsLayout(MarkOnlyThis);
+                childBox->setChildNeedsLayout();
             }
         }
     }
@@ -155,7 +156,6 @@ void RenderTableRow::addChild(RenderObject* child, RenderObject* beforeChild)
 
 void RenderTableRow::layout()
 {
-    StackStats::LayoutCheckPoint layoutCheckPoint;
     ASSERT(needsLayout());
 
     // Table rows do not add translation.
@@ -165,9 +165,10 @@ void RenderTableRow::layout()
 
     for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
         if (child->isTableCell()) {
+            SubtreeLayoutScope layouter(child);
             RenderTableCell* cell = toRenderTableCell(child);
             if (!cell->needsLayout() && paginated && view()->layoutState()->pageLogicalHeight() && view()->layoutState()->pageLogicalOffset(cell, cell->logicalTop()) != cell->pageLogicalOffset())
-                cell->setChildNeedsLayout(MarkOnlyThis);
+                layouter.setChildNeedsLayout(cell);
 
             if (child->needsLayout()) {
                 cell->computeAndSetBlockDirectionMargins(table());
@@ -274,7 +275,7 @@ RenderTableRow* RenderTableRow::createAnonymous(Document* document)
 
 RenderTableRow* RenderTableRow::createAnonymousWithParentRenderer(const RenderObject* parent)
 {
-    RenderTableRow* newRow = RenderTableRow::createAnonymous(parent->document());
+    RenderTableRow* newRow = RenderTableRow::createAnonymous(&parent->document());
     RefPtr<RenderStyle> newStyle = RenderStyle::createAnonymousStyleWithDisplay(parent->style(), TABLE_ROW);
     newRow->setStyle(newStyle.release());
     return newRow;

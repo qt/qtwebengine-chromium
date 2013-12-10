@@ -306,10 +306,10 @@ Press Ctrl+Alt+Z to disable.
         Audio Settings
       </message>
       <message name="IDS_ASH_STATUS_TRAY_AUDIO_OUTPUT" desc="The label used in audio detailed page for audio output section of ash tray pop up.">
-        OUTPUT
+        Output
       </message>
       <message name="IDS_ASH_STATUS_TRAY_AUDIO_INPUT" desc="The label used in audio detailed page for audio input section of ash tray pop up.">
-        INPUT
+        Input
       </message>
 
       <message name="IDS_ASH_STATUS_TRAY_DISPLAY_MIRRORING" desc="The label used in the tray to show that the current status is mirroring.">
@@ -325,7 +325,10 @@ Press Ctrl+Alt+Z to disable.
         Extending screen
       </message>
       <message name="IDS_ASH_STATUS_TRAY_DISPLAY_DOCKED" desc="The label used in the tray to show that the current status is docked mode.">
-        Dock mode
+        Docked mode
+      </message>
+      <message name="IDS_ASH_STATUS_TRAY_DISPLAY_DOCKED_DESCRIPTION" desc="The label used in the notification body to describe what the docked mode means.">
+        Your Chromebook will stay on while connected to an external display, even with the lid closed.
       </message>
       <message name="IDS_ASH_STATUS_TRAY_DISPLAY_RESOLUTION_CHANGED" desc="The label used in the tray to notify that the display resolution settings has changed.">
         <ph name="DISPLAY_NAME">$1</ph> resolution was changed to <ph name="RESOLUTION">$2</ph>
@@ -557,11 +560,17 @@ Press Shift + Alt to switch.
       <message name="IDS_ASH_SCREENSHOT_NOTIFICATION_TITLE_SUCCESS" desc="The title of the notification when a screenshot was taken.">
         Screenshot taken
       </message>
+      <message name="IDS_ASH_SCREENSHOT_NOTIFICATION_TITLE_DISABLED" desc="The title of the notification when taking a screenshot failed because screenshots are disabled.">
+        Screenshots disabled
+      </message>
       <message name="IDS_ASH_SCREENSHOT_NOTIFICATION_TITLE_FAIL" desc="The title of the notification when taking a screenshot failed.">
         An error occurred
       </message>
       <message name="IDS_ASH_SCREENSHOT_NOTIFICATION_TEXT_SUCCESS" desc="The text of the notification when a screenshot was taken.">
         Click to view
+      </message>
+      <message name="IDS_ASH_SCREENSHOT_NOTIFICATION_TEXT_DISABLED" desc="The text of the notification when taking a screenshot failed because screenshots are disabled by administrator policy.">
+        The ability to take screenshots has been disabled by your administrator.
       </message>
       <message name="IDS_ASH_SCREENSHOT_NOTIFICATION_TEXT_FAIL" desc="The text of the notification when taking a screenshot failed.">
         Failed to save screenshot

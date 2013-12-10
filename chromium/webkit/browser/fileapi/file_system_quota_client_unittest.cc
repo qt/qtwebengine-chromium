@@ -6,13 +6,13 @@
 #include "base/bind.h"
 #include "base/file_util.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/platform_file.h"
+#include "base/run_loop.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
+#include "webkit/browser/fileapi/async_file_test_helper.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/file_system_quota_client.h"
 #include "webkit/browser/fileapi/file_system_usage_cache.h"
 #include "webkit/browser/fileapi/mock_file_system_context.h"
@@ -74,7 +74,7 @@ class FileSystemQuotaClientTest : public testing::Test {
                        const std::string& origin_url,
                        quota::StorageType type) {
     GetOriginUsageAsync(quota_client, origin_url, type);
-    base::MessageLoop::current()->RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
     return usage_;
   }
 
@@ -85,7 +85,7 @@ class FileSystemQuotaClientTest : public testing::Test {
         type,
         base::Bind(&FileSystemQuotaClientTest::OnGetOrigins,
                    weak_factory_.GetWeakPtr()));
-    base::MessageLoop::current()->RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
     return origins_;
   }
 
@@ -97,7 +97,7 @@ class FileSystemQuotaClientTest : public testing::Test {
         type, host,
         base::Bind(&FileSystemQuotaClientTest::OnGetOrigins,
                    weak_factory_.GetWeakPtr()));
-    base::MessageLoop::current()->RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
     return origins_;
   }
 
@@ -110,32 +110,16 @@ class FileSystemQuotaClientTest : public testing::Test {
                    weak_factory_.GetWeakPtr()));
   }
 
-  FileSystemOperationContext* CreateFileSystemOperationContext(
-      FileSystemType type) {
-    FileSystemOperationContext* context =
-        new FileSystemOperationContext(file_system_context_.get());
-    context->set_allowed_bytes_growth(100000000);
-    context->set_update_observers(
-        *file_system_context_->GetUpdateObservers(type));
-    return context;
-  }
-
   bool CreateFileSystemDirectory(const base::FilePath& file_path,
                                  const std::string& origin_url,
                                  quota::StorageType storage_type) {
     FileSystemType type = QuotaStorageTypeToFileSystemType(storage_type);
-    FileSystemFileUtil* file_util = file_system_context_->GetFileUtil(type);
-
     FileSystemURL url = file_system_context_->CreateCrackedFileSystemURL(
         GURL(origin_url), type, file_path);
-    scoped_ptr<FileSystemOperationContext> context(
-        CreateFileSystemOperationContext(type));
 
     base::PlatformFileError result =
-        file_util->CreateDirectory(context.get(), url, false, false);
-    if (result != base::PLATFORM_FILE_OK)
-      return false;
-    return true;
+        AsyncFileTestHelper::CreateDirectory(file_system_context_, url);
+    return result == base::PLATFORM_FILE_OK;
   }
 
   bool CreateFileSystemFile(const base::FilePath& file_path,
@@ -146,22 +130,17 @@ class FileSystemQuotaClientTest : public testing::Test {
       return false;
 
     FileSystemType type = QuotaStorageTypeToFileSystemType(storage_type);
-    FileSystemFileUtil* file_util = file_system_context_->GetFileUtil(type);
-
     FileSystemURL url = file_system_context_->CreateCrackedFileSystemURL(
         GURL(origin_url), type, file_path);
-    scoped_ptr<FileSystemOperationContext> context(
-        CreateFileSystemOperationContext(type));
 
-    bool created = false;
-    if (base::PLATFORM_FILE_OK !=
-        file_util->EnsureFileExists(context.get(), url, &created))
+    base::PlatformFileError result =
+        AsyncFileTestHelper::CreateFile(file_system_context_, url);
+    if (result != base::PLATFORM_FILE_OK)
       return false;
-    EXPECT_TRUE(created);
-    if (base::PLATFORM_FILE_OK !=
-        file_util->Truncate(context.get(), url, file_size))
-      return false;
-    return true;
+
+    result = AsyncFileTestHelper::TruncateFile(
+        file_system_context_, url, file_size);
+    return result == base::PLATFORM_FILE_OK;
   }
 
   void InitializeOriginFiles(FileSystemQuotaClient* quota_client,
@@ -428,7 +407,7 @@ TEST_F(FileSystemQuotaClientTest, GetUsage_MultipleTasks) {
   GetOriginUsageAsync(quota_client.get(), kDummyURL1, kTemporary);
   RunAdditionalOriginUsageTask(quota_client.get(), kDummyURL1, kTemporary);
   RunAdditionalOriginUsageTask(quota_client.get(), kDummyURL1, kTemporary);
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(11 + 22 + file_paths_cost, usage());
   EXPECT_EQ(2, additional_callback_count());
 
@@ -437,7 +416,7 @@ TEST_F(FileSystemQuotaClientTest, GetUsage_MultipleTasks) {
   RunAdditionalOriginUsageTask(quota_client.get(), kDummyURL1, kTemporary);
   GetOriginUsageAsync(quota_client.get(), kDummyURL1, kTemporary);
   RunAdditionalOriginUsageTask(quota_client.get(), kDummyURL1, kTemporary);
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(11 + 22 + file_paths_cost, usage());
   EXPECT_EQ(2, additional_callback_count());
 }
@@ -539,15 +518,15 @@ TEST_F(FileSystemQuotaClientTest, DeleteOriginTest) {
           "https://bar.com/", kPersistent);
 
   DeleteOriginData(quota_client.get(), "http://foo.com/", kTemporary);
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(quota::kQuotaStatusOk, status());
 
   DeleteOriginData(quota_client.get(), "http://bar.com/", kPersistent);
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(quota::kQuotaStatusOk, status());
 
   DeleteOriginData(quota_client.get(), "http://buz.com/", kTemporary);
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(quota::kQuotaStatusOk, status());
 
   EXPECT_EQ(0, GetOriginUsage(

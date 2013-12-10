@@ -7,7 +7,7 @@
 
 #include "ash/ash_export.h"
 #include "ash/display/display_controller.h"
-#include "ui/base/events/event_handler.h"
+#include "ui/events/event_handler.h"
 #include "ui/gfx/display_observer.h"
 #include "ui/views/widget/widget_observer.h"
 
@@ -67,7 +67,9 @@ class ASH_EXPORT TouchObserverHUD
 
 #if defined(OS_CHROMEOS)
   // Overriden from chromeos::OutputConfigurator::Observer.
-  virtual void OnDisplayModeChanged() OVERRIDE;
+  virtual void OnDisplayModeChanged(
+      const std::vector<chromeos::OutputConfigurator::OutputSnapshot>& outputs)
+      OVERRIDE;
 #endif  // defined(OS_CHROMEOS)
 
   // Overriden form DisplayController::Observer.

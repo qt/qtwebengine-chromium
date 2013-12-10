@@ -180,7 +180,8 @@ void SkPath::resetFields() {
     fIsOval = false;
 #ifdef SK_BUILD_FOR_ANDROID
     GEN_ID_INC;
-    fSourcePath = NULL;
+    // We don't touch fSourcePath.  It's used to track texture garbage collection, so we don't
+    // want to muck with it if it's been set to something non-NULL.
 #endif
 }
 
@@ -189,7 +190,7 @@ SkPath::SkPath(const SkPath& that)
     this->copyFields(that);
 #ifdef SK_BUILD_FOR_ANDROID
     fGenerationID = that.fGenerationID;
-    fSourcePath   = NULL;  // TODO(mtklein): follow up with Android: do we want to copy this too?
+    fSourcePath   = that.fSourcePath;
 #endif
     SkDEBUGCODE(that.validate();)
 }
@@ -206,7 +207,7 @@ SkPath& SkPath::operator=(const SkPath& that) {
         this->copyFields(that);
 #ifdef SK_BUILD_FOR_ANDROID
         GEN_ID_INC;  // Similar to swap, we can't just copy this or it could go back in time.
-        fSourcePath = NULL;  // TODO(mtklein): follow up with Android: do we want to copy this too?
+        fSourcePath = that.fSourcePath;
 #endif
     }
     SkDEBUGCODE(this->validate();)
@@ -513,7 +514,7 @@ bool SkPath::isRectContour(bool allowPartial, int* currVerb, const SkPoint** pts
                 closedOrMoved = true;
                 break;
             default:
-                SkASSERT(!"unexpected verb");
+                SkDEBUGFAIL("unexpected verb");
                 break;
         }
         *currVerb += 1;
@@ -857,7 +858,7 @@ void SkPath::close() {
                 // don't add a close if it's the first verb or a repeat
                 break;
             default:
-                SkASSERT(!"unexpected verb");
+                SkDEBUGFAIL("unexpected verb");
                 break;
         }
     }
@@ -1593,7 +1594,7 @@ void SkPath::reverseAddPath(const SkPath& src) {
                 needClose = true;
                 break;
             default:
-                SkASSERT(!"unexpected verb");
+                SkDEBUGFAIL("unexpected verb");
         }
     }
 }
@@ -1661,7 +1662,7 @@ void SkPath::transform(const SkMatrix& matrix, SkPath* dst) const {
                     subdivide_quad_to(&tmp, pts);
                     break;
                 case kConic_Verb:
-                    SkASSERT(!"TODO: compute new weight");
+                    SkDEBUGFAIL("TODO: compute new weight");
                     tmp.conicTo(pts[1], pts[2], iter.conicWeight());
                     break;
                 case kCubic_Verb:
@@ -2497,7 +2498,7 @@ void ContourIter::next() {
             case SkPath::kClose_Verb:
                 break;
             default:
-                SkASSERT(!"unexpected verb");
+                SkDEBUGFAIL("unexpected verb");
                 break;
         }
     }

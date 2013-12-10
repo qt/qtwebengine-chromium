@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <set>
 
+#include "base/atomicops.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
@@ -71,6 +72,14 @@ size_t ClampUint64ToSizeT(uint64 value) {
   value = std::min(value,
                    static_cast<uint64>(std::numeric_limits<size_t>::max()));
   return static_cast<size_t>(value);
+}
+
+uint32_t GenFlushID() {
+  static base::subtle::Atomic32 flush_id = 0;
+
+  base::subtle::Atomic32 my_id = base::subtle::Barrier_AtomicIncrement(
+      &flush_id, 1);
+  return static_cast<uint32_t>(my_id);
 }
 
 // Singleton used to initialize and terminate the gles2 library.
@@ -234,7 +243,9 @@ WebGraphicsContext3DCommandBufferImpl::WebGraphicsContext3DCommandBufferImpl(
       command_buffer_size_(0),
       start_transfer_buffer_size_(0),
       min_transfer_buffer_size_(0),
-      max_transfer_buffer_size_(0) {
+      max_transfer_buffer_size_(0),
+      mapped_memory_limit_(gpu::gles2::GLES2Implementation::kNoLimit),
+      flush_id_(0) {
 #if (defined(OS_MACOSX) || defined(OS_WIN)) && !defined(USE_AURA)
   // Get ViewMsg_SwapBuffers_ACK from browser for single-threaded path.
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
@@ -266,7 +277,8 @@ bool WebGraphicsContext3DCommandBufferImpl::InitializeWithDefaultBufferSizes(
                     kDefaultCommandBufferSize,
                     kDefaultStartTransferBufferSize,
                     kDefaultMinTransferBufferSize,
-                    kDefaultMaxTransferBufferSize);
+                    kDefaultMaxTransferBufferSize,
+                    gpu::gles2::GLES2Implementation::kNoLimit);
 }
 
 bool WebGraphicsContext3DCommandBufferImpl::Initialize(
@@ -276,7 +288,8 @@ bool WebGraphicsContext3DCommandBufferImpl::Initialize(
     size_t command_buffer_size,
     size_t start_transfer_buffer_size,
     size_t min_transfer_buffer_size,
-    size_t max_transfer_buffer_size) {
+    size_t max_transfer_buffer_size,
+    size_t mapped_memory_limit) {
   TRACE_EVENT0("gpu", "WebGfxCtx3DCmdBfrImpl::initialize");
 
   attributes_ = attributes;
@@ -297,12 +310,12 @@ bool WebGraphicsContext3DCommandBufferImpl::Initialize(
   start_transfer_buffer_size_ = start_transfer_buffer_size;
   min_transfer_buffer_size_ = min_transfer_buffer_size;
   max_transfer_buffer_size_ = max_transfer_buffer_size;
+  mapped_memory_limit_ = mapped_memory_limit;
 
   return true;
 }
 
-bool WebGraphicsContext3DCommandBufferImpl::MaybeInitializeGL(
-    const char* allowed_extensions) {
+bool WebGraphicsContext3DCommandBufferImpl::MaybeInitializeGL() {
   if (initialized_)
     return true;
 
@@ -311,11 +324,7 @@ bool WebGraphicsContext3DCommandBufferImpl::MaybeInitializeGL(
 
   TRACE_EVENT0("gpu", "WebGfxCtx3DCmdBfrImpl::MaybeInitializeGL");
 
-  const char* preferred_extensions = "*";
-
-  if (!CreateContext(surface_id_ != 0,
-                     allowed_extensions ?
-                         allowed_extensions : preferred_extensions)) {
+  if (!CreateContext(surface_id_ != 0)) {
     Destroy();
     initialize_failed_ = true;
     return false;
@@ -368,8 +377,7 @@ bool WebGraphicsContext3DCommandBufferImpl::MaybeInitializeGL(
 }
 
 bool WebGraphicsContext3DCommandBufferImpl::InitializeCommandBuffer(
-    bool onscreen,
-    const char* allowed_extensions) {
+    bool onscreen) {
   if (!host_.get())
     return false;
   // We need to lock g_all_shared_contexts to ensure that the context we picked
@@ -403,7 +411,6 @@ bool WebGraphicsContext3DCommandBufferImpl::InitializeCommandBuffer(
     command_buffer_.reset(host_->CreateViewCommandBuffer(
         surface_id_,
         share_group,
-        allowed_extensions,
         attribs,
         active_url_,
         gpu_preference_));
@@ -411,7 +418,6 @@ bool WebGraphicsContext3DCommandBufferImpl::InitializeCommandBuffer(
     command_buffer_.reset(host_->CreateOffscreenCommandBuffer(
         gfx::Size(1, 1),
         share_group,
-        allowed_extensions,
         attribs,
         active_url_,
         gpu_preference_));
@@ -425,15 +431,12 @@ bool WebGraphicsContext3DCommandBufferImpl::InitializeCommandBuffer(
 }
 
 bool WebGraphicsContext3DCommandBufferImpl::CreateContext(
-    bool onscreen,
-    const char* allowed_extensions) {
-
+    bool onscreen) {
   // Ensure the gles2 library is initialized first in a thread safe way.
   g_gles2_initializer.Get();
 
   if (!command_buffer_ &&
-      !InitializeCommandBuffer(onscreen,
-                               allowed_extensions)) {
+      !InitializeCommandBuffer(onscreen)) {
     return false;
   }
 
@@ -480,7 +483,8 @@ bool WebGraphicsContext3DCommandBufferImpl::CreateContext(
   if (!real_gl_->Initialize(
       start_transfer_buffer_size_,
       min_transfer_buffer_size_,
-      max_transfer_buffer_size_)) {
+      max_transfer_buffer_size_,
+      mapped_memory_limit_)) {
     return false;
   }
 
@@ -494,13 +498,17 @@ bool WebGraphicsContext3DCommandBufferImpl::CreateContext(
 }
 
 bool WebGraphicsContext3DCommandBufferImpl::makeContextCurrent() {
-  if (!MaybeInitializeGL(NULL))
+  if (!MaybeInitializeGL())
     return false;
   gles2::SetGLContext(gl_);
   if (command_buffer_->GetLastError() != gpu::error::kNoError)
     return false;
 
   return true;
+}
+
+uint32_t WebGraphicsContext3DCommandBufferImpl::lastFlushID() {
+  return flush_id_;
 }
 
 int WebGraphicsContext3DCommandBufferImpl::width() {
@@ -819,12 +827,14 @@ DELEGATE_TO_GL_1(enableVertexAttribArray, EnableVertexAttribArray,
                  WGC3Duint)
 
 void WebGraphicsContext3DCommandBufferImpl::finish() {
+  flush_id_ = GenFlushID();
   gl_->Finish();
   if (!visible_ && free_command_buffer_when_invisible_)
     real_gl_->FreeEverything();
 }
 
 void WebGraphicsContext3DCommandBufferImpl::flush() {
+  flush_id_ = GenFlushID();
   gl_->Flush();
   if (!visible_ && free_command_buffer_when_invisible_)
     real_gl_->FreeEverything();
@@ -1430,8 +1440,15 @@ DELEGATE_TO_GL_6(copyTextureCHROMIUM, CopyTextureCHROMIUM,  WGC3Denum,
 DELEGATE_TO_GL_3(bindUniformLocationCHROMIUM, BindUniformLocationCHROMIUM,
                  WebGLId, WGC3Dint, const WGC3Dchar*)
 
-DELEGATE_TO_GL(shallowFlushCHROMIUM, ShallowFlushCHROMIUM);
-DELEGATE_TO_GL(shallowFinishCHROMIUM, ShallowFinishCHROMIUM);
+void WebGraphicsContext3DCommandBufferImpl::shallowFlushCHROMIUM() {
+  flush_id_ = GenFlushID();
+  gl_->ShallowFlushCHROMIUM();
+}
+
+void WebGraphicsContext3DCommandBufferImpl::shallowFinishCHROMIUM() {
+  flush_id_ = GenFlushID();
+  gl_->ShallowFinishCHROMIUM();
+}
 
 DELEGATE_TO_GL_1(waitSyncPoint, WaitSyncPointCHROMIUM, GLuint)
 

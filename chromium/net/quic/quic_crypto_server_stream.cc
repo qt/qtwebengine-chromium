@@ -27,6 +27,8 @@ QuicCryptoServerStream::~QuicCryptoServerStream() {
 
 void QuicCryptoServerStream::OnHandshakeMessage(
     const CryptoHandshakeMessage& message) {
+  QuicCryptoStream::OnHandshakeMessage(message);
+
   // Do not process handshake messages after the handshake is confirmed.
   if (handshake_confirmed_) {
     CloseConnection(QUIC_CRYPTO_MESSAGE_AFTER_HANDSHAKE_COMPLETE);
@@ -129,7 +131,6 @@ QuicErrorCode QuicCryptoServerStream::ProcessClientHello(
     string* error_details) {
   return crypto_config_.ProcessClientHello(
       message,
-      session()->connection()->version(),
       session()->connection()->guid(),
       session()->connection()->peer_address(),
       session()->connection()->clock(),

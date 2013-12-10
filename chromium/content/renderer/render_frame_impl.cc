@@ -4,25 +4,24 @@
 
 #include "content/renderer/render_frame_impl.h"
 
+#include "base/command_line.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "content/child/appcache/appcache_dispatcher.h"
-#include "content/child/fileapi/file_system_dispatcher.h"
-#include "content/child/fileapi/webfilesystem_callback_adapters.h"
 #include "content/child/quota_dispatcher.h"
 #include "content/child/request_extra_data.h"
 #include "content/common/socket_stream_handle_data.h"
+#include "content/common/swapped_out_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_constants.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/renderer/document_state.h"
 #include "content/public/renderer/navigation_state.h"
-#include "content/public/renderer/password_form_conversion_utils.h"
 #include "content/renderer/browser_plugin/browser_plugin.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager.h"
 #include "content/renderer/internal_document_state_data.h"
-#include "content/renderer/media/rtc_peer_connection_handler.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/renderer_webapplicationcachehost_impl.h"
@@ -35,7 +34,6 @@
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebFileSystemCallbacks.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebNavigationPolicy.h"
 #include "third_party/WebKit/public/web/WebPlugin.h"
@@ -47,9 +45,12 @@
 #include "third_party/WebKit/public/web/WebView.h"
 #include "webkit/child/weburlresponse_extradata_impl.h"
 
+#if defined(ENABLE_WEBRTC)
+#include "content/renderer/media/rtc_peer_connection_handler.h"
+#endif
+
 using WebKit::WebDataSource;
 using WebKit::WebDocument;
-using WebKit::WebFileSystemCallbacks;
 using WebKit::WebFrame;
 using WebKit::WebNavigationPolicy;
 using WebKit::WebPluginParams;
@@ -98,29 +99,33 @@ void RenderFrameImpl::InstallCreateHook(
 // RenderFrameImpl ----------------------------------------------------------
 RenderFrameImpl::RenderFrameImpl(RenderViewImpl* render_view, int routing_id)
     : render_view_(render_view),
-      routing_id_(routing_id) {
+      routing_id_(routing_id),
+      is_swapped_out_(false),
+      is_detaching_(false) {
 }
 
 RenderFrameImpl::~RenderFrameImpl() {
 }
 
 int RenderFrameImpl::GetRoutingID() const {
-  // TODO(nasko): Until we register RenderFrameHost in the browser process as
-  // a listener, we must route all messages to the RenderViewHost, so use the
-  // routing id of the RenderView for now.
-  return render_view_->GetRoutingID();
+  return routing_id_;
 }
 
 bool RenderFrameImpl::Send(IPC::Message* message) {
-  // TODO(nasko): Move away from using the RenderView's Send method once we
-  // have enough infrastructure and state to make the right checks here.
-  return render_view_->Send(message);
+  if (is_detaching_ ||
+      (is_swapped_out_ &&
+       !SwappedOutMessages::CanSendWhileSwappedOut(message))) {
+    delete message;
+    return false;
+  }
+
+  return RenderThread::Get()->Send(message);
 }
 
 bool RenderFrameImpl::OnMessageReceived(const IPC::Message& msg) {
-  // Pass the message up to the RenderView, until we have enough
-  // infrastructure to start processing messages in this object.
-  return render_view_->OnMessageReceived(msg);
+  // TODO(ajwong): Fill in with message handlers as various components
+  // are migrated over to understand frames.
+  return false;
 }
 
 // WebKit::WebFrameClient implementation -------------------------------------
@@ -168,10 +173,10 @@ WebKit::WebSharedWorker* RenderFrameImpl::createSharedWorker(
   params.url = url;
   params.name = name;
   params.document_id = document_id;
-  params.render_view_route_id = GetRoutingID();
+  params.render_view_route_id = render_view_->GetRoutingID();
   params.route_id = MSG_ROUTING_NONE;
   params.script_resource_appcache_id = 0;
-  Send(new ViewHostMsg_LookupSharedWorker(
+  render_view_->Send(new ViewHostMsg_LookupSharedWorker(
       params, &exists, &route_id, &url_mismatch));
   if (url_mismatch) {
     return NULL;
@@ -180,7 +185,7 @@ WebKit::WebSharedWorker* RenderFrameImpl::createSharedWorker(
                                     document_id,
                                     exists,
                                     route_id,
-                                    GetRoutingID());
+                                    render_view_->GetRoutingID());
   }
 }
 
@@ -214,8 +219,9 @@ void RenderFrameImpl::didAccessInitialDocument(WebKit::WebFrame* frame) {
 
 void RenderFrameImpl::didCreateFrame(WebKit::WebFrame* parent,
                                      WebKit::WebFrame* child) {
-  Send(new ViewHostMsg_FrameAttached(GetRoutingID(), parent->identifier(),
-      child->identifier(), UTF16ToUTF8(child->assignedName())));
+  render_view_->Send(new ViewHostMsg_FrameAttached(
+      render_view_->GetRoutingID(), parent->identifier(), child->identifier(),
+      UTF16ToUTF8(child->assignedName())));
 }
 
 void RenderFrameImpl::didDisownOpener(WebKit::WebFrame* frame) {
@@ -223,12 +229,25 @@ void RenderFrameImpl::didDisownOpener(WebKit::WebFrame* frame) {
 }
 
 void RenderFrameImpl::frameDetached(WebKit::WebFrame* frame) {
+  // Currently multiple WebCore::Frames can send frameDetached to a single
+  // RenderFrameImpl. This is legacy behavior from when RenderViewImpl served
+  // as a shared WebFrameClient for multiple Webcore::Frame objects. It also
+  // prevents this class from entering the |is_detaching_| state because
+  // even though one WebCore::Frame may have detached itself, others will
+  // still need to use this object.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess)) {
+    // TODO(ajwong): Add CHECK(!is_detaching_) once we guarantee each
+    // RenderFrameImpl is only used by one WebCore::Frame.
+    is_detaching_ = true;
+  }
+
   int64 parent_frame_id = -1;
   if (frame->parent())
     parent_frame_id = frame->parent()->identifier();
 
-  Send(new ViewHostMsg_FrameDetached(GetRoutingID(), parent_frame_id,
-      frame->identifier()));
+  render_view_->Send(new ViewHostMsg_FrameDetached(render_view_->GetRoutingID(),
+                                                   parent_frame_id,
+                                                   frame->identifier()));
 
   // Call back to RenderViewImpl for observers to be notified.
   // TODO(nasko): Remove once we have RenderFrameObserver.
@@ -246,10 +265,11 @@ void RenderFrameImpl::didChangeName(WebKit::WebFrame* frame,
   if (!render_view_->renderer_preferences_.report_frame_name_changes)
     return;
 
-  Send(new ViewHostMsg_UpdateFrameName(GetRoutingID(),
-                                       frame->identifier(),
-                                       !frame->parent(),
-                                       UTF16ToUTF8(name)));
+  render_view_->Send(
+      new ViewHostMsg_UpdateFrameName(render_view_->GetRoutingID(),
+                                      frame->identifier(),
+                                      !frame->parent(),
+                                      UTF16ToUTF8(name)));
 }
 
 void RenderFrameImpl::loadURLExternally(WebKit::WebFrame* frame,
@@ -265,8 +285,9 @@ void RenderFrameImpl::loadURLExternally(
     const WebKit::WebString& suggested_name) {
   Referrer referrer(RenderViewImpl::GetReferrerFromRequest(frame, request));
   if (policy == WebKit::WebNavigationPolicyDownload) {
-    Send(new ViewHostMsg_DownloadUrl(GetRoutingID(), request.url(), referrer,
-                                     suggested_name));
+    render_view_->Send(new ViewHostMsg_DownloadUrl(render_view_->GetRoutingID(),
+                                                   request.url(), referrer,
+                                                   suggested_name));
   } else {
     render_view_->OpenURL(frame, request.url(), referrer, policy);
   }
@@ -295,13 +316,9 @@ WebKit::WebNavigationPolicy RenderFrameImpl::decidePolicyForNavigation(
 
 void RenderFrameImpl::willSendSubmitEvent(WebKit::WebFrame* frame,
                                           const WebKit::WebFormElement& form) {
-  // Some login forms have onSubmit handlers that put a hash of the password
-  // into a hidden field and then clear the password. (Issue 28910.)
-  // This method gets called before any of those handlers run, so save away
-  // a copy of the password in case it gets lost.
-  DocumentState* document_state =
-      DocumentState::FromDataSource(frame->dataSource());
-  document_state->set_password_form_data(CreatePasswordForm(form));
+  // Call back to RenderViewImpl for observers to be notified.
+  // TODO(nasko): Remove once we have RenderFrameObserver.
+  render_view_->willSendSubmitEvent(frame, form);
 }
 
 void RenderFrameImpl::willSubmitForm(WebKit::WebFrame* frame,
@@ -322,25 +339,6 @@ void RenderFrameImpl::willSubmitForm(WebKit::WebFrame* frame,
   internal_data->set_searchable_form_url(web_searchable_form_data.url());
   internal_data->set_searchable_form_encoding(
       web_searchable_form_data.encoding().utf8());
-  scoped_ptr<PasswordForm> password_form_data =
-      CreatePasswordForm(form);
-
-  // In order to save the password that the user actually typed and not one
-  // that may have gotten transformed by the site prior to submit, recover it
-  // from the form contents already stored by |willSendSubmitEvent| into the
-  // dataSource's NavigationState (as opposed to the provisionalDataSource's,
-  // which is what we're storing into now.)
-  if (password_form_data) {
-    DocumentState* old_document_state =
-        DocumentState::FromDataSource(frame->dataSource());
-    if (old_document_state) {
-      PasswordForm* old_form_data = old_document_state->password_form_data();
-      if (old_form_data && old_form_data->action == password_form_data->action)
-        password_form_data->password_value = old_form_data->password_value;
-    }
-  }
-
-  document_state->set_password_form_data(password_form_data.Pass());
 
   // Call back to RenderViewImpl for observers to be notified.
   // TODO(nasko): Remove once we have RenderFrameObserver.
@@ -414,8 +412,10 @@ void RenderFrameImpl::didCreateDocumentElement(WebKit::WebFrame* frame) {
   if (url.is_valid() && url.spec() != kAboutBlankURL) {
     // TODO(nasko): Check if webview()->mainFrame() is the same as the
     // frame->tree()->top().
-    if (frame == render_view_->webview()->mainFrame())
-      Send(new ViewHostMsg_DocumentAvailableInMainFrame(GetRoutingID()));
+    if (frame == render_view_->webview()->mainFrame()) {
+      render_view_->Send(new ViewHostMsg_DocumentAvailableInMainFrame(
+          render_view_->GetRoutingID()));
+    }
   }
 
   // Call back to RenderViewImpl for observers to be notified.
@@ -571,6 +571,7 @@ void RenderFrameImpl::willSendRequest(
                            was_after_preconnect_request,
                            (frame == top_frame),
                            frame->identifier(),
+                           GURL(frame->document().securityOrigin().toString()),
                            frame->parent() == top_frame,
                            frame->parent() ? frame->parent()->identifier() : -1,
                            navigation_state->allow_download(),
@@ -594,7 +595,7 @@ void RenderFrameImpl::willSendRequest(
   // into the data portion of the message. This can cause problems if we
   // don't register this id on the browser side, since the download manager
   // expects to find a RenderViewHost based off the id.
-  request.setRequestorID(GetRoutingID());
+  request.setRequestorID(render_view_->GetRoutingID());
   request.setHasUserGesture(WebUserGestureIndicator::isProcessingUserGesture());
 
   if (!navigation_state->extra_headers().empty()) {
@@ -680,8 +681,8 @@ void RenderFrameImpl::didLoadResourceFromMemoryCache(
 
   // Let the browser know we loaded a resource from the memory cache.  This
   // message is needed to display the correct SSL indicators.
-  Send(new ViewHostMsg_DidLoadResourceFromMemoryCache(
-      GetRoutingID(),
+  render_view_->Send(new ViewHostMsg_DidLoadResourceFromMemoryCache(
+      render_view_->GetRoutingID(),
       url,
       response.securityInfo(),
       request.httpMethod().utf8(),
@@ -690,22 +691,24 @@ void RenderFrameImpl::didLoadResourceFromMemoryCache(
 }
 
 void RenderFrameImpl::didDisplayInsecureContent(WebKit::WebFrame* frame) {
-  Send(new ViewHostMsg_DidDisplayInsecureContent(GetRoutingID()));
+  render_view_->Send(new ViewHostMsg_DidDisplayInsecureContent(
+      render_view_->GetRoutingID()));
 }
 
 void RenderFrameImpl::didRunInsecureContent(
     WebKit::WebFrame* frame,
     const WebKit::WebSecurityOrigin& origin,
     const WebKit::WebURL& target) {
-  Send(new ViewHostMsg_DidRunInsecureContent(
-      GetRoutingID(),
+  render_view_->Send(new ViewHostMsg_DidRunInsecureContent(
+      render_view_->GetRoutingID(),
       origin.toString().utf8(),
       target));
 }
 
 void RenderFrameImpl::didExhaustMemoryAvailableForScript(
     WebKit::WebFrame* frame) {
-  Send(new ViewHostMsg_JSOutOfMemory(GetRoutingID()));
+  render_view_->Send(new ViewHostMsg_JSOutOfMemory(
+      render_view_->GetRoutingID()));
 }
 
 void RenderFrameImpl::didCreateScriptContext(WebKit::WebFrame* frame,
@@ -742,8 +745,10 @@ void RenderFrameImpl::didChangeScrollOffset(WebKit::WebFrame* frame) {
 }
 
 void RenderFrameImpl::willInsertBody(WebKit::WebFrame* frame) {
-  if (!frame->parent())
-    Send(new ViewHostMsg_WillInsertBody(GetRoutingID()));
+  if (!frame->parent()) {
+    render_view_->Send(new ViewHostMsg_WillInsertBody(
+        render_view_->GetRoutingID()));
+  }
 }
 
 void RenderFrameImpl::reportFindInPageMatchCount(int request_id,
@@ -753,65 +758,18 @@ void RenderFrameImpl::reportFindInPageMatchCount(int request_id,
   if (!count)
     active_match_ordinal = 0;
 
-  Send(new ViewHostMsg_Find_Reply(GetRoutingID(),
-                                  request_id,
-                                  count,
-                                  gfx::Rect(),
-                                  active_match_ordinal,
-                                  final_update));
+  render_view_->Send(new ViewHostMsg_Find_Reply(
+      render_view_->GetRoutingID(), request_id, count,
+      gfx::Rect(), active_match_ordinal, final_update));
 }
 
 void RenderFrameImpl::reportFindInPageSelection(
     int request_id,
     int active_match_ordinal,
     const WebKit::WebRect& selection_rect) {
-  Send(new ViewHostMsg_Find_Reply(GetRoutingID(),
-                                  request_id,
-                                  -1,
-                                  selection_rect,
-                                  active_match_ordinal,
-                                  false));
-}
-
-void RenderFrameImpl::openFileSystem(
-    WebKit::WebFrame* frame,
-    WebKit::WebFileSystemType type,
-    long long size,
-    bool create,
-    WebKit::WebFileSystemCallbacks* callbacks) {
-  DCHECK(callbacks);
-
-  WebSecurityOrigin origin = frame->document().securityOrigin();
-  if (origin.isUnique()) {
-    // Unique origins cannot store persistent state.
-    callbacks->didFail(WebKit::WebFileErrorAbort);
-    return;
-  }
-
-  ChildThread::current()->file_system_dispatcher()->OpenFileSystem(
-      GURL(origin.toString()), static_cast<fileapi::FileSystemType>(type),
-      size, create,
-      base::Bind(&OpenFileSystemCallbackAdapter, callbacks),
-      base::Bind(&FileStatusCallbackAdapter, callbacks));
-}
-
-void RenderFrameImpl::deleteFileSystem(
-    WebKit::WebFrame* frame,
-    WebKit::WebFileSystemType type,
-    WebKit::WebFileSystemCallbacks* callbacks) {
-  DCHECK(callbacks);
-
-  WebSecurityOrigin origin = frame->document().securityOrigin();
-  if (origin.isUnique()) {
-    // Unique origins cannot store persistent state.
-    callbacks->didSucceed();
-    return;
-  }
-
-  ChildThread::current()->file_system_dispatcher()->DeleteFileSystem(
-      GURL(origin.toString()),
-      static_cast<fileapi::FileSystemType>(type),
-      base::Bind(&FileStatusCallbackAdapter, callbacks));
+  render_view_->Send(new ViewHostMsg_Find_Reply(
+      render_view_->GetRoutingID(), request_id, -1, selection_rect,
+      active_match_ordinal, false));
 }
 
 void RenderFrameImpl::requestStorageQuota(
@@ -827,14 +785,14 @@ void RenderFrameImpl::requestStorageQuota(
     return;
   }
   ChildThread::current()->quota_dispatcher()->RequestStorageQuota(
-      GetRoutingID(), GURL(origin.toString()),
+      render_view_->GetRoutingID(), GURL(origin.toString()),
       static_cast<quota::StorageType>(type), requested_size,
       QuotaDispatcher::CreateWebStorageQuotaCallbacksWrapper(callbacks));
 }
 
 void RenderFrameImpl::willOpenSocketStream(
     WebKit::WebSocketStreamHandle* handle) {
-  SocketStreamHandleData::AddToHandle(handle, GetRoutingID());
+  SocketStreamHandleData::AddToHandle(handle, render_view_->GetRoutingID());
 }
 
 void RenderFrameImpl::willStartUsingPeerConnectionHandler(
@@ -892,8 +850,8 @@ bool RenderFrameImpl::allowWebGL(WebKit::WebFrame* frame, bool default_value) {
     return false;
 
   bool blocked = true;
-  Send(new ViewHostMsg_Are3DAPIsBlocked(
-      GetRoutingID(),
+  render_view_->Send(new ViewHostMsg_Are3DAPIsBlocked(
+      render_view_->GetRoutingID(),
       GURL(frame->top()->document().securityOrigin().toString()),
       THREE_D_API_TYPE_WEBGL,
       &blocked));
@@ -902,7 +860,7 @@ bool RenderFrameImpl::allowWebGL(WebKit::WebFrame* frame, bool default_value) {
 
 void RenderFrameImpl::didLoseWebGLContext(WebKit::WebFrame* frame,
                                           int arb_robustness_status_code) {
-  Send(new ViewHostMsg_DidLose3DContext(
+  render_view_->Send(new ViewHostMsg_DidLose3DContext(
       GURL(frame->top()->document().securityOrigin().toString()),
       THREE_D_API_TYPE_WEBGL,
       arb_robustness_status_code));

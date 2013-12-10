@@ -51,7 +51,7 @@ static String urlForLoggingTrack(const KURL& url)
 }
 #endif
 
-inline HTMLTrackElement::HTMLTrackElement(const QualifiedName& tagName, Document* document)
+inline HTMLTrackElement::HTMLTrackElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
     , m_loadTimer(this, &HTMLTrackElement::loadTimerFired)
 {
@@ -66,7 +66,7 @@ HTMLTrackElement::~HTMLTrackElement()
         m_track->clearClient();
 }
 
-PassRefPtr<HTMLTrackElement> HTMLTrackElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLTrackElement> HTMLTrackElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLTrackElement(tagName, document));
 }
@@ -87,8 +87,8 @@ Node::InsertionNotificationRequest HTMLTrackElement::insertedInto(ContainerNode*
 
 void HTMLTrackElement::removedFrom(ContainerNode* insertionPoint)
 {
-    if (!parentNode() && WebCore::isMediaElement(insertionPoint))
-        toMediaElement(insertionPoint)->didRemoveTrack(this);
+    if (!parentNode() && isHTMLMediaElement(insertionPoint))
+        toHTMLMediaElement(insertionPoint)->didRemoveTrack(this);
     HTMLElement::removedFrom(insertionPoint);
 }
 
@@ -118,7 +118,7 @@ void HTMLTrackElement::parseAttribute(const QualifiedName& name, const AtomicStr
 
 KURL HTMLTrackElement::src() const
 {
-    return document()->completeURL(getAttribute(srcAttr));
+    return document().completeURL(getAttribute(srcAttr));
 }
 
 void HTMLTrackElement::setSrc(const String& url)
@@ -252,7 +252,7 @@ bool HTMLTrackElement::canLoadUrl(const KURL& url)
     if (url.isEmpty())
         return false;
 
-    if (!document()->contentSecurityPolicy()->allowMediaFromSource(url)) {
+    if (!document().contentSecurityPolicy()->allowMediaFromSource(url)) {
         LOG(Media, "HTMLTrackElement::canLoadUrl(%s) -> rejected by Content Security Policy", urlForLoggingTrack(url).utf8().data());
         return false;
     }
@@ -274,7 +274,7 @@ void HTMLTrackElement::didCompleteLoad(LoadableTextTrack*, LoadStatus status)
 
     if (status == Failure) {
         setReadyState(HTMLTrackElement::TRACK_ERROR);
-        dispatchEvent(Event::create(eventNames().errorEvent, false, false), IGNORE_EXCEPTION);
+        dispatchEvent(Event::create(eventNames().errorEvent), IGNORE_EXCEPTION);
         return;
     }
 
@@ -285,7 +285,7 @@ void HTMLTrackElement::didCompleteLoad(LoadableTextTrack*, LoadStatus status)
 
     //     2. If the file was successfully processed, fire a simple event named load at the
     //        track element.
-    dispatchEvent(Event::create(eventNames().loadEvent, false, false), IGNORE_EXCEPTION);
+    dispatchEvent(Event::create(eventNames().loadEvent), IGNORE_EXCEPTION);
 }
 
 // NOTE: The values in the TextTrack::ReadinessState enum must stay in sync with those in HTMLTrackElement::ReadyState.
@@ -358,8 +358,7 @@ HTMLMediaElement* HTMLTrackElement::mediaElement() const
 {
     Element* parent = parentElement();
     if (parent && parent->isMediaElement())
-        return static_cast<HTMLMediaElement*>(parentNode());
-
+        return toHTMLMediaElement(parentNode());
     return 0;
 }
 

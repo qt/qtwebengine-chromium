@@ -7,12 +7,19 @@
 #include "tools/gn/filesystem_utils.h"
 
 BuildSettings::BuildSettings()
-    : item_tree_(),
+    : using_external_generator_(false),
+      item_tree_(),
       target_manager_(this),
       toolchain_manager_(this) {
 }
 
 BuildSettings::~BuildSettings() {
+}
+
+void BuildSettings::SetRootPath(const base::FilePath& r) {
+  DCHECK(r.value()[r.value().size() - 1] != base::FilePath::kSeparators[0]);
+  root_path_ = r;
+  root_path_utf8_ = FilePathToUTF8(root_path_);
 }
 
 void BuildSettings::SetSecondarySourcePath(const SourceDir& d) {

@@ -18,13 +18,20 @@ class Label;
 class ListNode;
 class ParseNode;
 class Scope;
-class SourceDir;
 class Token;
 class Value;
 
 // -----------------------------------------------------------------------------
 
 namespace functions {
+
+// This type of function invocation has no block and evaluates its arguments
+// itself rather than taking a pre-executed list. This allows us to implement
+// certain built-in functions.
+typedef Value (*SelfEvaluatingArgsFunction)(Scope* scope,
+                                            const FunctionCallNode* function,
+                                            const ListNode* args_list,
+                                            Err* err);
 
 // This type of function invocation takes a block node that it will execute.
 typedef Value (*GenericBlockFunction)(Scope* scope,
@@ -86,10 +93,18 @@ Value RunCustom(Scope* scope,
 
 extern const char kDeclareArgs[];
 extern const char kDeclareArgs_Help[];
-Value RunDeclareArgs(const FunctionCallNode* function,
+Value RunDeclareArgs(Scope* scope,
+                     const FunctionCallNode* function,
                      const std::vector<Value>& args,
-                     Scope* block_scope,
+                     BlockNode* block,
                      Err* err);
+
+extern const char kDefined[];
+extern const char kDefined_Help[];
+Value RunDefined(Scope* scope,
+                 const FunctionCallNode* function,
+                 const ListNode* args_list,
+                 Err* err);
 
 extern const char kExecScript[];
 extern const char kExecScript_Help[];
@@ -141,6 +156,13 @@ Value RunReadFile(Scope* scope,
                   const FunctionCallNode* function,
                   const std::vector<Value>& args,
                   Err* err);
+
+extern const char kRebasePath[];
+extern const char kRebasePath_Help[];
+Value RunRebasePath(Scope* scope,
+                    const FunctionCallNode* function,
+                    const std::vector<Value>& args,
+                    Err* err);
 
 extern const char kSetDefaults[];
 extern const char kSetDefaults_Help[];
@@ -212,6 +234,14 @@ Value RunToolchain(Scope* scope,
                    BlockNode* block,
                    Err* err);
 
+extern const char kToolchainArgs[];
+extern const char kToolchainArgs_Help[];
+Value RunToolchainArgs(Scope* scope,
+                       const FunctionCallNode* function,
+                       const std::vector<Value>& args,
+                       BlockNode* block,
+                       Err* err);
+
 extern const char kWriteFile[];
 extern const char kWriteFile_Help[];
 Value RunWriteFile(Scope* scope,
@@ -225,10 +255,12 @@ Value RunWriteFile(Scope* scope,
 // which indicates the type of function it is.
 struct FunctionInfo {
   FunctionInfo();
+  FunctionInfo(SelfEvaluatingArgsFunction seaf, const char* in_help);
   FunctionInfo(GenericBlockFunction gbf, const char* in_help);
   FunctionInfo(ExecutedBlockFunction ebf, const char* in_help);
   FunctionInfo(NoBlockFunction nbf, const char* in_help);
 
+  SelfEvaluatingArgsFunction self_evaluating_args_runner;
   GenericBlockFunction generic_block_runner;
   ExecutedBlockFunction executed_block_runner;
   NoBlockFunction no_block_runner;
@@ -244,7 +276,7 @@ const FunctionInfoMap& GetFunctions();
 // Runs the given function.
 Value RunFunction(Scope* scope,
                   const FunctionCallNode* function,
-                  const std::vector<Value>& args,
+                  const ListNode* args_list,
                   BlockNode* block,  // Optional.
                   Err* err);
 
@@ -274,11 +306,15 @@ bool EnsureNotProcessingBuildConfig(const ParseNode* node,
 // On success, returns true. On failure, sets the error and returns false.
 bool FillTargetBlockScope(const Scope* scope,
                           const FunctionCallNode* function,
-                          const char* target_type,
+                          const std::string& target_type,
                           const BlockNode* block,
                           const std::vector<Value>& args,
                           Scope* block_scope,
                           Err* err);
+
+// Sets the given error to a message explaining that the function call requires
+// a block.
+void FillNeedsBlockError(const FunctionCallNode* function, Err* err);
 
 // Validates that the given function call has one string argument. This is
 // the most common function signature, so it saves space to have this helper.
@@ -286,10 +322,6 @@ bool FillTargetBlockScope(const Scope* scope,
 bool EnsureSingleStringArg(const FunctionCallNode* function,
                            const std::vector<Value>& args,
                            Err* err);
-
-// Returns the source directory for the file comtaining the given function
-// invocation.
-const SourceDir& SourceDirForFunctionCall(const FunctionCallNode* function);
 
 // Returns the name of the toolchain for the given scope.
 const Label& ToolchainLabelForScope(const Scope* scope);

@@ -37,13 +37,21 @@ base.unittest.testSuite('about_tracing.profiling_view', function() {
   // tracing controller can be used to interactively test the UI.
   var createSendHandler = function() {
     var systemTraceRequested = false;
+    var continuousTraceRequested = false;
+    var samplingRequested = false;
     var corruptTrace;
     var tracingController;
     function send(message, opt_args) {
       var args = opt_args || [];
       if (message == 'getKnownCategories') {
         setTimeout(function() {
-          tracingController.onKnownCategoriesCollected(['a', 'b', 'c']);
+          var categories = [];
+          for (var i = 0; i < 30; i++)
+            categories.push('cat-' + i);
+          for (var i = 0; i < 20; i++)
+            categories.push('disabled-by-default-cat-' + i);
+          categories.push('really-really-really-really-really-really-long-cat');
+          tracingController.onKnownCategoriesCollected(categories);
         }, 1);
 
       } else if (message == 'beginTracing') {
@@ -155,19 +163,20 @@ base.unittest.testSuite('about_tracing.profiling_view', function() {
 
   var recordTestCommon = function() {
     var view = new about_tracing.ProfilingView();
+    view.canImportAsynchronously = false;
 
     var tracingController = new FakeTracingController();
     view.tracingController = tracingController;
 
-    view.querySelector('button.record').click();
+    view.clickRecordButton();
     assertTrue(tracingController.wasCollectCategoriesCalled);
 
     var e = new base.Event('categoriesCollected');
     e.categories = ['skia', 'gpu'];
     tracingController.dispatchEvent(e);
 
-    view.recordSelectionDialog_.querySelector(
-        'button.record-categories').click();
+    var dlg = view.currentRecordSelectionDialog;
+    dlg.clickRecordButton();
 
     assertTrue(tracingController.wasBeginTracingCalled);
     assertEquals(base.isChromeOS,
@@ -209,19 +218,15 @@ base.unittest.testSuite('about_tracing.profiling_view', function() {
     var tracingController = new FakeTracingController(this);
     view.tracingController = tracingController;
 
-    view.querySelector('button.record').click();
+    view.clickRecordButton();
     assertTrue(tracingController.wasCollectCategoriesCalled);
 
     var e = new base.Event('categoriesCollected');
     e.categories = ['skia', 'gpu', 'cc', 'renderer'];
     tracingController.dispatchEvent(e);
 
-    assertVisible(view.recordSelectionDialog_);
-    assertVisible(view.recordSelectionDialog_.toolbar);
-
-    view.recordSelectionDialog_.querySelector('input#skia').click();
-    view.recordSelectionDialog_.querySelector(
-        'button.record-categories').click();
+    view.currentRecordSelectionDialog.querySelector('input#skia').click();
+    view.currentRecordSelectionDialog.clickRecordButton();
 
     var categories = tracingController.beginTracingCategories;
     // Renderer is disabled in settings, skia is clicked off.
@@ -237,17 +242,17 @@ base.unittest.testSuite('about_tracing.profiling_view', function() {
     var tracingController = new FakeTracingController(this);
     view.tracingController = tracingController;
 
-    view.querySelector('button.record').click();
+    view.clickRecordButton();
     assertTrue(tracingController.wasCollectCategoriesCalled);
 
     var e = new base.Event('categoriesCollected');
     e.categories = ['baz,zap', 'gpu'];
     tracingController.dispatchEvent(e);
 
-    view.recordSelectionDialog_.querySelector(
-        'button.record-categories').click();
+    var dlg = view.currentRecordSelectionDialog;
+    dlg.clickRecordButton();
 
-    var inputs = view.recordSelectionDialog_.querySelectorAll('input');
+    var inputs = dlg.querySelectorAll('input');
     var inputs_length = inputs.length;
     for (var i = 0; i < inputs_length; ++i) {
       // Comes from categories and should be split before getting
@@ -303,7 +308,10 @@ base.unittest.testSuite('about_tracing.profiling_view', function() {
     var view = new about_tracing.ProfilingView();
     var tracingController = new FakeTracingController();
     view.tracingController = tracingController;
-    view.selectingCategories = true;
+
+    view.clickRecordButton();
+    assertTrue(tracingController.wasCollectCategoriesCalled);
+    tracingController.wasCollectCategoriesCalled = false;
 
     var evt = document.createEvent('Event');
     evt.initEvent('keypress',
@@ -313,6 +321,7 @@ base.unittest.testSuite('about_tracing.profiling_view', function() {
     evt.keyCode = 'r'.charCodeAt(0);
 
     document.dispatchEvent(evt);
+
     assertFalse(tracingController.wasCollectCategoriesCalled);
 
     view.detach_();
@@ -322,19 +331,16 @@ base.unittest.testSuite('about_tracing.profiling_view', function() {
     var view = new about_tracing.ProfilingView();
     var tracingController = new FakeTracingController();
     view.tracingController = tracingController;
-    view.selectingCategories = false;
 
-    view.querySelector('button.record').click();
-    assertTrue(view.selectingCategories);
+    view.clickRecordButton();
 
     var e = new base.Event('categoriesCollected');
     e.categories = ['skia', 'gpu', 'cc', 'renderer'];
     tracingController.dispatchEvent(e);
 
-    view.recordSelectionDialog_.querySelector(
-        'button.record-categories').click();
+    view.currentRecordSelectionDialog.clickRecordButton();
 
-    assertFalse(view.selectingCategories);
+    assertFalse(view.currentRecordSelectionDialog);
     view.detach_();
   });
 
@@ -342,18 +348,18 @@ base.unittest.testSuite('about_tracing.profiling_view', function() {
     var view = new about_tracing.ProfilingView();
     var tracingController = new FakeTracingController();
     view.tracingController = tracingController;
-    view.selectingCategories = false;
 
-    view.querySelector('button.record').click();
-    assertTrue(view.selectingCategories);
+    view.clickRecordButton();
 
     var e = new base.Event('categoriesCollected');
     e.categories = ['skia', 'gpu', 'cc', 'renderer'];
     tracingController.dispatchEvent(e);
 
-    view.recordSelectionDialog_.visible = false;
+    assertTrue(view.currentRecordSelectionDialog !== undefined);
 
-    assertFalse(view.selectingCategories);
+    view.currentRecordSelectionDialog.visible = false;
+
+    assertFalse(view.currentRecordSelectionDialog);
     view.detach_();
   });
 
@@ -362,15 +368,14 @@ base.unittest.testSuite('about_tracing.profiling_view', function() {
 
     var tracingController = new FakeTracingController();
     view.tracingController = tracingController;
-    view.querySelector('button.record').click();
+    view.clickRecordButton();
 
     var e = new base.Event('categoriesCollected');
     e.categories = [];
     tracingController.dispatchEvent(e);
 
-    view.recordSelectionDialog_.querySelector('.sampling-button').click();
-    view.recordSelectionDialog_.querySelector(
-        'button.record-categories').click();
+    view.currentRecordSelectionDialog.useSampling = true;
+    view.currentRecordSelectionDialog.clickRecordButton();
 
     assertTrue(tracingController.wasBeginTracingCalled);
     assertTrue(tracingController.wasSamplingEnabled);
@@ -381,14 +386,14 @@ base.unittest.testSuite('about_tracing.profiling_view', function() {
 
     var tracingController = new FakeTracingController();
     view.tracingController = tracingController;
-    view.querySelector('button.record').click();
+    view.clickRecordButton();
 
     var e = new base.Event('categoriesCollected');
     e.categories = [];
     tracingController.dispatchEvent(e);
 
-    view.recordSelectionDialog_.querySelector(
-        'button.record-categories').click();
+    view.currentRecordSelectionDialog.useSampling = false;
+    view.currentRecordSelectionDialog.clickRecordButton();
 
     assertTrue(tracingController.wasBeginTracingCalled);
     assertFalse(tracingController.wasSamplingEnabled);

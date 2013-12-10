@@ -14,6 +14,9 @@ namespace switches {
 const char kBackgroundColorInsteadOfCheckerboard[] =
     "background-color-instead-of-checkerboard";
 
+// Disables LCD text.
+const char kDisableLCDText[] = "disable-lcd-text";
+
 const char kDisableThreadedAnimation[] = "disable-threaded-animation";
 
 // Disables layer-edge anti-aliasing in the compositor.
@@ -23,6 +26,9 @@ const char kDisableCompositedAntialiasing[] =
 // Paint content on the main thread instead of the compositor thread.
 // Overrides the kEnableImplSidePainting flag.
 const char kDisableImplSidePainting[] = "disable-impl-side-painting";
+
+// Enables LCD text.
+const char kEnableLCDText[] = "enable-lcd-text";
 
 // Paint content on the compositor thread instead of the main thread.
 const char kEnableImplSidePainting[] = "enable-impl-side-painting";
@@ -125,11 +131,32 @@ const char kUIShowOccludingRects[] = "ui-show-occluding-rects";
 const char kShowNonOccludingRects[] = "show-nonoccluding-rects";
 const char kUIShowNonOccludingRects[] = "ui-show-nonoccluding-rects";
 
-// Enable the codepath that uses images within TileManager.
-const char kUseMapImage[] = "use-map-image";
+// Enable rasterizer that writes directly to GPU memory.
+const char kEnableMapImage[] = "enable-map-image";
+
+// Disable rasterizer that writes directly to GPU memory.
+// Overrides the kEnableMapImage flag.
+const char kDisableMapImage[] = "disable-map-image";
 
 // Prevents the layer tree unit tests from timing out.
 const char kCCLayerTreeTestNoTimeout[] = "cc-layer-tree-test-no-timeout";
+
+// Disable textures using RGBA_4444 layout.
+const char kDisable4444Textures[] = "disable-4444-textures";
+
+bool IsLCDTextEnabled() {
+  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(cc::switches::kDisableLCDText))
+    return false;
+  else if (command_line->HasSwitch(cc::switches::kEnableLCDText))
+    return true;
+
+#if defined(OS_ANDROID)
+  return false;
+#else
+  return true;
+#endif
+}
 
 bool IsImplSidePaintingEnabled() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
@@ -144,6 +171,17 @@ bool IsImplSidePaintingEnabled() {
 #else
   return false;
 #endif
+}
+
+bool IsMapImageEnabled() {
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+
+  if (command_line.HasSwitch(cc::switches::kDisableMapImage))
+    return false;
+  else if (command_line.HasSwitch(cc::switches::kEnableMapImage))
+    return true;
+
+  return false;
 }
 
 }  // namespace switches

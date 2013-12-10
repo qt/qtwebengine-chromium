@@ -23,7 +23,6 @@
 
 #include "SVGNames.h"
 #include "XLinkNames.h"
-#include "core/dom/NodeRenderingContext.h"
 #include "core/rendering/svg/RenderSVGForeignObject.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/svg/SVGElementInstance.h"
@@ -50,7 +49,7 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGForeignObjectElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGForeignObjectElement::SVGForeignObjectElement(const QualifiedName& tagName, Document* document)
+inline SVGForeignObjectElement::SVGForeignObjectElement(const QualifiedName& tagName, Document& document)
     : SVGGraphicsElement(tagName, document)
     , m_x(LengthModeWidth)
     , m_y(LengthModeHeight)
@@ -62,7 +61,7 @@ inline SVGForeignObjectElement::SVGForeignObjectElement(const QualifiedName& tag
     registerAnimatedPropertiesForSVGForeignObjectElement();
 }
 
-PassRefPtr<SVGForeignObjectElement> SVGForeignObjectElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<SVGForeignObjectElement> SVGForeignObjectElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new SVGForeignObjectElement(tagName, document));
 }
@@ -127,17 +126,17 @@ RenderObject* SVGForeignObjectElement::createRenderer(RenderStyle*)
     return new RenderSVGForeignObject(this);
 }
 
-bool SVGForeignObjectElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
+bool SVGForeignObjectElement::childShouldCreateRenderer(const Node& child) const
 {
     // Disallow arbitary SVG content. Only allow proper <svg xmlns="svgNS"> subdocuments.
-    if (childContext.node()->isSVGElement())
-        return childContext.node()->hasTagName(SVGNames::svgTag);
+    if (child.isSVGElement())
+        return child.hasTagName(SVGNames::svgTag);
 
     // Skip over SVG rules which disallow non-SVG kids
-    return Element::childShouldCreateRenderer(childContext);
+    return Element::childShouldCreateRenderer(child);
 }
 
-bool SVGForeignObjectElement::rendererIsNeeded(const NodeRenderingContext& context)
+bool SVGForeignObjectElement::rendererIsNeeded(const RenderStyle& style)
 {
     // Suppress foreignObject renderers in SVG hidden containers.
     // (https://bugs.webkit.org/show_bug.cgi?id=87297)
@@ -152,7 +151,7 @@ bool SVGForeignObjectElement::rendererIsNeeded(const NodeRenderingContext& conte
         ancestor = ancestor->parentElement();
     }
 
-    return SVGGraphicsElement::rendererIsNeeded(context);
+    return SVGGraphicsElement::rendererIsNeeded(style);
 }
 
 bool SVGForeignObjectElement::selfHasRelativeLengths() const

@@ -85,7 +85,7 @@ static bool skipBodyBackground(const RenderBox* bodyElementRenderer)
     ASSERT(bodyElementRenderer->isBody());
     // The <body> only paints its background if the root element has defined a background independent of the body,
     // or if the <body>'s parent is not the document element's renderer (e.g. inside SVG foreignObject).
-    RenderObject* documentElementRenderer = bodyElementRenderer->document()->documentElement()->renderer();
+    RenderObject* documentElementRenderer = bodyElementRenderer->document().documentElement()->renderer();
     return documentElementRenderer
         && !documentElementRenderer->hasBackground()
         && (documentElementRenderer == bodyElementRenderer->parent());
@@ -105,13 +105,13 @@ RenderBox::~RenderBox()
 {
 }
 
-LayoutRect RenderBox::borderBoxRectInRegion(RenderRegion* region, LayoutUnit offsetFromTopOfFirstPage, RenderBoxRegionInfoFlags cacheFlag) const
+LayoutRect RenderBox::borderBoxRectInRegion(RenderRegion* region, RenderBoxRegionInfoFlags cacheFlag) const
 {
     if (!region)
         return borderBoxRect();
 
     // Compute the logical width and placement in this region.
-    RenderBoxRegionInfo* boxInfo = renderBoxRegionInfo(region, offsetFromTopOfFirstPage, cacheFlag);
+    RenderBoxRegionInfo* boxInfo = renderBoxRegionInfo(region, cacheFlag);
     if (!boxInfo)
         return borderBoxRect();
 
@@ -122,17 +122,15 @@ LayoutRect RenderBox::borderBoxRectInRegion(RenderRegion* region, LayoutUnit off
     // Now apply the parent inset since it is cumulative whenever anything in the containing block chain shifts.
     // FIXME: Doesn't work right with perpendicular writing modes.
     const RenderBlock* currentBox = containingBlock();
-    offsetFromTopOfFirstPage -= logicalTop();
-    RenderBoxRegionInfo* currentBoxInfo = currentBox->renderBoxRegionInfo(region, offsetFromTopOfFirstPage);
+    RenderBoxRegionInfo* currentBoxInfo = currentBox->renderBoxRegionInfo(region);
     while (currentBoxInfo && currentBoxInfo->isShifted()) {
         if (currentBox->style()->direction() == LTR)
             logicalLeft += currentBoxInfo->logicalLeft();
         else
             logicalLeft -= (currentBox->logicalWidth() - currentBoxInfo->logicalWidth()) - currentBoxInfo->logicalLeft();
-        offsetFromTopOfFirstPage -= logicalTop();
         currentBox = currentBox->containingBlock();
         region = currentBox->clampToStartAndEndRegions(region);
-        currentBoxInfo = currentBox->renderBoxRegionInfo(region, offsetFromTopOfFirstPage);
+        currentBoxInfo = currentBox->renderBoxRegionInfo(region);
     }
 
     if (cacheFlag == DoNotCacheRenderBoxRegionInfo)
@@ -276,33 +274,8 @@ void RenderBox::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle
         }
     }
 
-    bool isBodyRenderer = isBody();
-    bool isRootRenderer = isRoot();
-
-    if (isRootRenderer || isBodyRenderer) {
-        // Propagate the new writing mode and direction up to the RenderView.
-        RenderView* viewRenderer = view();
-        RenderStyle* viewStyle = viewRenderer->style();
-        if (viewStyle->direction() != newStyle->direction() && (isRootRenderer || !document()->directionSetOnDocumentElement())) {
-            viewStyle->setDirection(newStyle->direction());
-            if (isBodyRenderer)
-                document()->documentElement()->renderer()->style()->setDirection(newStyle->direction());
-            setNeedsLayoutAndPrefWidthsRecalc();
-        }
-
-        if (viewStyle->writingMode() != newStyle->writingMode() && (isRootRenderer || !document()->writingModeSetOnDocumentElement())) {
-            viewStyle->setWritingMode(newStyle->writingMode());
-            viewRenderer->setHorizontalWritingMode(newStyle->isHorizontalWritingMode());
-            viewRenderer->markAllDescendantsWithFloatsForLayout();
-            if (isBodyRenderer) {
-                document()->documentElement()->renderer()->style()->setWritingMode(newStyle->writingMode());
-                document()->documentElement()->renderer()->setHorizontalWritingMode(newStyle->isHorizontalWritingMode());
-            }
-            setNeedsLayoutAndPrefWidthsRecalc();
-        }
-
-        frame()->view()->recalculateScrollbarOverlayStyle();
-    }
+    if (isRoot() || isBody())
+        document().view()->recalculateScrollbarOverlayStyle();
 
     updateShapeOutsideInfoAfterStyleChange(style()->shapeOutside(), oldStyle ? oldStyle->shapeOutside() : 0);
     updateGridPositionAfterStyleChange(oldStyle);
@@ -331,7 +304,8 @@ void RenderBox::updateGridPositionAfterStyleChange(const RenderStyle* oldStyle)
         && oldStyle->gridColumnEnd() == style()->gridColumnEnd()
         && oldStyle->gridRowStart() == style()->gridRowStart()
         && oldStyle->gridRowEnd() == style()->gridRowEnd()
-        && oldStyle->order() == style()->order())
+        && oldStyle->order() == style()->order()
+        && oldStyle->hasOutOfFlowPosition() == style()->hasOutOfFlowPosition())
         return;
 
     // It should be possible to not dirty the grid in some cases (like moving an explicitly placed grid item).
@@ -361,9 +335,9 @@ void RenderBox::updateFromStyle()
             // (1) The root element is <html>.
             // (2) We are the primary <body> (can be checked by looking at document.body).
             // (3) The root element has visible overflow.
-            if (isHTMLHtmlElement(document()->documentElement())
-                && document()->body() == node()
-                && document()->documentElement()->renderer()->style()->overflowX() == OVISIBLE)
+            if (isHTMLHtmlElement(document().documentElement())
+                && document().body() == node()
+                && document().documentElement()->renderer()->style()->overflowX() == OVISIBLE)
                 boxHasOverflowClip = false;
         }
 
@@ -383,7 +357,6 @@ void RenderBox::updateFromStyle()
 
 void RenderBox::layout()
 {
-    StackStats::LayoutCheckPoint layoutCheckPoint;
     ASSERT(needsLayout());
 
     RenderObject* child = firstChild();
@@ -437,7 +410,16 @@ int RenderBox::pixelSnappedOffsetHeight() const
 
 bool RenderBox::requiresLayoutToDetermineWidth() const
 {
-    RenderStyle* style = this->style();
+   // This optimization unfortunately doesn't work:
+   // https://code.google.com/p/chromium/issues/detail?id=290399
+   // So we've disabled it for M30 until it can be fixed on trunk.
+   // Attempting to revert the original change or trying to fix
+   // it on trunk and merge over to M30 is too risky so we just
+   // force code which uses this to always use the "slow" (correct) path
+   // instead of the (broken) optimization returning false would allow.
+   return true;
+
+   RenderStyle* style = this->style();
     return !style->width().isFixed()
         || !style->minWidth().isFixed()
         || (!style->maxWidth().isUndefined() && !style->maxWidth().isFixed())
@@ -446,7 +428,7 @@ bool RenderBox::requiresLayoutToDetermineWidth() const
         || style->resize() != RESIZE_NONE
         || style->boxSizing() == BORDER_BOX
         || !isRenderBlock()
-        || !isBlockFlow()
+        || !isRenderBlockFlow()
         || isFlexItemIncludingDeprecated();
 }
 
@@ -499,13 +481,13 @@ int RenderBox::scrollTop() const
 void RenderBox::setScrollLeft(int newLeft)
 {
     if (hasOverflowClip())
-        layer()->scrollToXOffset(newLeft, RenderLayer::ScrollOffsetClamped);
+        layer()->scrollToXOffset(newLeft, ScrollOffsetClamped);
 }
 
 void RenderBox::setScrollTop(int newTop)
 {
     if (hasOverflowClip())
-        layer()->scrollToYOffset(newTop, RenderLayer::ScrollOffsetClamped);
+        layer()->scrollToYOffset(newTop, ScrollOffsetClamped);
 }
 
 void RenderBox::absoluteRects(Vector<IntRect>& rects, const LayoutPoint& accumulatedOffset) const
@@ -525,12 +507,12 @@ void RenderBox::updateLayerTransform()
         layer()->updateTransform();
 }
 
-LayoutUnit RenderBox::constrainLogicalWidthInRegionByMinMax(LayoutUnit logicalWidth, LayoutUnit availableWidth, RenderBlock* cb, RenderRegion* region, LayoutUnit offsetFromLogicalTopOfFirstPage) const
+LayoutUnit RenderBox::constrainLogicalWidthInRegionByMinMax(LayoutUnit logicalWidth, LayoutUnit availableWidth, RenderBlock* cb, RenderRegion* region) const
 {
     RenderStyle* styleToUse = style();
     if (!styleToUse->logicalMaxWidth().isUndefined())
-        logicalWidth = min(logicalWidth, computeLogicalWidthInRegionUsing(MaxSize, styleToUse->logicalMaxWidth(), availableWidth, cb, region, offsetFromLogicalTopOfFirstPage));
-    return max(logicalWidth, computeLogicalWidthInRegionUsing(MinSize, styleToUse->logicalMinWidth(), availableWidth, cb, region, offsetFromLogicalTopOfFirstPage));
+        logicalWidth = min(logicalWidth, computeLogicalWidthInRegionUsing(MaxSize, styleToUse->logicalMaxWidth(), availableWidth, cb, region));
+    return max(logicalWidth, computeLogicalWidthInRegionUsing(MinSize, styleToUse->logicalMinWidth(), availableWidth, cb, region));
 }
 
 LayoutUnit RenderBox::constrainLogicalHeightByMinMax(LayoutUnit logicalHeight, LayoutUnit intrinsicContentHeight) const
@@ -708,10 +690,15 @@ int RenderBox::instrinsicScrollbarLogicalWidth() const
     return 0;
 }
 
-bool RenderBox::scroll(ScrollDirection direction, ScrollGranularity granularity, float multiplier, Node** stopNode)
+bool RenderBox::scrollImpl(ScrollDirection direction, ScrollGranularity granularity, float multiplier)
 {
     RenderLayer* l = layer();
-    if (l && l->scroll(direction, granularity, multiplier)) {
+    return l && l->scroll(direction, granularity, multiplier);
+}
+
+bool RenderBox::scroll(ScrollDirection direction, ScrollGranularity granularity, float multiplier, Node** stopNode)
+{
+    if (scrollImpl(direction, granularity, multiplier)) {
         if (stopNode)
             *stopNode = node();
         return true;
@@ -728,18 +715,11 @@ bool RenderBox::scroll(ScrollDirection direction, ScrollGranularity granularity,
 
 bool RenderBox::logicalScroll(ScrollLogicalDirection direction, ScrollGranularity granularity, float multiplier, Node** stopNode)
 {
-    bool scrolled = false;
-
-    RenderLayer* l = layer();
-    if (l) {
-        if (l->scroll(logicalToPhysical(direction, isHorizontalWritingMode(), style()->isFlippedBlocksWritingMode()), granularity, multiplier))
-            scrolled = true;
-
-        if (scrolled) {
-            if (stopNode)
-                *stopNode = node();
-            return true;
-        }
+    if (scrollImpl(logicalToPhysical(direction, isHorizontalWritingMode(), style()->isFlippedBlocksWritingMode()),
+        granularity, multiplier)) {
+        if (stopNode)
+            *stopNode = node();
+        return true;
     }
 
     if (stopNode && *stopNode && *stopNode == node())
@@ -758,7 +738,18 @@ bool RenderBox::canBeScrolledAndHasScrollableArea() const
 
 bool RenderBox::canBeProgramaticallyScrolled() const
 {
-    return (hasOverflowClip() && (scrollsOverflow() || (node() && node()->rendererIsEditable()))) || (node() && node()->isDocumentNode());
+    Node* node = this->node();
+    if (node && node->isDocumentNode())
+        return true;
+
+    if (!hasOverflowClip())
+        return false;
+
+    bool hasScrollableOverflow = hasScrollableOverflowX() || hasScrollableOverflowY();
+    if (scrollsOverflow() && hasScrollableOverflow)
+        return true;
+
+    return node && node->rendererIsEditable();
 }
 
 bool RenderBox::usesCompositedScrolling() const
@@ -780,18 +771,11 @@ bool RenderBox::autoscrollInProgress() const
 // There are two kinds of renderer that can autoscroll.
 bool RenderBox::canAutoscroll() const
 {
-    // Check for a box that can be scrolled in its own right.
-    if (canBeScrolledAndHasScrollableArea())
-        return true;
+    if (node() && node()->isDocumentNode())
+        return view()->frameView()->isScrollable();
 
-    // Check for a box that represents the top level of a web page.
-    if (node() != document())
-        return false;
-    Frame* frame = this->frame();
-    if (!frame)
-        return false;
-    Page* page = frame->page();
-    return page && page->mainFrame() == frame && frame->view()->isScrollable();
+    // Check for a box that can be scrolled in its own right.
+    return canBeScrolledAndHasScrollableArea();
 }
 
 // If specified point is in border belt, returned offset denotes direction of
@@ -805,27 +789,30 @@ IntSize RenderBox::calculateAutoscrollDirection(const IntPoint& windowPoint) con
     if (!frameView)
         return IntSize();
 
-    IntSize offset;
-    IntPoint point = frameView->windowToContents(windowPoint);
     IntRect box(absoluteBoundingBoxRect());
+    box.move(view()->frameView()->scrollOffset());
+    IntRect windowBox = view()->frameView()->contentsToWindow(box);
 
-    if (point.x() < box.x() + autoscrollBeltSize)
-        point.move(-autoscrollBeltSize, 0);
-    else if (point.x() > box.maxX() - autoscrollBeltSize)
-        point.move(autoscrollBeltSize, 0);
+    IntPoint windowAutoscrollPoint = windowPoint;
 
-    if (point.y() < box.y() + autoscrollBeltSize)
-        point.move(0, -autoscrollBeltSize);
-    else if (point.y() > box.maxY() - autoscrollBeltSize)
-        point.move(0, autoscrollBeltSize);
-    return frameView->contentsToWindow(point) - windowPoint;
+    if (windowAutoscrollPoint.x() < windowBox.x() + autoscrollBeltSize)
+        windowAutoscrollPoint.move(-autoscrollBeltSize, 0);
+    else if (windowAutoscrollPoint.x() > windowBox.maxX() - autoscrollBeltSize)
+        windowAutoscrollPoint.move(autoscrollBeltSize, 0);
+
+    if (windowAutoscrollPoint.y() < windowBox.y() + autoscrollBeltSize)
+        windowAutoscrollPoint.move(0, -autoscrollBeltSize);
+    else if (windowAutoscrollPoint.y() > windowBox.maxY() - autoscrollBeltSize)
+        windowAutoscrollPoint.move(0, autoscrollBeltSize);
+
+    return windowAutoscrollPoint - windowPoint;
 }
 
 RenderBox* RenderBox::findAutoscrollable(RenderObject* renderer)
 {
     while (renderer && !(renderer->isBox() && toRenderBox(renderer)->canAutoscroll())) {
-        if (!renderer->parent() && renderer->node() == renderer->document() && renderer->document()->ownerElement())
-            renderer = renderer->document()->ownerElement()->renderer();
+        if (!renderer->parent() && renderer->node() == &renderer->document() && renderer->document().ownerElement())
+            renderer = renderer->document().ownerElement()->renderer();
         else
             renderer = renderer->parent();
     }
@@ -1151,7 +1138,7 @@ void RenderBox::paintBoxDecorations(PaintInfo& paintInfo, const LayoutPoint& pai
     // If we have a native theme appearance, paint that before painting our background.
     // The theme will tell us whether or not we should also paint the CSS background.
     IntRect snappedPaintRect(pixelSnappedIntRect(paintRect));
-    bool themePainted = style()->hasAppearance() && !theme()->paint(this, paintInfo, snappedPaintRect);
+    bool themePainted = style()->hasAppearance() && !RenderTheme::theme().paint(this, paintInfo, snappedPaintRect);
     if (!themePainted) {
         if (bleedAvoidance == BackgroundBleedBackgroundOverBorder)
             paintBorder(paintInfo, paintRect, style(), bleedAvoidance);
@@ -1159,16 +1146,16 @@ void RenderBox::paintBoxDecorations(PaintInfo& paintInfo, const LayoutPoint& pai
         paintBackground(paintInfo, paintRect, bleedAvoidance);
 
         if (style()->hasAppearance())
-            theme()->paintDecorations(this, paintInfo, snappedPaintRect);
+            RenderTheme::theme().paintDecorations(this, paintInfo, snappedPaintRect);
     }
     paintBoxShadow(paintInfo, paintRect, style(), Inset);
 
     // The theme will tell us whether or not we should also paint the CSS border.
-    if (bleedAvoidance != BackgroundBleedBackgroundOverBorder && (!style()->hasAppearance() || (!themePainted && theme()->paintBorderOnly(this, paintInfo, snappedPaintRect))) && style()->hasBorder())
+    if (bleedAvoidance != BackgroundBleedBackgroundOverBorder && (!style()->hasAppearance() || (!themePainted && RenderTheme::theme().paintBorderOnly(this, paintInfo, snappedPaintRect))) && style()->hasBorder())
         paintBorder(paintInfo, paintRect, style(), bleedAvoidance);
 
     if (bleedAvoidance == BackgroundBleedUseTransparencyLayer)
-        paintInfo.context->endTransparencyLayer();
+        paintInfo.context->endLayer();
 }
 
 void RenderBox::paintBackground(const PaintInfo& paintInfo, const LayoutRect& paintRect, BackgroundBleedAvoidance bleedAvoidance)
@@ -1189,7 +1176,7 @@ LayoutRect RenderBox::backgroundPaintedExtent() const
     ASSERT(hasBackground());
     LayoutRect backgroundRect = pixelSnappedIntRect(borderBoxRect());
 
-    StyleColor backgroundColor = resolveStyleColor(CSSPropertyBackgroundColor);
+    Color backgroundColor = resolveColor(CSSPropertyBackgroundColor);
     if (backgroundColor.isValid() && backgroundColor.alpha())
         return backgroundRect;
     if (!style()->backgroundLayers()->image() || style()->backgroundLayers()->next())
@@ -1204,7 +1191,7 @@ bool RenderBox::backgroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect) c
     if (isBody() && skipBodyBackground(this))
         return false;
 
-    StyleColor backgroundColor = resolveStyleColor(CSSPropertyBackgroundColor);
+    Color backgroundColor = resolveColor(CSSPropertyBackgroundColor);
     if (!backgroundColor.isValid() || backgroundColor.hasAlpha())
         return false;
 
@@ -1322,7 +1309,7 @@ bool RenderBox::backgroundHasOpaqueTopLayer() const
 
     // If there is only one layer and no image, check whether the background color is opaque
     if (!fillLayer->next() && !fillLayer->hasImage()) {
-        StyleColor bgColor = resolveStyleColor(CSSPropertyBackgroundColor);
+        Color bgColor = resolveColor(CSSPropertyBackgroundColor);
         if (bgColor.isValid() && bgColor.alpha() == 255)
             return true;
     }
@@ -1372,7 +1359,7 @@ void RenderBox::paintMaskImages(const PaintInfo& paintInfo, const LayoutRect& pa
     }
 
     if (pushTransparencyLayer)
-        paintInfo.context->endTransparencyLayer();
+        paintInfo.context->endLayer();
 }
 
 LayoutRect RenderBox::maskClipRect()
@@ -1434,7 +1421,7 @@ void RenderBox::paintFillLayers(const PaintInfo& paintInfo, const Color& c, cons
         paintFillLayer(paintInfo, c, *it, rect, bleedAvoidance, op, backgroundObject);
 
     if (shouldDrawBackgroundInSeparateBuffer)
-        context->endTransparencyLayer();
+        context->endLayer();
 }
 
 void RenderBox::paintFillLayer(const PaintInfo& paintInfo, const Color& c, const FillLayer* fillLayer, const LayoutRect& rect,
@@ -1483,7 +1470,7 @@ bool RenderBox::repaintLayerRectsForImage(WrappedImagePtr image, const FillLayer
             // Now that we know this image is being used, compute the renderer and the rect
             // if we haven't already
             if (!layerRenderer) {
-                bool drawingRootBackground = drawingBackground && (isRoot() || (isBody() && !document()->documentElement()->renderer()->hasBackground()));
+                bool drawingRootBackground = drawingBackground && (isRoot() || (isBody() && !document().documentElement()->renderer()->hasBackground()));
                 if (drawingRootBackground) {
                     layerRenderer = view();
 
@@ -1538,6 +1525,11 @@ bool RenderBox::pushContentsClip(PaintInfo& paintInfo, const LayoutPoint& accumu
         LayoutRect contentsVisualOverflow = contentsVisualOverflowRect();
         if (contentsVisualOverflow.isEmpty())
             return false;
+
+        // FIXME: Get rid of this slop from here and elsewhere.
+        // Instead, properly include the outline in visual overflow.
+        if (RenderView* view = this->view())
+            contentsVisualOverflow.inflate(view->maximalOutlineSize());
 
         LayoutRect conservativeClipRect = clipRect;
         if (hasBorderRadius)
@@ -1624,18 +1616,17 @@ LayoutRect RenderBox::clipRect(const LayoutPoint& location, RenderRegion* region
     return clipRect;
 }
 
-LayoutUnit RenderBox::shrinkLogicalWidthToAvoidFloats(LayoutUnit childMarginStart, LayoutUnit childMarginEnd, const RenderBlock* cb, RenderRegion* region, LayoutUnit offsetFromLogicalTopOfFirstPage) const
+LayoutUnit RenderBox::shrinkLogicalWidthToAvoidFloats(LayoutUnit childMarginStart, LayoutUnit childMarginEnd, const RenderBlock* cb, RenderRegion* region) const
 {
     RenderRegion* containingBlockRegion = 0;
     LayoutUnit logicalTopPosition = logicalTop();
-    LayoutUnit adjustedPageOffsetForContainingBlock = offsetFromLogicalTopOfFirstPage - logicalTop();
     if (region) {
-        LayoutUnit offsetFromLogicalTopOfRegion = region ? region->logicalTopForFlowThreadContent() - offsetFromLogicalTopOfFirstPage : LayoutUnit();
+        LayoutUnit offsetFromLogicalTopOfRegion = region ? region->logicalTopForFlowThreadContent() - offsetFromLogicalTopOfFirstPage() : LayoutUnit();
         logicalTopPosition = max(logicalTopPosition, logicalTopPosition + offsetFromLogicalTopOfRegion);
         containingBlockRegion = cb->clampToStartAndEndRegions(region);
     }
 
-    LayoutUnit result = cb->availableLogicalWidthForLine(logicalTopPosition, false, containingBlockRegion, adjustedPageOffsetForContainingBlock) - childMarginStart - childMarginEnd;
+    LayoutUnit result = cb->availableLogicalWidthForLine(logicalTopPosition, false, containingBlockRegion) - childMarginStart - childMarginEnd;
 
     // We need to see if margins on either the start side or the end side can contain the floats in question. If they can,
     // then just using the line width is inaccurate. In the case where a float completely fits, we don't need to use the line
@@ -1643,9 +1634,9 @@ LayoutUnit RenderBox::shrinkLogicalWidthToAvoidFloats(LayoutUnit childMarginStar
     // doesn't fit, we can use the line offset, but we need to grow it by the margin to reflect the fact that the margin was
     // "consumed" by the float. Negative margins aren't consumed by the float, and so we ignore them.
     if (childMarginStart > 0) {
-        LayoutUnit startContentSide = cb->startOffsetForContent(containingBlockRegion, adjustedPageOffsetForContainingBlock);
+        LayoutUnit startContentSide = cb->startOffsetForContent(containingBlockRegion);
         LayoutUnit startContentSideWithMargin = startContentSide + childMarginStart;
-        LayoutUnit startOffset = cb->startOffsetForLine(logicalTopPosition, false, containingBlockRegion, adjustedPageOffsetForContainingBlock);
+        LayoutUnit startOffset = cb->startOffsetForLine(logicalTopPosition, false, containingBlockRegion);
         if (startOffset > startContentSideWithMargin)
             result += childMarginStart;
         else
@@ -1653,9 +1644,9 @@ LayoutUnit RenderBox::shrinkLogicalWidthToAvoidFloats(LayoutUnit childMarginStar
     }
 
     if (childMarginEnd > 0) {
-        LayoutUnit endContentSide = cb->endOffsetForContent(containingBlockRegion, adjustedPageOffsetForContainingBlock);
+        LayoutUnit endContentSide = cb->endOffsetForContent(containingBlockRegion);
         LayoutUnit endContentSideWithMargin = endContentSide + childMarginEnd;
-        LayoutUnit endOffset = cb->endOffsetForLine(logicalTopPosition, false, containingBlockRegion, adjustedPageOffsetForContainingBlock);
+        LayoutUnit endOffset = cb->endOffsetForLine(logicalTopPosition, false, containingBlockRegion);
         if (endOffset > endContentSideWithMargin)
             result += childMarginEnd;
         else
@@ -1683,7 +1674,7 @@ LayoutUnit RenderBox::containingBlockLogicalHeightForContent(AvailableLogicalHei
     return cb->availableLogicalHeight(heightType);
 }
 
-LayoutUnit RenderBox::containingBlockLogicalWidthForContentInRegion(RenderRegion* region, LayoutUnit offsetFromLogicalTopOfFirstPage) const
+LayoutUnit RenderBox::containingBlockLogicalWidthForContentInRegion(RenderRegion* region) const
 {
     if (!region)
         return containingBlockLogicalWidthForContent();
@@ -1693,24 +1684,23 @@ LayoutUnit RenderBox::containingBlockLogicalWidthForContentInRegion(RenderRegion
     // FIXME: It's unclear if a region's content should use the containing block's override logical width.
     // If it should, the following line should call containingBlockLogicalWidthForContent.
     LayoutUnit result = cb->availableLogicalWidth();
-    RenderBoxRegionInfo* boxInfo = cb->renderBoxRegionInfo(containingBlockRegion, offsetFromLogicalTopOfFirstPage - logicalTop());
+    RenderBoxRegionInfo* boxInfo = cb->renderBoxRegionInfo(containingBlockRegion);
     if (!boxInfo)
         return result;
     return max<LayoutUnit>(0, result - (cb->logicalWidth() - boxInfo->logicalWidth()));
 }
 
-LayoutUnit RenderBox::containingBlockAvailableLineWidthInRegion(RenderRegion* region, LayoutUnit offsetFromLogicalTopOfFirstPage) const
+LayoutUnit RenderBox::containingBlockAvailableLineWidthInRegion(RenderRegion* region) const
 {
     RenderBlock* cb = containingBlock();
     RenderRegion* containingBlockRegion = 0;
     LayoutUnit logicalTopPosition = logicalTop();
-    LayoutUnit adjustedPageOffsetForContainingBlock = offsetFromLogicalTopOfFirstPage - logicalTop();
     if (region) {
-        LayoutUnit offsetFromLogicalTopOfRegion = region ? region->logicalTopForFlowThreadContent() - offsetFromLogicalTopOfFirstPage : LayoutUnit();
+        LayoutUnit offsetFromLogicalTopOfRegion = region ? region->logicalTopForFlowThreadContent() - offsetFromLogicalTopOfFirstPage() : LayoutUnit();
         logicalTopPosition = max(logicalTopPosition, logicalTopPosition + offsetFromLogicalTopOfRegion);
         containingBlockRegion = cb->clampToStartAndEndRegions(region);
     }
-    return cb->availableLogicalWidthForLine(logicalTopPosition, false, containingBlockRegion, adjustedPageOffsetForContainingBlock, availableLogicalHeight(IncludeMarginBorderPadding));
+    return cb->availableLogicalWidthForLine(logicalTopPosition, false, containingBlockRegion, availableLogicalHeight(IncludeMarginBorderPadding));
 }
 
 LayoutUnit RenderBox::perpendicularContainingBlockLogicalHeight() const
@@ -2008,7 +1998,7 @@ void RenderBox::computeRectForRepaint(const RenderLayerModelObject* repaintConta
         topLeft += layer()->offsetForInFlowPosition();
     }
 
-    if (position != AbsolutePosition && position != FixedPosition && o->hasColumns() && o->isBlockFlow()) {
+    if (position != AbsolutePosition && position != FixedPosition && o->hasColumns() && o->isRenderBlockFlow()) {
         LayoutRect repaintRect(topLeft, rect.size());
         toRenderBlock(o)->adjustRectForColumns(repaintRect);
         topLeft = repaintRect.location();
@@ -2084,7 +2074,7 @@ static float getMaxWidthListMarker(const RenderBox* renderer)
             if (!itemChild->isListMarker())
                 continue;
             RenderBox* itemMarker = toRenderBox(itemChild);
-            if (itemMarker->requiresLayoutToDetermineWidth()) {
+            if (itemMarker->requiresLayoutToDetermineWidth() && itemMarker->needsLayout()) {
                 // Make sure to compute the autosized width.
                 itemMarker->layout();
             }
@@ -2095,7 +2085,7 @@ static float getMaxWidthListMarker(const RenderBox* renderer)
     return maxWidth;
 }
 
-void RenderBox::computeLogicalWidthInRegion(LogicalExtentComputedValues& computedValues, RenderRegion* region, LayoutUnit offsetFromLogicalTopOfFirstPage) const
+void RenderBox::computeLogicalWidthInRegion(LogicalExtentComputedValues& computedValues, RenderRegion* region) const
 {
     computedValues.m_extent = logicalWidth();
     computedValues.m_position = logicalLeft();
@@ -2105,7 +2095,7 @@ void RenderBox::computeLogicalWidthInRegion(LogicalExtentComputedValues& compute
     if (isOutOfFlowPositioned()) {
         // FIXME: This calculation is not patched for block-flow yet.
         // https://bugs.webkit.org/show_bug.cgi?id=46500
-        computePositionedLogicalWidth(computedValues, region, offsetFromLogicalTopOfFirstPage);
+        computePositionedLogicalWidth(computedValues, region);
         return;
     }
 
@@ -2132,7 +2122,7 @@ void RenderBox::computeLogicalWidthInRegion(LogicalExtentComputedValues& compute
     Length logicalWidthLength = treatAsReplaced ? Length(computeReplacedLogicalWidth(), Fixed) : styleToUse->logicalWidth();
 
     RenderBlock* cb = containingBlock();
-    LayoutUnit containerLogicalWidth = max<LayoutUnit>(0, containingBlockLogicalWidthForContentInRegion(region, offsetFromLogicalTopOfFirstPage));
+    LayoutUnit containerLogicalWidth = max<LayoutUnit>(0, containingBlockLogicalWidthForContentInRegion(region));
     bool hasPerpendicularContainingBlock = cb->isHorizontalWritingMode() != isHorizontalWritingMode();
 
     if (isInline() && !isInlineBlockOrInlineTable()) {
@@ -2152,8 +2142,8 @@ void RenderBox::computeLogicalWidthInRegion(LogicalExtentComputedValues& compute
         LayoutUnit containerWidthInInlineDirection = containerLogicalWidth;
         if (hasPerpendicularContainingBlock)
             containerWidthInInlineDirection = perpendicularContainingBlockLogicalHeight();
-        LayoutUnit preferredWidth = computeLogicalWidthInRegionUsing(MainOrPreferredSize, styleToUse->logicalWidth(), containerWidthInInlineDirection, cb, region, offsetFromLogicalTopOfFirstPage);
-        computedValues.m_extent = constrainLogicalWidthInRegionByMinMax(preferredWidth, containerWidthInInlineDirection, cb, region, offsetFromLogicalTopOfFirstPage);
+        LayoutUnit preferredWidth = computeLogicalWidthInRegionUsing(MainOrPreferredSize, styleToUse->logicalWidth(), containerWidthInInlineDirection, cb, region);
+        computedValues.m_extent = constrainLogicalWidthInRegionByMinMax(preferredWidth, containerWidthInInlineDirection, cb, region);
     }
 
     // Margin calculations.
@@ -2164,7 +2154,7 @@ void RenderBox::computeLogicalWidthInRegion(LogicalExtentComputedValues& compute
     } else {
         LayoutUnit containerLogicalWidthForAutoMargins = containerLogicalWidth;
         if (avoidsFloats() && cb->containsFloats())
-            containerLogicalWidthForAutoMargins = containingBlockAvailableLineWidthInRegion(region, offsetFromLogicalTopOfFirstPage);
+            containerLogicalWidthForAutoMargins = containingBlockAvailableLineWidthInRegion(region);
         bool hasInvertedDirection = cb->style()->isLeftToRightDirection() != style()->isLeftToRightDirection();
         computeInlineDirectionMargins(cb, containerLogicalWidthForAutoMargins, computedValues.m_extent,
             hasInvertedDirection ? computedValues.m_margins.m_end : computedValues.m_margins.m_start,
@@ -2236,7 +2226,7 @@ LayoutUnit RenderBox::computeIntrinsicLogicalWidthUsing(Length logicalWidthLengt
 }
 
 LayoutUnit RenderBox::computeLogicalWidthInRegionUsing(SizeType widthType, Length logicalWidth, LayoutUnit availableLogicalWidth,
-    const RenderBlock* cb, RenderRegion* region, LayoutUnit offsetFromLogicalTopOfFirstPage) const
+    const RenderBlock* cb, RenderRegion* region) const
 {
     if (!logicalWidth.isIntrinsicOrAuto()) {
         // FIXME: If the containing block flow is perpendicular to our direction we need to use the available logical height instead.
@@ -2251,7 +2241,7 @@ LayoutUnit RenderBox::computeLogicalWidthInRegionUsing(SizeType widthType, Lengt
     LayoutUnit logicalWidthResult = fillAvailableMeasure(availableLogicalWidth, marginStart, marginEnd);
 
     if (shrinkToAvoidFloats() && cb->containsFloats())
-        logicalWidthResult = min(logicalWidthResult, shrinkLogicalWidthToAvoidFloats(marginStart, marginEnd, cb, region, offsetFromLogicalTopOfFirstPage));
+        logicalWidthResult = min(logicalWidthResult, shrinkLogicalWidthToAvoidFloats(marginStart, marginEnd, cb, region));
 
     if (widthType == MainOrPreferredSize && sizesLogicalWidthToFitContent(widthType))
         return max(minPreferredLogicalWidth(), min(maxPreferredLogicalWidth(), logicalWidthResult));
@@ -2395,7 +2385,7 @@ void RenderBox::computeInlineDirectionMargins(RenderBlock* containingBlock, Layo
     marginEnd = minimumValueForLength(marginEndLength, containerWidth, renderView);
 }
 
-RenderBoxRegionInfo* RenderBox::renderBoxRegionInfo(RenderRegion* region, LayoutUnit offsetFromLogicalTopOfFirstPage, RenderBoxRegionInfoFlags cacheFlag) const
+RenderBoxRegionInfo* RenderBox::renderBoxRegionInfo(RenderRegion* region, RenderBoxRegionInfoFlags cacheFlag) const
 {
     // Make sure nobody is trying to call this with a null region.
     if (!region)
@@ -2415,13 +2405,12 @@ RenderBoxRegionInfo* RenderBox::renderBoxRegionInfo(RenderRegion* region, Layout
         return 0;
 
     LogicalExtentComputedValues computedValues;
-    computeLogicalWidthInRegion(computedValues, region, offsetFromLogicalTopOfFirstPage);
+    computeLogicalWidthInRegion(computedValues, region);
 
     // Now determine the insets based off where this object is supposed to be positioned.
     RenderBlock* cb = containingBlock();
     RenderRegion* clampedContainingBlockRegion = cb->clampToStartAndEndRegions(region);
-    RenderBoxRegionInfo* containingBlockInfo = cb->renderBoxRegionInfo(clampedContainingBlockRegion,
-        offsetFromLogicalTopOfFirstPage - logicalTop());
+    RenderBoxRegionInfo* containingBlockInfo = cb->renderBoxRegionInfo(clampedContainingBlockRegion);
     LayoutUnit containingBlockLogicalWidth = cb->logicalWidth();
     LayoutUnit containingBlockLogicalWidthInRegion = containingBlockInfo ? containingBlockInfo->logicalWidth() : containingBlockLogicalWidth;
 
@@ -2438,7 +2427,7 @@ RenderBoxRegionInfo* RenderBox::renderBoxRegionInfo(RenderRegion* region, Layout
     LayoutUnit logicalLeftOffset = 0;
 
     if (!isOutOfFlowPositioned() && avoidsFloats() && cb->containsFloats()) {
-        LayoutUnit startPositionDelta = cb->computeStartPositionDeltaForChildAvoidingFloats(this, marginStartInRegion, region, offsetFromLogicalTopOfFirstPage);
+        LayoutUnit startPositionDelta = cb->computeStartPositionDeltaForChildAvoidingFloats(this, marginStartInRegion, region);
         if (cb->style()->isLeftToRightDirection())
             logicalLeftDelta += startPositionDelta;
         else
@@ -2592,8 +2581,8 @@ void RenderBox::computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logica
     // is specified. When we're printing, we also need this quirk if the body or root has a percentage
     // height since we don't set a height in RenderView when we're printing. So without this quirk, the
     // height has nothing to be a percentage of, and it ends up being 0. That is bad.
-    bool paginatedContentNeedsBaseHeight = document()->printing() && h.isPercent()
-        && (isRoot() || (isBody() && document()->documentElement()->renderer()->style()->logicalHeight().isPercent())) && !isInline();
+    bool paginatedContentNeedsBaseHeight = document().printing() && h.isPercent()
+        && (isRoot() || (isBody() && document().documentElement()->renderer()->style()->logicalHeight().isPercent())) && !isInline();
     if (stretchesToViewport() || paginatedContentNeedsBaseHeight) {
         LayoutUnit margins = collapsedMarginBefore() + collapsedMarginAfter();
         LayoutUnit visibleHeight = viewLogicalHeightForPercentages();
@@ -2608,7 +2597,7 @@ void RenderBox::computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logica
 
 LayoutUnit RenderBox::viewLogicalHeightForPercentages() const
 {
-    if (document()->printing())
+    if (document().printing())
         return static_cast<LayoutUnit>(view()->pageLogicalHeight());
     return view()->viewLogicalHeight();
 }
@@ -2668,7 +2657,7 @@ bool RenderBox::skipContainingBlockForPercentHeightCalculation(const RenderBox* 
 {
     // For quirks mode and anonymous blocks, we skip auto-height containingBlocks when computing percentages.
     // For standards mode, we treat the percentage as auto if it has an auto-height containing block.
-    if (!document()->inQuirksMode() && !containingBlock->isAnonymousBlock())
+    if (!document().inQuirksMode() && !containingBlock->isAnonymousBlock())
         return false;
     return !containingBlock->isTableCell() && !containingBlock->isOutOfFlowPositioned() && containingBlock->style()->logicalHeight().isAuto() && isHorizontalWritingMode() == containingBlock->isHorizontalWritingMode();
 }
@@ -2729,6 +2718,17 @@ LayoutUnit RenderBox::computePercentageLogicalHeight(const Length& height) const
     } else if (cbstyle->logicalHeight().isPercent() && !isOutOfFlowPositionedWithSpecifiedHeight) {
         // We need to recur and compute the percentage height for our containing block.
         LayoutUnit heightWithScrollbar = cb->computePercentageLogicalHeight(cbstyle->logicalHeight());
+        if (heightWithScrollbar != -1) {
+            LayoutUnit contentBoxHeightWithScrollbar = cb->adjustContentBoxLogicalHeightForBoxSizing(heightWithScrollbar);
+            // We need to adjust for min/max height because this method does not
+            // handle the min/max of the current block, its caller does. So the
+            // return value from the recursive call will not have been adjusted
+            // yet.
+            LayoutUnit contentBoxHeight = cb->constrainContentBoxLogicalHeightByMinMax(contentBoxHeightWithScrollbar - cb->scrollbarLogicalHeight(), -1);
+            availableHeight = max<LayoutUnit>(0, contentBoxHeight);
+        }
+    } else if (cbstyle->logicalHeight().isViewportPercentage()) {
+        LayoutUnit heightWithScrollbar = valueForLength(cbstyle->logicalHeight(), 0, view());
         if (heightWithScrollbar != -1) {
             LayoutUnit contentBoxHeightWithScrollbar = cb->adjustContentBoxLogicalHeightForBoxSizing(heightWithScrollbar);
             // We need to adjust for min/max height because this method does not
@@ -2920,7 +2920,7 @@ LayoutUnit RenderBox::availableLogicalHeightUsing(const Length& h, AvailableLogi
         return logicalHeight() - borderAndPaddingLogicalHeight();
     }
 
-    if (h.isPercent() && isOutOfFlowPositioned()) {
+    if (h.isPercent() && isOutOfFlowPositioned() && !isRenderFlowThread()) {
         // FIXME: This is wrong if the containingBlock has a perpendicular writing mode.
         LayoutUnit availableHeight = containingBlockLogicalHeightForPositioned(containingBlock());
         return adjustContentBoxLogicalHeightForBoxSizing(valueForLength(h, availableHeight));
@@ -2977,8 +2977,7 @@ void RenderBox::computeAndSetBlockDirectionMargins(const RenderBlock* containing
     containingBlock->setMarginAfterForChild(this, marginAfter);
 }
 
-LayoutUnit RenderBox::containingBlockLogicalWidthForPositioned(const RenderBoxModelObject* containingBlock, RenderRegion* region,
-    LayoutUnit offsetFromLogicalTopOfFirstPage, bool checkForPerpendicularWritingMode) const
+LayoutUnit RenderBox::containingBlockLogicalWidthForPositioned(const RenderBoxModelObject* containingBlock, RenderRegion* region, bool checkForPerpendicularWritingMode) const
 {
     if (checkForPerpendicularWritingMode && containingBlock->isHorizontalWritingMode() != isHorizontalWritingMode())
         return containingBlockLogicalHeightForPositioned(containingBlock, false);
@@ -3003,16 +3002,16 @@ LayoutUnit RenderBox::containingBlockLogicalWidthForPositioned(const RenderBoxMo
             if (containingBlock->isRenderFlowThread() && !checkForPerpendicularWritingMode)
                 return toRenderFlowThread(containingBlock)->contentLogicalWidthOfFirstRegion();
             if (isWritingModeRoot()) {
-                LayoutUnit cbPageOffset = offsetFromLogicalTopOfFirstPage - logicalTop();
+                LayoutUnit cbPageOffset = cb->offsetFromLogicalTopOfFirstPage();
                 RenderRegion* cbRegion = cb->regionAtBlockOffset(cbPageOffset);
                 if (cbRegion) {
                     cbRegion = cb->clampToStartAndEndRegions(cbRegion);
-                    boxInfo = cb->renderBoxRegionInfo(cbRegion, cbPageOffset);
+                    boxInfo = cb->renderBoxRegionInfo(cbRegion);
                 }
             }
         } else if (region && flowThread->isHorizontalWritingMode() == containingBlock->isHorizontalWritingMode()) {
             RenderRegion* containingBlockRegion = cb->clampToStartAndEndRegions(region);
-            boxInfo = cb->renderBoxRegionInfo(containingBlockRegion, offsetFromLogicalTopOfFirstPage - logicalTop());
+            boxInfo = cb->renderBoxRegionInfo(containingBlockRegion);
         }
         return (boxInfo) ? max<LayoutUnit>(0, cb->clientLogicalWidth() - (cb->logicalWidth() - boxInfo->logicalWidth())) : cb->clientLogicalWidth();
     }
@@ -3043,7 +3042,7 @@ LayoutUnit RenderBox::containingBlockLogicalWidthForPositioned(const RenderBoxMo
 LayoutUnit RenderBox::containingBlockLogicalHeightForPositioned(const RenderBoxModelObject* containingBlock, bool checkForPerpendicularWritingMode) const
 {
     if (checkForPerpendicularWritingMode && containingBlock->isHorizontalWritingMode() != isHorizontalWritingMode())
-        return containingBlockLogicalWidthForPositioned(containingBlock, 0, 0, false);
+        return containingBlockLogicalWidthForPositioned(containingBlock, 0, false);
 
     // Use viewport as container for top-level fixed-position elements.
     if (style()->position() == FixedPosition && containingBlock->isRenderView()) {
@@ -3094,12 +3093,21 @@ static void computeInlineStaticDistance(Length& logicalLeft, Length& logicalRigh
         for (RenderObject* curr = child->parent(); curr && curr != containerBlock; curr = curr->container()) {
             if (curr->isBox()) {
                 staticPosition += toRenderBox(curr)->logicalLeft();
+                if (toRenderBox(curr)->isRelPositioned())
+                    staticPosition += toRenderBox(curr)->relativePositionOffset().width();
                 if (region && curr->isRenderBlock()) {
                     const RenderBlock* cb = toRenderBlock(curr);
                     region = cb->clampToStartAndEndRegions(region);
-                    RenderBoxRegionInfo* boxInfo = cb->renderBoxRegionInfo(region, region->logicalTopForFlowThreadContent());
+                    RenderBoxRegionInfo* boxInfo = cb->renderBoxRegionInfo(region);
                     if (boxInfo)
                         staticPosition += boxInfo->logicalLeft();
+                }
+            } else if (curr->isInline()) {
+                if (curr->isRelPositioned()) {
+                    if (!curr->style()->logicalLeft().isAuto())
+                        staticPosition += curr->style()->logicalLeft().value();
+                    else
+                        staticPosition -= curr->style()->logicalRight().value();
                 }
             }
         }
@@ -3107,22 +3115,32 @@ static void computeInlineStaticDistance(Length& logicalLeft, Length& logicalRigh
     } else {
         RenderBox* enclosingBox = child->parent()->enclosingBox();
         LayoutUnit staticPosition = child->layer()->staticInlinePosition() + containerLogicalWidth + containerBlock->borderLogicalLeft();
-        for (RenderObject* curr = enclosingBox; curr; curr = curr->container()) {
+        for (RenderObject* curr = child->parent(); curr; curr = curr->container()) {
             if (curr->isBox()) {
-                if (curr != containerBlock)
+                if (curr != containerBlock) {
                     staticPosition -= toRenderBox(curr)->logicalLeft();
+                    if (toRenderBox(curr)->isRelPositioned())
+                        staticPosition -= toRenderBox(curr)->relativePositionOffset().width();
+                }
                 if (curr == enclosingBox)
                     staticPosition -= enclosingBox->logicalWidth();
                 if (region && curr->isRenderBlock()) {
-                     const RenderBlock* cb = toRenderBlock(curr);
-                     region = cb->clampToStartAndEndRegions(region);
-                     RenderBoxRegionInfo* boxInfo = cb->renderBoxRegionInfo(region, region->logicalTopForFlowThreadContent());
-                     if (boxInfo) {
+                    const RenderBlock* cb = toRenderBlock(curr);
+                    region = cb->clampToStartAndEndRegions(region);
+                    RenderBoxRegionInfo* boxInfo = cb->renderBoxRegionInfo(region);
+                    if (boxInfo) {
                         if (curr != containerBlock)
                             staticPosition -= cb->logicalWidth() - (boxInfo->logicalLeft() + boxInfo->logicalWidth());
                         if (curr == enclosingBox)
                             staticPosition += enclosingBox->logicalWidth() - boxInfo->logicalWidth();
                     }
+                }
+            } else if (curr->isInline()) {
+                if (curr->isRelPositioned()) {
+                    if (!curr->style()->logicalLeft().isAuto())
+                        staticPosition -= curr->style()->logicalLeft().value();
+                    else
+                        staticPosition += curr->style()->logicalRight().value();
                 }
             }
             if (curr == containerBlock)
@@ -3132,7 +3150,7 @@ static void computeInlineStaticDistance(Length& logicalLeft, Length& logicalRigh
     }
 }
 
-void RenderBox::computePositionedLogicalWidth(LogicalExtentComputedValues& computedValues, RenderRegion* region, LayoutUnit offsetFromLogicalTopOfFirstPage) const
+void RenderBox::computePositionedLogicalWidth(LogicalExtentComputedValues& computedValues, RenderRegion* region) const
 {
     if (isReplaced()) {
         // FIXME: Positioned replaced elements inside a flow thread are not working properly
@@ -3161,7 +3179,7 @@ void RenderBox::computePositionedLogicalWidth(LogicalExtentComputedValues& compu
     // relative positioned inline.
     const RenderBoxModelObject* containerBlock = toRenderBoxModelObject(container());
 
-    const LayoutUnit containerLogicalWidth = containingBlockLogicalWidthForPositioned(containerBlock, region, offsetFromLogicalTopOfFirstPage);
+    const LayoutUnit containerLogicalWidth = containingBlockLogicalWidthForPositioned(containerBlock, region);
 
     // Use the container block's direction except when calculating the static distance
     // This conforms with the reference results for abspos-replaced-width-margin-000.htm
@@ -3253,11 +3271,11 @@ void RenderBox::computePositionedLogicalWidth(LogicalExtentComputedValues& compu
         ASSERT(containerBlock->canHaveBoxInfoInRegion());
         LayoutUnit logicalLeftPos = computedValues.m_position;
         const RenderBlock* cb = toRenderBlock(containerBlock);
-        LayoutUnit cbPageOffset = offsetFromLogicalTopOfFirstPage - logicalTop();
+        LayoutUnit cbPageOffset = cb->offsetFromLogicalTopOfFirstPage();
         RenderRegion* cbRegion = cb->regionAtBlockOffset(cbPageOffset);
         if (cbRegion) {
             cbRegion = cb->clampToStartAndEndRegions(cbRegion);
-            RenderBoxRegionInfo* boxInfo = cb->renderBoxRegionInfo(cbRegion, cbPageOffset);
+            RenderBoxRegionInfo* boxInfo = cb->renderBoxRegionInfo(cbRegion);
             if (boxInfo) {
                 logicalLeftPos += boxInfo->logicalLeft();
                 computedValues.m_position = logicalLeftPos;
@@ -3291,7 +3309,7 @@ void RenderBox::computePositionedLogicalWidthUsing(Length logicalWidth, const Re
 
     LayoutUnit logicalLeftValue = 0;
 
-    const LayoutUnit containerRelativeLogicalWidth = containingBlockLogicalWidthForPositioned(containerBlock, 0, 0, false);
+    const LayoutUnit containerRelativeLogicalWidth = containingBlockLogicalWidthForPositioned(containerBlock, 0, false);
 
     bool logicalWidthIsAuto = logicalWidth.isIntrinsicOrAuto();
     bool logicalLeftIsAuto = logicalLeft.isAuto();
@@ -3576,7 +3594,7 @@ void RenderBox::computePositionedLogicalHeight(LogicalExtentComputedValues& comp
         RenderRegion* cbRegion = cb->regionAtBlockOffset(cbPageOffset);
         if (cbRegion) {
             cbRegion = cb->clampToStartAndEndRegions(cbRegion);
-            RenderBoxRegionInfo* boxInfo = cb->renderBoxRegionInfo(cbRegion, cbPageOffset);
+            RenderBoxRegionInfo* boxInfo = cb->renderBoxRegionInfo(cbRegion);
             if (boxInfo) {
                 logicalTopPos += boxInfo->logicalLeft();
                 computedValues.m_position = logicalTopPos;
@@ -3619,7 +3637,7 @@ void RenderBox::computePositionedLogicalHeightUsing(Length logicalHeightLength, 
     LayoutUnit logicalHeightValue;
     LayoutUnit contentLogicalHeight = logicalHeight - bordersPlusPadding;
 
-    const LayoutUnit containerRelativeLogicalWidth = containingBlockLogicalWidthForPositioned(containerBlock, 0, 0, false);
+    const LayoutUnit containerRelativeLogicalWidth = containingBlockLogicalWidthForPositioned(containerBlock, 0, false);
 
     LayoutUnit logicalTopValue = 0;
 
@@ -3751,7 +3769,7 @@ void RenderBox::computePositionedLogicalWidthReplaced(LogicalExtentComputedValue
     const RenderBoxModelObject* containerBlock = toRenderBoxModelObject(container());
 
     const LayoutUnit containerLogicalWidth = containingBlockLogicalWidthForPositioned(containerBlock);
-    const LayoutUnit containerRelativeLogicalWidth = containingBlockLogicalWidthForPositioned(containerBlock, 0, 0, false);
+    const LayoutUnit containerRelativeLogicalWidth = containingBlockLogicalWidthForPositioned(containerBlock, 0, false);
 
     // To match WinIE, in quirks mode use the parent's 'direction' property
     // instead of the the container block's.
@@ -3920,7 +3938,7 @@ void RenderBox::computePositionedLogicalHeightReplaced(LogicalExtentComputedValu
     const RenderBoxModelObject* containerBlock = toRenderBoxModelObject(container());
 
     const LayoutUnit containerLogicalHeight = containingBlockLogicalHeightForPositioned(containerBlock);
-    const LayoutUnit containerRelativeLogicalWidth = containingBlockLogicalWidthForPositioned(containerBlock, 0, 0, false);
+    const LayoutUnit containerRelativeLogicalWidth = containingBlockLogicalWidthForPositioned(containerBlock, 0, false);
 
     // Variables to solve.
     Length marginBefore = style()->marginBefore();
@@ -4115,7 +4133,7 @@ PositionWithAffinity RenderBox::positionForPoint(const LayoutPoint& point)
         adjustedPoint.moveBy(location());
 
     for (RenderObject* renderObject = firstChild(); renderObject; renderObject = renderObject->nextSibling()) {
-        if ((!renderObject->firstChild() && !renderObject->isInline() && !renderObject->isBlockFlow() )
+        if ((!renderObject->firstChild() && !renderObject->isInline() && !renderObject->isRenderBlockFlow() )
             || renderObject->style()->visibility() != VISIBLE)
             continue;
 
@@ -4357,7 +4375,7 @@ bool RenderBox::percentageLogicalHeightIsResolvableFromBlock(const RenderBlock* 
     // block has an auto height. We still skip anonymous containing blocks in both modes, though, and look
     // only at explicit containers.
     const RenderBlock* cb = containingBlock;
-    bool inQuirksMode = cb->document()->inQuirksMode();
+    bool inQuirksMode = cb->document().inQuirksMode();
     while (!cb->isRenderView() && !cb->isBody() && !cb->isTableCell() && !cb->isOutOfFlowPositioned() && cb->style()->logicalHeight().isAuto()) {
         if (!inQuirksMode && !cb->isAnonymousBlock())
             break;
@@ -4723,6 +4741,19 @@ RenderObject* RenderBox::splitAnonymousBoxesAroundChild(RenderObject* beforeChil
 
     ASSERT(beforeChild->parent() == this);
     return beforeChild;
+}
+
+LayoutUnit RenderBox::offsetFromLogicalTopOfFirstPage() const
+{
+    LayoutState* layoutState = view()->layoutState();
+    if (layoutState && !layoutState->isPaginated())
+        return 0;
+
+    if (!layoutState && !flowThreadContainingBlock())
+        return 0;
+
+    RenderBlock* containerBlock = containingBlock();
+    return containerBlock->offsetFromLogicalTopOfFirstPage() + logicalTop();
 }
 
 } // namespace WebCore

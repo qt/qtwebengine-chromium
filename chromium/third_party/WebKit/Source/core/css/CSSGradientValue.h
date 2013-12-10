@@ -28,7 +28,6 @@
 
 #include "core/css/CSSImageGeneratorValue.h"
 #include "core/css/CSSPrimitiveValue.h"
-#include "core/css/StyleColor.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
@@ -52,7 +51,7 @@ struct CSSGradientColorStop {
     CSSGradientColorStop() : m_colorIsDerivedFromElement(false) { };
     RefPtr<CSSPrimitiveValue> m_position; // percentage or length
     RefPtr<CSSPrimitiveValue> m_color;
-    StyleColor m_resolvedColor;
+    Color m_resolvedColor;
     bool m_colorIsDerivedFromElement;
     bool operator==(const CSSGradientColorStop& other) const
     {
@@ -90,7 +89,7 @@ public:
     bool knownToBeOpaque(const RenderObject*) const;
 
     void loadSubimages(ResourceFetcher*) { }
-    PassRefPtr<CSSGradientValue> gradientWithStylesResolved(const TextLinkColors&);
+    PassRefPtr<CSSGradientValue> gradientWithStylesResolved(const TextLinkColors&, Color currentColor);
 
 protected:
     CSSGradientValue(ClassType classType, CSSGradientRepeat repeat, CSSGradientType gradientType)
@@ -164,7 +163,7 @@ private:
     {
     }
 
-    CSSLinearGradientValue(const CSSLinearGradientValue& other)
+    explicit CSSLinearGradientValue(const CSSLinearGradientValue& other)
         : CSSGradientValue(other, LinearGradientClass, other.gradientType())
         , m_angle(other.m_angle)
     {
@@ -207,7 +206,7 @@ private:
     {
     }
 
-    CSSRadialGradientValue(const CSSRadialGradientValue& other)
+    explicit CSSRadialGradientValue(const CSSRadialGradientValue& other)
         : CSSGradientValue(other, RadialGradientClass, other.gradientType())
         , m_firstRadius(other.m_firstRadius)
         , m_secondRadius(other.m_secondRadius)

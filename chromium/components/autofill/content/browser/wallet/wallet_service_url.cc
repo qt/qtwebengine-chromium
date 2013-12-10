@@ -27,10 +27,16 @@ const char kSandboxWalletSecureServiceUrl[] =
     "https://wallet-web.sandbox.google.com/";
 
 bool IsWalletProductionEnabled() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  return command_line.HasSwitch(switches::kWalletServiceUseProd) ||
-      base::FieldTrialList::FindFullName("WalletProductionService") == "Yes" ||
-      base::FieldTrialList::FindFullName("Autocheckout") == "Yes";
+  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  std::string sandbox_enabled(
+      command_line->GetSwitchValueASCII(switches::kWalletServiceUseSandbox));
+  if (!sandbox_enabled.empty())
+    return sandbox_enabled != "1";
+#if defined(OS_MACOSX)
+  return false;
+#else
+  return true;
+#endif
 }
 
 GURL GetWalletHostUrl() {
@@ -122,6 +128,8 @@ GURL GetSignInUrl() {
   GURL url(GaiaUrls::GetInstance()->service_login_url());
   url = net::AppendQueryParameter(url, "service", "toolbar");
   url = net::AppendQueryParameter(url, "nui", "1");
+  // Prevents promos from showing (see http://crbug.com/235227).
+  url = net::AppendQueryParameter(url, "sarp", "1");
   url = net::AppendQueryParameter(url,
                                   "continue",
                                   GetSignInContinueUrl().spec());

@@ -30,9 +30,9 @@
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Document.h"
 #include "core/dom/Node.h"
-#include "core/loader/cache/FetchRequest.h"
-#include "core/loader/cache/FontResource.h"
-#include "core/loader/cache/ResourceFetcher.h"
+#include "core/fetch/FetchRequest.h"
+#include "core/fetch/FontResource.h"
+#include "core/fetch/ResourceFetcher.h"
 #include "core/platform/graphics/FontCustomPlatformData.h"
 #include "core/svg/SVGFontFaceElement.h"
 #include "wtf/text/StringBuilder.h"
@@ -98,7 +98,7 @@ FontResource* CSSFontFaceSrcValue::fetch(Document* document)
 {
     if (!m_fetched) {
         FetchRequest request(ResourceRequest(document->completeURL(m_resource)), FetchInitiatorTypeNames::css);
-        m_fetched = document->fetcher()->requestFont(request);
+        m_fetched = document->fetcher()->fetchFont(request);
     }
     return m_fetched.get();
 }

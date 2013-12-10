@@ -29,9 +29,9 @@
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/ContextFeatures.h"
 #include "core/dom/Document.h"
-#include "core/dom/DocumentStyleSheetCollection.h"
 #include "core/dom/Event.h"
 #include "core/dom/EventSender.h"
+#include "core/dom/StyleEngine.h"
 #include "core/dom/shadow/ShadowRoot.h"
 
 namespace WebCore {
@@ -44,9 +44,9 @@ static StyleEventSender& styleLoadEventSender()
     return sharedLoadEventSender;
 }
 
-inline HTMLStyleElement::HTMLStyleElement(const QualifiedName& tagName, Document* document, bool createdByParser)
+inline HTMLStyleElement::HTMLStyleElement(const QualifiedName& tagName, Document& document, bool createdByParser)
     : HTMLElement(tagName, document)
-    , StyleElement(document, createdByParser)
+    , StyleElement(&document, createdByParser)
     , m_firedLoad(false)
     , m_loadedSheet(false)
     , m_scopedStyleRegistrationState(NotRegistered)
@@ -64,7 +64,7 @@ HTMLStyleElement::~HTMLStyleElement()
     styleLoadEventSender().cancelEvent(this);
 }
 
-PassRefPtr<HTMLStyleElement> HTMLStyleElement::create(const QualifiedName& tagName, Document* document, bool createdByParser)
+PassRefPtr<HTMLStyleElement> HTMLStyleElement::create(const QualifiedName& tagName, Document& document, bool createdByParser)
 {
     return adoptRef(new HTMLStyleElement(tagName, document, createdByParser));
 }
@@ -73,12 +73,12 @@ void HTMLStyleElement::parseAttribute(const QualifiedName& name, const AtomicStr
 {
     if (name == titleAttr && m_sheet) {
         m_sheet->setTitle(value);
-    } else if (name == scopedAttr && ContextFeatures::styleScopedEnabled(document())) {
+    } else if (name == scopedAttr && ContextFeatures::styleScopedEnabled(&document())) {
         scopedAttributeChanged(!value.isNull());
-    } else if (name == mediaAttr && inDocument() && document()->renderer() && m_sheet) {
+    } else if (name == mediaAttr && inDocument() && document().renderer() && m_sheet) {
         m_sheet->setMediaQueries(MediaQuerySet::create(value));
-        // FIXME: This shold be DeferRecalcStyle.
-        document()->modifiedStyleSheet(m_sheet.get(), RecalcStyleImmediately);
+        // FIXME: This shold be RecalcStyleDeferred.
+        document().modifiedStyleSheet(m_sheet.get(), RecalcStyleImmediately);
     } else {
         HTMLElement::parseAttribute(name, value);
     }
@@ -86,7 +86,7 @@ void HTMLStyleElement::parseAttribute(const QualifiedName& name, const AtomicStr
 
 void HTMLStyleElement::scopedAttributeChanged(bool scoped)
 {
-    ASSERT(ContextFeatures::styleScopedEnabled(document()));
+    ASSERT(ContextFeatures::styleScopedEnabled(&document()));
 
     if (!inDocument())
         return;
@@ -102,11 +102,11 @@ void HTMLStyleElement::scopedAttributeChanged(bool scoped)
             scopingNode = containingShadowRoot();
             unregisterWithScopingNode(scopingNode);
         }
-        document()->styleSheetCollection()->removeStyleSheetCandidateNode(this, scopingNode);
+        document().styleEngine()->removeStyleSheetCandidateNode(this, scopingNode);
         registerWithScopingNode(true);
 
-        document()->styleSheetCollection()->addStyleSheetCandidateNode(this, false);
-        document()->modifiedStyleSheet(sheet());
+        document().styleEngine()->addStyleSheetCandidateNode(this, false);
+        document().modifiedStyleSheet(sheet());
         return;
     }
 
@@ -115,7 +115,7 @@ void HTMLStyleElement::scopedAttributeChanged(bool scoped)
     if (m_scopedStyleRegistrationState != RegisteredAsScoped)
         return;
 
-    document()->styleSheetCollection()->removeStyleSheetCandidateNode(this, parentNode());
+    document().styleEngine()->removeStyleSheetCandidateNode(this, parentNode());
     unregisterWithScopingNode(parentNode());
 
     // As any <style> in a shadow tree is treated as "scoped",
@@ -123,8 +123,8 @@ void HTMLStyleElement::scopedAttributeChanged(bool scoped)
     if (isInShadowTree())
         registerWithScopingNode(false);
 
-    document()->styleSheetCollection()->addStyleSheetCandidateNode(this, false);
-    document()->modifiedStyleSheet(sheet());
+    document().styleEngine()->addStyleSheetCandidateNode(this, false);
+    document().modifiedStyleSheet(sheet());
 }
 
 void HTMLStyleElement::finishParsingChildren()
@@ -157,7 +157,7 @@ void HTMLStyleElement::registerWithScopingNode(bool scoped)
 
 void HTMLStyleElement::unregisterWithScopingNode(ContainerNode* scope)
 {
-    ASSERT(m_scopedStyleRegistrationState != NotRegistered || !ContextFeatures::styleScopedEnabled(document()));
+    ASSERT(m_scopedStyleRegistrationState != NotRegistered || !ContextFeatures::styleScopedEnabled(&document()));
     if (!isRegisteredAsScoped())
         return;
 
@@ -176,10 +176,8 @@ Node::InsertionNotificationRequest HTMLStyleElement::insertedInto(ContainerNode*
     if (insertionPoint->inDocument()) {
         if (m_scopedStyleRegistrationState == NotRegistered && (scoped() || isInShadowTree()))
             registerWithScopingNode(scoped());
-        return InsertionShouldCallDidNotifySubtreeInsertions;
     }
-
-    return InsertionDone;
+    return InsertionShouldCallDidNotifySubtreeInsertions;
 }
 
 void HTMLStyleElement::removedFrom(ContainerNode* insertionPoint)
@@ -205,7 +203,7 @@ void HTMLStyleElement::removedFrom(ContainerNode* insertionPoint)
         StyleElement::removedFromDocument(document(), this, scope);
 }
 
-void HTMLStyleElement::didNotifySubtreeInsertions(ContainerNode* insertionPoint)
+void HTMLStyleElement::didNotifySubtreeInsertionsToDocument()
 {
     StyleElement::processStyleSheet(document(), this);
 }
@@ -228,7 +226,7 @@ const AtomicString& HTMLStyleElement::type() const
 
 bool HTMLStyleElement::scoped() const
 {
-    return fastHasAttribute(scopedAttr) && ContextFeatures::styleScopedEnabled(document());
+    return fastHasAttribute(scopedAttr) && ContextFeatures::styleScopedEnabled(&document());
 }
 
 void HTMLStyleElement::setScoped(bool scopedValue)
@@ -242,7 +240,7 @@ ContainerNode* HTMLStyleElement::scopingNode()
         return 0;
 
     if (!isRegisteredAsScoped())
-        return document();
+        return &document();
 
     if (isRegisteredInShadowRoot())
         return containingShadowRoot();
@@ -258,10 +256,7 @@ void HTMLStyleElement::dispatchPendingLoadEvents()
 void HTMLStyleElement::dispatchPendingEvent(StyleEventSender* eventSender)
 {
     ASSERT_UNUSED(eventSender, eventSender == &styleLoadEventSender());
-    if (m_loadedSheet)
-        dispatchEvent(Event::create(eventNames().loadEvent, false, false));
-    else
-        dispatchEvent(Event::create(eventNames().errorEvent, false, false));
+    dispatchEvent(Event::create(m_loadedSheet ? eventNames().loadEvent : eventNames().errorEvent));
 }
 
 void HTMLStyleElement::notifyLoadedSheetAndAllCriticalSubresources(bool errorOccurred)

@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#if ENABLE_NOTIFICATIONS
 #include "NotificationPresenter.h"
 
 #include "public/platform/Platform.h"
@@ -88,6 +87,14 @@ bool NotificationPresenter::simulateClick(const WebString& title)
     WebNotification eventTarget(notification);
     eventTarget.dispatchClickEvent();
     return true;
+}
+
+void NotificationPresenter::cancelAllActiveNotifications()
+{
+    while (!m_activeNotifications.empty()) {
+        const WebNotification& notification = m_activeNotifications.begin()->second;
+        cancel(notification);
+    }
 }
 
 // The output from all these methods matches what DumpRenderTree produces.
@@ -159,5 +166,3 @@ void NotificationPresenter::requestPermission(
 }
 
 }
-
-#endif // ENABLE_NOTIFICATIONS

@@ -42,7 +42,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline MeterShadowElement::MeterShadowElement(Document* document)
+inline MeterShadowElement::MeterShadowElement(Document& document)
     : HTMLDivElement(HTMLNames::divTag, document)
 {
 }
@@ -52,31 +52,31 @@ HTMLMeterElement* MeterShadowElement::meterElement() const
     return toHTMLMeterElement(shadowHost());
 }
 
-bool MeterShadowElement::rendererIsNeeded(const NodeRenderingContext& context)
+bool MeterShadowElement::rendererIsNeeded(const RenderStyle& style)
 {
-    RenderObject* render = meterElement()->renderer();
-    return render && !render->theme()->supportsMeter(render->style()->appearance()) && HTMLDivElement::rendererIsNeeded(context);
+    RenderObject* renderer = meterElement()->renderer();
+    return renderer && !RenderTheme::theme().supportsMeter(renderer->style()->appearance()) && HTMLDivElement::rendererIsNeeded(style);
 }
 
-inline MeterInnerElement::MeterInnerElement(Document* document)
+inline MeterInnerElement::MeterInnerElement(Document& document)
     : MeterShadowElement(document)
 {
 }
 
-PassRefPtr<MeterInnerElement> MeterInnerElement::create(Document* document)
+PassRefPtr<MeterInnerElement> MeterInnerElement::create(Document& document)
 {
     RefPtr<MeterInnerElement> element = adoptRef(new MeterInnerElement(document));
     element->setPart(AtomicString("-webkit-meter-inner-element", AtomicString::ConstructFromLiteral));
     return element.release();
 }
 
-bool MeterInnerElement::rendererIsNeeded(const NodeRenderingContext& context)
+bool MeterInnerElement::rendererIsNeeded(const RenderStyle& style)
 {
     if (meterElement()->hasAuthorShadowRoot())
-        return HTMLDivElement::rendererIsNeeded(context);
+        return HTMLDivElement::rendererIsNeeded(style);
 
-    RenderObject* render = meterElement()->renderer();
-    return render && !render->theme()->supportsMeter(render->style()->appearance()) && HTMLDivElement::rendererIsNeeded(context);
+    RenderObject* renderer = meterElement()->renderer();
+    return renderer && !RenderTheme::theme().supportsMeter(renderer->style()->appearance()) && HTMLDivElement::rendererIsNeeded(style);
 }
 
 RenderObject* MeterInnerElement::createRenderer(RenderStyle*)
@@ -84,24 +84,24 @@ RenderObject* MeterInnerElement::createRenderer(RenderStyle*)
     return new RenderMeter(this);
 }
 
-inline MeterBarElement::MeterBarElement(Document* document)
+inline MeterBarElement::MeterBarElement(Document& document)
     : MeterShadowElement(document)
 {
 }
 
-PassRefPtr<MeterBarElement> MeterBarElement::create(Document* document)
+PassRefPtr<MeterBarElement> MeterBarElement::create(Document& document)
 {
     RefPtr<MeterBarElement> element = adoptRef(new MeterBarElement(document));
     element->setPart(AtomicString("-webkit-meter-bar", AtomicString::ConstructFromLiteral));
     return element.release();
 }
 
-inline MeterValueElement::MeterValueElement(Document* document)
+inline MeterValueElement::MeterValueElement(Document& document)
     : MeterShadowElement(document)
 {
 }
 
-PassRefPtr<MeterValueElement> MeterValueElement::create(Document* document)
+PassRefPtr<MeterValueElement> MeterValueElement::create(Document& document)
 {
     RefPtr<MeterValueElement> element = adoptRef(new MeterValueElement(document));
     element->updatePseudo();

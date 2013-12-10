@@ -10,6 +10,9 @@
 #include <string>
 
 #include "base/compiler_specific.h"
+#include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "media/video/capture/video_capture_device.h"
 #include "media/video/capture/video_capture_types.h"
 
@@ -19,7 +22,7 @@ namespace media {
 
 // Called by VideoCaptureManager to open, close and start, stop video capture
 // devices.
-class VideoCaptureDeviceMac : public VideoCaptureDevice {
+class VideoCaptureDeviceMac : public VideoCaptureDevice1 {
  public:
   explicit VideoCaptureDeviceMac(const Name& device_name);
   virtual ~VideoCaptureDeviceMac();
@@ -35,11 +38,17 @@ class VideoCaptureDeviceMac : public VideoCaptureDevice {
   bool Init();
 
   // Called to deliver captured video frames.
-  void ReceiveFrame(const uint8* video_frame, int video_frame_length,
-                    const VideoCaptureCapability& frame_info);
+  void ReceiveFrame(const uint8* video_frame,
+                    int video_frame_length,
+                    const VideoCaptureCapability& frame_info,
+                    int aspect_numerator,
+                    int aspect_denominator);
+
+  void ReceiveError(const std::string& reason);
 
  private:
   void SetErrorState(const std::string& reason);
+  bool UpdateCaptureResolution();
 
   // Flag indicating the internal state.
   enum InternalState {
@@ -52,7 +61,18 @@ class VideoCaptureDeviceMac : public VideoCaptureDevice {
 
   Name device_name_;
   VideoCaptureDevice::EventHandler* observer_;
+
+  VideoCaptureCapability current_settings_;
+  bool sent_frame_info_;
+
+  // Only read and write state_ from inside this loop.
+  const scoped_refptr<base::MessageLoopProxy> loop_proxy_;
   InternalState state_;
+
+  // Used with Bind and PostTask to ensure that methods aren't called
+  // after the VideoCaptureDeviceMac is destroyed.
+  base::WeakPtrFactory<VideoCaptureDeviceMac> weak_factory_;
+  base::WeakPtr<VideoCaptureDeviceMac> weak_this_;
 
   VideoCaptureDeviceQTKit* capture_device_;
 

@@ -14,11 +14,41 @@ class Token {
     INVALID,
     INTEGER,    // 123
     STRING,     // "blah"
-    OPERATOR,   // =, +=, -=, +, -, ==, !=, <=, >=, <, >
+    TRUE_TOKEN,  // Not "TRUE" to avoid collisions with #define in windows.h.
+    FALSE_TOKEN,
+
+    // Various operators.
+    EQUAL,
+    PLUS,
+    MINUS,
+    PLUS_EQUALS,
+    MINUS_EQUALS,
+    EQUAL_EQUAL,
+    NOT_EQUAL,
+    LESS_EQUAL,
+    GREATER_EQUAL,
+    LESS_THAN,
+    GREATER_THAN,
+    BOOLEAN_AND,
+    BOOLEAN_OR,
+    BANG,
+
+    LEFT_PAREN,
+    RIGHT_PAREN,
+    LEFT_BRACKET,
+    RIGHT_BRACKET,
+    LEFT_BRACE,
+    RIGHT_BRACE,
+
+    IF,
+    ELSE,
     IDENTIFIER, // foo
-    SCOPER,     // (, ), [, ], {, }
-    SEPARATOR,  // ,
-    COMMENT     // #...\n
+    COMMA,  // ,
+    COMMENT,    // #...\n
+
+    UNCLASSIFIED_OPERATOR,  // TODO(scottmg): This shouldn't be necessary.
+
+    NUM_TYPES
   };
 
   Token();
@@ -30,13 +60,12 @@ class Token {
   LocationRange range() const {
     return LocationRange(location_,
                          Location(location_.file(), location_.line_number(),
-                                  location_.char_offset() + value_.size()));
+                                  location_.char_offset() +
+                                      static_cast<int>(value_.size())));
   }
 
   // Helper functions for comparing this token to something.
   bool IsIdentifierEqualTo(const char* v) const;
-  bool IsOperatorEqualTo(const char* v) const;
-  bool IsScoperEqualTo(const char* v) const;
   bool IsStringEqualTo(const char* v) const;
 
   // For STRING tokens, returns the string value (no quotes at end, does

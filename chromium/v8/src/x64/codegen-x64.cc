@@ -394,7 +394,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
 
   if (FLAG_debug_code) {
     __ CompareRoot(rbx, Heap::kTheHoleValueRootIndex);
-    __ Assert(equal, "object found in smi-only array");
+    __ Assert(equal, kObjectFoundInSmiOnlyArray);
   }
 
   __ movq(FieldOperand(r14, r9, times_8, FixedDoubleArray::kHeaderSize), r15);
@@ -577,7 +577,7 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
     // Assert that we do not have a cons or slice (indirect strings) here.
     // Sequential strings have already been ruled out.
     __ testb(result, Immediate(kIsIndirectStringMask));
-    __ Assert(zero, "external string expected, but not found");
+    __ Assert(zero, kExternalStringExpectedButNotFound);
   }
   // Rule out short external strings.
   STATIC_CHECK(kShortExternalStringTag != 0);
@@ -740,6 +740,28 @@ void Code::PatchPlatformCodeAge(byte* sequence,
          i++) {
       patcher.masm()->nop();
     }
+  }
+}
+
+
+Operand StackArgumentsAccessor::GetArgumentOperand(int index) {
+  ASSERT(index >= 0);
+  ASSERT(base_reg_.is(rsp) || base_reg_.is(rbp));
+  int receiver = (receiver_mode_ == ARGUMENTS_CONTAIN_RECEIVER) ? 1 : 0;
+  int displacement_to_last_argument = base_reg_.is(rsp) ?
+      kPCOnStackSize : kFPOnStackSize + kPCOnStackSize;
+  displacement_to_last_argument += extra_displacement_to_last_argument_;
+  if (argument_count_reg_.is(no_reg)) {
+    // argument[0] is at base_reg_ + displacement_to_last_argument +
+    // (argument_count_immediate_ + receiver - 1) * kPointerSize.
+    ASSERT(argument_count_immediate_ + receiver > 0);
+    return Operand(base_reg_, displacement_to_last_argument +
+        (argument_count_immediate_ + receiver - 1 - index) * kPointerSize);
+  } else {
+    // argument[0] is at base_reg_ + displacement_to_last_argument +
+    // argument_count_reg_ * times_pointer_size + (receiver - 1) * kPointerSize.
+    return Operand(base_reg_, argument_count_reg_, times_pointer_size,
+        displacement_to_last_argument + (receiver - 1 - index) * kPointerSize);
   }
 }
 

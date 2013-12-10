@@ -11,6 +11,8 @@
     'public/utility/content_utility_client.h',
     'public/utility/utility_thread.cc',
     'public/utility/utility_thread.h',
+    'utility/in_process_utility_thread.cc',
+    'utility/in_process_utility_thread.h',
     'utility/utility_main.cc',
     'utility/utility_thread_impl.cc',
     'utility/utility_thread_impl.h',

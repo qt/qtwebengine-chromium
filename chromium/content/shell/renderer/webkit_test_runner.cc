@@ -9,6 +9,7 @@
 #include <cmath>
 
 #include "base/base64.h"
+#include "base/command_line.h"
 #include "base/debug/debugger.h"
 #include "base/files/file_path.h"
 #include "base/md5.h"
@@ -19,6 +20,7 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/renderer/history_item_serialization.h"
 #include "content/public/renderer/render_view.h"
@@ -66,6 +68,7 @@ using WebKit::WebArrayBufferView;
 using WebKit::WebContextMenuData;
 using WebKit::WebDevToolsAgent;
 using WebKit::WebDeviceMotionData;
+using WebKit::WebDeviceOrientationData;
 using WebKit::WebDeviceOrientation;
 using WebKit::WebElement;
 using WebKit::WebFrame;
@@ -109,14 +112,16 @@ void MakeBitmapOpaque(SkBitmap* bitmap) {
 #endif
 
 void CopyCanvasToBitmap(SkCanvas* canvas,  SkBitmap* snapshot) {
-  SkDevice* device = skia::GetTopDevice(*canvas);
+  SkBaseDevice* device = skia::GetTopDevice(*canvas);
   const SkBitmap& bitmap = device->accessBitmap(false);
   const bool success = bitmap.copyTo(snapshot, SkBitmap::kARGB_8888_Config);
   DCHECK(success);
 
 #if !defined(OS_MACOSX)
   // Only the expected PNGs for Mac have a valid alpha channel.
-  MakeBitmapOpaque(snapshot);
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableOverlayFullscreenVideo))
+    MakeBitmapOpaque(snapshot);
 #endif
 }
 
@@ -215,6 +220,11 @@ void WebKitTestRunner::setGamepadData(const WebGamepads& gamepads) {
 
 void WebKitTestRunner::setDeviceMotionData(const WebDeviceMotionData& data) {
   SetMockDeviceMotionData(data);
+}
+
+void WebKitTestRunner::setDeviceOrientationData(
+    const WebDeviceOrientationData& data) {
+  SetMockDeviceOrientationData(data);
 }
 
 void WebKitTestRunner::printMessage(const std::string& message) {

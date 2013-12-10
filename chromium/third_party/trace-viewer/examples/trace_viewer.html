@@ -36,6 +36,8 @@ found in the LICENSE file.
   base.require('tracing.importer');
   base.require('cc');
   base.require('tcmalloc');
+  base.require('system_stats');
+  base.require('gpu');
   </script>
   <script>
   'use strict';
@@ -61,12 +63,16 @@ found in the LICENSE file.
 
   function getAsync(url, cb) {
     var req = new XMLHttpRequest();
+    var is_binary = /[.]gz$/.test(url) || /[.]zip$/.test(url);
+    req.overrideMimeType('text/plain; charset=x-user-defined');
     req.open('GET', url, true);
+    if (is_binary)
+      req.responseType = 'arraybuffer';
     req.onreadystatechange = function(aEvt) {
       if (req.readyState == 4) {
         window.setTimeout(function() {
           if (req.status == 200) {
-            cb(req.responseText);
+            cb(is_binary ? req.response : req.responseText);
           } else {
             console.log('Failed to load ' + url);
           }
@@ -78,13 +84,21 @@ found in the LICENSE file.
 
   function createViewFromTraces(filenames, traces) {
     var m = new tracing.TraceModel();
-    m.importTraces(traces, true);
-
-    timelineViewEl.model = m;
-    timelineViewEl.tabIndex = 1;
-    if (timelineViewEl.timeline)
-      timelineViewEl.timeline.focusElement = timelineViewEl;
-    timelineViewEl.viewTitle = filenames;
+    var p = m.importTracesWithProgressDialog(traces, true);
+    p.then(
+      function() {
+        timelineViewEl.model = m;
+        timelineViewEl.tabIndex = 1;
+        if (timelineViewEl.timeline)
+          timelineViewEl.timeline.focusElement = timelineViewEl;
+        timelineViewEl.viewTitle = filenames;
+      },
+      function(err) {
+        var overlay = new ui.Overlay();
+        overlay.textContent = normalizeException(err).message;
+        overlay.title = 'Import error';
+        overlay.visible = true;
+      });
   }
 
   function onSelectionChange() {

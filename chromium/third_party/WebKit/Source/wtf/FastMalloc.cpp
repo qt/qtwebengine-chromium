@@ -82,12 +82,12 @@
 #include "wtf/StdLibExtras.h"
 #include "wtf/UnusedParam.h"
 
-#if OS(DARWIN)
+#if OS(MACOSX)
 #include <AvailabilityMacros.h>
 #endif
 
 #include <limits>
-#if OS(WINDOWS)
+#if OS(WIN)
 #include <windows.h>
 #else
 #include <pthread.h>
@@ -116,7 +116,7 @@
 #ifndef NDEBUG
 namespace WTF {
 
-#if OS(WINDOWS)
+#if OS(WIN)
 
 // TLS_OUT_OF_INDEXES is not defined on WinCE.
 #ifndef TLS_OUT_OF_INDEXES
@@ -151,7 +151,7 @@ void fastMallocAllow()
     TlsSetValue(isForibiddenTlsIndex, kTlsAllowValue);
 }
 
-#else // !OS(WINDOWS)
+#else // !OS(WIN)
 
 static pthread_key_t isForbiddenKey;
 static pthread_once_t isForbiddenKeyOnce = PTHREAD_ONCE_INIT;
@@ -179,7 +179,7 @@ void fastMallocAllow()
     pthread_once(&isForbiddenKeyOnce, initializeIsForbiddenKey);
     pthread_setspecific(isForbiddenKey, 0);
 }
-#endif // OS(WINDOWS)
+#endif // OS(WIN)
 
 } // namespace WTF
 #endif // NDEBUG
@@ -205,22 +205,13 @@ char* fastStrDup(const char* src)
 
 #if FORCE_SYSTEM_MALLOC
 
-#if OS(DARWIN)
+#if OS(MACOSX)
 #include <malloc/malloc.h>
-#elif OS(WINDOWS)
+#elif OS(WIN)
 #include <malloc.h>
 #endif
 
 namespace WTF {
-
-size_t fastMallocGoodSize(size_t bytes)
-{
-#if OS(DARWIN)
-    return malloc_good_size(bytes);
-#else
-    return bytes;
-#endif
-}
 
 void* fastMalloc(size_t n)
 {
@@ -269,7 +260,7 @@ FastMallocStatistics fastMallocStatistics()
 
 } // namespace WTF
 
-#if OS(DARWIN)
+#if OS(MACOSX)
 // This symbol is present in the JavaScriptCore exports file even when FastMalloc is disabled.
 // It will never be used in this case, so it's type and value are less interesting than its presence.
 extern "C"  const int jscore_fastmalloc_introspection = 0;
@@ -287,18 +278,17 @@ extern "C"  const int jscore_fastmalloc_introspection = 0;
 #include <pthread.h>
 #include <stdarg.h>
 #include <stddef.h>
-#include <stdio.h>
-#if OS(UNIX)
+#if OS(POSIX)
 #include <unistd.h>
 #endif
-#if OS(WINDOWS)
+#if OS(WIN)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
 #endif
 
-#if OS(DARWIN)
+#if OS(MACOSX)
 #include "MallocZoneSupport.h"
 #include "wtf/HashSet.h"
 #include "wtf/Vector.h"
@@ -326,7 +316,7 @@ extern "C"  const int jscore_fastmalloc_introspection = 0;
 // call to the function on Mac OS X, and it's used in performance-critical code. So we
 // use a function pointer. But that's not necessarily faster on other platforms, and we had
 // problems with this technique on Windows, so we'll do this only on Mac OS X.
-#if OS(DARWIN)
+#if OS(MACOSX)
 #if !USE(PTHREAD_GETSPECIFIC_DIRECT)
 static void* (*pthread_getspecific_function_pointer)(pthread_key_t) = pthread_getspecific;
 #define pthread_getspecific(key) pthread_getspecific_function_pointer(key)
@@ -364,7 +354,7 @@ template <unsigned> struct EntropySource;
 template <> struct EntropySource<4> {
     static uint32_t value()
     {
-#if OS(DARWIN)
+#if OS(MACOSX)
         return arc4random();
 #else
         return static_cast<uint32_t>(static_cast<uintptr_t>(currentTime() * 10000) ^ reinterpret_cast<uintptr_t>(&kLLHardeningMask));
@@ -939,7 +929,7 @@ class PageHeapAllocator {
 
   int inuse() const { return inuse_; }
 
-#if OS(DARWIN)
+#if OS(MACOSX)
   template <class Recorder>
   void recordAdministrativeRegions(Recorder& recorder, const RemoteMemoryReader& reader)
   {
@@ -1273,7 +1263,7 @@ typedef TCMalloc_Central_FreeListPadded_Template<sizeof(TCMalloc_Central_FreeLis
 #pragma clang diagnostic pop
 #endif
 
-#if OS(DARWIN)
+#if OS(MACOSX)
 struct Span;
 class TCMalloc_PageHeap;
 class TCMalloc_ThreadCache;
@@ -1591,7 +1581,7 @@ class TCMalloc_PageHeap {
   // Index of last free list we scavenged
   size_t scavenge_index_;
 
-#if OS(DARWIN)
+#if OS(MACOSX)
   friend class FastMallocZone;
 #endif
 
@@ -1601,7 +1591,7 @@ class TCMalloc_PageHeap {
   void scavenge();
   ALWAYS_INLINE bool shouldScavenge() const;
 
-#if HAVE(DISPATCH_H) || OS(WINDOWS)
+#if HAVE(DISPATCH_H) || OS(WIN)
   void periodicScavenge();
   ALWAYS_INLINE bool isScavengerSuspended();
   ALWAYS_INLINE void scheduleScavenger();
@@ -1613,7 +1603,7 @@ class TCMalloc_PageHeap {
   dispatch_queue_t m_scavengeQueue;
   dispatch_source_t m_scavengeTimer;
   bool m_scavengingSuspended;
-#elif OS(WINDOWS)
+#elif OS(WIN)
   static void CALLBACK scavengerTimerFired(void*, BOOLEAN);
   HANDLE m_scavengeQueueTimer;
 #else
@@ -1700,7 +1690,7 @@ ALWAYS_INLINE void TCMalloc_PageHeap::suspendScavenger()
     dispatch_suspend(m_scavengeTimer);
 }
 
-#elif OS(WINDOWS)
+#elif OS(WIN)
 
 void TCMalloc_PageHeap::scavengerTimerFired(void* context, BOOLEAN)
 {
@@ -2371,7 +2361,7 @@ class TCMalloc_ThreadCache_FreeList {
 class TCMalloc_ThreadCache {
  private:
   typedef TCMalloc_ThreadCache_FreeList FreeList;
-#if OS(WINDOWS)
+#if OS(WIN)
   typedef DWORD ThreadIdentifier;
 #else
   typedef pthread_t ThreadIdentifier;
@@ -2467,16 +2457,9 @@ static inline TCMalloc_PageHeap* getPageHeap()
 
 #define pageheap getPageHeap()
 
-size_t fastMallocGoodSize(size_t bytes)
-{
-    if (!phinited)
-        TCMalloc_ThreadCache::InitModule();
-    return AllocationSize(bytes);
-}
-
 #if USE_BACKGROUND_THREAD_TO_SCAVENGE_MEMORY
 
-#if HAVE(DISPATCH_H) || OS(WINDOWS)
+#if HAVE(DISPATCH_H) || OS(WIN)
 
 void TCMalloc_PageHeap::periodicScavenge()
 {
@@ -2558,7 +2541,7 @@ static __thread TCMalloc_ThreadCache *threadlocal_heap;
 // Until then, we use a slow path to get the heap object.
 static bool tsd_inited = false;
 static pthread_key_t heap_key;
-#if OS(WINDOWS)
+#if OS(WIN)
 DWORD tlsIndex = TLS_OUT_OF_INDEXES;
 #endif
 
@@ -2575,7 +2558,7 @@ static ALWAYS_INLINE void setThreadHeap(TCMalloc_ThreadCache* heap)
     // of thread-local storage in use, to benefit from the delete callback.
     pthread_setspecific(heap_key, heap);
 
-#if OS(WINDOWS)
+#if OS(WIN)
     TlsSetValue(tlsIndex, heap);
 #endif
 }
@@ -2833,7 +2816,7 @@ ALWAYS_INLINE void TCMalloc_Central_FreeList::Populate() {
     if (span) pageheap->RegisterSizeClass(span, size_class_);
   }
   if (span == NULL) {
-#if OS(WINDOWS)
+#if OS(WIN)
     MESSAGE("allocation failed: %d\n", ::GetLastError());
 #else
     MESSAGE("allocation failed: %d\n", errno);
@@ -3094,7 +3077,7 @@ void TCMalloc_ThreadCache::InitModule() {
     }
     pageheap->init();
     phinited = 1;
-#if OS(DARWIN)
+#if OS(MACOSX)
     FastMallocZone::init();
 #endif
   }
@@ -3118,7 +3101,7 @@ inline TCMalloc_ThreadCache* TCMalloc_ThreadCache::GetThreadHeap() {
     // __thread is faster, but only when the kernel supports it
   if (KernelSupportsTLS())
     return threadlocal_heap;
-#elif OS(WINDOWS)
+#elif OS(WIN)
     return static_cast<TCMalloc_ThreadCache*>(TlsGetValue(tlsIndex));
 #else
     return static_cast<TCMalloc_ThreadCache*>(pthread_getspecific(heap_key));
@@ -3152,19 +3135,19 @@ void TCMalloc_ThreadCache::InitTSD() {
 #else
   pthread_key_create(&heap_key, DestroyThreadCache);
 #endif
-#if OS(WINDOWS)
+#if OS(WIN)
   tlsIndex = TlsAlloc();
 #endif
   tsd_inited = true;
 
-#if !OS(WINDOWS)
+#if !OS(WIN)
   // We may have used a fake pthread_t for the main thread.  Fix it.
   pthread_t zero;
   memset(&zero, 0, sizeof(zero));
 #endif
   ASSERT(pageheap_lock.IsHeld());
   for (TCMalloc_ThreadCache* h = thread_heaps; h != NULL; h = h->next_) {
-#if OS(WINDOWS)
+#if OS(WIN)
     if (h->tid_ == 0) {
       h->tid_ = GetCurrentThreadId();
     }
@@ -3182,7 +3165,7 @@ TCMalloc_ThreadCache* TCMalloc_ThreadCache::CreateCacheIfNecessary() {
   {
     SpinLockHolder h(&pageheap_lock);
 
-#if OS(WINDOWS)
+#if OS(WIN)
     DWORD me;
     if (!tsd_inited) {
       me = 0;
@@ -3203,7 +3186,7 @@ TCMalloc_ThreadCache* TCMalloc_ThreadCache::CreateCacheIfNecessary() {
     // In that case, the heap for this thread has already been created
     // and added to the linked list.  So we search for that first.
     for (TCMalloc_ThreadCache* h = thread_heaps; h != NULL; h = h->next_) {
-#if OS(WINDOWS)
+#if OS(WIN)
       if (h->tid_ == me) {
 #else
       if (pthread_equal(h->tid_, me)) {
@@ -3564,7 +3547,7 @@ FastMallocStatistics fastMallocStatistics()
     return statistics;
 }
 
-#if OS(DARWIN)
+#if OS(MACOSX)
 
 template <typename T>
 T* RemoteMemoryReader::nextEntryInHardenedLinkedList(T** remoteAddress, uintptr_t entropy) const
@@ -3894,7 +3877,7 @@ void FastMallocZone::init()
     static FastMallocZone zone(pageheap, &thread_heaps, static_cast<TCMalloc_Central_FreeListPadded*>(central_cache), &span_allocator, &threadheap_allocator);
 }
 
-#endif // OS(DARWIN)
+#endif // OS(MACOSX)
 
 } // namespace WTF
 

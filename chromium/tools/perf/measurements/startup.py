@@ -23,7 +23,6 @@ class Startup(page_measurement.PageMeasurement):
 
   def __init__(self):
     super(Startup, self).__init__(needs_browser_restart_after_each_run=True)
-    self._cold = False
 
   def AddCommandLineOptions(self, parser):
     parser.add_option('--cold', action='store_true',
@@ -36,27 +35,18 @@ class Startup(page_measurement.PageMeasurement):
     # or --cold is explicitly specified.
     # assert options.warm != options.cold, \
     #     "You must specify either --warm or --cold"
-    self._cold = options.cold
-
-    if self._cold:
-      options.clear_sytem_cache_for_browser_and_profile_on_start = True
+    if options.cold:
+      browser_options = options.browser_options
+      browser_options.clear_sytem_cache_for_browser_and_profile_on_start = True
     else:
       self.discard_first_result = True
 
-    options.AppendExtraBrowserArg('--enable-stats-collection-bindings')
-
-    # Old commandline flags used for reference builds.
-    options.AppendExtraBrowserArg('--dom-automation')
-    options.AppendExtraBrowserArg(
-          '--reduce-security-for-dom-automation-tests')
+    options.AppendExtraBrowserArgs([
+        '--enable-stats-collection-bindings'
+    ])
 
   def MeasurePage(self, page, tab, results):
-    # TODO(jeremy): Remove references to
-    # domAutomationController.getBrowserHistogram when we update the reference
-    # builds.
-    get_histogram_js = ('(window.statsCollectionController ?'
-        'statsCollectionController :'
-        'domAutomationController).getBrowserHistogram("%s")')
+    get_histogram_js = 'statsCollectionController.getBrowserHistogram("%s")'
 
     for display_name, histogram_name in self.HISTOGRAMS_TO_RECORD.iteritems():
       result = tab.EvaluateJavaScript(get_histogram_js % histogram_name)

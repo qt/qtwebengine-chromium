@@ -10,7 +10,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "ui/aura/root_window_host.h"
-#include "ui/base/ozone/event_factory_ozone.h"
+#include "ui/events/ozone/event_factory_ozone.h"
 #include "ui/gfx/rect.h"
 
 namespace aura {
@@ -46,9 +46,6 @@ class RootWindowHostOzone : public RootWindowHost,
   virtual void OnCursorVisibilityChanged(bool show) OVERRIDE;
   virtual void MoveCursorTo(const gfx::Point& location) OVERRIDE;
   virtual void SetFocusWhenShown(bool focus_when_shown) OVERRIDE;
-  virtual bool CopyAreaToSkCanvas(const gfx::Rect& source_bounds,
-                                  const gfx::Point& dest_offset,
-                                  SkCanvas* canvas) OVERRIDE;
   virtual void PostNativeEvent(const base::NativeEvent& event) OVERRIDE;
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
   virtual void PrepareForShutdown() OVERRIDE;

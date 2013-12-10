@@ -17,9 +17,11 @@
     "unhooked-chrome-dex",
     "unhooked-other-ashmem",
     "unhooked-anonymous",
-    "unhooked-file-exec-lib-chrome",
+    "unhooked-file-exec-lib-chrome-shared",
+    "unhooked-file-exec-lib-chrome-private",
     "unhooked-file-exec",
-    "unhooked-file-nonexec-lib-chrome",
+    "unhooked-file-nonexec-lib-chrome-shared",
+    "unhooked-file-nonexec-lib-chrome-private",
     "unhooked-file-nonexec",
     "unhooked-stack",
     "unhooked-other",
@@ -52,6 +54,7 @@
     "tc-webcore-events-related",
     "tc-webcore-document-write",
     "tc-webcore-node-create-renderer",
+    "tc-webcore-image-frame-generator",
     "tc-webcore-render-catch-all",
     "tc-webcore-setInnerHTML-except-node",
     "tc-wtf-StringImpl-user-catch-all",
@@ -172,10 +175,18 @@
       "allocator": "unhooked"
     },
     {
-      "name": "unhooked-file-exec-lib-chrome",
+      "name": "unhooked-file-exec-lib-chrome-shared",
       "mappedpathname": "^/.*?(chromeview|content).*",
       "mappedpermission": "..x.",
-      "allocator": "unhooked"
+      "allocator": "unhooked",
+      "sharedwith": ["group", "others"]
+    },
+    {
+      "name": "unhooked-file-exec-lib-chrome-private",
+      "mappedpathname": "^/.*?(chromeview|content).*",
+      "mappedpermission": "..x.",
+      "allocator": "unhooked",
+      "sharedwith": ["private"]
     },
     {
       "name": "unhooked-file-exec",
@@ -184,9 +195,16 @@
       "allocator": "unhooked"
     },
     {
-      "name": "unhooked-file-nonexec-lib-chrome",
+      "name": "unhooked-file-nonexec-lib-chrome-shared",
       "mappedpathname": "^/.*?(chromeview|content).*",
-      "allocator": "unhooked"
+      "allocator": "unhooked",
+      "sharedwith": ["group", "others"]
+    },
+    {
+      "name": "unhooked-file-nonexec-lib-chrome-private",
+      "mappedpathname": "^/.*?(chromeview|content).*",
+      "allocator": "unhooked",
+      "sharedwith": ["private"]
     },
     {
       "name": "unhooked-file-nonexec",
@@ -411,6 +429,11 @@
     {
       "name": "tc-webcore-node-create-renderer",
       "stacktrace": ".*WebCore::Node::createRendererIfNeeded.*",
+      "allocator": "malloc"
+    },
+    {
+      "name": "tc-webcore-image-frame-generator",
+      "stacktrace": ".*WebCore::ImageFrameGenerator.*",
       "allocator": "malloc"
     },
     {

@@ -50,6 +50,10 @@ struct ANGLEShaderSymbol {
     ShDataType dataType;
     int size;
     bool isArray;
+    ShPrecisionType precision;
+#if ANGLE_SH_VERSION >= 112
+    int staticUse;
+#endif
 
     bool isSampler() const
     {

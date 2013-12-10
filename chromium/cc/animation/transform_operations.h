@@ -13,6 +13,7 @@
 #include "ui/gfx/transform.h"
 
 namespace gfx {
+class BoxF;
 struct DecomposedTransform;
 }
 
@@ -43,7 +44,18 @@ class CC_EXPORT TransformOperations {
   // transforms are baked to matrices (using apply), and the matrices are
   // then decomposed and interpolated. For more information, see
   // http://www.w3.org/TR/2011/WD-css3-2d-transforms-20111215/#matrix-decomposition.
-  gfx::Transform Blend(const TransformOperations& from, double progress) const;
+  gfx::Transform Blend(const TransformOperations& from,
+                       SkMScalar progress) const;
+
+  // Sets |bounds| be the bounding box for the region within which |box| will
+  // exist when it is transformed by the result of calling Blend on |from| and
+  // with progress in the range [min_progress, max_progress]. If this region
+  // cannot be computed, returns false.
+  bool BlendedBoundsForBox(const gfx::BoxF& box,
+                           const TransformOperations& from,
+                           SkMScalar min_progress,
+                           SkMScalar max_progress,
+                           gfx::BoxF* bounds) const;
 
   // Returns true if this operation and its descendants have the same types
   // as other and its descendants.
@@ -54,17 +66,18 @@ class CC_EXPORT TransformOperations {
   // fails (this can happen if either matrix cannot be decomposed).
   bool CanBlendWith(const TransformOperations& other) const;
 
-  void AppendTranslate(double x, double y, double z);
-  void AppendRotate(double x, double y, double z, double degrees);
-  void AppendScale(double x, double y, double z);
-  void AppendSkew(double x, double y);
-  void AppendPerspective(double depth);
+  void AppendTranslate(SkMScalar x, SkMScalar y, SkMScalar z);
+  void AppendRotate(SkMScalar x, SkMScalar y, SkMScalar z, SkMScalar degrees);
+  void AppendScale(SkMScalar x, SkMScalar y, SkMScalar z);
+  void AppendSkew(SkMScalar x, SkMScalar y);
+  void AppendPerspective(SkMScalar depth);
   void AppendMatrix(const gfx::Transform& matrix);
   void AppendIdentity();
   bool IsIdentity() const;
 
  private:
-  bool BlendInternal(const TransformOperations& from, double progress,
+  bool BlendInternal(const TransformOperations& from,
+                     SkMScalar progress,
                      gfx::Transform* result) const;
 
   std::vector<TransformOperation> operations_;

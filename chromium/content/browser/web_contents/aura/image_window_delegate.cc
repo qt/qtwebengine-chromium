@@ -4,6 +4,7 @@
 
 #include "content/browser/web_contents/aura/image_window_delegate.h"
 
+#include "ui/base/cursor/cursor.h"
 #include "ui/base/hit_test.h"
 #include "ui/compositor/compositor.h"
 #include "ui/gfx/canvas.h"
@@ -93,8 +94,8 @@ bool ImageWindowDelegate::HasHitTestMask() const {
 void ImageWindowDelegate::GetHitTestMask(gfx::Path* mask) const {
 }
 
-scoped_refptr<ui::Texture> ImageWindowDelegate::CopyTexture() {
-  return scoped_refptr<ui::Texture>();
+void ImageWindowDelegate::DidRecreateLayer(ui::Layer *old_layer,
+                                           ui::Layer *new_layer) {
 }
 
 }  // namespace content

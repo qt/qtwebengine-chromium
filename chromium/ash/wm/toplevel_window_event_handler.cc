@@ -5,10 +5,9 @@
 #include "ash/wm/toplevel_window_event_handler.h"
 
 #include "ash/shell.h"
-#include "ash/wm/property_util.h"
 #include "ash/wm/resize_shadow_controller.h"
-#include "ash/wm/window_properties.h"
 #include "ash/wm/window_resizer.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "ash/wm/workspace/snap_sizer.h"
 #include "base/message_loop/message_loop.h"
@@ -21,13 +20,13 @@
 #include "ui/aura/window_delegate.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/cursor/cursor.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_utils.h"
 #include "ui/base/gestures/gesture_recognizer.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/events/event.h"
+#include "ui/events/event_utils.h"
 #include "ui/gfx/screen.h"
 
 namespace {
@@ -104,9 +103,9 @@ void ToplevelWindowEventHandler::ScopedWindowResizer::OnWindowHierarchyChanging(
     const HierarchyChangeParams& params) {
   if (params.receiver != resizer_->GetTarget())
     return;
-
-  if (params.receiver->GetProperty(internal::kContinueDragAfterReparent)) {
-    params.receiver->SetProperty(internal::kContinueDragAfterReparent, false);
+  wm::WindowState* state = wm::GetWindowState(params.receiver);
+  if (state->continue_drag_after_reparent()) {
+    state->set_continue_drag_after_reparent(false);
     AddHandlers(params.new_parent);
   } else {
     handler_->CompleteDrag(DRAG_COMPLETE, 0);
@@ -117,7 +116,8 @@ void ToplevelWindowEventHandler::ScopedWindowResizer::OnWindowPropertyChanged(
     aura::Window* window,
     const void* key,
     intptr_t old) {
-  if (key == aura::client::kShowStateKey && !wm::IsWindowNormal(window))
+  if (key == aura::client::kShowStateKey &&
+      !wm::GetWindowState(window)->IsNormalShowState())
     handler_->CompleteDrag(DRAG_COMPLETE, 0);
 }
 
@@ -286,22 +286,24 @@ void ToplevelWindowEventHandler::OnGestureEvent(ui::GestureEvent* event) {
           target->delegate()->GetNonClientComponent(event->location());
       if (WindowResizer::GetBoundsChangeForWindowComponent(component) == 0)
         return;
-      if (!wm::IsWindowNormal(target))
+
+      wm::WindowState* window_state = wm::GetWindowState(target);
+      if (!window_state->IsNormalShowState())
         return;
 
       if (fabs(event->details().velocity_y()) >
           kMinVertVelocityForWindowMinimize) {
         // Minimize/maximize.
         if (event->details().velocity_y() > 0 &&
-            wm::CanMinimizeWindow(target)) {
-          wm::MinimizeWindow(target);
-          SetWindowAlwaysRestoresToRestoreBounds(target, true);
-          SetRestoreBoundsInParent(target, pre_drag_window_bounds_);
-        } else if (wm::CanMaximizeWindow(target)) {
-          SetRestoreBoundsInParent(target, pre_drag_window_bounds_);
-          wm::MaximizeWindow(target);
+            window_state->CanMinimize()) {
+          window_state->Minimize();
+          window_state->set_always_restores_to_restore_bounds(true);
+          window_state->SetRestoreBoundsInParent(pre_drag_window_bounds_);
+        } else if (window_state->CanMaximize()) {
+          window_state->SetRestoreBoundsInParent(pre_drag_window_bounds_);
+          window_state->Maximize();
         }
-      } else if (wm::CanSnapWindow(target) &&
+      } else if (window_state->CanSnap() &&
                  fabs(event->details().velocity_x()) >
                  kMinHorizVelocityForWindowSwipe) {
         // Snap left/right.
@@ -352,13 +354,11 @@ aura::client::WindowMoveResult ToplevelWindowEventHandler::RunMoveLoop(
   CreateScopedWindowResizer(source, drag_location, HTCAPTION, move_source);
   bool destroyed = false;
   destroyed_ = &destroyed;
-#if !defined(OS_MACOSX)
   base::MessageLoopForUI* loop = base::MessageLoopForUI::current();
   base::MessageLoop::ScopedNestableTaskAllower allow_nested(loop);
   base::RunLoop run_loop(aura::Env::GetInstance()->GetDispatcher());
   quit_closure_ = run_loop.QuitClosure();
   run_loop.Run();
-#endif  // !defined(OS_MACOSX)
   if (destroyed)
     return aura::client::MOVE_CANCELED;
   destroyed_ = NULL;

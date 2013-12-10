@@ -102,6 +102,8 @@ class COMPOSITOR_EXPORT LayerAnimationSequence
   bool IsFirstElementThreaded() const;
 
   // Used to identify groups of sequences that are supposed to start together.
+  // Once started, used to identify the sequence that owns a particular
+  // threaded animation.
   int animation_group_id() const { return animation_group_id_; }
   void set_animation_group_id(int id) { animation_group_id_ = id; }
 
@@ -123,6 +125,10 @@ class COMPOSITOR_EXPORT LayerAnimationSequence
   // by this sequence. Returns 0.0 if no elements have been progressed.
   double last_progressed_fraction() const { return last_progressed_fraction_; }
 
+  size_t size() const;
+
+  LayerAnimationElement* FirstElement() const;
+
  private:
   friend class LayerAnimatorTestController;
 
@@ -141,7 +147,7 @@ class COMPOSITOR_EXPORT LayerAnimationSequence
   void NotifyAborted();
 
   // The currently animating element.
-  LayerAnimationElement* CurrentElement();
+  LayerAnimationElement* CurrentElement() const;
 
   // The union of all the properties modified by all elements in the sequence.
   LayerAnimationElement::AnimatableProperties properties_;
@@ -164,6 +170,9 @@ class COMPOSITOR_EXPORT LayerAnimationSequence
   bool waiting_for_group_start_;
 
   // Identifies groups of sequences that are supposed to start together.
+  // Also used to identify the owner of a particular threaded animation; any
+  // in-progress threaded animation owned by this sequence will have this
+  // group id.
   int animation_group_id_;
 
   // These parties are notified when layer animations end.

@@ -77,6 +77,7 @@ class CONTENT_EXPORT NavigationControllerImpl
   virtual void SetMaxRestoredPageID(int32 max_id) OVERRIDE;
   virtual int32 GetMaxRestoredPageID() const OVERRIDE;
   virtual bool NeedsReload() const OVERRIDE;
+  virtual void SetNeedsReload() OVERRIDE;
   virtual void CancelPendingReload() OVERRIDE;
   virtual void ContinuePendingReload() OVERRIDE;
   virtual bool IsInitialNavigation() const OVERRIDE;
@@ -366,7 +367,7 @@ class CONTENT_EXPORT NavigationControllerImpl
   // of the restored entries to update its max page ID.
   int32 max_restored_page_id_;
 
-  // Manages the SSL security UI
+  // Manages the SSL security UI.
   SSLManager ssl_manager_;
 
   // Whether we need to be reloaded when made active.

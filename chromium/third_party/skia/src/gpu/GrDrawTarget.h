@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2010 Google Inc.
  *
@@ -6,20 +5,19 @@
  * found in the LICENSE file.
  */
 
-
 #ifndef GrDrawTarget_DEFINED
 #define GrDrawTarget_DEFINED
 
 #include "GrClipData.h"
 #include "GrDrawState.h"
 #include "GrIndexBuffer.h"
-#include "SkMatrix.h"
-#include "GrRefCnt.h"
 
 #include "SkClipStack.h"
+#include "SkMatrix.h"
 #include "SkPath.h"
-#include "SkTLazy.h"
 #include "SkTArray.h"
+#include "SkTLazy.h"
+#include "SkTypes.h"
 #include "SkXfermode.h"
 
 class GrClipData;
@@ -28,7 +26,7 @@ class GrPath;
 class GrVertexBuffer;
 class SkStrokeRec;
 
-class GrDrawTarget : public GrRefCnt {
+class GrDrawTarget : public SkRefCnt {
 protected:
     class DrawInfo;
 
@@ -475,7 +473,7 @@ public:
      *                             // destructor rather than target's current
      *                             // GrDrawState.
      */
-    class AutoStateRestore : ::GrNoncopyable {
+    class AutoStateRestore : public ::SkNoncopyable {
     public:
         /**
          * Default ASR will have no effect unless set() is subsequently called.
@@ -528,7 +526,7 @@ public:
 
     ////////////////////////////////////////////////////////////////////////////
 
-    class AutoReleaseGeometry : ::GrNoncopyable {
+    class AutoReleaseGeometry : public ::SkNoncopyable {
     public:
         AutoReleaseGeometry(GrDrawTarget*  target,
                             int            vertexCount,
@@ -539,8 +537,8 @@ public:
                  int            vertexCount,
                  int            indexCount);
         bool succeeded() const { return NULL != fTarget; }
-        void* vertices() const { GrAssert(this->succeeded()); return fVertices; }
-        void* indices() const { GrAssert(this->succeeded()); return fIndices; }
+        void* vertices() const { SkASSERT(this->succeeded()); return fVertices; }
+        void* indices() const { SkASSERT(this->succeeded()); return fIndices; }
         GrPoint* positions() const {
             return static_cast<GrPoint*>(this->vertices());
         }
@@ -555,7 +553,7 @@ public:
 
     ////////////////////////////////////////////////////////////////////////////
 
-    class AutoClipRestore : ::GrNoncopyable {
+    class AutoClipRestore : public ::SkNoncopyable {
     public:
         AutoClipRestore(GrDrawTarget* target) {
             fTarget = target;
@@ -580,11 +578,11 @@ public:
      * Saves the geometry src state at construction and restores in the destructor. It also saves
      * and then restores the vertex attrib state.
      */
-    class AutoGeometryPush : ::GrNoncopyable {
+    class AutoGeometryPush : public ::SkNoncopyable {
     public:
         AutoGeometryPush(GrDrawTarget* target)
             : fAttribRestore(target->drawState()) {
-            GrAssert(NULL != target);
+            SkASSERT(NULL != target);
             fTarget = target;
             target->pushGeometrySource();
         }
@@ -600,13 +598,13 @@ public:
      * Combination of AutoGeometryPush and AutoStateRestore. The vertex attribs will be in default
      * state regardless of ASRInit value.
      */
-    class AutoGeometryAndStatePush : ::GrNoncopyable {
+    class AutoGeometryAndStatePush : public ::SkNoncopyable {
     public:
         AutoGeometryAndStatePush(GrDrawTarget* target,
                                  ASRInit init,
                                  const SkMatrix* viewMatrix = NULL)
             : fState(target, init, viewMatrix) {
-            GrAssert(NULL != target);
+            SkASSERT(NULL != target);
             fTarget = target;
             target->pushGeometrySource();
             if (kPreserve_ASRInit == init) {
@@ -620,6 +618,23 @@ public:
         AutoStateRestore fState;
         GrDrawTarget*    fTarget;
     };
+
+    ///////////////////////////////////////////////////////////////////////////
+    // Draw execution tracking (for font atlases and other resources)
+    class DrawToken {
+    public:
+        DrawToken(GrDrawTarget* drawTarget, uint32_t drawID) :
+                  fDrawTarget(drawTarget), fDrawID(drawID) {}
+
+        bool isIssued() { return NULL != fDrawTarget && fDrawTarget->isIssued(fDrawID); }
+
+    private:
+        GrDrawTarget*  fDrawTarget;
+        uint32_t       fDrawID;   // this may wrap, but we're doing direct comparison
+                                  // so that should be okay
+    };
+
+    virtual DrawToken getCurrentDrawToken() { return DrawToken(this, 0); }
 
 protected:
 
@@ -702,7 +717,7 @@ protected:
     // it is preferable to call this rather than getGeomSrc()->fVertexSize because of the assert.
     size_t getVertexSize() const {
         // the vertex layout is only valid if a vertex source has been specified.
-        GrAssert(this->getGeomSrc().fVertexSrc != kNone_GeometrySrcType);
+        SkASSERT(this->getGeomSrc().fVertexSrc != kNone_GeometrySrcType);
         return this->getGeomSrc().fVertexSize;
     }
 
@@ -727,7 +742,7 @@ protected:
         int instanceCount() const { return fInstanceCount; }
 
         bool isIndexed() const { return fIndexCount > 0; }
-#if GR_DEBUG
+#ifdef SK_DEBUG
         bool isInstanced() const; // this version is longer because of asserts
 #else
         bool isInstanced() const { return fInstanceCount > 0; }
@@ -839,6 +854,9 @@ private:
     // but couldn't be made. Otherwise, returns true.
     bool setupDstReadIfNecessary(DrawInfo* info);
 
+    // Check to see if this set of draw commands has been sent out
+    virtual bool       isIssued(uint32_t drawID) { return true; }
+
     enum {
         kPreallocGeoSrcStateStackCnt = 4,
     };
@@ -849,7 +867,7 @@ private:
     // The context owns us, not vice-versa, so this ptr is not ref'ed by DrawTarget.
     GrContext*                                                      fContext;
 
-    typedef GrRefCnt INHERITED;
+    typedef SkRefCnt INHERITED;
 };
 
 #endif

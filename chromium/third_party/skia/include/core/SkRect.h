@@ -466,8 +466,9 @@ struct SK_API SkRect {
         return !SkScalarsEqual((SkScalar*)&a, (SkScalar*)&b, 4);
     }
 
-    /** return the 4 points that enclose the rectangle
-    */
+    /** return the 4 points that enclose the rectangle (top-left, top-right, bottom-right,
+        bottom-left). TODO: Consider adding param to control whether quad is CW or CCW.
+     */
     void toQuad(SkPoint quad[4]) const;
 
     /** Set this rectangle to the empty rectangle (0,0,0,0)
@@ -688,6 +689,21 @@ struct SK_API SkRect {
         fRight = SkMaxScalar(x, fRight);
         fTop    = SkMinScalar(y, fTop);
         fBottom = SkMaxScalar(y, fBottom);
+    }
+
+    /** Bulk version of growToInclude */
+    void growToInclude(const SkPoint pts[], int count) {
+        this->growToInclude(pts, sizeof(SkPoint), count);
+    }
+
+    /** Bulk version of growToInclude with stride. */
+    void growToInclude(const SkPoint pts[], size_t stride, int count) {
+        SkASSERT(count >= 0);
+        SkASSERT(stride >= sizeof(SkPoint));
+        const SkPoint* end = (const SkPoint*)((intptr_t)pts + count * stride);
+        for (; pts < end; pts = (const SkPoint*)((intptr_t)pts + stride)) {
+            this->growToInclude(pts->fX, pts->fY);
+        }
     }
 
     /**

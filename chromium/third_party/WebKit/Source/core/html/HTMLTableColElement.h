@@ -32,7 +32,7 @@ namespace WebCore {
 
 class HTMLTableColElement FINAL : public HTMLTablePartElement {
 public:
-    static PassRefPtr<HTMLTableColElement> create(const QualifiedName& tagName, Document*);
+    static PassRefPtr<HTMLTableColElement> create(const QualifiedName& tagName, Document&);
 
     int span() const { return m_span; }
     void setSpan(int);
@@ -40,7 +40,7 @@ public:
     String width() const;
 
 private:
-    HTMLTableColElement(const QualifiedName& tagName, Document*);
+    HTMLTableColElement(const QualifiedName& tagName, Document&);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
@@ -50,6 +50,12 @@ private:
     int m_span;
 };
 
-} //namespace
+inline HTMLTableColElement* toHTMLTableColElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::colTag) || node->hasTagName(HTMLNames::colgroupTag));
+    return static_cast<HTMLTableColElement*>(node);
+}
+
+} // namespace WebCore
 
 #endif

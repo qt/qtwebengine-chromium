@@ -54,37 +54,26 @@ public:
     ~InspectorFrontendHost();
     void disconnectClient();
 
-    void requestSetDockSide(const String&);
     void closeWindow();
-    void bringToFront();
     void setZoomFactor(float);
     void inspectedURLChanged(const String&);
 
     void setAttachedWindowHeight(unsigned);
-    void moveWindowBy(float x, float y) const;
     void setInjectedScriptForOrigin(const String& origin, const String& script);
 
     void copyText(const String& text);
-    void openInNewTab(const String& url);
-    void save(const String& url, const String& content, bool forceSaveAs);
-    void append(const String& url, const String& content);
     void close(const String& url);
 
     // Called from [Custom] implementations.
     void showContextMenu(Event*, const Vector<ContextMenuItem>& items);
     void sendMessageToBackend(const String& message);
+    void sendMessageToEmbedder(const String& message);
 
     String loadResourceSynchronously(const String& url);
     String getSelectionBackgroundColor();
     String getSelectionForegroundColor();
 
-    void requestFileSystems();
-    void addFileSystem();
-    void removeFileSystem(const String& fileSystemPath);
     PassRefPtr<DOMFileSystem> isolatedFileSystem(const String& fileSystemName, const String& rootURL);
-    void indexPath(int requestId, const String& fileSystemPath);
-    void stopIndexing(int requestId);
-    void searchInPath(int requestId, const String& fileSystemPath, const String& query);
 
     bool isUnderTest();
 

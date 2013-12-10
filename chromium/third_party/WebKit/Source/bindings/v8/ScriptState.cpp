@@ -44,7 +44,7 @@
 namespace WebCore {
 
 ScriptState::ScriptState(v8::Handle<v8::Context> context)
-    : m_context(context)
+    : m_context(context->GetIsolate(), context)
     , m_isolate(context->GetIsolate())
 {
     m_context.makeWeak(this, &makeWeakCallback);
@@ -72,19 +72,20 @@ ScriptState* ScriptState::forContext(v8::Handle<v8::Context> context)
 
     v8::Local<v8::Object> innerGlobal = v8::Local<v8::Object>::Cast(context->Global()->GetPrototype());
 
-    v8::Local<v8::Value> scriptStateWrapper = innerGlobal->GetHiddenValue(V8HiddenPropertyName::scriptState());
+    v8::Local<v8::Value> scriptStateWrapper = innerGlobal->GetHiddenValue(V8HiddenPropertyName::scriptState(context->GetIsolate()));
     if (!scriptStateWrapper.IsEmpty() && scriptStateWrapper->IsExternal())
         return static_cast<ScriptState*>(v8::External::Cast(*scriptStateWrapper)->Value());
 
     ScriptState* scriptState = new ScriptState(context);
-    innerGlobal->SetHiddenValue(V8HiddenPropertyName::scriptState(), v8::External::New(scriptState));
+    innerGlobal->SetHiddenValue(V8HiddenPropertyName::scriptState(context->GetIsolate()), v8::External::New(scriptState));
     return scriptState;
 }
 
 ScriptState* ScriptState::current()
 {
-    v8::HandleScope handleScope;
-    v8::Local<v8::Context> context = v8::Context::GetCurrent();
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    v8::HandleScope handleScope(isolate);
+    v8::Local<v8::Context> context = isolate->GetCurrentContext();
     ASSERT(!context.IsEmpty());
     return ScriptState::forContext(context);
 }
@@ -108,7 +109,7 @@ void ScriptState::setEvalEnabled(bool enabled)
 
 ScriptState* mainWorldScriptState(Frame* frame)
 {
-    v8::HandleScope handleScope;
+    v8::HandleScope handleScope(toIsolate(frame));
     return ScriptState::forContext(frame->script()->mainWorldContext());
 }
 
@@ -118,7 +119,7 @@ ScriptState* scriptStateFromWorkerGlobalScope(WorkerGlobalScope* workerGlobalSco
     if (!script)
         return 0;
 
-    v8::HandleScope handleScope;
+    v8::HandleScope handleScope(script->isolate());
     return ScriptState::forContext(script->context());
 }
 

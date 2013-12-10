@@ -6,7 +6,7 @@
 
 #include "base/i18n/case_conversion.h"
 #include "ui/base/ime/text_input_type.h"
-#include "ui/base/range/range.h"
+#include "ui/gfx/range/range.h"
 #include "ui/views/controls/prefix_delegate.h"
 #include "ui/views/widget/widget.h"
 
@@ -91,30 +91,30 @@ bool PrefixSelector::HasCompositionText() {
   return false;
 }
 
-bool PrefixSelector::GetTextRange(ui::Range* range) {
-  *range = ui::Range();
+bool PrefixSelector::GetTextRange(gfx::Range* range) {
+  *range = gfx::Range();
   return false;
 }
 
-bool PrefixSelector::GetCompositionTextRange(ui::Range* range) {
-  *range = ui::Range();
+bool PrefixSelector::GetCompositionTextRange(gfx::Range* range) {
+  *range = gfx::Range();
   return false;
 }
 
-bool PrefixSelector::GetSelectionRange(ui::Range* range) {
-  *range = ui::Range();
+bool PrefixSelector::GetSelectionRange(gfx::Range* range) {
+  *range = gfx::Range();
   return false;
 }
 
-bool PrefixSelector::SetSelectionRange(const ui::Range& range) {
+bool PrefixSelector::SetSelectionRange(const gfx::Range& range) {
   return false;
 }
 
-bool PrefixSelector::DeleteRange(const ui::Range& range) {
+bool PrefixSelector::DeleteRange(const gfx::Range& range) {
   return false;
 }
 
-bool PrefixSelector::GetTextFromRange(const ui::Range& range,
+bool PrefixSelector::GetTextFromRange(const gfx::Range& range,
                                         string16* text) {
   return false;
 }
@@ -135,9 +135,11 @@ void PrefixSelector::EnsureCaretInRect(const gfx::Rect& rect) {
 }
 
 void PrefixSelector::OnTextInput(const string16& text) {
-  // Small hack to filter out 'tab' input, as the expectation is that tabs
-  // should cycle input elements, not influence selection.
-  if (text.length() == 1 && text.at(0) == 0x09)
+  // Small hack to filter out 'tab' and 'enter' input, as the expectation is
+  // that they are control characters and will not affect the currently-active
+  // prefix.
+  if (text.length() == 1 &&
+      (text[0] == L'\t' || text[0] == L'\r' || text[0] == L'\n'))
     return;
 
   const int row_count = prefix_delegate_->GetRowCount();

@@ -174,7 +174,7 @@ WebInspector.NavigatorView.prototype = {
      * @param {WebInspector.UISourceCode} uiSourceCode
      * @param {boolean} focusSource
      */
-    _scriptSelected: function(uiSourceCode, focusSource)
+    _sourceSelected: function(uiSourceCode, focusSource)
     {
         this._lastSelectedUISourceCode = uiSourceCode;
         var data = { uiSourceCode: uiSourceCode, focusSource: focusSource};
@@ -213,7 +213,7 @@ WebInspector.NavigatorView.prototype = {
      */
     requestRename: function(uiSourceCode)
     {
-        this.dispatchEventToListeners(WebInspector.ScriptsNavigator.Events.ItemRenamingRequested, uiSourceCode);
+        this.dispatchEventToListeners(WebInspector.SourcesNavigator.Events.ItemRenamingRequested, uiSourceCode);
     },
 
     /**
@@ -299,6 +299,8 @@ WebInspector.NavigatorView.prototype = {
                 project.refresh(path);
             }
 
+            contextMenu.appendItem(WebInspector.UIString("Refresh"), refresh.bind(this));
+
             function create()
             {
                 var data = {};
@@ -307,8 +309,19 @@ WebInspector.NavigatorView.prototype = {
                 this.dispatchEventToListeners(WebInspector.NavigatorView.Events.ItemCreationRequested, data);
             }
 
-            contextMenu.appendItem(WebInspector.UIString("Refresh"), refresh.bind(this));
             contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "New file" : "New File"), create.bind(this));
+
+            function exclude()
+            {
+                var shouldExclude = window.confirm(WebInspector.UIString("Are you sure you want to exclude this folder?"));
+                if (shouldExclude) {
+                    WebInspector.startBatchUpdate();
+                    project.excludeFolder(path);
+                    WebInspector.endBatchUpdate();
+                }
+            }
+
+            contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Exclude folder" : "Exclude Folder"), exclude.bind(this));
         }
         contextMenu.appendSeparator();
         this._appendAddFolderItem(contextMenu);
@@ -636,7 +649,7 @@ WebInspector.NavigatorSourceTreeElement.prototype = {
 
     onspace: function()
     {
-        this._navigatorView._scriptSelected(this.uiSourceCode, true);
+        this._navigatorView._sourceSelected(this.uiSourceCode, true);
         return true;
     },
 
@@ -645,7 +658,7 @@ WebInspector.NavigatorSourceTreeElement.prototype = {
      */
     _onclick: function(event)
     {
-        this._navigatorView._scriptSelected(this.uiSourceCode, false);
+        this._navigatorView._sourceSelected(this.uiSourceCode, false);
     },
 
     /**
@@ -654,12 +667,12 @@ WebInspector.NavigatorSourceTreeElement.prototype = {
     ondblclick: function(event)
     {
         var middleClick = event.button === 1;
-        this._navigatorView._scriptSelected(this.uiSourceCode, !middleClick);
+        this._navigatorView._sourceSelected(this.uiSourceCode, !middleClick);
     },
 
     onenter: function()
     {
-        this._navigatorView._scriptSelected(this.uiSourceCode, true);
+        this._navigatorView._sourceSelected(this.uiSourceCode, true);
         return true;
     },
 
@@ -887,7 +900,7 @@ WebInspector.NavigatorUISourceCodeTreeNode.prototype = {
             return;
 
         var titleText = this._uiSourceCode.displayName();
-        if (!ignoreIsDirty && this._uiSourceCode.isDirty())
+        if (!ignoreIsDirty && (this._uiSourceCode.isDirty() || this._uiSourceCode.hasUnsavedCommittedChanges()))
             titleText = "*" + titleText;
         this._treeElement.titleText = titleText;
     },

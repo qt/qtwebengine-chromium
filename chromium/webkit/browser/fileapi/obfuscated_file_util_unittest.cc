@@ -11,8 +11,8 @@
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/platform_file.h"
+#include "base/run_loop.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/fileapi/async_file_test_helper.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
@@ -248,7 +248,7 @@ class ObfuscatedFileUtilTest : public testing::Test {
   }
 
   int64 SizeInUsageFile() {
-    base::MessageLoop::current()->RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
     int64 usage = 0;
     return usage_cache()->GetUsage(
         sandbox_file_system_.GetUsageCachePath(), &usage) ? usage : -1;
@@ -375,7 +375,7 @@ class ObfuscatedFileUtilTest : public testing::Test {
           expected_usage_(expected_usage) {}
 
     ~UsageVerifyHelper() {
-      base::MessageLoop::current()->RunUntilIdle();
+      base::RunLoop().RunUntilIdle();
       Check();
     }
 
@@ -2269,7 +2269,7 @@ TEST_F(ObfuscatedFileUtilTest, MaybeDropDatabasesAliveCase) {
   // Callback to Drop DB is called while ObfuscatedFileUtilTest is still alive.
   file_util.db_flush_delay_seconds_ = 0;
   file_util.MarkUsed();
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   ASSERT_TRUE(file_util.origin_database_ == NULL);
 }
@@ -2287,7 +2287,7 @@ TEST_F(ObfuscatedFileUtilTest, MaybeDropDatabasesAlreadyDeletedCase) {
   }
 
   // At this point the callback is still in the message queue but OFU is gone.
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 TEST_F(ObfuscatedFileUtilTest, DestroyDirectoryDatabase_Isolated) {
@@ -2367,9 +2367,37 @@ TEST_F(ObfuscatedFileUtilTest, MigrationBackFromIsolated) {
   // Check we see the same contents in the new origin directory.
   std::string origin_db_data;
   EXPECT_TRUE(base::PathExists(origin_directory.AppendASCII("dummy")));
-  EXPECT_TRUE(file_util::ReadFileToString(
+  EXPECT_TRUE(base::ReadFileToString(
       origin_directory.AppendASCII("dummy"), &origin_db_data));
   EXPECT_EQ(kFakeDirectoryData, origin_db_data);
+}
+
+TEST_F(ObfuscatedFileUtilTest, OpenPathInNonDirectory) {
+  FileSystemURL file(CreateURLFromUTF8("file"));
+  FileSystemURL path_in_file(CreateURLFromUTF8("file/file"));
+  bool created;
+
+  ASSERT_EQ(base::PLATFORM_FILE_OK,
+            ofu()->EnsureFileExists(UnlimitedContext().get(), file, &created));
+  ASSERT_TRUE(created);
+
+  created = false;
+  base::PlatformFile file_handle = base::kInvalidPlatformFileValue;
+  int file_flags = base::PLATFORM_FILE_CREATE | base::PLATFORM_FILE_WRITE;
+  ASSERT_EQ(base::PLATFORM_FILE_ERROR_NOT_A_DIRECTORY,
+            ofu()->CreateOrOpen(UnlimitedContext().get(),
+                                path_in_file,
+                                file_flags,
+                                &file_handle,
+                                &created));
+  ASSERT_FALSE(created);
+  ASSERT_EQ(base::kInvalidPlatformFileValue, file_handle);
+
+  ASSERT_EQ(base::PLATFORM_FILE_ERROR_NOT_A_DIRECTORY,
+            ofu()->CreateDirectory(UnlimitedContext().get(),
+                                   path_in_file,
+                                   false /* exclusive */,
+                                   false /* recursive */));
 }
 
 }  // namespace fileapi

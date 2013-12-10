@@ -20,47 +20,6 @@ namespace autofill {
 
 class AutofillMetrics {
  public:
-  // The possible results of an Autocheckout flow.
-  enum AutocheckoutBuyFlowMetric {
-    // The user has initated Autocheckout. The baseline metric.
-    AUTOCHECKOUT_BUY_FLOW_STARTED,
-    // Autocheckout completed successfully.
-    AUTOCHECKOUT_BUY_FLOW_SUCCESS,
-    // Autocheckout failed due to missing server side data.
-    AUTOCHECKOUT_BUY_FLOW_MISSING_FIELDMAPPING,
-    // Autocheckout failed due to a missing proceed element.
-    AUTOCHECKOUT_BUY_FLOW_MISSING_ADVANCE_ELEMENT,
-    // Autocheckout failed for any number of other reasons, e.g, the proceed
-    // element click failed, the page numbers were not increasing, etc.
-    AUTOCHECKOUT_BUY_FLOW_CANNOT_PROCEED,
-    // Autocheckout failed due to a missing click element before form filling.
-    AUTOCHECKOUT_BUY_FLOW_MISSING_CLICK_ELEMENT_BEFORE_FORM_FILLING,
-    // Autocheckout failed due to a missing click element after form filling.
-    AUTOCHECKOUT_BUY_FLOW_MISSING_CLICK_ELEMENT_AFTER_FORM_FILLING,
-    NUM_AUTOCHECKOUT_BUY_FLOW_METRICS
-  };
-
-  // The success or failure of Autocheckout.
-  enum AutocheckoutCompletionStatus {
-    AUTOCHECKOUT_CANCELLED,  // The user canceled Autocheckout while it was in
-                             // progress.
-    AUTOCHECKOUT_FAILED,     // The user canceled out of the dialog after
-                             // an Autocheckout failure.
-    AUTOCHECKOUT_SUCCEEDED,  // The dialog was closed after Autocheckout
-                             // succeeded.
-  };
-
-  // The action a user took to dismiss a bubble.
-  enum BubbleMetric {
-    BUBBLE_CREATED = 0,         // The bubble was created.
-    BUBBLE_ACCEPTED,            // The user accepted, i.e. confirmed, the
-                                // bubble.
-    BUBBLE_DISMISSED,           // The user dismissed the bubble.
-    BUBBLE_IGNORED,             // The user did not interact with the bubble.
-    BUBBLE_COULD_BE_DISPLAYED,  // The bubble could be displayed.
-    NUM_BUBBLE_METRICS,
-  };
-
   enum DeveloperEngagementMetric {
     // Parsed a form that is potentially autofillable.
     FILLABLE_FORM_PARSED = 0,
@@ -119,8 +78,8 @@ class AutofillMetrics {
     NUM_DIALOG_INITIAL_USER_STATE_METRICS
   };
 
-  // Events related to the Autofill popup shown in a requestAutocomplete or
-  // Autocheckout dialog.
+  // Events related to the Autofill popup shown in a requestAutocomplete
+  // dialog.
   enum DialogPopupEvent {
     // An Autofill popup was shown.
     DIALOG_POPUP_SHOWN = 0,
@@ -163,21 +122,21 @@ class AutofillMetrics {
     DIALOG_UI_SIGNIN_SHOWN,
 
     // Selecting a different item from a suggestion menu dropdown:
-    DIALOG_UI_EMAIL_SELECTED_SUGGESTION_CHANGED,
+    DEPRECATED_DIALOG_UI_EMAIL_SELECTED_SUGGESTION_CHANGED,
     DIALOG_UI_BILLING_SELECTED_SUGGESTION_CHANGED,
     DIALOG_UI_CC_BILLING_SELECTED_SUGGESTION_CHANGED,
     DIALOG_UI_SHIPPING_SELECTED_SUGGESTION_CHANGED,
     DIALOG_UI_CC_SELECTED_SUGGESTION_CHANGED,
 
     // Showing the editing UI for a section of the dialog:
-    DIALOG_UI_EMAIL_EDIT_UI_SHOWN,
-    DIALOG_UI_BILLING_EDIT_UI_SHOWN,
-    DIALOG_UI_CC_BILLING_EDIT_UI_SHOWN,
-    DIALOG_UI_SHIPPING_EDIT_UI_SHOWN,
-    DIALOG_UI_CC_EDIT_UI_SHOWN,
+    DEPRECATED_DIALOG_UI_EMAIL_EDIT_UI_SHOWN,
+    DEPRECATED_DIALOG_UI_BILLING_EDIT_UI_SHOWN,
+    DEPRECATED_DIALOG_UI_CC_BILLING_EDIT_UI_SHOWN,
+    DEPRECATED_DIALOG_UI_SHIPPING_EDIT_UI_SHOWN,
+    DEPRECATED_DIALOG_UI_CC_EDIT_UI_SHOWN,
 
     // Adding a new item in a section of the dialog:
-    DIALOG_UI_EMAIL_ITEM_ADDED,
+    DEPRECATED_DIALOG_UI_EMAIL_ITEM_ADDED,
     DIALOG_UI_BILLING_ITEM_ADDED,
     DIALOG_UI_CC_BILLING_ITEM_ADDED,
     DIALOG_UI_SHIPPING_ITEM_ADDED,
@@ -296,8 +255,8 @@ class AutofillMetrics {
     AUTHENTICATE_INSTRUMENT,
     GET_FULL_WALLET,
     GET_WALLET_ITEMS,
-    SEND_STATUS,
     SAVE_TO_WALLET,
+    NUM_WALLET_API_CALLS
   };
 
   // For measuring the frequency of errors while communicating with the Wallet
@@ -362,21 +321,8 @@ class AutofillMetrics {
     NUM_WALLET_REQUIRED_ACTIONS
   };
 
-  // The success or failure of downloading Autocheckout whitelist file.
-  enum AutocheckoutWhitelistDownloadStatus {
-    AUTOCHECKOUT_WHITELIST_DOWNLOAD_FAILED,
-    AUTOCHECKOUT_WHITELIST_DOWNLOAD_SUCCEEDED,
-  };
-
   AutofillMetrics();
   virtual ~AutofillMetrics();
-
-  // Logs how the user interacted with the Autocheckout bubble.
-  virtual void LogAutocheckoutBubbleMetric(BubbleMetric metric) const;
-
-  // Logs the result of an Autocheckout buy flow.
-  virtual void LogAutocheckoutBuyFlowMetric(
-      AutocheckoutBuyFlowMetric metric) const;
 
   virtual void LogCreditCardInfoBarMetric(InfoBarMetric metric) const;
 
@@ -402,66 +348,54 @@ class AutofillMetrics {
 
   virtual void LogUserHappinessMetric(UserHappinessMetric metric) const;
 
-  // Logs |state| to the dismissal states histogram for |dialog_type|.
-  virtual void LogDialogDismissalState(autofill::DialogType dialog_type,
-                                       DialogDismissalState state) const;
+  // Logs |state| to the dismissal states histogram.
+  virtual void LogDialogDismissalState(DialogDismissalState state) const;
 
   // This should be called as soon as the user's signed-in status and Wallet
   // item count is known.  Records that a user starting out in |user_state| is
-  // interacting with a dialog of |dialog_type|.
+  // interacting with a dialog.
   virtual void LogDialogInitialUserState(
-      autofill::DialogType dialog_type,
       DialogInitialUserStateMetric user_type) const;
 
-  // Logs the time elapsed between the dialog being shown for |dialog_type| and
-  // when it is ready for user interaction.
-  virtual void LogDialogLatencyToShow(autofill::DialogType dialog_type,
-                                         const base::TimeDelta& duration) const;
+  // Logs the time elapsed between the dialog being shown and when it is ready
+  // for user interaction.
+  virtual void LogDialogLatencyToShow(const base::TimeDelta& duration) const;
 
-  // Logs |event| to the popup events histogram for |dialog_type|.
-  virtual void LogDialogPopupEvent(autofill::DialogType dialog_type,
-                                   DialogPopupEvent event) const;
+  // Logs |event| to the popup events histogram.
+  virtual void LogDialogPopupEvent(DialogPopupEvent event) const;
 
-  // Logs |metric| to the security metrics histogram for |dialog_type|.
-  virtual void LogDialogSecurityMetric(autofill::DialogType dialog_type,
-                                       DialogSecurityMetric metric) const;
+  // Logs |metric| to the security metrics histogram.
+  virtual void LogDialogSecurityMetric(DialogSecurityMetric metric) const;
 
-  // This should be called when the Autofill dialog, invoked by a dialog of type
-  // |dialog_type|, is closed.  |duration| should be the time elapsed between
-  // the dialog being shown and it being closed.  |dismissal_action| should
-  // indicate whether the user dismissed the dialog by submitting the form data
-  // or by canceling.
+  // This should be called when the Autofill dialog is closed.  |duration|
+  // should be the time elapsed between the dialog being shown and it being
+  // closed.  |dismissal_action| should indicate whether the user dismissed
+  // the dialog by submitting the form data or by canceling.
   virtual void LogDialogUiDuration(
       const base::TimeDelta& duration,
-      autofill::DialogType dialog_type,
       DialogDismissalAction dismissal_action) const;
 
-  // Logs |event| to the UI events histogram for |dialog_type|.
-  virtual void LogDialogUiEvent(autofill::DialogType dialog_type,
-                                DialogUiEvent event) const;
+  // Logs |event| to the UI events histogram.
+  virtual void LogDialogUiEvent(DialogUiEvent event) const;
 
-  // Logs |metric| to the Wallet errors histogram for |dialog_type|.
-  virtual void LogWalletErrorMetric(autofill::DialogType dialog_type,
-                                    WalletErrorMetric metric) const;
+  // Logs |metric| to the Wallet errors histogram.
+  virtual void LogWalletErrorMetric(WalletErrorMetric metric) const;
 
   // Logs the network request time of Wallet API calls.
   virtual void LogWalletApiCallDuration(
       WalletApiCallMetric metric,
       const base::TimeDelta& duration) const;
 
-  // Logs |required_action| to the required actions histogram for |dialog_type|.
+  // Logs that the Wallet API call corresponding to |metric| was malformed.
+  virtual void LogWalletMalformedResponseMetric(
+      WalletApiCallMetric metric) const;
+
+  // Logs |required_action| to the required actions histogram.
   virtual void LogWalletRequiredActionMetric(
-      autofill::DialogType dialog_type,
       WalletRequiredActionMetric required_action) const;
 
-  virtual void LogAutocheckoutDuration(
-      const base::TimeDelta& duration,
-      AutocheckoutCompletionStatus status) const;
-
-  // Logs the time taken to download Autocheckout whitelist file.
-  virtual void LogAutocheckoutWhitelistDownloadDuration(
-      const base::TimeDelta& duration,
-      AutocheckoutWhitelistDownloadStatus status) const;
+  // Logs HTTP response codes recieved by wallet client.
+  virtual void LogWalletResponseCode(int response_code) const;
 
   // This should be called when a form that has been Autofilled is submitted.
   // |duration| should be the time elapsed between form load and submission.

@@ -64,7 +64,7 @@ void V8Document::evaluateMethodCustom(const v8::FunctionCallbackInfo<v8::Value>&
 {
     RefPtr<Document> document = V8Document::toNative(args.Holder());
     ExceptionState es(args.GetIsolate());
-    String expression = toWebCoreString(args[0]);
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, expression, args[0]);
     RefPtr<Node> contextNode;
     if (V8Node::HasInstance(args[1], args.GetIsolate(), worldType(args.GetIsolate())))
         contextNode = V8Node::toNative(v8::Handle<v8::Object>::Cast(args[1]));
@@ -84,7 +84,7 @@ void V8Document::evaluateMethodCustom(const v8::FunctionCallbackInfo<v8::Value>&
     if (es.throwIfNeeded())
         return;
 
-    v8SetReturnValue(args, toV8Fast(result.release(), args, document.get()));
+    v8SetReturnValueFast(args, result.release(), document.get());
 }
 
 v8::Handle<v8::Object> wrap(Document* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
@@ -102,18 +102,6 @@ v8::Handle<v8::Object> wrap(Document* impl, v8::Handle<v8::Object> creationConte
             frame->script()->windowShell(mainThreadNormalWorld())->updateDocumentWrapper(wrapper);
     }
     return wrapper;
-}
-
-void V8Document::createTouchListMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
-{
-    RefPtr<TouchList> touchList = TouchList::create();
-
-    for (int i = 0; i < args.Length(); i++) {
-        Touch* touch = V8DOMWrapper::isWrapperOfType(args[i], &V8Touch::info) ? V8Touch::toNative(args[i]->ToObject()) : 0;
-        touchList->append(touch);
-    }
-
-    v8SetReturnValue(args, toV8(touchList.release(), args.Holder(), args.GetIsolate()));
 }
 
 } // namespace WebCore

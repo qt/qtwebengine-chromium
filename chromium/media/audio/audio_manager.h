@@ -58,10 +58,15 @@ class MEDIA_EXPORT AudioManager {
   // threads to avoid blocking the rest of the application.
   virtual void ShowAudioInputSettings() = 0;
 
-  // Appends a list of available input devices. It is not guaranteed that
-  // all the devices in the list support all formats and sample rates for
+  // Appends a list of available input devices to |device_names|,
+  // which must initially be empty. It is not guaranteed that all the
+  // devices in the list support all formats and sample rates for
   // recording.
   virtual void GetAudioInputDeviceNames(AudioDeviceNames* device_names) = 0;
+
+  // Appends a list of available output devices to |device_names|,
+  // which must initially be empty.
+  virtual void GetAudioOutputDeviceNames(AudioDeviceNames* device_names) = 0;
 
   // Factory for all the supported stream formats. |params| defines parameters
   // of the audio stream to be created.
@@ -70,6 +75,14 @@ class MEDIA_EXPORT AudioManager {
   // audio source thinks it can usually fill without blocking. Internally two
   // or three buffers are created, one will be locked for playback and one will
   // be ready to be filled in the call to AudioSourceCallback::OnMoreData().
+  //
+  // To create a stream for the default output device, pass an empty string
+  // for |device_id|, otherwise the specified audio device will be opened.
+  //
+  // The |input_device_id| is used for low-latency unified streams
+  // (input+output) only and then only if the audio parameters specify a >0
+  // input channel count.  In other cases this id is ignored and should be
+  // empty.
   //
   // Returns NULL if the combination of the parameters is not supported, or if
   // we have reached some other platform specific limit.
@@ -82,14 +95,18 @@ class MEDIA_EXPORT AudioManager {
   //
   // Do not free the returned AudioOutputStream. It is owned by AudioManager.
   virtual AudioOutputStream* MakeAudioOutputStream(
-      const AudioParameters& params, const std::string& input_device_id) = 0;
+      const AudioParameters& params,
+      const std::string& device_id,
+      const std::string& input_device_id) = 0;
 
   // Creates new audio output proxy. A proxy implements
   // AudioOutputStream interface, but unlike regular output stream
   // created with MakeAudioOutputStream() it opens device only when a
   // sound is actually playing.
   virtual AudioOutputStream* MakeAudioOutputStreamProxy(
-      const AudioParameters& params, const std::string& input_device_id) = 0;
+      const AudioParameters& params,
+      const std::string& device_id,
+      const std::string& input_device_id) = 0;
 
   // Factory to create audio recording streams.
   // |channels| can be 1 or 2.
@@ -130,13 +147,27 @@ class MEDIA_EXPORT AudioManager {
   // streams. It is a convenience interface to
   // AudioManagerBase::GetPreferredOutputStreamParameters and each AudioManager
   // does not need their own implementation to this interface.
+  // TODO(tommi): Remove this method and use GetOutputStreamParameteres instead.
   virtual AudioParameters GetDefaultOutputStreamParameters() = 0;
+
+  // Returns the output hardware audio parameters for a specific output device.
+  virtual AudioParameters GetOutputStreamParameters(
+      const std::string& device_id) = 0;
 
   // Returns the input hardware audio parameters of the specific device
   // for opening input streams. Each AudioManager needs to implement their own
   // version of this interface.
   virtual AudioParameters GetInputStreamParameters(
       const std::string& device_id) = 0;
+
+  // Returns the device id of an output device that belongs to the same hardware
+  // as the specified input device.
+  // If the hardware has only an input device (e.g. a webcam), the return value
+  // will be empty (which the caller can then interpret to be the default output
+  // device).  Implementations that don't yet support this feature, must return
+  // an empty string.
+  virtual std::string GetAssociatedOutputDeviceID(
+      const std::string& input_device_id) = 0;
 
  protected:
   AudioManager();

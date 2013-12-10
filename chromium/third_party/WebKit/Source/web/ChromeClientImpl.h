@@ -81,7 +81,7 @@ public:
     virtual void takeFocus(WebCore::FocusDirection);
     virtual void focusedNodeChanged(WebCore::Node*);
     virtual WebCore::Page* createWindow(
-        WebCore::Frame*, const WebCore::FrameLoadRequest&, const WebCore::WindowFeatures&, const WebCore::NavigationAction&, WebCore::NavigationPolicy);
+        WebCore::Frame*, const WebCore::FrameLoadRequest&, const WebCore::WindowFeatures&, WebCore::NavigationPolicy);
     virtual void show(WebCore::NavigationPolicy);
     virtual bool canRunModal();
     virtual void runModal();
@@ -94,10 +94,11 @@ public:
     virtual void setMenubarVisible(bool);
     virtual bool menubarVisible();
     virtual void setResizable(bool);
+    virtual bool shouldReportDetailedMessageForSource(const WTF::String&);
     virtual void addMessageToConsole(
         WebCore::MessageSource, WebCore::MessageLevel,
         const WTF::String& message, unsigned lineNumber,
-        const WTF::String& sourceID);
+        const WTF::String& sourceID, const WTF::String& stackTrace);
     virtual bool canRunBeforeUnloadConfirmPanel();
     virtual bool runBeforeUnloadConfirmPanel(
         const WTF::String& message, WebCore::Frame*);
@@ -175,7 +176,7 @@ public:
     virtual bool isPasswordGenerationEnabled() const OVERRIDE;
     virtual void openPasswordGenerator(WebCore::HTMLInputElement*) OVERRIDE;
 
-    virtual bool shouldRunModalDialogDuringPageDismissal(const DialogType&, const String& dialogMessage, WebCore::FrameLoader::PageDismissalType) const;
+    virtual bool shouldRunModalDialogDuringPageDismissal(const DialogType&, const String& dialogMessage, WebCore::Document::PageDismissalType) const;
 
     virtual bool shouldRubberBandInDirection(WebCore::ScrollDirection) const;
     virtual void numWheelEventHandlersChanged(unsigned);

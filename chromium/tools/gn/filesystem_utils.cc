@@ -4,7 +4,10 @@
 
 #include "tools/gn/filesystem_utils.h"
 
+#include <algorithm>
+
 #include "base/logging.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "tools/gn/location.h"
@@ -63,7 +66,49 @@ DotDisposition ClassifyAfterDot(const std::string& path,
   return NOT_A_DIRECTORY;
 }
 
-}  // namesapce
+#if defined(OS_WIN)
+inline char NormalizeWindowsPathChar(char c) {
+  if (c == '/')
+    return '\\';
+  return base::ToLowerASCII(c);
+}
+
+// Attempts to do a case and slash-insensitive comparison of two 8-bit Windows
+// paths.
+bool AreAbsoluteWindowsPathsEqual(const base::StringPiece& a,
+                                  const base::StringPiece& b) {
+  if (a.size() != b.size())
+    return false;
+
+  // For now, just do a case-insensitive ASCII comparison. We could convert to
+  // UTF-16 and use ICU if necessary. Or maybe base::strcasecmp is good enough?
+  for (size_t i = 0; i < a.size(); i++) {
+    if (NormalizeWindowsPathChar(a[i]) != NormalizeWindowsPathChar(b[i]))
+      return false;
+  }
+  return true;
+}
+
+bool DoesBeginWindowsDriveLetter(const base::StringPiece& path) {
+  if (path.size() < 3)
+    return false;
+
+  // Check colon first, this will generally fail fastest.
+  if (path[1] != ':')
+    return false;
+
+  // Check drive letter
+  if (!((path[0] >= 'A' && path[0] <= 'Z') ||
+         path[0] >= 'a' && path[0] <= 'z'))
+    return false;
+
+  if (path[2] != '/' && path[2] != '\\')
+    return false;
+  return true;
+}
+#endif
+
+}  // namespace
 
 SourceFileType GetSourceFileType(const SourceFile& file,
                                  Settings::TargetOS os) {
@@ -86,14 +131,18 @@ SourceFileType GetSourceFileType(const SourceFile& file,
     case Settings::WIN:
       if (extension == "rc")
         return SOURCE_RC;
+      // TODO(brettw) asm files.
       break;
 
     default:
       break;
   }
 
-  // TODO(brettw) asm files.
-  // TODO(brettw) weird thing with .S on non-Windows platforms.
+  if (os != Settings::WIN) {
+    if (extension == "S")
+      return SOURCE_S;
+  }
+
   return SOURCE_UNKNOWN;
 }
 
@@ -102,17 +151,12 @@ const char* GetExtensionForOutputType(Target::OutputType type,
   switch (os) {
     case Settings::MAC:
       switch (type) {
-        case Target::NONE:
-          NOTREACHED();
-          return "";
         case Target::EXECUTABLE:
           return "";
         case Target::SHARED_LIBRARY:
           return "dylib";
         case Target::STATIC_LIBRARY:
           return "a";
-        case Target::LOADABLE_MODULE:
-          return "dylib";  // TODO(brettw) what's this?
         default:
           NOTREACHED();
       }
@@ -120,17 +164,25 @@ const char* GetExtensionForOutputType(Target::OutputType type,
 
     case Settings::WIN:
       switch (type) {
-        case Target::NONE:
-          NOTREACHED();
-          return "";
         case Target::EXECUTABLE:
           return "exe";
         case Target::SHARED_LIBRARY:
           return "dll.lib";  // Extension of import library.
         case Target::STATIC_LIBRARY:
           return "lib";
-        case Target::LOADABLE_MODULE:
-          return "dll";  // TODO(brettw) what's this?
+        default:
+          NOTREACHED();
+      }
+      break;
+
+    case Settings::LINUX:
+      switch (type) {
+        case Target::EXECUTABLE:
+          return "";
+        case Target::SHARED_LIBRARY:
+          return "so";
+        case Target::STATIC_LIBRARY:
+          return "a";
         default:
           NOTREACHED();
       }
@@ -142,11 +194,11 @@ const char* GetExtensionForOutputType(Target::OutputType type,
   return "";
 }
 
-std::string FilePathToUTF8(const base::FilePath& path) {
+std::string FilePathToUTF8(const base::FilePath::StringType& str) {
 #if defined(OS_WIN)
-  return WideToUTF8(path.value());
+  return WideToUTF8(str);
 #else
-  return path.value();
+  return str;
 #endif
 }
 
@@ -242,6 +294,97 @@ bool EnsureStringIsInOutputDir(const SourceDir& dir,
     return false;
   }
   return true;
+}
+
+bool IsPathAbsolute(const base::StringPiece& path) {
+  if (path.empty())
+    return false;
+
+  if (path[0] != '/') {
+#if defined(OS_WIN)
+    // Check for Windows system paths like "C:\foo".
+    if (path.size() > 2 &&
+        path[1] == ':' && (path[2] == '/' || path[2] == '\\'))
+      return true;
+#endif
+    return false;  // Doesn't begin with a slash, is relative.
+  }
+
+  if (path.size() > 1 && path[1] == '/')
+    return false;  // Double slash at the beginning means source-relative.
+
+  return true;
+}
+
+bool MakeAbsolutePathRelativeIfPossible(const base::StringPiece& source_root,
+                                        const base::StringPiece& path,
+                                        std::string* dest) {
+  DCHECK(IsPathAbsolute(source_root));
+  DCHECK(IsPathAbsolute(path));
+
+  dest->clear();
+
+  if (source_root.size() > path.size())
+    return false;  // The source root is longer: the path can never be inside.
+
+#if defined(OS_WIN)
+  // Source root should be canonical on Windows.
+  DCHECK(source_root.size() > 2 && source_root[0] != '/' &&
+         source_root[1] == ':' && source_root[2] =='\\');
+
+  size_t after_common_index = std::string::npos;
+  if (DoesBeginWindowsDriveLetter(path)) {
+    // Handle "C:\foo"
+    if (AreAbsoluteWindowsPathsEqual(source_root,
+                                     path.substr(0, source_root.size())))
+      after_common_index = source_root.size();
+    else
+      return false;
+  } else if (path[0] == '/' && source_root.size() <= path.size() - 1 &&
+             DoesBeginWindowsDriveLetter(path.substr(1))) {
+    // Handle "/C:/foo"
+    if (AreAbsoluteWindowsPathsEqual(source_root,
+                                     path.substr(1, source_root.size())))
+      after_common_index = source_root.size() + 1;
+    else
+      return false;
+  } else {
+    return false;
+  }
+
+  // If we get here, there's a match and after_common_index identifies the
+  // part after it.
+
+  // The base may or may not have a trailing slash, so skip all slashes from
+  // the path after our prefix match.
+  size_t first_after_slash = after_common_index;
+  while (first_after_slash < path.size() &&
+         (path[first_after_slash] == '/' || path[first_after_slash] == '\\'))
+    first_after_slash++;
+
+  dest->assign("//");  // Result is source root relative.
+  dest->append(&path.data()[first_after_slash],
+               path.size() - first_after_slash);
+  return true;
+
+#else
+
+  // On non-Windows this is easy. Since we know both are absolute, just do a
+  // prefix check.
+  if (path.substr(0, source_root.size()) == source_root) {
+    // The base may or may not have a trailing slash, so skip all slashes from
+    // the path after our prefix match.
+    size_t first_after_slash = source_root.size();
+    while (first_after_slash < path.size() && path[first_after_slash] == '/')
+      first_after_slash++;
+
+    dest->assign("//");  // Result is source root relative.
+    dest->append(&path.data()[first_after_slash],
+                 path.size() - first_after_slash);
+    return true;
+  }
+  return false;
+#endif
 }
 
 std::string InvertDir(const SourceDir& path) {
@@ -366,3 +509,40 @@ std::string PathToSystem(const std::string& path) {
   return ret;
 }
 
+std::string RebaseSourceAbsolutePath(const std::string& input,
+                                     const SourceDir& dest_dir) {
+  CHECK(input.size() >= 2 && input[0] == '/' && input[1] == '/')
+      << "Input to rebase isn't source-absolute: " << input;
+  CHECK(dest_dir.is_source_absolute())
+      << "Dir to rebase to isn't source-absolute: " << dest_dir.value();
+
+  const std::string& dest = dest_dir.value();
+
+  // Skip the common prefixes of the source and dest as long as they end in
+  // a [back]slash.
+  size_t common_prefix_len = 2;  // The beginning two "//" are always the same.
+  size_t max_common_length = std::min(input.size(), dest.size());
+  for (size_t i = common_prefix_len; i < max_common_length; i++) {
+    if ((input[i] == '/' || input[i] == '\\') &&
+        (dest[i] == '/' || dest[i] == '\\'))
+      common_prefix_len = i + 1;
+    else if (input[i] != dest[i])
+      break;
+  }
+
+  // Invert the dest dir starting from the end of the common prefix.
+  std::string ret;
+  for (size_t i = common_prefix_len; i < dest.size(); i++) {
+    if (dest[i] == '/' || dest[i] == '\\')
+      ret.append("../");
+  }
+
+  // Append any remaining unique input.
+  ret.append(&input[common_prefix_len], input.size() - common_prefix_len);
+
+  // If the result is still empty, the paths are the same.
+  if (ret.empty())
+    ret.push_back('.');
+
+  return ret;
+}

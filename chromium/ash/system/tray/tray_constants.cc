@@ -15,7 +15,12 @@ const int kPaddingFromOuterEdgeOfLauncherVerticalAlignment = 8;
 const int kPaddingFromInnerEdgeOfLauncherVerticalAlignment = 9;
 const int kPaddingFromBottomOfScreenVerticalAlignment = 10;
 
-// Inset between the edge of the shelf region and the status tray.
+// Padding used to position the system menu relative to the status area.
+const int kAlternateLayoutBubblePaddingHorizontalBottom = 6;
+const int kAlternateLayoutBubblePaddingHorizontalSide = 10;
+const int kAlternateLayoutBubblePaddingVerticalBottom = 3;
+const int kAlternateLayoutBubblePaddingVerticalSide = 15;
+
 const int kPaddingFromEdgeOfShelf = 3;
 
 // Top inset of system tray bubble for bottom anchor alignment.
@@ -26,7 +31,9 @@ const int kTrayImageItemHorizontalPaddingVerticalAlignment = 1;
 const int kTrayImageItemVerticalPaddingVerticalAlignment = 1;
 
 const int kTrayLabelItemHorizontalPaddingBottomAlignment = 7;
-const int kTrayLabelItemVerticalPaddingVeriticalAlignment = 4;
+
+// Vertical padding between status tray items when the shelf is vertical.
+const int kTrayLabelItemVerticalPaddingVerticalAlignment = 4;
 
 const int kTrayMenuBottomRowPadding = 5;
 const int kTrayMenuBottomRowPaddingBetweenItems = -1;
@@ -39,6 +46,7 @@ const int kTrayPopupTextSpacingVertical = 4;
 
 const int kTrayPopupItemHeight = 48;
 const int kTrayPopupDetailsIconWidth = 25;
+const int kTrayPopupDetailsLabelExtraLeftMargin = 8;
 const int kTrayPopupScrollSeparatorHeight = 15;
 const int kTrayRoundedBorderRadius = 2;
 const int kTrayBarButtonWidth = 39;
@@ -67,12 +75,17 @@ const int kTrayNotificationContentsWidth = kTrayPopupMinWidth -
      (kTrayPopupPaddingHorizontal / 2) * 3);
 const int kTraySpacing = 8;
 const int kAlternateTraySpacing = 4;
+const int kShelfItemHeight = 31;
+const int kAlternateShelfItemHeight = 38;
 
-// Returns kTraySpacing or kAlternateTraySpacing as applicable
-// (Determined by ash::switches::UseAlternateShelfLayout).
 int GetTraySpacing() {
   return ash::switches::UseAlternateShelfLayout() ?
       kAlternateTraySpacing : kTraySpacing;
+}
+
+int GetShelfItemHeight() {
+  return ash::switches::UseAlternateShelfLayout() ?
+      kAlternateShelfItemHeight : kShelfItemHeight;
 }
 
 }  // namespace ash

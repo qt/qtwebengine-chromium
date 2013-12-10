@@ -64,6 +64,17 @@ void ContextMenuController::clearContextMenu()
     if (m_menuProvider)
         m_menuProvider->contextMenuCleared();
     m_menuProvider = 0;
+    m_hitTestResult = HitTestResult();
+    m_client->clearContextMenu();
+}
+
+void ContextMenuController::documentDetached(Document* document)
+{
+    if (Node* innerNode = m_hitTestResult.innerNode()) {
+        // Invalidate the context menu info if its target document is detached.
+        if (&innerNode->document() == document)
+            clearContextMenu();
+    }
 }
 
 void ContextMenuController::handleContextMenuEvent(Event* event)
@@ -99,7 +110,7 @@ PassOwnPtr<ContextMenu> ContextMenuController::createContextMenu(Event* event)
     MouseEvent* mouseEvent = toMouseEvent(event);
     HitTestResult result(mouseEvent->absoluteLocation());
 
-    if (Frame* frame = event->target()->toNode()->document()->frame())
+    if (Frame* frame = event->target()->toNode()->document().frame())
         result = frame->eventHandler()->hitTestResultAtPoint(mouseEvent->absoluteLocation(), HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::DisallowShadowContent);
 
     if (!result.innerNonSharedNode())

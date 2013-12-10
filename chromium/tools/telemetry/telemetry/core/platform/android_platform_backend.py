@@ -3,23 +3,20 @@
 # found in the LICENSE file.
 
 import logging
-import os
-import sys
 
 from telemetry.core import platform
+from telemetry.core import util
 from telemetry.core.platform import platform_backend
+from telemetry.core.platform import proc_util
 
 # Get build/android scripts into our path.
-sys.path.append(
-    os.path.abspath(
-        os.path.join(os.path.dirname(__file__),
-                     '../../../build/android')))
-
-from pylib import perf_tests_helper  # pylint: disable=F0401
-from pylib import thermal_throttle  # pylint: disable=F0401
+util.AddDirToPythonPath(util.GetChromiumSrcDir(), 'build', 'android')
+from pylib.perf import cache_control  # pylint: disable=F0401
+from pylib.perf import perf_control  # pylint: disable=F0401
+from pylib.perf import thermal_throttle  # pylint: disable=F0401
 
 try:
-  from pylib import surface_stats_collector # pylint: disable=F0401
+  from pylib.perf import surface_stats_collector  # pylint: disable=F0401
 except Exception:
   surface_stats_collector = None
 
@@ -29,7 +26,7 @@ class AndroidPlatformBackend(platform_backend.PlatformBackend):
     super(AndroidPlatformBackend, self).__init__()
     self._adb = adb
     self._surface_stats_collector = None
-    self._perf_tests_setup = perf_tests_helper.PerfControl(self._adb)
+    self._perf_tests_setup = perf_control.PerfControl(self._adb)
     self._thermal_throttle = thermal_throttle.ThermalThrottle(self._adb)
     self._no_performance_mode = no_performance_mode
     self._raw_display_frame_rate_measurements = []
@@ -84,6 +81,22 @@ class AndroidPlatformBackend(platform_backend.PlatformBackend):
         return int(line.split()[2]) * 1024
     return 0
 
+  def GetCpuStats(self, pid):
+    if not self._adb.CanAccessProtectedFileContents():
+      logging.warning('CPU stats cannot be retrieved on non-rooted device.')
+      return {}
+    stats = self._adb.GetProtectedFileContents('/proc/%s/stat' % pid,
+                                               log_result=False)[0].split()
+    return proc_util.GetCpuStats(stats)
+
+  def GetCpuTimestamp(self):
+    if not self._adb.CanAccessProtectedFileContents():
+      logging.warning('CPU stats cannot be retrieved on non-rooted device.')
+      return {}
+    timer_list = self._adb.GetProtectedFileContents('/proc/timer_list',
+                                                    log_result=False)
+    return proc_util.GetTimestampJiffies(timer_list)
+
   def GetMemoryStats(self, pid):
     memory_usage = self._adb.GetMemoryUsageForPid(pid)[0]
     return {'ProportionalSetSize': memory_usage['Pss'] * 1024,
@@ -127,8 +140,8 @@ class AndroidPlatformBackend(platform_backend.PlatformBackend):
     return False
 
   def FlushEntireSystemCache(self):
-    cache_control = perf_tests_helper.CacheControl(self._adb.Adb())
-    cache_control.DropRamCaches()
+    cache = cache_control.CacheControl(self._adb)
+    cache.DropRamCaches()
 
   def FlushSystemCacheForDirectory(self, directory, ignoring=None):
     raise NotImplementedError()

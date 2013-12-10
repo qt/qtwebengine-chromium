@@ -24,6 +24,7 @@
 #include "core/dom/Attr.h"
 
 #include "XMLNSNames.h"
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Element.h"
@@ -37,9 +38,9 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-Attr::Attr(Element* element, const QualifiedName& name)
-    : ContainerNode(element->document())
-    , m_element(element)
+Attr::Attr(Element& element, const QualifiedName& name)
+    : ContainerNode(&element.document())
+    , m_element(&element)
     , m_name(name)
     , m_ignoreChildrenChanged(0)
     , m_specified(true)
@@ -47,8 +48,8 @@ Attr::Attr(Element* element, const QualifiedName& name)
     ScriptWrappable::init(this);
 }
 
-Attr::Attr(Document* document, const QualifiedName& name, const AtomicString& standaloneValue)
-    : ContainerNode(document)
+Attr::Attr(Document& document, const QualifiedName& name, const AtomicString& standaloneValue)
+    : ContainerNode(&document)
     , m_element(0)
     , m_name(name)
     , m_standaloneValue(standaloneValue)
@@ -58,14 +59,14 @@ Attr::Attr(Document* document, const QualifiedName& name, const AtomicString& st
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<Attr> Attr::create(Element* element, const QualifiedName& name)
+PassRefPtr<Attr> Attr::create(Element& element, const QualifiedName& name)
 {
     RefPtr<Attr> attr = adoptRef(new Attr(element, name));
     attr->createTextChild();
     return attr.release();
 }
 
-PassRefPtr<Attr> Attr::create(Document* document, const QualifiedName& name, const AtomicString& value)
+PassRefPtr<Attr> Attr::create(Document& document, const QualifiedName& name, const AtomicString& value)
 {
     RefPtr<Attr> attr = adoptRef(new Attr(document, name, value));
     attr->createTextChild();
@@ -80,12 +81,12 @@ void Attr::createTextChild()
 {
     ASSERT(refCount());
     if (!value().isEmpty()) {
-        RefPtr<Text> textNode = document()->createTextNode(value().string());
+        RefPtr<Text> textNode = document().createTextNode(value().string());
 
         // This does everything appendChild() would do in this situation (assuming m_ignoreChildrenChanged was set),
         // but much more efficiently.
         textNode->setParentOrShadowHostNode(this);
-        treeScope()->adoptIfNeeded(textNode.get());
+        treeScope().adoptIfNeeded(textNode.get());
         setFirstChild(textNode.get());
         setLastChild(textNode.get());
     }
@@ -97,9 +98,13 @@ void Attr::setPrefix(const AtomicString& prefix, ExceptionState& es)
     if (es.hadException())
         return;
 
-    if ((prefix == xmlnsAtom && namespaceURI() != XMLNSNames::xmlnsNamespaceURI)
-        || static_cast<Attr*>(this)->qualifiedName() == xmlnsAtom) {
-        es.throwDOMException(NamespaceError);
+    if (prefix == xmlnsAtom && namespaceURI() != XMLNSNames::xmlnsNamespaceURI) {
+        es.throwDOMException(NamespaceError, ExceptionMessages::failedToSet("prefix", "Attr", "The prefix '" + xmlnsAtom + "' may not be used on the namespace '" + namespaceURI() + "'."));
+        return;
+    }
+
+    if (this->qualifiedName() == xmlnsAtom) {
+        es.throwDOMException(NamespaceError, ExceptionMessages::failedToSet("prefix", "Attr", "The prefix '" + prefix + "' may not be used as a namespace prefix for attributes whose qualified name is '" + xmlnsAtom + "'."));
         return;
     }
 
@@ -182,7 +187,7 @@ void Attr::childrenChanged(bool, Node*, Node*, int)
 
 bool Attr::isId() const
 {
-    return qualifiedName().matches(document()->idAttributeName());
+    return qualifiedName().matches(document().idAttributeName());
 }
 
 const AtomicString& Attr::value() const

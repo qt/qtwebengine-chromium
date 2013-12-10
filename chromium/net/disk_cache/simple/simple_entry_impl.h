@@ -13,6 +13,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
+#include "net/base/cache_type.h"
+#include "net/base/net_export.h"
 #include "net/base/net_log.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/disk_cache/simple/simple_entry_format.h"
@@ -23,6 +25,7 @@ class TaskRunner;
 }
 
 namespace net {
+class GrowableIOBuffer;
 class IOBuffer;
 }
 
@@ -30,13 +33,14 @@ namespace disk_cache {
 
 class SimpleBackendImpl;
 class SimpleSynchronousEntry;
-struct SimpleEntryStat;
+class SimpleEntryStat;
 struct SimpleEntryCreationResults;
 
 // SimpleEntryImpl is the IO thread interface to an entry in the very simple
 // disk cache. It proxies for the SimpleSynchronousEntry, which performs IO
 // on the worker thread.
-class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
+class NET_EXPORT_PRIVATE SimpleEntryImpl : public Entry,
+    public base::RefCounted<SimpleEntryImpl>,
     public base::SupportsWeakPtr<SimpleEntryImpl> {
   friend class base::RefCounted<SimpleEntryImpl>;
  public:
@@ -45,7 +49,8 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
     OPTIMISTIC_OPERATIONS,
   };
 
-  SimpleEntryImpl(const base::FilePath& path,
+  SimpleEntryImpl(net::CacheType cache_type,
+                  const base::FilePath& path,
                   uint64 entry_hash,
                   OperationsMode operations_mode,
                   SimpleBackendImpl* backend,
@@ -132,6 +137,12 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
 
   virtual ~SimpleEntryImpl();
 
+  // Must be used to invoke a client-provided completion callback for an
+  // operation initiated through the backend (e.g. create, open) so that clients
+  // don't get notified after they deleted the backend (which they would not
+  // expect).
+  void PostClientCallback(const CompletionCallback& callback, int result);
+
   // Sets entry to STATE_UNINITIALIZED.
   void MakeUninitialized();
 
@@ -177,6 +188,8 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
                          const CompletionCallback& callback,
                          bool truncate);
 
+  void DoomEntryInternal(const CompletionCallback& callback);
+
   // Called after a SimpleSynchronousEntry has completed CreateEntry() or
   // OpenEntry(). If |in_sync_entry| is non-NULL, creation is successful and we
   // can return |this| SimpleEntryImpl to |*out_entry|. Runs
@@ -205,7 +218,7 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
                              int offset,
                              const CompletionCallback& completion_callback,
                              scoped_ptr<uint32> read_crc32,
-                             scoped_ptr<base::Time> last_used,
+                             scoped_ptr<SimpleEntryStat> entry_stat,
                              scoped_ptr<int> result);
 
   // Called after an asynchronous write completes.
@@ -213,6 +226,11 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
                               const CompletionCallback& completion_callback,
                               scoped_ptr<SimpleEntryStat> entry_stat,
                               scoped_ptr<int> result);
+
+  // Called after an asynchronous doom completes.
+  void DoomOperationComplete(const CompletionCallback& callback,
+                             State state_to_restore,
+                             int result);
 
   // Called after validating the checksums on an entry. Passes through the
   // original result if successful, propogates the error if the checksum does
@@ -234,11 +252,29 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
   void RecordReadIsParallelizable(const SimpleEntryOperation& operation) const;
   void RecordWriteDependencyType(const SimpleEntryOperation& operation) const;
 
+  // Reads from the stream 0 data kept in memory.
+  int ReadStream0Data(net::IOBuffer* buf, int offset, int buf_len);
+
+  // Copies data from |buf| to the internal in-memory buffer for stream 0. If
+  // |truncate| is set to true, the target buffer will be truncated at |offset|
+  // + |buf_len| before being written.
+  int SetStream0Data(net::IOBuffer* buf,
+                     int offset, int buf_len,
+                     bool truncate);
+
+  // Updates |crc32s_| and |crc32s_end_offset_| for a write of the data in
+  // |buffer| on |stream_index|, starting at |offset| and of length |length|.
+  void AdvanceCrc(net::IOBuffer* buffer,
+                  int offset,
+                  int length,
+                  int stream_index);
+
   // All nonstatic SimpleEntryImpl methods should always be called on the IO
   // thread, in all cases. |io_thread_checker_| documents and enforces this.
   base::ThreadChecker io_thread_checker_;
 
-  base::WeakPtr<SimpleBackendImpl> backend_;
+  const base::WeakPtr<SimpleBackendImpl> backend_;
+  const net::CacheType cache_type_;
   const scoped_refptr<base::TaskRunner> worker_pool_;
   const base::FilePath path_;
   const uint64 entry_hash_;
@@ -250,12 +286,14 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
   // TODO(clamy): Unify last_used_ with data in the index.
   base::Time last_used_;
   base::Time last_modified_;
-  int32 data_size_[kSimpleEntryFileCount];
+  int32 data_size_[kSimpleEntryStreamCount];
 
   // Number of times this object has been returned from Backend::OpenEntry() and
   // Backend::CreateEntry() without subsequent Entry::Close() calls. Used to
   // notify the backend when this entry not used by any callers.
   int open_count_;
+
+  bool doomed_;
 
   State state_;
 
@@ -263,19 +301,23 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
   // write. For each stream, |crc32s_[index]| is the crc32 of that stream from
   // [0 .. |crc32s_end_offset_|). If |crc32s_end_offset_[index] == 0| then the
   // value of |crc32s_[index]| is undefined.
-  int32 crc32s_end_offset_[kSimpleEntryFileCount];
-  uint32 crc32s_[kSimpleEntryFileCount];
+  int32 crc32s_end_offset_[kSimpleEntryStreamCount];
+  uint32 crc32s_[kSimpleEntryStreamCount];
 
-  // If |have_written_[index]| is true, we have written to the stream |index|.
-  bool have_written_[kSimpleEntryFileCount];
+  // If |have_written_[index]| is true, we have written to the file that
+  // contains stream |index|.
+  bool have_written_[kSimpleEntryStreamCount];
 
   // Reflects how much CRC checking has been done with the entry. This state is
   // reported on closing each entry stream.
-  CheckCrcResult crc_check_state_[kSimpleEntryFileCount];
+  CheckCrcResult crc_check_state_[kSimpleEntryStreamCount];
 
   // The |synchronous_entry_| is the worker thread object that performs IO on
-  // entries. It's owned by this SimpleEntryImpl whenever |operation_running_|
-  // is false (i.e. when an operation is not pending on the worker pool).
+  // entries. It's owned by this SimpleEntryImpl whenever |executing_operation_|
+  // is false (i.e. when an operation is not pending on the worker pool). When
+  // an operation is being executed no one owns the synchronous entry. Therefore
+  // SimpleEntryImpl should not be deleted while an operation is running as that
+  // would leak the SimpleSynchronousEntry.
   SimpleSynchronousEntry* synchronous_entry_;
 
   std::queue<SimpleEntryOperation> pending_operations_;
@@ -283,6 +325,17 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
   net::BoundNetLog net_log_;
 
   scoped_ptr<SimpleEntryOperation> executing_operation_;
+
+  // Unlike other streams, stream 0 data is read from the disk when the entry is
+  // opened, and then kept in memory. All read/write operations on stream 0
+  // affect the |stream_0_data_| buffer. When the entry is closed,
+  // |stream_0_data_| is written to the disk.
+  // Stream 0 is kept in memory because it is stored in the same file as stream
+  // 1 on disk, to reduce the number of file descriptors and save disk space.
+  // This strategy allows stream 1 to change size easily. Since stream 0 is only
+  // used to write HTTP headers, the memory consumption of keeping it in memory
+  // is acceptable.
+  scoped_refptr<net::GrowableIOBuffer> stream_0_data_;
 };
 
 }  // namespace disk_cache

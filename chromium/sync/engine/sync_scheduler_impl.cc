@@ -16,6 +16,7 @@
 #include "base/message_loop/message_loop.h"
 #include "sync/engine/backoff_delay_provider.h"
 #include "sync/engine/syncer.h"
+#include "sync/notifier/object_id_invalidation_map.h"
 #include "sync/protocol/proto_enum_conversions.h"
 #include "sync/protocol/sync.pb.h"
 #include "sync/util/data_type_histogram.h"
@@ -173,7 +174,7 @@ SyncSchedulerImpl::SyncSchedulerImpl(const std::string& name,
 
 SyncSchedulerImpl::~SyncSchedulerImpl() {
   DCHECK(CalledOnValidThread());
-  StopImpl();
+  Stop();
 }
 
 void SyncSchedulerImpl::OnCredentialsUpdated() {
@@ -389,14 +390,15 @@ void SyncSchedulerImpl::ScheduleLocalRefreshRequest(
 
 void SyncSchedulerImpl::ScheduleInvalidationNudge(
     const TimeDelta& desired_delay,
-    const ModelTypeInvalidationMap& invalidation_map,
+    const ObjectIdInvalidationMap& invalidation_map,
     const tracked_objects::Location& nudge_location) {
   DCHECK(CalledOnValidThread());
   DCHECK(!invalidation_map.empty());
 
   SDVLOG_LOC(nudge_location, 2)
       << "Scheduling sync because we received invalidation for "
-      << ModelTypeInvalidationMapToString(invalidation_map);
+      << ModelTypeSetToString(ObjectIdSetToModelTypeSet(
+              ObjectIdInvalidationMapToSet(invalidation_map)));
   nudge_tracker_.RecordRemoteInvalidation(invalidation_map);
   ScheduleNudgeImpl(desired_delay, nudge_location);
 }
@@ -552,9 +554,6 @@ void SyncSchedulerImpl::HandleFailure(
 }
 
 void SyncSchedulerImpl::DoPollSyncSessionJob() {
-  ModelSafeRoutingInfo r;
-  ModelTypeInvalidationMap invalidation_map =
-      ModelSafeRoutingInfoToInvalidationMap(r, std::string());
   base::AutoReset<bool> protector(&no_scheduling_allowed_, true);
 
   if (!CanRunJobNow(NORMAL_PRIORITY)) {
@@ -644,17 +643,9 @@ void SyncSchedulerImpl::RestartWaiting() {
   }
 }
 
-void SyncSchedulerImpl::RequestStop() {
-  syncer_->RequestEarlyExit();  // Safe to call from any thread.
-  DCHECK(weak_handle_this_.IsInitialized());
-  SDVLOG(3) << "Posting StopImpl";
-  weak_handle_this_.Call(FROM_HERE,
-                         &SyncSchedulerImpl::StopImpl);
-}
-
-void SyncSchedulerImpl::StopImpl() {
+void SyncSchedulerImpl::Stop() {
   DCHECK(CalledOnValidThread());
-  SDVLOG(2) << "StopImpl called";
+  SDVLOG(2) << "Stop called";
 
   // Kill any in-flight method calls.
   weak_ptr_factory_.InvalidateWeakPtrs();
@@ -862,7 +853,7 @@ void SyncSchedulerImpl::OnReceivedClientInvalidationHintBufferSize(int size) {
 void SyncSchedulerImpl::OnShouldStopSyncingPermanently() {
   DCHECK(CalledOnValidThread());
   SDVLOG(2) << "OnShouldStopSyncingPermanently";
-  syncer_->RequestEarlyExit();  // Thread-safe.
+  Stop();
   Notify(SyncEngineEvent::STOP_SYNCING_PERMANENTLY);
 }
 
@@ -881,7 +872,7 @@ void SyncSchedulerImpl::OnSyncProtocolError(
   if (ShouldRequestEarlyExit(
           snapshot.model_neutral_state().sync_protocol_error)) {
     SDVLOG(2) << "Sync Scheduler requesting early exit.";
-    syncer_->RequestEarlyExit();  // Thread-safe.
+    Stop();
   }
   if (IsActionableError(snapshot.model_neutral_state().sync_protocol_error))
     OnActionableError(snapshot);

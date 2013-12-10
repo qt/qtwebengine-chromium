@@ -20,6 +20,7 @@ base.unittest.testSuite('tracing.find_control', function() {
       this.addAllObjectsMatchingFilterToSelectionReturnValue = [];
 
       this.selection = new tracing.Selection();
+      this.highlight = new tracing.Selection();
       this.keyHelp = '<keyHelp>';
 
       // Put some simple UI in for testing purposes.
@@ -41,47 +42,36 @@ base.unittest.testSuite('tracing.find_control', function() {
       this.statusEl_.textContent = status;
     },
 
-    zoomToSelection: function() {},
-
-    panToSelection: function() {},
-
     addAllObjectsMatchingFilterToSelection: function(filter, selection) {
       var n = this.addAllObjectsMatchingFilterToSelectionReturnValue.length;
-      for (var i = 0; i < n; i++)
-        selection.push_(
+      for (var i = 0; i < n; i++) {
+        selection.push(
             this.addAllObjectsMatchingFilterToSelectionReturnValue[i]);
+      }
+    },
+
+    setHighlightAndClearSelection: function(highlight) {
+      this.highlight = highlight;
     }
   };
 
   test('instantiate', function() {
     var ctl = new tracing.FindControl();
-    var didFindPrevious = false;
-    var didFindNext = false;
     ctl.controller = {
       findNext: function() {
-        didFindNext = true;
       },
 
       findPrevious: function() {
-        didFindPrevious = true;
       },
 
       reset: function() {},
 
-      filterHits: [],
+      filterHits: ['a', 'b'],
 
       currentHitIndex: 0
     };
 
     this.addHTMLOutput(ctl);
-
-    ctl.querySelector('input').focus();
-    ctl.querySelector('input').blur();
-
-    ctl.querySelector('.find-previous').click();
-    assertTrue(didFindPrevious);
-    ctl.querySelector('.find-next').click();
-    assertTrue(didFindNext);
   });
 
   test('findControllerNoTimeline', function() {
@@ -96,10 +86,13 @@ base.unittest.testSuite('tracing.find_control', function() {
     controller.timeline = timeline;
 
     timeline.selection = new tracing.Selection();
+    timeline.highlight = new tracing.Selection();
     controller.findNext();
     assertArrayShallowEquals([], timeline.selection);
+    assertArrayShallowEquals([], timeline.highlight);
     controller.findPrevious();
     assertArrayShallowEquals([], timeline.selection);
+    assertArrayShallowEquals([], timeline.highlight);
   });
 
   test('findControllerOneHit', function() {
@@ -110,12 +103,17 @@ base.unittest.testSuite('tracing.find_control', function() {
     timeline.addAllObjectsMatchingFilterToSelectionReturnValue = [1];
     controller.filterText = 'asdf';
 
+    assertArrayShallowEquals([], timeline.selection);
+    assertArrayShallowEquals([1], timeline.highlight);
     controller.findNext();
     assertArrayShallowEquals([1], timeline.selection);
+    assertArrayShallowEquals([1], timeline.highlight);
     controller.findNext();
     assertArrayShallowEquals([1], timeline.selection);
+    assertArrayShallowEquals([1], timeline.highlight);
     controller.findPrevious();
     assertArrayShallowEquals([1], timeline.selection);
+    assertArrayShallowEquals([1], timeline.highlight);
   });
 
   test('findControllerMultipleHits', function() {
@@ -127,6 +125,8 @@ base.unittest.testSuite('tracing.find_control', function() {
     controller.filterText = 'asdf';
 
     // Loop through hits then when we wrap, try moving backward.
+    assertArrayShallowEquals([], timeline.selection);
+    assertArrayShallowEquals([1, 2, 3], timeline.highlight);
     controller.findNext();
     assertArrayShallowEquals([1], timeline.selection);
     controller.findNext();
@@ -139,6 +139,7 @@ base.unittest.testSuite('tracing.find_control', function() {
     assertArrayShallowEquals([3], timeline.selection);
     controller.findPrevious();
     assertArrayShallowEquals([2], timeline.selection);
+    assertArrayShallowEquals([1, 2, 3], timeline.highlight);
   });
 
   test('findControllerChangeFilterAfterNext', function() {
@@ -164,11 +165,13 @@ base.unittest.testSuite('tracing.find_control', function() {
 
     timeline.addAllObjectsMatchingFilterToSelectionReturnValue = [1, 2, 3];
     controller.filterText = 'asdfsf';
-    assertArrayShallowEquals([1, 2, 3], timeline.selection);
+    assertArrayShallowEquals([], timeline.selection);
+    assertArrayShallowEquals([1, 2, 3], timeline.highlight);
     controller.findNext();
     assertArrayShallowEquals([1], timeline.selection);
     controller.findNext();
     assertArrayShallowEquals([2], timeline.selection);
+    assertArrayShallowEquals([1, 2, 3], timeline.highlight);
   });
 
   test('findControllerWithRealTimeline', function() {
@@ -189,11 +192,16 @@ base.unittest.testSuite('tracing.find_control', function() {
 
     // Test find with filter txt.
     controller.filterText = 'a';
+    assertArrayEquals([], timeline.selection);
+    assertArrayEquals(t1.sliceGroup.slices, timeline.highlight);
+
     controller.findNext();
     assertEquals(1, timeline.selection.length);
-    assertEquals(t1.sliceGroup.slices[0], timeline.selection[0].slice);
+    assertEquals(t1.sliceGroup.slices[0], timeline.selection[0]);
 
     controller.filterText = 'xxx';
+    assertEquals(0, timeline.highlight.length);
+    assertEquals(0, timeline.selection.length);
     controller.findNext();
     assertEquals(0, timeline.selection.length);
     controller.findNext();

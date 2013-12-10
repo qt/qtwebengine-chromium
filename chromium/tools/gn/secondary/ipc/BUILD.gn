@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 component("ipc") {
+  external = true
   sources = [
     "file_descriptor_set_posix.cc",
     "file_descriptor_set_posix.h",
@@ -79,6 +80,7 @@ component("ipc") {
 }
 
 test("ipc_tests") {
+  external = true
   sources = [
     "file_descriptor_set_posix_unittest.cc",
     "ipc_channel_posix_unittest.cc",
@@ -96,9 +98,6 @@ test("ipc_tests") {
     "unix_domain_socket_util_unittest.cc",
   ]
 
-  #if (toolkit_uses_gtk) {
-  #  deps += "/build/linux/system:gtk"
-  #}
   if (is_win || is_ios) {
     sources -= "unix_domain_socket_util_unittest.cc"
   }
@@ -123,15 +122,13 @@ test("ipc_tests") {
 }
 
 test("ipc_perftests") {
+  external = true
   sources = [
     "ipc_perftests.cc",
     "ipc_test_base.cc",
     "ipc_test_base.h",
   ]
 
-  #if (toolkit_uses_gtk) {
-  #  deps += "/build/linux/system:gtk"
-  #}
   #if (is_android && gtest_target_type == "shared_library") {
   #  deps += "/testing/android/native_test.gyp:native_testNative_code"
   #}
@@ -153,6 +150,7 @@ test("ipc_perftests") {
 }
 
 static_library("test_support_ipc") {
+  external = true
   sources = [
     "ipc_multiprocess_test.cc",
     "ipc_multiprocess_test.h",

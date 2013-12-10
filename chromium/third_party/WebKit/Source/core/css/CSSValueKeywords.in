@@ -4,7 +4,7 @@
 
 // The mode argument is used to limit the keyword to be used only for certain
 // CSSParserModes. Values that have the prefix -internal- are automatically
-// only for UASheetMode.
+// only for UASheetMode or CSSAttributeMode.
 
 inherit
 initial
@@ -838,11 +838,6 @@ windowed
 // -webkit-hyphenate-limit-lines
 no-limit
 
-// -webkit-hyphens
-// none
-manual
-// auto
-
 // -webkit-writing-mode
 // SVG compatibility
 lr
@@ -966,6 +961,9 @@ saturation
 color
 luminosity
 
+// object-fit
+scale-down
+
 // overflow
 -webkit-paged-x
 -webkit-paged-y
@@ -978,13 +976,23 @@ no-drag
 span
 
 // text-indent
--webkit-each-line condition=CSS3_TEXT
+each-line
 
 // (scan:) media feature
 progressive
 interlace
 
+// CSS_PROP_PAINT_ORDER
+// normal
+// fill
+// stroke
+markers
+
 //
 // CSS3 viewport-length keywords
 //
 -internal-extend-to-zoom
+
+// isolation
+// auto
+isolate

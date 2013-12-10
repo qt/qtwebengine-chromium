@@ -36,7 +36,7 @@
 #include <string>
 
 #if INSIDE_WEBKIT
-#include <wtf/Forward.h>
+#include "wtf/Forward.h"
 #else
 #include <base/strings/latin1_string_conversions.h>
 #include <base/strings/nullable_string16.h>
@@ -97,6 +97,15 @@ public:
     static WebString fromUTF8(const std::string& s)
     {
         return fromUTF8(s.data(), s.length());
+    }
+
+    BLINK_COMMON_EXPORT std::string latin1() const;
+
+    BLINK_COMMON_EXPORT static WebString fromLatin1(const WebLChar* data, size_t length);
+
+    static WebString fromLatin1(const std::string& s)
+    {
+        return fromLatin1(reinterpret_cast<const WebLChar*>(s.data()), s.length());
     }
 
     template <int N> WebString(const char (&data)[N])

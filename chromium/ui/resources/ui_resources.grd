@@ -25,10 +25,12 @@
         <structure type="chrome_scaled_image" name="IDR_APP_LIST_ITEM_PROGRESS_LEFT" file="common/app_list_progress_bar_left.png" />
         <structure type="chrome_scaled_image" name="IDR_APP_LIST_ITEM_PROGRESS_CENTER" file="common/app_list_progress_bar_center.png" />
         <structure type="chrome_scaled_image" name="IDR_APP_LIST_ITEM_PROGRESS_RIGHT" file="common/app_list_progress_bar_right.png" />
-        <structure type="chrome_scaled_image" name="IDR_APP_LIST_USER_INDICATOR" file="common/app_list_user_indicator.png" />
         <structure type="chrome_scaled_image" name="IDR_APP_LIST_TOOLS_HOVER" file="common/app_list_tools_hover.png" />
         <structure type="chrome_scaled_image" name="IDR_APP_LIST_TOOLS_NORMAL" file="common/app_list_tools_normal.png" />
         <structure type="chrome_scaled_image" name="IDR_APP_LIST_TOOLS_PRESSED" file="common/app_list_tools_pressed.png" />
+        <if expr="is_win">
+          <structure type="chrome_scaled_image" name="IDR_APP_LIST_USER_INDICATOR" file="win/app_list_user_indicator.png" />
+        </if>
       </if>
       <structure type="chrome_scaled_image" name="IDR_APP_TOP_CENTER" file="app_top_center.png" />
       <if expr="pp_ifdef('toolkit_views')">
@@ -36,6 +38,37 @@
         <structure type="chrome_scaled_image" name="IDR_APP_TOP_RIGHT" file="app_top_right.png" />
       </if>
       <if expr="is_linux and pp_ifdef('use_aura')">
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_ALIAS" file="common/pointers/alias_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_CELL" file="common/pointers/cell_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_COL_RESIZE" file="common/pointers/sb_h_double_arrow_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_CONTEXT_MENU" file="common/pointers/context_menu_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_COPY" file="common/pointers/copy_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_CROSSHAIR" file="common/pointers/crosshair_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_EAST_RESIZE" file="common/pointers/sb_h_double_arrow_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_EAST_WEST_RESIZE" file="common/pointers/sb_h_double_arrow_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_FLEUR" file="common/pointers/fleur_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_HAND" file="common/pointers/hand2_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_HELP" file="common/pointers/help_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_IBEAM" file="common/pointers/xterm_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_MOVE" file="common/pointers/move_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_NORTH_EAST_RESIZE" file="common/pointers/top_right_corner_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_NORTH_EAST_SOUTH_WEST_RESIZE" file="common/pointers/top_right_corner_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_NORTH_RESIZE" file="common/pointers/sb_v_double_arrow_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_NORTH_SOUTH_RESIZE" file="common/pointers/sb_v_double_arrow_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_NORTH_WEST_RESIZE" file="common/pointers/top_left_corner_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_NORTH_WEST_SOUTH_EAST_RESIZE" file="common/pointers/top_left_corner_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_NO_DROP" file="common/pointers/nodrop_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_PTR" file="common/pointers/left_ptr_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_ROW_RESIZE" file="common/pointers/sb_v_double_arrow_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_SOUTH_EAST_RESIZE" file="common/pointers/top_left_corner_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_SOUTH_RESIZE" file="common/pointers/sb_v_double_arrow_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_SOUTH_WEST_RESIZE" file="common/pointers/top_right_corner_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_WEST_RESIZE" file="common/pointers/sb_h_double_arrow_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_XTERM_HORIZ" file="common/pointers/xterm_horiz_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_ZOOM_IN" file="common/pointers/zoom_in_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_ZOOM_OUT" file="common/pointers/zoom_out_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_GRAB" file="common/pointers/fleur_big.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_BIG_GRABBING" file="common/pointers/hand3_big.png" />
         <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_ALIAS" file="common/pointers/alias.png" />
         <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_CELL" file="common/pointers/cell.png" />
         <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_COL_RESIZE" file="common/pointers/sb_h_double_arrow.png" />
@@ -154,10 +187,10 @@
       <structure type="chrome_scaled_image" name="IDR_RADIO_HOVER" file="common/radio_hover.png" />
       <structure type="chrome_scaled_image" name="IDR_RADIO_PRESSED" file="common/radio_pressed.png" />
       <structure type="chrome_scaled_image" name="IDR_TEXT_SELECTION_HANDLE" file="common/text_selection_handle_small.png" />
-      <if expr="not pp_ifdef('toolkit_views') and is_posix and not is_macosx">
+      <if expr="pp_ifdef('desktop_linux')">
         <structure type="chrome_scaled_image" name="IDR_CLOSE" file="linux/linux_close.png" />
       </if>
-      <if expr="pp_ifdef('toolkit_views')">
+      <if expr="not pp_ifdef('desktop_linux') and pp_ifdef('toolkit_views')">
         <structure type="chrome_scaled_image" name="IDR_CLOSE" file="close.png" />
       </if>
       <structure type="chrome_scaled_image" name="IDR_CLOSE_2" file="close_2.png" />
@@ -167,13 +200,15 @@
       <structure type="chrome_scaled_image" name="IDR_CLOSE_DIALOG" file="close_dialog.png" />
       <structure type="chrome_scaled_image" name="IDR_CLOSE_DIALOG_H" file="close_dialog_hover.png" />
       <structure type="chrome_scaled_image" name="IDR_CLOSE_DIALOG_P" file="close_dialog_pressed.png" />
-      <if expr="not pp_ifdef('toolkit_views') and is_posix and not is_macosx">
+      <if expr="pp_ifdef('desktop_linux')">
         <structure type="chrome_scaled_image" name="IDR_CLOSE_H" file="linux/linux_close_hover.png" />
         <structure type="chrome_scaled_image" name="IDR_CLOSE_P" file="linux/linux_close_pressed.png" />
       </if>
-      <if expr="pp_ifdef('toolkit_views')">
+      <if expr="not pp_ifdef('desktop_linux') and pp_ifdef('toolkit_views')">
         <structure type="chrome_scaled_image" name="IDR_CLOSE_H" file="close_hover.png" />
         <structure type="chrome_scaled_image" name="IDR_CLOSE_P" file="close_pressed.png" />
+      </if>
+      <if expr="pp_ifdef('toolkit_views')">
         <structure type="chrome_scaled_image" name="IDR_CLOSE_SA" file="close_sa.png" />
         <structure type="chrome_scaled_image" name="IDR_CLOSE_SA_H" file="close_sa_hover.png" />
         <structure type="chrome_scaled_image" name="IDR_CLOSE_SA_P" file="close_sa_pressed.png" />
@@ -193,18 +228,20 @@
       <structure type="chrome_scaled_image" name="IDR_FRAME" file="frame_default.png" />
       <structure type="chrome_scaled_image" name="IDR_FRAME_APP_PANEL" file="frame_app_panel_default.png" />
       <structure type="chrome_scaled_image" name="IDR_FRAME_INACTIVE" file="frame_default_inactive.png" />
-      <if expr="not pp_ifdef('toolkit_views') and is_posix and not is_macosx">
+      <if expr="pp_ifdef('desktop_linux')">
         <structure type="chrome_scaled_image" name="IDR_MAXIMIZE" file="linux/linux_maximize.png" />
         <structure type="chrome_scaled_image" name="IDR_MAXIMIZE_H" file="linux/linux_maximize_hover.png" />
         <structure type="chrome_scaled_image" name="IDR_MAXIMIZE_P" file="linux/linux_maximize_pressed.png" />
       </if>
-      <if expr="pp_ifdef('toolkit_views')">
+      <if expr="not pp_ifdef('desktop_linux') and pp_ifdef('toolkit_views')">
         <structure type="chrome_scaled_image" name="IDR_MAXIMIZE" file="maximize.png" />
         <structure type="chrome_scaled_image" name="IDR_MAXIMIZE_H" file="maximize_hover.png" />
         <structure type="chrome_scaled_image" name="IDR_MAXIMIZE_P" file="maximize_pressed.png" />
+      </if>
+      <if expr="pp_ifdef('toolkit_views')">
         <structure type="chrome_scaled_image" name="IDR_MENU_HIERARCHY_ARROW" file="common/menu_hierarchy_arrow.png" />
       </if>
-      <if expr="is_macosx">
+      <if expr="is_macosx or is_ios">
         <structure type="chrome_scaled_image" name="IDR_MENU_HIERARCHY_ARROW" file="mac/menu_hierarchy_arrow.png" />
       </if>
       <if expr="pp_ifdef('toolkit_views')">
@@ -226,12 +263,12 @@
       </if>
       <structure type="chrome_scaled_image" name="IDR_MENU_DROPARROW" file="cros/menu_droparrow.png" />
       <structure type="chrome_scaled_image" name="IDR_MESSAGE_CLOSE" file="common/message_close.png" />
-      <if expr="not pp_ifdef('toolkit_views') and is_posix and not is_macosx">
+      <if expr="pp_ifdef('desktop_linux')">
         <structure type="chrome_scaled_image" name="IDR_MINIMIZE" file="linux/linux_minimize.png" />
         <structure type="chrome_scaled_image" name="IDR_MINIMIZE_H" file="linux/linux_minimize_hover.png" />
         <structure type="chrome_scaled_image" name="IDR_MINIMIZE_P" file="linux/linux_minimize_pressed.png" />
       </if>
-      <if expr="pp_ifdef('toolkit_views')">
+      <if expr="not pp_ifdef('desktop_linux') and pp_ifdef('toolkit_views')">
         <structure type="chrome_scaled_image" name="IDR_MINIMIZE" file="minimize.png" />
         <structure type="chrome_scaled_image" name="IDR_MINIMIZE_H" file="minimize_hover.png" />
         <structure type="chrome_scaled_image" name="IDR_MINIMIZE_P" file="minimize_pressed.png" />
@@ -272,7 +309,7 @@
       <structure type="chrome_scaled_image" name="IDR_PANEL_TOP_RIGHT_CORNER" file="panel_top_right_corner.png" />
       <structure type="chrome_scaled_image" name="IDR_PANEL_BOTTOM_LEFT_CORNER" file="panel_bottom_left_corner.png" />
       <structure type="chrome_scaled_image" name="IDR_PANEL_BOTTOM_RIGHT_CORNER" file="panel_bottom_right_corner.png" />
-      <if expr="is_posix and not is_macosx and not pp_ifdef('use_aura')">
+      <if expr="is_posix and not is_macosx and not is_ios and not pp_ifdef('use_aura')">
         <structure type="chrome_scaled_image" name="IDR_PROGRESS_BAR" file="linux/linux-progress-bar.png" />
         <structure type="chrome_scaled_image" name="IDR_PROGRESS_BORDER_LEFT" file="linux/linux-progress-border-left.png" />
         <structure type="chrome_scaled_image" name="IDR_PROGRESS_BORDER_RIGHT" file="linux/linux-progress-border-right.png" />
@@ -309,12 +346,12 @@
         <structure type="chrome_scaled_image" name="IDR_SCROLL_THUMB_VERTICAL_TOP_H" file="cros/aura_scrollbar_thumb_vertical_hover_top.png" />
         <structure type="chrome_scaled_image" name="IDR_SCROLL_THUMB_VERTICAL_TOP_P" file="cros/aura_scrollbar_thumb_vertical_pressed_top.png" />
       </if>
-      <if expr="not pp_ifdef('toolkit_views') and is_posix and not is_macosx">
+      <if expr="pp_ifdef('desktop_linux')">
         <structure type="chrome_scaled_image" name="IDR_RESTORE" file="linux/linux_restore.png" />
         <structure type="chrome_scaled_image" name="IDR_RESTORE_H" file="linux/linux_restore_hover.png" />
         <structure type="chrome_scaled_image" name="IDR_RESTORE_P" file="linux/linux_restore_pressed.png" />
       </if>
-      <if expr="pp_ifdef('toolkit_views')">
+      <if expr="not pp_ifdef('desktop_linux') and pp_ifdef('toolkit_views')">
         <structure type="chrome_scaled_image" name="IDR_RESTORE" file="restore.png" />
         <structure type="chrome_scaled_image" name="IDR_RESTORE_H" file="restore_hover.png" />
         <structure type="chrome_scaled_image" name="IDR_RESTORE_P" file="restore_pressed.png" />
@@ -338,7 +375,7 @@
       <structure type="chrome_scaled_image" name="IDR_TEXTBUTTON_PRESSED_TOP_LEFT" file="common/textbutton_pressed_top_left.png" />
       <structure type="chrome_scaled_image" name="IDR_TEXTBUTTON_PRESSED_TOP_RIGHT" file="common/textbutton_pressed_top_right.png" />
       <structure type="chrome_scaled_image" name="IDR_THROBBER" file="throbber.png" />
-      <if expr="is_macosx">
+      <if expr="is_macosx or is_ios">
         <structure type="chrome_scaled_image" name="IDR_TRAY_ATTENTION" file="mac/notification_tray_attention.png"/>
         <structure type="chrome_scaled_image" name="IDR_TRAY_ATTENTION_PRESSED" file="mac/notification_tray_attention_pressed.png"/>
         <structure type="chrome_scaled_image" name="IDR_TRAY_DO_NOT_DISTURB_ATTENTION" file="mac/notification_tray_do_not_disturb_attention.png"/>

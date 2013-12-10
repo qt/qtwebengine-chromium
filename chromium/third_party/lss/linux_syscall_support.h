@@ -2028,13 +2028,12 @@ struct kernel_statfs {
        * function, as glibc goes out of its way to make it inaccessible.
        */
       long long res;
-      __asm__ __volatile__("call   2f\n"
-                         "0:.align 16\n"
+      __asm__ __volatile__("jmp    2f\n"
+                           ".align 16\n"
                          "1:movq   %1,%%rax\n"
                            LSS_ENTRYPOINT
-                         "2:popq   %0\n"
-                           "addq   $(1b-0b),%0\n"
-                           : "=a" (res)
+                         "2:leaq   1b(%%rip),%0\n"
+                           : "=r" (res)
                            : "i"  (__NR_rt_sigreturn));
       return (void (*)(void))(uintptr_t)res;
     }
@@ -2525,7 +2524,7 @@ struct kernel_statfs {
           #else
                              "daddu $29,16\n"
           #endif
-                             : "=&r" (__v0), "+r" (__r7)
+                             : "+r" (__v0), "+r" (__r7)
                              : "i"(-EINVAL), "i"(__NR_clone), "i"(__NR_exit),
                                "r"(fn), "r"(__stack), "r"(__flags), "r"(arg),
                                "r"(__ptid), "r"(__r7), "r"(__ctid)
@@ -2721,7 +2720,7 @@ struct kernel_statfs {
   #define __NR__exit   __NR_exit
   #define __NR__gettid __NR_gettid
   #define __NR__mremap __NR_mremap
-  LSS_INLINE _syscall1(int,     brk,             void *,      e)
+  LSS_INLINE _syscall1(void *,  brk,             void *,      e)
   LSS_INLINE _syscall1(int,     chdir,           const char *,p)
   LSS_INLINE _syscall1(int,     close,           int,         f)
   LSS_INLINE _syscall2(int,     clock_getres,    int,         c,
@@ -2823,8 +2822,11 @@ struct kernel_statfs {
                        int,            f, int,    m)
   LSS_INLINE _syscall3(int,     poll,           struct kernel_pollfd*, u,
                        unsigned int,   n, int,    t)
-  LSS_INLINE _syscall2(int,     prctl,           int,         o,
-                       long,           a)
+  LSS_INLINE _syscall5(int,     prctl,           int,         option,
+                       unsigned long,  arg2,
+                       unsigned long,  arg3,
+                       unsigned long,  arg4,
+                       unsigned long,  arg5)
   LSS_INLINE _syscall4(long,    ptrace,          int,         r,
                        pid_t,          p, void *, a, void *, d)
   #if defined(__NR_quotactl)

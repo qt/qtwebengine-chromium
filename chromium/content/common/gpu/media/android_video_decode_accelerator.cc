@@ -41,8 +41,13 @@ enum { kNumPictureBuffers = media::limits::kMaxVideoFrames + 1 };
 enum { kMaxBitstreamsNotifiedInAdvance = 32 };
 
 // static
-const base::TimeDelta AndroidVideoDecodeAccelerator::kDecodePollDelay =
-    base::TimeDelta::FromMilliseconds(10);
+static inline const base::TimeDelta DecodePollDelay() {
+  return base::TimeDelta::FromMilliseconds(10);
+}
+
+static inline const base::TimeDelta NoWaitTimeOut() {
+  return base::TimeDelta::FromMicroseconds(0);
+}
 
 AndroidVideoDecodeAccelerator::AndroidVideoDecodeAccelerator(
     media::VideoDecodeAccelerator::Client* client,
@@ -102,7 +107,7 @@ bool AndroidVideoDecodeAccelerator::Initialize(
   gl_decoder_->RestoreTextureUnitBindings(0);
   gl_decoder_->RestoreActiveTexture();
 
-  surface_texture_ = new gfx::SurfaceTextureBridge(surface_texture_id_);
+  surface_texture_ = new gfx::SurfaceTexture(surface_texture_id_);
 
   if (!ConfigureMediaCodec()) {
     LOG(ERROR) << "Failed to create MediaCodec instance.";
@@ -133,7 +138,7 @@ void AndroidVideoDecodeAccelerator::DoIOTask() {
         FROM_HERE,
         base::Bind(
             &AndroidVideoDecodeAccelerator::DoIOTask, base::AsWeakPtr(this)),
-            kDecodePollDelay);
+            DecodePollDelay());
   }
 }
 
@@ -143,12 +148,15 @@ void AndroidVideoDecodeAccelerator::QueueInput() {
   if (pending_bitstream_buffers_.empty())
     return;
 
-  int input_buf_index = media_codec_->DequeueInputBuffer(
-      media::MediaCodecBridge::kTimeOutNoWait);
-  if (input_buf_index < 0) {
-    DCHECK_EQ(input_buf_index, media::MediaCodecBridge::INFO_TRY_AGAIN_LATER);
+  int input_buf_index = 0;
+  media::MediaCodecStatus status = media_codec_->DequeueInputBuffer(
+      NoWaitTimeOut(), &input_buf_index);
+  if (status != media::MEDIA_CODEC_OK) {
+    DCHECK(status == media::MEDIA_CODEC_DEQUEUE_INPUT_AGAIN_LATER ||
+           status == media::MEDIA_CODEC_ERROR);
     return;
   }
+
   media::BitstreamBuffer& bitstream_buffer =
       pending_bitstream_buffers_.front();
 
@@ -212,14 +220,16 @@ void AndroidVideoDecodeAccelerator::DequeueOutput() {
   do {
     size_t offset = 0;
     size_t size = 0;
-    buf_index = media_codec_->DequeueOutputBuffer(
-        media::MediaCodecBridge::kTimeOutNoWait,
-        &offset, &size, &timestamp, &eos);
-    switch (buf_index) {
-      case media::MediaCodecBridge::INFO_TRY_AGAIN_LATER:
+    int buf_index = 0;
+
+    media::MediaCodecStatus status = media_codec_->DequeueOutputBuffer(
+        NoWaitTimeOut(), &buf_index, &offset, &size, &timestamp, &eos);
+    switch (status) {
+      case media::MEDIA_CODEC_DEQUEUE_OUTPUT_AGAIN_LATER:
+      case media::MEDIA_CODEC_ERROR:
         return;
 
-      case media::MediaCodecBridge::INFO_OUTPUT_FORMAT_CHANGED: {
+      case media::MEDIA_CODEC_OUTPUT_FORMAT_CHANGED: {
         int32 width, height;
         media_codec_->GetOutputFormat(&width, &height);
 
@@ -242,8 +252,18 @@ void AndroidVideoDecodeAccelerator::DequeueOutput() {
         return;
       }
 
-      case media::MediaCodecBridge::INFO_OUTPUT_BUFFERS_CHANGED:
-        media_codec_->GetOutputBuffers();
+      case media::MEDIA_CODEC_OUTPUT_BUFFERS_CHANGED:
+        RETURN_ON_FAILURE(media_codec_->GetOutputBuffers(),
+                          "Cannot get output buffer from MediaCodec.",
+                          PLATFORM_FAILURE);
+        break;
+
+      case media::MEDIA_CODEC_OK:
+        DCHECK_GE(buf_index, 0);
+        break;
+
+      default:
+        NOTREACHED();
         break;
     }
   } while (buf_index < 0);
@@ -381,7 +401,7 @@ void AndroidVideoDecodeAccelerator::Flush() {
 
 bool AndroidVideoDecodeAccelerator::ConfigureMediaCodec() {
   DCHECK(surface_texture_.get());
-  media_codec_.reset(media::VideoCodecBridge::Create(codec_));
+  media_codec_.reset(media::VideoCodecBridge::Create(codec_, false));
 
   if (!media_codec_)
     return false;
@@ -392,14 +412,13 @@ bool AndroidVideoDecodeAccelerator::ConfigureMediaCodec() {
   // TODO(dwkang): find out a way to remove the following hard-coded value.
   media_codec_->Start(
       codec_, gfx::Size(1280, 720), surface.j_surface().obj(), NULL);
-  media_codec_->GetOutputBuffers();
-  return true;
+  return media_codec_->GetOutputBuffers();
 }
 
 void AndroidVideoDecodeAccelerator::Reset() {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  while(!pending_bitstream_buffers_.empty()) {
+  while (!pending_bitstream_buffers_.empty()) {
     media::BitstreamBuffer& bitstream_buffer =
         pending_bitstream_buffers_.front();
     pending_bitstream_buffers_.pop();

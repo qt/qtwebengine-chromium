@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,6 +16,7 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/platform_file.h"
 #include "base/rand_util.h"
+#include "base/run_loop.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -28,9 +29,10 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "webkit/browser/fileapi/async_file_test_helper.h"
+#include "webkit/browser/fileapi/external_mount_points.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
-#include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/mock_file_system_context.h"
 
 namespace fileapi {
@@ -66,7 +68,7 @@ class FileSystemURLRequestJobTest : public testing::Test {
         OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
         base::Bind(&FileSystemURLRequestJobTest::OnOpenFileSystem,
                    weak_factory_.GetWeakPtr()));
-    base::MessageLoop::current()->RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
 
     net::URLRequest::Deprecated::RegisterProtocolFactory(
         "filesystem", &FileSystemURLRequestJobFactory);
@@ -80,7 +82,7 @@ class FileSystemURLRequestJobTest : public testing::Test {
       pending_job_ = NULL;
     }
     // FileReader posts a task to close the file in destructor.
-    base::MessageLoop::current()->RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
   }
 
   void OnOpenFileSystem(base::PlatformFileError result,
@@ -91,7 +93,8 @@ class FileSystemURLRequestJobTest : public testing::Test {
 
   void TestRequestHelper(const GURL& url,
                          const net::HttpRequestHeaders* headers,
-                         bool run_to_completion) {
+                         bool run_to_completion,
+                         FileSystemContext* file_system_context) {
     delegate_.reset(new net::TestDelegate());
     // Make delegate_ exit the MessageLoop when the request is done.
     delegate_->set_quit_on_complete(true);
@@ -101,7 +104,7 @@ class FileSystemURLRequestJobTest : public testing::Test {
       request_->SetExtraRequestHeaders(*headers);
     ASSERT_TRUE(!job_);
     job_ = new FileSystemURLRequestJob(
-        request_.get(), NULL, file_system_context_.get());
+        request_.get(), NULL, file_system_context);
     pending_job_ = job_;
 
     request_->Start();
@@ -111,61 +114,41 @@ class FileSystemURLRequestJobTest : public testing::Test {
   }
 
   void TestRequest(const GURL& url) {
-    TestRequestHelper(url, NULL, true);
+    TestRequestHelper(url, NULL, true, file_system_context_.get());
+  }
+
+  void TestRequestWithContext(const GURL& url,
+                              FileSystemContext* file_system_context) {
+    TestRequestHelper(url, NULL, true, file_system_context);
   }
 
   void TestRequestWithHeaders(const GURL& url,
                               const net::HttpRequestHeaders* headers) {
-    TestRequestHelper(url, headers, true);
+    TestRequestHelper(url, headers, true, file_system_context_.get());
   }
 
   void TestRequestNoRun(const GURL& url) {
-    TestRequestHelper(url, NULL, false);
+    TestRequestHelper(url, NULL, false, file_system_context_.get());
   }
 
   void CreateDirectory(const base::StringPiece& dir_name) {
-    FileSystemFileUtil* file_util = file_system_context_->GetFileUtil(
-        kFileSystemTypeTemporary);
     FileSystemURL url = file_system_context_->CreateCrackedFileSystemURL(
         GURL("http://remote"),
         kFileSystemTypeTemporary,
         base::FilePath().AppendASCII(dir_name));
-
-    FileSystemOperationContext context(file_system_context_.get());
-    context.set_allowed_bytes_growth(1024);
-
-    ASSERT_EQ(base::PLATFORM_FILE_OK, file_util->CreateDirectory(
-        &context,
-        url,
-        false /* exclusive */,
-        false /* recursive */));
+    ASSERT_EQ(base::PLATFORM_FILE_OK, AsyncFileTestHelper::CreateDirectory(
+        file_system_context_, url));
   }
 
   void WriteFile(const base::StringPiece& file_name,
                  const char* buf, int buf_size) {
-    FileSystemFileUtil* file_util = file_system_context_->GetFileUtil(
-        kFileSystemTypeTemporary);
     FileSystemURL url = file_system_context_->CreateCrackedFileSystemURL(
         GURL("http://remote"),
         kFileSystemTypeTemporary,
         base::FilePath().AppendASCII(file_name));
-
-    FileSystemOperationContext context(file_system_context_.get());
-    context.set_allowed_bytes_growth(1024);
-
-    base::PlatformFile handle = base::kInvalidPlatformFileValue;
-    bool created = false;
-    ASSERT_EQ(base::PLATFORM_FILE_OK, file_util->CreateOrOpen(
-        &context,
-        url,
-        base::PLATFORM_FILE_CREATE | base::PLATFORM_FILE_WRITE,
-        &handle,
-        &created));
-    EXPECT_TRUE(created);
-    ASSERT_NE(base::kInvalidPlatformFileValue, handle);
-    ASSERT_EQ(buf_size,
-        base::WritePlatformFile(handle, 0 /* offset */, buf, buf_size));
-    base::ClosePlatformFile(handle);
+    ASSERT_EQ(base::PLATFORM_FILE_OK,
+              AsyncFileTestHelper::CreateFileWithData(
+                  file_system_context_, url, buf, buf_size));
   }
 
   GURL CreateFileSystemURL(const std::string& path) {
@@ -335,7 +318,7 @@ TEST_F(FileSystemURLRequestJobTest, Cancel) {
 
   // Run StartAsync() and only StartAsync().
   base::MessageLoop::current()->DeleteSoon(FROM_HERE, request_.release());
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   // If we get here, success! we didn't crash!
 }
 
@@ -355,6 +338,27 @@ TEST_F(FileSystemURLRequestJobTest, GetMimeType) {
   std::string mime_type_from_job;
   request_->GetMimeType(&mime_type_from_job);
   EXPECT_EQ(mime_type_direct, mime_type_from_job);
+}
+
+TEST_F(FileSystemURLRequestJobTest, Incognito) {
+  WriteFile("file", kTestFileData, arraysize(kTestFileData) - 1);
+
+  // Creates a new filesystem context for incognito mode.
+  scoped_refptr<FileSystemContext> file_system_context =
+      CreateIncognitoFileSystemContextForTesting(NULL, temp_dir_.path());
+
+  // The request should return NOT_FOUND error if it's in incognito mode.
+  TestRequestWithContext(CreateFileSystemURL("file"),
+                         file_system_context.get());
+  ASSERT_FALSE(request_->is_pending());
+  EXPECT_TRUE(delegate_->request_failed());
+  EXPECT_EQ(net::ERR_FILE_NOT_FOUND, request_->status().error());
+
+  // Make sure it returns success with regular (non-incognito) context.
+  TestRequest(CreateFileSystemURL("file"));
+  ASSERT_FALSE(request_->is_pending());
+  EXPECT_EQ(kTestFileData, delegate_->data_received());
+  EXPECT_EQ(200, request_->GetResponseCode());
 }
 
 }  // namespace

@@ -7,11 +7,11 @@
 #include "ash/ash_switches.h"
 #include "ash/launcher/launcher.h"
 #include "ash/root_window_controller.h"
+#include "ash/screen_ash.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
 #include "ash/shell_window_ids.h"
-#include "ash/wm/property_util.h"
 #include "base/command_line.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/pagination_model.h"
@@ -19,9 +19,9 @@
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
-#include "ui/base/events/event.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/events/event.h"
 #include "ui/gfx/transform_util.h"
 #include "ui/views/widget/widget.h"
 
@@ -38,11 +38,6 @@ const int kAnimationOffset = 8;
 
 // The maximum shift in pixels when over-scroll happens.
 const int kMaxOverScrollShift = 48;
-
-// The alternate shelf style adjusts the bubble to be flush with the shelf
-// when there is no bubble-tip. This is the tip height which needs to be
-// offsetted.
-const int kArrowTipHeight = 10;
 
 // The minimal anchor position offset to make sure that the bubble is still on
 // the screen with 8 pixels spacing on the left / right. This constant is a
@@ -88,9 +83,9 @@ gfx::Rect OffsetTowardsShelf(const gfx::Rect& rect, views::Widget* widget) {
   return offseted;
 }
 
-// Using |button_bounds|, determine the anchor so that the bubble gets shown
-// above the shelf (used for the alternate shelf theme).
-gfx::Point GetAdjustAnchorPositionToShelf(
+// Using |button_bounds|, determine the anchor offset so that the bubble gets
+// shown above the shelf (used for the alternate shelf theme).
+gfx::Vector2d GetAnchorPositionOffsetToShelf(
     const gfx::Rect& button_bounds, views::Widget* widget) {
   DCHECK(Shell::HasInstance());
   ShelfAlignment shelf_alignment = Shell::GetInstance()->GetShelfAlignment(
@@ -99,31 +94,24 @@ gfx::Point GetAdjustAnchorPositionToShelf(
   switch (shelf_alignment) {
     case SHELF_ALIGNMENT_TOP:
     case SHELF_ALIGNMENT_BOTTOM:
-      {
-        if (base::i18n::IsRTL()) {
-          int screen_width = widget->GetWorkAreaBoundsInScreen().width();
-          anchor.set_x(std::min(screen_width - kMinimalAnchorPositionOffset,
-                                anchor.x()));
-        } else {
-          anchor.set_x(std::max(kMinimalAnchorPositionOffset, anchor.x()));
-        }
-        int offset = button_bounds.height() / 2 - kArrowTipHeight;
-        if (shelf_alignment == SHELF_ALIGNMENT_TOP)
-          offset = -offset;
-        anchor.set_y(anchor.y() - offset);
+      if (base::i18n::IsRTL()) {
+        int screen_width = widget->GetWorkAreaBoundsInScreen().width();
+        return gfx::Vector2d(
+            std::min(screen_width - kMinimalAnchorPositionOffset - anchor.x(),
+                     0), 0);
       }
-      break;
+      return gfx::Vector2d(
+          std::max(kMinimalAnchorPositionOffset - anchor.x(), 0), 0);
     case SHELF_ALIGNMENT_LEFT:
-      anchor.set_x(button_bounds.right() - kArrowTipHeight);
-      anchor.set_y(std::max(kMinimalAnchorPositionOffset, anchor.y()));
-      break;
+      return gfx::Vector2d(
+          0, std::max(kMinimalAnchorPositionOffset - anchor.y(), 0));
     case SHELF_ALIGNMENT_RIGHT:
-      anchor.set_x(button_bounds.x() + kArrowTipHeight);
-      anchor.set_y(std::max(kMinimalAnchorPositionOffset, anchor.y()));
-      break;
+      return gfx::Vector2d(
+          0, std::max(kMinimalAnchorPositionOffset - anchor.y(), 0));
+    default:
+      NOTREACHED();
+      return gfx::Vector2d();
   }
-
-  return anchor;
 }
 
 }  // namespace
@@ -162,33 +150,45 @@ void AppListController::SetVisible(bool visible, aura::Window* window) {
       UpdateAutoHideState();
 
   if (view_) {
+    // Our widget is currently active. When the animation completes we'll hide
+    // the widget, changing activation. If a menu is shown before the animation
+    // completes then the activation change triggers the menu to close. By
+    // deactivating now we ensure there is no activation change when the
+    // animation completes and any menus stay open.
+    if (!visible)
+      view_->GetWidget()->Deactivate();
     ScheduleAnimation();
   } else if (is_visible_) {
     // AppListModel and AppListViewDelegate are owned by AppListView. They
     // will be released with AppListView on close.
     app_list::AppListView* view = new app_list::AppListView(
         Shell::GetInstance()->delegate()->CreateAppListViewDelegate());
-    aura::Window* container = GetRootWindowController(window->GetRootWindow())->
+    aura::RootWindow* root_window = window->GetRootWindow();
+    aura::Window* container = GetRootWindowController(root_window)->
         GetContainer(kShellWindowId_AppListContainer);
     if (ash::switches::UseAlternateShelfLayout()) {
       gfx::Rect applist_button_bounds = Launcher::ForWindow(container)->
           GetAppListButtonView()->GetBoundsInScreen();
-      view->InitAsBubble(
+      // We need the location of the button within the local screen.
+      applist_button_bounds = ash::ScreenAsh::ConvertRectFromScreen(
+          root_window,
+          applist_button_bounds);
+      view->InitAsBubbleAttachedToAnchor(
           container,
           pagination_model_.get(),
-          NULL,
-          GetAdjustAnchorPositionToShelf(applist_button_bounds,
+          Launcher::ForWindow(container)->GetAppListButtonView(),
+          GetAnchorPositionOffsetToShelf(applist_button_bounds,
               Launcher::ForWindow(container)->GetAppListButtonView()->
                   GetWidget()),
           GetBubbleArrow(container),
           true /* border_accepts_events */);
       view->SetArrowPaintType(views::BubbleBorder::PAINT_NONE);
     } else {
-      view->InitAsBubble(
+      view->InitAsBubbleAttachedToAnchor(
           container,
           pagination_model_.get(),
           Launcher::ForWindow(container)->GetAppListButtonView(),
-          gfx::Point(),
+          gfx::Vector2d(),
           GetBubbleArrow(container),
           true /* border_accepts_events */);
     }
@@ -201,6 +201,8 @@ void AppListController::SetVisible(bool visible, aura::Window* window) {
           Launcher::ForWindow(window)->GetDragAndDropHostForAppList());
     }
   }
+  // Update applist button status when app list visibility is changed.
+  Launcher::ForWindow(window)->GetAppListButtonView()->SchedulePaint();
 }
 
 bool AppListController::IsVisible() const {

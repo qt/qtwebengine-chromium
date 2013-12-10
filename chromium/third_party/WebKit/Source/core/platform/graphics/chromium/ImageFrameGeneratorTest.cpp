@@ -24,82 +24,69 @@
  */
 
 #include "config.h"
-
 #include "core/platform/graphics/chromium/ImageFrameGenerator.h"
 
 #include "core/platform/SharedBuffer.h"
 #include "core/platform/graphics/chromium/ImageDecodingStore.h"
 #include "core/platform/graphics/chromium/test/MockImageDecoder.h"
+#include "wtf/Threading.h"
 #include <gtest/gtest.h>
 
-using namespace WebCore;
+namespace WebCore {
 
 namespace {
-
-class ImageFrameGeneratorTest;
 
 // Helper methods to generate standard sizes.
 SkISize fullSize() { return SkISize::Make(100, 100); }
 SkISize scaledSize() { return SkISize::Make(50, 50); }
 
-class ImageFrameGeneratorTest;
-
-class MockImageDecoderFactory : public ImageDecoderFactory {
-public:
-    static PassOwnPtr<MockImageDecoderFactory> create(ImageFrameGeneratorTest* test)
-    {
-        return adoptPtr(new MockImageDecoderFactory(test));
-    }
-
-    virtual PassOwnPtr<ImageDecoder> create();
-
-private:
-    MockImageDecoderFactory(ImageFrameGeneratorTest* test)
-        : m_test(test)
-    {
-    }
-
-    ImageFrameGeneratorTest* m_test;
-};
+} // namespace
 
 class ImageFrameGeneratorTest : public ::testing::Test, public MockImageDecoderClient {
 public:
-    virtual void SetUp()
+    virtual void SetUp() OVERRIDE
     {
         ImageDecodingStore::initializeOnce();
         m_data = SharedBuffer::create();
         m_generator = ImageFrameGenerator::create(fullSize(), m_data, true);
-        m_generator->setImageDecoderFactoryForTesting(MockImageDecoderFactory::create(this));
+        useMockImageDecoderFactory();
         m_decodersDestroyed = 0;
         m_frameBufferRequestCount = 0;
-        m_frameStatus = ImageFrame::FrameEmpty;
+        m_status = ImageFrame::FrameEmpty;
     }
 
-    virtual void TearDown()
+    virtual void TearDown() OVERRIDE
     {
         ImageDecodingStore::shutdown();
     }
 
-    virtual void decoderBeingDestroyed()
+    virtual void decoderBeingDestroyed() OVERRIDE
     {
         ++m_decodersDestroyed;
     }
 
-    virtual void frameBufferRequested()
+    virtual void frameBufferRequested() OVERRIDE
     {
         ++m_frameBufferRequestCount;
     }
 
-    virtual ImageFrame::FrameStatus frameStatus()
+    virtual ImageFrame::Status status() OVERRIDE
     {
-        return m_frameStatus;
+        ImageFrame::Status currentStatus = m_status;
+        m_status = m_nextFrameStatus;
+        return currentStatus;
     }
 
-    virtual size_t frameCount() { return 1; }
-    virtual int repetitionCount() const { return cAnimationNone; }
-    virtual float frameDuration() const { return 0; }
+    virtual size_t frameCount() OVERRIDE { return 1; }
+    virtual int repetitionCount() const OVERRIDE { return cAnimationNone; }
+    virtual float frameDuration() const OVERRIDE { return 0; }
 
 protected:
+    void useMockImageDecoderFactory()
+    {
+        m_generator->setImageDecoderFactory(MockImageDecoderFactory::create(this, fullSize()));
+    }
+
     PassOwnPtr<ScaledImageFragment> createCompleteImage(const SkISize& size)
     {
         SkBitmap bitmap;
@@ -114,22 +101,28 @@ protected:
         m_generator->setData(m_data, false);
     }
 
-    void setFrameStatus(ImageFrame::FrameStatus status)  { m_frameStatus = status; }
+    void setFrameStatus(ImageFrame::Status status)  { m_status = m_nextFrameStatus = status; }
+    void setNextFrameStatus(ImageFrame::Status status)  { m_nextFrameStatus = status; }
+
+    SkBitmap::Allocator* allocator() const { return m_generator->allocator(); }
+    void setAllocator(PassOwnPtr<SkBitmap::Allocator> allocator)
+    {
+        m_generator->setAllocator(allocator);
+    }
+
+    PassOwnPtr<ScaledImageFragment> decode(size_t index)
+    {
+        ImageDecoder* decoder = 0;
+        return m_generator->decode(index, &decoder);
+    }
 
     RefPtr<SharedBuffer> m_data;
     RefPtr<ImageFrameGenerator> m_generator;
     int m_decodersDestroyed;
     int m_frameBufferRequestCount;
-    ImageFrame::FrameStatus m_frameStatus;
+    ImageFrame::Status m_status;
+    ImageFrame::Status m_nextFrameStatus;
 };
-
-PassOwnPtr<ImageDecoder> MockImageDecoderFactory::create()
-{
-    OwnPtr<MockImageDecoder> decoder = MockImageDecoder::create(m_test);
-    decoder->setSize(fullSize().width(), fullSize().height());
-    decoder->setFrameHasAlpha(false);
-    return decoder.release();
-}
 
 TEST_F(ImageFrameGeneratorTest, cacheHit)
 {
@@ -392,10 +385,10 @@ TEST_F(ImageFrameGeneratorTest, incompleteBitmapCopied)
     ImageDecodingStore::instance()->unlockDecoder(m_generator.get(), tempDecoder);
 }
 
-TEST_F(ImageFrameGeneratorTest, resumeDecodeEmptyFrame)
+TEST_F(ImageFrameGeneratorTest, resumeDecodeEmptyFrameTurnsComplete)
 {
     m_generator = ImageFrameGenerator::create(fullSize(), m_data, false, true);
-    m_generator->setImageDecoderFactoryForTesting(MockImageDecoderFactory::create(this));
+    useMockImageDecoderFactory();
     setFrameStatus(ImageFrame::FrameComplete);
 
     const ScaledImageFragment* tempImage = m_generator->decodeAndScale(fullSize(), 0);
@@ -403,6 +396,7 @@ TEST_F(ImageFrameGeneratorTest, resumeDecodeEmptyFrame)
     ImageDecodingStore::instance()->unlockCache(m_generator.get(), tempImage);
 
     setFrameStatus(ImageFrame::FrameEmpty);
+    setNextFrameStatus(ImageFrame::FrameComplete);
     EXPECT_FALSE(m_generator->decodeAndScale(fullSize(), 1));
 }
 
@@ -423,4 +417,51 @@ TEST_F(ImageFrameGeneratorTest, frameHasAlpha)
     EXPECT_FALSE(m_generator->hasAlpha(1));
 }
 
+namespace {
+
+class MockAllocator : public SkBitmap::Allocator {
+public:
+    // N starts from 0.
+    MockAllocator(int failAtNthCall)
+        : m_callCount(0)
+        , m_failAtNthCall(failAtNthCall)
+        , m_defaultAllocator(adoptPtr(new DiscardablePixelRefAllocator()))
+    {
+    }
+
+    virtual bool allocPixelRef(SkBitmap* bitmap, SkColorTable* colorTable) OVERRIDE
+    {
+        if (m_callCount++ == m_failAtNthCall)
+            return false;
+        return m_defaultAllocator->allocPixelRef(bitmap, colorTable);
+    }
+
+    int m_callCount;
+    int m_failAtNthCall;
+    OwnPtr<SkBitmap::Allocator> m_defaultAllocator;
+};
+
 } // namespace
+
+TEST_F(ImageFrameGeneratorTest, decodingAllocatorFailure)
+{
+    // Try to emulate allocation failures at different stages. For now, the
+    // first allocation is for the bitmap in ImageFrame, the second is for the
+    // copy of partial bitmap. The loop will still work if the number or purpose
+    // of allocations change in the future.
+    for (int i = 0; ; ++i) {
+        SCOPED_TRACE(testing::Message() << "Allocation failure at call " << i);
+        setFrameStatus(ImageFrame::FramePartial);
+        setAllocator(adoptPtr(new MockAllocator(i)));
+        OwnPtr<ScaledImageFragment> image = decode(0);
+        if (i >= static_cast<MockAllocator*>(allocator())->m_callCount) {
+            // We have tested failures of all stages. This time all allocations
+            // were successful.
+            EXPECT_TRUE(image);
+            break;
+        }
+        EXPECT_FALSE(image);
+    }
+}
+
+} // namespace WebCore

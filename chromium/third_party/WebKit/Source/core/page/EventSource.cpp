@@ -42,7 +42,7 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/MessageEvent.h"
 #include "core/dom/ScriptExecutionContext.h"
-#include "core/loader/TextResourceDecoder.h"
+#include "core/fetch/TextResourceDecoder.h"
 #include "core/loader/ThreadableLoader.h"
 #include "core/page/ContentSecurityPolicy.h"
 #include "core/page/DOMWindow.h"
@@ -92,7 +92,8 @@ PassRefPtr<EventSource> EventSource::create(ScriptExecutionContext* context, con
         shouldBypassMainWorldContentSecurityPolicy = document->frame()->script()->shouldBypassMainWorldContentSecurityPolicy();
     }
     if (!shouldBypassMainWorldContentSecurityPolicy && !context->contentSecurityPolicy()->allowConnectToSource(fullURL)) {
-        es.throwDOMException(SecurityError, "Refused to connect to '" + fullURL.elidedString() + "' because it violates the document's Content Security Policy.");
+        // We can safely expose the URL to JavaScript, as this exception is generate synchronously before any redirects take place.
+        es.throwSecurityError("Refused to connect to '" + fullURL.elidedString() + "' because it violates the document's Content Security Policy.");
         return 0;
     }
 
@@ -159,7 +160,7 @@ void EventSource::scheduleReconnect()
 {
     m_state = CONNECTING;
     m_reconnectTimer.startOneShot(m_reconnectDelay / 1000.0);
-    dispatchEvent(Event::create(eventNames().errorEvent, false, false));
+    dispatchEvent(Event::create(eventNames().errorEvent));
 }
 
 void EventSource::reconnectTimerFired(Timer<EventSource>*)
@@ -246,10 +247,10 @@ void EventSource::didReceiveResponse(unsigned long, const ResourceResponse& resp
 
     if (responseIsValid) {
         m_state = OPEN;
-        dispatchEvent(Event::create(eventNames().openEvent, false, false));
+        dispatchEvent(Event::create(eventNames().openEvent));
     } else {
         m_loader->cancel();
-        dispatchEvent(Event::create(eventNames().errorEvent, false, false));
+        dispatchEvent(Event::create(eventNames().errorEvent));
     }
 }
 
@@ -310,7 +311,7 @@ void EventSource::abortConnectionAttempt()
     m_loader->cancel();
 
     ASSERT(m_state == CLOSED);
-    dispatchEvent(Event::create(eventNames().errorEvent, false, false));
+    dispatchEvent(Event::create(eventNames().errorEvent));
 }
 
 void EventSource::parseEventStream()

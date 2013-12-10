@@ -7,11 +7,37 @@
 
 #include "ash/ash_export.h"
 #include "base/basictypes.h"
-#include "ui/base/events/event_constants.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/event_constants.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 
 namespace ash {
 
+// There are four classes of accelerators in Ash:
+//
+// Ash (OS) reserved:
+// * Neither packaged apps nor web pages can cancel.
+// * For example, Alt-Tab window cycling.
+// * See kReservedActions below.
+//
+// Ash (OS) non-reserved:
+// * Packaged apps can cancel but web pages cannot.
+// * For example, volume up and down.
+// * See kActionsAllowedInAppMode below.
+//
+// Browser reserved:
+// * Packaged apps can cancel but web pages cannot.
+// * For example, browser back and forward from first-row function keys.
+// * See IsReservedCommandOrKey() in
+//   chrome/browser/ui/browser_command_controller.cc.
+//
+// Browser non-reserved:
+// * Both packaged apps and web pages can cancel.
+// * For example, selecting tabs by number with Ctrl-1 to Ctrl-9.
+// * See kAcceleratorMap in chrome/browser/ui/views/accelerator_table.cc.
+//
+// In particular, there is not an accelerator processing pass for Ash after
+// the browser gets the accelerator.  See crbug.com/285308 for details.
+//
 // Please put if/def sections at the end of the bare section and keep the list
 // within each section in alphabetical order.
 enum AcceleratorAction {
@@ -19,10 +45,9 @@ enum AcceleratorAction {
   ACCESSIBLE_FOCUS_PREVIOUS,
   BRIGHTNESS_DOWN,
   BRIGHTNESS_UP,
-  CYCLE_BACKWARD_LINEAR,
   CYCLE_BACKWARD_MRU,
-  CYCLE_FORWARD_LINEAR,
   CYCLE_FORWARD_MRU,
+  CYCLE_LINEAR,
   DEBUG_TOGGLE_DEVICE_SCALE_FACTOR,
   DEBUG_TOGGLE_SHOW_DEBUG_BORDERS,
   DEBUG_TOGGLE_SHOW_FPS_COUNTER,
@@ -117,69 +142,49 @@ struct AcceleratorData {
 
 // Accelerators handled by AcceleratorController.
 ASH_EXPORT extern const AcceleratorData kAcceleratorData[];
-
-// The number of elements in kAcceleratorData.
 ASH_EXPORT extern const size_t kAcceleratorDataLength;
 
 #if !defined(NDEBUG)
 // Accelerators useful when running on desktop. Debug build only.
 ASH_EXPORT extern const AcceleratorData kDesktopAcceleratorData[];
-
-// The number of elements in kDesktopAcceleratorData.
 ASH_EXPORT extern const size_t kDesktopAcceleratorDataLength;
 #endif
 
 // Debug accelerators enabled only when "Debugging keyboard shortcuts" flag
 // (--ash-debug-shortcuts) is enabled.
 ASH_EXPORT extern const AcceleratorData kDebugAcceleratorData[];
-
-// The number of elements in kDebugAcceleratorData.
 ASH_EXPORT extern const size_t kDebugAcceleratorDataLength;
 
 // Actions that should be handled very early in Ash unless the current target
 // window is full-screen.
 ASH_EXPORT extern const AcceleratorAction kReservedActions[];
-
-// The number of elements in kReservedActions.
 ASH_EXPORT extern const size_t kReservedActionsLength;
 
 // Actions that should be handled very early in Ash unless the current target
 // window is full-screen, these actions are only handled if
 // DebugShortcutsEnabled is true (command line switch 'ash-debug-shortcuts').
 ASH_EXPORT extern const AcceleratorAction kReservedDebugActions[];
-
-// The number of elements in kReservedDebugActions.
 ASH_EXPORT extern const size_t kReservedDebugActionsLength;
 
 // Actions allowed while user is not signed in or screen is locked.
 ASH_EXPORT extern const AcceleratorAction kActionsAllowedAtLoginOrLockScreen[];
-
-// The number of elements in kActionsAllowedAtLoginOrLockScreen.
 ASH_EXPORT extern const size_t kActionsAllowedAtLoginOrLockScreenLength;
 
 // Actions allowed while screen is locked (in addition to
 // kActionsAllowedAtLoginOrLockScreen).
 ASH_EXPORT extern const AcceleratorAction kActionsAllowedAtLockScreen[];
-
-// The number of elements in kActionsAllowedAtLockScreen.
 ASH_EXPORT extern const size_t kActionsAllowedAtLockScreenLength;
 
 // Actions allowed while a modal window is up.
 ASH_EXPORT extern const AcceleratorAction kActionsAllowedAtModalWindow[];
-
-// The number of elements in kActionsAllowedAtModalWindow.
 ASH_EXPORT extern const size_t kActionsAllowedAtModalWindowLength;
 
 // Actions which will not be repeated while holding an accelerator key.
 ASH_EXPORT extern const AcceleratorAction kNonrepeatableActions[];
-
-// The number of elements in kNonrepeatableActions.
 ASH_EXPORT extern const size_t kNonrepeatableActionsLength;
 
 // Actions allowed in app mode.
 ASH_EXPORT extern const AcceleratorAction kActionsAllowedInAppMode[];
-
-// The number of elements in kActionsAllowedInAppMode.
 ASH_EXPORT extern const size_t kActionsAllowedInAppModeLength;
 
 }  // namespace ash

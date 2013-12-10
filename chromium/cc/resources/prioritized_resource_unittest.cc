@@ -7,6 +7,7 @@
 #include "cc/resources/prioritized_resource_manager.h"
 #include "cc/resources/resource.h"
 #include "cc/test/fake_output_surface.h"
+#include "cc/test/fake_output_surface_client.h"
 #include "cc/test/fake_proxy.h"
 #include "cc/test/tiled_layer_test_common.h"
 #include "cc/trees/single_thread_proxy.h"  // For DebugScopedSetImplThread
@@ -18,10 +19,12 @@ class PrioritizedResourceTest : public testing::Test {
  public:
   PrioritizedResourceTest()
       : texture_size_(256, 256),
-        texture_format_(GL_RGBA),
-        output_surface_(CreateFakeOutputSurface()) {
+        texture_format_(RGBA_8888),
+        output_surface_(FakeOutputSurface::Create3d()) {
     DebugScopedSetImplThread impl_thread(&proxy_);
-    resource_provider_ = cc::ResourceProvider::Create(output_surface_.get(), 0);
+    CHECK(output_surface_->BindToClient(&output_surface_client_));
+    resource_provider_ =
+        cc::ResourceProvider::Create(output_surface_.get(), 0, false);
   }
 
   virtual ~PrioritizedResourceTest() {
@@ -91,7 +94,8 @@ class PrioritizedResourceTest : public testing::Test {
  protected:
   FakeProxy proxy_;
   const gfx::Size texture_size_;
-  const GLenum texture_format_;
+  const ResourceFormat texture_format_;
+  FakeOutputSurfaceClient output_surface_client_;
   scoped_ptr<OutputSurface> output_surface_;
   scoped_ptr<cc::ResourceProvider> resource_provider_;
 };

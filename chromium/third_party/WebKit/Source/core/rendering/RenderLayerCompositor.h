@@ -27,7 +27,6 @@
 #define RenderLayerCompositor_h
 
 #include "core/page/ChromeClient.h"
-#include "core/page/Frame.h"
 #include "core/platform/graphics/GraphicsLayerClient.h"
 #include "core/rendering/RenderLayer.h"
 #include "wtf/HashMap.h"
@@ -103,7 +102,7 @@ public:
     void updateCompositingDescendantGeometry(RenderLayer* compositingAncestor, RenderLayer*, bool compositedChildrenOnly);
 
     // Whether layer's backing needs a graphics layer to do clipping by an ancestor (non-stacking-context parent with overflow).
-    bool clippedByAncestor(RenderLayer*) const;
+    bool clippedByAncestor(const RenderLayer*) const;
     // Whether layer's backing needs a graphics layer to clip z-order children of the given layer.
     bool clipsCompositingDescendants(const RenderLayer*) const;
 
@@ -184,7 +183,7 @@ public:
     GraphicsLayer* layerForHorizontalScrollbar() const { return m_layerForHorizontalScrollbar.get(); }
     GraphicsLayer* layerForVerticalScrollbar() const { return m_layerForVerticalScrollbar.get(); }
     GraphicsLayer* layerForScrollCorner() const { return m_layerForScrollCorner.get(); }
-#if ENABLE(RUBBER_BANDING)
+#if USE(RUBBER_BANDING)
     GraphicsLayer* layerForOverhangAreas() const { return m_layerForOverhangAreas.get(); }
 
     GraphicsLayer* updateLayerForTopOverhangArea(bool wantsLayer);
@@ -204,6 +203,8 @@ public:
 
     // Returns all reasons (direct, indirectly due to subtree, and indirectly due to overlap) that a layer should be composited.
     CompositingReasons reasonsForCompositing(const RenderLayer*) const;
+
+    virtual String debugName(const GraphicsLayer*) OVERRIDE;
 
 private:
     class OverlapMap;
@@ -237,7 +238,7 @@ private:
     void addToOverlapMapRecursive(OverlapMap&, RenderLayer*, RenderLayer* ancestorLayer = 0);
 
     // Returns true if any layer's compositing changed
-    void computeCompositingRequirements(RenderLayer* ancestorLayer, RenderLayer*, OverlapMap*, struct CompositingState&, bool& layersChanged, bool& descendantHas3DTransform);
+    void computeCompositingRequirements(RenderLayer* ancestorLayer, RenderLayer*, OverlapMap*, struct CompositingState&, bool& layersChanged, bool& descendantHas3DTransform, Vector<RenderLayer*>& unclippedDescendants);
 
     // Recurses down the tree, parenting descendant compositing layers and collecting an array of child layers for the current compositing layer.
     void rebuildCompositingLayerTree(RenderLayer*, Vector<GraphicsLayer*>& childGraphicsLayersOfEnclosingLayer, int depth);
@@ -283,6 +284,8 @@ private:
     bool requiresCompositingForBackfaceVisibilityHidden(RenderObject*) const;
     bool requiresCompositingForFilters(RenderObject*) const;
     bool requiresCompositingForBlending(RenderObject* renderer) const;
+    bool requiresCompositingForOverflowScrollingParent(const RenderLayer*) const;
+    bool requiresCompositingForOutOfFlowClipping(const RenderLayer*) const;
     bool requiresCompositingForScrollableFrame() const;
     bool requiresCompositingForPosition(RenderObject*, const RenderLayer*, RenderLayer::ViewportConstrainedNotCompositedReason* = 0) const;
     bool requiresCompositingForOverflowScrolling(const RenderLayer*) const;
@@ -295,8 +298,8 @@ private:
     bool requiresHorizontalScrollbarLayer() const;
     bool requiresVerticalScrollbarLayer() const;
     bool requiresScrollCornerLayer() const;
-#if ENABLE(RUBBER_BANDING)
-    bool requiresOverhangAreasLayer() const;
+#if USE(RUBBER_BANDING)
+    bool requiresOverhangLayers() const;
 #endif
 
 #if !LOG_DISABLED
@@ -346,8 +349,9 @@ private:
     OwnPtr<GraphicsLayer> m_layerForHorizontalScrollbar;
     OwnPtr<GraphicsLayer> m_layerForVerticalScrollbar;
     OwnPtr<GraphicsLayer> m_layerForScrollCorner;
-#if ENABLE(RUBBER_BANDING)
+#if USE(RUBBER_BANDING)
     OwnPtr<GraphicsLayer> m_layerForOverhangAreas;
+    OwnPtr<GraphicsLayer> m_layerForOverhangShadow;
 #endif
 
 #if !LOG_DISABLED

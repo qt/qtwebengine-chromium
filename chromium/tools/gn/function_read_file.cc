@@ -25,7 +25,7 @@ const char kReadFile_Help[] =
     "  Whitespace will be trimmed from the end of the file. Throws an error\n"
     "  if the file can not be opened.\n"
     "\n"
-    "Arguments:\n"
+    "Arguments\n"
     "\n"
     "  filename\n"
     "      Filename to read, relative to the build file.\n"
@@ -34,7 +34,7 @@ const char kReadFile_Help[] =
     "      Controls how the file is read and parsed.\n"
     "      See \"gn help input_conversion\".\n"
     "\n"
-    "Example:\n"
+    "Example\n"
     "  lines = read_file(\"foo.txt\", \"list lines\")\n";
 
 Value RunReadFile(Scope* scope,
@@ -50,17 +50,17 @@ Value RunReadFile(Scope* scope,
     return Value();
 
   // Compute the file name.
-  const SourceDir& cur_dir = SourceDirForFunctionCall(function);
+  const SourceDir& cur_dir = scope->GetSourceDir();
   SourceFile source_file = cur_dir.ResolveRelativeFile(args[0].string_value());
   base::FilePath file_path =
       scope->settings()->build_settings()->GetFullPath(source_file);
 
   // Ensure that everything is recomputed if the read file changes.
-  g_scheduler->AddGenDependency(source_file);
+  g_scheduler->AddGenDependency(file_path);
 
   // Read contents.
   std::string file_contents;
-  if (!file_util::ReadFileToString(file_path, &file_contents)) {
+  if (!base::ReadFileToString(file_path, &file_contents)) {
     *err = Err(args[0], "Could not read file.",
                "I resolved this to \"" + FilePathToUTF8(file_path) + "\".");
     return Value();

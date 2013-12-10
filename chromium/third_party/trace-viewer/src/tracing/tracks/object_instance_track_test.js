@@ -6,6 +6,7 @@
 
 base.require('tracing.test_utils');
 base.require('tracing.selection');
+base.require('tracing.trace_model.event');
 base.require('tracing.trace_model.object_collection');
 base.require('tracing.timeline_viewport');
 base.require('tracing.tracks.drawing_container');
@@ -33,7 +34,8 @@ base.unittest.testSuite('tracing.tracks.object_instance_track', function() {
   test('instantiate', function() {
     var objects = createObjects();
     var frames = objects.getAllInstancesByTypeName()['Frame'];
-    frames[0].snapshots[1].selected = true;
+    frames[0].snapshots[1].selectionState =
+        tracing.trace_model.SelectionState.SELECTED;
 
     var div = document.createElement('div');
     this.addHTMLOutput(div);
@@ -48,7 +50,9 @@ base.unittest.testSuite('tracing.tracks.object_instance_track', function() {
 
     track.heading = 'testBasic';
     track.objectInstances = frames;
-    track.viewport.xSetWorldBounds(0, 50, track.clientWidth);
+    var dt = new tracing.TimelineDisplayTransform();
+    dt.xSetWorldBounds(0, 50, track.clientWidth);
+    track.viewport.setDisplayTransformImmediately(dt);
   });
 
   test('selectionHitTestingWithThreadTrack', function() {
@@ -69,13 +73,28 @@ base.unittest.testSuite('tracing.tracks.object_instance_track', function() {
     track.addIntersectingItemsInRangeToSelectionInWorldSpace(
         9.98, 9.99, 0.1, selection);
     assertEquals(1, selection.length);
-    assertEquals(1, selection.getNumObjectSnapshotHits());
+    assertTrue(selection[0] instanceof tracing.trace_model.ObjectSnapshot);
 
     // Hit the instance, between the 1st and 2nd snapshots
     selection = new Selection();
     track.addIntersectingItemsInRangeToSelectionInWorldSpace(
         20, 20.1, 0.1, selection);
     assertEquals(1, selection.length);
-    assertEquals(1, selection.getNumObjectInstanceHits());
+    assertTrue(selection[0] instanceof tracing.trace_model.ObjectInstance);
+  });
+
+  test('addItemNearToProvidedEventToSelection', function() {
+    var objects = createObjects();
+    var frames = objects.getAllInstancesByTypeName()['Frame'];
+
+    var track = ObjectInstanceTrack(new Viewport());
+    track.objectInstances = frames;
+
+    var instance = new tracing.trace_model.ObjectInstance(
+        {}, '0x1000', 'cat', 'n', 10);
+
+    assertDoesNotThrow(function() {
+      track.addItemNearToProvidedEventToSelection(instance, 0, undefined);
+    });
   });
 });

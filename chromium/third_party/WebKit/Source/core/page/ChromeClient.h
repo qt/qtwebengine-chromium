@@ -65,7 +65,6 @@ class GraphicsLayerFactory;
 class HitTestResult;
 class HTMLInputElement;
 class IntRect;
-class NavigationAction;
 class Node;
 class Page;
 class PagePopup;
@@ -105,7 +104,7 @@ public:
     // created Page has its show method called.
     // The FrameLoadRequest parameter is only for ChromeClient to check if the
     // request could be fulfilled. The ChromeClient should not load the request.
-    virtual Page* createWindow(Frame*, const FrameLoadRequest&, const WindowFeatures&, const NavigationAction&, NavigationPolicy = NavigationPolicyIgnore) = 0;
+    virtual Page* createWindow(Frame*, const FrameLoadRequest&, const WindowFeatures&, NavigationPolicy = NavigationPolicyIgnore) = 0;
     virtual void show(NavigationPolicy) = 0;
 
     virtual bool canRunModal() = 0;
@@ -125,12 +124,8 @@ public:
 
     virtual void setResizable(bool) = 0;
 
-    virtual void addMessageToConsole(MessageSource, MessageLevel, const String& message, unsigned lineNumber, const String& sourceID) = 0;
-    // FIXME: Remove this MessageType variant once all the clients are updated.
-    virtual void addMessageToConsole(MessageSource source, MessageType, MessageLevel level, const String& message, unsigned lineNumber, const String& sourceID)
-    {
-        addMessageToConsole(source, level, message, lineNumber, sourceID);
-    }
+    virtual bool shouldReportDetailedMessageForSource(const String& source) = 0;
+    virtual void addMessageToConsole(MessageSource, MessageLevel, const String& message, unsigned lineNumber, const String& sourceID, const String& stackTrace) = 0;
 
     virtual bool canRunBeforeUnloadConfirmPanel() = 0;
     virtual bool runBeforeUnloadConfirmPanel(const String& message, Frame*) = 0;
@@ -155,9 +150,7 @@ public:
     virtual IntRect rootViewToScreen(const IntRect&) const = 0;
     virtual WebKit::WebScreenInfo screenInfo() const = 0;
     virtual void setCursor(const Cursor&) = 0;
-#if !USE(REQUEST_ANIMATION_FRAME_TIMER)
     virtual void scheduleAnimation() = 0;
-#endif
     // End methods used by HostWindow.
 
     virtual void dispatchViewportPropertiesDidChange(const ViewportArguments&) const { }
@@ -255,7 +248,7 @@ public:
         PromptDialog = 2,
         HTMLDialog = 3
     };
-    virtual bool shouldRunModalDialogDuringPageDismissal(const DialogType&, const String& dialogMessage, FrameLoader::PageDismissalType) const { UNUSED_PARAM(dialogMessage); return true; }
+    virtual bool shouldRunModalDialogDuringPageDismissal(const DialogType&, const String& dialogMessage, Document::PageDismissalType) const { UNUSED_PARAM(dialogMessage); return true; }
 
     virtual void numWheelEventHandlersChanged(unsigned) = 0;
 

@@ -39,7 +39,7 @@ class SVGScriptElement FINAL
     , public SVGExternalResourcesRequired
     , public ScriptLoaderClient {
 public:
-    static PassRefPtr<SVGScriptElement> create(const QualifiedName&, Document*, bool wasInsertedByParser);
+    static PassRefPtr<SVGScriptElement> create(const QualifiedName&, Document&, bool wasInsertedByParser);
 
     String type() const;
     void setType(const String&);
@@ -47,11 +47,12 @@ public:
     ScriptLoader* loader() const { return m_loader.get(); }
 
 private:
-    SVGScriptElement(const QualifiedName&, Document*, bool wasInsertedByParser, bool alreadyStarted);
+    SVGScriptElement(const QualifiedName&, Document&, bool wasInsertedByParser, bool alreadyStarted);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+    virtual void didNotifySubtreeInsertionsToDocument() OVERRIDE;
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
 
     virtual void svgAttributeChanged(const QualifiedName&);
@@ -75,7 +76,7 @@ private:
     virtual void dispatchLoadEvent() { SVGExternalResourcesRequired::dispatchLoadEvent(this); }
 
     virtual PassRefPtr<Element> cloneElementWithoutAttributesAndChildren();
-    virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
 
     // SVGExternalResourcesRequired
     virtual void setHaveFiredLoadEvent(bool) OVERRIDE;

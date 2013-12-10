@@ -29,18 +29,6 @@ VideoCoder::~VideoCoder()
     VideoCodingModule::Destroy(_vcm);
 }
 
-int32_t VideoCoder::ResetDecoder()
-{
-    _vcm->ResetDecoder();
-
-    _vcm->InitializeSender();
-    _vcm->InitializeReceiver();
-
-    _vcm->RegisterTransportCallback(this);
-    _vcm->RegisterReceiveCallback(this);
-    return 0;
-}
-
 int32_t VideoCoder::SetEncodeCodec(VideoCodec& videoCodecInst,
                                    uint32_t numberOfCores,
                                    uint32_t maxPayloadSize)
@@ -84,10 +72,6 @@ int32_t VideoCoder::Decode(I420VideoFrame& decodedVideo,
     }
 
     _decodedVideo = &decodedVideo;
-    if(_vcm->DecodeFromStorage(encodedData) != VCM_OK)
-    {
-        return -1;
-    }
     return 0;
 }
 

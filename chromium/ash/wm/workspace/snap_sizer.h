@@ -46,6 +46,9 @@ class ASH_EXPORT SnapSizer {
   // Snaps a window left or right.
   static void SnapWindow(aura::Window* window, Edge edge);
 
+  // Snaps |window_| to the target bounds.
+  void SnapWindowToTargetBounds();
+
   // Updates the target bounds based on a mouse move.
   void Update(const gfx::Point& location);
 
@@ -62,6 +65,9 @@ class ASH_EXPORT SnapSizer {
   // Returns the target bounds based on the edge and the provided |size_index|.
   // For unit test purposes this function is not private.
   gfx::Rect GetTargetBoundsForSize(size_t size_index) const;
+
+  // Returns true when snapping sequence is at its last (docking) step.
+  bool end_of_sequence() const { return end_of_sequence_; }
 
  private:
   // Calculates the amount to increment by. This returns one of -1, 0 or 1 and
@@ -95,6 +101,10 @@ class ASH_EXPORT SnapSizer {
   // Index into |kSizes| that dictates the width of the screen the target
   // bounds should get.
   int size_index_;
+
+  // Set to true when an attempt is made to increment |size_index_| past
+  // the size of |usable_width_|.
+  bool end_of_sequence_;
 
   // If set, |size_index_| will get ignored and the single button default
   // setting will be used instead.

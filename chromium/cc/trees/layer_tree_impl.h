@@ -14,7 +14,7 @@
 #include "cc/layers/layer_impl.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/resources/ui_resource_client.h"
-#include "ui/base/latency_info.h"
+#include "ui/events/latency_info.h"
 
 #if defined(COMPILER_GCC)
 namespace BASE_HASH_NAMESPACE {
@@ -29,6 +29,7 @@ struct hash<cc::LayerImpl*> {
 
 namespace cc {
 
+class ContextProvider;
 class DebugRectHistory;
 class FrameRateCounter;
 class HeadsUpDisplayLayerImpl;
@@ -42,6 +43,7 @@ class PaintTimeCounter;
 class Proxy;
 class ResourceProvider;
 class TileManager;
+class UIResourceRequest;
 struct RendererCapabilities;
 
 typedef std::list<UIResourceRequest> UIResourceRequestQueue;
@@ -58,12 +60,14 @@ class CC_EXPORT LayerTreeImpl {
   // ---------------------------------------------------------------------------
   const LayerTreeSettings& settings() const;
   const RendererCapabilities& GetRendererCapabilities() const;
+  ContextProvider* context_provider() const;
   OutputSurface* output_surface() const;
   ResourceProvider* resource_provider() const;
   TileManager* tile_manager() const;
   FrameRateCounter* frame_rate_counter() const;
   PaintTimeCounter* paint_time_counter() const;
   MemoryHistory* memory_history() const;
+  bool device_viewport_valid_for_tile_management() const;
   bool IsActiveTree() const;
   bool IsPendingTree() const;
   bool IsRecycleTree() const;
@@ -75,6 +79,8 @@ class CC_EXPORT LayerTreeImpl {
   base::Time CurrentFrameTime() const;
   base::TimeTicks CurrentPhysicalTimeTicks() const;
   void SetNeedsCommit();
+  gfx::Size DrawViewportSize() const;
+  void StartScrollbarAnimation();
 
   // Tree specific methods exposed to layer-impl tree.
   // ---------------------------------------------------------------------------
@@ -84,7 +90,6 @@ class CC_EXPORT LayerTreeImpl {
   // trivial accessors in a followup patch.
   const LayerTreeDebugState& debug_state() const;
   float device_scale_factor() const;
-  gfx::Size device_viewport_size() const;
   DebugRectHistory* debug_rect_history() const;
   scoped_ptr<base::Value> AsValue() const;
 
@@ -114,7 +119,12 @@ class CC_EXPORT LayerTreeImpl {
 
   void FindRootScrollLayer();
   void UpdateMaxScrollOffset();
-  void ApplySentScrollAndScaleDeltas();
+  void SetViewportLayersFromIds(int page_scale_layer_id,
+                                int inner_viewport_scroll_layer_id,
+                                int outer_viewport_scroll_layer_id);
+  void ClearViewportLayers();
+  void ApplySentScrollAndScaleDeltasFromAbortedCommit();
+  void ApplyScrollDeltasSinceBeginFrame();
 
   SkColor background_color() const { return background_color_; }
   void set_background_color(SkColor color) { background_color_ = color; }
@@ -196,7 +206,7 @@ class CC_EXPORT LayerTreeImpl {
   const ui::LatencyInfo& GetLatencyInfo();
   void ClearLatencyInfo();
 
-  void WillModifyTilePriorities();
+  void DidModifyTilePriorities();
 
   ResourceProvider::ResourceId ResourceIdForUIResource(UIResourceId uid) const;
   void ProcessUIResourceRequestQueue();
@@ -221,6 +231,10 @@ class CC_EXPORT LayerTreeImpl {
   LayerScrollOffsetDelegate* root_layer_scroll_offset_delegate_;
   SkColor background_color_;
   bool has_transparent_background_;
+
+  LayerImpl* page_scale_layer_;
+  LayerImpl* inner_viewport_scroll_layer_;
+  LayerImpl* outer_viewport_scroll_layer_;
 
   float page_scale_factor_;
   float page_scale_delta_;

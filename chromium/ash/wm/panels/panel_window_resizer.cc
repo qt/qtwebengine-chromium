@@ -13,8 +13,8 @@
 #include "ash/shell_window_ids.h"
 #include "ash/wm/coordinate_conversion.h"
 #include "ash/wm/panels/panel_layout_manager.h"
-#include "ash/wm/property_util.h"
-#include "ash/wm/window_properties.h"
+#include "ash/wm/window_state.h"
+#include "base/memory/weak_ptr.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
@@ -40,8 +40,6 @@ internal::PanelLayoutManager* GetPanelLayoutManager(
 }  // namespace
 
 PanelWindowResizer::~PanelWindowResizer() {
-  if (destroyed_)
-    *destroyed_ = true;
 }
 
 // static
@@ -59,7 +57,6 @@ PanelWindowResizer::Create(WindowResizer* next_window_resizer,
 void PanelWindowResizer::Drag(const gfx::Point& location, int event_flags) {
   last_location_ = location;
   wm::ConvertPointToScreen(GetTarget()->parent(), &last_location_);
-  bool destroyed = false;
   if (!did_move_or_resize_) {
     did_move_or_resize_ = true;
     StartedDragging();
@@ -93,15 +90,12 @@ void PanelWindowResizer::Drag(const gfx::Point& location, int event_flags) {
   should_attach_ = AttachToLauncher(bounds, &offset);
   gfx::Point modified_location(location.x() + offset.x(),
                                location.y() + offset.y());
-  destroyed_ = &destroyed;
-  next_window_resizer_->Drag(modified_location, event_flags);
 
-  // TODO(flackr): Refactor the way WindowResizer calls into other window
-  // resizers to avoid the awkward pattern here for checking if
-  // next_window_resizer_ destroys the resizer object.
-  if (destroyed)
+  base::WeakPtr<PanelWindowResizer> resizer(weak_ptr_factory_.GetWeakPtr());
+  next_window_resizer_->Drag(modified_location, event_flags);
+  if (!resizer)
     return;
-  destroyed_ = NULL;
+
   if (should_attach_ &&
       !(details_.bounds_change & WindowResizer::kBoundsChange_Resizes)) {
     UpdateLauncherPosition();
@@ -135,9 +129,9 @@ PanelWindowResizer::PanelWindowResizer(WindowResizer* next_window_resizer,
       panel_container_(NULL),
       initial_panel_container_(NULL),
       did_move_or_resize_(false),
-      was_attached_(GetTarget()->GetProperty(internal::kPanelAttachedKey)),
+      was_attached_(wm::GetWindowState(GetTarget())->panel_attached()),
       should_attach_(was_attached_),
-      destroyed_(NULL) {
+      weak_ptr_factory_(this) {
   DCHECK(details_.is_resizable);
   panel_container_ = Shell::GetContainer(
       details.window->GetRootWindow(),
@@ -196,8 +190,8 @@ void PanelWindowResizer::StartedDragging() {
     GetPanelLayoutManager(panel_container_)->StartDragging(GetTarget());
   if (!was_attached_) {
     // Attach the panel while dragging placing it in front of other panels.
-    GetTarget()->SetProperty(internal::kContinueDragAfterReparent, true);
-    GetTarget()->SetProperty(internal::kPanelAttachedKey, true);
+    wm::GetWindowState(GetTarget())->set_continue_drag_after_reparent(true);
+    wm::GetWindowState(GetTarget())->set_panel_attached(true);
     // We use root window coordinates to ensure that during the drag the panel
     // is reparented to a container in the root window that has that window.
     GetTarget()->SetDefaultParentByRootWindow(
@@ -209,9 +203,8 @@ void PanelWindowResizer::StartedDragging() {
 void PanelWindowResizer::FinishDragging() {
   if (!did_move_or_resize_)
     return;
-  if (GetTarget()->GetProperty(internal::kPanelAttachedKey) !=
-      should_attach_) {
-    GetTarget()->SetProperty(internal::kPanelAttachedKey, should_attach_);
+  if (wm::GetWindowState(GetTarget())->panel_attached() != should_attach_) {
+    wm::GetWindowState(GetTarget())->set_panel_attached(should_attach_);
     // We use last known location to ensure that after the drag the panel
     // is reparented to a container in the root window that has that location.
     GetTarget()->SetDefaultParentByRootWindow(

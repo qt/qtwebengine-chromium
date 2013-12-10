@@ -2,15 +2,18 @@
 # Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+import json
 import logging
 import os
 import sys
 import tempfile
 import time
+import urlparse
 
 from telemetry import test
 from telemetry.core import browser_options
 from telemetry.core import discover
+from telemetry.core import util
 from telemetry.core import wpr_modes
 from telemetry.page import page_measurement
 from telemetry.page import page_runner
@@ -47,8 +50,7 @@ class RecordPage(page_test.PageTest):
     should_reload = False
     for compound_action in self._CompoundActionsForPage(page):
       if should_reload:
-        tab.Navigate(page.url)
-        tab.WaitForDocumentReadyStateToBeComplete()
+        self.RunNavigateSteps(page, tab)
       self._RunCompoundAction(page, tab, compound_action)
       should_reload = True
 
@@ -61,18 +63,31 @@ class RecordPage(page_test.PageTest):
     return actions
 
 
+def _CreatePageSetForUrl(url):
+  ps_name = urlparse.urlparse(url).hostname + '.json'
+  ps_path = os.path.join(util.GetBaseDir(), 'page_sets', ps_name)
+  ps = {'archive_data_file': '../data/%s' % ps_name,
+        'pages': [
+          { 'url': url }
+          ]
+        }
+  with open(ps_path, 'w') as f:
+    f.write(json.dumps(ps))
+  print 'Created new page set %s' % ps_path
+  return page_set.PageSet.FromFile(ps_path)
+
+
 def Main(base_dir):
   measurements = discover.DiscoverClasses(base_dir, base_dir,
                                           page_measurement.PageMeasurement)
   tests = discover.DiscoverClasses(base_dir, base_dir, test.Test,
                                    index_by_class_name=True)
-  options = browser_options.BrowserOptions()
-  parser = options.CreateParser('%prog <PageSet|Measurement|Test>')
+  options = browser_options.BrowserFinderOptions()
+  parser = options.CreateParser('%prog <PageSet|Measurement|Test|URL>')
   page_runner.AddCommandLineOptions(parser)
 
   recorder = RecordPage(measurements)
   recorder.AddCommandLineOptions(parser)
-  recorder.AddOutputOptions(parser)
 
   _, args = parser.parse_args()
 
@@ -86,6 +101,8 @@ def Main(base_dir):
     ps = tests[args[0]]().CreatePageSet(options)
   elif args[0] in measurements:
     ps = measurements[args[0]]().CreatePageSet(args, options)
+  elif args[0].startswith('http'):
+    ps = _CreatePageSetForUrl(args[0])
   else:
     parser.print_usage()
     sys.exit(1)
@@ -97,8 +114,8 @@ def Main(base_dir):
   ps.wpr_archive_info.AddNewTemporaryRecording(temp_target_wpr_file_path)
 
   # Do the actual recording.
-  options.wpr_mode = wpr_modes.WPR_RECORD
-  options.no_proxy_server = True
+  options.browser_options.wpr_mode = wpr_modes.WPR_RECORD
+  options.browser_options.no_proxy_server = True
   recorder.CustomizeBrowserOptions(options)
   results = page_runner.Run(recorder, ps, expectations, options)
 

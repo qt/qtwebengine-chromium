@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// TCP cubic send side congestion algorithm, emulates the behaviour of
+// TCP cubic send side congestion algorithm, emulates the behavior of
 // TCP cubic.
 
 #ifndef NET_QUIC_CONGESTION_CONTROL_TCP_CUBIC_SENDER_H_
@@ -41,10 +41,12 @@ class NET_EXPORT_PRIVATE TcpCubicSender : public SendAlgorithmInterface {
                              QuicByteCount acked_bytes,
                              QuicTime::Delta rtt) OVERRIDE;
   virtual void OnIncomingLoss(QuicTime ack_receive_time) OVERRIDE;
-  virtual void SentPacket(QuicTime sent_time,
-                          QuicPacketSequenceNumber sequence_number,
-                          QuicByteCount bytes,
-                          Retransmission is_retransmission) OVERRIDE;
+  virtual bool SentPacket(
+      QuicTime sent_time,
+      QuicPacketSequenceNumber sequence_number,
+      QuicByteCount bytes,
+      Retransmission is_retransmission,
+      HasRetransmittableData is_retransmittable) OVERRIDE;
   virtual void AbandoningPacket(QuicPacketSequenceNumber sequence_number,
                                 QuicByteCount abandoned_bytes) OVERRIDE;
   virtual QuicTime::Delta TimeUntilSend(

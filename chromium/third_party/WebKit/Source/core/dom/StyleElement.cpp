@@ -25,9 +25,9 @@
 #include "core/css/MediaQueryEvaluator.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Document.h"
-#include "core/dom/DocumentStyleSheetCollection.h"
 #include "core/dom/Element.h"
 #include "core/dom/ScriptableDocumentParser.h"
+#include "core/dom/StyleEngine.h"
 #include "core/html/HTMLStyleElement.h"
 #include "core/page/ContentSecurityPolicy.h"
 #include "wtf/text/StringBuilder.h"
@@ -55,22 +55,20 @@ StyleElement::~StyleElement()
         clearSheet();
 }
 
-void StyleElement::processStyleSheet(Document* document, Element* element)
+void StyleElement::processStyleSheet(Document& document, Element* element)
 {
-    ASSERT(document);
     ASSERT(element);
-    document->styleSheetCollection()->addStyleSheetCandidateNode(element, m_createdByParser);
+    document.styleEngine()->addStyleSheetCandidateNode(element, m_createdByParser);
     if (m_createdByParser)
         return;
 
     process(element);
 }
 
-void StyleElement::removedFromDocument(Document* document, Element* element, ContainerNode* scopingNode)
+void StyleElement::removedFromDocument(Document& document, Element* element, ContainerNode* scopingNode)
 {
-    ASSERT(document);
     ASSERT(element);
-    document->styleSheetCollection()->removeStyleSheetCandidateNode(element, scopingNode);
+    document.styleEngine()->removeStyleSheetCandidateNode(element, scopingNode);
 
     RefPtr<StyleSheet> removedSheet = m_sheet;
 
@@ -78,17 +76,17 @@ void StyleElement::removedFromDocument(Document* document, Element* element, Con
         clearSheet();
 
     // If we're in document teardown, then we don't need to do any notification of our sheet's removal.
-    if (document->renderer())
-        document->removedStyleSheet(removedSheet.get());
+    if (document.renderer())
+        document.removedStyleSheet(removedSheet.get());
 }
 
-void StyleElement::clearDocumentData(Document* document, Element* element)
+void StyleElement::clearDocumentData(Document& document, Element* element)
 {
     if (m_sheet)
         m_sheet->clearOwnerNode();
 
     if (element->inDocument())
-        document->styleSheetCollection()->removeStyleSheetCandidateNode(element, isHTMLStyleElement(element) ? toHTMLStyleElement(element)->scopingNode() :  0);
+        document.styleEngine()->removeStyleSheetCandidateNode(element, isHTMLStyleElement(element) ? toHTMLStyleElement(element)->scopingNode() :  0);
 }
 
 void StyleElement::childrenChanged(Element* element)
@@ -124,26 +122,26 @@ void StyleElement::createSheet(Element* e, const String& text)
 {
     ASSERT(e);
     ASSERT(e->inDocument());
-    Document* document = e->document();
+    Document& document = e->document();
     if (m_sheet) {
         if (m_sheet->isLoading())
-            document->styleSheetCollection()->removePendingSheet();
+            document.styleEngine()->removePendingSheet(e);
         clearSheet();
     }
 
     // If type is empty or CSS, this is a CSS style sheet.
     const AtomicString& type = this->type();
-    if (document->contentSecurityPolicy()->allowInlineStyle(e->document()->url(), m_startPosition.m_line) && isCSS(e, type)) {
+    if (document.contentSecurityPolicy()->allowInlineStyle(e->document().url(), m_startPosition.m_line) && isCSS(e, type)) {
         RefPtr<MediaQuerySet> mediaQueries = MediaQuerySet::create(media());
 
         MediaQueryEvaluator screenEval("screen", true);
         MediaQueryEvaluator printEval("print", true);
         if (screenEval.eval(mediaQueries.get()) || printEval.eval(mediaQueries.get())) {
-            document->styleSheetCollection()->addPendingSheet();
+            document.styleEngine()->addPendingSheet();
             m_loading = true;
 
             TextPosition startPosition = m_startPosition == TextPosition::belowRangePosition() ? TextPosition::minimumPosition() : m_startPosition;
-            m_sheet = CSSStyleSheet::createInline(e, KURL(), startPosition, document->inputEncoding());
+            m_sheet = CSSStyleSheet::createInline(e, KURL(), startPosition, document.inputEncoding());
             m_sheet->setMediaQueries(mediaQueries.release());
             m_sheet->setTitle(e->title());
             m_sheet->contents()->parseStringAtPosition(text, startPosition, m_createdByParser);
@@ -163,20 +161,18 @@ bool StyleElement::isLoading() const
     return m_sheet ? m_sheet->isLoading() : false;
 }
 
-bool StyleElement::sheetLoaded(Document* document)
+bool StyleElement::sheetLoaded(Document& document)
 {
-    ASSERT(document);
     if (isLoading())
         return false;
 
-    document->styleSheetCollection()->removePendingSheet();
+    document.styleEngine()->removePendingSheet(m_sheet->ownerNode());
     return true;
 }
 
-void StyleElement::startLoadingDynamicSheet(Document* document)
+void StyleElement::startLoadingDynamicSheet(Document& document)
 {
-    ASSERT(document);
-    document->styleSheetCollection()->addPendingSheet();
+    document.styleEngine()->addPendingSheet();
 }
 
 }

@@ -27,7 +27,6 @@
 
 #include "CSSPropertyNames.h"
 #include "HTMLNames.h"
-#include "core/dom/NodeRenderingContext.h"
 #include "core/html/HTMLDocument.h"
 #include "core/rendering/RenderIFrame.h"
 
@@ -35,7 +34,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLIFrameElement::HTMLIFrameElement(const QualifiedName& tagName, Document* document)
+inline HTMLIFrameElement::HTMLIFrameElement(const QualifiedName& tagName, Document& document)
     : HTMLFrameElementBase(tagName, document)
     , m_didLoadNonEmptyDocument(false)
 {
@@ -44,7 +43,7 @@ inline HTMLIFrameElement::HTMLIFrameElement(const QualifiedName& tagName, Docume
     setHasCustomStyleCallbacks();
 }
 
-PassRefPtr<HTMLIFrameElement> HTMLIFrameElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLIFrameElement> HTMLIFrameElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLIFrameElement(tagName, document));
 }
@@ -78,28 +77,28 @@ void HTMLIFrameElement::collectStyleForPresentationAttribute(const QualifiedName
 void HTMLIFrameElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     if (name == nameAttr) {
-        if (inDocument() && document()->isHTMLDocument() && !isInShadowTree()) {
-            HTMLDocument* document = toHTMLDocument(this->document());
-            document->removeExtraNamedItem(m_name);
-            document->addExtraNamedItem(value);
+        if (inDocument() && document().isHTMLDocument() && !isInShadowTree()) {
+            HTMLDocument& document = toHTMLDocument(this->document());
+            document.removeExtraNamedItem(m_name);
+            document.addExtraNamedItem(value);
         }
         m_name = value;
     } else if (name == sandboxAttr) {
         String invalidTokens;
         setSandboxFlags(value.isNull() ? SandboxNone : SecurityContext::parseSandboxPolicy(value, invalidTokens));
         if (!invalidTokens.isNull())
-            document()->addConsoleMessage(OtherMessageSource, ErrorMessageLevel, "Error while parsing the 'sandbox' attribute: " + invalidTokens);
+            document().addConsoleMessage(OtherMessageSource, ErrorMessageLevel, "Error while parsing the 'sandbox' attribute: " + invalidTokens);
     } else if (name == seamlessAttr) {
         // If we're adding or removing the seamless attribute, we need to force the content document to recalculate its StyleResolver.
         if (contentDocument())
-            contentDocument()->styleResolverChanged(DeferRecalcStyle);
+            contentDocument()->styleResolverChanged(RecalcStyleDeferred);
     } else
         HTMLFrameElementBase::parseAttribute(name, value);
 }
 
-bool HTMLIFrameElement::rendererIsNeeded(const NodeRenderingContext& context)
+bool HTMLIFrameElement::rendererIsNeeded(const RenderStyle& style)
 {
-    return isURLAllowed() && context.style()->display() != NONE;
+    return isURLAllowed() && HTMLElement::rendererIsNeeded(style);
 }
 
 RenderObject* HTMLIFrameElement::createRenderer(RenderStyle*)
@@ -110,16 +109,16 @@ RenderObject* HTMLIFrameElement::createRenderer(RenderStyle*)
 Node::InsertionNotificationRequest HTMLIFrameElement::insertedInto(ContainerNode* insertionPoint)
 {
     InsertionNotificationRequest result = HTMLFrameElementBase::insertedInto(insertionPoint);
-    if (insertionPoint->inDocument() && document()->isHTMLDocument() && !insertionPoint->isInShadowTree())
-        toHTMLDocument(document())->addExtraNamedItem(m_name);
+    if (insertionPoint->inDocument() && document().isHTMLDocument() && !insertionPoint->isInShadowTree())
+        toHTMLDocument(document()).addExtraNamedItem(m_name);
     return result;
 }
 
 void HTMLIFrameElement::removedFrom(ContainerNode* insertionPoint)
 {
     HTMLFrameElementBase::removedFrom(insertionPoint);
-    if (insertionPoint->inDocument() && document()->isHTMLDocument() && !insertionPoint->isInShadowTree())
-        toHTMLDocument(document())->removeExtraNamedItem(m_name);
+    if (insertionPoint->inDocument() && document().isHTMLDocument() && !insertionPoint->isInShadowTree())
+        toHTMLDocument(document()).removeExtraNamedItem(m_name);
 }
 
 bool HTMLIFrameElement::shouldDisplaySeamlessly() const
@@ -127,13 +126,18 @@ bool HTMLIFrameElement::shouldDisplaySeamlessly() const
     return contentDocument() && contentDocument()->shouldDisplaySeamlesslyWithParent();
 }
 
-void HTMLIFrameElement::didRecalcStyle(StyleChange styleChange)
+void HTMLIFrameElement::didRecalcStyle(StyleRecalcChange styleChange)
 {
     if (!shouldDisplaySeamlessly())
         return;
     Document* childDocument = contentDocument();
     if (shouldRecalcStyle(styleChange, childDocument))
         contentDocument()->recalcStyle(styleChange);
+}
+
+bool HTMLIFrameElement::isInteractiveContent() const
+{
+    return true;
 }
 
 }

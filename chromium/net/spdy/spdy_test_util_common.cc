@@ -500,7 +500,7 @@ base::WeakPtr<SpdySession> CreateSpdySessionHelper(
 
   scoped_refptr<TransportSocketParams> transport_params(
       new TransportSocketParams(
-          key.host_port_pair(), MEDIUM, false, false,
+          key.host_port_pair(), false, false,
           OnHostResolutionCallback()));
 
   scoped_ptr<ClientSocketHandle> connection(new ClientSocketHandle);
@@ -509,13 +509,10 @@ base::WeakPtr<SpdySession> CreateSpdySessionHelper(
   int rv = ERR_UNEXPECTED;
   if (is_secure) {
     SSLConfig ssl_config;
-    scoped_refptr<SOCKSSocketParams> socks_params;
-    scoped_refptr<HttpProxySocketParams> http_proxy_params;
     scoped_refptr<SSLSocketParams> ssl_params(
         new SSLSocketParams(transport_params,
-                            socks_params,
-                            http_proxy_params,
-                            ProxyServer::SCHEME_DIRECT,
+                            NULL,
+                            NULL,
                             key.host_port_pair(),
                             ssl_config,
                             key.privacy_mode(),
@@ -649,8 +646,8 @@ base::WeakPtr<SpdySession> CreateFakeSpdySessionHelper(
   EXPECT_FALSE(HasSpdySession(pool, key));
   base::WeakPtr<SpdySession> spdy_session;
   scoped_ptr<ClientSocketHandle> handle(new ClientSocketHandle());
-  handle->set_socket(new FakeSpdySessionClientSocket(
-      expected_status == OK ? ERR_IO_PENDING : expected_status));
+  handle->SetSocket(scoped_ptr<StreamSocket>(new FakeSpdySessionClientSocket(
+      expected_status == OK ? ERR_IO_PENDING : expected_status)));
   EXPECT_EQ(
       expected_status,
       pool->CreateAvailableSessionFromSocket(
@@ -942,7 +939,8 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyGet(const char* const extra_headers[],
 SpdyFrame* SpdyTestUtil::ConstructSpdyConnect(
     const char* const extra_headers[],
     int extra_header_count,
-    int stream_id) const {
+    int stream_id,
+    RequestPriority priority) const {
   const char* const kConnectHeaders[] = {
     GetMethodKey(),  "CONNECT",
     GetPathKey(),    "www.google.com:443",
@@ -953,7 +951,7 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyConnect(
                                    extra_header_count,
                                    /*compressed*/ false,
                                    stream_id,
-                                   LOWEST,
+                                   priority,
                                    SYN_STREAM,
                                    CONTROL_FLAG_NONE,
                                    kConnectHeaders,

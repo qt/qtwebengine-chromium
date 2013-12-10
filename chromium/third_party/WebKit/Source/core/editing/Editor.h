@@ -52,28 +52,29 @@ class HTMLElement;
 class HitTestResult;
 class KillRing;
 class Pasteboard;
-class SimpleFontData;
-class SpellChecker;
-class SpellCheckRequest;
 class SharedBuffer;
+class SimpleFontData;
+class SpellCheckRequest;
+class SpellCheckRequester;
 class StylePropertySet;
 class Text;
 class TextCheckerClient;
-class TextEvent;
+class TextCheckingParagraph;
 struct TextCheckingResult;
+class TextEvent;
 
 enum EditorCommandSource { CommandFromMenuOrKeyBinding, CommandFromDOM, CommandFromDOMWithUserInterface };
 enum EditorParagraphSeparator { EditorParagraphSeparatorIsDiv, EditorParagraphSeparatorIsP };
 
 class Editor : public FrameDestructionObserver {
 public:
-    explicit Editor(Frame*);
+    explicit Editor(Frame&);
     ~Editor();
 
-    EditorClient* client() const;
-    TextCheckerClient* textChecker() const;
+    EditorClient& client() const;
+    TextCheckerClient& textChecker() const;
 
-    Frame* frame() const { return m_frame; }
+    Frame& frame() const { return *m_frame; }
 
     CompositeEditCommand* lastEditCommand() { return m_lastEditCommand.get(); }
 
@@ -214,7 +215,7 @@ public:
     bool canRedo();
     void redo();
 
-    void didBeginEditing();
+    void didBeginEditing(Element*);
     void didEndEditing();
 
     void setBaseWritingDirection(WritingDirection);
@@ -237,7 +238,7 @@ public:
     VisibleSelection selectionForCommand(Event*);
 
     KillRing* killRing() const { return m_killRing.get(); }
-    SpellChecker* spellChecker() const { return m_spellChecker.get(); }
+    SpellCheckRequester& spellCheckRequester() const { return *m_spellCheckRequester; }
 
     EditingBehavior behavior() const;
 
@@ -267,8 +268,6 @@ public:
     void setMark(const VisibleSelection&);
 
     void computeAndSetTypingStyle(StylePropertySet* , EditAction = EditActionUnspecified);
-    void applyEditingStyleToBodyElement() const;
-    void applyEditingStyleToElement(Element*) const;
 
     IntRect firstRectForRange(Range*) const;
 
@@ -281,7 +280,7 @@ public:
     bool markedTextMatchesAreHighlighted() const;
     void setMarkedTextMatchesAreHighlighted(bool);
 
-    void textFieldDidBeginEditing(Element*);
+    void textAreaOrTextFieldDidBeginEditing(Element*);
     void textFieldDidEndEditing(Element*);
     void textDidChangeInTextField(Element*);
     bool doTextFieldCommandFromEvent(Element*, KeyboardEvent*);
@@ -309,6 +308,8 @@ public:
     };
     friend class RevealSelectionScope;
 
+    void elementDidBeginEditing(Element*);
+
 private:
     RefPtr<CompositeEditCommand> m_lastEditCommand;
     RefPtr<Node> m_removedAnchor;
@@ -316,7 +317,7 @@ private:
     bool m_shouldStartNewKillRingSequence;
     bool m_shouldStyleWithCSS;
     OwnPtr<KillRing> m_killRing;
-    OwnPtr<SpellChecker> m_spellChecker;
+    const OwnPtr<SpellCheckRequester> m_spellCheckRequester;
     VisibleSelection m_mark;
     bool m_areMarkedTextMatchesHighlighted;
     EditorParagraphSeparator m_defaultParagraphSeparator;
@@ -338,6 +339,9 @@ private:
     Node* findEventTargetFromSelection() const;
 
     bool unifiedTextCheckerEnabled() const;
+
+    void chunkAndMarkAllMisspellingsAndBadGrammar(TextCheckingTypeMask textCheckingOptions, const TextCheckingParagraph& fullParagraphToCheck, bool asynchronous);
+    void markAllMisspellingsAndBadGrammarInRanges(TextCheckingTypeMask textCheckingOptions, Range* checkingRange, Range* paragraphRange, bool asynchronous, int requestNumber, int* checkingLength = 0);
 };
 
 inline void Editor::setStartNewKillRingSequence(bool flag)

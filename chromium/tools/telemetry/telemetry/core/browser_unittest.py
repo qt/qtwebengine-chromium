@@ -2,10 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 import logging
-import os
 import unittest
 
 from telemetry.core import browser_finder
+from telemetry.core import gpu_device
+from telemetry.core import gpu_info
+from telemetry.core import system_info
+from telemetry.core import util
 from telemetry.unittest import options_for_unittests
 
 class BrowserTest(unittest.TestCase):
@@ -28,10 +31,10 @@ class BrowserTest(unittest.TestCase):
       if not is_running_on_desktop:
         logging.warn("Desktop-only test, skipping.")
         return None
-      options.profile_type = profile_type
+      options.browser_options.profile_type = profile_type
 
     if extra_browser_args:
-      options.extra_browser_args.extend(extra_browser_args)
+      options.AppendExtraBrowserArgs(extra_browser_args)
 
     browser_to_create = browser_finder.FindBrowser(options)
     if not browser_to_create:
@@ -39,9 +42,7 @@ class BrowserTest(unittest.TestCase):
     self._browser = browser_to_create.Create()
     self._browser.Start()
 
-    unittest_data_dir = os.path.join(os.path.dirname(__file__),
-                                     '..', '..', 'unittest_data')
-    self._browser.SetHTTPServerDirectories(unittest_data_dir)
+    self._browser.SetHTTPServerDirectories(util.GetUnittestDataDir())
 
     return self._browser
 
@@ -72,7 +73,7 @@ class BrowserTest(unittest.TestCase):
     v = b._browser_backend._inspector_protocol_version # pylint: disable=W0212
     self.assertTrue(v > 0)
 
-    v = b._browser_backend._chrome_branch_number > 0 # pylint: disable=W0212
+    v = b._browser_backend.chrome_branch_number # pylint: disable=W0212
     self.assertTrue(v > 0)
 
   def testNewCloseTab(self):
@@ -123,3 +124,22 @@ class BrowserTest(unittest.TestCase):
       return
 
     self.assertEquals(1, len(b.tabs))
+
+  def testGetSystemInfo(self):
+    b = self.CreateBrowser()
+    if not b.supports_system_info:
+      logging.warning(
+          'Browser does not support getting system info, skipping test.')
+      return
+
+    info = b.GetSystemInfo()
+
+    self.assertTrue(isinstance(info, system_info.SystemInfo))
+    self.assertTrue(hasattr(info, 'model_name'))
+    self.assertTrue(hasattr(info, 'gpu'))
+    self.assertTrue(isinstance(info.gpu, gpu_info.GPUInfo))
+    self.assertTrue(hasattr(info.gpu, 'devices'))
+    self.assertTrue(len(info.gpu.devices) > 0)
+    for g in info.gpu.devices:
+      self.assertTrue(isinstance(g, gpu_device.GPUDevice))
+

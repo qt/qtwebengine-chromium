@@ -5,13 +5,29 @@
 #include "tools/gn/scheduler.h"
 
 #include "base/bind.h"
+#include "base/command_line.h"
+#include "base/strings/string_number_conversions.h"
 #include "tools/gn/ninja_target_writer.h"
 #include "tools/gn/standard_out.h"
 
 Scheduler* g_scheduler = NULL;
 
+namespace {
+
+int GetThreadCount() {
+  std::string thread_count =
+      CommandLine::ForCurrentProcess()->GetSwitchValueASCII("threads");
+
+  int result;
+  if (thread_count.empty() || !base::StringToInt(thread_count, &result))
+    return 32;
+  return result;
+}
+
+}  // namespace
+
 Scheduler::Scheduler()
-    : pool_(new base::SequencedWorkerPool(32, "worker_")),
+    : pool_(new base::SequencedWorkerPool(GetThreadCount(), "worker_")),
       input_file_manager_(new InputFileManager),
       verbose_logging_(false),
       work_count_(0),
@@ -77,12 +93,12 @@ void Scheduler::ScheduleTargetFileWrite(const Target* target) {
       base::SequencedWorkerPool::BLOCK_SHUTDOWN);
 }
 
-void Scheduler::AddGenDependency(const SourceFile& source_file) {
+void Scheduler::AddGenDependency(const base::FilePath& file) {
   base::AutoLock lock(lock_);
-  gen_dependencies_.push_back(source_file);
+  gen_dependencies_.push_back(file);
 }
 
-std::vector<SourceFile> Scheduler::GetGenDependencies() const {
+std::vector<base::FilePath> Scheduler::GetGenDependencies() const {
   base::AutoLock lock(lock_);
   return gen_dependencies_;
 }

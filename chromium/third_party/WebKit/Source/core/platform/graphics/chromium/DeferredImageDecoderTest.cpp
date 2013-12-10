@@ -24,11 +24,10 @@
  */
 
 #include "config.h"
-
 #include "core/platform/graphics/chromium/DeferredImageDecoder.h"
 
+#include "SkBitmapDevice.h"
 #include "SkCanvas.h"
-#include "SkDevice.h"
 #include "SkPicture.h"
 #include "core/platform/SharedBuffer.h"
 #include "core/platform/graphics/chromium/ImageDecodingStore.h"
@@ -36,9 +35,10 @@
 #include "core/platform/graphics/skia/NativeImageSkia.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
+#include "wtf/Threading.h"
 #include <gtest/gtest.h>
 
-using namespace WebCore;
+namespace WebCore {
 
 namespace {
 
@@ -59,7 +59,7 @@ const unsigned char whitePNG[] = {
 
 static SkCanvas* createRasterCanvas(int width, int height)
 {
-    SkAutoTUnref<SkDevice> device(new SkDevice(SkBitmap::kARGB_8888_Config, width, height));
+    SkAutoTUnref<SkBaseDevice> device(new SkBitmapDevice(SkBitmap::kARGB_8888_Config, width, height));
     return new SkCanvas(device);
 }
 
@@ -68,9 +68,11 @@ struct Rasterizer {
     SkPicture* picture;
 };
 
+} // namespace
+
 class DeferredImageDecoderTest : public ::testing::Test, public MockImageDecoderClient {
 public:
-    virtual void SetUp()
+    virtual void SetUp() OVERRIDE
     {
         ImageDecodingStore::initializeOnce();
         DeferredImageDecoder::setEnabled(true);
@@ -83,46 +85,57 @@ public:
         m_frameBufferRequestCount = 0;
         m_frameCount = 1;
         m_repetitionCount = cAnimationNone;
-        m_frameStatus = ImageFrame::FrameComplete;
+        m_status = ImageFrame::FrameComplete;
         m_frameDuration = 0;
+        m_decodedSize = m_actualDecoder->size();
     }
 
-    virtual void TearDown()
+    virtual void TearDown() OVERRIDE
     {
         ImageDecodingStore::shutdown();
     }
 
-    virtual void decoderBeingDestroyed()
+    virtual void decoderBeingDestroyed() OVERRIDE
     {
         m_actualDecoder = 0;
     }
 
-    virtual void frameBufferRequested()
+    virtual void frameBufferRequested() OVERRIDE
     {
         ++m_frameBufferRequestCount;
     }
 
-    virtual size_t frameCount()
+    virtual size_t frameCount() OVERRIDE
     {
         return m_frameCount;
     }
 
-    virtual int repetitionCount() const
+    virtual int repetitionCount() const OVERRIDE
     {
         return m_repetitionCount;
     }
 
-    virtual ImageFrame::FrameStatus frameStatus()
+    virtual ImageFrame::Status status() OVERRIDE
     {
-        return m_frameStatus;
+        return m_status;
     }
 
-    virtual float frameDuration() const
+    virtual float frameDuration() const OVERRIDE
     {
         return m_frameDuration;
     }
 
+    virtual IntSize decodedSize() const OVERRIDE
+    {
+        return m_decodedSize;
+    }
+
 protected:
+    void useMockImageDecoderFactory()
+    {
+        m_lazyDecoder->frameGenerator()->setImageDecoderFactory(MockImageDecoderFactory::create(this, m_decodedSize));
+    }
+
     // Don't own this but saves the pointer to query states.
     MockImageDecoder* m_actualDecoder;
     OwnPtr<DeferredImageDecoder> m_lazyDecoder;
@@ -132,8 +145,9 @@ protected:
     RefPtr<SharedBuffer> m_data;
     size_t m_frameCount;
     int m_repetitionCount;
-    ImageFrame::FrameStatus m_frameStatus;
+    ImageFrame::Status m_status;
     float m_frameDuration;
+    IntSize m_decodedSize;
 };
 
 TEST_F(DeferredImageDecoderTest, drawIntoSkPicture)
@@ -224,14 +238,14 @@ TEST_F(DeferredImageDecoderTest, decodeOnOtherThread)
 
 TEST_F(DeferredImageDecoderTest, singleFrameImageLoading)
 {
-    m_frameStatus = ImageFrame::FramePartial;
+    m_status = ImageFrame::FramePartial;
     m_lazyDecoder->setData(m_data.get(), false);
     EXPECT_FALSE(m_lazyDecoder->frameIsCompleteAtIndex(0));
     ImageFrame* frame = m_lazyDecoder->frameBufferAtIndex(0);
     EXPECT_EQ(ImageFrame::FramePartial, frame->status());
     EXPECT_TRUE(m_actualDecoder);
 
-    m_frameStatus = ImageFrame::FrameComplete;
+    m_status = ImageFrame::FrameComplete;
     m_lazyDecoder->setData(m_data.get(), true);
     EXPECT_FALSE(m_actualDecoder);
     EXPECT_TRUE(m_lazyDecoder->frameIsCompleteAtIndex(0));
@@ -245,7 +259,7 @@ TEST_F(DeferredImageDecoderTest, multiFrameImageLoading)
     m_repetitionCount = 10;
     m_frameCount = 1;
     m_frameDuration = 10;
-    m_frameStatus = ImageFrame::FramePartial;
+    m_status = ImageFrame::FramePartial;
     m_lazyDecoder->setData(m_data.get(), false);
     EXPECT_EQ(ImageFrame::FramePartial, m_lazyDecoder->frameBufferAtIndex(0)->status());
     EXPECT_FALSE(m_lazyDecoder->frameIsCompleteAtIndex(0));
@@ -254,7 +268,7 @@ TEST_F(DeferredImageDecoderTest, multiFrameImageLoading)
 
     m_frameCount = 2;
     m_frameDuration = 20;
-    m_frameStatus = ImageFrame::FrameComplete;
+    m_status = ImageFrame::FrameComplete;
     m_lazyDecoder->setData(m_data.get(), false);
     EXPECT_EQ(ImageFrame::FrameComplete, m_lazyDecoder->frameBufferAtIndex(0)->status());
     EXPECT_EQ(ImageFrame::FrameComplete, m_lazyDecoder->frameBufferAtIndex(1)->status());
@@ -267,7 +281,7 @@ TEST_F(DeferredImageDecoderTest, multiFrameImageLoading)
 
     m_frameCount = 3;
     m_frameDuration = 30;
-    m_frameStatus = ImageFrame::FrameComplete;
+    m_status = ImageFrame::FrameComplete;
     m_lazyDecoder->setData(m_data.get(), true);
     EXPECT_FALSE(m_actualDecoder);
     EXPECT_EQ(ImageFrame::FrameComplete, m_lazyDecoder->frameBufferAtIndex(0)->status());
@@ -285,4 +299,25 @@ TEST_F(DeferredImageDecoderTest, multiFrameImageLoading)
     EXPECT_EQ(10, m_lazyDecoder->repetitionCount());
 }
 
-} // namespace
+TEST_F(DeferredImageDecoderTest, decodedSize)
+{
+    m_decodedSize = IntSize(22, 33);
+    m_lazyDecoder->setData(m_data.get(), true);
+    RefPtr<NativeImageSkia> image = m_lazyDecoder->frameBufferAtIndex(0)->asNewNativeImage();
+    EXPECT_EQ(m_decodedSize.width(), image->bitmap().width());
+    EXPECT_EQ(m_decodedSize.height(), image->bitmap().height());
+    EXPECT_FALSE(image->bitmap().isNull());
+    EXPECT_TRUE(image->bitmap().isImmutable());
+
+    useMockImageDecoderFactory();
+
+    // The following code should not fail any assert.
+    SkCanvas* tempCanvas = m_picture.beginRecording(100, 100);
+    tempCanvas->drawBitmap(image->bitmap(), 0, 0);
+    m_picture.endRecording();
+    EXPECT_EQ(0, m_frameBufferRequestCount);
+    m_canvas->drawPicture(m_picture);
+    EXPECT_EQ(1, m_frameBufferRequestCount);
+}
+
+} // namespace WebCore

@@ -31,14 +31,16 @@
 #ifndef HTMLTemplateElement_h
 #define HTMLTemplateElement_h
 
-#include "core/dom/DocumentFragment.h"
 #include "core/html/HTMLElement.h"
 
 namespace WebCore {
 
+class DocumentFragment;
+class TemplateContentDocumentFragment;
+
 class HTMLTemplateElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLTemplateElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<HTMLTemplateElement> create(const QualifiedName&, Document&);
     virtual ~HTMLTemplateElement();
 
     DocumentFragment* content() const;
@@ -47,26 +49,22 @@ private:
     virtual PassRefPtr<Node> cloneNode(bool deep = true) OVERRIDE;
     virtual void didMoveToNewDocument(Document* oldDocument) OVERRIDE;
 
-    HTMLTemplateElement(const QualifiedName&, Document*);
+    HTMLTemplateElement(const QualifiedName&, Document&);
 
-    mutable RefPtr<DocumentFragment> m_content;
+    mutable RefPtr<TemplateContentDocumentFragment> m_content;
 };
-
-const HTMLTemplateElement* toHTMLTemplateElement(const Node*);
 
 inline HTMLTemplateElement* toHTMLTemplateElement(Node* node)
 {
-    return const_cast<HTMLTemplateElement*>(toHTMLTemplateElement(static_cast<const Node*>(node)));
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || (node->isHTMLElement() && node->hasTagName(HTMLNames::templateTag)));
+    return static_cast<HTMLTemplateElement*>(node);
 }
 
-#ifdef NDEBUG
-
-// The debug version of this, with assertions, is not inlined.
 inline const HTMLTemplateElement* toHTMLTemplateElement(const Node* node)
 {
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || (node->isHTMLElement() && node->hasTagName(HTMLNames::templateTag)));
     return static_cast<const HTMLTemplateElement*>(node);
 }
-#endif // NDEBUG
 
 } // namespace WebCore
 

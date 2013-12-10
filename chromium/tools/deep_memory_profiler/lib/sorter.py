@@ -8,16 +8,24 @@ import logging
 import os
 import re
 
+from lib.ordered_dict import OrderedDict
+
 
 LOGGER = logging.getLogger('dmprof')
 
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DEFAULT_SORTERS = [
-    os.path.join(BASE_PATH, 'sorter.malloc-component.json'),
-    os.path.join(BASE_PATH, 'sorter.malloc-type.json'),
-    os.path.join(BASE_PATH, 'sorter.vm-map.json'),
-    os.path.join(BASE_PATH, 'sorter.vm-sharing.json'),
+    os.path.join(BASE_PATH, 'sorters', 'malloc.browser-module.json'),
+    os.path.join(BASE_PATH, 'sorters', 'malloc.renderer-module.json'),
+    os.path.join(BASE_PATH, 'sorters', 'malloc.type.json'),
+    os.path.join(BASE_PATH, 'sorters', 'malloc.WebCore.json'),
+    os.path.join(BASE_PATH, 'sorters', 'vm.Android-specific.json'),
+    os.path.join(BASE_PATH, 'sorters', 'vm.base.json'),
+    os.path.join(BASE_PATH, 'sorters', 'vm.GPU.json'),
+    os.path.join(BASE_PATH, 'sorters', 'vm.sharing.json'),
+    os.path.join(BASE_PATH, 'sorters', 'vm.Skia.json'),
+    os.path.join(BASE_PATH, 'sorters', 'vm.V8.json'),
     ]
 
 DEFAULT_TEMPLATES = os.path.join(BASE_PATH, 'templates.json')
@@ -193,7 +201,7 @@ class VMRule(AbstractRule):
 
   def __repr__(self):
     result = cStringIO.StringIO()
-    result.write('{"%s"=>' % self._name)
+    result.write('%s: ' % self._name)
     attributes = []
     attributes.append('mmap: %s' % self._mmap)
     if self._backtrace_function:
@@ -206,7 +214,7 @@ class VMRule(AbstractRule):
     if self._mapped_permission:
       attributes.append('mapped_permission: "%s"' %
                         self._mapped_permission.pattern)
-    result.write('%s}' % ', '.join(attributes))
+    result.write('{ %s }' % ', '.join(attributes))
     return result.getvalue()
 
   def match(self, unit):
@@ -287,13 +295,14 @@ class MallocRule(AbstractRule):
 
   def __repr__(self):
     result = cStringIO.StringIO()
-    result.write('{"%s"=>' % self._name)
+    result.write('%s: ' % self._name)
     attributes = []
     if self._backtrace_function:
-      attributes.append('backtrace_function: "%s"' % self._backtrace_function)
+      attributes.append('backtrace_function: "%s"' %
+                        self._backtrace_function.pattern)
     if self._typeinfo:
-      attributes.append('typeinfo: "%s"' % self._typeinfo)
-    result.write('%s}' % ', '.join(attributes))
+      attributes.append('typeinfo: "%s"' % self._typeinfo.pattern)
+    result.write('{ %s }' % ', '.join(attributes))
     return result.getvalue()
 
   def match(self, unit):
@@ -310,17 +319,6 @@ class MallocRule(AbstractRule):
             (not self._backtrace_sourcefile or
              self._backtrace_sourcefile.match(stacksourcefile)) and
             (not self._typeinfo or self._typeinfo.match(typeinfo)))
-
-
-class NoBucketMallocRule(MallocRule):
-  """Represents a Rule that small ignorable units match with."""
-  def __init__(self):
-    super(NoBucketMallocRule, self).__init__({'name': 'tc-no-bucket'})
-    self._no_bucket = True
-
-  @property
-  def no_bucket(self):
-    return self._no_bucket
 
 
 class AbstractSorter(object):
@@ -344,17 +342,19 @@ class AbstractSorter(object):
 
   def __repr__(self):
     result = cStringIO.StringIO()
-    result.write('world=%s' % self._world)
-    result.write('order=%s' % self._order)
-    result.write('rules:')
+    print >> result, '%s' % self._name
+    print >> result, 'world=%s' % self._world
+    print >> result, 'name=%s' % self._name
+    print >> result, 'order=%s' % self._order
+    print >> result, 'rules:'
     for rule in self._rules:
-      result.write('  %s' % rule)
+      print >> result, '  %s' % rule
     return result.getvalue()
 
   @staticmethod
   def load(filename):
     with open(filename) as sorter_f:
-      sorter_dict = json.load(sorter_f)
+      sorter_dict = json.load(sorter_f, object_pairs_hook=OrderedDict)
     if sorter_dict['world'] == 'vm':
       return VMSorter(sorter_dict)
     elif sorter_dict['world'] == 'malloc':
@@ -374,6 +374,10 @@ class AbstractSorter(object):
   @property
   def root(self):
     return self._root
+
+  def iter_rule(self):
+    for rule in self._rules:
+      yield rule
 
   def find(self, unit):
     raise NotImplementedError()
@@ -396,7 +400,7 @@ class VMSorter(AbstractSorter):
     for rule in self._rules:
       if rule.match(unit):
         return rule
-    assert False
+    return None
 
 
 class MallocSorter(AbstractSorter):
@@ -404,21 +408,18 @@ class MallocSorter(AbstractSorter):
   def __init__(self, dct):
     assert dct['world'] == 'malloc'
     super(MallocSorter, self).__init__(dct)
-    self._no_bucket_rule = NoBucketMallocRule()
 
   def find(self, unit):
     if not unit.bucket:
-      return self._no_bucket_rule
+      return None
     assert unit.bucket.allocator_type == 'malloc'
 
-    if unit.bucket.component_cache:
-      return unit.bucket.component_cache
+    # TODO(dmikurube): Utilize component_cache again, or remove it.
 
     for rule in self._rules:
       if rule.match(unit):
-        unit.bucket.component_cache = rule
         return rule
-    assert False
+    return None
 
 
 class SorterTemplates(object):
@@ -432,7 +433,7 @@ class SorterTemplates(object):
   @staticmethod
   def load(filename):
     with open(filename) as templates_f:
-      templates_dict = json.load(templates_f)
+      templates_dict = json.load(templates_f, object_pairs_hook=OrderedDict)
     return SorterTemplates(templates_dict)
 
 
@@ -444,7 +445,9 @@ class SorterSet(object):
     if not default:
       default = DEFAULT_SORTERS
     self._sorters = {}
+    LOGGER.info('Loading sorters.')
     for filename in default + additional:
+      LOGGER.info('  Loading a sorter "%s".' % filename)
       sorter = AbstractSorter.load(filename)
       if sorter.world not in self._sorters:
         self._sorters[sorter.world] = []
@@ -453,7 +456,9 @@ class SorterSet(object):
 
   def __repr__(self):
     result = cStringIO.StringIO()
-    result.write(self._sorters)
+    for world, sorters in self._sorters.iteritems():
+      for sorter in sorters:
+        print >> result, '%s: %s' % (world, sorter)
     return result.getvalue()
 
   def __iter__(self):

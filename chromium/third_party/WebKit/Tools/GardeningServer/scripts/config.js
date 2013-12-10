@@ -33,13 +33,13 @@ config.kPlatforms = {
     'chromium' : {
         label : 'Chromium',
         buildConsoleURL: 'http://build.chromium.org/p/chromium.webkit',
-        layoutTestResultsURL: 'http://build.chromium.org/f/chromium/layout_test_results',
+
+        layoutTestResultsURL: 'https://storage.googleapis.com/chromium-layout-test-archives',
         waterfallURL: 'http://build.chromium.org/p/chromium.webkit/waterfall',
         builders: {
             'WebKit XP': {version: 'xp'},
             'WebKit Win7': {version: 'win7'},
-            'WebKit Win7 (dbg)(1)': {version: 'win7', debug: true},
-            'WebKit Win7 (dbg)(2)': {version: 'win7', debug: true},
+            'WebKit Win7 (dbg)': {version: 'win7', debug: true},
             'WebKit Linux': {version: 'lucid', is64bit: true},
             'WebKit Linux 32': {version: 'lucid'},
             'WebKit Linux (dbg)': {version: 'lucid', is64bit: true, debug: true},
@@ -48,18 +48,16 @@ config.kPlatforms = {
             'WebKit Mac10.7': {version: 'lion'},
             'WebKit Mac10.7 (dbg)': {version: 'lion', debug: true},
             'WebKit Mac10.8': {version: 'mountainlion'},
+            'WebKit Mac10.8 (retina)': {version: 'retina'},
+            'WebKit Android (Nexus4)': {version: 'android'},
         },
         resultsDirectoryNameFromBuilderName: function(builderName) {
             return base.underscoredBuilderName(builderName);
         },
         _builderApplies: function(builderName) {
-            // FIXME: Should garden-o-matic show these?
-            // WebKit Android and ASAN are red all the time.
-            // Remove this function entirely once they are better supported.
+            // FIXME: Remove the Perf check once the bots are gone.
             return builderName.indexOf('GPU') == -1 &&
-                   builderName.indexOf('ASAN') == -1 &&
-                   builderName.indexOf('WebKit (Content Shell) Android') == -1 &&
-                   builderName.indexOf('WebKit Android') == -1;
+                   builderName.indexOf('Perf') == -1;
         },
     },
 };

@@ -65,7 +65,7 @@ PageOverlay::PageOverlay(WebViewImpl* viewImpl, WebPageOverlay* overlay)
 
 class OverlayGraphicsLayerClientImpl : public WebCore::GraphicsLayerClient {
 public:
-    static PassOwnPtr<OverlayGraphicsLayerClientImpl*> create(WebPageOverlay* overlay)
+    static PassOwnPtr<OverlayGraphicsLayerClientImpl> create(WebPageOverlay* overlay)
     {
         return adoptPtr(new OverlayGraphicsLayerClientImpl(overlay));
     }
@@ -79,6 +79,11 @@ public:
         gc.save();
         m_overlay->paintPageOverlay(ToWebCanvas(&gc));
         gc.restore();
+    }
+
+    virtual String debugName(const GraphicsLayer* graphicsLayer) OVERRIDE
+    {
+        return String("WebViewImpl Page Overlay Content Layer");
     }
 
 private:
@@ -108,8 +113,16 @@ void PageOverlay::update()
     if (!m_layer) {
         m_layerClient = OverlayGraphicsLayerClientImpl::create(m_overlay);
         m_layer = GraphicsLayer::create(m_viewImpl->graphicsLayerFactory(), m_layerClient.get());
-        m_layer->setName("WebViewImpl page overlay content");
         m_layer->setDrawsContent(true);
+
+        // Compositor hit-testing does not know how to deal with layers that may be
+        // transparent to events (see http://crbug.com/269598). So require
+        // scrolling and touches on this layer to go to the main thread.
+        WebLayer* platformLayer = m_layer->platformLayer();
+        platformLayer->setShouldScrollOnMainThread(true);
+        WebVector<WebRect> webRects(static_cast<size_t>(1));
+        webRects[0] = WebRect(0, 0, INT_MAX, INT_MAX);
+        platformLayer->setTouchEventHandlerRegion(webRects);
     }
 
     FloatSize size(m_viewImpl->size());
@@ -122,9 +135,6 @@ void PageOverlay::update()
 
     m_viewImpl->setOverlayLayer(m_layer.get());
     m_layer->setNeedsDisplay();
-
-    WebLayer* platformLayer = m_layer->platformLayer();
-    platformLayer->setShouldScrollOnMainThread(true);
 }
 
 void PageOverlay::paintWebFrame(GraphicsContext& gc)

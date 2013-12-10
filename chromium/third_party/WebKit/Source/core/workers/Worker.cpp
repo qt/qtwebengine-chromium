@@ -33,11 +33,9 @@
 #include "core/dom/EventListener.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/MessageEvent.h"
+#include "core/fetch/ResourceFetcher.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/loader/FrameLoader.h"
-#include "core/loader/cache/ResourceFetcher.h"
 #include "core/page/DOMWindow.h"
-#include "core/page/Frame.h"
 #include "core/page/UseCounter.h"
 #include "core/workers/WorkerGlobalScopeProxy.h"
 #include "core/workers/WorkerScriptLoader.h"
@@ -124,9 +122,9 @@ void Worker::didReceiveResponse(unsigned long identifier, const ResourceResponse
 
 void Worker::notifyFinished()
 {
-    if (m_scriptLoader->failed())
-        dispatchEvent(Event::create(eventNames().errorEvent, false, true));
-    else {
+    if (m_scriptLoader->failed()) {
+        dispatchEvent(Event::createCancelable(eventNames().errorEvent));
+    } else {
         WorkerThreadStartMode startMode = DontPauseWorkerGlobalScopeOnStart;
         if (InspectorInstrumentation::shouldPauseDedicatedWorkerOnStart(scriptExecutionContext()))
             startMode = PauseWorkerGlobalScopeOnStart;

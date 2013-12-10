@@ -27,7 +27,10 @@
 #include "config.h"
 #include "modules/device_orientation/DeviceMotionController.h"
 
+#include "RuntimeEnabledFeatures.h"
 #include "core/dom/Document.h"
+#include "core/dom/EventNames.h"
+#include "core/page/Page.h"
 #include "modules/device_orientation/DeviceMotionData.h"
 #include "modules/device_orientation/DeviceMotionDispatcher.h"
 #include "modules/device_orientation/DeviceMotionEvent.h"
@@ -35,7 +38,10 @@
 namespace WebCore {
 
 DeviceMotionController::DeviceMotionController(Document* document)
-    : DeviceSensorEventController(document)
+    : DOMWindowLifecycleObserver(document->domWindow())
+    , DeviceSensorEventController(document)
+    , PageLifecycleObserver(document->page())
+    , m_hasEventListener(false)
 {
 }
 
@@ -88,6 +94,40 @@ bool DeviceMotionController::isNullEvent(Event* event)
     ASSERT(event->type() == eventNames().devicemotionEvent);
     DeviceMotionEvent* motionEvent = static_cast<DeviceMotionEvent*>(event);
     return !motionEvent->deviceMotionData()->canProvideEventData();
+}
+
+void DeviceMotionController::didAddEventListener(DOMWindow*, const AtomicString& eventType)
+{
+    if (eventType == eventNames().devicemotionEvent && RuntimeEnabledFeatures::deviceMotionEnabled()) {
+        if (page() && page()->visibilityState() == PageVisibilityStateVisible)
+            startUpdating();
+        m_hasEventListener = true;
+    }
+}
+
+void DeviceMotionController::didRemoveEventListener(DOMWindow*, const AtomicString& eventType)
+{
+    if (eventType == eventNames().devicemotionEvent) {
+        stopUpdating();
+        m_hasEventListener = false;
+    }
+}
+
+void DeviceMotionController::didRemoveAllEventListeners(DOMWindow*)
+{
+    stopUpdating();
+    m_hasEventListener = false;
+}
+
+void DeviceMotionController::pageVisibilityChanged()
+{
+    if (!m_hasEventListener)
+        return;
+
+    if (page()->visibilityState() == PageVisibilityStateVisible)
+        startUpdating();
+    else
+        stopUpdating();
 }
 
 } // namespace WebCore

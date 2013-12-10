@@ -20,14 +20,11 @@
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_pump_aurax11.h"
+#include "base/message_loop/message_pump_x11.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
-#include "third_party/skia/include/core/SkBitmap.h"
-#include "third_party/skia/include/core/SkCanvas.h"
-#include "third_party/skia/include/core/SkPostConfig.h"
 #include "ui/aura/client/capture_client.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/screen_position_client.h"
@@ -35,9 +32,6 @@
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/base/cursor/cursor.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_utils.h"
-#include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/touch/touch_factory_x11.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/base/view_prop.h"
@@ -45,7 +39,9 @@
 #include "ui/base/x/x11_util.h"
 #include "ui/compositor/dip_util.h"
 #include "ui/compositor/layer.h"
-#include "ui/gfx/codec/png_codec.h"
+#include "ui/events/event.h"
+#include "ui/events/event_utils.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/screen.h"
 
 #if defined(OS_CHROMEOS)
@@ -91,7 +87,7 @@ bool IsSideBezelsEnabled() {
 #endif
 
 void SelectEventsForRootWindow() {
-  Display* display = ui::GetXDisplay();
+  XDisplay* display = gfx::GetXDisplay();
   ::Window root_window = ui::GetX11RootWindow();
 
   // Receive resize events for the root-window so |x_root_bounds_| can be
@@ -367,7 +363,7 @@ class RootWindowHostX11::MouseMoveFilter {
 
 RootWindowHostX11::RootWindowHostX11(const gfx::Rect& bounds)
     : delegate_(NULL),
-      xdisplay_(base::MessagePumpAuraX11::GetDefaultXDisplay()),
+      xdisplay_(gfx::GetXDisplay()),
       xwindow_(0),
       x_root_window_(DefaultRootWindow(xdisplay_)),
       current_cursor_(ui::kCursorNull),
@@ -377,7 +373,8 @@ RootWindowHostX11::RootWindowHostX11(const gfx::Rect& bounds)
       focus_when_shown_(false),
       touch_calibrate_(new internal::TouchEventCalibrate),
       mouse_move_filter_(new MouseMoveFilter),
-      atom_cache_(xdisplay_, kAtomsToCache) {
+      atom_cache_(xdisplay_, kAtomsToCache),
+      bezel_tracking_ids_(0) {
   XSetWindowAttributes swa;
   memset(&swa, 0, sizeof(swa));
   swa.background_pixmap = None;
@@ -391,8 +388,8 @@ RootWindowHostX11::RootWindowHostX11(const gfx::Rect& bounds)
       CopyFromParent,  // visual
       CWBackPixmap | CWOverrideRedirect,
       &swa);
-  base::MessagePumpAuraX11::Current()->AddDispatcherForWindow(this, xwindow_);
-  base::MessagePumpAuraX11::Current()->AddDispatcherForRootWindow(this);
+  base::MessagePumpX11::Current()->AddDispatcherForWindow(this, xwindow_);
+  base::MessagePumpX11::Current()->AddDispatcherForRootWindow(this);
 
   long event_mask = ButtonPressMask | ButtonReleaseMask | FocusChangeMask |
                     KeyPressMask | KeyReleaseMask |
@@ -443,8 +440,8 @@ RootWindowHostX11::RootWindowHostX11(const gfx::Rect& bounds)
 
 RootWindowHostX11::~RootWindowHostX11() {
   Env::GetInstance()->RemoveObserver(this);
-  base::MessagePumpAuraX11::Current()->RemoveDispatcherForRootWindow(this);
-  base::MessagePumpAuraX11::Current()->RemoveDispatcherForWindow(xwindow_);
+  base::MessagePumpX11::Current()->RemoveDispatcherForRootWindow(this);
+  base::MessagePumpX11::Current()->RemoveDispatcherForWindow(xwindow_);
 
   UnConfineCursor();
 
@@ -633,7 +630,7 @@ void RootWindowHostX11::Show() {
     // We now block until our window is mapped. Some X11 APIs will crash and
     // burn if passed |xwindow_| before the window is mapped, and XMapWindow is
     // asynchronous.
-    base::MessagePumpAuraX11::Current()->BlockUntilWindowMapped(xwindow_);
+    base::MessagePumpX11::Current()->BlockUntilWindowMapped(xwindow_);
     window_mapped_ = true;
   }
 }
@@ -819,51 +816,6 @@ void RootWindowHostX11::SetFocusWhenShown(bool focus_when_shown) {
   }
 }
 
-bool RootWindowHostX11::CopyAreaToSkCanvas(const gfx::Rect& source_bounds,
-                                             const gfx::Point& dest_offset,
-                                             SkCanvas* canvas) {
-  ui::XScopedImage scoped_image(
-      XGetImage(xdisplay_, xwindow_,
-                source_bounds.x(), source_bounds.y(),
-                source_bounds.width(), source_bounds.height(),
-                AllPlanes, ZPixmap));
-  XImage* image = scoped_image.get();
-  if (!image) {
-    LOG(ERROR) << "XGetImage failed";
-    return false;
-  }
-
-  if (image->bits_per_pixel == 32) {
-    if ((0xff << SK_R32_SHIFT) != image->red_mask ||
-        (0xff << SK_G32_SHIFT) != image->green_mask ||
-        (0xff << SK_B32_SHIFT) != image->blue_mask) {
-      LOG(WARNING) << "XImage and Skia byte orders differ";
-      return false;
-    }
-
-    // Set the alpha channel before copying to the canvas.  Otherwise, areas of
-    // the framebuffer that were cleared by ply-image rather than being obscured
-    // by an image during boot may end up transparent.
-    // TODO(derat|marcheu): Remove this if/when ply-image has been updated to
-    // set the framebuffer's alpha channel regardless of whether the device
-    // claims to support alpha or not.
-    for (int i = 0; i < image->width * image->height * 4; i += 4)
-      image->data[i + 3] = 0xff;
-
-    SkBitmap bitmap;
-    bitmap.setConfig(SkBitmap::kARGB_8888_Config,
-                     image->width, image->height,
-                     image->bytes_per_line);
-    bitmap.setPixels(image->data);
-    canvas->drawBitmap(bitmap, SkIntToScalar(0), SkIntToScalar(0), NULL);
-  } else {
-    NOTIMPLEMENTED() << "Unsupported bits-per-pixel " << image->bits_per_pixel;
-    return false;
-  }
-
-  return true;
-}
-
 void RootWindowHostX11::PostNativeEvent(
     const base::NativeEvent& native_event) {
   DCHECK(xwindow_);
@@ -902,7 +854,7 @@ void RootWindowHostX11::OnDeviceScaleFactorChanged(
 }
 
 void RootWindowHostX11::PrepareForShutdown() {
-  base::MessagePumpAuraX11::Current()->RemoveDispatcherForWindow(xwindow_);
+  base::MessagePumpX11::Current()->RemoveDispatcherForWindow(xwindow_);
 }
 
 void RootWindowHostX11::OnWindowInitialized(Window* window) {
@@ -961,15 +913,22 @@ void RootWindowHostX11::DispatchXI2Event(const base::NativeEvent& event) {
     case ui::ET_TOUCH_PRESSED:
     case ui::ET_TOUCH_CANCELLED:
     case ui::ET_TOUCH_RELEASED: {
+      ui::TouchEvent touchev(xev);
 #if defined(USE_XI2_MT)
-      // Ignore events from the bezel when the side bezel flag is not explicitly
-      // enabled.
-      if (!IsSideBezelsEnabled() &&
-          touch_calibrate_->IsEventOnSideBezels(xev, bounds_)) {
-        break;
+      // Ignore touch events with touch press happening on the side bezel.
+      if (!IsSideBezelsEnabled()) {
+        uint32 tracking_id = (1 << touchev.touch_id());
+        if (type == ui::ET_TOUCH_PRESSED &&
+            touch_calibrate_->IsEventOnSideBezels(xev, bounds_))
+          bezel_tracking_ids_ |= tracking_id;
+        if (bezel_tracking_ids_ & tracking_id) {
+          if (type == ui::ET_TOUCH_CANCELLED || type == ui::ET_TOUCH_RELEASED)
+            bezel_tracking_ids_ =
+                (bezel_tracking_ids_ | tracking_id) ^ tracking_id;
+          return;
+        }
       }
 #endif  // defined(USE_XI2_MT)
-      ui::TouchEvent touchev(xev);
 #if defined(OS_CHROMEOS)
       if (base::chromeos::IsRunningOnChromeOS()) {
         if (!bounds_.Contains(touchev.location()))
@@ -1131,7 +1090,7 @@ RootWindowHost* RootWindowHost::Create(const gfx::Rect& bounds) {
 
 // static
 gfx::Size RootWindowHost::GetNativeScreenSize() {
-  ::Display* xdisplay = base::MessagePumpAuraX11::GetDefaultXDisplay();
+  ::XDisplay* xdisplay = gfx::GetXDisplay();
   return gfx::Size(DisplayWidth(xdisplay, 0), DisplayHeight(xdisplay, 0));
 }
 

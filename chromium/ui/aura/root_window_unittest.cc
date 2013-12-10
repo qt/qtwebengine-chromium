@@ -17,12 +17,12 @@
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window_tracker.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_handler.h"
-#include "ui/base/events/event_utils.h"
 #include "ui/base/gestures/gesture_configuration.h"
 #include "ui/base/hit_test.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/event.h"
+#include "ui/events/event_handler.h"
+#include "ui/events/event_utils.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/screen.h"
@@ -402,10 +402,14 @@ namespace {
 class EventFilterRecorder : public ui::EventHandler {
  public:
   typedef std::vector<ui::EventType> Events;
+  typedef std::vector<gfx::Point> MouseEventLocations;
 
   EventFilterRecorder() {}
 
   Events& events() { return events_; }
+
+  MouseEventLocations& mouse_locations() { return mouse_locations_; }
+  gfx::Point mouse_location(int i) const { return mouse_locations_[i]; }
 
   // ui::EventHandler overrides:
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE {
@@ -414,6 +418,7 @@ class EventFilterRecorder : public ui::EventHandler {
 
   virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE {
     events_.push_back(event->type());
+    mouse_locations_.push_back(event->location());
   }
 
   virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE {
@@ -430,6 +435,7 @@ class EventFilterRecorder : public ui::EventHandler {
 
  private:
   Events events_;
+  MouseEventLocations mouse_locations_;
 
   DISALLOW_COPY_AND_ASSIGN(EventFilterRecorder);
 };
@@ -679,6 +685,41 @@ TEST_F(RootWindowTest, DispatchSyntheticMouseEvents) {
   EXPECT_TRUE(filter->events().empty());
 }
 
+// Tests that a mouse exit is dispatched to the last known cursor location
+// when the cursor becomes invisible.
+TEST_F(RootWindowTest, DispatchMouseExitWhenCursorHidden) {
+  EventFilterRecorder* filter = new EventFilterRecorder;
+  root_window()->SetEventFilter(filter);  // passes ownership
+
+  test::TestWindowDelegate delegate;
+  gfx::Point window_origin(7, 18);
+  scoped_ptr<aura::Window> window(CreateTestWindowWithDelegate(
+      &delegate, 1234, gfx::Rect(window_origin,
+      gfx::Size(100, 100)), root_window()));
+  window->Show();
+
+  // Dispatch a mouse move event into the window.
+  gfx::Point mouse_location(gfx::Point(15, 25));
+  ui::MouseEvent mouse1(ui::ET_MOUSE_MOVED, mouse_location,
+                        mouse_location, 0);
+  EXPECT_TRUE(filter->events().empty());
+  root_window()->AsRootWindowHostDelegate()->OnHostMouseEvent(&mouse1);
+  EXPECT_FALSE(filter->events().empty());
+  filter->events().clear();
+
+  // Hide the cursor and verify a mouse exit was dispatched.
+  root_window()->OnCursorVisibilityChanged(false);
+  EXPECT_FALSE(filter->events().empty());
+  EXPECT_EQ("MOUSE_EXITED", EventTypesToString(filter->events()));
+
+  // Verify the mouse exit was dispatched at the correct location
+  // (in the correct coordinate space).
+  int translated_x = mouse_location.x() - window_origin.x();
+  int translated_y = mouse_location.y() - window_origin.y();
+  gfx::Point translated_point(translated_x, translated_y);
+  EXPECT_EQ(filter->mouse_location(0).ToString(), translated_point.ToString());
+}
+
 class DeletingEventFilter : public ui::EventHandler {
  public:
   DeletingEventFilter()
@@ -880,6 +921,134 @@ TEST_F(RootWindowTest, GestureEndDeliveredAfterNestedGestures) {
   // Both windows should get their gesture end events.
   EXPECT_EQ(1, d1.gesture_end_count());
   EXPECT_EQ(1, d2.gesture_end_count());
+}
+
+// Tests whether we can repost the Tap down gesture event.
+TEST_F(RootWindowTest, RepostTapdownGestureTest) {
+  EventFilterRecorder* filter = new EventFilterRecorder;
+  root_window()->SetEventFilter(filter);  // passes ownership
+
+  test::TestWindowDelegate delegate;
+  scoped_ptr<aura::Window> window(CreateTestWindowWithDelegate(
+      &delegate, 1, gfx::Rect(0, 0, 100, 100), root_window()));
+
+  ui::GestureEventDetails details(ui::ET_GESTURE_TAP_DOWN, 0.0f, 0.0f);
+  gfx::Point point(10, 10);
+  ui::GestureEvent event(
+      ui::ET_GESTURE_TAP_DOWN,
+      point.x(),
+      point.y(),
+      0,
+      ui::EventTimeForNow(),
+      details,
+      0);
+  root_window()->RepostEvent(event);
+  RunAllPendingInMessageLoop();
+  // TODO(rbyers): Currently disabled - crbug.com/170987
+  EXPECT_FALSE(EventTypesToString(filter->events()).find("GESTURE_TAP_DOWN") !=
+              std::string::npos);
+  filter->events().clear();
+}
+
+// This class inherits from the EventFilterRecorder class which provides a
+// facility to record events. This class additionally provides a facility to
+// repost the ET_GESTURE_TAP_DOWN gesture to the target window and records
+// events after that.
+class RepostGestureEventRecorder : public EventFilterRecorder {
+ public:
+  RepostGestureEventRecorder(aura::Window* repost_source,
+                             aura::Window* repost_target)
+      : repost_source_(repost_source),
+        repost_target_(repost_target),
+        reposted_(false) {}
+
+  virtual ~RepostGestureEventRecorder() {}
+
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
+    EXPECT_EQ(reposted_ ? repost_target_ : repost_source_, event->target());
+    if (event->type() == ui::ET_GESTURE_TAP_DOWN) {
+      if (!reposted_) {
+        EXPECT_NE(repost_target_, event->target());
+        reposted_ = true;
+        events().clear();
+        repost_target_->GetRootWindow()->RepostEvent(*event);
+        // Ensure that the reposted gesture event above goes to the
+        // repost_target_;
+        repost_source_->GetRootWindow()->RemoveChild(repost_source_);
+        return;
+      }
+    }
+    EventFilterRecorder::OnGestureEvent(event);
+  }
+
+  // Ignore mouse events as they don't fire at all times. This causes
+  // the GestureRepostEventOrder test to fail randomly.
+  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE {}
+
+ private:
+  aura::Window* repost_source_;
+  aura::Window* repost_target_;
+  // set to true if we reposted the ET_GESTURE_TAP_DOWN event.
+  bool reposted_;
+  DISALLOW_COPY_AND_ASSIGN(RepostGestureEventRecorder);
+};
+
+// Tests whether events which are generated after the reposted gesture event
+// are received after that. In this case the scroll sequence events should
+// be received after the reposted gesture event.
+TEST_F(RootWindowTest, GestureRepostEventOrder) {
+  // Expected events at the end for the repost_target window defined below.
+  const char kExpectedTargetEvents[] =
+    // TODO)(rbyers): Gesture event reposting is disabled - crbug.com/279039.
+    // "GESTURE_BEGIN GESTURE_TAP_DOWN "
+    "TOUCH_RELEASED TOUCH_PRESSED GESTURE_BEGIN GESTURE_TAP_DOWN TOUCH_MOVED "
+    " GESTURE_SCROLL_BEGIN GESTURE_SCROLL_UPDATE TOUCH_MOVED "
+    "GESTURE_SCROLL_UPDATE TOUCH_MOVED GESTURE_SCROLL_UPDATE TOUCH_RELEASED "
+    "GESTURE_SCROLL_END GESTURE_END";
+  // We create two windows.
+  // The first window (repost_source) is the one to which the initial tap
+  // gesture is sent. It reposts this event to the second window
+  // (repost_target).
+  // We then generate the scroll sequence for repost_target and look for two
+  // ET_GESTURE_TAP_DOWN events in the event list at the end.
+  test::TestWindowDelegate delegate;
+  scoped_ptr<aura::Window> repost_target(CreateTestWindowWithDelegate(
+      &delegate, 1, gfx::Rect(0, 0, 100, 100), root_window()));
+
+  scoped_ptr<aura::Window> repost_source(CreateTestWindowWithDelegate(
+      &delegate, 1, gfx::Rect(0, 0, 50, 50), root_window()));
+
+  RepostGestureEventRecorder* repost_event_recorder =
+      new RepostGestureEventRecorder(repost_source.get(), repost_target.get());
+  root_window()->SetEventFilter(repost_event_recorder);  // passes ownership
+
+  // Generate a tap down gesture for the repost_source. This will be reposted
+  // to repost_target.
+  test::EventGenerator repost_generator(root_window(), repost_source.get());
+  repost_generator.GestureTapAt(gfx::Point(40, 40));
+  RunAllPendingInMessageLoop();
+
+  test::EventGenerator scroll_generator(root_window(), repost_target.get());
+  scroll_generator.GestureScrollSequence(
+      gfx::Point(80, 80),
+      gfx::Point(100, 100),
+      base::TimeDelta::FromMilliseconds(100),
+      3);
+  RunAllPendingInMessageLoop();
+
+  int tap_down_count = 0;
+  for (size_t i = 0; i < repost_event_recorder->events().size(); ++i) {
+    if (repost_event_recorder->events()[i] == ui::ET_GESTURE_TAP_DOWN)
+      ++tap_down_count;
+  }
+
+  // We expect two tap down events. One from the repost and the other one from
+  // the scroll sequence posted above.
+  // TODO(rbyers): Currently disabled - crbug.com/170987
+  EXPECT_EQ(1, tap_down_count);
+
+  EXPECT_EQ(kExpectedTargetEvents,
+            EventTypesToString(repost_event_recorder->events()));
 }
 
 }  // namespace aura

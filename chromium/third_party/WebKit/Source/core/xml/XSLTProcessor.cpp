@@ -21,21 +21,18 @@
  */
 
 #include "config.h"
-
 #include "core/xml/XSLTProcessor.h"
 
 #include "core/dom/DOMImplementation.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/editing/markup.h"
-#include "core/loader/TextResourceDecoder.h"
 #include "core/page/ContentSecurityPolicy.h"
 #include "core/page/DOMWindow.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "weborigin/SecurityOrigin.h"
-
-#include <wtf/Assertions.h>
-#include <wtf/Vector.h>
+#include "wtf/Assertions.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -63,7 +60,7 @@ XSLTProcessor::~XSLTProcessor()
 PassRefPtr<Document> XSLTProcessor::createDocumentFromSource(const String& sourceString,
     const String& sourceEncoding, const String& sourceMIMEType, Node* sourceNode, Frame* frame)
 {
-    RefPtr<Document> ownerDocument = sourceNode->document();
+    RefPtr<Document> ownerDocument = &sourceNode->document();
     bool sourceIsDocument = (sourceNode == ownerDocument.get());
     String documentSource = sourceString;
 
@@ -90,10 +87,7 @@ PassRefPtr<Document> XSLTProcessor::createDocumentFromSource(const String& sourc
         frame->domWindow()->setDocument(result);
     }
 
-    RefPtr<TextResourceDecoder> decoder = TextResourceDecoder::create(sourceMIMEType);
-    decoder->setEncoding(sourceEncoding.isEmpty() ? UTF8Encoding() : WTF::TextEncoding(sourceEncoding), TextResourceDecoder::EncodingFromXMLHeader);
-    result->setDecoder(decoder.release());
-
+    result->setEncoding(sourceEncoding.isEmpty() ? UTF8Encoding() : WTF::TextEncoding(sourceEncoding));
     result->setContent(documentSource);
 
     return result.release();
@@ -127,7 +121,7 @@ PassRefPtr<DocumentFragment> XSLTProcessor::transformToFragment(Node* sourceNode
 
     if (!transformToString(sourceNode, resultMIMEType, resultString, resultEncoding))
         return 0;
-    return createFragmentForTransformToFragment(resultString, resultMIMEType, outputDoc);
+    return createFragmentForTransformToFragment(resultString, resultMIMEType, *outputDoc);
 }
 
 void XSLTProcessor::setParameter(const String& /*namespaceURI*/, const String& localName, const String& value)

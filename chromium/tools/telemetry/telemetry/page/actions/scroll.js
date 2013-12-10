@@ -11,28 +11,6 @@
 (function() {
   var MAX_SCROLL_LENGTH_PIXELS = 5000;
 
-  var getTimeMs = (function() {
-    if (window.performance)
-      return (performance.now       ||
-              performance.mozNow    ||
-              performance.msNow     ||
-              performance.oNow      ||
-              performance.webkitNow).bind(window.performance);
-    else
-      return function() { return new Date().getTime(); };
-  })();
-
-  var requestAnimationFrame = (function() {
-    return window.requestAnimationFrame       ||
-           window.webkitRequestAnimationFrame ||
-           window.mozRequestAnimationFrame    ||
-           window.oRequestAnimationFrame      ||
-           window.msRequestAnimationFrame     ||
-           function(callback) {
-             window.setTimeout(callback, 1000 / 60);
-           };
-  })().bind(window);
-
   function ScrollGestureOptions(opt_options) {
     if (opt_options) {
       this.element_ = opt_options.element;
@@ -102,11 +80,7 @@
 
   // This class scrolls a page from the top to the bottom once.
   //
-  // The page is scrolled down by a set of scroll gestures. These gestures
-  // correspond to a reading gesture on that platform.
-  //
-  // start -> startPass_ -> ...scroll... -> onGestureComplete_ ->
-  //       -> startPass_ -> .. scroll... -> onGestureComplete_ -> callback_
+  // The page is scrolled down by a single scroll gesture.
   function ScrollAction(opt_callback, opt_remaining_distance_func) {
     var self = this;
 
@@ -159,17 +133,6 @@
   }
 
   ScrollAction.prototype.onGestureComplete_ = function() {
-    // If the scrollHeight went down, only scroll to the new scrollHeight.
-    // -1 to allow for rounding errors on scaled viewports (like mobile).
-    this.scrollHeight_ = Math.min(this.scrollHeight_,
-                                  this.element_.scrollHeight - 1);
-
-    if (this.getRemainingScrollDistance_() > 0) {
-      this.gesture_.start(this.getRemainingScrollDistance_(),
-                          this.onGestureComplete_.bind(this));
-      return;
-    }
-
     this.endMeasuringHook();
 
     // We're done.

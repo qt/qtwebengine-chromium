@@ -147,7 +147,7 @@ public:
     {
         return glyphDataAndPageForCharacter(c, mirror, variant).first;
     }
-#if OS(DARWIN)
+#if OS(MACOSX)
     const SimpleFontData* fontDataForCombiningCharacterSequence(const UChar*, size_t length, FontDataVariant) const;
 #endif
     std::pair<GlyphData, GlyphPage*> glyphDataAndPageForCharacter(UChar32, bool mirror, FontDataVariant = AutoVariant) const;
@@ -234,6 +234,8 @@ public:
 
     bool needsTranscoding() const { return m_needsTranscoding; }
     FontFallbackList* fontList() const { return m_fontFallbackList.get(); }
+
+    void willUseFontData() const;
 
 private:
     bool loadingCustomFonts() const

@@ -36,8 +36,8 @@ public:
 
     virtual ScrollbarMode scrollingMode() const { return m_scrolling; }
 
-    virtual int marginWidth() const { return m_marginWidth; }
-    virtual int marginHeight() const { return m_marginHeight; }
+    int marginWidth() const { return m_marginWidth; }
+    int marginHeight() const { return m_marginHeight; }
 
     int width();
     int height();
@@ -45,15 +45,13 @@ public:
     virtual bool canContainRangeEndPoint() const { return false; }
 
 protected:
-    HTMLFrameElementBase(const QualifiedName&, Document*);
+    HTMLFrameElementBase(const QualifiedName&, Document&);
 
     bool isURLAllowed() const;
 
-    virtual bool allowScrollingInContentFrame() { return scrollingMode() != ScrollbarAlwaysOff; }
-
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void didNotifySubtreeInsertions(ContainerNode*) OVERRIDE;
+    virtual void didNotifySubtreeInsertionsToDocument() OVERRIDE;
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
 
 private:
@@ -78,6 +76,12 @@ private:
     int m_marginWidth;
     int m_marginHeight;
 };
+
+inline HTMLFrameElementBase* toHTMLFrameElementBase(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || (node->isElementNode() && toElement(node)->isFrameElementBase()));
+    return static_cast<HTMLFrameElementBase*>(node);
+}
 
 } // namespace WebCore
 

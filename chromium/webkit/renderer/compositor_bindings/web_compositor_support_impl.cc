@@ -17,6 +17,7 @@
 #include "webkit/renderer/compositor_bindings/web_float_animation_curve_impl.h"
 #include "webkit/renderer/compositor_bindings/web_image_layer_impl.h"
 #include "webkit/renderer/compositor_bindings/web_layer_impl.h"
+#include "webkit/renderer/compositor_bindings/web_nine_patch_layer_impl.h"
 #include "webkit/renderer/compositor_bindings/web_scrollbar_layer_impl.h"
 #include "webkit/renderer/compositor_bindings/web_solid_color_layer_impl.h"
 #include "webkit/renderer/compositor_bindings/web_transform_animation_curve_impl.h"
@@ -31,6 +32,7 @@ using WebKit::WebExternalTextureLayerClient;
 using WebKit::WebFilterOperations;
 using WebKit::WebFloatAnimationCurve;
 using WebKit::WebImageLayer;
+using WebKit::WebNinePatchLayer;
 using WebKit::WebLayer;
 using WebKit::WebScrollbar;
 using WebKit::WebScrollbarLayer;
@@ -64,6 +66,10 @@ WebKit::WebImageLayer* WebCompositorSupportImpl::createImageLayer() {
   return new WebImageLayerImpl();
 }
 
+WebKit::WebNinePatchLayer* WebCompositorSupportImpl::createNinePatchLayer() {
+  return new WebNinePatchLayerImpl();
+}
+
 WebSolidColorLayer* WebCompositorSupportImpl::createSolidColorLayer() {
   return new WebSolidColorLayerImpl();
 }
@@ -73,6 +79,20 @@ WebScrollbarLayer* WebCompositorSupportImpl::createScrollbarLayer(
     WebScrollbarThemePainter painter,
     WebScrollbarThemeGeometry* geometry) {
   return new WebScrollbarLayerImpl(scrollbar, painter, geometry);
+}
+
+WebScrollbarLayer* WebCompositorSupportImpl::createSolidColorScrollbarLayer(
+      WebScrollbar::Orientation orientation, int thumb_thickness) {
+  // TODO(tony): Remove this after the caller in blink is migrated to
+  // the version which includes |should_place_vertical_scrollbar_on_left|.
+  return new WebScrollbarLayerImpl(orientation, thumb_thickness, false);
+}
+
+WebScrollbarLayer* WebCompositorSupportImpl::createSolidColorScrollbarLayer(
+      WebScrollbar::Orientation orientation, int thumb_thickness,
+      bool is_left_side_vertical_scrollbar) {
+  return new WebScrollbarLayerImpl(orientation, thumb_thickness,
+      is_left_side_vertical_scrollbar);
 }
 
 WebAnimation* WebCompositorSupportImpl::createAnimation(

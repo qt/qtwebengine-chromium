@@ -25,7 +25,7 @@
 #include "HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
-#include "core/dom/NodeTraversal.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/html/HTMLOListElement.h"
 #include "core/rendering/CounterNode.h"
 #include "core/rendering/RenderListItem.h"
@@ -148,7 +148,7 @@ static bool planCounter(RenderObject* object, const AtomicString& identifier, bo
         }
         if (Node* e = object->node()) {
             if (e->hasTagName(olTag)) {
-                value = static_cast<HTMLOListElement*>(e)->start();
+                value = toHTMLOListElement(e)->start();
                 isReset = true;
                 return true;
             }
@@ -417,23 +417,7 @@ PassRefPtr<StringImpl> RenderCounter::originalText() const
 
 void RenderCounter::updateCounter()
 {
-    computePreferredLogicalWidths(0);
-}
-
-void RenderCounter::computePreferredLogicalWidths(float lead)
-{
-#ifndef NDEBUG
-    // FIXME: We shouldn't be modifying the tree in computePreferredLogicalWidths.
-    // Instead, we should properly hook the appropriate changes in the DOM and modify
-    // the render tree then. When that's done, we also won't need to override
-    // computePreferredLogicalWidths at all.
-    // https://bugs.webkit.org/show_bug.cgi?id=104829
-    SetLayoutNeededForbiddenScope layoutForbiddenScope(this, false);
-#endif
-
     setTextInternal(originalText());
-
-    RenderText::computePreferredLogicalWidths(lead);
 }
 
 void RenderCounter::invalidate()

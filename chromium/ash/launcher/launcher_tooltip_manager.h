@@ -11,7 +11,7 @@
 #include "base/basictypes.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
-#include "ui/base/events/event_handler.h"
+#include "ui/events/event_handler.h"
 #include "ui/gfx/rect.h"
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/bubble/bubble_delegate.h"
@@ -73,6 +73,9 @@ class ASH_EXPORT LauncherTooltipManager : public ui::EventHandler,
 
   // Returns true if the tooltip is currently visible.
   bool IsVisible();
+
+  // Returns the view to which the tooltip bubble is anchored. May be NULL.
+  views::View* GetCurrentAnchorView() { return anchor_; }
 
   // Create an instant timer for test purposes.
   void CreateZeroDelayTimerForTest();

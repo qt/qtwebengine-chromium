@@ -1,13 +1,16 @@
 # Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
 import logging
 import json
 import os
 
-from telemetry.core.chrome import facebook_credentials_backend
-from telemetry.core.chrome import google_credentials_backend
+from telemetry.core import util
+from telemetry.core.backends import facebook_credentials_backend
+from telemetry.core.backends import google_credentials_backend
 from telemetry.unittest import options_for_unittests
+
 
 class BrowserCredentials(object):
   def __init__(self, backends = None):
@@ -126,11 +129,8 @@ class BrowserCredentials(object):
                                        page_set.credentials_path)))
       files_to_tweak.append('~/.telemetry-credentials')
 
-      example_credentials_file = (
-        os.path.relpath(
-          os.path.join(
-            os.path.dirname(__file__),
-            '..', 'examples', 'credentials_example.json')))
+      example_credentials_file = os.path.join(
+          util.GetTelemetryDir(), 'examples', 'credentials_example.json')
 
       logging.warning("""
         Credentials for %s were not found. %i pages will not be tested.

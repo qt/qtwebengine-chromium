@@ -4,8 +4,8 @@
 
 #include "base/prefs/pref_member.h"
 
-#include "base/bind_helpers.h"
 #include "base/callback.h"
+#include "base/callback_helpers.h"
 #include "base/location.h"
 #include "base/prefs/pref_service.h"
 #include "base/value_conversions.h"
@@ -94,7 +94,8 @@ void PrefMemberBase::InvokeUnnamedCallback(const base::Closure& callback,
 
 PrefMemberBase::Internal::Internal()
     : thread_loop_(MessageLoopProxy::current()),
-      is_managed_(false) {
+      is_managed_(false),
+      is_user_modifiable_(false) {
 }
 PrefMemberBase::Internal::~Internal() { }
 

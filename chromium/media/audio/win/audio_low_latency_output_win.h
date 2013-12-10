@@ -122,6 +122,7 @@ class MEDIA_EXPORT WASAPIAudioOutputStream :
   // The ctor takes all the usual parameters, plus |manager| which is the
   // the audio manager who is creating this object.
   WASAPIAudioOutputStream(AudioManagerWin* manager,
+                          const std::string& device_id,
                           const AudioParameters& params,
                           ERole device_role);
 
@@ -149,8 +150,9 @@ class MEDIA_EXPORT WASAPIAudioOutputStream :
   static ChannelLayout HardwareChannelLayout();
 
   // Retrieves the sample rate the audio engine uses for its internal
-  // processing/mixing of shared-mode streams for the default endpoint device.
-  static int HardwareSampleRate();
+  // processing/mixing of shared-mode streams.  To fetch the settings for the
+  // default device, pass an empty string as the |device_id|.
+  static int HardwareSampleRate(const std::string& device_id);
 
   // Returns AUDCLNT_SHAREMODE_EXCLUSIVE if --enable-exclusive-mode is used
   // as command-line flag and AUDCLNT_SHAREMODE_SHARED otherwise (default).
@@ -218,6 +220,9 @@ class MEDIA_EXPORT WASAPIAudioOutputStream :
 
   // Length of the audio endpoint buffer.
   uint32 endpoint_buffer_size_frames_;
+
+  // The target device id or an empty string for the default device.
+  const std::string device_id_;
 
   // Defines the role that the system has assigned to an audio endpoint device.
   ERole device_role_;

@@ -35,6 +35,7 @@
 #include "XMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/DocumentFragment.h"
+#include "core/html/HTMLDocument.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLHtmlElement.h"
 #include "core/html/HTMLOptGroupElement.h"
@@ -58,7 +59,7 @@ namespace {
 
 inline bool isHTMLSpaceOrReplacementCharacter(UChar character)
 {
-    return isHTMLSpace(character) || character == replacementCharacter;
+    return isHTMLSpace<UChar>(character) || character == replacementCharacter;
 }
 
 }
@@ -70,7 +71,7 @@ static TextPosition uninitializedPositionValue1()
 
 static inline bool isAllWhitespace(const String& string)
 {
-    return string.isAllSpecialCharacters<isHTMLSpace>();
+    return string.isAllSpecialCharacters<isHTMLSpace<UChar> >();
 }
 
 static inline bool isAllWhitespaceOrReplacementCharacters(const String& string)
@@ -184,17 +185,17 @@ public:
 
     void skipLeadingWhitespace()
     {
-        skipLeading<isHTMLSpace>();
+        skipLeading<isHTMLSpace<UChar> >();
     }
 
     String takeLeadingWhitespace()
     {
-        return takeLeading<isHTMLSpace>();
+        return takeLeading<isHTMLSpace<UChar> >();
     }
 
     void skipLeadingNonWhitespace()
     {
-        skipLeading<isNotHTMLSpace>();
+        skipLeading<isNotHTMLSpace<UChar> >();
     }
 
     String takeRemaining()
@@ -223,7 +224,7 @@ public:
 
         unsigned length = 0;
         for (unsigned i = start; i < m_end; ++i) {
-            if (isHTMLSpace((*m_characters)[i]))
+            if (isHTMLSpace<UChar>((*m_characters)[i]))
                 ++length;
         }
         // Returning the null string when there aren't any whitespace
@@ -238,7 +239,7 @@ public:
         result.reserveCapacity(length);
         for (unsigned i = start; i < m_end; ++i) {
             UChar c = (*m_characters)[i];
-            if (isHTMLSpace(c))
+            if (isHTMLSpace<UChar>(c))
                 result.append(c);
         }
 
@@ -272,7 +273,7 @@ private:
     unsigned m_end;
 };
 
-HTMLTreeBuilder::HTMLTreeBuilder(HTMLDocumentParser* parser, Document* document, ParserContentPolicy parserContentPolicy, bool, const HTMLParserOptions& options)
+HTMLTreeBuilder::HTMLTreeBuilder(HTMLDocumentParser* parser, HTMLDocument* document, ParserContentPolicy parserContentPolicy, bool, const HTMLParserOptions& options)
     : m_framesetOk(true)
 #ifndef NDEBUG
     , m_isAttached(true)

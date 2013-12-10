@@ -11,10 +11,12 @@
 #include "content/browser/renderer_host/pepper/pepper_flash_file_message_filter.h"
 #include "content/browser/renderer_host/pepper/pepper_gamepad_host.h"
 #include "content/browser/renderer_host/pepper/pepper_host_resolver_message_filter.h"
+#include "content/browser/renderer_host/pepper/pepper_network_monitor_host.h"
 #include "content/browser/renderer_host/pepper/pepper_network_proxy_host.h"
 #include "content/browser/renderer_host/pepper/pepper_print_settings_manager.h"
 #include "content/browser/renderer_host/pepper/pepper_printing_host.h"
 #include "content/browser/renderer_host/pepper/pepper_tcp_server_socket_message_filter.h"
+#include "content/browser/renderer_host/pepper/pepper_tcp_socket_message_filter.h"
 #include "content/browser/renderer_host/pepper/pepper_truetype_font_list_host.h"
 #include "content/browser/renderer_host/pepper/pepper_udp_socket_message_filter.h"
 #include "ppapi/host/message_filter_host.h"
@@ -36,18 +38,17 @@ const size_t kMaxSocketsAllowed = 1024;
 
 bool CanCreateSocket() {
   return
-      PepperUDPSocketMessageFilter::GetNumInstances() +
-      PepperTCPServerSocketMessageFilter::GetNumInstances() <
+      PepperTCPServerSocketMessageFilter::GetNumInstances() +
+      PepperTCPSocketMessageFilter::GetNumInstances() +
+      PepperUDPSocketMessageFilter::GetNumInstances() <
       kMaxSocketsAllowed;
 }
 
 }  // namespace
 
 ContentBrowserPepperHostFactory::ContentBrowserPepperHostFactory(
-    BrowserPpapiHostImpl* host,
-    const scoped_refptr<PepperMessageFilter>& pepper_message_filter)
-    : host_(host),
-      pepper_message_filter_(pepper_message_filter) {
+    BrowserPpapiHostImpl* host)
+    : host_(host) {
 }
 
 ContentBrowserPepperHostFactory::~ContentBrowserPepperHostFactory() {
@@ -102,6 +103,15 @@ scoped_ptr<ResourceHost> ContentBrowserPepperHostFactory::CreateResourceHost(
       return scoped_ptr<ResourceHost>(new PepperFileRefHost(
           host_, instance, params.pp_resource(), file_system, internal_path));
     }
+    case PpapiHostMsg_TCPSocket_Create::ID: {
+      ppapi::TCPSocketVersion version;
+      if (!UnpackMessage<PpapiHostMsg_TCPSocket_Create>(message, &version) ||
+          version == ppapi::TCP_SOCKET_VERSION_PRIVATE) {
+        return scoped_ptr<ResourceHost>();
+      }
+
+      return CreateNewTCPSocket(instance, params.pp_resource(), version);
+    }
     case PpapiHostMsg_UDPSocket_Create::ID: {
       if (CanCreateSocket()) {
         scoped_refptr<ResourceMessageFilter> udp_socket(
@@ -155,14 +165,17 @@ scoped_ptr<ResourceHost> ContentBrowserPepperHostFactory::CreateResourceHost(
   if (message.type() == PpapiHostMsg_TCPServerSocket_CreatePrivate::ID) {
     if (CanCreateSocket()) {
       scoped_refptr<ResourceMessageFilter> tcp_server_socket(
-          new PepperTCPServerSocketMessageFilter(host_, instance, true,
-                                                 pepper_message_filter_));
+          new PepperTCPServerSocketMessageFilter(this, host_, instance, true));
       return scoped_ptr<ResourceHost>(new MessageFilterHost(
           host_->GetPpapiHost(), instance, params.pp_resource(),
           tcp_server_socket));
     } else {
       return scoped_ptr<ResourceHost>();
     }
+  }
+  if (message.type() == PpapiHostMsg_TCPSocket_CreatePrivate::ID) {
+    return CreateNewTCPSocket(instance, params.pp_resource(),
+                              ppapi::TCP_SOCKET_VERSION_PRIVATE);
   }
   if (message.type() == PpapiHostMsg_UDPSocket_CreatePrivate::ID) {
     if (CanCreateSocket()) {
@@ -173,6 +186,10 @@ scoped_ptr<ResourceHost> ContentBrowserPepperHostFactory::CreateResourceHost(
     } else {
       return scoped_ptr<ResourceHost>();
     }
+  }
+  if (message.type() == PpapiHostMsg_NetworkMonitor_Create::ID) {
+    return scoped_ptr<ResourceHost>(
+        new PepperNetworkMonitorHost(host_, instance, params.pp_resource()));
   }
 
   // Flash interfaces.
@@ -189,6 +206,37 @@ scoped_ptr<ResourceHost> ContentBrowserPepperHostFactory::CreateResourceHost(
   }
 
   return scoped_ptr<ResourceHost>();
+}
+
+scoped_ptr<ppapi::host::ResourceHost>
+ContentBrowserPepperHostFactory::CreateAcceptedTCPSocket(
+    PP_Instance instance,
+    ppapi::TCPSocketVersion version,
+    scoped_ptr<net::TCPSocket> socket) {
+  if (!CanCreateSocket())
+    return scoped_ptr<ResourceHost>();
+  scoped_refptr<ResourceMessageFilter> tcp_socket(
+      new PepperTCPSocketMessageFilter(host_, instance, version,
+                                       socket.Pass()));
+  return scoped_ptr<ResourceHost>(new MessageFilterHost(
+      host_->GetPpapiHost(), instance, 0, tcp_socket));
+}
+
+scoped_ptr<ppapi::host::ResourceHost>
+ContentBrowserPepperHostFactory::CreateNewTCPSocket(
+    PP_Instance instance,
+    PP_Resource resource,
+    ppapi::TCPSocketVersion version) {
+  if (!CanCreateSocket())
+    return scoped_ptr<ResourceHost>();
+
+  scoped_refptr<ResourceMessageFilter> tcp_socket(
+      new PepperTCPSocketMessageFilter(this, host_, instance, version));
+  if (!tcp_socket)
+    return scoped_ptr<ResourceHost>();
+
+  return scoped_ptr<ResourceHost>(new MessageFilterHost(
+      host_->GetPpapiHost(), instance, resource, tcp_socket));
 }
 
 const ppapi::PpapiPermissions&

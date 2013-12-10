@@ -323,12 +323,12 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyWebkitMarginBefore: return 271;
     case CSSPropertyWebkitMarginEnd: return 272;
     case CSSPropertyWebkitMarginStart: return 273;
-    case CSSPropertyWebkitMarquee: return 274;
-    case CSSPropertyWebkitMarqueeDirection: return 275;
-    case CSSPropertyWebkitMarqueeIncrement: return 276;
-    case CSSPropertyWebkitMarqueeRepetition: return 277;
-    case CSSPropertyWebkitMarqueeSpeed: return 278;
-    case CSSPropertyWebkitMarqueeStyle: return 279;
+    // CSSPropertyWebkitMarquee was 274.
+    case CSSPropertyInternalMarqueeDirection: return 275;
+    case CSSPropertyInternalMarqueeIncrement: return 276;
+    case CSSPropertyInternalMarqueeRepetition: return 277;
+    case CSSPropertyInternalMarqueeSpeed: return 278;
+    case CSSPropertyInternalMarqueeStyle: return 279;
     case CSSPropertyWebkitMask: return 280;
     case CSSPropertyWebkitMaskBoxImage: return 281;
     case CSSPropertyWebkitMaskBoxImageOutset: return 282;
@@ -469,9 +469,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyMinZoom: return 407;
     case CSSPropertyOrientation: return 408;
     case CSSPropertyUserZoom: return 409;
-#if defined(ENABLE_DASHBOARD_SUPPORT) && ENABLE_DASHBOARD_SUPPORT
-    case CSSPropertyWebkitDashboardRegion: return 410;
-#endif
+    // CSSPropertyWebkitDashboardRegion was 410.
     // CSSPropertyWebkitOverflowScrolling was 411.
     case CSSPropertyWebkitAppRegion: return 412;
     case CSSPropertyWebkitFilter: return 413;
@@ -485,6 +483,20 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyTouchAction: return 421;
     case CSSPropertyGridArea: return 422;
     case CSSPropertyGridTemplate: return 423;
+    case CSSPropertyAnimation: return 424;
+    case CSSPropertyAnimationDelay: return 425;
+    case CSSPropertyAnimationDirection: return 426;
+    case CSSPropertyAnimationDuration: return 427;
+    case CSSPropertyAnimationFillMode: return 428;
+    case CSSPropertyAnimationIterationCount: return 429;
+    case CSSPropertyAnimationName: return 430;
+    case CSSPropertyAnimationPlayState: return 431;
+    case CSSPropertyAnimationTimingFunction: return 432;
+    case CSSPropertyObjectFit: return 433;
+    case CSSPropertyPaintOrder: return 434;
+    case CSSPropertyMaskSourceType: return 435;
+    case CSSPropertyIsolation: return 436;
+    case CSSPropertyObjectPosition: return 437;
 
     // Add new features above this line (don't change the assigned numbers of the existing
     // items) and update maximumCSSSampleId() with the new maximum value.
@@ -499,7 +511,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     return 0;
 }
 
-static int maximumCSSSampleId() { return 423; }
+static int maximumCSSSampleId() { return 437; }
 
 UseCounter::UseCounter()
 {
@@ -560,8 +572,8 @@ void UseCounter::count(Document* document, Feature feature)
     if (!page)
         return;
 
-    ASSERT(page->useCounter()->deprecationMessage(feature).isEmpty());
-    page->useCounter()->recordMeasurement(feature);
+    ASSERT(page->useCounter().deprecationMessage(feature).isEmpty());
+    page->useCounter().recordMeasurement(feature);
 }
 
 void UseCounter::count(DOMWindow* domWindow, Feature feature)
@@ -593,9 +605,9 @@ void UseCounter::countDeprecation(Document* document, Feature feature)
     if (!page)
         return;
 
-    if (page->useCounter()->recordMeasurement(feature)) {
-        ASSERT(!page->useCounter()->deprecationMessage(feature).isEmpty());
-        page->console()->addMessage(DeprecationMessageSource, WarningMessageLevel, page->useCounter()->deprecationMessage(feature));
+    if (page->useCounter().recordMeasurement(feature)) {
+        ASSERT(!page->useCounter().deprecationMessage(feature).isEmpty());
+        page->console().addMessage(DeprecationMessageSource, WarningMessageLevel, page->useCounter().deprecationMessage(feature));
     }
 }
 
@@ -654,6 +666,12 @@ String UseCounter::deprecationMessage(Feature feature)
     case ConsoleMarkTimeline:
         return "console.markTimeline is deprecated. Please use the console.timeStamp instead.";
 
+    case FileError:
+        return "FileError is deprecated. Please use the 'name' or 'message' attributes of DOMError rather than 'code'.";
+
+    case EventReturnValue:
+        return "event.returnValue is deprecated. Please use the standard event.preventDefault() instead.";
+
     // Features that aren't deprecated don't have a deprecation message.
     default:
         return String();
@@ -676,7 +694,7 @@ void UseCounter::count(Feature feature)
 UseCounter* UseCounter::getFrom(const Document* document)
 {
     if (document && document->page())
-        return document->page()->useCounter();
+        return &document->page()->useCounter();
     return 0;
 }
 

@@ -30,7 +30,7 @@ inline GrGLubyte verb_to_gl_path_cmd(const SkPath::Verb verb) {
     GR_STATIC_ASSERT(4 == SkPath::kCubic_Verb);
     GR_STATIC_ASSERT(5 == SkPath::kClose_Verb);
 
-    GrAssert(verb >= 0 && (size_t)verb < GR_ARRAY_COUNT(gTable));
+    SkASSERT(verb >= 0 && (size_t)verb < GR_ARRAY_COUNT(gTable));
     return gTable[verb];
 }
 
@@ -50,7 +50,7 @@ inline int num_pts(const SkPath::Verb verb) {
     GR_STATIC_ASSERT(4 == SkPath::kCubic_Verb);
     GR_STATIC_ASSERT(5 == SkPath::kClose_Verb);
 
-    GrAssert(verb >= 0 && (size_t)verb < GR_ARRAY_COUNT(gTable));
+    SkASSERT(verb >= 0 && (size_t)verb < GR_ARRAY_COUNT(gTable));
     return gTable[verb];
 }
 #endif
@@ -78,13 +78,13 @@ GrGLPath::GrGLPath(GrGpuGL* gpu, const SkPath& path) : INHERITED(gpu, kIsWrapped
     path.getPoints(&pathPoints[0], pointCnt);
     path.getVerbs(&pathCommands[0], verbCnt);
 
-    GR_DEBUGCODE(int numPts = 0);
+    SkDEBUGCODE(int numPts = 0);
     for (int i = 0; i < verbCnt; ++i) {
         SkPath::Verb v = static_cast<SkPath::Verb>(pathCommands[i]);
         pathCommands[i] = verb_to_gl_path_cmd(v);
-        GR_DEBUGCODE(numPts += num_pts(v));
+        SkDEBUGCODE(numPts += num_pts(v));
     }
-    GrAssert(pathPoints.count() == numPts);
+    SkASSERT(pathPoints.count() == numPts);
 
     GL_CALL(PathCommands(fPathID,
                          verbCnt, &pathCommands[0],

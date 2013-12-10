@@ -18,15 +18,31 @@ Value::Value(const ParseNode* origin, Type t)
       origin_(origin) {
 }
 
+Value::Value(const ParseNode* origin, bool bool_val)
+    : type_(BOOLEAN),
+      boolean_value_(bool_val),
+      int_value_(0),
+      origin_(origin) {
+}
+
 Value::Value(const ParseNode* origin, int64 int_val)
     : type_(INTEGER),
+      boolean_value_(false),
       int_value_(int_val),
       origin_(origin) {
 }
 
-Value::Value(const ParseNode* origin, const base::StringPiece& str_val)
+Value::Value(const ParseNode* origin, std::string str_val)
     : type_(STRING),
-      string_value_(str_val.as_string()),
+      string_value_(),
+      int_value_(0),
+      origin_(origin) {
+  string_value_.swap(str_val);
+}
+
+Value::Value(const ParseNode* origin, const char* str_val)
+    : type_(STRING),
+      string_value_(str_val),
       int_value_(0),
       origin_(origin) {
 }
@@ -39,6 +55,8 @@ const char* Value::DescribeType(Type t) {
   switch (t) {
     case NONE:
       return "none";
+    case BOOLEAN:
+      return "boolean";
     case INTEGER:
       return "integer";
     case STRING:
@@ -51,38 +69,24 @@ const char* Value::DescribeType(Type t) {
   }
 }
 
-int64 Value::InterpretAsInt() const {
-  switch (type_) {
-    case NONE:
-      return 0;
-    case INTEGER:
-      return int_value_;
-    case STRING:
-      return string_value_.empty() ? 0 : 1;
-    case LIST:
-      return list_value_.empty() ? 0 : 1;
-  }
-  return 0;
-}
-
-std::string Value::ToString() const {
+std::string Value::ToString(bool quote_string) const {
   switch (type_) {
     case NONE:
       return "<void>";
+    case BOOLEAN:
+      return boolean_value_ ? "true" : "false";
     case INTEGER:
       return base::Int64ToString(int_value_);
     case STRING:
+      if (quote_string)
+        return "\"" + string_value_ + "\"";
       return string_value_;
     case LIST: {
       std::string result = "[";
       for (size_t i = 0; i < list_value_.size(); i++) {
         if (i > 0)
           result += ", ";
-        // TODO(brettw) maybe also want to escape quotes in the string.
-        if (list_value_[i].type() == STRING)
-          result += std::string("\"") + list_value_[i].ToString() + "\"";
-        else
-          result += list_value_[i].ToString();
+        result += list_value_[i].ToString(true);
       }
       result.push_back(']');
       return result;
@@ -104,6 +108,8 @@ bool Value::operator==(const Value& other) const {
     return false;
 
   switch (type_) {
+    case Value::BOOLEAN:
+      return boolean_value() == other.boolean_value();
     case Value::INTEGER:
       return int_value() == other.int_value();
     case Value::STRING:

@@ -9,18 +9,19 @@
 #include "ash/ash_constants.h"
 #include "ash/ash_switches.h"
 #include "ash/drag_drop/drag_image_view.h"
-#include "ash/launcher/alternate_app_list_button.h"
-#include "ash/launcher/app_list_button.h"
 #include "ash/launcher/launcher_button.h"
 #include "ash/launcher/launcher_delegate.h"
 #include "ash/launcher/launcher_icon_observer.h"
+#include "ash/launcher/launcher_item_delegate.h"
+#include "ash/launcher/launcher_item_delegate_manager.h"
 #include "ash/launcher/launcher_model.h"
 #include "ash/launcher/launcher_tooltip_manager.h"
-#include "ash/launcher/overflow_bubble.h"
-#include "ash/launcher/overflow_button.h"
-#include "ash/launcher/tabbed_launcher_button.h"
 #include "ash/root_window_controller.h"
 #include "ash/scoped_target_root_window.h"
+#include "ash/shelf/alternate_app_list_button.h"
+#include "ash/shelf/app_list_button.h"
+#include "ash/shelf/overflow_bubble.h"
+#include "ash/shelf/overflow_button.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell_delegate.h"
@@ -51,7 +52,7 @@
 #include "ui/views/view_model_utils.h"
 #include "ui/views/widget/widget.h"
 
-using ui::Animation;
+using gfx::Animation;
 using views::View;
 
 namespace ash {
@@ -97,6 +98,15 @@ const SkColor kCaptionItemForegroundColor = SK_ColorBLACK;
 
 // The maximum allowable length of a menu line of an application menu in pixels.
 const int kMaximumAppMenuItemLength = 350;
+
+// The distance of the cursor from the outer rim of the shelf before it
+// separates / re-inserts. Note that the rip off distance is bigger then the
+// re-insertion distance to avoid "flickering" between the two states.
+const int kRipOffDistance = 48;
+const int kReinsertDistance = 32;
+
+// The rip off drag and drop proxy image should get scaled by this factor.
+const float kDragAndDropProxyScale = 1.5f;
 
 namespace {
 
@@ -401,7 +411,10 @@ LauncherView::LauncherView(LauncherModel* model,
       closing_event_time_(base::TimeDelta()),
       got_deleted_(NULL),
       drag_and_drop_item_pinned_(false),
-      drag_and_drop_launcher_id_(0) {
+      drag_and_drop_launcher_id_(0),
+      dragged_off_shelf_(false),
+      snap_back_from_rip_off_view_(NULL),
+      item_manager_(Shell::GetInstance()->launcher_item_delegate_manager()) {
   DCHECK(model_);
   bounds_animator_.reset(new views::BoundsAnimator(this));
   bounds_animator_->AddObserver(this);
@@ -464,7 +477,7 @@ void LauncherView::OnShelfAlignmentChanged() {
     if (i >= first_visible_index_ && i <= last_visible_index_)
       view_model_->view_at(i)->Layout();
   }
-  tooltip_->UpdateArrow();
+  tooltip_->Close();
   if (overflow_bubble_)
     overflow_bubble_->Hide();
 }
@@ -524,11 +537,8 @@ void LauncherView::UpdatePanelIconPosition(LauncherID id,
 }
 
 bool LauncherView::IsShowingMenu() const {
-#if !defined(OS_MACOSX)
   return (launcher_menu_runner_.get() &&
        launcher_menu_runner_->IsRunning());
-#endif
-  return false;
 }
 
 bool LauncherView::IsShowingOverflowBubble() const {
@@ -670,9 +680,17 @@ void LauncherView::EndDrag(bool cancel) {
 
   // Either destroy the temporarily created item - or - make the item visible.
   if (drag_and_drop_item_pinned_ && cancel)
-    delegate_->UnpinAppsWithID(drag_and_drop_app_id_);
-  else if (drag_and_drop_view)
-    drag_and_drop_view->SetSize(pre_drag_and_drop_size_);
+    delegate_->UnpinAppWithID(drag_and_drop_app_id_);
+  else if (drag_and_drop_view) {
+    if (cancel) {
+      // When a hosted drag gets canceled, the item can remain in the same slot
+      // and it might have moved within the bounds. In that case the item need
+      // to animate back to its correct location.
+      AnimateToIdealBounds();
+    } else {
+      drag_and_drop_view->SetSize(pre_drag_and_drop_size_);
+    }
+  }
 
   drag_and_drop_launcher_id_ = 0;
 }
@@ -792,7 +810,7 @@ void LauncherView::CalculateIdealBounds(IdealBounds* bounds) {
 
   // Create Space for the overflow button
   if (show_overflow && ash::switches::UseAlternateShelfLayout() &&
-      last_visible_index_ > 0)
+      last_visible_index_ > 0 && last_visible_index_ < last_button_index)
     --last_visible_index_;
   for (int i = 0; i < view_model_->view_size(); ++i) {
     bool visible = i <= last_visible_index_ || i > last_hidden_index_;
@@ -808,7 +826,8 @@ void LauncherView::CalculateIdealBounds(IdealBounds* bounds) {
     if (last_visible_index_ == -1) {
       x = shelf->SelectValueForShelfAlignment(inset, 0, 0, inset);
       y = shelf->SelectValueForShelfAlignment(0, inset, inset, 0);
-    } else if (last_visible_index_ == last_button_index) {
+    } else if (last_visible_index_ == last_button_index
+        && !ash::switches::UseAlternateShelfLayout()) {
       x = view_model_->ideal_bounds(last_visible_index_).x();
       y = view_model_->ideal_bounds(last_visible_index_).y();
     } else {
@@ -896,21 +915,6 @@ void LauncherView::AnimateToIdealBounds() {
 views::View* LauncherView::CreateViewForItem(const LauncherItem& item) {
   views::View* view = NULL;
   switch (item.type) {
-    case TYPE_TABBED: {
-      TabbedLauncherButton* button =
-          TabbedLauncherButton::Create(
-              this,
-              this,
-              tooltip_->shelf_layout_manager(),
-              item.is_incognito ?
-                  TabbedLauncherButton::STATE_INCOGNITO :
-                  TabbedLauncherButton::STATE_NOT_INCOGNITO);
-      button->SetTabImage(item.image);
-      ReflectItemStatus(item, button);
-      view = button;
-      break;
-    }
-
     case TYPE_BROWSER_SHORTCUT:
     case TYPE_APP_SHORTCUT:
     case TYPE_WINDOWED_APP:
@@ -974,9 +978,15 @@ void LauncherView::PrepareForDrag(Pointer pointer,
   drag_pointer_ = pointer;
   start_drag_index_ = view_model_->GetIndexOfView(drag_view_);
 
+  if (start_drag_index_== -1) {
+    CancelDrag(-1);
+    return;
+  }
+
   // If the item is no longer draggable, bail out.
-  if (start_drag_index_ == -1 ||
-      !delegate_->IsDraggable(model_->items()[start_drag_index_])) {
+  LauncherItemDelegate* item_delegate = item_manager_->GetLauncherItemDelegate(
+      model_->items()[start_drag_index_].type);
+  if (!item_delegate->IsDraggable(model_->items()[start_drag_index_])) {
     CancelDrag(-1);
     return;
   }
@@ -987,20 +997,31 @@ void LauncherView::PrepareForDrag(Pointer pointer,
 }
 
 void LauncherView::ContinueDrag(const ui::LocatedEvent& event) {
-  ShelfLayoutManager* shelf = tooltip_->shelf_layout_manager();
+  // Due to a syncing operation the application might have been removed.
+  // Bail if it is gone.
+  int current_index = view_model_->GetIndexOfView(drag_view_);
+  DCHECK_NE(-1, current_index);
+
+  LauncherItemDelegate* item_delegate = item_manager_->GetLauncherItemDelegate(
+      model_->items()[current_index].type);
+  if (!item_delegate->IsDraggable(model_->items()[current_index])) {
+    CancelDrag(-1);
+    return;
+  }
+
+  // If this is not a drag and drop host operation and not the app list item,
+  // check if the item got ripped off the shelf - if it did we are done.
+  if (!drag_and_drop_launcher_id_ && ash::switches::UseDragOffShelf() &&
+      RemovableByRipOff(current_index) != NOT_REMOVABLE) {
+    if (HandleRipOffDrag(event))
+      return;
+    // The rip off handler could have changed the location of the item.
+    current_index = view_model_->GetIndexOfView(drag_view_);
+  }
 
   // TODO: I don't think this works correctly with RTL.
   gfx::Point drag_point(event.location());
   views::View::ConvertPointToTarget(drag_view_, this, &drag_point);
-  int current_index = view_model_->GetIndexOfView(drag_view_);
-  DCHECK_NE(-1, current_index);
-
-  // If the item is no longer draggable, bail out.
-  if (current_index == -1 ||
-      !delegate_->IsDraggable(model_->items()[current_index])) {
-    CancelDrag(-1);
-    return;
-  }
 
   // Constrain the location to the range of valid indices for the type.
   std::pair<int, int> indices(GetDragRange(current_index));
@@ -1012,6 +1033,7 @@ void LauncherView::ContinueDrag(const ui::LocatedEvent& event) {
       last_drag_index > last_visible_index_)
     last_drag_index = last_visible_index_;
   int x = 0, y = 0;
+  ShelfLayoutManager* shelf = tooltip_->shelf_layout_manager();
   if (shelf->IsHorizontalAlignment()) {
     x = std::max(view_model_->ideal_bounds(indices.first).x(),
                      drag_point.x() - drag_offset_);
@@ -1050,19 +1072,138 @@ void LauncherView::ContinueDrag(const ui::LocatedEvent& event) {
   bounds_animator_->StopAnimatingView(drag_view_);
 }
 
+bool LauncherView::HandleRipOffDrag(const ui::LocatedEvent& event) {
+  // Determine the distance to the shelf.
+  int delta = CalculateShelfDistance(event.root_location());
+  int current_index = view_model_->GetIndexOfView(drag_view_);
+  DCHECK_NE(-1, current_index);
+  // To avoid ugly forwards and backwards flipping we use different constants
+  // for ripping off / re-inserting the items.
+  if (dragged_off_shelf_) {
+    // If the re-insertion distance is undercut we insert the item back into
+    // the shelf. Note that the reinsertion value is slightly smaller then the
+    // rip off distance to avoid flickering.
+    if (delta < kReinsertDistance) {
+      // Destroy our proxy view item.
+      DestroyDragIconProxy();
+      // Re-insert the item and return simply false since the caller will handle
+      // the move as in any normal case.
+      dragged_off_shelf_ = false;
+      drag_view_->layer()->SetOpacity(1.0f);
+      return false;
+    }
+    // Move our proxy view item.
+    UpdateDragIconProxy(event.root_location());
+    return true;
+  }
+  // Check if we are too far away from the shelf to enter the ripped off state.
+  if (delta > kRipOffDistance) {
+    // Create a proxy view item which can be moved anywhere.
+    LauncherButton* button = static_cast<LauncherButton*>(drag_view_);
+    CreateDragIconProxy(event.root_location(),
+                        button->GetImage(),
+                        drag_view_,
+                        gfx::Vector2d(0, 0),
+                        kDragAndDropProxyScale);
+    drag_view_->layer()->SetOpacity(0.0f);
+    if (RemovableByRipOff(current_index) == REMOVABLE) {
+      // Move the item to the end of the launcher and hide it.
+      model_->Move(current_index, model_->item_count() - 1);
+      AnimateToIdealBounds();
+      // Make the item partially disappear to show that it will get removed if
+      // dropped.
+      drag_image_->SetOpacity(0.5f);
+    }
+    dragged_off_shelf_ = true;
+    return true;
+  }
+  return false;
+}
+
+void LauncherView::FinalizeRipOffDrag(bool cancel) {
+  if (!dragged_off_shelf_)
+    return;
+  // Make sure we do not come in here again.
+  dragged_off_shelf_ = false;
+
+  // Coming here we should always have a |drag_view_|.
+  DCHECK(drag_view_);
+  int current_index = view_model_->GetIndexOfView(drag_view_);
+  // If the view isn't part of the model anymore (|current_index| == -1), a sync
+  // operation must have removed it. In that case we shouldn't change the model
+  // and only delete the proxy image.
+  if (current_index == -1) {
+    DestroyDragIconProxy();
+    return;
+  }
+
+  // Set to true when the animation should snap back to where it was before.
+  bool snap_back = false;
+  // Items which cannot be dragged off will be handled as a cancel.
+  if (!cancel) {
+    // Make sure we do not try to remove un-removable items like items which
+    // were not pinned or have to be always there.
+    if (RemovableByRipOff(current_index) != REMOVABLE) {
+      cancel = true;
+      snap_back = true;
+    } else {
+      // Make sure the item stays invisible upon removal.
+      drag_view_->SetVisible(false);
+      std::string app_id =
+          delegate_->GetAppIDForLauncherID(model_->items()[current_index].id);
+      delegate_->UnpinAppWithID(app_id);
+    }
+  }
+  if (cancel || snap_back) {
+    if (!cancelling_drag_model_changed_) {
+      // Only do something if the change did not come through a model change.
+      gfx::Rect drag_bounds = drag_image_->GetBoundsInScreen();
+      gfx::Point relative_to = GetBoundsInScreen().origin();
+      gfx::Rect target(
+          gfx::PointAtOffsetFromOrigin(drag_bounds.origin()- relative_to),
+          drag_bounds.size());
+      drag_view_->SetBoundsRect(target);
+      // Hide the status from the active item since we snap it back now. Upon
+      // animation end the flag gets cleared if |snap_back_from_rip_off_view_|
+      // is set.
+      snap_back_from_rip_off_view_ = drag_view_;
+      LauncherButton* button = static_cast<LauncherButton*>(drag_view_);
+      button->AddState(LauncherButton::STATE_HIDDEN);
+      // When a canceling drag model is happening, the view model is diverged
+      // from the menu model and movements / animations should not be done.
+      model_->Move(current_index, start_drag_index_);
+      AnimateToIdealBounds();
+    }
+    drag_view_->layer()->SetOpacity(1.0f);
+  }
+  DestroyDragIconProxy();
+}
+
+LauncherView::RemovableState LauncherView::RemovableByRipOff(int index) {
+  LauncherItemType type = model_->items()[index].type;
+  if (type == TYPE_APP_LIST || !delegate_->CanPin())
+    return NOT_REMOVABLE;
+  std::string app_id =
+      delegate_->GetAppIDForLauncherID(model_->items()[index].id);
+  // Note: Only pinned app shortcuts can be removed!
+  return (type == TYPE_APP_SHORTCUT && delegate_->IsAppPinned(app_id)) ?
+      REMOVABLE : DRAGGABLE;
+}
+
 bool LauncherView::SameDragType(LauncherItemType typea,
                                 LauncherItemType typeb) const {
   switch (typea) {
-    case TYPE_TABBED:
-    case TYPE_PLATFORM_APP:
-      return (typeb == TYPE_TABBED || typeb == TYPE_PLATFORM_APP);
     case TYPE_APP_SHORTCUT:
     case TYPE_BROWSER_SHORTCUT:
       return (typeb == TYPE_APP_SHORTCUT || typeb == TYPE_BROWSER_SHORTCUT);
-    case TYPE_WINDOWED_APP:
     case TYPE_APP_LIST:
+    case TYPE_PLATFORM_APP:
+    case TYPE_WINDOWED_APP:
     case TYPE_APP_PANEL:
       return typeb == typea;
+    case TYPE_UNDEFINED:
+      NOTREACHED() << "LauncherItemType must be set.";
+      return false;
   }
   NOTREACHED();
   return false;
@@ -1168,6 +1309,7 @@ bool LauncherView::ShouldHideTooltip(const gfx::Point& cursor_location) {
 }
 
 int LauncherView::CancelDrag(int modified_index) {
+  FinalizeRipOffDrag(true);
   if (!drag_view_)
     return modified_index;
   bool was_dragging = dragging();
@@ -1279,10 +1421,8 @@ void LauncherView::LauncherItemAdded(int model_index) {
 }
 
 void LauncherView::LauncherItemRemoved(int model_index, LauncherID id) {
-#if !defined(OS_MACOSX)
   if (id == context_menu_id_)
     launcher_menu_runner_.reset();
-#endif
   {
     base::AutoReset<bool> cancelling_drag(
         &cancelling_drag_model_changed_, true);
@@ -1307,6 +1447,11 @@ void LauncherView::LauncherItemRemoved(int model_index, LauncherID id) {
                                   view_model_->view_size() - 1);
     UpdateOverflowRange(overflow_bubble_->launcher_view());
   }
+
+  // Close the tooltip because it isn't needed any longer and its anchor view
+  // will be deleted soon.
+  if (tooltip_->GetCurrentAnchorView() == view)
+    tooltip_->Close();
 }
 
 void LauncherView::LauncherItemChanged(int model_index,
@@ -1317,27 +1462,21 @@ void LauncherView::LauncherItemChanged(int model_index,
     model_index = CancelDrag(model_index);
     scoped_ptr<views::View> old_view(view_model_->view_at(model_index));
     bounds_animator_->StopAnimatingView(old_view.get());
+    // Removing and re-inserting a view in our view model will strip the ideal
+    // bounds from the item. To avoid recalculation of everything the bounds
+    // get remembered and restored after the insertion to the previous value.
+    gfx::Rect old_ideal_bounds = view_model_->ideal_bounds(model_index);
     view_model_->Remove(model_index);
     views::View* new_view = CreateViewForItem(item);
     AddChildView(new_view);
     view_model_->Add(new_view, model_index);
+    view_model_->set_ideal_bounds(model_index, old_ideal_bounds);
     new_view->SetBoundsRect(old_view->bounds());
     return;
   }
 
   views::View* view = view_model_->view_at(model_index);
   switch (item.type) {
-    case TYPE_TABBED: {
-      TabbedLauncherButton* button = static_cast<TabbedLauncherButton*>(view);
-      gfx::Size pref = button->GetPreferredSize();
-      button->SetTabImage(item.image);
-      if (pref != button->GetPreferredSize())
-        AnimateToIdealBounds();
-      else
-        button->SchedulePaint();
-      ReflectItemStatus(item, button);
-      break;
-    }
     case TYPE_BROWSER_SHORTCUT:
       // Fallthrough for the new Launcher since it needs to show the activation
       // change as well.
@@ -1387,11 +1526,14 @@ void LauncherView::PointerPressedOnButton(views::View* view,
   if (drag_view_)
     return;
 
-  tooltip_->Close();
   int index = view_model_->GetIndexOfView(view);
-  if (index == -1 ||
-      view_model_->view_size() <= 1 ||
-      !delegate_->IsDraggable(model_->items()[index]))
+  if (index == -1)
+    return;
+
+  LauncherItemDelegate* item_delegate = item_manager_->GetLauncherItemDelegate(
+      model_->items()[index].type);
+  if (view_model_->view_size() <= 1 ||
+      !item_delegate->IsDraggable(model_->items()[index]))
     return;  // View is being deleted or not draggable, ignore request.
 
   ShelfLayoutManager* shelf = tooltip_->shelf_layout_manager();
@@ -1420,6 +1562,7 @@ void LauncherView::PointerReleasedOnButton(views::View* view,
   if (canceled) {
     CancelDrag(-1);
   } else if (drag_pointer_ == pointer) {
+    FinalizeRipOffDrag(false);
     drag_pointer_ = NONE;
     AnimateToIdealBounds();
   }
@@ -1459,21 +1602,9 @@ base::string16 LauncherView::GetAccessibleName(const views::View* view) {
   if (view_index == -1)
     return base::string16();
 
-  switch (model_->items()[view_index].type) {
-    case TYPE_TABBED:
-    case TYPE_APP_PANEL:
-    case TYPE_APP_SHORTCUT:
-    case TYPE_WINDOWED_APP:
-    case TYPE_PLATFORM_APP:
-    case TYPE_BROWSER_SHORTCUT:
-      return delegate_->GetTitle(model_->items()[view_index]);
-
-    case TYPE_APP_LIST:
-      return model_->status() == LauncherModel::STATUS_LOADING ?
-          l10n_util::GetStringUTF16(IDS_AURA_APP_LIST_SYNCING_TITLE) :
-          l10n_util::GetStringUTF16(IDS_AURA_APP_LIST_TITLE);
-  }
-  return base::string16();
+  LauncherItemDelegate* item_delegate = item_manager_->GetLauncherItemDelegate(
+      model_->items()[view_index].type);
+  return item_delegate->GetTitle(model_->items()[view_index]);
 }
 
 void LauncherView::ButtonPressed(views::Button* sender,
@@ -1481,8 +1612,6 @@ void LauncherView::ButtonPressed(views::Button* sender,
   // Do not handle mouse release during drag.
   if (dragging())
     return;
-
-  tooltip_->Close();
 
   if (sender == overflow_button_) {
     ToggleOverflowBubble();
@@ -1517,29 +1646,37 @@ void LauncherView::ButtonPressed(views::Button* sender,
       case TYPE_BROWSER_SHORTCUT:
         Shell::GetInstance()->delegate()->RecordUserMetricsAction(
             UMA_LAUNCHER_CLICK_ON_APP);
-        // Fallthrough
-      case TYPE_TABBED:
-      case TYPE_APP_PANEL:
-        delegate_->ItemSelected(model_->items()[view_index], event);
         break;
 
       case TYPE_APP_LIST:
         Shell::GetInstance()->delegate()->RecordUserMetricsAction(
             UMA_LAUNCHER_CLICK_ON_APPLIST_BUTTON);
-        Shell::GetInstance()->ToggleAppList(GetWidget()->GetNativeView());
+        break;
+
+      case TYPE_APP_PANEL:
+        break;
+
+      case TYPE_UNDEFINED:
+        NOTREACHED() << "LauncherItemType must be set.";
         break;
     }
-  }
 
-  if (model_->items()[view_index].type != TYPE_APP_LIST)
+    LauncherItemDelegate* item_delegate =
+        item_manager_->GetLauncherItemDelegate(
+            model_->items()[view_index].type);
+    item_delegate->ItemSelected(model_->items()[view_index], event);
+
     ShowListMenuForView(model_->items()[view_index], sender, event);
+  }
 }
 
 bool LauncherView::ShowListMenuForView(const LauncherItem& item,
                                        views::View* source,
                                        const ui::Event& event) {
   scoped_ptr<ash::LauncherMenuModel> menu_model;
-  menu_model.reset(delegate_->CreateApplicationMenu(item, event.flags()));
+  LauncherItemDelegate* item_delegate =
+      item_manager_->GetLauncherItemDelegate(item.type);
+  menu_model.reset(item_delegate->CreateApplicationMenu(item, event.flags()));
 
   // Make sure we have a menu and it has at least two items in addition to the
   // application title and the 3 spacing separators.
@@ -1559,22 +1696,26 @@ void LauncherView::ShowContextMenuForView(views::View* source,
                                           const gfx::Point& point,
                                           ui:: MenuSourceType source_type) {
   int view_index = view_model_->GetIndexOfView(source);
+  // TODO(simon.hong81): Create LauncherContextMenu for applist in its
+  // LauncherItemDelegate.
   if (view_index != -1 &&
       model_->items()[view_index].type == TYPE_APP_LIST) {
     view_index = -1;
   }
 
-  tooltip_->Close();
-
   if (view_index == -1) {
     Shell::GetInstance()->ShowContextMenu(point, source_type);
     return;
   }
-  scoped_ptr<ui::MenuModel> menu_model(delegate_->CreateContextMenu(
+  scoped_ptr<ui::MenuModel> menu_model;
+  LauncherItemDelegate* item_delegate = item_manager_->GetLauncherItemDelegate(
+      model_->items()[view_index].type);
+  menu_model.reset(item_delegate->CreateContextMenu(
       model_->items()[view_index],
       source->GetWidget()->GetNativeView()->GetRootWindow()));
   if (!menu_model)
     return;
+
   base::AutoReset<LauncherID> reseter(
       &context_menu_id_,
       view_index == -1 ? 0 : model_->items()[view_index].id);
@@ -1679,6 +1820,23 @@ void LauncherView::OnBoundsAnimatorProgressed(views::BoundsAnimator* animator) {
 }
 
 void LauncherView::OnBoundsAnimatorDone(views::BoundsAnimator* animator) {
+  if (snap_back_from_rip_off_view_ && animator == bounds_animator_) {
+    if (!animator->IsAnimating(snap_back_from_rip_off_view_)) {
+      // Coming here the animation of the LauncherButton is finished and the
+      // previously hidden status can be shown again. Since the button itself
+      // might have gone away or changed locations we check that the button
+      // is still in the shelf and show its status again.
+      for (int index = 0; index < view_model_->view_size(); index++) {
+        views::View* view = view_model_->view_at(index);
+        if (view == snap_back_from_rip_off_view_) {
+          LauncherButton* button = static_cast<LauncherButton*>(view);
+          button->ClearState(LauncherButton::STATE_HIDDEN);
+          break;
+        }
+      }
+      snap_back_from_rip_off_view_ = NULL;
+    }
+  }
 }
 
 bool LauncherView::IsUsableEvent(const ui::Event& event) {
@@ -1706,7 +1864,34 @@ bool LauncherView::ShouldShowTooltipForView(const views::View* view) const {
       Shell::GetInstance()->GetAppListWindow())
     return false;
   const LauncherItem* item = LauncherItemForView(view);
-  return (!item || delegate_->ShouldShowTooltip(*item));
+  if (!item)
+    return true;
+  LauncherItemDelegate* item_delegate =
+      item_manager_->GetLauncherItemDelegate(item->type);
+  return item_delegate->ShouldShowTooltip(*item);
+}
+
+int LauncherView::CalculateShelfDistance(const gfx::Point& coordinate) const {
+  ShelfWidget* shelf = RootWindowController::ForLauncher(
+      GetWidget()->GetNativeView())->shelf();
+  ash::ShelfAlignment align = shelf->GetAlignment();
+  const gfx::Rect bounds = GetBoundsInScreen();
+  int distance = 0;
+  switch (align) {
+    case ash::SHELF_ALIGNMENT_BOTTOM:
+      distance = bounds.y() - coordinate.y();
+      break;
+    case ash::SHELF_ALIGNMENT_LEFT:
+      distance = coordinate.x() - bounds.right();
+      break;
+    case ash::SHELF_ALIGNMENT_RIGHT:
+      distance = bounds.x() - coordinate.x();
+      break;
+    case ash::SHELF_ALIGNMENT_TOP:
+      distance = coordinate.y() - bounds.bottom();
+      break;
+  }
+  return distance > 0 ? distance : 0;
 }
 
 }  // namespace internal

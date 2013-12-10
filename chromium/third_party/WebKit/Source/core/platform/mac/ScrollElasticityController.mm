@@ -30,7 +30,7 @@
 #include <sys/time.h>
 #include "core/platform/PlatformWheelEvent.h"
 
-#if ENABLE(RUBBER_BANDING)
+#if USE(RUBBER_BANDING)
 
 static NSTimeInterval systemUptime()
 {
@@ -132,11 +132,12 @@ bool ScrollElasticityController::handleWheelEvent(const PlatformWheelEvent& whee
     }
 
     if (wheelEvent.phase() == PlatformWheelEventPhaseEnded) {
-        if (isRubberBandInProgress()) {
-            snapRubberBand();
-            return true;
-        }
-        return false;
+        bool wasRubberBandInProgress = isRubberBandInProgress();
+        // Call snapRubberBand() even if isRubberBandInProgress() is false. For example,
+        // m_inScrollGesture may be true (and needs to be reset on a phase end) even if
+        // isRubberBandInProgress() is not (e.g. the overhang area is empty).
+        snapRubberBand();
+        return wasRubberBandInProgress;
     }
 
     bool isMomentumScrollEvent = (wheelEvent.momentumPhase() != PlatformWheelEventPhaseNone);
@@ -183,8 +184,13 @@ bool ScrollElasticityController::handleWheelEvent(const PlatformWheelEvent& whee
     PlatformWheelEventPhase momentumPhase = wheelEvent.momentumPhase();
 
     // If we are starting momentum scrolling then do some setup.
-    if (!m_momentumScrollInProgress && (momentumPhase == PlatformWheelEventPhaseBegan || momentumPhase == PlatformWheelEventPhaseChanged))
+    if (!m_momentumScrollInProgress && (momentumPhase == PlatformWheelEventPhaseBegan || momentumPhase == PlatformWheelEventPhaseChanged)) {
         m_momentumScrollInProgress = true;
+        // Start the snap rubber band timer if it's not running. This is needed to
+        // snap back from the over scroll caused by momentum events.
+        if (!m_snapRubberbandTimerIsActive && m_startTime == 0)
+            snapRubberBand();
+    }
 
     CFTimeInterval timeDelta = wheelEvent.timestamp() - m_lastMomentumScrollTimestamp;
     if (m_inScrollGesture || m_momentumScrollInProgress) {
@@ -319,7 +325,6 @@ void ScrollElasticityController::snapRubberBandTimerFired()
 
                 m_stretchScrollForce = FloatSize();
                 m_startTime = 0;
-                m_startStretch = FloatSize();
                 m_origOrigin = FloatPoint();
                 m_origVelocity = FloatSize();
                 return;
@@ -392,11 +397,18 @@ void ScrollElasticityController::snapRubberBand()
     if (m_snapRubberbandTimerIsActive)
         return;
 
-    m_startTime = [NSDate timeIntervalSinceReferenceDate];
     m_startStretch = FloatSize();
     m_origOrigin = FloatPoint();
     m_origVelocity = FloatSize();
 
+    // If there's no momentum scroll or stretch amount, no need to start the timer.
+    if (!m_momentumScrollInProgress && m_client->stretchAmount() == FloatSize()) {
+        m_startTime = 0;
+        m_stretchScrollForce = FloatSize();
+        return;
+    }
+
+    m_startTime = [NSDate timeIntervalSinceReferenceDate];
     m_client->startSnapRubberbandTimer();
     m_snapRubberbandTimerIsActive = true;
 }
@@ -413,4 +425,4 @@ bool ScrollElasticityController::shouldRubberBandInHorizontalDirection(const Pla
 
 } // namespace WebCore
 
-#endif // ENABLE(RUBBER_BANDING)
+#endif // USE(RUBBER_BANDING)

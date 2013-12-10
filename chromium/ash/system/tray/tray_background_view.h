@@ -19,7 +19,8 @@ class StatusAreaWidget;
 class TrayEventFilter;
 class TrayBackground;
 
-// Base class for children of StatusAreaWidget: SystemTray, WebNotificationTray.
+// Base class for children of StatusAreaWidget: SystemTray, WebNotificationTray,
+// LogoutButtonTray.
 // This class handles setting and animating the background when the Launcher
 // his shown/hidden. It also inherits from ActionableView so that the tray
 // items can override PerformAction when clicked on.
@@ -88,6 +89,9 @@ class ASH_EXPORT TrayBackgroundView : public ActionableView,
   // Called from GetAccessibleState, must return a valid accessible name.
   virtual base::string16 GetAccessibleNameForTray() = 0;
 
+  // Called when the bubble is resized.
+  virtual void BubbleResized(const views::TrayBubbleView* bubble_view) {}
+
   // Hides the bubble associated with |bubble_view|. Called when the widget
   // is closed.
   virtual void HideBubbleWithView(const views::TrayBubbleView* bubble_view) = 0;
@@ -123,8 +127,11 @@ class ASH_EXPORT TrayBackgroundView : public ActionableView,
   // Returns the bubble anchor alignment based on |shelf_alignment_|.
   views::TrayBubbleView::AnchorAlignment GetAnchorAlignment() const;
 
-  // Updates the view visual based on the visibility of the bubble.
-  void SetBubbleVisible(bool visible);
+  // Forces the background to be drawn active if set to true.
+  void SetDrawBackgroundAsActive(bool visible);
+
+  // Returns true when the the background was overridden to be drawn as active.
+  bool draw_background_as_active() const {return draw_background_as_active_; }
 
   StatusAreaWidget* status_area_widget() {
     return status_area_widget_;
@@ -138,11 +145,8 @@ class ASH_EXPORT TrayBackgroundView : public ActionableView,
 
   ShelfLayoutManager* GetShelfLayoutManager();
 
-  // Updates the arrow visibilty based on the launcher visibilty.
+  // Updates the arrow visibility based on the launcher visibility.
   void UpdateBubbleViewArrow(views::TrayBubbleView* bubble_view);
-
-  // Provides the background with a function to query for pressed state.
-  virtual bool IsPressed();
 
  private:
   class TrayWidgetObserver;
@@ -163,10 +167,17 @@ class ASH_EXPORT TrayBackgroundView : public ActionableView,
   // Owned by the view passed to SetContents().
   internal::TrayBackground* background_;
 
+  // Animators for the background. They are only used for the old shelf layout.
   internal::BackgroundAnimator hide_background_animator_;
   internal::BackgroundAnimator hover_background_animator_;
+
+  // True if the background gets hovered.
   bool hovered_;
-  bool pressed_;
+
+  // This variable stores the activation override which will tint the background
+  // differently if set to true.
+  bool draw_background_as_active_;
+
   scoped_ptr<TrayWidgetObserver> widget_observer_;
   scoped_ptr<TrayEventFilter> tray_event_filter_;
 

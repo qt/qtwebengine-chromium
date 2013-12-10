@@ -39,6 +39,14 @@
 #include "core/dom/DeviceOrientationController.h"
 #include "core/dom/Document.h"
 #include "core/dom/UserGestureIndicator.h"
+#include "core/fetch/CSSStyleSheetResource.h"
+#include "core/fetch/FontResource.h"
+#include "core/fetch/ImageResource.h"
+#include "core/fetch/MemoryCache.h"
+#include "core/fetch/Resource.h"
+#include "core/fetch/ResourceFetcher.h"
+#include "core/fetch/ScriptResource.h"
+#include "core/fetch/TextResourceDecoder.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/inspector/ContentSearchUtils.h"
 #include "core/inspector/DOMPatchSupport.h"
@@ -53,14 +61,6 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
-#include "core/loader/TextResourceDecoder.h"
-#include "core/loader/cache/CSSStyleSheetResource.h"
-#include "core/loader/cache/FontResource.h"
-#include "core/loader/cache/ImageResource.h"
-#include "core/loader/cache/MemoryCache.h"
-#include "core/loader/cache/Resource.h"
-#include "core/loader/cache/ResourceFetcher.h"
-#include "core/loader/cache/ScriptResource.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "core/page/Page.h"
@@ -156,17 +156,16 @@ static bool hasTextContent(Resource* cachedResource)
 
 static PassRefPtr<TextResourceDecoder> createXHRTextDecoder(const String& mimeType, const String& textEncodingName)
 {
-    RefPtr<TextResourceDecoder> decoder;
     if (!textEncodingName.isEmpty())
-        decoder = TextResourceDecoder::create("text/plain", textEncodingName);
-    else if (DOMImplementation::isXMLMIMEType(mimeType.lower())) {
-        decoder = TextResourceDecoder::create("application/xml");
+        return TextResourceDecoder::create("text/plain", textEncodingName);
+    if (DOMImplementation::isXMLMIMEType(mimeType.lower())) {
+        RefPtr<TextResourceDecoder> decoder = TextResourceDecoder::create("application/xml");
         decoder->useLenientXMLDecoding();
-    } else if (equalIgnoringCase(mimeType, "text/html"))
-        decoder = TextResourceDecoder::create("text/html", "UTF-8");
-    else
-        decoder = TextResourceDecoder::create("text/plain", "UTF-8");
-    return decoder;
+        return decoder;
+    }
+    if (equalIgnoringCase(mimeType, "text/html"))
+        return TextResourceDecoder::create("text/html", "UTF-8");
+    return TextResourceDecoder::create("text/plain", "UTF-8");
 }
 
 bool InspectorPageAgent::cachedResourceContent(Resource* cachedResource, String* result, bool* base64Encoded)
@@ -207,9 +206,6 @@ bool InspectorPageAgent::cachedResourceContent(Resource* cachedResource, String*
             if (!buffer)
                 return false;
             RefPtr<TextResourceDecoder> decoder = createXHRTextDecoder(cachedResource->response().mimeType(), cachedResource->response().textEncodingName());
-            // We show content for raw resources only for certain mime types (text, html and xml). Otherwise decoder will be null.
-            if (!decoder)
-                return false;
             String content = decoder->decode(buffer->data(), buffer->size());
             *result = content + decoder->flush();
             return true;
@@ -396,7 +392,7 @@ void InspectorPageAgent::disable(ErrorString*)
     setShowPaintRects(0, false);
     setShowDebugBorders(0, false);
     setShowFPSCounter(0, false);
-    setEmulatedMedia(0, "");
+    setEmulatedMedia(0, String());
     setContinuousPaintingEnabled(0, false);
     setShowScrollBottleneckRects(0, false);
     setShowViewportSizeOnResize(0, false, 0);
@@ -456,6 +452,12 @@ void InspectorPageAgent::navigate(ErrorString*, const String& url)
     FrameLoadRequest request(frame->document()->securityOrigin(), ResourceRequest(frame->document()->completeURL(url)));
     frame->loader()->load(request);
 }
+
+void InspectorPageAgent::getNavigationHistory(ErrorString*, int*, RefPtr<TypeBuilder::Array<TypeBuilder::Page::NavigationEntry> >&)
+{ }
+
+void InspectorPageAgent::navigateToHistoryEntry(ErrorString*, int)
+{ }
 
 static PassRefPtr<TypeBuilder::Page::Cookie> buildObjectForCookie(const Cookie& cookie)
 {
@@ -655,7 +657,7 @@ void InspectorPageAgent::setDocumentContent(ErrorString* errorString, const Stri
         *errorString = "No Document instance to set HTML for";
         return;
     }
-    DOMPatchSupport::patchDocument(document, html);
+    DOMPatchSupport::patchDocument(*document, html);
 }
 
 void InspectorPageAgent::setDeviceMetricsOverride(ErrorString* errorString, int width, int height, double fontScaleFactor, bool fitWindow)
@@ -693,7 +695,7 @@ bool InspectorPageAgent::deviceMetricsChanged(int width, int height, double font
     // These two always fit an int.
     int currentWidth = static_cast<int>(m_state->getLong(PageAgentState::pageAgentScreenWidthOverride));
     int currentHeight = static_cast<int>(m_state->getLong(PageAgentState::pageAgentScreenHeightOverride));
-    double currentFontScaleFactor = m_state->getDouble(PageAgentState::pageAgentFontScaleFactorOverride);
+    double currentFontScaleFactor = m_state->getDouble(PageAgentState::pageAgentFontScaleFactorOverride, 1);
     bool currentFitWindow = m_state->getBoolean(PageAgentState::pageAgentFitWindow);
 
     return width != currentWidth || height != currentHeight || fontScaleFactor != currentFontScaleFactor || fitWindow != currentFitWindow;
@@ -823,11 +825,16 @@ void InspectorPageAgent::didCommitLoad(Frame*, DocumentLoader* loader)
 {
     if (loader->frame() == m_page->mainFrame()) {
         m_scriptToEvaluateOnLoadOnce = m_pendingScriptToEvaluateOnLoadOnce;
-        m_scriptPreprocessor = m_pendingScriptPreprocessor;
+        m_scriptPreprocessorSource = m_pendingScriptPreprocessor;
         m_pendingScriptToEvaluateOnLoadOnce = String();
         m_pendingScriptPreprocessor = String();
     }
     m_frontend->frameNavigated(buildObjectForFrame(loader->frame()));
+}
+
+void InspectorPageAgent::frameAttachedToParent(Frame* frame)
+{
+    m_frontend->frameAttached(frameId(frame));
 }
 
 void InspectorPageAgent::frameDetachedFromParent(Frame* frame)
@@ -1247,24 +1254,34 @@ void InspectorPageAgent::applyEmulatedMedia(String* media)
 
 void InspectorPageAgent::setForceCompositingMode(ErrorString* errorString, bool force)
 {
-    Settings* settings = m_page->settings();
-    if (force && !settings->acceleratedCompositingEnabled()) {
+    Settings& settings = m_page->settings();
+    if (force && !settings.acceleratedCompositingEnabled()) {
         if (errorString)
             *errorString = "Compositing mode is not supported";
         return;
     }
     m_state->setBoolean(PageAgentState::forceCompositingMode, force);
-    if (settings->forceCompositingMode() == force)
+    if (settings.forceCompositingMode() == force)
         return;
     m_didForceCompositingMode = force;
-    settings->setForceCompositingMode(force);
+    settings.setForceCompositingMode(force);
     Frame* mainFrame = m_page->mainFrame();
     if (!mainFrame)
         return;
     mainFrame->view()->updateCompositingLayersAfterStyleChange();
 }
 
-void InspectorPageAgent::captureScreenshot(ErrorString*, String*)
+void InspectorPageAgent::captureScreenshot(ErrorString*, const String*, const int*, const int*, const int*, String*, double*, double*, RefPtr<TypeBuilder::DOM::Rect>&)
+{
+    // Handled on the browser level.
+}
+
+void InspectorPageAgent::startScreencast(ErrorString*, const String*, const int*, const int*, const int*)
+{
+    // Handled on the browser level.
+}
+
+void InspectorPageAgent::stopScreencast(ErrorString*)
 {
     // Handled on the browser level.
 }

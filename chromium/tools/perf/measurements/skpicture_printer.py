@@ -15,10 +15,10 @@ class SkpicturePrinter(page_measurement.PageMeasurement):
                       help='Output directory for the SKP files')
 
   def CustomizeBrowserOptions(self, options):
-    options.extra_browser_args.extend(['--enable-gpu-benchmarking',
-                                       '--no-sandbox',
-                                       '--enable-deferred-image-decoding',
-                                       '--force-compositing-mode'])
+    options.AppendExtraBrowserArgs(['--enable-gpu-benchmarking',
+                                    '--no-sandbox',
+                                    '--enable-deferred-image-decoding',
+                                    '--force-compositing-mode'])
 
   def MeasurePage(self, page, tab, results):
     skp_outdir = self.options.skp_outdir
@@ -26,7 +26,7 @@ class SkpicturePrinter(page_measurement.PageMeasurement):
       raise Exception('Please specify --skp-outdir')
     outpath = os.path.abspath(
         os.path.join(skp_outdir,
-                     page.url_as_file_safe_name))
+                     page.file_safe_name))
     # Replace win32 path separator char '\' with '\\'.
     js = _JS.format(outpath.replace('\\', '\\\\'))
     tab.EvaluateJavaScript(js)

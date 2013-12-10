@@ -46,6 +46,13 @@ AccessibilityImageMapLink::~AccessibilityImageMapLink()
 {
 }
 
+void AccessibilityImageMapLink::detachFromParent()
+{
+    AccessibilityMockObject::detachFromParent();
+    m_areaElement = 0;
+    m_mapElement = 0;
+}
+
 PassRefPtr<AccessibilityImageMapLink> AccessibilityImageMapLink::create()
 {
     return adoptRef(new AccessibilityImageMapLink());
@@ -59,19 +66,19 @@ AccessibilityObject* AccessibilityImageMapLink::parentObject() const
     if (!m_mapElement.get() || !m_mapElement->renderer())
         return 0;
 
-    return m_mapElement->document()->axObjectCache()->getOrCreate(m_mapElement->renderer());
+    return m_mapElement->document().axObjectCache()->getOrCreate(m_mapElement->renderer());
 }
 
 AccessibilityRole AccessibilityImageMapLink::roleValue() const
 {
     if (!m_areaElement)
-        return WebCoreLinkRole;
+        return LinkRole;
 
     const AtomicString& ariaRole = getAttribute(roleAttr);
     if (!ariaRole.isEmpty())
         return AccessibilityObject::ariaRoleToWebCoreRole(ariaRole);
 
-    return WebCoreLinkRole;
+    return LinkRole;
 }
 
 Element* AccessibilityImageMapLink::actionElement() const
@@ -138,7 +145,7 @@ LayoutRect AccessibilityImageMapLink::elementRect() const
 
     RenderObject* renderer;
     if (m_parent && m_parent->isAccessibilityRenderObject())
-        renderer = static_cast<AccessibilityRenderObject*>(m_parent)->renderer();
+        renderer = toAccessibilityRenderObject(m_parent)->renderer();
     else
         renderer = m_mapElement->renderer();
 

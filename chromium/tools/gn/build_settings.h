@@ -5,9 +5,12 @@
 #ifndef TOOLS_GN_BUILD_SETTINGS_H_
 #define TOOLS_GN_BUILD_SETTINGS_H_
 
+#include <map>
+
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/files/file_path.h"
+#include "tools/gn/args.h"
 #include "tools/gn/item_tree.h"
 #include "tools/gn/scope.h"
 #include "tools/gn/source_dir.h"
@@ -15,19 +18,23 @@
 #include "tools/gn/target_manager.h"
 #include "tools/gn/toolchain_manager.h"
 
+class OutputFile;
+
 // Settings for one build, which is one toplevel output directory. There
 // may be multiple Settings objects that refer to this, one for each toolchain.
 class BuildSettings {
  public:
   typedef base::Callback<void(const Target*)> TargetResolvedCallback;
+  typedef std::multimap<Label, OutputFile> AdditionalLibsMap;
 
   BuildSettings();
   ~BuildSettings();
 
   // Absolute path of the source root on the local system. Everything is
-  // relative to this.
+  // relative to this. Does not end in a [back]slash.
   const base::FilePath& root_path() const { return root_path_; }
-  void set_root_path(const base::FilePath& r) { root_path_ = r; }
+  const std::string& root_path_utf8() const { return root_path_utf8_; }
+  void SetRootPath(const base::FilePath& r);
 
   // When nonempty, specifies a parallel directory higherarchy in which to
   // search for buildfiles if they're not found in the root higherarchy. This
@@ -36,6 +43,13 @@ class BuildSettings {
     return secondary_source_path_;
   }
   void SetSecondarySourcePath(const SourceDir& d);
+
+  // Set when we're running an external generator (e.g. GYP) and should
+  // enable "external" flags on targets.
+  bool using_external_generator() const { return using_external_generator_; }
+  void set_using_external_generator(bool ueg) {
+    using_external_generator_ = ueg;
+  }
 
   // Path of the python executable to run scripts with.
   base::FilePath python_path() const { return python_path_; }
@@ -55,6 +69,10 @@ class BuildSettings {
   const std::string& build_to_source_dir_string() const {
     return build_to_source_dir_string_;
   }
+
+  // The build args are normally specified on the command-line.
+  Args& build_args() { return build_args_; }
+  const Args& build_args() const { return build_args_; }
 
   // These accessors do not return const objects since the resulting objects
   // are threadsafe. In this setting, we use constness primarily to ensure
@@ -88,14 +106,30 @@ class BuildSettings {
     target_resolved_callback_ = cb;
   }
 
+  // When using_external_generator is set, this will be populated with
+  // known linker dependencies for each target. The mapping is from .ninja
+  // files to library (.a, .so, .dll, etc.) files needed by that target.
+  //
+  // When generating a GN binary that depends on some GYP-generated targets,
+  // we need to know the GYP target's recursive set of libraries so we can in
+  // turn link them into the final binary.
+  AdditionalLibsMap& external_link_deps() { return external_link_deps_; }
+  const AdditionalLibsMap& external_link_deps() const {
+    return external_link_deps_;
+  }
+
  private:
   base::FilePath root_path_;
+  std::string root_path_utf8_;
   base::FilePath secondary_source_path_;
+  bool using_external_generator_;
   base::FilePath python_path_;
 
   SourceFile build_config_file_;
   SourceDir build_dir_;
   std::string build_to_source_dir_string_;
+  Args build_args_;
+  AdditionalLibsMap external_link_deps_;
 
   TargetResolvedCallback target_resolved_callback_;
 

@@ -25,6 +25,7 @@
 #ifndef RenderTableCell_h
 #define RenderTableCell_h
 
+#include "core/rendering/RenderBlockFlow.h"
 #include "core/rendering/RenderTableRow.h"
 #include "core/rendering/RenderTableSection.h"
 
@@ -35,7 +36,9 @@ static const unsigned maxColumnIndex = 0x1FFFFFFE; // 536,870,910
 
 enum IncludeBorderColorOrNot { DoNotIncludeBorderColor, IncludeBorderColor };
 
-class RenderTableCell FINAL : public RenderBlock {
+class SubtreeLayoutScope;
+
+class RenderTableCell FINAL : public RenderBlockFlow {
 public:
     explicit RenderTableCell(Element*);
 
@@ -97,13 +100,13 @@ public:
         int styleLogicalHeight = valueForLength(style()->logicalHeight(), 0, view());
         // In strict mode, box-sizing: content-box do the right thing and actually add in the border and padding.
         // Call computedCSSPadding* directly to avoid including implicitPadding.
-        if (!document()->inQuirksMode() && style()->boxSizing() != BORDER_BOX)
+        if (!document().inQuirksMode() && style()->boxSizing() != BORDER_BOX)
             styleLogicalHeight += (computedCSSPaddingBefore() + computedCSSPaddingAfter()).floor() + borderBefore() + borderAfter();
         return max(styleLogicalHeight, adjustedLogicalHeight);
     }
 
 
-    void setCellLogicalWidth(int constrainedLogicalWidth);
+    void setCellLogicalWidth(int constrainedLogicalWidth, SubtreeLayoutScope&);
 
     virtual int borderLeft() const;
     virtual int borderRight() const;
@@ -119,6 +122,8 @@ public:
 
     virtual void layout();
 
+    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
+
     virtual void paint(PaintInfo&, const LayoutPoint&);
 
     void paintCollapsedBorders(PaintInfo&, const LayoutPoint&);
@@ -131,7 +136,7 @@ public:
         return va == BASELINE || va == TEXT_BOTTOM || va == TEXT_TOP || va == SUPER || va == SUB || va == LENGTH;
     }
 
-    void computeIntrinsicPadding(int rowHeight);
+    void computeIntrinsicPadding(int rowHeight, SubtreeLayoutScope&);
     void clearIntrinsicPadding() { setIntrinsicPadding(0, 0); }
 
     int intrinsicPaddingBefore() const { return m_intrinsicPaddingBefore; }

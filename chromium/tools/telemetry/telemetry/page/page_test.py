@@ -3,12 +3,11 @@
 # found in the LICENSE file.
 import logging
 
-from telemetry.core import util
-from telemetry.page import gtest_test_results
 from telemetry.page import test_expectations
-from telemetry.page import page_test_results
 from telemetry.page.actions import all_page_actions
+from telemetry.page.actions import navigate
 from telemetry.page.actions import page_action
+
 
 def _GetActionFromData(action_data):
   action_name = action_data['action']
@@ -19,6 +18,7 @@ def _GetActionFromData(action_data):
                      'log for possible Python loading/compilation errors.')
     raise Exception('Action "%s" not found.' % action_name)
   return action(action_data)
+
 
 def GetCompoundActionFromPage(page, action_name):
   if not action_name:
@@ -38,10 +38,12 @@ def GetCompoundActionFromPage(page, action_name):
     action_list += subaction * subaction_data.get('repeat', 1)
   return action_list
 
+
 class Failure(Exception):
   """Exception that can be thrown from PageMeasurement to indicate an
   undesired but designed-for problem."""
   pass
+
 
 class PageTest(object):
   """A class styled on unittest.TestCase for creating page-specific tests."""
@@ -127,6 +129,14 @@ class PageTest(object):
     """
     pass
 
+  def WillRunPageRepeats(self, page, tab):
+    """Override to do operations before each page is iterated over."""
+    pass
+
+  def DidRunPageRepeats(self, page, tab):
+    """Override to do operations after each page is iterated over."""
+    pass
+
   def DidStartHTTPServer(self, tab):
     """Override to do operations after the HTTP server is started."""
     pass
@@ -136,8 +146,8 @@ class PageTest(object):
     pass
 
   def DidNavigateToPage(self, page, tab):
-    """Override to do operations right after the page is navigated, but before
-    any waiting for completion has occurred."""
+    """Override to do operations right after the page is navigated and after
+    all waiting for completion has occurred."""
     pass
 
   def WillRunAction(self, page, tab, action):
@@ -158,32 +168,6 @@ class PageTest(object):
     any that may have been defined in the page set."""
     return test_expectations.TestExpectations()
 
-  def AddOutputOptions(self, parser):
-    parser.add_option('--output-format',
-                      default=self.output_format_choices[0],
-                      choices=self.output_format_choices,
-                      help='Output format. Defaults to "%%default". '
-                      'Can be %s.' % ', '.join(self.output_format_choices))
-
-  @property
-  def output_format_choices(self):
-    """Allowed output formats. The default is the first item in the list."""
-    return ['gtest', 'none']
-
-  def PrepareResults(self, options):
-    if not hasattr(options, 'output_format'):
-      options.output_format = self.output_format_choices[0]
-
-    if options.output_format == 'gtest':
-      return gtest_test_results.GTestTestResults()
-    elif options.output_format == 'none':
-      return page_test_results.PageTestResults()
-    else:
-      # Should never be reached. The parser enforces the choices.
-      raise Exception('Invalid --output-format "%s". Valid choices are: %s'
-                      % (options.output_format,
-                         ', '.join(self.output_format_choices)))
-
   def Run(self, options, page, tab, results):
     self.options = options
     compound_action = GetCompoundActionFromPage(page, self._action_name_to_run)
@@ -193,7 +177,7 @@ class PageTest(object):
     finally:
       self.options = None
 
-  def _RunCompoundAction(self, page, tab, actions):
+  def _RunCompoundAction(self, page, tab, actions, run_setup_methods=True):
     for i, action in enumerate(actions):
       prev_action = actions[i - 1] if i > 0 else None
       next_action = actions[i + 1] if i < len(actions) - 1 else None
@@ -205,15 +189,31 @@ class PageTest(object):
 
       if not (next_action and next_action.RunsPreviousAction()):
         action.WillRunAction(page, tab)
-        self.WillRunAction(page, tab, action)
+        if run_setup_methods:
+          self.WillRunAction(page, tab, action)
         try:
           action.RunAction(page, tab, prev_action)
         finally:
-          self.DidRunAction(page, tab, action)
+          if run_setup_methods:
+            self.DidRunAction(page, tab, action)
 
-      # Closing the connections periodically is needed; otherwise we won't be
-      # able to open enough sockets, and the pages will time out.
-      util.CloseConnections(tab)
+      # Note that we must not call util.CloseConnections here. Many tests
+      # navigate to a URL in the first action and then wait for a condition
+      # in the second action. Calling util.CloseConnections here often
+      # aborts resource loads performed by the page.
+
+  def RunNavigateSteps(self, page, tab):
+    """Navigates the tab to the page URL attribute.
+
+    Runs the 'navigate_steps' page attribute as a compound action.
+    """
+    navigate_actions = GetCompoundActionFromPage(page, 'navigate_steps')
+    if not any(isinstance(action, navigate.NavigateAction)
+        for action in navigate_actions):
+      raise page_action.PageActionFailed(
+          'No NavigateAction in navigate_steps')
+
+    self._RunCompoundAction(page, tab, navigate_actions, False)
 
   @property
   def action_name_to_run(self):

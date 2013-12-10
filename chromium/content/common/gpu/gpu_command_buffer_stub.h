@@ -23,7 +23,7 @@
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "media/base/video_decoder_config.h"
-#include "ui/base/latency_info.h"
+#include "ui/events/latency_info.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 #include "ui/gl/gl_surface.h"
@@ -70,7 +70,6 @@ class GpuCommandBufferStub
       gpu::gles2::ImageManager* image_manager,
       const gfx::Size& size,
       const gpu::gles2::DisallowedFeatures& disallowed_features,
-      const std::string& allowed_extensions,
       const std::vector<int32>& attribs,
       gfx::GpuPreference gpu_preference,
       bool use_virtualized_gl_context,
@@ -167,6 +166,8 @@ class GpuCommandBufferStub
       media::VideoCodecProfile profile,
       IPC::Message* reply_message);
 
+  void OnCreateSurfaceCapturer(IPC::Message* reply_message);
+
   void OnSetSurfaceVisible(bool visible);
 
   void OnDiscardBackbuffer();
@@ -212,7 +213,6 @@ class GpuCommandBufferStub
   gfx::GLSurfaceHandle handle_;
   gfx::Size initial_size_;
   gpu::gles2::DisallowedFeatures disallowed_features_;
-  std::string allowed_extensions_;
   std::vector<int32> requested_attribs_;
   gfx::GpuPreference gpu_preference_;
   bool use_virtualized_gl_context_;

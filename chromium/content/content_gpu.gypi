@@ -16,6 +16,8 @@
     'gpu/gpu_child_thread.h',
     'gpu/gpu_watchdog_thread.cc',
     'gpu/gpu_watchdog_thread.h',
+    'gpu/in_process_gpu_thread.cc',
+    'gpu/in_process_gpu_thread.h',
   ],
   'include_dirs': [
     '..',

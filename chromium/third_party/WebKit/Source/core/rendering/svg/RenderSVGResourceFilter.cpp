@@ -79,7 +79,7 @@ void RenderSVGResourceFilter::removeClientFromCache(RenderObject* client, bool m
 
 PassRefPtr<SVGFilterBuilder> RenderSVGResourceFilter::buildPrimitives(SVGFilter* filter)
 {
-    SVGFilterElement* filterElement = toSVGFilterElement(node());
+    SVGFilterElement* filterElement = toSVGFilterElement(element());
     FloatRect targetBoundingBox = filter->targetBoundingBox();
 
     // Add effects to the builder
@@ -123,6 +123,28 @@ bool RenderSVGResourceFilter::fitsInMaximumImageSize(const FloatSize& size, Floa
     return matchesFilterSize;
 }
 
+static bool createImageBuffer(const FloatRect& targetRect, const AffineTransform& absoluteTransform,
+    OwnPtr<ImageBuffer>& imageBuffer, RenderingMode renderingMode)
+{
+    IntRect paintRect = SVGRenderingContext::calculateImageBufferRect(targetRect, absoluteTransform);
+    // Don't create empty ImageBuffers.
+    if (paintRect.isEmpty())
+        return false;
+
+    OwnPtr<ImageBuffer> image = ImageBuffer::create(paintRect.size(), 1, renderingMode);
+    if (!image)
+        return false;
+
+    GraphicsContext* imageContext = image->context();
+    ASSERT(imageContext);
+
+    imageContext->translate(-paintRect.x(), -paintRect.y());
+    imageContext->concatCTM(absoluteTransform);
+
+    imageBuffer = image.release();
+    return true;
+}
+
 bool RenderSVGResourceFilter::applyResource(RenderObject* object, RenderStyle*, GraphicsContext*& context, unsigned short resourceMode)
 {
     ASSERT(object);
@@ -139,7 +161,7 @@ bool RenderSVGResourceFilter::applyResource(RenderObject* object, RenderStyle*, 
     OwnPtr<FilterData> filterData(adoptPtr(new FilterData));
     FloatRect targetBoundingBox = object->objectBoundingBox();
 
-    SVGFilterElement* filterElement = toSVGFilterElement(node());
+    SVGFilterElement* filterElement = toSVGFilterElement(element());
     filterData->boundaries = SVGLengthContext::resolveRectangle<SVGFilterElement>(filterElement, filterElement->filterUnitsCurrentValue(), targetBoundingBox);
     if (filterData->boundaries.isEmpty())
         return false;
@@ -215,8 +237,8 @@ bool RenderSVGResourceFilter::applyResource(RenderObject* object, RenderStyle*, 
     effectiveTransform.multiply(filterData->shearFreeAbsoluteTransform);
 
     OwnPtr<ImageBuffer> sourceGraphic;
-    RenderingMode renderingMode = object->document()->page()->settings()->acceleratedFiltersEnabled() ? Accelerated : Unaccelerated;
-    if (!SVGRenderingContext::createImageBuffer(filterData->drawingRegion, effectiveTransform, sourceGraphic, renderingMode)) {
+    RenderingMode renderingMode = object->document().page()->settings().acceleratedFiltersEnabled() ? Accelerated : Unaccelerated;
+    if (!createImageBuffer(filterData->drawingRegion, effectiveTransform, sourceGraphic, renderingMode)) {
         ASSERT(!m_filter.contains(object));
         filterData->savedContext = context;
         m_filter.set(object, filterData.leakPtr());
@@ -311,7 +333,7 @@ void RenderSVGResourceFilter::postApplyResource(RenderObject* object, GraphicsCo
 
 FloatRect RenderSVGResourceFilter::resourceBoundingBox(RenderObject* object)
 {
-    if (SVGFilterElement* element = toSVGFilterElement(node()))
+    if (SVGFilterElement* element = toSVGFilterElement(this->element()))
         return SVGLengthContext::resolveRectangle<SVGFilterElement>(element, element->filterUnitsCurrentValue(), object->objectBoundingBox());
 
     return FloatRect();

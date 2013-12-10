@@ -28,6 +28,8 @@
 namespace WebCore {
 
 class RenderLayer;
+class RenderLayerBacking;
+class ScrollableArea;
 
 class RenderLayerModelObject : public RenderObject {
 public:
@@ -39,6 +41,7 @@ public:
 
     bool hasSelfPaintingLayer() const;
     RenderLayer* layer() const { return m_layer; }
+    ScrollableArea* scrollableArea() const;
 
     virtual void styleWillChange(StyleDifference, const RenderStyle* newStyle) OVERRIDE;
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
@@ -52,6 +55,8 @@ public:
 
     // This is null for anonymous renderers.
     ContainerNode* node() const { return toContainerNode(RenderObject::node()); }
+
+    RenderLayerBacking* backing() const;
 
 protected:
     void ensureLayer();

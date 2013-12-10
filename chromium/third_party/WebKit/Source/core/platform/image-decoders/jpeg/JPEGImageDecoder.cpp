@@ -43,6 +43,7 @@
 #include "core/platform/PlatformInstrumentation.h"
 #include "wtf/CPU.h"
 #include "wtf/PassOwnPtr.h"
+#include "wtf/dtoa/utils.h"
 
 extern "C" {
 #include <stdio.h> // jpeglib.h needs stdio FILE.
@@ -90,7 +91,14 @@ inline bool doFancyUpsampling() { return false; }
 inline bool doFancyUpsampling() { return true; }
 #endif
 
+namespace {
+
 const int exifMarker = JPEG_APP0 + 1;
+
+// JPEG only supports a denominator of 8.
+const unsigned scaleDenominator = 8;
+
+} // namespace
 
 namespace WebCore {
 
@@ -320,8 +328,6 @@ public:
 
     bool decode(const SharedBuffer& data, bool onlySize)
     {
-        m_decodingSizeOnly = onlySize;
-
         unsigned newByteCount = data.size() - m_bufferLength;
         unsigned readOffset = m_bufferLength - m_info.src->bytes_in_buffer;
 
@@ -394,18 +400,7 @@ public:
             // image is a sequential JPEG.
             m_info.buffered_image = jpeg_has_multiple_scans(&m_info);
 
-            // Used to set up image size so arrays can be allocated.
-            jpeg_calc_output_dimensions(&m_info);
-
-            // Make a one-row-high sample array that will go away when done with
-            // image. Always make it big enough to hold an RGB row. Since this
-            // uses the IJG memory manager, it must be allocated before the call
-            // to jpeg_start_compress().
-            // FIXME: note that some output color spaces do not need the samples
-            // buffer. Remove this allocation for those color spaces.
-            m_samples = (*m_info.mem->alloc_sarray)((j_common_ptr) &m_info, JPOOL_IMAGE, m_info.output_width * 4, 1);
-
-            if (m_decodingSizeOnly) {
+            if (onlySize) {
                 // We can stop here. Reduce our buffer length and available data.
                 m_bufferLength -= m_info.src->bytes_in_buffer;
                 m_info.src->bytes_in_buffer = 0;
@@ -422,6 +417,22 @@ public:
             m_info.do_fancy_upsampling = doFancyUpsampling();
             m_info.enable_2pass_quant = false;
             m_info.do_block_smoothing = true;
+
+            if (m_decoder->size() != m_decoder->decodedSize()) {
+                m_info.scale_denom = scaleDenominator;
+                m_info.scale_num = m_decoder->decodedSize().width() * scaleDenominator / m_info.image_width;
+            }
+
+            // Used to set up image size so arrays can be allocated.
+            jpeg_calc_output_dimensions(&m_info);
+
+            // Make a one-row-high sample array that will go away when done with
+            // image. Always make it big enough to hold an RGB row. Since this
+            // uses the IJG memory manager, it must be allocated before the call
+            // to jpeg_start_compress().
+            // FIXME: note that some output color spaces do not need the samples
+            // buffer. Remove this allocation for those color spaces.
+            m_samples = (*m_info.mem->alloc_sarray)(reinterpret_cast<j_common_ptr>(&m_info), JPOOL_IMAGE, m_info.output_width * 4, 1);
 
             // Start decompressor.
             if (!jpeg_start_decompress(&m_info))
@@ -542,7 +553,6 @@ private:
     JPEGImageDecoder* m_decoder;
     unsigned m_bufferLength;
     int m_bytesToSkip;
-    bool m_decodingSizeOnly;
 
     jpeg_decompress_struct m_info;
     decoder_error_mgr m_err;
@@ -588,8 +598,9 @@ void term_source(j_decompress_ptr jd)
 }
 
 JPEGImageDecoder::JPEGImageDecoder(ImageSource::AlphaOption alphaOption,
-                                   ImageSource::GammaAndColorProfileOption gammaAndColorProfileOption)
-    : ImageDecoder(alphaOption, gammaAndColorProfileOption)
+    ImageSource::GammaAndColorProfileOption gammaAndColorProfileOption,
+    size_t maxDecodedBytes)
+    : ImageDecoder(alphaOption, gammaAndColorProfileOption, maxDecodedBytes)
 {
 }
 
@@ -603,6 +614,32 @@ bool JPEGImageDecoder::isSizeAvailable()
          decode(true);
 
     return ImageDecoder::isSizeAvailable();
+}
+
+bool JPEGImageDecoder::setSize(unsigned width, unsigned height)
+{
+    if (!ImageDecoder::setSize(width, height))
+        return false;
+
+    size_t originalBytes = width * height * 4;
+    if (originalBytes <= m_maxDecodedBytes) {
+        m_decodedSize = IntSize(width, height);
+        return true;
+    }
+
+    // Downsample according to the maximum decoded size.
+    unsigned scaleNumerator = static_cast<unsigned>(floor(sqrt(
+        // MSVC needs explicit parameter type for sqrt().
+        static_cast<float>(m_maxDecodedBytes * scaleDenominator * scaleDenominator / originalBytes))));
+    m_decodedSize = IntSize((scaleNumerator * width + scaleDenominator - 1) / scaleDenominator,
+        (scaleNumerator * height + scaleDenominator - 1) / scaleDenominator);
+
+    // The image is too big to be downsampled by libjpeg.
+    // FIXME: Post-process to downsample the image.
+    if (m_decodedSize.isEmpty())
+        return setFailed();
+
+    return true;
 }
 
 ImageFrame* JPEGImageDecoder::frameBufferAtIndex(size_t index)
@@ -684,10 +721,15 @@ bool JPEGImageDecoder::outputScanlines()
     if (m_frameBufferCache.isEmpty())
         return false;
 
+    jpeg_decompress_struct* info = m_reader->info();
+
     // Initialize the framebuffer if needed.
     ImageFrame& buffer = m_frameBufferCache[0];
     if (buffer.status() == ImageFrame::FrameEmpty) {
-        if (!buffer.setSize(size().width(), size().height()))
+        ASSERT(info->output_width == m_decodedSize.width());
+        ASSERT(info->output_height == m_decodedSize.height());
+
+        if (!buffer.setSize(info->output_width, info->output_height))
             return setFailed();
         buffer.setStatus(ImageFrame::FramePartial);
         // The buffer is transparent outside the decoded area while the image is
@@ -697,8 +739,6 @@ bool JPEGImageDecoder::outputScanlines()
         // For JPEGs, the frame always fills the entire image.
         buffer.setOriginalFrameRect(IntRect(IntPoint(), size()));
     }
-
-    jpeg_decompress_struct* info = m_reader->info();
 
 #if defined(TURBO_JPEG_RGB_SWIZZLE)
     if (turboSwizzled(info->out_color_space)) {
@@ -744,8 +784,9 @@ void JPEGImageDecoder::decode(bool onlySize)
     if (failed())
         return;
 
-    if (!m_reader)
+    if (!m_reader) {
         m_reader = adoptPtr(new JPEGImageReader(this));
+    }
 
     // If we couldn't decode the image but we've received all the data, decoding
     // has failed.

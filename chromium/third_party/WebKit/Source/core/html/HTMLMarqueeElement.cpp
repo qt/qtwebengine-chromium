@@ -34,15 +34,15 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLMarqueeElement::HTMLMarqueeElement(const QualifiedName& tagName, Document* document)
+inline HTMLMarqueeElement::HTMLMarqueeElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
-    , ActiveDOMObject(document)
+    , ActiveDOMObject(&document)
 {
     ASSERT(hasTagName(marqueeTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLMarqueeElement> HTMLMarqueeElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLMarqueeElement> HTMLMarqueeElement::create(const QualifiedName& tagName, Document& document)
 {
     RefPtr<HTMLMarqueeElement> marqueeElement(adoptRef(new HTMLMarqueeElement(tagName, document)));
     marqueeElement->suspendIfNeeded();
@@ -88,23 +88,23 @@ void HTMLMarqueeElement::collectStyleForPresentationAttribute(const QualifiedNam
         }
     } else if (name == scrollamountAttr) {
         if (!value.isEmpty())
-            addHTMLLengthToStyle(style, CSSPropertyWebkitMarqueeIncrement, value);
+            addHTMLLengthToStyle(style, CSSPropertyInternalMarqueeIncrement, value);
     } else if (name == scrolldelayAttr) {
         if (!value.isEmpty())
-            addHTMLLengthToStyle(style, CSSPropertyWebkitMarqueeSpeed, value);
+            addHTMLLengthToStyle(style, CSSPropertyInternalMarqueeSpeed, value);
     } else if (name == loopAttr) {
         if (!value.isEmpty()) {
             if (value == "-1" || equalIgnoringCase(value, "infinite"))
-                addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitMarqueeRepetition, CSSValueInfinite);
+                addPropertyToPresentationAttributeStyle(style, CSSPropertyInternalMarqueeRepetition, CSSValueInfinite);
             else
-                addHTMLLengthToStyle(style, CSSPropertyWebkitMarqueeRepetition, value);
+                addHTMLLengthToStyle(style, CSSPropertyInternalMarqueeRepetition, value);
         }
     } else if (name == behaviorAttr) {
         if (!value.isEmpty())
-            addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitMarqueeStyle, value);
+            addPropertyToPresentationAttributeStyle(style, CSSPropertyInternalMarqueeStyle, value);
     } else if (name == directionAttr) {
         if (!value.isEmpty())
-            addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitMarqueeDirection, value);
+            addPropertyToPresentationAttributeStyle(style, CSSPropertyInternalMarqueeDirection, value);
     } else
         HTMLElement::collectStyleForPresentationAttribute(name, value, style);
 }

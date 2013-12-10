@@ -9,13 +9,12 @@
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 
-#include "base/message_loop/message_pump_aurax11.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window_delegate.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_utils.h"
 #include "ui/base/hit_test.h"
-#include "ui/views/widget/desktop_aura/desktop_activation_client.h"
+#include "ui/events/event.h"
+#include "ui/events/event_utils.h"
+#include "ui/gfx/x/x11_types.h"
 #include "ui/views/widget/native_widget_aura.h"
 
 namespace {
@@ -59,10 +58,8 @@ const char* kAtomsToCache[] = {
 namespace views {
 
 X11WindowEventFilter::X11WindowEventFilter(
-    aura::RootWindow* root_window,
-    DesktopActivationClient* activation_client)
-    : activation_client_(activation_client),
-      xdisplay_(base::MessagePumpAuraX11::GetDefaultXDisplay()),
+    aura::RootWindow* root_window)
+    : xdisplay_(gfx::GetXDisplay()),
       xwindow_(root_window->GetAcceleratedWidget()),
       x_root_window_(DefaultRootWindow(xdisplay_)),
       atom_cache_(xdisplay_, kAtomsToCache),
@@ -79,7 +76,7 @@ void X11WindowEventFilter::SetUseHostWindowBorders(bool use_os_border) {
   motif_hints.decorations = use_os_border ? 1 : 0;
 
   ::Atom hint_atom = atom_cache_.GetAtom("_MOTIF_WM_HINTS");
-  XChangeProperty(base::MessagePumpAuraX11::GetDefaultXDisplay(),
+  XChangeProperty(gfx::GetXDisplay(),
                   xwindow_,
                   hint_atom,
                   hint_atom,

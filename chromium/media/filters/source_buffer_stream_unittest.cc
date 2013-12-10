@@ -2683,6 +2683,31 @@ TEST_F(SourceBufferStreamTest, SetExplicitDuration_DeletePartialSelectedRange) {
   CheckExpectedRanges("{ [0,4) [10,10) }");
 }
 
+// Test the case where duration is set while the stream parser buffers
+// already start passing the data to decoding pipeline. Selected range,
+// when invalidated by getting truncated, should be updated to NULL
+// accordingly so that successive append operations keep working.
+TEST_F(SourceBufferStreamTest, SetExplicitDuration_UpdateSelectedRange) {
+  // Seek to start of stream.
+  SeekToTimestamp(base::TimeDelta::FromMilliseconds(0));
+
+  NewSegmentAppend("0K 30 60 90");
+
+  // Read out the first few buffers.
+  CheckExpectedBuffers("0K 30");
+
+  // Set duration to be right before buffer 1.
+  stream_->OnSetDuration(base::TimeDelta::FromMilliseconds(60));
+
+  // Verify that there is no next buffer.
+  CheckNoNextBuffer();
+
+  // We should be able to append new buffers at this point.
+  NewSegmentAppend("120K 150");
+
+  CheckExpectedRangesByTimestamp("{ [0,60) [120,180) }");
+}
+
 // Test the case were the current playback position is at the end of the
 // buffered data and several overlaps occur that causes the selected
 // range to get split and then merged back into a single range.
@@ -2940,7 +2965,7 @@ TEST_F(SourceBufferStreamTest, Remove_Partial4) {
   CheckExpectedRangesByTimestamp("{ [10,40) [2060,2150) }");
 }
 
-// Test behavior when the current positing is removed and new buffers
+// Test behavior when the current position is removed and new buffers
 // are appended over the removal range.
 TEST_F(SourceBufferStreamTest, Remove_CurrentPosition) {
   Seek(0);
@@ -2962,6 +2987,21 @@ TEST_F(SourceBufferStreamTest, Remove_CurrentPosition) {
   // Verify that buffers resume at the next keyframe after the
   // current position.
   CheckExpectedBuffers("210K 240 270K 300 330");
+}
+
+// Test behavior when buffers in the selected range before the current position
+// are removed.
+TEST_F(SourceBufferStreamTest, Remove_BeforeCurrentPosition) {
+  Seek(0);
+  NewSegmentAppend("0K 30 60 90K 120 150 180K 210 240 270K 300 330");
+  CheckExpectedRangesByTimestamp("{ [0,360) }");
+  CheckExpectedBuffers("0K 30 60 90K 120");
+
+  // Remove a range that is before the current playback position.
+  RemoveInMs(0, 90, 360);
+  CheckExpectedRangesByTimestamp("{ [90,360) }");
+
+  CheckExpectedBuffers("150 180K 210 240 270K 300 330");
 }
 
 // TODO(vrk): Add unit tests where keyframes are unaligned between streams.

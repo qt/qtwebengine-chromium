@@ -70,17 +70,15 @@ QuicTime::Delta QuicConnectionPeer::GetNetworkTimeout(
 bool QuicConnectionPeer::IsSavedForRetransmission(
     QuicConnection* connection,
     QuicPacketSequenceNumber sequence_number) {
-  return ContainsKey(connection->retransmission_map_, sequence_number);
+  return connection->sent_packet_manager_.IsUnacked(sequence_number);
 }
 
 // static
 size_t QuicConnectionPeer::GetRetransmissionCount(
     QuicConnection* connection,
     QuicPacketSequenceNumber sequence_number) {
-  QuicConnection::RetransmissionMap::iterator it =
-      connection->retransmission_map_.find(sequence_number);
-  DCHECK(connection->retransmission_map_.end() != it);
-  return it->second.number_retransmissions;
+  return connection->sent_packet_manager_.GetRetransmissionCount(
+      sequence_number);
 }
 
 // static
@@ -124,6 +122,12 @@ void QuicConnectionPeer::SetIsServer(QuicConnection* connection,
 void QuicConnectionPeer::SetSelfAddress(QuicConnection* connection,
                                         const IPEndPoint& self_address) {
   connection->self_address_ = self_address;
+}
+
+// static
+void QuicConnectionPeer::SetPeerAddress(QuicConnection* connection,
+                                        const IPEndPoint& peer_address) {
+  connection->peer_address_ = peer_address;
 }
 
 // static

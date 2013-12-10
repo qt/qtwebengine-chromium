@@ -28,8 +28,7 @@ class NET_EXPORT_PRIVATE SOCKSSocketParams
     : public base::RefCounted<SOCKSSocketParams> {
  public:
   SOCKSSocketParams(const scoped_refptr<TransportSocketParams>& proxy_server,
-                    bool socks_v5, const HostPortPair& host_port_pair,
-                    RequestPriority priority);
+                    bool socks_v5, const HostPortPair& host_port_pair);
 
   const scoped_refptr<TransportSocketParams>& transport_params() const {
     return transport_params_;
@@ -57,6 +56,7 @@ class NET_EXPORT_PRIVATE SOCKSSocketParams
 class SOCKSConnectJob : public ConnectJob {
  public:
   SOCKSConnectJob(const std::string& group_name,
+                  RequestPriority priority,
                   const scoped_refptr<SOCKSSocketParams>& params,
                   const base::TimeDelta& timeout_duration,
                   TransportClientSocketPool* transport_pool,
@@ -105,8 +105,10 @@ class SOCKSConnectJob : public ConnectJob {
 };
 
 class NET_EXPORT_PRIVATE SOCKSClientSocketPool
-    : public ClientSocketPool, public LayeredPool {
+    : public ClientSocketPool, public HigherLayeredPool {
  public:
+  typedef SOCKSSocketParams SocketParams;
+
   SOCKSClientSocketPool(
       int max_sockets,
       int max_sockets_per_group,
@@ -134,12 +136,10 @@ class NET_EXPORT_PRIVATE SOCKSClientSocketPool
                              ClientSocketHandle* handle) OVERRIDE;
 
   virtual void ReleaseSocket(const std::string& group_name,
-                             StreamSocket* socket,
+                             scoped_ptr<StreamSocket> socket,
                              int id) OVERRIDE;
 
   virtual void FlushWithError(int error) OVERRIDE;
-
-  virtual bool IsStalled() const OVERRIDE;
 
   virtual void CloseIdleSockets() OVERRIDE;
 
@@ -152,10 +152,6 @@ class NET_EXPORT_PRIVATE SOCKSClientSocketPool
       const std::string& group_name,
       const ClientSocketHandle* handle) const OVERRIDE;
 
-  virtual void AddLayeredPool(LayeredPool* layered_pool) OVERRIDE;
-
-  virtual void RemoveLayeredPool(LayeredPool* layered_pool) OVERRIDE;
-
   virtual base::DictionaryValue* GetInfoAsValue(
       const std::string& name,
       const std::string& type,
@@ -165,7 +161,14 @@ class NET_EXPORT_PRIVATE SOCKSClientSocketPool
 
   virtual ClientSocketPoolHistograms* histograms() const OVERRIDE;
 
-  // LayeredPool implementation.
+  // LowerLayeredPool implementation.
+  virtual bool IsStalled() const OVERRIDE;
+
+  virtual void AddHigherLayeredPool(HigherLayeredPool* higher_pool) OVERRIDE;
+
+  virtual void RemoveHigherLayeredPool(HigherLayeredPool* higher_pool) OVERRIDE;
+
+  // HigherLayeredPool implementation.
   virtual bool CloseOneIdleConnection() OVERRIDE;
 
  private:
@@ -183,7 +186,7 @@ class NET_EXPORT_PRIVATE SOCKSClientSocketPool
     virtual ~SOCKSConnectJobFactory() {}
 
     // ClientSocketPoolBase::ConnectJobFactory methods.
-    virtual ConnectJob* NewConnectJob(
+    virtual scoped_ptr<ConnectJob> NewConnectJob(
         const std::string& group_name,
         const PoolBase::Request& request,
         ConnectJob::Delegate* delegate) const OVERRIDE;
@@ -203,8 +206,6 @@ class NET_EXPORT_PRIVATE SOCKSClientSocketPool
 
   DISALLOW_COPY_AND_ASSIGN(SOCKSClientSocketPool);
 };
-
-REGISTER_SOCKET_PARAMS_FOR_POOL(SOCKSClientSocketPool, SOCKSSocketParams);
 
 }  // namespace net
 

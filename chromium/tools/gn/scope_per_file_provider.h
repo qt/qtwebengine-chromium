@@ -14,7 +14,7 @@
 // variable support.
 class ScopePerFileProvider : public Scope::ProgrammaticProvider {
  public:
-  ScopePerFileProvider(Scope* scope, const SourceFile& source_file);
+  ScopePerFileProvider(Scope* scope);
   virtual ~ScopePerFileProvider();
 
   // ProgrammaticProvider implementation.
@@ -25,27 +25,29 @@ class ScopePerFileProvider : public Scope::ProgrammaticProvider {
   const Value* GetCurrentToolchain();
   const Value* GetDefaultToolchain();
   const Value* GetPythonPath();
-  const Value* GetRelativeRootOutputDir();
-  const Value* GetRelativeRootGenDir();
-  const Value* GetRelativeTargetOutputDir();
-  const Value* GetRelativeTargetGenDir();
+  const Value* GetRootBuildDir();
+  const Value* GetRootGenDir();
+  const Value* GetRootOutDir();
+  const Value* GetTargetGenDir();
+  const Value* GetTargetOutDir();
 
   static std::string GetRootOutputDirWithNoLastSlash(const Settings* settings);
-  static std::string GetRootGenDirWithNoLastSlash(const Settings* settings);
+  static std::string GetToolchainOutputDirWithNoLastSlash(
+      const Settings* settings);
+  static std::string GetToolchainGenDirWithNoLastSlash(
+      const Settings* settings);
 
   std::string GetFileDirWithNoLastSlash() const;
-  std::string GetRelativeRootWithNoLastSlash() const;
-
-  SourceFile source_file_;
 
   // All values are lazily created.
   scoped_ptr<Value> current_toolchain_;
   scoped_ptr<Value> default_toolchain_;
   scoped_ptr<Value> python_path_;
-  scoped_ptr<Value> relative_root_output_dir_;
-  scoped_ptr<Value> relative_root_gen_dir_;
-  scoped_ptr<Value> relative_target_output_dir_;
-  scoped_ptr<Value> relative_target_gen_dir_;
+  scoped_ptr<Value> root_build_dir_;
+  scoped_ptr<Value> root_gen_dir_;
+  scoped_ptr<Value> root_out_dir_;
+  scoped_ptr<Value> target_gen_dir_;
+  scoped_ptr<Value> target_out_dir_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopePerFileProvider);
 };

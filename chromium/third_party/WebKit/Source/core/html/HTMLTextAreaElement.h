@@ -34,7 +34,7 @@ class VisibleSelection;
 
 class HTMLTextAreaElement FINAL : public HTMLTextFormControlElement {
 public:
-    static PassRefPtr<HTMLTextAreaElement> create(const QualifiedName&, Document*, HTMLFormElement*);
+    static PassRefPtr<HTMLTextAreaElement> create(const QualifiedName&, Document&, HTMLFormElement*);
 
     int cols() const { return m_cols; }
     int rows() const { return m_rows; }
@@ -62,11 +62,14 @@ public:
     void setRows(int);
 
 private:
-    HTMLTextAreaElement(const QualifiedName&, Document*, HTMLFormElement*);
+    HTMLTextAreaElement(const QualifiedName&, Document&, HTMLFormElement*);
 
     enum WrapMethod { NoWrap, SoftWrap, HardWrap };
 
     virtual void didAddUserAgentShadowRoot(ShadowRoot*) OVERRIDE;
+    // FIXME: Author shadows should be allowed
+    // https://bugs.webkit.org/show_bug.cgi?id=92608
+    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 
     void handleBeforeTextInsertedEvent(BeforeTextInsertedEvent*) const;
     static String sanitizeUserInputValue(const String&, unsigned maxLength);
@@ -75,7 +78,6 @@ private:
     void setValueCommon(const String&);
 
     virtual bool supportsPlaceholder() const { return true; }
-    virtual HTMLElement* placeholderElement() const;
     virtual void updatePlaceholderText();
     virtual bool isEmptyValue() const { return value().isEmpty(); }
 
@@ -83,10 +85,12 @@ private:
     virtual bool isRequiredFormControl() const { return isRequired(); }
 
     virtual void defaultEventHandler(Event*);
+    virtual void handleFocusEvent(Element* oldFocusedNode, FocusDirection) OVERRIDE;
 
     virtual void subtreeHasChanged();
 
     virtual bool isEnumeratable() const { return true; }
+    virtual bool isInteractiveContent() const OVERRIDE;
     virtual bool supportLabels() const OVERRIDE { return true; }
 
     virtual const AtomicString& formControlType() const;
@@ -111,7 +115,6 @@ private:
     virtual void accessKeyAction(bool sendMouseEvents);
 
     virtual bool shouldUseInputMethod();
-    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual bool matchesReadOnlyPseudoClass() const OVERRIDE;
     virtual bool matchesReadWritePseudoClass() const OVERRIDE;
 
@@ -121,7 +124,6 @@ private:
     int m_rows;
     int m_cols;
     WrapMethod m_wrap;
-    HTMLElement* m_placeholder;
     mutable String m_value;
     mutable bool m_isDirty;
     mutable bool m_wasModifiedByUser;

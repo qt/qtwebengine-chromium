@@ -31,6 +31,7 @@
 #ifndef NotificationPresenter_h
 #define NotificationPresenter_h
 
+#include "public/platform/WebNonCopyable.h"
 #include "public/web/WebNotification.h"
 #include "public/web/WebNotificationPresenter.h"
 #include <map>
@@ -42,7 +43,7 @@ namespace WebTestRunner {
 class WebTestDelegate;
 
 // A class that implements WebNotificationPresenter for the TestRunner library.
-class NotificationPresenter : public WebKit::WebNotificationPresenter {
+class NotificationPresenter : public WebKit::WebNotificationPresenter, public WebKit::WebNonCopyable {
 public:
     NotificationPresenter();
     virtual ~NotificationPresenter();
@@ -54,6 +55,9 @@ public:
 
     // Called by the TestRunner to simulate a user clicking on a notification.
     bool simulateClick(const WebKit::WebString& notificationIdentifier);
+
+    // Called by the TestRunner to cancel all active notications.
+    void cancelAllActiveNotifications();
 
     // WebKit::WebNotificationPresenter interface
     virtual bool show(const WebKit::WebNotification&);

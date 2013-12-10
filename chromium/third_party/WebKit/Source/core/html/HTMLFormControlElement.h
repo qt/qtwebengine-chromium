@@ -106,7 +106,7 @@ public:
     using Node::deref;
 
 protected:
-    HTMLFormControlElement(const QualifiedName& tagName, Document*, HTMLFormElement*);
+    HTMLFormControlElement(const QualifiedName& tagName, Document&, HTMLFormElement*);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual void requiredAttributeChanged();
@@ -117,7 +117,6 @@ protected:
     virtual void didMoveToNewDocument(Document* oldDocument) OVERRIDE;
 
     virtual bool supportsFocus() const OVERRIDE;
-    virtual bool rendererIsFocusable() const OVERRIDE;
     virtual bool isKeyboardFocusable() const OVERRIDE;
     virtual bool shouldShowFocusRingOnMouseFocus() const;
     virtual bool shouldHaveFocusAppearance() const OVERRIDE;
@@ -125,7 +124,7 @@ protected:
     virtual void dispatchBlurEvent(Element* newFocusedElement) OVERRIDE;
     virtual void willCallDefaultEventHandler(const Event&) OVERRIDE;
 
-    virtual void didRecalcStyle(StyleChange) OVERRIDE;
+    virtual void didRecalcStyle(StyleRecalcChange) OVERRIDE;
 
     // This must be called any time the result of willValidate() has changed.
     void setNeedsWillValidateCheck();
@@ -181,6 +180,12 @@ inline HTMLFormControlElement* toHTMLFormControlElement(FormAssociatedElement* c
 {
     ASSERT_WITH_SECURITY_IMPLICATION(!control || control->isFormControlElement());
     return static_cast<HTMLFormControlElement*>(control);
+}
+
+inline const HTMLFormControlElement* toHTMLFormControlElement(const FormAssociatedElement* control)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!control || control->isFormControlElement());
+    return static_cast<const HTMLFormControlElement*>(control);
 }
 
 } // namespace

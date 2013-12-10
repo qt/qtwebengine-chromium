@@ -27,12 +27,11 @@
 #include "V8Location.h"
 #include "bindings/v8/V8Binding.h"
 #include "core/page/DOMWindow.h"
-#include "core/page/Frame.h"
 #include "core/page/Location.h"
 
 namespace WebCore {
 
-void V8Document::locationAttrGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
+void V8Document::locationAttributeGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     Document* document = V8Document::toNative(info.Holder());
     if (!document->frame()) {
@@ -41,10 +40,10 @@ void V8Document::locationAttrGetterCustom(v8::Local<v8::String> name, const v8::
     }
 
     DOMWindow* window = document->domWindow();
-    v8SetReturnValue(info, toV8Fast(window->location(), info, document));
+    v8SetReturnValueFast(info, window->location(), document);
 }
 
-void V8Document::locationAttrSetterCustom(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void>& info)
+void V8Document::locationAttributeSetterCustom(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void>& info)
 {
     Document* document = V8Document::toNative(info.Holder());
     if (!document->frame())
@@ -59,8 +58,10 @@ void V8Document::locationAttrSetterCustom(v8::Local<v8::String> name, v8::Local<
         return;
 
     DOMWindow* window = document->domWindow();
-    if (Location* location = window->location())
-        location->setHref(active, first, toWebCoreString(value));
+    if (Location* location = window->location()) {
+        V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, stringValue, value);
+        location->setHref(active, first, stringValue);
+    }
 }
 
 } // namespace WebCore

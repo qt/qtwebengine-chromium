@@ -17,13 +17,14 @@ NetworkIconAnimation::NetworkIconAnimation()
     : animation_(this) {
   // Set up the animation throbber.
   animation_.SetThrobDuration(kThrobDurationMs);
-  animation_.SetTweenType(ui::Tween::LINEAR);
+  animation_.SetTweenType(gfx::Tween::LINEAR);
 }
 
 NetworkIconAnimation::~NetworkIconAnimation() {
 }
 
-void NetworkIconAnimation::AnimationProgressed(const ui::Animation* animation) {
+void NetworkIconAnimation::AnimationProgressed(
+    const gfx::Animation* animation) {
   if (animation != &animation_)
     return;
   FOR_EACH_OBSERVER(AnimationObserver, observers_, NetworkIconChanged());
@@ -45,7 +46,7 @@ void NetworkIconAnimation::AddObserver(AnimationObserver* observer) {
 
 void NetworkIconAnimation::RemoveObserver(AnimationObserver* observer) {
   observers_.RemoveObserver(observer);
-  if (observers_.size() == 0)
+  if (!observers_.might_have_observers())
     animation_.Reset();  // Stops the animation and resets the current value.
 }
 

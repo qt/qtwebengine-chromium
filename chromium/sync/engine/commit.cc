@@ -6,8 +6,9 @@
 
 #include "base/debug/trace_event.h"
 #include "sync/engine/build_commit_command.h"
-#include "sync/engine/get_commit_ids_command.h"
+#include "sync/engine/get_commit_ids.h"
 #include "sync/engine/process_commit_response_command.h"
+#include "sync/engine/syncer.h"
 #include "sync/engine/syncer_proto_util.h"
 #include "sync/sessions/sync_session.h"
 #include "sync/syncable/mutable_entry.h"
@@ -26,12 +27,12 @@ namespace {
 void SetAllSyncingBitsToValue(WriteTransaction* trans,
                               const sessions::OrderedCommitSet& commit_set,
                               bool value_to_set) {
-  const std::vector<syncable::Id>& commit_ids = commit_set.GetAllCommitIds();
-  for (std::vector<syncable::Id>::const_iterator it = commit_ids.begin();
-       it != commit_ids.end(); ++it) {
-    syncable::MutableEntry entry(trans, syncable::GET_BY_ID, *it);
+  const std::vector<int64>& commit_handles = commit_set.GetAllCommitHandles();
+  for (std::vector<int64>::const_iterator it = commit_handles.begin();
+       it != commit_handles.end(); ++it) {
+    syncable::MutableEntry entry(trans, syncable::GET_BY_HANDLE, *it);
     if (entry.good()) {
-      entry.Put(syncable::SYNCING, value_to_set);
+      entry.PutSyncing(value_to_set);
     }
   }
 }
@@ -76,11 +77,7 @@ bool PrepareCommitMessage(
 
   // Fetch the items to commit.
   const size_t batch_size = session->context()->max_commit_batch_size();
-  GetCommitIdsCommand get_commit_ids_command(&trans,
-                                             requested_types,
-                                             batch_size,
-                                             commit_set);
-  get_commit_ids_command.Execute(session);
+  GetCommitIds(&trans, requested_types, batch_size, commit_set);
 
   DVLOG(1) << "Commit message will contain " << commit_set->Size() << " items.";
   if (commit_set->Empty()) {

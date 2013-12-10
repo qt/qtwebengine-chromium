@@ -56,26 +56,32 @@ class ASH_EXPORT WorkspaceLayoutManager : public BaseLayoutManager {
                                        const void* key,
                                        intptr_t old) OVERRIDE;
 
+  // ash::WindowSettings::Observer overrides:
+  virtual void OnTrackedByWorkspaceChanged(aura::Window* window,
+                                           bool old) OVERRIDE;
+
  private:
   // Overridden from BaseLayoutManager:
-  virtual void ShowStateChanged(aura::Window* window,
+  virtual void ShowStateChanged(wm::WindowState* window_state,
                                 ui::WindowShowState last_show_state) OVERRIDE;
   virtual void AdjustAllWindowsBoundsForWorkAreaChange(
       AdjustWindowReason reason) OVERRIDE;
   virtual void AdjustWindowBoundsForWorkAreaChange(
-      aura::Window* window,
+      wm::WindowState* window_state,
       AdjustWindowReason reason) OVERRIDE;
 
-  void AdjustWindowBoundsWhenAdded(aura::Window* window);
+  void AdjustWindowBoundsWhenAdded(wm::WindowState* window_state);
 
   void UpdateDesktopVisibility();
 
-  // Updates the bounds of the window from a show state change.
-  void UpdateBoundsFromShowState(aura::Window* window);
+  // Updates the bounds of the window for a show state change from
+  // |last_show_state|.
+  void UpdateBoundsFromShowState(wm::WindowState* window_state,
+                                 ui::WindowShowState last_show_state);
 
-  // If |window| is maximized or fullscreen the bounds of the window are set and
-  // true is returned. Does nothing otherwise.
-  bool SetMaximizedOrFullscreenBounds(aura::Window* window);
+  // If |window_state| is maximized or fullscreen the bounds of the
+  // window are set and true is returned. Does nothing otherwise.
+  bool SetMaximizedOrFullscreenBounds(wm::WindowState* window_state);
 
   internal::ShelfLayoutManager* shelf_;
   aura::Window* window_;

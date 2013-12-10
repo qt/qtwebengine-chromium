@@ -40,6 +40,10 @@
           }],
         ],
       }],
+      [ 'OS == "android" and google_tv != 1', {
+        'widevine_cdm_version_h_file%':
+            'android/widevine_cdm_version.h',
+      }],
     ],
   },
   # Always provide a target, so we can put the logic about whether there's

@@ -8,6 +8,7 @@
 
 #include "ash/caps_lock_delegate_stub.h"
 #include "ash/host/root_window_host_factory.h"
+#include "ash/keyboard_controller_proxy_stub.h"
 #include "ash/session_state_delegate.h"
 #include "ash/session_state_delegate_stub.h"
 #include "ash/shell/context_menu.h"
@@ -15,42 +16,13 @@
 #include "ash/shell/launcher_delegate_impl.h"
 #include "ash/shell/toplevel_window.h"
 #include "ash/shell_window_ids.h"
-#include "ash/wm/window_util.h"
+#include "ash/system/tray/default_system_tray_delegate.h"
+#include "ash/wm/window_state.h"
 #include "base/message_loop/message_loop.h"
 #include "ui/aura/window.h"
-#include "ui/keyboard/keyboard_controller_proxy.h"
 #include "ui/views/corewm/input_method_event_filter.h"
 
 namespace ash {
-
-namespace {
-
-class DummyKeyboardControllerProxy : public keyboard::KeyboardControllerProxy {
- public:
-  DummyKeyboardControllerProxy() {}
-  virtual ~DummyKeyboardControllerProxy() {}
-
- private:
-  // Overridden from keyboard::KeyboardControllerProxy:
-  virtual content::BrowserContext* GetBrowserContext() OVERRIDE {
-    return Shell::GetInstance()->browser_context();
-  }
-
-  virtual ui::InputMethod* GetInputMethod() OVERRIDE {
-    return Shell::GetInstance()->input_method_filter()->input_method();
-  }
-
-  virtual void RequestAudioInput(content::WebContents* web_contents,
-      const content::MediaStreamRequest& request,
-      const content::MediaResponseCallback& callback) OVERRIDE {
-    return;
-  }
-
-  DISALLOW_COPY_AND_ASSIGN(DummyKeyboardControllerProxy);
-};
-
-}  // namespace
-
 namespace shell {
 
 ShellDelegateImpl::ShellDelegateImpl()
@@ -109,9 +81,9 @@ void ShellDelegateImpl::ToggleFullscreen() {
 }
 
 void ShellDelegateImpl::ToggleMaximized() {
-  aura::Window* window = ash::wm::GetActiveWindow();
-  if (window)
-    ash::wm::ToggleMaximizedWindow(window);
+  wm::WindowState* window_state = wm::GetActiveWindowState();
+  if (window_state)
+    window_state->ToggleMaximized();
 }
 
 void ShellDelegateImpl::OpenFileManager(bool as_dialog) {
@@ -128,7 +100,7 @@ void ShellDelegateImpl::ShowKeyboardOverlay() {
 
 keyboard::KeyboardControllerProxy*
     ShellDelegateImpl::CreateKeyboardControllerProxy() {
-  return new DummyKeyboardControllerProxy();
+  return new KeyboardControllerProxyStub();
 }
 
 void ShellDelegateImpl::ShowTaskManager() {
@@ -197,7 +169,7 @@ ash::LauncherDelegate* ShellDelegateImpl::CreateLauncherDelegate(
 }
 
 ash::SystemTrayDelegate* ShellDelegateImpl::CreateSystemTrayDelegate() {
-  return NULL;
+  return new DefaultSystemTrayDelegate;
 }
 
 ash::UserWallpaperDelegate* ShellDelegateImpl::CreateUserWallpaperDelegate() {

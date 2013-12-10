@@ -27,13 +27,14 @@ class ASH_EXPORT LauncherButton : public views::CustomButton {
     // Button has mouse hovering on it.
     STATE_HOVERED   = 1 << 0,
     // Underlying LauncherItem has a running instance.
-    //   e.g. A TYPE_TABBED item that has a window.
     STATE_RUNNING   = 1 << 1,
     // Underlying LauncherItem is active (i.e. has focus).
     STATE_ACTIVE    = 1 << 2,
     // Underlying LauncherItem needs user's attention.
     STATE_ATTENTION = 1 << 3,
     STATE_FOCUSED   = 1 << 4,
+    // Hide the status (temporarily for some animations).
+    STATE_HIDDEN = 1 << 5,
   };
 
   virtual ~LauncherButton();
@@ -45,6 +46,9 @@ class ASH_EXPORT LauncherButton : public views::CustomButton {
 
   // Sets the image to display for this entry.
   void SetImage(const gfx::ImageSkia& image);
+
+  // Retrieve the image to show proxy operations.
+  const gfx::ImageSkia& GetImage() const;
 
   // |state| is or'd into the current state.
   void AddState(State state);
@@ -60,6 +64,9 @@ class ASH_EXPORT LauncherButton : public views::CustomButton {
   // Overrides to views::CustomButton:
   virtual void ShowContextMenu(const gfx::Point& p,
                                ui::MenuSourceType source_type) OVERRIDE;
+
+  // View override - needed by unit test.
+  virtual void OnMouseCaptureLost() OVERRIDE;
 
  protected:
   LauncherButton(views::ButtonListener* listener,
@@ -91,7 +98,6 @@ class ASH_EXPORT LauncherButton : public views::CustomButton {
   // View overrides:
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseCaptureLost() OVERRIDE;
   virtual bool OnMouseDragged(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseMoved(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
@@ -124,6 +130,9 @@ class ASH_EXPORT LauncherButton : public views::CustomButton {
   // Updates the parts of the button to reflect the current |state_| and
   // alignment. This may add or remove views, layout and paint.
   void UpdateState();
+
+  // Updates the status bar (bitmap, orientation, visibility).
+  void UpdateBar();
 
   LauncherButtonHost* host_;
   IconView* icon_view_;

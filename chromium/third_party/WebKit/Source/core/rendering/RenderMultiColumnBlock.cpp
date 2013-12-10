@@ -35,7 +35,7 @@ using namespace std;
 namespace WebCore {
 
 RenderMultiColumnBlock::RenderMultiColumnBlock(Element* element)
-    : RenderBlock(element)
+    : RenderBlockFlow(element)
     , m_flowThread(0)
     , m_columnCount(1)
     , m_columnWidth(0)
@@ -139,14 +139,14 @@ bool RenderMultiColumnBlock::relayoutForPagination(bool, LayoutUnit, LayoutState
 void RenderMultiColumnBlock::addChild(RenderObject* newChild, RenderObject* beforeChild)
 {
     if (!m_flowThread) {
-        m_flowThread = RenderMultiColumnFlowThread::createAnonymous(document());
+        m_flowThread = RenderMultiColumnFlowThread::createAnonymous(&document());
         m_flowThread->setStyle(RenderStyle::createAnonymousStyleWithDisplay(style(), BLOCK));
         RenderBlock::addChild(m_flowThread);
     }
     m_flowThread->addChild(newChild, beforeChild);
 }
 
-RenderObject* RenderMultiColumnBlock::layoutSpecialExcludedChild(bool relayoutChildren)
+RenderObject* RenderMultiColumnBlock::layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope& layoutScope)
 {
     if (!m_flowThread)
         return 0;
@@ -170,7 +170,7 @@ RenderObject* RenderMultiColumnBlock::layoutSpecialExcludedChild(bool relayoutCh
         m_flowThread->invalidateRegions();
 
     if (relayoutChildren)
-        m_flowThread->setChildNeedsLayout(MarkOnlyThis);
+        layoutScope.setChildNeedsLayout(m_flowThread);
 
     setLogicalTopForChild(m_flowThread, borderBefore() + paddingBefore());
     m_flowThread->layoutIfNeeded();

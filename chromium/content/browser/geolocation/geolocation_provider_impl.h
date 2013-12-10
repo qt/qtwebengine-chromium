@@ -19,17 +19,13 @@
 template<typename Type> struct DefaultSingletonTraits;
 
 namespace content {
-class GeolocationArbitrator;
-class GeolocationProviderTest;
+class LocationArbitrator;
 
 // This is the main API to the geolocation subsystem. The application will hold
 // a single instance of this class and can register multiple clients to be
 // notified of location changes:
-// * Observers are registered by AddLocationUpdateCallback() and will keep
-//   receiving updates
-//   until unregistered by RemoveLocationUpdateCallback().
-// * Callbacks are registered by RequestCallback() and will be called exactly
-//   once when the next update becomes available.
+// * Callbacks are registered by AddLocationUpdateCallback() and will keep
+//   receiving updates until unregistered by RemoveLocationUpdateCallback().
 // The application must instantiate the GeolocationProvider on the IO thread and
 // must communicate with it on the same thread.
 // The underlying location arbitrator will only be enabled whilst there is at
@@ -53,7 +49,7 @@ class CONTENT_EXPORT GeolocationProviderImpl
   // position to all registered clients.
   void OverrideLocationForTesting(const Geoposition& override_position);
 
-  // Callback from the GeolocationArbitrator. Public for testing.
+  // Callback from the LocationArbitrator. Public for testing.
   void OnLocationUpdate(const Geoposition& position);
 
   // Gets a pointer to the singleton instance of the location relayer, which
@@ -68,7 +64,7 @@ class CONTENT_EXPORT GeolocationProviderImpl
   virtual ~GeolocationProviderImpl();
 
   // Useful for injecting mock geolocation arbitrator in tests.
-  virtual GeolocationArbitrator* CreateArbitrator();
+  virtual LocationArbitrator* CreateArbitrator();
 
  private:
   typedef std::pair<LocationUpdateCallback, bool> LocationUpdateInfo;
@@ -107,7 +103,7 @@ class CONTENT_EXPORT GeolocationProviderImpl
   bool ignore_location_updates_;
 
   // Only to be used on the geolocation thread.
-  GeolocationArbitrator* arbitrator_;
+  LocationArbitrator* arbitrator_;
 
   DISALLOW_COPY_AND_ASSIGN(GeolocationProviderImpl);
 };

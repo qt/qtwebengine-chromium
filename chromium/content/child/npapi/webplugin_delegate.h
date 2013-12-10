@@ -10,12 +10,12 @@
 
 #include "base/strings/string16.h"
 #include "build/build_config.h"
-#include "third_party/WebKit/public/platform/WebCanvas.h"
 #include "third_party/npapi/bindings/npapi.h"
 #include "ui/gfx/native_widget_types.h"
 #include "webkit/common/cursors/webcursor.h"
 
 class GURL;
+class SkCanvas;
 struct NPObject;
 
 namespace WebKit {
@@ -28,7 +28,6 @@ class Rect;
 
 namespace content {
 
-class WebPlugin;
 class WebPluginResourceClient;
 
 // This is the interface that a plugin implementation needs to provide.
@@ -48,7 +47,6 @@ class WebPluginDelegate {
   virtual bool Initialize(const GURL& url,
                           const std::vector<std::string>& arg_names,
                           const std::vector<std::string>& arg_values,
-                          WebPlugin* plugin,
                           bool load_manually) = 0;
 
   // Called when the WebPlugin is being destroyed.  This is a signal to the
@@ -66,7 +64,7 @@ class WebPluginDelegate {
 
   // Tells the plugin to paint the damaged rect.  |canvas| is only used for
   // windowless plugins.
-  virtual void Paint(WebKit::WebCanvas* canvas, const gfx::Rect& rect) = 0;
+  virtual void Paint(SkCanvas* canvas, const gfx::Rect& rect) = 0;
 
   // Informs the plugin that it has gained or lost focus. This is only called in
   // windowless mode.
@@ -129,6 +127,23 @@ class WebPluginDelegate {
   // has become seekable.
   virtual WebPluginResourceClient* CreateSeekableResourceClient(
       unsigned long resource_id, int range_request_id) = 0;
+
+  // Tell the plugin that the given URL should be fetched. This is a result of
+  // loading the plugin data or the plugin calling HandleURLRequest which didn't
+  // end up being routed to another frame or being a javscript:// URL.
+  virtual void FetchURL(unsigned long resource_id,
+                        int notify_id,
+                        const GURL& url,
+                        const GURL& first_party_for_cookies,
+                        const std::string& method,
+                        const char* buf,
+                        unsigned int len,
+                        const GURL& referrer,
+                        bool notify_redirects,
+                        bool is_plugin_src_load,
+                        int origin_pid,
+                        int render_view_id) = 0;
+
 };
 
 }  // namespace content

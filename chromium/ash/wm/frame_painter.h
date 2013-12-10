@@ -6,12 +6,13 @@
 #define ASH_WM_FRAME_PAINTER_H_
 
 #include "ash/ash_export.h"
+#include "ash/wm/window_state.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"  // OVERRIDE
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/aura/window_observer.h"
-#include "ui/base/animation/animation_delegate.h"
+#include "ui/gfx/animation/animation_delegate.h"
 #include "ui/gfx/rect.h"
 
 namespace aura {
@@ -24,25 +25,23 @@ class Font;
 class ImageSkia;
 class Point;
 class Size;
-}
-namespace ui {
 class SlideAnimation;
 }
 namespace views {
-class ImageButton;
 class NonClientFrameView;
-class ToggleImageButton;
 class View;
 class Widget;
 }
 
 namespace ash {
+class FrameCaptionButtonContainerView;
 
 // Helper class for painting window frames.  Exists to share code between
 // various implementations of views::NonClientFrameView.  Canonical source of
 // layout constants for Ash window frames.
 class ASH_EXPORT FramePainter : public aura::WindowObserver,
-                                public ui::AnimationDelegate {
+                                public gfx::AnimationDelegate,
+                                public wm::WindowState::Observer {
  public:
   // Opacity values for the window header in various states, from 0 to 255.
   static int kActiveWindowOpacity;
@@ -71,9 +70,10 @@ class ASH_EXPORT FramePainter : public aura::WindowObserver,
   // |frame| and buttons are used for layout and are not owned.
   void Init(views::Widget* frame,
             views::View* window_icon,
-            views::ImageButton* size_button,
-            views::ImageButton* close_button,
-            SizeButtonBehavior behavior);
+            FrameCaptionButtonContainerView* caption_button_container);
+
+  // Enable/Disable the solo-window transparent header appearance feature.
+  static void SetSoloWindowHeadersEnabled(bool enabled);
 
   // Updates the solo-window transparent header appearance for all windows
   // using frame painters in |root_window|.
@@ -145,8 +145,12 @@ class ASH_EXPORT FramePainter : public aura::WindowObserver,
   virtual void OnWindowAddedToRootWindow(aura::Window* window) OVERRIDE;
   virtual void OnWindowRemovingFromRootWindow(aura::Window* window) OVERRIDE;
 
-  // Overridden from ui::AnimationDelegate
-  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
+  // ash::WindowSettings::Observer overrides:
+  virtual void OnTrackedByWorkspaceChanged(aura::Window* window,
+                                           bool old) OVERRIDE;
+
+  // Overridden from gfx::AnimationDelegate
+  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(FramePainterTest, CreateAndDeleteSingleWindow);
@@ -163,24 +167,12 @@ class ASH_EXPORT FramePainter : public aura::WindowObserver,
   FRIEND_TEST_ALL_PREFIXES(FramePainterTest,
                            NoCrashShutdownWithAlwaysOnTopWindow);
 
-  // Sets the images for a button based on IDs from the |frame_| theme provider.
-  void SetButtonImages(views::ImageButton* button,
-                       int normal_image_id,
-                       int hot_image_id,
-                       int pushed_image_id);
-
-  // Sets the toggled-state button images for a button based on IDs from the
-  // |frame_| theme provider.
-  void SetToggledButtonImages(views::ToggleImageButton* button,
-                              int normal_image_id,
-                              int hot_image_id,
-                              int pushed_image_id);
-
   // Returns the offset between window left edge and title string.
   int GetTitleOffsetX() const;
 
-  // Returns the vertical center of the close button in window coordinates.
-  int GetCloseButtonCenterY() const;
+  // Returns the vertical center of the caption button container in window
+  // coordinates.
+  int GetCaptionButtonContainerCenterY() const;
 
   // Returns the opacity value used to paint the header.
   // |theme_frame_overlay_id| is 0 if no overlay image is used.
@@ -223,12 +215,10 @@ class ASH_EXPORT FramePainter : public aura::WindowObserver,
   // Not owned
   views::Widget* frame_;
   views::View* window_icon_;  // May be NULL.
-  views::ImageButton* size_button_;
-  views::ImageButton* close_button_;
+  FrameCaptionButtonContainerView* caption_button_container_;
   aura::Window* window_;
 
   // Window frame header/caption parts.
-  const gfx::ImageSkia* button_separator_;
   const gfx::ImageSkia* top_left_corner_;
   const gfx::ImageSkia* top_edge_;
   const gfx::ImageSkia* top_right_corner_;
@@ -246,9 +236,7 @@ class ASH_EXPORT FramePainter : public aura::WindowObserver,
   int crossfade_opacity_;
 
   gfx::Rect header_frame_bounds_;
-  scoped_ptr<ui::SlideAnimation> crossfade_animation_;
-
-  SizeButtonBehavior size_button_behavior_;
+  scoped_ptr<gfx::SlideAnimation> crossfade_animation_;
 
   DISALLOW_COPY_AND_ASSIGN(FramePainter);
 };

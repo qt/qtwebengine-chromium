@@ -127,7 +127,8 @@ public:
     // will be treated as before ignoredNode (thus node() is really after the position, not containing it).
     Node* deprecatedNode() const { return m_anchorNode.get(); }
 
-    Document* document() const { return m_anchorNode ? m_anchorNode->document() : 0; }
+    Document* document() const { return m_anchorNode ? &m_anchorNode->document() : 0; }
+    bool inDocument() const { return m_anchorNode && m_anchorNode->inDocument(); }
     Element* rootEditableElement() const
     {
         Node* container = containerNode();
@@ -249,13 +250,13 @@ inline Position positionInParentBeforeNode(const Node* node)
     // At least one caller currently hits this ASSERT though, which indicates
     // that the caller is trying to make a position relative to a disconnected node (which is likely an error)
     // Specifically, editing/deleting/delete-ligature-001.html crashes with ASSERT(node->parentNode())
-    return Position(Position::findParent(node), node->nodeIndex(), Position::PositionIsOffsetInAnchor);
+    return Position(node->parentNode(), node->nodeIndex(), Position::PositionIsOffsetInAnchor);
 }
 
 inline Position positionInParentAfterNode(const Node* node)
 {
-    ASSERT(Position::findParent(node));
-    return Position(Position::findParent(node), node->nodeIndex() + 1, Position::PositionIsOffsetInAnchor);
+    ASSERT(node->parentNode());
+    return Position(node->parentNode(), node->nodeIndex() + 1, Position::PositionIsOffsetInAnchor);
 }
 
 // positionBeforeNode and positionAfterNode return neighbor-anchored positions, construction is O(1)

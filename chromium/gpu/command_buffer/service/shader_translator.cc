@@ -48,6 +48,9 @@ void GetVariableInfo(ShHandle compiler, ShShaderInfo var_type,
     case SH_ACTIVE_UNIFORMS:
       ShGetInfo(compiler, SH_ACTIVE_UNIFORM_MAX_LENGTH, &name_len);
       break;
+    case SH_VARYINGS:
+      ShGetInfo(compiler, SH_VARYING_MAX_LENGTH, &name_len);
+      break;
     default: NOTREACHED();
   }
   ShGetInfo(compiler, SH_MAPPED_NAME_MAX_LENGTH, &mapped_name_len);
@@ -61,18 +64,12 @@ void GetVariableInfo(ShHandle compiler, ShShaderInfo var_type,
     ANGLEGetInfoType len = 0;
     int size = 0;
     ShDataType type = SH_NONE;
+    ShPrecisionType precision = SH_PRECISION_UNDEFINED;
+    int static_use = 0;
 
-    switch (var_type) {
-      case SH_ACTIVE_ATTRIBUTES:
-        ShGetActiveAttrib(
-            compiler, i, &len, &size, &type, name.get(), mapped_name.get());
-        break;
-      case SH_ACTIVE_UNIFORMS:
-        ShGetActiveUniform(
-            compiler, i, &len, &size, &type, name.get(), mapped_name.get());
-        break;
-      default: NOTREACHED();
-    }
+    ShGetVariableInfo(compiler, var_type, i,
+                      &len, &size, &type, &precision, &static_use,
+                      name.get(), mapped_name.get());
 
     // In theory we should CHECK(len <= name_len - 1) here, but ANGLE needs
     // to handle long struct field name mapping before we can do this.
@@ -81,7 +78,8 @@ void GetVariableInfo(ShHandle compiler, ShShaderInfo var_type,
     std::string name_string(name.get(), std::min(len, name_len - 1));
     mapped_name.get()[mapped_name_len - 1] = '\0';
 
-    ShaderTranslator::VariableInfo info(type, size, name_string);
+    ShaderTranslator::VariableInfo info(
+        type, size, precision, static_use, name_string);
     (*var_map)[mapped_name.get()] = info;
   }
 }
@@ -120,7 +118,7 @@ ShaderTranslator::DestructionObserver::~DestructionObserver() {
 ShaderTranslator::ShaderTranslator()
     : compiler_(NULL),
       implementation_is_glsl_es_(false),
-      needs_built_in_function_emulation_(false) {
+      driver_bug_workarounds_(static_cast<ShCompileOptions>(0)) {
 }
 
 bool ShaderTranslator::Init(
@@ -128,8 +126,7 @@ bool ShaderTranslator::Init(
     ShShaderSpec shader_spec,
     const ShBuiltInResources* resources,
     ShaderTranslatorInterface::GlslImplementationType glsl_implementation_type,
-    ShaderTranslatorInterface::GlslBuiltInFunctionBehavior
-        glsl_built_in_function_behavior) {
+    ShCompileOptions driver_bug_workarounds) {
   // Make sure Init is called only once.
   DCHECK(compiler_ == NULL);
   DCHECK(shader_type == SH_FRAGMENT_SHADER || shader_type == SH_VERTEX_SHADER);
@@ -149,21 +146,19 @@ bool ShaderTranslator::Init(
   }
   compiler_options_ = *resources;
   implementation_is_glsl_es_ = (glsl_implementation_type == kGlslES);
-  needs_built_in_function_emulation_ =
-      (glsl_built_in_function_behavior == kGlslBuiltInFunctionEmulated);
+  driver_bug_workarounds_ = driver_bug_workarounds;
   return compiler_ != NULL;
 }
 
 int ShaderTranslator::GetCompileOptions() const {
   int compile_options =
-      SH_OBJECT_CODE | SH_ATTRIBUTES_UNIFORMS |
+      SH_OBJECT_CODE | SH_VARIABLES |
       SH_MAP_LONG_VARIABLE_NAMES | SH_ENFORCE_PACKING_RESTRICTIONS |
       SH_LIMIT_EXPRESSION_COMPLEXITY | SH_LIMIT_CALL_STACK_DEPTH;
 
   compile_options |= SH_CLAMP_INDIRECT_ARRAY_BOUNDS;
 
-  if (needs_built_in_function_emulation_)
-    compile_options |= SH_EMULATE_BUILT_IN_FUNCTIONS;
+  compile_options |= driver_bug_workarounds_;
 
   return compile_options;
 }
@@ -190,6 +185,7 @@ bool ShaderTranslator::Translate(const char* shader) {
     // Get info for attribs and uniforms.
     GetVariableInfo(compiler_, SH_ACTIVE_ATTRIBUTES, &attrib_map_);
     GetVariableInfo(compiler_, SH_ACTIVE_UNIFORMS, &uniform_map_);
+    GetVariableInfo(compiler_, SH_VARYINGS, &varying_map_);
     // Get info for name hashing.
     GetNameHashingInfo(compiler_, &name_map_);
   }
@@ -281,6 +277,11 @@ ShaderTranslator::uniform_map() const {
   return uniform_map_;
 }
 
+const ShaderTranslatorInterface::VariableMap&
+ShaderTranslator::varying_map() const {
+  return varying_map_;
+}
+
 const ShaderTranslatorInterface::NameMap&
 ShaderTranslator::name_map() const {
   return name_map_;
@@ -310,6 +311,7 @@ void ShaderTranslator::ClearResults() {
   info_log_.reset();
   attrib_map_.clear();
   uniform_map_.clear();
+  varying_map_.clear();
   name_map_.clear();
 }
 

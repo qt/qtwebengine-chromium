@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/cancelable_callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "cc/base/cc_export.h"
@@ -20,34 +21,36 @@ namespace cc {
 
 class Thread;
 
-struct ScheduledActionDrawAndSwapResult {
-  ScheduledActionDrawAndSwapResult()
-      : did_draw(false),
-        did_swap(false) {}
-  ScheduledActionDrawAndSwapResult(bool did_draw, bool did_swap)
-      : did_draw(did_draw),
-        did_swap(did_swap) {}
+struct DrawSwapReadbackResult {
+  DrawSwapReadbackResult()
+      : did_draw(false), did_swap(false), did_readback(false) {}
+  DrawSwapReadbackResult(bool did_draw, bool did_swap, bool did_readback)
+      : did_draw(did_draw), did_swap(did_swap), did_readback(did_readback) {}
   bool did_draw;
   bool did_swap;
+  bool did_readback;
 };
 
 class SchedulerClient {
  public:
   virtual void SetNeedsBeginFrameOnImplThread(bool enable) = 0;
   virtual void ScheduledActionSendBeginFrameToMainThread() = 0;
-  virtual ScheduledActionDrawAndSwapResult
-  ScheduledActionDrawAndSwapIfPossible() = 0;
-  virtual ScheduledActionDrawAndSwapResult
-  ScheduledActionDrawAndSwapForced() = 0;
+  virtual DrawSwapReadbackResult ScheduledActionDrawAndSwapIfPossible() = 0;
+  virtual DrawSwapReadbackResult ScheduledActionDrawAndSwapForced() = 0;
+  virtual DrawSwapReadbackResult ScheduledActionDrawAndReadback() = 0;
   virtual void ScheduledActionCommit() = 0;
   virtual void ScheduledActionUpdateVisibleTiles() = 0;
-  virtual void ScheduledActionActivatePendingTreeIfNeeded() = 0;
+  virtual void ScheduledActionActivatePendingTree() = 0;
   virtual void ScheduledActionBeginOutputSurfaceCreation() = 0;
   virtual void ScheduledActionAcquireLayerTexturesForMainThread() = 0;
+  virtual void ScheduledActionManageTiles() = 0;
   virtual void DidAnticipatedDrawTimeChange(base::TimeTicks time) = 0;
   virtual base::TimeDelta DrawDurationEstimate() = 0;
   virtual base::TimeDelta BeginFrameToCommitDurationEstimate() = 0;
   virtual base::TimeDelta CommitToActivateDurationEstimate() = 0;
+  virtual void PostBeginFrameDeadline(const base::Closure& closure,
+                                      base::TimeTicks deadline) = 0;
+  virtual void DidBeginFrameDeadlineOnImplThread() = 0;
 
  protected:
   virtual ~SchedulerClient() {}
@@ -67,23 +70,23 @@ class CC_EXPORT Scheduler {
 
   void SetVisible(bool visible);
   void SetCanDraw(bool can_draw);
-  void SetHasPendingTree(bool has_pending_tree);
+  void NotifyReadyToActivate();
 
   void SetNeedsCommit();
 
   // Like SetNeedsCommit(), but ensures a commit will definitely happen even if
-  // we are not visible.
-  void SetNeedsForcedCommit();
+  // we are not visible. Will eventually result in a forced draw internally.
+  void SetNeedsForcedCommitForReadback();
 
   void SetNeedsRedraw();
 
+  void SetNeedsManageTiles();
+
   void SetMainThreadNeedsLayerTextures();
 
-  // Like SetNeedsRedraw(), but ensures the draw will definitely happen even if
-  // we are not visible.
-  void SetNeedsForcedRedraw();
+  void SetSwapUsedIncompleteTile(bool used_incomplete_tile);
 
-  void DidSwapUseIncompleteTile();
+  void SetSmoothnessTakesPriority(bool smoothness_takes_priority);
 
   void FinishCommit();
   void BeginFrameAbortedByMainThread(bool did_handle);
@@ -96,6 +99,9 @@ class CC_EXPORT Scheduler {
 
   bool CommitPending() const { return state_machine_.CommitPending(); }
   bool RedrawPending() const { return state_machine_.RedrawPending(); }
+  bool ManageTilesPending() const {
+    return state_machine_.ManageTilesPending();
+  }
 
   bool WillDrawIfNeeded() const;
 
@@ -104,16 +110,27 @@ class CC_EXPORT Scheduler {
   base::TimeTicks LastBeginFrameOnImplThreadTime();
 
   void BeginFrame(const BeginFrameArgs& args);
+  void OnBeginFrameDeadline();
+  void PollForAnticipatedDrawTriggers();
 
-  std::string StateAsStringForTesting() { return state_machine_.ToString(); }
+  scoped_ptr<base::Value> StateAsValue() {
+    return state_machine_.AsValue().Pass();
+  }
+
+  bool IsInsideAction(SchedulerStateMachine::Action action) {
+    return inside_action_ == action;
+  }
 
  private:
   Scheduler(SchedulerClient* client,
             const SchedulerSettings& scheduler_settings);
 
+  void PostBeginFrameDeadline(base::TimeTicks deadline);
   void SetupNextBeginFrameIfNeeded();
+  void ActivatePendingTree();
   void DrawAndSwapIfPossible();
   void DrawAndSwapForced();
+  void DrawAndReadback();
   void ProcessScheduledActions();
 
   const SchedulerSettings settings_;
@@ -121,14 +138,13 @@ class CC_EXPORT Scheduler {
 
   base::WeakPtrFactory<Scheduler> weak_factory_;
   bool last_set_needs_begin_frame_;
-  bool has_pending_begin_frame_;
-  // TODO(brianderson): crbug.com/249806 : Remove safe_to_expect_begin_frame_
-  // workaround.
-  bool safe_to_expect_begin_frame_;
   BeginFrameArgs last_begin_frame_args_;
+  base::CancelableClosure begin_frame_deadline_closure_;
+  base::CancelableClosure poll_for_draw_triggers_closure_;
 
   SchedulerStateMachine state_machine_;
   bool inside_process_scheduled_actions_;
+  SchedulerStateMachine::Action inside_action_;
 
   DISALLOW_COPY_AND_ASSIGN(Scheduler);
 };

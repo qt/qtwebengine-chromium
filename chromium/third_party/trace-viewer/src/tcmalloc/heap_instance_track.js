@@ -7,31 +7,30 @@
 base.requireStylesheet('tcmalloc.heap_instance_track');
 
 base.require('base.sorted_array_utils');
-base.require('tracing.tracks.heading_track');
+base.require('tracing.tracks.stacked_bars_track');
 base.require('tracing.tracks.object_instance_track');
 base.require('tracing.color_scheme');
 base.require('ui');
 
 base.exportTo('tcmalloc', function() {
 
-  var palette = tracing.getColorPalette();
-  var highlightIdBoost = tracing.getColorPaletteHighlightIdBoost();
+  var EventPresenter = tracing.EventPresenter;
 
   /**
    * A track that displays heap memory data.
    * @constructor
-   * @extends {HeadingTrack}
+   * @extends {StackedBarsTrack}
    */
 
   var HeapInstanceTrack = ui.define(
-      'heap-instance-track', tracing.tracks.HeadingTrack);
+      'heap-instance-track', tracing.tracks.StackedBarsTrack);
 
   HeapInstanceTrack.prototype = {
 
-    __proto__: tracing.tracks.HeadingTrack.prototype,
+    __proto__: tracing.tracks.StackedBarsTrack.prototype,
 
     decorate: function(viewport) {
-      tracing.tracks.HeadingTrack.prototype.decorate.call(this, viewport);
+      tracing.tracks.StackedBarsTrack.prototype.decorate.call(this, viewport);
       this.classList.add('heap-instance-track');
       this.objectInstance_ = null;
     },
@@ -90,7 +89,7 @@ base.exportTo('tcmalloc', function() {
       var height = bounds.height * pixelRatio;
 
       // Culling parameters.
-      var vp = this.viewport;
+      var dt = this.viewport.currentDisplayTransform;
 
       // Scale by the size of the largest snapshot.
       var maxBytes = this.maxBytes_;
@@ -112,17 +111,26 @@ base.exportTo('tcmalloc', function() {
         var left = snapshot.ts;
         if (left > viewRWorld)
           break;
-        var leftView = vp.xWorldToView(left);
+        var leftView = dt.xWorldToView(left);
         if (leftView < 0)
           leftView = 0;
 
         // Compute the edges for the column graph bar.
         var right;
-        if (i < objectSnapshots.length - 1)
+        if (i != objectSnapshots.length - 1) {
           right = objectSnapshots[i + 1].ts;
-        else
-          right = objectSnapshots[objectSnapshots.length - 1].ts + 5000;
-        var rightView = vp.xWorldToView(right);
+        } else {
+          // If this is the last snaphot of multiple snapshots, use the width of
+          // the previous snapshot for the width.
+          if (objectSnapshots.length > 1)
+            right = objectSnapshots[i].ts + (objectSnapshots[i].ts -
+                    objectSnapshots[i - 1].ts);
+          else
+            // If there's only one snapshot, use max bounds as the width.
+            right = this.objectInstance_.parent.model.bounds.max;
+        }
+
+        var rightView = dt.xWorldToView(right);
         if (rightView > width)
           rightView = width;
 
@@ -142,13 +150,8 @@ base.exportTo('tcmalloc', function() {
               this.objectInstance_.selectedTraces[0] == keys[k]) {
             // A trace selected in the analysis view is bright yellow.
             ctx.fillStyle = 'rgb(239, 248, 206)';
-          } else {
-            // Selected snapshots get a lighter color.
-            var colorId = snapshot.selected ?
-                snapshot.objectInstance.colorId + highlightIdBoost :
-                snapshot.objectInstance.colorId;
-            ctx.fillStyle = palette[colorId + k];
-          }
+          } else
+            ctx.fillStyle = EventPresenter.getBarSnapshotColor(snapshot, k);
 
           var barHeight = height * trace.currentBytes / maxBytes;
           ctx.fillRect(leftView, currentY - barHeight,
@@ -157,59 +160,6 @@ base.exportTo('tcmalloc', function() {
         }
       }
       ctx.lineWidth = 1;
-    },
-
-    memoizeSlices_: function() {
-      var vp = this.viewport_;
-      var objectSnapshots = this.objectInstance_.snapshots;
-      objectSnapshots.forEach(function(obj) {
-        vp.sliceMemoization(obj, this);
-      }.bind(this));
-    },
-
-    /**
-     * Used to hit-test clicks in the graph.
-     */
-    addIntersectingItemsInRangeToSelectionInWorldSpace: function(
-        loWX, hiWX, viewPixWidthWorld, selection) {
-      var that = this;
-      function onSnapshotHit(snapshot) {
-        selection.addObjectSnapshot(that, snapshot);
-      }
-      base.iterateOverIntersectingIntervals(
-          this.objectInstance_.snapshots,
-          function(x) { return x.ts; },
-          function(x) { return 5000; },
-          loWX, hiWX,
-          onSnapshotHit);
-    },
-
-    /**
-     * Add the item to the left or right of the provided hit, if any, to the
-     * selection.
-     * @param {slice} The current slice.
-     * @param {Number} offset Number of slices away from the hit to look.
-     * @param {Selection} selection The selection to add a hit to,
-     * if found.
-     * @return {boolean} Whether a hit was found.
-     * @private
-     */
-    addItemNearToProvidedHitToSelection: function(hit, offset, selection) {
-      if (hit instanceof tracing.SelectionObjectSnapshotHit) {
-        var objectSnapshots = this.objectInstance_.snapshots;
-        var index = objectSnapshots.indexOf(hit.objectSnapshot);
-        var newIndex = index + offset;
-        if (newIndex >= 0 && newIndex < objectSnapshots.length) {
-          selection.addObjectSnapshot(this, objectSnapshots[newIndex]);
-          return true;
-        }
-      } else {
-        throw new Error('Unrecognized hit');
-      }
-      return false;
-    },
-
-    addAllObjectsMatchingFilterToSelection: function(filter, selection) {
     }
   };
 

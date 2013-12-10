@@ -16,7 +16,6 @@
 #include "content/browser/indexed_db/indexed_db_callbacks.h"
 #include "content/browser/indexed_db/indexed_db_database.h"
 #include "content/browser/indexed_db/indexed_db_database_callbacks.h"
-#include "content/browser/indexed_db/indexed_db_factory.h"
 #include "content/common/content_export.h"
 
 namespace content {
@@ -57,15 +56,16 @@ class CONTENT_EXPORT IndexedDBFactory
 
   virtual ~IndexedDBFactory();
 
-  scoped_refptr<IndexedDBBackingStore> OpenBackingStore(
+  virtual scoped_refptr<IndexedDBBackingStore> OpenBackingStore(
       const std::string& origin_identifier,
       const base::FilePath& data_directory,
-      WebKit::WebIDBCallbacks::DataLoss* data_loss);
+      WebKit::WebIDBCallbacks::DataLoss* data_loss,
+      bool* disk_full);
 
  private:
   typedef std::map<IndexedDBDatabase::Identifier,
                    scoped_refptr<IndexedDBDatabase> > IndexedDBDatabaseMap;
-  IndexedDBDatabaseMap database_backend_map_;
+  IndexedDBDatabaseMap database_map_;
 
   typedef std::map<std::string, base::WeakPtr<IndexedDBBackingStore> >
       IndexedDBBackingStoreMap;

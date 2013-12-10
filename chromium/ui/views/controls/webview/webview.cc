@@ -4,6 +4,7 @@
 
 #include "ui/views/controls/webview/webview.h"
 
+#include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_details.h"
@@ -17,7 +18,7 @@
 #include "ipc/ipc_message.h"
 #include "ui/base/accessibility/accessibility_types.h"
 #include "ui/base/accessibility/accessible_view_state.h"
-#include "ui/base/events/event.h"
+#include "ui/events/event.h"
 #include "ui/views/accessibility/native_view_accessibility.h"
 #include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/focus/focus_manager.h"
@@ -34,6 +35,8 @@ const char WebView::kViewClassName[] = "WebView";
 WebView::WebView(content::BrowserContext* browser_context)
     : wcv_holder_(new NativeViewHost),
       web_contents_(NULL),
+      embed_fullscreen_widget_mode_enabled_(false),
+      is_embedding_fullscreen_widget_(false),
       browser_context_(browser_context),
       allow_accelerators_(false) {
   AddChildView(wcv_holder_);
@@ -63,9 +66,33 @@ void WebView::SetWebContents(content::WebContents* web_contents) {
   if (web_contents == web_contents_)
     return;
   DetachWebContents();
-  wc_owner_.reset();
+  if (wc_owner_ != web_contents)
+    wc_owner_.reset();
   web_contents_ = web_contents;
+  if (embed_fullscreen_widget_mode_enabled_) {
+    WebContentsObserver::Observe(web_contents_);
+    is_embedding_fullscreen_widget_ =
+        web_contents_ && web_contents_->GetFullscreenRenderWidgetHostView();
+  } else {
+    is_embedding_fullscreen_widget_ = false;
+  }
   AttachWebContents();
+}
+
+void WebView::SetEmbedFullscreenWidgetMode(bool enable) {
+  bool should_be_embedded = enable;
+  if (!embed_fullscreen_widget_mode_enabled_ && enable) {
+    DCHECK(!is_embedding_fullscreen_widget_);
+    embed_fullscreen_widget_mode_enabled_ = true;
+    WebContentsObserver::Observe(web_contents_);
+    should_be_embedded =
+        web_contents_ && web_contents_->GetFullscreenRenderWidgetHostView();
+  } else if (embed_fullscreen_widget_mode_enabled_ && !enable) {
+    embed_fullscreen_widget_mode_enabled_ = false;
+    WebContentsObserver::Observe(NULL);
+  }
+  if (should_be_embedded != is_embedding_fullscreen_widget_)
+    ReattachForFullscreenChange(should_be_embedded);
 }
 
 void WebView::LoadInitialURL(const GURL& url) {
@@ -125,8 +152,16 @@ bool WebView::IsFocusable() const {
 }
 
 void WebView::OnFocus() {
-  if (web_contents_)
+  if (!web_contents_)
+    return;
+  if (is_embedding_fullscreen_widget_) {
+    content::RenderWidgetHostView* const current_fs_view =
+        web_contents_->GetFullscreenRenderWidgetHostView();
+    if (current_fs_view)
+      current_fs_view->Focus();
+  } else {
     web_contents_->GetView()->Focus();
+  }
 }
 
 void WebView::AboutToRequestFocusFromTabTraversal(bool reverse) {
@@ -162,15 +197,13 @@ void WebView::Observe(int type,
                       const content::NotificationSource& source,
                       const content::NotificationDetails& details) {
   if (type == content::NOTIFICATION_RENDER_VIEW_HOST_CHANGED) {
-    std::pair<content::RenderViewHost*, content::RenderViewHost*>*
-        switched_details =
-            content::Details<std::pair<content::RenderViewHost*,
-                                       content::RenderViewHost*> >(
-                details).ptr();
-    RenderViewHostChanged(switched_details->first,
-                          switched_details->second);
+    FocusManager* const focus_manager = GetFocusManager();
+    if (focus_manager && focus_manager->GetFocusedView() == this)
+      OnFocus();
   } else if (type == content::NOTIFICATION_WEB_CONTENTS_DESTROYED) {
-    WebContentsDestroyed(content::Source<content::WebContents>(source).ptr());
+    DCHECK(content::Source<content::WebContents>(source).ptr() ==
+               web_contents_);
+    SetWebContents(NULL);
   } else {
     NOTREACHED();
   }
@@ -185,26 +218,22 @@ void WebView::WebContentsFocused(content::WebContents* web_contents) {
   OnWebContentsFocused(web_contents_);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// WebView, AccessibleWebView implementation:
-
-gfx::NativeViewAccessible WebView::AccessibleObjectFromChildId(long child_id) {
-#if defined(OS_WIN) && defined(USE_AURA)
-  if (!web_contents_)
-    return NULL;
-  content::RenderWidgetHostView* host_view =
-      web_contents_->GetRenderWidgetHostView();
-  if (host_view)
-    return host_view->AccessibleObjectFromChildId(child_id);
-  return NULL;
-#else
-  NOTIMPLEMENTED();
-  return NULL;
-#endif
+bool WebView::EmbedsFullscreenWidget() const {
+  DCHECK(wc_owner_.get());
+  return embed_fullscreen_widget_mode_enabled_;
 }
 
-View* WebView::AsView() {
-  return this;
+////////////////////////////////////////////////////////////////////////////////
+// WebView, content::WebContentsObserver implementation:
+
+void WebView::DidShowFullscreenWidget(int routing_id) {
+  DCHECK(embed_fullscreen_widget_mode_enabled_);
+  ReattachForFullscreenChange(true);
+}
+
+void WebView::DidDestroyFullscreenWidget(int routing_id) {
+  DCHECK(embed_fullscreen_widget_mode_enabled_);
+  ReattachForFullscreenChange(false);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -213,66 +242,69 @@ View* WebView::AsView() {
 void WebView::AttachWebContents() {
   // Prevents attachment if the WebView isn't already in a Widget, or it's
   // already attached.
-  if (!GetWidget() || !web_contents_ ||
-      wcv_holder_->native_view() == web_contents_->GetView()->GetNativeView()) {
+  if (!GetWidget() || !web_contents_)
     return;
-  }
 
-  if (web_contents_) {
-    wcv_holder_->Attach(web_contents_->GetView()->GetNativeView());
+  const gfx::NativeView view_to_attach = is_embedding_fullscreen_widget_ ?
+      web_contents_->GetFullscreenRenderWidgetHostView()->GetNativeView() :
+      web_contents_->GetView()->GetNativeView();
+  if (wcv_holder_->native_view() == view_to_attach)
+    return;
+  wcv_holder_->Attach(view_to_attach);
 
-    // The WebContentsView will not be focused automatically when it is
-    // attached, so we need to pass on focus to it if the FocusManager thinks
-    // the WebView is focused. Note that not every Widget has a focus manager.
-    FocusManager* focus_manager = GetFocusManager();
-    if (focus_manager && focus_manager->GetFocusedView() == this)
-      web_contents_->GetView()->Focus();
+  // The view will not be focused automatically when it is attached, so we need
+  // to pass on focus to it if the FocusManager thinks the view is focused. Note
+  // that not every Widget has a focus manager.
+  FocusManager* const focus_manager = GetFocusManager();
+  if (focus_manager && focus_manager->GetFocusedView() == this)
+    OnFocus();
 
-    registrar_.Add(
-        this,
-        content::NOTIFICATION_RENDER_VIEW_HOST_CHANGED,
-        content::Source<content::NavigationController>(
-            &web_contents_->GetController()));
-    registrar_.Add(
-        this,
-        content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-        content::Source<content::WebContents>(web_contents_));
-  }
+  registrar_.Add(
+      this,
+      content::NOTIFICATION_RENDER_VIEW_HOST_CHANGED,
+      content::Source<content::NavigationController>(
+          &web_contents_->GetController()));
+  registrar_.Add(
+      this,
+      content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
+      content::Source<content::WebContents>(web_contents_));
 
 #if defined(OS_WIN) && defined(USE_AURA)
-  web_contents_->SetParentNativeViewAccessible(
-      parent()->GetNativeViewAccessible());
+  if (!is_embedding_fullscreen_widget_) {
+    web_contents_->SetParentNativeViewAccessible(
+        parent()->GetNativeViewAccessible());
+  }
 #endif
 }
 
 void WebView::DetachWebContents() {
   if (web_contents_) {
     wcv_holder_->Detach();
-#if defined(OS_WIN) && !defined(USE_AURA)
-    // TODO(beng): This should either not be necessary, or be done implicitly by
-    // NativeViewHostWin on Detach(). As it stands, this is needed so that the
-    // view of the detached contents knows to tell the renderer it's been
-    // hidden.
-    //
-    // Moving this out of here would also mean we wouldn't be potentially
-    // calling member functions on a half-destroyed WebContents.
-    ShowWindow(web_contents_->GetView()->GetNativeView(), SW_HIDE);
-#elif defined(OS_WIN) && defined(USE_AURA)
-    web_contents_->SetParentNativeViewAccessible(NULL);
+#if defined(OS_WIN)
+    if (!is_embedding_fullscreen_widget_) {
+#if !defined(USE_AURA)
+      // TODO(beng): This should either not be necessary, or be done implicitly
+      // by NativeViewHostWin on Detach(). As it stands, this is needed so that
+      // the of the detached contents knows to tell the renderer it's been
+      // hidden.
+      //
+      // Moving this out of here would also mean we wouldn't be potentially
+      // calling member functions on a half-destroyed WebContents.
+      ShowWindow(web_contents_->GetView()->GetNativeView(), SW_HIDE);
+#else
+      web_contents_->SetParentNativeViewAccessible(NULL);
+#endif
+    }
 #endif
   }
   registrar_.RemoveAll();
 }
 
-void WebView::RenderViewHostChanged(content::RenderViewHost* old_host,
-                                    content::RenderViewHost* new_host) {
-  if (GetFocusManager()->GetFocusedView() == this)
-    web_contents_->GetView()->Focus();
-}
-
-void WebView::WebContentsDestroyed(content::WebContents* web_contents) {
-  DCHECK(web_contents == web_contents_);
-  SetWebContents(NULL);
+void WebView::ReattachForFullscreenChange(bool enter_fullscreen) {
+  DetachWebContents();
+  is_embedding_fullscreen_widget_ = enter_fullscreen &&
+      web_contents_ && web_contents_->GetFullscreenRenderWidgetHostView();
+  AttachWebContents();
 }
 
 content::WebContents* WebView::CreateWebContents(

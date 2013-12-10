@@ -2,12 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 import logging
-import os
-import sys
 import unittest
 
 from telemetry.core import browser_options
 from telemetry.core import discover
+from telemetry.core import util
 from telemetry.unittest import gtest_testrunner
 from telemetry.unittest import options_for_unittests
 
@@ -81,14 +80,28 @@ def DiscoverAndRunTests(
   return test_result
 
 
+def RestoreLoggingLevel(func):
+  def _LoggingRestoreWrapper(*args, **kwargs):
+    # Cache the current logging level, this needs to be done before calling
+    # parser.parse_args, which changes logging level based on verbosity
+    # setting.
+    logging_level = logging.getLogger().getEffectiveLevel()
+    try:
+      return func(*args, **kwargs)
+    finally:
+      # Restore logging level, which may be changed in parser.parse_args.
+      logging.getLogger().setLevel(logging_level)
+
+  return _LoggingRestoreWrapper
+
+
+@RestoreLoggingLevel
 def Main(args, start_dir, top_level_dir, runner=None):
   """Unit test suite that collects all test cases for telemetry."""
   # Add unittest_data to the path so we can import packages from it.
-  unittest_data_dir = os.path.abspath(os.path.join(
-        os.path.dirname(__file__), '..', '..', 'unittest_data'))
-  sys.path.append(unittest_data_dir)
+  util.AddDirToPythonPath(util.GetUnittestDataDir())
 
-  default_options = browser_options.BrowserOptions()
+  default_options = browser_options.BrowserFinderOptions()
   default_options.browser_type = 'any'
 
   parser = default_options.CreateParser('run_tests [options] [test names]')
@@ -102,7 +115,6 @@ def Main(args, start_dir, top_level_dir, runner=None):
 
   _, args = parser.parse_args(args)
 
-  logging_level = logging.getLogger().getEffectiveLevel()
   if default_options.verbosity == 0:
     logging.getLogger().setLevel(logging.WARN)
 
@@ -121,9 +133,7 @@ def Main(args, start_dir, top_level_dir, runner=None):
 
   options_for_unittests.Set(default_options,
                             browser_to_create.browser_type)
-  olddir = os.getcwd()
   try:
-    os.chdir(top_level_dir)
     success = True
     for _ in range(
         default_options.run_test_repeat_count): # pylint: disable=E1101
@@ -133,10 +143,6 @@ def Main(args, start_dir, top_level_dir, runner=None):
     if success:
       return 0
   finally:
-    os.chdir(olddir)
     options_for_unittests.Set(None, None)
-    if default_options.verbosity == 0:
-      # Restore logging level.
-      logging.getLogger().setLevel(logging_level)
 
   return 1

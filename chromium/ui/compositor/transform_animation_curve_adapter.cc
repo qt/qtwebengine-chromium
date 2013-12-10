@@ -7,7 +7,7 @@
 namespace ui {
 
 TransformAnimationCurveAdapter::TransformAnimationCurveAdapter(
-    Tween::Type tween_type,
+    gfx::Tween::Type tween_type,
     gfx::Transform initial_value,
     gfx::Transform target_value,
     base::TimeDelta duration)
@@ -47,8 +47,67 @@ gfx::Transform TransformAnimationCurveAdapter::GetValue(
   gfx::BlendDecomposedTransforms(&to_return,
                                  decomposed_target_value_,
                                  decomposed_initial_value_,
-                                 Tween::CalculateValue(tween_type_, progress));
+                                 gfx::Tween::CalculateValue(tween_type_,
+                                                            progress));
   return gfx::ComposeTransform(to_return);
+}
+
+bool TransformAnimationCurveAdapter::AnimatedBoundsForBox(
+    const gfx::BoxF& box,
+    gfx::BoxF* bounds) const {
+  // TODO(ajuma): Once cc::TransformOperation::BlendedBoundsForBox supports
+  // computing bounds for TransformOperationMatrix, use that to compute
+  // the bounds we need here.
+  return false;
+}
+
+InverseTransformCurveAdapter::InverseTransformCurveAdapter(
+    TransformAnimationCurveAdapter base_curve,
+    gfx::Transform initial_value,
+    base::TimeDelta duration)
+    : base_curve_(base_curve),
+      initial_value_(initial_value),
+      duration_(duration) {
+  effective_initial_value_ = base_curve_.GetValue(0.0) * initial_value_;
+}
+
+InverseTransformCurveAdapter::~InverseTransformCurveAdapter() {
+}
+
+double InverseTransformCurveAdapter::Duration() const {
+  return duration_.InSeconds();
+}
+
+scoped_ptr<cc::AnimationCurve> InverseTransformCurveAdapter::Clone() const {
+  scoped_ptr<InverseTransformCurveAdapter> to_return(
+      new InverseTransformCurveAdapter(base_curve_,
+                                       initial_value_,
+                                       duration_));
+  return to_return.PassAs<cc::AnimationCurve>();
+}
+
+gfx::Transform InverseTransformCurveAdapter::GetValue(
+    double t) const {
+  if (t <= 0.0)
+    return initial_value_;
+
+  gfx::Transform base_transform = base_curve_.GetValue(t);
+  // Invert base
+  gfx::Transform to_return(gfx::Transform::kSkipInitialization);
+  bool is_invertible = base_transform.GetInverse(&to_return);
+  DCHECK(is_invertible);
+
+  to_return.PreconcatTransform(effective_initial_value_);
+  return to_return;
+}
+
+bool InverseTransformCurveAdapter::AnimatedBoundsForBox(
+    const gfx::BoxF& box,
+    gfx::BoxF* bounds) const {
+  // TODO(ajuma): Once cc::TransformOperation::BlendedBoundsForBox supports
+  // computing bounds for TransformOperationMatrix, use that to compute
+  // the bounds we need here.
+  return false;
 }
 
 }  // namespace ui

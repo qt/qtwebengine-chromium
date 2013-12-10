@@ -11,6 +11,7 @@ from measurements import blink_perf
 
 
 class BlinkPerfAll(test.Test):
+  tag = 'all'
   test = blink_perf.BlinkPerf
 
   def CreatePageSet(self, options):

@@ -11,9 +11,14 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/shared_memory.h"
 #include "content/common/gpu/gpu_command_buffer_stub.h"
+#include "content/common/gpu/media/video_decode_accelerator_impl.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "media/video/video_decode_accelerator.h"
+
+namespace base {
+class MessageLoopProxy;
+}
 
 namespace content {
 
@@ -26,7 +31,10 @@ class GpuVideoDecodeAccelerator
   // Each of the arguments to the constructor must outlive this object.
   // |stub->decoder()| will be made current around any operation that touches
   // the underlying VDA so that it can make GL calls safely.
-  GpuVideoDecodeAccelerator(int32 host_route_id, GpuCommandBufferStub* stub);
+  GpuVideoDecodeAccelerator(
+      int32 host_route_id,
+      GpuCommandBufferStub* stub,
+      const scoped_refptr<base::MessageLoopProxy>& io_message_loop);
   virtual ~GpuVideoDecodeAccelerator();
 
   // IPC::Listener implementation.
@@ -58,6 +66,8 @@ class GpuVideoDecodeAccelerator
                   IPC::Message* init_done_msg);
 
  private:
+  class MessageFilter;
+
   // Handlers for IPC messages.
   void OnDecode(base::SharedMemoryHandle handle, int32 id, uint32 size);
   void OnAssignPictureBuffers(
@@ -69,6 +79,9 @@ class GpuVideoDecodeAccelerator
   void OnFlush();
   void OnReset();
   void OnDestroy();
+
+  // Called on IO thread when |filter_| has been removed.
+  void OnFilterRemoved();
 
   // Message to Send() when initialization is done.  Is only non-NULL during
   // initialization and is owned by the IPC channel underlying the
@@ -82,7 +95,7 @@ class GpuVideoDecodeAccelerator
   GpuCommandBufferStub* stub_;
 
   // The underlying VideoDecodeAccelerator.
-  scoped_ptr<media::VideoDecodeAccelerator> video_decode_accelerator_;
+  scoped_ptr<VideoDecodeAcceleratorImpl> video_decode_accelerator_;
 
   // Callback for making the relevant context current for GL calls.
   // Returns false if failed.
@@ -90,6 +103,18 @@ class GpuVideoDecodeAccelerator
 
   // The texture target as requested by ProvidePictureBuffers().
   uint32 texture_target_;
+
+  // The message filter to run VDA::Decode on IO thread if VDA supports it.
+  scoped_refptr<MessageFilter> filter_;
+
+  // GPU child message loop.
+  scoped_refptr<base::MessageLoopProxy> child_message_loop_;
+
+  // GPU IO message loop.
+  scoped_refptr<base::MessageLoopProxy> io_message_loop_;
+
+  // Weak pointers will be invalidated on IO thread.
+  base::WeakPtrFactory<Client> weak_factory_for_io_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(GpuVideoDecodeAccelerator);
 };

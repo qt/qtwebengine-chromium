@@ -9,6 +9,9 @@
  */
 base.require('tracing.trace_model.process_base');
 base.exportTo('tracing.trace_model', function() {
+
+  var ProcessBase = tracing.trace_model.ProcessBase;
+
   /**
    * The Process represents a single userland process in the
    * trace.
@@ -62,7 +65,7 @@ base.exportTo('tracing.trace_model', function() {
     get userFriendlyName() {
       var res;
       if (this.name)
-        res = this.name;
+        res = this.name + ' (pid ' + this.pid + ')';
       else
         res = 'Process ' + this.pid;
       if (this.labels.length)
@@ -90,6 +93,12 @@ base.exportTo('tracing.trace_model', function() {
 
       tracing.trace_model.ProcessBase.prototype
           .shiftTimestampsForward.apply(this, arguments);
+    },
+
+    iterateAllEvents: function(callback) {
+      this.instantEvents.forEach(callback);
+
+      ProcessBase.prototype.iterateAllEvents.call(this, callback);
     }
   };
 

@@ -21,8 +21,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-//#define DEBUG
-
 #include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
 #include "avcodec.h"
@@ -461,6 +459,7 @@ static int gif_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, A
 
     if (s->keyframe) {
         s->keyframe_ok = 0;
+        s->gce_prev_disposal = GCE_DISPOSAL_NONE;
         if ((ret = gif_read_header1(s)) < 0)
             return ret;
 
@@ -533,6 +532,7 @@ static const AVClass decoder_class = {
 
 AVCodec ff_gif_decoder = {
     .name           = "gif",
+    .long_name      = NULL_IF_CONFIG_SMALL("GIF (Graphics Interchange Format)"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_GIF,
     .priv_data_size = sizeof(GifState),
@@ -540,6 +540,5 @@ AVCodec ff_gif_decoder = {
     .close          = gif_decode_close,
     .decode         = gif_decode_frame,
     .capabilities   = CODEC_CAP_DR1,
-    .long_name      = NULL_IF_CONFIG_SMALL("GIF (Graphics Interchange Format)"),
     .priv_class     = &decoder_class,
 };

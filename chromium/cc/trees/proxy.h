@@ -69,6 +69,7 @@ class CC_EXPORT Proxy {
   virtual void SetNeedsUpdateLayers() = 0;
   virtual void SetNeedsCommit() = 0;
   virtual void SetNeedsRedraw(gfx::Rect damage_rect) = 0;
+  virtual void SetNextCommitWaitsForActivation() = 0;
 
   virtual void NotifyInputThrottledUntilCommit() = 0;
 
@@ -98,7 +99,7 @@ class CC_EXPORT Proxy {
 
   // Testing hooks
   virtual bool CommitPendingForTesting() = 0;
-  virtual std::string SchedulerStateAsStringForTesting();
+  virtual scoped_ptr<base::Value> SchedulerStateAsValueForTesting();
 
  protected:
   explicit Proxy(

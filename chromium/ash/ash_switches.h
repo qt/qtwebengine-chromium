@@ -26,17 +26,16 @@ ASH_EXPORT extern const char kAshDefaultGuestWallpaperLarge[];
 ASH_EXPORT extern const char kAshDefaultGuestWallpaperSmall[];
 ASH_EXPORT extern const char kAshDefaultWallpaperLarge[];
 ASH_EXPORT extern const char kAshDefaultWallpaperSmall[];
+ASH_EXPORT extern const char kAshDisableAlternateShelfLayout[];
 #if defined(OS_CHROMEOS)
 ASH_EXPORT extern const char kAshDisableAudioDeviceMenu[];
 #endif
+ASH_EXPORT extern const char kAshDisableAlternateFrameCaptionButtonStyle[];
 ASH_EXPORT extern const char kAshDisableAutoMaximizing[];
-ASH_EXPORT extern const char kAshDisableAutoWindowPlacement[];
 ASH_EXPORT extern const char kAshDisableDisplayChangeLimiter[];
+ASH_EXPORT extern const char kAshDisableDragOffShelf[];
 ASH_EXPORT extern const char kAshDisableImmersiveFullscreen[];
 ASH_EXPORT extern const char kAshDisableNewLockAnimations[];
-ASH_EXPORT extern const char kAshDisablePerAppLauncher[];
-ASH_EXPORT extern const char kAshDisableUIScaling[];
-ASH_EXPORT extern const char kAshDisableDisplayRotation[];
 ASH_EXPORT extern const char kAshDisableDragAndDropAppListToLauncher[];
 #if defined(OS_CHROMEOS)
 ASH_EXPORT extern const char kAshDisableSoftwareMirroring[];
@@ -44,14 +43,19 @@ ASH_EXPORT extern const char kAshDisableUsbChargerNotification[];
 ASH_EXPORT extern const char kAshEnableAudioDeviceMenu[];
 #endif
 ASH_EXPORT extern const char kAshEnableAdvancedGestures[];
+ASH_EXPORT extern const char kAshEnableAlternateFrameCaptionButtonStyle[];
 ASH_EXPORT extern const char kAshEnableBrightnessControl[];
 ASH_EXPORT extern const char kAshEnableDockedWindows[];
+ASH_EXPORT extern const char kAshEnableImmersiveFullscreen[];
+ASH_EXPORT extern const char kAshEnableOverviewMode[];
 #if defined(OS_LINUX)
 ASH_EXPORT extern const char kAshEnableMemoryMonitor[];
 #endif
-ASH_EXPORT extern const char kAshEnableImmersiveFullscreen[];
+#if defined(OS_CHROMEOS)
+ASH_EXPORT extern const char kAshEnableMultiProfileShelfMenu[];
+#endif
 ASH_EXPORT extern const char kAshEnableOak[];
-ASH_EXPORT extern const char kAshEnableOverviewMode[];
+ASH_EXPORT extern const char kAshEnableSoftwareMirroring[];
 ASH_EXPORT extern const char kAshEnableStickyEdges[];
 ASH_EXPORT extern const char kAshEnableTrayDragging[];
 ASH_EXPORT extern const char kAshForceMirrorMode[];
@@ -68,8 +72,24 @@ ASH_EXPORT extern const char kForceAshToDesktop[];
 #endif
 ASH_EXPORT extern const char kForcedMaximizeMode[];
 
+ASH_EXPORT extern const char kShowShelfAlignmentMenu[];
+ASH_EXPORT extern const char kHideShelfAlignmentMenu[];
+
+// Returns true if the alternate visual style for the caption buttons (minimize,
+// maximize, restore, close) should be used.
+ASH_EXPORT bool UseAlternateFrameCaptionButtonStyle();
+
 // Returns true if the alternate shelf layout should be used.
 ASH_EXPORT bool UseAlternateShelfLayout();
+
+// Returns true if items can be dragged off the shelf to unpin.
+ASH_EXPORT bool UseDragOffShelf();
+
+// Returns true if side shelf alignment is enabled.
+ASH_EXPORT bool ShowShelfAlignmentMenu();
+
+// Returns true if the MultiProfile shelf menu should be shown.
+ASH_EXPORT bool ShowMultiProfileShelfMenu();
 
 #if defined(OS_CHROMEOS)
 // Returns true if new audio handler should be used.

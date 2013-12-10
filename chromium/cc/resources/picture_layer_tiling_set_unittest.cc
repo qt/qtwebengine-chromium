@@ -10,6 +10,7 @@
 #include "cc/resources/resource_pool.h"
 #include "cc/resources/resource_provider.h"
 #include "cc/test/fake_output_surface.h"
+#include "cc/test/fake_output_surface_client.h"
 #include "cc/test/fake_picture_layer_tiling_client.h"
 #include "cc/test/fake_tile_manager_client.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -59,10 +60,13 @@ class PictureLayerTilingSetTestWithResources : public testing::Test {
       float scale_increment,
       float ideal_contents_scale,
       float expected_scale) {
+    FakeOutputSurfaceClient output_surface_client;
     scoped_ptr<FakeOutputSurface> output_surface =
         FakeOutputSurface::Create3d();
+    CHECK(output_surface->BindToClient(&output_surface_client));
+
     scoped_ptr<ResourceProvider> resource_provider =
-        ResourceProvider::Create(output_surface.get(), 0);
+        ResourceProvider::Create(output_surface.get(), 0, false);
 
     FakePictureLayerTilingClient client;
     client.SetTileSize(gfx::Size(256, 256));
@@ -74,17 +78,8 @@ class PictureLayerTilingSetTestWithResources : public testing::Test {
       PictureLayerTiling* tiling = set.AddTiling(scale);
       tiling->CreateAllTilesForTesting();
       std::vector<Tile*> tiles = tiling->AllTilesForTesting();
-      for (size_t i = 0; i < tiles.size(); ++i) {
-        ManagedTileState::TileVersion& tile_version =
-            tiles[i]->GetTileVersionForTesting(HIGH_QUALITY_NO_LCD_RASTER_MODE);
-        EXPECT_FALSE(tile_version.GetResourceForTesting());
-
-        tile_version.SetResourceForTesting(
-            make_scoped_ptr(new ResourcePool::Resource(
-                resource_provider.get(),
-                gfx::Size(1, 1),
-                resource_provider->best_texture_format())));
-      }
+      client.tile_manager()->InitializeTilesWithResourcesForTesting(
+          tiles, resource_provider.get());
     }
 
     float max_contents_scale = scale;

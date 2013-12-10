@@ -16,8 +16,8 @@
 #include "ash/display/display_manager.h"
 #include "ash/display/root_window_transformers.h"
 #include "ash/host/root_window_host_factory.h"
+#include "ash/root_window_settings.h"
 #include "ash/shell.h"
-#include "ash/wm/window_properties.h"
 #include "base/strings/stringprintf.h"
 #include "ui/aura/client/capture_client.h"
 #include "ui/aura/env.h"
@@ -34,6 +34,10 @@
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/native_widget_types.h"
 
+#if defined(USE_X11)
+#include "ui/gfx/x/x11_types.h"
+#endif
+
 namespace ash {
 namespace internal {
 namespace {
@@ -43,8 +47,7 @@ namespace {
 void DisableInput(XID window) {
   long event_mask = ExposureMask | VisibilityChangeMask |
       StructureNotifyMask | PropertyChangeMask;
-  XSelectInput(base::MessagePumpAuraX11::GetDefaultXDisplay(),
-               window, event_mask);
+  XSelectInput(gfx::GetXDisplay(), window, event_mask);
 }
 #endif
 
@@ -116,10 +119,8 @@ class CursorWindowDelegate : public aura::WindowDelegate {
     return false;
   }
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE {}
-  virtual scoped_refptr<ui::Texture> CopyTexture() OVERRIDE {
-    NOTREACHED();
-    return scoped_refptr<ui::Texture>();
-  }
+  virtual void DidRecreateLayer(ui::Layer* old_layer,
+                                ui::Layer* new_layer) OVERRIDE {}
 
   // Set the cursor image for the |display|'s scale factor.  Note that
   // mirror window's scale factor is always 1.0f, therefore we need to
@@ -160,10 +161,10 @@ void MirrorWindowController::UpdateWindow(const DisplayInfo& display_info) {
   static int mirror_root_window_count = 0;
 
   if (!root_window_.get()) {
-    const gfx::Rect& bounds_in_pixel = display_info.bounds_in_pixel();
-    aura::RootWindow::CreateParams params(bounds_in_pixel);
+    const gfx::Rect& bounds_in_native = display_info.bounds_in_native();
+    aura::RootWindow::CreateParams params(bounds_in_native);
     params.host = Shell::GetInstance()->root_window_host_factory()->
-        CreateRootWindowHost(bounds_in_pixel);
+        CreateRootWindowHost(bounds_in_native);
     root_window_.reset(new aura::RootWindow(params));
     root_window_->SetName(
         base::StringPrintf("MirrorRootWindow-%d", mirror_root_window_count++));
@@ -174,7 +175,7 @@ void MirrorWindowController::UpdateWindow(const DisplayInfo& display_info) {
         Shell::GetInstance()->display_controller());
     root_window_->AddRootWindowObserver(this);
     // TODO(oshima): TouchHUD is using idkey.
-    root_window_->SetProperty(internal::kDisplayIdKey, display_info.id());
+    InitRootWindowSettings(root_window_.get())->display_id = display_info.id();
     root_window_->Init();
 #if defined(USE_X11)
     DisableInput(root_window_->GetAcceleratedWidget());
@@ -199,8 +200,8 @@ void MirrorWindowController::UpdateWindow(const DisplayInfo& display_info) {
     root_window_->AddChild(cursor_window_);
     cursor_window_->Show();
   } else {
-    root_window_->SetProperty(internal::kDisplayIdKey, display_info.id());
-    root_window_->SetHostBounds(display_info.bounds_in_pixel());
+    GetRootWindowSettings(root_window_.get())->display_id = display_info.id();
+    root_window_->SetHostBounds(display_info.bounds_in_native());
   }
 
   DisplayManager* display_manager = Shell::GetInstance()->display_manager();
@@ -262,6 +263,7 @@ void MirrorWindowController::SetMirroredCursor(gfx::NativeCursor cursor) {
   current_cursor_rotation_ = display.rotation();
   int resource_id;
   bool success = ui::GetCursorDataFor(
+      ui::CURSOR_SET_NORMAL,  // Not support custom cursor set.
       current_cursor_type_,
       display.device_scale_factor(),
       &resource_id,

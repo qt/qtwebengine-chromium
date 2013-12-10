@@ -494,6 +494,14 @@ body:not(.platform-mac) .toolbar-item.close-left {
   cursor: default;
 }
 
+#root {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+}
+
 #main {
     position: absolute;
     z-index: 1;
@@ -834,6 +842,10 @@ body.remote .dock-status-bar-item {
 
 .console-status-bar-item .glyph {
     -webkit-mask-position: -64px -24px;
+}
+
+.screencast-status-bar-item .glyph {
+    -webkit-mask-position: -256px -96px;
 }
 
 .clear-status-bar-item .glyph {
@@ -2429,6 +2441,17 @@ body.inactive li.selected .bubble.search-matches {
     background-color: rgb(255, 255, 194);
 }
 
+.source-frame-stepin-mark {
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.source-frame-stepin-mark-highlighted {
+    font-weight: 800;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
 .workers-list {
     list-style: none;
     margin: 0;
@@ -2775,7 +2798,7 @@ body.platform-mac .search-drawer-header input[type="checkbox"].search-config-che
     background-color: rgb(216, 0, 0) !important;
 }
 
-.storage-empty-view,
+.empty-view,
 .storage-view .storage-table-error {
     position: absolute;
     top: 0;

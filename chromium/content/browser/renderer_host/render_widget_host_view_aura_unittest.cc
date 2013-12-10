@@ -5,16 +5,24 @@
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
 
 #include "base/basictypes.h"
+#include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
+#include "cc/output/compositor_frame.h"
+#include "cc/output/compositor_frame_metadata.h"
+#include "cc/output/gl_frame_data.h"
+#include "content/browser/aura/resize_lock.h"
+#include "content/browser/browser_thread_impl.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/common/gpu/gpu_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
 #include "ipc/ipc_test_sink.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/env.h"
@@ -26,9 +34,11 @@
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_observer.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_utils.h"
 #include "ui/base/ui_base_types.h"
+#include "ui/events/event.h"
+#include "ui/events/event_utils.h"
+
+using testing::_;
 
 namespace content {
 namespace {
@@ -69,11 +79,48 @@ class TestWindowObserver : public aura::WindowObserver {
   DISALLOW_COPY_AND_ASSIGN(TestWindowObserver);
 };
 
+class FakeRenderWidgetHostViewAura : public RenderWidgetHostViewAura {
+ public:
+  FakeRenderWidgetHostViewAura(RenderWidgetHost* widget)
+      : RenderWidgetHostViewAura(widget), has_resize_lock_(false) {}
+
+  virtual ~FakeRenderWidgetHostViewAura() {}
+
+  virtual bool ShouldCreateResizeLock() OVERRIDE {
+    gfx::Size desired_size = window()->bounds().size();
+    return desired_size != current_frame_size();
+  }
+
+  virtual scoped_ptr<ResizeLock> CreateResizeLock(bool defer_compositor_lock)
+      OVERRIDE {
+    gfx::Size desired_size = window()->bounds().size();
+    return scoped_ptr<ResizeLock>(
+        new FakeResizeLock(desired_size, defer_compositor_lock));
+  }
+
+  void RunOnCompositingDidCommit() {
+    OnCompositingDidCommit(window()->GetRootWindow()->compositor());
+  }
+
+  // A lock that doesn't actually do anything to the compositor, and does not
+  // time out.
+  class FakeResizeLock : public ResizeLock {
+   public:
+    FakeResizeLock(const gfx::Size new_size, bool defer_compositor_lock)
+        : ResizeLock(new_size, defer_compositor_lock) {}
+  };
+
+  bool has_resize_lock_;
+  gfx::Size last_frame_size_;
+};
+
 class RenderWidgetHostViewAuraTest : public testing::Test {
  public:
-  RenderWidgetHostViewAuraTest() {}
+  RenderWidgetHostViewAuraTest()
+      : browser_thread_for_ui_(BrowserThread::UI, &message_loop_) {}
 
   virtual void SetUp() {
+    ImageTransportFactory::InitializeForUnitTests();
     aura_test_helper_.reset(new aura::test::AuraTestHelper(&message_loop_));
     aura_test_helper_->SetUp();
 
@@ -84,7 +131,7 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
     sink_ = &process_host->sink();
 
     parent_host_ = new RenderWidgetHostImpl(
-        &delegate_, process_host, MSG_ROUTING_NONE);
+        &delegate_, process_host, MSG_ROUTING_NONE, false);
     parent_view_ = static_cast<RenderWidgetHostViewAura*>(
         RenderWidgetHostView::CreateViewForWidget(parent_host_));
     parent_view_->InitAsChild(NULL);
@@ -92,10 +139,11 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
         aura_test_helper_->root_window(), gfx::Rect());
 
     widget_host_ = new RenderWidgetHostImpl(
-        &delegate_, process_host, MSG_ROUTING_NONE);
+        &delegate_, process_host, MSG_ROUTING_NONE, false);
     widget_host_->Init();
-    view_ = static_cast<RenderWidgetHostViewAura*>(
-        RenderWidgetHostView::CreateViewForWidget(widget_host_));
+    widget_host_->OnMessageReceived(
+        ViewHostMsg_DidActivateAcceleratedCompositing(0, true));
+    view_ = new FakeRenderWidgetHostViewAura(widget_host_);
   }
 
   virtual void TearDown() {
@@ -112,10 +160,12 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
 
     message_loop_.DeleteSoon(FROM_HERE, browser_context_.release());
     message_loop_.RunUntilIdle();
+    ImageTransportFactory::Terminate();
   }
 
  protected:
   base::MessageLoopForUI message_loop_;
+  BrowserThreadImpl browser_thread_for_ui_;
   scoped_ptr<aura::test::AuraTestHelper> aura_test_helper_;
   scoped_ptr<BrowserContext> browser_context_;
   MockRenderWidgetHostDelegate delegate_;
@@ -128,7 +178,7 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
   // Tests should set these to NULL if they've already triggered their
   // destruction.
   RenderWidgetHostImpl* widget_host_;
-  RenderWidgetHostViewAura* view_;
+  FakeRenderWidgetHostViewAura* view_;
 
   IPC::TestSink* sink_;
 
@@ -168,6 +218,11 @@ class FullscreenLayoutManager : public aura::LayoutManager {
  private:
   aura::RootWindow* owner_;
   DISALLOW_COPY_AND_ASSIGN(FullscreenLayoutManager);
+};
+
+class MockWindowObserver : public aura::WindowObserver {
+ public:
+  MOCK_METHOD2(OnWindowPaintScheduled, void(aura::Window*, const gfx::Rect&));
 };
 
 }  // namespace
@@ -231,7 +286,7 @@ TEST_F(RenderWidgetHostViewAuraTest, SetCompositionText) {
   const ui::CompositionUnderlines& underlines = composition_text.underlines;
 
   // Caret is at the end. (This emulates Japanese MSIME 2007 and later)
-  composition_text.selection = ui::Range(4);
+  composition_text.selection = gfx::Range(4);
 
   sink_->ClearMessages();
   view_->SetCompositionText(composition_text);
@@ -582,6 +637,211 @@ TEST_F(RenderWidgetHostViewAuraTest, FullscreenResize) {
               gfx::Rect(params.a.screen_info.availableRect).ToString());
     EXPECT_EQ("1600x1200", params.a.new_size.ToString());
   }
+}
+
+scoped_ptr<cc::CompositorFrame> MakeGLFrame(float scale_factor,
+                                            gfx::Size size,
+                                            gfx::Rect damage) {
+  scoped_ptr<cc::CompositorFrame> frame(new cc::CompositorFrame);
+  frame->metadata.device_scale_factor = scale_factor;
+  frame->gl_frame_data.reset(new cc::GLFrameData);
+  frame->gl_frame_data->sync_point = 1;
+  memset(frame->gl_frame_data->mailbox.name, '1', 64);
+  frame->gl_frame_data->size = size;
+  frame->gl_frame_data->sub_buffer_rect = damage;
+  return frame.Pass();
+}
+
+scoped_ptr<cc::CompositorFrame> MakeSoftwareFrame(float scale_factor,
+                                                  gfx::Size size,
+                                                  gfx::Rect damage) {
+  scoped_ptr<cc::CompositorFrame> frame(new cc::CompositorFrame);
+  frame->metadata.device_scale_factor = scale_factor;
+  frame->software_frame_data.reset(new cc::SoftwareFrameData);
+  frame->software_frame_data->id = 1;
+  frame->software_frame_data->size = size;
+  frame->software_frame_data->damage_rect = damage;
+  base::SharedMemory shm;
+  shm.CreateAndMapAnonymous(size.GetArea() * 4);
+  shm.GiveToProcess(base::GetCurrentProcessHandle(),
+                    &frame->software_frame_data->handle);
+  return frame.Pass();
+}
+
+scoped_ptr<cc::CompositorFrame> MakeDelegatedFrame(float scale_factor,
+                                                   gfx::Size size,
+                                                   gfx::Rect damage) {
+  scoped_ptr<cc::CompositorFrame> frame(new cc::CompositorFrame);
+  frame->metadata.device_scale_factor = scale_factor;
+  frame->delegated_frame_data.reset(new cc::DelegatedFrameData);
+
+  scoped_ptr<cc::RenderPass> pass = cc::RenderPass::Create();
+  pass->SetNew(cc::RenderPass::Id(1, 1),
+               gfx::Rect(size),
+               gfx::RectF(damage),
+               gfx::Transform());
+  frame->delegated_frame_data->render_pass_list.push_back(pass.Pass());
+  return frame.Pass();
+}
+
+// Swapping a frame should notify the window.
+TEST_F(RenderWidgetHostViewAuraTest, SwapNotifiesWindow) {
+  gfx::Size view_size(100, 100);
+  gfx::Rect view_rect(view_size);
+
+  view_->InitAsChild(NULL);
+  view_->GetNativeView()->SetDefaultParentByRootWindow(
+      parent_view_->GetNativeView()->GetRootWindow(), gfx::Rect());
+  view_->SetSize(view_size);
+  view_->WasShown();
+
+  MockWindowObserver observer;
+  view_->window_->AddObserver(&observer);
+
+  // Swap a frame through the GPU path.
+  GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params params;
+  params.surface_id = widget_host_->surface_id();
+  params.route_id = widget_host_->GetRoutingID();
+  params.mailbox_name = std::string(64, '1');
+  params.size = view_size;
+  params.scale_factor = 1.f;
+
+  EXPECT_CALL(observer, OnWindowPaintScheduled(view_->window_, view_rect));
+  view_->AcceleratedSurfaceBuffersSwapped(params, 0);
+  testing::Mock::VerifyAndClearExpectations(&observer);
+
+  // DSF = 2
+  params.size = gfx::Size(200, 200);
+  params.scale_factor = 2.f;
+  EXPECT_CALL(observer, OnWindowPaintScheduled(view_->window_, view_rect));
+  view_->AcceleratedSurfaceBuffersSwapped(params, 0);
+  testing::Mock::VerifyAndClearExpectations(&observer);
+
+  // Partial frames though GPU path
+  GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params post_params;
+  post_params.surface_id = widget_host_->surface_id();
+  post_params.route_id = widget_host_->GetRoutingID();
+  post_params.mailbox_name = std::string(64, '1');
+  post_params.surface_size = gfx::Size(200, 200);
+  post_params.surface_scale_factor = 2.f;
+  post_params.x = 40;
+  post_params.y = 40;
+  post_params.width = 80;
+  post_params.height = 80;
+  // rect from params is upside down, and is inflated in RWHVA, just because.
+  EXPECT_CALL(observer, OnWindowPaintScheduled(view_->window_,
+                                               gfx::Rect(19, 39, 42, 42)));
+  view_->AcceleratedSurfacePostSubBuffer(post_params, 0);
+  testing::Mock::VerifyAndClearExpectations(&observer);
+
+  // Composite-to-mailbox path
+  EXPECT_CALL(observer, OnWindowPaintScheduled(view_->window_, view_rect));
+  view_->OnSwapCompositorFrame(0, MakeGLFrame(1.f, view_size, view_rect));
+  testing::Mock::VerifyAndClearExpectations(&observer);
+
+  // rect from GL frame is upside down, and is inflated in RWHVA, just because.
+  EXPECT_CALL(observer, OnWindowPaintScheduled(view_->window_,
+                                               gfx::Rect(4, 89, 7, 7)));
+  view_->OnSwapCompositorFrame(
+      0, MakeGLFrame(1.f, view_size, gfx::Rect(5, 5, 5, 5)));
+  testing::Mock::VerifyAndClearExpectations(&observer);
+
+  // Software path
+  EXPECT_CALL(observer, OnWindowPaintScheduled(view_->window_, view_rect));
+  view_->OnSwapCompositorFrame(0, MakeSoftwareFrame(1.f, view_size, view_rect));
+  testing::Mock::VerifyAndClearExpectations(&observer);
+
+  EXPECT_CALL(observer, OnWindowPaintScheduled(view_->window_,
+                                               gfx::Rect(5, 5, 5, 5)));
+  view_->OnSwapCompositorFrame(
+      0, MakeSoftwareFrame(1.f, view_size, gfx::Rect(5, 5, 5, 5)));
+  testing::Mock::VerifyAndClearExpectations(&observer);
+
+  // Delegated renderer path
+  EXPECT_CALL(observer, OnWindowPaintScheduled(view_->window_, view_rect));
+  view_->OnSwapCompositorFrame(
+      0, MakeDelegatedFrame(1.f, view_size, view_rect));
+  testing::Mock::VerifyAndClearExpectations(&observer);
+
+  EXPECT_CALL(observer, OnWindowPaintScheduled(view_->window_,
+                                               gfx::Rect(5, 5, 5, 5)));
+  view_->OnSwapCompositorFrame(
+      0, MakeDelegatedFrame(1.f, view_size, gfx::Rect(5, 5, 5, 5)));
+  testing::Mock::VerifyAndClearExpectations(&observer);
+
+  view_->window_->RemoveObserver(&observer);
+}
+
+// Skipped frames should not drop their damage.
+TEST_F(RenderWidgetHostViewAuraTest, SkippedDelegatedFrames) {
+  gfx::Rect view_rect(100, 100);
+  gfx::Size frame_size = view_rect.size();
+
+  view_->InitAsChild(NULL);
+  view_->GetNativeView()->SetDefaultParentByRootWindow(
+      parent_view_->GetNativeView()->GetRootWindow(), gfx::Rect());
+  view_->SetSize(view_rect.size());
+
+  MockWindowObserver observer;
+  view_->window_->AddObserver(&observer);
+
+  // A full frame of damage.
+  EXPECT_CALL(observer, OnWindowPaintScheduled(view_->window_, view_rect));
+  view_->OnSwapCompositorFrame(
+      0, MakeDelegatedFrame(1.f, frame_size, view_rect));
+  testing::Mock::VerifyAndClearExpectations(&observer);
+  view_->RunOnCompositingDidCommit();
+
+  // A partial damage frame.
+  gfx::Rect partial_view_rect(30, 30, 20, 20);
+  EXPECT_CALL(observer,
+              OnWindowPaintScheduled(view_->window_, partial_view_rect));
+  view_->OnSwapCompositorFrame(
+      0, MakeDelegatedFrame(1.f, frame_size, partial_view_rect));
+  testing::Mock::VerifyAndClearExpectations(&observer);
+  view_->RunOnCompositingDidCommit();
+
+  // Lock the compositor. Now we should drop frames.
+  view_rect = gfx::Rect(150, 150);
+  view_->SetSize(view_rect.size());
+  view_->MaybeCreateResizeLock();
+
+  // This frame is dropped.
+  gfx::Rect dropped_damage_rect_1(10, 20, 30, 40);
+  EXPECT_CALL(observer, OnWindowPaintScheduled(_, _)).Times(0);
+  view_->OnSwapCompositorFrame(
+      0, MakeDelegatedFrame(1.f, frame_size, dropped_damage_rect_1));
+  testing::Mock::VerifyAndClearExpectations(&observer);
+  view_->RunOnCompositingDidCommit();
+
+  gfx::Rect dropped_damage_rect_2(40, 50, 10, 20);
+  EXPECT_CALL(observer, OnWindowPaintScheduled(_, _)).Times(0);
+  view_->OnSwapCompositorFrame(
+      0, MakeDelegatedFrame(1.f, frame_size, dropped_damage_rect_2));
+  testing::Mock::VerifyAndClearExpectations(&observer);
+  view_->RunOnCompositingDidCommit();
+
+  // Unlock the compositor. This frame should damage everything.
+  frame_size = view_rect.size();
+
+  gfx::Rect new_damage_rect(5, 6, 10, 10);
+  EXPECT_CALL(observer,
+              OnWindowPaintScheduled(view_->window_, view_rect));
+  view_->OnSwapCompositorFrame(
+      0, MakeDelegatedFrame(1.f, frame_size, new_damage_rect));
+  testing::Mock::VerifyAndClearExpectations(&observer);
+  view_->RunOnCompositingDidCommit();
+
+  // A partial damage frame, this should not be dropped.
+  EXPECT_CALL(observer,
+              OnWindowPaintScheduled(view_->window_, partial_view_rect));
+  view_->OnSwapCompositorFrame(
+      0, MakeDelegatedFrame(1.f, frame_size, partial_view_rect));
+  testing::Mock::VerifyAndClearExpectations(&observer);
+  view_->RunOnCompositingDidCommit();
+
+
+  view_->window_->RemoveObserver(&observer);
 }
 
 }  // namespace content

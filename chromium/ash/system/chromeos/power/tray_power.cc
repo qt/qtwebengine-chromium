@@ -7,6 +7,7 @@
 #include "ash/ash_switches.h"
 #include "ash/system/chromeos/power/power_status_view.h"
 #include "ash/system/date/date_view.h"
+#include "ash/system/system_notifier.h"
 #include "ash/system/tray/tray_constants.h"
 #include "ash/system/tray/tray_notification_view.h"
 #include "ash/system/tray/tray_utils.h"
@@ -204,10 +205,11 @@ bool TrayPower::MaybeShowUsbChargerNotification() {
         message_center::NOTIFICATION_TYPE_SIMPLE,
         kNotificationId,
         rb.GetLocalizedString(IDS_ASH_STATUS_TRAY_LOW_POWER_CHARGER_TITLE),
-        rb.GetLocalizedString(IDS_ASH_STATUS_TRAY_LOW_POWER_CHARGER_MESSAGE),
+        rb.GetLocalizedString(
+            IDS_ASH_STATUS_TRAY_LOW_POWER_CHARGER_MESSAGE_SHORT),
         rb.GetImageNamed(IDR_AURA_NOTIFICATION_LOW_POWER_CHARGER),
         base::string16(),
-        std::string(),
+        message_center::NotifierId(system_notifier::NOTIFIER_POWER),
         message_center::RichNotificationData(),
         NULL));
     message_center_->AddNotification(notification.Pass());

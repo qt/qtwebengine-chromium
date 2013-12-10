@@ -57,7 +57,6 @@ void RtcVideoCaptureDelegate::OnStopped(media::VideoCapture* capture) {
 }
 
 void RtcVideoCaptureDelegate::OnPaused(media::VideoCapture* capture) {
-  NOTIMPLEMENTED();
 }
 
 void RtcVideoCaptureDelegate::OnError(media::VideoCapture* capture,
@@ -82,30 +81,30 @@ void RtcVideoCaptureDelegate::OnRemoved(media::VideoCapture* capture) {
   Release();
 }
 
-void RtcVideoCaptureDelegate::OnBufferReady(
+void RtcVideoCaptureDelegate::OnFrameReady(
     media::VideoCapture* capture,
-    scoped_refptr<media::VideoCapture::VideoFrameBuffer> buf) {
+    const scoped_refptr<media::VideoFrame>& frame) {
   message_loop_proxy_->PostTask(
       FROM_HERE,
-      base::Bind(&RtcVideoCaptureDelegate::OnBufferReadyOnCaptureThread,
-                 this, capture, buf));
+      base::Bind(&RtcVideoCaptureDelegate::OnFrameReadyOnCaptureThread,
+                 this,
+                 capture,
+                 frame));
 }
 
 void RtcVideoCaptureDelegate::OnDeviceInfoReceived(
     media::VideoCapture* capture,
     const media::VideoCaptureParams& device_info) {
-  NOTIMPLEMENTED();
 }
 
 void RtcVideoCaptureDelegate::OnDeviceInfoChanged(
     media::VideoCapture* capture,
     const media::VideoCaptureParams& device_info) {
-  NOTIMPLEMENTED();
 }
 
-void RtcVideoCaptureDelegate::OnBufferReadyOnCaptureThread(
+void RtcVideoCaptureDelegate::OnFrameReadyOnCaptureThread(
     media::VideoCapture* capture,
-    scoped_refptr<media::VideoCapture::VideoFrameBuffer> buf) {
+    const scoped_refptr<media::VideoFrame>& frame) {
   if (!captured_callback_.is_null()) {
     if (!got_first_frame_) {
       got_first_frame_ = true;
@@ -113,9 +112,8 @@ void RtcVideoCaptureDelegate::OnBufferReadyOnCaptureThread(
         state_callback_.Run(CAPTURE_RUNNING);
     }
 
-    captured_callback_.Run(*buf.get());
+    captured_callback_.Run(frame);
   }
-  capture->FeedBuffer(buf);
 }
 
 void RtcVideoCaptureDelegate::OnErrorOnCaptureThread(

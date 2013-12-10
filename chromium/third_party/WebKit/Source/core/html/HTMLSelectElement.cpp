@@ -33,17 +33,17 @@
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/dom/Attribute.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/KeyboardEvent.h"
 #include "core/dom/MouseEvent.h"
-#include "core/dom/NodeRenderingContext.h"
 #include "core/dom/NodeTraversal.h"
-#include "core/html/FormController.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLOptGroupElement.h"
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/HTMLOptionsCollection.h"
+#include "core/html/forms/FormController.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
@@ -64,7 +64,7 @@ using namespace HTMLNames;
 // Upper limit agreed upon with representatives of Opera and Mozilla.
 static const unsigned maxSelectItems = 10000;
 
-HTMLSelectElement::HTMLSelectElement(const QualifiedName& tagName, Document* document, HTMLFormElement* form, bool createdByParser)
+HTMLSelectElement::HTMLSelectElement(const QualifiedName& tagName, Document& document, HTMLFormElement* form, bool createdByParser)
     : HTMLFormControlElementWithState(tagName, document, form)
     , m_typeAhead(this)
     , m_size(0)
@@ -81,12 +81,12 @@ HTMLSelectElement::HTMLSelectElement(const QualifiedName& tagName, Document* doc
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLSelectElement> HTMLSelectElement::create(Document* document)
+PassRefPtr<HTMLSelectElement> HTMLSelectElement::create(Document& document)
 {
     return adoptRef(new HTMLSelectElement(selectTag, document, 0, false));
 }
 
-PassRefPtr<HTMLSelectElement> HTMLSelectElement::create(const QualifiedName& tagName, Document* document, HTMLFormElement* form, bool createdByParser)
+PassRefPtr<HTMLSelectElement> HTMLSelectElement::create(const QualifiedName& tagName, Document& document, HTMLFormElement* form, bool createdByParser)
 {
     ASSERT(tagName.matches(selectTag));
     return adoptRef(new HTMLSelectElement(tagName, document, form, createdByParser));
@@ -189,9 +189,7 @@ void HTMLSelectElement::listBoxSelectItem(int listIndex, bool allowMultiplySelec
 
 bool HTMLSelectElement::usesMenuList() const
 {
-    const Page* page = document()->page();
-    RefPtr<RenderTheme> renderTheme = page ? page->theme() : RenderTheme::defaultTheme();
-    if (renderTheme->delegatesMenuListRendering())
+    if (RenderTheme::theme().delegatesMenuListRendering())
         return true;
 
     return !m_multiple && m_size <= 1;
@@ -219,7 +217,7 @@ void HTMLSelectElement::add(HTMLElement* element, HTMLElement* before, Exception
     if (!element || !(element->hasLocalName(optionTag) || element->hasLocalName(hrTag)))
         return;
 
-    insertBefore(element, before, es, AttachLazily);
+    insertBefore(element, before, es);
     setNeedsValidityCheck();
 }
 
@@ -336,12 +334,12 @@ RenderObject* HTMLSelectElement::createRenderer(RenderStyle*)
     return new RenderListBox(this);
 }
 
-bool HTMLSelectElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
+bool HTMLSelectElement::childShouldCreateRenderer(const Node& child) const
 {
-    if (!HTMLFormControlElementWithState::childShouldCreateRenderer(childContext))
+    if (!HTMLFormControlElementWithState::childShouldCreateRenderer(child))
         return false;
     if (!usesMenuList())
-        return childContext.node()->hasTagName(HTMLNames::optionTag) || isHTMLOptGroupElement(childContext.node());
+        return child.hasTagName(HTMLNames::optionTag) || isHTMLOptGroupElement(&child);
     return false;
 }
 
@@ -379,7 +377,7 @@ void HTMLSelectElement::optionElementChildrenChanged()
     setNeedsValidityCheck();
 
     if (renderer()) {
-        if (AXObjectCache* cache = renderer()->document()->existingAXObjectCache())
+        if (AXObjectCache* cache = renderer()->document().existingAXObjectCache())
             cache->childrenChanged(this);
     }
 }
@@ -447,7 +445,7 @@ void HTMLSelectElement::setLength(unsigned newLen, ExceptionState& es)
 
     if (diff < 0) { // Add dummy elements.
         do {
-            RefPtr<Element> option = document()->createElement(optionTag, false);
+            RefPtr<Element> option = document().createElement(optionTag, false);
             ASSERT(option);
             add(toHTMLElement(option.get()), 0, es);
             if (es.hadException())
@@ -722,7 +720,7 @@ void HTMLSelectElement::setRecalcListItems()
         invalidateSelectedItems();
 
     if (renderer()) {
-        if (AXObjectCache* cache = renderer()->document()->existingAXObjectCache())
+        if (AXObjectCache* cache = renderer()->document().existingAXObjectCache())
             cache->childrenChanged(this);
     }
 }
@@ -957,7 +955,7 @@ size_t HTMLSelectElement::searchOptionsForValue(const String& value, size_t list
         if (toHTMLOptionElement(items[i])->value() == value)
             return i;
     }
-    return notFound;
+    return kNotFound;
 }
 
 void HTMLSelectElement::restoreFormControlState(const FormControlState& state)
@@ -977,16 +975,16 @@ void HTMLSelectElement::restoreFormControlState(const FormControlState& state)
 
     if (!multiple()) {
         size_t foundIndex = searchOptionsForValue(state[0], 0, itemsSize);
-        if (foundIndex != notFound)
+        if (foundIndex != kNotFound)
             toHTMLOptionElement(items[foundIndex])->setSelectedState(true);
     } else {
         size_t startIndex = 0;
         for (size_t i = 0; i < state.valueSize(); ++i) {
             const String& value = state[i];
             size_t foundIndex = searchOptionsForValue(value, startIndex, itemsSize);
-            if (foundIndex == notFound)
+            if (foundIndex == kNotFound)
                 foundIndex = searchOptionsForValue(value, 0, startIndex);
-            if (foundIndex == notFound)
+            if (foundIndex == kNotFound)
                 continue;
             toHTMLOptionElement(items[foundIndex])->setSelectedState(true);
             startIndex = foundIndex + 1;
@@ -1060,16 +1058,13 @@ void HTMLSelectElement::reset()
     setNeedsValidityCheck();
 }
 
-#if !OS(WINDOWS)
+#if !OS(WIN)
 bool HTMLSelectElement::platformHandleKeydownEvent(KeyboardEvent* event)
 {
-    const Page* page = document()->page();
-    RefPtr<RenderTheme> renderTheme = page ? page->theme() : RenderTheme::defaultTheme();
-
-    if (!renderTheme->popsMenuByArrowKeys())
+    if (!RenderTheme::theme().popsMenuByArrowKeys())
         return false;
 
-    if (!isSpatialNavigationEnabled(document()->frame())) {
+    if (!isSpatialNavigationEnabled(document().frame())) {
         if (event->keyIdentifier() == "Down" || event->keyIdentifier() == "Up") {
             focus();
             // Calling focus() may cause us to lose our renderer. Return true so
@@ -1096,8 +1091,7 @@ bool HTMLSelectElement::platformHandleKeydownEvent(KeyboardEvent* event)
 
 void HTMLSelectElement::menuListDefaultEventHandler(Event* event)
 {
-    const Page* page = document()->page();
-    RefPtr<RenderTheme> renderTheme = page ? page->theme() : RenderTheme::defaultTheme();
+    RenderTheme& renderTheme = RenderTheme::theme();
 
     if (event->type() == eventNames().keydownEvent) {
         if (!renderer() || !event->isKeyboardEvent())
@@ -1109,7 +1103,7 @@ void HTMLSelectElement::menuListDefaultEventHandler(Event* event)
         // When using spatial navigation, we want to be able to navigate away
         // from the select element when the user hits any of the arrow keys,
         // instead of changing the selection.
-        if (isSpatialNavigationEnabled(document()->frame())) {
+        if (isSpatialNavigationEnabled(document().frame())) {
             if (!m_activeSelectionState)
                 return;
         }
@@ -1150,14 +1144,14 @@ void HTMLSelectElement::menuListDefaultEventHandler(Event* event)
         int keyCode = toKeyboardEvent(event)->keyCode();
         bool handled = false;
 
-        if (keyCode == ' ' && isSpatialNavigationEnabled(document()->frame())) {
+        if (keyCode == ' ' && isSpatialNavigationEnabled(document().frame())) {
             // Use space to toggle arrow key handling for selection change or spatial navigation.
             m_activeSelectionState = !m_activeSelectionState;
             event->setDefaultHandled();
             return;
         }
 
-        if (renderTheme->popsMenuBySpaceOrReturn()) {
+        if (renderTheme.popsMenuBySpaceOrReturn()) {
             if (keyCode == ' ' || keyCode == '\r') {
                 focus();
 
@@ -1175,7 +1169,7 @@ void HTMLSelectElement::menuListDefaultEventHandler(Event* event)
                     menuList->showPopup();
                 handled = true;
             }
-        } else if (renderTheme->popsMenuByArrowKeys()) {
+        } else if (renderTheme.popsMenuByArrowKeys()) {
             if (keyCode == ' ') {
                 focus();
 
@@ -1297,13 +1291,13 @@ void HTMLSelectElement::listBoxDefaultEventHandler(Event* event)
         int listIndex = toRenderListBox(renderer())->listIndexAtOffset(toIntSize(localOffset));
         if (listIndex >= 0) {
             if (!isDisabledFormControl()) {
-#if OS(DARWIN)
+#if OS(MACOSX)
                 updateSelectedState(listIndex, mouseEvent->metaKey(), mouseEvent->shiftKey());
 #else
                 updateSelectedState(listIndex, mouseEvent->ctrlKey(), mouseEvent->shiftKey());
 #endif
             }
-            if (Frame* frame = document()->frame())
+            if (Frame* frame = document().frame())
                 frame->eventHandler()->setMouseDownMayStartAutoscroll();
 
             event->setDefaultHandled();
@@ -1388,7 +1382,7 @@ void HTMLSelectElement::listBoxDefaultEventHandler(Event* event)
             handled = true;
         }
 
-        if (isSpatialNavigationEnabled(document()->frame()))
+        if (isSpatialNavigationEnabled(document().frame()))
             // Check if the selection moves to the boundary.
             if (keyIdentifier == "Left" || keyIdentifier == "Right" || ((keyIdentifier == "Down" || keyIdentifier == "Up") && endIndex == m_activeSelectionEndIndex))
                 return;
@@ -1402,7 +1396,7 @@ void HTMLSelectElement::listBoxDefaultEventHandler(Event* event)
             ASSERT_UNUSED(listItems, !listItems.size() || static_cast<size_t>(endIndex) < listItems.size());
             setActiveSelectionEndIndex(endIndex);
 
-            bool selectNewItem = !m_multiple || toKeyboardEvent(event)->shiftKey() || !isSpatialNavigationEnabled(document()->frame());
+            bool selectNewItem = !m_multiple || toKeyboardEvent(event)->shiftKey() || !isSpatialNavigationEnabled(document().frame());
             if (selectNewItem)
                 m_activeSelectionState = true;
             // If the anchor is unitialized, or if we're going to deselect all
@@ -1432,7 +1426,7 @@ void HTMLSelectElement::listBoxDefaultEventHandler(Event* event)
             if (form())
                 form()->submitImplicitly(event, false);
             event->setDefaultHandled();
-        } else if (m_multiple && keyCode == ' ' && isSpatialNavigationEnabled(document()->frame())) {
+        } else if (m_multiple && keyCode == ' ' && isSpatialNavigationEnabled(document().frame())) {
             // Use space to toggle selection change.
             m_activeSelectionState = !m_activeSelectionState;
             updateSelectedState(listToOptionIndex(m_activeSelectionEndIndex), true /*multi*/, false /*shift*/);
@@ -1581,6 +1575,11 @@ bool HTMLSelectElement::anonymousIndexedSetter(unsigned index, PassRefPtr<HTMLOp
 bool HTMLSelectElement::anonymousIndexedSetterRemove(unsigned index, ExceptionState& es)
 {
     remove(index);
+    return true;
+}
+
+bool HTMLSelectElement::isInteractiveContent() const
+{
     return true;
 }
 

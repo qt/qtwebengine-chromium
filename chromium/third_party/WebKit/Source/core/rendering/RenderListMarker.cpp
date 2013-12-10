@@ -26,7 +26,7 @@
 #include "core/rendering/RenderListMarker.h"
 
 #include "core/dom/Document.h"
-#include "core/loader/cache/ImageResource.h"
+#include "core/fetch/ImageResource.h"
 #include "core/platform/graphics/Font.h"
 #include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/rendering/RenderLayer.h"
@@ -1070,9 +1070,9 @@ RenderListMarker::~RenderListMarker()
 
 RenderListMarker* RenderListMarker::createAnonymous(RenderListItem* item)
 {
-    Document* document = item->document();
+    Document& document = item->document();
     RenderListMarker* renderer = new RenderListMarker(item);
-    renderer->setDocumentForAnonymous(document);
+    renderer->setDocumentForAnonymous(&document);
     return renderer;
 }
 
@@ -1321,7 +1321,6 @@ void RenderListMarker::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffse
 
 void RenderListMarker::layout()
 {
-    StackStats::LayoutCheckPoint layoutCheckPoint;
     ASSERT(needsLayout());
 
     if (isImage()) {
@@ -1480,7 +1479,7 @@ void RenderListMarker::computePreferredLogicalWidths()
     if (isImage()) {
         LayoutSize imageSize = m_image->imageSize(this, style()->effectiveZoom());
         m_minPreferredLogicalWidth = m_maxPreferredLogicalWidth = style()->isHorizontalWritingMode() ? imageSize.width() : imageSize.height();
-        setPreferredLogicalWidthsDirty(false);
+        clearPreferredLogicalWidthsDirty();
         updateMargins();
         return;
     }
@@ -1590,7 +1589,7 @@ void RenderListMarker::computePreferredLogicalWidths()
     m_minPreferredLogicalWidth = logicalWidth;
     m_maxPreferredLogicalWidth = logicalWidth;
 
-    setPreferredLogicalWidthsDirty(false);
+    clearPreferredLogicalWidthsDirty();
 
     updateMargins();
 }
@@ -1602,7 +1601,7 @@ void RenderListMarker::updateMargins()
     LayoutUnit marginStart = 0;
     LayoutUnit marginEnd = 0;
 
-    if (isInside() && !m_listItem->isFloating()) {
+    if (isInside()) {
         if (isImage())
             marginEnd = cMarkerPadding;
         else switch (style()->listStyleType()) {

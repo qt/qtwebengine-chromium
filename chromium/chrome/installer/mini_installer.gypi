@@ -4,7 +4,6 @@
 {
   'dependencies': [
     '<@(chrome_dll_project)',
-    '../chrome.gyp:app_host',
     '../chrome.gyp:chrome',
     '../chrome.gyp:chrome_nacl_win64',
     '../chrome.gyp:default_extensions',
@@ -48,7 +47,6 @@
     },
     'VCLinkerTool': {
       'OutputFile': '<(output_dir)/mini_installer.exe',
-      'MapFileName': '<(output_dir)/mini_installer.map',
       'RandomizedBaseAddress': '1',
       'DataExecutionPrevention': '0',
       'AdditionalLibraryDirectories': [
@@ -56,7 +54,6 @@
       ],
       'DelayLoadDLLs': [],
       'EntryPointSymbol': 'MainEntryPoint',
-      'GenerateMapFile': 'true',
       'IgnoreAllDefaultLibraries': 'true',
       'OptimizeForWindows98': '1',
       'SubSystem': '2',  # Set /SUBSYSTEM:WINDOWS
@@ -191,7 +188,6 @@
       ],
       'inputs': [
         '<(create_installer_archive_py_path)',
-        '<(PRODUCT_DIR)/app_host.exe',
         '<(PRODUCT_DIR)/chrome.exe',
         '<@(chrome_dll_path)',
         '<(PRODUCT_DIR)/nacl64.exe',

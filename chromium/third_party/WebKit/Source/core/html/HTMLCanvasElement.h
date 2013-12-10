@@ -58,8 +58,8 @@ public:
 
 class HTMLCanvasElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLCanvasElement> create(Document*);
-    static PassRefPtr<HTMLCanvasElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<HTMLCanvasElement> create(Document&);
+    static PassRefPtr<HTMLCanvasElement> create(const QualifiedName&, Document&);
     virtual ~HTMLCanvasElement();
 
     void addObserver(CanvasObserver*);
@@ -126,7 +126,6 @@ public:
 
     bool is3D() const;
 
-    void makeRenderingResultsAvailable();
     bool hasCreatedImageBuffer() const { return m_hasCreatedImageBuffer; }
 
     bool shouldAccelerate(const IntSize&) const;
@@ -136,7 +135,7 @@ public:
     InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
 
 private:
-    HTMLCanvasElement(const QualifiedName&, Document*);
+    HTMLCanvasElement(const QualifiedName&, Document&);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual RenderObject* createRenderer(RenderStyle*);

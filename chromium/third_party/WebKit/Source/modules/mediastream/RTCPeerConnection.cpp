@@ -100,7 +100,7 @@ PassRefPtr<RTCConfiguration> RTCPeerConnection::parseConfiguration(const Diction
             return 0;
         }
         KURL url(KURL(), urlString);
-        if (!url.isValid() || !(url.protocolIs("turn") || url.protocolIs("stun"))) {
+        if (!url.isValid() || !(url.protocolIs("turn") || url.protocolIs("turns") || url.protocolIs("stun"))) {
             es.throwDOMException(TypeMismatchError);
             return 0;
         }
@@ -141,7 +141,7 @@ RTCPeerConnection::RTCPeerConnection(ScriptExecutionContext* context, PassRefPtr
     , m_stopped(false)
 {
     ScriptWrappable::init(this);
-    Document* document = toDocument(m_scriptExecutionContext);
+    Document* document = toDocument(scriptExecutionContext());
 
     if (!document->frame()) {
         es.throwDOMException(NotSupportedError);
@@ -298,6 +298,25 @@ void RTCPeerConnection::addIceCandidate(RTCIceCandidate* iceCandidate, Exception
         es.throwDOMException(SyntaxError);
 }
 
+void RTCPeerConnection::addIceCandidate(RTCIceCandidate* iceCandidate, PassRefPtr<VoidCallback> successCallback, PassRefPtr<RTCErrorCallback> errorCallback, ExceptionState& es)
+{
+    if (m_signalingState == SignalingStateClosed) {
+        es.throwDOMException(InvalidStateError);
+        return;
+    }
+
+    if (!iceCandidate || !successCallback || !errorCallback) {
+        es.throwDOMException(TypeMismatchError);
+        return;
+    }
+
+    RefPtr<RTCVoidRequestImpl> request = RTCVoidRequestImpl::create(scriptExecutionContext(), successCallback, errorCallback);
+
+    bool implemented = m_peerHandler->addIceCandidate(request.release(), iceCandidate->webCandidate());
+    if (!implemented)
+        es.throwDOMException(NotSupportedError);
+}
+
 String RTCPeerConnection::signalingState() const
 {
     switch (m_signalingState) {
@@ -399,7 +418,7 @@ void RTCPeerConnection::removeStream(PassRefPtr<MediaStream> prpStream, Exceptio
     RefPtr<MediaStream> stream = prpStream;
 
     size_t pos = m_localStreams.find(stream);
-    if (pos == notFound)
+    if (pos == kNotFound)
         return;
 
     m_localStreams.remove(pos);
@@ -519,7 +538,7 @@ void RTCPeerConnection::close(ExceptionState& es)
 
 void RTCPeerConnection::negotiationNeeded()
 {
-    scheduleDispatchEvent(Event::create(eventNames().negotiationneededEvent, false, false));
+    scheduleDispatchEvent(Event::create(eventNames().negotiationneededEvent));
 }
 
 void RTCPeerConnection::didGenerateIceCandidate(WebKit::WebRTCICECandidate webCandidate)
@@ -576,7 +595,7 @@ void RTCPeerConnection::didRemoveRemoteStream(MediaStreamDescriptor* streamDescr
         return;
 
     size_t pos = m_remoteStreams.find(stream);
-    ASSERT(pos != notFound);
+    ASSERT(pos != kNotFound);
     m_remoteStreams.remove(pos);
 
     scheduleDispatchEvent(MediaStreamEvent::create(eventNames().removestreamEvent, false, false, stream.release()));
@@ -633,7 +652,7 @@ void RTCPeerConnection::changeSignalingState(SignalingState signalingState)
 {
     if (m_signalingState != SignalingStateClosed && m_signalingState != signalingState) {
         m_signalingState = signalingState;
-        scheduleDispatchEvent(Event::create(eventNames().signalingstatechangeEvent, false, false));
+        scheduleDispatchEvent(Event::create(eventNames().signalingstatechangeEvent));
     }
 }
 
@@ -646,7 +665,7 @@ void RTCPeerConnection::changeIceConnectionState(IceConnectionState iceConnectio
 {
     if (m_iceConnectionState != IceConnectionStateClosed && m_iceConnectionState != iceConnectionState) {
         m_iceConnectionState = iceConnectionState;
-        scheduleDispatchEvent(Event::create(eventNames().iceconnectionstatechangeEvent, false, false));
+        scheduleDispatchEvent(Event::create(eventNames().iceconnectionstatechangeEvent));
     }
 }
 

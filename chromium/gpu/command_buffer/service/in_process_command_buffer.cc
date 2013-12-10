@@ -22,10 +22,10 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/sequence_checker.h"
 #include "base/threading/thread.h"
-#include "gpu/command_buffer/common/id_allocator.h"
 #include "gpu/command_buffer/service/command_buffer_service.h"
 #include "gpu/command_buffer/service/context_group.h"
 #include "gpu/command_buffer/service/gl_context_virtual.h"
+#include "gpu/command_buffer/service/gpu_control_service.h"
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/service/transfer_buffer_manager.h"
@@ -33,6 +33,11 @@
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_image.h"
 #include "ui/gl/gl_share_group.h"
+
+#if defined(OS_ANDROID)
+#include "gpu/command_buffer/service/stream_texture_manager_in_process_android.h"
+#include "ui/gl/android/surface_texture.h"
+#endif
 
 namespace gpu {
 
@@ -43,6 +48,7 @@ static base::LazyInstance<std::set<InProcessCommandBuffer*> >
 
 static bool g_use_virtualized_gl_context = false;
 static bool g_uses_explicit_scheduling = false;
+static GpuMemoryBufferFactory* g_gpu_memory_buffer_factory = NULL;
 
 template <typename T>
 static void RunTaskWithResult(base::Callback<T(void)> task,
@@ -293,7 +299,6 @@ bool InProcessCommandBuffer::Initialize(
     bool share_resources,
     gfx::AcceleratedWidget window,
     const gfx::Size& size,
-    const char* allowed_extensions,
     const std::vector<int32>& attribs,
     gfx::GpuPreference gpu_preference,
     const base::Closure& context_lost_callback,
@@ -316,7 +321,6 @@ bool InProcessCommandBuffer::Initialize(
                  is_offscreen,
                  window,
                  size,
-                 allowed_extensions,
                  attribs,
                  gpu_preference);
 
@@ -332,7 +336,6 @@ bool InProcessCommandBuffer::InitializeOnGpuThread(
     bool is_offscreen,
     gfx::AcceleratedWidget window,
     const gfx::Size& size,
-    const char* allowed_extensions,
     const std::vector<int32>& attribs,
     gfx::GpuPreference gpu_preference) {
   CheckSequencedThread();
@@ -378,17 +381,31 @@ bool InProcessCommandBuffer::InitializeOnGpuThread(
       share_group = new gfx::GLShareGroup;
   }
 
+  StreamTextureManager* stream_texture_manager = NULL;
+#if defined(OS_ANDROID)
+  stream_texture_manager = stream_texture_manager_ =
+      context_group ? context_group->stream_texture_manager_.get()
+                    : new StreamTextureManagerInProcess;
+#endif
+
   bool bind_generates_resource = false;
   decoder_.reset(gles2::GLES2Decoder::Create(
       context_group ? context_group->decoder_->GetContextGroup()
-                    : new gles2::ContextGroup(
-                          NULL, NULL, NULL, NULL, bind_generates_resource)));
+                    : new gles2::ContextGroup(NULL,
+                                              NULL,
+                                              NULL,
+                                              stream_texture_manager,
+                                              bind_generates_resource)));
 
   gpu_scheduler_.reset(
       new GpuScheduler(command_buffer.get(), decoder_.get(), decoder_.get()));
   command_buffer->SetGetBufferChangeCallback(base::Bind(
       &GpuScheduler::SetGetBuffer, base::Unretained(gpu_scheduler_.get())));
   command_buffer_ = command_buffer.Pass();
+
+  gpu_control_.reset(
+      new GpuControlService(decoder_->GetContextGroup()->image_manager(),
+                            g_gpu_memory_buffer_factory));
 
   decoder_->set_engine(gpu_scheduler_.get());
 
@@ -445,7 +462,6 @@ bool InProcessCommandBuffer::InitializeOnGpuThread(
                             is_offscreen,
                             size,
                             disallowed_features,
-                            allowed_extensions,
                             attribs)) {
     LOG(ERROR) << "Could not initialize decoder.";
     DestroyOnGpuThread();
@@ -494,55 +510,6 @@ bool InProcessCommandBuffer::DestroyOnGpuThread() {
 void InProcessCommandBuffer::CheckSequencedThread() {
   DCHECK(!sequence_checker_ ||
          sequence_checker_->CalledOnValidSequencedThread());
-}
-
-unsigned int InProcessCommandBuffer::CreateImageForGpuMemoryBuffer(
-    gfx::GpuMemoryBufferHandle buffer,
-    gfx::Size size) {
-  CheckSequencedThread();
-  unsigned int image_id;
-  {
-    // TODO: ID allocation should go through CommandBuffer
-    base::AutoLock lock(command_buffer_lock_);
-    gles2::ContextGroup* group = decoder_->GetContextGroup();
-    image_id =
-        group->GetIdAllocator(gles2::id_namespaces::kImages)->AllocateID();
-  }
-  base::Closure image_task =
-      base::Bind(&InProcessCommandBuffer::CreateImageOnGpuThread,
-                 base::Unretained(this), buffer, size, image_id);
-  QueueTask(image_task);
-  return image_id;
-}
-
-void InProcessCommandBuffer::CreateImageOnGpuThread(
-    gfx::GpuMemoryBufferHandle buffer,
-    gfx::Size size,
-    unsigned int image_id) {
-  CheckSequencedThread();
-  scoped_refptr<gfx::GLImage> gl_image =
-      gfx::GLImage::CreateGLImageForGpuMemoryBuffer(buffer, size);
-   decoder_->GetContextGroup()->image_manager()->AddImage(gl_image, image_id);
-}
-
-void InProcessCommandBuffer::RemoveImage(unsigned int image_id) {
-  CheckSequencedThread();
-  {
-    // TODO: ID allocation should go through CommandBuffer
-    base::AutoLock lock(command_buffer_lock_);
-    gles2::ContextGroup* group = decoder_->GetContextGroup();
-    group->GetIdAllocator(gles2::id_namespaces::kImages)->FreeID(image_id);
-  }
-  base::Closure image_manager_task =
-      base::Bind(&InProcessCommandBuffer::RemoveImageOnGpuThread,
-                 base::Unretained(this),
-                 image_id);
-  QueueTask(image_manager_task);
-}
-
-void InProcessCommandBuffer::RemoveImageOnGpuThread(unsigned int image_id) {
-  CheckSequencedThread();
-  decoder_->GetContextGroup()->image_manager()->RemoveImage(image_id);
 }
 
 void InProcessCommandBuffer::OnContextLost() {
@@ -680,6 +647,28 @@ void InProcessCommandBuffer::SignalSyncPoint(unsigned sync_point,
   QueueTask(WrapCallback(callback));
 }
 
+gfx::GpuMemoryBuffer* InProcessCommandBuffer::CreateGpuMemoryBuffer(
+    size_t width,
+    size_t height,
+    unsigned internalformat,
+    int32* id) {
+  CheckSequencedThread();
+  base::AutoLock lock(command_buffer_lock_);
+  return gpu_control_->CreateGpuMemoryBuffer(width,
+                                             height,
+                                             internalformat,
+                                             id);
+}
+
+void InProcessCommandBuffer::DestroyGpuMemoryBuffer(int32 id) {
+  CheckSequencedThread();
+  base::Closure task = base::Bind(&GpuControl::DestroyGpuMemoryBuffer,
+                                  base::Unretained(gpu_control_.get()),
+                                  id);
+
+  QueueTask(task);
+}
+
 gpu::error::Error InProcessCommandBuffer::GetLastError() {
   CheckSequencedThread();
   return last_state_.error;
@@ -734,6 +723,14 @@ base::Closure InProcessCommandBuffer::WrapCallback(
   return wrapped_callback;
 }
 
+#if defined(OS_ANDROID)
+scoped_refptr<gfx::SurfaceTexture>
+InProcessCommandBuffer::GetSurfaceTexture(uint32 stream_id) {
+  DCHECK(stream_texture_manager_);
+  return stream_texture_manager_->GetSurfaceTexture(stream_id);
+}
+#endif
+
 // static
 void InProcessCommandBuffer::EnableVirtualizedContext() {
   g_use_virtualized_gl_context = true;
@@ -751,6 +748,12 @@ void InProcessCommandBuffer::SetScheduleCallback(
 // static
 void InProcessCommandBuffer::ProcessGpuWorkOnCurrentThread() {
   g_gpu_queue.Get().RunTasks();
+}
+
+// static
+void InProcessCommandBuffer::SetGpuMemoryBufferFactory(
+    GpuMemoryBufferFactory* factory) {
+  g_gpu_memory_buffer_factory = factory;
 }
 
 }  // namespace gpu

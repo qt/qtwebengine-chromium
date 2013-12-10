@@ -9,13 +9,14 @@
 
 #include "ash/ash_export.h"
 #include "ash/shell_observer.h"
+#include "ash/wm/window_state.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "ui/aura/client/activation_change_observer.h"
 #include "ui/aura/layout_manager.h"
 #include "ui/aura/window_observer.h"
-#include "ui/base/events/event_handler.h"
 #include "ui/base/ui_base_types.h"
+#include "ui/events/event_handler.h"
 
 namespace aura {
 class RootWindow;
@@ -23,6 +24,10 @@ class Window;
 }
 
 namespace ash {
+namespace wm {
+class WindowState;
+}
+
 namespace internal {
 
 // BaseLayoutManager is the simplest possible implementation for a window
@@ -32,9 +37,10 @@ namespace internal {
 // properly.
 class ASH_EXPORT BaseLayoutManager
     : public aura::LayoutManager,
-      public ash::ShellObserver,
       public aura::WindowObserver,
-      public aura::client::ActivationChangeObserver {
+      public aura::client::ActivationChangeObserver,
+      public ShellObserver,
+      public wm::WindowState::Observer {
  public:
   typedef std::set<aura::Window*> WindowSet;
 
@@ -49,7 +55,7 @@ class ASH_EXPORT BaseLayoutManager
   static gfx::Rect BoundsWithScreenEdgeVisible(aura::Window* window,
                                                const gfx::Rect& restore_bounds);
 
-  // LayoutManager overrides:
+  // aura::LayoutManager overrides:
   virtual void OnWindowResized() OVERRIDE;
   virtual void OnWindowAddedToLayout(aura::Window* child) OVERRIDE;
   virtual void OnWillRemoveWindowFromLayout(aura::Window* child) OVERRIDE;
@@ -59,10 +65,7 @@ class ASH_EXPORT BaseLayoutManager
   virtual void SetChildBounds(aura::Window* child,
                               const gfx::Rect& requested_bounds) OVERRIDE;
 
-  // ash::ShellObserver overrides:
-  virtual void OnDisplayWorkAreaInsetsChanged() OVERRIDE;
-
-  // WindowObserver overrides:
+  // aura::WindowObserver overrides:
   virtual void OnWindowPropertyChanged(aura::Window* window,
                                        const void* key,
                                        intptr_t old) OVERRIDE;
@@ -75,6 +78,9 @@ class ASH_EXPORT BaseLayoutManager
   virtual void OnWindowActivated(aura::Window* gained_active,
                                  aura::Window* lost_active) OVERRIDE;
 
+  // ash::ShellObserver overrides:
+  virtual void OnDisplayWorkAreaInsetsChanged() OVERRIDE;
+
  protected:
   enum AdjustWindowReason {
     ADJUST_WINDOW_DISPLAY_SIZE_CHANGED,
@@ -82,7 +88,7 @@ class ASH_EXPORT BaseLayoutManager
   };
 
   // Invoked from OnWindowPropertyChanged() if |kShowStateKey| changes.
-  virtual void ShowStateChanged(aura::Window* window,
+  virtual void ShowStateChanged(wm::WindowState* window_state,
                                 ui::WindowShowState last_show_state);
 
   // Adjusts the window's bounds when the display area changes for given
@@ -98,14 +104,15 @@ class ASH_EXPORT BaseLayoutManager
 
   // Adjusts the sizes of the specific window in respond to a screen change or
   // display-area size change.
-  virtual void AdjustWindowBoundsForWorkAreaChange(aura::Window* window,
-                                                   AdjustWindowReason reason);
+  virtual void AdjustWindowBoundsForWorkAreaChange(
+      wm::WindowState* window_state,
+      AdjustWindowReason reason);
 
   aura::RootWindow* root_window() { return root_window_; }
 
  private:
   // Update window bounds based on a change in show state.
-  void UpdateBoundsFromShowState(aura::Window* window);
+  void UpdateBoundsFromShowState(wm::WindowState* controller);
 
   // Set of windows we're listening to.
   WindowSet windows_;

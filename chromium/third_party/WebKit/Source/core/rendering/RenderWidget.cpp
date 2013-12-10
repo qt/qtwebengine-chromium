@@ -83,7 +83,7 @@ static void moveWidgetToParentSoon(Widget* child, FrameView* parent)
 RenderWidget::RenderWidget(Element* element)
     : RenderReplaced(element)
     , m_widget(0)
-    , m_frameView(element->document()->view())
+    , m_frameView(element->document().view())
     // Reference counting is used to prevent the widget from being
     // destroyed while inside the Widget code, which might not be
     // able to handle that.
@@ -97,7 +97,7 @@ void RenderWidget::willBeDestroyed()
     if (RenderView* v = view())
         v->removeWidget(this);
 
-    if (AXObjectCache* cache = document()->existingAXObjectCache()) {
+    if (AXObjectCache* cache = document().existingAXObjectCache()) {
         cache->childrenChanged(this->parent());
         cache->remove(this);
     }
@@ -198,13 +198,12 @@ void RenderWidget::setWidget(PassRefPtr<Widget> widget)
         moveWidgetToParentSoon(m_widget.get(), m_frameView);
     }
 
-    if (AXObjectCache* cache = document()->existingAXObjectCache())
+    if (AXObjectCache* cache = document().existingAXObjectCache())
         cache->childrenChanged(this);
 }
 
 void RenderWidget::layout()
 {
-    StackStats::LayoutCheckPoint layoutCheckPoint;
     ASSERT(needsLayout());
 
     clearNeedsLayout();
@@ -297,12 +296,12 @@ void RenderWidget::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
         paintInfo.context->restore();
 
     // Paint a partially transparent wash over selected widgets.
-    if (isSelected() && !document()->printing()) {
+    if (isSelected() && !document().printing()) {
         // FIXME: selectionRect() is in absolute, not painting coordinates.
         paintInfo.context->fillRect(pixelSnappedIntRect(selectionRect()), selectionBackgroundColor());
     }
 
-    if (hasLayer() && layer()->canResize())
+    if (canResize())
         layer()->paintResizer(paintInfo.context, roundedIntPoint(adjustedPaintOffset), paintInfo.rect);
 }
 
@@ -331,7 +330,7 @@ void RenderWidget::updateWidgetPosition()
     if (m_widget && m_widget->isFrameView()) {
         FrameView* frameView = toFrameView(m_widget.get());
         // Check the frame's page to make sure that the frame isn't in the process of being destroyed.
-        if ((boundsChanged || frameView->needsLayout()) && frameView->frame()->page())
+        if ((boundsChanged || frameView->needsLayout()) && frameView->frame().page())
             frameView->layout();
     }
 }

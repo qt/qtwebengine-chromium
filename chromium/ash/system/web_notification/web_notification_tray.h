@@ -11,6 +11,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "ui/base/models/simple_menu_model.h"
 #include "ui/message_center/message_center_tray.h"
 #include "ui/message_center/message_center_tray_delegate.h"
 #include "ui/views/bubble/tray_bubble_view.h"
@@ -49,7 +50,8 @@ class ASH_EXPORT WebNotificationTray
       public views::TrayBubbleView::Delegate,
       public message_center::MessageCenterTrayDelegate,
       public views::ButtonListener,
-      public base::SupportsWeakPtr<WebNotificationTray> {
+      public base::SupportsWeakPtr<WebNotificationTray>,
+      public ui::SimpleMenuModel::Delegate {
  public:
   explicit WebNotificationTray(
       internal::StatusAreaWidget* status_area_widget);
@@ -59,9 +61,6 @@ class ASH_EXPORT WebNotificationTray
   // the notification popups don't overlap with the tray. Passes 0 if no UI is
   // shown in the system tray side.
   void SetSystemTrayHeight(int height);
-
-  // Updates tray visibility login status of the system changes.
-  void UpdateAfterLoginStatusChange(user::LoginStatus login_status);
 
   // Returns true if it should block the auto hide behavior of the launcher.
   bool ShouldBlockLauncherAutoHide() const;
@@ -109,10 +108,15 @@ class ASH_EXPORT WebNotificationTray
   virtual bool ShowNotifierSettings() OVERRIDE;
   virtual message_center::MessageCenterTray* GetMessageCenterTray() OVERRIDE;
 
-  // Overridden from TrayBackgroundView.
-  virtual bool IsPressed() OVERRIDE;
+  // Overridden from SimpleMenuModel::Delegate.
+  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
+  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
+  virtual bool GetAcceleratorForCommandId(
+      int command_id,
+      ui::Accelerator* accelerator) OVERRIDE;
+  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
 
-  message_center::MessageCenter* message_center();
+  message_center::MessageCenter* message_center() const;
 
  private:
   friend class WebNotificationTrayTest;
@@ -124,6 +128,7 @@ class ASH_EXPORT WebNotificationTray
   FRIEND_TEST_ALL_PREFIXES(WebNotificationTrayTest, ManyPopupNotifications);
   FRIEND_TEST_ALL_PREFIXES(WebNotificationTrayTest, PopupShownOnBothDisplays);
   FRIEND_TEST_ALL_PREFIXES(WebNotificationTrayTest, PopupAndSystemTray);
+  FRIEND_TEST_ALL_PREFIXES(WebNotificationTrayTest, PopupAndAutoHideShelf);
 
   void UpdateTrayContent();
 
@@ -142,6 +147,9 @@ class ASH_EXPORT WebNotificationTray
   // Shows the quiet mode menu.
   void ShowQuietModeMenu(const ui::Event& event);
 
+  // Creates the menu model for quiet mode and returns it.
+  ui::MenuModel* CreateQuietModeMenu();
+
   internal::WebNotificationBubbleWrapper* message_center_bubble() const {
     return message_center_bubble_.get();
   }
@@ -153,7 +161,6 @@ class ASH_EXPORT WebNotificationTray
   scoped_ptr<message_center::MessageCenterTray> message_center_tray_;
   scoped_ptr<internal::WebNotificationBubbleWrapper> message_center_bubble_;
   scoped_ptr<message_center::MessagePopupCollection> popup_collection_;
-  scoped_ptr<views::MenuRunner> quiet_mode_menu_runner_;
   internal::WebNotificationButton* button_;
 
   bool show_message_center_on_unlock_;

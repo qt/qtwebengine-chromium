@@ -21,8 +21,9 @@
 #define SVGFontFaceUriElement_h
 
 #if ENABLE(SVG_FONTS)
-#include "core/loader/cache/FontResource.h"
-#include "core/loader/cache/ResourcePtr.h"
+#include "SVGNames.h"
+#include "core/fetch/FontResource.h"
+#include "core/fetch/ResourcePtr.h"
 #include "core/svg/SVGElement.h"
 
 namespace WebCore {
@@ -31,25 +32,31 @@ class CSSFontFaceSrcValue;
 
 class SVGFontFaceUriElement FINAL : public SVGElement, public FontResourceClient {
 public:
-    static PassRefPtr<SVGFontFaceUriElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGFontFaceUriElement> create(const QualifiedName&, Document&);
 
     virtual ~SVGFontFaceUriElement();
 
     PassRefPtr<CSSFontFaceSrcValue> srcValue() const;
 
 private:
-    SVGFontFaceUriElement(const QualifiedName&, Document*);
+    SVGFontFaceUriElement(const QualifiedName&, Document&);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
 
-    virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
 
     void loadFont();
 
     ResourcePtr<FontResource> m_resource;
 };
+
+inline SVGFontFaceUriElement* toSVGFontFaceUriElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::font_face_uriTag));
+    return static_cast<SVGFontFaceUriElement*>(node);
+}
 
 } // namespace WebCore
 

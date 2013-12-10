@@ -379,7 +379,6 @@
         'app/webrtc/dtmfsender_unittest.cc',
         'app/webrtc/jsepsessiondescription_unittest.cc',
         'app/webrtc/localaudiosource_unittest.cc',
-        'app/webrtc/localvideosource_unittest.cc',
         # 'app/webrtc/mediastream_unittest.cc',
         # 'app/webrtc/mediastreamhandler_unittest.cc',
         'app/webrtc/mediastreamsignaling_unittest.cc',
@@ -387,6 +386,7 @@
         'app/webrtc/peerconnectionfactory_unittest.cc',
         'app/webrtc/peerconnectioninterface_unittest.cc',
         # 'app/webrtc/peerconnectionproxy_unittest.cc',
+        'app/webrtc/remotevideocapturer_unittest.cc',
         'app/webrtc/test/fakeaudiocapturemodule.cc',
         'app/webrtc/test/fakeaudiocapturemodule.h',
         'app/webrtc/test/fakeaudiocapturemodule_unittest.cc',
@@ -397,6 +397,7 @@
         'app/webrtc/test/fakevideotrackrenderer.h',
         'app/webrtc/test/mockpeerconnectionobservers.h',
         'app/webrtc/test/testsdpstrings.h',
+        'app/webrtc/videosource_unittest.cc',
         'app/webrtc/videotrack_unittest.cc',
         'app/webrtc/webrtcsdp_unittest.cc',
         'app/webrtc/webrtcsession_unittest.cc',
@@ -464,13 +465,16 @@
         },
       ],
     }],
-    ['libjingle_objc == 1', {
+    ['OS=="ios" or (OS=="mac" and target_arch!="ia32" and mac_sdk>="10.7")', {
+      # The >=10.7 above is required to make ARC link cleanly (e.g. as
+      # opposed to _compile_ cleanly, which the library under test
+      # does just fine on 10.6 too).
       'targets': [
         {
+        'target_name': 'libjingle_peerconnection_objc_test',
           'variables': {
             'infoplist_file': './app/webrtc/objctests/Info.plist',
           },
-          'target_name': 'libjingle_peerconnection_objc_test',
           'type': 'executable',
           'mac_bundle': 1,
           'mac_bundle_resources': [
@@ -510,7 +514,7 @@
               ],
             }],
           ],
-        },
+        },  # target libjingle_peerconnection_objc_test
       ],
     }],
   ],

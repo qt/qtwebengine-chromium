@@ -19,7 +19,7 @@
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/public/renderer/render_thread.h"
-#include "content/renderer/media/renderer_gpu_video_decoder_factories.h"
+#include "content/renderer/media/renderer_gpu_video_accelerator_factories.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ui/gfx/native_widget_types.h"
 
@@ -55,7 +55,6 @@ class ForwardingMessageFilter;
 
 namespace media {
 class AudioHardwareConfig;
-class GpuVideoDecoderFactories;
 }
 
 namespace v8 {
@@ -88,6 +87,7 @@ class MediaStreamDependencyFactory;
 class MIDIMessageFilter;
 class P2PSocketDispatcher;
 class PeerConnectionTracker;
+class RendererDemuxerAndroid;
 class RendererWebKitPlatformSupportImpl;
 class RenderProcessObserver;
 class VideoCaptureImplManager;
@@ -218,6 +218,12 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
     return midi_message_filter_.get();
   }
 
+#if defined(OS_ANDROID)
+  RendererDemuxerAndroid* renderer_demuxer() {
+    return renderer_demuxer_.get();
+  }
+#endif
+
   // Creates the embedder implementation of WebMediaStreamCenter.
   // The resulting object is owned by WebKit and deleted by WebKit at tear-down.
   WebKit::WebMediaStreamCenter* CreateMediaStreamCenter(
@@ -258,20 +264,9 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // not sent for at least one notification delay.
   void PostponeIdleNotification();
 
-  // Gets gpu factories, which will run on |factories_loop|. Returns NULL if VDA
-  // is disabled or a graphics context cannot be obtained.
-  scoped_refptr<RendererGpuVideoDecoderFactories> GetGpuFactories(
+  // Gets gpu factories, which will run on |factories_loop|.
+  scoped_refptr<RendererGpuVideoAcceleratorFactories> GetGpuFactories(
       const scoped_refptr<base::MessageLoopProxy>& factories_loop);
-
-  // Returns a graphics context shared among all
-  // RendererGpuVideoDecoderFactories, or NULL on error.  Context remains owned
-  // by this class and must be null-tested before each use to detect context
-  // loss.  The returned context is only valid on the compositor thread when
-  // threaded compositing is enabled.
-  WebGraphicsContext3DCommandBufferImpl* GetGpuVDAContext3D();
-
-  // Handle loss of the shared GpuVDAContext3D context above.
-  static void OnGpuVDAContextLoss();
 
   scoped_refptr<cc::ContextProvider>
       OffscreenContextProviderForMainThread();
@@ -403,6 +398,9 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   scoped_refptr<AudioInputMessageFilter> audio_input_message_filter_;
   scoped_refptr<AudioMessageFilter> audio_message_filter_;
   scoped_refptr<MIDIMessageFilter> midi_message_filter_;
+#if defined(OS_ANDROID)
+  scoped_refptr<RendererDemuxerAndroid> renderer_demuxer_;
+#endif
   scoped_refptr<DevToolsAgentFilter> devtools_agent_message_filter_;
 
   scoped_ptr<MediaStreamDependencyFactory> media_stream_factory_;
@@ -478,9 +476,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 
   ObserverList<RenderProcessObserver> observers_;
 
-  class GpuVDAContextLostCallback;
-  scoped_ptr<GpuVDAContextLostCallback> context_lost_cb_;
-  scoped_ptr<WebGraphicsContext3DCommandBufferImpl> gpu_vda_context3d_;
+  scoped_refptr<ContextProviderCommandBuffer> gpu_va_context_provider_;
 
   scoped_ptr<AudioRendererMixerManager> audio_renderer_mixer_manager_;
   scoped_ptr<media::AudioHardwareConfig> audio_hardware_config_;

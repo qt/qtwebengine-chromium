@@ -121,8 +121,9 @@ class DtlsTransportChannelWrapper : public TransportChannelImpl {
                               TransportChannelImpl* channel);
   virtual ~DtlsTransportChannelWrapper();
 
-  virtual void SetIceRole(IceRole ice_role);
-  // Returns current transport role of the channel.
+  virtual void SetIceRole(IceRole role) {
+    channel_->SetIceRole(role);
+  }
   virtual IceRole GetIceRole() const {
     return channel_->GetIceRole();
   }
@@ -134,7 +135,9 @@ class DtlsTransportChannelWrapper : public TransportChannelImpl {
   virtual bool IsDtlsActive() const { return dtls_state_ != STATE_NONE; }
 
   // Called to send a packet (via DTLS, if turned on).
-  virtual int SendPacket(const char* data, size_t size, int flags);
+  virtual int SendPacket(const char* data, size_t size,
+                         talk_base::DiffServCodePoint dscp,
+                         int flags);
 
   // TransportChannel calls that we forward to the wrapped transport.
   virtual int SetOption(talk_base::Socket::Option opt, int value) {
@@ -157,6 +160,9 @@ class DtlsTransportChannelWrapper : public TransportChannelImpl {
 
   // Find out which DTLS-SRTP cipher was negotiated
   virtual bool GetSrtpCipher(std::string* cipher);
+
+  virtual bool GetSslRole(talk_base::SSLRole* role) const;
+  virtual bool SetSslRole(talk_base::SSLRole role);
 
   // Once DTLS has established (i.e., this channel is writable), this method
   // extracts the keys negotiated during the DTLS handshake, for use in external
@@ -234,7 +240,7 @@ class DtlsTransportChannelWrapper : public TransportChannelImpl {
   std::vector<std::string> srtp_ciphers_;  // SRTP ciphers to use with DTLS.
   State dtls_state_;
   talk_base::SSLIdentity* local_identity_;
-  talk_base::SSLRole dtls_role_;
+  talk_base::SSLRole ssl_role_;
   talk_base::Buffer remote_fingerprint_value_;
   std::string remote_fingerprint_algorithm_;
 

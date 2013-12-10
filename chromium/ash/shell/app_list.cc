@@ -45,8 +45,9 @@ class WindowTypeLauncherItem : public app_list::AppListItemModel {
   };
 
   explicit WindowTypeLauncherItem(Type type) : type_(type) {
+    std::string title(GetTitle(type));
     SetIcon(GetIcon(type), false);
-    SetTitle(GetTitle(type));
+    SetTitleAndFullName(title, title);
   }
 
   static gfx::ImageSkia GetIcon(Type type) {
@@ -119,11 +120,9 @@ class WindowTypeLauncherItem : public app_list::AppListItemModel {
         break;
       }
       case EXAMPLES_WINDOW: {
-#if !defined(OS_MACOSX)
         views::examples::ShowExamplesWindowWithContent(
             views::examples::DO_NOTHING_ON_CLOSE,
             ash::Shell::GetInstance()->browser_context());
-#endif
         break;
       }
       default:
@@ -223,7 +222,11 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
   }
 
   // Overridden from ash::AppListViewDelegate:
-  virtual void SetModel(app_list::AppListModel* model) OVERRIDE {
+  virtual void SetProfileByPath(const base::FilePath& profile_path) OVERRIDE {
+    // Nothing needs to be done.
+  }
+
+  virtual void InitModel(app_list::AppListModel* model) OVERRIDE {
     model_ = model;
     PopulateApps(model_->apps());
     DecorateSearchBox(model_->search_box());
@@ -294,20 +297,8 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
     // Nothing needs to be done.
   }
 
-  virtual void ViewActivationChanged(bool active) OVERRIDE {
-    // Nothing needs to be done.
-  }
-
   virtual gfx::ImageSkia GetWindowIcon() OVERRIDE {
     return gfx::ImageSkia();
-  }
-
-  virtual base::string16 GetCurrentUserName() OVERRIDE {
-    return base::string16();
-  }
-
-  virtual base::string16 GetCurrentUserEmail() OVERRIDE {
-    return base::string16();
   }
 
   virtual void OpenSettings() OVERRIDE {
@@ -319,6 +310,11 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
   }
 
   virtual void OpenFeedback() OVERRIDE {
+    // Nothing needs to be done.
+  }
+
+  virtual void ShowForProfileByPath(
+      const base::FilePath& profile_path) OVERRIDE {
     // Nothing needs to be done.
   }
 

@@ -6,7 +6,7 @@
 
 <polymer-element name="kb-key-base"
     on-pointerdown="down" on-pointerup="up" on-pointerout="out"
-    attributes="accents char invert repeat superscript toKeyset toLayout">
+    attributes="accents char invert repeat hintText toKeyset toLayout">
   <script>
     /**
      * The long-press delay in milliseconds before long-press handler is
@@ -109,20 +109,50 @@
         }
       },
       down: function(event) {
-        var detail = {
-            char: this.char || this.textContent,
-            toLayout: this.toLayout,
-            repeat: this.repeat
-        };
+        var detail = this.populateDetails();
         if (this.keysetRules && this.keysetRules.down != undefined) {
           detail.toKeyset = this.keysetRules.down[TO_KEYSET - OFFSET];
           detail.nextKeyset = this.keysetRules.down[NEXT_KEYSET - OFFSET];
         }
         this.fire('key-down', detail);
-        this.longPressTimer = this.asyncMethod(function() {
+        this.longPressTimer = this.generateLongPressTimer();
+      },
+      out: function(event) {
+        clearTimeout(this.longPressTimer);
+      },
+      up: function(event) {
+        clearTimeout(this.longPressTimer);
+        var detail = this.populateDetails();
+        if (this.keysetRules && this.keysetRules.up != undefined) {
+          detail.toKeyset = this.keysetRules.up[TO_KEYSET - OFFSET];
+          detail.nextKeyset = this.keysetRules.up[NEXT_KEYSET - OFFSET];
+        }
+        this.fire('key-up', detail);
+      },
+
+      /**
+       * Character value associated with the key. Typically, the value is a
+       * single charcater, but may be multi-character in cases like a ".com"
+       * button.
+       * @type {string}
+       */
+      get charValue() {
+        return this.char || this.textContent;
+      },
+
+      populateDetails: function() {
+         return {
+            char: this.charValue,
+            toLayout: this.toLayout,
+            repeat: this.repeat
+         };
+      },
+
+      generateLongPressTimer: function() {
+        return this.asyncMethod(function() {
           var detail = {
-            char: this.char || this.textContent,
-            superscript: this.superscript
+            char: this.charValue,
+            hintText: this.hintText
           };
           if (this.keysetRules && this.keysetRules.long != undefined) {
             detail.toKeyset = this.keysetRules.long[TO_KEYSET - OFFSET];
@@ -131,21 +161,6 @@
           this.fire('key-longpress', detail);
         }, null, LONGPRESS_DELAY_MSEC);
       },
-      out: function(event) {
-        clearTimeout(this.longPressTimer);
-      },
-      up: function(event) {
-        clearTimeout(this.longPressTimer);
-        var detail = {
-            char: this.char || this.textContent,
-            toLayout: this.toLayout
-        };
-        if (this.keysetRules && this.keysetRules.up != undefined) {
-          detail.toKeyset = this.keysetRules.up[TO_KEYSET - OFFSET];
-          detail.nextKeyset = this.keysetRules.up[NEXT_KEYSET - OFFSET];
-        }
-        this.fire('key-up', detail);
-      }
     });
   </script>
 </polymer-element>

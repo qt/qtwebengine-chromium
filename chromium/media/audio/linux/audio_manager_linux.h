@@ -25,8 +25,10 @@ class MEDIA_EXPORT AudioManagerLinux : public AudioManagerBase {
   virtual bool HasAudioOutputDevices() OVERRIDE;
   virtual bool HasAudioInputDevices() OVERRIDE;
   virtual void ShowAudioInputSettings() OVERRIDE;
-  virtual void GetAudioInputDeviceNames(media::AudioDeviceNames* device_names)
-      OVERRIDE;
+  virtual void GetAudioInputDeviceNames(
+      AudioDeviceNames* device_names) OVERRIDE;
+  virtual void GetAudioOutputDeviceNames(
+      AudioDeviceNames* device_names) OVERRIDE;
   virtual AudioParameters GetInputStreamParameters(
       const std::string& device_id) OVERRIDE;
 
@@ -35,6 +37,7 @@ class MEDIA_EXPORT AudioManagerLinux : public AudioManagerBase {
       const AudioParameters& params) OVERRIDE;
   virtual AudioOutputStream* MakeLowLatencyOutputStream(
       const AudioParameters& params,
+      const std::string& device_id,
       const std::string& input_device_id) OVERRIDE;
   virtual AudioInputStream* MakeLinearInputStream(
       const AudioParameters& params, const std::string& device_id) OVERRIDE;
@@ -45,6 +48,7 @@ class MEDIA_EXPORT AudioManagerLinux : public AudioManagerBase {
   virtual ~AudioManagerLinux();
 
   virtual AudioParameters GetPreferredOutputStreamParameters(
+      const std::string& output_device_id,
       const AudioParameters& input_params) OVERRIDE;
 
  private:
@@ -53,14 +57,22 @@ class MEDIA_EXPORT AudioManagerLinux : public AudioManagerBase {
     kStreamCapture,
   };
 
-  // Gets a list of available ALSA input devices.
-  void GetAlsaAudioInputDevices(media::AudioDeviceNames* device_names);
+  // Gets a list of available ALSA devices.
+  void GetAlsaAudioDevices(StreamType type,
+                           media::AudioDeviceNames* device_names);
 
-  // Gets the ALSA devices' names and ids.
-  void GetAlsaDevicesInfo(void** hint, media::AudioDeviceNames* device_names);
+  // Gets the ALSA devices' names and ids that support streams of the
+  // given type.
+  void GetAlsaDevicesInfo(StreamType type,
+                          void** hint,
+                          media::AudioDeviceNames* device_names);
 
   // Checks if the specific ALSA device is available.
-  bool IsAlsaDeviceAvailable(const char* device_name);
+  static bool IsAlsaDeviceAvailable(StreamType type,
+                                    const char* device_name);
+
+  static const char* UnwantedDeviceTypeWhenEnumerating(
+      StreamType wanted_type);
 
   // Returns true if a device is present for the given stream type.
   bool HasAnyAlsaAudioDevice(StreamType stream);

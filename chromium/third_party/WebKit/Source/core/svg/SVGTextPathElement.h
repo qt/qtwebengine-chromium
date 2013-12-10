@@ -20,8 +20,8 @@
 #ifndef SVGTextPathElement_h
 #define SVGTextPathElement_h
 
+#include "SVGNames.h"
 #include "core/svg/SVGTextContentElement.h"
-
 #include "core/svg/SVGURIReference.h"
 
 namespace WebCore {
@@ -109,10 +109,10 @@ public:
         TEXTPATH_SPACINGTYPE_EXACT = SVGTextPathSpacingExact
     };
 
-    static PassRefPtr<SVGTextPathElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGTextPathElement> create(const QualifiedName&, Document&);
 
 private:
-    SVGTextPathElement(const QualifiedName&, Document*);
+    SVGTextPathElement(const QualifiedName&, Document&);
 
     virtual ~SVGTextPathElement();
 
@@ -127,8 +127,8 @@ private:
     virtual void svgAttributeChanged(const QualifiedName&);
 
     virtual RenderObject* createRenderer(RenderStyle*);
-    virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const;
-    virtual bool rendererIsNeeded(const NodeRenderingContext&);
+    virtual bool childShouldCreateRenderer(const Node& child) const;
+    virtual bool rendererIsNeeded(const RenderStyle&);
 
     virtual bool selfHasRelativeLengths() const;
 
@@ -139,6 +139,12 @@ private:
         DECLARE_ANIMATED_STRING(Href, href)
     END_DECLARE_ANIMATED_PROPERTIES
 };
+
+inline SVGTextPathElement* toSVGTextPathElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::textPathTag));
+    return static_cast<SVGTextPathElement*>(node);
+}
 
 } // namespace WebCore
 

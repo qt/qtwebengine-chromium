@@ -58,7 +58,7 @@ bool CSSToStyleMap::useSVGZoomRules() const
 
 PassRefPtr<StyleImage> CSSToStyleMap::styleImage(CSSPropertyID propertyId, CSSValue* value)
 {
-    return m_elementStyleResources.styleImage(m_state.document()->textLinkColors(), propertyId, value);
+    return m_elementStyleResources.styleImage(m_state.document().textLinkColors(), m_state.style()->visitedDependentColor(CSSPropertyColor), propertyId, value);
 }
 
 void CSSToStyleMap::mapFillAttachment(CSSPropertyID, FillLayer* layer, CSSValue* value) const
@@ -297,6 +297,34 @@ void CSSToStyleMap::mapFillYPosition(CSSPropertyID propertyID, FillLayer* layer,
         layer->setBackgroundYOrigin(*(pair->first()));
 }
 
+void CSSToStyleMap::mapFillMaskSourceType(CSSPropertyID, FillLayer* layer, CSSValue* value)
+{
+    EMaskSourceType type = FillLayer::initialFillMaskSourceType(layer->type());
+    if (value->isInitialValue()) {
+        layer->setMaskSourceType(type);
+        return;
+    }
+
+    if (!value->isPrimitiveValue())
+        return;
+
+    CSSPrimitiveValue* primitiveValue = static_cast<CSSPrimitiveValue*>(value);
+    switch (primitiveValue->getValueID()) {
+    case CSSValueAlpha:
+        type = MaskAlpha;
+        break;
+    case CSSValueLuminance:
+        type = MaskLuminance;
+        break;
+    case CSSValueAuto:
+        break;
+    default:
+        ASSERT_NOT_REACHED();
+    }
+
+    layer->setMaskSourceType(type);
+}
+
 void CSSToStyleMap::mapAnimationDelay(CSSAnimationData* animation, CSSValue* value) const
 {
     if (value->isInitialValue()) {
@@ -482,10 +510,10 @@ void CSSToStyleMap::mapAnimationTimingFunction(CSSAnimationData* animation, CSSV
             animation->setTimingFunction(CubicBezierTimingFunction::preset(CubicBezierTimingFunction::EaseInOut));
             break;
         case CSSValueStepStart:
-            animation->setTimingFunction(StepsTimingFunction::create(1, true));
+            animation->setTimingFunction(StepsTimingFunction::preset(StepsTimingFunction::Start));
             break;
         case CSSValueStepEnd:
-            animation->setTimingFunction(StepsTimingFunction::create(1, false));
+            animation->setTimingFunction(StepsTimingFunction::preset(StepsTimingFunction::End));
             break;
         default:
             break;
@@ -499,8 +527,7 @@ void CSSToStyleMap::mapAnimationTimingFunction(CSSAnimationData* animation, CSSV
     } else if (value->isStepsTimingFunctionValue()) {
         CSSStepsTimingFunctionValue* stepsTimingFunction = static_cast<CSSStepsTimingFunctionValue*>(value);
         animation->setTimingFunction(StepsTimingFunction::create(stepsTimingFunction->numberOfSteps(), stepsTimingFunction->stepAtStart()));
-    } else if (value->isLinearTimingFunctionValue())
-        animation->setTimingFunction(LinearTimingFunction::create());
+    }
 }
 
 void CSSToStyleMap::mapNinePieceImage(RenderStyle* mutableStyle, CSSPropertyID property, CSSValue* value, NinePieceImage& image)

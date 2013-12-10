@@ -5,11 +5,13 @@
 #include "tools/gn/toolchain.h"
 
 #include "base/logging.h"
+#include "tools/gn/value.h"
 
 const char* Toolchain::kToolCc = "cc";
 const char* Toolchain::kToolCxx = "cxx";
 const char* Toolchain::kToolObjC = "objc";
 const char* Toolchain::kToolObjCxx = "objcxx";
+const char* Toolchain::kToolRc = "rc";
 const char* Toolchain::kToolAsm = "asm";
 const char* Toolchain::kToolAlink = "alink";
 const char* Toolchain::kToolSolink = "solink";
@@ -23,7 +25,7 @@ Toolchain::Tool::Tool() {
 Toolchain::Tool::~Tool() {
 }
 
-Toolchain::Toolchain(const Label& label) : Item(label) {
+Toolchain::Toolchain(const Label& label) : Item(label), is_default_(false) {
 }
 
 Toolchain::~Toolchain() {
@@ -43,6 +45,7 @@ Toolchain::ToolType Toolchain::ToolNameToType(const base::StringPiece& str) {
   if (str == kToolCxx) return TYPE_CXX;
   if (str == kToolObjC) return TYPE_OBJC;
   if (str == kToolObjCxx) return TYPE_OBJCXX;
+  if (str == kToolRc) return TYPE_RC;
   if (str == kToolAsm) return TYPE_ASM;
   if (str == kToolAlink) return TYPE_ALINK;
   if (str == kToolSolink) return TYPE_SOLINK;
@@ -59,6 +62,7 @@ std::string Toolchain::ToolTypeToName(ToolType type) {
     case TYPE_CXX: return kToolCxx;
     case TYPE_OBJC: return kToolObjC;
     case TYPE_OBJCXX: return kToolObjCxx;
+    case TYPE_RC: return kToolRc;
     case TYPE_ASM: return kToolAsm;
     case TYPE_ALINK: return kToolAlink;
     case TYPE_SOLINK: return kToolSolink;

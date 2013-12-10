@@ -31,7 +31,6 @@
 #include "WebCommon.h"
 #include "WebCompositingReasons.h"
 #include "WebPoint.h"
-#include "WebPrivatePtr.h"
 #include "WebRect.h"
 #include "WebString.h"
 #include "WebVector.h"
@@ -42,13 +41,12 @@ class SkImageFilter;
 namespace WebKit {
 class WebAnimationDelegate;
 class WebFilterOperations;
+class WebLayerClient;
 class WebLayerScrollClient;
 struct WebFloatPoint;
 struct WebFloatRect;
 struct WebLayerPositionConstraint;
 struct WebSize;
-
-class WebLayerImpl;
 
 class WebLayer {
 public:
@@ -135,11 +133,8 @@ public:
     // (opacity, transforms), it may conflict and hide the background filters.
     virtual void setBackgroundFilters(const WebFilterOperations&) = 0;
 
-    virtual void setDebugName(WebString) = 0;
-
     // Provides a bitfield that describe why this composited layer was created.
-    // FIXME: non-pure until the chromium-side implements this.
-    virtual void setCompositingReasons(WebCompositingReasons) { }
+    virtual void setCompositingReasons(WebCompositingReasons) = 0;
 
     // An animation delegate is notified when animations are started and
     // stopped. The WebLayer does not take ownership of the delegate, and it is
@@ -167,8 +162,15 @@ public:
     // Returns true if this layer has any active animations - useful for tests.
     virtual bool hasActiveAnimation() = 0;
 
-    // Transfers all animations running on the current layer.
-    virtual void transferAnimationsTo(WebLayer*) { }
+    // If a scroll parent is set, this layer will inherit its parent's scroll
+    // delta and offset even though it will not be a descendant of the scroll
+    // in the layer hierarchy.
+    virtual void setScrollParent(WebLayer*) = 0;
+
+    // A layer will not respect any clips established by layers between it and
+    // its nearest clipping ancestor. Note, the clip parent must be an ancestor.
+    // This is not a requirement of the scroll parent.
+    virtual void setClipParent(WebLayer*) = 0;
 
     // Scrolling
     virtual void setScrollPosition(WebPoint) = 0;
@@ -189,8 +191,8 @@ public:
     virtual void setNonFastScrollableRegion(const WebVector<WebRect>&) = 0;
     virtual WebVector<WebRect> nonFastScrollableRegion() const = 0;
 
-    virtual void setTouchEventHandlerRegion(const WebVector<WebRect>&) { };
-    virtual WebVector<WebRect> touchEventHandlerRegion() const { return WebVector<WebRect>();}
+    virtual void setTouchEventHandlerRegion(const WebVector<WebRect>&) = 0;
+    virtual WebVector<WebRect> touchEventHandlerRegion() const = 0;
 
     virtual void setIsContainerForFixedPositionLayers(bool) = 0;
     virtual bool isContainerForFixedPositionLayers() const = 0;
@@ -213,6 +215,8 @@ public:
 
     // True if the layer is not part of a tree attached to a WebLayerTreeView.
     virtual bool isOrphan() const = 0;
+
+    virtual void setWebLayerClient(WebLayerClient*) = 0;
 };
 
 } // namespace WebKit

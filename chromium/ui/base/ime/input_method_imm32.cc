@@ -120,11 +120,6 @@ void InputMethodIMM32::CancelComposition(const TextInputClient* client) {
     imm32_manager_.CancelIME(GetAttachedWindowHandle(client));
 }
 
-void InputMethodIMM32::SetFocusedTextInputClient(TextInputClient* client) {
-  ConfirmCompositionText();
-  InputMethodWin::SetFocusedTextInputClient(client);
-}
-
 bool InputMethodIMM32::IsCandidatePopupOpen() const {
   return is_candidate_popup_open_;
 }
@@ -158,8 +153,7 @@ LRESULT InputMethodIMM32::OnImeSetContext(HWND window_handle,
                                           WPARAM wparam,
                                           LPARAM lparam,
                                           BOOL* handled) {
-  active_ = (wparam == TRUE);
-  if (active_)
+  if (!!wparam)
     imm32_manager_.CreateImeWindow(window_handle);
 
   OnInputMethodChanged();
@@ -270,24 +264,20 @@ void InputMethodIMM32::ConfirmCompositionText() {
 void InputMethodIMM32::UpdateIMEState() {
   // Use switch here in case we are going to add more text input types.
   // We disable input method in password field.
+  const HWND window_handle = GetAttachedWindowHandle(GetTextInputClient());
   switch (GetTextInputType()) {
     case ui::TEXT_INPUT_TYPE_NONE:
     case ui::TEXT_INPUT_TYPE_PASSWORD:
-      imm32_manager_.DisableIME(GetAttachedWindowHandle(GetTextInputClient()));
+      imm32_manager_.DisableIME(window_handle);
       enabled_ = false;
       break;
     default:
-      imm32_manager_.EnableIME(GetAttachedWindowHandle(GetTextInputClient()));
+      imm32_manager_.EnableIME(window_handle);
       enabled_ = true;
       break;
   }
-}
 
-bool InputMethodIMM32::IsWindowFocused(const TextInputClient* client) const {
-  if (!client)
-    return false;
-  HWND attached_window_handle = GetAttachedWindowHandle(client);
-  return attached_window_handle && GetFocus() == attached_window_handle;
+  imm32_manager_.SetTextInputMode(window_handle, GetTextInputMode());
 }
 
 }  // namespace ui

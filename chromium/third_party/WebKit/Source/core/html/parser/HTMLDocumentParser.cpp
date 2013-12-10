@@ -29,6 +29,7 @@
 #include "HTMLNames.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/Element.h"
+#include "core/html/HTMLDocument.h"
 #include "core/html/parser/AtomicHTMLToken.h"
 #include "core/html/parser/BackgroundHTMLParser.h"
 #include "core/html/parser/CompactHTMLToken.h"
@@ -73,7 +74,7 @@ static HTMLTokenizer::State tokenizerStateForContextElement(Element* contextElem
     return HTMLTokenizer::DataState;
 }
 
-HTMLDocumentParser::HTMLDocumentParser(Document* document, bool reportErrors)
+HTMLDocumentParser::HTMLDocumentParser(HTMLDocument* document, bool reportErrors)
     : ScriptableDocumentParser(document)
     , m_options(document)
     , m_token(m_options.useThreading ? nullptr : adoptPtr(new HTMLToken))
@@ -95,12 +96,12 @@ HTMLDocumentParser::HTMLDocumentParser(Document* document, bool reportErrors)
 // FIXME: Member variables should be grouped into self-initializing structs to
 // minimize code duplication between these constructors.
 HTMLDocumentParser::HTMLDocumentParser(DocumentFragment* fragment, Element* contextElement, ParserContentPolicy parserContentPolicy)
-    : ScriptableDocumentParser(fragment->document(), parserContentPolicy)
-    , m_options(fragment->document())
+    : ScriptableDocumentParser(&fragment->document(), parserContentPolicy)
+    , m_options(&fragment->document())
     , m_token(adoptPtr(new HTMLToken))
     , m_tokenizer(HTMLTokenizer::create(m_options))
     , m_treeBuilder(HTMLTreeBuilder::create(this, fragment, contextElement, this->parserContentPolicy(), m_options))
-    , m_xssAuditorDelegate(fragment->document())
+    , m_xssAuditorDelegate(&fragment->document())
     , m_weakFactory(this)
     , m_isPinnedToMainThread(true)
     , m_endWasDelayed(false)
@@ -558,7 +559,7 @@ void HTMLDocumentParser::pumpTokenizer(SynchronousMode mode)
     if (isWaitingForScripts()) {
         ASSERT(m_tokenizer->state() == HTMLTokenizer::DataState);
         if (!m_preloadScanner) {
-            m_preloadScanner = adoptPtr(new HTMLPreloadScanner(m_options, document()->url()));
+            m_preloadScanner = adoptPtr(new HTMLPreloadScanner(m_options, document()->url(), document()->devicePixelRatio()));
             m_preloadScanner->appendToEnd(m_input.current());
         }
         m_preloadScanner->scan(m_preloader.get(), document()->baseElementURL());
@@ -633,7 +634,8 @@ void HTMLDocumentParser::insert(const SegmentedString& source)
         // Check the document.write() output with a separate preload scanner as
         // the main scanner can't deal with insertions.
         if (!m_insertionPreloadScanner)
-            m_insertionPreloadScanner = adoptPtr(new HTMLPreloadScanner(m_options, document()->url()));
+            m_insertionPreloadScanner = adoptPtr(new HTMLPreloadScanner(m_options, document()->url(), document()->devicePixelRatio()));
+
         m_insertionPreloadScanner->appendToEnd(source);
         m_insertionPreloadScanner->scan(m_preloader.get(), document()->baseElementURL());
     }
@@ -657,7 +659,7 @@ void HTMLDocumentParser::startBackgroundParser()
     config->parser = m_weakFactory.createWeakPtr();
     config->xssAuditor = adoptPtr(new XSSAuditor);
     config->xssAuditor->init(document(), &m_xssAuditorDelegate);
-    config->preloadScanner = adoptPtr(new TokenPreloadScanner(document()->url().copy()));
+    config->preloadScanner = adoptPtr(new TokenPreloadScanner(document()->url().copy(), document()->devicePixelRatio()));
 
     ASSERT(config->xssAuditor->isSafeToSendToAnotherThread());
     ASSERT(config->preloadScanner->isSafeToSendToAnotherThread());

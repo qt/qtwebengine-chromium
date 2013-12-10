@@ -99,12 +99,18 @@ void AXComputedObjectAttributeCache::setIgnored(AXID id, AccessibilityObjectIncl
     }
 }
 
+void AXComputedObjectAttributeCache::clear()
+{
+    m_idMapping.clear();
+}
+
 bool AXObjectCache::gAccessibilityEnabled = false;
 
 AXObjectCache::AXObjectCache(const Document* doc)
     : m_notificationPostTimer(this, &AXObjectCache::notificationPostTimerFired)
 {
     m_document = const_cast<Document*>(doc);
+    m_computedObjectAttributeCache = AXComputedObjectAttributeCache::create();
 }
 
 AXObjectCache::~AXObjectCache()
@@ -131,7 +137,7 @@ AccessibilityObject* AXObjectCache::focusedImageMapUIElement(HTMLAreaElement* ar
     if (!imageElement)
         return 0;
 
-    AccessibilityObject* axRenderImage = areaElement->document()->axObjectCache()->getOrCreate(imageElement);
+    AccessibilityObject* axRenderImage = areaElement->document().axObjectCache()->getOrCreate(imageElement);
     if (!axRenderImage)
         return 0;
 
@@ -163,7 +169,7 @@ AccessibilityObject* AXObjectCache::focusedUIElementForPage(const Page* page)
     if (isHTMLAreaElement(focusedNode))
         return focusedImageMapUIElement(toHTMLAreaElement(focusedNode));
 
-    AccessibilityObject* obj = focusedNode->document()->axObjectCache()->getOrCreate(focusedNode);
+    AccessibilityObject* obj = focusedNode->document().axObjectCache()->getOrCreate(focusedNode);
     if (!obj)
         return 0;
 
@@ -311,7 +317,7 @@ AccessibilityObject* AXObjectCache::getOrCreate(Widget* widget)
 
     RefPtr<AccessibilityObject> newObj = 0;
     if (widget->isFrameView())
-        newObj = AccessibilityScrollView::create(static_cast<ScrollView*>(widget));
+        newObj = AccessibilityScrollView::create(toScrollView(widget));
     else if (widget->isScrollbar())
         newObj = AccessibilityScrollbar::create(static_cast<Scrollbar*>(widget));
 
@@ -629,7 +635,7 @@ void AXObjectCache::notificationPostTimerFired(Timer<AXObjectCache>*)
         // Make sure none of the render views are in the process of being layed out.
         // Notifications should only be sent after the renderer has finished
         if (obj->isAccessibilityRenderObject()) {
-            AccessibilityRenderObject* renderObj = static_cast<AccessibilityRenderObject*>(obj);
+            AccessibilityRenderObject* renderObj = toAccessibilityRenderObject(obj);
             RenderObject* renderer = renderObj->renderer();
             if (renderer && renderer->view())
                 ASSERT(!renderer->view()->layoutState());
@@ -651,7 +657,7 @@ void AXObjectCache::postNotification(RenderObject* renderer, AXNotification noti
     if (!renderer)
         return;
 
-    stopCachingComputedObjectAttributes();
+    m_computedObjectAttributeCache->clear();
 
     // Get an accessibility object that already exists. One should not be created here
     // because a render update may be in progress and creating an AX object can re-trigger a layout
@@ -664,7 +670,7 @@ void AXObjectCache::postNotification(RenderObject* renderer, AXNotification noti
     if (!renderer)
         return;
 
-    postNotification(object.get(), renderer->document(), notification, postToElement, postType);
+    postNotification(object.get(), &renderer->document(), notification, postToElement, postType);
 }
 
 void AXObjectCache::postNotification(Node* node, AXNotification notification, bool postToElement, PostType postType)
@@ -672,7 +678,7 @@ void AXObjectCache::postNotification(Node* node, AXNotification notification, bo
     if (!node)
         return;
 
-    stopCachingComputedObjectAttributes();
+    m_computedObjectAttributeCache->clear();
 
     // Get an accessibility object that already exists. One should not be created here
     // because a render update may be in progress and creating an AX object can re-trigger a layout
@@ -685,12 +691,12 @@ void AXObjectCache::postNotification(Node* node, AXNotification notification, bo
     if (!node)
         return;
 
-    postNotification(object.get(), node->document(), notification, postToElement, postType);
+    postNotification(object.get(), &node->document(), notification, postToElement, postType);
 }
 
 void AXObjectCache::postNotification(AccessibilityObject* object, Document* document, AXNotification notification, bool postToElement, PostType postType)
 {
-    stopCachingComputedObjectAttributes();
+    m_computedObjectAttributeCache->clear();
 
     if (object && !postToElement)
         object = object->observableObject();
@@ -728,18 +734,6 @@ void AXObjectCache::selectedChildrenChanged(RenderObject* renderer)
     postNotification(renderer, AXSelectedChildrenChanged, false);
 }
 
-void AXObjectCache::nodeTextChangeNotification(Node* node, AXTextChange textChange, unsigned offset, const String& text)
-{
-    if (!node)
-        return;
-
-    stopCachingComputedObjectAttributes();
-
-    // Delegate on the right platform
-    AccessibilityObject* obj = getOrCreate(node);
-    nodeTextChangePlatformNotification(obj, textChange, offset, text);
-}
-
 void AXObjectCache::handleScrollbarUpdate(ScrollView* view)
 {
     if (!view)
@@ -747,7 +741,7 @@ void AXObjectCache::handleScrollbarUpdate(ScrollView* view)
 
     // We don't want to create a scroll view from this method, only update an existing one.
     if (AccessibilityObject* scrollViewObject = get(view)) {
-        stopCachingComputedObjectAttributes();
+        m_computedObjectAttributeCache->clear();
         scrollViewObject->updateChildrenIfNecessary();
     }
 }
@@ -766,10 +760,9 @@ void AXObjectCache::handleActiveDescendantChanged(Node* node)
 
 void AXObjectCache::handleAriaRoleChanged(Node* node)
 {
-    stopCachingComputedObjectAttributes();
-
     if (AccessibilityObject* obj = getOrCreate(node)) {
         obj->updateAccessibilityRole();
+        m_computedObjectAttributeCache->clear();
         obj->notifyIfIgnoredValueChanged();
     }
 }
@@ -819,14 +812,14 @@ void AXObjectCache::recomputeIsIgnored(RenderObject* renderer)
 
 void AXObjectCache::startCachingComputedObjectAttributesUntilTreeMutates()
 {
-    if (!m_computedObjectAttributeCache)
-        m_computedObjectAttributeCache = AXComputedObjectAttributeCache::create();
+    // FIXME: no longer needed. When Chromium no longer calls
+    // WebAXObject::startCachingComputedObjectAttributesUntilTreeMutates,
+    // delete this function and the WebAXObject interfaces.
 }
 
 void AXObjectCache::stopCachingComputedObjectAttributes()
 {
-    if (m_computedObjectAttributeCache)
-        m_computedObjectAttributeCache.clear();
+    // FIXME: no longer needed (see above).
 }
 
 VisiblePosition AXObjectCache::visiblePositionForTextMarkerData(TextMarkerData& textMarkerData)
@@ -844,7 +837,7 @@ VisiblePosition AXObjectCache::visiblePositionForTextMarkerData(TextMarkerData& 
     if (!renderer)
         return VisiblePosition();
 
-    AXObjectCache* cache = renderer->document()->axObjectCache();
+    AXObjectCache* cache = renderer->document().axObjectCache();
     if (!cache->isIDinUse(textMarkerData.axID))
         return VisiblePosition();
 
@@ -873,7 +866,7 @@ void AXObjectCache::textMarkerDataForVisiblePosition(TextMarkerData& textMarkerD
         return;
 
     // find or create an accessibility object for this node
-    AXObjectCache* cache = domNode->document()->axObjectCache();
+    AXObjectCache* cache = domNode->document().axObjectCache();
     RefPtr<AccessibilityObject> obj = cache->getOrCreate(domNode);
 
     textMarkerData.axID = obj.get()->axObjectID();
@@ -934,55 +927,26 @@ void AXObjectCache::postPlatformNotification(AccessibilityObject* obj, AXNotific
         Scrollbar* scrollBar = static_cast<AccessibilityScrollbar*>(obj)->scrollbar();
         if (!scrollBar || !scrollBar->parent() || !scrollBar->parent()->isFrameView())
             return;
-        Document* document = toFrameView(scrollBar->parent())->frame()->document();
+        Document* document = toFrameView(scrollBar->parent())->frame().document();
         if (document != document->topDocument())
             return;
         obj = get(document->renderer());
     }
 
-    if (!obj || !obj->document() || !obj->documentFrameView() || !obj->documentFrameView()->frame() || !obj->documentFrameView()->frame()->page())
+    if (!obj || !obj->document() || !obj->documentFrameView() || !obj->documentFrameView()->frame().page())
         return;
 
-    ChromeClient* client = obj->documentFrameView()->frame()->page()->chrome().client();
-    if (!client)
-        return;
+    ChromeClient& client = obj->documentFrameView()->frame().page()->chrome().client();
 
-    switch (notification) {
-    case AXActiveDescendantChanged:
-        if (!obj->document()->focusedElement() || (obj->node() != obj->document()->focusedElement()))
-            break;
-
+    if (notification == AXActiveDescendantChanged
+        && obj->document()->focusedElement()
+        && obj->node() == obj->document()->focusedElement()) {
         // Calling handleFocusedUIElementChanged will focus the new active
         // descendant and send the AXFocusedUIElementChanged notification.
         handleFocusedUIElementChanged(0, obj->document()->focusedElement());
-        break;
-    case AXAriaAttributeChanged:
-    case AXAutocorrectionOccured:
-    case AXCheckedStateChanged:
-    case AXChildrenChanged:
-    case AXFocusedUIElementChanged:
-    case AXInvalidStatusChanged:
-    case AXLayoutComplete:
-    case AXLiveRegionChanged:
-    case AXLoadComplete:
-    case AXMenuListItemSelected:
-    case AXMenuListValueChanged:
-    case AXRowCollapsed:
-    case AXRowCountChanged:
-    case AXRowExpanded:
-    case AXScrolledToAnchor:
-    case AXSelectedChildrenChanged:
-    case AXSelectedTextChanged:
-    case AXTextChanged:
-    case AXValueChanged:
-        break;
     }
 
-    client->postAccessibilityNotification(obj, notification);
-}
-
-void AXObjectCache::nodeTextChangePlatformNotification(AccessibilityObject*, AXTextChange, unsigned, const String&)
-{
+    client.postAccessibilityNotification(obj, notification);
 }
 
 void AXObjectCache::handleFocusedUIElementChanged(Node*, Node* newFocusedNode)
@@ -990,7 +954,7 @@ void AXObjectCache::handleFocusedUIElementChanged(Node*, Node* newFocusedNode)
     if (!newFocusedNode)
         return;
 
-    Page* page = newFocusedNode->document()->page();
+    Page* page = newFocusedNode->document().page();
     if (!page)
         return;
 

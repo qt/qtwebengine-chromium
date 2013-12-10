@@ -11,11 +11,10 @@ class ScrollAction(page_action.PageAction):
     super(ScrollAction, self).__init__(attributes)
 
   def WillRunAction(self, page, tab):
-    with open(
-      os.path.join(os.path.dirname(__file__),
-                   'scroll.js')) as f:
-      js = f.read()
-      tab.ExecuteJavaScript(js)
+    for js_file in ['gesture_common.js', 'scroll.js']:
+      with open(os.path.join(os.path.dirname(__file__), js_file)) as f:
+        js = f.read()
+        tab.ExecuteJavaScript(js)
 
     # Fail if this action requires touch and we can't send touch events.
     if (hasattr(self, 'scroll_requires_touch') and
@@ -72,7 +71,7 @@ class ScrollAction(page_action.PageAction):
     return True
 
   def CustomizeBrowserOptions(self, options):
-    options.AppendExtraBrowserArg('--enable-gpu-benchmarking')
+    options.AppendExtraBrowserArgs('--enable-gpu-benchmarking')
 
   def BindMeasurementJavaScript(self, tab, start_js, stop_js):
     # Make the scroll action start and stop measurement automatically.

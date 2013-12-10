@@ -10,8 +10,7 @@
 #include "ash/shell_window_ids.h"
 #include "ash/wm/always_on_top_controller.h"
 #include "ash/wm/coordinate_conversion.h"
-#include "ash/wm/property_util.h"
-#include "ash/wm/window_properties.h"
+#include "ash/wm/window_state.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
@@ -26,7 +25,7 @@ namespace {
 // return the active root window.
 aura::RootWindow* FindContainerRoot(const gfx::Rect& bounds) {
   if (bounds.x() == 0 && bounds.y() == 0 && bounds.IsEmpty())
-    return Shell::GetActiveRootWindow();
+    return Shell::GetTargetRootWindow();
   return wm::GetRootWindowMatching(bounds);
 }
 
@@ -50,13 +49,10 @@ bool HasTransientParentWindow(aura::Window* window) {
       window->transient_parent()->type() != aura::client::WINDOW_TYPE_UNKNOWN;
 }
 
-bool IsPanelAttached(aura::Window* window) {
-  return window->GetProperty(internal::kPanelAttachedKey);
-}
-
 internal::AlwaysOnTopController*
 GetAlwaysOnTopController(aura::RootWindow* root_window) {
-  return GetRootWindowController(root_window)->always_on_top_controller();
+  return internal::GetRootWindowController(root_window)->
+      always_on_top_controller();
 }
 
 }  // namespace
@@ -96,7 +92,7 @@ aura::Window* StackingController::GetDefaultParent(aura::Window* context,
       return GetContainerById(
           target_root, internal::kShellWindowId_UnparentedControlContainer);
     case aura::client::WINDOW_TYPE_PANEL:
-      if (IsPanelAttached(window))
+      if (wm::GetWindowState(window)->panel_attached())
         return GetContainerById(target_root,
                                 internal::kShellWindowId_PanelContainer);
       else

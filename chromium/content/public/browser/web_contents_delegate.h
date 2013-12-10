@@ -37,6 +37,7 @@ class DownloadItem;
 class JavaScriptDialogManager;
 class PageState;
 class RenderViewHost;
+class SessionStorageNamespace;
 class WebContents;
 class WebContentsImpl;
 struct ContextMenuParams;
@@ -93,9 +94,10 @@ class CONTENT_EXPORT WebContentsDelegate {
 
   // Creates a new tab with the already-created WebContents 'new_contents'.
   // The window for the added contents should be reparented correctly when this
-  // method returns.  If |disposition| is NEW_POPUP, |pos| should hold the
-  // initial position. If |was_blocked| is non-NULL, then |*was_blocked| will
-  // be set to true if the popup gets blocked, and left unchanged otherwise.
+  // method returns.  If |disposition| is NEW_POPUP, |initial_pos| should hold
+  // the initial position. If |was_blocked| is non-NULL, then |*was_blocked|
+  // will be set to true if the popup gets blocked, and left unchanged
+  // otherwise.
   virtual void AddNewContents(WebContents* source,
                               WebContents* new_contents,
                               WindowOpenDisposition disposition,
@@ -115,13 +117,11 @@ class CONTENT_EXPORT WebContentsDelegate {
   // loading feedback. See WebContents::IsLoading()
   virtual void LoadingStateChanged(WebContents* source) {}
 
-#if defined(OS_ANDROID)
   // Notifies the delegate that the page has made some progress loading.
   // |progress| is a value between 0.0 (nothing loaded) to 1.0 (page fully
   // loaded).
   virtual void LoadProgressChanged(WebContents* source,
                                    double progress) {}
-#endif
 
   // Request the delegate to close this web contents, and do whatever cleanup
   // it needs to do.
@@ -300,11 +300,8 @@ class CONTENT_EXPORT WebContentsDelegate {
       WindowContainerType window_container_type,
       const string16& frame_name,
       const GURL& target_url,
-      const Referrer& referrer,
-      WindowOpenDisposition disposition,
-      const WebKit::WebWindowFeatures& features,
-      bool user_gesture,
-      bool opener_suppressed);
+      const std::string& partition_id,
+      SessionStorageNamespace* session_storage_namespace);
 
   // Notifies the delegate about the creation of a new WebContents. This
   // typically happens when popups are created.
@@ -351,6 +348,12 @@ class CONTENT_EXPORT WebContentsDelegate {
                                   int request_id,
                                   const base::FilePath& path) {}
 
+  // Returns true if the delegate will embed a WebContents-owned fullscreen
+  // render widget.  In this case, the delegate may access the widget by calling
+  // WebContents::GetFullscreenRenderWidgetHostView().  If false is returned,
+  // WebContents will be responsible for showing the fullscreen widget.
+  virtual bool EmbedsFullscreenWidget() const;
+
   // Called when the renderer puts a tab into or out of fullscreen mode.
   virtual void ToggleFullscreenModeForTab(WebContents* web_contents,
                                           bool enter_fullscreen) {}
@@ -390,6 +393,13 @@ class CONTENT_EXPORT WebContentsDelegate {
                                    int version,
                                    const std::vector<gfx::RectF>& rects,
                                    const gfx::RectF& active_rect) {}
+
+  // Request permission to access protected media identifier. The callback will
+  // tell whether it's allowed.
+  virtual void RequestProtectedMediaIdentifierPermission(
+      const WebContents* web_contents,
+      const GURL& frame_url,
+      const base::Callback<void(bool)>& callback) {}
 #endif
 
   // Invoked when the preferred size of the contents has been changed.
@@ -434,6 +444,14 @@ class CONTENT_EXPORT WebContentsDelegate {
       const GURL& url,
       const base::FilePath& plugin_path,
       const base::Callback<void(bool)>& callback);
+
+  // Returns the size for the new render view created for the pending entry in
+  // |web_contents|; if there's no size, returns an empty size.
+  // This is optional for implementations of WebContentsDelegate; if the
+  // delegate doesn't provide a size, the current WebContentsView's size will be
+  // used.
+  virtual gfx::Size GetSizeForNewRenderView(
+      const WebContents* web_contents) const;
 
  protected:
   virtual ~WebContentsDelegate();

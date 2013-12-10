@@ -91,7 +91,11 @@ InspectorController::InspectorController(Page* page, InspectorClient* inspectorC
     InspectorDOMAgent* domAgent = domAgentPtr.get();
     m_agents.append(domAgentPtr.release());
 
-    m_agents.append(InspectorCSSAgent::create(m_instrumentingAgents.get(), m_state.get(), domAgent, pageAgent));
+    OwnPtr<InspectorResourceAgent> resourceAgentPtr(InspectorResourceAgent::create(m_instrumentingAgents.get(), pageAgent, inspectorClient, m_state.get(), m_overlay.get()));
+    InspectorResourceAgent* resourceAgent = resourceAgentPtr.get();
+    m_agents.append(resourceAgentPtr.release());
+
+    m_agents.append(InspectorCSSAgent::create(m_instrumentingAgents.get(), m_state.get(), domAgent, pageAgent, resourceAgent));
 
     m_agents.append(InspectorDatabaseAgent::create(m_instrumentingAgents.get(), m_state.get()));
 
@@ -111,13 +115,12 @@ InspectorController::InspectorController(Page* page, InspectorClient* inspectorC
     m_agents.append(timelineAgentPtr.release());
 
     m_agents.append(InspectorApplicationCacheAgent::create(m_instrumentingAgents.get(), m_state.get(), pageAgent));
-    m_agents.append(InspectorResourceAgent::create(m_instrumentingAgents.get(), pageAgent, inspectorClient, m_state.get(), m_overlay.get()));
 
     PageScriptDebugServer* pageScriptDebugServer = &PageScriptDebugServer::shared();
 
     m_agents.append(PageRuntimeAgent::create(m_instrumentingAgents.get(), m_state.get(), m_injectedScriptManager.get(), pageScriptDebugServer, page, pageAgent));
 
-    OwnPtr<InspectorConsoleAgent> consoleAgentPtr(PageConsoleAgent::create(m_instrumentingAgents.get(), m_state.get(), m_injectedScriptManager.get(), domAgent));
+    OwnPtr<InspectorConsoleAgent> consoleAgentPtr(PageConsoleAgent::create(m_instrumentingAgents.get(), m_state.get(), m_injectedScriptManager.get(), domAgent, m_timelineAgent));
     InspectorConsoleAgent* consoleAgent = consoleAgentPtr.get();
     m_agents.append(consoleAgentPtr.release());
 
@@ -320,6 +323,15 @@ void InspectorController::hideHighlight()
 Node* InspectorController::highlightedNode() const
 {
     return m_overlay->highlightedNode();
+}
+
+bool InspectorController::handleGestureEvent(Frame* frame, const PlatformGestureEvent& event)
+{
+    // Overlay should not consume events.
+    m_overlay->handleGestureEvent(event);
+    if (InspectorDOMAgent* domAgent = m_instrumentingAgents->inspectorDOMAgent())
+        return domAgent->handleGestureEvent(frame, event);
+    return false;
 }
 
 bool InspectorController::handleMouseEvent(Frame* frame, const PlatformMouseEvent& event)

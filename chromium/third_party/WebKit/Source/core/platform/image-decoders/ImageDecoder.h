@@ -33,6 +33,7 @@
 #include "core/platform/graphics/ImageSource.h"
 #include "core/platform/graphics/IntRect.h"
 #include "core/platform/graphics/skia/NativeImageSkia.h"
+#include "public/platform/Platform.h"
 #include "wtf/Assertions.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
@@ -40,7 +41,7 @@
 
 #if USE(QCMSLIB)
 #include "qcms.h"
-#if OS(DARWIN)
+#if OS(MACOSX)
 #include <ApplicationServices/ApplicationServices.h>
 #include "core/platform/graphics/cg/GraphicsContextCG.h"
 #include "wtf/RetainPtr.h"
@@ -53,16 +54,32 @@ namespace WebCore {
     // decoders write a single frame into.
     class ImageFrame {
     public:
-        enum FrameStatus { FrameEmpty, FramePartial, FrameComplete };
-        enum FrameDisposalMethod {
+        enum Status { FrameEmpty, FramePartial, FrameComplete };
+        enum DisposalMethod {
             // If you change the numeric values of these, make sure you audit
             // all users, as some users may cast raw values to/from these
             // constants.
-            DisposeNotSpecified,      // Leave frame in framebuffer
-            DisposeKeep,              // Leave frame in framebuffer
-            DisposeOverwriteBgcolor,  // Clear frame to transparent
-            DisposeOverwritePrevious  // Clear frame to previous framebuffer
-                                      // contents
+            DisposeNotSpecified, // Leave frame in framebuffer
+            DisposeKeep, // Leave frame in framebuffer
+            DisposeOverwriteBgcolor, // Clear frame to fully transparent
+            DisposeOverwritePrevious // Clear frame to previous framebuffer contents
+        };
+        // Indicates how non-opaque pixels in the current frame rectangle
+        // are blended with those in the previous frame.
+        // Notes:
+        // * GIF always uses 'BlendAtopPreviousFrame'.
+        // * WebP also uses the 'BlendAtopBgcolor' option. This is useful for
+        //   cases where one wants to transform a few opaque pixels of the
+        //   previous frame into non-opaque pixels in the current frame.
+        enum AlphaBlendSource {
+            // Blend non-opaque pixels atop the corresponding pixels in the
+            // initial buffer state (i.e. any previous frame buffer after having
+            // been properly disposed).
+            BlendAtopPreviousFrame,
+
+            // Blend non-opaque pixels against fully transparent (i.e. simply
+            // overwrite the corresponding pixels).
+            BlendAtopBgcolor,
         };
         typedef uint32_t PixelData;
 
@@ -111,9 +128,10 @@ namespace WebCore {
 
         bool hasAlpha() const;
         const IntRect& originalFrameRect() const { return m_originalFrameRect; }
-        FrameStatus status() const { return m_status; }
+        Status status() const { return m_status; }
         unsigned duration() const { return m_duration; }
-        FrameDisposalMethod disposalMethod() const { return m_disposalMethod; }
+        DisposalMethod disposalMethod() const { return m_disposalMethod; }
+        AlphaBlendSource alphaBlendSource() const { return m_alphaBlendSource; }
         bool premultiplyAlpha() const { return m_premultiplyAlpha; }
         SkBitmap::Allocator* allocator() const { return m_allocator; }
         const SkBitmap& getSkBitmap() const { return m_bitmap->bitmap(); }
@@ -128,9 +146,10 @@ namespace WebCore {
 #endif
         void setHasAlpha(bool alpha);
         void setOriginalFrameRect(const IntRect& r) { m_originalFrameRect = r; }
-        void setStatus(FrameStatus status);
+        void setStatus(Status);
         void setDuration(unsigned duration) { m_duration = duration; }
-        void setDisposalMethod(FrameDisposalMethod method) { m_disposalMethod = method; }
+        void setDisposalMethod(DisposalMethod disposalMethod) { m_disposalMethod = disposalMethod; }
+        void setAlphaBlendSource(AlphaBlendSource alphaBlendSource) { m_alphaBlendSource = alphaBlendSource; }
         void setPremultiplyAlpha(bool premultiplyAlpha) { m_premultiplyAlpha = premultiplyAlpha; }
         void setMemoryAllocator(SkBitmap::Allocator* allocator) { m_allocator = allocator; }
         void setSkBitmap(const SkBitmap& bitmap) { m_bitmap = NativeImageSkia::create(bitmap); }
@@ -196,13 +215,14 @@ namespace WebCore {
         // This will always just be the entire buffer except for GIF or WebP
         // frames whose original rect was smaller than the overall image size.
         IntRect m_originalFrameRect;
-        FrameStatus m_status;
+        Status m_status;
         unsigned m_duration;
-        FrameDisposalMethod m_disposalMethod;
+        DisposalMethod m_disposalMethod;
+        AlphaBlendSource m_alphaBlendSource;
         bool m_premultiplyAlpha;
 
         // The frame that must be decoded before this frame can be decoded.
-        // WTF::notFound if this frame doesn't require any previous frame.
+        // WTF::kNotFound if this frame doesn't require any previous frame.
         // This is used by ImageDecoder::clearCacheExceptFrame(), and will never
         // be read for image formats that do not have multiple frames.
         size_t m_requiredPreviousFrameIndex;
@@ -213,12 +233,16 @@ namespace WebCore {
 
     // ImageDecoder is a base for all format-specific decoders
     // (e.g. JPEGImageDecoder). This base manages the ImageFrame cache.
+    //
     class ImageDecoder {
         WTF_MAKE_NONCOPYABLE(ImageDecoder); WTF_MAKE_FAST_ALLOCATED;
     public:
-        ImageDecoder(ImageSource::AlphaOption alphaOption, ImageSource::GammaAndColorProfileOption gammaAndColorProfileOption)
+        static const size_t noDecodedImageByteLimit = WebKit::Platform::noDecodedImageByteLimit;
+
+        ImageDecoder(ImageSource::AlphaOption alphaOption, ImageSource::GammaAndColorProfileOption gammaAndColorProfileOption, size_t maxDecodedBytes)
             : m_premultiplyAlpha(alphaOption == ImageSource::AlphaPremultiplied)
             , m_ignoreGammaAndColorProfile(gammaAndColorProfileOption == ImageSource::GammaAndColorProfileIgnored)
+            , m_maxDecodedBytes(maxDecodedBytes)
             , m_sizeAvailable(false)
             , m_isAllDataReceived(false)
             , m_failed(false) { }
@@ -228,7 +252,11 @@ namespace WebCore {
         // Returns a caller-owned decoder of the appropriate type.  Returns 0 if
         // we can't sniff a supported type from the provided data (possibly
         // because there isn't enough data yet).
+        // Sets m_maxDecodedBytes to Platform::maxImageDecodedBytes().
         static PassOwnPtr<ImageDecoder> create(const SharedBuffer& data, ImageSource::AlphaOption, ImageSource::GammaAndColorProfileOption);
+
+        // Returns a decoder with custom maxDecodedSize.
+        static PassOwnPtr<ImageDecoder> create(const SharedBuffer& data, ImageSource::AlphaOption, ImageSource::GammaAndColorProfileOption, size_t maxDecodedSize);
 
         virtual String filenameExtension() const = 0;
 
@@ -252,6 +280,10 @@ namespace WebCore {
 
         virtual IntSize size() const { return m_size; }
 
+        // Decoders which downsample images should override this method to
+        // return the actual decoded size.
+        virtual IntSize decodedSize() const { return size(); }
+
         // This will only differ from size() for ICO (where each frame is a
         // different icon) or other formats where different frames are different
         // sizes. This does NOT differ from size() for GIF or WebP, since
@@ -266,7 +298,7 @@ namespace WebCore {
         // overflow elsewhere).  If not, marks decoding as failed.
         virtual bool setSize(unsigned width, unsigned height)
         {
-            if (isOverSize(width, height))
+            if (sizeCalculationMayOverflow(width, height))
                 return setFailed();
             m_size = IntSize(width, height);
             m_sizeAvailable = true;
@@ -327,7 +359,7 @@ namespace WebCore {
             if (!qcmsInitialized) {
                 qcmsInitialized = true;
                 // FIXME: Add optional ICCv4 support.
-#if OS(DARWIN)
+#if OS(MACOSX)
                 RetainPtr<CGColorSpaceRef> monitorColorSpace(AdoptCF, CGDisplayCopyColorSpace(CGMainDisplayID()));
                 CFDataRef iccProfile(CGColorSpaceCopyICCProfile(monitorColorSpace.get()));
                 if (iccProfile) {
@@ -368,7 +400,7 @@ namespace WebCore {
         bool failed() const { return m_failed; }
 
         // Clears decoded pixel data from all frames except the provided frame.
-        // Callers may pass WTF::notFound to clear all frames.
+        // Callers may pass WTF::kNotFound to clear all frames.
         // Note: If |m_frameBufferCache| contains only one frame, it won't be cleared.
         // Returns the number of bytes of frame data actually cleared.
         virtual size_t clearCacheExceptFrame(size_t);
@@ -383,15 +415,17 @@ namespace WebCore {
             if (m_frameBufferCache.isEmpty()) {
                 m_frameBufferCache.resize(1);
                 m_frameBufferCache[0].setRequiredPreviousFrameIndex(
-                    findRequiredPreviousFrame(0));
+                    findRequiredPreviousFrame(0, false));
             }
             m_frameBufferCache[0].setMemoryAllocator(allocator);
         }
 
     protected:
         // Calculates the most recent frame whose image data may be needed in
-        // order to decode frame |frameIndex|, based on frame disposal methods.
-        // If no previous frame's data is required, returns WTF::notFound.
+        // order to decode frame |frameIndex|, based on frame disposal methods
+        // and |frameRectIsOpaque|, where |frameRectIsOpaque| signifies whether
+        // the rectangle of frame at |frameIndex| is known to be opaque.
+        // If no previous frame's data is required, returns WTF::kNotFound.
         //
         // This function requires that the previous frame's
         // |m_requiredPreviousFrameIndex| member has been set correctly. The
@@ -404,7 +438,7 @@ namespace WebCore {
         // Image formats which do not use more than one frame do not need to
         // worry about this; see comments on
         // ImageFrame::m_requiredPreviousFrameIndex.
-        size_t findRequiredPreviousFrame(size_t frameIndex);
+        size_t findRequiredPreviousFrame(size_t frameIndex, bool frameRectIsOpaque);
 
         virtual void clearFrameBuffer(size_t frameIndex);
 
@@ -414,10 +448,17 @@ namespace WebCore {
         bool m_ignoreGammaAndColorProfile;
         ImageOrientation m_orientation;
 
+        // The maximum amount of memory a decoded image should require. Ideally,
+        // image decoders should downsample large images to fit under this limit
+        // (and then return the downsampled size from decodedSize()). Ignoring
+        // this limit can cause excessive memory use or even crashes on low-
+        // memory devices.
+        size_t m_maxDecodedBytes;
+
     private:
         // Some code paths compute the size of the image as "width * height * 4"
         // and return it as a (signed) int.  Avoid overflow.
-        static bool isOverSize(unsigned width, unsigned height)
+        static bool sizeCalculationMayOverflow(unsigned width, unsigned height)
         {
             unsigned long long total_size = static_cast<unsigned long long>(width)
                                           * static_cast<unsigned long long>(height);

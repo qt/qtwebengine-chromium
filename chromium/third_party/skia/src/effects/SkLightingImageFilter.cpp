@@ -25,7 +25,6 @@ class GrGLSpecularLightingEffect;
 
 // For brevity
 typedef GrGLUniformManager::UniformHandle UniformHandle;
-static const UniformHandle kInvalidUniformHandle = GrGLUniformManager::kInvalidUniformHandle;
 #endif
 
 namespace {
@@ -65,9 +64,9 @@ public:
         colorScale = SkScalarClampMax(colorScale, SK_Scalar1);
         SkPoint3 color(lightColor * colorScale);
         return SkPackARGB32(255,
-                            SkScalarFloorToInt(color.fX),
-                            SkScalarFloorToInt(color.fY),
-                            SkScalarFloorToInt(color.fZ));
+                            SkClampMax(SkScalarFloorToInt(color.fX), 255),
+                            SkClampMax(SkScalarFloorToInt(color.fY), 255),
+                            SkClampMax(SkScalarFloorToInt(color.fZ), 255));
     }
 private:
     SkScalar fKD;
@@ -85,10 +84,10 @@ public:
             SkScalarPow(normal.dot(halfDir), fShininess));
         colorScale = SkScalarClampMax(colorScale, SK_Scalar1);
         SkPoint3 color(lightColor * colorScale);
-        return SkPackARGB32(SkScalarFloorToInt(color.maxComponent()),
-                            SkScalarFloorToInt(color.fX),
-                            SkScalarFloorToInt(color.fY),
-                            SkScalarFloorToInt(color.fZ));
+        return SkPackARGB32(SkClampMax(SkScalarFloorToInt(color.maxComponent()), 255),
+                            SkClampMax(SkScalarFloorToInt(color.fX), 255),
+                            SkClampMax(SkScalarFloorToInt(color.fY), 255),
+                            SkClampMax(SkScalarFloorToInt(color.fZ), 255));
     }
 private:
     SkScalar fKS;
@@ -266,7 +265,7 @@ public:
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkDiffuseLightingImageFilter)
 
 #if SK_SUPPORT_GPU
-    virtual bool asNewEffect(GrEffectRef** effect, GrTexture*, const SkIPoint& offset) const SK_OVERRIDE;
+    virtual bool asNewEffect(GrEffectRef** effect, GrTexture*, const SkMatrix& matrix) const SK_OVERRIDE;
 #endif
     SkScalar kd() const { return fKD; }
 
@@ -288,7 +287,7 @@ public:
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkSpecularLightingImageFilter)
 
 #if SK_SUPPORT_GPU
-    virtual bool asNewEffect(GrEffectRef** effect, GrTexture*, const SkIPoint& offset) const SK_OVERRIDE;
+    virtual bool asNewEffect(GrEffectRef** effect, GrTexture*, const SkMatrix& matrix) const SK_OVERRIDE;
 #endif
 
     SkScalar ks() const { return fKS; }
@@ -310,12 +309,12 @@ private:
 
 class GrLightingEffect : public GrSingleTextureEffect {
 public:
-    GrLightingEffect(GrTexture* texture, const SkLight* light, SkScalar surfaceScale, const SkIPoint& offset);
+    GrLightingEffect(GrTexture* texture, const SkLight* light, SkScalar surfaceScale, const SkMatrix& matrix);
     virtual ~GrLightingEffect();
 
     const SkLight* light() const { return fLight; }
     SkScalar surfaceScale() const { return fSurfaceScale; }
-    const SkIPoint& offset() const { return fOffset; }
+    const SkMatrix& filterMatrix() const { return fFilterMatrix; }
 
     virtual void getConstantColorComponents(GrColor* color,
                                             uint32_t* validFlags) const SK_OVERRIDE {
@@ -330,7 +329,7 @@ private:
     typedef GrSingleTextureEffect INHERITED;
     const SkLight* fLight;
     SkScalar fSurfaceScale;
-    SkIPoint fOffset;
+    SkMatrix fFilterMatrix;
 };
 
 class GrDiffuseLightingEffect : public GrLightingEffect {
@@ -338,12 +337,12 @@ public:
     static GrEffectRef* Create(GrTexture* texture,
                                const SkLight* light,
                                SkScalar surfaceScale,
-                               const SkIPoint& offset,
+                               const SkMatrix& matrix,
                                SkScalar kd) {
         AutoEffectUnref effect(SkNEW_ARGS(GrDiffuseLightingEffect, (texture,
                                                                     light,
                                                                     surfaceScale,
-                                                                    offset,
+                                                                    matrix,
                                                                     kd)));
         return CreateEffectRef(effect);
     }
@@ -361,7 +360,7 @@ private:
     GrDiffuseLightingEffect(GrTexture* texture,
                             const SkLight* light,
                             SkScalar surfaceScale,
-                            const SkIPoint& offset,
+                            const SkMatrix& matrix,
                             SkScalar kd);
 
     GR_DECLARE_EFFECT_TEST;
@@ -374,13 +373,13 @@ public:
     static GrEffectRef* Create(GrTexture* texture,
                                const SkLight* light,
                                SkScalar surfaceScale,
-                               const SkIPoint& offset,
+                               const SkMatrix& matrix,
                                SkScalar ks,
                                SkScalar shininess) {
         AutoEffectUnref effect(SkNEW_ARGS(GrSpecularLightingEffect, (texture,
                                                                      light,
                                                                      surfaceScale,
-                                                                     offset,
+                                                                     matrix,
                                                                      ks,
                                                                      shininess)));
         return CreateEffectRef(effect);
@@ -399,7 +398,7 @@ private:
     GrSpecularLightingEffect(GrTexture* texture,
                              const SkLight* light,
                              SkScalar surfaceScale,
-                             const SkIPoint& offset,
+                             const SkMatrix& matrix,
                              SkScalar ks,
                              SkScalar shininess);
 
@@ -435,8 +434,7 @@ public:
     // This is called from GrGLLightingEffect's setData(). Subclasses of GrGLLight must call
     // INHERITED::setData().
     virtual void setData(const GrGLUniformManager&,
-                         const SkLight* light,
-                         const SkIPoint& offset) const;
+                         const SkLight* light) const;
 
 protected:
     /**
@@ -457,8 +455,7 @@ class GrGLDistantLight : public GrGLLight {
 public:
     virtual ~GrGLDistantLight() {}
     virtual void setData(const GrGLUniformManager&,
-                         const SkLight* light,
-                         const SkIPoint& offset) const SK_OVERRIDE;
+                         const SkLight* light) const SK_OVERRIDE;
     virtual void emitSurfaceToLight(GrGLShaderBuilder*, const char* z) SK_OVERRIDE;
 
 private:
@@ -472,8 +469,7 @@ class GrGLPointLight : public GrGLLight {
 public:
     virtual ~GrGLPointLight() {}
     virtual void setData(const GrGLUniformManager&,
-                         const SkLight* light,
-                         const SkIPoint& offset) const SK_OVERRIDE;
+                         const SkLight* light) const SK_OVERRIDE;
     virtual void emitSurfaceToLight(GrGLShaderBuilder*, const char* z) SK_OVERRIDE;
 
 private:
@@ -487,8 +483,7 @@ class GrGLSpotLight : public GrGLLight {
 public:
     virtual ~GrGLSpotLight() {}
     virtual void setData(const GrGLUniformManager&,
-                         const SkLight* light,
-                         const SkIPoint& offset) const SK_OVERRIDE;
+                         const SkLight* light) const SK_OVERRIDE;
     virtual void emitSurfaceToLight(GrGLShaderBuilder*, const char* z) SK_OVERRIDE;
     virtual void emitLightColor(GrGLShaderBuilder*, const char *surfaceToLight) SK_OVERRIDE;
 
@@ -530,12 +525,15 @@ public:
     }
     // Called to know whether the generated GrGLLight will require access to the fragment position.
     virtual bool requiresFragmentPosition() const = 0;
+    virtual SkLight* transform(const SkMatrix& matrix) const = 0;
 
 protected:
     SkLight(SkColor color)
       : fColor(SkIntToScalar(SkColorGetR(color)),
                SkIntToScalar(SkColorGetG(color)),
                SkIntToScalar(SkColorGetB(color))) {}
+    SkLight(const SkPoint3& color)
+      : fColor(color) {}
     SkLight(SkFlattenableReadBuffer& buffer)
       : INHERITED(buffer) {
         fColor = readPoint3(buffer);
@@ -589,8 +587,14 @@ public:
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkDistantLight)
 
 protected:
+    SkDistantLight(const SkPoint3& direction, const SkPoint3& color)
+      : INHERITED(color), fDirection(direction) {
+    }
     SkDistantLight(SkFlattenableReadBuffer& buffer) : INHERITED(buffer) {
         fDirection = readPoint3(buffer);
+    }
+    virtual SkLight* transform(const SkMatrix& matrix) const {
+        return new SkDistantLight(direction(), color());
     }
     virtual void flatten(SkFlattenableWriteBuffer& buffer) const {
         INHERITED::flatten(buffer);
@@ -636,6 +640,12 @@ public:
         return INHERITED::isEqual(other) &&
                fLocation == o.fLocation;
     }
+    virtual SkLight* transform(const SkMatrix& matrix) const {
+        SkPoint location2 = SkPoint::Make(fLocation.fX, fLocation.fY);
+        matrix.mapPoints(&location2, 1);
+        SkPoint3 location(location2.fX, location2.fY, fLocation.fZ);
+        return new SkPointLight(location, color());
+    }
 
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkPointLight)
 
@@ -643,6 +653,8 @@ protected:
     SkPointLight(SkFlattenableReadBuffer& buffer) : INHERITED(buffer) {
         fLocation = readPoint3(buffer);
     }
+    SkPointLight(const SkPoint3& location, const SkPoint3& color)
+     : INHERITED(color), fLocation(location) {}
     virtual void flatten(SkFlattenableWriteBuffer& buffer) const {
         INHERITED::flatten(buffer);
         writePoint3(fLocation, buffer);
@@ -661,7 +673,7 @@ public:
      : INHERITED(color),
        fLocation(location),
        fTarget(target),
-       fSpecularExponent(specularExponent)
+       fSpecularExponent(SkScalarPin(specularExponent, kSpecularExponentMin, kSpecularExponentMax))
     {
        fS = target - location;
        fS.normalize();
@@ -669,6 +681,16 @@ public:
        const SkScalar antiAliasThreshold = SkFloatToScalar(0.016f);
        fCosInnerConeAngle = fCosOuterConeAngle + antiAliasThreshold;
        fConeScale = SkScalarInvert(antiAliasThreshold);
+    }
+
+    virtual SkLight* transform(const SkMatrix& matrix) const {
+        SkPoint location2 = SkPoint::Make(fLocation.fX, fLocation.fY);
+        matrix.mapPoints(&location2, 1);
+        SkPoint3 location(location2.fX, location2.fY, fLocation.fZ);
+        SkPoint target2 = SkPoint::Make(fTarget.fX, fTarget.fY);
+        matrix.mapPoints(&target2, 1);
+        SkPoint3 target(target2.fX, target2.fY, fTarget.fZ);
+        return new SkSpotLight(location, target, fSpecularExponent, fCosOuterConeAngle, fCosInnerConeAngle, fConeScale, fS, color());
     }
 
     SkPoint3 surfaceToLight(int x, int y, int z, SkScalar surfaceScale) const {
@@ -720,6 +742,17 @@ protected:
         fConeScale = buffer.readScalar();
         fS = readPoint3(buffer);
     }
+    SkSpotLight(const SkPoint3& location, const SkPoint3& target, SkScalar specularExponent, SkScalar cosOuterConeAngle, SkScalar cosInnerConeAngle, SkScalar coneScale, const SkPoint3& s, const SkPoint3& color)
+     : INHERITED(color),
+       fLocation(location),
+       fTarget(target),
+       fSpecularExponent(specularExponent),
+       fCosOuterConeAngle(cosOuterConeAngle),
+       fCosInnerConeAngle(cosInnerConeAngle),
+       fConeScale(coneScale),
+       fS(s)
+    {
+    }
     virtual void flatten(SkFlattenableWriteBuffer& buffer) const {
         INHERITED::flatten(buffer);
         writePoint3(fLocation, buffer);
@@ -745,6 +778,9 @@ protected:
     }
 
 private:
+    static const SkScalar kSpecularExponentMin;
+    static const SkScalar kSpecularExponentMax;
+
     typedef SkLight INHERITED;
     SkPoint3 fLocation;
     SkPoint3 fTarget;
@@ -754,6 +790,11 @@ private:
     SkScalar fConeScale;
     SkPoint3 fS;
 };
+
+// According to the spec, the specular term should be in the range [1, 128] :
+// http://www.w3.org/TR/SVG/filters.html#feSpecularLightingSpecularExponentAttribute
+const SkScalar SkSpotLight::kSpecularExponentMin = SkFloatToScalar(1.0f);
+const SkScalar SkSpotLight::kSpecularExponentMax = SkFloatToScalar(128.0f);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -858,7 +899,7 @@ void SkDiffuseLightingImageFilter::flatten(SkFlattenableWriteBuffer& buffer) con
 
 bool SkDiffuseLightingImageFilter::onFilterImage(Proxy*,
                                                  const SkBitmap& src,
-                                                 const SkMatrix&,
+                                                 const SkMatrix& ctm,
                                                  SkBitmap* dst,
                                                  SkIPoint* offset) {
     if (src.config() != SkBitmap::kARGB_8888_Config) {
@@ -871,7 +912,7 @@ bool SkDiffuseLightingImageFilter::onFilterImage(Proxy*,
 
     SkIRect bounds;
     src.getBounds(&bounds);
-    if (!this->applyCropRect(&bounds)) {
+    if (!this->applyCropRect(&bounds, ctm)) {
         return false;
     }
 
@@ -882,16 +923,18 @@ bool SkDiffuseLightingImageFilter::onFilterImage(Proxy*,
     dst->setConfig(src.config(), bounds.width(), bounds.height());
     dst->allocPixels();
 
+    SkAutoTUnref<SkLight> transformedLight(light()->transform(ctm));
+
     DiffuseLightingType lightingType(fKD);
-    switch (light()->type()) {
+    switch (transformedLight->type()) {
         case SkLight::kDistant_LightType:
-            lightBitmap<DiffuseLightingType, SkDistantLight>(lightingType, light(), src, dst, surfaceScale(), bounds);
+            lightBitmap<DiffuseLightingType, SkDistantLight>(lightingType, transformedLight, src, dst, surfaceScale(), bounds);
             break;
         case SkLight::kPoint_LightType:
-            lightBitmap<DiffuseLightingType, SkPointLight>(lightingType, light(), src, dst, surfaceScale(), bounds);
+            lightBitmap<DiffuseLightingType, SkPointLight>(lightingType, transformedLight, src, dst, surfaceScale(), bounds);
             break;
         case SkLight::kSpot_LightType:
-            lightBitmap<DiffuseLightingType, SkSpotLight>(lightingType, light(), src, dst, surfaceScale(), bounds);
+            lightBitmap<DiffuseLightingType, SkSpotLight>(lightingType, transformedLight, src, dst, surfaceScale(), bounds);
             break;
     }
 
@@ -901,10 +944,10 @@ bool SkDiffuseLightingImageFilter::onFilterImage(Proxy*,
 }
 
 #if SK_SUPPORT_GPU
-bool SkDiffuseLightingImageFilter::asNewEffect(GrEffectRef** effect, GrTexture* texture, const SkIPoint& offset) const {
+bool SkDiffuseLightingImageFilter::asNewEffect(GrEffectRef** effect, GrTexture* texture, const SkMatrix& matrix) const {
     if (effect) {
         SkScalar scale = SkScalarMul(surfaceScale(), SkIntToScalar(255));
-        *effect = GrDiffuseLightingEffect::Create(texture, light(), scale, offset, kd());
+        *effect = GrDiffuseLightingEffect::Create(texture, light(), scale, matrix, kd());
     }
     return true;
 }
@@ -934,7 +977,7 @@ void SkSpecularLightingImageFilter::flatten(SkFlattenableWriteBuffer& buffer) co
 
 bool SkSpecularLightingImageFilter::onFilterImage(Proxy*,
                                                   const SkBitmap& src,
-                                                  const SkMatrix&,
+                                                  const SkMatrix& ctm,
                                                   SkBitmap* dst,
                                                   SkIPoint* offset) {
     if (src.config() != SkBitmap::kARGB_8888_Config) {
@@ -947,7 +990,7 @@ bool SkSpecularLightingImageFilter::onFilterImage(Proxy*,
 
     SkIRect bounds;
     src.getBounds(&bounds);
-    if (!this->applyCropRect(&bounds)) {
+    if (!this->applyCropRect(&bounds, ctm)) {
         return false;
     }
 
@@ -959,15 +1002,16 @@ bool SkSpecularLightingImageFilter::onFilterImage(Proxy*,
     dst->allocPixels();
 
     SpecularLightingType lightingType(fKS, fShininess);
-    switch (light()->type()) {
+    SkAutoTUnref<SkLight> transformedLight(light()->transform(ctm));
+    switch (transformedLight->type()) {
         case SkLight::kDistant_LightType:
-            lightBitmap<SpecularLightingType, SkDistantLight>(lightingType, light(), src, dst, surfaceScale(), bounds);
+            lightBitmap<SpecularLightingType, SkDistantLight>(lightingType, transformedLight, src, dst, surfaceScale(), bounds);
             break;
         case SkLight::kPoint_LightType:
-            lightBitmap<SpecularLightingType, SkPointLight>(lightingType, light(), src, dst, surfaceScale(), bounds);
+            lightBitmap<SpecularLightingType, SkPointLight>(lightingType, transformedLight, src, dst, surfaceScale(), bounds);
             break;
         case SkLight::kSpot_LightType:
-            lightBitmap<SpecularLightingType, SkSpotLight>(lightingType, light(), src, dst, surfaceScale(), bounds);
+            lightBitmap<SpecularLightingType, SkSpotLight>(lightingType, transformedLight, src, dst, surfaceScale(), bounds);
             break;
     }
     offset->fX += bounds.left();
@@ -976,10 +1020,10 @@ bool SkSpecularLightingImageFilter::onFilterImage(Proxy*,
 }
 
 #if SK_SUPPORT_GPU
-bool SkSpecularLightingImageFilter::asNewEffect(GrEffectRef** effect, GrTexture* texture, const SkIPoint& offset) const {
+bool SkSpecularLightingImageFilter::asNewEffect(GrEffectRef** effect, GrTexture* texture, const SkMatrix& matrix) const {
     if (effect) {
         SkScalar scale = SkScalarMul(surfaceScale(), SkIntToScalar(255));
-        *effect = GrSpecularLightingEffect::Create(texture, light(), scale, offset, ks(), shininess());
+        *effect = GrSpecularLightingEffect::Create(texture, light(), scale, matrix, ks(), shininess());
     }
     return true;
 }
@@ -990,13 +1034,13 @@ bool SkSpecularLightingImageFilter::asNewEffect(GrEffectRef** effect, GrTexture*
 #if SK_SUPPORT_GPU
 
 namespace {
-SkPoint3 random_point3(SkMWCRandom* random) {
+SkPoint3 random_point3(SkRandom* random) {
     return SkPoint3(SkScalarToFloat(random->nextSScalar1()),
                     SkScalarToFloat(random->nextSScalar1()),
                     SkScalarToFloat(random->nextSScalar1()));
 }
 
-SkLight* create_random_light(SkMWCRandom* random) {
+SkLight* create_random_light(SkRandom* random) {
     int type = random->nextULessThan(3);
     switch (type) {
         case 0: {
@@ -1088,11 +1132,11 @@ private:
 GrLightingEffect::GrLightingEffect(GrTexture* texture,
                                    const SkLight* light,
                                    SkScalar surfaceScale,
-                                   const SkIPoint& offset)
+                                   const SkMatrix& matrix)
     : INHERITED(texture, MakeDivByTextureWHMatrix(texture))
     , fLight(light)
     , fSurfaceScale(surfaceScale)
-    , fOffset(offset) {
+    , fFilterMatrix(matrix) {
     fLight->ref();
     if (light->requiresFragmentPosition()) {
         this->setWillReadFragmentPosition();
@@ -1115,9 +1159,9 @@ bool GrLightingEffect::onIsEqual(const GrEffect& sBase) const {
 GrDiffuseLightingEffect::GrDiffuseLightingEffect(GrTexture* texture,
                                                  const SkLight* light,
                                                  SkScalar surfaceScale,
-                                                 const SkIPoint& offset,
+                                                 const SkMatrix& matrix,
                                                  SkScalar kd)
-    : INHERITED(texture, light, surfaceScale, offset), fKD(kd) {
+    : INHERITED(texture, light, surfaceScale, matrix), fKD(kd) {
 }
 
 const GrBackendEffectFactory& GrDiffuseLightingEffect::getFactory() const {
@@ -1132,16 +1176,19 @@ bool GrDiffuseLightingEffect::onIsEqual(const GrEffect& sBase) const {
 
 GR_DEFINE_EFFECT_TEST(GrDiffuseLightingEffect);
 
-GrEffectRef* GrDiffuseLightingEffect::TestCreate(SkMWCRandom* random,
+GrEffectRef* GrDiffuseLightingEffect::TestCreate(SkRandom* random,
                                                  GrContext* context,
                                                  const GrDrawTargetCaps&,
                                                  GrTexture* textures[]) {
     SkScalar surfaceScale = random->nextSScalar1();
     SkScalar kd = random->nextUScalar1();
     SkAutoTUnref<SkLight> light(create_random_light(random));
-    SkIPoint offset = SkIPoint::Make(random->nextS(), random->nextS());
+    SkMatrix matrix;
+    for (int i = 0; i < 9; i++) {
+        matrix[i] = random->nextUScalar1();
+    }
     return GrDiffuseLightingEffect::Create(textures[GrEffectUnitTest::kAlphaTextureIdx],
-                                           light, surfaceScale, offset, kd);
+                                           light, surfaceScale, matrix, kd);
 }
 
 
@@ -1150,8 +1197,6 @@ GrEffectRef* GrDiffuseLightingEffect::TestCreate(SkMWCRandom* random,
 GrGLLightingEffect::GrGLLightingEffect(const GrBackendEffectFactory& factory,
                                        const GrDrawEffect& drawEffect)
     : INHERITED(factory)
-    , fImageIncrementUni(kInvalidUniformHandle)
-    , fSurfaceScaleUni(kInvalidUniformHandle)
     , fEffectMatrix(drawEffect.castEffect<GrLightingEffect>().coordsType()) {
     const GrLightingEffect& m = drawEffect.castEffect<GrLightingEffect>();
     fLight = m.light()->createGLLight();
@@ -1167,13 +1212,13 @@ void GrGLLightingEffect::emitCode(GrGLShaderBuilder* builder,
                                   const char* outputColor,
                                   const char* inputColor,
                                   const TextureSamplerArray& samplers) {
-    const char* coords;
+    SkString coords;
     fEffectMatrix.emitCodeMakeFSCoords2D(builder, key, &coords);
 
-    fImageIncrementUni = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType,
+    fImageIncrementUni = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility,
                                               kVec2f_GrSLType,
                                              "ImageIncrement");
-    fSurfaceScaleUni = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType,
+    fSurfaceScaleUni = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility,
                                            kFloat_GrSLType,
                                            "SurfaceScale");
     fLight->emitLightColorUniform(builder);
@@ -1189,26 +1234,24 @@ void GrGLLightingEffect::emitCode(GrGLShaderBuilder* builder,
         GrGLShaderVar("scale", kFloat_GrSLType),
     };
     SkString sobelFuncName;
-    builder->emitFunction(GrGLShaderBuilder::kFragment_ShaderType,
-                          kFloat_GrSLType,
-                          "sobel",
-                          SK_ARRAY_COUNT(gSobelArgs),
-                          gSobelArgs,
-                          "\treturn (-a + b - 2.0 * c + 2.0 * d -e + f) * scale;\n",
-                          &sobelFuncName);
+    builder->fsEmitFunction(kFloat_GrSLType,
+                            "sobel",
+                            SK_ARRAY_COUNT(gSobelArgs),
+                            gSobelArgs,
+                            "\treturn (-a + b - 2.0 * c + 2.0 * d -e + f) * scale;\n",
+                            &sobelFuncName);
     static const GrGLShaderVar gPointToNormalArgs[] =  {
         GrGLShaderVar("x", kFloat_GrSLType),
         GrGLShaderVar("y", kFloat_GrSLType),
         GrGLShaderVar("scale", kFloat_GrSLType),
     };
     SkString pointToNormalName;
-    builder->emitFunction(GrGLShaderBuilder::kFragment_ShaderType,
-                          kVec3f_GrSLType,
-                          "pointToNormal",
-                          SK_ARRAY_COUNT(gPointToNormalArgs),
-                          gPointToNormalArgs,
-                          "\treturn normalize(vec3(-x * scale, y * scale, 1));\n",
-                          &pointToNormalName);
+    builder->fsEmitFunction(kVec3f_GrSLType,
+                            "pointToNormal",
+                            SK_ARRAY_COUNT(gPointToNormalArgs),
+                            gPointToNormalArgs,
+                            "\treturn normalize(vec3(-x * scale, y * scale, 1));\n",
+                            &pointToNormalName);
 
     static const GrGLShaderVar gInteriorNormalArgs[] =  {
         GrGLShaderVar("m", kFloat_GrSLType, 9),
@@ -1222,15 +1265,14 @@ void GrGLLightingEffect::emitCode(GrGLShaderBuilder* builder,
                                 sobelFuncName.c_str(),
                                 sobelFuncName.c_str());
     SkString interiorNormalName;
-    builder->emitFunction(GrGLShaderBuilder::kFragment_ShaderType,
-                          kVec3f_GrSLType,
-                          "interiorNormal",
-                          SK_ARRAY_COUNT(gInteriorNormalArgs),
-                          gInteriorNormalArgs,
-                          interiorNormalBody.c_str(),
-                          &interiorNormalName);
+    builder->fsEmitFunction(kVec3f_GrSLType,
+                            "interiorNormal",
+                            SK_ARRAY_COUNT(gInteriorNormalArgs),
+                            gInteriorNormalArgs,
+                            interiorNormalBody.c_str(),
+                            &interiorNormalName);
 
-    builder->fsCodeAppendf("\t\tvec2 coord = %s;\n", coords);
+    builder->fsCodeAppendf("\t\tvec2 coord = %s;\n", coords.c_str());
     builder->fsCodeAppend("\t\tfloat m[9];\n");
 
     const char* imgInc = builder->getUniformCStr(fImageIncrementUni);
@@ -1242,9 +1284,7 @@ void GrGLLightingEffect::emitCode(GrGLShaderBuilder* builder,
             SkString texCoords;
             texCoords.appendf("coord + vec2(%d, %d) * %s", dx, dy, imgInc);
             builder->fsCodeAppendf("\t\tm[%d] = ", index++);
-            builder->appendTextureLookup(GrGLShaderBuilder::kFragment_ShaderType,
-                                         samplers[0],
-                                         texCoords.c_str());
+            builder->fsAppendTextureLookup(samplers[0], texCoords.c_str());
             builder->fsCodeAppend(".a;\n");
         }
     }
@@ -1281,7 +1321,8 @@ void GrGLLightingEffect::setData(const GrGLUniformManager& uman,
     float ySign = texture->origin() == kTopLeft_GrSurfaceOrigin ? -1.0f : 1.0f;
     uman.set2f(fImageIncrementUni, 1.0f / texture->width(), ySign / texture->height());
     uman.set1f(fSurfaceScaleUni, lighting.surfaceScale());
-    fLight->setData(uman, lighting.light(), lighting.offset());
+    SkAutoTUnref<SkLight> transformedLight(lighting.light()->transform(lighting.filterMatrix()));
+    fLight->setData(uman, transformedLight);
     fEffectMatrix.setData(uman,
                           lighting.getMatrix(),
                           drawEffect,
@@ -1294,13 +1335,12 @@ void GrGLLightingEffect::setData(const GrGLUniformManager& uman,
 
 GrGLDiffuseLightingEffect::GrGLDiffuseLightingEffect(const GrBackendEffectFactory& factory,
                                                      const GrDrawEffect& drawEffect)
-    : INHERITED(factory, drawEffect)
-    , fKDUni(kInvalidUniformHandle) {
+    : INHERITED(factory, drawEffect) {
 }
 
 void GrGLDiffuseLightingEffect::emitLightFunc(GrGLShaderBuilder* builder, SkString* funcName) {
     const char* kd;
-    fKDUni = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType,
+    fKDUni = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility,
                                  kFloat_GrSLType,
                                  "KD",
                                  &kd);
@@ -1313,13 +1353,12 @@ void GrGLDiffuseLightingEffect::emitLightFunc(GrGLShaderBuilder* builder, SkStri
     SkString lightBody;
     lightBody.appendf("\tfloat colorScale = %s * dot(normal, surfaceToLight);\n", kd);
     lightBody.appendf("\treturn vec4(lightColor * clamp(colorScale, 0.0, 1.0), 1.0);\n");
-    builder->emitFunction(GrGLShaderBuilder::kFragment_ShaderType,
-                          kVec4f_GrSLType,
-                          "light",
-                          SK_ARRAY_COUNT(gLightArgs),
-                          gLightArgs,
-                          lightBody.c_str(),
-                          funcName);
+    builder->fsEmitFunction(kVec4f_GrSLType,
+                            "light",
+                            SK_ARRAY_COUNT(gLightArgs),
+                            gLightArgs,
+                            lightBody.c_str(),
+                            funcName);
 }
 
 void GrGLDiffuseLightingEffect::setData(const GrGLUniformManager& uman,
@@ -1334,10 +1373,10 @@ void GrGLDiffuseLightingEffect::setData(const GrGLUniformManager& uman,
 GrSpecularLightingEffect::GrSpecularLightingEffect(GrTexture* texture,
                                                    const SkLight* light,
                                                    SkScalar surfaceScale,
-                                                   const SkIPoint& offset,
+                                                   const SkMatrix& matrix,
                                                    SkScalar ks,
                                                    SkScalar shininess)
-    : INHERITED(texture, light, surfaceScale, offset),
+    : INHERITED(texture, light, surfaceScale, matrix),
       fKS(ks),
       fShininess(shininess) {
 }
@@ -1355,7 +1394,7 @@ bool GrSpecularLightingEffect::onIsEqual(const GrEffect& sBase) const {
 
 GR_DEFINE_EFFECT_TEST(GrSpecularLightingEffect);
 
-GrEffectRef* GrSpecularLightingEffect::TestCreate(SkMWCRandom* random,
+GrEffectRef* GrSpecularLightingEffect::TestCreate(SkRandom* random,
                                                   GrContext* context,
                                                   const GrDrawTargetCaps&,
                                                   GrTexture* textures[]) {
@@ -1363,27 +1402,28 @@ GrEffectRef* GrSpecularLightingEffect::TestCreate(SkMWCRandom* random,
     SkScalar ks = random->nextUScalar1();
     SkScalar shininess = random->nextUScalar1();
     SkAutoTUnref<SkLight> light(create_random_light(random));
-    SkIPoint offset = SkIPoint::Make(random->nextS(), random->nextS());
+    SkMatrix matrix;
+    for (int i = 0; i < 9; i++) {
+        matrix[i] = random->nextUScalar1();
+    }
     return GrSpecularLightingEffect::Create(textures[GrEffectUnitTest::kAlphaTextureIdx],
-                                            light, surfaceScale, offset, ks, shininess);
+                                            light, surfaceScale, matrix, ks, shininess);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 GrGLSpecularLightingEffect::GrGLSpecularLightingEffect(const GrBackendEffectFactory& factory,
                                                        const GrDrawEffect& drawEffect)
-    : GrGLLightingEffect(factory, drawEffect)
-    , fKSUni(kInvalidUniformHandle)
-    , fShininessUni(kInvalidUniformHandle) {
+    : INHERITED(factory, drawEffect) {
 }
 
 void GrGLSpecularLightingEffect::emitLightFunc(GrGLShaderBuilder* builder, SkString* funcName) {
     const char* ks;
     const char* shininess;
 
-    fKSUni = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType,
+    fKSUni = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility,
                                  kFloat_GrSLType, "KS", &ks);
-    fShininessUni = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType,
+    fShininessUni = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility,
                                         kFloat_GrSLType, "Shininess", &shininess);
 
     static const GrGLShaderVar gLightArgs[] = {
@@ -1396,13 +1436,12 @@ void GrGLSpecularLightingEffect::emitLightFunc(GrGLShaderBuilder* builder, SkStr
     lightBody.appendf("\tfloat colorScale = %s * pow(dot(normal, halfDir), %s);\n", ks, shininess);
     lightBody.appendf("\tvec3 color = lightColor * clamp(colorScale, 0.0, 1.0);\n");
     lightBody.appendf("\treturn vec4(color, max(max(color.r, color.g), color.b));\n");
-    builder->emitFunction(GrGLShaderBuilder::kFragment_ShaderType,
-                          kVec4f_GrSLType,
-                          "light",
-                          SK_ARRAY_COUNT(gLightArgs),
-                          gLightArgs,
-                          lightBody.c_str(),
-                          funcName);
+    builder->fsEmitFunction(kVec4f_GrSLType,
+                            "light",
+                            SK_ARRAY_COUNT(gLightArgs),
+                            gLightArgs,
+                            lightBody.c_str(),
+                            funcName);
 }
 
 void GrGLSpecularLightingEffect::setData(const GrGLUniformManager& uman,
@@ -1415,7 +1454,7 @@ void GrGLSpecularLightingEffect::setData(const GrGLUniformManager& uman,
 
 ///////////////////////////////////////////////////////////////////////////////
 void GrGLLight::emitLightColorUniform(GrGLShaderBuilder* builder) {
-    fColorUni = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType,
+    fColorUni = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility,
                                     kVec3f_GrSLType, "LightColor");
 }
 
@@ -1425,17 +1464,15 @@ void GrGLLight::emitLightColor(GrGLShaderBuilder* builder,
 }
 
 void GrGLLight::setData(const GrGLUniformManager& uman,
-                        const SkLight* light,
-                        const SkIPoint&) const {
+                        const SkLight* light) const {
     setUniformPoint3(uman, fColorUni, light->color() * SkScalarInvert(SkIntToScalar(255)));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 void GrGLDistantLight::setData(const GrGLUniformManager& uman,
-                               const SkLight* light,
-                               const SkIPoint& offset) const {
-    INHERITED::setData(uman, light, offset);
+                               const SkLight* light) const {
+    INHERITED::setData(uman, light);
     SkASSERT(light->type() == SkLight::kDistant_LightType);
     const SkDistantLight* distantLight = static_cast<const SkDistantLight*>(light);
     setUniformNormal3(uman, fDirectionUni, distantLight->direction());
@@ -1443,7 +1480,7 @@ void GrGLDistantLight::setData(const GrGLUniformManager& uman,
 
 void GrGLDistantLight::emitSurfaceToLight(GrGLShaderBuilder* builder, const char* z) {
     const char* dir;
-    fDirectionUni = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType, kVec3f_GrSLType,
+    fDirectionUni = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility, kVec3f_GrSLType,
                                         "LightDirection", &dir);
     builder->fsCodeAppend(dir);
 }
@@ -1451,20 +1488,16 @@ void GrGLDistantLight::emitSurfaceToLight(GrGLShaderBuilder* builder, const char
 ///////////////////////////////////////////////////////////////////////////////
 
 void GrGLPointLight::setData(const GrGLUniformManager& uman,
-                             const SkLight* light,
-                             const SkIPoint& offset) const {
-    INHERITED::setData(uman, light, offset);
+                             const SkLight* light) const {
+    INHERITED::setData(uman, light);
     SkASSERT(light->type() == SkLight::kPoint_LightType);
     const SkPointLight* pointLight = static_cast<const SkPointLight*>(light);
-    SkPoint3 location = pointLight->location();
-    location.fX -= offset.fX;
-    location.fY -= offset.fY;
-    setUniformPoint3(uman, fLocationUni, location);
+    setUniformPoint3(uman, fLocationUni, pointLight->location());
 }
 
 void GrGLPointLight::emitSurfaceToLight(GrGLShaderBuilder* builder, const char* z) {
     const char* loc;
-    fLocationUni = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType, kVec3f_GrSLType,
+    fLocationUni = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility, kVec3f_GrSLType,
                                        "LightLocation", &loc);
     builder->fsCodeAppendf("normalize(%s - vec3(%s.xy, %s))", loc, builder->fragmentPosition(), z);
 }
@@ -1472,15 +1505,11 @@ void GrGLPointLight::emitSurfaceToLight(GrGLShaderBuilder* builder, const char* 
 ///////////////////////////////////////////////////////////////////////////////
 
 void GrGLSpotLight::setData(const GrGLUniformManager& uman,
-                            const SkLight* light,
-                            const SkIPoint& offset) const {
-    INHERITED::setData(uman, light, offset);
+                            const SkLight* light) const {
+    INHERITED::setData(uman, light);
     SkASSERT(light->type() == SkLight::kSpot_LightType);
     const SkSpotLight* spotLight = static_cast<const SkSpotLight *>(light);
-    SkPoint3 location = spotLight->location();
-    location.fX -= offset.fX;
-    location.fY -= offset.fY;
-    setUniformPoint3(uman, fLocationUni, location);
+    setUniformPoint3(uman, fLocationUni, spotLight->location());
     uman.set1f(fExponentUni, spotLight->specularExponent());
     uman.set1f(fCosInnerConeAngleUni, spotLight->cosInnerConeAngle());
     uman.set1f(fCosOuterConeAngleUni, spotLight->cosOuterConeAngle());
@@ -1490,7 +1519,7 @@ void GrGLSpotLight::setData(const GrGLUniformManager& uman,
 
 void GrGLSpotLight::emitSurfaceToLight(GrGLShaderBuilder* builder, const char* z) {
     const char* location;
-    fLocationUni = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType,
+    fLocationUni = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility,
                                        kVec3f_GrSLType, "LightLocation", &location);
     builder->fsCodeAppendf("normalize(%s - vec3(%s.xy, %s))",
                            location, builder->fragmentPosition(), z);
@@ -1506,15 +1535,15 @@ void GrGLSpotLight::emitLightColor(GrGLShaderBuilder* builder,
     const char* cosOuter;
     const char* coneScale;
     const char* s;
-    fExponentUni = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType,
+    fExponentUni = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility,
                                        kFloat_GrSLType, "Exponent", &exponent);
-    fCosInnerConeAngleUni = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType,
+    fCosInnerConeAngleUni = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility,
                                                 kFloat_GrSLType, "CosInnerConeAngle", &cosInner);
-    fCosOuterConeAngleUni = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType,
+    fCosOuterConeAngleUni = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility,
                                                 kFloat_GrSLType, "CosOuterConeAngle", &cosOuter);
-    fConeScaleUni = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType,
+    fConeScaleUni = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility,
                                         kFloat_GrSLType, "ConeScale", &coneScale);
-    fSUni = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType,
+    fSUni = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility,
                                 kVec3f_GrSLType, "S", &s);
 
     static const GrGLShaderVar gLightColorArgs[] = {
@@ -1531,13 +1560,12 @@ void GrGLSpotLight::emitLightColor(GrGLShaderBuilder* builder,
                            color, cosOuter, coneScale);
     lightColorBody.appendf("\t}\n");
     lightColorBody.appendf("\treturn %s;\n", color);
-    builder->emitFunction(GrGLShaderBuilder::kFragment_ShaderType,
-                          kVec3f_GrSLType,
-                          "lightColor",
-                          SK_ARRAY_COUNT(gLightColorArgs),
-                          gLightColorArgs,
-                          lightColorBody.c_str(),
-                          &fLightColorFunc);
+    builder->fsEmitFunction(kVec3f_GrSLType,
+                            "lightColor",
+                            SK_ARRAY_COUNT(gLightColorArgs),
+                            gLightColorArgs,
+                            lightColorBody.c_str(),
+                            &fLightColorFunc);
 
     builder->fsCodeAppendf("%s(%s)", fLightColorFunc.c_str(), surfaceToLight);
 }

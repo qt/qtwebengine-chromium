@@ -55,13 +55,18 @@ MessageCenterTrayDelegate* CreateMessageCenterTray() {
 #endif  // defined(OS_CHROMEOS)
 
 namespace ash {
+namespace {
+
+// Menu commands
+const int kToggleQuietMode = 0;
+const int kEnableQuietModeHour = 1;
+const int kEnableQuietModeDay = 2;
+
+}
+
 namespace internal {
 namespace {
 
-const int kWebNotificationIconSize = 31;
-// Height of the art assets used in alternate shelf layout,
-// see ash/ash_switches.h:UseAlternateShelfLayout.
-const int kWebNotificationAlternateSize = 38;
 const SkColor kWebNotificationColorNoUnread = SkColorSetA(SK_ColorWHITE, 128);
 const SkColor kWebNotificationColorWithUnread = SK_ColorWHITE;
 
@@ -72,11 +77,17 @@ const SkColor kWebNotificationColorWithUnread = SK_ColorWHITE;
 class WorkAreaObserver : public ShelfLayoutManagerObserver,
                          public ShellObserver {
  public:
-  WorkAreaObserver(message_center::MessagePopupCollection* collection,
-                   ShelfLayoutManager* shelf);
+  WorkAreaObserver();
   virtual ~WorkAreaObserver();
 
   void SetSystemTrayHeight(int height);
+
+  // Starts observing |shelf| and shell and sends the change to |collection|.
+  void StartObserving(message_center::MessagePopupCollection* collection,
+                      aura::RootWindow* root_window);
+
+  // Stops the observing session.
+  void StopObserving();
 
   // Overridden from ShellObserver:
   virtual void OnDisplayWorkAreaInsetsChanged() OVERRIDE;
@@ -85,38 +96,71 @@ class WorkAreaObserver : public ShelfLayoutManagerObserver,
   virtual void OnAutoHideStateChanged(ShelfAutoHideState new_state) OVERRIDE;
 
  private:
+  // Updates |shelf_| from |root_window_|.
+  void UpdateShelf();
+
   message_center::MessagePopupCollection* collection_;
+  aura::RootWindow* root_window_;
   ShelfLayoutManager* shelf_;
   int system_tray_height_;
 
   DISALLOW_COPY_AND_ASSIGN(WorkAreaObserver);
 };
 
-WorkAreaObserver::WorkAreaObserver(
-    message_center::MessagePopupCollection* collection,
-    ShelfLayoutManager* shelf)
-    : collection_(collection),
-      shelf_(shelf),
+WorkAreaObserver::WorkAreaObserver()
+    : collection_(NULL),
+      root_window_(NULL),
+      shelf_(NULL),
       system_tray_height_(0) {
-  DCHECK(collection_);
-  shelf_->AddObserver(this);
-  Shell::GetInstance()->AddShellObserver(this);
 }
 
 WorkAreaObserver::~WorkAreaObserver() {
-  Shell::GetInstance()->RemoveShellObserver(this);
-  shelf_->RemoveObserver(this);
+  StopObserving();
 }
 
 void WorkAreaObserver::SetSystemTrayHeight(int height) {
   system_tray_height_ = height;
+
+  // If the shelf is shown during auto-hide state, the distance from the edge
+  // should be reduced by the height of shelf's shown height.
+  if (shelf_ && shelf_->visibility_state() == SHELF_AUTO_HIDE &&
+      shelf_->auto_hide_state() == SHELF_AUTO_HIDE_SHOWN) {
+    system_tray_height_ -= ShelfLayoutManager::GetPreferredShelfSize() -
+        ShelfLayoutManager::kAutoHideSize;
+  }
+
   if (system_tray_height_ > 0 && ash::switches::UseAlternateShelfLayout())
     system_tray_height_ += message_center::kMarginBetweenItems;
+
+  if (!shelf_)
+    return;
 
   OnAutoHideStateChanged(shelf_->auto_hide_state());
 }
 
+void WorkAreaObserver::StartObserving(
+    message_center::MessagePopupCollection* collection,
+    aura::RootWindow* root_window) {
+  DCHECK(collection);
+  collection_ = collection;
+  root_window_ = root_window;
+  UpdateShelf();
+  Shell::GetInstance()->AddShellObserver(this);
+  if (system_tray_height_ > 0)
+    OnAutoHideStateChanged(shelf_->auto_hide_state());
+}
+
+void WorkAreaObserver::StopObserving() {
+  Shell::GetInstance()->RemoveShellObserver(this);
+  if (shelf_)
+    shelf_->RemoveObserver(this);
+  collection_ = NULL;
+  shelf_ = NULL;
+}
+
 void WorkAreaObserver::OnDisplayWorkAreaInsetsChanged() {
+  UpdateShelf();
+
   collection_->OnDisplayBoundsChanged(
       Shell::GetScreen()->GetDisplayNearestWindow(
           shelf_->shelf_widget()->GetNativeView()));
@@ -127,45 +171,34 @@ void WorkAreaObserver::OnAutoHideStateChanged(ShelfAutoHideState new_state) {
       shelf_->shelf_widget()->GetNativeView());
   gfx::Rect work_area = display.work_area();
   int width = 0;
-  if (shelf_->auto_hide_behavior() != SHELF_AUTO_HIDE_BEHAVIOR_NEVER) {
-    width = (new_state == SHELF_AUTO_HIDE_HIDDEN) ?
-        ShelfLayoutManager::kAutoHideSize :
-        ShelfLayoutManager::GetPreferredShelfSize();
+  if ((shelf_->visibility_state() == SHELF_AUTO_HIDE) &&
+      new_state == SHELF_AUTO_HIDE_SHOWN) {
+    // Since the work_area is already reduced by kAutoHideSize, the inset width
+    // should be just the difference.
+    width = ShelfLayoutManager::GetPreferredShelfSize() -
+        ShelfLayoutManager::kAutoHideSize;
   }
-  switch (shelf_->GetAlignment()) {
-    case SHELF_ALIGNMENT_BOTTOM:
-      work_area.Inset(0, 0, 0, width);
-      if (system_tray_height_ > 0) {
-        work_area.set_height(
-            std::max(0, work_area.height() - system_tray_height_));
-      }
-      break;
-    case SHELF_ALIGNMENT_LEFT:
-      work_area.Inset(width, 0, 0, 0);
-      // Popups appear on the left bottom only when UI is RTL.
-      if (base::i18n::IsRTL() && system_tray_height_ > 0) {
-        work_area.set_height(
-            std::max(0, work_area.height() - system_tray_height_));
-      }
-      break;
-    case SHELF_ALIGNMENT_RIGHT:
-      work_area.Inset(0, 0, width, 0);
-      // Popups appear on the right bottom only when UI isn't RTL.
-      if (!base::i18n::IsRTL() && system_tray_height_ > 0) {
-        work_area.set_height(
-            std::max(0, work_area.height() - system_tray_height_));
-      }
-      break;
-    case SHELF_ALIGNMENT_TOP:
-      work_area.Inset(0, width, 0, 0);
-      if (system_tray_height_ > 0) {
-        work_area.set_y(work_area.y() + system_tray_height_);
-        work_area.set_height(
-            std::max(0, work_area.height() - system_tray_height_));
-      }
-      break;
+  work_area.Inset(shelf_->SelectValueForShelfAlignment(
+      gfx::Insets(0, 0, width, 0),
+      gfx::Insets(0, width, 0, 0),
+      gfx::Insets(0, 0, 0, width),
+      gfx::Insets(width, 0, 0, 0)));
+  if (system_tray_height_ > 0) {
+    work_area.set_height(
+        std::max(0, work_area.height() - system_tray_height_));
+    if (shelf_->GetAlignment() == SHELF_ALIGNMENT_TOP)
+      work_area.set_y(work_area.y() + system_tray_height_);
   }
   collection_->SetDisplayInfo(work_area, display.bounds());
+}
+
+void WorkAreaObserver::UpdateShelf() {
+  if (shelf_)
+    return;
+
+  shelf_ = ShelfLayoutManager::ForLauncher(root_window_);
+  if (shelf_)
+    shelf_->AddObserver(this);
 }
 
 // Class to initialize and manage the WebNotificationBubble and
@@ -241,10 +274,12 @@ class WebNotificationButton : public views::CustomButton {
  protected:
   // Overridden from views::ImageButton:
   virtual gfx::Size GetPreferredSize() OVERRIDE {
-    if (ash::switches::UseAlternateShelfLayout())
-      return gfx::Size(kWebNotificationAlternateSize,
-                       kWebNotificationAlternateSize);
-    return gfx::Size(kWebNotificationIconSize, kWebNotificationIconSize);
+    const int notification_item_size = GetShelfItemHeight();
+    return gfx::Size(notification_item_size, notification_item_size);
+  }
+
+  virtual int GetHeightForWidth(int width) OVERRIDE {
+    return GetPreferredSize().height();
   }
 
  private:
@@ -282,6 +317,7 @@ WebNotificationTray::WebNotificationTray(
   message_center_tray_.reset(new message_center::MessageCenterTray(
       this,
       message_center::MessageCenter::Get()));
+  work_area_observer_.reset(new internal::WorkAreaObserver());
   OnMessageCenterTrayChanged();
 }
 
@@ -340,6 +376,7 @@ bool WebNotificationTray::ShowMessageCenterInternal(bool show_settings) {
   status_area_widget()->SetHideSystemNotifications(true);
   GetShelfLayoutManager()->UpdateAutoHideState();
   button_->SetBubbleVisible(true);
+  SetDrawBackgroundAsActive(true);
   return true;
 }
 
@@ -350,6 +387,7 @@ bool WebNotificationTray::ShowMessageCenter() {
 void WebNotificationTray::HideMessageCenter() {
   if (!message_center_bubble())
     return;
+  SetDrawBackgroundAsActive(false);
   message_center_bubble_.reset();
   should_block_shelf_auto_hide_ = false;
   show_message_center_on_unlock_ = false;
@@ -359,17 +397,12 @@ void WebNotificationTray::HideMessageCenter() {
 }
 
 void WebNotificationTray::SetSystemTrayHeight(int height) {
-  if (!work_area_observer_)
-    return;
   work_area_observer_->SetSystemTrayHeight(height);
 }
 
 bool WebNotificationTray::ShowPopups() {
-  if (status_area_widget()->login_status() == user::LOGGED_IN_LOCKED ||
-      message_center_bubble() ||
-      !status_area_widget()->ShouldShowWebNotifications()) {
+  if (message_center_bubble())
     return false;
-  }
 
   popup_collection_.reset(new message_center::MessagePopupCollection(
       ash::Shell::GetContainer(
@@ -378,14 +411,14 @@ bool WebNotificationTray::ShowPopups() {
       message_center(),
       message_center_tray_.get(),
       ash::switches::UseAlternateShelfLayout()));
-  work_area_observer_.reset(new internal::WorkAreaObserver(
-      popup_collection_.get(), GetShelfLayoutManager()));
+  work_area_observer_->StartObserving(
+      popup_collection_.get(), GetWidget()->GetNativeView()->GetRootWindow());
   return true;
 }
 
 void WebNotificationTray::HidePopups() {
   popup_collection_.reset();
-  work_area_observer_.reset();
+  work_area_observer_->StopObserving();
 }
 
 // Private methods.
@@ -394,53 +427,6 @@ bool WebNotificationTray::ShouldShowMessageCenter() {
   return status_area_widget()->login_status() != user::LOGGED_IN_LOCKED &&
       !(status_area_widget()->system_tray() &&
         status_area_widget()->system_tray()->HasNotificationBubble());
-}
-
-void WebNotificationTray::ShowQuietModeMenu(const ui::Event& event) {
-  base::AutoReset<bool> reset(&should_block_shelf_auto_hide_, true);
-  scoped_ptr<ui::MenuModel> menu_model(
-      message_center_tray_->CreateQuietModeMenu());
-  quiet_mode_menu_runner_.reset(new views::MenuRunner(menu_model.get()));
-  gfx::Point point;
-  views::View::ConvertPointToScreen(this, &point);
-  if (quiet_mode_menu_runner_->RunMenuAt(
-      GetWidget(),
-      NULL,
-      gfx::Rect(point, bounds().size()),
-      views::MenuItemView::BUBBLE_ABOVE,
-      ui::GetMenuSourceTypeForEvent(event),
-      views::MenuRunner::HAS_MNEMONICS) == views::MenuRunner::MENU_DELETED)
-    return;
-
-  quiet_mode_menu_runner_.reset();
-  GetShelfLayoutManager()->UpdateAutoHideState();
-}
-
-bool WebNotificationTray::ShouldShowQuietModeMenu(const ui::Event& event) {
-  // TODO(mukai): Add keyboard event handler.
-  if (!event.IsMouseEvent())
-    return false;
-
-  const ui::MouseEvent* mouse_event =
-      static_cast<const ui::MouseEvent*>(&event);
-
-  return mouse_event->IsRightMouseButton();
-}
-
-void WebNotificationTray::UpdateAfterLoginStatusChange(
-    user::LoginStatus login_status) {
-  if (login_status == user::LOGGED_IN_LOCKED) {
-    show_message_center_on_unlock_ =
-        message_center_tray_->HideMessageCenterBubble();
-    message_center_tray_->HidePopupBubble();
-  } else {
-    // Only try once to show the message center bubble on login status change,
-    // so always set |show_message_center_on_unlock_| to false.
-    if (show_message_center_on_unlock_)
-      message_center_tray_->ShowMessageCenterBubble();
-    show_message_center_on_unlock_ = false;
-  }
-  OnMessageCenterTrayChanged();
 }
 
 bool WebNotificationTray::ShouldBlockLauncherAutoHide() const {
@@ -494,11 +480,6 @@ void WebNotificationTray::HideBubbleWithView(
 }
 
 bool WebNotificationTray::PerformAction(const ui::Event& event) {
-  if (ShouldShowQuietModeMenu(event)) {
-    ShowQuietModeMenu(event);
-    return true;
-  }
-
   if (message_center_bubble())
     message_center_tray_->HideMessageCenterBubble();
   else
@@ -543,8 +524,32 @@ message_center::MessageCenterTray* WebNotificationTray::GetMessageCenterTray() {
   return message_center_tray_.get();
 }
 
-bool WebNotificationTray::IsPressed() {
-  return IsMessageCenterBubbleVisible();
+bool WebNotificationTray::IsCommandIdChecked(int command_id) const {
+  if (command_id != kToggleQuietMode)
+    return false;
+  return message_center()->IsQuietMode();
+}
+
+bool WebNotificationTray::IsCommandIdEnabled(int command_id) const {
+  return true;
+}
+
+bool WebNotificationTray::GetAcceleratorForCommandId(
+    int command_id,
+    ui::Accelerator* accelerator) {
+  return false;
+}
+
+void WebNotificationTray::ExecuteCommand(int command_id, int event_flags) {
+  if (command_id == kToggleQuietMode) {
+    bool in_quiet_mode = message_center()->IsQuietMode();
+    message_center()->SetQuietMode(!in_quiet_mode);
+    return;
+  }
+  base::TimeDelta expires_in = command_id == kEnableQuietModeDay ?
+      base::TimeDelta::FromDays(1):
+      base::TimeDelta::FromHours(1);
+  message_center()->EnterQuietModeWithExpire(expires_in);
 }
 
 void WebNotificationTray::ButtonPressed(views::Button* sender,
@@ -591,7 +596,7 @@ bool WebNotificationTray::ClickedOutsideBubble() {
   return true;
 }
 
-message_center::MessageCenter* WebNotificationTray::message_center() {
+message_center::MessageCenter* WebNotificationTray::message_center() const {
   return message_center_tray_->message_center();
 }
 

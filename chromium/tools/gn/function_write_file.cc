@@ -29,7 +29,7 @@ const char kWriteFile_Help[] =
     "  TODO(brettw) we probably need an optional third argument to control\n"
     "  list formatting.\n"
     "\n"
-    "Arguments:\n"
+    "Arguments\n"
     "\n"
     "  filename\n"
     "      Filename to write. This must be within the output directory.\n"
@@ -50,7 +50,7 @@ Value RunWriteFile(Scope* scope,
   // Compute the file name and make sure it's in the output dir.
   if (!args[0].VerifyTypeIs(Value::STRING, err))
     return Value();
-  const SourceDir& cur_dir = SourceDirForFunctionCall(function);
+  const SourceDir& cur_dir = scope->GetSourceDir();
   SourceFile source_file = cur_dir.ResolveRelativeFile(args[0].string_value());
   if (!EnsureStringIsInOutputDir(
           scope->settings()->build_settings()->build_dir(),
@@ -62,9 +62,9 @@ Value RunWriteFile(Scope* scope,
   if (args[1].type() == Value::LIST) {
     const std::vector<Value>& list = args[1].list_value();
     for (size_t i = 0; i < list.size(); i++)
-      contents << list[i].ToString() << std::endl;
+      contents << list[i].ToString(false) << std::endl;
   } else {
-    contents << args[1].ToString();
+    contents << args[1].ToString(false);
   }
 
   // Write file, creating the directory if necessary.

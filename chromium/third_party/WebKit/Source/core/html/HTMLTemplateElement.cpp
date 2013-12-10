@@ -39,7 +39,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLTemplateElement::HTMLTemplateElement(const QualifiedName& tagName, Document* document)
+inline HTMLTemplateElement::HTMLTemplateElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
 {
     ScriptWrappable::init(this);
@@ -47,9 +47,11 @@ inline HTMLTemplateElement::HTMLTemplateElement(const QualifiedName& tagName, Do
 
 HTMLTemplateElement::~HTMLTemplateElement()
 {
+    if (m_content)
+        m_content->clearHost();
 }
 
-PassRefPtr<HTMLTemplateElement> HTMLTemplateElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLTemplateElement> HTMLTemplateElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLTemplateElement(tagName, document));
 }
@@ -57,7 +59,7 @@ PassRefPtr<HTMLTemplateElement> HTMLTemplateElement::create(const QualifiedName&
 DocumentFragment* HTMLTemplateElement::content() const
 {
     if (!m_content)
-        m_content = TemplateContentDocumentFragment::create(document()->ensureTemplateDocument(), this);
+        m_content = TemplateContentDocumentFragment::create(document().ensureTemplateDocument(), this);
 
     return m_content.get();
 }
@@ -78,15 +80,7 @@ void HTMLTemplateElement::didMoveToNewDocument(Document* oldDocument)
     HTMLElement::didMoveToNewDocument(oldDocument);
     if (!m_content)
         return;
-    document()->ensureTemplateDocument()->adoptIfNeeded(m_content.get());
+    document().ensureTemplateDocument().adoptIfNeeded(m_content.get());
 }
-
-#ifndef NDEBUG
-const HTMLTemplateElement* toHTMLTemplateElement(const Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || (node->isHTMLElement() && node->hasTagName(templateTag)));
-    return static_cast<const HTMLTemplateElement*>(node);
-}
-#endif
 
 } // namespace WebCore

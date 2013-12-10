@@ -94,6 +94,7 @@ const char StatsReport::kStatsValueNameRemoteAddress[] = "googRemoteAddress";
 const char StatsReport::kStatsValueNameRetransmitBitrate[] =
     "googRetransmitBitrate";
 const char StatsReport::kStatsValueNameRtt[] = "googRtt";
+const char StatsReport::kStatsValueNameSsrc[] = "ssrc";
 const char StatsReport::kStatsValueNameTargetEncBitrate[] =
     "googTargetEncBitrate";
 const char StatsReport::kStatsValueNameTransmitBitrate[] =
@@ -101,7 +102,8 @@ const char StatsReport::kStatsValueNameTransmitBitrate[] =
 const char StatsReport::kStatsValueNameTransportId[] = "transportId";
 const char StatsReport::kStatsValueNameTransportType[] = "googTransportType";
 const char StatsReport::kStatsValueNameTrackId[] = "googTrackId";
-const char StatsReport::kStatsValueNameSsrc[] = "ssrc";
+const char StatsReport::kStatsValueNameTypingNoiseState[] =
+    "googTypingNoiseState";
 const char StatsReport::kStatsValueNameWritable[] = "googWritable";
 
 const char StatsReport::kStatsReportTypeSession[] = "googLibjingleSession";
@@ -114,6 +116,7 @@ const char StatsReport::kStatsReportTypeComponent[] = "googComponent";
 const char StatsReport::kStatsReportTypeCandidatePair[] = "googCandidatePair";
 
 const char StatsReport::kStatsReportVideoBweId[] = "bweforvideo";
+
 
 // Implementations of functions in statstypes.h
 void StatsReport::AddValue(const std::string& name, const std::string& value) {
@@ -200,6 +203,8 @@ void ExtractStats(const cricket::VoiceSenderInfo& info, StatsReport* report) {
   report->AddValue(StatsReport::kStatsValueNameEchoReturnLossEnhancement,
                    info.echo_return_loss_enhancement);
   report->AddValue(StatsReport::kStatsValueNameCodecName, info.codec_name);
+  report->AddBoolean(StatsReport::kStatsValueNameTypingNoiseState,
+                     info.typing_noise_detected);
 }
 
 void ExtractStats(const cricket::VideoReceiverInfo& info, StatsReport* report) {
@@ -398,8 +403,8 @@ StatsReport* StatsCollector::PrepareReport(uint32 ssrc,
   std::string track_id;
   if (it == reports_.end()) {
     if (!session()->GetTrackIdBySsrc(ssrc, &track_id)) {
-      LOG(LS_ERROR) << "The SSRC " << ssrc
-                    << " is not associated with a track";
+      LOG(LS_WARNING) << "The SSRC " << ssrc
+                      << " is not associated with a track";
       return NULL;
     }
   } else {

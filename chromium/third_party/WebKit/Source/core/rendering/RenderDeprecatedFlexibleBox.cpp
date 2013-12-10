@@ -126,13 +126,13 @@ RenderDeprecatedFlexibleBox::RenderDeprecatedFlexibleBox(Element* element)
     setChildrenInline(false); // All of our children must be block-level
     m_stretchingChildren = false;
     if (!isAnonymous()) {
-        const KURL& url = document()->url();
+        const KURL& url = document().url();
         if (url.protocolIs("chrome"))
-            UseCounter::count(document(), UseCounter::DeprecatedFlexboxChrome);
+            UseCounter::count(&document(), UseCounter::DeprecatedFlexboxChrome);
         else if (url.protocolIs("chrome-extension"))
-            UseCounter::count(document(), UseCounter::DeprecatedFlexboxChromeExtension);
+            UseCounter::count(&document(), UseCounter::DeprecatedFlexboxChromeExtension);
         else
-            UseCounter::count(document(), UseCounter::DeprecatedFlexboxWebContent);
+            UseCounter::count(&document(), UseCounter::DeprecatedFlexboxWebContent);
     }
 }
 
@@ -247,7 +247,7 @@ void RenderDeprecatedFlexibleBox::computePreferredLogicalWidths()
     m_minPreferredLogicalWidth += borderAndPadding;
     m_maxPreferredLogicalWidth += borderAndPadding;
 
-    setPreferredLogicalWidthsDirty(false);
+    clearPreferredLogicalWidthsDirty();
 }
 
 void RenderDeprecatedFlexibleBox::layoutBlock(bool relayoutChildren, LayoutUnit)
@@ -281,8 +281,6 @@ void RenderDeprecatedFlexibleBox::layoutBlock(bool relayoutChildren, LayoutUnit)
 
     m_stretchingChildren = false;
 
-    initMaxMarginValues();
-
     if (isHorizontal())
         layoutHorizontalBox(relayoutChildren);
     else
@@ -297,24 +295,6 @@ void RenderDeprecatedFlexibleBox::layoutBlock(bool relayoutChildren, LayoutUnit)
     layoutPositionedObjects(relayoutChildren || isRoot());
 
     computeRegionRangeForBlock(flowThread);
-
-    if (!isFloatingOrOutOfFlowPositioned() && height() == 0) {
-        // We are a block with no border and padding and a computed height
-        // of 0.  The CSS spec states that zero-height blocks collapse their margins
-        // together.
-        // When blocks are self-collapsing, we just use the top margin values and set the
-        // bottom margin max values to 0.  This way we don't factor in the values
-        // twice when we collapse with our previous vertically adjacent and
-        // following vertically adjacent blocks.
-        LayoutUnit pos = maxPositiveMarginBefore();
-        LayoutUnit neg = maxNegativeMarginBefore();
-        if (maxPositiveMarginAfter() > pos)
-            pos = maxPositiveMarginAfter();
-        if (maxNegativeMarginAfter() > neg)
-            neg = maxNegativeMarginAfter();
-        setMaxMarginBeforeValues(pos, neg);
-        setMaxMarginAfterValues(0, 0);
-    }
 
     computeOverflow(oldClientAfterEdge);
 
@@ -391,18 +371,18 @@ void RenderDeprecatedFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
         // our box's intrinsic height.
         LayoutUnit maxAscent = 0, maxDescent = 0;
         for (RenderBox* child = iterator.first(); child; child = iterator.next()) {
-            // make sure we relayout children if we need it.
-            if (relayoutChildren || (child->isReplaced() && (child->style()->width().isPercent() || child->style()->height().isPercent())))
-                child->setChildNeedsLayout(MarkOnlyThis);
-
             if (child->isOutOfFlowPositioned())
                 continue;
+
+            SubtreeLayoutScope layoutScope(child);
+            if (relayoutChildren || (child->isReplaced() && (child->style()->width().isPercent() || child->style()->height().isPercent())))
+                layoutScope.setChildNeedsLayout(child);
 
             // Compute the child's vertical margins.
             child->computeAndSetBlockDirectionMargins(this);
 
             if (!child->needsLayout())
-                child->markForPaginationRelayoutIfNeeded();
+                child->markForPaginationRelayoutIfNeeded(layoutScope);
 
             // Now do the layout.
             child->layoutIfNeeded();
@@ -462,6 +442,7 @@ void RenderDeprecatedFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
                 continue;
             }
 
+            SubtreeLayoutScope layoutScope(child);
 
             // We need to see if this child's height has changed, since we make block elements
             // fill the height of a containing box by default.
@@ -469,10 +450,10 @@ void RenderDeprecatedFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
             LayoutUnit oldChildHeight = child->height();
             child->updateLogicalHeight();
             if (oldChildHeight != child->height())
-                child->setChildNeedsLayout(MarkOnlyThis);
+                layoutScope.setChildNeedsLayout(child);
 
             if (!child->needsLayout())
-                child->markForPaginationRelayoutIfNeeded();
+                child->markForPaginationRelayoutIfNeeded(layoutScope);
 
             child->layoutIfNeeded();
 
@@ -680,10 +661,6 @@ void RenderDeprecatedFlexibleBox::layoutVerticalBox(bool relayoutChildren)
         LayoutUnit minHeight = height() + toAdd;
 
         for (RenderBox* child = iterator.first(); child; child = iterator.next()) {
-            // Make sure we relayout children if we need it.
-            if (!haveLineClamp && (relayoutChildren || (child->isReplaced() && (child->style()->width().isPercent() || child->style()->height().isPercent()))))
-                child->setChildNeedsLayout(MarkOnlyThis);
-
             if (child->isOutOfFlowPositioned()) {
                 child->containingBlock()->insertPositionedObject(child);
                 RenderLayer* childLayer = child->layer();
@@ -695,6 +672,10 @@ void RenderDeprecatedFlexibleBox::layoutVerticalBox(bool relayoutChildren)
                 }
                 continue;
             }
+
+            SubtreeLayoutScope layoutScope(child);
+            if (!haveLineClamp && (relayoutChildren || (child->isReplaced() && (child->style()->width().isPercent() || child->style()->height().isPercent()))))
+                layoutScope.setChildNeedsLayout(child);
 
             if (child->style()->visibility() == COLLAPSE) {
                 // visibility: collapsed children do not participate in our positioning.
@@ -710,7 +691,7 @@ void RenderDeprecatedFlexibleBox::layoutVerticalBox(bool relayoutChildren)
             setHeight(height() + child->marginTop());
 
             if (!child->needsLayout())
-                child->markForPaginationRelayoutIfNeeded();
+                child->markForPaginationRelayoutIfNeeded(layoutScope);
 
             // Now do a layout.
             child->layoutIfNeeded();
@@ -899,7 +880,7 @@ void RenderDeprecatedFlexibleBox::layoutVerticalBox(bool relayoutChildren)
 
 void RenderDeprecatedFlexibleBox::applyLineClamp(FlexBoxIterator& iterator, bool relayoutChildren)
 {
-    UseCounter::count(document(), UseCounter::LineClamp);
+    UseCounter::count(&document(), UseCounter::LineClamp);
 
     int maxLineCount = 0;
     for (RenderBox* child = iterator.first(); child; child = iterator.next()) {
@@ -908,7 +889,7 @@ void RenderDeprecatedFlexibleBox::applyLineClamp(FlexBoxIterator& iterator, bool
 
         child->clearOverrideSize();
         if (relayoutChildren || (child->isReplaced() && (child->style()->width().isPercent() || child->style()->height().isPercent()))
-            || (child->style()->height().isAuto() && child->isBlockFlow())) {
+            || (child->style()->height().isAuto() && child->isRenderBlock())) {
             child->setChildNeedsLayout(MarkOnlyThis);
 
             // Dirty all the positioned objects.
@@ -918,7 +899,7 @@ void RenderDeprecatedFlexibleBox::applyLineClamp(FlexBoxIterator& iterator, bool
             }
         }
         child->layoutIfNeeded();
-        if (child->style()->height().isAuto() && child->isBlockFlow())
+        if (child->style()->height().isAuto() && child->isRenderBlock())
             maxLineCount = max(maxLineCount, toRenderBlock(child)->lineCount());
     }
 
@@ -930,7 +911,7 @@ void RenderDeprecatedFlexibleBox::applyLineClamp(FlexBoxIterator& iterator, bool
         return;
 
     for (RenderBox* child = iterator.first(); child; child = iterator.next()) {
-        if (childDoesNotAffectWidthOrFlexing(child) || !child->style()->height().isAuto() || !child->isBlockFlow())
+        if (childDoesNotAffectWidthOrFlexing(child) || !child->style()->height().isAuto() || !child->isRenderBlock())
             continue;
 
         RenderBlock* blockChild = toRenderBlock(child);
@@ -1006,7 +987,7 @@ void RenderDeprecatedFlexibleBox::clearLineClamp()
 
         child->clearOverrideSize();
         if ((child->isReplaced() && (child->style()->width().isPercent() || child->style()->height().isPercent()))
-            || (child->style()->height().isAuto() && child->isBlockFlow())) {
+            || (child->style()->height().isAuto() && child->isRenderBlock())) {
             child->setChildNeedsLayout();
 
             if (child->isRenderBlock()) {

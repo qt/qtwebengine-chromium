@@ -20,13 +20,15 @@
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/system_monitor/system_monitor.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/timer/hi_res_timer_manager.h"
 #include "content/browser/browser_thread_impl.h"
-#include "content/browser/device_orientation/device_motion_service.h"
+#include "content/browser/device_orientation/device_inertial_sensor_service.h"
 #include "content/browser/download/save_file_manager.h"
 #include "content/browser/gamepad/gamepad_service.h"
 #include "content/browser/gpu/browser_gpu_channel_host_factory.h"
+#include "content/browser/gpu/compositor_util.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/gpu/gpu_process_host_ui_shim.h"
@@ -43,7 +45,6 @@
 #include "content/browser/webui/url_data_manager.h"
 #include "content/public/browser/browser_main_parts.h"
 #include "content/public/browser/browser_shutdown.h"
-#include "content/public/browser/compositor_util.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/content_switches.h"
@@ -52,6 +53,7 @@
 #include "crypto/nss_util.h"
 #include "media/audio/audio_manager.h"
 #include "media/base/media.h"
+#include "media/base/user_input_monitor.h"
 #include "media/midi/midi_manager.h"
 #include "net/base/network_change_notifier.h"
 #include "net/socket/client_socket_factory.h"
@@ -64,7 +66,7 @@
 
 #if defined(OS_ANDROID)
 #include "base/android/jni_android.h"
-#include "content/browser/android/browser_startup_config.h"
+#include "content/browser/android/browser_startup_controller.h"
 #include "content/browser/android/surface_texture_peer_browser_impl.h"
 #endif
 
@@ -80,7 +82,7 @@
 #include "ui/base/l10n/l10n_util_win.h"
 #endif
 
-#if defined(OS_LINUX) || defined(OS_OPENBSD)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
 #include <glib-object.h>
 #endif
 
@@ -173,7 +175,7 @@ void SetupSandbox(const CommandLine& parsed_command_line) {
 }
 #endif
 
-#if defined(OS_LINUX) || defined(OS_OPENBSD)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
 static void GLibLogHandler(const gchar* log_domain,
                            GLogLevelFlags log_level,
                            const gchar* message,
@@ -419,6 +421,7 @@ void BrowserMainLoop::MainMessageLoopStart() {
     network_change_notifier_.reset(net::NetworkChangeNotifier::Create());
   }
 
+#if !defined(OS_IOS)
   {
     TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:MediaFeatures")
     media::InitializeCPUSpecificMediaFeatures();
@@ -431,8 +434,6 @@ void BrowserMainLoop::MainMessageLoopStart() {
     TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:MIDIManager")
     midi_manager_.reset(media::MIDIManager::Create());
   }
-
-#if !defined(OS_IOS)
   {
     TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:ContentWebUIController")
     WebUIControllerFactory::RegisterFactory(
@@ -454,6 +455,11 @@ void BrowserMainLoop::MainMessageLoopStart() {
   {
     TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:OnlineStateObserver")
     online_state_observer_.reset(new BrowserOnlineStateObserver);
+  }
+
+  {
+    system_stats_monitor_.reset(new base::debug::TraceEventSystemStatsMonitor(
+        base::ThreadTaskRunnerHandle::Get()));
   }
 #endif  // !defined(OS_IOS)
 
@@ -526,36 +532,53 @@ int BrowserMainLoop::PreCreateThreads() {
 }
 
 void BrowserMainLoop::CreateStartupTasks() {
-  TRACE_EVENT0("startup", "BrowserMainLoop::CreateStartupTasks")
+  TRACE_EVENT0("startup", "BrowserMainLoop::CreateStartupTasks");
+
+  // First time through, we really want to create all the tasks
+  if (!startup_task_runner_.get()) {
+#if defined(OS_ANDROID)
+    startup_task_runner_ = make_scoped_ptr(new StartupTaskRunner(
+        base::Bind(&BrowserStartupComplete),
+        base::MessageLoop::current()->message_loop_proxy()));
+#else
+    startup_task_runner_ = make_scoped_ptr(new StartupTaskRunner(
+        base::Callback<void(int)>(),
+        base::MessageLoop::current()->message_loop_proxy()));
+#endif
+    StartupTask pre_create_threads =
+        base::Bind(&BrowserMainLoop::PreCreateThreads, base::Unretained(this));
+    startup_task_runner_->AddTask(pre_create_threads);
+
+    StartupTask create_threads =
+        base::Bind(&BrowserMainLoop::CreateThreads, base::Unretained(this));
+    startup_task_runner_->AddTask(create_threads);
+
+    StartupTask browser_thread_started = base::Bind(
+        &BrowserMainLoop::BrowserThreadsStarted, base::Unretained(this));
+    startup_task_runner_->AddTask(browser_thread_started);
+
+    StartupTask pre_main_message_loop_run = base::Bind(
+        &BrowserMainLoop::PreMainMessageLoopRun, base::Unretained(this));
+    startup_task_runner_->AddTask(pre_main_message_loop_run);
 
 #if defined(OS_ANDROID)
-  scoped_refptr<StartupTaskRunner> task_runner =
-      new StartupTaskRunner(BrowserMayStartAsynchronously(),
-                            base::Bind(&BrowserStartupComplete),
-                            base::MessageLoop::current()->message_loop_proxy());
-#else
-  scoped_refptr<StartupTaskRunner> task_runner =
-      new StartupTaskRunner(false,
-                            base::Callback<void(int)>(),
-                            base::MessageLoop::current()->message_loop_proxy());
+    if (BrowserMayStartAsynchronously()) {
+      startup_task_runner_->StartRunningTasksAsync();
+    }
 #endif
-  StartupTask pre_create_threads =
-      base::Bind(&BrowserMainLoop::PreCreateThreads, base::Unretained(this));
-  task_runner->AddTask(pre_create_threads);
-
-  StartupTask create_threads =
-      base::Bind(&BrowserMainLoop::CreateThreads, base::Unretained(this));
-  task_runner->AddTask(create_threads);
-
-  StartupTask browser_thread_started = base::Bind(
-      &BrowserMainLoop::BrowserThreadsStarted, base::Unretained(this));
-  task_runner->AddTask(browser_thread_started);
-
-  StartupTask pre_main_message_loop_run = base::Bind(
-      &BrowserMainLoop::PreMainMessageLoopRun, base::Unretained(this));
-  task_runner->AddTask(pre_main_message_loop_run);
-
-  task_runner->StartRunningTasks();
+  }
+#if defined(OS_ANDROID)
+  if (!BrowserMayStartAsynchronously()) {
+    // A second request for asynchronous startup can be ignored, so
+    // StartupRunningTasksAsync is only called first time through. If, however,
+    // this is a request for synchronous startup then it must override any
+    // previous call for async startup, so we call RunAllTasksNow()
+    // unconditionally.
+    startup_task_runner_->RunAllTasksNow();
+  }
+#else
+  startup_task_runner_->RunAllTasksNow();
+#endif
 }
 
 int BrowserMainLoop::CreateThreads() {
@@ -681,6 +704,8 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
     // Called early, nothing to do
     return;
   }
+  TRACE_EVENT0("shutdown", "BrowserMainLoop::ShutdownThreadsAndCleanUp")
+
   // Teardown may start in PostMainMessageLoopRun, and during teardown we
   // need to be able to perform IO.
   base::ThreadRestrictions::SetIOAllowed(true);
@@ -689,24 +714,37 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
       base::Bind(base::IgnoreResult(&base::ThreadRestrictions::SetIOAllowed),
                  true));
 
-  if (parts_)
+  if (parts_) {
+    TRACE_EVENT0("shutdown",
+                 "BrowserMainLoop::Subsystem:PostMainMessageLoopRun");
     parts_->PostMainMessageLoopRun();
+  }
 
   trace_memory_controller_.reset();
+  system_stats_monitor_.reset();
 
 #if !defined(OS_IOS)
   // Destroying the GpuProcessHostUIShims on the UI thread posts a task to
   // delete related objects on the GPU thread. This must be done before
   // stopping the GPU thread. The GPU thread will close IPC channels to renderer
   // processes so this has to happen before stopping the IO thread.
-  GpuProcessHostUIShim::DestroyAll();
-
+  {
+    TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:GPUProcessHostShim");
+    GpuProcessHostUIShim::DestroyAll();
+  }
   // Cancel pending requests and prevent new requests.
-  if (resource_dispatcher_host_)
+  if (resource_dispatcher_host_) {
+    TRACE_EVENT0("shutdown",
+                 "BrowserMainLoop::Subsystem:ResourceDispatcherHost");
     resource_dispatcher_host_.get()->Shutdown();
+  }
 
 #if defined(USE_AURA)
-  ImageTransportFactory::Terminate();
+  {
+    TRACE_EVENT0("shutdown",
+                 "BrowserMainLoop::Subsystem:ImageTransportFactory");
+    ImageTransportFactory::Terminate();
+  }
 #endif
 
   // The device monitors are using |system_monitor_| as dependency, so delete
@@ -743,29 +781,42 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
     //
     // - (Not sure why DB stops last.)
     switch (thread_id) {
-      case BrowserThread::DB:
-        db_thread_.reset();
+      case BrowserThread::DB: {
+          TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:DBThread");
+          db_thread_.reset();
+        }
         break;
-      case BrowserThread::FILE_USER_BLOCKING:
-        file_user_blocking_thread_.reset();
+      case BrowserThread::FILE_USER_BLOCKING: {
+          TRACE_EVENT0("shutdown",
+                       "BrowserMainLoop::Subsystem:FileUserBlockingThread");
+          file_user_blocking_thread_.reset();
+        }
         break;
-      case BrowserThread::FILE:
+      case BrowserThread::FILE: {
+          TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:FileThread");
 #if !defined(OS_IOS)
-        // Clean up state that lives on or uses the file_thread_ before
-        // it goes away.
-        if (resource_dispatcher_host_)
-          resource_dispatcher_host_.get()->save_file_manager()->Shutdown();
+          // Clean up state that lives on or uses the file_thread_ before
+          // it goes away.
+          if (resource_dispatcher_host_)
+            resource_dispatcher_host_.get()->save_file_manager()->Shutdown();
 #endif  // !defined(OS_IOS)
-        file_thread_.reset();
+          file_thread_.reset();
+        }
         break;
-      case BrowserThread::PROCESS_LAUNCHER:
-        process_launcher_thread_.reset();
+      case BrowserThread::PROCESS_LAUNCHER: {
+          TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:LauncherThread");
+          process_launcher_thread_.reset();
+        }
         break;
-      case BrowserThread::CACHE:
-        cache_thread_.reset();
+      case BrowserThread::CACHE: {
+          TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:CacheThread");
+          cache_thread_.reset();
+        }
         break;
-      case BrowserThread::IO:
-        io_thread_.reset();
+      case BrowserThread::IO: {
+          TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:IOThread");
+          io_thread_.reset();
+        }
         break;
       case BrowserThread::UI:
       case BrowserThread::ID_COUNT:
@@ -776,7 +827,10 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
   }
 
 #if !defined(OS_IOS)
-  indexed_db_thread_.reset();
+  {
+    TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:IndexedDBThread");
+    indexed_db_thread_.reset();
+  }
 #endif
 
   // Close the blocking I/O pool after the other threads. Other threads such
@@ -785,23 +839,39 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
   // may also be slow operations pending that will blcok shutdown, so closing
   // it here (which will block until required operations are complete) gives
   // more head start for those operations to finish.
-  BrowserThreadImpl::ShutdownThreadPool();
+  {
+    TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:ThreadPool");
+    BrowserThreadImpl::ShutdownThreadPool();
+  }
 
 #if !defined(OS_IOS)
   // Must happen after the IO thread is shutdown since this may be accessed from
   // it.
-  BrowserGpuChannelHostFactory::Terminate();
+  {
+    TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:GPUChannelFactory");
+    BrowserGpuChannelHostFactory::Terminate();
+  }
 
   // Must happen after the I/O thread is shutdown since this class lives on the
   // I/O thread and isn't threadsafe.
-  GamepadService::GetInstance()->Terminate();
-  DeviceMotionService::GetInstance()->Shutdown();
-
-  URLDataManager::DeleteDataSources();
+  {
+    TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:GamepadService");
+    GamepadService::GetInstance()->Terminate();
+  }
+  {
+    TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:SensorService");
+    DeviceInertialSensorService::GetInstance()->Shutdown();
+  }
+  {
+    TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:DeleteDataSources");
+    URLDataManager::DeleteDataSources();
+  }
 #endif  // !defined(OS_IOS)
 
-  if (parts_)
+  if (parts_) {
+    TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:PostDestroyThreads");
     parts_->PostDestroyThreads();
+  }
 }
 
 void BrowserMainLoop::InitializeMainThread() {
@@ -872,6 +942,14 @@ int BrowserMainLoop::BrowserThreadsStarted() {
         audio_manager_.get(), media_stream_manager_.get()));
   }
 
+  {
+    TRACE_EVENT0(
+        "startup",
+        "BrowserMainLoop::BrowserThreadsStarted::InitUserInputMonitor");
+    user_input_monitor_ = media::UserInputMonitor::Create(
+        io_thread_->message_loop_proxy(), main_thread_->message_loop_proxy());
+  }
+
   // Alert the clipboard class to which threads are allowed to access the
   // clipboard:
   std::vector<base::PlatformThreadId> allowed_clipboard_threads;
@@ -887,8 +965,13 @@ int BrowserMainLoop::BrowserThreadsStarted() {
   // When running the GPU thread in-process, avoid optimistically starting it
   // since creating the GPU thread races against creation of the one-and-only
   // ChildProcess instance which is created by the renderer thread.
+  bool always_uses_gpu = IsForceCompositingModeEnabled();
+#if defined(USE_AURA)
+  if (!GpuDataManagerImpl::GetInstance()->CanUseGpuBrowserCompositor())
+    always_uses_gpu = false;
+#endif
   if (GpuDataManagerImpl::GetInstance()->GpuAccessAllowed(NULL) &&
-      IsForceCompositingModeEnabled() &&
+      always_uses_gpu &&
       !parsed_command_line_.HasSwitch(switches::kDisableGpuProcessPrelaunch) &&
       !parsed_command_line_.HasSwitch(switches::kSingleProcess) &&
       !parsed_command_line_.HasSwitch(switches::kInProcessGPU)) {
@@ -911,7 +994,7 @@ void BrowserMainLoop::InitializeToolkit() {
   // are no #else branches on any #ifs.
   // TODO(stevenjb): Move platform specific code into platform specific Parts
   // (Need to add InitializeToolkit stage to BrowserParts).
-#if defined(OS_LINUX) || defined(OS_OPENBSD)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
   // g_type_init will be deprecated in 2.36. 2.35 is the development
   // version for 2.36, hence do not call g_type_init starting 2.35.
   // http://developer.gnome.org/gobject/unstable/gobject-Type-Information.html#g-type-init

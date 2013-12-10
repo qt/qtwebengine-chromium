@@ -34,10 +34,9 @@
 #include "WebApplicationCacheHost.h"
 #include "WebDataSource.h"
 #include "WebFrameImpl.h"
-#include "core/loader/CrossOriginAccessControl.h"
+#include "core/fetch/CrossOriginAccessControl.h"
 #include "core/loader/DocumentThreadableLoader.h"
 #include "core/loader/DocumentThreadableLoaderClient.h"
-#include "core/loader/ResourceLoader.h"
 #include "core/platform/Timer.h"
 #include "core/platform/chromium/support/WrappedResourceRequest.h"
 #include "core/platform/chromium/support/WrappedResourceResponse.h"
@@ -227,7 +226,7 @@ void AssociatedURLLoader::ClientAdapter::didDownloadData(int dataLength)
     if (!m_client)
         return;
 
-    m_client->didDownloadData(m_loader, dataLength);
+    m_client->didDownloadData(m_loader, dataLength, -1);
 }
 
 void AssociatedURLLoader::ClientAdapter::didReceiveData(const char* data, int dataLength)

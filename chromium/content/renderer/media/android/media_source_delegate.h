@@ -5,6 +5,9 @@
 #ifndef CONTENT_RENDERER_MEDIA_ANDROID_MEDIA_SOURCE_DELEGATE_H_
 #define CONTENT_RENDERER_MEDIA_ANDROID_MEDIA_SOURCE_DELEGATE_H_
 
+#include <string>
+#include <vector>
+
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -25,19 +28,22 @@ class DecoderBuffer;
 class DecryptingDemuxerStream;
 class DemuxerStream;
 class MediaLog;
-struct MediaPlayerHostMsg_DemuxerReady_Params;
-struct MediaPlayerHostMsg_ReadFromDemuxerAck_Params;
+struct DemuxerConfigs;
+struct DemuxerData;
 }
 
 namespace content {
 
-class WebMediaPlayerProxyAndroid;
+class RendererDemuxerAndroid;
 
 class MediaSourceDelegate : public media::DemuxerHost {
  public:
+  typedef base::Callback<void(WebKit::WebMediaSource*)>
+      MediaSourceOpenedCB;
   typedef base::Callback<void(WebKit::WebMediaPlayer::NetworkState)>
       UpdateNetworkStateCB;
   typedef base::Callback<void(const base::TimeDelta&)> DurationChangeCB;
+  typedef base::Callback<void(const base::TimeDelta&)> TimeUpdateSeekHackCB;
 
   // Helper class used by scoped_ptr to destroy an instance of
   // MediaSourceDelegate.
@@ -48,19 +54,20 @@ class MediaSourceDelegate : public media::DemuxerHost {
     }
   };
 
-  MediaSourceDelegate(WebMediaPlayerProxyAndroid* proxy,
-                      int player_id,
+  MediaSourceDelegate(RendererDemuxerAndroid* demuxer_client,
+                      int demuxer_client_id,
                       const scoped_refptr<base::MessageLoopProxy>& media_loop,
                       media::MediaLog* media_log);
 
   // Initialize the MediaSourceDelegate. |media_source| will be owned by
   // this object after this call.
   void InitializeMediaSource(
-      WebKit::WebMediaSource* media_source,
+      const MediaSourceOpenedCB& media_source_opened_cb,
       const media::NeedKeyCB& need_key_cb,
       const media::SetDecryptorReadyCB& set_decryptor_ready_cb,
       const UpdateNetworkStateCB& update_network_state_cb,
-      const DurationChangeCB& duration_change_cb);
+      const DurationChangeCB& duration_change_cb,
+      const TimeUpdateSeekHackCB& time_update_seek_hack_cb);
 
 #if defined(GOOGLE_TV)
   void InitializeMediaStream(
@@ -77,7 +84,7 @@ class MediaSourceDelegate : public media::DemuxerHost {
   // Seeks the demuxer and acknowledges the seek request with |seek_request_id|
   // after the seek has been completed. This method can be called during pending
   // seeks, in which case only the last seek request will be acknowledged.
-  void Seek(base::TimeDelta time, unsigned seek_request_id);
+  void Seek(const base::TimeDelta& time, unsigned seek_request_id);
 
   void NotifyKeyAdded(const std::string& key_system);
 
@@ -91,12 +98,10 @@ class MediaSourceDelegate : public media::DemuxerHost {
   void Destroy();
 
  private:
-  typedef base::Callback<void(
-      scoped_ptr<media::MediaPlayerHostMsg_ReadFromDemuxerAck_Params> params)>
-          ReadFromDemuxerAckCB;
-  typedef base::Callback<void(
-      scoped_ptr<media::MediaPlayerHostMsg_DemuxerReady_Params> params)>
-          DemuxerReadyCB;
+  typedef base::Callback<void(scoped_ptr<media::DemuxerData> data)>
+      ReadFromDemuxerAckCB;
+  typedef base::Callback<void(scoped_ptr<media::DemuxerConfigs> configs)>
+      DemuxerReadyCB;
 
   // This is private to enforce use of the Destroyer.
   virtual ~MediaSourceDelegate();
@@ -109,6 +114,9 @@ class MediaSourceDelegate : public media::DemuxerHost {
   virtual void SetDuration(base::TimeDelta duration) OVERRIDE;
   virtual void OnDemuxerError(media::PipelineStatus status) OVERRIDE;
 
+  // Notifies |demuxer_client_| and fires |duration_changed_cb_|.
+  void OnDurationChanged(const base::TimeDelta& duration);
+
   // Callback for ChunkDemuxer initialization.
   void OnDemuxerInitDone(media::PipelineStatus status);
 
@@ -120,55 +128,36 @@ class MediaSourceDelegate : public media::DemuxerHost {
   void OnAudioDecryptingDemuxerStreamInitDone(media::PipelineStatus status);
   void OnVideoDecryptingDemuxerStreamInitDone(media::PipelineStatus status);
 
-  // Callback for Demuxer seek. It will call ResetAudioDecryptingDemuxerStream()
-  // as part of the reset callback chain.
+  // Callback for ChunkDemuxer::Seek() and callback chain for resetting
+  // decrypted audio/video streams if present.
+  //
+  // Runs on the media thread.
   void OnDemuxerSeekDone(unsigned seek_request_id,
                          media::PipelineStatus status);
-
-  // Resets AudioDecryptingDemuxerStream if it exists. Then it will call
-  // ResetVideoDecryptingDemuxerStream() as part of the reset callback chain.
   void ResetAudioDecryptingDemuxerStream();
-
-  // Resets VideoDecryptingDemuxerStream if it exists. Then it will call
-  // SendSeekRequestAck() as part of the reset callback chain.
   void ResetVideoDecryptingDemuxerStream();
-
-  // Sends SeekRequestAck to the browser.
-  void SendSeekRequestAck();
+  void FinishResettingDecryptingDemuxerStreams();
 
   void OnDemuxerStopDone();
   void OnDemuxerOpened();
   void OnNeedKey(const std::string& type,
-                 const std::string& session_id,
-                 scoped_ptr<uint8[]> init_data,
-                 int init_data_size);
-  scoped_ptr<media::TextTrack> OnAddTextTrack(media::TextKind kind,
-                                              const std::string& label,
-                                              const std::string& language);
+                 const std::vector<uint8>& init_data);
   void NotifyDemuxerReady();
   bool CanNotifyDemuxerReady();
-  void SendDemuxerReady(
-      scoped_ptr<media::MediaPlayerHostMsg_DemuxerReady_Params> params);
 
   void StopDemuxer();
   void InitializeDemuxer();
-  void SeekInternal(base::TimeDelta time, unsigned seek_request_id);
-  void OnReadFromDemuxerInternal(media::DemuxerStream::Type type);
+  void SeekInternal(const base::TimeDelta& time, unsigned seek_request_id);
   // Reads an access unit from the demuxer stream |stream| and stores it in
   // the |index|th access unit in |params|.
-  void ReadFromDemuxerStream(
-      media::DemuxerStream::Type type,
-      scoped_ptr<media::MediaPlayerHostMsg_ReadFromDemuxerAck_Params> params,
-      size_t index);
-  void OnBufferReady(
-      media::DemuxerStream::Type type,
-      scoped_ptr<media::MediaPlayerHostMsg_ReadFromDemuxerAck_Params> params,
-      size_t index,
-      media::DemuxerStream::Status status,
-      const scoped_refptr<media::DecoderBuffer>& buffer);
-
-  void SendReadFromDemuxerAck(
-      scoped_ptr<media::MediaPlayerHostMsg_ReadFromDemuxerAck_Params> params);
+  void ReadFromDemuxerStream(media::DemuxerStream::Type type,
+                             scoped_ptr<media::DemuxerData> data,
+                             size_t index);
+  void OnBufferReady(media::DemuxerStream::Type type,
+                     scoped_ptr<media::DemuxerData> data,
+                     size_t index,
+                     media::DemuxerStream::Status status,
+                     const scoped_refptr<media::DecoderBuffer>& buffer);
 
   // Helper function for calculating duration.
   int GetDurationMs();
@@ -178,33 +167,24 @@ class MediaSourceDelegate : public media::DemuxerHost {
   void SetSeeking(bool seeking);
   bool IsSeeking() const;
 
-  // Weak pointer must be dereferenced and invalidated on the same thread.
-  base::WeakPtrFactory<MediaSourceDelegate> main_weak_this_;
-  base::WeakPtrFactory<MediaSourceDelegate> media_weak_this_;
-
-  // Message loop for main renderer thread.
+  // Message loop for main renderer thread and corresponding weak pointer.
   const scoped_refptr<base::MessageLoopProxy> main_loop_;
-#if defined(GOOGLE_TV)
-  // Message loop for the media thread.
-  // When there is high load in the render thread, the reading from |demuxer_|
-  // and its read-callback loops run very slowly.  To improve the response time
-  // of the readings, we run tasks related to |demuxer_| in the media thread.
+  base::WeakPtrFactory<MediaSourceDelegate> main_weak_factory_;
+  base::WeakPtr<MediaSourceDelegate> main_weak_this_;
+
+  // Message loop for media thread and corresponding weak pointer.
   const scoped_refptr<base::MessageLoopProxy> media_loop_;
+  base::WeakPtrFactory<MediaSourceDelegate> media_weak_factory_;
 
-  ReadFromDemuxerAckCB send_read_from_demuxer_ack_cb_;
-  base::Closure send_seek_request_ack_cb_;
-  DemuxerReadyCB send_demuxer_ready_cb_;
-#endif
-
-  WebMediaPlayerProxyAndroid* proxy_;
-  int player_id_;
+  RendererDemuxerAndroid* demuxer_client_;
+  int demuxer_client_id_;
 
   scoped_refptr<media::MediaLog> media_log_;
   UpdateNetworkStateCB update_network_state_cb_;
   DurationChangeCB duration_change_cb_;
+  TimeUpdateSeekHackCB time_update_seek_hack_cb_;
 
   scoped_ptr<media::ChunkDemuxer> chunk_demuxer_;
-  scoped_ptr<WebKit::WebMediaSource> media_source_;
   media::Demuxer* demuxer_;
   bool is_demuxer_ready_;
 
@@ -221,6 +201,7 @@ class MediaSourceDelegate : public media::DemuxerHost {
   // Keep a list of buffered time ranges.
   WebKit::WebTimeRanges buffered_web_time_ranges_;
 
+  MediaSourceOpenedCB media_source_opened_cb_;
   media::NeedKeyCB need_key_cb_;
 
   // The currently selected key system. Empty string means that no key system
@@ -238,8 +219,10 @@ class MediaSourceDelegate : public media::DemuxerHost {
   base::TimeDelta last_seek_time_;
   unsigned last_seek_request_id_;
 
+#if defined(GOOGLE_TV)
   bool key_added_;
   std::string key_system_;
+#endif  // defined(GOOGLE_TV)
 
   size_t access_unit_size_;
 

@@ -61,11 +61,8 @@
           'ENABLE_INPUT_SPEECH=0',
           'ENABLE_LEGACY_NOTIFICATIONS=0',
           'ENABLE_MEDIA_CAPTURE=1',
-          'ENABLE_NOTIFICATIONS=0',
           'ENABLE_ORIENTATION_EVENTS=1',
-          'ENABLE_PRINTING=0',
           'ENABLE_NAVIGATOR_CONTENT_UTILS=0',
-          'WTF_USE_NATIVE_FULLSCREEN_VIDEO=1',
         ],
         'enable_touch_icon_loading': 1,
       }, { # OS!="android"
@@ -76,9 +73,7 @@
           'ENABLE_LEGACY_NOTIFICATIONS=1',
           'ENABLE_MEDIA_CAPTURE=0',
           'ENABLE_NAVIGATOR_CONTENT_UTILS=1',
-          'ENABLE_NOTIFICATIONS=1',
           'ENABLE_ORIENTATION_EVENTS=0',
-          'ENABLE_PRINTING=1',
           'ENABLE_WEB_AUDIO=1',
         ],
       }],
@@ -99,16 +94,6 @@
       ['OS=="win" or OS=="android" or OS=="linux"', {
         'feature_defines': [
           'ENABLE_OPENTYPE_VERTICAL=1',
-        ],
-      }],
-      ['OS=="mac"', {
-        'feature_defines': [
-          'ENABLE_RUBBER_BANDING=1',
-        ],
-      }],
-      ['OS=="linux" or OS=="android"', {
-        'feature_defines': [
-          'WTF_USE_HARFBUZZ=1',
         ],
       }],
       ['use_default_render_theme==1', {

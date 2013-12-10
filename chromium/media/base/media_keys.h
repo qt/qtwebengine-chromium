@@ -29,9 +29,9 @@ class MEDIA_EXPORT MediaKeys {
   enum KeyError {
     kUnknownError = 1,
     kClientError,
-    // The following v0.1b values have never been used.
+    // The commented v0.1b values below have never been used.
     // kServiceError,
-    // kOutputError,
+    kOutputError = 4,
     // kHardwareChangeError,
     // kDomainError,
     kMaxKeyError  // Must be last and greater than any legit value.
@@ -82,8 +82,7 @@ typedef base::Callback<void(const std::string& session_id,
 
 typedef base::Callback<void(const std::string& session_id,
                             const std::string& type,
-                            scoped_ptr<uint8[]> init_data,
-                            int init_data_size)> NeedKeyCB;
+                            const std::vector<uint8>& init_data)> NeedKeyCB;
 
 }  // namespace media
 

@@ -38,18 +38,16 @@ CSSFontFaceLoadEvent::CSSFontFaceLoadEvent()
     ScriptWrappable::init(this);
 }
 
-CSSFontFaceLoadEvent::CSSFontFaceLoadEvent(const AtomicString& type, PassRefPtr<CSSFontFaceRule> fontface, PassRefPtr<DOMError> error)
+CSSFontFaceLoadEvent::CSSFontFaceLoadEvent(const AtomicString& type, const FontFaceArray& fontfaces)
     : Event(type, false, false)
-    , m_fontface(fontface)
-    , m_error(error)
+    , m_fontfaces(fontfaces)
 {
     ScriptWrappable::init(this);
 }
 
 CSSFontFaceLoadEvent::CSSFontFaceLoadEvent(const AtomicString& type, const CSSFontFaceLoadEventInit& initializer)
     : Event(type, initializer)
-    , m_fontface(initializer.fontface)
-    , m_error(initializer.error)
+    , m_fontfaces(initializer.fontfaces)
 {
     ScriptWrappable::init(this);
 }

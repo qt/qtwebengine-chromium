@@ -29,18 +29,17 @@ WifiDataProviderChromeOs::WifiDataProviderChromeOs() : started_(false) {
 WifiDataProviderChromeOs::~WifiDataProviderChromeOs() {
 }
 
-bool WifiDataProviderChromeOs::StartDataProvider() {
+void WifiDataProviderChromeOs::StartDataProvider() {
   DCHECK(CalledOnClientThread());
 
   DCHECK(polling_policy_ == NULL);
   polling_policy_.reset(
-      new GenericPollingPolicy<kDefaultPollingIntervalMilliseconds,
-                               kNoChangePollingIntervalMilliseconds,
-                               kTwoNoChangePollingIntervalMilliseconds,
-                               kNoWifiPollingIntervalMilliseconds>);
+      new GenericWifiPollingPolicy<kDefaultPollingIntervalMilliseconds,
+                                   kNoChangePollingIntervalMilliseconds,
+                                   kTwoNoChangePollingIntervalMilliseconds,
+                                   kNoWifiPollingIntervalMilliseconds>);
 
   ScheduleStart();
-  return true;
 }
 
 void WifiDataProviderChromeOs::StopDataProvider() {
@@ -71,14 +70,14 @@ void WifiDataProviderChromeOs::DoWifiScanTaskOnUIThread() {
 
   WifiData new_data;
 
-  if (!GetAccessPointData(&new_data.access_point_data)) {
-    client_loop()->PostTask(
-        FROM_HERE,
-        base::Bind(&WifiDataProviderChromeOs::DidWifiScanTaskNoResults, this));
-  } else {
+  if (GetAccessPointData(&new_data.access_point_data)) {
     client_loop()->PostTask(
         FROM_HERE,
         base::Bind(&WifiDataProviderChromeOs::DidWifiScanTask, this, new_data));
+  } else {
+    client_loop()->PostTask(
+        FROM_HERE,
+        base::Bind(&WifiDataProviderChromeOs::DidWifiScanTaskNoResults, this));
   }
 }
 
@@ -88,7 +87,6 @@ void WifiDataProviderChromeOs::DidWifiScanTaskNoResults() {
   // in between DoWifiScanTaskOnUIThread and this method).
   if (started_)
     ScheduleNextScan(polling_policy_->NoWifiInterval());
-  MaybeNotifyListeners(false);
 }
 
 void WifiDataProviderChromeOs::DidWifiScanTask(const WifiData& new_data) {
@@ -101,13 +99,10 @@ void WifiDataProviderChromeOs::DidWifiScanTask(const WifiData& new_data) {
     polling_policy_->UpdatePollingInterval(update_available);
     ScheduleNextScan(polling_policy_->PollingInterval());
   }
-  MaybeNotifyListeners(update_available);
-}
 
-void WifiDataProviderChromeOs::MaybeNotifyListeners(bool update_available) {
   if (update_available || !is_first_scan_complete_) {
     is_first_scan_complete_ = true;
-    NotifyListeners();
+    RunCallbacks();
   }
 }
 
@@ -141,9 +136,12 @@ void WifiDataProviderChromeOs::ScheduleStart() {
 
 bool WifiDataProviderChromeOs::GetAccessPointData(
     WifiData::AccessPointDataSet* result) {
-  chromeos::WifiAccessPointVector access_points;
+  // If wifi isn't enabled, we've effectively completed the task.
+  // Return true to indicate an empty access point list.
   if (!chromeos::NetworkHandler::Get()->geolocation_handler()->wifi_enabled())
-    return false;
+    return true;
+
+  chromeos::WifiAccessPointVector access_points;
   int64 age_ms = 0;
   if (!chromeos::NetworkHandler::Get()->geolocation_handler()->
       GetWifiAccessPoints(&access_points, &age_ms)) {
@@ -168,7 +166,6 @@ bool WifiDataProviderChromeOs::GetAccessPointData(
 }
 
 // static
-template<>
 WifiDataProviderImplBase* WifiDataProvider::DefaultFactoryFunction() {
   return new WifiDataProviderChromeOs();
 }

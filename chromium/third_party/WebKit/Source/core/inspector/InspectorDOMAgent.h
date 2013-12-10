@@ -60,6 +60,7 @@ class InspectorPageAgent;
 class InspectorState;
 class InstrumentingAgents;
 class Node;
+class PlatformGestureEvent;
 class PlatformTouchEvent;
 class RevalidateStyleAttributeTask;
 class ShadowRoot;
@@ -147,6 +148,8 @@ public:
     virtual void markUndoableState(ErrorString*);
     virtual void focus(ErrorString*, int nodeId);
     virtual void setFileInputFiles(ErrorString*, int nodeId, const RefPtr<JSONArray>& files);
+    virtual void getBoxModel(ErrorString*, int nodeId, RefPtr<TypeBuilder::DOM::BoxModel>&);
+    virtual void getNodeForLocation(ErrorString*, int x, int y, int* nodeId);
 
     static void getEventListeners(Node*, Vector<EventListenerInfo>& listenersArray, bool includeAncestors);
 
@@ -169,6 +172,8 @@ public:
     void didPushShadowRoot(Element* host, ShadowRoot*);
     void willPopShadowRoot(Element* host, ShadowRoot*);
     void frameDocumentUpdated(Frame*);
+    void pseudoElementCreated(PseudoElement*);
+    void pseudoElementDestroyed(PseudoElement*);
 
     int pushNodeToFrontend(ErrorString*, int documentNodeId, Node*);
     Node* nodeForId(int nodeId);
@@ -180,6 +185,7 @@ public:
 
     PassRefPtr<TypeBuilder::Runtime::RemoteObject> resolveNode(Node*, const String& objectGroup);
     bool handleMousePress();
+    bool handleGestureEvent(Frame*, const PlatformGestureEvent&);
     bool handleTouchEvent(Frame*, const PlatformTouchEvent&);
     void handleMouseMove(Frame*, const PlatformMouseEvent&);
 
@@ -230,6 +236,7 @@ private:
     PassRefPtr<TypeBuilder::Array<String> > buildArrayForElementAttributes(Element*);
     PassRefPtr<TypeBuilder::Array<TypeBuilder::DOM::Node> > buildArrayForContainerChildren(Node* container, int depth, NodeToIdMap* nodesMap);
     PassRefPtr<TypeBuilder::DOM::EventListener> buildObjectForEventListener(const RegisteredEventListener&, const AtomicString& eventType, Node*, const String* objectGroupId);
+    PassRefPtr<TypeBuilder::Array<TypeBuilder::DOM::Node> > buildArrayForPseudoElements(Element*, NodeToIdMap* nodesMap);
 
     Node* nodeForPath(const String& path);
 

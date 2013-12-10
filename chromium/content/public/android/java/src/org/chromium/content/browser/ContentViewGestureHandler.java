@@ -54,7 +54,11 @@ class ContentViewGestureHandler implements LongPressDelegate {
      */
     static final String DELTA = "Delta";
 
-    private final Bundle mExtraParamBundle;
+    private final Bundle mExtraParamBundleSingleTap;
+    private final Bundle mExtraParamBundleFling;
+    private final Bundle mExtraParamBundleScroll;
+    private final Bundle mExtraParamBundleDoubleTapDragZoom;
+    private final Bundle mExtraParamBundlePinchBy;
     private GestureDetector mGestureDetector;
     private final ZoomManager mZoomManager;
     private LongPressDetector mLongPressDetector;
@@ -81,6 +85,10 @@ class ContentViewGestureHandler implements LongPressDelegate {
     // Remember whether onShowPress() is called. If it is not, in onSingleTapConfirmed()
     // we will first show the press state, then trigger the click.
     private boolean mShowPressIsCalled;
+
+    // This flag is used for ignoring the remaining touch events, i.e., All the events until the
+    // next ACTION_DOWN. This is automatically set to false on the next ACTION_DOWN.
+    private boolean mIgnoreRemainingTouchEvents;
 
     // TODO(klobag): this is to avoid a bug in GestureDetector. With multi-touch,
     // mAlwaysInTapRegion is not reset. So when the last finger is up, onSingleTapUp()
@@ -144,8 +152,20 @@ class ContentViewGestureHandler implements LongPressDelegate {
     // Whether input events are delivered right before vsync.
     private final boolean mInputEventsDeliveredAtVSync;
 
+    // Certain touch-event generated gestures (PINCH_BY, SCROLL_BY) may trigger an expedited vsync
+    // signal. Rather than sending the vsync immediately after such a gesture is sent, we
+    // set this flag and defer the "last event for vsync" signal until the touch event is fully
+    // processed. This allows multiple such gestures to be sent in a given frame.
+    private boolean mSentGestureNeedsVSync;
+    private long mLastVSyncGestureTimeMs;
+
+    // Incremented and decremented when the methods onTouchEvent() and confirmTouchEvent() start
+    // and finish execution, respectively. This provides accounting for synchronous calls to
+    // confirmTouchEvent(), from either itself or onTouchEvent().
+    private int mTouchEventHandlingStackDepth;
+
     // Keeps track of the last long press event, if we end up opening a context menu, we would need
-    // to potentially use the event to send GESTURE_SHOW_PRESS_CANCEL to remove ::active styling
+    // to potentially use the event to send GESUTRE_SHOW_PRESS_CANCEL to remove ::active styling
     private MotionEvent mLastLongPressEvent;
 
     static final int GESTURE_SHOW_PRESSED_STATE = 0;
@@ -288,15 +308,18 @@ class ContentViewGestureHandler implements LongPressDelegate {
          * @param timeMs The time the gesture event occurred at.
          * @param x The x location for the gesture event.
          * @param y The y location for the gesture event.
-         * @param lastInputEventForVSync Indicates that this gesture event is the last input
-         * to be event sent during the current vsync interval.
          * @param extraParams A bundle that holds specific extra parameters for certain gestures.
+         *                    This is read-only and should not be modified in this function.
          * Refer to gesture type definition for more information.
          * @return Whether the gesture was sent successfully.
          */
-        boolean sendGesture(
-                int type, long timeMs, int x, int y, boolean lastInputEventForVSync,
-                Bundle extraParams);
+        boolean sendGesture(int type, long timeMs, int x, int y, Bundle extraParams);
+
+        /**
+         * Indicate delivery of the final gesture for the current vsync interval.
+         * @param eventTimeMs Time of the last sent gesture event in ms.
+         */
+        void onSentLastGestureForVSync(long eventTimeMs);
 
         /**
          * Gives the UI the chance to override each scroll event.
@@ -320,7 +343,12 @@ class ContentViewGestureHandler implements LongPressDelegate {
     ContentViewGestureHandler(
             Context context, MotionEventDelegate delegate, ZoomManager zoomManager,
             int inputEventDeliveryMode) {
-        mExtraParamBundle = new Bundle();
+        mExtraParamBundleSingleTap = new Bundle();
+        mExtraParamBundleFling = new Bundle();
+        mExtraParamBundleScroll = new Bundle();
+        mExtraParamBundleDoubleTapDragZoom = new Bundle();
+        mExtraParamBundlePinchBy = new Bundle();
+
         mLongPressDetector = new LongPressDetector(context, this);
         mMotionEventDelegate = delegate;
         mZoomManager = zoomManager;
@@ -418,12 +446,14 @@ class ContentViewGestureHandler implements LongPressDelegate {
                         int dy = (int) (distanceY + mAccumulatedScrollErrorY);
                         mAccumulatedScrollErrorX = distanceX + mAccumulatedScrollErrorX - dx;
                         mAccumulatedScrollErrorY = distanceY + mAccumulatedScrollErrorY - dy;
-                        mExtraParamBundle.clear();
-                        mExtraParamBundle.putInt(DISTANCE_X, dx);
-                        mExtraParamBundle.putInt(DISTANCE_Y, dy);
+
+                        mExtraParamBundleScroll.putInt(DISTANCE_X, dx);
+                        mExtraParamBundleScroll.putInt(DISTANCE_Y, dy);
+                        assert mExtraParamBundleScroll.size() == 2;
+
                         if ((dx | dy) != 0) {
-                            sendLastGestureForVSync(GESTURE_SCROLL_BY,
-                                    e2.getEventTime(), x, y, mExtraParamBundle);
+                            sendGestureAndRequestVSync(GESTURE_SCROLL_BY,
+                                    e2.getEventTime(), x, y, mExtraParamBundleScroll);
                         }
 
                         mMotionEventDelegate.invokeZoomPicker();
@@ -479,10 +509,12 @@ class ContentViewGestureHandler implements LongPressDelegate {
                                 // for double tap timeout.
                                 float x = e.getX();
                                 float y = e.getY();
-                                mExtraParamBundle.clear();
-                                mExtraParamBundle.putBoolean(SHOW_PRESS, mShowPressIsCalled);
+                                mExtraParamBundleSingleTap.putBoolean(SHOW_PRESS,
+                                        mShowPressIsCalled);
+                                assert mExtraParamBundleSingleTap.size() == 1;
+
                                 if (sendMotionEventAsGesture(GESTURE_SINGLE_TAP_CONFIRMED, e,
-                                        mExtraParamBundle)) {
+                                        mExtraParamBundleSingleTap)) {
                                     mIgnoreSingleTap = true;
                                 }
                                 setClickXAndY((int) x, (int) y);
@@ -506,10 +538,11 @@ class ContentViewGestureHandler implements LongPressDelegate {
 
                         int x = (int) e.getX();
                         int y = (int) e.getY();
-                        mExtraParamBundle.clear();
-                        mExtraParamBundle.putBoolean(SHOW_PRESS, mShowPressIsCalled);
+                        mExtraParamBundleSingleTap.putBoolean(SHOW_PRESS, mShowPressIsCalled);
                         sendMotionEventAsGesture(GESTURE_SINGLE_TAP_CONFIRMED, e,
-                            mExtraParamBundle);
+                            mExtraParamBundleSingleTap);
+                        assert mExtraParamBundleSingleTap.size() == 1;
+
                         setClickXAndY(x, y);
                         return true;
                     }
@@ -542,9 +575,10 @@ class ContentViewGestureHandler implements LongPressDelegate {
                                         mDoubleTapDragMode = DOUBLE_TAP_DRAG_MODE_ZOOM;
                                     }
                                 } else if (mDoubleTapDragMode == DOUBLE_TAP_DRAG_MODE_ZOOM) {
-                                    mExtraParamBundle.clear();
+                                    assert mExtraParamBundleDoubleTapDragZoom.isEmpty();
                                     sendGesture(GESTURE_SCROLL_BY, e.getEventTime(),
-                                            (int) e.getX(), (int) e.getY(), mExtraParamBundle);
+                                            (int) e.getX(), (int) e.getY(),
+                                            mExtraParamBundleDoubleTapDragZoom);
 
                                     float dy = mDoubleTapY - e.getY();
                                     pinchBy(e.getEventTime(),
@@ -641,6 +675,12 @@ class ContentViewGestureHandler implements LongPressDelegate {
      */
     void fling(long timeMs, int x, int y, int velocityX, int velocityY) {
         endFlingIfNecessary(timeMs);
+
+        if (velocityX == 0 && velocityY == 0) {
+            endTouchScrollIfNecessary(timeMs, true);
+            return;
+        }
+
         if (!mTouchScrolling) {
             // The native side needs a GESTURE_SCROLL_BEGIN before GESTURE_FLING_START
             // to send the fling to the correct target. Send if it has not sent.
@@ -650,10 +690,10 @@ class ContentViewGestureHandler implements LongPressDelegate {
 
         mFlingMayBeActive = true;
 
-        mExtraParamBundle.clear();
-        mExtraParamBundle.putInt(VELOCITY_X, velocityX);
-        mExtraParamBundle.putInt(VELOCITY_Y, velocityY);
-        sendGesture(GESTURE_FLING_START, timeMs, x, y, mExtraParamBundle);
+        mExtraParamBundleFling.putInt(VELOCITY_X, velocityX);
+        mExtraParamBundleFling.putInt(VELOCITY_Y, velocityY);
+        assert mExtraParamBundleFling.size() == 2;
+        sendGesture(GESTURE_FLING_START, timeMs, x, y, mExtraParamBundleFling);
     }
 
     /**
@@ -730,9 +770,10 @@ class ContentViewGestureHandler implements LongPressDelegate {
      * @param delta The percentage to pinch by.
      */
     void pinchBy(long timeMs, int anchorX, int anchorY, float delta) {
-        mExtraParamBundle.clear();
-        mExtraParamBundle.putFloat(DELTA, delta);
-        sendLastGestureForVSync(GESTURE_PINCH_BY, timeMs, anchorX, anchorY, mExtraParamBundle);
+        mExtraParamBundlePinchBy.putFloat(DELTA, delta);
+        assert mExtraParamBundlePinchBy.size() == 1;
+        sendGestureAndRequestVSync(
+                GESTURE_PINCH_BY, timeMs, anchorX, anchorY, mExtraParamBundlePinchBy);
         mPinchInProgress = true;
     }
 
@@ -772,12 +813,33 @@ class ContentViewGestureHandler implements LongPressDelegate {
     }
 
     /**
+     * Cancel the current touch event sequence by sending ACTION_CANCEL and ignore all the
+     * subsequent events until the next ACTION_DOWN.
+     *
+     * One example usecase is stop processing the touch events when showing context popup menu.
+     */
+    public void setIgnoreRemainingTouchEvents() {
+        onTouchEvent(obtainActionCancelMotionEvent());
+        mIgnoreRemainingTouchEvents = true;
+    }
+
+    /**
      * Handle the incoming MotionEvent.
      * @return Whether the event was handled.
      */
     boolean onTouchEvent(MotionEvent event) {
         try {
             TraceEvent.begin("onTouchEvent");
+            onTouchEventHandlingBegin();
+
+            if (mIgnoreRemainingTouchEvents) {
+                if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                    mIgnoreRemainingTouchEvents = false;
+                } else {
+                    return false;
+                }
+            }
+
             mLongPressDetector.cancelLongPressIfNeeded(event);
             mSnapScrollController.setSnapScrollingMode(event);
             // Notify native that scrolling has stopped whenever a down action is processed prior to
@@ -801,6 +863,7 @@ class ContentViewGestureHandler implements LongPressDelegate {
             }
             return processTouchEvent(event);
         } finally {
+            onTouchEventHandlingEnd();
             TraceEvent.end("onTouchEvent");
         }
     }
@@ -981,6 +1044,21 @@ class ContentViewGestureHandler implements LongPressDelegate {
         return handled;
     }
 
+    private void onTouchEventHandlingBegin() {
+        mTouchEventHandlingStackDepth++;
+    }
+
+    private void onTouchEventHandlingEnd() {
+        assert mTouchEventHandlingStackDepth > 0;
+        mTouchEventHandlingStackDepth--;
+        // Signal the vsync after we've finished handling touch events.
+        if (mSentGestureNeedsVSync && mTouchEventHandlingStackDepth == 0) {
+            assert mLastVSyncGestureTimeMs != 0;
+            mSentGestureNeedsVSync = false;
+            mMotionEventDelegate.onSentLastGestureForVSync(mLastVSyncGestureTimeMs);
+        }
+    }
+
     /**
      * For testing to simulate a timeout of a touch event handler.
      */
@@ -993,46 +1071,52 @@ class ContentViewGestureHandler implements LongPressDelegate {
      * @param ackResult The status acknowledgment code.
      */
     void confirmTouchEvent(int ackResult) {
-        if (mTouchEventTimeoutHandler.confirmTouchEvent()) return;
-        if (mPendingMotionEvents.isEmpty()) {
-            Log.w(TAG, "confirmTouchEvent with Empty pending list!");
-            return;
-        }
-        TraceEvent.begin("confirmTouchEvent");
-        MotionEvent ackedEvent = mPendingMotionEvents.removeFirst();
-        if (ackedEvent == mLastCancelledEvent) {
-            // The event is canceled, just drain all the pending events until next
-            // touch down.
-            ackResult = INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS;
-            TraceEvent.instant("confirmTouchEvent:CanceledEvent");
-        }
-        switch (ackResult) {
-            case INPUT_EVENT_ACK_STATE_UNKNOWN:
-                // This should never get sent.
-                assert(false);
-                break;
-            case INPUT_EVENT_ACK_STATE_CONSUMED:
-                mJavaScriptIsConsumingGesture = true;
-                mZoomManager.passTouchEventThrough(ackedEvent);
-                trySendPendingEventsToNative();
-                break;
-            case INPUT_EVENT_ACK_STATE_NOT_CONSUMED:
-                if (!mJavaScriptIsConsumingGesture) processTouchEvent(ackedEvent);
-                trySendPendingEventsToNative();
-                break;
-            case INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS:
-                mNoTouchHandlerForGesture = true;
-                processTouchEvent(ackedEvent);
-                drainAllPendingEventsUntilNextDown();
-                break;
-            default:
-                break;
-        }
+        try {
+            TraceEvent.begin("confirmTouchEvent");
+            onTouchEventHandlingBegin();
 
-        mLongPressDetector.cancelLongPressIfNeeded(mPendingMotionEvents.iterator());
+            if (mTouchEventTimeoutHandler.confirmTouchEvent()) return;
+            if (mPendingMotionEvents.isEmpty()) {
+                Log.w(TAG, "confirmTouchEvent with Empty pending list!");
+                return;
+            }
 
-        recycleEvent(ackedEvent);
-        TraceEvent.end("confirmTouchEvent");
+            MotionEvent ackedEvent = mPendingMotionEvents.removeFirst();
+            if (ackedEvent == mLastCancelledEvent) {
+                // The event is canceled, just drain all the pending events until next
+                // touch down.
+                ackResult = INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS;
+                TraceEvent.instant("confirmTouchEvent:CanceledEvent");
+            }
+            switch (ackResult) {
+                case INPUT_EVENT_ACK_STATE_UNKNOWN:
+                    // This should never get sent.
+                    assert(false);
+                    break;
+                case INPUT_EVENT_ACK_STATE_CONSUMED:
+                    mJavaScriptIsConsumingGesture = true;
+                    mZoomManager.passTouchEventThrough(ackedEvent);
+                    trySendPendingEventsToNative();
+                    break;
+                case INPUT_EVENT_ACK_STATE_NOT_CONSUMED:
+                    if (!mJavaScriptIsConsumingGesture) processTouchEvent(ackedEvent);
+                    trySendPendingEventsToNative();
+                    break;
+                case INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS:
+                    mNoTouchHandlerForGesture = true;
+                    processTouchEvent(ackedEvent);
+                    drainAllPendingEventsUntilNextDown();
+                    break;
+                default:
+                    break;
+            }
+
+            mLongPressDetector.cancelLongPressIfNeeded(mPendingMotionEvents.iterator());
+            recycleEvent(ackedEvent);
+        } finally {
+            onTouchEventHandlingEnd();
+            TraceEvent.end("confirmTouchEvent");
+        }
     }
 
     private void trySendPendingEventsToNative() {
@@ -1075,18 +1159,20 @@ class ContentViewGestureHandler implements LongPressDelegate {
     private boolean sendMotionEventAsGesture(
             int type, MotionEvent event, Bundle extraParams) {
         return mMotionEventDelegate.sendGesture(type, event.getEventTime(),
-            (int) event.getX(), (int) event.getY(), false, extraParams);
+            (int) event.getX(), (int) event.getY(), extraParams);
     }
 
     private boolean sendGesture(
             int type, long timeMs, int x, int y, Bundle extraParams) {
-        return mMotionEventDelegate.sendGesture(type, timeMs, x, y, false, extraParams);
+        return mMotionEventDelegate.sendGesture(type, timeMs, x, y, extraParams);
     }
 
-    private boolean sendLastGestureForVSync(
+    private boolean sendGestureAndRequestVSync(
             int type, long timeMs, int x, int y, Bundle extraParams) {
-        return mMotionEventDelegate.sendGesture(
-            type, timeMs, x, y, mInputEventsDeliveredAtVSync, extraParams);
+        // VSync should only be signalled if the sent gesture was generated from a touch event.
+        mSentGestureNeedsVSync = mInputEventsDeliveredAtVSync && mTouchEventHandlingStackDepth > 0;
+        mLastVSyncGestureTimeMs = timeMs;
+        return mMotionEventDelegate.sendGesture(type, timeMs, x, y, extraParams);
     }
 
     void sendShowPressCancelIfNecessary(MotionEvent e) {

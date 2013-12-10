@@ -63,7 +63,7 @@ InspectorFrontendClientImpl::~InspectorFrontendClientImpl()
 
 void InspectorFrontendClientImpl::windowObjectCleared()
 {
-    v8::HandleScope handleScope;
+    v8::HandleScope handleScope(v8::Isolate::GetCurrent());
     v8::Handle<v8::Context> frameContext = m_frontendPage->mainFrame() ? m_frontendPage->mainFrame()->script()->currentWorldContext() : v8::Local<v8::Context>();
     v8::Context::Scope contextScope(frameContext);
 
@@ -74,52 +74,37 @@ void InspectorFrontendClientImpl::windowObjectCleared()
     v8::Handle<v8::Object> global = frameContext->Global();
 
     global->Set(v8::String::New("InspectorFrontendHost"), frontendHostObj);
-}
 
-void InspectorFrontendClientImpl::moveWindowBy(float x, float y)
-{
-    m_client->moveWindowBy(WebFloatPoint(x, y));
-}
+    ScriptController* scriptController = m_frontendPage->mainFrame() ? m_frontendPage->mainFrame()->script() : 0;
+    if (scriptController) {
+        String installLegacyOverrides =
+            "(function(host, legacyMethodNames) {"
+            "    function dispatch(methodName) {"
+            "        var argsArray = Array.prototype.slice.call(arguments, 1);"
+            "        var message = {'method': methodName};"
+            "        if (argsArray.length)"
+            "            message.params = argsArray;"
+            "        this.sendMessageToEmbedder(JSON.stringify(message));"
+            "    };"
+            "    legacyMethodNames.forEach(function(methodName) {"
+            "        host[methodName] = dispatch.bind(host, methodName);"
+            "    });"
+            "})(InspectorFrontendHost,"
+            "    ['moveWindowBy',"
+            "     'bringToFront',"
+            "     'requestSetDockSide',"
+            "     'openInNewTab',"
+            "     'save',"
+            "     'append',"
+            "     'requestFileSystems',"
+            "     'indexPath',"
+            "     'stopIndexing',"
+            "     'searchInPath',"
+            "     'addFileSystem',"
+            "     'removeFileSystem']);";
 
-void InspectorFrontendClientImpl::bringToFront()
-{
-    m_client->activateWindow();
-}
-
-void InspectorFrontendClientImpl::closeWindow()
-{
-    m_client->closeWindow();
-}
-
-void InspectorFrontendClientImpl::requestSetDockSide(DockSide side)
-{
-    String sideString = "undocked";
-    switch (side) {
-    case DockedToRight: sideString = "right"; break;
-    case DockedToBottom: sideString = "bottom"; break;
-    case Undocked: sideString = "undocked"; break;
+        scriptController->executeScriptInMainWorld(ScriptSourceCode(installLegacyOverrides));
     }
-    m_client->requestSetDockSide(sideString);
-}
-
-void InspectorFrontendClientImpl::changeAttachedWindowHeight(unsigned height)
-{
-    m_client->changeAttachedWindowHeight(height);
-}
-
-void InspectorFrontendClientImpl::openInNewTab(const String& url)
-{
-    m_client->openInNewTab(url);
-}
-
-void InspectorFrontendClientImpl::save(const String& url, const String& content, bool forceSaveAs)
-{
-    m_client->save(url, content, forceSaveAs);
-}
-
-void InspectorFrontendClientImpl::append(const String& url, const String& content)
-{
-    m_client->append(url, content);
 }
 
 void InspectorFrontendClientImpl::inspectedURLChanged(const String& url)
@@ -132,34 +117,9 @@ void InspectorFrontendClientImpl::sendMessageToBackend(const String& message)
     m_client->sendMessageToBackend(message);
 }
 
-void InspectorFrontendClientImpl::requestFileSystems()
+void InspectorFrontendClientImpl::sendMessageToEmbedder(const String& message)
 {
-    m_client->requestFileSystems();
-}
-
-void InspectorFrontendClientImpl::indexPath(int requestId, const String& fileSystemPath)
-{
-    m_client->indexPath(requestId, fileSystemPath);
-}
-
-void InspectorFrontendClientImpl::stopIndexing(int requestId)
-{
-    m_client->stopIndexing(requestId);
-}
-
-void InspectorFrontendClientImpl::searchInPath(int requestId, const String& fileSystemPath, const String& query)
-{
-    m_client->searchInPath(requestId, fileSystemPath, query);
-}
-
-void InspectorFrontendClientImpl::addFileSystem()
-{
-    m_client->addFileSystem();
-}
-
-void InspectorFrontendClientImpl::removeFileSystem(const String& fileSystemPath)
-{
-    m_client->removeFileSystem(fileSystemPath);
+    m_client->sendMessageToEmbedder(message);
 }
 
 bool InspectorFrontendClientImpl::isUnderTest()

@@ -8,6 +8,7 @@
 #include <deque>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/basictypes.h"
@@ -18,6 +19,10 @@
 #include "cc/base/cc_export.h"
 #include "cc/output/context_provider.h"
 #include "cc/output/output_surface.h"
+#include "cc/resources/release_callback.h"
+#include "cc/resources/resource_format.h"
+#include "cc/resources/return_callback.h"
+#include "cc/resources/single_release_callback.h"
 #include "cc/resources/texture_mailbox.h"
 #include "cc/resources/transferable_resource.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -57,8 +62,8 @@ class CC_EXPORT ResourceProvider {
   };
 
   static scoped_ptr<ResourceProvider> Create(OutputSurface* output_surface,
-                                             int highp_threshold_min);
-
+                                             int highp_threshold_min,
+                                             bool use_rgba_4444_texture_format);
   virtual ~ResourceProvider();
 
   void InitializeSoftware();
@@ -66,14 +71,17 @@ class CC_EXPORT ResourceProvider {
 
   void DidLoseOutputSurface() { lost_output_surface_ = true; }
 
-  WebKit::WebGraphicsContext3D* GraphicsContext3D();
   int max_texture_size() const { return max_texture_size_; }
-  GLenum best_texture_format() const { return best_texture_format_; }
+  ResourceFormat memory_efficient_texture_format() const {
+    return use_rgba_4444_texture_format_ ? RGBA_4444 : best_texture_format_;
+  }
+  ResourceFormat best_texture_format() const { return best_texture_format_; }
   size_t num_resources() const { return resources_.size(); }
 
   // Checks whether a resource is in use by a consumer.
   bool InUseByConsumer(ResourceId id);
 
+  bool IsLost(ResourceId id);
 
   // Producer interface.
 
@@ -82,20 +90,23 @@ class CC_EXPORT ResourceProvider {
 
   // Creates a resource of the default resource type.
   ResourceId CreateResource(gfx::Size size,
-                            GLenum format,
-                            TextureUsageHint hint);
+                            GLint wrap_mode,
+                            TextureUsageHint hint,
+                            ResourceFormat format);
 
   // Creates a resource which is tagged as being managed for GPU memory
   // accounting purposes.
   ResourceId CreateManagedResource(gfx::Size size,
-                                   GLenum format,
-                                   TextureUsageHint hint);
+                                   GLint wrap_mode,
+                                   TextureUsageHint hint,
+                                   ResourceFormat format);
 
   // You can also explicitly create a specific resource type.
   ResourceId CreateGLTexture(gfx::Size size,
-                             GLenum format,
                              GLenum texture_pool,
-                             TextureUsageHint hint);
+                             GLint wrap_mode,
+                             TextureUsageHint hint,
+                             ResourceFormat format);
 
   ResourceId CreateBitmap(gfx::Size size);
   // Wraps an external texture into a GL resource.
@@ -104,7 +115,9 @@ class CC_EXPORT ResourceProvider {
       unsigned texture_id);
 
   // Wraps an external texture mailbox into a GL resource.
-  ResourceId CreateResourceFromTextureMailbox(const TextureMailbox& mailbox);
+  ResourceId CreateResourceFromTextureMailbox(
+      const TextureMailbox& mailbox,
+      scoped_ptr<SingleReleaseCallback> release_callback);
 
   void DeleteResource(ResourceId id);
 
@@ -122,6 +135,7 @@ class CC_EXPORT ResourceProvider {
   double EstimatedUploadsPerSecond();
   void FlushUploads();
   void ReleaseCachedData();
+  base::TimeDelta TextureUpdateTickRate();
 
   // Flush all context operations, kicking uploads and ensuring ordering with
   // respect to other contexts.
@@ -136,7 +150,7 @@ class CC_EXPORT ResourceProvider {
   bool ShallowFlushIfSupported();
 
   // Creates accounting for a child. Returns a child ID.
-  int CreateChild();
+  int CreateChild(const ReturnCallback& return_callback);
 
   // Destroys accounting for the child, deleting all accounted resources.
   void DestroyChild(int child);
@@ -151,29 +165,31 @@ class CC_EXPORT ResourceProvider {
   void PrepareSendToParent(const ResourceIdArray& resources,
                            TransferableResourceArray* transferable_resources);
 
-  // Prepares resources to be transfered back to the child, moving them to
-  // mailboxes and serializing meta-data into TransferableResources.
-  // Resources are removed from the ResourceProvider. Note: the resource IDs
-  // passed are in the parent namespace and will be translated to the child
-  // namespace when returned.
-  void PrepareSendToChild(int child,
-                          const ResourceIdArray& resources,
-                          TransferableResourceArray* transferable_resources);
-
   // Receives resources from a child, moving them from mailboxes. Resource IDs
   // passed are in the child namespace, and will be translated to the parent
   // namespace, added to the child->parent map.
+  // This adds the resources to the working set in the ResourceProvider without
+  // declaring which resources are in use. Use DeclareUsedResourcesFromChild
+  // after calling this method to do that. All calls to ReceiveFromChild should
+  // be followed by a DeclareUsedResourcesFromChild.
   // NOTE: if the sync_point is set on any TransferableResource, this will
   // wait on it.
   void ReceiveFromChild(
       int child, const TransferableResourceArray& transferable_resources);
 
+  // Once a set of resources have been received, they may or may not be used.
+  // This declares what set of resources are currently in use from the child,
+  // releasing any other resources back to the child.
+  void DeclareUsedResourcesFromChild(
+      int child,
+      const ResourceIdArray& resources_from_child);
+
   // Receives resources from the parent, moving them from mailboxes. Resource
   // IDs passed are in the child namespace.
   // NOTE: if the sync_point is set on any TransferableResource, this will
   // wait on it.
-  void ReceiveFromParent(
-      const TransferableResourceArray& transferable_resources);
+  void ReceiveReturnsFromParent(
+      const ReturnedResourceArray& transferable_resources);
 
   // The following lock classes are part of the ResourceProvider API and are
   // needed to read and write the resource contents. The user must ensure
@@ -313,6 +329,8 @@ class CC_EXPORT ResourceProvider {
   // For tests only!
   void CreateForTesting(ResourceId id);
 
+  GLint WrapModeForTesting(ResourceId id);
+
   // Sets the current read fence. If a resource is locked for read
   // and has read fences enabled, the resource will not allow writes
   // until this fence has passed.
@@ -327,14 +345,11 @@ class CC_EXPORT ResourceProvider {
   // Indicates if we can currently lock this resource for write.
   bool CanLockForWrite(ResourceId id);
 
-  cc::ContextProvider* offscreen_context_provider() {
-    return offscreen_context_provider_.get();
-  }
-  void set_offscreen_context_provider(
-      scoped_refptr<cc::ContextProvider> offscreen_context_provider) {
-    offscreen_context_provider_ = offscreen_context_provider;
-  }
   static GLint GetActiveTextureUnit(WebKit::WebGraphicsContext3D* context);
+  static size_t BytesPerPixel(ResourceFormat format);
+  static GLenum GetGLDataType(ResourceFormat format);
+  static GLenum GetGLDataFormat(ResourceFormat format);
+  static GLenum GetGLInternalFormat(ResourceFormat format);
 
  private:
   struct Resource {
@@ -342,24 +357,31 @@ class CC_EXPORT ResourceProvider {
     ~Resource();
     Resource(unsigned texture_id,
              gfx::Size size,
-             GLenum format,
              GLenum filter,
              GLenum texture_pool,
-             TextureUsageHint hint);
-    Resource(uint8_t* pixels, gfx::Size size, GLenum format, GLenum filter);
+             GLint wrap_mode,
+             TextureUsageHint hint,
+             ResourceFormat format);
+    Resource(uint8_t* pixels,
+             gfx::Size size,
+             GLenum filter,
+             GLint wrap_mode);
 
+    int child_id;
     unsigned gl_id;
     // Pixel buffer used for set pixels without unnecessary copying.
     unsigned gl_pixel_buffer_id;
     // Query used to determine when asynchronous set pixels complete.
     unsigned gl_upload_query_id;
     TextureMailbox mailbox;
+    ReleaseCallback release_callback;
     uint8_t* pixels;
     uint8_t* pixel_buffer;
     int lock_for_read_count;
+    int imported_count;
+    int exported_count;
     bool locked_for_write;
     bool external;
-    bool exported;
     bool marked_for_deletion;
     bool pending_set_pixels;
     bool set_pixels_completion_forced;
@@ -367,21 +389,32 @@ class CC_EXPORT ResourceProvider {
     bool enable_read_lock_fences;
     scoped_refptr<Fence> read_lock_fence;
     gfx::Size size;
-    GLenum format;
     // TODO(skyostil): Use a separate sampler object for filter state.
+    GLenum original_filter;
     GLenum filter;
+    GLenum target;
     unsigned image_id;
     GLenum texture_pool;
+    GLint wrap_mode;
+    bool lost;
     TextureUsageHint hint;
     ResourceType type;
+    ResourceFormat format;
   };
   typedef base::hash_map<ResourceId, Resource> ResourceMap;
+
+  static bool CompareResourceMapIteratorsByChildId(
+      const std::pair<ReturnedResource, ResourceMap::iterator>& a,
+      const std::pair<ReturnedResource, ResourceMap::iterator>& b);
+
   struct Child {
     Child();
     ~Child();
 
     ResourceIdMap child_to_parent_map;
     ResourceIdMap parent_to_child_map;
+    ReturnCallback return_callback;
+    ResourceIdSet in_use_resources;
   };
   typedef base::hash_map<int, Child> ChildMap;
 
@@ -390,11 +423,13 @@ class CC_EXPORT ResourceProvider {
            resource->read_lock_fence->HasPassed();
   }
 
-  explicit ResourceProvider(OutputSurface* output_surface,
-                            int highp_threshold_min);
+  ResourceProvider(OutputSurface* output_surface,
+                   int highp_threshold_min,
+                   bool use_rgba_4444_texture_format);
 
   void CleanUpGLIfNeeded();
 
+  Resource* GetResource(ResourceId id);
   const Resource* LockForRead(ResourceId id);
   void UnlockForRead(ResourceId id);
   const Resource* LockForWrite(ResourceId id);
@@ -402,7 +437,7 @@ class CC_EXPORT ResourceProvider {
   static void PopulateSkBitmapWithResource(SkBitmap* sk_bitmap,
                                            const Resource* resource);
 
-  bool TransferResource(WebKit::WebGraphicsContext3D* context,
+  void TransferResource(WebKit::WebGraphicsContext3D* context,
                         ResourceId id,
                         TransferableResource* resource);
   enum DeleteStyle {
@@ -410,6 +445,9 @@ class CC_EXPORT ResourceProvider {
     ForShutdown,
   };
   void DeleteResourceInternal(ResourceMap::iterator it, DeleteStyle style);
+  void DeleteAndReturnUnusedResourcesToChild(Child* child_info,
+                                             DeleteStyle style,
+                                             const ResourceIdArray& unused);
   void LazyCreate(Resource* resource);
   void LazyAllocate(Resource* resource);
 
@@ -423,6 +461,9 @@ class CC_EXPORT ResourceProvider {
   void UnbindForSampling(ResourceProvider::ResourceId resource_id,
                          GLenum target,
                          GLenum unit);
+
+  // Returns NULL if the output_surface_ does not have a ContextProvider.
+  WebKit::WebGraphicsContext3D* Context3d() const;
 
   OutputSurface* output_surface_;
   bool lost_output_surface_;
@@ -438,13 +479,12 @@ class CC_EXPORT ResourceProvider {
   bool use_shallow_flush_;
   scoped_ptr<TextureUploader> texture_uploader_;
   int max_texture_size_;
-  GLenum best_texture_format_;
-
-  scoped_refptr<cc::ContextProvider> offscreen_context_provider_;
+  ResourceFormat best_texture_format_;
 
   base::ThreadChecker thread_checker_;
 
   scoped_refptr<Fence> current_read_lock_fence_;
+  bool use_rgba_4444_texture_format_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceProvider);
 };

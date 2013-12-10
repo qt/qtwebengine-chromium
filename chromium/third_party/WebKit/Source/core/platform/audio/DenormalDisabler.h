@@ -25,28 +25,30 @@
 #ifndef DenormalDisabler_h
 #define DenormalDisabler_h
 
+#include "wtf/CPU.h"
 #include "wtf/MathExtras.h"
+#include <float.h>
 
 namespace WebCore {
 
 // Deal with denormals. They can very seriously impact performance on x86.
 
 // Define HAVE_DENORMAL if we support flushing denormals to zero.
-#if OS(WINDOWS) && COMPILER(MSVC)
-#define HAVE_DENORMAL
+#if OS(WIN) && COMPILER(MSVC)
+#define HAVE_DENORMAL 1
 #endif
 
-#if defined(__GNUC__) && (defined(__i386__) || defined(__x86_64__))
-#define HAVE_DENORMAL
+#if COMPILER(GCC) && (CPU(X86) || CPU(X86_64))
+#define HAVE_DENORMAL 1
 #endif
 
-#ifdef HAVE_DENORMAL
+#if HAVE(DENORMAL)
 class DenormalDisabler {
 public:
     DenormalDisabler()
             : m_savedCSR(0)
     {
-#if OS(WINDOWS) && COMPILER(MSVC)
+#if OS(WIN) && COMPILER(MSVC)
         // Save the current state, and set mode to flush denormals.
         //
         // http://stackoverflow.com/questions/637175/possible-bug-in-controlfp-s-may-not-restore-control-word-correctly
@@ -61,7 +63,7 @@ public:
 
     ~DenormalDisabler()
     {
-#if OS(WINDOWS) && COMPILER(MSVC)
+#if OS(WIN) && COMPILER(MSVC)
         unsigned int unused;
         _controlfp_s(&unused, m_savedCSR, _MCW_DN);
 #else
@@ -72,7 +74,7 @@ public:
     // This is a nop if we can flush denormals to zero in hardware.
     static inline float flushDenormalFloatToZero(float f)
     {
-#if OS(WINDOWS) && COMPILER(MSVC) && (!_M_IX86_FP)
+#if OS(WIN) && COMPILER(MSVC) && (!_M_IX86_FP)
         // For systems using x87 instead of sse, there's no hardware support
         // to flush denormals automatically. Hence, we need to flush
         // denormals to zero manually.
@@ -82,7 +84,7 @@ public:
 #endif
     }
 private:
-#if defined(__GNUC__) && (defined(__i386__) || defined(__x86_64__))
+#if COMPILER(GCC) && (CPU(X86) || CPU(X86_64))
     inline int getCSR()
     {
         int result;

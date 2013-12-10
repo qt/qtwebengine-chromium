@@ -68,10 +68,10 @@ static v8::Local<v8::Object> createInjectedScriptHostV8Wrapper(InjectedScriptHos
 
 ScriptObject InjectedScriptManager::createInjectedScript(const String& scriptSource, ScriptState* inspectedScriptState, int id)
 {
-    v8::HandleScope handleScope;
+    v8::Isolate* isolate = inspectedScriptState->isolate();
+    v8::HandleScope handleScope(isolate);
 
     v8::Local<v8::Context> inspectedContext = inspectedScriptState->context();
-    v8::Isolate* isolate = inspectedContext->GetIsolate();
     v8::Context::Scope contextScope(inspectedContext);
 
     // Call custom code to create InjectedScripHost wrapper specific for the context
@@ -92,14 +92,14 @@ ScriptObject InjectedScriptManager::createInjectedScript(const String& scriptSou
     ASSERT(value->IsFunction());
 
     v8::Local<v8::Object> windowGlobal = inspectedContext->Global();
-    v8::Handle<v8::Value> args[] = { scriptHostWrapper, windowGlobal, v8::Number::New(id) };
+    v8::Handle<v8::Value> args[] = { scriptHostWrapper, windowGlobal, v8::Number::New(inspectedContext->GetIsolate(), id) };
     v8::Local<v8::Value> injectedScriptValue = V8ScriptRunner::callInternalFunction(v8::Local<v8::Function>::Cast(value), windowGlobal, WTF_ARRAY_LENGTH(args), args, inspectedContext->GetIsolate());
     return ScriptObject(inspectedScriptState, v8::Handle<v8::Object>::Cast(injectedScriptValue));
 }
 
 bool InjectedScriptManager::canAccessInspectedWindow(ScriptState* scriptState)
 {
-    v8::HandleScope handleScope;
+    v8::HandleScope handleScope(scriptState->isolate());
     v8::Local<v8::Context> context = scriptState->context();
     v8::Local<v8::Object> global = context->Global();
     if (global.IsEmpty())
@@ -118,7 +118,7 @@ bool InjectedScriptManager::canAccessInspectedWindow(ScriptState* scriptState)
 void InjectedScriptManager::makeWeakCallback(v8::Isolate* isolate, v8::Persistent<v8::Object>* object, InjectedScriptHost* host)
 {
     host->deref();
-    object->Dispose(isolate);
+    object->Dispose();
 }
 
 } // namespace WebCore

@@ -173,8 +173,8 @@ bool PPB_Instance_Proxy::OnMessageReceived(const IPC::Message& msg) {
                         OnHostMsgDocumentCanAccessDocument)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBInstance_GetPluginInstanceURL,
                         OnHostMsgGetPluginInstanceURL)
-    IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBInstance_NeedKey,
-                        OnHostMsgNeedKey)
+    IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBInstance_GetPluginReferrerURL,
+                        OnHostMsgGetPluginReferrerURL)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBInstance_KeyAdded,
                         OnHostMsgKeyAdded)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBInstance_KeyMessage,
@@ -526,17 +526,15 @@ PP_Var PPB_Instance_Proxy::GetPluginInstanceURL(
       components);
 }
 
-void PPB_Instance_Proxy::NeedKey(PP_Instance instance,
-                                 PP_Var key_system,
-                                 PP_Var session_id,
-                                 PP_Var init_data) {
-  dispatcher()->Send(
-      new PpapiHostMsg_PPBInstance_NeedKey(
-          API_ID_PPB_INSTANCE,
-          instance,
-          SerializedVarSendInput(dispatcher(), key_system),
-          SerializedVarSendInput(dispatcher(), session_id),
-          SerializedVarSendInput(dispatcher(), init_data)));
+PP_Var PPB_Instance_Proxy::GetPluginReferrerURL(
+      PP_Instance instance,
+      PP_URLComponents_Dev* components) {
+  ReceiveSerializedVarReturnValue result;
+  dispatcher()->Send(new PpapiHostMsg_PPBInstance_GetPluginReferrerURL(
+      API_ID_PPB_INSTANCE, instance, &result));
+  return PPB_URLUtil_Shared::ConvertComponentsAndReturnURL(
+      result.Return(dispatcher()),
+      components);
 }
 
 void PPB_Instance_Proxy::KeyAdded(PP_Instance instance,
@@ -1032,18 +1030,15 @@ void PPB_Instance_Proxy::OnHostMsgGetPluginInstanceURL(
   }
 }
 
-void PPB_Instance_Proxy::OnHostMsgNeedKey(PP_Instance instance,
-                                          SerializedVarReceiveInput key_system,
-                                          SerializedVarReceiveInput session_id,
-                                          SerializedVarReceiveInput init_data) {
-  if (!dispatcher()->permissions().HasPermission(PERMISSION_PRIVATE))
+void PPB_Instance_Proxy::OnHostMsgGetPluginReferrerURL(
+    PP_Instance instance,
+    SerializedVarReturnValue result) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_DEV))
     return;
   EnterInstanceNoLock enter(instance);
   if (enter.succeeded()) {
-    enter.functions()->NeedKey(instance,
-                               key_system.Get(dispatcher()),
-                               session_id.Get(dispatcher()),
-                               init_data.Get(dispatcher()));
+    result.Return(dispatcher(),
+                  enter.functions()->GetPluginReferrerURL(instance, NULL));
   }
 }
 

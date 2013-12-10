@@ -8,26 +8,23 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include "webrtc/common_audio/include/audio_util.h"
 #include "webrtc/common_audio/resampler/push_sinc_resampler.h"
 
-#include <math.h>
 #include <string.h>
-
-#include <algorithm>
 
 namespace webrtc {
 
 PushSincResampler::PushSincResampler(int source_frames,
                                      int destination_frames)
     : resampler_(NULL),
-      float_buffer_(NULL),
+      float_buffer_(new float[destination_frames]),
       source_ptr_(NULL),
       destination_frames_(destination_frames),
       first_pass_(true),
       source_available_(0) {
   resampler_.reset(new SincResampler(source_frames * 1.0 / destination_frames,
                                      source_frames, this));
-  float_buffer_.reset(new float[destination_frames]);
 }
 
 PushSincResampler::~PushSincResampler() {
@@ -61,10 +58,8 @@ int PushSincResampler::Resample(const int16_t* source,
     resampler_->Resample(resampler_->ChunkSize(), float_buffer_.get());
 
   resampler_->Resample(destination_frames_, float_buffer_.get());
-  for (int i = 0; i < destination_frames_; ++i) {
-    float clipped = std::max(std::min(float_buffer_[i], 32767.0f), -32768.0f);
-    destination[i] = static_cast<int16_t>(floor(clipped + 0.5));
-  }
+  for (int i = 0; i < destination_frames_; ++i)
+    destination[i] = RoundToInt16(ClampInt16(float_buffer_[i]));
   source_ptr_ = NULL;
   return destination_frames_;
 }

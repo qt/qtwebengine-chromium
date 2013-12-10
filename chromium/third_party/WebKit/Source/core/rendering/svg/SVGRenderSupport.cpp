@@ -29,6 +29,7 @@
 #include "core/platform/graphics/transforms/TransformState.h"
 #include "core/rendering/RenderGeometryMap.h"
 #include "core/rendering/RenderLayer.h"
+#include "core/rendering/SubtreeLayoutScope.h"
 #include "core/rendering/svg/RenderSVGInlineText.h"
 #include "core/rendering/svg/RenderSVGResourceClipper.h"
 #include "core/rendering/svg/RenderSVGResourceFilter.h"
@@ -240,8 +241,15 @@ void SVGRenderSupport::layoutChildren(RenderObject* start, bool selfNeedsLayout)
             }
         }
 
-        if (needsLayout)
-            child->setNeedsLayout(MarkOnlyThis);
+        SubtreeLayoutScope layoutScope(child);
+        // Resource containers are nasty: they can invalidate clients outside the current SubtreeLayoutScope.
+        // Since they only care about viewport size changes (to resolve their relative lengths), we trigger
+        // their invalidation directly from SVGSVGElement::svgAttributeChange() or at a higher
+        // SubtreeLayoutScope (in RenderView::layout()).
+        if (needsLayout && !child->isSVGResourceContainer())
+            layoutScope.setNeedsLayout(child);
+
+        layoutResourcesIfNeeded(child);
 
         if (child->needsLayout()) {
             child->layout();
@@ -253,8 +261,6 @@ void SVGRenderSupport::layoutChildren(RenderObject* start, bool selfNeedsLayout)
                 child->repaint();
         } else if (layoutSizeChanged)
             notlayoutedObjects.add(child);
-
-        ASSERT(!child->needsLayout());
     }
 
     if (!layoutSizeChanged) {
@@ -266,6 +272,15 @@ void SVGRenderSupport::layoutChildren(RenderObject* start, bool selfNeedsLayout)
     HashSet<RenderObject*>::iterator end = notlayoutedObjects.end();
     for (HashSet<RenderObject*>::iterator it = notlayoutedObjects.begin(); it != end; ++it)
         invalidateResourcesOfChildren(*it);
+}
+
+void SVGRenderSupport::layoutResourcesIfNeeded(const RenderObject* object)
+{
+    ASSERT(object);
+
+    SVGResources* resources = SVGResourcesCache::cachedResourcesForRenderObject(object);
+    if (resources)
+        resources->layoutIfNeeded();
 }
 
 bool SVGRenderSupport::isOverflowHidden(const RenderObject* object)

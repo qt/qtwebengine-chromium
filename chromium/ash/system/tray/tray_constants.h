@@ -15,8 +15,12 @@ extern const int kPaddingFromOuterEdgeOfLauncherVerticalAlignment;
 extern const int kPaddingFromInnerEdgeOfLauncherVerticalAlignment;
 extern const int kPaddingFromBottomOfScreenVerticalAlignment;
 
-extern const int kPaddingFromEdgeOfShelf;
+extern const int kAlternateLayoutBubblePaddingHorizontalBottom;
+extern const int kAlternateLayoutBubblePaddingHorizontalSide;
+extern const int kAlternateLayoutBubblePaddingVerticalBottom;
+extern const int kAlternateLayoutBubblePaddingVerticalSide;
 
+extern const int kPaddingFromEdgeOfShelf;
 extern const int kTrayBubbleAnchorTopInsetBottomAnchor;
 
 extern const int kTrayImageItemHorizontalPaddingBottomAlignment;
@@ -24,7 +28,7 @@ extern const int kTrayImageItemHorizontalPaddingVerticalAlignment;
 extern const int kTrayImageItemVerticalPaddingVerticalAlignment;
 
 extern const int kTrayLabelItemHorizontalPaddingBottomAlignment;
-extern const int kTrayLabelItemVerticalPaddingVeriticalAlignment;
+extern const int kTrayLabelItemVerticalPaddingVerticalAlignment;
 
 extern const int kTrayMenuBottomRowPadding;
 extern const int kTrayMenuBottomRowPaddingBetweenItems;
@@ -37,6 +41,7 @@ extern const int kTrayPopupTextSpacingVertical;
 
 extern const int kTrayPopupItemHeight;
 extern const int kTrayPopupDetailsIconWidth;
+extern const int kTrayPopupDetailsLabelExtraLeftMargin;
 extern const int kTrayPopupScrollSeparatorHeight;
 extern const int kTrayRoundedBorderRadius;
 extern const int kTrayBarButtonWidth;
@@ -65,6 +70,10 @@ extern const int kTrayNotificationContentsWidth;
 // Returns kTraySpacing or kAlternateTraySpacing as applicable
 // (Determined by ash::switches::UseAlternateShelfLayout).
 int GetTraySpacing();
+
+// Returns kShelfItemHeight or kAlternateShelfItemHeight as applicable
+// (Determined by ash::switches::UseAlternateShelfLayout).
+int GetShelfItemHeight();
 
 }  // namespace ash
 

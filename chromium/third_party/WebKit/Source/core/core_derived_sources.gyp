@@ -111,7 +111,7 @@
           'msvs_cygwin_shell': 0,
           'action': [
             '<(perl_exe)',
-            'inspector/xxd.pl',
+            'scripts/xxd.pl',
             'V8ArrayBufferViewCustomScript_js',
             '<@(_inputs)',
             '<@(_outputs)'
@@ -129,7 +129,7 @@
           'msvs_cygwin_shell': 0,
           'action': [
             '<(perl_exe)',
-            'inspector/xxd.pl',
+            'scripts/xxd.pl',
             'XMLViewer_css',
             '<@(_inputs)',
             '<@(_outputs)'
@@ -146,7 +146,7 @@
           'msvs_cygwin_shell': 0,
           'action': [
             '<(perl_exe)',
-            'inspector/xxd.pl',
+            'scripts/xxd.pl',
             'XMLViewer_js',
             '<@(_inputs)',
             '<@(_outputs)'
@@ -174,6 +174,7 @@
           'inputs': [
             '<@(scripts_for_in_files)',
             'scripts/make_runtime_features.py',
+            'scripts/name_utilities.py',
             'page/RuntimeEnabledFeatures.in',
             'scripts/templates/RuntimeEnabledFeatures.cpp.tmpl',
             'scripts/templates/RuntimeEnabledFeatures.h.tmpl',
@@ -372,6 +373,7 @@
           'inputs': [
             '<@(scripts_for_in_files)',
             'scripts/make_event_factory.py',
+            'scripts/name_utilities.py',
             '<(SHARED_INTERMEDIATE_DIR)/blink/EventInterfaces.in',
             'dom/EventAliases.in',
           ],
@@ -394,6 +396,7 @@
           'inputs': [
             '<@(scripts_for_in_files)',
             'scripts/make_event_factory.py',
+            'scripts/name_utilities.py',
             'dom/EventTargetFactory.in',
           ],
           'outputs': [
@@ -453,6 +456,7 @@
               'css/mediaControls.css',
               'css/mediaControlsAndroid.css',
               'css/fullscreen.css',
+              'css/xhtmlmp.css',
             ],
           },
           'inputs': [
@@ -481,7 +485,7 @@
             'scripts/Hasher.pm',
             'scripts/StaticString.pm',
             'scripts/make_names.pl',
-            'loader/cache/FetchInitiatorTypeNames.in',
+            'fetch/FetchInitiatorTypeNames.in',
           ],
           'outputs': [
             '<(SHARED_INTERMEDIATE_DIR)/blink/FetchInitiatorTypeNames.cpp',

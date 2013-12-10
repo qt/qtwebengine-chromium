@@ -107,6 +107,9 @@ class MediaStreamTrackInterface : public talk_base::RefCountInterface,
   virtual bool set_enabled(bool enable) = 0;
   // These methods should be called by implementation only.
   virtual bool set_state(TrackState new_state) = 0;
+
+ protected:
+  virtual ~MediaStreamTrackInterface() {}
 };
 
 // Interface for rendering VideoFrames from a VideoTrack
@@ -130,12 +133,6 @@ class VideoTrackInterface : public MediaStreamTrackInterface {
   virtual void AddRenderer(VideoRendererInterface* renderer) = 0;
   // Deregister a renderer.
   virtual void RemoveRenderer(VideoRendererInterface* renderer) = 0;
-
-  // Gets a pointer to the frame input of this VideoTrack.
-  // The pointer is valid for the lifetime of this VideoTrack.
-  // VideoFrames rendered to the cricket::VideoRenderer will be rendered on all
-  // registered renderers.
-  virtual cricket::VideoRenderer* FrameInput() = 0;
 
   virtual VideoSourceInterface* GetSource() const = 0;
 

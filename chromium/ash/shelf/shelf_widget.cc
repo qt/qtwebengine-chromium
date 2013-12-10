@@ -4,6 +4,7 @@
 
 #include "ash/shelf/shelf_widget.h"
 
+#include "ash/ash_switches.h"
 #include "ash/focus_cycler.h"
 #include "ash/launcher/launcher_delegate.h"
 #include "ash/launcher/launcher_model.h"
@@ -15,7 +16,7 @@
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
-#include "ash/wm/property_util.h"
+#include "ash/system/tray/system_tray_delegate.h"
 #include "ash/wm/status_area_layout_manager.h"
 #include "ash/wm/window_properties.h"
 #include "ash/wm/workspace_controller.h"
@@ -24,10 +25,10 @@
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_observer.h"
-#include "ui/base/events/event_constants.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/events/event_constants.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia_operations.h"
@@ -236,7 +237,8 @@ namespace ash {
 // sizes it to the width of the shelf minus the size of the status area.
 class ShelfWidget::DelegateView : public views::WidgetDelegate,
                                   public views::AccessiblePaneView,
-                                  public internal::BackgroundAnimatorDelegate {
+                                  public internal::BackgroundAnimatorDelegate,
+                                  public aura::WindowObserver {
  public:
   explicit DelegateView(ShelfWidget* shelf);
   virtual ~DelegateView();
@@ -254,9 +256,6 @@ class ShelfWidget::DelegateView : public views::WidgetDelegate,
   void SetDimmed(bool dimmed);
   bool GetDimmed() const;
 
-  // Set the bounds of the widget.
-  void SetWidgetBounds(const gfx::Rect bounds);
-
   void SetParentLayer(ui::Layer* layer);
 
   // views::View overrides:
@@ -273,7 +272,17 @@ class ShelfWidget::DelegateView : public views::WidgetDelegate,
   virtual bool CanActivate() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual void ReorderChildLayers(ui::Layer* parent_layer) OVERRIDE;
+  // This will be called when the parent local bounds change.
   virtual void OnBoundsChanged(const gfx::Rect& old_bounds) OVERRIDE;
+
+  // aura::WindowObserver overrides:
+  // This will be called when the shelf itself changes its absolute position.
+  // Since the |dimmer_| panel needs to be placed in screen coordinates it needs
+  // to be repositioned. The difference to the OnBoundsChanged call above is
+  // that this gets also triggered when the shelf only moves.
+  virtual void OnWindowBoundsChanged(aura::Window* window,
+                                     const gfx::Rect& old_bounds,
+                                     const gfx::Rect& new_bounds) OVERRIDE;
 
   // BackgroundAnimatorDelegate overrides:
   virtual void UpdateBackground(int alpha) OVERRIDE;
@@ -325,6 +334,8 @@ ShelfWidget::DelegateView::DelegateView(ShelfWidget* shelf)
 }
 
 ShelfWidget::DelegateView::~DelegateView() {
+  // Make sure that the dimmer goes away since it might have set an observer.
+  SetDimmed(false);
 }
 
 void ShelfWidget::DelegateView::SetDimmed(bool value) {
@@ -349,7 +360,11 @@ void ShelfWidget::DelegateView::SetDimmed(bool value) {
     dimmer_->SetContentsView(dimmer_view_);
     dimmer_->GetNativeView()->SetName("ShelfDimmerView");
     dimmer_->Show();
+    shelf_->GetNativeView()->AddObserver(this);
   } else {
+    // Some unit tests will come here with a destroyed window.
+    if (shelf_->GetNativeView())
+      shelf_->GetNativeView()->RemoveObserver(this);
     dimmer_view_ = NULL;
     dimmer_.reset(NULL);
   }
@@ -357,11 +372,6 @@ void ShelfWidget::DelegateView::SetDimmed(bool value) {
 
 bool ShelfWidget::DelegateView::GetDimmed() const {
   return dimmer_.get() && dimmer_->IsVisible();
-}
-
-void ShelfWidget::DelegateView::SetWidgetBounds(const gfx::Rect bounds) {
-  if (dimmer_)
-    dimmer_->SetBounds(bounds);
 }
 
 void ShelfWidget::DelegateView::SetParentLayer(ui::Layer* layer) {
@@ -430,6 +440,18 @@ void ShelfWidget::DelegateView::ReorderChildLayers(ui::Layer* parent_layer) {
 
 void ShelfWidget::DelegateView::OnBoundsChanged(const gfx::Rect& old_bounds) {
   opaque_background_.SetBounds(GetLocalBounds());
+  if (dimmer_)
+    dimmer_->SetBounds(GetBoundsInScreen());
+}
+
+void ShelfWidget::DelegateView::OnWindowBoundsChanged(
+    aura::Window* window,
+    const gfx::Rect& old_bounds,
+    const gfx::Rect& new_bounds) {
+  // Coming here the shelf got repositioned and since the |dimmer_| is placed
+  // in screen coordinates and not relative to the parent it needs to be
+  // repositioned accordingly.
+  dimmer_->SetBounds(GetBoundsInScreen());
 }
 
 void ShelfWidget::DelegateView::ForceUndimming(bool force) {
@@ -528,6 +550,31 @@ ShelfBackgroundType ShelfWidget::GetBackgroundType() const {
   return SHELF_BACKGROUND_DEFAULT;
 }
 
+// static
+bool ShelfWidget::ShelfAlignmentAllowed() {
+  if (!ash::switches::ShowShelfAlignmentMenu())
+    return false;
+  user::LoginStatus login_status =
+      Shell::GetInstance()->system_tray_delegate()->GetUserLoginStatus();
+
+  switch (login_status) {
+    case user::LOGGED_IN_USER:
+    case user::LOGGED_IN_OWNER:
+      return true;
+    case user::LOGGED_IN_LOCKED:
+    case user::LOGGED_IN_PUBLIC:
+    case user::LOGGED_IN_LOCALLY_MANAGED:
+    case user::LOGGED_IN_GUEST:
+    case user::LOGGED_IN_RETAIL_MODE:
+    case user::LOGGED_IN_KIOSK_APP:
+    case user::LOGGED_IN_NONE:
+      return false;
+  }
+
+  DCHECK(false);
+  return false;
+}
+
 ShelfAlignment ShelfWidget::GetAlignment() const {
   return shelf_layout_manager_->GetAlignment();
 }
@@ -600,11 +647,6 @@ void ShelfWidget::ShutdownStatusAreaWidget() {
   if (status_area_widget_)
     status_area_widget_->Shutdown();
   status_area_widget_ = NULL;
-}
-
-void ShelfWidget::SetWidgetBounds(const gfx::Rect& rect) {
-  Widget::SetBounds(rect);
-  delegate_view_->SetWidgetBounds(rect);
 }
 
 void ShelfWidget::ForceUndimming(bool force) {

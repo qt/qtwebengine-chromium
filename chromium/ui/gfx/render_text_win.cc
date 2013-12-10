@@ -7,16 +7,18 @@
 #include <algorithm>
 
 #include "base/i18n/break_iterator.h"
+#include "base/i18n/char_iterator.h"
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/windows_version.h"
-#include "ui/base/text/utf16_indexing.h"
+#include "third_party/icu/source/common/unicode/uchar.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font_fallback_win.h"
 #include "ui/gfx/font_smoothing_win.h"
 #include "ui/gfx/platform_font_win.h"
+#include "ui/gfx/utf16_indexing.h"
 
 namespace gfx {
 
@@ -132,26 +134,116 @@ bool IsUnicodeBidiControlCharacter(char16 c) {
 // Returns the corresponding glyph range of the given character range.
 // |range| is in text-space (0 corresponds to |GetLayoutText()[0]|).
 // Returned value is in run-space (0 corresponds to the first glyph in the run).
-ui::Range CharRangeToGlyphRange(const internal::TextRun& run,
-                                const ui::Range& range) {
+Range CharRangeToGlyphRange(const internal::TextRun& run,
+                            const Range& range) {
   DCHECK(run.range.Contains(range));
   DCHECK(!range.is_reversed());
   DCHECK(!range.is_empty());
-  const ui::Range run_range = ui::Range(range.start() - run.range.start(),
-                                        range.end() - run.range.start());
-  ui::Range result;
+  const Range run_range(range.start() - run.range.start(),
+                        range.end() - run.range.start());
+  Range result;
   if (run.script_analysis.fRTL) {
-    result = ui::Range(run.logical_clusters[run_range.end() - 1],
+    result = Range(run.logical_clusters[run_range.end() - 1],
         run_range.start() > 0 ? run.logical_clusters[run_range.start() - 1]
                               : run.glyph_count);
   } else {
-    result = ui::Range(run.logical_clusters[run_range.start()],
+    result = Range(run.logical_clusters[run_range.start()],
         run_range.end() < run.range.length() ?
             run.logical_clusters[run_range.end()] : run.glyph_count);
   }
   DCHECK(!result.is_reversed());
-  DCHECK(ui::Range(0, run.glyph_count).Contains(result));
+  DCHECK(Range(0, run.glyph_count).Contains(result));
   return result;
+}
+
+// Starting from |start_char|, finds a suitable line break position at or before
+// |available_width| using word break info from |breaks|. If |empty_line| is
+// true, this function will not roll back to |start_char| and |*next_char| will
+// be greater than |start_char| (to avoid constructing empty lines).
+// TODO(ckocagil): Do not break ligatures and diacritics.
+//                 TextRun::logical_clusters might help.
+// TODO(ckocagil): We might have to reshape after breaking at ligatures.
+//                 See whether resolving the TODO above resolves this too.
+// TODO(ckocagil): Do not reserve width for whitespace at the end of lines.
+void BreakRunAtWidth(const internal::TextRun& run,
+                     const BreakList<size_t>& breaks,
+                     size_t start_char,
+                     int available_width,
+                     bool empty_line,
+                     int* width,
+                     size_t* next_char) {
+  DCHECK(run.range.Contains(Range(start_char, start_char + 1)));
+  BreakList<size_t>::const_iterator word = breaks.GetBreak(start_char);
+  BreakList<size_t>::const_iterator next_word = word + 1;
+  // Width from |std::max(word->first, start_char)| to the current character.
+  int word_width = 0;
+  *width = 0;
+
+  for (size_t i = start_char; i < run.range.end(); ++i) {
+    // |word| holds the word boundary at or before |i|, and |next_word| holds
+    // the word boundary right after |i|. Advance both |word| and |next_word|
+    // when |i| reaches |next_word|.
+    if (next_word != breaks.breaks().end() && i >= next_word->first) {
+      word = next_word++;
+      word_width = 0;
+    }
+
+    Range glyph_range = CharRangeToGlyphRange(run, Range(i, i + 1));
+    int char_width = 0;
+    for (size_t j = glyph_range.start(); j < glyph_range.end(); ++j)
+      char_width += run.advance_widths[j];
+
+    *width += char_width;
+    word_width += char_width;
+
+    if (*width > available_width) {
+      if (!empty_line || word_width < *width) {
+        *width -= word_width;
+        *next_char = std::max(word->first, start_char);
+      } else if (char_width < *width) {
+        *width -= char_width;
+        *next_char = i;
+      } else {
+        *next_char = i + 1;
+      }
+
+      return;
+    }
+  }
+
+  *next_char = run.range.end();
+}
+
+// For segments in the same run, checks the continuity and order of |x_range|
+// and |char_range| fields.
+void CheckLineIntegrity(const std::vector<internal::Line>& lines,
+                        const ScopedVector<internal::TextRun>& runs) {
+  size_t previous_segment_line = 0;
+  const internal::LineSegment* previous_segment = NULL;
+
+  for (size_t i = 0; i < lines.size(); ++i) {
+    for (size_t j = 0; j < lines[i].segments.size(); ++j) {
+      const internal::LineSegment* segment = &lines[i].segments[j];
+      internal::TextRun* run = runs[segment->run];
+
+      if (!previous_segment) {
+        previous_segment = segment;
+      } else if (runs[previous_segment->run] != run) {
+        previous_segment = NULL;
+      } else {
+        DCHECK_EQ(previous_segment->char_range.end(),
+                  segment->char_range.start());
+        if (!run->script_analysis.fRTL) {
+          DCHECK_EQ(previous_segment->x_range.end(), segment->x_range.start());
+        } else {
+          DCHECK_EQ(segment->x_range.end(), previous_segment->x_range.start());
+        }
+
+        previous_segment = segment;
+        previous_segment_line = i;
+      }
+    }
+  }
 }
 
 }  // namespace
@@ -197,6 +289,183 @@ int GetGlyphXBoundary(const internal::TextRun* run,
   return run->preceding_run_widths + x;
 }
 
+// Internal class to generate Line structures. If |multiline| is true, the text
+// is broken into lines at |words| boundaries such that each line is no longer
+// than |max_width|. If |multiline| is false, only outputs a single Line from
+// the given runs. |min_baseline| and |min_height| are the minimum baseline and
+// height for each line.
+// TODO(ckocagil): Expose the interface of this class in the header and test
+//                 this class directly.
+class LineBreaker {
+ public:
+  LineBreaker(int max_width,
+              int min_baseline,
+              int min_height,
+              bool multiline,
+              const BreakList<size_t>* words,
+              const ScopedVector<TextRun>& runs)
+      : max_width_(max_width),
+        min_baseline_(min_baseline),
+        min_height_(min_height),
+        multiline_(multiline),
+        words_(words),
+        runs_(runs),
+        text_x_(0),
+        line_x_(0),
+        line_ascent_(0),
+        line_descent_(0) {
+    AdvanceLine();
+  }
+
+  // Breaks the run at given |run_index| into Line structs.
+  void AddRun(int run_index) {
+    const TextRun* run = runs_[run_index];
+    if (multiline_ && line_x_ + run->width > max_width_)
+      BreakRun(run_index);
+    else
+      AddSegment(run_index, run->range, run->width);
+  }
+
+  // Finishes line breaking and outputs the results. Can be called at most once.
+  void Finalize(std::vector<Line>* lines, Size* size) {
+    DCHECK(!lines_.empty());
+    // Add an empty line to finish the line size calculation and remove it.
+    AdvanceLine();
+    lines_.pop_back();
+    *size = total_size_;
+    lines->swap(lines_);
+  }
+
+ private:
+  // A (line index, segment index) pair that specifies a segment in |lines_|.
+  typedef std::pair<size_t, size_t> SegmentHandle;
+
+  LineSegment* SegmentFromHandle(const SegmentHandle& handle) {
+    return &lines_[handle.first].segments[handle.second];
+  }
+
+  // Breaks a run into segments that fit in the last line in |lines_| and adds
+  // them. Adds a new Line to the back of |lines_| whenever a new segment can't
+  // be added without the Line's width exceeding |max_width_|.
+  void BreakRun(int run_index) {
+    DCHECK(words_);
+    const TextRun* const run = runs_[run_index];
+    int width = 0;
+    size_t next_char = run->range.start();
+
+    // Break the run until it fits the current line.
+    while (next_char < run->range.end()) {
+      const size_t current_char = next_char;
+      BreakRunAtWidth(*run, *words_, current_char, max_width_ - line_x_,
+                      line_x_ == 0, &width, &next_char);
+      AddSegment(run_index, Range(current_char, next_char), width);
+      if (next_char < run->range.end())
+        AdvanceLine();
+    }
+  }
+
+  // RTL runs are broken in logical order but displayed in visual order. To find
+  // the text-space coordinate (where it would fall in a single-line text)
+  // |x_range| of RTL segments, segment widths are applied in reverse order.
+  // e.g. {[5, 10], [10, 40]} will become {[35, 40], [5, 35]}.
+  void UpdateRTLSegmentRanges() {
+    if (rtl_segments_.empty())
+      return;
+    int x = SegmentFromHandle(rtl_segments_[0])->x_range.start();
+    for (size_t i = rtl_segments_.size(); i > 0; --i) {
+      LineSegment* segment = SegmentFromHandle(rtl_segments_[i - 1]);
+      const size_t segment_width = segment->x_range.length();
+      segment->x_range = Range(x, x + segment_width);
+      x += segment_width;
+    }
+    rtl_segments_.clear();
+  }
+
+  // Finishes the size calculations of the last Line in |lines_|. Adds a new
+  // Line to the back of |lines_|.
+  void AdvanceLine() {
+    if (!lines_.empty()) {
+      Line* line = &lines_.back();
+      // TODO(ckocagil): Determine optimal multiline height behavior.
+      if (line_ascent_ + line_descent_ == 0) {
+        line_ascent_ = min_baseline_;
+        line_descent_ = min_height_ - min_baseline_;
+      }
+      // Set the single-line mode Line's metrics to be at least
+      // |RenderText::font_list()| to not break the current single-line code.
+      line_ascent_ = std::max(line_ascent_, min_baseline_);
+      line_descent_ = std::max(line_descent_, min_height_ - min_baseline_);
+
+      line->baseline = line_ascent_;
+      line->size.set_height(line_ascent_ + line_descent_);
+      line->preceding_heights = total_size_.height();
+      total_size_.set_height(total_size_.height() + line->size.height());
+      total_size_.set_width(std::max(total_size_.width(), line->size.width()));
+    }
+    line_x_ = 0;
+    line_ascent_ = 0;
+    line_descent_ = 0;
+    lines_.push_back(Line());
+  }
+
+  // Adds a new segment with the given properties to |lines_.back()|.
+  void AddSegment(int run_index, Range char_range, int width) {
+    if (char_range.is_empty()) {
+      DCHECK_EQ(width, 0);
+      return;
+    }
+    const TextRun* run = runs_[run_index];
+    line_ascent_ = std::max(line_ascent_, run->font.GetBaseline());
+    line_descent_ = std::max(line_descent_,
+                             run->font.GetHeight() - run->font.GetBaseline());
+
+    LineSegment segment;
+    segment.run = run_index;
+    segment.char_range = char_range;
+    segment.x_range = Range(text_x_, text_x_ + width);
+
+    Line* line = &lines_.back();
+    line->segments.push_back(segment);
+    line->size.set_width(line->size.width() + segment.x_range.length());
+    if (run->script_analysis.fRTL) {
+      rtl_segments_.push_back(SegmentHandle(lines_.size() - 1,
+                                            line->segments.size() - 1));
+      // If this is the last segment of an RTL run, reprocess the text-space x
+      // ranges of all segments from the run.
+      if (char_range.end() == run->range.end())
+        UpdateRTLSegmentRanges();
+    }
+    text_x_ += width;
+    line_x_ += width;
+  }
+
+  const int max_width_;
+  const int min_baseline_;
+  const int min_height_;
+  const bool multiline_;
+  const BreakList<size_t>* const words_;
+  const ScopedVector<TextRun>& runs_;
+
+  // Stores the resulting lines.
+  std::vector<Line> lines_;
+
+  // Text space and line space x coordinates of the next segment to be added.
+  int text_x_;
+  int line_x_;
+
+  // Size of the multiline text, not including the currently processed line.
+  Size total_size_;
+
+  // Ascent and descent values of the current line, |lines_.back()|.
+  int line_ascent_;
+  int line_descent_;
+
+  // The current RTL run segments, to be applied by |UpdateRTLSegmentRanges()|.
+  std::vector<SegmentHandle> rtl_segments_;
+
+  DISALLOW_COPY_AND_ASSIGN(LineBreaker);
+};
+
 }  // namespace internal
 
 // static
@@ -207,7 +476,6 @@ std::map<std::string, Font> RenderTextWin::successful_substitute_fonts_;
 
 RenderTextWin::RenderTextWin()
     : RenderText(),
-      common_baseline_(0),
       needs_layout_(false) {
   set_truncate_length(kMaxUniscribeTextLength);
 
@@ -222,12 +490,12 @@ RenderTextWin::~RenderTextWin() {
 
 Size RenderTextWin::GetStringSize() {
   EnsureLayout();
-  return string_size_;
+  return multiline_string_size_;
 }
 
 int RenderTextWin::GetBaseline() {
   EnsureLayout();
-  return common_baseline_;
+  return lines()[0].baseline;
 }
 
 SelectionModel RenderTextWin::FindCursorPosition(const Point& point) {
@@ -266,8 +534,8 @@ std::vector<RenderText::FontSpan> RenderTextWin::GetFontSpansForTesting() {
   std::vector<RenderText::FontSpan> spans;
   for (size_t i = 0; i < runs_.size(); ++i) {
     spans.push_back(RenderText::FontSpan(runs_[i]->font,
-        ui::Range(LayoutIndexToTextIndex(runs_[i]->range.start()),
-                  LayoutIndexToTextIndex(runs_[i]->range.end()))));
+        Range(LayoutIndexToTextIndex(runs_[i]->range.start()),
+              LayoutIndexToTextIndex(runs_[i]->range.end()))));
   }
 
   return spans;
@@ -364,54 +632,61 @@ SelectionModel RenderTextWin::AdjacentWordSelectionModel(
   return SelectionModel(pos, CURSOR_FORWARD);
 }
 
-ui::Range RenderTextWin::GetGlyphBounds(size_t index) {
+Range RenderTextWin::GetGlyphBounds(size_t index) {
   const size_t run_index =
       GetRunContainingCaret(SelectionModel(index, CURSOR_FORWARD));
   // Return edge bounds if the index is invalid or beyond the layout text size.
   if (run_index >= runs_.size())
-    return ui::Range(string_size_.width());
+    return Range(string_width_);
   internal::TextRun* run = runs_[run_index];
   const size_t layout_index = TextIndexToLayoutIndex(index);
-  return ui::Range(GetGlyphXBoundary(run, layout_index, false),
-                   GetGlyphXBoundary(run, layout_index, true));
+  return Range(GetGlyphXBoundary(run, layout_index, false),
+               GetGlyphXBoundary(run, layout_index, true));
 }
 
-std::vector<Rect> RenderTextWin::GetSubstringBounds(const ui::Range& range) {
+std::vector<Rect> RenderTextWin::GetSubstringBounds(const Range& range) {
   DCHECK(!needs_layout_);
-  DCHECK(ui::Range(0, text().length()).Contains(range));
-  ui::Range layout_range(TextIndexToLayoutIndex(range.start()),
-                         TextIndexToLayoutIndex(range.end()));
-  DCHECK(ui::Range(0, GetLayoutText().length()).Contains(layout_range));
+  DCHECK(Range(0, text().length()).Contains(range));
+  Range layout_range(TextIndexToLayoutIndex(range.start()),
+                     TextIndexToLayoutIndex(range.end()));
+  DCHECK(Range(0, GetLayoutText().length()).Contains(layout_range));
 
-  std::vector<Rect> bounds;
+  std::vector<Rect> rects;
   if (layout_range.is_empty())
-    return bounds;
+    return rects;
+  std::vector<Range> bounds;
 
-  // Add a Rect for each run/selection intersection.
+  // Add a Range for each run/selection intersection.
   // TODO(msw): The bounds should probably not always be leading the range ends.
   for (size_t i = 0; i < runs_.size(); ++i) {
     const internal::TextRun* run = runs_[visual_to_logical_[i]];
-    ui::Range intersection = run->range.Intersect(layout_range);
+    Range intersection = run->range.Intersect(layout_range);
     if (intersection.IsValid()) {
       DCHECK(!intersection.is_reversed());
-      ui::Range range_x(GetGlyphXBoundary(run, intersection.start(), false),
-                        GetGlyphXBoundary(run, intersection.end(), false));
-      Rect rect(range_x.GetMin(), 0, range_x.length(), run->font.GetHeight());
-      rect.set_origin(ToViewPoint(rect.origin()));
-      // Union this with the last rect if they're adjacent.
-      if (!bounds.empty() && rect.SharesEdgeWith(bounds.back())) {
-        rect.Union(bounds.back());
+      Range range_x(GetGlyphXBoundary(run, intersection.start(), false),
+                    GetGlyphXBoundary(run, intersection.end(), false));
+      if (range_x.is_empty())
+        continue;
+      range_x = Range(range_x.GetMin(), range_x.GetMax());
+      // Union this with the last range if they're adjacent.
+      DCHECK(bounds.empty() || bounds.back().GetMax() <= range_x.GetMin());
+      if (!bounds.empty() && bounds.back().GetMax() == range_x.GetMin()) {
+        range_x = Range(bounds.back().GetMin(), range_x.GetMax());
         bounds.pop_back();
       }
-      bounds.push_back(rect);
+      bounds.push_back(range_x);
     }
   }
-  return bounds;
+  for (size_t i = 0; i < bounds.size(); ++i) {
+    std::vector<Rect> current_rects = TextBoundsToViewBounds(bounds[i]);
+    rects.insert(rects.end(), current_rects.begin(), current_rects.end());
+  }
+  return rects;
 }
 
 size_t RenderTextWin::TextIndexToLayoutIndex(size_t index) const {
   DCHECK_LE(index, text().length());
-  ptrdiff_t i = obscured() ? ui::UTF16IndexToOffset(text(), 0, index) : index;
+  ptrdiff_t i = obscured() ? gfx::UTF16IndexToOffset(text(), 0, index) : index;
   CHECK_GE(i, 0);
   // Clamp layout indices to the length of the text actually used for layout.
   return std::min<size_t>(GetLayoutText().length(), i);
@@ -422,7 +697,7 @@ size_t RenderTextWin::LayoutIndexToTextIndex(size_t index) const {
     return index;
 
   DCHECK_LE(index, GetLayoutText().length());
-  const size_t text_index = ui::UTF16OffsetToIndex(text(), 0, index);
+  const size_t text_index = gfx::UTF16OffsetToIndex(text(), 0, index);
   DCHECK_LE(text_index, text().length());
   return text_index;
 }
@@ -437,7 +712,7 @@ bool RenderTextWin::IsCursorablePosition(size_t position) {
   // and that its glyph has distinct bounds (not mid-multi-character-grapheme).
   // An example of a multi-character-grapheme that is not a surrogate-pair is:
   // \x0915\x093f - (ki) - one of many Devanagari biconsonantal conjuncts.
-  return ui::IsValidCodePointIndex(text(), position) &&
+  return gfx::IsValidCodePointIndex(text(), position) &&
          position < LayoutIndexToTextIndex(GetLayoutText().length()) &&
          GetGlyphBounds(position) != GetGlyphBounds(position - 1);
 }
@@ -448,23 +723,40 @@ void RenderTextWin::ResetLayout() {
 }
 
 void RenderTextWin::EnsureLayout() {
-  if (!needs_layout_)
-    return;
-  // TODO(msw): Skip complex processing if ScriptIsComplex returns false.
-  ItemizeLogicalText();
-  if (!runs_.empty())
-    LayoutVisualText();
-  needs_layout_ = false;
+  if (needs_layout_) {
+    // TODO(msw): Skip complex processing if ScriptIsComplex returns false.
+    ItemizeLogicalText();
+    if (!runs_.empty())
+      LayoutVisualText();
+    needs_layout_ = false;
+    std::vector<internal::Line> lines;
+    set_lines(&lines);
+  }
+
+  // Compute lines if they're not valid. This is separate from the layout steps
+  // above to avoid text layout and shaping when we resize |display_rect_|.
+  if (lines().empty()) {
+    DCHECK(!needs_layout_);
+    std::vector<internal::Line> lines;
+    internal::LineBreaker line_breaker(display_rect().width() - 1,
+                                       font_list().GetBaseline(),
+                                       font_list().GetHeight(), multiline(),
+                                       multiline() ? &GetLineBreaks() : NULL,
+                                       runs_);
+    for (size_t i = 0; i < runs_.size(); ++i)
+      line_breaker.AddRun(visual_to_logical_[i]);
+    line_breaker.Finalize(&lines, &multiline_string_size_);
+    DCHECK(!lines.empty());
+#ifndef NDEBUG
+    CheckLineIntegrity(lines, runs_);
+#endif
+    set_lines(&lines);
+  }
 }
 
 void RenderTextWin::DrawVisualText(Canvas* canvas) {
   DCHECK(!needs_layout_);
-
-  // Skia will draw glyphs with respect to the baseline.
-  Vector2d offset(GetTextOffset() + Vector2d(0, common_baseline_));
-
-  SkScalar x = SkIntToScalar(offset.x());
-  SkScalar y = SkIntToScalar(offset.y());
+  DCHECK(!lines().empty());
 
   std::vector<SkPoint> pos;
 
@@ -481,52 +773,79 @@ void RenderTextWin::DrawVisualText(Canvas* canvas) {
 
   ApplyCompositionAndSelectionStyles();
 
-  for (size_t i = 0; i < runs_.size(); ++i) {
-    // Get the run specified by the visual-to-logical map.
-    internal::TextRun* run = runs_[visual_to_logical_[i]];
+  for (size_t i = 0; i < lines().size(); ++i) {
+    const internal::Line& line = lines()[i];
+    const Vector2d line_offset = GetLineOffset(i);
 
-    // Skip painting empty runs and runs outside the display rect area.
-    if ((run->glyph_count == 0) || (x >= display_rect().right()) ||
-        (x + run->width <= display_rect().x())) {
-      x += run->width;
+    // Skip painting empty lines or lines outside the display rect area.
+    if (!display_rect().Intersects(Rect(PointAtOffsetFromOrigin(line_offset),
+                                        line.size)))
       continue;
+
+    const Vector2d text_offset = line_offset + Vector2d(0, line.baseline);
+    int preceding_segment_widths = 0;
+
+    for (size_t j = 0; j < line.segments.size(); ++j) {
+      const internal::LineSegment* segment = &line.segments[j];
+      const int segment_width = segment->x_range.length();
+      const internal::TextRun* run = runs_[segment->run];
+      DCHECK(!segment->char_range.is_empty());
+      DCHECK(run->range.Contains(segment->char_range));
+      Range glyph_range = CharRangeToGlyphRange(*run, segment->char_range);
+      DCHECK(!glyph_range.is_empty());
+      // Skip painting segments outside the display rect area.
+      if (!multiline()) {
+        const Rect segment_bounds(PointAtOffsetFromOrigin(line_offset) +
+                                      Vector2d(preceding_segment_widths, 0),
+                                  Size(segment_width, line.size.height()));
+        if (!display_rect().Intersects(segment_bounds)) {
+          preceding_segment_widths += segment_width;
+          continue;
+        }
+      }
+
+      // |pos| contains the positions of glyphs. An extra terminal |pos| entry
+      // is added to simplify width calculations.
+      int segment_x = preceding_segment_widths;
+      pos.resize(glyph_range.length() + 1);
+      for (size_t k = glyph_range.start(); k < glyph_range.end(); ++k) {
+        pos[k - glyph_range.start()].set(
+            SkIntToScalar(text_offset.x() + run->offsets[k].du + segment_x),
+            SkIntToScalar(text_offset.y() + run->offsets[k].dv));
+        segment_x += run->advance_widths[k];
+      }
+      pos.back().set(SkIntToScalar(text_offset.x() + segment_x),
+                     SkIntToScalar(text_offset.y()));
+
+      renderer.SetTextSize(run->font.GetFontSize());
+      renderer.SetFontFamilyWithStyle(run->font.GetFontName(), run->font_style);
+
+      for (BreakList<SkColor>::const_iterator it =
+               colors().GetBreak(segment->char_range.start());
+           it != colors().breaks().end() &&
+               it->first < segment->char_range.end();
+           ++it) {
+        const Range intersection =
+            colors().GetRange(it).Intersect(segment->char_range);
+        const Range colored_glyphs = CharRangeToGlyphRange(*run, intersection);
+        DCHECK(glyph_range.Contains(colored_glyphs));
+        DCHECK(!colored_glyphs.is_empty());
+        const SkPoint& start_pos =
+            pos[colored_glyphs.start() - glyph_range.start()];
+        const SkPoint& end_pos =
+            pos[colored_glyphs.end() - glyph_range.start()];
+
+        renderer.SetForegroundColor(it->second);
+        renderer.DrawPosText(&start_pos, &run->glyphs[colored_glyphs.start()],
+                             colored_glyphs.length());
+        renderer.DrawDecorations(start_pos.x(), text_offset.y(),
+                                 SkScalarCeilToInt(end_pos.x() - start_pos.x()),
+                                 run->underline, run->strike,
+                                 run->diagonal_strike);
+      }
+
+      preceding_segment_widths += segment_width;
     }
-
-    // Based on WebCore::skiaDrawText. |pos| contains the positions of glyphs.
-    // An extra terminal |pos| entry is added to simplify width calculations.
-    pos.resize(run->glyph_count + 1);
-    SkScalar glyph_x = x;
-    for (int glyph = 0; glyph < run->glyph_count; glyph++) {
-      pos[glyph].set(glyph_x + run->offsets[glyph].du,
-                     y + run->offsets[glyph].dv);
-      glyph_x += SkIntToScalar(run->advance_widths[glyph]);
-    }
-    pos.back().set(glyph_x, y);
-
-    renderer.SetTextSize(run->font.GetFontSize());
-    renderer.SetFontFamilyWithStyle(run->font.GetFontName(), run->font_style);
-
-    for (BreakList<SkColor>::const_iterator it =
-             colors().GetBreak(run->range.start());
-         it != colors().breaks().end() && it->first < run->range.end();
-         ++it) {
-      const ui::Range glyph_range = CharRangeToGlyphRange(*run,
-          colors().GetRange(it).Intersect(run->range));
-      if (glyph_range.is_empty())
-        continue;
-      renderer.SetForegroundColor(it->second);
-      renderer.DrawPosText(&pos[glyph_range.start()],
-                           &run->glyphs[glyph_range.start()],
-                           glyph_range.length());
-      const SkScalar width = pos[glyph_range.end()].x() -
-          pos[glyph_range.start()].x();
-      renderer.DrawDecorations(pos[glyph_range.start()].x(), y,
-                               SkScalarCeilToInt(width), run->underline,
-                               run->strike, run->diagonal_strike);
-    }
-
-    DCHECK_EQ(glyph_x - x, run->width);
-    x = glyph_x;
   }
 
   UndoCompositionAndSelectionStyles();
@@ -534,22 +853,21 @@ void RenderTextWin::DrawVisualText(Canvas* canvas) {
 
 void RenderTextWin::ItemizeLogicalText() {
   runs_.clear();
-  // Make |string_size_|'s height and |common_baseline_| tall enough to draw
-  // often-used characters which are rendered with fonts in the font list.
-  string_size_ = Size(0, font_list().GetHeight());
-  common_baseline_ = font_list().GetBaseline();
+  string_width_ = 0;
+  multiline_string_size_ = Size();
 
   // Set Uniscribe's base text direction.
   script_state_.uBidiLevel =
       (GetTextDirection() == base::i18n::RIGHT_TO_LEFT) ? 1 : 0;
 
-  if (text().empty())
+  const base::string16& layout_text = GetLayoutText();
+  if (layout_text.empty())
     return;
 
   HRESULT hr = E_OUTOFMEMORY;
   int script_items_count = 0;
   std::vector<SCRIPT_ITEM> script_items;
-  const size_t layout_text_length = GetLayoutText().length();
+  const size_t layout_text_length = layout_text.length();
   // Ensure that |kMaxRuns| is attempted and the loop terminates afterward.
   for (size_t runs = kGuessRuns; hr == E_OUTOFMEMORY && runs <= kMaxRuns;
        runs = std::max(runs + 1, std::min(runs * 2, kMaxRuns))) {
@@ -557,9 +875,9 @@ void RenderTextWin::ItemizeLogicalText() {
     // ScriptItemize always adds a terminal array item so that the length of
     // the last item can be derived from the terminal SCRIPT_ITEM::iCharPos.
     script_items.resize(runs);
-    hr = ScriptItemize(GetLayoutText().c_str(), layout_text_length,
-                       runs - 1, &script_control_, &script_state_,
-                       &script_items[0], &script_items_count);
+    hr = ScriptItemize(layout_text.c_str(), layout_text_length, runs - 1,
+                       &script_control_, &script_state_, &script_items[0],
+                       &script_items_count);
   }
   DCHECK(SUCCEEDED(hr));
   if (!SUCCEEDED(hr) || script_items_count <= 0)
@@ -571,7 +889,7 @@ void RenderTextWin::ItemizeLogicalText() {
   // Build the list of runs from the script items and ranged styles. Use an
   // empty color BreakList to avoid breaking runs at color boundaries.
   BreakList<SkColor> empty_colors;
-  empty_colors.SetMax(text().length());
+  empty_colors.SetMax(layout_text_length);
   internal::StyleIterator style(empty_colors, styles());
   SCRIPT_ITEM* script_item = &script_items[0];
   const size_t max_run_length = kMaxGlyphs / 2;
@@ -592,9 +910,32 @@ void RenderTextWin::ItemizeLogicalText() {
     const size_t script_item_break = (script_item + 1)->iCharPos;
     run_break = std::min(script_item_break,
                          TextIndexToLayoutIndex(style.GetRange().end()));
+
     // Clamp run lengths to avoid exceeding the maximum supported glyph count.
-    if ((run_break - run->range.start()) > max_run_length)
+    if ((run_break - run->range.start()) > max_run_length) {
       run_break = run->range.start() + max_run_length;
+      if (!gfx::IsValidCodePointIndex(layout_text, run_break))
+        --run_break;
+    }
+
+    // Break runs between characters in different code blocks. This avoids using
+    // fallback fonts for more characters than needed. http://crbug.com/278913
+    if (run_break > run->range.start()) {
+      const size_t run_start = run->range.start();
+      const int32 run_length = static_cast<int32>(run_break - run_start);
+      base::i18n::UTF16CharIterator iter(layout_text.c_str() + run_start,
+                                         run_length);
+      const UBlockCode first_block_code = ublock_getCode(iter.get());
+      while (iter.Advance() && iter.array_pos() < run_length) {
+        if (ublock_getCode(iter.get()) != first_block_code) {
+          run_break = run_start + iter.array_pos();
+          break;
+        }
+      }
+    }
+
+    DCHECK(gfx::IsValidCodePointIndex(layout_text, run_break));
+
     style.UpdatePosition(LayoutIndexToTextIndex(run_break));
     if (script_item_break == run_break)
       script_item++;
@@ -643,8 +984,6 @@ void RenderTextWin::LayoutVisualText() {
       DCHECK(SUCCEEDED(hr));
     }
   }
-  string_size_.set_height(ascent + descent);
-  common_baseline_ = ascent;
 
   // Build the array of bidirectional embedding levels.
   scoped_ptr<BYTE[]> levels(new BYTE[runs_.size()]);
@@ -669,7 +1008,7 @@ void RenderTextWin::LayoutVisualText() {
     run->width = abc.abcA + abc.abcB + abc.abcC;
     preceding_run_widths += run->width;
   }
-  string_size_.set_width(preceding_run_widths);
+  string_width_ = preceding_run_widths;
 }
 
 void RenderTextWin::LayoutTextRun(internal::TextRun* run) {
@@ -684,7 +1023,6 @@ void RenderTextWin::LayoutTextRun(internal::TextRun* run) {
   // in the case where no font is able to display the entire run.
   int best_partial_font_missing_char_count = INT_MAX;
   Font best_partial_font = original_font;
-  bool using_best_partial_font = false;
   Font current_font;
 
   run->logical_clusters.reset(new WORD[run_length]);

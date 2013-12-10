@@ -46,6 +46,12 @@ extern "C" {
   /*!\deprecated Use #VPX_TS_MAX_LAYERS instead. */
 #define MAX_LAYERS      VPX_TS_MAX_LAYERS
 
+/*! Spatial Scalability: Maximum number of coding layers */
+#define VPX_SS_MAX_LAYERS       5
+
+/*! Spatial Scalability: Default number of coding layers */
+#define VPX_SS_DEFAULT_LAYERS       3
+
   /*!\brief Current ABI version number
    *
    * \internal
@@ -217,9 +223,10 @@ extern "C" {
 
   /*!\brief Rate control mode */
   enum vpx_rc_mode {
-    VPX_VBR, /**< Variable Bit Rate (VBR) mode */
+    VPX_VBR,  /**< Variable Bit Rate (VBR) mode */
     VPX_CBR,  /**< Constant Bit Rate (CBR) mode */
-    VPX_CQ   /**< Constant Quality  (CQ)  mode */
+    VPX_CQ,   /**< Constrained Quality (CQ)  mode */
+    VPX_Q,    /**< Constant Quality (Q) mode */
   };
 
 
@@ -595,8 +602,14 @@ extern "C" {
     unsigned int           kf_max_dist;
 
     /*
-     * Temporal scalability settings (ts)
+     * Spatial scalability settings (ss)
      */
+
+    /*!\brief Number of coding layers (spatial)
+     *
+     * This value specifies the number of coding layers to be used.
+     */
+    unsigned int           ss_number_layers;
 
     /*!\brief Number of coding layers
      *

@@ -168,6 +168,35 @@ class Browser(object):
     return result
 
   @property
+  def cpu_stats(self):
+    """Returns a dict of cpu statistics for the system.
+    { 'Browser': {
+        'CpuProcessTime': S,
+        'TotalTime': T
+      },
+      'Gpu': {
+        'CpuProcessTime': S,
+        'TotalTime': T
+      },
+      'Renderer': {
+        'CpuProcessTime': S,
+        'TotalTime': T
+      }
+    }
+    Any of the above keys may be missing on a per-platform basis.
+    """
+    result = self._GetStatsCommon(self._platform_backend.GetCpuStats)
+    del result['ProcessCount']
+
+    # We want a single time value, not the sum for all processes.
+    for process_type in result:
+      # Skip any process_types that are empty
+      if not len(result[process_type]):
+        continue
+      result[process_type].update(self._platform_backend.GetCpuTimestamp())
+    return result
+
+  @property
   def io_stats(self):
     """Returns a dict of IO statistics for the browser:
     { 'Browser': {
@@ -201,7 +230,7 @@ class Browser(object):
 
     profiler_class = profiler_finder.FindProfiler(profiler_name)
 
-    if not profiler_class.is_supported(self._browser_backend.options):
+    if not profiler_class.is_supported(self._browser_backend.browser_type):
       raise Exception('The %s profiler is not '
                       'supported on this platform.' % profiler_name)
 
@@ -227,13 +256,9 @@ class Browser(object):
   def StopTracing(self):
     return self._browser_backend.StopTracing()
 
-  def GetTraceResultAndReset(self):
-    """Returns the result of the trace, as TraceResult object."""
-    return self._browser_backend.GetTraceResultAndReset()
-
   def Start(self):
-    options = self._browser_backend.options
-    if options.clear_sytem_cache_for_browser_and_profile_on_start:
+    browser_options = self._browser_backend.browser_options
+    if browser_options.clear_sytem_cache_for_browser_and_profile_on_start:
       if self._platform.CanFlushIndividualFilesFromSystemCache():
         self._platform.FlushSystemCacheForDirectory(
             self._browser_backend.profile_directory)
@@ -305,15 +330,20 @@ class Browser(object):
         archive_path,
         use_record_mode,
         append_to_existing_wpr,
-        make_javascript_deterministic,
-        self._browser_backend.WEBPAGEREPLAY_HOST,
-        self._browser_backend.webpagereplay_local_http_port,
-        self._browser_backend.webpagereplay_local_https_port,
-        self._browser_backend.webpagereplay_remote_http_port,
-        self._browser_backend.webpagereplay_remote_https_port)
+        make_javascript_deterministic)
 
   def GetStandardOutput(self):
     return self._browser_backend.GetStandardOutput()
 
   def GetStackTrace(self):
     return self._browser_backend.GetStackTrace()
+
+  @property
+  def supports_system_info(self):
+    return self._browser_backend.supports_system_info
+
+  def GetSystemInfo(self):
+    """Returns low-level information about the system, if available.
+
+       See the documentation of the SystemInfo class for more details."""
+    return self._browser_backend.GetSystemInfo()

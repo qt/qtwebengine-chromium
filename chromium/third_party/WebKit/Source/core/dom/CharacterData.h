@@ -38,9 +38,11 @@ public:
     unsigned length() const { return m_data.length(); }
     String substringData(unsigned offset, unsigned count, ExceptionState&);
     void appendData(const String&);
-    void insertData(unsigned offset, const String&, ExceptionState&);
-    void deleteData(unsigned offset, unsigned count, ExceptionState&);
     void replaceData(unsigned offset, unsigned count, const String&, ExceptionState&);
+
+    enum RecalcStyleBehavior { DoNotRecalcStyle, DeprecatedRecalcStyleImmediatlelyForEditing };
+    void insertData(unsigned offset, const String&, ExceptionState&, RecalcStyleBehavior = DoNotRecalcStyle);
+    void deleteData(unsigned offset, unsigned count, ExceptionState&, RecalcStyleBehavior = DoNotRecalcStyle);
 
     bool containsOnlyWhitespace() const;
 
@@ -51,8 +53,8 @@ public:
     unsigned parserAppendData(const String& string, unsigned offset, unsigned lengthLimit);
 
 protected:
-    CharacterData(TreeScope* treeScope, const String& text, ConstructionType type)
-        : Node(treeScope, type)
+    CharacterData(TreeScope& treeScope, const String& text, ConstructionType type)
+        : Node(&treeScope, type)
         , m_data(!text.isNull() ? text : emptyString())
     {
         ASSERT(type == CreateOther || type == CreateText || type == CreateEditingText);
@@ -66,16 +68,28 @@ protected:
     }
     void didModifyData(const String& oldValue);
 
+    String m_data;
+
 private:
     virtual String nodeValue() const OVERRIDE FINAL;
     virtual void setNodeValue(const String&) OVERRIDE FINAL;
     virtual bool isCharacterDataNode() const OVERRIDE FINAL { return true; }
     virtual int maxCharacterOffset() const OVERRIDE FINAL;
     virtual bool offsetInCharacters() const OVERRIDE FINAL;
-    void setDataAndUpdate(const String&, unsigned offsetOfReplacedData, unsigned oldLength, unsigned newLength);
-
-    String m_data;
+    void setDataAndUpdate(const String&, unsigned offsetOfReplacedData, unsigned oldLength, unsigned newLength, RecalcStyleBehavior = DoNotRecalcStyle);
 };
+
+inline CharacterData* toCharacterData(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isCharacterDataNode());
+    return static_cast<CharacterData*>(node);
+}
+
+inline const CharacterData* toCharacterData(const Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isCharacterDataNode());
+    return static_cast<const CharacterData*>(node);
+}
 
 } // namespace WebCore
 

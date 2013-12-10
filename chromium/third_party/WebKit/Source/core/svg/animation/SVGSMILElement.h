@@ -34,11 +34,15 @@ namespace WebCore {
 
 class ConditionEventListener;
 class SMILTimeContainer;
+class SVGSMILElement;
+
+template<typename T> class EventSender;
+typedef EventSender<SVGSMILElement> SMILEventSender;
 
 // This class implements SMIL interval timing model as needed for SVG animation.
 class SVGSMILElement : public SVGElement {
 public:
-    SVGSMILElement(const QualifiedName&, Document*);
+    SVGSMILElement(const QualifiedName&, Document&);
     virtual ~SVGSMILElement();
 
     static bool isSMILElement(Node*);
@@ -109,6 +113,11 @@ public:
     virtual void clearAnimatedType(SVGElement* targetElement) = 0;
     virtual void applyResultsToTarget() = 0;
 
+    void connectConditions();
+
+    void dispatchPendingEvent(SMILEventSender*);
+    void dispatchRepeatEvents(unsigned);
+
 protected:
     void addBeginTime(SMILTime eventTime, SMILTime endTime, SMILTimeWithOrigin::Origin = SMILTimeWithOrigin::ParserOrigin);
     void addEndTime(SMILTime eventTime, SMILTime endTime, SMILTimeWithOrigin::Origin = SMILTimeWithOrigin::ParserOrigin);
@@ -127,7 +136,7 @@ private:
     void endedActiveInterval();
     virtual void updateAnimation(float percent, unsigned repeat, SVGSMILElement* resultElement) = 0;
 
-    virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
 
     enum BeginOrEnd {
         Begin,
@@ -136,7 +145,7 @@ private:
 
     SMILTime findInstanceTime(BeginOrEnd, SMILTime minimumTime, bool equalsMinimumOK) const;
     void resolveFirstInterval();
-    void resolveNextInterval(bool notifyDependents);
+    bool resolveNextInterval(bool notifyDependents);
     void resolveInterval(bool first, SMILTime& beginResult, SMILTime& endResult) const;
     SMILTime resolveActiveEnd(SMILTime resolvedBegin, SMILTime resolvedEnd) const;
     SMILTime repeatingDuration() const;
@@ -153,13 +162,13 @@ private:
             AccessKey
         };
 
-        Condition(Type, BeginOrEnd, const String& baseID, const String& name, SMILTime offset, int repeats = -1);
+        Condition(Type, BeginOrEnd, const String& baseID, const String& name, SMILTime offset, int repeat = -1);
         Type m_type;
         BeginOrEnd m_beginOrEnd;
         String m_baseID;
         String m_name;
         SMILTime m_offset;
-        int m_repeats;
+        int m_repeat;
         RefPtr<Element> m_syncbase;
         RefPtr<ConditionEventListener> m_eventListener;
     };
@@ -167,7 +176,6 @@ private:
     void parseBeginOrEnd(const String&, BeginOrEnd beginOrEnd);
     Element* eventBaseFor(const Condition&);
 
-    void connectConditions();
     void disconnectConditions();
 
     // Event base timing
@@ -225,6 +233,8 @@ private:
 
     RefPtr<SMILTimeContainer> m_timeContainer;
     unsigned m_documentOrderIndex;
+
+    Vector<unsigned> m_repeatEventCountList;
 
     mutable SMILTime m_cachedDur;
     mutable SMILTime m_cachedRepeatDur;

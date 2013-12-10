@@ -48,6 +48,7 @@
 #include "core/platform/network/DNS.h"
 #include "core/platform/network/ResourceRequest.h"
 #include "core/rendering/RenderImage.h"
+#include "core/svg/graphics/SVGImage.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebPrescientNetworking.h"
 #include "public/platform/WebURL.h"
@@ -108,7 +109,7 @@ private:
 
 using namespace HTMLNames;
 
-HTMLAnchorElement::HTMLAnchorElement(const QualifiedName& tagName, Document* document)
+HTMLAnchorElement::HTMLAnchorElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
     , m_hasRootEditableElementForSelectionOnMouseDown(false)
     , m_wasShiftKeyDownOnMouseDown(false)
@@ -118,12 +119,12 @@ HTMLAnchorElement::HTMLAnchorElement(const QualifiedName& tagName, Document* doc
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLAnchorElement> HTMLAnchorElement::create(Document* document)
+PassRefPtr<HTMLAnchorElement> HTMLAnchorElement::create(Document& document)
 {
     return adoptRef(new HTMLAnchorElement(aTag, document));
 }
 
-PassRefPtr<HTMLAnchorElement> HTMLAnchorElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLAnchorElement> HTMLAnchorElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLAnchorElement(tagName, document));
 }
@@ -162,23 +163,17 @@ bool HTMLAnchorElement::isMouseFocusable() const
 
 bool HTMLAnchorElement::isKeyboardFocusable() const
 {
-    if (!isLink())
+    if (isFocusable() && Element::supportsFocus())
         return HTMLElement::isKeyboardFocusable();
 
-    if (!isFocusable())
-        return false;
-
-    Page* page = document()->page();
-    if (!page)
-        return false;
-
-    if (!page->chrome().client()->tabsToLinks())
-        return false;
-
-    if (isInCanvasSubtree())
-        return true;
-
-    return hasNonEmptyBoundingBox();
+    if (isLink()) {
+        Page* page = document().page();
+        if (!page)
+            return false;
+        if (!page->chrome().client().tabsToLinks())
+            return false;
+    }
+    return HTMLElement::isKeyboardFocusable();
 }
 
 static void appendServerMapMousePosition(StringBuilder& url, Event* event)
@@ -230,8 +225,8 @@ void HTMLAnchorElement::defaultEventHandler(Event* event)
         if (rendererIsEditable()) {
             // This keeps track of the editable block that the selection was in (if it was in one) just before the link was clicked
             // for the LiveWhenNotFocused editable link behavior
-            if (event->type() == eventNames().mousedownEvent && event->isMouseEvent() && toMouseEvent(event)->button() != RightButton && document()->frame() && document()->frame()->selection()) {
-                setRootEditableElementForSelectionOnMouseDown(document()->frame()->selection()->rootEditableElement());
+            if (event->type() == eventNames().mousedownEvent && event->isMouseEvent() && toMouseEvent(event)->button() != RightButton && document().frame()) {
+                setRootEditableElementForSelectionOnMouseDown(document().frame()->selection().rootEditableElement());
                 m_wasShiftKeyDownOnMouseDown = toMouseEvent(event)->shiftKey();
             } else if (event->type() == eventNames().mouseoverEvent) {
                 // These are cleared on mouseover and not mouseout because their values are needed for drag events,
@@ -249,7 +244,7 @@ void HTMLAnchorElement::setActive(bool down, bool pause)
 {
     if (rendererIsEditable()) {
         EditableLinkBehavior editableLinkBehavior = EditableLinkDefaultBehavior;
-        if (Settings* settings = document()->settings())
+        if (Settings* settings = document().settings())
             editableLinkBehavior = settings->editableLinkBehavior();
 
         switch (editableLinkBehavior) {
@@ -264,7 +259,7 @@ void HTMLAnchorElement::setActive(bool down, bool pause)
             // Don't set the link to be active if the current selection is in the same editable block as
             // this link
             case EditableLinkLiveWhenNotFocused:
-                if (down && document()->frame() && document()->frame()->selection()->rootEditableElement() == rootEditableElement())
+                if (down && document().frame() && document().frame()->selection().rootEditableElement() == rootEditableElement())
                     return;
                 break;
 
@@ -284,17 +279,17 @@ void HTMLAnchorElement::parseAttribute(const QualifiedName& name, const AtomicSt
         setIsLink(!value.isNull());
         if (wasLink != isLink()) {
             didAffectSelector(AffectedSelectorLink | AffectedSelectorVisited | AffectedSelectorEnabled);
-            if (wasLink && treeScope()->adjustedFocusedElement() == this) {
+            if (wasLink && treeScope().adjustedFocusedElement() == this) {
                 // We might want to call blur(), but it's dangerous to dispatch
                 // events here.
-                document()->setNeedsFocusedElementCheck();
+                document().setNeedsFocusedElementCheck();
             }
         }
         if (isLink()) {
             String parsedURL = stripLeadingAndTrailingHTMLSpaces(value);
-            if (document()->isDNSPrefetchEnabled()) {
+            if (document().isDNSPrefetchEnabled()) {
                 if (protocolIs(parsedURL, "http") || protocolIs(parsedURL, "https") || parsedURL.startsWith("//"))
-                    prefetchDNS(document()->completeURL(parsedURL).host());
+                    prefetchDNS(document().completeURL(parsedURL).host());
             }
 
             if (wasLink)
@@ -340,7 +335,7 @@ bool HTMLAnchorElement::draggable() const
 
 KURL HTMLAnchorElement::href() const
 {
-    return document()->completeURL(stripLeadingAndTrailingHTMLSpaces(getAttribute(hrefAttr)));
+    return document().completeURL(stripLeadingAndTrailingHTMLSpaces(getAttribute(hrefAttr)));
 }
 
 void HTMLAnchorElement::setHref(const AtomicString& value)
@@ -418,7 +413,7 @@ void HTMLAnchorElement::setHost(const String& value)
     if (!separator)
         return;
 
-    if (separator == notFound)
+    if (separator == kNotFound)
         url.setHostAndPort(value);
     else {
         unsigned portEnd;
@@ -559,40 +554,40 @@ bool HTMLAnchorElement::isLiveLink() const
 
 void HTMLAnchorElement::sendPings(const KURL& destinationURL)
 {
-    if (!hasAttribute(pingAttr) || !document()->settings() || !document()->settings()->hyperlinkAuditingEnabled())
+    if (!hasAttribute(pingAttr) || !document().settings() || !document().settings()->hyperlinkAuditingEnabled())
         return;
 
     SpaceSplitString pingURLs(getAttribute(pingAttr), false);
     for (unsigned i = 0; i < pingURLs.size(); i++)
-        PingLoader::sendPing(document()->frame(), document()->completeURL(pingURLs[i]), destinationURL);
+        PingLoader::sendPing(document().frame(), document().completeURL(pingURLs[i]), destinationURL);
 }
 
 void HTMLAnchorElement::handleClick(Event* event)
 {
     event->setDefaultHandled();
 
-    Frame* frame = document()->frame();
+    Frame* frame = document().frame();
     if (!frame)
         return;
 
     StringBuilder url;
     url.append(stripLeadingAndTrailingHTMLSpaces(fastGetAttribute(hrefAttr)));
     appendServerMapMousePosition(url, event);
-    KURL completedURL = document()->completeURL(url.toString());
+    KURL completedURL = document().completeURL(url.toString());
 
     ResourceRequest request(completedURL);
     if (prefetchEventHandler()->hasIssuedPreconnect())
         frame->loader()->client()->dispatchWillRequestAfterPreconnect(request);
     if (hasAttribute(downloadAttr)) {
         if (!hasRel(RelationNoReferrer)) {
-            String referrer = SecurityPolicy::generateReferrerHeader(document()->referrerPolicy(), completedURL, frame->loader()->outgoingReferrer());
+            String referrer = SecurityPolicy::generateReferrerHeader(document().referrerPolicy(), completedURL, frame->loader()->outgoingReferrer());
             if (!referrer.isEmpty())
                 request.setHTTPReferrer(referrer);
         }
 
         frame->loader()->client()->loadURLExternally(request, NavigationPolicyDownload, fastGetAttribute(downloadAttr));
     } else {
-        FrameLoadRequest frameRequest(document()->securityOrigin(), request, target());
+        FrameLoadRequest frameRequest(document().securityOrigin(), request, target());
         frameRequest.setTriggeringEvent(event);
         if (hasRel(RelationNoReferrer))
             frameRequest.setShouldSendReferrer(NeverSendReferrer);
@@ -614,7 +609,7 @@ bool HTMLAnchorElement::treatLinkAsLiveForEventType(EventType eventType) const
     if (!rendererIsEditable())
         return true;
 
-    Settings* settings = document()->settings();
+    Settings* settings = document().settings();
     if (!settings)
         return true;
 
@@ -821,17 +816,15 @@ bool HTMLAnchorElement::PrefetchEventHandler::shouldPrefetch(const KURL& url)
     if (!url.protocolIsInHTTPFamily())
         return false;
 
-    Document* document = m_anchorElement->document();
-    if (!document)
+    Document& document = m_anchorElement->document();
+
+    if (!document.securityOrigin()->canDisplay(url))
         return false;
 
-    if (!document->securityOrigin()->canDisplay(url))
+    if (url.hasFragmentIdentifier() && equalIgnoringFragmentIdentifier(document.url(), url))
         return false;
 
-    if (url.hasFragmentIdentifier() && equalIgnoringFragmentIdentifier(document->url(), url))
-        return false;
-
-    Frame* frame = document->frame();
+    Frame* frame = document.frame();
     if (!frame)
         return false;
 
@@ -855,6 +848,11 @@ void HTMLAnchorElement::PrefetchEventHandler::prefetch(WebKit::WebPreconnectMoti
 
     preconnectToURL(url, motivation);
     m_hasIssuedPreconnect = true;
+}
+
+bool HTMLAnchorElement::isInteractiveContent() const
+{
+    return true;
 }
 
 }

@@ -111,12 +111,14 @@ public class ContentView extends FrameLayout
                 ContentViewCore.INPUT_EVENTS_DELIVERED_IMMEDIATELY);
     }
 
-    // PageInfo implementation.
-
-    @Override
+    /**
+     * @return The URL of the page.
+     */
     public String getUrl() {
         return mContentViewCore.getUrl();
     }
+
+    // PageInfo implementation.
 
     @Override
     public String getTitle() {
@@ -336,6 +338,11 @@ public class ContentView extends FrameLayout
 
     void setIgnoreSingleTap(boolean value) {
         mContentViewCore.getContentViewGestureHandler().setIgnoreSingleTap(value);
+    }
+
+    /** @see ContentViewGestureHandler#setIgnoreRemainingTouchEvents */
+    public void setIgnoreRemainingTouchEvents() {
+        mContentViewCore.getContentViewGestureHandler().setIgnoreRemainingTouchEvents();
     }
 
     /**

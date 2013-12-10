@@ -45,6 +45,8 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
   // requests' ID
   int AddPendingRequest(webkit_glue::ResourceLoaderBridge::Peer* callback,
                         ResourceType::Type resource_type,
+                        int origin_pid,
+                        const GURL& frame_origin,
                         const GURL& request_url);
 
   // Removes a request from the pending_requests_ list, returning true if the
@@ -52,7 +54,7 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
   bool RemovePendingRequest(int request_id);
 
   // Cancels a request in the pending_requests_ list.
-  void CancelPendingRequest(int routing_id, int request_id);
+  void CancelPendingRequest(int request_id);
 
   IPC::Sender* message_sender() const {
     return message_sender_;
@@ -85,15 +87,26 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
 
     PendingRequestInfo(webkit_glue::ResourceLoaderBridge::Peer* peer,
                        ResourceType::Type resource_type,
+                       int origin_pid,
+                       const GURL& frame_origin,
                        const GURL& request_url);
 
     ~PendingRequestInfo();
 
     webkit_glue::ResourceLoaderBridge::Peer* peer;
     ResourceType::Type resource_type;
+    // The PID of the original process which issued this request. This gets
+    // non-zero only for a request proxied by another renderer, particularly
+    // requests from plugins.
+    int origin_pid;
     MessageQueue deferred_message_queue;
     bool is_deferred;
+    // Original requested url.
     GURL url;
+    // The security origin of the frame that initiates this request.
+    GURL frame_origin;
+    // The url of the latest response even in case of redirection.
+    GURL response_url;
     linked_ptr<IPC::Message> pending_redirect_message;
     base::TimeTicks request_start;
     base::TimeTicks response_start;
@@ -112,33 +125,29 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
 
   // Message response handlers, called by the message handler for this process.
   void OnUploadProgress(
-      const IPC::Message& message,
       int request_id,
       int64 position,
       int64 size);
   void OnReceivedResponse(int request_id, const ResourceResponseHead&);
   void OnReceivedCachedMetadata(int request_id, const std::vector<char>& data);
   void OnReceivedRedirect(
-      const IPC::Message& message,
       int request_id,
       const GURL& new_url,
       const ResourceResponseHead& response_head);
   void OnSetDataBuffer(
-      const IPC::Message& message,
       int request_id,
       base::SharedMemoryHandle shm_handle,
       int shm_size,
       base::ProcessId renderer_pid);
   void OnReceivedData(
-      const IPC::Message& message,
       int request_id,
       int data_offset,
       int data_length,
       int encoded_data_length);
   void OnDownloadedData(
-      const IPC::Message& message,
       int request_id,
-      int data_len);
+      int data_len,
+      int encoded_data_length);
   void OnRequestComplete(
       int request_id,
       int error_code,

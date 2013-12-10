@@ -92,7 +92,7 @@ namespace internal {
 // Note that the bitset representation is closed under both Union and Intersect.
 //
 // The type representation is heap-allocated, so cannot (currently) be used in
-// a parallel compilation context.
+// a concurrent compilation context.
 
 
 #define PRIMITIVE_TYPE_LIST(V)           \
@@ -302,6 +302,11 @@ struct Bounds {
   Bounds(Type* l, Type* u, Isolate* isl) : lower(l, isl), upper(u, isl) {}
   explicit Bounds(Handle<Type> t) : lower(t), upper(t) {}
   Bounds(Type* t, Isolate* isl) : lower(t, isl), upper(t, isl) {}
+
+  // Unrestricted bounds.
+  static Bounds Unbounded(Isolate* isl) {
+    return Bounds(Type::None(), Type::Any(), isl);
+  }
 
   // Meet: both b1 and b2 are known to hold.
   static Bounds Both(Bounds b1, Bounds b2, Isolate* isl) {

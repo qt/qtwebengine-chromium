@@ -362,6 +362,7 @@ GrContext* GraphicsContext3D::grContext()
 }
 
 DELEGATE_TO_WEBCONTEXT_R(makeContextCurrent, bool)
+DELEGATE_TO_WEBCONTEXT_R(lastFlushID, uint32_t)
 
 DELEGATE_TO_WEBCONTEXT_1(activeTexture, GC3Denum)
 DELEGATE_TO_WEBCONTEXT_2(attachShader, Platform3DObject, Platform3DObject)
@@ -668,7 +669,7 @@ DELEGATE_TO_WEBCONTEXT_1(deleteTexture, Platform3DObject)
 
 DELEGATE_TO_WEBCONTEXT_1(synthesizeGLError, GC3Denum)
 
-Extensions3D* GraphicsContext3D::getExtensions()
+Extensions3D* GraphicsContext3D::extensions()
 {
     if (!m_extensions)
         m_extensions = adoptPtr(new Extensions3D(this));

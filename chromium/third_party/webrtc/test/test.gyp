@@ -44,21 +44,12 @@
     {
       'target_name': 'test_support',
       'type': 'static_library',
-      'include_dirs': [
-        # TODO(kjellander): Remove this by making all includes use full paths.
-        '.',
-      ],
       'dependencies': [
         '<(DEPTH)/testing/gtest.gyp:gtest',
         '<(DEPTH)/testing/gmock.gyp:gmock',
+        '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
         '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
       ],
-      'all_dependent_settings': {
-        'include_dirs': [
-          # TODO(kjellander): Remove this by making all includes use full paths.
-          '.',
-        ],
-      },
       'sources': [
         'test_suite.cc',
         'test_suite.h',
@@ -207,6 +198,24 @@
           'type': 'none',
           'dependencies': [
             '<(apk_tests_path):test_support_unittests_apk',
+          ],
+        },
+      ],
+    }],
+    ['test_isolation_mode != "noop"', {
+      'targets': [
+        {
+          'target_name': 'test_support_unittests_run',
+          'type': 'none',
+          'dependencies': [
+            '<(import_isolate_path):import_isolate_gypi',
+            'test_support_unittests',
+          ],
+          'includes': [
+            'test_support_unittests.isolate',
+          ],
+          'sources': [
+            'test_support_unittests.isolate',
           ],
         },
       ],

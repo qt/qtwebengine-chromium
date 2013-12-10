@@ -40,6 +40,7 @@ namespace WebCore {
     macro(blocked) \
     macro(blur) \
     macro(cached) \
+    macro(cancel) \
     macro(change) \
     macro(chargingchange) \
     macro(chargingtimechange) \
@@ -88,6 +89,7 @@ namespace WebCore {
     macro(load) \
     macro(loading) \
     macro(loadingdone) \
+    macro(loadingerror) \
     macro(loadstart) \
     macro(message) \
     macro(midimessage) \
@@ -125,6 +127,7 @@ namespace WebCore {
     macro(upgradeneeded) \
     macro(versionchange) \
     macro(webkitvisibilitychange) \
+    macro(wheel) \
     macro(write) \
     macro(writeend) \
     macro(writestart) \
@@ -189,8 +192,11 @@ namespace WebCore {
     macro(stalled) \
     macro(suspend) \
     \
+    macro(animationend) \
     macro(webkitAnimationEnd) \
+    macro(animationstart) \
     macro(webkitAnimationStart) \
+    macro(animationiteration) \
     macro(webkitAnimationIteration) \
     \
     macro(webkitTransitionEnd) \

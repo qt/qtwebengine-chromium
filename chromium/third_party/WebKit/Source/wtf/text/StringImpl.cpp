@@ -25,6 +25,7 @@
 #include "config.h"
 #include "wtf/text/StringImpl.h"
 
+#include "wtf/LeakAnnotations.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/StringBuffer.h"
@@ -249,7 +250,7 @@ void StringStats::printStats()
 #endif
 
 
-StringImpl::~StringImpl()
+inline StringImpl::~StringImpl()
 {
     ASSERT(!isStatic());
 
@@ -257,6 +258,12 @@ StringImpl::~StringImpl()
 
     if (isAtomic())
         AtomicString::remove(this);
+}
+
+void StringImpl::destroyIfNotStatic()
+{
+    if (!isStatic())
+        delete this;
 }
 
 PassRefPtr<StringImpl> StringImpl::createUninitialized(unsigned length, LChar*& data)
@@ -345,6 +352,7 @@ StringImpl* StringImpl::createStatic(const char* string, unsigned length, unsign
     // heap allocation from this call.
     RELEASE_ASSERT(length <= ((std::numeric_limits<unsigned>::max() - sizeof(StringImpl)) / sizeof(LChar)));
     size_t size = sizeof(StringImpl) + length * sizeof(LChar);
+    WTF_ANNOTATE_SCOPED_MEMORY_LEAK;
     StringImpl* impl = static_cast<StringImpl*>(fastMalloc(size));
 
     LChar* data = reinterpret_cast<LChar*>(impl + 1);
@@ -965,7 +973,7 @@ size_t StringImpl::find(const LChar* matchString, unsigned index)
 {
     // Check for null or empty string to match against
     if (!matchString)
-        return notFound;
+        return kNotFound;
     size_t matchStringLength = strlen(reinterpret_cast<const char*>(matchString));
     RELEASE_ASSERT(matchStringLength <= numeric_limits<unsigned>::max());
     unsigned matchLength = matchStringLength;
@@ -978,10 +986,10 @@ size_t StringImpl::find(const LChar* matchString, unsigned index)
 
     // Check index & matchLength are in range.
     if (index > length())
-        return notFound;
+        return kNotFound;
     unsigned searchLength = length() - index;
     if (matchLength > searchLength)
-        return notFound;
+        return kNotFound;
     // delta is the number of additional times to test; delta == 0 means test only once.
     unsigned delta = searchLength - matchLength;
 
@@ -1000,7 +1008,7 @@ size_t StringImpl::find(const LChar* matchString, unsigned index)
     // keep looping until we match
     while (searchHash != matchHash || !equal(searchCharacters + i, matchString, matchLength)) {
         if (i == delta)
-            return notFound;
+            return kNotFound;
         searchHash += searchCharacters[i + matchLength];
         searchHash -= searchCharacters[i];
         ++i;
@@ -1017,7 +1025,7 @@ ALWAYS_INLINE size_t findIgnoringCaseInternal(const CharType* searchCharacters, 
     unsigned i = 0;
     while (!equalIgnoringCase(searchCharacters + i, matchString, matchLength)) {
         if (i == delta)
-            return notFound;
+            return kNotFound;
         ++i;
     }
     return index + i;
@@ -1027,7 +1035,7 @@ size_t StringImpl::findIgnoringCase(const LChar* matchString, unsigned index)
 {
     // Check for null or empty string to match against
     if (!matchString)
-        return notFound;
+        return kNotFound;
     size_t matchStringLength = strlen(reinterpret_cast<const char*>(matchString));
     RELEASE_ASSERT(matchStringLength <= numeric_limits<unsigned>::max());
     unsigned matchLength = matchStringLength;
@@ -1036,10 +1044,10 @@ size_t StringImpl::findIgnoringCase(const LChar* matchString, unsigned index)
 
     // Check index & matchLength are in range.
     if (index > length())
-        return notFound;
+        return kNotFound;
     unsigned searchLength = length() - index;
     if (matchLength > searchLength)
-        return notFound;
+        return kNotFound;
 
     if (is8Bit())
         return findIgnoringCaseInternal(characters8() + index, matchString, index, searchLength, matchLength);
@@ -1067,7 +1075,7 @@ ALWAYS_INLINE static size_t findInternal(const SearchCharacterType* searchCharac
     // keep looping until we match
     while (searchHash != matchHash || !equal(searchCharacters + i, matchCharacters, matchLength)) {
         if (i == delta)
-            return notFound;
+            return kNotFound;
         searchHash += searchCharacters[i + matchLength];
         searchHash -= searchCharacters[i];
         ++i;
@@ -1079,7 +1087,7 @@ size_t StringImpl::find(StringImpl* matchString)
 {
     // Check for null string to match against
     if (UNLIKELY(!matchString))
-        return notFound;
+        return kNotFound;
     unsigned matchLength = matchString->length();
 
     // Optimization 1: fast case for strings of length 1.
@@ -1096,7 +1104,7 @@ size_t StringImpl::find(StringImpl* matchString)
 
     // Check matchLength is in range.
     if (matchLength > length())
-        return notFound;
+        return kNotFound;
 
     // Check for empty string to match against
     if (UNLIKELY(!matchLength))
@@ -1118,7 +1126,7 @@ size_t StringImpl::find(StringImpl* matchString, unsigned index)
 {
     // Check for null or empty string to match against
     if (UNLIKELY(!matchString))
-        return notFound;
+        return kNotFound;
 
     unsigned matchLength = matchString->length();
 
@@ -1134,10 +1142,10 @@ size_t StringImpl::find(StringImpl* matchString, unsigned index)
 
     // Check index & matchLength are in range.
     if (index > length())
-        return notFound;
+        return kNotFound;
     unsigned searchLength = length() - index;
     if (matchLength > searchLength)
-        return notFound;
+        return kNotFound;
 
     if (is8Bit()) {
         if (matchString->is8Bit())
@@ -1161,7 +1169,7 @@ ALWAYS_INLINE static size_t findIgnoringCaseInner(const SearchCharacterType* sea
     // keep looping until we match
     while (!equalIgnoringCase(searchCharacters + i, matchCharacters, matchLength)) {
         if (i == delta)
-            return notFound;
+            return kNotFound;
         ++i;
     }
     return index + i;
@@ -1171,17 +1179,17 @@ size_t StringImpl::findIgnoringCase(StringImpl* matchString, unsigned index)
 {
     // Check for null or empty string to match against
     if (!matchString)
-        return notFound;
+        return kNotFound;
     unsigned matchLength = matchString->length();
     if (!matchLength)
         return min(index, length());
 
     // Check index & matchLength are in range.
     if (index > length())
-        return notFound;
+        return kNotFound;
     unsigned searchLength = length() - index;
     if (matchLength > searchLength)
-        return notFound;
+        return kNotFound;
 
     if (is8Bit()) {
         if (matchString->is8Bit())
@@ -1241,7 +1249,7 @@ ALWAYS_INLINE static size_t reverseFindInner(const SearchCharacterType* searchCh
     // keep looping until we match
     while (searchHash != matchHash || !equal(searchCharacters + delta, matchCharacters, matchLength)) {
         if (!delta)
-            return notFound;
+            return kNotFound;
         --delta;
         searchHash -= searchCharacters[delta + matchLength];
         searchHash += searchCharacters[delta];
@@ -1253,7 +1261,7 @@ size_t StringImpl::reverseFind(StringImpl* matchString, unsigned index)
 {
     // Check for null or empty string to match against
     if (!matchString)
-        return notFound;
+        return kNotFound;
     unsigned matchLength = matchString->length();
     unsigned ourLength = length();
     if (!matchLength)
@@ -1268,7 +1276,7 @@ size_t StringImpl::reverseFind(StringImpl* matchString, unsigned index)
 
     // Check index & matchLength are in range.
     if (matchLength > ourLength)
-        return notFound;
+        return kNotFound;
 
     if (is8Bit()) {
         if (matchString->is8Bit())
@@ -1291,7 +1299,7 @@ ALWAYS_INLINE static size_t reverseFindIgnoringCaseInner(const SearchCharacterTy
     // keep looping until we match
     while (!equalIgnoringCase(searchCharacters + delta, matchCharacters, matchLength)) {
         if (!delta)
-            return notFound;
+            return kNotFound;
         --delta;
     }
     return delta;
@@ -1301,7 +1309,7 @@ size_t StringImpl::reverseFindIgnoringCase(StringImpl* matchString, unsigned ind
 {
     // Check for null or empty string to match against
     if (!matchString)
-        return notFound;
+        return kNotFound;
     unsigned matchLength = matchString->length();
     unsigned ourLength = length();
     if (!matchLength)
@@ -1309,7 +1317,7 @@ size_t StringImpl::reverseFindIgnoringCase(StringImpl* matchString, unsigned ind
 
     // Check index & matchLength are in range.
     if (matchLength > ourLength)
-        return notFound;
+        return kNotFound;
 
     if (is8Bit()) {
         if (matchString->is8Bit())
@@ -1502,7 +1510,7 @@ PassRefPtr<StringImpl> StringImpl::replace(UChar pattern, const LChar* replaceme
     unsigned matchCount = 0;
 
     // Count the matches.
-    while ((srcSegmentStart = find(pattern, srcSegmentStart)) != notFound) {
+    while ((srcSegmentStart = find(pattern, srcSegmentStart)) != kNotFound) {
         ++matchCount;
         ++srcSegmentStart;
     }
@@ -1529,7 +1537,7 @@ PassRefPtr<StringImpl> StringImpl::replace(UChar pattern, const LChar* replaceme
         LChar* data;
         RefPtr<StringImpl> newImpl = createUninitialized(newSize, data);
 
-        while ((srcSegmentEnd = find(pattern, srcSegmentStart)) != notFound) {
+        while ((srcSegmentEnd = find(pattern, srcSegmentStart)) != kNotFound) {
             srcSegmentLength = srcSegmentEnd - srcSegmentStart;
             memcpy(data + dstOffset, characters8() + srcSegmentStart, srcSegmentLength * sizeof(LChar));
             dstOffset += srcSegmentLength;
@@ -1549,7 +1557,7 @@ PassRefPtr<StringImpl> StringImpl::replace(UChar pattern, const LChar* replaceme
     UChar* data;
     RefPtr<StringImpl> newImpl = createUninitialized(newSize, data);
 
-    while ((srcSegmentEnd = find(pattern, srcSegmentStart)) != notFound) {
+    while ((srcSegmentEnd = find(pattern, srcSegmentStart)) != kNotFound) {
         srcSegmentLength = srcSegmentEnd - srcSegmentStart;
         memcpy(data + dstOffset, characters16() + srcSegmentStart, srcSegmentLength * sizeof(UChar));
 
@@ -1577,7 +1585,7 @@ PassRefPtr<StringImpl> StringImpl::replace(UChar pattern, const UChar* replaceme
     unsigned matchCount = 0;
 
     // Count the matches.
-    while ((srcSegmentStart = find(pattern, srcSegmentStart)) != notFound) {
+    while ((srcSegmentStart = find(pattern, srcSegmentStart)) != kNotFound) {
         ++matchCount;
         ++srcSegmentStart;
     }
@@ -1604,7 +1612,7 @@ PassRefPtr<StringImpl> StringImpl::replace(UChar pattern, const UChar* replaceme
         UChar* data;
         RefPtr<StringImpl> newImpl = createUninitialized(newSize, data);
 
-        while ((srcSegmentEnd = find(pattern, srcSegmentStart)) != notFound) {
+        while ((srcSegmentEnd = find(pattern, srcSegmentStart)) != kNotFound) {
             srcSegmentLength = srcSegmentEnd - srcSegmentStart;
             for (unsigned i = 0; i < srcSegmentLength; ++i)
                 data[i + dstOffset] = characters8()[i + srcSegmentStart];
@@ -1628,7 +1636,7 @@ PassRefPtr<StringImpl> StringImpl::replace(UChar pattern, const UChar* replaceme
     UChar* data;
     RefPtr<StringImpl> newImpl = createUninitialized(newSize, data);
 
-    while ((srcSegmentEnd = find(pattern, srcSegmentStart)) != notFound) {
+    while ((srcSegmentEnd = find(pattern, srcSegmentStart)) != kNotFound) {
         srcSegmentLength = srcSegmentEnd - srcSegmentStart;
         memcpy(data + dstOffset, characters16() + srcSegmentStart, srcSegmentLength * sizeof(UChar));
 
@@ -1661,7 +1669,7 @@ PassRefPtr<StringImpl> StringImpl::replace(StringImpl* pattern, StringImpl* repl
     unsigned matchCount = 0;
 
     // Count the matches.
-    while ((srcSegmentStart = find(pattern, srcSegmentStart)) != notFound) {
+    while ((srcSegmentStart = find(pattern, srcSegmentStart)) != kNotFound) {
         ++matchCount;
         srcSegmentStart += patternLength;
     }
@@ -1695,7 +1703,7 @@ PassRefPtr<StringImpl> StringImpl::replace(StringImpl* pattern, StringImpl* repl
         // Case 1
         LChar* data;
         RefPtr<StringImpl> newImpl = createUninitialized(newSize, data);
-        while ((srcSegmentEnd = find(pattern, srcSegmentStart)) != notFound) {
+        while ((srcSegmentEnd = find(pattern, srcSegmentStart)) != kNotFound) {
             srcSegmentLength = srcSegmentEnd - srcSegmentStart;
             memcpy(data + dstOffset, characters8() + srcSegmentStart, srcSegmentLength * sizeof(LChar));
             dstOffset += srcSegmentLength;
@@ -1714,7 +1722,7 @@ PassRefPtr<StringImpl> StringImpl::replace(StringImpl* pattern, StringImpl* repl
 
     UChar* data;
     RefPtr<StringImpl> newImpl = createUninitialized(newSize, data);
-    while ((srcSegmentEnd = find(pattern, srcSegmentStart)) != notFound) {
+    while ((srcSegmentEnd = find(pattern, srcSegmentStart)) != kNotFound) {
         srcSegmentLength = srcSegmentEnd - srcSegmentStart;
         if (srcIs8Bit) {
             // Case 3.

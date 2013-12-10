@@ -6,9 +6,9 @@
 #define UI_GFX_CANVAS_PAINT_WIN_H_
 
 #include "skia/ext/platform_canvas.h"
-#include "ui/base/win/dpi.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/size.h"
+#include "ui/gfx/win/dpi.h"
 
 namespace gfx {
 

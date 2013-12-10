@@ -84,14 +84,10 @@ static bool shouldUseLengthLimit(const ContainerNode* node)
 
 static inline bool isAllWhitespace(const String& string)
 {
-    return string.isAllSpecialCharacters<isHTMLSpace>();
+    return string.isAllSpecialCharacters<isHTMLSpace<UChar> >();
 }
 
-// The |lazyAttach| parameter to this function exists for historical reasons.
-// There used to be two code paths, one that used lazyAttach and one that
-// didn't. We should make the two code paths consistent and either use
-// lazyAttach or non-lazyAttach, but we wanted to make that change separately.
-static inline void insert(HTMLConstructionSiteTask& task, bool lazyAttach)
+static inline void insert(HTMLConstructionSiteTask& task)
 {
     if (task.parent->hasTagName(templateTag))
         task.parent = toHTMLTemplateElement(task.parent.get())->content();
@@ -103,23 +99,13 @@ static inline void insert(HTMLConstructionSiteTask& task, bool lazyAttach)
         task.parent->parserInsertBefore(task.child.get(), task.nextChild.get());
     else
         task.parent->parserAppendChild(task.child.get());
-
-    // JavaScript run from beforeload (or DOM Mutation or event handlers)
-    // might have removed the child, in which case we should not attach it.
-
-    if (task.child->parentNode() && task.parent->attached() && !task.child->attached()) {
-        if (lazyAttach)
-            task.child->lazyAttach();
-        else
-            task.child->attach();
-    }
 }
 
 static inline void executeInsertTask(HTMLConstructionSiteTask& task)
 {
     ASSERT(task.operation == HTMLConstructionSiteTask::Insert);
 
-    insert(task, false);
+    insert(task);
 
     task.child->beginParsingChildren();
 
@@ -135,16 +121,13 @@ static inline void executeReparentTask(HTMLConstructionSiteTask& task)
         parent->parserRemoveChild(task.child.get());
 
     task.parent->parserAppendChild(task.child);
-
-    if (task.child->parentElement()->attached() && !task.child->attached())
-        task.child->lazyAttach();
 }
 
 static inline void executeInsertAlreadyParsedChildTask(HTMLConstructionSiteTask& task)
 {
     ASSERT(task.operation == HTMLConstructionSiteTask::InsertAlreadyParsedChild);
 
-    insert(task, true);
+    insert(task);
 }
 
 static inline void executeTakeAllChildrenTask(HTMLConstructionSiteTask& task)
@@ -223,18 +206,18 @@ HTMLConstructionSite::HTMLConstructionSite(Document* document, ParserContentPoli
     , m_redirectAttachToFosterParent(false)
     , m_inQuirksMode(document->inQuirksMode())
 {
-    ASSERT(m_document->isHTMLDocument() || m_document->isSVGDocument() || m_document->isXHTMLDocument());
+    ASSERT(m_document->isHTMLDocument() || m_document->isXHTMLDocument());
 }
 
 HTMLConstructionSite::HTMLConstructionSite(DocumentFragment* fragment, ParserContentPolicy parserContentPolicy)
-    : m_document(fragment->document())
+    : m_document(&fragment->document())
     , m_attachmentRoot(fragment)
     , m_parserContentPolicy(parserContentPolicy)
     , m_isParsingFragment(true)
     , m_redirectAttachToFosterParent(false)
-    , m_inQuirksMode(fragment->document()->inQuirksMode())
+    , m_inQuirksMode(fragment->document().inQuirksMode())
 {
-    ASSERT(m_document->isHTMLDocument() || m_document->isSVGDocument() || m_document->isXHTMLDocument());
+    ASSERT(m_document->isHTMLDocument() || m_document->isXHTMLDocument());
 }
 
 HTMLConstructionSite::~HTMLConstructionSite()
@@ -268,7 +251,8 @@ void HTMLConstructionSite::dispatchDocumentElementAvailableIfNeeded()
 
 void HTMLConstructionSite::insertHTMLHtmlStartTagBeforeHTML(AtomicHTMLToken* token)
 {
-    RefPtr<HTMLHtmlElement> element = HTMLHtmlElement::create(m_document);
+    ASSERT(m_document);
+    RefPtr<HTMLHtmlElement> element = HTMLHtmlElement::create(*m_document);
     setAttributes(element.get(), token, m_parserContentPolicy);
     attachLater(m_attachmentRoot, element);
     m_openElements.pushHTMLHtmlElement(HTMLStackItem::create(element, token));
@@ -447,7 +431,8 @@ void HTMLConstructionSite::insertComment(AtomicHTMLToken* token)
 void HTMLConstructionSite::insertCommentOnDocument(AtomicHTMLToken* token)
 {
     ASSERT(token->type() == HTMLToken::Comment);
-    attachLater(m_attachmentRoot, Comment::create(m_document, token->comment()));
+    ASSERT(m_document);
+    attachLater(m_attachmentRoot, Comment::create(*m_document, token->comment()));
 }
 
 void HTMLConstructionSite::insertCommentOnHTMLHtmlElement(AtomicHTMLToken* token)
@@ -566,8 +551,7 @@ void HTMLConstructionSite::insertTextNode(const String& characters, WhitespaceMo
     if (previousChild && previousChild->isTextNode()) {
         // FIXME: We're only supposed to append to this text node if it
         // was the last text node inserted by the parser.
-        CharacterData* textNode = static_cast<CharacterData*>(previousChild);
-        currentPosition = textNode->parserAppendData(characters, 0, lengthLimit);
+        currentPosition = toCharacterData(previousChild)->parserAppendData(characters, 0, lengthLimit);
     }
 
     while (currentPosition < characters.length()) {
@@ -626,12 +610,12 @@ void HTMLConstructionSite::takeAllChildren(HTMLStackItem* newParent, HTMLElement
 PassRefPtr<Element> HTMLConstructionSite::createElement(AtomicHTMLToken* token, const AtomicString& namespaceURI)
 {
     QualifiedName tagName(nullAtom, token->name(), namespaceURI);
-    RefPtr<Element> element = ownerDocumentForCurrentNode()->createElement(tagName, true);
+    RefPtr<Element> element = ownerDocumentForCurrentNode().createElement(tagName, true);
     setAttributes(element.get(), token, m_parserContentPolicy);
     return element.release();
 }
 
-inline Document* HTMLConstructionSite::ownerDocumentForCurrentNode()
+inline Document& HTMLConstructionSite::ownerDocumentForCurrentNode()
 {
     if (currentNode()->hasTagName(templateTag))
         return toHTMLTemplateElement(currentElement())->content()->document();
@@ -641,14 +625,14 @@ inline Document* HTMLConstructionSite::ownerDocumentForCurrentNode()
 PassRefPtr<Element> HTMLConstructionSite::createHTMLElement(AtomicHTMLToken* token)
 {
     QualifiedName tagName(nullAtom, token->name(), xhtmlNamespaceURI);
-    Document* document = ownerDocumentForCurrentNode();
+    Document& document = ownerDocumentForCurrentNode();
     // Only associate the element with the current form if we're creating the new element
     // in a document with a browsing context (rather than in <template> contents).
-    HTMLFormElement* form = document->frame() ? m_form.get() : 0;
+    HTMLFormElement* form = document.frame() ? m_form.get() : 0;
     // FIXME: This can't use HTMLConstructionSite::createElement because we
     // have to pass the current form element.  We should rework form association
     // to occur after construction to allow better code sharing here.
-    RefPtr<Element> element = HTMLElementFactory::createHTMLElement(tagName, document, form, true);
+    RefPtr<Element> element = HTMLElementFactory::createHTMLElement(tagName, &document, form, true);
     setAttributes(element.get(), token, m_parserContentPolicy);
     ASSERT(element->isHTMLElement());
     return element.release();

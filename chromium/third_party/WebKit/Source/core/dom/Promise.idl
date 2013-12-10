@@ -28,21 +28,19 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-callback PromiseInit = void (PromiseResolver resolver);
+callback PromiseInit = void (any resolve, any reject);
 callback AnyCallback = any (optional any value);
 [
    GlobalContext=Window&WorkerGlobalScope,
    CustomConstructor(PromiseInit init),
-   EnabledAtRuntime=promise
+   EnabledAtRuntime=Promise
 ] interface Promise {
    [Custom] Promise then(optional AnyCallback fulfillCallback, optional AnyCallback rejectCallback);
    [Custom] Promise catch(optional AnyCallback rejectCallback);
 
-   [Custom] static Promise fulfill(any value);
    [Custom] static Promise resolve(any value);
    [Custom] static Promise reject(any value);
 
    [Custom] static Promise _any(any... values);
    [Custom] static Promise every(any... values);
-   [Custom] static Promise some(any... values);
 };

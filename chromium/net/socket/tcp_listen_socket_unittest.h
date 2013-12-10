@@ -91,30 +91,37 @@ class TCPListenSocketTester :
 
   // StreamListenSocket::Delegate:
   virtual void DidAccept(StreamListenSocket* server,
-                         StreamListenSocket* connection) OVERRIDE;
+                         scoped_ptr<StreamListenSocket> connection) OVERRIDE;
   virtual void DidRead(StreamListenSocket* connection, const char* data,
                        int len) OVERRIDE;
   virtual void DidClose(StreamListenSocket* sock) OVERRIDE;
 
   scoped_ptr<base::Thread> thread_;
   base::MessageLoopForIO* loop_;
-  scoped_refptr<TCPListenSocket> server_;
-  StreamListenSocket* connection_;
+  scoped_ptr<TCPListenSocket> server_;
+  scoped_ptr<StreamListenSocket> connection_;
   TCPListenSocketTestAction last_action_;
 
   SocketDescriptor test_socket_;
-  static const int kTestPort;
 
-  base::Lock lock_;  // protects |queue_| and wraps |cv_|
+  base::Lock lock_;  // Protects |queue_| and |server_port_|. Wraps |cv_|.
   base::ConditionVariable cv_;
   std::deque<TCPListenSocketTestAction> queue_;
 
- protected:
+ private:
   friend class base::RefCountedThreadSafe<TCPListenSocketTester>;
 
   virtual ~TCPListenSocketTester();
 
-  virtual scoped_refptr<TCPListenSocket> DoListen();
+  virtual scoped_ptr<TCPListenSocket> DoListen();
+
+  // Getters/setters for |server_port_|. They use |lock_| for thread safety.
+  int GetServerPort();
+  void SetServerPort(int server_port);
+
+  // Port the server is using. Must have |lock_| to access. Set by Listen() on
+  // the server's thread.
+  int server_port_;
 };
 
 }  // namespace net

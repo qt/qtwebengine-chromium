@@ -357,7 +357,11 @@ class ValgrindTool(BaseTool):
     if self.SelfContained():
       proc = ["valgrind-%s.sh" % tool_name]
     else:
-      proc = ["valgrind", "--tool=%s" % tool_name]
+      if 'CHROME_VALGRIND' in os.environ:
+        path = os.path.join(os.environ['CHROME_VALGRIND'], "bin", "valgrind")
+      else:
+        path = "valgrind"
+      proc = [path, "--tool=%s" % tool_name]
 
     proc += ["--num-callers=%i" % int(self._options.num_callers)]
 
@@ -930,6 +934,9 @@ class DrMemory(BaseTool):
     #proc += ["-quiet", "-no_results_to_stderr"]
 
     proc += ["-callstack_max_frames", "40"]
+
+    # disable leak scan for now
+    proc += ["-no_count_leaks", "-no_leak_scan"]
 
     # make callstacks easier to read
     proc += ["-callstack_srcfile_prefix",

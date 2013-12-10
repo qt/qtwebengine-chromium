@@ -1,3 +1,7 @@
+# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
 config("my_msvs") {
   defines = [
       "CHROMIUM_BUILD",
@@ -21,7 +25,6 @@ config("my_msvs") {
       "ENABLE_BACKGROUND=1",
       "ENABLE_AUTOMATION=1",
       "ENABLE_GOOGLE_NOW=1",
-      "ENABLE_LANGUAGE_DETECTION=1",
       "ENABLE_PRINTING=1",
       "ENABLE_CAPTIVE_PORTAL_DETECTION=1",
       "ENABLE_APP_LIST=1",

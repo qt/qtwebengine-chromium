@@ -44,11 +44,19 @@ LineSegmentRange::LineSegmentRange(const InlineIterator& start, const InlineIter
 bool ShapeInsideInfo::isEnabledFor(const RenderBlock* renderer)
 {
     ShapeValue* shapeValue = renderer->style()->resolvedShapeInside();
-    if (!shapeValue || shapeValue->type() != ShapeValue::Shape)
+    if (!shapeValue)
         return false;
 
-    BasicShape* shape = shapeValue->shape();
-    return shape && shape->type() != BasicShape::BasicShapeInsetRectangleType;
+    switch (shapeValue->type()) {
+    case ShapeValue::Shape:
+        return shapeValue->shape() && shapeValue->shape()->type() != BasicShape::BasicShapeInsetRectangleType;
+    case ShapeValue::Image:
+        return shapeValue->isImageValid();
+    case ShapeValue::Outside:
+        return false;
+    }
+
+    return false;
 }
 
 bool ShapeInsideInfo::adjustLogicalLineTop(float minSegmentWidth)
@@ -66,6 +74,11 @@ bool ShapeInsideInfo::adjustLogicalLineTop(float minSegmentWidth)
     }
 
     return false;
+}
+
+ShapeValue* ShapeInsideInfo::shapeValue() const
+{
+    return m_renderer->style()->resolvedShapeInside();
 }
 
 }

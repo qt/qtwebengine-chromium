@@ -35,14 +35,21 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
+#include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
 #include "wtf/unicode/Unicode.h"
 
-#if OS(WINDOWS)
+#if OS(WIN)
 #include <windows.h>
 #include <objidl.h>
 #include <mlang.h>
 #endif
+
+#if OS(WIN) && !ENABLE(GDI_FONTS_ON_WINDOWS)
+#include "SkFontMgr.h"
+#endif
+
+class SkTypeface;
 
 namespace WebCore {
 
@@ -78,6 +85,7 @@ public:
     PassRefPtr<SimpleFontData> getFontResourceData(const FontDescription&, const AtomicString&, bool checkingAlternateName = false, ShouldRetain = Retain);
     PassRefPtr<SimpleFontData> getLastResortFallbackFont(const FontDescription&, ShouldRetain = Retain);
     SimpleFontData* getNonRetainedLastResortFallbackFont(const FontDescription&);
+    bool isPlatformFontAvailable(const FontDescription&, const AtomicString&, bool checkingAlternateName = false);
 
     void addClient(FontSelector*);
     void removeClient(FontSelector*);
@@ -89,7 +97,7 @@ public:
     size_t inactiveFontDataCount();
     void purgeInactiveFontData(int count = INT_MAX);
 
-#if OS(WINDOWS)
+#if OS(WIN)
     PassRefPtr<SimpleFontData> fontDataFromDescriptionAndLogFont(const FontDescription&, ShouldRetain, const LOGFONT&, wchar_t* outFontFamilyName);
 #endif
 
@@ -126,13 +134,20 @@ private:
     PassRefPtr<SimpleFontData> getSimilarFontPlatformData(const Font&);
     FontPlatformData* createFontPlatformData(const FontDescription&, const AtomicString& family);
 
+    // Implemented on skia platforms.
+    SkTypeface* createTypeface(const FontDescription&, const AtomicString& family, CString& name);
+
     PassRefPtr<SimpleFontData> getFontResourceData(const FontPlatformData*, ShouldRetain = Retain);
     const FontPlatformData* getFallbackFontData(const FontDescription&);
 
     // Don't purge if this count is > 0;
     int m_purgePreventCount;
 
-#if OS(DARWIN) || OS(ANDROID)
+#if OS(WIN) && !ENABLE(GDI_FONTS_ON_WINDOWS)
+    OwnPtr<SkFontMgr> m_fontManager;
+#endif
+
+#if OS(MACOSX) || OS(ANDROID)
     friend class ComplexTextController;
 #endif
     friend class SimpleFontData; // For getFontResourceData(const FontPlatformData*)

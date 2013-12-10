@@ -133,12 +133,6 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
   // the locaion of the secondary display relative to the primary.
   void SetLayoutForCurrentDisplays(const DisplayLayout& layout);
 
-  // Returns the display layout used for current displays.
-  DisplayLayout GetCurrentDisplayLayout();
-
-  // Returns the current display pair.
-  DisplayIdPair GetCurrentDisplayIdPair() const;
-
   // Checks if the mouse pointer is on one of displays, and moves to
   // the center of the nearest display if it's outside of all displays.
   void EnsurePointerInDisplays();
@@ -172,7 +166,7 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
   virtual void CreateOrUpdateMirrorWindow(
       const internal::DisplayInfo& info) OVERRIDE;
   virtual void CloseMirrorWindow() OVERRIDE;
-  virtual void PreDisplayConfigurationChange() OVERRIDE;
+  virtual void PreDisplayConfigurationChange(bool dispay_removed) OVERRIDE;
   virtual void PostDisplayConfigurationChange() OVERRIDE;
 
  private:

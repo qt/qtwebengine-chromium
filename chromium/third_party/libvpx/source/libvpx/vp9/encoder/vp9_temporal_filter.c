@@ -40,10 +40,7 @@ static void temporal_filter_predictors_mb_c(MACROBLOCKD *xd,
                                             int mv_col,
                                             uint8_t *pred) {
   const int which_mv = 0;
-  int_mv mv;
-
-  mv.as_mv.row = mv_row;
-  mv.as_mv.col = mv_col;
+  MV mv = { mv_row, mv_col };
 
   vp9_build_inter_predictor(y_mb_ptr, stride,
                             &pred[0], 16,
@@ -51,25 +48,25 @@ static void temporal_filter_predictors_mb_c(MACROBLOCKD *xd,
                             &xd->scale_factor[which_mv],
                             16, 16,
                             which_mv,
-                            &xd->subpix);
+                            &xd->subpix, MV_PRECISION_Q3);
 
   stride = (stride + 1) >> 1;
 
-  vp9_build_inter_predictor_q4(u_mb_ptr, stride,
-                               &pred[256], 8,
-                               &mv,
-                               &xd->scale_factor_uv[which_mv],
-                               8, 8,
-                               which_mv,
-                               &xd->subpix);
+  vp9_build_inter_predictor(u_mb_ptr, stride,
+                            &pred[256], 8,
+                            &mv,
+                            &xd->scale_factor[which_mv],
+                            8, 8,
+                            which_mv,
+                            &xd->subpix, MV_PRECISION_Q4);
 
-  vp9_build_inter_predictor_q4(v_mb_ptr, stride,
-                               &pred[320], 8,
-                               &mv,
-                               &xd->scale_factor_uv[which_mv],
-                               8, 8,
-                               which_mv,
-                               &xd->subpix);
+  vp9_build_inter_predictor(v_mb_ptr, stride,
+                            &pred[320], 8,
+                            &mv,
+                            &xd->scale_factor[which_mv],
+                            8, 8,
+                            which_mv,
+                            &xd->subpix, MV_PRECISION_Q4);
 }
 
 void vp9_temporal_filter_apply_c(uint8_t *frame1,
@@ -148,18 +145,19 @@ static int temporal_filter_find_matching_mb_c(VP9_COMP *cpi,
 
   // Further step/diamond searches as necessary
   if (cpi->speed < 8)
-    step_param = cpi->sf.first_step + ((cpi->speed > 5) ? 1 : 0);
+    step_param = cpi->sf.reduce_first_step_size + ((cpi->speed > 5) ? 1 : 0);
   else
-    step_param = cpi->sf.first_step + 2;
+    step_param = cpi->sf.reduce_first_step_size + 2;
+  step_param = MIN(step_param, (cpi->sf.max_step_search_steps - 2));
 
   /*cpi->sf.search_method == HEX*/
   // TODO Check that the 16x16 vf & sdf are selected here
   // Ignore mv costing by sending NULL pointer instead of cost arrays
-  ref_mv = &x->e_mbd.mode_info_context->bmi[0].as_mv[0];
-  bestsme = vp9_hex_search(x, &best_ref_mv1_full, ref_mv,
-                           step_param, sadpb, &cpi->fn_ptr[BLOCK_16X16],
-                           NULL, NULL, NULL, NULL,
-                           &best_ref_mv1);
+  ref_mv = &x->e_mbd.mi_8x8[0]->bmi[0].as_mv[0];
+  bestsme = vp9_hex_search(x, &best_ref_mv1_full,
+                           step_param, sadpb, 1,
+                           &cpi->fn_ptr[BLOCK_16X16],
+                           0, &best_ref_mv1, ref_mv);
 
 #if ALT_REF_SUBPEL_ENABLED
   // Try sub-pixel MC?
@@ -172,6 +170,7 @@ static int temporal_filter_find_matching_mb_c(VP9_COMP *cpi,
                                            &best_ref_mv1,
                                            x->errorperbit,
                                            &cpi->fn_ptr[BLOCK_16X16],
+                                           0, cpi->sf.subpel_iters_per_step,
                                            NULL, NULL,
                                            &distortion, &sse);
   }
@@ -246,8 +245,8 @@ static void temporal_filter_iterate_c(VP9_COMP *cpi,
         if (cpi->frames[frame] == NULL)
           continue;
 
-        mbd->mode_info_context->bmi[0].as_mv[0].as_mv.row = 0;
-        mbd->mode_info_context->bmi[0].as_mv[0].as_mv.col = 0;
+        mbd->mi_8x8[0]->bmi[0].as_mv[0].as_mv.row = 0;
+        mbd->mi_8x8[0]->bmi[0].as_mv[0].as_mv.col = 0;
 
         if (frame == alt_ref_index) {
           filter_weight = 2;
@@ -280,8 +279,8 @@ static void temporal_filter_iterate_c(VP9_COMP *cpi,
            cpi->frames[frame]->u_buffer + mb_uv_offset,
            cpi->frames[frame]->v_buffer + mb_uv_offset,
            cpi->frames[frame]->y_stride,
-           mbd->mode_info_context->bmi[0].as_mv[0].as_mv.row,
-           mbd->mode_info_context->bmi[0].as_mv[0].as_mv.col,
+           mbd->mi_8x8[0]->bmi[0].as_mv[0].as_mv.row,
+           mbd->mi_8x8[0]->bmi[0].as_mv[0].as_mv.col,
            predictor);
 
           // Apply the filter (YUV)
@@ -442,7 +441,6 @@ void vp9_temporal_filter_prepare(VP9_COMP *cpi, int distance) {
       cm->yv12_fb[cm->new_fb_idx].y_crop_width,
       cm->yv12_fb[cm->new_fb_idx].y_crop_height,
       cm->width, cm->height);
-  cpi->mb.e_mbd.scale_factor_uv[0] = cpi->mb.e_mbd.scale_factor[0];
 
   // Setup frame pointers, NULL indicates frame not included in filter
   vpx_memset(cpi->frames, 0, max_frames * sizeof(YV12_BUFFER_CONFIG *));

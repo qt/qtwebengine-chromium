@@ -15,8 +15,15 @@ namespace base {
 class DictionaryValue;
 }
 
+namespace chromeos {
+class NetworkTypePattern;
+}
+
 namespace ash {
 namespace network_connect {
+
+ASH_EXPORT extern const char kNetworkConnectNotificationId[];
+ASH_EXPORT extern const char kNetworkActivateNotificationId[];
 
 ASH_EXPORT extern const char kErrorActivateFailed[];
 
@@ -26,8 +33,19 @@ ASH_EXPORT extern const char kErrorActivateFailed[];
 ASH_EXPORT void ConnectToNetwork(const std::string& service_path,
                                  gfx::NativeWindow owning_window);
 
+// Enables or disables a network technology. If |technology| refers to cellular
+// and the device cannot be enabled due to a SIM lock, this function will
+// launch the SIM unlock dialog.
+ASH_EXPORT void SetTechnologyEnabled(
+    const chromeos::NetworkTypePattern& technology,
+    bool enabled_state);
+
 // Requests network activation and handles any errors and notifications.
 ASH_EXPORT void ActivateCellular(const std::string& service_path);
+
+// Determines whether or not a network requires a connection to activate or
+// setup and either shows a notification or opens the mobile setup dialog.
+ASH_EXPORT void ShowMobileSetup(const std::string& service_path);
 
 // Configures a network with a dictionary of Shill properties, then sends a
 // connect request. The profile is set according to 'shared' if allowed.
@@ -43,6 +61,10 @@ ASH_EXPORT void CreateConfigurationAndConnect(base::DictionaryValue* properties,
 
 // Returns the localized string for shill error string |error|.
 ASH_EXPORT base::string16 ErrorString(const std::string& error);
+
+// Shows the settings for the network specified by |service_path|. If empty,
+// or no matching network exists, shows the general internet settings page.
+ASH_EXPORT void ShowNetworkSettings(const std::string& service_path);
 
 }  // network_connect
 }  // ash

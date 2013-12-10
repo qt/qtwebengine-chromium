@@ -10,7 +10,6 @@ layer-picker {
 
 layer-picker > top-controls {
   -webkit-flex: 0 0 auto;
-  -webkit-user-select: none;
   background-image: -webkit-gradient(linear,
                                      0 0, 100% 0,
                                      from(#E5E5E5),
@@ -18,6 +17,12 @@ layer-picker > top-controls {
   border-bottom: 1px solid #8e8e8e;
   border-top: 1px solid white;
   display: inline;
+  font-size: 14px;
+  padding-left: 2px;
+}
+
+layer-picker > top-controls input[type='checkbox'] {
+    vertical-align: -2px;
 }
 
 layer-picker > .x-list-view {
@@ -33,5 +38,6 @@ layer-picker > x-generic-object-view {
 }
 
 layer-picker > x-generic-object-view * {
+  -webkit-user-select: text !important;
   cursor: text;
 }
