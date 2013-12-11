@@ -7,14 +7,15 @@
 base.requireStylesheet('tracing.tracks.object_instance_track');
 
 base.require('base.sorted_array_utils');
+base.require('tracing.trace_model.event');
 base.require('tracing.tracks.heading_track');
 base.require('tracing.color_scheme');
 base.require('ui');
 
 base.exportTo('tracing.tracks', function() {
 
-  var palette = tracing.getColorPalette();
-  var highlightIdBoost = tracing.getColorPaletteHighlightIdBoost();
+  var SelectionState = tracing.trace_model.SelectionState;
+  var EventPresenter = tracing.EventPresenter;
 
   /**
    * A track that displays an array of Slice objects.
@@ -85,14 +86,14 @@ base.exportTo('tracing.tracks', function() {
       var twoPi = Math.PI * 2;
 
       // Culling parameters.
-      var vp = this.viewport;
+      var dt = this.viewport.currentDisplayTransform;
       var snapshotRadiusView = this.snapshotRadiusView;
-      var snapshotRadiusWorld = vp.xViewVectorToWorld(height);
+      var snapshotRadiusWorld = dt.xViewVectorToWorld(height);
       var loI;
 
       // Begin rendering in world space.
       ctx.save();
-      vp.applyTransformToCanvas(ctx);
+      dt.applyTransformToCanvas(ctx);
 
       // Instances
       var objectInstances = this.objectInstances_;
@@ -102,7 +103,6 @@ base.exportTo('tracing.tracks', function() {
             return instance.deletionTs;
           },
           viewLWorld);
-      ctx.globalAlpha = 0.25;
       ctx.strokeStyle = 'rgb(0,0,0)';
       for (var i = loI; i < objectInstances.length; ++i) {
         var instance = objectInstances[i];
@@ -110,16 +110,11 @@ base.exportTo('tracing.tracks', function() {
         if (x > viewRWorld)
           break;
 
-        var colorId = instance.selected ?
-            instance.colorId + highlightIdBoost :
-            instance.colorId;
-
         var right = instance.deletionTs == Number.MAX_VALUE ?
             viewRWorld : instance.deletionTs;
-        ctx.fillStyle = palette[colorId];
+        ctx.fillStyle = EventPresenter.getObjectInstanceColor(instance);
         ctx.fillRect(x, pixelRatio, right - x, height - 2 * pixelRatio);
       }
-      ctx.globalAlpha = 1;
       ctx.restore();
 
       // Snapshots. Has to run in worldspace because ctx.arc gets transformed.
@@ -127,8 +122,7 @@ base.exportTo('tracing.tracks', function() {
       loI = base.findLowIndexInSortedArray(
           objectSnapshots,
           function(snapshot) {
-            return snapshot.ts +
-                snapshotRadiusWorld;
+            return snapshot.ts + snapshotRadiusWorld;
           },
           viewLWorld);
       for (var i = loI; i < objectSnapshots.length; ++i) {
@@ -136,13 +130,9 @@ base.exportTo('tracing.tracks', function() {
         var x = snapshot.ts;
         if (x - snapshotRadiusWorld > viewRWorld)
           break;
-        var xView = vp.xWorldToView(x);
+        var xView = dt.xWorldToView(x);
 
-        var colorId = snapshot.selected ?
-            snapshot.objectInstance.colorId + highlightIdBoost :
-            snapshot.objectInstance.colorId;
-
-        ctx.fillStyle = palette[colorId];
+        ctx.fillStyle = EventPresenter.getObjectSnapshotColor(snapshot);
         ctx.beginPath();
         ctx.arc(xView, halfHeight, snapshotRadiusView, 0, twoPi);
         ctx.fill();
@@ -163,32 +153,45 @@ base.exportTo('tracing.tracks', function() {
         }
       }
       ctx.lineWidth = 1;
+
+      // For performance reasons we only check the SelectionState of the first
+      // instance. If it's DIMMED we assume that all are DIMMED.
+      // TODO(egraether): Allow partial highlight.
+      var selectionState = SelectionState.NONE;
+      if (objectInstances.length &&
+          objectInstances[0].selectionState === SelectionState.DIMMED) {
+        selectionState = SelectionState.DIMMED;
+      }
+
+      // Dim the track when there is an active highlight.
+      if (selectionState === SelectionState.DIMMED) {
+        var width = bounds.width * pixelRatio;
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.fillRect(0, 0, width, height);
+        ctx.restore();
+      }
     },
 
-    memoizeSlices_: function() {
-      var vp = this.viewport_;
-
+    addEventsToTrackMap: function(eventToTrackMap) {
       if (this.objectInstance_ !== undefined) {
         this.objectInstance_.forEach(function(obj) {
-          vp.sliceMemoization(obj, this);
-        }.bind(this));
+          eventToTrackMap.addEvent(obj, this);
+        }, this);
       }
 
       if (this.objectSnapshots_ !== undefined) {
         this.objectSnapshots_.forEach(function(obj) {
-          vp.sliceMemoization(obj, this);
-        }.bind(this));
+          eventToTrackMap.addEvent(obj, this);
+        }, this);
       }
     },
 
     addIntersectingItemsInRangeToSelectionInWorldSpace: function(
         loWX, hiWX, viewPixWidthWorld, selection) {
-      var that = this;
-
       // Pick snapshots first.
       var foundSnapshot = false;
-      function onSnapshotHit(snapshot) {
-        selection.addObjectSnapshot(that, snapshot);
+      function onSnapshot(snapshot) {
+        selection.push(snapshot);
         foundSnapshot = true;
       }
       var snapshotRadiusView = this.snapshotRadiusView;
@@ -198,54 +201,66 @@ base.exportTo('tracing.tracks', function() {
           function(x) { return x.ts - snapshotRadiusWorld; },
           function(x) { return 2 * snapshotRadiusWorld; },
           loWX, hiWX,
-          onSnapshotHit);
+          onSnapshot);
       if (foundSnapshot)
         return;
 
       // Try picking instances.
-      function onInstanceHit(instance) {
-        selection.addObjectInstance(that, instance);
-      }
       base.iterateOverIntersectingIntervals(
           this.objectInstances_,
           function(x) { return x.creationTs; },
           function(x) { return x.deletionTs - x.creationTs; },
           loWX, hiWX,
-          onInstanceHit);
+          selection.push.bind(selection));
     },
 
     /**
-     * Add the item to the left or right of the provided hit, if any, to the
+     * Add the item to the left or right of the provided event, if any, to the
      * selection.
-     * @param {slice} The current slice.
-     * @param {Number} offset Number of slices away from the hit to look.
-     * @param {Selection} selection The selection to add a hit to,
+     * @param {event} The current event item.
+     * @param {Number} offset Number of slices away from the event to look.
+     * @param {Selection} selection The selection to add an event to,
      * if found.
-     * @return {boolean} Whether a hit was found.
+     * @return {boolean} Whether an event was found.
      * @private
      */
-    addItemNearToProvidedHitToSelection: function(hit, offset, selection) {
-      if (hit instanceof tracing.SelectionObjectSnapshotHit) {
-        var index = this.objectSnapshots_.indexOf(hit.objectSnapshot);
-        var newIndex = index + offset;
-        if (newIndex >= 0 && newIndex < this.objectSnapshots_.length) {
-          selection.addObjectSnapshot(this, this.objectSnapshots_[newIndex]);
-          return true;
-        }
-      } else if (hit instanceof tracing.SelectionObjectInstanceHit) {
-        var index = this.objectInstances_.indexOf(hit.objectInstance);
-        var newIndex = index + offset;
-        if (newIndex >= 0 && newIndex < this.objectInstances_.length) {
-          selection.addObjectInstance(this, this.objectInstances_[newIndex]);
-          return true;
-        }
-      } else {
-        throw new Error('Unrecognized hit');
+    addItemNearToProvidedEventToSelection: function(event, offset, selection) {
+      var events;
+      if (event instanceof tracing.trace_model.ObjectSnapshot)
+        events = this.objectSnapshots_;
+      else if (event instanceof tracing.trace_model.ObjectInstance)
+        events = this.objectInstances_;
+      else
+        throw new Error('Unrecognized event');
+
+      var index = events.indexOf(event);
+      var newIndex = index + offset;
+      if (newIndex >= 0 && newIndex < events.length) {
+        selection.push(events[newIndex]);
+        return true;
       }
       return false;
     },
 
     addAllObjectsMatchingFilterToSelection: function(filter, selection) {
+    },
+
+    addClosestEventToSelection: function(worldX, worldMaxDist, loY, hiY,
+                                         selection) {
+      var snapshot = base.findClosestElementInSortedArray(
+          this.objectSnapshots_,
+          function(x) { return x.ts; },
+          worldX,
+          worldMaxDist);
+
+      if (!snapshot)
+        return;
+
+      selection.push(snapshot);
+
+      // TODO(egraether): Search for object instances as well, which was not
+      // implemented because it makes little sense with the current visual and
+      // needs to take care of overlapping intervals.
     }
   };
 

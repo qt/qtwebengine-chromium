@@ -55,8 +55,6 @@ struct FontRec {
     SkRefPtr<SkTypeface> fTypeface;
     SkString fFileName;
     SkTypeface::Style fStyle;
-    SkPaintOptionsAndroid fPaintOptions;
-    bool fIsFallbackFont;
     bool fIsValid;
     FamilyRecID fFamilyRecID;
 };
@@ -68,10 +66,12 @@ struct FamilyRec {
 
     static const int FONT_STYLE_COUNT = 4;
     FontRecID fFontRecID[FONT_STYLE_COUNT];
+    bool fIsFallbackFont;
+    SkPaintOptionsAndroid fPaintOptions;
 };
 
 
-typedef SkTDArray<FontRecID> FallbackFontList;
+typedef SkTDArray<FamilyRecID> FallbackFontList;
 
 class SkFontConfigInterfaceAndroid : public SkFontConfigInterface {
 public:
@@ -95,7 +95,7 @@ public:
      *  Get the family name of the font in the default fallback font list that
      *  contains the specified chararacter. if no font is found, returns false.
      */
-    bool getFallbackFamilyNameForChar(SkUnichar uni, SkString* name);
+    bool getFallbackFamilyNameForChar(SkUnichar uni, const char* lang, SkString* name);
     /**
      *
      */
@@ -105,7 +105,7 @@ public:
                                     const SkPaintOptionsAndroid& options);
 
 private:
-    void addFallbackFont(FontRecID fontRecID);
+    void addFallbackFamily(FamilyRecID fontRecID);
     SkTypeface* getTypefaceForFontRec(FontRecID fontRecID);
     FallbackFontList* getCurrentLocaleFallbackFontList();
     FallbackFontList* findFallbackFontList(const SkLanguage& lang, bool isOriginal = true);
@@ -183,7 +183,12 @@ static void get_path_for_sys_fonts(SkString* full, const char name[]) {
 static void insert_into_name_dict(SkTDict<FamilyRecID>& familyNameDict,
                                   const char* name, FamilyRecID familyRecID) {
     SkAutoAsciiToLC tolc(name);
-    familyNameDict.set(tolc.lc(), familyRecID);
+    if (familyNameDict.find(tolc.lc())) {
+        SkDebugf("---- system font attempting to use a the same name [%s] for"
+                 "multiple families. skipping subsequent occurrences", tolc.lc());
+    } else {
+        familyNameDict.set(tolc.lc(), familyRecID);
+    }
 }
 
 // Defined in SkFontHost_FreeType.cpp
@@ -222,8 +227,6 @@ SkFontConfigInterfaceAndroid::SkFontConfigInterfaceAndroid(SkTDArray<FontFamily*
             FontRec& fontRec = fFonts.push_back();
             fontRec.fFileName = filename;
             fontRec.fStyle = SkTypeface::kNormal;
-            fontRec.fPaintOptions = family->fFontFiles[j]->fPaintOptions;
-            fontRec.fIsFallbackFont = family->fIsFallbackFont;
             fontRec.fIsValid = false;
             fontRec.fFamilyRecID = familyRecID;
 
@@ -236,17 +239,17 @@ SkFontConfigInterfaceAndroid::SkFontConfigInterfaceAndroid(SkTDArray<FontFamily*
                 fontRec.fIsValid = find_name_and_attributes(stream.get(), &name,
                                                             &fontRec.fStyle, &isFixedWidth);
             } else {
-                if (!fontRec.fIsFallbackFont) {
+                if (!family->fIsFallbackFont) {
                     SkDebugf("---- failed to open <%s> as a font\n", filename.c_str());
                 }
             }
 
             if (fontRec.fIsValid) {
                 DEBUG_FONT(("---- SystemFonts[%d][%d] fallback=%d file=%s",
-                           i, fFonts.count() - 1, fontRec.fIsFallbackFont, filename.c_str()));
+                           i, fFonts.count() - 1, family->fIsFallbackFont, filename.c_str()));
             } else {
                 DEBUG_FONT(("---- SystemFonts[%d][%d] fallback=%d file=%s (INVALID)",
-                           i, fFonts.count() - 1, fontRec.fIsFallbackFont, filename.c_str()));
+                           i, fFonts.count() - 1, family->fIsFallbackFont, filename.c_str()));
                 continue;
             }
 
@@ -256,6 +259,18 @@ SkFontConfigInterfaceAndroid::SkFontConfigInterfaceAndroid(SkTDArray<FontFamily*
                 familyRec = &fFontFamilies.push_back();
                 familyRecID = fFontFamilies.count() - 1;
                 fontRec.fFamilyRecID = familyRecID;
+
+                familyRec->fIsFallbackFont = family->fIsFallbackFont;
+                familyRec->fPaintOptions = family->fFontFiles[j]->fPaintOptions;
+
+                // if this is a fallback font then add it to the appropriate fallback chains
+                if (familyRec->fIsFallbackFont) {
+                    addFallbackFamily(familyRecID);
+                }
+            } else if (familyRec->fPaintOptions != family->fFontFiles[j]->fPaintOptions) {
+                SkDebugf("Every font file within a family must have identical"
+                         "language and variant attributes");
+                sk_throw();
             }
 
             // add this font to the current familyRec
@@ -266,21 +281,16 @@ SkFontConfigInterfaceAndroid::SkFontConfigInterfaceAndroid(SkTDArray<FontFamily*
             }
             familyRec->fFontRecID[fontRec.fStyle] = fontRecID;
 
-            // if this is a fallback font then add it to the appropriate fallback chains
-            if (fontRec.fIsFallbackFont) {
-                addFallbackFont(fontRecID);
-            }
-
             // add the fallback file name to the name dictionary.  This is needed
             // by getFallbackFamilyNameForChar() so that fallback families can be
             // requested by the filenames of the fonts they contain.
-            if (family->fIsFallbackFont && familyRec) {
+            if (familyRec && familyRec->fIsFallbackFont) {
                 insert_into_name_dict(fFamilyNameDict, fontRec.fFileName.c_str(), familyRecID);
             }
         }
 
         // add the names that map to this family to the dictionary for easy lookup
-        if (familyRec && !family->fIsFallbackFont) {
+        if (familyRec && !familyRec->fIsFallbackFont) {
             SkTDArray<const char*> names = family->fNames;
             if (names.isEmpty()) {
                 SkDEBUGFAIL("ERROR: non-fallback font with no name");
@@ -309,10 +319,10 @@ SkFontConfigInterfaceAndroid::SkFontConfigInterfaceAndroid(SkTDArray<FontFamily*
     const char* fallbackLang = iter.next(&fallbackList);
     while(fallbackLang != NULL) {
         for (int i = 0; i < fDefaultFallbackList.count(); i++) {
-            FontRecID fontRecID = fDefaultFallbackList[i];
-            const SkString& fontLang = fFonts[fontRecID].fPaintOptions.getLanguage().getTag();
+            FamilyRecID familyRecID = fDefaultFallbackList[i];
+            const SkString& fontLang = fFontFamilies[familyRecID].fPaintOptions.getLanguage().getTag();
             if (strcmp(fallbackLang, fontLang.c_str()) != 0) {
-                fallbackList->push(fontRecID);
+                fallbackList->push(familyRecID);
             }
         }
         // move to the next fallback list in the dictionary
@@ -329,16 +339,16 @@ SkFontConfigInterfaceAndroid::~SkFontConfigInterfaceAndroid() {
     }
 }
 
-void SkFontConfigInterfaceAndroid::addFallbackFont(FontRecID fontRecID) {
-    SkASSERT(fontRecID < fFonts.count());
-    const FontRec& fontRec = fFonts[fontRecID];
-    SkASSERT(fontRec.fIsFallbackFont);
+void SkFontConfigInterfaceAndroid::addFallbackFamily(FamilyRecID familyRecID) {
+    SkASSERT(familyRecID < fFontFamilies.count());
+    const FamilyRec& familyRec = fFontFamilies[familyRecID];
+    SkASSERT(familyRec.fIsFallbackFont);
 
     // add to the default fallback list
-    fDefaultFallbackList.push(fontRecID);
+    fDefaultFallbackList.push(familyRecID);
 
     // stop here if it is the default language tag
-    const SkString& languageTag = fontRec.fPaintOptions.getLanguage().getTag();
+    const SkString& languageTag = familyRec.fPaintOptions.getLanguage().getTag();
     if (languageTag.isEmpty()) {
         return;
     }
@@ -351,7 +361,7 @@ void SkFontConfigInterfaceAndroid::addFallbackFont(FontRecID fontRecID) {
         fFallbackFontDict.set(languageTag.c_str(), customList);
     }
     SkASSERT(customList != NULL);
-    customList->push(fontRecID);
+    customList->push(familyRecID);
 }
 
 
@@ -403,10 +413,11 @@ bool SkFontConfigInterfaceAndroid::matchFamilyName(const char familyName[],
 
     }
 
+    // If no matching family name is found then return false. This allows clients
+    // to be able to search for other fonts instead of forcing them to use the
+    // default font.
     if (INVALID_FAMILY_REC_ID == familyRecID) {
-        //TODO this ensures that we always return something
-        familyRecID = fDefaultFamilyRecID;
-        //return false;
+        return false;
     }
 
     FontRecID fontRecID = find_best_style(fFontFamilies[familyRecID], style);
@@ -494,10 +505,21 @@ SkTypeface* SkFontConfigInterfaceAndroid::getTypefaceForFontRec(FontRecID fontRe
     return face;
 }
 
-bool SkFontConfigInterfaceAndroid::getFallbackFamilyNameForChar(SkUnichar uni, SkString* name) {
-    FallbackFontList* fallbackFontList = this->getCurrentLocaleFallbackFontList();
+bool SkFontConfigInterfaceAndroid::getFallbackFamilyNameForChar(SkUnichar uni,
+                                                                const char* lang,
+                                                                SkString* name) {
+    FallbackFontList* fallbackFontList = this->findFallbackFontList(lang);
     for (int i = 0; i < fallbackFontList->count(); i++) {
-        FontRecID fontRecID = fallbackFontList->getAt(i);
+        FamilyRecID familyRecID = fallbackFontList->getAt(i);
+
+        // if it is not one of the accepted variants then move to the next family
+        int32_t acceptedVariants = SkPaintOptionsAndroid::kDefault_Variant |
+                                   SkPaintOptionsAndroid::kElegant_Variant;
+        if (!(fFontFamilies[familyRecID].fPaintOptions.getFontVariant() & acceptedVariants)) {
+            continue;
+        }
+
+        FontRecID fontRecID = find_best_style(fFontFamilies[familyRecID], SkTypeface::kNormal);
         SkTypeface* face = this->getTypefaceForFontRec(fontRecID);
 
         SkPaint paint;
@@ -588,6 +610,12 @@ SkTypeface* SkFontConfigInterfaceAndroid::nextLogicalTypeface(SkFontID currFontI
     FallbackFontList* currentFallbackList = findFallbackFontList(opts.getLanguage());
     SkASSERT(currentFallbackList);
 
+    SkTypeface::Style origStyle = SkTypeface::kNormal;
+    const SkTypeface* origTypeface = SkTypefaceCache::FindByID(origFontID);
+    if (NULL != origTypeface) {
+        origStyle = origTypeface->style();
+    }
+
     // we must convert currTypeface into a FontRecID
     FontRecID currFontRecID = INVALID_FONT_REC_ID;
     const SkTypeface* currTypeface = SkTypefaceCache::FindByID(currFontID);
@@ -598,8 +626,13 @@ SkTypeface* SkFontConfigInterfaceAndroid::nextLogicalTypeface(SkFontID currFontI
         SkASSERT(INVALID_FONT_REC_ID != currFontRecID);
     }
 
+    FamilyRecID currFamilyRecID = INVALID_FAMILY_REC_ID;
+    if (INVALID_FONT_REC_ID != currFontRecID) {
+        currFamilyRecID = fFonts[currFontRecID].fFamilyRecID;
+    }
+
     // lookup the index next font in the chain
-    int currFallbackFontIndex = currentFallbackList->find(currFontRecID);
+    int currFallbackFontIndex = currentFallbackList->find(currFamilyRecID);
     // We add 1 to the returned index for 2 reasons: (1) if find succeeds it moves
     // our index to the next entry in the list; (2) if find() fails it returns
     // -1 and incrementing it will set our starting index to 0 (the head of the list)
@@ -620,9 +653,10 @@ SkTypeface* SkFontConfigInterfaceAndroid::nextLogicalTypeface(SkFontID currFontI
 
     SkTypeface* nextLogicalTypeface = 0;
     while (nextFallbackFontIndex < currentFallbackList->count()) {
-        FontRecID fontRecID = currentFallbackList->getAt(nextFallbackFontIndex);
-        if ((fFonts[fontRecID].fPaintOptions.getFontVariant() & acceptedVariants) != 0) {
-            nextLogicalTypeface = this->getTypefaceForFontRec(fontRecID);
+        FamilyRecID familyRecID = currentFallbackList->getAt(nextFallbackFontIndex);
+        if ((fFontFamilies[familyRecID].fPaintOptions.getFontVariant() & acceptedVariants) != 0) {
+            FontRecID matchedFont = find_best_style(fFontFamilies[familyRecID], origStyle);
+            nextLogicalTypeface = this->getTypefaceForFontRec(matchedFont);
             break;
         }
         nextFallbackFontIndex++;
@@ -639,8 +673,14 @@ SkTypeface* SkFontConfigInterfaceAndroid::nextLogicalTypeface(SkFontID currFontI
 ///////////////////////////////////////////////////////////////////////////////
 
 bool SkGetFallbackFamilyNameForChar(SkUnichar uni, SkString* name) {
+    SkString locale = SkFontConfigParser::GetLocale();
     SkFontConfigInterfaceAndroid* fontConfig = getSingletonInterface();
-    return fontConfig->getFallbackFamilyNameForChar(uni, name);
+    return fontConfig->getFallbackFamilyNameForChar(uni, locale.c_str(), name);
+}
+
+bool SkGetFallbackFamilyNameForChar(SkUnichar uni, const char* lang, SkString* name) {
+    SkFontConfigInterfaceAndroid* fontConfig = getSingletonInterface();
+    return fontConfig->getFallbackFamilyNameForChar(uni, lang, name);
 }
 
 void SkUseTestFontConfigFile(const char* mainconf, const char* fallbackconf,

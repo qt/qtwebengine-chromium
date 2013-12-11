@@ -133,8 +133,12 @@ void InspectorInputAgent::dispatchKeyEvent(ErrorString* error, const String& typ
     m_client->dispatchKeyEvent(event);
 }
 
-void InspectorInputAgent::dispatchMouseEvent(ErrorString* error, const String& type, int x, int y, const int* modifiers, const double* timestamp, const String* button, const int* clickCount)
+void InspectorInputAgent::dispatchMouseEvent(ErrorString* error, const String& type, int x, int y, const int* modifiers, const double* timestamp, const String* button, const int* clickCount, const bool* deviceSpace)
 {
+    if (deviceSpace && *deviceSpace) {
+        *error = "Internal error: events with device coordinates should be processed on the embedder level.";
+        return;
+    }
     PlatformEvent::Type convertedType;
     if (type == "mousePressed")
         convertedType = PlatformEvent::MousePressed;
@@ -268,6 +272,11 @@ void InspectorInputAgent::dispatchTouchEvent(ErrorString* error, const String& t
 
     EventHandler* handler = m_page->mainFrame()->eventHandler();
     handler->handleTouchEvent(event);
+}
+
+void InspectorInputAgent::dispatchGestureEvent(ErrorString*, const String& type, int x, int y, const double* timestamp, const int* deltaX, const int* deltaY, const double* scale)
+{
+    // Handled on the browser level.
 }
 
 } // namespace WebCore

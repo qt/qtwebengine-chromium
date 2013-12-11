@@ -50,6 +50,7 @@ static size_t sizeForImmutableStylePropertySetWithPropertyCount(unsigned count)
 
 PassRefPtr<ImmutableStylePropertySet> ImmutableStylePropertySet::create(const CSSProperty* properties, unsigned count, CSSParserMode cssParserMode)
 {
+    ASSERT(count <= MaxArraySize);
     void* slot = WTF::fastMalloc(sizeForImmutableStylePropertySetWithPropertyCount(count));
     return adoptRef(new (slot) ImmutableStylePropertySet(properties, count, cssParserMode));
 }
@@ -80,7 +81,7 @@ ImmutableStylePropertySet::ImmutableStylePropertySet(const CSSProperty* properti
 {
     StylePropertyMetadata* metadataArray = const_cast<StylePropertyMetadata*>(this->metadataArray());
     CSSValue** valueArray = const_cast<CSSValue**>(this->valueArray());
-    for (unsigned i = 0; i < length; ++i) {
+    for (unsigned i = 0; i < m_arraySize; ++i) {
         metadataArray[i] = properties[i].metadata();
         valueArray[i] = properties[i].value();
         valueArray[i]->ref();
@@ -138,7 +139,7 @@ String StylePropertySet::variableValue(const AtomicString& name) const
 {
     ASSERT(RuntimeEnabledFeatures::cssVariablesEnabled());
     size_t index = findVariableIndex(name);
-    if (index == notFound)
+    if (index == kNotFound)
         return String();
     return toCSSVariableValue(propertyAt(index).value())->value();
 }
@@ -284,14 +285,14 @@ bool MutableStylePropertySet::setVariableValue(const AtomicString& name, const S
         return removeVariable(name);
 
     size_t index = findVariableIndex(name);
-    if (index != notFound) {
+    if (index != kNotFound) {
         CSSValue* cssValue = m_propertyVector.at(index).value();
         if (toCSSVariableValue(cssValue)->value() == value)
             return false;
     }
 
     CSSProperty property(CSSPropertyVariable, CSSVariableValue::create(name, value), important);
-    if (index == notFound)
+    if (index == kNotFound)
         m_propertyVector.append(property);
     else
         m_propertyVector.at(index) = property;
@@ -342,7 +343,7 @@ void MutableStylePropertySet::parseDeclaration(const String& styleDeclaration, S
     parser.parseDeclaration(this, styleDeclaration, 0, contextStyleSheet);
 }
 
-void MutableStylePropertySet::addParsedProperties(const Vector<CSSProperty>& properties)
+void MutableStylePropertySet::addParsedProperties(const Vector<CSSProperty, 256>& properties)
 {
     m_propertyVector.reserveCapacity(m_propertyVector.size() + properties.size());
     for (unsigned i = 0; i < properties.size(); ++i)
@@ -482,8 +483,8 @@ int StylePropertySet::findPropertyIndex(CSSPropertyID propertyID) const
     uint16_t id = static_cast<uint16_t>(propertyID);
     for (int n = propertyCount() - 1 ; n >= 0; --n) {
         if (id == propertyAt(n).propertyMetadata().m_propertyID) {
-            // Only enabled properties should be part of the style.
-            ASSERT(RuntimeCSSEnabled::isCSSPropertyEnabled(propertyID));
+            // Only enabled or internal properties should be part of the style.
+            ASSERT(RuntimeCSSEnabled::isCSSPropertyEnabled(propertyID) || isInternalProperty(propertyID));
             return n;
         }
     }
@@ -498,7 +499,7 @@ size_t StylePropertySet::findVariableIndex(const AtomicString& name) const
         if (property.id() == CSSPropertyVariable && toCSSVariableValue(property.value())->name() == name)
             return i;
     }
-    return notFound;
+    return kNotFound;
 }
 
 CSSProperty* MutableStylePropertySet::findCSSPropertyWithID(CSSPropertyID propertyID)
@@ -549,7 +550,7 @@ bool MutableStylePropertySet::removeVariable(const AtomicString& name)
 {
     ASSERT(RuntimeEnabledFeatures::cssVariablesEnabled());
     size_t index = findVariableIndex(name);
-    if (index == notFound)
+    if (index == kNotFound)
         return false;
     m_propertyVector.remove(index);
     return true;

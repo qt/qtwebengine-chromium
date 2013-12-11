@@ -55,6 +55,28 @@ static const int kMinPacingDelayMs = 200;
 // VideoEngine API and remove the kTransmissionMaxBitrateMultiplier.
 static const int kTransmissionMaxBitrateMultiplier = 2;
 
+std::vector<uint32_t> AllocateStreamBitrates(
+    uint32_t total_bitrate,
+    const SimulcastStream* stream_configs,
+    size_t number_of_streams) {
+  if (number_of_streams == 0) {
+    std::vector<uint32_t> stream_bitrates(1, 0);
+    stream_bitrates[0] = total_bitrate;
+    return stream_bitrates;
+  }
+  std::vector<uint32_t> stream_bitrates(number_of_streams, 0);
+  uint32_t bitrate_remainder = total_bitrate;
+  for (size_t i = 0; i < stream_bitrates.size() && bitrate_remainder > 0; ++i) {
+    if (stream_configs[i].maxBitrate * 1000 > bitrate_remainder) {
+      stream_bitrates[i] = bitrate_remainder;
+    } else {
+      stream_bitrates[i] = stream_configs[i].maxBitrate * 1000;
+    }
+    bitrate_remainder -= stream_bitrates[i];
+  }
+  return stream_bitrates;
+}
+
 class QMVideoSettingsCallback : public VCMQMSettingsCallback {
  public:
   explicit QMVideoSettingsCallback(VideoProcessingModule* vpm);
@@ -401,7 +423,11 @@ int32_t ViEEncoder::SetEncoder(const webrtc::VideoCodec& video_codec) {
     return -1;
   }
   // Convert from kbps to bps.
-  default_rtp_rtcp_->SetTargetSendBitrate(video_codec.startBitrate * 1000);
+  std::vector<uint32_t> stream_bitrates = AllocateStreamBitrates(
+      video_codec.startBitrate * 1000,
+      video_codec.simulcastStream,
+      video_codec.numberOfSimulcastStreams);
+  default_rtp_rtcp_->SetTargetSendBitrate(stream_bitrates);
 
   uint16_t max_data_payload_length =
       default_rtp_rtcp_->MaxDataPayloadLength();
@@ -726,7 +752,7 @@ int ViEEncoder::CodecTargetBitrate(uint32_t* bitrate) const {
   return 0;
 }
 
-int32_t ViEEncoder::UpdateProtectionMethod() {
+int32_t ViEEncoder::UpdateProtectionMethod(bool enable_nack) {
   bool fec_enabled = false;
   uint8_t dummy_ptype_red = 0;
   uint8_t dummy_ptypeFEC = 0;
@@ -739,25 +765,23 @@ int32_t ViEEncoder::UpdateProtectionMethod() {
   if (error) {
     return -1;
   }
-
-  bool nack_enabled = (default_rtp_rtcp_->NACK() == kNackOff) ? false : true;
-  if (fec_enabled_ == fec_enabled && nack_enabled_ == nack_enabled) {
+  if (fec_enabled_ == fec_enabled && nack_enabled_ == enable_nack) {
     // No change needed, we're already in correct state.
     return 0;
   }
   fec_enabled_ = fec_enabled;
-  nack_enabled_ = nack_enabled;
+  nack_enabled_ = enable_nack;
 
   // Set Video Protection for VCM.
-  if (fec_enabled && nack_enabled) {
+  if (fec_enabled && nack_enabled_) {
     vcm_.SetVideoProtection(webrtc::kProtectionNackFEC, true);
   } else {
     vcm_.SetVideoProtection(webrtc::kProtectionFEC, fec_enabled_);
-    vcm_.SetVideoProtection(webrtc::kProtectionNack, nack_enabled_);
+    vcm_.SetVideoProtection(webrtc::kProtectionNackSender, nack_enabled_);
     vcm_.SetVideoProtection(webrtc::kProtectionNackFEC, false);
   }
 
-  if (fec_enabled || nack_enabled) {
+  if (fec_enabled_ || nack_enabled_) {
     WEBRTC_TRACE(webrtc::kTraceInfo, webrtc::kTraceVideo,
                  ViEId(engine_id_, channel_id_), "%s: FEC status ",
                  __FUNCTION__, fec_enabled);
@@ -1015,10 +1039,36 @@ void ViEEncoder::OnNetworkChanged(const uint32_t bitrate_bps,
   if (vcm_.SendCodec(&send_codec) != 0) {
     return;
   }
-  int pad_up_to_bitrate = std::min(bitrate_kbps,
-                                   static_cast<int>(send_codec.maxBitrate));
-  paced_sender_->UpdateBitrate(bitrate_kbps, pad_up_to_bitrate);
-  default_rtp_rtcp_->SetTargetSendBitrate(bitrate_bps);
+  SimulcastStream* stream_configs = send_codec.simulcastStream;
+  // Allocate the bandwidth between the streams.
+  std::vector<uint32_t> stream_bitrates = AllocateStreamBitrates(
+      bitrate_bps,
+      stream_configs,
+      send_codec.numberOfSimulcastStreams);
+  // Find the max amount of padding we can allow ourselves to send at this
+  // point, based on which streams are currently active and what our current
+  // available bandwidth is.
+  int max_padding_bitrate_kbps = 0;
+  int i = send_codec.numberOfSimulcastStreams - 1;
+  for (std::vector<uint32_t>::reverse_iterator it = stream_bitrates.rbegin();
+       it != stream_bitrates.rend(); ++it) {
+    if (*it > 0) {
+      max_padding_bitrate_kbps = std::min((*it + 500) / 1000,
+                                          stream_configs[i].minBitrate);
+      break;
+    }
+    --i;
+  }
+  int pad_up_to_bitrate_kbps =
+      stream_configs[send_codec.numberOfSimulcastStreams - 1].minBitrate;
+  for (int i = 0; i < send_codec.numberOfSimulcastStreams - 1; ++i) {
+    pad_up_to_bitrate_kbps += stream_configs[i].targetBitrate;
+  }
+  pad_up_to_bitrate_kbps = std::min(bitrate_kbps, pad_up_to_bitrate_kbps);
+  paced_sender_->UpdateBitrate(bitrate_kbps,
+                               max_padding_bitrate_kbps,
+                               pad_up_to_bitrate_kbps);
+  default_rtp_rtcp_->SetTargetSendBitrate(stream_bitrates);
 }
 
 PacedSender* ViEEncoder::GetPacedSender() {

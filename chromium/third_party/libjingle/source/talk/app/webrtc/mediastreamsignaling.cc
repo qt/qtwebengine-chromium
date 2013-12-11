@@ -33,8 +33,11 @@
 #include "talk/app/webrtc/mediastreamproxy.h"
 #include "talk/app/webrtc/mediaconstraintsinterface.h"
 #include "talk/app/webrtc/mediastreamtrackproxy.h"
+#include "talk/app/webrtc/remotevideocapturer.h"
+#include "talk/app/webrtc/videosource.h"
 #include "talk/app/webrtc/videotrack.h"
 #include "talk/base/bytebuffer.h"
+#include "talk/media/sctp/sctpdataengine.h"
 
 static const char kDefaultStreamLabel[] = "default";
 static const char kDefaultAudioTrackLabel[] = "defaulta0";
@@ -132,8 +135,10 @@ static bool EvaluateNeedForBundle(const cricket::MediaSessionOptions& options) {
 // Factory class for creating remote MediaStreams and MediaStreamTracks.
 class RemoteMediaStreamFactory {
  public:
-  explicit RemoteMediaStreamFactory(talk_base::Thread* signaling_thread)
-      : signaling_thread_(signaling_thread) {
+  explicit RemoteMediaStreamFactory(talk_base::Thread* signaling_thread,
+                                    cricket::ChannelManager* channel_manager)
+      : signaling_thread_(signaling_thread),
+        channel_manager_(channel_manager) {
   }
 
   talk_base::scoped_refptr<MediaStreamInterface> CreateMediaStream(
@@ -144,21 +149,24 @@ class RemoteMediaStreamFactory {
 
   AudioTrackInterface* AddAudioTrack(webrtc::MediaStreamInterface* stream,
                                      const std::string& track_id) {
-    return AddTrack<AudioTrackInterface, AudioTrack, AudioTrackProxy>(stream,
-                                                                      track_id);
+    return AddTrack<AudioTrackInterface, AudioTrack, AudioTrackProxy>(
+        stream, track_id, static_cast<AudioSourceInterface*>(NULL));
   }
 
   VideoTrackInterface* AddVideoTrack(webrtc::MediaStreamInterface* stream,
                                      const std::string& track_id) {
-    return AddTrack<VideoTrackInterface, VideoTrack, VideoTrackProxy>(stream,
-                                                                      track_id);
+    return AddTrack<VideoTrackInterface, VideoTrack, VideoTrackProxy>(
+        stream, track_id, VideoSource::Create(channel_manager_,
+                                              new RemoteVideoCapturer(),
+                                              NULL).get());
   }
 
  private:
-  template <typename TI, typename T, typename TP>
-  TI* AddTrack(MediaStreamInterface* stream, const std::string& track_id) {
+  template <typename TI, typename T, typename TP, typename S>
+  TI* AddTrack(MediaStreamInterface* stream, const std::string& track_id,
+               S* source) {
     talk_base::scoped_refptr<TI> track(
-        TP::Create(signaling_thread_, T::Create(track_id, NULL)));
+        TP::Create(signaling_thread_, T::Create(track_id, source)));
     track->set_state(webrtc::MediaStreamTrackInterface::kLive);
     if (stream->AddTrack(track)) {
       return track;
@@ -167,17 +175,20 @@ class RemoteMediaStreamFactory {
   }
 
   talk_base::Thread* signaling_thread_;
+  cricket::ChannelManager* channel_manager_;
 };
 
 MediaStreamSignaling::MediaStreamSignaling(
     talk_base::Thread* signaling_thread,
-    MediaStreamSignalingObserver* stream_observer)
+    MediaStreamSignalingObserver* stream_observer,
+    cricket::ChannelManager* channel_manager)
     : signaling_thread_(signaling_thread),
       data_channel_factory_(NULL),
       stream_observer_(stream_observer),
       local_streams_(StreamCollection::Create()),
       remote_streams_(StreamCollection::Create()),
-      remote_stream_factory_(new RemoteMediaStreamFactory(signaling_thread)),
+      remote_stream_factory_(new RemoteMediaStreamFactory(signaling_thread,
+                                                          channel_manager)),
       last_allocated_sctp_id_(0) {
   options_.has_video = false;
   options_.has_audio = false;
@@ -223,6 +234,10 @@ bool MediaStreamSignaling::AllocateSctpId(int* id) {
 
   *id = last_allocated_sctp_id_;
   return true;
+}
+
+bool MediaStreamSignaling::HasDataChannels() const {
+  return !data_channels_.empty();
 }
 
 bool MediaStreamSignaling::AddDataChannel(DataChannel* data_channel) {
@@ -599,15 +614,19 @@ void MediaStreamSignaling::OnRemoteTrackRemoved(
   if (media_type == cricket::MEDIA_TYPE_AUDIO) {
     talk_base::scoped_refptr<AudioTrackInterface> audio_track =
         stream->FindAudioTrack(track_id);
-    audio_track->set_state(webrtc::MediaStreamTrackInterface::kEnded);
-    stream->RemoveTrack(audio_track);
-    stream_observer_->OnRemoveRemoteAudioTrack(stream, audio_track);
+    if (audio_track) {
+      audio_track->set_state(webrtc::MediaStreamTrackInterface::kEnded);
+      stream->RemoveTrack(audio_track);
+      stream_observer_->OnRemoveRemoteAudioTrack(stream, audio_track);
+    }
   } else if (media_type == cricket::MEDIA_TYPE_VIDEO) {
     talk_base::scoped_refptr<VideoTrackInterface> video_track =
         stream->FindVideoTrack(track_id);
-    video_track->set_state(webrtc::MediaStreamTrackInterface::kEnded);
-    stream->RemoveTrack(video_track);
-    stream_observer_->OnRemoveRemoteVideoTrack(stream, video_track);
+    if (video_track) {
+      video_track->set_state(webrtc::MediaStreamTrackInterface::kEnded);
+      stream->RemoveTrack(video_track);
+      stream_observer_->OnRemoveRemoteVideoTrack(stream, video_track);
+    }
   } else {
     ASSERT(false && "Invalid media type");
   }
@@ -621,11 +640,19 @@ void MediaStreamSignaling::RejectRemoteTracks(cricket::MediaType media_type) {
     MediaStreamInterface* stream = remote_streams_->find(info.stream_label);
     if (media_type == cricket::MEDIA_TYPE_AUDIO) {
       AudioTrackInterface* track = stream->FindAudioTrack(info.track_id);
-      track->set_state(webrtc::MediaStreamTrackInterface::kEnded);
+      // There's no guarantee the track is still available, e.g. the track may
+      // have been removed from the stream by javascript.
+      if (track) {
+        track->set_state(webrtc::MediaStreamTrackInterface::kEnded);
+      }
     }
     if (media_type == cricket::MEDIA_TYPE_VIDEO) {
       VideoTrackInterface* track = stream->FindVideoTrack(info.track_id);
-      track->set_state(webrtc::MediaStreamTrackInterface::kEnded);
+      // There's no guarantee the track is still available, e.g. the track may
+      // have been removed from the stream by javascript.
+      if (track) {
+        track->set_state(webrtc::MediaStreamTrackInterface::kEnded);
+      }
     }
   }
 }

@@ -19,11 +19,12 @@
 #include "base/observer_list.h"
 #include "content/common/gpu/gpu_memory_allocation.h"
 #include "content/common/gpu/gpu_memory_allocation.h"
+#include "content/common/gpu/surface_capturer.h"
 #include "gpu/command_buffer/common/command_buffer.h"
 #include "gpu/command_buffer/common/command_buffer_shared.h"
 #include "ipc/ipc_listener.h"
 #include "media/video/video_decode_accelerator.h"
-#include "ui/base/latency_info.h"
+#include "ui/events/latency_info.h"
 
 struct GPUCommandBufferConsoleMessage;
 
@@ -69,6 +70,11 @@ class CommandBufferProxyImpl
   scoped_ptr<media::VideoDecodeAccelerator> CreateVideoDecoder(
       media::VideoCodecProfile profile,
       media::VideoDecodeAccelerator::Client* client);
+
+  // Send an IPC message to create a SurfaceCapturer.  Returns NULL on failure
+  // to create the SurfaceCapturer.
+  scoped_ptr<SurfaceCapturer> CreateSurfaceCapturer(
+      SurfaceCapturer::Client* client);
 
   // IPC::Listener implementation:
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;

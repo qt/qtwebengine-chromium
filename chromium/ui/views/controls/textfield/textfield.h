@@ -15,7 +15,7 @@
 #include "build/build_config.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/ime/text_input_type.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/font_list.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/text_constants.h"
@@ -27,11 +27,11 @@
 #endif
 
 namespace gfx {
+class Range;
 class ImageSkia;
 }
 
 namespace ui {
-class Range;
 class TextInputClient;
 }  // namespace ui
 
@@ -172,9 +172,6 @@ class VIEWS_EXPORT Textfield : public View {
   // Sets the text to display when empty.
   void set_placeholder_text(const string16& text) {
     placeholder_text_ = text;
-#if !defined(OS_LINUX)
-    NOTIMPLEMENTED();
-#endif
   }
   const string16& placeholder_text() const {
     return placeholder_text_;
@@ -209,11 +206,11 @@ class VIEWS_EXPORT Textfield : public View {
   // Gets the selected range. This is views-implementation only and
   // has to be called after the wrapper is created.
   // TODO(msw): Return a const reference when NativeTextfieldWin is gone.
-  ui::Range GetSelectedRange() const;
+  gfx::Range GetSelectedRange() const;
 
   // Selects the text given by |range|. This is views-implementation only and
   // has to be called after the wrapper is created.
-  void SelectRange(const ui::Range& range);
+  void SelectRange(const gfx::Range& range);
 
   // Gets the selection model. This is views-implementation only and
   // has to be called after the wrapper is created.
@@ -232,14 +229,14 @@ class VIEWS_EXPORT Textfield : public View {
   // Empty and invalid ranges are ignored. This is views-implementation only and
   // has to be called after the wrapper is created.
   void SetColor(SkColor value);
-  void ApplyColor(SkColor value, const ui::Range& range);
+  void ApplyColor(SkColor value, const gfx::Range& range);
 
   // Set various text styles over the entire text or a logical character range.
   // The respective |style| is applied if |value| is true, or removed if false.
   // Empty and invalid ranges are ignored. This is views-implementation only and
   // has to be called after the wrapper is created.
   void SetStyle(gfx::TextStyle style, bool value);
-  void ApplyStyle(gfx::TextStyle style, bool value, const ui::Range& range);
+  void ApplyStyle(gfx::TextStyle style, bool value, const gfx::Range& range);
 
   // Clears Edit history.
   void ClearEditHistory();
@@ -276,6 +273,7 @@ class VIEWS_EXPORT Textfield : public View {
   virtual void OnBlur() OVERRIDE;
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
   virtual ui::TextInputClient* GetTextInputClient() OVERRIDE;
+  virtual gfx::Point GetKeyboardContextMenuLocation() OVERRIDE;
 
  protected:
   virtual void ViewHierarchyChanged(

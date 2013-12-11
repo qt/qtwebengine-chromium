@@ -171,7 +171,11 @@ bool BaseTestServer::GetAddressList(AddressList* address_list) const {
   scoped_ptr<HostResolver> resolver(HostResolver::CreateDefaultResolver(NULL));
   HostResolver::RequestInfo info(host_port_pair_);
   TestCompletionCallback callback;
-  int rv = resolver->Resolve(info, address_list, callback.callback(), NULL,
+  int rv = resolver->Resolve(info,
+                             DEFAULT_PRIORITY,
+                             address_list,
+                             callback.callback(),
+                             NULL,
                              BoundNetLog());
   if (rv == ERR_IO_PENDING)
     rv = callback.WaitForResult();

@@ -105,6 +105,21 @@ void FileStream::Context::CloseSync() {
   }
 }
 
+void FileStream::Context::CloseAsync(const CompletionCallback& callback) {
+  DCHECK(!async_in_progress_);
+  const bool posted = base::PostTaskAndReplyWithResult(
+      task_runner_.get(),
+      FROM_HERE,
+      base::Bind(&Context::CloseFileImpl, base::Unretained(this)),
+      base::Bind(&Context::ProcessAsyncResult,
+                 base::Unretained(this),
+                 IntToInt64(callback),
+                 FILE_ERROR_SOURCE_CLOSE));
+  DCHECK(posted);
+
+  async_in_progress_ = true;
+}
+
 void FileStream::Context::SeekAsync(Whence whence,
                                     int64 offset,
                                     const Int64CompletionCallback& callback) {
@@ -158,11 +173,6 @@ void FileStream::Context::RecordError(const IOResult& result,
     // |result| is not an error.
     return;
   }
-
-  // The following check is against incorrect use or bug. File descriptor
-  // shouldn't ever be closed outside of FileStream while it still tries to do
-  // something with it.
-  DCHECK_NE(result.result, ERR_INVALID_HANDLE);
 
   if (!orphaned_) {
     bound_net_log_.AddEvent(

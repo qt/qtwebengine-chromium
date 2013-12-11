@@ -44,7 +44,7 @@ public:
     virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName&);
 
 protected:
-    SVGFilterPrimitiveStandardAttributes(const QualifiedName&, Document*);
+    SVGFilterPrimitiveStandardAttributes(const QualifiedName&, Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
@@ -63,8 +63,8 @@ private:
     virtual bool isFilterEffect() const { return true; }
 
     virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
-    virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE;
-    virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const OVERRIDE { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
+    virtual bool childShouldCreateRenderer(const Node& child) const OVERRIDE { return false; }
 
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGFilterPrimitiveStandardAttributes)
         DECLARE_ANIMATED_LENGTH(X, x)

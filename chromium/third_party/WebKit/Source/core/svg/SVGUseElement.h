@@ -22,7 +22,7 @@
 #define SVGUseElement_h
 
 #include "SVGNames.h"
-#include "core/loader/cache/DocumentResource.h"
+#include "core/fetch/DocumentResource.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
@@ -39,7 +39,7 @@ class SVGUseElement FINAL : public SVGGraphicsElement,
                             public SVGURIReference,
                             public DocumentResourceClient {
 public:
-    static PassRefPtr<SVGUseElement> create(const QualifiedName&, Document*, bool wasInsertedByParser);
+    static PassRefPtr<SVGUseElement> create(const QualifiedName&, Document&, bool wasInsertedByParser);
     virtual ~SVGUseElement();
 
     SVGElementInstance* instanceRoot();
@@ -51,7 +51,7 @@ public:
     RenderObject* rendererClipChild() const;
 
 private:
-    SVGUseElement(const QualifiedName&, Document*, bool wasInsertedByParser);
+    SVGUseElement(const QualifiedName&, Document&, bool wasInsertedByParser);
 
     virtual bool isValid() const { return SVGTests::isValid(); }
     virtual bool supportsFocus() const OVERRIDE { return hasFocusEventListeners(); }
@@ -64,7 +64,8 @@ private:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual void svgAttributeChanged(const QualifiedName&);
 
-    virtual void willRecalcStyle(StyleChange) OVERRIDE;
+    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
+    virtual void willRecalcStyle(StyleRecalcChange) OVERRIDE;
 
     virtual RenderObject* createRenderer(RenderStyle*);
     virtual void toClipPath(Path&);

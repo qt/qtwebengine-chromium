@@ -93,6 +93,27 @@ class TestValidatorFactory : public CopyOrMoveFileValidatorFactory {
   };
 };
 
+// Records CopyProgressCallback invocations.
+struct ProgressRecord {
+  FileSystemOperation::CopyProgressType type;
+  FileSystemURL source_url;
+  FileSystemURL dest_url;
+  int64 size;
+};
+
+void RecordProgressCallback(std::vector<ProgressRecord>* records,
+                            FileSystemOperation::CopyProgressType type,
+                            const FileSystemURL& source_url,
+                            const FileSystemURL& dest_url,
+                            int64 size) {
+  ProgressRecord record;
+  record.type = type;
+  record.source_url = source_url;
+  record.dest_url = dest_url;
+  record.size = size;
+  records->push_back(record);
+}
+
 }  // namespace
 
 class CopyOrMoveOperationTestHelper {
@@ -110,7 +131,7 @@ class CopyOrMoveOperationTestHelper {
     quota_manager_proxy_->SimulateQuotaManagerDestroyed();
     quota_manager_ = NULL;
     quota_manager_proxy_ = NULL;
-    base::MessageLoop::current()->RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
   }
 
   void SetUp() {
@@ -156,7 +177,7 @@ class CopyOrMoveOperationTestHelper {
     backend->OpenFileSystem(origin_, dest_type_,
                             OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
                             base::Bind(&ExpectOk));
-    base::MessageLoop::current()->RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
 
     // Grant relatively big quota initially.
     quota_manager_->SetQuota(origin_,
@@ -192,6 +213,14 @@ class CopyOrMoveOperationTestHelper {
   base::PlatformFileError Copy(const FileSystemURL& src,
                                const FileSystemURL& dest) {
     return AsyncFileTestHelper::Copy(file_system_context_.get(), src, dest);
+  }
+
+  base::PlatformFileError CopyWithProgress(
+      const FileSystemURL& src,
+      const FileSystemURL& dest,
+      const AsyncFileTestHelper::CopyProgressCallback& progress_callback) {
+    return AsyncFileTestHelper::CopyWithProgress(
+        file_system_context_.get(), src, dest, progress_callback);
   }
 
   base::PlatformFileError Move(const FileSystemURL& src,
@@ -453,7 +482,10 @@ TEST(LocalFileSystemCopyOrMoveOperationTest, CopyDirectory) {
   int64 src_increase = helper.GetSourceUsage() - src_initial_usage;
 
   // Copy it.
-  ASSERT_EQ(base::PLATFORM_FILE_OK, helper.Copy(src, dest));
+  ASSERT_EQ(base::PLATFORM_FILE_OK,
+            helper.CopyWithProgress(
+                src, dest,
+                AsyncFileTestHelper::CopyProgressCallback()));
 
   // Verify.
   ASSERT_TRUE(helper.DirectoryExists(src));
@@ -557,6 +589,77 @@ TEST(LocalFileSystemCopyOrMoveOperationTest, CopySingleFileNoValidator) {
   // the factory returns a security error, and the copy operation must
   // respect that.
   ASSERT_EQ(base::PLATFORM_FILE_ERROR_SECURITY, helper.Copy(src, dest));
+}
+
+TEST(LocalFileSystemCopyOrMoveOperationTest, ProgressCallback) {
+  CopyOrMoveOperationTestHelper helper(GURL("http://foo"),
+                                       kFileSystemTypeTemporary,
+                                       kFileSystemTypePersistent);
+  helper.SetUp();
+
+  FileSystemURL src = helper.SourceURL("a");
+  FileSystemURL dest = helper.DestURL("b");
+
+  // Set up a source directory.
+  ASSERT_EQ(base::PLATFORM_FILE_OK, helper.CreateDirectory(src));
+  ASSERT_EQ(base::PLATFORM_FILE_OK,
+            helper.SetUpTestCaseFiles(src,
+                                      test::kRegularTestCases,
+                                      test::kRegularTestCaseSize));
+
+  std::vector<ProgressRecord> records;
+  ASSERT_EQ(base::PLATFORM_FILE_OK,
+            helper.CopyWithProgress(src, dest,
+                                    base::Bind(&RecordProgressCallback,
+                                               base::Unretained(&records))));
+
+  // Verify progress callback.
+  for (size_t i = 0; i < test::kRegularTestCaseSize; ++i) {
+    const test::TestCaseRecord& test_case = test::kRegularTestCases[i];
+
+    FileSystemURL src_url = helper.SourceURL(
+        std::string("a/") + base::FilePath(test_case.path).AsUTF8Unsafe());
+    FileSystemURL dest_url = helper.DestURL(
+        std::string("b/") + base::FilePath(test_case.path).AsUTF8Unsafe());
+
+    // Find the first and last progress record.
+    size_t begin_index = records.size();
+    size_t end_index = records.size();
+    for (size_t j = 0; j < records.size(); ++j) {
+      if (records[j].source_url == src_url) {
+        if (begin_index == records.size())
+          begin_index = j;
+        end_index = j;
+      }
+    }
+
+    // The record should be found.
+    ASSERT_NE(begin_index, records.size());
+    ASSERT_NE(end_index, records.size());
+    ASSERT_NE(begin_index, end_index);
+
+    EXPECT_EQ(FileSystemOperation::BEGIN_COPY_ENTRY,
+              records[begin_index].type);
+    EXPECT_FALSE(records[begin_index].dest_url.is_valid());
+    EXPECT_EQ(FileSystemOperation::END_COPY_ENTRY, records[end_index].type);
+    EXPECT_EQ(dest_url, records[end_index].dest_url);
+
+    if (test_case.is_directory) {
+      // For directory copy, the progress shouldn't be interlaced.
+      EXPECT_EQ(begin_index + 1, end_index);
+    } else {
+      // PROGRESS event's size should be assending order.
+      int64 current_size = 0;
+      for (size_t j = begin_index + 1; j < end_index; ++j) {
+        if (records[j].source_url == src_url) {
+          EXPECT_EQ(FileSystemOperation::PROGRESS, records[j].type);
+          EXPECT_FALSE(records[j].dest_url.is_valid());
+          EXPECT_GE(records[j].size, current_size);
+          current_size = records[j].size;
+        }
+      }
+    }
+  }
 }
 
 }  // namespace fileapi

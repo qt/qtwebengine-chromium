@@ -698,7 +698,7 @@ WebInspector.TabbedPaneTab.prototype = {
         this._iconTooltip = iconTooltip;
         if (this._iconElement)
             this._iconElement.remove();
-        if (this._iconClass)
+        if (this._iconClass && this._tabElement)
             this._iconElement = this._createIconElement(this._tabElement, this._titleElement);
         delete this._measuredWidth;
     },
@@ -819,8 +819,12 @@ WebInspector.TabbedPaneTab.prototype = {
      */
     _tabClicked: function(event)
     {
-        if (this._closeable && (event.button === 1 || event.target.hasStyleClass("close-button-gray")))
-            this._closeTabs([this.id]);
+        var middleButton = event.button === 1;
+        var shouldClose = this._closeable && (middleButton || event.target.hasStyleClass("close-button-gray"));
+        if (!shouldClose)
+            return;
+        this._closeTabs([this.id]);
+        event.consume(true);
     },
 
     /**

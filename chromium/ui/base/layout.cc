@@ -23,7 +23,7 @@
 
 #if defined(OS_WIN)
 #include "base/win/metro.h"
-#include "ui/base/win/dpi.h"
+#include "ui/gfx/win/dpi.h"
 #include <Windows.h>
 #endif  // defined(OS_WIN)
 
@@ -66,7 +66,8 @@ bool UseTouchOptimizedUI() {
 }
 #endif  // defined(OS_WIN)
 
-const float kScaleFactorScales[] = {1.0f, 1.0f, 1.33f, 1.4f, 1.5f, 1.8f, 2.0f};
+const float kScaleFactorScales[] = {1.0f, 1.0f, 1.25f, 1.33f, 1.4f, 1.5f, 1.8f,
+                                    2.0f};
 COMPILE_ASSERT(NUM_SCALE_FACTORS == arraysize(kScaleFactorScales),
                kScaleFactorScales_incorrect_size);
 const size_t kScaleFactorScalesLength = arraysize(kScaleFactorScales);
@@ -123,7 +124,7 @@ std::vector<ScaleFactor>& GetSupportedScaleFactorsInternal() {
     // Have high-DPI resources for 140% and 180% scaling on Windows based on
     // default scaling for Metro mode.  Round to nearest supported scale in
     // all cases.
-    if (ui::IsInHighDPIMode()) {
+    if (gfx::IsInHighDPIMode()) {
       supported_scale_factors->push_back(SCALE_FACTOR_140P);
       supported_scale_factors->push_back(SCALE_FACTOR_180P);
     }

@@ -48,7 +48,6 @@
 #include "core/dom/Node.h"
 #include "core/dom/NodeList.h"
 #include "core/editing/markup.h"
-#include "core/page/Frame.h"
 #include "core/platform/Widget.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderWidget.h"
@@ -107,7 +106,7 @@ bool WebNode::setNodeValue(const WebString& value)
 
 WebDocument WebNode::document() const
 {
-    return WebDocument(m_private->document());
+    return WebDocument(&m_private->document());
 }
 
 WebNode WebNode::firstChild() const
@@ -159,7 +158,7 @@ bool WebNode::isFocusable() const
 {
     if (!m_private->isElementNode())
         return false;
-    m_private->document()->updateLayoutIgnorePendingStylesheets();
+    m_private->document().updateLayoutIgnorePendingStylesheets();
     return toElement(m_private.get())->isFocusable();
 }
 
@@ -229,7 +228,7 @@ bool WebNode::remove()
 
 bool WebNode::hasNonEmptyBoundingBox() const
 {
-    m_private->document()->updateLayoutIgnorePendingStylesheets();
+    m_private->document().updateLayoutIgnorePendingStylesheets();
     return m_private->hasNonEmptyBoundingBox();
 }
 
@@ -243,7 +242,7 @@ WebPluginContainer* WebNode::pluginContainer() const
         if (object && object->isWidget()) {
             Widget* widget = WebCore::toRenderWidget(object)->widget();
             if (widget && widget->isPluginContainer())
-                return static_cast<WebPluginContainerImpl*>(widget);
+                return toPluginContainerImpl(widget);
         }
     }
     return 0;

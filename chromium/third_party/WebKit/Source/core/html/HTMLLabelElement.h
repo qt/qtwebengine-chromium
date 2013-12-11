@@ -31,7 +31,7 @@ namespace WebCore {
 
 class HTMLLabelElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLLabelElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<HTMLLabelElement> create(const QualifiedName&, Document&);
 
     LabelableElement* control();
     HTMLFormElement* form() const;
@@ -39,10 +39,11 @@ public:
     virtual bool willRespondToMouseClickEvents() OVERRIDE;
 
 private:
-    HTMLLabelElement(const QualifiedName&, Document*);
+    HTMLLabelElement(const QualifiedName&, Document&);
+    bool isInInteractiveContent(Node*) const;
 
     virtual bool rendererIsFocusable() const OVERRIDE;
-
+    virtual bool isInteractiveContent() const OVERRIDE;
     virtual void accessKeyAction(bool sendMouseEvents);
 
     // Overridden to update the hover/active state of the corresponding control.

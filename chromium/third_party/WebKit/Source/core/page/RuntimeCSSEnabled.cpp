@@ -56,13 +56,16 @@ static void setPropertySwitchesFromRuntimeFeatures()
     setCSSPropertiesEnabled(regionProperites, WTF_ARRAY_LENGTH(regionProperites), RuntimeEnabledFeatures::cssRegionsEnabled());
     CSSPropertyID exclusionProperties[] = {
         CSSPropertyWebkitWrapFlow,
+        CSSPropertyWebkitWrapThrough,
+    };
+    setCSSPropertiesEnabled(exclusionProperties, WTF_ARRAY_LENGTH(exclusionProperties), RuntimeEnabledFeatures::cssExclusionsEnabled());
+    CSSPropertyID shapeProperties[] = {
         CSSPropertyWebkitShapeMargin,
         CSSPropertyWebkitShapePadding,
-        CSSPropertyWebkitWrapThrough,
         CSSPropertyWebkitShapeInside,
         CSSPropertyWebkitShapeOutside,
     };
-    setCSSPropertiesEnabled(exclusionProperties, WTF_ARRAY_LENGTH(exclusionProperties), RuntimeEnabledFeatures::cssExclusionsEnabled());
+    setCSSPropertiesEnabled(shapeProperties, WTF_ARRAY_LENGTH(shapeProperties), RuntimeEnabledFeatures::cssShapesEnabled());
     CSSPropertyID css3TextDecorationProperties[] = {
         CSSPropertyTextDecorationColor,
         CSSPropertyTextDecorationLine,
@@ -85,14 +88,36 @@ static void setPropertySwitchesFromRuntimeFeatures()
         CSSPropertyGridColumn,
         CSSPropertyGridRow,
         CSSPropertyGridArea,
-        CSSPropertyGridAutoFlow
+        CSSPropertyGridAutoFlow,
+        CSSPropertyGridTemplate
     };
     setCSSPropertiesEnabled(cssGridLayoutProperties, WTF_ARRAY_LENGTH(cssGridLayoutProperties), RuntimeEnabledFeatures::cssGridLayoutEnabled());
+    CSSPropertyID cssObjectFitPositionProperties[] = {
+        CSSPropertyObjectFit,
+        CSSPropertyObjectPosition
+    };
+    setCSSPropertiesEnabled(cssObjectFitPositionProperties, WTF_ARRAY_LENGTH(cssObjectFitPositionProperties), RuntimeEnabledFeatures::objectFitPositionEnabled());
+
+    CSSPropertyID animationProperties[] = {
+        CSSPropertyAnimation,
+        CSSPropertyAnimationName,
+        CSSPropertyAnimationDuration,
+        CSSPropertyAnimationTimingFunction,
+        CSSPropertyAnimationDelay,
+        CSSPropertyAnimationIterationCount,
+        CSSPropertyAnimationDirection,
+        CSSPropertyAnimationFillMode,
+        CSSPropertyAnimationPlayState
+    };
+    setCSSPropertiesEnabled(animationProperties, WTF_ARRAY_LENGTH(animationProperties), RuntimeEnabledFeatures::cssAnimationUnprefixedEnabled());
 
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyBackgroundBlendMode, RuntimeEnabledFeatures::cssCompositingEnabled());
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyMixBlendMode, RuntimeEnabledFeatures::cssCompositingEnabled());
+    RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyIsolation, RuntimeEnabledFeatures::cssCompositingEnabled());
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyTouchAction, RuntimeEnabledFeatures::cssTouchActionEnabled());
+    RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyPaintOrder, RuntimeEnabledFeatures::svgPaintOrderEnabled());
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyVariable, RuntimeEnabledFeatures::cssVariablesEnabled());
+    RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyMaskSourceType, RuntimeEnabledFeatures::cssMaskSourceTypeEnabled());
 }
 
 static BoolVector& propertySwitches()
@@ -116,6 +141,11 @@ size_t indexForProperty(CSSPropertyID propertyId)
 
 bool RuntimeCSSEnabled::isCSSPropertyEnabled(CSSPropertyID propertyId)
 {
+    // Internal properties shouldn't be exposed to the web
+    // so they are considered to be always disabled.
+    if (isInternalProperty(propertyId))
+        return false;
+
     return propertySwitches()[indexForProperty(propertyId)];
 }
 

@@ -47,6 +47,7 @@ class CustomElementDefinition;
 class Dictionary;
 class Document;
 class Element;
+class ExceptionState;
 class QualifiedName;
 class ScriptState;
 class V8PerContextData;
@@ -66,10 +67,9 @@ public:
     // (returns false), the calls must stop.
 
     bool isFeatureAllowed() const;
-    bool validateOptions();
-    bool findTagName(const AtomicString& customElementType, QualifiedName& tagName);
+    bool validateOptions(const AtomicString& type, QualifiedName& tagName, ExceptionState&);
     PassRefPtr<CustomElementLifecycleCallbacks> createCallbacks();
-    bool createConstructor(Document*, CustomElementDefinition*);
+    bool createConstructor(Document*, CustomElementDefinition*, ExceptionState&);
     bool didRegisterDefinition(CustomElementDefinition*) const;
 
     // This method collects a return value for the bindings. It is
@@ -78,16 +78,14 @@ public:
     ScriptValue bindingsReturnValue() const;
 
 private:
-    static WrapperTypeInfo* findWrapperType(v8::Handle<v8::Value> chain);
-    bool hasValidPrototypeChainFor(V8PerContextData*, WrapperTypeInfo*) const;
-    bool prototypeIsValid() const;
+    bool hasValidPrototypeChainFor(WrapperTypeInfo*) const;
+    bool prototypeIsValid(const AtomicString& type, ExceptionState&) const;
     v8::Handle<v8::Function> retrieveCallback(v8::Isolate*, const char* name);
 
     v8::Handle<v8::Context> m_context;
     const Dictionary* m_options;
     v8::Handle<v8::Object> m_prototype;
     WrapperTypeInfo* m_wrapperType;
-    AtomicString m_namespaceURI;
     v8::Handle<v8::Function> m_constructor;
     RefPtr<V8CustomElementLifecycleCallbacks> m_callbacks;
 };

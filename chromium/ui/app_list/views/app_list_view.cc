@@ -4,6 +4,7 @@
 
 #include "ui/app_list/views/app_list_view.h"
 
+#include "base/callback.h"
 #include "base/command_line.h"
 #include "base/strings/string_util.h"
 #include "ui/app_list/app_list_constants.h"
@@ -37,6 +38,8 @@ namespace app_list {
 
 namespace {
 
+base::Closure g_next_paint_callback;
+
 // The distance between the arrow tip and edge of the anchor view.
 const int kArrowOffset = 10;
 
@@ -51,29 +54,136 @@ AppListView::AppListView(AppListViewDelegate* delegate)
       app_list_main_view_(NULL),
       signin_view_(NULL) {
   if (delegate_)
-    delegate_->SetModel(model_.get());
-  if (GetSigninDelegate())
-    GetSigninDelegate()->AddObserver(this);
+    delegate_->InitModel(model_.get());
+  model_->AddObserver(this);
 }
 
 AppListView::~AppListView() {
-  if (GetSigninDelegate())
-    GetSigninDelegate()->RemoveObserver(this);
-
+  model_->RemoveObserver(this);
   // Models are going away, ensure their references are cleared.
   RemoveAllChildViews(true);
 }
 
-void AppListView::InitAsBubble(gfx::NativeView parent,
-                               PaginationModel* pagination_model,
-                               views::View* anchor,
-                               const gfx::Point& anchor_point,
-                               views::BubbleBorder::Arrow arrow,
-                               bool border_accepts_events) {
+void AppListView::InitAsBubbleAttachedToAnchor(
+    gfx::NativeView parent,
+    PaginationModel* pagination_model,
+    views::View* anchor,
+    const gfx::Vector2d& anchor_offset,
+    views::BubbleBorder::Arrow arrow,
+    bool border_accepts_events) {
+  set_anchor_view(anchor);
+  InitAsBubbleInternal(
+      parent, pagination_model, arrow, border_accepts_events, anchor_offset);
+}
+
+void AppListView::InitAsBubbleAtFixedLocation(
+    gfx::NativeView parent,
+    PaginationModel* pagination_model,
+    const gfx::Point& anchor_point_in_screen,
+    views::BubbleBorder::Arrow arrow,
+    bool border_accepts_events) {
+  set_anchor_view(NULL);
+  set_anchor_rect(gfx::Rect(anchor_point_in_screen, gfx::Size()));
+  InitAsBubbleInternal(
+      parent, pagination_model, arrow, border_accepts_events, gfx::Vector2d());
+}
+
+void AppListView::SetBubbleArrow(views::BubbleBorder::Arrow arrow) {
+  GetBubbleFrameView()->bubble_border()->set_arrow(arrow);
+  SizeToContents();  // Recalcuates with new border.
+  GetBubbleFrameView()->SchedulePaint();
+}
+
+void AppListView::SetAnchorPoint(const gfx::Point& anchor_point) {
+  set_anchor_rect(gfx::Rect(anchor_point, gfx::Size()));
+  SizeToContents();  // Repositions view relative to the anchor.
+}
+
+void AppListView::SetDragAndDropHostOfCurrentAppList(
+    ApplicationDragAndDropHost* drag_and_drop_host) {
+  app_list_main_view_->SetDragAndDropHostOfCurrentAppList(drag_and_drop_host);
+}
+
+void AppListView::ShowWhenReady() {
+  app_list_main_view_->ShowAppListWhenReady();
+}
+
+void AppListView::Close() {
+  app_list_main_view_->Close();
+  if (delegate_)
+    delegate_->Dismiss();
+  else
+    GetWidget()->Close();
+}
+
+void AppListView::UpdateBounds() {
+  SizeToContents();
+}
+
+gfx::Size AppListView::GetPreferredSize() {
+  return app_list_main_view_->GetPreferredSize();
+}
+
+void AppListView::Paint(gfx::Canvas* canvas) {
+  views::BubbleDelegateView::Paint(canvas);
+  if (!g_next_paint_callback.is_null()) {
+    g_next_paint_callback.Run();
+    g_next_paint_callback.Reset();
+  }
+}
+
+bool AppListView::ShouldHandleSystemCommands() const {
+  return true;
+}
+
+void AppListView::Prerender() {
+  app_list_main_view_->Prerender();
+}
+
+void AppListView::OnSigninStatusChanged() {
+  signin_view_->SetVisible(!model_->signed_in());
+  app_list_main_view_->SetVisible(model_->signed_in());
+  app_list_main_view_->search_box_view()->InvalidateMenu();
+}
+
+void AppListView::SetProfileByPath(const base::FilePath& profile_path) {
+  delegate_->SetProfileByPath(profile_path);
+}
+
+void AppListView::AddObserver(Observer* observer) {
+  observers_.AddObserver(observer);
+}
+
+void AppListView::RemoveObserver(Observer* observer) {
+  observers_.RemoveObserver(observer);
+}
+
+// static
+void AppListView::SetNextPaintCallback(const base::Closure& callback) {
+  g_next_paint_callback = callback;
+}
+
+#if defined(OS_WIN)
+HWND AppListView::GetHWND() const {
+#if defined(USE_AURA)
+  gfx::NativeWindow window =
+      GetWidget()->GetTopLevelWidget()->GetNativeWindow();
+  return window->GetRootWindow()->GetAcceleratedWidget();
+#else
+  return GetWidget()->GetTopLevelWidget()->GetNativeWindow();
+#endif
+}
+#endif
+
+void AppListView::InitAsBubbleInternal(gfx::NativeView parent,
+                                       PaginationModel* pagination_model,
+                                       views::BubbleBorder::Arrow arrow,
+                                       bool border_accepts_events,
+                                       const gfx::Vector2d& anchor_offset) {
   app_list_main_view_ = new AppListMainView(delegate_.get(),
                                             model_.get(),
                                             pagination_model,
-                                            anchor);
+                                            parent);
   AddChildView(app_list_main_view_);
 #if defined(USE_AURA)
   app_list_main_view_->SetPaintToLayer(true);
@@ -82,28 +192,28 @@ void AppListView::InitAsBubble(gfx::NativeView parent,
 #endif
 
   signin_view_ = new SigninView(
-      GetSigninDelegate(),
+      delegate_ ? delegate_->GetSigninDelegate()
+                : NULL,
       app_list_main_view_->GetPreferredSize().width());
   AddChildView(signin_view_);
 
   OnSigninStatusChanged();
-
-  set_anchor_view(anchor);
-  set_anchor_rect(gfx::Rect(anchor_point, gfx::Size()));
   set_color(kContentsBackgroundColor);
   set_margins(gfx::Insets());
   set_move_with_anchor(true);
   set_parent_window(parent);
   set_close_on_deactivate(false);
   set_close_on_esc(false);
-  set_anchor_view_insets(gfx::Insets(kArrowOffset, kArrowOffset,
-                                     kArrowOffset, kArrowOffset));
+  set_anchor_view_insets(gfx::Insets(kArrowOffset + anchor_offset.y(),
+                                     kArrowOffset + anchor_offset.x(),
+                                     kArrowOffset - anchor_offset.y(),
+                                     kArrowOffset - anchor_offset.x()));
   set_border_accepts_events(border_accepts_events);
   set_shadow(views::BubbleBorder::BIG_SHADOW);
 #if defined(USE_AURA) && defined(OS_WIN)
   if (!ui::win::IsAeroGlassEnabled() ||
       CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableDwmComposition)) {
+          switches::kDisableDwmComposition)) {
     set_shadow(views::BubbleBorder::NO_SHADOW_OPAQUE_BORDER);
   }
 #endif
@@ -129,71 +239,6 @@ void AppListView::InitAsBubble(gfx::NativeView parent,
   GetWidget()->Hide();
 #endif
 }
-
-void AppListView::SetBubbleArrow(views::BubbleBorder::Arrow arrow) {
-  GetBubbleFrameView()->bubble_border()->set_arrow(arrow);
-  SizeToContents();  // Recalcuates with new border.
-  GetBubbleFrameView()->SchedulePaint();
-}
-
-void AppListView::SetAnchorPoint(const gfx::Point& anchor_point) {
-  set_anchor_rect(gfx::Rect(anchor_point, gfx::Size()));
-  SizeToContents();  // Repositions view relative to the anchor.
-}
-
-void AppListView::SetDragAndDropHostOfCurrentAppList(
-    app_list::ApplicationDragAndDropHost* drag_and_drop_host) {
-  app_list_main_view_->SetDragAndDropHostOfCurrentAppList(drag_and_drop_host);
-}
-
-void AppListView::ShowWhenReady() {
-  app_list_main_view_->ShowAppListWhenReady();
-}
-
-void AppListView::Close() {
-  app_list_main_view_->Close();
-  if (delegate_)
-    delegate_->Dismiss();
-  else
-    GetWidget()->Close();
-}
-
-void AppListView::UpdateBounds() {
-  SizeToContents();
-}
-
-gfx::Size AppListView::GetPreferredSize() {
-  return app_list_main_view_->GetPreferredSize();
-}
-
-bool AppListView::ShouldHandleSystemCommands() const {
-  return true;
-}
-
-void AppListView::Prerender() {
-  app_list_main_view_->Prerender();
-}
-
-void AppListView::OnSigninStatusChanged() {
-  const bool needs_signin =
-      GetSigninDelegate() && GetSigninDelegate()->NeedSignin();
-
-  signin_view_->SetVisible(needs_signin);
-  app_list_main_view_->SetVisible(!needs_signin);
-  app_list_main_view_->search_box_view()->InvalidateMenu();
-}
-
-#if defined(OS_WIN)
-HWND AppListView::GetHWND() const {
-#if defined(USE_AURA)
-  gfx::NativeWindow window =
-      GetWidget()->GetTopLevelWidget()->GetNativeWindow();
-  return window->GetRootWindow()->GetAcceleratedWidget();
-#else
-  return GetWidget()->GetTopLevelWidget()->GetNativeWindow();
-#endif
-}
-#endif
 
 views::View* AppListView::GetInitiallyFocusedView() {
   return app_list_main_view_->search_box_view()->search_box();
@@ -247,8 +292,9 @@ void AppListView::OnWidgetActivationChanged(views::Widget* widget,
                                             bool active) {
   // Do not called inherited function as the bubble delegate auto close
   // functionality is not used.
-  if (delegate_ && widget == GetWidget())
-    delegate_->ViewActivationChanged(active);
+  if (widget == GetWidget())
+    FOR_EACH_OBSERVER(Observer, observers_,
+                      OnActivationChanged(widget, active));
 }
 
 void AppListView::OnWidgetVisibilityChanged(views::Widget* widget,
@@ -268,12 +314,12 @@ void AppListView::OnWidgetVisibilityChanged(views::Widget* widget,
   Layout();
 }
 
-void AppListView::OnSigninSuccess() {
+void AppListView::OnAppListModelSigninStatusChanged() {
   OnSigninStatusChanged();
 }
 
-SigninDelegate* AppListView::GetSigninDelegate() {
-  return delegate_ ? delegate_->GetSigninDelegate() : NULL;
+void AppListView::OnAppListModelUsersChanged() {
+  OnSigninStatusChanged();
 }
 
 }  // namespace app_list

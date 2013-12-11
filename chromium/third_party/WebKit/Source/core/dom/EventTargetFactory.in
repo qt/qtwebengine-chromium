@@ -1,6 +1,6 @@
 namespace="EventTarget"
 
-core/css/FontLoader
+core/css/FontFaceSet
 core/dom/MessagePort
 core/dom/Node
 core/dom/WebKitNamedFlow ImplementedAs=NamedFlow
@@ -9,7 +9,7 @@ core/html/MediaController
 core/html/track/TextTrack
 core/html/track/TextTrackCue
 core/html/track/TextTrackList
-core/loader/appcache/DOMApplicationCache
+core/loader/appcache/ApplicationCache
 core/page/EventSource
 core/page/Performance
 core/page/Window ImplementedAs=DOMWindow
@@ -36,7 +36,7 @@ modules/mediastream/MediaStreamTrack
 modules/mediastream/RTCDTMFSender
 modules/mediastream/RTCDataChannel
 modules/mediastream/RTCPeerConnection
-modules/notifications/Notification Conditional=NOTIFICATIONS
+modules/notifications/Notification
 modules/speech/SpeechRecognition
 modules/speech/SpeechSynthesisUtterance
 modules/webaudio/AudioContext Conditional=WEB_AUDIO

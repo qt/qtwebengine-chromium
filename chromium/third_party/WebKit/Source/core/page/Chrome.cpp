@@ -159,9 +159,9 @@ bool Chrome::canRunModal() const
 static bool canRunModalIfDuringPageDismissal(Page* page, ChromeClient::DialogType dialog, const String& message)
 {
     for (Frame* frame = page->mainFrame(); frame; frame = frame->tree()->traverseNext()) {
-        FrameLoader::PageDismissalType dismissal = frame->loader()->pageDismissalEventBeingDispatched();
-        if (dismissal != FrameLoader::NoDismissal)
-            return page->chrome().client()->shouldRunModalDialogDuringPageDismissal(dialog, message, dismissal);
+        Document::PageDismissalType dismissal = frame->document()->pageDismissalEventBeingDispatched();
+        if (dismissal != Document::NoDismissal)
+            return page->chrome().client().shouldRunModalDialogDuringPageDismissal(dialog, message, dismissal);
     }
     return true;
 }
@@ -306,8 +306,7 @@ IntRect Chrome::windowResizerRect() const
 void Chrome::mouseDidMoveOverElement(const HitTestResult& result, unsigned modifierFlags)
 {
     if (result.innerNode()) {
-        Document* document = result.innerNode()->document();
-        if (document && document->isDNSPrefetchEnabled())
+        if (result.innerNode()->document().isDNSPrefetchEnabled())
             prefetchDNS(result.absoluteLinkURL().host());
     }
     m_client->mouseDidMoveOverElement(result, modifierFlags);
@@ -409,7 +408,7 @@ void Chrome::registerPopupOpeningObserver(PopupOpeningObserver* observer)
 void Chrome::unregisterPopupOpeningObserver(PopupOpeningObserver* observer)
 {
     size_t index = m_popupOpeningObservers.find(observer);
-    ASSERT(index != notFound);
+    ASSERT(index != kNotFound);
     m_popupOpeningObservers.remove(index);
 }
 

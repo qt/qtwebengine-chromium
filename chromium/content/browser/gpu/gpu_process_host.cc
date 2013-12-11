@@ -6,8 +6,9 @@
 
 #include "base/base64.h"
 #include "base/base_switches.h"
+#include "base/basictypes.h"
 #include "base/bind.h"
-#include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
@@ -24,8 +25,6 @@
 #include "content/common/child_process_host_impl.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/view_messages.h"
-#include "content/gpu/gpu_child_thread.h"
-#include "content/gpu/gpu_process.h"
 #include "content/port/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
@@ -37,7 +36,7 @@
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_switches.h"
-#include "ui/base/latency_info.h"
+#include "ui/events/latency_info.h"
 #include "ui/gl/gl_switches.h"
 
 
@@ -81,9 +80,12 @@ void SendGpuProcessMessage(GpuProcessHost::GpuProcessKind kind,
   }
 }
 
-void AcceleratedSurfaceBuffersSwappedCompletedForGPU(int host_id,
-                                                     int route_id,
-                                                     bool alive) {
+void AcceleratedSurfaceBuffersSwappedCompletedForGPU(
+    int host_id,
+    int route_id,
+    bool alive,
+    base::TimeTicks vsync_timebase,
+    base::TimeDelta vsync_interval) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
     BrowserThread::PostTask(
         BrowserThread::IO,
@@ -91,7 +93,9 @@ void AcceleratedSurfaceBuffersSwappedCompletedForGPU(int host_id,
         base::Bind(&AcceleratedSurfaceBuffersSwappedCompletedForGPU,
                    host_id,
                    route_id,
-                   alive));
+                   alive,
+                   vsync_timebase,
+                   vsync_interval));
     return;
   }
 
@@ -100,6 +104,10 @@ void AcceleratedSurfaceBuffersSwappedCompletedForGPU(int host_id,
     if (alive) {
       AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
       ack_params.sync_point = 0;
+#if defined(OS_WIN)
+      ack_params.vsync_timebase = vsync_timebase;
+      ack_params.vsync_interval = vsync_interval;
+#endif
       host->Send(
           new AcceleratedSurfaceMsg_BufferPresented(route_id, ack_params));
     } else {
@@ -151,10 +159,10 @@ void AcceleratedSurfaceBuffersSwappedCompleted(
     base::TimeTicks timebase,
     base::TimeDelta interval,
     const ui::LatencyInfo& latency_info) {
-  AcceleratedSurfaceBuffersSwappedCompletedForGPU(host_id, route_id,
-                                                  alive);
-  AcceleratedSurfaceBuffersSwappedCompletedForRenderer(surface_id, timebase,
-                                                       interval, latency_info);
+  AcceleratedSurfaceBuffersSwappedCompletedForGPU(
+      host_id, route_id, alive, timebase, interval);
+  AcceleratedSurfaceBuffersSwappedCompletedForRenderer(
+      surface_id, timebase, interval, latency_info);
 }
 
 // NOTE: changes to this class need to be reviewed by the security team.
@@ -278,43 +286,6 @@ class GpuSandboxedProcessLauncherDelegate
 
 }  // anonymous namespace
 
-// Single process not supported in multiple dll mode currently.
-#if !defined(CHROME_MULTIPLE_DLL)
-// This class creates a GPU thread (instead of a GPU process), when running
-// with --in-process-gpu or --single-process.
-class GpuMainThread : public base::Thread {
- public:
-  explicit GpuMainThread(const std::string& channel_id)
-      : base::Thread("Chrome_InProcGpuThread"),
-        channel_id_(channel_id),
-        gpu_process_(NULL) {
-  }
-
-  virtual ~GpuMainThread() {
-    Stop();
-  }
-
- protected:
-  virtual void Init() OVERRIDE {
-    gpu_process_ = new GpuProcess();
-    // The process object takes ownership of the thread object, so do not
-    // save and delete the pointer.
-    gpu_process_->set_main_thread(new GpuChildThread(channel_id_));
-  }
-
-  virtual void CleanUp() OVERRIDE {
-    delete gpu_process_;
-  }
-
- private:
-  std::string channel_id_;
-  // Deleted in CleanUp() on the gpu thread, so don't use smart pointers.
-  GpuProcess* gpu_process_;
-
-  DISALLOW_COPY_AND_ASSIGN(GpuMainThread);
-};
-#endif  // !CHROME_MULTIPLE_DLL
-
 // static
 bool GpuProcessHost::ValidateHost(GpuProcessHost* host) {
   if (!host)
@@ -399,6 +370,13 @@ void GpuProcessHost::SendOnIO(GpuProcessKind kind,
               &SendGpuProcessMessage, kind, cause, message))) {
     delete message;
   }
+}
+
+GpuMainThreadFactoryFunction g_gpu_main_thread_factory = NULL;
+
+void GpuProcessHost::RegisterGpuMainThreadFactory(
+    GpuMainThreadFactoryFunction create) {
+  g_gpu_main_thread_factory = create;
 }
 
 // static
@@ -550,7 +528,8 @@ GpuProcessHost::~GpuProcessHost() {
   std::string message;
   if (!in_process_) {
     int exit_code;
-    base::TerminationStatus status = process_->GetTerminationStatus(&exit_code);
+    base::TerminationStatus status = process_->GetTerminationStatus(
+        false /* known_dead */, &exit_code);
     UMA_HISTOGRAM_ENUMERATION("GPU.GPUProcessTerminationStatus",
                               status,
                               base::TERMINATION_STATUS_MAX_ENUM);
@@ -598,19 +577,15 @@ bool GpuProcessHost::Init() {
   if (channel_id.empty())
     return false;
 
-  // Single process not supported in multiple dll mode currently.
-#if !defined(CHROME_MULTIPLE_DLL)
-  if (in_process_) {
+  if (in_process_ && g_gpu_main_thread_factory) {
     CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kDisableGpuWatchdog);
 
-    in_process_gpu_thread_.reset(new GpuMainThread(channel_id));
+    in_process_gpu_thread_.reset(g_gpu_main_thread_factory(channel_id));
     in_process_gpu_thread_->Start();
 
     OnProcessLaunched();  // Fake a callback that the process is ready.
-  } else
-#endif  // !CHROME_MULTIPLE_DLL
-      if (!LaunchGpuProcess(channel_id)) {
+  } else if (!LaunchGpuProcess(channel_id)) {
     return false;
   }
 
@@ -916,7 +891,7 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
   base::ScopedClosureRunner scoped_completion_runner(
       base::Bind(&AcceleratedSurfaceBuffersSwappedCompletedForGPU,
                  host_id_, params.route_id,
-                 true /* alive */));
+                 true /* alive */, base::TimeTicks(), base::TimeDelta()));
 
   int render_process_id = 0;
   int render_widget_id = 0;
@@ -933,7 +908,7 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
   // if the browser is waiting for a new frame. Otherwise the RenderWidgetHelper
   // will forward to the RenderWidgetHostView via RenderProcessHostImpl and
   // RenderWidgetHostImpl.
-  scoped_completion_runner.Release();
+  ignore_result(scoped_completion_runner.Release());
 
   ViewHostMsg_CompositorSurfaceBuffersSwapped_Params view_params;
   view_params.surface_id = params.surface_id;
@@ -969,7 +944,7 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
     TRACE_EVENT1("gpu", "SurfaceIDNotFound_RoutingToUI",
                  "surface_id", params.surface_id);
     // This is a content area swap, send it on to the UI thread.
-    scoped_completion_runner.Release();
+    ignore_result(scoped_completion_runner.Release());
     RouteOnUIThread(GpuHostMsg_AcceleratedSurfaceBuffersSwapped(params));
     return;
   }
@@ -983,7 +958,7 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
                  "EarlyOut_NativeWindowNotFound",
                  "handle",
                  handle.handle);
-    scoped_completion_runner.Release();
+    ignore_result(scoped_completion_runner.Release());
     AcceleratedSurfaceBuffersSwappedCompleted(host_id_,
                                               params.route_id,
                                               params.surface_id,
@@ -994,7 +969,7 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
     return;
   }
 
-  scoped_completion_runner.Release();
+  ignore_result(scoped_completion_runner.Release());
   presenter->AsyncPresentAndAcknowledge(
       params.size,
       params.surface_handle,
@@ -1079,7 +1054,7 @@ void GpuProcessHost::OnProcessLaunched() {
 void GpuProcessHost::OnProcessCrashed(int exit_code) {
   SendOutstandingReplies();
   GpuDataManagerImpl::GetInstance()->ProcessCrashed(
-      process_->GetTerminationStatus(NULL));
+      process_->GetTerminationStatus(true /* known_dead */, NULL));
 }
 
 GpuProcessHost::GpuProcessKind GpuProcessHost::kind() {
@@ -1148,7 +1123,6 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
     switches::kDisableSeccompFilterSandbox,
     switches::kEnableLogging,
     switches::kEnableShareGroupAsyncTextureUpload,
-    switches::kEnableVirtualGLContexts,
     switches::kGpuStartupDialog,
     switches::kGpuSandboxAllowSysVShm,
     switches::kLoggingLevel,
@@ -1195,7 +1169,7 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
       new GpuSandboxedProcessLauncherDelegate(cmd_line),
 #elif defined(OS_POSIX)
       false,
-      base::EnvironmentVector(),
+      base::EnvironmentMap(),
 #endif
       cmd_line);
   process_launched_ = true;

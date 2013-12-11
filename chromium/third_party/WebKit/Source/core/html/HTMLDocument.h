@@ -24,7 +24,7 @@
 #define HTMLDocument_h
 
 #include "core/dom/Document.h"
-#include "core/loader/cache/ResourceClient.h"
+#include "core/fetch/ResourceClient.h"
 #include "wtf/HashCountedSet.h"
 
 namespace WebCore {
@@ -68,37 +68,33 @@ public:
 
     void addNamedItem(const AtomicString& name);
     void removeNamedItem(const AtomicString& name);
-    bool hasNamedItem(StringImpl* name);
+    bool hasNamedItem(const AtomicString& name);
 
     void addExtraNamedItem(const AtomicString& name);
     void removeExtraNamedItem(const AtomicString& name);
-    bool hasExtraNamedItem(StringImpl* name);
+    bool hasExtraNamedItem(const AtomicString& name);
 
     static bool isCaseSensitiveAttribute(const QualifiedName&);
-
-    virtual PassRefPtr<Document> cloneDocumentWithoutChildren() OVERRIDE FINAL;
 
 protected:
     HTMLDocument(const DocumentInit&, DocumentClassFlags extendedDocumentClasses = DefaultDocumentClass);
 
 private:
     HTMLBodyElement* bodyAsHTMLBodyElement() const;
-    void addItemToMap(HashCountedSet<StringImpl*>&, const AtomicString&);
-    void removeItemFromMap(HashCountedSet<StringImpl*>&, const AtomicString&);
+    void addItemToMap(HashCountedSet<AtomicString>&, const AtomicString&);
+    void removeItemFromMap(HashCountedSet<AtomicString>&, const AtomicString&);
 
-    HashCountedSet<StringImpl*> m_namedItemCounts;
-    HashCountedSet<StringImpl*> m_extraNamedItemCounts;
+    HashCountedSet<AtomicString> m_namedItemCounts;
+    HashCountedSet<AtomicString> m_extraNamedItemCounts;
 };
 
-inline bool HTMLDocument::hasNamedItem(StringImpl* name)
+inline bool HTMLDocument::hasNamedItem(const AtomicString& name)
 {
-    ASSERT(name);
     return m_namedItemCounts.contains(name);
 }
 
-inline bool HTMLDocument::hasExtraNamedItem(StringImpl* name)
+inline bool HTMLDocument::hasExtraNamedItem(const AtomicString& name)
 {
-    ASSERT(name);
     return m_extraNamedItemCounts.contains(name);
 }
 
@@ -112,6 +108,18 @@ inline const HTMLDocument* toHTMLDocument(const Document* document)
 {
     ASSERT_WITH_SECURITY_IMPLICATION(!document || document->isHTMLDocument());
     return static_cast<const HTMLDocument*>(document);
+}
+
+inline HTMLDocument& toHTMLDocument(Document& document)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(document.isHTMLDocument());
+    return static_cast<HTMLDocument&>(document);
+}
+
+inline const HTMLDocument& toHTMLDocument(const Document& document)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(document.isHTMLDocument());
+    return static_cast<const HTMLDocument&>(document);
 }
 
 // This will catch anyone doing an unnecessary cast.

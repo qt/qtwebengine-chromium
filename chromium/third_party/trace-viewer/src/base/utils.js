@@ -65,7 +65,30 @@ base.exportTo('base', function() {
       position[1] += node.offsetTop;
       node = node.offsetParent;
     }
-    return base.Rect.FromXYWH(position[0], position[1], size[0], size[1]);
+    return base.Rect.fromXYWH(position[0], position[1], size[0], size[1]);
+  }
+
+  function clamp(x, lo, hi) {
+    return Math.min(Math.max(x, lo), hi);
+  }
+
+  function lerp(percentage, lo, hi) {
+    var range = hi - lo;
+    return lo + percentage * range;
+  }
+
+  function deg2rad(deg) {
+    return (Math.PI * deg) / 180.0;
+  }
+
+  function scrollIntoViewIfNeeded(el) {
+    var pr = el.parentElement.getBoundingClientRect();
+    var cr = el.getBoundingClientRect();
+    if (cr.top < pr.top) {
+      el.scrollIntoView(true);
+    } else if (cr.bottom > pr.bottom) {
+      el.scrollIntoView(false);
+    }
   }
 
   return {
@@ -75,7 +98,13 @@ base.exportTo('base', function() {
     normalizeException: normalizeException,
     instantiateTemplate: instantiateTemplate,
     stackTrace: stackTrace,
-    windowRectForElement: windowRectForElement
+
+    windowRectForElement: windowRectForElement,
+
+    scrollIntoViewIfNeeded: scrollIntoViewIfNeeded,
+
+    clamp: clamp,
+    lerp: lerp,
+    deg2rad: deg2rad
   };
 });
-

@@ -34,6 +34,7 @@
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderTableCol.h"
 #include "core/rendering/RenderView.h"
+#include "core/rendering/SubtreeLayoutScope.h"
 #include "core/rendering/style/CollapsedBorderValue.h"
 
 using namespace std;
@@ -42,7 +43,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-struct SameSizeAsRenderTableCell : public RenderBlock {
+struct SameSizeAsRenderTableCell : public RenderBlockFlow {
     unsigned bitfields;
     int paddings[2];
 };
@@ -51,7 +52,7 @@ COMPILE_ASSERT(sizeof(RenderTableCell) == sizeof(SameSizeAsRenderTableCell), Ren
 COMPILE_ASSERT(sizeof(CollapsedBorderValue) == 8, CollapsedBorderValue_should_stay_small);
 
 RenderTableCell::RenderTableCell(Element* element)
-    : RenderBlock(element)
+    : RenderBlockFlow(element)
     , m_column(unsetColumnIndex)
     , m_cellWidthChanged(false)
     , m_intrinsicPaddingBefore(0)
@@ -162,7 +163,7 @@ void RenderTableCell::computePreferredLogicalWidths()
     }
 }
 
-void RenderTableCell::computeIntrinsicPadding(int rowHeight)
+void RenderTableCell::computeIntrinsicPadding(int rowHeight, SubtreeLayoutScope& layouter)
 {
     int oldIntrinsicPaddingBefore = intrinsicPaddingBefore();
     int oldIntrinsicPaddingAfter = intrinsicPaddingAfter();
@@ -200,20 +201,19 @@ void RenderTableCell::computeIntrinsicPadding(int rowHeight)
     // FIXME: Changing an intrinsic padding shouldn't trigger a relayout as it only shifts the cell inside the row but
     // doesn't change the logical height.
     if (intrinsicPaddingBefore != oldIntrinsicPaddingBefore || intrinsicPaddingAfter != oldIntrinsicPaddingAfter)
-        setNeedsLayout(MarkOnlyThis);
+        layouter.setNeedsLayout(this);
 }
 
 void RenderTableCell::updateLogicalWidth()
 {
 }
 
-void RenderTableCell::setCellLogicalWidth(int tableLayoutLogicalWidth)
+void RenderTableCell::setCellLogicalWidth(int tableLayoutLogicalWidth, SubtreeLayoutScope& layouter)
 {
     if (tableLayoutLogicalWidth == logicalWidth())
         return;
 
-    setNeedsLayout(MarkOnlyThis);
-    row()->setChildNeedsLayout(MarkOnlyThis);
+    layouter.setNeedsLayout(this);
 
     if (!table()->selfNeedsLayout() && checkForRepaintDuringLayout())
         repaint();
@@ -224,7 +224,8 @@ void RenderTableCell::setCellLogicalWidth(int tableLayoutLogicalWidth)
 
 void RenderTableCell::layout()
 {
-    StackStats::LayoutCheckPoint layoutCheckPoint;
+    ASSERT(needsLayout());
+
     updateFirstLetter();
 
     int oldCellBaseline = cellBaselinePosition();
@@ -237,7 +238,8 @@ void RenderTableCell::layout()
     if (isBaselineAligned() && section()->rowBaseline(rowIndex()) && cellBaselinePosition() > section()->rowBaseline(rowIndex())) {
         int newIntrinsicPaddingBefore = max<LayoutUnit>(0, intrinsicPaddingBefore() - max<LayoutUnit>(0, cellBaselinePosition() - oldCellBaseline));
         setIntrinsicPaddingBefore(newIntrinsicPaddingBefore);
-        setNeedsLayout(MarkOnlyThis);
+        SubtreeLayoutScope layouter(this);
+        layouter.setNeedsLayout(this);
         layoutBlock(cellWidthChanged());
     }
 
@@ -1168,7 +1170,7 @@ void RenderTableCell::paintBackgroundsBehindCell(PaintInfo& paintInfo, const Lay
     if (backgroundObject != this)
         adjustedPaintOffset.moveBy(location());
 
-    StyleColor c = backgroundObject->resolveStyleColor(CSSPropertyBackgroundColor);
+    Color c = backgroundObject->resolveColor(CSSPropertyBackgroundColor);
     const FillLayer* bgLayer = backgroundObject->style()->backgroundLayers();
 
     if (bgLayer->hasImage() || c.isValid()) {
@@ -1181,7 +1183,7 @@ void RenderTableCell::paintBackgroundsBehindCell(PaintInfo& paintInfo, const Lay
                 width() - borderLeft() - borderRight(), height() - borderTop() - borderBottom());
             paintInfo.context->clip(clipRect);
         }
-        paintFillLayers(paintInfo, c.color(), bgLayer, LayoutRect(adjustedPaintOffset, pixelSnappedSize()), BackgroundBleedNone, CompositeSourceOver, backgroundObject);
+        paintFillLayers(paintInfo, c, bgLayer, LayoutRect(adjustedPaintOffset, pixelSnappedSize()), BackgroundBleedNone, CompositeSourceOver, backgroundObject);
     }
 }
 
@@ -1258,7 +1260,7 @@ RenderTableCell* RenderTableCell::createAnonymous(Document* document)
 
 RenderTableCell* RenderTableCell::createAnonymousWithParentRenderer(const RenderObject* parent)
 {
-    RenderTableCell* newCell = RenderTableCell::createAnonymous(parent->document());
+    RenderTableCell* newCell = RenderTableCell::createAnonymous(&parent->document());
     RefPtr<RenderStyle> newStyle = RenderStyle::createAnonymousStyleWithDisplay(parent->style(), TABLE_CELL);
     newCell->setStyle(newStyle.release());
     return newCell;

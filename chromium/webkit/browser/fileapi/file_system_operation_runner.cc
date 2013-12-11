@@ -5,11 +5,14 @@
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
 
 #include "base/bind.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "base/stl_util.h"
 #include "net/url_request/url_request_context.h"
+#include "webkit/browser/blob/blob_url_request_job_factory.h"
 #include "webkit/browser/fileapi/file_observers.h"
 #include "webkit/browser/fileapi/file_stream_writer.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_operation_impl.h"
+#include "webkit/browser/fileapi/file_system_operation.h"
 #include "webkit/browser/fileapi/file_writer_delegate.h"
 #include "webkit/common/blob/shareable_file_reference.h"
 
@@ -17,7 +20,17 @@ namespace fileapi {
 
 typedef FileSystemOperationRunner::OperationID OperationID;
 
-const OperationID FileSystemOperationRunner::kErrorOperationID = -1;
+class FileSystemOperationRunner::BeginOperationScoper
+    : public base::SupportsWeakPtr<
+          FileSystemOperationRunner::BeginOperationScoper> {
+ public:
+  BeginOperationScoper() {}
+ private:
+  DISALLOW_COPY_AND_ASSIGN(BeginOperationScoper);
+};
+
+FileSystemOperationRunner::OperationHandle::OperationHandle() {}
+FileSystemOperationRunner::OperationHandle::~OperationHandle() {}
 
 FileSystemOperationRunner::~FileSystemOperationRunner() {
 }
@@ -33,17 +46,19 @@ OperationID FileSystemOperationRunner::CreateFile(
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   FileSystemOperation* operation =
       file_system_context_->CreateFileSystemOperation(url, &error);
+
+  BeginOperationScoper scope;
+  OperationHandle handle = BeginOperation(operation, scope.AsWeakPtr());
   if (!operation) {
-    callback.Run(error);
-    return kErrorOperationID;
+    DidFinish(handle, callback, error);
+    return handle.id;
   }
-  OperationID id = operations_.Add(operation);
-  PrepareForWrite(id, url);
+  PrepareForWrite(handle.id, url);
   operation->CreateFile(
       url, exclusive,
       base::Bind(&FileSystemOperationRunner::DidFinish, AsWeakPtr(),
-                 id, callback));
-  return id;
+                 handle, callback));
+  return handle.id;
 }
 
 OperationID FileSystemOperationRunner::CreateDirectory(
@@ -54,38 +69,45 @@ OperationID FileSystemOperationRunner::CreateDirectory(
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   FileSystemOperation* operation =
       file_system_context_->CreateFileSystemOperation(url, &error);
+  BeginOperationScoper scope;
+  OperationHandle handle = BeginOperation(operation, scope.AsWeakPtr());
   if (!operation) {
-    callback.Run(error);
-    return kErrorOperationID;
+    DidFinish(handle, callback, error);
+    return handle.id;
   }
-  OperationID id = operations_.Add(operation);
-  PrepareForWrite(id, url);
+  PrepareForWrite(handle.id, url);
   operation->CreateDirectory(
       url, exclusive, recursive,
       base::Bind(&FileSystemOperationRunner::DidFinish, AsWeakPtr(),
-                 id, callback));
-  return id;
+                 handle, callback));
+  return handle.id;
 }
 
 OperationID FileSystemOperationRunner::Copy(
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
+    const CopyProgressCallback& progress_callback,
     const StatusCallback& callback) {
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   FileSystemOperation* operation =
       file_system_context_->CreateFileSystemOperation(dest_url, &error);
+  BeginOperationScoper scope;
+  OperationHandle handle = BeginOperation(operation, scope.AsWeakPtr());
   if (!operation) {
-    callback.Run(error);
-    return kErrorOperationID;
+    DidFinish(handle, callback, error);
+    return handle.id;
   }
-  OperationID id = operations_.Add(operation);
-  PrepareForWrite(id, dest_url);
-  PrepareForRead(id, src_url);
+  PrepareForWrite(handle.id, dest_url);
+  PrepareForRead(handle.id, src_url);
   operation->Copy(
       src_url, dest_url,
+      progress_callback.is_null() ?
+          CopyProgressCallback() :
+          base::Bind(&FileSystemOperationRunner::OnCopyProgress, AsWeakPtr(),
+                     handle, progress_callback),
       base::Bind(&FileSystemOperationRunner::DidFinish, AsWeakPtr(),
-                 id, callback));
-  return id;
+                 handle, callback));
+  return handle.id;
 }
 
 OperationID FileSystemOperationRunner::Move(
@@ -95,18 +117,19 @@ OperationID FileSystemOperationRunner::Move(
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   FileSystemOperation* operation =
       file_system_context_->CreateFileSystemOperation(dest_url, &error);
+  BeginOperationScoper scope;
+  OperationHandle handle = BeginOperation(operation, scope.AsWeakPtr());
   if (!operation) {
-    callback.Run(error);
-    return kErrorOperationID;
+    DidFinish(handle, callback, error);
+    return handle.id;
   }
-  OperationID id = operations_.Add(operation);
-  PrepareForWrite(id, dest_url);
-  PrepareForWrite(id, src_url);
+  PrepareForWrite(handle.id, dest_url);
+  PrepareForWrite(handle.id, src_url);
   operation->Move(
       src_url, dest_url,
       base::Bind(&FileSystemOperationRunner::DidFinish, AsWeakPtr(),
-                 id, callback));
-  return id;
+                 handle, callback));
+  return handle.id;
 }
 
 OperationID FileSystemOperationRunner::DirectoryExists(
@@ -115,17 +138,18 @@ OperationID FileSystemOperationRunner::DirectoryExists(
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   FileSystemOperation* operation =
       file_system_context_->CreateFileSystemOperation(url, &error);
+  BeginOperationScoper scope;
+  OperationHandle handle = BeginOperation(operation, scope.AsWeakPtr());
   if (!operation) {
-    callback.Run(error);
-    return kErrorOperationID;
+    DidFinish(handle, callback, error);
+    return handle.id;
   }
-  OperationID id = operations_.Add(operation);
-  PrepareForRead(id, url);
+  PrepareForRead(handle.id, url);
   operation->DirectoryExists(
       url,
       base::Bind(&FileSystemOperationRunner::DidFinish, AsWeakPtr(),
-                 id, callback));
-  return id;
+                 handle, callback));
+  return handle.id;
 }
 
 OperationID FileSystemOperationRunner::FileExists(
@@ -134,17 +158,18 @@ OperationID FileSystemOperationRunner::FileExists(
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   FileSystemOperation* operation =
       file_system_context_->CreateFileSystemOperation(url, &error);
+  BeginOperationScoper scope;
+  OperationHandle handle = BeginOperation(operation, scope.AsWeakPtr());
   if (!operation) {
-    callback.Run(error);
-    return kErrorOperationID;
+    DidFinish(handle, callback, error);
+    return handle.id;
   }
-  OperationID id = operations_.Add(operation);
-  PrepareForRead(id, url);
+  PrepareForRead(handle.id, url);
   operation->FileExists(
       url,
       base::Bind(&FileSystemOperationRunner::DidFinish, AsWeakPtr(),
-                 id, callback));
-  return id;
+                 handle, callback));
+  return handle.id;
 }
 
 OperationID FileSystemOperationRunner::GetMetadata(
@@ -153,17 +178,18 @@ OperationID FileSystemOperationRunner::GetMetadata(
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   FileSystemOperation* operation =
       file_system_context_->CreateFileSystemOperation(url, &error);
+  BeginOperationScoper scope;
+  OperationHandle handle = BeginOperation(operation, scope.AsWeakPtr());
   if (!operation) {
-    callback.Run(error, base::PlatformFileInfo());
-    return kErrorOperationID;
+    DidGetMetadata(handle, callback, error, base::PlatformFileInfo());
+    return handle.id;
   }
-  OperationID id = operations_.Add(operation);
-  PrepareForRead(id, url);
+  PrepareForRead(handle.id, url);
   operation->GetMetadata(
       url,
       base::Bind(&FileSystemOperationRunner::DidGetMetadata, AsWeakPtr(),
-                 id, callback));
-  return id;
+                 handle, callback));
+  return handle.id;
 }
 
 OperationID FileSystemOperationRunner::ReadDirectory(
@@ -172,17 +198,19 @@ OperationID FileSystemOperationRunner::ReadDirectory(
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   FileSystemOperation* operation =
       file_system_context_->CreateFileSystemOperation(url, &error);
+  BeginOperationScoper scope;
+  OperationHandle handle = BeginOperation(operation, scope.AsWeakPtr());
   if (!operation) {
-    callback.Run(error, std::vector<DirectoryEntry>(), false);
-    return kErrorOperationID;
+    DidReadDirectory(handle, callback, error, std::vector<DirectoryEntry>(),
+                     false);
+    return handle.id;
   }
-  OperationID id = operations_.Add(operation);
-  PrepareForRead(id, url);
+  PrepareForRead(handle.id, url);
   operation->ReadDirectory(
       url,
       base::Bind(&FileSystemOperationRunner::DidReadDirectory, AsWeakPtr(),
-                 id, callback));
-  return id;
+                 handle, callback));
+  return handle.id;
 }
 
 OperationID FileSystemOperationRunner::Remove(
@@ -191,54 +219,60 @@ OperationID FileSystemOperationRunner::Remove(
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   FileSystemOperation* operation =
       file_system_context_->CreateFileSystemOperation(url, &error);
+  BeginOperationScoper scope;
+  OperationHandle handle = BeginOperation(operation, scope.AsWeakPtr());
   if (!operation) {
-    callback.Run(error);
-    return kErrorOperationID;
+    DidFinish(handle, callback, error);
+    return handle.id;
   }
-  OperationID id = operations_.Add(operation);
-  PrepareForWrite(id, url);
+  PrepareForWrite(handle.id, url);
   operation->Remove(
       url, recursive,
       base::Bind(&FileSystemOperationRunner::DidFinish, AsWeakPtr(),
-                 id, callback));
-  return id;
+                 handle, callback));
+  return handle.id;
 }
 
 OperationID FileSystemOperationRunner::Write(
     const net::URLRequestContext* url_request_context,
     const FileSystemURL& url,
-    const GURL& blob_url,
+    scoped_ptr<webkit_blob::BlobDataHandle> blob,
     int64 offset,
     const WriteCallback& callback) {
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   FileSystemOperation* operation =
       file_system_context_->CreateFileSystemOperation(url, &error);
+
+  BeginOperationScoper scope;
+  OperationHandle handle = BeginOperation(operation, scope.AsWeakPtr());
   if (!operation) {
-    callback.Run(error, 0, true);
-    return kErrorOperationID;
+    DidWrite(handle, callback, error, 0, true);
+    return handle.id;
   }
 
   scoped_ptr<FileStreamWriter> writer(
       file_system_context_->CreateFileStreamWriter(url, offset));
   if (!writer) {
     // Write is not supported.
-    callback.Run(base::PLATFORM_FILE_ERROR_SECURITY, 0, true);
-    return kErrorOperationID;
+    DidWrite(handle, callback, base::PLATFORM_FILE_ERROR_SECURITY, 0, true);
+    return handle.id;
   }
 
-  DCHECK(blob_url.is_valid());
   scoped_ptr<FileWriterDelegate> writer_delegate(
       new FileWriterDelegate(writer.Pass()));
-  scoped_ptr<net::URLRequest> blob_request(url_request_context->CreateRequest(
-      blob_url, writer_delegate.get()));
 
-  OperationID id = operations_.Add(operation);
-  PrepareForWrite(id, url);
+  scoped_ptr<net::URLRequest> blob_request(
+      webkit_blob::BlobProtocolHandler::CreateBlobRequest(
+          blob.Pass(),
+          url_request_context,
+          writer_delegate.get()));
+
+  PrepareForWrite(handle.id, url);
   operation->Write(
       url, writer_delegate.Pass(), blob_request.Pass(),
       base::Bind(&FileSystemOperationRunner::DidWrite, AsWeakPtr(),
-                 id, callback));
-  return id;
+                 handle, callback));
+  return handle.id;
 }
 
 OperationID FileSystemOperationRunner::Truncate(
@@ -247,25 +281,31 @@ OperationID FileSystemOperationRunner::Truncate(
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   FileSystemOperation* operation =
       file_system_context_->CreateFileSystemOperation(url, &error);
+  BeginOperationScoper scope;
+  OperationHandle handle = BeginOperation(operation, scope.AsWeakPtr());
   if (!operation) {
-    callback.Run(error);
-    return kErrorOperationID;
+    DidFinish(handle, callback, error);
+    return handle.id;
   }
-  OperationID id = operations_.Add(operation);
-  PrepareForWrite(id, url);
+  PrepareForWrite(handle.id, url);
   operation->Truncate(
       url, length,
       base::Bind(&FileSystemOperationRunner::DidFinish, AsWeakPtr(),
-                 id, callback));
-  return id;
+                 handle, callback));
+  return handle.id;
 }
 
 void FileSystemOperationRunner::Cancel(
     OperationID id,
     const StatusCallback& callback) {
+  if (ContainsKey(finished_operations_, id)) {
+    DCHECK(!ContainsKey(stray_cancel_callbacks_, id));
+    stray_cancel_callbacks_[id] = callback;
+    return;
+  }
   FileSystemOperation* operation = operations_.Lookup(id);
   if (!operation) {
-    // The operation is already finished; report that we failed to stop it.
+    // There is no operation with |id|.
     callback.Run(base::PLATFORM_FILE_ERROR_INVALID_OPERATION);
     return;
   }
@@ -280,17 +320,18 @@ OperationID FileSystemOperationRunner::TouchFile(
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   FileSystemOperation* operation =
       file_system_context_->CreateFileSystemOperation(url, &error);
+  BeginOperationScoper scope;
+  OperationHandle handle = BeginOperation(operation, scope.AsWeakPtr());
   if (!operation) {
-    callback.Run(error);
-    return kErrorOperationID;
+    DidFinish(handle, callback, error);
+    return handle.id;
   }
-  OperationID id = operations_.Add(operation);
-  PrepareForWrite(id, url);
+  PrepareForWrite(handle.id, url);
   operation->TouchFile(
       url, last_access_time, last_modified_time,
       base::Bind(&FileSystemOperationRunner::DidFinish, AsWeakPtr(),
-                 id, callback));
-  return id;
+                 handle, callback));
+  return handle.id;
 }
 
 OperationID FileSystemOperationRunner::OpenFile(
@@ -301,27 +342,28 @@ OperationID FileSystemOperationRunner::OpenFile(
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   FileSystemOperation* operation =
       file_system_context_->CreateFileSystemOperation(url, &error);
+  BeginOperationScoper scope;
+  OperationHandle handle = BeginOperation(operation, scope.AsWeakPtr());
   if (!operation) {
-    callback.Run(error, base::kInvalidPlatformFileValue,
-                 base::Closure(), base::ProcessHandle());
-    return kErrorOperationID;
+    DidOpenFile(handle, callback, error, base::kInvalidPlatformFileValue,
+                base::Closure(), base::ProcessHandle());
+    return handle.id;
   }
-  OperationID id = operations_.Add(operation);
   if (file_flags &
       (base::PLATFORM_FILE_CREATE | base::PLATFORM_FILE_OPEN_ALWAYS |
        base::PLATFORM_FILE_CREATE_ALWAYS | base::PLATFORM_FILE_OPEN_TRUNCATED |
        base::PLATFORM_FILE_WRITE | base::PLATFORM_FILE_EXCLUSIVE_WRITE |
        base::PLATFORM_FILE_DELETE_ON_CLOSE |
        base::PLATFORM_FILE_WRITE_ATTRIBUTES)) {
-    PrepareForWrite(id, url);
+    PrepareForWrite(handle.id, url);
   } else {
-    PrepareForRead(id, url);
+    PrepareForRead(handle.id, url);
   }
   operation->OpenFile(
       url, file_flags, peer_handle,
       base::Bind(&FileSystemOperationRunner::DidOpenFile, AsWeakPtr(),
-                 id, callback));
-  return id;
+                 handle, callback));
+  return handle.id;
 }
 
 OperationID FileSystemOperationRunner::CreateSnapshotFile(
@@ -330,17 +372,19 @@ OperationID FileSystemOperationRunner::CreateSnapshotFile(
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   FileSystemOperation* operation =
       file_system_context_->CreateFileSystemOperation(url, &error);
+  BeginOperationScoper scope;
+  OperationHandle handle = BeginOperation(operation, scope.AsWeakPtr());
   if (!operation) {
-    callback.Run(error, base::PlatformFileInfo(), base::FilePath(), NULL);
-    return kErrorOperationID;
+    DidCreateSnapshot(handle, callback, error, base::PlatformFileInfo(),
+                      base::FilePath(), NULL);
+    return handle.id;
   }
-  OperationID id = operations_.Add(operation);
-  PrepareForRead(id, url);
+  PrepareForRead(handle.id, url);
   operation->CreateSnapshotFile(
       url,
       base::Bind(&FileSystemOperationRunner::DidCreateSnapshot, AsWeakPtr(),
-                 id, callback));
-  return id;
+                 handle, callback));
+  return handle.id;
 }
 
 OperationID FileSystemOperationRunner::CopyInForeignFile(
@@ -348,71 +392,78 @@ OperationID FileSystemOperationRunner::CopyInForeignFile(
     const FileSystemURL& dest_url,
     const StatusCallback& callback) {
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
-  FileSystemOperation* operation = CreateFileSystemOperationImpl(
-      dest_url, &error);
+  FileSystemOperation* operation =
+      file_system_context_->CreateFileSystemOperation(dest_url, &error);
+  BeginOperationScoper scope;
+  OperationHandle handle = BeginOperation(operation, scope.AsWeakPtr());
   if (!operation) {
-    callback.Run(error);
-    return kErrorOperationID;
+    DidFinish(handle, callback, error);
+    return handle.id;
   }
-  OperationID id = operations_.Add(operation);
-  operation->AsFileSystemOperationImpl()->CopyInForeignFile(
+  operation->CopyInForeignFile(
       src_local_disk_path, dest_url,
       base::Bind(&FileSystemOperationRunner::DidFinish, AsWeakPtr(),
-                 id, callback));
-  return id;
+                 handle, callback));
+  return handle.id;
 }
 
 OperationID FileSystemOperationRunner::RemoveFile(
     const FileSystemURL& url,
     const StatusCallback& callback) {
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
-  FileSystemOperation* operation = CreateFileSystemOperationImpl(url, &error);
+  FileSystemOperation* operation =
+      file_system_context_->CreateFileSystemOperation(url, &error);
+  BeginOperationScoper scope;
+  OperationHandle handle = BeginOperation(operation, scope.AsWeakPtr());
   if (!operation) {
-    callback.Run(error);
-    return kErrorOperationID;
+    DidFinish(handle, callback, error);
+    return handle.id;
   }
-  OperationID id = operations_.Add(operation);
-  operation->AsFileSystemOperationImpl()->RemoveFile(
+  operation->RemoveFile(
       url,
       base::Bind(&FileSystemOperationRunner::DidFinish, AsWeakPtr(),
-                 id, callback));
-  return id;
+                 handle, callback));
+  return handle.id;
 }
 
 OperationID FileSystemOperationRunner::RemoveDirectory(
     const FileSystemURL& url,
     const StatusCallback& callback) {
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
-  FileSystemOperation* operation = CreateFileSystemOperationImpl(url, &error);
+  FileSystemOperation* operation =
+      file_system_context_->CreateFileSystemOperation(url, &error);
+  BeginOperationScoper scope;
+  OperationHandle handle = BeginOperation(operation, scope.AsWeakPtr());
   if (!operation) {
-    callback.Run(error);
-    return kErrorOperationID;
+    DidFinish(handle, callback, error);
+    return handle.id;
   }
-  OperationID id = operations_.Add(operation);
-  operation->AsFileSystemOperationImpl()->RemoveDirectory(
+  operation->RemoveDirectory(
       url,
       base::Bind(&FileSystemOperationRunner::DidFinish, AsWeakPtr(),
-                 id, callback));
-  return id;
+                 handle, callback));
+  return handle.id;
 }
 
 OperationID FileSystemOperationRunner::CopyFileLocal(
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
+    const CopyFileProgressCallback& progress_callback,
     const StatusCallback& callback) {
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
-  FileSystemOperation* operation = CreateFileSystemOperationImpl(
-      src_url, &error);
+  FileSystemOperation* operation =
+      file_system_context_->CreateFileSystemOperation(src_url, &error);
+  BeginOperationScoper scope;
+  OperationHandle handle = BeginOperation(operation, scope.AsWeakPtr());
   if (!operation) {
-    callback.Run(error);
-    return kErrorOperationID;
+    DidFinish(handle, callback, error);
+    return handle.id;
   }
-  OperationID id = operations_.Add(operation);
-  operation->AsFileSystemOperationImpl()->CopyFileLocal(
-      src_url, dest_url,
+  operation->CopyFileLocal(
+      src_url, dest_url, progress_callback,
       base::Bind(&FileSystemOperationRunner::DidFinish, AsWeakPtr(),
-                 id, callback));
-  return id;
+                 handle, callback));
+  return handle.id;
 }
 
 OperationID FileSystemOperationRunner::MoveFileLocal(
@@ -420,30 +471,30 @@ OperationID FileSystemOperationRunner::MoveFileLocal(
     const FileSystemURL& dest_url,
     const StatusCallback& callback) {
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
-  FileSystemOperation* operation = CreateFileSystemOperationImpl(
-      src_url, &error);
+  FileSystemOperation* operation =
+      file_system_context_->CreateFileSystemOperation(src_url, &error);
+  BeginOperationScoper scope;
+  OperationHandle handle = BeginOperation(operation, scope.AsWeakPtr());
   if (!operation) {
-    callback.Run(error);
-    return kErrorOperationID;
+    DidFinish(handle, callback, error);
+    return handle.id;
   }
-  OperationID id = operations_.Add(operation);
-  operation->AsFileSystemOperationImpl()->MoveFileLocal(
+  operation->MoveFileLocal(
       src_url, dest_url,
       base::Bind(&FileSystemOperationRunner::DidFinish, AsWeakPtr(),
-                 id, callback));
-  return id;
+                 handle, callback));
+  return handle.id;
 }
 
 base::PlatformFileError FileSystemOperationRunner::SyncGetPlatformPath(
     const FileSystemURL& url,
     base::FilePath* platform_path) {
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
-  FileSystemOperation* operation = CreateFileSystemOperationImpl(url, &error);
+  FileSystemOperation* operation =
+      file_system_context_->CreateFileSystemOperation(url, &error);
   if (!operation)
     return error;
-
-  return operation->AsFileSystemOperationImpl()->SyncGetPlatformPath(
-      url, platform_path);
+  return operation->SyncGetPlatformPath(url, platform_path);
 }
 
 FileSystemOperationRunner::FileSystemOperationRunner(
@@ -451,79 +502,126 @@ FileSystemOperationRunner::FileSystemOperationRunner(
     : file_system_context_(file_system_context) {}
 
 void FileSystemOperationRunner::DidFinish(
-    OperationID id,
+    const OperationHandle& handle,
     const StatusCallback& callback,
     base::PlatformFileError rv) {
+  if (handle.scope) {
+    finished_operations_.insert(handle.id);
+    base::MessageLoopProxy::current()->PostTask(
+        FROM_HERE, base::Bind(&FileSystemOperationRunner::DidFinish,
+                              AsWeakPtr(), handle, callback, rv));
+    return;
+  }
   callback.Run(rv);
-  FinishOperation(id);
+  FinishOperation(handle.id);
 }
 
 void FileSystemOperationRunner::DidGetMetadata(
-    OperationID id,
+    const OperationHandle& handle,
     const GetMetadataCallback& callback,
     base::PlatformFileError rv,
     const base::PlatformFileInfo& file_info) {
+  if (handle.scope) {
+    finished_operations_.insert(handle.id);
+    base::MessageLoopProxy::current()->PostTask(
+        FROM_HERE, base::Bind(&FileSystemOperationRunner::DidGetMetadata,
+                              AsWeakPtr(), handle, callback, rv, file_info));
+    return;
+  }
   callback.Run(rv, file_info);
-  FinishOperation(id);
+  FinishOperation(handle.id);
 }
 
 void FileSystemOperationRunner::DidReadDirectory(
-    OperationID id,
+    const OperationHandle& handle,
     const ReadDirectoryCallback& callback,
     base::PlatformFileError rv,
     const std::vector<DirectoryEntry>& entries,
     bool has_more) {
+  if (handle.scope) {
+    finished_operations_.insert(handle.id);
+    base::MessageLoopProxy::current()->PostTask(
+        FROM_HERE, base::Bind(&FileSystemOperationRunner::DidReadDirectory,
+                              AsWeakPtr(), handle, callback, rv,
+                              entries, has_more));
+    return;
+  }
   callback.Run(rv, entries, has_more);
   if (rv != base::PLATFORM_FILE_OK || !has_more)
-    FinishOperation(id);
+    FinishOperation(handle.id);
 }
 
 void FileSystemOperationRunner::DidWrite(
-    OperationID id,
+    const OperationHandle& handle,
     const WriteCallback& callback,
     base::PlatformFileError rv,
     int64 bytes,
     bool complete) {
+  if (handle.scope) {
+    finished_operations_.insert(handle.id);
+    base::MessageLoopProxy::current()->PostTask(
+        FROM_HERE, base::Bind(&FileSystemOperationRunner::DidWrite, AsWeakPtr(),
+                              handle, callback, rv, bytes, complete));
+    return;
+  }
   callback.Run(rv, bytes, complete);
   if (rv != base::PLATFORM_FILE_OK || complete)
-    FinishOperation(id);
+    FinishOperation(handle.id);
 }
 
 void FileSystemOperationRunner::DidOpenFile(
-    OperationID id,
+    const OperationHandle& handle,
     const OpenFileCallback& callback,
     base::PlatformFileError rv,
     base::PlatformFile file,
     const base::Closure& on_close_callback,
     base::ProcessHandle peer_handle) {
+  if (handle.scope) {
+    finished_operations_.insert(handle.id);
+    base::MessageLoopProxy::current()->PostTask(
+        FROM_HERE, base::Bind(&FileSystemOperationRunner::DidOpenFile,
+                              AsWeakPtr(), handle, callback, rv, file,
+                              on_close_callback, peer_handle));
+    return;
+  }
   callback.Run(rv, file, on_close_callback, peer_handle);
-  FinishOperation(id);
+  FinishOperation(handle.id);
 }
 
 void FileSystemOperationRunner::DidCreateSnapshot(
-    OperationID id,
+    const OperationHandle& handle,
     const SnapshotFileCallback& callback,
     base::PlatformFileError rv,
     const base::PlatformFileInfo& file_info,
     const base::FilePath& platform_path,
     const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref) {
+  if (handle.scope) {
+    finished_operations_.insert(handle.id);
+    base::MessageLoopProxy::current()->PostTask(
+        FROM_HERE, base::Bind(&FileSystemOperationRunner::DidCreateSnapshot,
+                              AsWeakPtr(), handle, callback, rv, file_info,
+                              platform_path, file_ref));
+    return;
+  }
   callback.Run(rv, file_info, platform_path, file_ref);
-  FinishOperation(id);
+  FinishOperation(handle.id);
 }
 
-FileSystemOperation*
-FileSystemOperationRunner::CreateFileSystemOperationImpl(
-    const FileSystemURL& url, base::PlatformFileError* error) {
-  FileSystemOperation* operation =
-      file_system_context_->CreateFileSystemOperation(url, error);
-  if (!operation)
-    return NULL;
-  if (!operation->AsFileSystemOperationImpl()) {
-    *error = base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
-    delete operation;
-    return NULL;
+void FileSystemOperationRunner::OnCopyProgress(
+    const OperationHandle& handle,
+    const CopyProgressCallback& callback,
+    FileSystemOperation::CopyProgressType type,
+    const FileSystemURL& source_url,
+    const FileSystemURL& dest_url,
+    int64 size) {
+  if (handle.scope) {
+    base::MessageLoopProxy::current()->PostTask(
+        FROM_HERE, base::Bind(
+            &FileSystemOperationRunner::OnCopyProgress,
+            AsWeakPtr(), handle, callback, type, source_url, dest_url, size));
+    return;
   }
-  return operation;
+  callback.Run(type, source_url, dest_url, size);
 }
 
 void FileSystemOperationRunner::PrepareForWrite(OperationID id,
@@ -543,6 +641,16 @@ void FileSystemOperationRunner::PrepareForRead(OperationID id,
   }
 }
 
+FileSystemOperationRunner::OperationHandle
+FileSystemOperationRunner::BeginOperation(
+    FileSystemOperation* operation,
+    base::WeakPtr<BeginOperationScoper> scope) {
+  OperationHandle handle;
+  handle.id = operations_.Add(operation);
+  handle.scope = scope;
+  return handle;
+}
+
 void FileSystemOperationRunner::FinishOperation(OperationID id) {
   OperationToURLSet::iterator found = write_target_urls_.find(id);
   if (found != write_target_urls_.end()) {
@@ -556,8 +664,22 @@ void FileSystemOperationRunner::FinishOperation(OperationID id) {
     }
     write_target_urls_.erase(found);
   }
-  DCHECK(operations_.Lookup(id));
+
+  // IDMap::Lookup fails if the operation is NULL, so we don't check
+  // operations_.Lookup(id) here.
+
   operations_.Remove(id);
+  finished_operations_.erase(id);
+
+  // Dispatch stray cancel callback if exists.
+  std::map<OperationID, StatusCallback>::iterator found_cancel =
+      stray_cancel_callbacks_.find(id);
+  if (found_cancel != stray_cancel_callbacks_.end()) {
+    // This cancel has been requested after the operation has finished,
+    // so report that we failed to stop it.
+    found_cancel->second.Run(base::PLATFORM_FILE_ERROR_INVALID_OPERATION);
+    stray_cancel_callbacks_.erase(found_cancel);
+  }
 }
 
 }  // namespace fileapi

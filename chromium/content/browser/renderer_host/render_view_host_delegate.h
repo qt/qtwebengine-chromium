@@ -50,6 +50,7 @@ class PageState;
 class RenderViewHost;
 class RenderViewHostDelegateView;
 class SessionStorageNamespace;
+class SiteInstance;
 class WebContents;
 class WebContentsImpl;
 struct ContextMenuParams;
@@ -58,7 +59,8 @@ struct GlobalRequestID;
 struct NativeWebKeyboardEvent;
 struct Referrer;
 struct RendererPreferences;
-class SiteInstance;
+struct ResourceRedirectDetails;
+struct ResourceRequestDetails;
 
 //
 // RenderViewHostDelegate
@@ -151,8 +153,8 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // The RenderView processed a redirect during a provisional load.
   //
   // TODO(creis): Remove this method and have the pre-rendering code listen to
-  // the ResourceDispatcherHost's RESOURCE_RECEIVED_REDIRECT notification
-  // instead.  See http://crbug.com/78512.
+  // WebContentsObserver::DidGetRedirectForResourceRequest instead.
+  // See http://crbug.com/78512.
   virtual void DidRedirectProvisionalLoad(
       RenderViewHost* render_view_host,
       int32 page_id,
@@ -163,6 +165,14 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   virtual void DidFailProvisionalLoadWithError(
       RenderViewHost* render_view_host,
       const ViewHostMsg_DidFailProvisionalLoadWithError_Params& params) {}
+
+  // A response has been received for a resource request.
+  virtual void DidGetResourceResponseStart(
+      const ResourceRequestDetails& details) {}
+
+  // A redirect was received while requesting a resource.
+  virtual void DidGetRedirectForResourceRequest(
+      const ResourceRedirectDetails& details) {}
 
   // The RenderView was navigated to a different page.
   virtual void DidNavigate(RenderViewHost* render_view_host,
@@ -299,6 +309,7 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // Notification that the renderer has become unresponsive. The
   // delegate can use this notification to show a warning to the user.
   virtual void RendererUnresponsive(RenderViewHost* render_view_host,
+                                    bool is_during_before_unload,
                                     bool is_during_unload) {}
 
   // Notification that a previously unresponsive renderer has become

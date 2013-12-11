@@ -6,9 +6,9 @@
 #define UI_BASE_GESTURES_GESTURE_SEQUENCE_H_
 
 #include "base/timer/timer.h"
-#include "ui/base/events/event_constants.h"
 #include "ui/base/gestures/gesture_point.h"
 #include "ui/base/gestures/gesture_recognizer.h"
+#include "ui/events/event_constants.h"
 #include "ui/gfx/rect.h"
 
 namespace ui {
@@ -19,6 +19,7 @@ class GestureEvent;
 enum GestureState {
   GS_NO_GESTURE,
   GS_PENDING_SYNTHETIC_CLICK,
+  GS_PENDING_SYNTHETIC_CLICK_NO_SCROLL,
   GS_SCROLL,
   GS_PINCH,
   GS_PENDING_TWO_FINGER_TAP,
@@ -170,6 +171,10 @@ class UI_EXPORT GestureSequence {
   bool MaybeSwipe(const TouchEvent& event,
                   const GesturePoint& point,
                   Gestures* gestures);
+
+  void TwoFingerTapOrPinch(const TouchEvent& event,
+                           const GesturePoint& point,
+                           Gestures* gestures);
 
   void StopLongPressTimerIfRequired(const TouchEvent& event);
 

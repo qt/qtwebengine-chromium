@@ -46,8 +46,8 @@
 namespace WebCore {
 
 ScheduledAction::ScheduledAction(v8::Handle<v8::Context> context, v8::Handle<v8::Function> function, int argc, v8::Handle<v8::Value> argv[], v8::Isolate* isolate)
-    : m_context(context)
-    , m_function(function)
+    : m_context(isolate, context)
+    , m_function(isolate, function)
     , m_code(String(), KURL(), TextPosition::belowRangePosition())
     , m_isolate(isolate)
 {
@@ -57,7 +57,7 @@ ScheduledAction::ScheduledAction(v8::Handle<v8::Context> context, v8::Handle<v8:
 }
 
 ScheduledAction::ScheduledAction(v8::Handle<v8::Context> context, const String& code, const KURL& url, v8::Isolate* isolate)
-    : m_context(context)
+    : m_context(isolate, context)
     , m_code(code, url)
     , m_isolate(isolate)
 {
@@ -114,7 +114,7 @@ void ScheduledAction::execute(WorkerGlobalScope* worker)
     if (!m_function.isEmpty()) {
         Vector<v8::Handle<v8::Value> > args;
         createLocalHandlesForArgs(&args);
-        V8ScriptRunner::callFunction(m_function.newLocal(m_isolate), worker, context->Global(), args.size(), args.data());
+        V8ScriptRunner::callFunction(m_function.newLocal(m_isolate), worker, context->Global(), args.size(), args.data(), m_isolate);
     } else
         worker->script()->evaluate(m_code);
 }

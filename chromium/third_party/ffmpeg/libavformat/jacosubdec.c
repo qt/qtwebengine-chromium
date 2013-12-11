@@ -60,10 +60,10 @@ static int jacosub_probe(AVProbeData *p)
             ptr++;
         if (*ptr != '#' && *ptr != '\n') {
             if (timed_line(ptr))
-                return AVPROBE_SCORE_MAX/2 + 1;
+                return AVPROBE_SCORE_EXTENSION + 1;
             return 0;
         }
-        ptr += strcspn(ptr, "\n") + 1;
+        ptr += ff_subtitles_next_line(ptr);
     }
     return 0;
 }

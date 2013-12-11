@@ -32,10 +32,11 @@
 #include "core/html/LinkImport.h"
 
 #include "core/dom/Document.h"
+#include "core/fetch/CrossOriginAccessControl.h"
 #include "core/html/HTMLImportLoader.h"
 #include "core/html/HTMLImportsController.h"
 #include "core/html/HTMLLinkElement.h"
-#include "core/loader/CrossOriginAccessControl.h"
+
 
 namespace WebCore {
 
@@ -67,12 +68,12 @@ void LinkImport::process()
         return;
     if (!m_owner)
         return;
-    if (!m_owner->document()->frame() && !m_owner->document()->import())
+    if (!m_owner->document().frame() && !m_owner->document().import())
         return;
 
-    if (!m_owner->document()->import()) {
-        ASSERT(m_owner->document()->frame()); // The document should be the master.
-        HTMLImportsController::provideTo(m_owner->document());
+    if (!m_owner->document().import()) {
+        ASSERT(m_owner->document().frame()); // The document should be the master.
+        HTMLImportsController::provideTo(&m_owner->document());
     }
 
     LinkRequestBuilder builder(m_owner);
@@ -81,7 +82,7 @@ void LinkImport::process()
         return;
     }
 
-    HTMLImport* parent = m_owner->document()->import();
+    HTMLImport* parent = m_owner->document().import();
     HTMLImportsController* controller = parent->controller();
     m_loader = controller->createLoader(parent, builder.build(true));
     if (!m_loader) {

@@ -60,7 +60,7 @@ namespace WebCore {
 using namespace HTMLNames;
 
 RenderMarquee::RenderMarquee(Element* element)
-    : RenderBlock(element)
+    : RenderBlockFlow(element)
     , m_currentLoop(0)
     , m_totalLoops(0)
     , m_timer(this, &RenderMarquee::timerFired)
@@ -72,7 +72,7 @@ RenderMarquee::RenderMarquee(Element* element)
     , m_stopped(false)
     , m_direction(MAUTO)
 {
-    UseCounter::count(document(), UseCounter::HTMLMarqueeElement);
+    UseCounter::count(&document(), UseCounter::HTMLMarqueeElement);
 }
 
 RenderMarquee::~RenderMarquee()
@@ -82,11 +82,8 @@ RenderMarquee::~RenderMarquee()
 int RenderMarquee::marqueeSpeed() const
 {
     int result = style()->marqueeSpeed();
-    if (Node* node = this->node()) {
-        ASSERT(node->hasTagName(marqueeTag));
-        HTMLMarqueeElement* marqueeElt = static_cast<HTMLMarqueeElement*>(node);
-        result = max(result, marqueeElt->minimumDelay());
-    }
+    if (Node* node = this->node())
+        result = std::max(result, toHTMLMarqueeElement(node)->minimumDelay());
     return result;
 }
 
@@ -167,7 +164,7 @@ void RenderMarquee::start()
 
     // We may end up propagating a scroll event. It is important that we suspend events until
     // the end of the function since they could delete the layer, including the marquee.
-    FrameView* frameView = document()->view();
+    FrameView* frameView = document().view();
     if (frameView)
         frameView->pauseScheduledEvents();
 
@@ -276,7 +273,7 @@ void RenderMarquee::styleDidChange(StyleDifference difference, const RenderStyle
 
 void RenderMarquee::layoutBlock(bool relayoutChildren, LayoutUnit pageLogicalHeight)
 {
-    RenderBlock::layoutBlock(relayoutChildren, pageLogicalHeight);
+    RenderBlockFlow::layoutBlock(relayoutChildren, pageLogicalHeight);
 
     updateMarqueePosition();
 }

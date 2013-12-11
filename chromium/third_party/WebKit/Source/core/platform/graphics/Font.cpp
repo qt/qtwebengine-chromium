@@ -251,7 +251,7 @@ float Font::width(const TextRun& run, int& charsConsumed, String& glyphName) con
     return width(run);
 }
 
-#if !OS(DARWIN)
+#if !OS(MACOSX)
 
 PassOwnPtr<TextLayout> Font::createLayout(RenderText*, float, bool) const
 {
@@ -692,6 +692,13 @@ bool Font::canReceiveTextEmphasis(UChar32 c)
         return false;
 
     return true;
+}
+
+void Font::willUseFontData() const
+{
+    const FontFamily& family = fontDescription().family();
+    if (m_fontFallbackList && m_fontFallbackList->fontSelector() && !family.familyIsEmpty())
+        m_fontFallbackList->fontSelector()->willUseFontData(fontDescription(), family.family());
 }
 
 }

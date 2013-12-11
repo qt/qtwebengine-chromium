@@ -10,6 +10,7 @@
 #include "base/command_line.h"
 #include "base/location.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/output_surface.h"
 #include "content/browser/aura/browser_compositor_output_surface.h"
@@ -74,6 +75,7 @@ class OwnedTexture : public ui::Texture, ImageTransportFactoryObserver {
   // ImageTransportFactory overrides:
   virtual void OnLostResources() OVERRIDE {
     DeleteTexture();
+    host_context_ = NULL;
   }
 
  protected:
@@ -90,9 +92,8 @@ class OwnedTexture : public ui::Texture, ImageTransportFactoryObserver {
     }
   }
 
-  // A raw pointer. This |ImageTransportClientTexture| will be destroyed
-  // before the |host_context_| via
-  // |ImageTransportFactoryObserver::OnLostContext()| handlers.
+  // The OnLostResources() callback will happen before this context
+  // pointer is destroyed.
   WebKit::WebGraphicsContext3D* host_context_;
   unsigned texture_id_;
 
@@ -199,12 +200,6 @@ GpuProcessTransportFactory::CreateOffscreenCommandBufferContext() {
   return CreateContextCommon(swap_client, 0);
 }
 
-scoped_ptr<WebKit::WebGraphicsContext3D>
-GpuProcessTransportFactory::CreateOffscreenContext() {
-  return CreateOffscreenCommandBufferContext()
-      .PassAs<WebKit::WebGraphicsContext3D>();
-}
-
 scoped_ptr<cc::SoftwareOutputDevice> CreateSoftwareOutputDevice(
     ui::Compositor* compositor) {
 #if defined(OS_WIN)
@@ -225,15 +220,22 @@ scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
   if (!data)
     data = CreatePerCompositorData(compositor);
 
-  scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context;
+  scoped_refptr<ContextProviderCommandBuffer> context_provider;
+
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   if (!command_line->HasSwitch(switches::kUIEnableSoftwareCompositing)) {
-    context =
-        CreateContextCommon(data->swap_client->AsWeakPtr(), data->surface_id);
+    context_provider = ContextProviderCommandBuffer::Create(
+        GpuProcessTransportFactory::CreateContextCommon(
+            data->swap_client->AsWeakPtr(),
+            data->surface_id),
+            "Compositor");
   }
-  if (!context) {
+
+  UMA_HISTOGRAM_BOOLEAN("Aura.CreatedGpuBrowserCompositor", !!context_provider);
+
+  if (!context_provider.get()) {
     if (ui::Compositor::WasInitializedWithThread()) {
-      LOG(FATAL) << "Failed to create UI context, but can't use software "
+      LOG(FATAL) << "Failed to create UI context, but can't use software"
                  " compositing with browser threaded compositing. Aborting.";
     }
 
@@ -255,7 +257,7 @@ scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
 
   scoped_ptr<BrowserCompositorOutputSurface> surface(
       new BrowserCompositorOutputSurface(
-          context.PassAs<WebKit::WebGraphicsContext3D>(),
+          context_provider,
           per_compositor_data_[compositor]->surface_id,
           &output_surface_map_,
           base::MessageLoopProxy::current().get(),
@@ -390,12 +392,14 @@ void GpuProcessTransportFactory::RemoveObserver(
 
 scoped_refptr<cc::ContextProvider>
 GpuProcessTransportFactory::OffscreenContextProviderForMainThread() {
-  if (!shared_contexts_main_thread_.get() ||
-      shared_contexts_main_thread_->DestroyedOnMainThread()) {
+  // Don't check for DestroyedOnMainThread() here. We hear about context
+  // loss for this context through the lost context callback. If the context
+  // is lost, we want to leave this ContextProvider available until the lost
+  // context notification is sent to the ImageTransportFactoryObserver clients.
+  if (!shared_contexts_main_thread_.get()) {
     shared_contexts_main_thread_ = ContextProviderCommandBuffer::Create(
-        base::Bind(&GpuProcessTransportFactory::
-                       CreateOffscreenCommandBufferContext,
-                   base::Unretained(this)));
+        GpuProcessTransportFactory::CreateOffscreenCommandBufferContext(),
+        "Compositor-Offscreen-MainThread");
     if (shared_contexts_main_thread_) {
       shared_contexts_main_thread_->SetLostContextCallback(base::Bind(
           &GpuProcessTransportFactory::
@@ -411,12 +415,13 @@ GpuProcessTransportFactory::OffscreenContextProviderForMainThread() {
 
 scoped_refptr<cc::ContextProvider>
 GpuProcessTransportFactory::OffscreenContextProviderForCompositorThread() {
-  if (!shared_contexts_compositor_thread_.get() ||
-      shared_contexts_compositor_thread_->DestroyedOnMainThread()) {
+  // The lifetime of this context is tied to the main thread context so that
+  // they are always in the same share group. So do not check for
+  // DestroyedOnMainThread().
+  if (!shared_contexts_compositor_thread_.get()) {
     shared_contexts_compositor_thread_ = ContextProviderCommandBuffer::Create(
-        base::Bind(&GpuProcessTransportFactory::
-                       CreateOffscreenCommandBufferContext,
-                   base::Unretained(this)));
+        GpuProcessTransportFactory::CreateOffscreenCommandBufferContext(),
+        "Compositor-Offscreen");
   }
   return shared_contexts_compositor_thread_;
 }
@@ -500,18 +505,29 @@ void GpuProcessTransportFactory::OnLostMainThreadSharedContextInsideCallback() {
 
 void GpuProcessTransportFactory::OnLostMainThreadSharedContext() {
   LOG(ERROR) << "Lost UI shared context.";
+
   // Keep old resources around while we call the observers, but ensure that
   // new resources are created if needed.
+  // Kill shared contexts for both threads in tandem so they are always in
+  // the same share group.
 
-  scoped_refptr<ContextProviderCommandBuffer> old_contexts_main_thread =
+  scoped_refptr<cc::ContextProvider> lost_shared_contexts_main_thread =
       shared_contexts_main_thread_;
+  scoped_refptr<cc::ContextProvider> lost_shared_contexts_compositor_thread =
+      shared_contexts_compositor_thread_;
   shared_contexts_main_thread_ = NULL;
+  shared_contexts_compositor_thread_ = NULL;
 
-  scoped_ptr<GLHelper> old_helper(gl_helper_.release());
+  scoped_ptr<GLHelper> lost_gl_helper = gl_helper_.Pass();
 
   FOR_EACH_OBSERVER(ImageTransportFactoryObserver,
                     observer_list_,
                     OnLostResources());
+
+  // Kill things that use the shared context before killing the shared context.
+  lost_gl_helper.reset();
+  lost_shared_contexts_main_thread = NULL;
+  lost_shared_contexts_compositor_thread = NULL;
 }
 
 }  // namespace content

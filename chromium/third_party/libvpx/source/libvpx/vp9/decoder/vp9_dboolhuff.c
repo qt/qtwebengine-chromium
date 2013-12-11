@@ -13,6 +13,12 @@
 
 #include "vp9/decoder/vp9_dboolhuff.h"
 
+// This is meant to be a large, positive constant that can still be efficiently
+// loaded as an immediate (on platforms like ARM, for example).
+// Even relatively modest values like 100 would work fine.
+#define LOTS_OF_BITS 0x40000000
+
+
 int vp9_reader_init(vp9_reader *r, const uint8_t *buffer, size_t size) {
   int marker_bit;
 
@@ -35,13 +41,13 @@ void vp9_reader_fill(vp9_reader *r) {
   const uint8_t *buffer = r->buffer;
   VP9_BD_VALUE value = r->value;
   int count = r->count;
-  int shift = VP9_BD_VALUE_SIZE - 8 - (count + 8);
+  int shift = BD_VALUE_SIZE - 8 - (count + 8);
   int loop_end = 0;
   const int bits_left = (int)((buffer_end - buffer)*CHAR_BIT);
   const int x = shift + CHAR_BIT - bits_left;
 
   if (x >= 0) {
-    count += VP9_LOTS_OF_BITS;
+    count += LOTS_OF_BITS;
     loop_end = x;
   }
 
@@ -60,10 +66,27 @@ void vp9_reader_fill(vp9_reader *r) {
 
 const uint8_t *vp9_reader_find_end(vp9_reader *r) {
   // Find the end of the coded buffer
-  while (r->count > CHAR_BIT && r->count < VP9_BD_VALUE_SIZE) {
+  while (r->count > CHAR_BIT && r->count < BD_VALUE_SIZE) {
     r->count -= CHAR_BIT;
     r->buffer--;
   }
   return r->buffer;
 }
 
+int vp9_reader_has_error(vp9_reader *r) {
+  // Check if we have reached the end of the buffer.
+  //
+  // Variable 'count' stores the number of bits in the 'value' buffer, minus
+  // 8. The top byte is part of the algorithm, and the remainder is buffered
+  // to be shifted into it. So if count == 8, the top 16 bits of 'value' are
+  // occupied, 8 for the algorithm and 8 in the buffer.
+  //
+  // When reading a byte from the user's buffer, count is filled with 8 and
+  // one byte is filled into the value buffer. When we reach the end of the
+  // data, count is additionally filled with LOTS_OF_BITS. So when
+  // count == LOTS_OF_BITS - 1, the user's data has been exhausted.
+  //
+  // 1 if we have tried to decode bits after the end of stream was encountered.
+  // 0 No error.
+  return r->count > BD_VALUE_SIZE && r->count < LOTS_OF_BITS;
+}

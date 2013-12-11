@@ -27,7 +27,6 @@
 #include "bindings/v8/ExceptionState.h"
 #include "core/css/CSSHelper.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/page/Frame.h"
 #include "core/platform/graphics/FontMetrics.h"
 #include "core/rendering/RenderPart.h"
 #include "core/rendering/RenderView.h"
@@ -294,7 +293,7 @@ bool SVGLengthContext::determineViewport(float& width, float& height) const
 
     // SVGLengthContext should NEVER be used to resolve width/height values for <svg> elements,
     // as they require special treatment, due the relationship with the CSS width/height properties.
-    ASSERT(m_context->document()->documentElement() != m_context);
+    ASSERT(m_context->document().documentElement() != m_context);
 
     // Take size from nearest viewport element.
     SVGElement* viewportElement = m_context->viewportElement();

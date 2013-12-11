@@ -90,6 +90,7 @@ WebInspector.Settings = function()
     this.overrideDeviceOrientation = this.createSetting("overrideDeviceOrientation", false);
     this.deviceOrientationOverride = this.createSetting("deviceOrientationOverride", "");
     this.showAdvancedHeapSnapshotProperties = this.createSetting("showAdvancedHeapSnapshotProperties", false);
+    this.highResolutionCpuProfiling = this.createSetting("highResolutionCpuProfiling", false);
     this.searchInContentScripts = this.createSetting("searchInContentScripts", false);
     this.textEditorIndent = this.createSetting("textEditorIndent", "    ");
     this.textEditorAutoDetectIndent = this.createSetting("textEditorAutoIndentIndent", true);
@@ -109,7 +110,6 @@ WebInspector.Settings = function()
     this.splitVerticallyWhenDockedToRight = this.createSetting("splitVerticallyWhenDockedToRight", true);
     this.visiblePanels = this.createSetting("visiblePanels", {});
     this.shortcutPanelSwitch = this.createSetting("shortcutPanelSwitch", false);
-    this.portForwardings = this.createSetting("portForwardings", []);
     this.showWhitespacesInEditor = this.createSetting("showWhitespacesInEditor", false);
     this.skipStackFramesSwitch = this.createSetting("skipStackFramesSwitch", false);
     this.skipStackFramesPattern = this.createSetting("skipStackFramesPattern", "");
@@ -158,11 +158,19 @@ WebInspector.Setting = function(name, defaultValue, eventSupport, storage)
 }
 
 WebInspector.Setting.prototype = {
+    /**
+     * @param {function(WebInspector.Event)} listener
+     * @param {Object=} thisObject
+     */
     addChangeListener: function(listener, thisObject)
     {
         this._eventSupport.addEventListener(this._name, listener, thisObject);
     },
 
+    /**
+     * @param {function(WebInspector.Event)} listener
+     * @param {Object=} thisObject
+     */
     removeChangeListener: function(listener, thisObject)
     {
         this._eventSupport.removeEventListener(this._name, listener, thisObject);
@@ -256,11 +264,12 @@ WebInspector.ExperimentsSettings = function()
     this.cssRegions = this._createExperiment("cssRegions", "CSS Regions Support");
     this.showOverridesInDrawer = this._createExperiment("showOverridesInDrawer", "Show Overrides in drawer");
     this.customizableToolbar = this._createExperiment("customizableToolbar", "Enable toolbar customization");
-    this.tethering = this._createExperiment("tethering", "Enable port forwarding");
     this.drawerOverlay = this._createExperiment("drawerOverlay", "Open console as overlay");
     this.frameworksDebuggingSupport = this._createExperiment("frameworksDebuggingSupport", "Enable frameworks debugging support");
-    this.refreshFileSystemsOnFocus = this._createExperiment("refreshFileSystemsOnFocus", "Refresh file system folders on window focus");
-    this.scrollBeyondEndOfFile = this._createExperiment("scrollBeyondEndOfFile", "Support scrolling beyond end of file");
+    this.layersPanel = this._createExperiment("layersPanel", "Show Layers panel");
+    this.screencast = this._createExperiment("screencast", "Enable screencast");
+    this.stepIntoSelection = this._createExperiment("stepIntoSelection", "Show step-in candidates while debugging.");
+    this.openConsoleWithCtrlTilde = this._createExperiment("openConsoleWithCtrlTilde", "Open console with Ctrl/Cmd+Tilde, not Esc");
 
     this._cleanUpSetting();
 }

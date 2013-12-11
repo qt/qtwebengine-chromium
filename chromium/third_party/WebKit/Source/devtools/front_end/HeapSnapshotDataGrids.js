@@ -107,17 +107,21 @@ WebInspector.HeapSnapshotSortableDataGrid.prototype = {
         if (!td)
             return;
         var node = td.heapSnapshotNode;
-        if (node instanceof WebInspector.HeapSnapshotInstanceNode || node instanceof WebInspector.HeapSnapshotObjectNode) {
-            function revealInDominatorsView()
-            {
+        function revealInDominatorsView()
+        {
                 profilesPanel.showObject(node.snapshotNodeId, "Dominators");
-            }
+        }
+        function revealInSummaryView()
+        {
+                profilesPanel.showObject(node.snapshotNodeId, "Summary");
+        }
+        if(node && node.showRetainingEdges) {
+            contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Reveal in Summary view" : "Reveal in Summary View"), revealInSummaryView.bind(this));
+            contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Reveal in Dominators view" : "Reveal in Dominators View"), revealInDominatorsView.bind(this));
+        }
+        else if (node instanceof WebInspector.HeapSnapshotInstanceNode || node instanceof WebInspector.HeapSnapshotObjectNode) {
             contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Reveal in Dominators view" : "Reveal in Dominators View"), revealInDominatorsView.bind(this));
         } else if (node instanceof WebInspector.HeapSnapshotDominatorObjectNode) {
-            function revealInSummaryView()
-            {
-                profilesPanel.showObject(node.snapshotNodeId, "Summary");
-            }
             contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Reveal in Summary view" : "Reveal in Summary View"), revealInSummaryView.bind(this));
         }
     },
@@ -855,5 +859,62 @@ WebInspector.HeapSnapshotDominatorsDataGrid.prototype = {
     },
 
     __proto__: WebInspector.HeapSnapshotSortableDataGrid.prototype
+}
+
+
+/**
+ * @constructor
+ * @extends {WebInspector.DataGrid}
+ */
+WebInspector.AllocationDataGrid = function()
+{
+    var columns = [
+        {id: "name", title: WebInspector.UIString("Function"), width: "200px", disclosure: true, sortable: true},
+        {id: "count", title: WebInspector.UIString("Count"), sortable: true, sort: WebInspector.DataGrid.Order.Descending},
+        {id: "size", title: WebInspector.UIString("Size"), sortable: true, sort: WebInspector.DataGrid.Order.Descending},
+    ];
+    WebInspector.DataGrid.call(this, columns);
+}
+
+WebInspector.AllocationDataGrid.prototype = {
+    setDataSource: function(snapshot)
+    {
+        this._snapshot = snapshot;
+        this._snapshot.allocationTracesTops(didReceiveAllocationTracesTops.bind(this));
+        function didReceiveAllocationTracesTops(tops)
+        {
+            var root = this.rootNode();
+            for (var i = 0; i < tops.length; i++)
+                root.appendChild(new WebInspector.AllocationGridNode(this, tops[i]));
+        }
+    },
+
+    __proto__: WebInspector.DataGrid.prototype
+}
+
+
+/**
+ * @constructor
+ * @extends {WebInspector.DataGridNode}
+ * @param {WebInspector.DataGrid} dataGrid
+ */
+WebInspector.AllocationGridNode = function(dataGrid, data)
+{
+    WebInspector.DataGridNode.call(this, data, data.hasChildren);
+    this._dataGrid = dataGrid;
+}
+
+WebInspector.AllocationGridNode.prototype = {
+    populate: function()
+    {
+        this._dataGrid._snapshot.allocationNodeCallers(this.data.id, didReceiveCallers.bind(this));
+        function didReceiveCallers(callers)
+        {
+            for (var i = 0; i < callers.length; i++)
+                this.appendChild(new WebInspector.AllocationGridNode(this._dataGrid, callers[i]));
+        }
+    },
+
+    __proto__: WebInspector.DataGridNode.prototype
 }
 

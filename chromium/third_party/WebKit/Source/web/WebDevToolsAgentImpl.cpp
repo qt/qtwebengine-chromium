@@ -46,9 +46,9 @@
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8Utilities.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/fetch/MemoryCache.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InspectorController.h"
-#include "core/loader/cache/MemoryCache.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "core/page/Page.h"
@@ -210,9 +210,9 @@ public:
         m_emulatedFrameSize = WebSize(width, height);
         m_fitWindow = fitWindow;
         m_originalZoomFactor = 0;
-        m_webView->setEmulatedTextZoomFactor(textZoomFactor);
+        m_webView->setTextZoomFactor(textZoomFactor);
         applySizeOverrideInternal(view, FitWindowAllowed);
-        autoZoomPageToFitWidth(view->frame());
+        autoZoomPageToFitWidth(&view->frame());
 
         m_webView->sendResizeEventAndRepaint();
     }
@@ -228,15 +228,12 @@ public:
 
     void autoZoomPageToFitWidth(Frame* frame)
     {
-        if (!frame)
-            return;
-
-        frame->setTextZoomFactor(m_webView->emulatedTextZoomFactor());
+        frame->setTextZoomFactor(m_webView->textZoomFactor());
         ensureOriginalZoomFactor(frame->view());
         Document* document = frame->document();
         float numerator = document->renderView() ? document->renderView()->viewWidth() : frame->view()->contentsWidth();
         float factor = m_originalZoomFactor * (numerator / m_emulatedFrameSize.width);
-        frame->setPageAndTextZoomFactors(factor, m_webView->emulatedTextZoomFactor());
+        frame->setPageAndTextZoomFactors(factor, m_webView->textZoomFactor());
         document->styleResolverChanged(RecalcStyleImmediately);
         document->updateLayout();
     }
@@ -268,7 +265,7 @@ private:
             return;
 
         m_webView->setPageScaleFactor(1, WebPoint());
-        m_webView->setZoomLevel(false, 0);
+        m_webView->setZoomLevel(0);
         WebSize scaledEmulatedSize = scaledEmulatedFrameSize(frameView);
         double denominator = frameView->contentsWidth();
         if (!denominator)
@@ -282,8 +279,8 @@ private:
         if (!view)
             return;
 
-        m_webView->setZoomLevel(false, 0);
-        m_webView->setEmulatedTextZoomFactor(1);
+        m_webView->setZoomLevel(0);
+        m_webView->setTextZoomFactor(1);
         view->setHorizontalScrollbarLock(false);
         view->setVerticalScrollbarLock(false);
         view->setScrollbarModes(ScrollbarAuto, ScrollbarAuto, false, false);
@@ -338,7 +335,7 @@ private:
         if (IntSize(overrideWidth, overrideHeight) != frameView->size())
             frameView->resize(overrideWidth, overrideHeight);
 
-        Document* doc = frameView->frame()->document();
+        Document* doc = frameView->frame().document();
         doc->styleResolverChanged(RecalcStyleImmediately);
         doc->updateLayout();
     }
@@ -464,10 +461,18 @@ void WebDevToolsAgentImpl::webViewResized(const WebSize& size)
 
 bool WebDevToolsAgentImpl::handleInputEvent(WebCore::Page* page, const WebInputEvent& inputEvent)
 {
+    if (!m_attached)
+        return false;
+
     InspectorController* ic = inspectorController();
     if (!ic)
         return false;
 
+    if (WebInputEvent::isGestureEventType(inputEvent.type) && inputEvent.type == WebInputEvent::GestureTap) {
+        // Only let GestureTab in (we only need it and we know PlatformGestureEventBuilder supports it).
+        PlatformGestureEvent gestureEvent = PlatformGestureEventBuilder(page->mainFrame()->view(), *static_cast<const WebGestureEvent*>(&inputEvent));
+        return ic->handleGestureEvent(page->mainFrame(), gestureEvent);
+    }
     if (WebInputEvent::isMouseEventType(inputEvent.type) && inputEvent.type != WebInputEvent::MouseEnter) {
         // PlatformMouseEventBuilder does not work with MouseEnter type, so we filter it out manually.
         PlatformMouseEvent mouseEvent = PlatformMouseEventBuilder(page->mainFrame()->view(), *static_cast<const WebMouseEvent*>(&inputEvent));
@@ -634,7 +639,7 @@ void WebDevToolsAgentImpl::inspectElementAt(const WebPoint& point)
 InspectorController* WebDevToolsAgentImpl::inspectorController()
 {
     if (Page* page = m_webViewImpl->page())
-        return page->inspectorController();
+        return &page->inspectorController();
     return 0;
 }
 

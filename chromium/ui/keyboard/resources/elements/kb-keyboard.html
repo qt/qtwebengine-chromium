@@ -1,5 +1,5 @@
 <!--
-  -- Copyright (c) 2013 The Chromium Authors. All rights reserved.
+  -- Copyright 2013 The Chromium Authors. All rights reserved.
   -- Use of this source code is governed by a BSD-style license that can be
   -- found in the LICENSE file.
   -->
@@ -7,7 +7,8 @@
 <polymer-element name="kb-keyboard" on-key-over="keyOver" on-key-up="keyUp"
     on-key-down="keyDown" on-key-longpress="keyLongpress" on-pointerup="up"
     on-pointerdown="down" on-enable-sel="enableSel"
-    on-enable-dbl="enableDbl" attributes="keyset layout rows">
+    on-enable-dbl="enableDbl"
+    attributes="keyset layout rows inputType inputTypeToLayoutMap">
   <template>
     <style>
       @host {
@@ -23,6 +24,7 @@
       -- keyboard layouts.
       -->
     <content select="#{{layout}}-{{keyset}}"></content>
+    <kb-key-codes id="keyCodeMetadata"></kb-key-codes>
   </template>
   <script>
     /**
@@ -48,6 +50,20 @@
      * @type {number}
      */
     var DBL_INTERVAL_MSEC = 300;
+
+    /**
+     * The index of the name of the keyset when searching for all keysets.
+     * @const
+     * @type {number}
+     */
+    var REGEX_KEYSET_INDEX = 1;
+
+    /**
+     * The integer number of matches when searching for keysets.
+     * @const
+     * @type {number}
+     */
+    var REGEX_MATCH_COUNT = 2;
 
     /**
      * The boolean to decide if keyboard should transit to upper case keyset
@@ -112,7 +128,6 @@
 
     /**
      * The boolean to decide if it is swipe in process or finished.
-     * @const
      * @type {boolean}
      */
     var swipeInProgress = false;
@@ -179,10 +194,36 @@
       dblDetail_: null,
       dblTimer_: null,
       swipeHandler: null,
+      shift: null,
+      inputType: null,
+
+      /**
+       * The default input type to keyboard layout map. The key must be one of
+       * the input box type values.
+       * @type {object}
+       */
+      inputTypeToLayoutMap: {
+        number: "numeric",
+        text: "qwerty"
+      },
 
       ready: function() {
         this.voiceInput_ = new VoiceInput(this);
         this.swipeHandler = this.onSwipeUpdate.bind(this);
+      },
+
+      /**
+       * Called when the type of focused input box changes. If a keyboard layout
+       * is defined for the current input type, that layout will be loaded.
+       * Otherwise, the keyboard layout for 'text' type will be loaded.
+       */
+      inputTypeChanged: function() {
+        // TODO(bshe): Toggle visibility of some keys in a keyboard layout
+        // according to the input type.
+        var layout = this.inputTypeToLayoutMap[this.inputType];
+        if (!layout)
+          layout = this.inputTypeToLayoutMap.text;
+        this.layout = layout;
       },
 
       /**
@@ -262,6 +303,24 @@
         this.lastPressedKey = event.target;
         this.lastPressedKey.classList.add('active');
         repeatKey.cancel();
+
+        var char = detail.char;
+        switch(char) {
+          case 'Shift':
+            // Removes caps-lock if caps-locked.
+            if(this.classList.contains('caps-locked')) {
+              this.classList.remove('caps-locked');
+            }
+            break;
+          default:
+            // Non-control key pressed, notify control keys.
+            // Control keys are shift, control and alt.
+            if(this.shift)
+              this.shift.onNonControlKeyDown();
+            break;
+        }
+
+        // A transition key was pressed, immediately move to new keyset.
         var toKeyset = detail.toKeyset;
         if (toKeyset) {
           this.keyset = toKeyset;
@@ -271,12 +330,13 @@
         }
 
         if (detail.repeat) {
-          insertText(detail.char);
+          this.keyTyped(detail);
           repeatKey.key = this.lastPressedKey;
+          var self = this;
           repeatKey.timer = setTimeout(function() {
             repeatKey.timer = undefined;
             repeatKey.interval = setInterval(function() {
-               insertText(detail.char);
+               self.keyTyped(detail);
             }, REPEAT_INTERVAL_MSEC);
           }, Math.max(0, REPEAT_DELAY_MSEC - REPEAT_INTERVAL_MSEC));
         }
@@ -294,6 +354,7 @@
           this.dblDetail_.clickCount = 0;
           var self = this;
           this.dblTimer_ = setTimeout(function() {
+            self.dblDetail_.callback = null;
             self.dblDetail_ = null;
           }, DBL_INTERVAL_MSEC);
         }
@@ -330,10 +391,15 @@
         if (this.dblDetail_) {
           this.dblDetail_.clickCount++;
           if (this.dblDetail_.clickCount == 2) {
+            this.dblDetail_.callback();
             this.keyset = this.dblDetail_.toKeyset;
-            var keysetId = '#' + this.layout + '-' + this.keyset
-            this.querySelector(keysetId).nextKeyset = this.dblTimer_.nextKeyset;
+            var keysetId = '#' + this.layout + '-' + this.keyset;
+            var keyset = this.querySelector(keysetId);
+            keyset.nextKeyset = this.dblTimer_.nextKeyset;
             clearTimeout(this.dblTimer_);
+            
+            this.classList.add('caps-locked');
+
             this.dblDetail_ = null;
           }
         }
@@ -347,7 +413,6 @@
           swipeInProgress = false;
           swipeStatus.resetAll();
         }
-        // Remove the pointermove event hander here.
         this.removeEventListener('pointermove', this.swipeHandler, false);
       },
 
@@ -362,31 +427,48 @@
         if (swipeInProgress)
           return;
         this.lastPressedKey.classList.remove('active');
-        if (this.lastPressedKey != event.target)
+        if (this.lastPressedKey.char != event.target.char)
           return;
         if (repeatKey.key == event.target) {
           repeatKey.cancel();
           return;
         }
-        var toKeyset = detail.toKeyset;
-        // Keyset transition key.
-        if (toKeyset) {
-          this.keyset = toKeyset;
+        var toKeysetId = detail.toKeyset;
+        // Keyset transition key. This is needed to transition from upper
+        // to lower case when we are not in caps mode.
+        if (toKeysetId) {
+          this.keyset = toKeysetId;
           this.querySelector('#' + this.layout + '-' + this.keyset).nextKeyset =
               detail.nextKeyset;
         }
-        var toLayout = detail.toLayout;
+        var toLayoutId = detail.toLayout;
         // Layout transition key.
-        if (toLayout)
-          this.layout = toLayout;
+        if (toLayoutId)
+          this.layout = toLayoutId;
         var char = detail.char;
         if (enterUpperOnSpace) {
           enterUpperOnSpace = false;
-          if (char == ' ')
-            this.keyset = 'upper';
+          if (char == ' ') {
+            // If shift key defined in layout.
+            if(this.shift) {
+              var shiftDetail = this.shift.onSpaceAfterPunctuation();
+              var toKeyset = shiftDetail.toKeyset;
+              // Check if transition defined.
+              if(toKeyset) {
+                this.keyset = toKeyset;
+                this.querySelector('#' + this.layout + '-' +
+                    this.keyset).nextKeyset = shiftDetail.nextKeyset;
+              }
+            } else {
+              console.error('Capitalization on space after punctuation \
+                            enabled, but cannot find target keyset.');
+            }
+          }
         }
         switch(char) {
           case 'Invalid':
+            swipeStatus.swipeFlags = 0;
+            return;
           case 'Shift':
             swipeStatus.swipeFlags = 0;
             return;
@@ -401,7 +483,10 @@
           default:
             break;
         }
-        insertText(char);
+        if (char.length == 1)
+          this.keyTyped(detail);
+        else
+          insertText(char);
       },
 
       /*
@@ -411,12 +496,17 @@
        * @param {Object} detail The detail of pressed key.
        */
       keyLongpress: function(event, detail) {
+        // If the gesture is long press, remove the pointermove listener.
+        this.removeEventListener('pointermove', this.swipeHandler, false);
         var toKeyset = detail.toKeyset;
         // Keyset transtion key.
         if (toKeyset) {
           this.keyset = toKeyset;
           this.querySelector('#' + this.layout + '-' + this.keyset).nextKeyset =
               detail.nextKeyset;
+
+          // Locks the keyset before removing active to prevent flicker.
+          this.classList.add('caps-locked');
           // Makes last pressed key inactive if transit to a new keyset on long
           // press.
           this.lastPressedKey.classList.remove('active');
@@ -424,7 +514,7 @@
       },
 
       /**
-       * Handles a change in the keyboard layout.  Auto-selects the default
+       * Handles a change in the keyboard layout. Auto-selects the default
        * keyset for the new layout.
        */
       layoutChanged: function() {
@@ -435,14 +525,46 @@
             keyboard.appendChild(flattenKeysets(keysets.content));
             this.selectDefaultKeyset();
           } else {
-            console.error('Unable to find layout ' + this.layout);
-         }
+            // Add link for the keysets if missing from the document. Force
+            // a layout change after resolving the import of the link.
+            var query = 'link[id=' + this.layout + ']';
+            if (!document.querySelector(query)) {
+              // Layout has not beeen loaded yet.
+              var link = document.createElement('link');
+              link.id = this.layout;
+              link.setAttribute('rel', 'import');
+              link.setAttribute('href', 'layouts/' + this.layout + '.html');
+              document.head.appendChild(link);
+
+              // Load content for the new link element.
+              var self = this;
+              HTMLImports.importer.load(document, function() {
+                HTMLImports.parser.parseLink(link);
+                self.layoutChanged();
+              });
+            }
+          }
         }
+        this.classList.remove('caps-locked');
+        this.shift = this.querySelector('kb-shift-key');
+        if(this.shift)
+          this.shift.reset();
+      },
+
+      /**
+       * Generates fabricated key events to simulate typing on a
+       * physical keyboard.
+       * @param {Object} detail Attributes of the key being typed.
+       */
+      keyTyped: function(detail) {
+        var builder = this.$.keyCodeMetadata;
+        sendKeyEvent(builder.createVirtualKeyEvent(detail, "keydown"));
+        sendKeyEvent(builder.createVirtualKeyEvent(detail, "keyup"));
       },
 
       /**
        * Selects the default keyset for a layout.
-       * @return {boolean} True if successful.  This method can fail if the
+       * @return {boolean} True if successful. This method can fail if the
        *     keysets corresponding to the layout have not been injected.
        */
       selectDefaultKeyset: function() {
@@ -452,10 +574,10 @@
         var keysetsLoaded = false;
         for (var i = 0; i < keysets.length; i++) {
           var matches = keysets[i].id.match(regex);
-          if (matches && matches.length == 2) {
+          if (matches && matches.length == REGEX_MATCH_COUNT) {
              keysetsLoaded = true;
              if (keysets[i].isDefault) {
-               this.keyset = matches[1];
+               this.keyset = matches[REGEX_KEYSET_INDEX];
                return true;
              }
           }
@@ -467,4 +589,3 @@
     });
   </script>
 </polymer-element>
-

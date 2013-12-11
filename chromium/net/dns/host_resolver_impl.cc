@@ -69,10 +69,6 @@ const unsigned kNegativeCacheEntryTTLSeconds = 0;
 // Minimum TTL for successful resolutions with DnsTask.
 const unsigned kMinimumTTLSeconds = kCacheEntryTTLSeconds;
 
-// Number of consecutive failures of DnsTask (with successful fallback) before
-// the DnsClient is disabled until the next DNS change.
-const unsigned kMaximumDnsFailures = 16;
-
 // We use a separate histogram name for each platform to facilitate the
 // display of error codes by their symbolic name (since each platform has
 // different mappings).
@@ -343,7 +339,6 @@ base::Value* NetLogRequestInfoCallback(const NetLog::Source& source,
                    static_cast<int>(info->address_family()));
   dict->SetBoolean("allow_cached_response", info->allow_cached_response());
   dict->SetBoolean("is_speculative", info->is_speculative());
-  dict->SetInteger("priority", info->priority());
   return dict;
 }
 
@@ -457,6 +452,8 @@ class PriorityTracker {
 
 //-----------------------------------------------------------------------------
 
+const unsigned HostResolverImpl::kMaximumDnsFailures = 16;
+
 // Holds the data for a request that could not be completed synchronously.
 // It is owned by a Job. Canceled Requests are only marked as canceled rather
 // than removed from the Job's |requests_| list.
@@ -465,16 +462,17 @@ class HostResolverImpl::Request {
   Request(const BoundNetLog& source_net_log,
           const BoundNetLog& request_net_log,
           const RequestInfo& info,
+          RequestPriority priority,
           const CompletionCallback& callback,
           AddressList* addresses)
       : source_net_log_(source_net_log),
         request_net_log_(request_net_log),
         info_(info),
+        priority_(priority),
         job_(NULL),
         callback_(callback),
         addresses_(addresses),
-        request_time_(base::TimeTicks::Now()) {
-  }
+        request_time_(base::TimeTicks::Now()) {}
 
   // Mark the request as canceled.
   void MarkAsCanceled() {
@@ -521,16 +519,19 @@ class HostResolverImpl::Request {
     return info_;
   }
 
-  base::TimeTicks request_time() const {
-    return request_time_;
-  }
+  RequestPriority priority() const { return priority_; }
+
+  base::TimeTicks request_time() const { return request_time_; }
 
  private:
   BoundNetLog source_net_log_;
   BoundNetLog request_net_log_;
 
   // The request info that started the request.
-  RequestInfo info_;
+  const RequestInfo info_;
+
+  // TODO(akalin): Support reprioritization.
+  const RequestPriority priority_;
 
   // The resolve job that this request is dependent on.
   Job* job_;
@@ -967,54 +968,98 @@ class HostResolverImpl::LoopbackProbeJob {
 // TODO(szym): This could be moved to separate source file as well.
 class HostResolverImpl::DnsTask : public base::SupportsWeakPtr<DnsTask> {
  public:
-  typedef base::Callback<void(int net_error,
-                              const AddressList& addr_list,
-                              base::TimeDelta ttl)> Callback;
+  class Delegate {
+   public:
+    virtual void OnDnsTaskComplete(base::TimeTicks start_time,
+                                   int net_error,
+                                   const AddressList& addr_list,
+                                   base::TimeDelta ttl) = 0;
+
+    // Called when the first of two jobs succeeds.  If the first completed
+    // transaction fails, this is not called.  Also not called when the DnsTask
+    // only needs to run one transaction.
+    virtual void OnFirstDnsTransactionComplete() = 0;
+
+   protected:
+    Delegate() {}
+    virtual ~Delegate() {}
+  };
 
   DnsTask(DnsClient* client,
           const Key& key,
-          const Callback& callback,
+          Delegate* delegate,
           const BoundNetLog& job_net_log)
       : client_(client),
-        family_(key.address_family),
-        callback_(callback),
-        net_log_(job_net_log) {
+        key_(key),
+        delegate_(delegate),
+        net_log_(job_net_log),
+        num_completed_transactions_(0),
+        task_start_time_(base::TimeTicks::Now()) {
     DCHECK(client);
-    DCHECK(!callback.is_null());
-
-    // If unspecified, do IPv4 first, because suffix search will be faster.
-    uint16 qtype = (family_ == ADDRESS_FAMILY_IPV6) ?
-                   dns_protocol::kTypeAAAA :
-                   dns_protocol::kTypeA;
-    transaction_ = client_->GetTransactionFactory()->CreateTransaction(
-        key.hostname,
-        qtype,
-        base::Bind(&DnsTask::OnTransactionComplete, base::Unretained(this),
-                   true /* first_query */, base::TimeTicks::Now()),
-        net_log_);
+    DCHECK(delegate_);
   }
 
-  void Start() {
+  bool needs_two_transactions() const {
+    return key_.address_family == ADDRESS_FAMILY_UNSPECIFIED;
+  }
+
+  bool needs_another_transaction() const {
+    return needs_two_transactions() && !transaction_aaaa_;
+  }
+
+  void StartFirstTransaction() {
+    DCHECK_EQ(0u, num_completed_transactions_);
     net_log_.BeginEvent(NetLog::TYPE_HOST_RESOLVER_IMPL_DNS_TASK);
-    transaction_->Start();
+    if (key_.address_family == ADDRESS_FAMILY_IPV6) {
+      StartAAAA();
+    } else {
+      StartA();
+    }
+  }
+
+  void StartSecondTransaction() {
+    DCHECK(needs_two_transactions());
+    StartAAAA();
   }
 
  private:
-  void OnTransactionComplete(bool first_query,
-                             const base::TimeTicks& start_time,
+  void StartA() {
+    DCHECK(!transaction_a_);
+    DCHECK_NE(ADDRESS_FAMILY_IPV6, key_.address_family);
+    transaction_a_ = CreateTransaction(ADDRESS_FAMILY_IPV4);
+    transaction_a_->Start();
+  }
+
+  void StartAAAA() {
+    DCHECK(!transaction_aaaa_);
+    DCHECK_NE(ADDRESS_FAMILY_IPV4, key_.address_family);
+    transaction_aaaa_ = CreateTransaction(ADDRESS_FAMILY_IPV6);
+    transaction_aaaa_->Start();
+  }
+
+  scoped_ptr<DnsTransaction> CreateTransaction(AddressFamily family) {
+    DCHECK_NE(ADDRESS_FAMILY_UNSPECIFIED, family);
+    return client_->GetTransactionFactory()->CreateTransaction(
+        key_.hostname,
+        family == ADDRESS_FAMILY_IPV6 ? dns_protocol::kTypeAAAA :
+                                        dns_protocol::kTypeA,
+        base::Bind(&DnsTask::OnTransactionComplete, base::Unretained(this),
+                   base::TimeTicks::Now()),
+        net_log_);
+  }
+
+  void OnTransactionComplete(const base::TimeTicks& start_time,
                              DnsTransaction* transaction,
                              int net_error,
                              const DnsResponse* response) {
     DCHECK(transaction);
     base::TimeDelta duration = base::TimeTicks::Now() - start_time;
-    // Run |callback_| last since the owning Job will then delete this DnsTask.
     if (net_error != OK) {
       DNS_HISTOGRAM("AsyncDNS.TransactionFailure", duration);
       OnFailure(net_error, DnsResponse::DNS_PARSE_OK);
       return;
     }
 
-    CHECK(response);
     DNS_HISTOGRAM("AsyncDNS.TransactionSuccess", duration);
     switch (transaction->GetType()) {
       case dns_protocol::kTypeA:
@@ -1024,6 +1069,7 @@ class HostResolverImpl::DnsTask : public base::SupportsWeakPtr<DnsTask> {
         DNS_HISTOGRAM("AsyncDNS.TransactionSuccess_AAAA", duration);
         break;
     }
+
     AddressList addr_list;
     base::TimeDelta ttl;
     DnsResponse::Result result = response->ParseToAddressList(&addr_list, &ttl);
@@ -1036,58 +1082,53 @@ class HostResolverImpl::DnsTask : public base::SupportsWeakPtr<DnsTask> {
       return;
     }
 
-    bool needs_sort = false;
-    if (first_query) {
-      DCHECK(client_->GetConfig()) <<
-          "Transaction should have been aborted when config changed!";
-      if (family_ == ADDRESS_FAMILY_IPV6) {
-        needs_sort = (addr_list.size() > 1);
-      } else if (family_ == ADDRESS_FAMILY_UNSPECIFIED) {
-        first_addr_list_ = addr_list;
-        first_ttl_ = ttl;
-        // Use fully-qualified domain name to avoid search.
-        transaction_ = client_->GetTransactionFactory()->CreateTransaction(
-            response->GetDottedName() + ".",
-            dns_protocol::kTypeAAAA,
-            base::Bind(&DnsTask::OnTransactionComplete, base::Unretained(this),
-                       false /* first_query */, base::TimeTicks::Now()),
-            net_log_);
-        transaction_->Start();
-        return;
-      }
+    ++num_completed_transactions_;
+    if (num_completed_transactions_ == 1) {
+      ttl_ = ttl;
     } else {
-      DCHECK_EQ(ADDRESS_FAMILY_UNSPECIFIED, family_);
-      bool has_ipv6_addresses = !addr_list.empty();
-      if (!first_addr_list_.empty()) {
-        ttl = std::min(ttl, first_ttl_);
-        // Place IPv4 addresses after IPv6.
-        addr_list.insert(addr_list.end(), first_addr_list_.begin(),
-                                          first_addr_list_.end());
-      }
-      needs_sort = (has_ipv6_addresses && addr_list.size() > 1);
+      ttl_ = std::min(ttl_, ttl);
     }
 
-    if (addr_list.empty()) {
+    if (transaction->GetType() == dns_protocol::kTypeA) {
+      DCHECK_EQ(transaction_a_.get(), transaction);
+      // Place IPv4 addresses after IPv6.
+      addr_list_.insert(addr_list_.end(), addr_list.begin(), addr_list.end());
+    } else {
+      DCHECK_EQ(transaction_aaaa_.get(), transaction);
+      // Place IPv6 addresses before IPv4.
+      addr_list_.insert(addr_list_.begin(), addr_list.begin(), addr_list.end());
+    }
+
+    if (needs_two_transactions() && num_completed_transactions_ == 1) {
+      // No need to repeat the suffix search.
+      key_.hostname = transaction->GetHostname();
+      delegate_->OnFirstDnsTransactionComplete();
+      return;
+    }
+
+    if (addr_list_.empty()) {
       // TODO(szym): Don't fallback to ProcTask in this case.
       OnFailure(ERR_NAME_NOT_RESOLVED, DnsResponse::DNS_PARSE_OK);
       return;
     }
 
-    if (needs_sort) {
-      // Sort could complete synchronously.
+    // If there are multiple addresses, and at least one is IPv6, need to sort
+    // them.  Note that IPv6 addresses are always put before IPv4 ones, so it's
+    // sufficient to just check the family of the first address.
+    if (addr_list_.size() > 1 &&
+        addr_list_[0].GetFamily() == ADDRESS_FAMILY_IPV6) {
+      // Sort addresses if needed.  Sort could complete synchronously.
       client_->GetAddressSorter()->Sort(
-          addr_list,
+          addr_list_,
           base::Bind(&DnsTask::OnSortComplete,
                      AsWeakPtr(),
-                     base::TimeTicks::Now(),
-                     ttl));
+                     base::TimeTicks::Now()));
     } else {
-      OnSuccess(addr_list, ttl);
+      OnSuccess(addr_list_);
     }
   }
 
   void OnSortComplete(base::TimeTicks start_time,
-                      base::TimeDelta ttl,
                       bool success,
                       const AddressList& addr_list) {
     if (!success) {
@@ -1107,7 +1148,7 @@ class HostResolverImpl::DnsTask : public base::SupportsWeakPtr<DnsTask> {
       return;
     }
 
-    OnSuccess(addr_list, ttl);
+    OnSuccess(addr_list);
   }
 
   void OnFailure(int net_error, DnsResponse::Result result) {
@@ -1115,26 +1156,34 @@ class HostResolverImpl::DnsTask : public base::SupportsWeakPtr<DnsTask> {
     net_log_.EndEvent(
         NetLog::TYPE_HOST_RESOLVER_IMPL_DNS_TASK,
         base::Bind(&NetLogDnsTaskFailedCallback, net_error, result));
-    callback_.Run(net_error, AddressList(), base::TimeDelta());
+    delegate_->OnDnsTaskComplete(task_start_time_, net_error, AddressList(),
+                                 base::TimeDelta());
   }
 
-  void OnSuccess(const AddressList& addr_list, base::TimeDelta ttl) {
+  void OnSuccess(const AddressList& addr_list) {
     net_log_.EndEvent(NetLog::TYPE_HOST_RESOLVER_IMPL_DNS_TASK,
                       addr_list.CreateNetLogCallback());
-    callback_.Run(OK, addr_list, ttl);
+    delegate_->OnDnsTaskComplete(task_start_time_, OK, addr_list, ttl_);
   }
 
   DnsClient* client_;
-  AddressFamily family_;
+  Key key_;
+
   // The listener to the results of this DnsTask.
-  Callback callback_;
+  Delegate* delegate_;
   const BoundNetLog net_log_;
 
-  scoped_ptr<DnsTransaction> transaction_;
+  scoped_ptr<DnsTransaction> transaction_a_;
+  scoped_ptr<DnsTransaction> transaction_aaaa_;
 
-  // Results from the first transaction. Used only if |family_| is unspecified.
-  AddressList first_addr_list_;
-  base::TimeDelta first_ttl_;
+  unsigned num_completed_transactions_;
+
+  // These are updated as each transaction completes.
+  base::TimeDelta ttl_;
+  // IPv6 addresses must appear first in the list.
+  AddressList addr_list_;
+
+  base::TimeTicks task_start_time_;
 
   DISALLOW_COPY_AND_ASSIGN(DnsTask);
 };
@@ -1142,7 +1191,8 @@ class HostResolverImpl::DnsTask : public base::SupportsWeakPtr<DnsTask> {
 //-----------------------------------------------------------------------------
 
 // Aggregates all Requests for the same Key. Dispatched via PriorityDispatch.
-class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
+class HostResolverImpl::Job : public PrioritizedDispatcher::Job,
+                              public HostResolverImpl::DnsTask::Delegate {
  public:
   // Creates new job for |key| where |request_net_log| is bound to the
   // request that spawned it.
@@ -1155,6 +1205,7 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
         priority_tracker_(priority),
         had_non_speculative_request_(false),
         had_dns_config_(false),
+        num_occupied_job_slots_(0),
         dns_task_error_(OK),
         creation_time_(base::TimeTicks::Now()),
         priority_change_time_(creation_time_),
@@ -1178,7 +1229,7 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
         proc_task_ = NULL;
       }
       // Clean up now for nice NetLog.
-      dns_task_.reset(NULL);
+      KillDnsTask();
       net_log_.EndEventWithNetErrorCode(NetLog::TYPE_HOST_RESOLVER_IMPL_JOB,
                                         ERR_ABORTED);
     } else if (is_queued()) {
@@ -1201,16 +1252,30 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
     }
   }
 
-  // Add this job to the dispatcher.
-  void Schedule() {
-    handle_ = resolver_->dispatcher_.Add(this, priority());
+  // Add this job to the dispatcher.  If "at_head" is true, adds at the front
+  // of the queue.
+  void Schedule(bool at_head) {
+    DCHECK(!is_queued());
+    PrioritizedDispatcher::Handle handle;
+    if (!at_head) {
+      handle = resolver_->dispatcher_.Add(this, priority());
+    } else {
+      handle = resolver_->dispatcher_.AddAtHead(this, priority());
+    }
+    // The dispatcher could have started |this| in the above call to Add, which
+    // could have called Schedule again. In that case |handle| will be null,
+    // but |handle_| may have been set by the other nested call to Schedule.
+    if (!handle.is_null()) {
+      DCHECK(handle_.is_null());
+      handle_ = handle;
+    }
   }
 
   void AddRequest(scoped_ptr<Request> req) {
     DCHECK_EQ(key_.hostname, req->info().hostname());
 
     req->set_job(this);
-    priority_tracker_.Add(req->info().priority());
+    priority_tracker_.Add(req->priority());
 
     req->request_net_log().AddEvent(
         NetLog::TYPE_HOST_RESOLVER_IMPL_JOB_ATTACH,
@@ -1245,12 +1310,11 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
     LogCancelRequest(req->source_net_log(), req->request_net_log(),
                      req->info());
 
-    priority_tracker_.Remove(req->info().priority());
-    net_log_.AddEvent(
-        NetLog::TYPE_HOST_RESOLVER_IMPL_JOB_REQUEST_DETACH,
-        base::Bind(&NetLogJobAttachCallback,
-                   req->request_net_log().source(),
-                   priority()));
+    priority_tracker_.Remove(req->priority());
+    net_log_.AddEvent(NetLog::TYPE_HOST_RESOLVER_IMPL_JOB_REQUEST_DETACH,
+                      base::Bind(&NetLogJobAttachCallback,
+                                 req->request_net_log().source(),
+                                 priority()));
 
     if (num_active_requests() > 0) {
       UpdatePriority();
@@ -1272,7 +1336,7 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
   // If DnsTask present, abort it and fall back to ProcTask.
   void AbortDnsTask() {
     if (dns_task_) {
-      dns_task_.reset();
+      KillDnsTask();
       dns_task_error_ = OK;
       StartProcTask();
     }
@@ -1321,6 +1385,29 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
   }
 
  private:
+  void KillDnsTask() {
+    if (dns_task_) {
+      ReduceToOneJobSlot();
+      dns_task_.reset();
+    }
+  }
+
+  // Reduce the number of job slots occupied and queued in the dispatcher
+  // to one. If the second Job slot is queued in the dispatcher, cancels the
+  // queued job. Otherwise, the second Job has been started by the
+  // PrioritizedDispatcher, so signals it is complete.
+  void ReduceToOneJobSlot() {
+    DCHECK_GE(num_occupied_job_slots_, 1u);
+    if (is_queued()) {
+      resolver_->dispatcher_.Cancel(handle_);
+      handle_.Reset();
+    } else if (num_occupied_job_slots_ > 1) {
+      resolver_->dispatcher_.OnJobFinished();
+      --num_occupied_job_slots_;
+    }
+    DCHECK_EQ(1u, num_occupied_job_slots_);
+  }
+
   void UpdatePriority() {
     if (is_queued()) {
       if (priority() != static_cast<RequestPriority>(handle_.priority()))
@@ -1337,8 +1424,17 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
 
   // PriorityDispatch::Job:
   virtual void Start() OVERRIDE {
-    DCHECK(!is_running());
+    DCHECK_LE(num_occupied_job_slots_, 1u);
+
     handle_.Reset();
+    ++num_occupied_job_slots_;
+
+    if (num_occupied_job_slots_ == 2) {
+      StartSecondDnsTransaction();
+      return;
+    }
+
+    DCHECK(!is_running());
 
     net_log_.AddEvent(NetLog::TYPE_HOST_RESOLVER_IMPL_JOB_STARTED);
 
@@ -1359,8 +1455,12 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
                                 queue_time_after_change);
     }
 
+    bool system_only =
+        (key_.host_resolver_flags & HOST_RESOLVER_SYSTEM_ONLY) != 0;
+
     // Caution: Job::Start must not complete synchronously.
-    if (had_dns_config_ && !ResemblesMulticastDNSName(key_.hostname)) {
+    if (!system_only && had_dns_config_ &&
+        !ResemblesMulticastDNSName(key_.hostname)) {
       StartDnsTask();
     } else {
       StartProcTask();
@@ -1442,14 +1542,18 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
 
   void StartDnsTask() {
     DCHECK(resolver_->HaveDnsConfig());
-    base::TimeTicks start_time = base::TimeTicks::Now();
-    dns_task_.reset(new DnsTask(
-        resolver_->dns_client_.get(),
-        key_,
-        base::Bind(&Job::OnDnsTaskComplete, base::Unretained(this), start_time),
-        net_log_));
+    dns_task_.reset(new DnsTask(resolver_->dns_client_.get(), key_, this,
+                                net_log_));
 
-    dns_task_->Start();
+    dns_task_->StartFirstTransaction();
+    // Schedule a second transaction, if needed.
+    if (dns_task_->needs_two_transactions())
+      Schedule(true);
+  }
+
+  void StartSecondDnsTransaction() {
+    DCHECK(dns_task_->needs_two_transactions());
+    dns_task_->StartSecondTransaction();
   }
 
   // Called if DnsTask fails. It is posted from StartDnsTask, so Job may be
@@ -1471,7 +1575,7 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
     // TODO(szym): Some net errors indicate lack of connectivity. Starting
     // ProcTask in that case is a waste of time.
     if (resolver_->fallback_to_proctask_) {
-      dns_task_.reset();
+      KillDnsTask();
       StartProcTask();
     } else {
       UmaAsyncDnsResolveStatus(RESOLVE_STATUS_FAIL);
@@ -1479,11 +1583,13 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
     }
   }
 
-  // Called by DnsTask when it completes.
-  void OnDnsTaskComplete(base::TimeTicks start_time,
-                         int net_error,
-                         const AddressList& addr_list,
-                         base::TimeDelta ttl) {
+
+  // HostResolverImpl::DnsTask::Delegate implementation:
+
+  virtual void OnDnsTaskComplete(base::TimeTicks start_time,
+                                 int net_error,
+                                 const AddressList& addr_list,
+                                 base::TimeDelta ttl) OVERRIDE {
     DCHECK(is_dns_running());
 
     base::TimeDelta duration = base::TimeTicks::Now() - start_time;
@@ -1518,6 +1624,19 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
         bounded_ttl);
   }
 
+  virtual void OnFirstDnsTransactionComplete() OVERRIDE {
+    DCHECK(dns_task_->needs_two_transactions());
+    DCHECK_EQ(dns_task_->needs_another_transaction(), is_queued());
+    // No longer need to occupy two dispatcher slots.
+    ReduceToOneJobSlot();
+
+    // We already have a job slot at the dispatcher, so if the second
+    // transaction hasn't started, reuse it now instead of waiting in the queue
+    // for the second slot.
+    if (dns_task_->needs_another_transaction())
+      dns_task_->StartSecondTransaction();
+  }
+
   // Performs Job's last rites. Completes all Requests. Deletes this.
   void CompleteRequests(const HostCache::Entry& entry,
                         base::TimeDelta ttl) {
@@ -1532,12 +1651,12 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
     resolver_->RemoveJob(this);
 
     if (is_running()) {
-      DCHECK(!is_queued());
       if (is_proc_running()) {
+        DCHECK(!is_queued());
         proc_task_->Cancel();
         proc_task_ = NULL;
       }
-      dns_task_.reset();
+      KillDnsTask();
 
       // Signal dispatcher that a slot has opened.
       resolver_->dispatcher_.OnJobFinished();
@@ -1631,6 +1750,9 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
   // Distinguishes measurements taken while DnsClient was fully configured.
   bool had_dns_config_;
 
+  // Number of slots occupied by this Job in resolver's PrioritizedDispatcher.
+  unsigned num_occupied_job_slots_;
+
   // Result of DnsTask.
   int dns_task_error_;
 
@@ -1681,6 +1803,7 @@ HostResolverImpl::HostResolverImpl(
       received_dns_config_(false),
       num_dns_failures_(0),
       probe_ipv6_support_(true),
+      use_local_ipv6_(false),
       resolved_known_ipv6_hostname_(false),
       additional_resolver_flags_(0),
       fallback_to_proctask_(true) {
@@ -1706,19 +1829,22 @@ HostResolverImpl::HostResolverImpl(
   EnsureDnsReloaderInit();
 #endif
 
-  // TODO(szym): Remove when received_dns_config_ is removed, once
-  // http://crbug.com/137914 is resolved.
   {
     DnsConfig dns_config;
     NetworkChangeNotifier::GetDnsConfig(&dns_config);
     received_dns_config_ = dns_config.IsValid();
+    // Conservatively assume local IPv6 is needed when DnsConfig is not valid.
+    use_local_ipv6_ = !dns_config.IsValid() || dns_config.use_local_ipv6;
   }
 
   fallback_to_proctask_ = !ConfigureAsyncDnsNoFallbackFieldTrial();
 }
 
 HostResolverImpl::~HostResolverImpl() {
-  // This will also cancel all outstanding requests.
+  // Prevent the dispatcher from starting new jobs.
+  dispatcher_.SetLimitsToZero();
+  // It's now safe for Jobs to call KillDsnTask on destruction, because
+  // OnJobComplete will not start any new jobs.
   STLDeleteValues(&jobs_);
 
   NetworkChangeNotifier::RemoveIPAddressObserver(this);
@@ -1732,6 +1858,7 @@ void HostResolverImpl::SetMaxQueuedJobs(size_t value) {
 }
 
 int HostResolverImpl::Resolve(const RequestInfo& info,
+                              RequestPriority priority,
                               AddressList* addresses,
                               const CompletionCallback& callback,
                               RequestHandle* out_req,
@@ -1768,9 +1895,9 @@ int HostResolverImpl::Resolve(const RequestInfo& info,
   JobMap::iterator jobit = jobs_.find(key);
   Job* job;
   if (jobit == jobs_.end()) {
-    job = new Job(weak_ptr_factory_.GetWeakPtr(), key, info.priority(),
-                  request_net_log);
-    job->Schedule();
+    job =
+        new Job(weak_ptr_factory_.GetWeakPtr(), key, priority, request_net_log);
+    job->Schedule(false);
 
     // Check for queue overflow.
     if (dispatcher_.num_queued_jobs() > max_queued_jobs_) {
@@ -1789,11 +1916,8 @@ int HostResolverImpl::Resolve(const RequestInfo& info,
   }
 
   // Can't complete synchronously. Create and attach request.
-  scoped_ptr<Request> req(new Request(source_net_log,
-                                      request_net_log,
-                                      info,
-                                      callback,
-                                      addresses));
+  scoped_ptr<Request> req(new Request(
+      source_net_log, request_net_log, info, priority, callback, addresses));
   if (out_req)
     *out_req = reinterpret_cast<RequestHandle>(req.get());
 
@@ -2023,33 +2147,33 @@ HostResolverImpl::Key HostResolverImpl::GetEffectiveKeyForRequest(
   AddressFamily effective_address_family = info.address_family();
 
   if (info.address_family() == ADDRESS_FAMILY_UNSPECIFIED) {
-    base::TimeTicks start_time = base::TimeTicks::Now();
-    // Google DNS address.
-    const uint8 kIPv6Address[] =
-        { 0x20, 0x01, 0x48, 0x60, 0x48, 0x60, 0x00, 0x00,
-          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x88, 0x88 };
-    IPAddressNumber address(kIPv6Address,
-                            kIPv6Address + arraysize(kIPv6Address));
-    bool rv6 = IsGloballyReachable(address, net_log);
-    if (rv6)
-      net_log.AddEvent(NetLog::TYPE_HOST_RESOLVER_IMPL_IPV6_SUPPORTED);
+    if (probe_ipv6_support_ && !use_local_ipv6_) {
+      base::TimeTicks start_time = base::TimeTicks::Now();
+      // Google DNS address.
+      const uint8 kIPv6Address[] =
+          { 0x20, 0x01, 0x48, 0x60, 0x48, 0x60, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x88, 0x88 };
+      IPAddressNumber address(kIPv6Address,
+                              kIPv6Address + arraysize(kIPv6Address));
+      bool rv6 = IsGloballyReachable(address, net_log);
+      if (rv6)
+        net_log.AddEvent(NetLog::TYPE_HOST_RESOLVER_IMPL_IPV6_SUPPORTED);
 
-    UMA_HISTOGRAM_TIMES("Net.IPv6ConnectDuration",
-                        base::TimeTicks::Now() - start_time);
-    if (rv6) {
-      UMA_HISTOGRAM_BOOLEAN("Net.IPv6ConnectSuccessMatch",
-          default_address_family_ == ADDRESS_FAMILY_UNSPECIFIED);
+      UMA_HISTOGRAM_TIMES("Net.IPv6ConnectDuration",
+                          base::TimeTicks::Now() - start_time);
+      if (rv6) {
+        UMA_HISTOGRAM_BOOLEAN("Net.IPv6ConnectSuccessMatch",
+            default_address_family_ == ADDRESS_FAMILY_UNSPECIFIED);
+      } else {
+        UMA_HISTOGRAM_BOOLEAN("Net.IPv6ConnectFailureMatch",
+            default_address_family_ != ADDRESS_FAMILY_UNSPECIFIED);
+
+        effective_address_family = ADDRESS_FAMILY_IPV4;
+        effective_flags |= HOST_RESOLVER_DEFAULT_FAMILY_SET_DUE_TO_NO_IPV6;
+      }
     } else {
-      UMA_HISTOGRAM_BOOLEAN("Net.IPv6ConnectFailureMatch",
-          default_address_family_ != ADDRESS_FAMILY_UNSPECIFIED);
+      effective_address_family = default_address_family_;
     }
-  }
-
-  if (effective_address_family == ADDRESS_FAMILY_UNSPECIFIED &&
-      default_address_family_ != ADDRESS_FAMILY_UNSPECIFIED) {
-    effective_address_family = default_address_family_;
-    if (probe_ipv6_support_)
-      effective_flags |= HOST_RESOLVER_DEFAULT_FAMILY_SET_DUE_TO_NO_IPV6;
   }
 
   return Key(info.hostname(), effective_address_family, effective_flags);
@@ -2070,8 +2194,13 @@ void HostResolverImpl::AbortAllInProgressJobs() {
     }
   }
 
-  // Check if no dispatcher slots leaked out.
-  DCHECK_EQ(dispatcher_.num_running_jobs(), jobs_to_abort.size());
+  // Pause the dispatcher so it won't start any new dispatcher jobs while
+  // aborting the old ones.  This is needed so that it won't start the second
+  // DnsTransaction for a job in |jobs_to_abort| if the DnsConfig just became
+  // invalid.
+  PrioritizedDispatcher::Limits limits = dispatcher_.GetLimits();
+  dispatcher_.SetLimits(
+      PrioritizedDispatcher::Limits(limits.reserved_slots.size(), 0));
 
   // Life check to bail once |this| is deleted.
   base::WeakPtr<HostResolverImpl> self = weak_ptr_factory_.GetWeakPtr();
@@ -2081,6 +2210,22 @@ void HostResolverImpl::AbortAllInProgressJobs() {
     jobs_to_abort[i]->Abort();
     jobs_to_abort[i] = NULL;
   }
+
+  if (self)
+    dispatcher_.SetLimits(limits);
+}
+
+void HostResolverImpl::AbortDnsTasks() {
+  // Pause the dispatcher so it won't start any new dispatcher jobs while
+  // aborting the old ones.  This is needed so that it won't start the second
+  // DnsTransaction for a job if the DnsConfig just changed.
+  PrioritizedDispatcher::Limits limits = dispatcher_.GetLimits();
+  dispatcher_.SetLimits(
+      PrioritizedDispatcher::Limits(limits.reserved_slots.size(), 0));
+
+  for (JobMap::iterator it = jobs_.begin(); it != jobs_.end(); ++it)
+    it->second->AbortDnsTask();
+  dispatcher_.SetLimits(limits);
 }
 
 void HostResolverImpl::TryServingAllJobsFromHosts() {
@@ -2126,6 +2271,8 @@ void HostResolverImpl::OnDNSChanged() {
 
   // TODO(szym): Remove once http://crbug.com/137914 is resolved.
   received_dns_config_ = dns_config.IsValid();
+  // Conservatively assume local IPv6 is needed when DnsConfig is not valid.
+  use_local_ipv6_ = !dns_config.IsValid() || dns_config.use_local_ipv6;
 
   num_dns_failures_ = 0;
 
@@ -2133,7 +2280,7 @@ void HostResolverImpl::OnDNSChanged() {
   // the newly started jobs use the new config.
   if (dns_client_.get()) {
     dns_client_->SetConfig(dns_config);
-    if (dns_config.IsValid())
+    if (dns_client_->GetConfig())
       UMA_HISTOGRAM_BOOLEAN("AsyncDNS.DnsClientEnabled", true);
   }
 
@@ -2175,10 +2322,14 @@ void HostResolverImpl::OnDnsTaskResolve(int net_error) {
   ++num_dns_failures_;
   if (num_dns_failures_ < kMaximumDnsFailures)
     return;
-  // Disable DnsClient until the next DNS change.
-  for (JobMap::iterator it = jobs_.begin(); it != jobs_.end(); ++it)
-    it->second->AbortDnsTask();
+
+  // Disable DnsClient until the next DNS change.  Must be done before aborting
+  // DnsTasks, since doing so may start new jobs.
   dns_client_->SetConfig(DnsConfig());
+
+  // Switch jobs with active DnsTasks over to using ProcTasks.
+  AbortDnsTasks();
+
   UMA_HISTOGRAM_BOOLEAN("AsyncDNS.DnsClientEnabled", false);
   UMA_HISTOGRAM_CUSTOM_ENUMERATION("AsyncDNS.DnsClientDisabledReason",
                                    std::abs(net_error),
@@ -2186,21 +2337,20 @@ void HostResolverImpl::OnDnsTaskResolve(int net_error) {
 }
 
 void HostResolverImpl::SetDnsClient(scoped_ptr<DnsClient> dns_client) {
-  if (HaveDnsConfig()) {
-    for (JobMap::iterator it = jobs_.begin(); it != jobs_.end(); ++it)
-      it->second->AbortDnsTask();
-  }
+  // DnsClient and config must be updated before aborting DnsTasks, since doing
+  // so may start new jobs.
   dns_client_ = dns_client.Pass();
-  if (!dns_client_ || dns_client_->GetConfig() ||
-      num_dns_failures_ >= kMaximumDnsFailures) {
-    return;
+  if (dns_client_ && !dns_client_->GetConfig() &&
+      num_dns_failures_ < kMaximumDnsFailures) {
+    DnsConfig dns_config;
+    NetworkChangeNotifier::GetDnsConfig(&dns_config);
+    dns_client_->SetConfig(dns_config);
+    num_dns_failures_ = 0;
+    if (dns_client_->GetConfig())
+      UMA_HISTOGRAM_BOOLEAN("AsyncDNS.DnsClientEnabled", true);
   }
-  DnsConfig dns_config;
-  NetworkChangeNotifier::GetDnsConfig(&dns_config);
-  dns_client_->SetConfig(dns_config);
-  num_dns_failures_ = 0;
-  if (dns_config.IsValid())
-    UMA_HISTOGRAM_BOOLEAN("AsyncDNS.DnsClientEnabled", true);
+
+  AbortDnsTasks();
 }
 
 }  // namespace net

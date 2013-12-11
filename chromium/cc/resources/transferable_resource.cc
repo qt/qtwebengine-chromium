@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/logging.h"
+#include "cc/resources/returned_resource.h"
 #include "cc/resources/transferable_resource.h"
 
 namespace cc {
@@ -10,11 +11,28 @@ namespace cc {
 TransferableResource::TransferableResource()
     : id(0),
       sync_point(0),
-      format(0),
+      format(RGBA_8888),
       filter(0) {
 }
 
 TransferableResource::~TransferableResource() {
+}
+
+ReturnedResource TransferableResource::ToReturnedResource() const {
+  ReturnedResource returned;
+  returned.id = id;
+  returned.sync_point = sync_point;
+  returned.count = 1;
+  return returned;
+}
+
+// static
+void TransferableResource::ReturnResources(
+    const TransferableResourceArray& input,
+    ReturnedResourceArray* output) {
+  for (TransferableResourceArray::const_iterator it = input.begin();
+       it != input.end(); ++it)
+    output->push_back(it->ToReturnedResource());
 }
 
 }  // namespace cc

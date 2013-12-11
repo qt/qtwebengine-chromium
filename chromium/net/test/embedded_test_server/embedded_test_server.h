@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
@@ -33,10 +34,10 @@ class HttpListenSocket : public TCPListenSocket {
  public:
   HttpListenSocket(const SocketDescriptor socket_descriptor,
                    StreamListenSocket::Delegate* delegate);
+  virtual ~HttpListenSocket();
   virtual void Listen();
 
  private:
-  virtual ~HttpListenSocket();
 
   base::ThreadChecker thread_checker_;
 };
@@ -53,7 +54,7 @@ class HttpListenSocket : public TCPListenSocket {
 //
 // void SetUp() {
 //   base::Thread::Options thread_options;
-//   thread_options.message_loop_type = MessageLoop::TYPE_IO;
+//   thread_options.message_loop_type = base::MessageLoop::TYPE_IO;
 //   ASSERT_TRUE(io_thread_.StartWithOptions(thread_options));
 //
 //   test_server_.reset(
@@ -137,7 +138,7 @@ class EmbeddedTestServer : public StreamListenSocket::Delegate {
 
   // StreamListenSocket::Delegate overrides:
   virtual void DidAccept(StreamListenSocket* server,
-                         StreamListenSocket* connection) OVERRIDE;
+                         scoped_ptr<StreamListenSocket> connection) OVERRIDE;
   virtual void DidRead(StreamListenSocket* connection,
                        const char* data,
                        int length) OVERRIDE;
@@ -145,9 +146,13 @@ class EmbeddedTestServer : public StreamListenSocket::Delegate {
 
   HttpConnection* FindConnection(StreamListenSocket* socket);
 
+  // Posts a task to the |io_thread_| and waits for a reply.
+  bool PostTaskToIOThreadAndWait(
+      const base::Closure& closure) WARN_UNUSED_RESULT;
+
   scoped_refptr<base::SingleThreadTaskRunner> io_thread_;
 
-  scoped_refptr<HttpListenSocket> listen_socket_;
+  scoped_ptr<HttpListenSocket> listen_socket_;
   int port_;
   GURL base_url_;
 

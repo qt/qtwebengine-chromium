@@ -11,7 +11,7 @@
 #include "base/memory/scoped_vector.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/win_util.h"
-#include "ui/base/win/window_impl.h"
+#include "ui/gfx/win/window_impl.h"
 #include "ui/views/widget/native_widget_private.h"
 #include "ui/views/win/hwnd_message_handler_delegate.h"
 
@@ -146,6 +146,7 @@ class VIEWS_EXPORT NativeWidgetWin : public internal::NativeWidgetPrivate,
   virtual void EndMoveLoop() OVERRIDE;
   virtual void SetVisibilityChangedAnimationsEnabled(bool value) OVERRIDE;
   virtual ui::NativeTheme* GetNativeTheme() const OVERRIDE;
+  virtual void OnRootViewLayout() const OVERRIDE;
 
   // Overridden from NativeWidget:
   virtual ui::EventHandler* GetEventHandler() OVERRIDE;
@@ -202,6 +203,7 @@ class VIEWS_EXPORT NativeWidgetWin : public internal::NativeWidgetPrivate,
   virtual void HandleEndWMSizeMove() OVERRIDE;
   virtual void HandleMove() OVERRIDE;
   virtual void HandleWorkAreaChanged() OVERRIDE;
+  virtual void HandleVisibilityChanging(bool visible) OVERRIDE;
   virtual void HandleVisibilityChanged(bool visible) OVERRIDE;
   virtual void HandleClientSizeChanged(const gfx::Size& new_size) OVERRIDE;
   virtual void HandleFrameChanged() OVERRIDE;
@@ -210,7 +212,7 @@ class VIEWS_EXPORT NativeWidgetWin : public internal::NativeWidgetPrivate,
   virtual bool HandleMouseEvent(const ui::MouseEvent& event) OVERRIDE;
   virtual bool HandleKeyEvent(const ui::KeyEvent& event) OVERRIDE;
   virtual bool HandleUntranslatedKeyEvent(const ui::KeyEvent& event) OVERRIDE;
-  virtual bool HandleTouchEvent(const ui::TouchEvent& event) OVERRIDE;
+  virtual void HandleTouchEvent(const ui::TouchEvent& event) OVERRIDE;
   virtual bool HandleIMEMessage(UINT message,
                                 WPARAM w_param,
                                 LPARAM l_param,

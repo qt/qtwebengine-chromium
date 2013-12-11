@@ -51,8 +51,12 @@ public:
     static PassRefPtr<DocumentTimeline> create(Document*);
     void serviceAnimations(double);
     PassRefPtr<Player> play(TimedItem*);
+    // Called from setReadyState() in Document.cpp to set m_zeroTimeAsPerfTime to
+    // performance.timing.domInteractive.
+    void setZeroTimeAsPerfTime(double);
     double currentTime() { return m_currentTime; }
     void pauseAnimationsForTesting(double);
+    size_t numberOfActiveAnimationsForTesting() const;
     AnimationStack* animationStack(const Element* element) const
     {
         if (ActiveAnimations* animations = element->activeAnimations())
@@ -68,6 +72,7 @@ private:
     DocumentTimeline(Document*);
     void dispatchEvents();
     double m_currentTime;
+    double m_zeroTimeAsPerfTime;
     Document* m_document;
     Vector<RefPtr<Player> > m_players;
 

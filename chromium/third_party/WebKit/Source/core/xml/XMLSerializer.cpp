@@ -1,6 +1,7 @@
 /*
  *  Copyright (C) 2003, 2006 Apple Inc. All rights reserved.
  *  Copyright (C) 2006 Samuel Weinig (sam@webkit.org)
+ *  Copyright (C) 2013 Samsung Electronics. All rights reserved.
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -24,22 +25,14 @@
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/editing/markup.h"
-#include <wtf/text/WTFString.h>
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
 String XMLSerializer::serializeToString(Node* node, ExceptionState& es)
 {
-    if (!node)
-        return String();
-
-    if (!node->document()) {
-        // Due to the fact that DocumentType nodes are created by the DOMImplementation
-        // and not the Document, it is possible for it to not have a Document associated
-        // with it.  It should be the only type of node where this is possible.
-        ASSERT(node->nodeType() == Node::DOCUMENT_TYPE_NODE);
-
-        es.throwDOMException(InvalidAccessError);
+    if (!node) {
+        es.throwDOMException(TypeError, "Invalid node value.");
         return String();
     }
 

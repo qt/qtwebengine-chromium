@@ -25,6 +25,7 @@
 #include "config.h"
 #include "core/rendering/RenderLayerModelObject.h"
 
+#include "core/page/Frame.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
 
@@ -71,6 +72,11 @@ void RenderLayerModelObject::ensureLayer()
 bool RenderLayerModelObject::hasSelfPaintingLayer() const
 {
     return m_layer && m_layer->isSelfPaintingLayer();
+}
+
+ScrollableArea* RenderLayerModelObject::scrollableArea() const
+{
+    return m_layer ? m_layer->scrollableArea() : 0;
 }
 
 void RenderLayerModelObject::willBeDestroyed()
@@ -198,6 +204,11 @@ void RenderLayerModelObject::addLayerHitTestRects(LayerHitTestRects& rects, cons
     } else {
         RenderObject::addLayerHitTestRects(rects, currentLayer, layerOffset, containerRect);
     }
+}
+
+RenderLayerBacking* RenderLayerModelObject::backing() const
+{
+    return m_layer ? m_layer->backing() : 0;
 }
 
 } // namespace WebCore

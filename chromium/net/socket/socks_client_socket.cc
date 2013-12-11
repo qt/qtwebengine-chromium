@@ -55,32 +55,20 @@ struct SOCKS4ServerResponse {
 COMPILE_ASSERT(sizeof(SOCKS4ServerResponse) == kReadHeaderSize,
                socks4_server_response_struct_wrong_size);
 
-SOCKSClientSocket::SOCKSClientSocket(ClientSocketHandle* transport_socket,
-                                     const HostResolver::RequestInfo& req_info,
-                                     HostResolver* host_resolver)
-    : transport_(transport_socket),
+SOCKSClientSocket::SOCKSClientSocket(
+    scoped_ptr<ClientSocketHandle> transport_socket,
+    const HostResolver::RequestInfo& req_info,
+    RequestPriority priority,
+    HostResolver* host_resolver)
+    : transport_(transport_socket.Pass()),
       next_state_(STATE_NONE),
       completed_handshake_(false),
       bytes_sent_(0),
       bytes_received_(0),
       host_resolver_(host_resolver),
       host_request_info_(req_info),
-      net_log_(transport_socket->socket()->NetLog()) {
-}
-
-SOCKSClientSocket::SOCKSClientSocket(StreamSocket* transport_socket,
-                                     const HostResolver::RequestInfo& req_info,
-                                     HostResolver* host_resolver)
-    : transport_(new ClientSocketHandle()),
-      next_state_(STATE_NONE),
-      completed_handshake_(false),
-      bytes_sent_(0),
-      bytes_received_(0),
-      host_resolver_(host_resolver),
-      host_request_info_(req_info),
-      net_log_(transport_socket->NetLog()) {
-  transport_->set_socket(transport_socket);
-}
+      priority_(priority),
+      net_log_(transport_->socket()->NetLog()) {}
 
 SOCKSClientSocket::~SOCKSClientSocket() {
   Disconnect();
@@ -283,7 +271,9 @@ int SOCKSClientSocket::DoResolveHost() {
   // addresses for the target host.
   host_request_info_.set_address_family(ADDRESS_FAMILY_IPV4);
   return host_resolver_.Resolve(
-      host_request_info_, &addresses_,
+      host_request_info_,
+      priority_,
+      &addresses_,
       base::Bind(&SOCKSClientSocket::OnIOComplete, base::Unretained(this)),
       net_log_);
 }

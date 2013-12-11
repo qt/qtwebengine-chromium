@@ -26,13 +26,11 @@
 #ifndef ProcessID_h
 #define ProcessID_h
 
-#include "wtf/Platform.h"
-
-#if OS(UNIX)
+#if OS(POSIX)
 #include <unistd.h>
 #endif
 
-#if OS(WINDOWS)
+#if OS(WIN)
 #include <windows.h>
 #endif
 
@@ -40,7 +38,7 @@ namespace WTF {
 
 inline int getCurrentProcessID()
 {
-#if OS(WINDOWS)
+#if OS(WIN)
     return GetCurrentProcessId();
 #else
     return getpid();

@@ -12,13 +12,15 @@ using base::StringPiece;
 
 namespace net {
 
+class QuicAckNotifier;
+
 QuicPacketGenerator::QuicPacketGenerator(DelegateInterface* delegate,
                                          DebugDelegateInterface* debug_delegate,
                                          QuicPacketCreator* creator)
     : delegate_(delegate),
       debug_delegate_(debug_delegate),
       packet_creator_(creator),
-      should_flush_(true),
+      batch_mode_(false),
       should_send_ack_(false),
       should_send_feedback_(false) {
 }
@@ -60,7 +62,6 @@ void QuicPacketGenerator::SetShouldSendAck(bool also_send_feedback) {
   SendQueuedFrames();
 }
 
-
 void QuicPacketGenerator::AddControlFrame(const QuicFrame& frame) {
   queued_control_frames_.push_back(frame);
   SendQueuedFrames();
@@ -69,19 +70,39 @@ void QuicPacketGenerator::AddControlFrame(const QuicFrame& frame) {
 QuicConsumedData QuicPacketGenerator::ConsumeData(QuicStreamId id,
                                                   StringPiece data,
                                                   QuicStreamOffset offset,
-                                                  bool fin) {
+                                                  bool fin,
+                                                  QuicAckNotifier* notifier) {
+  IsHandshake handshake = id == kCryptoStreamId ? IS_HANDSHAKE : NOT_HANDSHAKE;
+  // The caller should have flushed pending frames before sending handshake
+  // messages.
+  DCHECK(handshake == NOT_HANDSHAKE || !HasPendingFrames());
   SendQueuedFrames();
 
   size_t total_bytes_consumed = 0;
   bool fin_consumed = false;
 
+  if (!packet_creator_->HasRoomForStreamFrame(id, offset)) {
+    SerializeAndSendPacket();
+  }
   while (delegate_->CanWrite(NOT_RETRANSMISSION, HAS_RETRANSMITTABLE_DATA,
-                             NOT_HANDSHAKE)) {
+                             handshake)) {
     QuicFrame frame;
-    size_t bytes_consumed = packet_creator_->CreateStreamFrame(
+    size_t bytes_consumed;
+    if (notifier != NULL) {
+      // We want to track which packet this stream frame ends up in.
+      bytes_consumed = packet_creator_->CreateStreamFrameWithNotifier(
+        id, data, offset + total_bytes_consumed, fin, notifier, &frame);
+    } else {
+      bytes_consumed = packet_creator_->CreateStreamFrame(
         id, data, offset + total_bytes_consumed, fin, &frame);
-    bool success = AddFrame(frame);
-    DCHECK(success);
+    }
+    if (!AddFrame(frame)) {
+      LOG(DFATAL) << "Failed to add stream frame.";
+      // Inability to add a STREAM frame creates an unrecoverable hole in a
+      // the stream, so it's best to close the connection.
+      delegate_->CloseConnection(QUIC_INTERNAL_ERROR, false);
+      return QuicConsumedData(0, false);
+    }
 
     total_bytes_consumed += bytes_consumed;
     fin_consumed = fin && bytes_consumed == data.size();
@@ -89,7 +110,7 @@ QuicConsumedData QuicPacketGenerator::ConsumeData(QuicStreamId id,
     DCHECK(data.empty() || packet_creator_->BytesFree() == 0u);
 
     // TODO(ianswett): Restore packet reordering.
-    if (should_flush_ || !packet_creator_->HasRoomForStreamFrame(id, offset)) {
+    if (!InBatchMode() || !packet_creator_->HasRoomForStreamFrame(id, offset)) {
       SerializeAndSendPacket();
     }
 
@@ -101,15 +122,15 @@ QuicConsumedData QuicPacketGenerator::ConsumeData(QuicStreamId id,
     }
   }
 
-  // Ensure the FEC group is closed at the end of this method unless other
-  // writes are pending.
-  if (should_flush_ && packet_creator_->ShouldSendFec(true)) {
+  // Ensure the FEC group is closed at the end of this method if not in batch
+  // mode.
+  if (!InBatchMode() && packet_creator_->ShouldSendFec(true)) {
     SerializedPacket serialized_fec = packet_creator_->SerializeFec();
     DCHECK(serialized_fec.packet);
     delegate_->OnSerializedPacket(serialized_fec);
   }
 
-  DCHECK(!should_flush_ || !packet_creator_->HasPendingFrames());
+  DCHECK(InBatchMode() || !packet_creator_->HasPendingFrames());
   return QuicConsumedData(total_bytes_consumed, fin_consumed);
 }
 
@@ -135,7 +156,7 @@ void QuicPacketGenerator::SendQueuedFrames() {
     }
   }
 
-  if (should_flush_) {
+  if (!InBatchMode()) {
     if (packet_creator_->HasPendingFrames()) {
       SerializeAndSendPacket();
     }
@@ -151,12 +172,16 @@ void QuicPacketGenerator::SendQueuedFrames() {
   }
 }
 
+bool QuicPacketGenerator::InBatchMode() {
+  return batch_mode_;
+}
+
 void QuicPacketGenerator::StartBatchOperations() {
-  should_flush_ = false;
+  batch_mode_ = true;
 }
 
 void QuicPacketGenerator::FinishBatchOperations() {
-  should_flush_ = true;
+  batch_mode_ = false;
   SendQueuedFrames();
 }
 
@@ -171,7 +196,7 @@ bool QuicPacketGenerator::HasPendingFrames() const {
 
 bool QuicPacketGenerator::AddNextPendingFrame() {
   if (should_send_ack_) {
-    pending_ack_frame_.reset((delegate_->CreateAckFrame()));
+    pending_ack_frame_.reset(delegate_->CreateAckFrame());
     // If we can't this add the frame now, then we still need to do so later.
     should_send_ack_ = !AddFrame(QuicFrame(pending_ack_frame_.get()));
     // Return success if we have cleared out this flag (i.e., added the frame).
@@ -180,7 +205,7 @@ bool QuicPacketGenerator::AddNextPendingFrame() {
   }
 
   if (should_send_feedback_) {
-    pending_feedback_frame_.reset((delegate_->CreateFeedbackFrame()));
+    pending_feedback_frame_.reset(delegate_->CreateFeedbackFrame());
     // If we can't this add the frame now, then we still need to do so later.
     should_send_feedback_ = !AddFrame(QuicFrame(pending_feedback_frame_.get()));
     // Return success if we have cleared out this flag (i.e., added the frame).

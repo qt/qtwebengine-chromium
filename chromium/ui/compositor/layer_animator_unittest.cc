@@ -10,6 +10,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_delegate.h"
 #include "ui/compositor/layer_animation_element.h"
 #include "ui/compositor/layer_animation_sequence.h"
@@ -21,6 +22,8 @@
 #include "ui/compositor/test/test_utils.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/transform.h"
+
+using gfx::AnimationContainerElement;
 
 namespace ui {
 
@@ -112,7 +115,6 @@ class DeletingLayerAnimationObserver : public LayerAnimationObserver {
 
  private:
   LayerAnimator* animator_;
-  LayerAnimationSequence* sequence_;
 
   DISALLOW_COPY_AND_ASSIGN(DeletingLayerAnimationObserver);
 };
@@ -1764,13 +1766,13 @@ TEST(LayerAnimatorTest, ObserverReleasedBeforeAnimationSequenceEnds) {
   animator->StartAnimation(sequence);
 
   // |observer| should be attached to |sequence|.
-  EXPECT_EQ(static_cast<size_t>(1), sequence->observers_.size());
+  EXPECT_TRUE(sequence->observers_.might_have_observers());
 
   // Now, release |observer|
   observer.reset();
 
   // And |sequence| should no longer be attached to |observer|.
-  EXPECT_EQ(static_cast<size_t>(0), sequence->observers_.size());
+  EXPECT_FALSE(sequence->observers_.might_have_observers());
 }
 
 TEST(LayerAnimatorTest, ObserverAttachedAfterAnimationStarted) {
@@ -2374,6 +2376,35 @@ TEST(LayerAnimatorTest, TestSetterRespectEnqueueStrategy) {
   animator->SetOpacity(magic_opacity);
 
   EXPECT_EQ(start_opacity, delegate.GetOpacityForAnimation());
+}
+
+TEST(LayerAnimatorTest, TestScopedCounterAnimation) {
+  Layer parent, child;
+  parent.Add(&child);
+
+  gfx::Transform parent_begin, parent_end;
+
+  parent_end.Scale3d(2.0, 0.5, 1.0);
+
+  // Parent animates from identity to the end value. The counter animation will
+  // start at the end value and animate back to identity.
+  gfx::Transform child_begin(parent_end);
+
+  child.SetTransform(child_begin);
+  parent.SetTransform(parent_begin);
+
+  EXPECT_FALSE(child.GetAnimator()->is_animating());
+
+  ScopedLayerAnimationSettings settings(parent.GetAnimator());
+  settings.SetInverselyAnimatedBaseLayer(&parent);
+  settings.AddInverselyAnimatedLayer(&child);
+
+  parent.SetTransform(parent_end);
+
+  EXPECT_TRUE(child.GetAnimator()->is_animating());
+  EXPECT_TRUE(child.GetTargetTransform().IsIdentity())
+    << child.GetTargetTransform().ToString();
+
 }
 
 }  // namespace ui

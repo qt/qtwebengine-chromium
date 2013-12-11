@@ -31,7 +31,7 @@
 #include "core/dom/ActiveDOMObject.h"
 #include "core/dom/ErrorEvent.h"
 #include "core/dom/SecurityContext.h"
-#include "core/loader/CrossOriginAccessControl.h"
+#include "core/fetch/CrossOriginAccessControl.h"
 #include "core/page/ConsoleTypes.h"
 #include "core/page/DOMTimer.h"
 #include "core/platform/LifecycleContext.h"
@@ -40,6 +40,10 @@
 #include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
+
+namespace WTF {
+class OrdinalNumber;
+}
 
 namespace WebCore {
 
@@ -77,8 +81,8 @@ public:
     bool shouldSanitizeScriptError(const String& sourceURL, AccessControlStatus);
     void reportException(PassRefPtr<ErrorEvent>, PassRefPtr<ScriptCallStack>, AccessControlStatus);
 
-    void addConsoleMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, ScriptState* = 0, unsigned long requestIdentifier = 0);
-    virtual void addConsoleMessage(MessageSource, MessageLevel, const String& message, unsigned long requestIdentifier = 0) = 0;
+    void addConsoleMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber);
+    void addConsoleMessage(MessageSource, MessageLevel, const String& message, ScriptState* = 0);
 
     PublicURLManager& publicURLManager();
 
@@ -159,7 +163,7 @@ private:
     virtual const KURL& virtualURL() const = 0;
     virtual KURL virtualCompleteURL(const String&) const = 0;
 
-    virtual void addMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, PassRefPtr<ScriptCallStack>, ScriptState* = 0, unsigned long requestIdentifier = 0) = 0;
+    virtual void addMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, ScriptState*) = 0;
     virtual EventTarget* errorEventTarget() = 0;
     virtual void logExceptionToConsole(const String& errorMessage, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtr<ScriptCallStack>) = 0;
     bool dispatchErrorEvent(PassRefPtr<ErrorEvent>, AccessControlStatus);

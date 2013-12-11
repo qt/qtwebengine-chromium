@@ -17,13 +17,10 @@ include_rules = [
   "-base/prefs",
 
   "+cc",
-  "-cc/base/thread.h",  # http://crbug.com/249172
-  "!cc/base/thread_impl.h",  # http://crbug.com/249172
   # If you want to use any of these files, move them to src/base first.
   "-cc/base/hash_pair.h",
   "-cc/base/scoped_ptr_algorithm.h",
   "-cc/base/scoped_ptr_deque.h",
-  "-cc/base/scoped_ptr_hash_map.h",
   "-cc/base/scoped_ptr_vector.h",
 
   "+crypto",
@@ -33,6 +30,7 @@ include_rules = [
   "+grit/ui_strings.h",
   "+grit/webkit_resources.h",
   "+grit/webkit_strings.h",
+  "+grit/webui_resources.h",
   "+grit/webui_resources_map.h",
 
   "+dbus",
@@ -80,6 +78,7 @@ include_rules = [
   "+ui/aura",
   "+ui/base",
   "+ui/compositor",
+  "+ui/events",
   "+ui/gfx",
   "+ui/gl",
   "+ui/native_theme",

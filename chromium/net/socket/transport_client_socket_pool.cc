@@ -48,24 +48,17 @@ bool AddressListOnlyContainsIPv6(const AddressList& list) {
 
 TransportSocketParams::TransportSocketParams(
     const HostPortPair& host_port_pair,
-    RequestPriority priority,
     bool disable_resolver_cache,
     bool ignore_limits,
     const OnHostResolutionCallback& host_resolution_callback)
     : destination_(host_port_pair),
       ignore_limits_(ignore_limits),
       host_resolution_callback_(host_resolution_callback) {
-  Initialize(priority, disable_resolver_cache);
-}
-
-TransportSocketParams::~TransportSocketParams() {}
-
-void TransportSocketParams::Initialize(RequestPriority priority,
-                                       bool disable_resolver_cache) {
-  destination_.set_priority(priority);
   if (disable_resolver_cache)
     destination_.set_allow_cached_response(false);
 }
+
+TransportSocketParams::~TransportSocketParams() {}
 
 // TransportConnectJobs will time out after this many seconds.  Note this is
 // the total time, including both host resolution and TCP connect() times.
@@ -80,13 +73,14 @@ static const int kTransportConnectJobTimeoutInSeconds = 240;  // 4 minutes.
 
 TransportConnectJob::TransportConnectJob(
     const std::string& group_name,
+    RequestPriority priority,
     const scoped_refptr<TransportSocketParams>& params,
     base::TimeDelta timeout_duration,
     ClientSocketFactory* client_socket_factory,
     HostResolver* host_resolver,
     Delegate* delegate,
     NetLog* net_log)
-    : ConnectJob(group_name, timeout_duration, delegate,
+    : ConnectJob(group_name, timeout_duration, priority, delegate,
                  BoundNetLog::Make(net_log, NetLog::SOURCE_CONNECT_JOB)),
       params_(params),
       client_socket_factory_(client_socket_factory),
@@ -107,10 +101,11 @@ LoadState TransportConnectJob::GetLoadState() const {
     case STATE_TRANSPORT_CONNECT:
     case STATE_TRANSPORT_CONNECT_COMPLETE:
       return LOAD_STATE_CONNECTING;
-    default:
-      NOTREACHED();
+    case STATE_NONE:
       return LOAD_STATE_IDLE;
   }
+  NOTREACHED();
+  return LOAD_STATE_IDLE;
 }
 
 // static
@@ -166,7 +161,9 @@ int TransportConnectJob::DoResolveHost() {
   connect_timing_.dns_start = base::TimeTicks::Now();
 
   return resolver_.Resolve(
-      params_->destination(), &addresses_,
+      params_->destination(),
+      priority(),
+      &addresses_,
       base::Bind(&TransportConnectJob::OnIOComplete, base::Unretained(this)),
       net_log());
 }
@@ -190,8 +187,8 @@ int TransportConnectJob::DoResolveHostComplete(int result) {
 
 int TransportConnectJob::DoTransportConnect() {
   next_state_ = STATE_TRANSPORT_CONNECT_COMPLETE;
-  transport_socket_.reset(client_socket_factory_->CreateTransportClientSocket(
-        addresses_, net_log().net_log(), net_log().source()));
+  transport_socket_ = client_socket_factory_->CreateTransportClientSocket(
+        addresses_, net_log().net_log(), net_log().source());
   int rv = transport_socket_->Connect(
       base::Bind(&TransportConnectJob::OnIOComplete, base::Unretained(this)));
   if (rv == ERR_IO_PENDING &&
@@ -246,7 +243,7 @@ int TransportConnectJob::DoTransportConnectComplete(int result) {
                                    100);
       }
     }
-    set_socket(transport_socket_.release());
+    SetSocket(transport_socket_.Pass());
     fallback_timer_.Stop();
   } else {
     // Be a bit paranoid and kill off the fallback members to prevent reuse.
@@ -270,9 +267,9 @@ void TransportConnectJob::DoIPv6FallbackTransportConnect() {
 
   fallback_addresses_.reset(new AddressList(addresses_));
   MakeAddressListStartWithIPv4(fallback_addresses_.get());
-  fallback_transport_socket_.reset(
+  fallback_transport_socket_ =
       client_socket_factory_->CreateTransportClientSocket(
-          *fallback_addresses_, net_log().net_log(), net_log().source()));
+          *fallback_addresses_, net_log().net_log(), net_log().source());
   fallback_connect_start_time_ = base::TimeTicks::Now();
   int rv = fallback_transport_socket_->Connect(
       base::Bind(
@@ -317,7 +314,7 @@ void TransportConnectJob::DoIPv6FallbackTransportConnectComplete(int result) {
         base::TimeDelta::FromMilliseconds(1),
         base::TimeDelta::FromMinutes(10),
         100);
-    set_socket(fallback_transport_socket_.release());
+    SetSocket(fallback_transport_socket_.Pass());
     next_state_ = STATE_NONE;
     transport_socket_.reset();
   } else {
@@ -333,18 +330,20 @@ int TransportConnectJob::ConnectInternal() {
   return DoLoop(OK);
 }
 
-ConnectJob*
+scoped_ptr<ConnectJob>
     TransportClientSocketPool::TransportConnectJobFactory::NewConnectJob(
     const std::string& group_name,
     const PoolBase::Request& request,
     ConnectJob::Delegate* delegate) const {
-  return new TransportConnectJob(group_name,
-                                 request.params(),
-                                 ConnectionTimeout(),
-                                 client_socket_factory_,
-                                 host_resolver_,
-                                 delegate,
-                                 net_log_);
+  return scoped_ptr<ConnectJob>(
+      new TransportConnectJob(group_name,
+                              request.priority(),
+                              request.params(),
+                              ConnectionTimeout(),
+                              client_socket_factory_,
+                              host_resolver_,
+                              delegate,
+                              net_log_));
 }
 
 base::TimeDelta
@@ -360,11 +359,11 @@ TransportClientSocketPool::TransportClientSocketPool(
     HostResolver* host_resolver,
     ClientSocketFactory* client_socket_factory,
     NetLog* net_log)
-    : base_(max_sockets, max_sockets_per_group, histograms,
+    : base_(NULL, max_sockets, max_sockets_per_group, histograms,
             ClientSocketPool::unused_idle_socket_timeout(),
             ClientSocketPool::used_idle_socket_timeout(),
             new TransportConnectJobFactory(client_socket_factory,
-                                     host_resolver, net_log)) {
+                                           host_resolver, net_log)) {
   base_.EnableConnectBackupJobs();
 }
 
@@ -419,17 +418,13 @@ void TransportClientSocketPool::CancelRequest(
 
 void TransportClientSocketPool::ReleaseSocket(
     const std::string& group_name,
-    StreamSocket* socket,
+    scoped_ptr<StreamSocket> socket,
     int id) {
-  base_.ReleaseSocket(group_name, socket, id);
+  base_.ReleaseSocket(group_name, socket.Pass(), id);
 }
 
 void TransportClientSocketPool::FlushWithError(int error) {
   base_.FlushWithError(error);
-}
-
-bool TransportClientSocketPool::IsStalled() const {
-  return base_.IsStalled();
 }
 
 void TransportClientSocketPool::CloseIdleSockets() {
@@ -450,14 +445,6 @@ LoadState TransportClientSocketPool::GetLoadState(
   return base_.GetLoadState(group_name, handle);
 }
 
-void TransportClientSocketPool::AddLayeredPool(LayeredPool* layered_pool) {
-  base_.AddLayeredPool(layered_pool);
-}
-
-void TransportClientSocketPool::RemoveLayeredPool(LayeredPool* layered_pool) {
-  base_.RemoveLayeredPool(layered_pool);
-}
-
 base::DictionaryValue* TransportClientSocketPool::GetInfoAsValue(
     const std::string& name,
     const std::string& type,
@@ -471,6 +458,20 @@ base::TimeDelta TransportClientSocketPool::ConnectionTimeout() const {
 
 ClientSocketPoolHistograms* TransportClientSocketPool::histograms() const {
   return base_.histograms();
+}
+
+bool TransportClientSocketPool::IsStalled() const {
+  return base_.IsStalled();
+}
+
+void TransportClientSocketPool::AddHigherLayeredPool(
+    HigherLayeredPool* higher_pool) {
+  base_.AddHigherLayeredPool(higher_pool);
+}
+
+void TransportClientSocketPool::RemoveHigherLayeredPool(
+    HigherLayeredPool* higher_pool) {
+  base_.RemoveHigherLayeredPool(higher_pool);
 }
 
 }  // namespace net

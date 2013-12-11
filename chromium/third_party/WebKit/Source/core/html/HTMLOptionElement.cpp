@@ -46,7 +46,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLOptionElement::HTMLOptionElement(const QualifiedName& tagName, Document* document)
+HTMLOptionElement::HTMLOptionElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
     , m_disabled(false)
     , m_isSelected(false)
@@ -56,17 +56,17 @@ HTMLOptionElement::HTMLOptionElement(const QualifiedName& tagName, Document* doc
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLOptionElement> HTMLOptionElement::create(Document* document)
+PassRefPtr<HTMLOptionElement> HTMLOptionElement::create(Document& document)
 {
     return adoptRef(new HTMLOptionElement(optionTag, document));
 }
 
-PassRefPtr<HTMLOptionElement> HTMLOptionElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLOptionElement> HTMLOptionElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLOptionElement(tagName, document));
 }
 
-PassRefPtr<HTMLOptionElement> HTMLOptionElement::createForJSConstructor(Document* document, const String& data, const String& value,
+PassRefPtr<HTMLOptionElement> HTMLOptionElement::createForJSConstructor(Document& document, const String& data, const String& value,
     bool defaultSelected, bool selected, ExceptionState& es)
 {
     RefPtr<HTMLOptionElement> element = adoptRef(new HTMLOptionElement(optionTag, document));
@@ -110,11 +110,11 @@ bool HTMLOptionElement::rendererIsFocusable() const
 
 String HTMLOptionElement::text() const
 {
-    Document* document = this->document();
+    Document& document = this->document();
     String text;
 
     // WinIE does not use the label attribute, so as a quirk, we ignore it.
-    if (!document->inQuirksMode())
+    if (!document.inQuirksMode())
         text = fastGetAttribute(labelAttr);
 
     // FIXME: The following treats an element with the label attribute set to
@@ -125,7 +125,7 @@ String HTMLOptionElement::text() const
 
     // FIXME: Is displayStringModifiedByEncoding helpful here?
     // If it's correct here, then isn't it needed in the value and label functions too?
-    return document->displayStringModifiedByEncoding(text).stripWhiteSpace(isHTMLSpace).simplifyWhiteSpace(isHTMLSpace);
+    return document.displayStringModifiedByEncoding(text).stripWhiteSpace(isHTMLSpace<UChar>).simplifyWhiteSpace(isHTMLSpace<UChar>);
 }
 
 void HTMLOptionElement::setText(const String &text, ExceptionState& es)
@@ -145,7 +145,7 @@ void HTMLOptionElement::setText(const String &text, ExceptionState& es)
         toText(child)->setData(text);
     else {
         removeChildren();
-        appendChild(Text::create(document(), text), es, AttachLazily);
+        appendChild(Text::create(document(), text), es);
     }
 
     if (selectIsMenuList && select->selectedIndex() != oldSelectedIndex)
@@ -193,7 +193,7 @@ void HTMLOptionElement::parseAttribute(const QualifiedName& name, const AtomicSt
         if (oldDisabled != m_disabled) {
             didAffectSelector(AffectedSelectorDisabled | AffectedSelectorEnabled);
             if (renderer() && renderer()->style()->hasAppearance())
-                renderer()->theme()->stateChanged(renderer(), EnabledState);
+                RenderTheme::theme().stateChanged(renderer(), EnabledState);
         }
     } else if (name == selectedAttr) {
         if (bool willBeSelected = !value.isNull())
@@ -207,7 +207,7 @@ String HTMLOptionElement::value() const
     const AtomicString& value = fastGetAttribute(valueAttr);
     if (!value.isNull())
         return value;
-    return collectOptionInnerText().stripWhiteSpace(isHTMLSpace).simplifyWhiteSpace(isHTMLSpace);
+    return collectOptionInnerText().stripWhiteSpace(isHTMLSpace<UChar>).simplifyWhiteSpace(isHTMLSpace<UChar>);
 }
 
 void HTMLOptionElement::setValue(const String& value)
@@ -268,7 +268,7 @@ HTMLDataListElement* HTMLOptionElement::ownerDataListElement() const
 {
     for (ContainerNode* parent = parentNode(); parent ; parent = parent->parentNode()) {
         if (parent->hasTagName(datalistTag))
-            return static_cast<HTMLDataListElement*>(parent);
+            return toHTMLDataListElement(parent);
     }
     return 0;
 }
@@ -290,7 +290,7 @@ String HTMLOptionElement::label() const
     const AtomicString& label = fastGetAttribute(labelAttr);
     if (!label.isNull())
         return label;
-    return collectOptionInnerText().stripWhiteSpace(isHTMLSpace).simplifyWhiteSpace(isHTMLSpace);
+    return collectOptionInnerText().stripWhiteSpace(isHTMLSpace<UChar>).simplifyWhiteSpace(isHTMLSpace<UChar>);
 }
 
 void HTMLOptionElement::setLabel(const String& label)
@@ -316,7 +316,7 @@ PassRefPtr<RenderStyle> HTMLOptionElement::customStyleForRenderer()
     return m_style;
 }
 
-void HTMLOptionElement::didRecalcStyle(StyleChange)
+void HTMLOptionElement::didRecalcStyle(StyleRecalcChange)
 {
     // FIXME: This is nasty, we ask our owner select to repaint even if the new
     // style is exactly the same.

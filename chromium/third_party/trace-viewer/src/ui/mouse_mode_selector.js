@@ -25,13 +25,13 @@ base.exportTo('ui', function() {
   MOUSE_SELECTOR_MODE.PANSCAN = 0x2;
   MOUSE_SELECTOR_MODE.ZOOM = 0x4;
   MOUSE_SELECTOR_MODE.TIMING = 0x8;
-  MOUSE_SELECTOR_MODE.ALL_MODES = 0xF;
+  MOUSE_SELECTOR_MODE.ROTATE = 0x10;
+  MOUSE_SELECTOR_MODE.ALL_MODES = 0x1F;
 
   var allModeInfo = {};
   allModeInfo[MOUSE_SELECTOR_MODE.PANSCAN] = {
+    title: 'pan',
     className: 'pan-scan-mode-button',
-    cmdOrCtrlAlternate: MOUSE_SELECTOR_MODE.ZOOM,
-    shiftAlternate: MOUSE_SELECTOR_MODE.SELECTION,
     eventNames: {
       enter: 'enterpan',
       begin: 'beginpan',
@@ -41,6 +41,7 @@ base.exportTo('ui', function() {
     }
   };
   allModeInfo[MOUSE_SELECTOR_MODE.SELECTION] = {
+    title: 'selection',
     className: 'selection-mode-button',
     eventNames: {
       enter: 'enterselection',
@@ -52,6 +53,7 @@ base.exportTo('ui', function() {
   };
 
   allModeInfo[MOUSE_SELECTOR_MODE.ZOOM] = {
+    title: 'zoom',
     className: 'zoom-mode-button',
     eventNames: {
       enter: 'enterzoom',
@@ -62,6 +64,7 @@ base.exportTo('ui', function() {
     }
   };
   allModeInfo[MOUSE_SELECTOR_MODE.TIMING] = {
+    title: 'timing',
     className: 'timing-mode-button',
     eventNames: {
       enter: 'entertiming',
@@ -70,6 +73,23 @@ base.exportTo('ui', function() {
       end: 'endtiming',
       exit: 'exittiming'
     }
+  };
+  allModeInfo[MOUSE_SELECTOR_MODE.ROTATE] = {
+    title: 'rotate',
+    className: 'rotate-mode-button',
+    eventNames: {
+      enter: 'enterrotate',
+      begin: 'beginrotate',
+      update: 'updaterotate',
+      end: 'endrotate',
+      exit: 'exitrotate'
+    }
+  };
+
+  var MODIFIER = {
+    SHIFT: 0x1,
+    SPACE: 0x2,
+    CMD_OR_CTRL: 0x4
   };
 
   /**
@@ -96,11 +116,6 @@ base.exportTo('ui', function() {
 
       this.supportedModeMask = MOUSE_SELECTOR_MODE.ALL_MODES;
 
-      this.pos = {
-        x: window.innerWidth - 50,
-        y: 100
-      };
-
       this.initialRelativeMouseDownPos_ = {x: 0, y: 0};
 
       this.defaultMode_ = MOUSE_SELECTOR_MODE.PANSCAN;
@@ -122,17 +137,15 @@ base.exportTo('ui', function() {
       base.KeyEventManager.instance.addListener(
           'keydown', this.onKeyDown_, this);
       base.KeyEventManager.instance.addListener(
-          'keypress', this.onKeyPress_, this);
-      base.KeyEventManager.instance.addListener(
           'keyup', this.onKeyUp_, this);
 
       this.mode_ = undefined;
       this.modeToKeyCodeMap_ = {};
+      this.modifierToModeMap_ = {};
 
       this.targetElement = opt_targetElement;
-      this.isInAlternativeMode_ = false;
-      this.modeBeforeAlternativeModeActivated_ = undefined;
-      this.exitAlternativeModeOnShift_ = false;
+      this.modeBeforeAlternativeModeActivated_ = null;
+      this.exitAlternativeModeModifier_ = null;
 
       this.isInteracting_ = false;
       this.isClick_ = false;
@@ -198,6 +211,7 @@ base.exportTo('ui', function() {
       function createButtonForMode(mode) {
         var button = document.createElement('div');
         button.mode = mode;
+        button.title = allModeInfo[mode].title;
         button.classList.add('tool-button');
         button.classList.add(allModeInfo[mode].className);
         return button;
@@ -239,7 +253,8 @@ base.exportTo('ui', function() {
         var buttonEl = this.buttonsEl_.querySelector('.' + modeInfo.className);
         if (buttonEl)
           buttonEl.classList.remove('active');
-        base.dispatchSimpleEvent(this, modeInfo.eventNames.exit, true);
+        if (!this.isInAlternativeMode_)
+          base.dispatchSimpleEvent(this, modeInfo.eventNames.exit, true);
       }
 
       this.currentMode_ = newMode;
@@ -249,10 +264,11 @@ base.exportTo('ui', function() {
         var buttonEl = this.buttonsEl_.querySelector('.' + modeInfo.className);
         if (buttonEl)
           buttonEl.classList.add('active');
-        base.dispatchSimpleEvent(this, modeInfo.eventNames.enter, true);
+        if (!this.isInAlternativeMode_)
+          base.dispatchSimpleEvent(this, modeInfo.eventNames.enter, true);
       }
 
-      if (this.settingsKey_)
+      if (this.settingsKey_ && !this.isInAlternativeMode_)
         base.Settings.set(this.settingsKey_ + '.mode', this.mode);
     },
 
@@ -260,6 +276,16 @@ base.exportTo('ui', function() {
       if ((mode & this.supportedModeMask_) === 0)
         throw new Error('Mode not supported');
       this.modeToKeyCodeMap_[mode] = keyCode;
+
+      if (!this.buttonsEl_)
+        return;
+
+      var modeInfo = allModeInfo[mode];
+      var buttonEl = this.buttonsEl_.querySelector('.' + modeInfo.className);
+      if (buttonEl) {
+        buttonEl.title =
+            modeInfo.title + ' (' + String.fromCharCode(keyCode) + ')';
+      }
     },
 
     setPositionFromEvent_: function(pos, e) {
@@ -286,6 +312,9 @@ base.exportTo('ui', function() {
       var mouseEvent = new base.Event(
           allModeInfo[this.mode].eventNames.update, true);
       mouseEvent.data = e;
+      mouseEvent.deltaX = e.x - this.mouseDownPos_.x;
+      mouseEvent.deltaY = e.y - this.mouseDownPos_.y;
+      mouseEvent.mouseDownPosition = this.mouseDownPos_;
       this.dispatchEvent(mouseEvent);
 
       if (this.isInteracting_)
@@ -309,12 +338,6 @@ base.exportTo('ui', function() {
         this.dispatchClickEvents_(e);
 
       this.isInteracting_ = false;
-
-      if (this.isInAlternativeMode_) {
-        this.mode = this.modeBeforeAlternativeModeActivated_;
-        this.modeBeforeAlternativeModeActivated_ = undefined;
-        this.isInAlternativeMode_ = false;
-      }
     },
 
     onButtonMouseDown_: function(e) {
@@ -328,29 +351,9 @@ base.exportTo('ui', function() {
     },
 
     onButtonPress_: function(e) {
+      this.setAlternateMode_(null);
       this.mode = e.target.mode;
-      this.isInAlternativeMode_ = false;
       e.preventDefault();
-    },
-
-    onKeyPress_: function(e) {
-
-      // Prevent the user from changing modes during an interaction.
-      if (this.isInteracting_)
-        return;
-
-      var modeInfo = allModeInfo[this.mode];
-      var handled = false;
-      base.iterItems(this.modeToKeyCodeMap_, function(modeStr, keyCode) {
-        var mode = parseInt(modeStr);
-        if (e.keyCode === keyCode) {
-          this.mode = mode;
-          this.isInAlternativeMode_ = false;
-          this.modeBeforeAlternativeModeActivated_ = undefined;
-          handled = true;
-        }
-      }, this);
-      return handled;
     },
 
     onKeyDown_: function(e) {
@@ -359,59 +362,93 @@ base.exportTo('ui', function() {
       if (this.isInteracting_)
         return;
 
-      var modeInfo = allModeInfo[this.mode];
-
-      var alternateMode;
-      var exitAlternativeModeOnShift;
-      if (e.shiftKey && modeInfo.shiftAlternate) {
-        alternateMode = modeInfo.shiftAlternate;
-        exitAlternativeModeOnShift = true;
-      }
-
-      var userIsPressingCmdOrCtrl = (base.isMac && e.metaKey) ||
-          (!base.isMac && e.ctrlKey);
-      if (userIsPressingCmdOrCtrl && modeInfo.cmdOrCtrlAlternate) {
-        alternateMode = modeInfo.cmdOrCtrlAlternate;
-        exitAlternativeModeOnShift = false;
-      }
-
-      if (!alternateMode)
+      if (this.isInAlternativeMode_)
         return;
 
-      if ((alternateMode & this.supportedModeMask_) === 0)
+      var modifierToModeMap = this.modifierToModeMap_;
+      var mode = this.mode;
+      var m = MODIFIER;
+      var modifier;
+
+      var shiftPressed = e.shiftKey;
+      var spacePressed = e.keyCode === ' '.charCodeAt(0);
+      var cmdOrCtrlPressed =
+          (base.isMac && e.metaKey) || (!base.isMac && e.ctrlKey);
+
+      if (shiftPressed && modifierToModeMap[m.SHIFT] !== mode)
+        modifier = m.SHIFT;
+      else if (spacePressed && modifierToModeMap[m.SPACE] !== mode)
+        modifier = m.SPACE;
+      else if (cmdOrCtrlPressed && modifierToModeMap[m.CMD_OR_CTRL] !== mode)
+        modifier = m.CMD_OR_CTRL;
+      else
         return;
 
-      this.isInAlternativeMode_ = true;
-      this.modeBeforeAlternativeModeActivated_ = this.mode;
-      this.exitAlternativeModeOnShift_ = false;
-
-      this.mode = alternateMode;
-      e.preventDefault();
+      this.setAlternateMode_(modifier);
     },
 
     onKeyUp_: function(e) {
+
       // Prevent the user from changing modes during an interaction.
       if (this.isInteracting_)
         return;
 
+      var didHandleKey = false;
+      base.iterItems(this.modeToKeyCodeMap_, function(modeStr, keyCode) {
+        if (e.keyCode === keyCode) {
+          this.setAlternateMode_(null);
+          var mode = parseInt(modeStr);
+          this.mode = mode;
+          didHandleKey = true;
+        }
+      }, this);
+
+      if (didHandleKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
       if (!this.isInAlternativeMode_)
         return;
 
-      if (!e.shiftKey && this.exitAlternativeModeOnShift_) {
-        this.mode = this.modeBeforeAlternativeModeActivated_;
-        this.modeBeforeAlternativeModeActivated_ = undefined;
-        this.isInAlternativeMode_ = false;
+      var shiftReleased = !e.shiftKey;
+      var spaceReleased = e.keyCode === ' '.charCodeAt(0);
+      var cmdOrCtrlReleased =
+          (base.isMac && !e.metaKey) || (!base.isMac && !e.ctrlKey);
+
+      var exitModifier = this.exitAlternativeModeModifier_;
+      if ((shiftReleased && exitModifier === MODIFIER.SHIFT) ||
+          (spaceReleased && exitModifier === MODIFIER.SPACE) ||
+          (cmdOrCtrlReleased && exitModifier === MODIFIER.CMD_OR_CTRL)) {
+        this.setAlternateMode_(null);
+      }
+    },
+
+    get isInAlternativeMode_() {
+      return !!this.modeBeforeAlternativeModeActivated_;
+    },
+
+    setAlternateMode_: function(modifier) {
+      if (!modifier) {
+        if (this.isInAlternativeMode_) {
+          this.mode = this.modeBeforeAlternativeModeActivated_;
+          this.modeBeforeAlternativeModeActivated_ = null;
+        }
         return;
       }
 
-      var userHasReleasedCmdOrCtrl = (base.isMac && !e.metaKey) ||
-          (!base.isMac && !e.ctrlKey);
-      if (userHasReleasedCmdOrCtrl && !this.exitAlternativeModeOnShift_) {
-        this.mode = this.modeBeforeAlternativeModeActivated_;
-        this.modeBeforeAlternativeModeActivated_ = undefined;
-        this.isInAlternativeMode_ = false;
+      var alternateMode = this.modifierToModeMap_[modifier];
+      if ((alternateMode & this.supportedModeMask_) === 0)
         return;
-      }
+
+      this.modeBeforeAlternativeModeActivated_ = this.mode;
+      this.exitAlternativeModeModifier_ = modifier;
+      this.mode = alternateMode;
+    },
+
+    setModifierForAlternateMode: function(mode, modifier) {
+      this.modifierToModeMap_[modifier] = mode;
     },
 
     get pos() {
@@ -495,6 +532,7 @@ base.exportTo('ui', function() {
 
   return {
     MouseModeSelector: MouseModeSelector,
-    MOUSE_SELECTOR_MODE: MOUSE_SELECTOR_MODE
+    MOUSE_SELECTOR_MODE: MOUSE_SELECTOR_MODE,
+    MODIFIER: MODIFIER
   };
 });

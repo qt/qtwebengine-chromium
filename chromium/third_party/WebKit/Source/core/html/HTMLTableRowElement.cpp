@@ -37,19 +37,19 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLTableRowElement::HTMLTableRowElement(const QualifiedName& tagName, Document* document)
+HTMLTableRowElement::HTMLTableRowElement(const QualifiedName& tagName, Document& document)
     : HTMLTablePartElement(tagName, document)
 {
     ASSERT(hasTagName(trTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLTableRowElement> HTMLTableRowElement::create(Document* document)
+PassRefPtr<HTMLTableRowElement> HTMLTableRowElement::create(Document& document)
 {
     return adoptRef(new HTMLTableRowElement(trTag, document));
 }
 
-PassRefPtr<HTMLTableRowElement> HTMLTableRowElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLTableRowElement> HTMLTableRowElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLTableRowElement(tagName, document));
 }
@@ -81,7 +81,7 @@ int HTMLTableRowElement::rowIndex() const
 
     for (Node *node = table->firstChild(); node; node = node->nextSibling()) {
         if (node->hasTagName(tbodyTag)) {
-            HTMLTableSectionElement* section = static_cast<HTMLTableSectionElement*>(node);
+            HTMLTableSectionElement* section = toHTMLTableSectionElement(node);
             for (Node* row = section->firstChild(); row; row = row->nextSibling()) {
                 if (row == this)
                     return rIndex;
@@ -129,14 +129,14 @@ PassRefPtr<HTMLElement> HTMLTableRowElement::insertCell(int index, ExceptionStat
 
     RefPtr<HTMLTableCellElement> cell = HTMLTableCellElement::create(tdTag, document());
     if (index < 0 || index >= numCells)
-        appendChild(cell, es, AttachLazily);
+        appendChild(cell, es);
     else {
         Node* n;
         if (index < 1)
             n = firstChild();
         else
             n = children->item(index);
-        insertBefore(cell, n, es, AttachLazily);
+        insertBefore(cell, n, es);
     }
     return cell.release();
 }

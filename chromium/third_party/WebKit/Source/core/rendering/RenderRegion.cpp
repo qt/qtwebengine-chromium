@@ -42,7 +42,7 @@ using namespace std;
 namespace WebCore {
 
 RenderRegion::RenderRegion(Element* element, RenderFlowThread* flowThread)
-    : RenderBlock(element)
+    : RenderBlockFlow(element)
     , m_flowThread(flowThread)
     , m_parentNamedFlowThread(0)
     , m_computedAutoHeight(-1)
@@ -209,7 +209,7 @@ void RenderRegion::checkRegionStyle()
     // FIXME: Region styling doesn't work for pseudo elements.
     if (node()) {
         Element* regionElement = toElement(node());
-        customRegionStyle = view()->document()->styleResolver()->checkRegionStyle(regionElement);
+        customRegionStyle = view()->document().styleResolver()->checkRegionStyle(regionElement);
     }
     setHasCustomRegionStyle(customRegionStyle);
     m_flowThread->checkRegionsWithStyling();
@@ -253,7 +253,9 @@ bool RenderRegion::shouldHaveAutoLogicalHeight() const
 {
     bool hasSpecifiedEndpointsForHeight = style()->logicalTop().isSpecified() && style()->logicalBottom().isSpecified();
     bool hasAnchoredEndpointsForHeight = isOutOfFlowPositioned() && hasSpecifiedEndpointsForHeight;
-    return style()->logicalHeight().isAuto() && !hasAnchoredEndpointsForHeight;
+    bool hasAutoHeightStyle = style()->logicalHeight().isAuto() || style()->logicalHeight().isFitContent()
+        || style()->logicalHeight().isMaxContent() || style()->logicalHeight().isMinContent();
+    return hasAutoHeightStyle && !hasAnchoredEndpointsForHeight;
 }
 
 void RenderRegion::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
@@ -277,8 +279,7 @@ void RenderRegion::styleDidChange(StyleDifference diff, const RenderStyle* oldSt
 
 void RenderRegion::layoutBlock(bool relayoutChildren, LayoutUnit)
 {
-    StackStats::LayoutCheckPoint layoutCheckPoint;
-    RenderBlock::layoutBlock(relayoutChildren);
+    RenderBlockFlow::layoutBlock(relayoutChildren);
 
     if (isValid()) {
         LayoutRect oldRegionRect(flowThreadPortionRect());
@@ -537,20 +538,19 @@ PassRefPtr<RenderStyle> RenderRegion::computeStyleInRegion(const RenderObject* o
 {
     ASSERT(object);
     ASSERT(object->view());
-    ASSERT(object->view()->document());
     ASSERT(!object->isAnonymous());
     ASSERT(object->node() && object->node()->isElementNode());
 
     // FIXME: Region styling fails for pseudo-elements because the renderers don't have a node.
     Element* element = toElement(object->node());
-    RefPtr<RenderStyle> renderObjectRegionStyle = object->view()->document()->styleResolver()->styleForElement(element, 0, DisallowStyleSharing, MatchAllRules, this);
+    RefPtr<RenderStyle> renderObjectRegionStyle = object->view()->document().styleResolver()->styleForElement(element, 0, DisallowStyleSharing, MatchAllRules, this);
 
     return renderObjectRegionStyle.release();
 }
 
 void RenderRegion::computeChildrenStyleInRegion(const RenderObject* object)
 {
-    for (RenderObject* child = object->firstChild(); child; child = child->nextSibling()) {
+    for (RenderObject* child = object->lastChild(); child; child = child->previousSibling()) {
 
         RenderObjectRegionStyleMap::iterator it = m_renderObjectRegionStyle.find(child);
 
@@ -602,7 +602,7 @@ void RenderRegion::clearObjectStyleInRegion(const RenderObject* object)
     m_renderObjectRegionStyle.remove(object);
 
     // Clear the style for the children of this object.
-    for (RenderObject* child = object->firstChild(); child; child = child->nextSibling())
+    for (RenderObject* child = object->lastChild(); child; child = child->previousSibling())
         clearObjectStyleInRegion(child);
 }
 

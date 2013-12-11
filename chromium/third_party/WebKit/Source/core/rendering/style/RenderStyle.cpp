@@ -80,7 +80,7 @@ PassRefPtr<RenderStyle> RenderStyle::create()
 
 PassRefPtr<RenderStyle> RenderStyle::createDefaultStyle()
 {
-    return adoptRef(new RenderStyle(true));
+    return adoptRef(new RenderStyle(DefaultStyle));
 }
 
 PassRefPtr<RenderStyle> RenderStyle::createAnonymousStyleWithDisplay(const RenderStyle* parentStyle, EDisplay display)
@@ -112,7 +112,7 @@ ALWAYS_INLINE RenderStyle::RenderStyle()
     COMPILE_ASSERT((sizeof(NonInheritedFlags) <= 8), NonInheritedFlags_does_not_grow);
 }
 
-ALWAYS_INLINE RenderStyle::RenderStyle(bool)
+ALWAYS_INLINE RenderStyle::RenderStyle(DefaultStyleTag)
 {
     setBitDefaults();
 
@@ -147,6 +147,54 @@ ALWAYS_INLINE RenderStyle::RenderStyle(const RenderStyle& o)
     , inherited_flags(o.inherited_flags)
     , noninherited_flags(o.noninherited_flags)
 {
+}
+
+static StyleRecalcChange comparePseudoStyles(const RenderStyle* oldStyle, const RenderStyle* newStyle)
+{
+    // If the pseudoStyles have changed, we want any StyleRecalcChange that is not NoChange
+    // because setStyle will do the right thing with anything else.
+    if (!oldStyle->hasAnyPublicPseudoStyles())
+        return NoChange;
+    for (PseudoId pseudoId = FIRST_PUBLIC_PSEUDOID; pseudoId < FIRST_INTERNAL_PSEUDOID; pseudoId = static_cast<PseudoId>(pseudoId + 1)) {
+        if (!oldStyle->hasPseudoStyle(pseudoId))
+            continue;
+        RenderStyle* newPseudoStyle = newStyle->getCachedPseudoStyle(pseudoId);
+        if (!newPseudoStyle)
+            return NoInherit;
+        RenderStyle* oldPseudoStyle = oldStyle->getCachedPseudoStyle(pseudoId);
+        if (oldPseudoStyle && *oldPseudoStyle != *newPseudoStyle)
+            return NoInherit;
+    }
+    return NoChange;
+}
+
+StyleRecalcChange RenderStyle::compare(const RenderStyle* oldStyle, const RenderStyle* newStyle)
+{
+    if ((!oldStyle && newStyle) || (oldStyle && !newStyle))
+        return Reattach;
+
+    if (!oldStyle && !newStyle)
+        return NoChange;
+
+    if (oldStyle->display() != newStyle->display()
+        || oldStyle->hasPseudoStyle(FIRST_LETTER) != newStyle->hasPseudoStyle(FIRST_LETTER)
+        || oldStyle->columnSpan() != newStyle->columnSpan()
+        || oldStyle->specifiesAutoColumns() != newStyle->specifiesAutoColumns()
+        || !oldStyle->contentDataEquivalent(newStyle)
+        || oldStyle->hasTextCombine() != newStyle->hasTextCombine()
+        || oldStyle->flowThread() != newStyle->flowThread()
+        || oldStyle->regionThread() != newStyle->regionThread())
+        return Reattach;
+
+    if (*oldStyle == *newStyle)
+        return comparePseudoStyles(oldStyle, newStyle);
+
+    if (oldStyle->inheritedNotEqual(newStyle)
+        || oldStyle->hasExplicitlyInheritedProperties()
+        || newStyle->hasExplicitlyInheritedProperties())
+        return Inherit;
+
+    return NoInherit;
 }
 
 void RenderStyle::inheritFrom(const RenderStyle* inheritParent, IsAtShadowBoundary isAtShadowBoundary)
@@ -186,6 +234,7 @@ void RenderStyle::copyNonInheritedFrom(const RenderStyle* other)
     noninherited_flags._page_break_after = other->noninherited_flags._page_break_after;
     noninherited_flags._page_break_inside = other->noninherited_flags._page_break_inside;
     noninherited_flags.explicitInheritance = other->noninherited_flags.explicitInheritance;
+    noninherited_flags.currentColor = other->noninherited_flags.currentColor;
     if (m_svgStyle != other->m_svgStyle)
         m_svgStyle.access()->copyNonInheritedFrom(other->m_svgStyle.get());
     ASSERT(zoom() == initialZoom());
@@ -431,9 +480,7 @@ StyleDifference RenderStyle::diff(const RenderStyle* other, unsigned& changedCon
     if (rareInheritedData.get() != other->rareInheritedData.get()) {
         if (rareInheritedData->highlight != other->rareInheritedData->highlight
             || rareInheritedData->indent != other->rareInheritedData->indent
-#if ENABLE(CSS3_TEXT)
             || rareInheritedData->m_textIndentLine != other->rareInheritedData->m_textIndentLine
-#endif
             || rareInheritedData->m_effectiveZoom != other->rareInheritedData->m_effectiveZoom
             || rareInheritedData->wordBreak != other->rareInheritedData->wordBreak
             || rareInheritedData->overflowWrap != other->rareInheritedData->overflowWrap
@@ -545,8 +592,7 @@ StyleDifference RenderStyle::diff(const RenderStyle* other, unsigned& changedCon
     if ((visibility() == COLLAPSE) != (other->visibility() == COLLAPSE))
         return StyleDifferenceLayout;
 
-    if ((rareNonInheritedData->opacity == 1 && other->rareNonInheritedData->opacity < 1)
-        || (rareNonInheritedData->opacity < 1 && other->rareNonInheritedData->opacity == 1)) {
+    if (rareNonInheritedData->hasOpacity() != other->rareNonInheritedData->hasOpacity()) {
         // FIXME: We would like to use SimplifiedLayout here, but we can't quite do that yet.
         // We need to make sure SimplifiedLayout can operate correctly on RenderInlines (we will need
         // to add a selfNeedsSimplifiedLayout bit in order to not get confused and taint every line).
@@ -554,6 +600,9 @@ StyleDifference RenderStyle::diff(const RenderStyle* other, unsigned& changedCon
         // a full layout is necessary to keep floating object lists sane.
         return StyleDifferenceLayout;
     }
+
+    if (rareNonInheritedData->hasFilters() != other->rareNonInheritedData->hasFilters())
+        return StyleDifferenceLayout;
 
     if (!QuotesData::equals(rareInheritedData->quotes.get(), other->rareInheritedData->quotes.get()))
         return StyleDifferenceLayout;
@@ -613,6 +662,8 @@ StyleDifference RenderStyle::diff(const RenderStyle* other, unsigned& changedCon
         || rareInheritedData->userSelect != other->rareInheritedData->userSelect
         || rareNonInheritedData->userDrag != other->rareNonInheritedData->userDrag
         || rareNonInheritedData->m_borderFit != other->rareNonInheritedData->m_borderFit
+        || rareNonInheritedData->m_objectFit != other->rareNonInheritedData->m_objectFit
+        || rareNonInheritedData->m_objectPosition != other->rareNonInheritedData->m_objectPosition
         || rareInheritedData->m_imageRendering != other->rareInheritedData->m_imageRendering)
         return StyleDifferenceRepaint;
 
@@ -787,6 +838,19 @@ bool RenderStyle::hasBlendMode() const
     return false;
 }
 
+EIsolation RenderStyle::isolation() const
+{
+    if (RuntimeEnabledFeatures::cssCompositingEnabled())
+        return static_cast<EIsolation>(rareNonInheritedData->m_isolation);
+    return IsolationAuto;
+}
+
+void RenderStyle::setIsolation(EIsolation v)
+{
+    if (RuntimeEnabledFeatures::cssCompositingEnabled())
+        rareNonInheritedData.access()->m_isolation = v;
+}
+
 inline bool requireTransformOrigin(const Vector<RefPtr<TransformOperation> >& transformOperations, RenderStyle::ApplyTransformOrigin applyOrigin)
 {
     // transform-origin brackets the transform with translate operations.
@@ -917,10 +981,10 @@ void RenderStyle::setListStyleImage(PassRefPtr<StyleImage> v)
         rareInheritedData.access()->listStyleImage = v;
 }
 
-StyleColor RenderStyle::color() const { return inherited->color; }
-StyleColor RenderStyle::visitedLinkColor() const { return inherited->visitedLinkColor; }
-void RenderStyle::setColor(const StyleColor& v) { SET_VAR(inherited, color, v); }
-void RenderStyle::setVisitedLinkColor(const StyleColor& v) { SET_VAR(inherited, visitedLinkColor, v); }
+Color RenderStyle::color() const { return inherited->color; }
+Color RenderStyle::visitedLinkColor() const { return inherited->visitedLinkColor; }
+void RenderStyle::setColor(const Color& v) { SET_VAR(inherited, color, v); }
+void RenderStyle::setVisitedLinkColor(const Color& v) { SET_VAR(inherited, visitedLinkColor, v); }
 
 short RenderStyle::horizontalBorderSpacing() const { return inherited->horizontal_border_spacing; }
 short RenderStyle::verticalBorderSpacing() const { return inherited->vertical_border_spacing; }
@@ -1292,9 +1356,9 @@ void RenderStyle::getShadowVerticalExtent(const ShadowData* shadow, LayoutUnit &
     }
 }
 
-StyleColor RenderStyle::colorIncludingFallback(int colorProperty, bool visitedLink) const
+Color RenderStyle::colorIncludingFallback(int colorProperty, bool visitedLink) const
 {
-    StyleColor result;
+    Color result;
     EBorderStyle borderStyle = BNONE;
     switch (colorProperty) {
     case CSSPropertyBackgroundColor:
@@ -1353,7 +1417,7 @@ StyleColor RenderStyle::colorIncludingFallback(int colorProperty, bool visitedLi
         break;
     }
 
-    if (!result.isValid() && !result.isCurrentColor()) {
+    if (!result.isValid()) {
         if (!visitedLink && (borderStyle == INSET || borderStyle == OUTSET || borderStyle == RIDGE || borderStyle == GROOVE))
             result.setRGB(238, 238, 238);
         else
@@ -1362,13 +1426,13 @@ StyleColor RenderStyle::colorIncludingFallback(int colorProperty, bool visitedLi
     return result;
 }
 
-StyleColor RenderStyle::visitedDependentColor(int colorProperty) const
+Color RenderStyle::visitedDependentColor(int colorProperty) const
 {
-    StyleColor unvisitedColor = colorIncludingFallback(colorProperty, false);
+    Color unvisitedColor = colorIncludingFallback(colorProperty, false);
     if (insideLink() != InsideVisitedLink)
         return unvisitedColor;
 
-    StyleColor visitedColor = colorIncludingFallback(colorProperty, true);
+    Color visitedColor = colorIncludingFallback(colorProperty, true);
 
     // Text decoration color validity is preserved (checked in RenderObject::decorationColor).
     if (colorProperty == CSSPropertyTextDecorationColor)
@@ -1382,12 +1446,8 @@ StyleColor RenderStyle::visitedDependentColor(int colorProperty) const
     if (colorProperty == CSSPropertyBackgroundColor && visitedColor == Color::transparent)
         return unvisitedColor;
 
-    // Unless the visitied color is 'currentColor'; take the alpha from the unvisited color,
-    // but get the RGB values from the visited color.
-    if (visitedColor.isCurrentColor())
-        return visitedColor;
-
-    return StyleColor(visitedColor.red(), visitedColor.green(), visitedColor.blue(), unvisitedColor.alpha());
+    // Take the alpha from the unvisited color, but get the RGB values from the visited color.
+    return Color(visitedColor.red(), visitedColor.green(), visitedColor.blue(), unvisitedColor.alpha());
 }
 
 const BorderValue& RenderStyle::borderBefore() const

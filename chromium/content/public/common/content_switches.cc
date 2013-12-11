@@ -10,6 +10,9 @@ namespace switches {
 // override for developers who need the old behavior for testing.
 const char kAllowFileAccessFromFiles[]      = "allow-file-access-from-files";
 
+// Allows filters (SkImageFilter objects) to be sent between processes over IPC
+const char kAllowFiltersOverIPC[]           = "allow-filters-over-ipc";
+
 // Enables the sandboxed processes to run without a job object assigned to them.
 // This flag is required to allow Chrome to run in RemoteApps or Citrix. This
 // flag can reduce the security of the sandboxed processes and allow them to do
@@ -38,6 +41,12 @@ const char kBlacklistAcceleratedCompositing[] =
 // Blacklist the GPU for WebGL.
 const char kBlacklistWebGL[]                = "blacklist-webgl";
 
+// Block cross-site documents (i.e., HTML/XML/JSON) from being loaded in
+// subresources when a document is not supposed to read them.  This will later
+// allow us to block them from the entire renderer process when site isolation
+// is enabled.
+const char kBlockCrossSiteDocuments[]     = "block-cross-site-documents";
+
 // Causes the browser process to throw an assertion on startup.
 const char kBrowserAssertTest[]             = "assert-test";
 
@@ -53,6 +62,11 @@ const char kDebugPluginLoading[] = "debug-plugin-loading";
 // Sets the tile size used by composited layers.
 const char kDefaultTileWidth[]              = "default-tile-width";
 const char kDefaultTileHeight[]             = "default-tile-height";
+
+// Handles URL requests by NPAPI plugins directly through the browser, instead
+// of going through the renderer. This will be the new default, but it's not
+// turned on initially until we do more testing.
+const char kDirectNPAPIRequests[]           = "direct-npapi-requests";
 
 // Disable antialiasing on 2d canvas.
 const char kDisable2dCanvasAntialiasing[]   = "disable-canvas-aa";
@@ -120,13 +134,19 @@ const char kDisableCompositingForTransition[] =
 // Disables HTML5 DB support.
 const char kDisableDatabases[]              = "disable-databases";
 
+// Disables the deadline scheduler.
+const char kDisableDeadlineScheduling[]     = "disable-deadline-scheduling";
+
 // Disables delegated renderer.
 const char kDisableDelegatedRenderer[]      = "disable-delegated-renderer";
 
 // Disables desktop notifications (default enabled on windows).
 const char kDisableDesktopNotifications[]   = "disable-desktop-notifications";
 
-// Disables device orientation events.
+// Disable device motion events.
+const char kDisableDeviceMotion[]           = "disable-device-motion";
+
+// Disable device orientation events.
 const char kDisableDeviceOrientation[]      = "disable-device-orientation";
 
 // Disable experimental WebGL support.
@@ -268,6 +288,9 @@ const char kDisableWebAudio[]               = "disable-webaudio";
 // Disables prefixed Media Source API (i.e., the WebKitMediaSource object).
 const char kDisableWebKitMediaSource[]      = "disable-webkit-media-source";
 
+// Disables unprefixed Media Source API (i.e., the MediaSource object).
+const char kDisableUnprefixedMediaSource[]  = "disable-unprefixed-media-source";
+
 // Don't enforce the same-origin policy. (Used by people testing their sites.)
 const char kDisableWebSecurity[]            = "disable-web-security";
 
@@ -355,11 +378,11 @@ const char kEnableCssShaders[]              = "enable-css-shaders";
 // Defer image decoding in WebKit until painting.
 const char kEnableDeferredImageDecoding[]   = "enable-deferred-image-decoding";
 
+// Enables the deadline scheduler.
+const char kEnableDeadlineScheduling[]      = "enable-deadline-scheduling";
+
 // Enables delegated renderer.
 const char kEnableDelegatedRenderer[]       = "enable-delegated-renderer";
-
-// Enables device motion events.
-const char kEnableDeviceMotion[]            = "enable-device-motion";
 
 // Enables restarting interrupted downloads.
 const char kEnableDownloadResumption[]      = "enable-download-resumption";
@@ -399,11 +422,19 @@ const char kEnableGpuClientTracing[]        = "enable-gpu-client-tracing";
 const char kEnableHighDpiCompositingForFixedPosition[] =
      "enable-high-dpi-fixed-position-compositing";
 
+#if defined(OS_WIN)
+// Use high resolution timers for TimeTicks.
+const char kEnableHighResolutionTime[]      = "enable-high-resolution-time";
+#endif
+
 // Enable HTML Imports
 extern const char kEnableHTMLImports[]      = "enable-html-imports";
 
 // Enables support for inband text tracks in media content.
 const char kEnableInbandTextTracks[]        = "enable-inband-text-tracks";
+
+// Enable inputmode attribute of HTML input or text element.
+extern const char kEnableInputModeAttribute[] = "enable-input-mode-attribute";
 
 // Force logging to be enabled.  Logging is disabled by default in release
 // builds.
@@ -417,12 +448,11 @@ const char kEnableMemoryBenchmarking[]      = "enable-memory-benchmarking";
 // assumed to be sRGB.
 const char kEnableMonitorProfile[]          = "enable-monitor-profile";
 
-// Enables the new chrome://media-internals page.
-// http://crbug.com/260005
-const char kEnableNewMediaInternals[]       = "enable-new-media-internals";
-
 // Enables use of cache if offline, even if it's stale
 const char kEnableOfflineCacheAccess[]      = "enable-offline-cache-access";
+
+// Enables use of hardware overlay for fullscreen video playback. Android only.
+const char kEnableOverlayFullscreenVideo[]  = "enable-overlay-fullscreen-video";
 
 // Enables overlay scrollbars on Aura or Linux. Does nothing on Mac.
 const char kEnableOverlayScrollbars[]       = "enable-overlay-scrollbars";
@@ -506,10 +536,6 @@ const char kEnableUserMediaScreenCapturing[] =
 // pinch gestures.
 const char kEnableViewport[]                = "enable-viewport";
 
-// Allow GL contexts to be automatically virtualized (shared between command
-// buffer clients) if they are compatible.
-const char kEnableVirtualGLContexts[]       = "enable-virtual-gl-contexts";
-
 // Enables moving cursor by word in visual order.
 const char kEnableVisualWordMovement[]      = "enable-visual-word-movement";
 
@@ -527,14 +553,6 @@ const char kEnableWebGLDraftExtensions[] = "enable-webgl-draft-extensions";
 
 // Enables Web MIDI API.
 const char kEnableWebMIDI[]                 = "enable-web-midi";
-
-// Enable WebRTC to open TCP server sockets.
-const char kEnableWebRtcTcpServerSocket[]   = "enable-webrtc-tcp-server-socket";
-
-// Enables experimental features for the geolocation API.
-// Current features:
-// - CoreLocation support for Mac OS X 10.6
-const char kExperimentalLocationFeatures[]  = "experimental-location-features";
 
 // Load NPAPI plugins from the specified directory.
 const char kExtraPluginDir[]                = "extra-plugin-dir";
@@ -633,6 +651,10 @@ const char kNoReferrers[]                   = "no-referrers";
 // Disables the sandbox for all process types that are normally sandboxed.
 const char kNoSandbox[]                     = "no-sandbox";
 
+// Enables not sending touch events to renderer while scrolling.
+const char kNoTouchToRendererWhileScrolling[] =
+    "no-touch-to-renderer-while-scrolling";
+
 // Enables or disables history navigation in response to horizontal overscroll.
 // Set the value to '1' to enable the feature, and set to '0' to disable.
 // Defaults to enabled.
@@ -716,6 +738,9 @@ const char kRendererProcessLimit[]          = "renderer-process-limit";
 // Causes the renderer process to display a dialog on launch.
 const char kRendererStartupDialog[]         = "renderer-startup-dialog";
 
+// Causes the process to run as a sandbox IPC subprocess.
+const char kSandboxIPCProcess[]             = "sandbox-ipc";
+
 // Enables or disables scroll end effect in response to vertical overscroll.
 // Set the value to '1' to enable the feature, and set to '0' to disable.
 // Defaults to disabled.
@@ -781,6 +806,19 @@ const char kTestingFixedHttpsPort[]         = "testing-fixed-https-port";
 
 // Runs the security test for the renderer sandbox.
 const char kTestSandbox[]                   = "test-sandbox";
+
+// Causes TRACE_EVENT flags to be recorded beginning with shutdown. Optionally,
+// can specify the specific trace categories to include (e.g.
+// --trace-shutdown=base,net) otherwise, all events are recorded.
+// --trace-shutdown-file can be used to control where the trace log gets stored
+// to since there is otherwise no way to access the result.
+const char kTraceShutdown[]                 = "trace-shutdown";
+
+// If supplied, sets the file which shutdown tracing will be stored into, if
+// omitted the default will be used "chrometrace.log" in the current directory.
+// Has no effect unless --trace-shutdown is also supplied.
+// Example: --trace-shutdown --trace-shutdown-file=/tmp/trace_event.log
+const char kTraceShutdownFile[]             = "trace-shutdown-file";
 
 // Causes TRACE_EVENT flags to be recorded from startup. Optionally, can
 // specify the specific trace categories to include (e.g.
@@ -862,22 +900,28 @@ const char kZygoteProcess[]                 = "zygote";
 
 #if defined(ENABLE_WEBRTC)
 // Disable WebRTC device enumeration.
-const char kDisableDeviceEnumeration[]        = "disable-device-enumeration";
+const char kDisableDeviceEnumeration[]      = "disable-device-enumeration";
 
-// Enable WebRTC DataChannels SCTP wire protocol support.
-const char kEnableSCTPDataChannels[]        = "enable-sctp-data-channels";
+// Disable WebRTC DataChannels SCTP wire protocol support.
+const char kDisableSCTPDataChannels[]       = "disable-sctp-data-channels";
+
+// Disables HW decode acceleration for WebRTC.
+const char kDisableWebRtcHWDecoding[]       = "disable-webrtc-hw-decoding";
+
+// Disables HW encode acceleration for WebRTC.
+const char kDisableWebRtcHWEncoding[]       = "disable-webrtc-hw-encoding";
 
 // Enables WebRTC AEC recordings.
 const char kEnableWebRtcAecRecordings[]     = "enable-webrtc-aec-recordings";
 
-// Enables HW decode acceleration for WebRTC.
-const char kEnableWebRtcHWDecoding[]        = "enable-webrtc-hw-decoding";
-
+// Enable WebRTC to open TCP server sockets.
+const char kEnableWebRtcTcpServerSocket[]   = "enable-webrtc-tcp-server-socket";
 #endif
 
 #if defined(OS_ANDROID)
-// Disables device motion events.
-const char kDisableDeviceMotion[]           = "disable-device-motion";
+// Disable user gesture requirement for the media element to enter fullscreen.
+const char kDisableGestureRequirementForMediaFullscreen[] =
+    "disable-gesture-requirement-for-media-fullscreen";
 
 // Disable user gesture requirement for media playback.
 const char kDisableGestureRequirementForMediaPlayback[] =
@@ -887,7 +931,7 @@ const char kDisableGestureRequirementForMediaPlayback[] =
 const char kDisableMediaHistoryLogging[]    = "disable-media-history";
 
 // Disable overscroll edge effects like those found in Android views.
-const char kDisableOverscrollEdgeEffect[] = "disable-overscroll-edge-effect";
+const char kDisableOverscrollEdgeEffect[]   = "disable-overscroll-edge-effect";
 
 // WebRTC is enabled by default on Android.
 const char kDisableWebRTC[]                 = "disable-webrtc";
@@ -934,8 +978,5 @@ extern const char kTestCompositor[]         = "test-compositor";
 #endif
 
 // Don't dump stuff here, follow the same order as the header.
-
-// Allows filters (SkImageFilter objects) to be sent between processes over IPC
-const char kAllowFiltersOverIPC[] = "allow-filters-over-ipc";
 
 }  // namespace switches

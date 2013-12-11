@@ -37,8 +37,26 @@ Tile::Tile(TileManager* tile_manager,
 
 Tile::~Tile() {
   TRACE_EVENT_OBJECT_DELETED_WITH_ID(
-      TRACE_DISABLED_BY_DEFAULT("cc.debug"), "cc::Tile", this);
+      TRACE_DISABLED_BY_DEFAULT("cc.debug") ","
+          TRACE_DISABLED_BY_DEFAULT("cc.debug.quads"),
+      "cc::Tile", this);
   tile_manager_->UnregisterTile(this);
+}
+
+void Tile::SetPriority(WhichTree tree, const TilePriority& priority) {
+  if (priority == priority_[tree])
+    return;
+
+  priority_[tree] = priority;
+  tile_manager_->DidChangeTilePriority(this);
+}
+
+void Tile::MarkRequiredForActivation() {
+  if (priority_[PENDING_TREE].required_for_activation)
+    return;
+
+  priority_[PENDING_TREE].required_for_activation = true;
+  tile_manager_->DidChangeTilePriority(this);
 }
 
 scoped_ptr<base::Value> Tile::AsValue() const {

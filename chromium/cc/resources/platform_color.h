@@ -7,6 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
+#include "cc/resources/resource_format.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
 #include "third_party/skia/include/core/SkTypes.h"
@@ -25,34 +26,28 @@ class PlatformColor {
   }
 
   // Returns the most efficient texture format for this platform.
-  static GLenum BestTextureFormat(bool supports_bgra8888) {
-    GLenum texture_format = GL_RGBA;
+  static ResourceFormat BestTextureFormat(bool supports_bgra8888) {
     switch (Format()) {
-      case SOURCE_FORMAT_RGBA8:
-        break;
       case SOURCE_FORMAT_BGRA8:
-        if (supports_bgra8888)
-          texture_format = GL_BGRA_EXT;
-        break;
-      default:
-        NOTREACHED();
-        break;
+        return (supports_bgra8888) ? BGRA_8888 : RGBA_8888;
+      case SOURCE_FORMAT_RGBA8:
+        return RGBA_8888;
     }
-    return texture_format;
+    NOTREACHED();
+    return RGBA_8888;
   }
 
   // Return true if the given texture format has the same component order
   // as the color on this platform.
-  static bool SameComponentOrder(GLenum texture_format) {
+  static bool SameComponentOrder(ResourceFormat format) {
     switch (Format()) {
       case SOURCE_FORMAT_RGBA8:
-        return texture_format == GL_RGBA;
+        return format == RGBA_8888 || format == RGBA_4444;
       case SOURCE_FORMAT_BGRA8:
-        return texture_format == GL_BGRA_EXT;
-      default:
-        NOTREACHED();
-        return false;
+        return format == BGRA_8888;
     }
+    NOTREACHED();
+    return false;
   }
 
  private:

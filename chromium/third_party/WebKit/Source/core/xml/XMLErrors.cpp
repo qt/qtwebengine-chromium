@@ -34,7 +34,7 @@
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Text.h"
-#include <wtf/text/WTFString.h>
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -123,20 +123,16 @@ void XMLErrors::insertErrorMessageBlock()
         RefPtr<Element> body = m_document->createElement(bodyTag, true);
         rootElement->parserAppendChild(body);
         m_document->parserAppendChild(rootElement);
-        rootElement->lazyAttach();
         documentElement = body.get();
     } else if (documentElement->namespaceURI() == SVGNames::svgNamespaceURI) {
         RefPtr<Element> rootElement = m_document->createElement(htmlTag, true);
         RefPtr<Element> body = m_document->createElement(bodyTag, true);
         rootElement->parserAppendChild(body);
 
-        if (documentElement->attached())
-            documentElement->detach();
         m_document->parserRemoveChild(documentElement.get());
 
         body->parserAppendChild(documentElement);
         m_document->parserAppendChild(rootElement);
-        rootElement->lazyAttach();
 
         documentElement = body.get();
     }
@@ -158,8 +154,6 @@ void XMLErrors::insertErrorMessageBlock()
         documentElement->parserInsertBefore(reportElement, documentElement->firstChild());
     else
         documentElement->parserAppendChild(reportElement);
-
-    reportElement->lazyAttach();
 
     // FIXME: Why do we need to call this manually?
     m_document->updateStyleIfNeeded();

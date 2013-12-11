@@ -26,9 +26,9 @@
 #include "SVGNames.h"
 #include "XLinkNames.h"
 #include "core/dom/Document.h"
-#include "core/loader/cache/FetchRequest.h"
-#include "core/loader/cache/ImageResource.h"
-#include "core/loader/cache/ResourceFetcher.h"
+#include "core/fetch/FetchRequest.h"
+#include "core/fetch/ImageResource.h"
+#include "core/fetch/ResourceFetcher.h"
 #include "core/platform/graphics/Image.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/svg/SVGElementInstance.h"
@@ -48,7 +48,7 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGFEImageElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGFilterPrimitiveStandardAttributes)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGFEImageElement::SVGFEImageElement(const QualifiedName& tagName, Document* document)
+inline SVGFEImageElement::SVGFEImageElement(const QualifiedName& tagName, Document& document)
     : SVGFilterPrimitiveStandardAttributes(tagName, document)
 {
     ASSERT(hasTagName(SVGNames::feImageTag));
@@ -56,7 +56,7 @@ inline SVGFEImageElement::SVGFEImageElement(const QualifiedName& tagName, Docume
     registerAnimatedPropertiesForSVGFEImageElement();
 }
 
-PassRefPtr<SVGFEImageElement> SVGFEImageElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<SVGFEImageElement> SVGFEImageElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new SVGFEImageElement(tagName, document));
 }
@@ -66,6 +66,14 @@ SVGFEImageElement::~SVGFEImageElement()
     clearResourceReferences();
 }
 
+bool SVGFEImageElement::currentFrameHasSingleSecurityOrigin() const
+{
+    if (m_cachedImage && m_cachedImage->image())
+        return m_cachedImage->image()->currentFrameHasSingleSecurityOrigin();
+
+    return true;
+}
+
 void SVGFEImageElement::clearResourceReferences()
 {
     if (m_cachedImage) {
@@ -73,14 +81,13 @@ void SVGFEImageElement::clearResourceReferences()
         m_cachedImage = 0;
     }
 
-    ASSERT(document());
-    document()->accessSVGExtensions()->removeAllTargetReferencesForElement(this);
+    document().accessSVGExtensions()->removeAllTargetReferencesForElement(this);
 }
 
-void SVGFEImageElement::requestImageResource()
+void SVGFEImageElement::fetchImageResource()
 {
     FetchRequest request(ResourceRequest(ownerDocument()->completeURL(hrefCurrentValue())), localName());
-    m_cachedImage = document()->fetcher()->requestImage(request);
+    m_cachedImage = document().fetcher()->fetchImage(request);
 
     if (m_cachedImage)
         m_cachedImage->addClient(this);
@@ -96,15 +103,15 @@ void SVGFEImageElement::buildPendingResource()
     Element* target = SVGURIReference::targetElementFromIRIString(hrefCurrentValue(), document(), &id);
     if (!target) {
         if (id.isEmpty())
-            requestImageResource();
+            fetchImageResource();
         else {
-            document()->accessSVGExtensions()->addPendingResource(id, this);
+            document().accessSVGExtensions()->addPendingResource(id, this);
             ASSERT(hasPendingResources());
         }
     } else if (target->isSVGElement()) {
         // Register us with the target in the dependencies map. Any change of hrefElement
         // that leads to relayout/repainting now informs us, so we can react to it.
-        document()->accessSVGExtensions()->addElementReferencingTarget(this, toSVGElement(target));
+        document().accessSVGExtensions()->addElementReferencingTarget(this, toSVGElement(target));
     }
 
     invalidate();
@@ -193,7 +200,8 @@ void SVGFEImageElement::notifyFinished(Resource*)
     if (!parent->hasTagName(SVGNames::filterTag) || !parent->renderer())
         return;
 
-    RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer());
+    if (RenderObject* renderer = this->renderer())
+        RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);
 }
 
 PassRefPtr<FilterEffect> SVGFEImageElement::build(SVGFilterBuilder*, Filter* filter)
@@ -207,7 +215,7 @@ void SVGFEImageElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) con
 {
     SVGFilterPrimitiveStandardAttributes::addSubresourceAttributeURLs(urls);
 
-    addSubresourceURL(urls, document()->completeURL(hrefCurrentValue()));
+    addSubresourceURL(urls, document().completeURL(hrefCurrentValue()));
 }
 
 }

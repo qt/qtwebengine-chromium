@@ -12,6 +12,8 @@
 #include "net/quic/quic_session.h"
 #include "net/quic/quic_spdy_decompressor.h"
 #include "net/spdy/spdy_framer.h"
+#include "net/tools/quic/quic_packet_writer.h"
+#include "net/tools/quic/quic_server_session.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 namespace net {
@@ -21,8 +23,6 @@ class IPEndPoint;
 
 namespace tools {
 namespace test {
-
-std::string SerializeUncompressedHeaders(const SpdyHeaderBlock& headers);
 
 class MockConnection : public QuicConnection {
  public:
@@ -71,6 +71,13 @@ class MockConnection : public QuicConnection {
   DISALLOW_COPY_AND_ASSIGN(MockConnection);
 };
 
+class MockQuicSessionOwner : public QuicSessionOwner {
+ public:
+  MockQuicSessionOwner();
+  ~MockQuicSessionOwner();
+  MOCK_METHOD2(OnConnectionClose, void(QuicGuid guid, QuicErrorCode error));
+};
+
 class TestDecompressorVisitor : public QuicSpdyDecompressor::Visitor {
  public:
   virtual ~TestDecompressorVisitor() {}
@@ -103,6 +110,27 @@ class TestSession : public QuicSession {
  private:
   QuicCryptoStream* crypto_stream_;
   DISALLOW_COPY_AND_ASSIGN(TestSession);
+};
+
+class MockAckNotifierDelegate : public QuicAckNotifier::DelegateInterface {
+ public:
+  MockAckNotifierDelegate();
+  virtual ~MockAckNotifierDelegate();
+
+  MOCK_METHOD0(OnAckNotification, void());
+};
+
+class MockPacketWriter : public QuicPacketWriter {
+ public:
+  MockPacketWriter();
+  virtual ~MockPacketWriter();
+
+  MOCK_METHOD6(WritePacket, int(const char* buffer,
+                                size_t buf_len,
+                                const IPAddressNumber& self_address,
+                                const IPEndPoint& peer_address,
+                                QuicBlockedWriterInterface* blocked_writer,
+                                int* error));
 };
 
 }  // namespace test

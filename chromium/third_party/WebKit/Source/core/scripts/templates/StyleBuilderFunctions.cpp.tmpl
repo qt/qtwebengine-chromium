@@ -63,7 +63,8 @@ namespace WebCore {
     const CSSAnimationDataList* parentList = state.parentStyle()->{{animation|lower}}();
     size_t i = 0, parentSize = parentList ? parentList->size() : 0;
     for ( ; i < parentSize && parentList->animation(i)->is{{attribute}}Set(); ++i) {
-        if (list->size() <= i)
+        ASSERT(list->size() >= i);
+        if (list->size() == i)
             list->append(CSSAnimationData::create());
         list->animation(i)->set{{attribute}}(parentList->animation(i)->{{lower_first(attribute)}}());
         list->animation(i)->setAnimationMode(parentList->animation(i)->animationMode());
@@ -81,7 +82,8 @@ namespace WebCore {
     if (value->isValueList()) {
         // Walk each value and put it into an animation, creating new animations as needed.
         for (CSSValueListIterator i = value; i.hasMore(); i.advance()) {
-            if (childIndex <= list->size())
+            ASSERT(list->size() >= childIndex);
+            if (list->size() == childIndex)
                 list->append(CSSAnimationData::create());
             state.styleMap().mapAnimation{{attribute}}(list->animation(childIndex), i.value());
             ++childIndex;
@@ -248,7 +250,7 @@ namespace WebCore {
 {%- set visited_link_setter = "setVisitedLink" + property.camel_case_name %}
 {{ declare_initial_function(property_id) }}
 {
-    StyleColor color = {{ initial_color or "StyleColor" -}}();
+    Color color = {{ initial_color or "Color" -}}();
     if (state.applyPropertyToRegularStyle())
         {{ set_value(property) }}(color);
     if (state.applyPropertyToVisitedLinkStyle())
@@ -258,7 +260,7 @@ namespace WebCore {
 {{ declare_inherit_function(property_id) }}
 {
     // Visited link style can never explicitly inherit from parent visited link style so no separate getters are needed.
-    StyleColor color = state.parentStyle()->{{property.getter}}();
+    Color color = state.parentStyle()->{{property.getter}}();
     if (!color.isValid())
         color = state.parentStyle()->{{default_getter}}();
     if (state.applyPropertyToRegularStyle())
@@ -282,9 +284,9 @@ namespace WebCore {
 {%- endif %}
 
     if (state.applyPropertyToRegularStyle())
-        {{ set_value(property) }}(state.document()->textLinkColors().colorFromPrimitiveValue(primitiveValue));
+        {{ set_value(property) }}(state.document().textLinkColors().colorFromPrimitiveValue(primitiveValue, state.style()->visitedDependentColor(CSSPropertyColor)));
     if (state.applyPropertyToVisitedLinkStyle())
-        state.style()->{{visited_link_setter}}(state.document()->textLinkColors().colorFromPrimitiveValue(primitiveValue, state.element()->isLink() /* forVisitedLink */));
+        state.style()->{{visited_link_setter}}(state.document().textLinkColors().colorFromPrimitiveValue(primitiveValue, state.style()->visitedDependentColor(CSSPropertyColor), state.element()->isLink() /* forVisitedLink */));
 }
 {%- endmacro %}
 
@@ -433,6 +435,7 @@ namespace WebCore {
 {{ apply_fill_layer("CSSPropertyBackgroundRepeatX", "RepeatX") }}
 {{ apply_fill_layer("CSSPropertyBackgroundRepeatY", "RepeatY") }}
 {{ apply_fill_layer("CSSPropertyBackgroundSize", "Size") }}
+{{ apply_fill_layer("CSSPropertyMaskSourceType", "MaskSourceType") }}
 {{ apply_fill_layer("CSSPropertyWebkitBackgroundComposite", "Composite") }}
 {{ apply_fill_layer("CSSPropertyWebkitMaskClip", "Clip") }}
 {{ apply_fill_layer("CSSPropertyWebkitMaskComposite", "Composite") }}
@@ -489,7 +492,7 @@ namespace WebCore {
 }
 {%- endmacro %}
 
-{{ apply_value_number("CSSPropertyWebkitMarqueeRepetition", "CSSValueInfinite") }}
+{{ apply_value_number("CSSPropertyInternalMarqueeRepetition", "CSSValueInfinite") }}
 
 {%- macro apply_value_shape(property_id) %}
 {{ declare_value_function(property_id) }}

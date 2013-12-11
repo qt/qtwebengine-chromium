@@ -41,10 +41,10 @@
 
 namespace WebCore {
 
-V8NodeFilterCondition::V8NodeFilterCondition(v8::Handle<v8::Value> filter, v8::Handle<v8::Object> owner)
-    : m_filter(filter)
+V8NodeFilterCondition::V8NodeFilterCondition(v8::Handle<v8::Value> filter, v8::Handle<v8::Object> owner, v8::Isolate* isolate)
+    : m_filter(isolate, filter)
 {
-    owner->SetHiddenValue(V8HiddenPropertyName::condition(), filter);
+    owner->SetHiddenValue(V8HiddenPropertyName::condition(isolate), filter);
     m_filter.makeWeak(this, &makeWeakCallback);
 }
 
@@ -81,7 +81,7 @@ short V8NodeFilterCondition::acceptNode(ScriptState* state, Node* node) const
     args[0] = toV8(node, v8::Handle<v8::Object>(), state->isolate());
 
     v8::Handle<v8::Object> object = v8::Context::GetCurrent()->Global();
-    v8::Handle<v8::Value> result = ScriptController::callFunctionWithInstrumentation(0, callback, object, 1, args.get());
+    v8::Handle<v8::Value> result = ScriptController::callFunctionWithInstrumentation(0, callback, object, 1, args.get(), isolate);
 
     if (exceptionCatcher.HasCaught()) {
         state->setException(exceptionCatcher.Exception());

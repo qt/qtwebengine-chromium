@@ -37,8 +37,9 @@
 #include "core/dom/MouseEvent.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/html/StepRange.h"
+#include "core/html/forms/StepRange.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/html/shadow/ShadowElementNames.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Frame.h"
 #include "core/rendering/RenderFlexibleBox.h"
@@ -63,36 +64,16 @@ inline static bool hasVerticalAppearance(HTMLInputElement* input)
     ASSERT(input->renderer());
     RenderStyle* sliderStyle = input->renderer()->style();
 
-    if (sliderStyle->appearance() == MediaVolumeSliderPart && input->renderer()->theme()->usesVerticalVolumeSlider())
+    if (sliderStyle->appearance() == MediaVolumeSliderPart && RenderTheme::theme().usesVerticalVolumeSlider())
         return true;
 
     return sliderStyle->appearance() == SliderVerticalPart;
 }
 
-SliderThumbElement* sliderThumbElementOf(Node* node)
-{
-    RELEASE_ASSERT(node->hasTagName(inputTag));
-    ShadowRoot* shadow = toHTMLInputElement(node)->userAgentShadowRoot();
-    ASSERT(shadow);
-    Node* thumb = shadow->firstChild()->firstChild()->firstChild();
-    ASSERT(thumb);
-    return toSliderThumbElement(thumb);
-}
-
-HTMLElement* sliderTrackElementOf(Node* node)
-{
-    RELEASE_ASSERT(node->hasTagName(inputTag));
-    ShadowRoot* shadow = toHTMLInputElement(node)->userAgentShadowRoot();
-    ASSERT(shadow);
-    Node* track = shadow->firstChild()->firstChild();
-    ASSERT(track);
-    return toHTMLElement(track);
-}
-
 // --------------------------------
 
 RenderSliderThumb::RenderSliderThumb(SliderThumbElement* element)
-    : RenderBlock(element)
+    : RenderBlockFlow(element)
 {
 }
 
@@ -109,7 +90,7 @@ void RenderSliderThumb::updateAppearance(RenderStyle* parentStyle)
     else if (parentStyle->appearance() == MediaFullScreenVolumeSliderPart)
         style()->setAppearance(MediaFullScreenVolumeSliderThumbPart);
     if (style()->hasAppearance())
-        theme()->adjustSliderThumbSize(style(), toElement(node()));
+        RenderTheme::theme().adjustSliderThumbSize(style(), toElement(node()));
 }
 
 bool RenderSliderThumb::isSliderThumb() const
@@ -138,12 +119,12 @@ void RenderSliderContainer::computeLogicalHeight(LayoutUnit logicalHeight, Layou
     bool isVertical = hasVerticalAppearance(input);
 
     if (input->renderer()->isSlider() && !isVertical && input->list()) {
-        int offsetFromCenter = theme()->sliderTickOffsetFromTrackCenter();
+        int offsetFromCenter = RenderTheme::theme().sliderTickOffsetFromTrackCenter();
         LayoutUnit trackHeight = 0;
         if (offsetFromCenter < 0)
             trackHeight = -2 * offsetFromCenter;
         else {
-            int tickLength = theme()->sliderTickSize().height();
+            int tickLength = RenderTheme::theme().sliderTickSize().height();
             trackHeight = 2 * (offsetFromCenter + tickLength);
         }
         float zoomFactor = style()->effectiveZoom();
@@ -171,12 +152,16 @@ void RenderSliderContainer::layout()
         style()->setDirection(LTR);
     }
 
-    RenderBox* thumb = input->sliderThumbElement() ? input->sliderThumbElement()->renderBox() : 0;
-    RenderBox* track = input->sliderTrackElement() ? input->sliderTrackElement()->renderBox() : 0;
+    Element* thumbElement = input->userAgentShadowRoot()->getElementById(ShadowElementNames::sliderThumb());
+    Element* trackElement = input->userAgentShadowRoot()->getElementById(ShadowElementNames::sliderTrack());
+    RenderBox* thumb = thumbElement ? thumbElement->renderBox() : 0;
+    RenderBox* track = trackElement ? trackElement->renderBox() : 0;
+
+    SubtreeLayoutScope layoutScope(this);
     // Force a layout to reset the position of the thumb so the code below doesn't move the thumb to the wrong place.
     // FIXME: Make a custom Render class for the track and move the thumb positioning code there.
     if (track)
-        track->setChildNeedsLayout(MarkOnlyThis);
+        layoutScope.setChildNeedsLayout(track);
 
     RenderFlexibleBox::layout();
 
@@ -209,6 +194,19 @@ void RenderSliderContainer::layout()
 }
 
 // --------------------------------
+
+inline SliderThumbElement::SliderThumbElement(Document& document)
+    : HTMLDivElement(HTMLNames::divTag, document)
+    , m_inDragMode(false)
+{
+}
+
+PassRefPtr<SliderThumbElement> SliderThumbElement::create(Document& document)
+{
+    RefPtr<SliderThumbElement> element = adoptRef(new SliderThumbElement(document));
+    element->setAttribute(idAttr, ShadowElementNames::sliderThumb());
+    return element.release();
+}
 
 void SliderThumbElement::setPositionFromValue()
 {
@@ -246,6 +244,7 @@ Node* SliderThumbElement::focusDelegate()
 
 void SliderThumbElement::dragFrom(const LayoutPoint& point)
 {
+    RefPtr<SliderThumbElement> protector(this);
     setPositionFromPoint(point);
     startDragging();
 }
@@ -253,12 +252,11 @@ void SliderThumbElement::dragFrom(const LayoutPoint& point)
 void SliderThumbElement::setPositionFromPoint(const LayoutPoint& point)
 {
     RefPtr<HTMLInputElement> input(hostInput());
-    HTMLElement* trackElement = sliderTrackElementOf(input.get());
+    Element* trackElement = input->userAgentShadowRoot()->getElementById(ShadowElementNames::sliderTrack());
 
     if (!input->renderer() || !renderBox() || !trackElement->renderBox())
         return;
 
-    input->setTextAsOfLastFormControlChangeEvent(input->value());
     LayoutPoint offset = roundedLayoutPoint(input->renderer()->absoluteToLocal(point, UseTransforms));
     bool isVertical = hasVerticalAppearance(input.get());
     bool isLeftToRightDirection = renderBox()->style()->isLeftToRightDirection();
@@ -289,7 +287,7 @@ void SliderThumbElement::setPositionFromPoint(const LayoutPoint& point)
     StepRange stepRange(input->createStepRange(RejectAny));
     Decimal value = stepRange.clampValue(stepRange.valueFromProportion(fraction));
 
-    const LayoutUnit snappingThreshold = renderer()->theme()->sliderTickSnappingThreshold();
+    const LayoutUnit snappingThreshold = RenderTheme::theme().sliderTickSnappingThreshold();
     if (snappingThreshold > 0) {
         Decimal closest = input->findClosestTickMarkValue(value);
         if (closest.isFinite()) {
@@ -314,7 +312,7 @@ void SliderThumbElement::setPositionFromPoint(const LayoutPoint& point)
 
 void SliderThumbElement::startDragging()
 {
-    if (Frame* frame = document()->frame()) {
+    if (Frame* frame = document().frame()) {
         frame->eventHandler()->setCapturingMouseEventsNode(this);
         m_inDragMode = true;
     }
@@ -325,7 +323,7 @@ void SliderThumbElement::stopDragging()
     if (!m_inDragMode)
         return;
 
-    if (Frame* frame = document()->frame())
+    if (Frame* frame = document().frame())
         frame->eventHandler()->setCapturingMouseEventsNode(0);
     m_inDragMode = false;
     if (renderer())
@@ -391,7 +389,7 @@ bool SliderThumbElement::willRespondToMouseClickEvents()
 void SliderThumbElement::detach(const AttachContext& context)
 {
     if (m_inDragMode) {
-        if (Frame* frame = document()->frame())
+        if (Frame* frame = document().frame())
             frame->eventHandler()->setCapturingMouseEventsNode(0);
     }
     HTMLDivElement::detach(context);
@@ -438,12 +436,12 @@ const AtomicString& SliderThumbElement::part() const
 
 // --------------------------------
 
-inline SliderContainerElement::SliderContainerElement(Document* document)
+inline SliderContainerElement::SliderContainerElement(Document& document)
     : HTMLDivElement(HTMLNames::divTag, document)
 {
 }
 
-PassRefPtr<SliderContainerElement> SliderContainerElement::create(Document* document)
+PassRefPtr<SliderContainerElement> SliderContainerElement::create(Document& document)
 {
     return adoptRef(new SliderContainerElement(document));
 }

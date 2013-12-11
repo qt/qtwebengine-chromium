@@ -143,14 +143,13 @@ private:
     bool resizeFramebuffer(const IntSize&);
     bool resizeMultisampleFramebuffer(const IntSize&);
     void resizeDepthStencil(const IntSize&, int sampleCount);
-    bool checkBufferIntegrity();
 
     // Bind to the m_framebufferBinding if it's not 0.
     void restoreFramebufferBinding();
 
     void clearPlatformLayer();
 
-    PassRefPtr<MailboxInfo> getRecycledMailbox();
+    PassRefPtr<MailboxInfo> recycledMailbox();
     PassRefPtr<MailboxInfo> createNewMailbox(unsigned);
 
     // Updates the current size of the buffer, ensuring that s_currentResourceUsePixels is updated.

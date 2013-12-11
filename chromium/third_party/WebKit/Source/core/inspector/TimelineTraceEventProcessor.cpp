@@ -66,7 +66,7 @@ public:
         MutexLocker locker(m_mutex);
 
         size_t index = m_processors.find(processor);
-        if (index == notFound) {
+        if (index == kNotFound) {
             ASSERT_NOT_REACHED();
             return;
         }
@@ -196,14 +196,14 @@ size_t TimelineTraceEventProcessor::TraceEvent::findParameter(const char* name) 
         if (!strcmp(name, m_argumentNames[i]))
             return i;
     }
-    return notFound;
+    return kNotFound;
 }
 
 const TimelineTraceEventProcessor::TraceValueUnion& TimelineTraceEventProcessor::TraceEvent::parameter(const char* name, TraceValueTypes expectedType) const
 {
     static TraceValueUnion missingValue;
     size_t index = findParameter(name);
-    if (index == notFound || m_argumentTypes[index] != expectedType) {
+    if (index == kNotFound || m_argumentTypes[index] != expectedType) {
         ASSERT_NOT_REACHED();
         return missingValue;
     }
@@ -266,13 +266,13 @@ void TimelineTraceEventProcessor::onPaintLayerEnd(const TraceEvent& event)
 void TimelineTraceEventProcessor::onPaintSetupBegin(const TraceEvent& event)
 {
     ASSERT(!m_paintSetupStart);
-    m_paintSetupStart = m_timeConverter.toProtocolTimestamp(event.timestamp());
+    m_paintSetupStart = m_timeConverter.fromMonotonicallyIncreasingTime(event.timestamp());
 }
 
 void TimelineTraceEventProcessor::onPaintSetupEnd(const TraceEvent& event)
 {
     ASSERT(m_paintSetupStart);
-    m_paintSetupEnd = m_timeConverter.toProtocolTimestamp(event.timestamp());
+    m_paintSetupEnd = m_timeConverter.fromMonotonicallyIncreasingTime(event.timestamp());
 }
 
 void TimelineTraceEventProcessor::onRasterTaskBegin(const TraceEvent& event)
@@ -293,7 +293,7 @@ void TimelineTraceEventProcessor::onRasterTaskEnd(const TraceEvent& event)
     if (!state.inKnownLayerTask)
         return;
     ASSERT(state.recordStack.isOpenRecordOfType(TimelineRecordType::Rasterize));
-    state.recordStack.closeScopedRecord(m_timeConverter.toProtocolTimestamp(event.timestamp()));
+    state.recordStack.closeScopedRecord(m_timeConverter.fromMonotonicallyIncreasingTime(event.timestamp()));
     leaveLayerTask(state);
 }
 
@@ -336,7 +336,7 @@ void TimelineTraceEventProcessor::onImageDecodeEnd(const TraceEvent& event)
     if (!state.inKnownLayerTask)
         return;
     ASSERT(state.recordStack.isOpenRecordOfType(TimelineRecordType::DecodeImage));
-    state.recordStack.closeScopedRecord(m_timeConverter.toProtocolTimestamp(event.timestamp()));
+    state.recordStack.closeScopedRecord(m_timeConverter.fromMonotonicallyIncreasingTime(event.timestamp()));
 }
 
 void TimelineTraceEventProcessor::onLayerDeleted(const TraceEvent& event)
@@ -370,7 +370,7 @@ void TimelineTraceEventProcessor::onPaint(const TraceEvent& event)
 
 PassRefPtr<JSONObject> TimelineTraceEventProcessor::createRecord(const TraceEvent& event, const String& recordType, PassRefPtr<JSONObject> data)
 {
-    double startTime = m_timeConverter.toProtocolTimestamp(event.timestamp());
+    double startTime = m_timeConverter.fromMonotonicallyIncreasingTime(event.timestamp());
     RefPtr<JSONObject> record = TimelineRecordFactory::createBackgroundRecord(startTime, String::number(event.threadIdentifier()));
     record->setString("type", recordType);
     record->setObject("data", data ? data : JSONObject::create());

@@ -637,8 +637,8 @@ void NavigationControllerImpl::LoadURLWithParams(const LoadURLParams& params) {
     case LOAD_TYPE_DEFAULT:
       break;
     case LOAD_TYPE_BROWSER_INITIATED_HTTP_POST:
-      if (!params.url.SchemeIs(chrome::kHttpScheme) &&
-          !params.url.SchemeIs(chrome::kHttpsScheme)) {
+      if (!params.url.SchemeIs(kHttpScheme) &&
+          !params.url.SchemeIs(kHttpsScheme)) {
         NOTREACHED() << "Http post load must use http(s) scheme.";
         return;
       }
@@ -798,6 +798,7 @@ bool NavigationControllerImpl::RendererDidNavigate(
   NavigationEntryImpl* active_entry =
       NavigationEntryImpl::FromNavigationEntry(GetLastCommittedEntry());
   active_entry->SetTimestamp(timestamp);
+  active_entry->SetHttpStatusCode(params.http_status_code);
   active_entry->SetPageState(params.page_state);
   // No longer needed since content state will hold the post data if any.
   active_entry->SetBrowserInitiatedPostData(NULL);
@@ -1415,6 +1416,10 @@ bool NavigationControllerImpl::NeedsReload() const {
   return needs_reload_;
 }
 
+void NavigationControllerImpl::SetNeedsReload() {
+  needs_reload_ = true;
+}
+
 void NavigationControllerImpl::RemoveEntryAtIndexInternal(int index) {
   DCHECK(index < GetEntryCount());
   DCHECK(index != last_committed_entry_index_);
@@ -1557,21 +1562,18 @@ void NavigationControllerImpl::NavigateToPendingEntry(ReloadType reload_type) {
 void NavigationControllerImpl::NotifyNavigationEntryCommitted(
     LoadCommittedDetails* details) {
   details->entry = GetActiveEntry();
-  NotificationDetails notification_details =
-      Details<LoadCommittedDetails>(details);
 
   // We need to notify the ssl_manager_ before the web_contents_ so the
   // location bar will have up-to-date information about the security style
   // when it wants to draw.  See http://crbug.com/11157
-  ssl_manager_.DidCommitProvisionalLoad(notification_details);
+  ssl_manager_.DidCommitProvisionalLoad(*details);
 
-  // TODO(pkasting): http://b/1113079 Probably these explicit notification paths
-  // should be removed, and interested parties should just listen for the
-  // notification below instead.
   web_contents_->NotifyNavigationStateChanged(kInvalidateAll);
-
   web_contents_->NotifyNavigationEntryCommitted(*details);
 
+  // TODO(avi): Remove. http://crbug.com/170921
+  NotificationDetails notification_details =
+      Details<LoadCommittedDetails>(details);
   NotificationService::current()->Notify(
       NOTIFICATION_NAV_ENTRY_COMMITTED,
       Source<NavigationController>(this),

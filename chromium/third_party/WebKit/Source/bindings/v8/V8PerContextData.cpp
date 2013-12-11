@@ -138,6 +138,14 @@ v8::Local<v8::Function> V8PerContextData::constructorForTypeSlowCase(WrapperType
     return function;
 }
 
+v8::Local<v8::Object> V8PerContextData::prototypeForType(WrapperTypeInfo* type)
+{
+    v8::Local<v8::Object> constructor = constructorForType(type);
+    if (constructor.IsEmpty())
+        return v8::Local<v8::Object>();
+    return constructor->Get(v8String("prototype", m_isolate)).As<v8::Object>();
+}
+
 void V8PerContextData::addCustomElementBinding(CustomElementDefinition* definition, PassOwnPtr<CustomElementBinding> binding)
 {
     ASSERT(!m_customElementBindings->contains(definition));
@@ -159,7 +167,7 @@ CustomElementBinding* V8PerContextData::customElementBinding(CustomElementDefini
 }
 
 
-static v8::Handle<v8::Value> createDebugData(const char* worldName, int debugId)
+static v8::Handle<v8::Value> createDebugData(const char* worldName, int debugId, v8::Isolate* isolate)
 {
     char buffer[32];
     unsigned wanted;
@@ -171,8 +179,8 @@ static v8::Handle<v8::Value> createDebugData(const char* worldName, int debugId)
     if (wanted < sizeof(buffer))
         return v8::String::NewSymbol(buffer);
 
-    return v8::Undefined();
-};
+    return v8::Undefined(isolate);
+}
 
 static v8::Handle<v8::Value> debugData(v8::Handle<v8::Context> context)
 {
@@ -190,15 +198,15 @@ bool V8PerContextDebugData::setContextDebugData(v8::Handle<v8::Context> context,
 {
     if (!debugData(context)->IsUndefined())
         return false;
-    v8::HandleScope scope;
-    v8::Handle<v8::Value> debugData = createDebugData(worldName, debugId);
+    v8::HandleScope scope(context->GetIsolate());
+    v8::Handle<v8::Value> debugData = createDebugData(worldName, debugId, context->GetIsolate());
     setDebugData(context, debugData);
     return true;
 }
 
 int V8PerContextDebugData::contextDebugId(v8::Handle<v8::Context> context)
 {
-    v8::HandleScope scope;
+    v8::HandleScope scope(context->GetIsolate());
     v8::Handle<v8::Value> data = debugData(context);
 
     if (!data->IsString())

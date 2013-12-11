@@ -33,7 +33,7 @@
 #include "core/css/SelectorCheckerFastPath.h"
 #include "core/css/SiblingTraversalStrategies.h"
 #include "core/dom/Document.h"
-#include "core/dom/NodeTraversal.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/dom/StaticNodeList.h"
 
 namespace WebCore {
@@ -67,7 +67,7 @@ public:
     explicit ClassRootNodeList(Node* rootNode, const AtomicString& className)
         : m_className(className)
         , m_rootNode(rootNode)
-        , m_currentElement(nextInternal(ElementTraversal::firstWithin(rootNode))) { }
+        , m_currentElement(nextInternal(ElementTraversal::firstWithin(m_rootNode))) { }
 
     bool isEmpty() const { return !m_currentElement; }
 
@@ -223,8 +223,21 @@ Element* SelectorDataList::findElementByTagName(Node* rootNode, const QualifiedN
 
 inline bool SelectorDataList::canUseFastQuery(Node* rootNode) const
 {
-    return m_selectors.size() == 1 && rootNode->inDocument() && !rootNode->document()->inQuirksMode();
+    return m_selectors.size() == 1 && rootNode->inDocument() && !rootNode->document().inQuirksMode();
 }
+
+inline bool ancestorHasClassName(Node* rootNode, const AtomicString& className)
+{
+    if (!rootNode->isElementNode())
+        return false;
+
+    for (Element* element = toElement(rootNode); element; element = element->parentElement()) {
+        if (element->hasClass() && element->classNames().contains(className))
+            return true;
+    }
+    return false;
+}
+
 
 // If returns true, traversalRoots has the elements that may match the selector query.
 //
@@ -245,8 +258,8 @@ PassOwnPtr<SimpleNodeList> SelectorDataList::findTraverseRoots(Node* rootNode, b
     bool startFromParent = false;
 
     for (const CSSSelector* selector = m_selectors[0].selector; selector; selector = selector->tagHistory()) {
-        if (selector->m_match == CSSSelector::Id && !rootNode->document()->containsMultipleElementsWithId(selector->value())) {
-            Element* element = rootNode->treeScope()->getElementById(selector->value());
+        if (selector->m_match == CSSSelector::Id && !rootNode->document().containsMultipleElementsWithId(selector->value())) {
+            Element* element = rootNode->treeScope().getElementById(selector->value());
             if (element && (isTreeScopeRoot(rootNode) || element->isDescendantOf(rootNode)))
                 rootNode = element;
             else if (!element || isRightmostSelector)
@@ -270,6 +283,10 @@ PassOwnPtr<SimpleNodeList> SelectorDataList::findTraverseRoots(Node* rootNode, b
                 return adoptPtr(new ClassElementList(rootNode, selector->value()));
             }
             matchTraverseRoots = false;
+            // Since there exists some ancestor element which has the class name, we need to see all children of rootNode.
+            if (ancestorHasClassName(rootNode, selector->value()))
+                return adoptPtr(new SingleNodeList(rootNode));
+
             return adoptPtr(new ClassRootNodeList(rootNode, selector->value()));
         }
 
@@ -313,11 +330,11 @@ void SelectorDataList::executeQueryAll(Node* rootNode, Vector<RefPtr<Node> >& ma
         switch (firstSelector->m_match) {
         case CSSSelector::Id:
             {
-                if (rootNode->document()->containsMultipleElementsWithId(firstSelector->value()))
+                if (rootNode->document().containsMultipleElementsWithId(firstSelector->value()))
                     break;
 
                 // Just the same as getElementById.
-                Element* element = rootNode->treeScope()->getElementById(firstSelector->value());
+                Element* element = rootNode->treeScope().getElementById(firstSelector->value());
                 if (element && (isTreeScopeRoot(rootNode) || element->isDescendantOf(rootNode)))
                     matchedElements.append(element);
                 return;
@@ -374,8 +391,8 @@ Node* SelectorDataList::findTraverseRoot(Node* rootNode, bool& matchTraverseRoot
     bool matchSingleNode = true;
     bool startFromParent = false;
     for (const CSSSelector* selector = m_selectors[0].selector; selector; selector = selector->tagHistory()) {
-        if (selector->m_match == CSSSelector::Id && !rootNode->document()->containsMultipleElementsWithId(selector->value())) {
-            Element* element = rootNode->treeScope()->getElementById(selector->value());
+        if (selector->m_match == CSSSelector::Id && !rootNode->document().containsMultipleElementsWithId(selector->value())) {
+            Element* element = rootNode->treeScope().getElementById(selector->value());
             if (element && (isTreeScopeRoot(rootNode) || element->isDescendantOf(rootNode)))
                 rootNode = element;
             else if (!element || matchSingleNode)
@@ -427,9 +444,9 @@ Element* SelectorDataList::executeQueryFirst(Node* rootNode) const
         switch (selector->m_match) {
         case CSSSelector::Id:
             {
-                if (rootNode->document()->containsMultipleElementsWithId(selector->value()))
+                if (rootNode->document().containsMultipleElementsWithId(selector->value()))
                     break;
-                Element* element = rootNode->treeScope()->getElementById(selector->value());
+                Element* element = rootNode->treeScope().getElementById(selector->value());
                 return element && (isTreeScopeRoot(rootNode) || element->isDescendantOf(rootNode)) ? element : 0;
             }
         case CSSSelector::Class:
@@ -480,7 +497,7 @@ PassRefPtr<Element> SelectorQuery::queryFirst(Node* rootNode) const
     return m_selectors.queryFirst(rootNode);
 }
 
-SelectorQuery* SelectorQueryCache::add(const AtomicString& selectors, Document* document, ExceptionState& es)
+SelectorQuery* SelectorQueryCache::add(const AtomicString& selectors, const Document& document, ExceptionState& es)
 {
     HashMap<AtomicString, OwnPtr<SelectorQuery> >::iterator it = m_entries.find(selectors);
     if (it != m_entries.end())
@@ -490,14 +507,14 @@ SelectorQuery* SelectorQueryCache::add(const AtomicString& selectors, Document* 
     CSSSelectorList selectorList;
     parser.parseSelector(selectors, selectorList);
 
-    if (!selectorList.first() || selectorList.hasInvalidSelector()) {
-        es.throwDOMException(SyntaxError);
+    if (!selectorList.first()) {
+        es.throwDOMException(SyntaxError, "Failed to execute query: '" + selectors + "' is not a valid selector.");
         return 0;
     }
 
     // throw a NamespaceError if the selector includes any namespace prefixes.
     if (selectorList.selectorsNeedNamespaceResolution()) {
-        es.throwDOMException(NamespaceError);
+        es.throwDOMException(NamespaceError, "Failed to execute query: '" + selectors + "' contains namespaces, which are not supported.");
         return 0;
     }
 

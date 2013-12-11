@@ -6,8 +6,8 @@
 #include "base/compiler_specific.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
-#include "base/perftimer.h"
 #include "base/strings/string_util.h"
+#include "base/test/perf_time_logger.h"
 #include "net/base/net_errors.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/proxy/proxy_info.h"
@@ -130,7 +130,7 @@ class PacPerfSuiteRunner {
 
     // Start the perf timer.
     std::string perf_test_name = resolver_name_ + "_" + script_name;
-    PerfTimeLogger timer(perf_test_name.c_str());
+    base::PerfTimeLogger timer(perf_test_name.c_str());
 
     for (int i = 0; i < kNumIterations; ++i) {
       // Round-robin between URLs to resolve.
@@ -163,7 +163,7 @@ class PacPerfSuiteRunner {
 
     // Try to read the file from disk.
     std::string file_contents;
-    bool ok = file_util::ReadFileToString(path, &file_contents);
+    bool ok = base::ReadFileToString(path, &file_contents);
 
     // If we can't load the file from disk, something is misconfigured.
     LOG_IF(ERROR, !ok) << "Failed to read file: " << path.value();

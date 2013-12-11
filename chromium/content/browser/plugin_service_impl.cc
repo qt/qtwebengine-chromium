@@ -33,7 +33,7 @@
 
 #if defined(OS_WIN)
 #include "content/common/plugin_constants_win.h"
-#include "ui/base/win/hwnd_util.h"
+#include "ui/gfx/win/hwnd_util.h"
 #endif
 
 #if defined(OS_POSIX)
@@ -328,8 +328,7 @@ PluginProcessHost* PluginServiceImpl::FindOrStartNpapiPluginProcess(
 PpapiPluginProcessHost* PluginServiceImpl::FindOrStartPpapiPluginProcess(
     int render_process_id,
     const base::FilePath& plugin_path,
-    const base::FilePath& profile_data_directory,
-    PpapiPluginProcessHost::PluginClient* client) {
+    const base::FilePath& profile_data_directory) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
   if (filter_ && !filter_->CanLoadPlugin(render_process_id, plugin_path))
@@ -356,8 +355,7 @@ PpapiPluginProcessHost* PluginServiceImpl::FindOrStartPpapiPluginProcess(
 
   // This plugin isn't loaded by any plugin process, so create a new process.
   return PpapiPluginProcessHost::CreatePluginHost(
-      *info, profile_data_directory,
-      client->GetResourceContext()->GetHostResolver());
+      *info, profile_data_directory);
 }
 
 PpapiPluginProcessHost* PluginServiceImpl::FindOrStartPpapiBrokerProcess(
@@ -413,7 +411,7 @@ void PluginServiceImpl::OpenChannelToPpapiPlugin(
     const base::FilePath& profile_data_directory,
     PpapiPluginProcessHost::PluginClient* client) {
   PpapiPluginProcessHost* plugin_host = FindOrStartPpapiPluginProcess(
-      render_process_id, plugin_path, profile_data_directory, client);
+      render_process_id, plugin_path, profile_data_directory);
   if (plugin_host) {
     plugin_host->OpenChannelToPlugin(client);
   } else {
@@ -660,7 +658,7 @@ void PluginServiceImpl::RegisterPepperPlugins() {
 PepperPluginInfo* PluginServiceImpl::GetRegisteredPpapiPluginInfo(
     const base::FilePath& plugin_path) {
   PepperPluginInfo* info = NULL;
-  for (size_t i = 0; i < ppapi_plugins_.size(); i++) {
+  for (size_t i = 0; i < ppapi_plugins_.size(); ++i) {
     if (ppapi_plugins_[i].path == plugin_path) {
       info = &ppapi_plugins_[i];
       break;
@@ -790,7 +788,8 @@ void PluginServiceImpl::GetInternalPlugins(
 }
 
 bool PluginServiceImpl::NPAPIPluginsSupported() {
-#if defined(OS_WIN) || defined(OS_MACOSX) || (defined(OS_LINUX) && !defined(USE_AURA))
+#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_BSD) || \
+    (defined(OS_LINUX) && !defined(USE_AURA))
   return true;
 #else
   return false;
@@ -839,7 +838,7 @@ bool PluginServiceImpl::GetPluginInfoFromWindow(
 }
 
 bool PluginServiceImpl::IsPluginWindow(HWND window) {
-  return ui::GetClassName(window) == base::string16(kNativeWindowClassName);
+  return gfx::GetClassName(window) == base::string16(kNativeWindowClassName);
 }
 #endif
 

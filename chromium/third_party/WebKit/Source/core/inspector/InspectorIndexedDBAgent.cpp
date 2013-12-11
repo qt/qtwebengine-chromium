@@ -407,7 +407,7 @@ public:
         return this == &other;
     }
 
-    virtual void handleEvent(ScriptExecutionContext*, Event* event) OVERRIDE
+    virtual void handleEvent(ScriptExecutionContext* context, Event* event) OVERRIDE
     {
         if (event->type() != eventNames().successEvent) {
             m_requestCallback->sendFailure("Unexpected event type.");
@@ -454,9 +454,9 @@ public:
         }
 
         RefPtr<DataEntry> dataEntry = DataEntry::create()
-            .setKey(m_injectedScript.wrapObject(idbCursor->key(), String()))
-            .setPrimaryKey(m_injectedScript.wrapObject(idbCursor->primaryKey(), String()))
-            .setValue(m_injectedScript.wrapObject(idbCursor->value(), String()));
+            .setKey(m_injectedScript.wrapObject(idbCursor->key(context), String()))
+            .setPrimaryKey(m_injectedScript.wrapObject(idbCursor->primaryKey(context), String()))
+            .setValue(m_injectedScript.wrapObject(idbCursor->value(context), String()));
         m_result->addItem(dataEntry);
 
     }
@@ -520,9 +520,9 @@ public:
                 return;
             }
 
-            idbRequest = idbIndex->openCursor(context(), PassRefPtr<IDBKeyRange>(m_idbKeyRange), IDBCursor::directionNext(), IGNORE_EXCEPTION);
+            idbRequest = idbIndex->openCursor(context(), PassRefPtr<IDBKeyRange>(m_idbKeyRange), IndexedDB::CursorNext);
         } else {
-            idbRequest = idbObjectStore->openCursor(context(), PassRefPtr<IDBKeyRange>(m_idbKeyRange), IDBCursor::directionNext(), IGNORE_EXCEPTION);
+            idbRequest = idbObjectStore->openCursor(context(), PassRefPtr<IDBKeyRange>(m_idbKeyRange), IndexedDB::CursorNext);
         }
         idbRequest->addEventListener(eventNames().successEvent, openCursorCallback, false);
     }
@@ -618,7 +618,7 @@ void InspectorIndexedDBAgent::requestDatabaseNames(ErrorString* errorString, con
         return;
 
     // FIXME: This should probably use ScriptState/ScriptScope instead of V8 API
-    v8::HandleScope handleScope;
+    v8::HandleScope handleScope(toIsolate(frame));
     v8::Handle<v8::Context> context = document->frame()->script()->mainWorldContext();
     ASSERT(!context.IsEmpty());
     v8::Context::Scope contextScope(context);
@@ -643,7 +643,7 @@ void InspectorIndexedDBAgent::requestDatabase(ErrorString* errorString, const St
         return;
 
     // FIXME: This should probably use ScriptState/ScriptScope instead of V8 API
-    v8::HandleScope handleScope;
+    v8::HandleScope handleScope(toIsolate(frame));
     v8::Handle<v8::Context> context = document->frame()->script()->mainWorldContext();
     ASSERT(!context.IsEmpty());
     v8::Context::Scope contextScope(context);
@@ -671,7 +671,7 @@ void InspectorIndexedDBAgent::requestData(ErrorString* errorString, const String
     }
 
     // FIXME: This should probably use ScriptState/ScriptScope instead of V8 API
-    v8::HandleScope handleScope;
+    v8::HandleScope handleScope(toIsolate(frame));
     v8::Handle<v8::Context> context = document->frame()->script()->mainWorldContext();
     ASSERT(!context.IsEmpty());
     v8::Context::Scope contextScope(context);
@@ -775,7 +775,7 @@ void InspectorIndexedDBAgent::clearObjectStore(ErrorString* errorString, const S
         return;
 
     // FIXME: This should probably use ScriptState/ScriptScope instead of V8 API
-    v8::HandleScope handleScope;
+    v8::HandleScope handleScope(toIsolate(frame));
     v8::Handle<v8::Context> context = document->frame()->script()->mainWorldContext();
     ASSERT(!context.IsEmpty());
     v8::Context::Scope contextScope(context);

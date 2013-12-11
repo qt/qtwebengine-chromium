@@ -46,6 +46,7 @@
 #include "core/page/DOMWindowPagePopup.h"
 #include "core/page/EventHandler.h"
 #include "core/page/FocusController.h"
+#include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "core/page/Page.h"
 #include "core/page/PagePopupClient.h"
@@ -84,7 +85,7 @@ private:
         m_popup->widgetClient()->setWindowRect(m_popup->m_windowRectInScreen);
     }
 
-    virtual void addMessageToConsole(MessageSource, MessageLevel, const String& message, unsigned lineNumber, const String&) OVERRIDE
+    virtual void addMessageToConsole(MessageSource, MessageLevel, const String& message, unsigned lineNumber, const String&, const String&) OVERRIDE
     {
 #ifndef NDEBUG
         fprintf(stderr, "CONSOLE MESSSAGE:%u: %s\n", lineNumber, message.utf8().data());
@@ -195,10 +196,10 @@ bool WebPagePopupImpl::initializePage()
     pageClients.chromeClient = m_chromeClient.get();
 
     m_page = adoptPtr(new Page(pageClients));
-    m_page->settings()->setScriptEnabled(true);
-    m_page->settings()->setAllowScriptsToCloseWindows(true);
+    m_page->settings().setScriptEnabled(true);
+    m_page->settings().setAllowScriptsToCloseWindows(true);
     m_page->setDeviceScaleFactor(m_webView->deviceScaleFactor());
-    m_page->settings()->setDeviceSupportsTouch(m_webView->page()->settings()->deviceSupportsTouch());
+    m_page->settings().setDeviceSupportsTouch(m_webView->page()->settings().deviceSupportsTouch());
 
     unsigned layoutMilestones = DidFirstLayout | DidFirstVisuallyNonEmptyLayout;
     m_page->addLayoutMilestones(static_cast<LayoutMilestones>(layoutMilestones));
@@ -320,7 +321,6 @@ void WebPagePopupImpl::closePopup()
     if (m_page) {
         m_page->clearPageGroup();
         m_page->mainFrame()->loader()->stopAllLoaders();
-        m_page->mainFrame()->loader()->stopLoading(UnloadEventPolicyNone);
         DOMWindowPagePopup::uninstall(m_page->mainFrame()->domWindow());
     }
     m_closing = true;

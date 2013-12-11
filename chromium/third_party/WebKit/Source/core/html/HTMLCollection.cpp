@@ -25,6 +25,7 @@
 
 #include "HTMLNames.h"
 #include "core/dom/ClassNodeList.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/dom/NodeList.h"
 #include "core/dom/NodeRareData.h"
 #include "core/dom/NodeTraversal.h"
@@ -181,7 +182,7 @@ inline bool isMatchingElement(const NodeListType*, Element*);
 template <> inline bool isMatchingElement(const HTMLCollection* htmlCollection, Element* element)
 {
     CollectionType type = htmlCollection->type();
-    if (!element->isHTMLElement() && !(type == DocAll || type == NodeChildren))
+    if (!element->isHTMLElement() && !(type == DocAll || type == NodeChildren || type == WindowNamedItems))
         return false;
 
     switch (type) {
@@ -211,7 +212,7 @@ template <> inline bool isMatchingElement(const HTMLCollection* htmlCollection, 
     case MapAreas:
         return element->hasLocalName(areaTag);
     case DocApplets:
-        return element->hasLocalName(appletTag) || (element->hasLocalName(objectTag) && static_cast<HTMLObjectElement*>(element)->containsJavaApplet());
+        return element->hasLocalName(appletTag) || (element->hasLocalName(objectTag) && toHTMLObjectElement(element)->containsJavaApplet());
     case DocEmbeds:
         return element->hasLocalName(embedTag);
     case DocLinks:
@@ -624,15 +625,14 @@ void HTMLCollection::updateNameCache() const
 
     unsigned arrayOffset = 0;
     for (Element* element = traverseFirstElement(arrayOffset, root); element; element = traverseNextElement(arrayOffset, element, root)) {
+        const AtomicString& idAttrVal = element->getIdAttribute();
+        if (!idAttrVal.isEmpty())
+            appendIdCache(idAttrVal, element);
         if (!element->isHTMLElement())
             continue;
-        HTMLElement* htmlElement = toHTMLElement(element);
-        const AtomicString& idAttrVal = htmlElement->getIdAttribute();
-        const AtomicString& nameAttrVal = htmlElement->getNameAttribute();
-        if (!idAttrVal.isEmpty())
-            appendIdCache(idAttrVal, htmlElement);
-        if (!nameAttrVal.isEmpty() && idAttrVal != nameAttrVal && (type() != DocAll || nameShouldBeVisibleInDocumentAll(htmlElement)))
-            appendNameCache(nameAttrVal, htmlElement);
+        const AtomicString& nameAttrVal = element->getNameAttribute();
+        if (!nameAttrVal.isEmpty() && idAttrVal != nameAttrVal && (type() != DocAll || nameShouldBeVisibleInDocumentAll(toHTMLElement(element))))
+            appendNameCache(nameAttrVal, element);
     }
 
     setHasNameCache();
@@ -674,11 +674,6 @@ void HTMLCollection::namedItems(const AtomicString& name, Vector<RefPtr<Node> >&
 
     for (unsigned i = 0; nameResults && i < nameResults->size(); ++i)
         result.append(nameResults->at(i));
-}
-
-PassRefPtr<NodeList> HTMLCollection::tags(const String& name)
-{
-    return ownerNode()->getElementsByTagName(name);
 }
 
 void HTMLCollection::append(NodeCacheMap& map, const AtomicString& key, Element* element)

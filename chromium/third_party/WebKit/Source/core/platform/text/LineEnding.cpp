@@ -202,6 +202,8 @@ void normalizeToCROrLF(const CString& from, Vector<char>& result, bool toCR)
 
 CString normalizeLineEndingsToCRLF(const CString& from)
 {
+    if (!from.length())
+        return from;
     CString result;
     CStringBuffer buffer(result);
     internalNormalizeLineEndingsToCRLF(from, buffer);
@@ -220,7 +222,7 @@ void normalizeLineEndingsToLF(const CString& from, Vector<char>& result)
 
 void normalizeLineEndingsToNative(const CString& from, Vector<char>& result)
 {
-#if OS(WINDOWS)
+#if OS(WIN)
     VectorCharAppendBuffer buffer(result);
     internalNormalizeLineEndingsToCRLF(from, buffer);
 #else

@@ -12,6 +12,7 @@
 #include "ui/aura/client/focus_change_observer.h"
 #include "ui/aura/root_window_observer.h"
 #include "ui/aura/window_delegate.h"
+#include "ui/base/cursor/cursor.h"
 #include "ui/views/ime/input_method_delegate.h"
 #include "ui/views/widget/native_widget_private.h"
 
@@ -27,8 +28,8 @@ namespace views {
 namespace corewm {
 class CompoundEventFilter;
 class InputMethodEventFilter;
+class ScopedCaptureClient;
 class ShadowController;
-class TooltipController;
 class VisibilityController;
 class WindowModalityController;
 }
@@ -36,6 +37,7 @@ class WindowModalityController;
 class DesktopRootWindowHost;
 class DropHelper;
 class NativeWidgetAuraWindowObserver;
+class ScopedTooltipClient;
 class TooltipManagerAura;
 class WindowReorderer;
 
@@ -69,8 +71,15 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
     return root_window_event_filter_;
   }
 
+  // Invoked from DesktopRootWindowHost creation to create the CaptureClient.
+  void CreateCaptureClient(aura::RootWindow* root);
+
   // Overridden from NativeWidget:
   virtual ui::EventHandler* GetEventHandler() OVERRIDE;
+
+  // Ensures that the correct window is activated/deactivated based on whether
+  // we are being activated/deactivated.
+  void HandleActivationChanged(bool active);
 
  protected:
   // Overridden from internal::NativeWidgetPrivate:
@@ -152,6 +161,7 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   virtual void EndMoveLoop() OVERRIDE;
   virtual void SetVisibilityChangedAnimationsEnabled(bool value) OVERRIDE;
   virtual ui::NativeTheme* GetNativeTheme() const OVERRIDE;
+  virtual void OnRootViewLayout() const OVERRIDE;
 
   // Overridden from aura::WindowDelegate:
   virtual gfx::Size GetMinimumSize() const OVERRIDE;
@@ -172,7 +182,8 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE;
   virtual bool HasHitTestMask() const OVERRIDE;
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE;
-  virtual scoped_refptr<ui::Texture> CopyTexture() OVERRIDE;
+  virtual void DidRecreateLayer(ui::Layer* old_layer,
+                                ui::Layer* new_layer) OVERRIDE;
 
   // Overridden from ui::EventHandler:
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
@@ -209,6 +220,8 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   // See class documentation for Widget in widget.h for a note about ownership.
   Widget::InitParams::Ownership ownership_;
 
+  scoped_ptr<corewm::ScopedCaptureClient> capture_client_;
+
   // The NativeWidget owns the RootWindow. Required because the RootWindow owns
   // its RootWindowHost, so DesktopRootWindowHost can't own it.
   scoped_ptr<aura::RootWindow> root_window_;
@@ -224,7 +237,16 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
 
   // Ownership passed to RootWindow on Init.
   DesktopRootWindowHost* desktop_root_window_host_;
+
+  // The content of |root_window_|. WARNING: this may be NULL if deleted out
+  // from under us.
   aura::Window* window_;
+
+  // Contains the content window defined above. Ensures that ZOrder changes
+  // occurring in the content window hierarchy don't affect the other children
+  // of the root window.
+  aura::Window* content_window_container_;
+
   internal::NativeWidgetDelegate* native_widget_delegate_;
 
   scoped_ptr<aura::client::StackingClient> stacking_client_;
@@ -237,7 +259,7 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   scoped_ptr<DropHelper> drop_helper_;
   int last_drop_operation_;
 
-  scoped_ptr<corewm::TooltipController> tooltip_controller_;
+  scoped_ptr<ScopedTooltipClient> scoped_tooltip_client_;
   scoped_ptr<TooltipManagerAura> tooltip_manager_;
 
   scoped_ptr<views::corewm::VisibilityController> visibility_controller_;

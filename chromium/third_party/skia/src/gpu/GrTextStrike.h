@@ -16,6 +16,7 @@
 #include "GrTHashCache.h"
 #include "GrPoint.h"
 #include "GrGlyph.h"
+#include "GrDrawTarget.h"
 
 class GrAtlasMgr;
 class GrFontCache;
@@ -94,7 +95,7 @@ public:
     }
     GrTextStrike* getHeadStrike() const { return fHead; }
 
-#if GR_DEBUG
+#ifdef SK_DEBUG
     void validate() const;
 #else
     void validate() const {}

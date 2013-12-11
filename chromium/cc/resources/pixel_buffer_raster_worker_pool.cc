@@ -9,7 +9,11 @@
 #include "base/values.h"
 #include "cc/debug/traced_value.h"
 #include "cc/resources/resource.h"
-#include "third_party/skia/include/core/SkDevice.h"
+#include "third_party/skia/include/core/SkBitmapDevice.h"
+
+#if defined(OS_ANDROID)
+#include "base/android/sys_utils.h"
+#endif
 
 namespace cc {
 
@@ -37,13 +41,10 @@ class PixelBufferWorkerPoolTaskImpl : public internal::WorkerPoolTask {
       needs_upload_ = true;
       return;
     }
-    SkBitmap bitmap;
-    bitmap.setConfig(SkBitmap::kARGB_8888_Config,
-                     task_->resource()->size().width(),
-                     task_->resource()->size().height());
-    bitmap.setPixels(buffer_);
-    SkDevice device(bitmap);
-    needs_upload_ = task_->RunOnWorkerThread(&device, thread_index);
+    needs_upload_ = task_->RunOnWorkerThread(thread_index,
+                                             buffer_,
+                                             task_->resource()->size(),
+                                             0);
   }
   virtual void CompleteOnOriginThread() OVERRIDE {
     // |needs_upload_| must be be false if task didn't run.
@@ -61,22 +62,6 @@ class PixelBufferWorkerPoolTaskImpl : public internal::WorkerPoolTask {
 
   DISALLOW_COPY_AND_ASSIGN(PixelBufferWorkerPoolTaskImpl);
 };
-
-// If we raster too fast we become upload bound, and pending
-// uploads consume memory. For maximum upload throughput, we would
-// want to allow for upload_throughput * pipeline_time of pending
-// uploads, after which we are just wasting memory. Since we don't
-// know our upload throughput yet, this just caps our memory usage.
-#if defined(OS_ANDROID)
-// For reference Nexus10 can upload 1MB in about 2.5ms.
-const size_t kMaxBytesUploadedPerMs = (2 * 1024 * 1024) / 5;
-#else
-// For reference Chromebook Pixel can upload 1MB in about 0.5ms.
-const size_t kMaxBytesUploadedPerMs = 1024 * 1024 * 2;
-#endif
-
-// Assuming a two frame deep pipeline.
-const size_t kMaxPendingUploadBytes = 16 * 2 * kMaxBytesUploadedPerMs;
 
 const int kCheckForCompletedRasterTasksDelayMs = 6;
 
@@ -106,11 +91,13 @@ bool WasCanceled(const internal::RasterWorkerPoolTask* task) {
 
 PixelBufferRasterWorkerPool::PixelBufferRasterWorkerPool(
     ResourceProvider* resource_provider,
-    size_t num_threads)
+    size_t num_threads,
+    size_t max_transfer_buffer_usage_bytes)
     : RasterWorkerPool(resource_provider, num_threads),
       shutdown_(false),
       scheduled_raster_task_count_(0),
       bytes_pending_upload_(0),
+      max_bytes_pending_upload_(max_transfer_buffer_usage_bytes),
       has_performed_uploads_since_last_flush_(false),
       check_for_completed_raster_tasks_pending_(false),
       should_notify_client_if_no_tasks_are_pending_(false),
@@ -158,6 +145,8 @@ void PixelBufferRasterWorkerPool::ScheduleTasks(RasterTask::Queue* queue) {
   should_notify_client_if_no_tasks_are_pending_ = true;
   should_notify_client_if_no_tasks_required_for_activation_are_pending_ = true;
 
+  tasks_required_for_activation_.clear();
+
   // Build new pixel buffer task set.
   TaskMap new_pixel_buffer_tasks;
   for (RasterTaskVector::const_iterator it = raster_tasks().begin();
@@ -165,16 +154,13 @@ void PixelBufferRasterWorkerPool::ScheduleTasks(RasterTask::Queue* queue) {
     internal::RasterWorkerPoolTask* task = it->get();
     DCHECK(new_pixel_buffer_tasks.find(task) == new_pixel_buffer_tasks.end());
     DCHECK(!task->HasCompleted());
+    DCHECK(!task->WasCanceled());
 
-    // Use existing pixel buffer task if available.
-    TaskMap::iterator pixel_buffer_it = pixel_buffer_tasks_.find(task);
-    if (pixel_buffer_it == pixel_buffer_tasks_.end()) {
-      new_pixel_buffer_tasks[task] = NULL;
-      continue;
-    }
-
-    new_pixel_buffer_tasks[task] = pixel_buffer_it->second;
+    new_pixel_buffer_tasks[task] = pixel_buffer_tasks_[task];
     pixel_buffer_tasks_.erase(task);
+
+    if (IsRasterTaskRequiredForActivation(task))
+      tasks_required_for_activation_.insert(task);
   }
 
   // Transfer remaining pixel buffer tasks to |new_pixel_buffer_tasks|
@@ -194,22 +180,17 @@ void PixelBufferRasterWorkerPool::ScheduleTasks(RasterTask::Queue* queue) {
                        completed_tasks_.end(),
                        task) == completed_tasks_.end());
       completed_tasks_.push_back(task);
-    }
-  }
-
-  tasks_required_for_activation_.clear();
-  for (TaskMap::iterator it = new_pixel_buffer_tasks.begin();
-       it != new_pixel_buffer_tasks.end(); ++it) {
-    internal::RasterWorkerPoolTask* task = it->first;
-    if (IsRasterTaskRequiredForActivation(task))
+    } else if (IsRasterTaskRequiredForActivation(task)) {
       tasks_required_for_activation_.insert(task);
+    }
   }
 
   // |tasks_required_for_activation_| contains all tasks that need to
   // complete before we can send a "ready to activate" signal. Tasks
   // that have already completed should not be part of this set.
   for (TaskDeque::const_iterator it = completed_tasks_.begin();
-       it != completed_tasks_.end(); ++it) {
+       it != completed_tasks_.end() && !tasks_required_for_activation_.empty();
+       ++it) {
     tasks_required_for_activation_.erase(*it);
   }
 
@@ -234,6 +215,10 @@ void PixelBufferRasterWorkerPool::ScheduleTasks(RasterTask::Queue* queue) {
   TRACE_EVENT_ASYNC_STEP1(
       "cc", "ScheduledTasks", this, StateName(),
       "state", TracedValue::FromValue(StateAsValue().release()));
+}
+
+ResourceFormat PixelBufferRasterWorkerPool::GetResourceFormat() const {
+  return resource_provider()->memory_efficient_texture_format();
 }
 
 void PixelBufferRasterWorkerPool::CheckForCompletedTasks() {
@@ -470,7 +455,7 @@ void PixelBufferRasterWorkerPool::ScheduleMoreTasks() {
     // All raster tasks need to be throttled by bytes of pending uploads.
     size_t new_bytes_pending_upload = bytes_pending_upload;
     new_bytes_pending_upload += task->resource()->bytes();
-    if (new_bytes_pending_upload > kMaxPendingUploadBytes)
+    if (new_bytes_pending_upload > max_bytes_pending_upload_)
       break;
 
     internal::WorkerPoolTask* pixel_buffer_task = pixel_buffer_it->second.get();
@@ -590,6 +575,11 @@ void PixelBufferRasterWorkerPool::OnRasterTaskCompleted(
     scoped_refptr<internal::RasterWorkerPoolTask> task,
     bool was_canceled,
     bool needs_upload) {
+  TRACE_EVENT2(TRACE_DISABLED_BY_DEFAULT("cc"),
+               "PixelBufferRasterWorkerPool::OnRasterTaskCompleted",
+               "was_canceled", was_canceled,
+               "needs_upload", needs_upload);
+
   DCHECK(pixel_buffer_tasks_.find(task.get()) != pixel_buffer_tasks_.end());
 
   // Balanced with MapPixelBuffer() call in ScheduleMoreTasks().
@@ -673,7 +663,7 @@ scoped_ptr<base::Value> PixelBufferRasterWorkerPool::ThrottleStateAsValue()
   scoped_ptr<base::DictionaryValue> throttle_state(new base::DictionaryValue);
 
   throttle_state->SetInteger("bytes_available_for_upload",
-                             kMaxPendingUploadBytes - bytes_pending_upload_);
+                             max_bytes_pending_upload_ - bytes_pending_upload_);
   throttle_state->SetInteger("bytes_pending_upload", bytes_pending_upload_);
   throttle_state->SetInteger("scheduled_raster_task_count",
                              scheduled_raster_task_count_);

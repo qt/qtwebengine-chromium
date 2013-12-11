@@ -18,6 +18,21 @@ namespace media {
 
 struct SubsampleEntry;
 
+// These must be in sync with MediaCodecBridge.MEDIA_CODEC_XXX constants in
+// MediaCodecBridge.java.
+enum MediaCodecStatus {
+  MEDIA_CODEC_OK,
+  MEDIA_CODEC_DEQUEUE_INPUT_AGAIN_LATER,
+  MEDIA_CODEC_DEQUEUE_OUTPUT_AGAIN_LATER,
+  MEDIA_CODEC_OUTPUT_BUFFERS_CHANGED,
+  MEDIA_CODEC_OUTPUT_FORMAT_CHANGED,
+  MEDIA_CODEC_INPUT_END_OF_STREAM,
+  MEDIA_CODEC_OUTPUT_END_OF_STREAM,
+  MEDIA_CODEC_NO_KEY,
+  MEDIA_CODEC_STOPPED,
+  MEDIA_CODEC_ERROR
+};
+
 // This class serves as a bridge for native code to call java functions inside
 // Android MediaCodec class. For more information on Android MediaCodec, check
 // http://developer.android.com/reference/android/media/MediaCodec.html
@@ -26,18 +41,24 @@ struct SubsampleEntry;
 // object.
 class MEDIA_EXPORT MediaCodecBridge {
  public:
-  enum DequeueBufferInfo {
-    INFO_OUTPUT_BUFFERS_CHANGED = -3,
-    INFO_OUTPUT_FORMAT_CHANGED = -2,
-    INFO_TRY_AGAIN_LATER = -1,
-    INFO_MEDIA_CODEC_ERROR = -1000,
-  };
-
-  static const base::TimeDelta kTimeOutInfinity;
-  static const base::TimeDelta kTimeOutNoWait;
-
   // Returns true if MediaCodec is available on the device.
   static bool IsAvailable();
+
+  // Returns whether MediaCodecBridge has a decoder that |is_secure| and can
+  // decode |codec| type.
+  static bool CanDecode(const std::string& codec, bool is_secure);
+
+  // Represents supported codecs on android. |secure_decoder_supported| is true
+  // if secure decoder is available for the codec type.
+  // TODO(qinmin): Curretly the codecs string only contains one codec, do we
+  // need more specific codecs separated by comma. (e.g. "vp8" -> "vp8, vp8.0")
+  struct CodecsInfo {
+    std::string codecs;
+    bool secure_decoder_supported;
+  };
+
+  // Get a list of supported codecs.
+  static void GetCodecsInfo(std::vector<CodecsInfo>* codecs_info);
 
   virtual ~MediaCodecBridge();
 
@@ -47,7 +68,7 @@ class MEDIA_EXPORT MediaCodecBridge {
   // words, there will be no outputs until new input is provided.
   // Returns MEDIA_CODEC_ERROR if an unexpected error happens, or Media_CODEC_OK
   // otherwise.
-  int Reset();
+  MediaCodecStatus Reset();
 
   // Finishes the decode/encode session. The instance remains active
   // and ready to be StartAudio/Video()ed again. HOWEVER, due to the buggy
@@ -61,14 +82,17 @@ class MEDIA_EXPORT MediaCodecBridge {
   void GetOutputFormat(int* width, int* height);
 
   // Submits a byte array to the given input buffer. Call this after getting an
-  // available buffer from DequeueInputBuffer(). Returns the number of bytes
-  // put to the input buffer.
-  size_t QueueInputBuffer(int index, const uint8* data, int size,
-                          const base::TimeDelta& presentation_time);
+  // available buffer from DequeueInputBuffer().
+  MediaCodecStatus QueueInputBuffer(int index,
+                                    const uint8* data,
+                                    int size,
+                                    const base::TimeDelta& presentation_time);
 
   // Similar to the above call, but submits a buffer that is encrypted.
-  size_t QueueSecureInputBuffer(
-      int index, const uint8* data, int data_size,
+  // Note: NULL |subsamples| indicates the whole buffer is encrypted.
+  MediaCodecStatus QueueSecureInputBuffer(
+      int index,
+      const uint8* data, int data_size,
       const uint8* key_id, int key_id_size,
       const uint8* iv, int iv_size,
       const SubsampleEntry* subsamples, int subsamples_size,
@@ -77,36 +101,48 @@ class MEDIA_EXPORT MediaCodecBridge {
   // Submits an empty buffer with a EOS (END OF STREAM) flag.
   void QueueEOS(int input_buffer_index);
 
-  // Returns an index (>=0) of an input buffer to be filled with valid data,
-  // INFO_TRY_AGAIN_LATER if no such buffer is currently available, or
-  // INFO_MEDIA_CODEC_ERROR if unexpected error happens.
-  // Use kTimeOutInfinity for infinite timeout.
-  int DequeueInputBuffer(base::TimeDelta timeout);
+  // Returns:
+  // MEDIA_CODEC_OK if an input buffer is ready to be filled with valid data,
+  // MEDIA_CODEC_ENQUEUE_INPUT_AGAIN_LATER if no such buffer is available, or
+  // MEDIA_CODEC_ERROR if unexpected error happens.
+  // Note: Never use infinite timeout as this would block the decoder thread and
+  // prevent the decoder job from being released.
+  MediaCodecStatus DequeueInputBuffer(const base::TimeDelta& timeout,
+                                      int* index);
 
   // Dequeues an output buffer, block at most timeout_us microseconds.
-  // Returns the index of an output buffer that has been successfully decoded
-  // or one of DequeueBufferInfo above.
-  // Use kTimeOutInfinity for infinite timeout.
-  int DequeueOutputBuffer(
-      base::TimeDelta timeout, size_t* offset, size_t* size,
-      base::TimeDelta* presentation_time, bool* end_of_stream);
+  // Returns the status of this operation. If OK is returned, the output
+  // parameters should be populated. Otherwise, the values of output parameters
+  // should not be used.
+  // Note: Never use infinite timeout as this would block the decoder thread and
+  // prevent the decoder job from being released.
+  // TODO(xhwang): Can we drop |end_of_stream| and return
+  // MEDIA_CODEC_OUTPUT_END_OF_STREAM?
+  MediaCodecStatus DequeueOutputBuffer(const base::TimeDelta& timeout,
+                                       int* index,
+                                       size_t* offset,
+                                       size_t* size,
+                                       base::TimeDelta* presentation_time,
+                                       bool* end_of_stream);
 
   // Returns the buffer to the codec. If you previously specified a surface
   // when configuring this video decoder you can optionally render the buffer.
   void ReleaseOutputBuffer(int index, bool render);
 
   // Gets output buffers from media codec and keeps them inside the java class.
-  // To access them, use DequeueOutputBuffer().
-  void GetOutputBuffers();
+  // To access them, use DequeueOutputBuffer(). Returns whether output buffers
+  // were successfully obtained.
+  bool GetOutputBuffers() WARN_UNUSED_RESULT;
 
   static bool RegisterMediaCodecBridge(JNIEnv* env);
 
  protected:
-  explicit MediaCodecBridge(const char* mime);
+  MediaCodecBridge(const std::string& mime, bool is_secure);
 
   // Calls start() against the media codec instance. Used in StartXXX() after
-  // configuring media codec.
-  void StartInternal();
+  // configuring media codec. Returns whether media codec was successfully
+  // started.
+  bool StartInternal() WARN_UNUSED_RESULT;
 
   jobject media_codec() { return j_media_codec_.obj(); }
 
@@ -129,7 +165,7 @@ class AudioCodecBridge : public MediaCodecBridge {
   // Start the audio codec bridge.
   bool Start(const AudioCodec codec, int sample_rate, int channel_count,
              const uint8* extra_data, size_t extra_data_size,
-             bool play_audio, jobject media_crypto);
+             bool play_audio, jobject media_crypto) WARN_UNUSED_RESULT;
 
   // Play the output buffer. This call must be called after
   // DequeueOutputBuffer() and before ReleaseOutputBuffer.
@@ -139,7 +175,7 @@ class AudioCodecBridge : public MediaCodecBridge {
   void SetVolume(double volume);
 
  private:
-  explicit AudioCodecBridge(const char* mime);
+  explicit AudioCodecBridge(const std::string& mime);
 
   // Configure the java MediaFormat object with the extra codec data passed in.
   bool ConfigureMediaFormat(jobject j_format, const AudioCodec codec,
@@ -150,7 +186,7 @@ class MEDIA_EXPORT VideoCodecBridge : public MediaCodecBridge {
  public:
   // Returns an VideoCodecBridge instance if |codec| is supported, or a NULL
   // pointer otherwise.
-  static VideoCodecBridge* Create(const VideoCodec codec);
+  static VideoCodecBridge* Create(const VideoCodec codec, bool is_secure);
 
   // Start the video codec bridge.
   // TODO(qinmin): Pass codec specific data if available.
@@ -158,7 +194,7 @@ class MEDIA_EXPORT VideoCodecBridge : public MediaCodecBridge {
              jobject media_crypto);
 
  private:
-  explicit VideoCodecBridge(const char* mime);
+  VideoCodecBridge(const std::string& mime, bool is_secure);
 };
 
 }  // namespace media

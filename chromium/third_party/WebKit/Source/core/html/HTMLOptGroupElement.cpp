@@ -35,7 +35,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLOptGroupElement::HTMLOptGroupElement(const QualifiedName& tagName, Document* document)
+inline HTMLOptGroupElement::HTMLOptGroupElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
 {
     ASSERT(hasTagName(optgroupTag));
@@ -43,7 +43,7 @@ inline HTMLOptGroupElement::HTMLOptGroupElement(const QualifiedName& tagName, Do
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLOptGroupElement> HTMLOptGroupElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLOptGroupElement> HTMLOptGroupElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLOptGroupElement(tagName, document));
 }
@@ -125,7 +125,7 @@ PassRefPtr<RenderStyle> HTMLOptGroupElement::customStyleForRenderer()
 
 String HTMLOptGroupElement::groupLabelText() const
 {
-    String itemText = document()->displayStringModifiedByEncoding(getAttribute(labelAttr));
+    String itemText = document().displayStringModifiedByEncoding(getAttribute(labelAttr));
 
     // In WinIE, leading and trailing whitespace is ignored in options and optgroups. We match this behavior.
     itemText = itemText.stripWhiteSpace();

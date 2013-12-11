@@ -73,7 +73,7 @@
 #include "core/platform/chromium/KeyboardCodes.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/GraphicsLayer.h"
-#include "core/plugins/IFrameShimSupport.h"
+#include "core/plugins/PluginOcclusionSupport.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderBox.h"
 #include "public/platform/Platform.h"
@@ -192,10 +192,10 @@ void WebPluginContainerImpl::handleEvent(Event* event)
         handleWheelEvent(static_cast<WheelEvent*>(event));
     else if (event->isKeyboardEvent())
         handleKeyboardEvent(toKeyboardEvent(event));
-    else if (eventNames().isTouchEventType(event->type()))
-        handleTouchEvent(static_cast<TouchEvent*>(event));
-    else if (eventNames().isGestureEventType(event->type()))
-        handleGestureEvent(static_cast<GestureEvent*>(event));
+    else if (event->isTouchEvent())
+        handleTouchEvent(toTouchEvent(event));
+    else if (event->isGestureEvent())
+        handleGestureEvent(toGestureEvent(event));
 
     // FIXME: it would be cleaner if Widget::handleEvent returned true/false and
     // HTMLPluginElement called setDefaultHandled or defaultEventHandler.
@@ -267,7 +267,7 @@ void WebPluginContainerImpl::setPlugin(WebPlugin* plugin)
 
 float WebPluginContainerImpl::deviceScaleFactor()
 {
-    Page* page = m_element->document()->page();
+    Page* page = m_element->document().page();
     if (!page)
         return 1.0;
     return page->deviceScaleFactor();
@@ -275,7 +275,7 @@ float WebPluginContainerImpl::deviceScaleFactor()
 
 float WebPluginContainerImpl::pageScaleFactor()
 {
-    Page* page = m_element->document()->page();
+    Page* page = m_element->document().page();
     if (!page)
         return 1.0;
     return page->pageScaleFactor();
@@ -283,7 +283,7 @@ float WebPluginContainerImpl::pageScaleFactor()
 
 float WebPluginContainerImpl::pageZoomFactor()
 {
-    Frame* frame = m_element->document()->frame();
+    Frame* frame = m_element->document().frame();
     if (!frame)
         return 1.0;
     return frame->pageZoomFactor();
@@ -417,7 +417,7 @@ void WebPluginContainerImpl::allowScriptObjects()
 
 void WebPluginContainerImpl::clearScriptObjects()
 {
-    Frame* frame = m_element->document()->frame();
+    Frame* frame = m_element->document().frame();
     if (!frame)
         return;
     frame->script()->cleanupScriptObjectsForPlugin(this);
@@ -430,7 +430,7 @@ NPObject* WebPluginContainerImpl::scriptableObjectForElement()
 
 WebString WebPluginContainerImpl::executeScriptURL(const WebURL& url, bool popupsAllowed)
 {
-    Frame* frame = m_element->document()->frame();
+    Frame* frame = m_element->document().frame();
     if (!frame)
         return WebString();
 
@@ -450,7 +450,7 @@ WebString WebPluginContainerImpl::executeScriptURL(const WebURL& url, bool popup
 
 void WebPluginContainerImpl::loadFrameRequest(const WebURLRequest& request, const WebString& target, bool notifyNeeded, void* notifyData)
 {
-    Frame* frame = m_element->document()->frame();
+    Frame* frame = m_element->document().frame();
     if (!frame || !frame->loader()->documentLoader())
         return;  // FIXME: send a notification in this case?
 
@@ -471,13 +471,13 @@ void WebPluginContainerImpl::loadFrameRequest(const WebURLRequest& request, cons
 
 void WebPluginContainerImpl::zoomLevelChanged(double zoomLevel)
 {
-    WebViewImpl* view = WebViewImpl::fromPage(m_element->document()->frame()->page());
+    WebViewImpl* view = WebViewImpl::fromPage(m_element->document().frame()->page());
     view->fullFramePluginZoomLevelChanged(zoomLevel);
 }
 
 bool WebPluginContainerImpl::isRectTopmost(const WebRect& rect)
 {
-    Frame* frame = m_element->document()->frame();
+    Frame* frame = m_element->document().frame();
     if (!frame)
         return false;
 
@@ -500,9 +500,9 @@ void WebPluginContainerImpl::requestTouchEventType(TouchEventRequestType request
         return;
 
     if (requestType != TouchEventRequestTypeNone && m_touchEventRequestType == TouchEventRequestTypeNone)
-        m_element->document()->didAddTouchEventHandler(m_element);
+        m_element->document().didAddTouchEventHandler(m_element);
     else if (requestType == TouchEventRequestTypeNone && m_touchEventRequestType != TouchEventRequestTypeNone)
-        m_element->document()->didRemoveTouchEventHandler(m_element);
+        m_element->document().didRemoveTouchEventHandler(m_element);
     m_touchEventRequestType = requestType;
 }
 
@@ -511,7 +511,7 @@ void WebPluginContainerImpl::setWantsWheelEvents(bool wantsWheelEvents)
     if (m_wantsWheelEvents == wantsWheelEvents)
         return;
     m_wantsWheelEvents = wantsWheelEvents;
-    if (Page* page = m_element->document()->page()) {
+    if (Page* page = m_element->document().page()) {
         if (ScrollingCoordinator* scrollingCoordinator = page->scrollingCoordinator()) {
             if (parent() && parent()->isFrameView())
                 scrollingCoordinator->frameViewLayoutUpdated(toFrameView(parent()));
@@ -600,7 +600,7 @@ bool WebPluginContainerImpl::wantsWheelEvents()
 void WebPluginContainerImpl::willDestroyPluginLoadObserver(WebPluginLoadObserver* observer)
 {
     size_t pos = m_pluginLoadObservers.find(observer);
-    if (pos == notFound)
+    if (pos == kNotFound)
         return;
     m_pluginLoadObservers.remove(pos);
 }
@@ -608,7 +608,7 @@ void WebPluginContainerImpl::willDestroyPluginLoadObserver(WebPluginLoadObserver
 ScrollbarGroup* WebPluginContainerImpl::scrollbarGroup()
 {
     if (!m_scrollbarGroup)
-        m_scrollbarGroup = adoptPtr(new ScrollbarGroup(m_element->document()->frame()->view(), frameRect()));
+        m_scrollbarGroup = adoptPtr(new ScrollbarGroup(m_element->document().frame()->view(), frameRect()));
     return m_scrollbarGroup.get();
 }
 
@@ -648,7 +648,7 @@ WebPluginContainerImpl::WebPluginContainerImpl(WebCore::HTMLPlugInElement* eleme
 WebPluginContainerImpl::~WebPluginContainerImpl()
 {
     if (m_touchEventRequestType != TouchEventRequestTypeNone)
-        m_element->document()->didRemoveTouchEventHandler(m_element);
+        m_element->document().didRemoveTouchEventHandler(m_element);
 
     for (size_t i = 0; i < m_pluginLoadObservers.size(); ++i)
         m_pluginLoadObservers[i]->clearPluginContainer();
@@ -697,10 +697,10 @@ void WebPluginContainerImpl::handleMouseEvent(MouseEvent* event)
     // A windowless plugin can change the cursor in response to a mouse move
     // event.  We need to reflect the changed cursor in the frame view as the
     // mouse is moved in the boundaries of the windowless plugin.
-    Page* page = parentView->frame()->page();
+    Page* page = parentView->frame().page();
     if (!page)
         return;
-    ChromeClientImpl* chromeClient = static_cast<ChromeClientImpl*>(page->chrome().client());
+    ChromeClientImpl* chromeClient = static_cast<ChromeClientImpl*>(&page->chrome().client());
     chromeClient->setCursorForPlugin(cursorInfo);
 }
 
@@ -748,7 +748,7 @@ void WebPluginContainerImpl::handleKeyboardEvent(KeyboardEvent* event)
         return;
 
     if (webEvent.type == WebInputEvent::KeyDown) {
-#if OS(DARWIN)
+#if OS(MACOSX)
         if (webEvent.modifiers == WebInputEvent::MetaKey
 #else
         if (webEvent.modifiers == WebInputEvent::ControlKey
@@ -775,7 +775,7 @@ void WebPluginContainerImpl::handleKeyboardEvent(KeyboardEvent* event)
     }
 
     // Give the client a chance to issue edit comamnds.
-    WebViewImpl* view = WebViewImpl::fromPage(m_element->document()->frame()->page());
+    WebViewImpl* view = WebViewImpl::fromPage(m_element->document().frame()->page());
     if (m_webPlugin->supportsEditCommands() && view->client())
         view->client()->handleCurrentKeyboardEvent();
 
@@ -852,11 +852,11 @@ void WebPluginContainerImpl::synthesizeMouseEventIfPossible(TouchEvent* event)
 
 void WebPluginContainerImpl::focusPlugin()
 {
-    Frame* containingFrame = static_cast<FrameView*>(parent())->frame();
-    if (Page* currentPage = containingFrame->page())
-        currentPage->focusController().setFocusedElement(m_element, containingFrame);
+    Frame& containingFrame = toFrameView(parent())->frame();
+    if (Page* currentPage = containingFrame.page())
+        currentPage->focusController().setFocusedElement(m_element, &containingFrame);
     else
-        containingFrame->document()->setFocusedElement(m_element);
+        containingFrame.document()->setFocusedElement(m_element);
 }
 
 void WebPluginContainerImpl::calculateGeometry(const IntRect& frameRect,
@@ -882,13 +882,13 @@ WebCore::IntRect WebPluginContainerImpl::windowClipRect() const
     IntRect clipRect =
         convertToContainingWindow(IntRect(0, 0, width(), height()));
 
-    // document()->renderer() can be 0 when we receive messages from the
+    // document().renderer() can be 0 when we receive messages from the
     // plugins while we are destroying a frame.
-    if (m_element->renderer()->document()->renderer()) {
+    if (m_element->renderer()->document().renderer()) {
         // Take our element and get the clip rect from the enclosing layer and
         // frame view.
         clipRect.intersect(
-            m_element->document()->view()->windowClipRectForFrameOwner(m_element, true));
+            m_element->document().view()->windowClipRectForFrameOwner(m_element, true));
     }
 
     return clipRect;

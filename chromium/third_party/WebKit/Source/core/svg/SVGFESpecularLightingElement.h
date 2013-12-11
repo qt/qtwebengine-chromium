@@ -22,6 +22,7 @@
 #ifndef SVGFESpecularLightingElement_h
 #define SVGFESpecularLightingElement_h
 
+#include "SVGNames.h"
 #include "core/platform/graphics/filters/FESpecularLighting.h"
 #include "core/svg/SVGAnimatedNumber.h"
 #include "core/svg/SVGFELightElement.h"
@@ -31,11 +32,11 @@ namespace WebCore {
 
 class SVGFESpecularLightingElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
-    static PassRefPtr<SVGFESpecularLightingElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGFESpecularLightingElement> create(const QualifiedName&, Document&);
     void lightElementAttributeChanged(const SVGFELightElement*, const QualifiedName&);
 
 private:
-    SVGFESpecularLightingElement(const QualifiedName&, Document*);
+    SVGFESpecularLightingElement(const QualifiedName&, Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
@@ -55,6 +56,12 @@ private:
         DECLARE_ANIMATED_NUMBER(KernelUnitLengthY, kernelUnitLengthY)
     END_DECLARE_ANIMATED_PROPERTIES
 };
+
+inline SVGFESpecularLightingElement* toSVGFESpecularLightingElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::feSpecularLightingTag));
+    return static_cast<SVGFESpecularLightingElement*>(node);
+}
 
 } // namespace WebCore
 

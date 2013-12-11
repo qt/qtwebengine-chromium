@@ -77,20 +77,23 @@ private:
     LayoutUnit computeUsedBreadthOfMinLength(TrackSizingDirection, const GridLength&) const;
     LayoutUnit computeUsedBreadthOfMaxLength(TrackSizingDirection, const GridLength&, LayoutUnit usedBreadth) const;
     LayoutUnit computeUsedBreadthOfSpecifiedLength(TrackSizingDirection, const Length&) const;
-    void resolveContentBasedTrackSizingFunctions(TrackSizingDirection, Vector<GridTrack>& columnTracks, Vector<GridTrack>& rowTracks, LayoutUnit& availableLogicalSpace);
+    void resolveContentBasedTrackSizingFunctions(TrackSizingDirection, Vector<GridTrack>& columnTracks, Vector<GridTrack>& rowTracks, const Vector<size_t>&, LayoutUnit& availableLogicalSpace);
 
     void growGrid(TrackSizingDirection);
     void insertItemIntoGrid(RenderBox*, size_t rowTrack, size_t columnTrack);
     void insertItemIntoGrid(RenderBox*, const GridCoordinate&);
     void placeItemsOnGrid();
     void populateExplicitGridAndOrderIterator();
-    void placeSpecifiedMajorAxisItemsOnGrid(Vector<RenderBox*>);
-    void placeAutoMajorAxisItemsOnGrid(Vector<RenderBox*>);
+    void placeSpecifiedMajorAxisItemsOnGrid(const Vector<RenderBox*>&);
+    void placeAutoMajorAxisItemsOnGrid(const Vector<RenderBox*>&);
     void placeAutoMajorAxisItemOnGrid(RenderBox*);
     TrackSizingDirection autoPlacementMajorAxisDirection() const;
     TrackSizingDirection autoPlacementMinorAxisDirection() const;
 
     void layoutGridItems();
+    void populateGridPositions(const Vector<GridTrack>& columnTracks, const Vector<GridTrack>& rowTracks);
+
+    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
 
     typedef LayoutUnit (RenderGrid::* SizingFunction)(RenderBox*, TrackSizingDirection, Vector<GridTrack>&);
     typedef LayoutUnit (GridTrack::* AccumulatorGetter)() const;
@@ -142,8 +145,12 @@ private:
         return m_grid.size();
     }
 
-    Vector<Vector<Vector<RenderBox*, 1> > > m_grid;
+    typedef Vector<RenderBox*, 1> GridCell;
+    typedef Vector<Vector<GridCell> > GridRepresentation;
+    GridRepresentation m_grid;
     bool m_gridIsDirty;
+    Vector<LayoutUnit> m_rowPositions;
+    Vector<LayoutUnit> m_columnPositions;
     HashMap<const RenderBox*, GridCoordinate> m_gridItemCoordinate;
     OrderIterator m_orderIterator;
 };

@@ -59,6 +59,10 @@ class MEDIA_EXPORT CoreAudioUtil {
   static ScopedComPtr<IMMDevice> CreateDefaultDevice(
       EDataFlow data_flow, ERole role);
 
+  // Returns the device id of the default output device or an empty string
+  // if no such device exists or if the default device has been disabled.
+  static std::string GetDefaultOutputDeviceID();
+
   // Creates an endpoint device that is specified by a unique endpoint device-
   // identification string.
   static ScopedComPtr<IMMDevice> CreateDevice(const std::string& device_id);
@@ -67,6 +71,24 @@ class MEDIA_EXPORT CoreAudioUtil {
   // Example: "{0.0.1.00000000}.{8db6020f-18e3-4f25-b6f5-7726c9122574}", and
   //          "Microphone (Realtek High Definition Audio)".
   static HRESULT GetDeviceName(IMMDevice* device, AudioDeviceName* name);
+
+  // Returns the device ID/path of the controller (a.k.a. physical device that
+  // |device| is connected to.  This ID will be the same for all devices from
+  // the same controller so it is useful for doing things like determining
+  // whether a set of output and input devices belong to the same controller.
+  // The device enumerator is required as well as the device itself since
+  // looking at the device topology is required and we need to open up
+  // associated devices to determine the controller id.
+  // If the ID could not be determined for some reason, an empty string is
+  // returned.
+  static std::string GetAudioControllerID(IMMDevice* device,
+      IMMDeviceEnumerator* enumerator);
+
+  // Accepts an id of an input device and finds a matching output device id.
+  // If the associated hardware does not have an audio output device (e.g.
+  // a webcam with a mic), an empty string is returned.
+  static std::string GetMatchingOutputDeviceID(
+      const std::string& input_device_id);
 
   // Gets the user-friendly name of the endpoint device which is represented
   // by a unique id in |device_id|.

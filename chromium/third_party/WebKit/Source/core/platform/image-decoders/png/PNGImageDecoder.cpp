@@ -216,8 +216,9 @@ private:
 };
 
 PNGImageDecoder::PNGImageDecoder(ImageSource::AlphaOption alphaOption,
-                                 ImageSource::GammaAndColorProfileOption gammaAndColorProfileOption)
-    : ImageDecoder(alphaOption, gammaAndColorProfileOption)
+    ImageSource::GammaAndColorProfileOption gammaAndColorProfileOption,
+    size_t maxDecodedBytes)
+    : ImageDecoder(alphaOption, gammaAndColorProfileOption, maxDecodedBytes)
     , m_doNothingOnFailure(false)
 {
 }

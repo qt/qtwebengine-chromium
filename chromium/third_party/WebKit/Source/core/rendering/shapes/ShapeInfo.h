@@ -62,7 +62,7 @@ private:
     }
 };
 
-template<class RenderType, ShapeValue* (RenderStyle::*shapeGetter)() const, void (Shape::*intervalGetter)(LayoutUnit, LayoutUnit, SegmentList&) const>
+template<class RenderType>
 class ShapeInfo {
     WTF_MAKE_FAST_ALLOCATED;
 public:
@@ -70,16 +70,15 @@ public:
 
     void setShapeSize(LayoutUnit logicalWidth, LayoutUnit logicalHeight)
     {
-        if (m_renderer->style()->boxSizing() == CONTENT_BOX) {
-            logicalWidth -= m_renderer->borderAndPaddingLogicalWidth();
-            logicalHeight -= m_renderer->borderAndPaddingLogicalHeight();
-        }
+        LayoutSize newLogicalSize(logicalWidth, logicalHeight);
 
-        if (m_shapeLogicalWidth == logicalWidth && m_shapeLogicalHeight == logicalHeight)
+        if (m_renderer->style()->boxSizing() == CONTENT_BOX)
+            newLogicalSize -= LayoutSize(m_renderer->borderAndPaddingLogicalWidth(), m_renderer->borderAndPaddingLogicalHeight());
+
+        if (m_shapeLogicalSize == newLogicalSize)
             return;
         dirtyShapeSize();
-        m_shapeLogicalWidth = logicalWidth;
-        m_shapeLogicalHeight = logicalHeight;
+        m_shapeLogicalSize = newLogicalSize;
     }
 
     virtual bool computeSegmentsForLine(LayoutUnit lineTop, LayoutUnit lineHeight);
@@ -95,9 +94,9 @@ public:
     LayoutUnit logicalLineTop() const { return m_shapeLineTop + logicalTopOffset(); }
     LayoutUnit logicalLineBottom() const { return m_shapeLineTop + m_lineHeight + logicalTopOffset(); }
 
-    LayoutUnit shapeContainingBlockHeight() const { return (m_renderer->style()->boxSizing() == CONTENT_BOX) ? (m_shapeLogicalHeight + m_renderer->borderAndPaddingLogicalHeight()) : m_shapeLogicalHeight; }
+    LayoutUnit shapeContainingBlockHeight() const { return (m_renderer->style()->boxSizing() == CONTENT_BOX) ? (m_shapeLogicalSize.height() + m_renderer->borderAndPaddingLogicalHeight()) : m_shapeLogicalSize.height(); }
 
-    bool lineOverlapsShapeBounds() const { return logicalLineTop() < shapeLogicalBottom() && shapeLogicalTop() <= logicalLineBottom(); }
+    virtual bool lineOverlapsShapeBounds() const = 0;
 
     void dirtyShapeSize() { m_shape.clear(); }
     bool shapeSizeDirty() { return !m_shape.get(); }
@@ -108,6 +107,8 @@ protected:
 
     const Shape* computedShape() const;
     virtual LayoutRect computedShapeLogicalBoundingBox() const = 0;
+    virtual ShapeValue* shapeValue() const = 0;
+    virtual void getIntervals(LayoutUnit, LayoutUnit, SegmentList&) const = 0;
 
     LayoutUnit logicalTopOffset() const { return m_renderer->style()->boxSizing() == CONTENT_BOX ? m_renderer->borderAndPaddingBefore() : LayoutUnit(); }
     LayoutUnit logicalLeftOffset() const { return (m_renderer->style()->boxSizing() == CONTENT_BOX && !m_renderer->isRenderRegion()) ? m_renderer->borderAndPaddingStart() : LayoutUnit(); }
@@ -120,9 +121,7 @@ protected:
 
 private:
     mutable OwnPtr<Shape> m_shape;
-
-    LayoutUnit m_shapeLogicalWidth;
-    LayoutUnit m_shapeLogicalHeight;
+    LayoutSize m_shapeLogicalSize;
 };
 }
 #endif

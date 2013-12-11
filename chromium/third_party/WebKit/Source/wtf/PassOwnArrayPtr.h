@@ -49,7 +49,6 @@ public:
     // a const PassOwnArrayPtr. However, it makes it much easier to work with PassOwnArrayPtr
     // temporaries, and we don't have a need to use real const PassOwnArrayPtrs anyway.
     PassOwnArrayPtr(const PassOwnArrayPtr& o) : m_ptr(o.leakPtr()) { }
-    template<typename U> PassOwnArrayPtr(const PassOwnArrayPtr<U>& o) : m_ptr(o.leakPtr()) { }
 
     ~PassOwnArrayPtr() { deleteOwnedArrayPtr(m_ptr); }
 
@@ -66,12 +65,12 @@ public:
     typedef PtrType PassOwnArrayPtr::*UnspecifiedBoolType;
     operator UnspecifiedBoolType() const { return m_ptr ? &PassOwnArrayPtr::m_ptr : 0; }
 
-    PassOwnArrayPtr& operator=(const PassOwnArrayPtr&) { COMPILE_ASSERT(!sizeof(T*), PassOwnArrayPtr_should_never_be_assigned_to); return *this; }
-
     template<typename U> friend PassOwnArrayPtr<U> adoptArrayPtr(U*);
 
 private:
     explicit PassOwnArrayPtr(PtrType ptr) : m_ptr(ptr) { }
+
+    PassOwnArrayPtr& operator=(const PassOwnArrayPtr&) { COMPILE_ASSERT(!sizeof(T*), PassOwnArrayPtr_should_never_be_assigned_to); ASSERT_NOT_REACHED(); return *this; }
 
     mutable PtrType m_ptr;
 };
@@ -140,9 +139,8 @@ template<typename T> inline PassOwnArrayPtr<T> adoptArrayPtr(T* ptr)
 
 template<typename T> inline void deleteOwnedArrayPtr(T* ptr)
 {
-    typedef char known[sizeof(T) ? 1 : -1];
-    if (sizeof(known))
-        delete [] ptr;
+    COMPILE_ASSERT(sizeof(T) > 0, TypeMustBeComplete);
+    delete [] ptr;
 }
 
 template<typename T, typename U> inline PassOwnArrayPtr<T> static_pointer_cast(const PassOwnArrayPtr<U>& p)

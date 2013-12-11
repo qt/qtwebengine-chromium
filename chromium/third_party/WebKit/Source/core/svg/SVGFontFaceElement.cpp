@@ -46,7 +46,7 @@ namespace WebCore {
 
 using namespace SVGNames;
 
-inline SVGFontFaceElement::SVGFontFaceElement(const QualifiedName& tagName, Document* document)
+inline SVGFontFaceElement::SVGFontFaceElement(const QualifiedName& tagName, Document& document)
     : SVGElement(tagName, document)
     , m_fontFaceRule(StyleRuleFontFace::create())
     , m_fontElement(0)
@@ -57,7 +57,7 @@ inline SVGFontFaceElement::SVGFontFaceElement(const QualifiedName& tagName, Docu
     m_fontFaceRule->setProperties(styleDeclaration.release());
 }
 
-PassRefPtr<SVGFontFaceElement> SVGFontFaceElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<SVGFontFaceElement> SVGFontFaceElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new SVGFontFaceElement(tagName, document));
 }
@@ -311,12 +311,12 @@ void SVGFontFaceElement::rebuildFontFace()
 
         unsigned srcLength = srcList ? srcList->length() : 0;
         for (unsigned i = 0; i < srcLength; i++) {
-            if (CSSFontFaceSrcValue* item = static_cast<CSSFontFaceSrcValue*>(srcList->itemWithoutBoundsCheck(i)))
+            if (CSSFontFaceSrcValue* item = toCSSFontFaceSrcValue(srcList->itemWithoutBoundsCheck(i)))
                 item->setSVGFontFaceElement(this);
         }
     }
 
-    document()->styleResolverChanged(DeferRecalcStyle);
+    document().styleResolverChanged(RecalcStyleDeferred);
 }
 
 Node::InsertionNotificationRequest SVGFontFaceElement::insertedInto(ContainerNode* rootParent)
@@ -326,7 +326,7 @@ Node::InsertionNotificationRequest SVGFontFaceElement::insertedInto(ContainerNod
         ASSERT(!m_fontElement);
         return InsertionDone;
     }
-    document()->accessSVGExtensions()->registerSVGFontFaceElement(this);
+    document().accessSVGExtensions()->registerSVGFontFaceElement(this);
 
     rebuildFontFace();
     return InsertionDone;
@@ -338,10 +338,10 @@ void SVGFontFaceElement::removedFrom(ContainerNode* rootParent)
 
     if (rootParent->inDocument()) {
         m_fontElement = 0;
-        document()->accessSVGExtensions()->unregisterSVGFontFaceElement(this);
+        document().accessSVGExtensions()->unregisterSVGFontFaceElement(this);
         m_fontFaceRule->mutableProperties()->clear();
 
-        document()->styleResolverChanged(DeferRecalcStyle);
+        document().styleResolverChanged(RecalcStyleDeferred);
     } else
         ASSERT(!m_fontElement);
 }

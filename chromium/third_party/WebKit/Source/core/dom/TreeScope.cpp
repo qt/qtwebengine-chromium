@@ -31,9 +31,9 @@
 #include "core/dom/ContainerNode.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/dom/EventPathWalker.h"
 #include "core/dom/IdTargetObserverRegistry.h"
-#include "core/dom/NodeTraversal.h"
 #include "core/dom/TreeScopeAdopter.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -170,7 +170,7 @@ void TreeScope::removeElementById(const AtomicString& elementId, Element* elemen
 Node* TreeScope::ancestorInThisScope(Node* node) const
 {
     while (node) {
-        if (node->treeScope() == this)
+        if (&node->treeScope() == this)
             return node;
         if (!node->isInShadowTree())
             return 0;
@@ -208,8 +208,8 @@ HTMLMapElement* TreeScope::getImageMap(const String& url) const
     if (!m_imageMapsByName)
         return 0;
     size_t hashPos = url.find('#');
-    String name = (hashPos == notFound ? url : url.substring(hashPos + 1)).impl();
-    if (rootNode()->document()->isHTMLDocument())
+    String name = (hashPos == kNotFound ? url : url.substring(hashPos + 1)).impl();
+    if (rootNode()->document().isHTMLDocument())
         return toHTMLMapElement(m_imageMapsByName->getElementByLowercasedMapName(AtomicString(name.lower()).impl(), this));
     return toHTMLMapElement(m_imageMapsByName->getElementByMapName(AtomicString(name).impl(), this));
 }
@@ -242,7 +242,7 @@ Node* nodeFromPoint(Document* document, int x, int y, LayoutPoint* localPoint)
 
 Element* TreeScope::elementFromPoint(int x, int y) const
 {
-    Node* node = nodeFromPoint(rootNode()->document(), x, y);
+    Node* node = nodeFromPoint(&rootNode()->document(), x, y);
     if (node && node->isTextNode())
         node = node->parentNode();
     ASSERT(!node || node->isElementNode() || node->isShadowRoot());
@@ -287,7 +287,7 @@ HTMLLabelElement* TreeScope::labelElementForId(const AtomicString& forAttributeV
 
 DOMSelection* TreeScope::getSelection() const
 {
-    if (!rootNode()->document()->frame())
+    if (!rootNode()->document().frame())
         return 0;
 
     if (m_selection)
@@ -309,7 +309,7 @@ Element* TreeScope::findAnchor(const String& name)
     for (Element* element = ElementTraversal::firstWithin(rootNode()); element; element = ElementTraversal::next(element)) {
         if (isHTMLAnchorElement(element)) {
             HTMLAnchorElement* anchor = toHTMLAnchorElement(element);
-            if (rootNode()->document()->inQuirksMode()) {
+            if (rootNode()->document().inQuirksMode()) {
                 // Quirks mode, case insensitive comparison of names.
                 if (equalIgnoringCase(anchor->name(), name))
                     return anchor;
@@ -350,10 +350,10 @@ static Element* focusedFrameOwnerElement(Frame* focusedFrame, Frame* currentFram
 
 Element* TreeScope::adjustedFocusedElement()
 {
-    Document* document = rootNode()->document();
-    Element* element = document->focusedElement();
-    if (!element && document->page())
-        element = focusedFrameOwnerElement(document->page()->focusController().focusedFrame(), document->frame());
+    Document& document = rootNode()->document();
+    Element* element = document.focusedElement();
+    if (!element && document.page())
+        element = focusedFrameOwnerElement(document.page()->focusController().focusedFrame(), document.frame());
     if (!element)
         return 0;
     Vector<Node*> targetStack;
@@ -379,12 +379,9 @@ Element* TreeScope::adjustedFocusedElement()
     return 0;
 }
 
-unsigned short TreeScope::comparePosition(const TreeScope* otherScope) const
+unsigned short TreeScope::comparePosition(const TreeScope& otherScope) const
 {
-    if (!otherScope)
-        return Node::DOCUMENT_POSITION_DISCONNECTED;
-
-    if (otherScope == this)
+    if (&otherScope == this)
         return Node::DOCUMENT_POSITION_EQUIVALENT;
 
     Vector<const TreeScope*, 16> chain1;
@@ -392,7 +389,7 @@ unsigned short TreeScope::comparePosition(const TreeScope* otherScope) const
     const TreeScope* current;
     for (current = this; current; current = current->parentTreeScope())
         chain1.append(current);
-    for (current = otherScope; current; current = current->parentTreeScope())
+    for (current = &otherScope; current; current = current->parentTreeScope())
         chain2.append(current);
 
     unsigned index1 = chain1.size();
@@ -427,7 +424,7 @@ unsigned short TreeScope::comparePosition(const TreeScope* otherScope) const
 static void listTreeScopes(Node* node, Vector<TreeScope*, 5>& treeScopes)
 {
     while (true) {
-        treeScopes.append(node->treeScope());
+        treeScopes.append(&node->treeScope());
         Element* ancestor = node->shadowHost();
         if (!ancestor)
             break;
@@ -440,8 +437,8 @@ TreeScope* commonTreeScope(Node* nodeA, Node* nodeB)
     if (!nodeA || !nodeB)
         return 0;
 
-    if (nodeA->treeScope() == nodeB->treeScope())
-        return nodeA->treeScope();
+    if (&nodeA->treeScope() == &nodeB->treeScope())
+        return &nodeA->treeScope();
 
     Vector<TreeScope*, 5> treeScopesA;
     listTreeScopes(nodeA, treeScopesA);
@@ -477,11 +474,10 @@ int TreeScope::refCount() const
     return 0;
 }
 
-bool TreeScope::isInclusiveAncestorOf(const TreeScope* scope) const
+bool TreeScope::isInclusiveAncestorOf(const TreeScope& scope) const
 {
-    ASSERT(scope);
-    for (; scope; scope = scope->parentTreeScope()) {
-        if (scope == this)
+    for (const TreeScope* current = &scope; current; current = current->parentTreeScope()) {
+        if (current == this)
             return true;
     }
     return false;
@@ -494,7 +490,7 @@ Element* TreeScope::getElementByAccessKey(const String& key) const
     Element* result = 0;
     Node* root = rootNode();
     for (Element* element = ElementTraversal::firstWithin(root); element; element = ElementTraversal::next(element, root)) {
-        if (element->fastGetAttribute(accesskeyAttr) == key)
+        if (equalIgnoringCase(element->fastGetAttribute(accesskeyAttr), key))
             result = element;
         for (ShadowRoot* shadowRoot = element->youngestShadowRoot(); shadowRoot; shadowRoot = shadowRoot->olderShadowRoot()) {
             if (Element* shadowResult = shadowRoot->getElementByAccessKey(key))

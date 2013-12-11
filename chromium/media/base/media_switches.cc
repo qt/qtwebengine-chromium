@@ -15,8 +15,8 @@ const char kEnableEac3Playback[] = "enable-eac3-playback";
 // Enables Opus playback in media elements.
 const char kEnableOpusPlayback[] = "enable-opus-playback";
 
-// Enables VP8 Alpha playback in media elements.
-const char kEnableVp8AlphaPlayback[] = "enable-vp8-alpha-playback";
+// Disables VP8 Alpha playback in media elements.
+const char kDisableVp8AlphaPlayback[] = "disable-vp8-alpha-playback";
 
 // Set number of threads to use for video decoding.
 const char kVideoThreads[] = "video-threads";
@@ -24,6 +24,22 @@ const char kVideoThreads[] = "video-threads";
 // Override suppressed responses to canPlayType().
 const char kOverrideEncryptedMediaCanPlayType[] =
     "override-encrypted-media-canplaytype";
+
+// Enables MP3 stream parser for Media Source Extensions.
+const char kEnableMP3StreamParser[] = "enable-mp3-stream-parser";
+
+#if defined(OS_ANDROID)
+// Disables the infobar popup for accessing protected media identifier.
+const char kDisableInfobarForProtectedMediaIdentifier[] =
+    "disable-infobar-for-protected-media-identifier";
+
+// Enables use of MediaDrm for Encrypted Media Extensions implementation.
+const char kEnableMediaDrm[] = "enable-mediadrm";
+
+// Enables use of non-compositing MediaDrm decoding by default for Encrypted
+// Media Extensions implementation.
+const char kMediaDrmEnableNonCompositing[] = "mediadrm-enable-non-compositing";
+#endif
 
 #if defined(GOOGLE_TV)
 // Use external video surface for video with more than or equal pixels to

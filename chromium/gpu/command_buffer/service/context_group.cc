@@ -67,7 +67,6 @@ ContextGroup::ContextGroup(
   id_namespaces_[id_namespaces::kTextures].reset(new IdAllocator);
   id_namespaces_[id_namespaces::kQueries].reset(new IdAllocator);
   id_namespaces_[id_namespaces::kVertexArrays].reset(new IdAllocator);
-  id_namespaces_[id_namespaces::kImages].reset(new IdAllocator);
 }
 
 static void GetIntegerv(GLenum pname, uint32* var) {
@@ -78,15 +77,14 @@ static void GetIntegerv(GLenum pname, uint32* var) {
 
 bool ContextGroup::Initialize(
     GLES2Decoder* decoder,
-    const DisallowedFeatures& disallowed_features,
-    const char* allowed_features) {
+    const DisallowedFeatures& disallowed_features) {
   // If we've already initialized the group just add the context.
   if (HaveContexts()) {
     decoders_.push_back(base::AsWeakPtr<GLES2Decoder>(decoder));
     return true;
   }
 
-  if (!feature_info_->Initialize(disallowed_features, allowed_features)) {
+  if (!feature_info_->Initialize(disallowed_features)) {
     LOG(ERROR) << "ContextGroup::Initialize failed because FeatureInfo "
                << "initialization failed.";
     return false;
@@ -122,14 +120,16 @@ bool ContextGroup::Initialize(
     draw_buffer_ = GL_BACK;
   }
 
+  const bool depth24_supported = feature_info_->feature_flags().oes_depth24;
+
   buffer_manager_.reset(
       new BufferManager(memory_tracker_.get(), feature_info_.get()));
   framebuffer_manager_.reset(
       new FramebufferManager(max_draw_buffers_, max_color_attachments_));
   renderbuffer_manager_.reset(new RenderbufferManager(
-      memory_tracker_.get(), max_renderbuffer_size, max_samples));
+      memory_tracker_.get(), max_renderbuffer_size, max_samples,
+      depth24_supported));
   shader_manager_.reset(new ShaderManager());
-  program_manager_.reset(new ProgramManager(program_cache_));
 
   // Lookup GL things we need to know.
   const GLint kGLES2RequiredMinimumVertexAttribs = 8u;
@@ -235,6 +235,9 @@ bool ContextGroup::Initialize(
        std::min(static_cast<uint32>(kMinVertexUniformVectors * 2),
                 max_vertex_uniform_vectors_);
   }
+
+  program_manager_.reset(new ProgramManager(
+      program_cache_, max_varying_vectors_));
 
   if (!texture_manager_->Initialize()) {
     LOG(ERROR) << "Context::Group::Initialize failed because texture manager "

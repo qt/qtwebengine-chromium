@@ -114,7 +114,7 @@ void DocumentMarkerController::addTextMatchMarker(const Range* range, bool activ
             // matches off-screen are (that haven't been painted yet).
             Node* node = textPiece->startContainer();
             Vector<DocumentMarker*> markers = markersFor(node);
-            static_cast<RenderedDocumentMarker*>(markers[markers.size() - 1])->setRenderedRect(range->boundingBox());
+            toRenderedDocumentMarker(markers[markers.size() - 1])->setRenderedRect(range->boundingBox());
         }
     }
 }
@@ -160,7 +160,7 @@ void DocumentMarkerController::addMarker(Node* node, const DocumentMarker& newMa
             DocumentMarker marker = list->at(i);
             if (marker.startOffset() > toInsert.startOffset())
                 break;
-            if (marker.type() == toInsert.type() && marker.endOffset() >= toInsert.startOffset()) {
+            if (marker.type() == toInsert.type() && marker.type() != DocumentMarker::TextMatch && marker.endOffset() >= toInsert.startOffset()) {
                 toInsert.setStartOffset(marker.startOffset());
                 list->remove(i);
                 numMarkers--;
@@ -175,7 +175,7 @@ void DocumentMarkerController::addMarker(Node* node, const DocumentMarker& newMa
             DocumentMarker marker = list->at(j);
             if (marker.startOffset() > toInsert.endOffset())
                 break;
-            if (marker.type() == toInsert.type()) {
+            if (marker.type() == toInsert.type() && marker.type() != DocumentMarker::TextMatch) {
                 list->remove(j);
                 if (toInsert.endOffset() <= marker.endOffset()) {
                     toInsert.setEndOffset(marker.endOffset());
@@ -342,20 +342,6 @@ Vector<DocumentMarker*> DocumentMarkerController::markersFor(Node* node, Documen
         if (markerTypes.contains(list->at(i).type()))
             result.append(&(list->at(i)));
     }
-
-    return result;
-}
-
-// FIXME: Should be removed after all relevant patches are landed
-Vector<DocumentMarker> DocumentMarkerController::markersForNode(Node* node)
-{
-    Vector<DocumentMarker> result;
-    MarkerList* list = m_markers.get(node);
-    if (!list)
-        return result;
-
-    for (size_t i = 0; i < list->size(); ++i)
-        result.append(list->at(i));
 
     return result;
 }
@@ -608,7 +594,7 @@ void DocumentMarkerController::setMarkersActive(Node* node, unsigned startOffset
             break;
 
         // Skip marker that is wrong type or before target.
-        if (marker.endOffset() < startOffset || marker.type() != DocumentMarker::TextMatch)
+        if (marker.endOffset() <= startOffset || marker.type() != DocumentMarker::TextMatch)
             continue;
 
         marker.setActiveMatch(active);

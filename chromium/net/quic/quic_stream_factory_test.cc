@@ -29,12 +29,14 @@ class QuicStreamFactoryTest : public ::testing::Test {
   QuicStreamFactoryTest()
       : clock_(new MockClock()),
         factory_(&host_resolver_, &socket_factory_,
+                 base::WeakPtr<HttpServerProperties>(),
                  &crypto_client_stream_factory_,
                  &random_generator_, clock_),
         host_port_proxy_pair_(HostPortPair("www.google.com", 443),
                               ProxyServer::Direct()),
         is_https_(false),
         cert_verifier_(CertVerifier::CreateDefault()) {
+    factory_.set_require_confirmation(false);
   }
 
   scoped_ptr<QuicEncryptedPacket> ConstructRstPacket(
@@ -45,11 +47,12 @@ class QuicStreamFactoryTest : public ::testing::Test {
     header.public_header.reset_flag = false;
     header.public_header.version_flag = true;
     header.packet_sequence_number = num;
+    header.public_header.sequence_number_length = PACKET_1BYTE_SEQUENCE_NUMBER;
     header.entropy_flag = false;
     header.fec_flag = false;
     header.fec_group = 0;
 
-    QuicRstStreamFrame rst(stream_id, QUIC_STREAM_NO_ERROR);
+    QuicRstStreamFrame rst(stream_id, QUIC_ERROR_PROCESSING_STREAM);
     return scoped_ptr<QuicEncryptedPacket>(
         ConstructPacket(header, QuicFrame(&rst)));
   }
@@ -171,7 +174,12 @@ TEST_F(QuicStreamFactoryTest, MaxOpenStream) {
   MockRead reads[] = {
     MockRead(ASYNC, OK, 0)  // EOF
   };
-  DeterministicSocketData socket_data(reads, arraysize(reads), NULL, 0);
+  scoped_ptr<QuicEncryptedPacket> rst(ConstructRstPacket(1, 3));
+  MockWrite writes[] = {
+    MockWrite(ASYNC, rst->data(), rst->length(), 1),
+  };
+  DeterministicSocketData socket_data(reads, arraysize(reads),
+                                      writes, arraysize(writes));
   socket_factory_.AddSocketDataProvider(&socket_data);
   socket_data.StopAfter(1);
 
@@ -342,6 +350,7 @@ TEST_F(QuicStreamFactoryTest, OnIPAddressChanged) {
   factory_.OnIPAddressChanged();
   EXPECT_EQ(ERR_NETWORK_CHANGED,
             stream->ReadResponseHeaders(callback_.callback()));
+  EXPECT_TRUE(factory_.require_confirmation());
 
   // Now attempting to request a stream to the same origin should create
   // a new session.

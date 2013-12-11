@@ -57,7 +57,7 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGFELightElement)
     REGISTER_LOCAL_ANIMATED_PROPERTY(limitingConeAngle)
 END_REGISTER_ANIMATED_PROPERTIES
 
-SVGFELightElement::SVGFELightElement(const QualifiedName& tagName, Document* document)
+SVGFELightElement::SVGFELightElement(const QualifiedName& tagName, Document& document)
     : SVGElement(tagName, document)
     , m_specularExponent(1)
 {
@@ -190,12 +190,10 @@ void SVGFELightElement::svgAttributeChanged(const QualifiedName& attrName)
             return;
 
         if (parent->hasTagName(SVGNames::feDiffuseLightingTag)) {
-            SVGFEDiffuseLightingElement* diffuseLighting = static_cast<SVGFEDiffuseLightingElement*>(parent);
-            diffuseLighting->lightElementAttributeChanged(this, attrName);
+            toSVGFEDiffuseLightingElement(parent)->lightElementAttributeChanged(this, attrName);
             return;
         } else if (parent->hasTagName(SVGNames::feSpecularLightingTag)) {
-            SVGFESpecularLightingElement* specularLighting = static_cast<SVGFESpecularLightingElement*>(parent);
-            specularLighting->lightElementAttributeChanged(this, attrName);
+            toSVGFESpecularLightingElement(parent)->lightElementAttributeChanged(this, attrName);
             return;
         }
     }

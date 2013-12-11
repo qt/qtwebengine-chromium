@@ -29,7 +29,7 @@
  */
 
 #include "config.h"
-#include "core/dom/Node.h"
+#include "V8Node.h"
 
 #include "V8Attr.h"
 #include "V8CDATASection.h"
@@ -40,7 +40,6 @@
 #include "V8Element.h"
 #include "V8Entity.h"
 #include "V8HTMLElement.h"
-#include "V8Node.h"
 #include "V8Notation.h"
 #include "V8ProcessingInstruction.h"
 #include "V8SVGElement.h"
@@ -69,7 +68,7 @@ void V8Node::insertBeforeMethodCustom(const v8::FunctionCallbackInfo<v8::Value>&
     ExceptionState es(args.GetIsolate());
     Node* newChild = V8Node::HasInstance(args[0], args.GetIsolate(), worldType(args.GetIsolate())) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(args[0])) : 0;
     Node* refChild = V8Node::HasInstance(args[1], args.GetIsolate(), worldType(args.GetIsolate())) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(args[1])) : 0;
-    imp->insertBefore(newChild, refChild, es, AttachLazily);
+    imp->insertBefore(newChild, refChild, es);
     if (es.throwIfNeeded())
         return;
     v8SetReturnValue(args, args[0]);
@@ -86,7 +85,7 @@ void V8Node::replaceChildMethodCustom(const v8::FunctionCallbackInfo<v8::Value>&
     ExceptionState es(args.GetIsolate());
     Node* newChild = V8Node::HasInstance(args[0], args.GetIsolate(), worldType(args.GetIsolate())) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(args[0])) : 0;
     Node* oldChild = V8Node::HasInstance(args[1], args.GetIsolate(), worldType(args.GetIsolate())) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(args[1])) : 0;
-    imp->replaceChild(newChild, oldChild, es, AttachLazily);
+    imp->replaceChild(newChild, oldChild, es);
     if (es.throwIfNeeded())
         return;
     v8SetReturnValue(args, args[1]);
@@ -117,7 +116,7 @@ void V8Node::appendChildMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& 
 
     ExceptionState es(args.GetIsolate());
     Node* newChild = V8Node::HasInstance(args[0], args.GetIsolate(), worldType(args.GetIsolate())) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(args[0])) : 0;
-    imp->appendChild(newChild, es, AttachLazily);
+    imp->appendChild(newChild, es);
     if (es.throwIfNeeded())
         return;
     v8SetReturnValue(args, args[0]);
@@ -139,23 +138,24 @@ v8::Handle<v8::Object> wrap(Node* impl, v8::Handle<v8::Object> creationContext, 
     case Node::TEXT_NODE:
         return wrap(toText(impl), creationContext, isolate);
     case Node::CDATA_SECTION_NODE:
-        return wrap(static_cast<CDATASection*>(impl), creationContext, isolate);
-    case Node::ENTITY_NODE:
-        return wrap(static_cast<Entity*>(impl), creationContext, isolate);
+        return wrap(toCDATASection(impl), creationContext, isolate);
     case Node::PROCESSING_INSTRUCTION_NODE:
-        return wrap(static_cast<ProcessingInstruction*>(impl), creationContext, isolate);
+        return wrap(toProcessingInstruction(impl), creationContext, isolate);
     case Node::COMMENT_NODE:
-        return wrap(static_cast<Comment*>(impl), creationContext, isolate);
+        return wrap(toComment(impl), creationContext, isolate);
     case Node::DOCUMENT_NODE:
         return wrap(toDocument(impl), creationContext, isolate);
     case Node::DOCUMENT_TYPE_NODE:
-        return wrap(static_cast<DocumentType*>(impl), creationContext, isolate);
+        return wrap(toDocumentType(impl), creationContext, isolate);
     case Node::DOCUMENT_FRAGMENT_NODE:
         if (impl->isShadowRoot())
             return wrap(toShadowRoot(impl), creationContext, isolate);
-        return wrap(static_cast<DocumentFragment*>(impl), creationContext, isolate);
+        return wrap(toDocumentFragment(impl), creationContext, isolate);
+    case Node::ENTITY_NODE:
     case Node::NOTATION_NODE:
-        return wrap(static_cast<Notation*>(impl), creationContext, isolate);
+        // We never create objects of Entity and Notation.
+        ASSERT_NOT_REACHED();
+        break;
     default:
         break; // ENTITY_REFERENCE_NODE or XPATH_NAMESPACE_NODE
     }

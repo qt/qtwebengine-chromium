@@ -29,6 +29,7 @@
  */
 
 [
+    CustomToV8,
     NoInterfaceObject
 ] interface MIDIOutput : MIDIPort {
     [RaisesException] void send(Uint8Array data, optional double timestamp);

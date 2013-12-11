@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
+#include "webrtc/video_engine/internal/transport_adapter.h"
 #include "webrtc/video_engine/new_include/video_receive_stream.h"
 #include "webrtc/video_engine/new_include/video_send_stream.h"
 
@@ -24,6 +25,7 @@ class ViEBase;
 class ViECapture;
 class ViECodec;
 class ViEExternalCapture;
+class ViEExternalCodec;
 class ViENetwork;
 class ViERTP_RTCP;
 
@@ -31,21 +33,20 @@ namespace internal {
 
 class ResolutionAdaptor;
 
-class VideoSendStream : public newapi::VideoSendStream,
-                        public newapi::VideoSendStreamInput,
-                        public webrtc::Transport {
+class VideoSendStream : public webrtc::VideoSendStream,
+                        public VideoSendStreamInput {
  public:
   VideoSendStream(newapi::Transport* transport,
                   bool overuse_detection,
                   webrtc::VideoEngine* video_engine,
-                  const newapi::VideoSendStream::Config& config);
+                  const VideoSendStream::Config& config);
 
   virtual ~VideoSendStream();
 
   virtual void PutFrame(const I420VideoFrame& frame,
                         uint32_t time_since_capture_ms) OVERRIDE;
 
-  virtual newapi::VideoSendStreamInput* Input() OVERRIDE;
+  virtual VideoSendStreamInput* Input() OVERRIDE;
 
   virtual void StartSend() OVERRIDE;
 
@@ -57,23 +58,18 @@ class VideoSendStream : public newapi::VideoSendStream,
 
   virtual void GetSendCodec(VideoCodec* send_codec) OVERRIDE;
 
-  virtual int SendPacket(int /*channel*/, const void* packet, int length)
-      OVERRIDE;
-
-  virtual int SendRTCPPacket(int /*channel*/, const void* packet, int length)
-      OVERRIDE;
-
  public:
   bool DeliverRtcp(const uint8_t* packet, size_t length);
 
  private:
-  newapi::Transport* transport_;
-  newapi::VideoSendStream::Config config_;
+  TransportAdapter transport_adapter_;
+  VideoSendStream::Config config_;
 
   ViEBase* video_engine_base_;
   ViECapture* capture_;
   ViECodec* codec_;
   ViEExternalCapture* external_capture_;
+  ViEExternalCodec* external_codec_;
   ViENetwork* network_;
   ViERTP_RTCP* rtp_rtcp_;
 

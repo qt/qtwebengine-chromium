@@ -28,7 +28,6 @@
 
 #include "HTMLNames.h"
 #include "core/html/HTMLTableColElement.h"
-#include "core/loader/cache/ImageResource.h"
 #include "core/rendering/RenderTable.h"
 #include "core/rendering/RenderTableCell.h"
 
@@ -62,7 +61,7 @@ void RenderTableCol::updateFromElement()
     unsigned oldSpan = m_span;
     Node* n = node();
     if (n && (n->hasTagName(colTag) || n->hasTagName(colgroupTag))) {
-        HTMLTableColElement* tc = static_cast<HTMLTableColElement*>(n);
+        HTMLTableColElement* tc = toHTMLTableColElement(n);
         m_span = tc->span();
     } else
         m_span = !(style() && style()->display() == TABLE_COLUMN_GROUP);
@@ -116,10 +115,10 @@ void RenderTableCol::imageChanged(WrappedImagePtr, const IntRect*)
 
 void RenderTableCol::clearPreferredLogicalWidthsDirtyBits()
 {
-    setPreferredLogicalWidthsDirty(false);
+    clearPreferredLogicalWidthsDirty();
 
     for (RenderObject* child = firstChild(); child; child = child->nextSibling())
-        child->setPreferredLogicalWidthsDirty(false);
+        child->clearPreferredLogicalWidthsDirty();
 }
 
 RenderTable* RenderTableCol::table() const

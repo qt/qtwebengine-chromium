@@ -22,14 +22,14 @@
 #ifndef RenderTextControl_h
 #define RenderTextControl_h
 
-#include "core/rendering/RenderBlock.h"
+#include "core/rendering/RenderBlockFlow.h"
 #include "core/rendering/RenderFlexibleBox.h"
 
 namespace WebCore {
 
 class HTMLTextFormControlElement;
 
-class RenderTextControl : public RenderBlock {
+class RenderTextControl : public RenderBlockFlow {
 public:
     virtual ~RenderTextControl();
 
@@ -62,17 +62,25 @@ protected:
 
     virtual void updateFromElement();
     virtual void computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues&) const OVERRIDE;
-    virtual RenderObject* layoutSpecialExcludedChild(bool relayoutChildren);
+    virtual RenderObject* layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope&);
+
+    // We need to override this function because we don't want overflow:hidden on an <input>
+    // to affect the baseline calculation. This is necessary because we are an inline-block
+    // element as an implementation detail which would normally be affected by this.
+    virtual int inlineBlockBaseline(LineDirectionMode direction) const OVERRIDE { return lastLineBoxBaseline(direction); }
 
 private:
     virtual const char* renderName() const { return "RenderTextControl"; }
     virtual bool isTextControl() const { return true; }
+    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
     virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const OVERRIDE;
     virtual void computePreferredLogicalWidths() OVERRIDE;
     virtual void removeLeftoverAnonymousBlock(RenderBlock*) { }
     virtual bool avoidsFloats() const { return true; }
     virtual bool canHaveGeneratedChildren() const OVERRIDE { return false; }
     virtual bool canBeReplacedWithInlineRunIn() const OVERRIDE;
+
+    virtual void addChild(RenderObject* newChild, RenderObject* beforeChild = 0) OVERRIDE FINAL;
 
     virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer = 0) OVERRIDE;
 
@@ -112,8 +120,8 @@ public:
         return RenderBlock::baselinePosition(baseline, firstLine, direction, position);
     }
     virtual int firstLineBoxBaseline() const OVERRIDE { return RenderBlock::firstLineBoxBaseline(); }
-    virtual int inlineBlockBaseline(LineDirectionMode direction) const OVERRIDE { return RenderBlock::inlineBlockBaseline(direction); }
-
+    virtual int inlineBlockBaseline(LineDirectionMode direction) const OVERRIDE { return lastLineBoxBaseline(direction); }
+    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
 };
 
 

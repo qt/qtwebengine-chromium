@@ -8,7 +8,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
 #include "base/time/time.h"
 #include "net/base/io_buffer.h"
 #include "net/http/http_request_headers.h"
@@ -18,8 +18,8 @@
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/blob/blob_url_request_job.h"
+#include "webkit/browser/fileapi/async_file_test_helper.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_file_util.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/mock_file_system_context.h"
@@ -175,7 +175,7 @@ class BlobURLRequestJobTest : public testing::Test {
         fileapi::OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
         base::Bind(&BlobURLRequestJobTest::OnValidateFileSystem,
                    base::Unretained(this)));
-    base::MessageLoop::current()->RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
     ASSERT_TRUE(file_system_root_url_.is_valid());
 
     // Prepare files on file system.
@@ -204,31 +204,14 @@ class BlobURLRequestJobTest : public testing::Test {
             kFileSystemType,
             base::FilePath().AppendASCII(filename));
 
-    fileapi::FileSystemFileUtil* file_util =
-        file_system_context_->GetFileUtil(kFileSystemType);
-
-    fileapi::FileSystemOperationContext context(file_system_context_.get());
-    context.set_allowed_bytes_growth(1024);
-
-    base::PlatformFile handle = base::kInvalidPlatformFileValue;
-    bool created = false;
-    ASSERT_EQ(base::PLATFORM_FILE_OK, file_util->CreateOrOpen(
-        &context,
-        url,
-        base::PLATFORM_FILE_CREATE | base::PLATFORM_FILE_WRITE,
-        &handle,
-        &created));
-    EXPECT_TRUE(created);
-    ASSERT_NE(base::kInvalidPlatformFileValue, handle);
-    ASSERT_EQ(buf_size,
-        base::WritePlatformFile(handle, 0 /* offset */, buf, buf_size));
-    base::ClosePlatformFile(handle);
+    ASSERT_EQ(base::PLATFORM_FILE_OK,
+              fileapi::AsyncFileTestHelper::CreateFileWithData(
+                  file_system_context_, url, buf, buf_size));
 
     base::PlatformFileInfo file_info;
-    base::FilePath platform_path;
     ASSERT_EQ(base::PLATFORM_FILE_OK,
-              file_util->GetFileInfo(&context, url, &file_info,
-                                     &platform_path));
+              fileapi::AsyncFileTestHelper::GetMetadata(
+                  file_system_context_, url, &file_info));
     if (modification_time)
       *modification_time = file_info.last_modified;
   }

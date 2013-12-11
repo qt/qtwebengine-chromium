@@ -35,8 +35,8 @@ const CodecTags ff_mkv_codec_tags[]={
     {"A_MPEG/L2"        , AV_CODEC_ID_MP2},
     {"A_MPEG/L1"        , AV_CODEC_ID_MP2},
     {"A_MPEG/L3"        , AV_CODEC_ID_MP3},
-    {"A_OPUS/EXPERIMENTAL",AV_CODEC_ID_OPUS},
     {"A_OPUS",            AV_CODEC_ID_OPUS},
+    {"A_OPUS/EXPERIMENTAL",AV_CODEC_ID_OPUS},
     {"A_PCM/FLOAT/IEEE" , AV_CODEC_ID_PCM_F32LE},
     {"A_PCM/FLOAT/IEEE" , AV_CODEC_ID_PCM_F64LE},
     {"A_PCM/INT/BIG"    , AV_CODEC_ID_PCM_S16BE},
@@ -56,6 +56,11 @@ const CodecTags ff_mkv_codec_tags[]={
     {"A_TTA1"           , AV_CODEC_ID_TTA},
     {"A_VORBIS"         , AV_CODEC_ID_VORBIS},
     {"A_WAVPACK4"       , AV_CODEC_ID_WAVPACK},
+
+    {"D_WEBVTT/SUBTITLES"   , AV_CODEC_ID_WEBVTT},
+    {"D_WEBVTT/CAPTIONS"    , AV_CODEC_ID_WEBVTT},
+    {"D_WEBVTT/DESCRIPTIONS", AV_CODEC_ID_WEBVTT},
+    {"D_WEBVTT/METADATA"    , AV_CODEC_ID_WEBVTT},
 
     {"S_TEXT/UTF8"      , AV_CODEC_ID_SUBRIP},
     {"S_TEXT/UTF8"      , AV_CODEC_ID_TEXT},

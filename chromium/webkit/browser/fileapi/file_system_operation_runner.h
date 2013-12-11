@@ -11,6 +11,7 @@
 #include "base/id_map.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "webkit/browser/blob/blob_data_handle.h"
 #include "webkit/browser/fileapi/file_system_operation.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
@@ -31,12 +32,6 @@ class FileSystemContext;
 // operation fails, in addition to dispatching the callback with an error
 // code (therefore in most cases the caller does not need to check the
 // returned operation ID).
-//
-// Some operations (e.g. CopyInForeignFile, RemoveFile, RemoveDirectory,
-// CopyFileLocal, MoveFileLocal and SyncGetPlatformPath) are only supported
-// by filesystems which implement FileSystemOperationImpl.
-// If they are called on other filesystems
-// base::PLATFORM_FILE_ERROR_INVALID_OPERATION is returned via callback.
 class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationRunner
     : public base::SupportsWeakPtr<FileSystemOperationRunner> {
  public:
@@ -46,10 +41,11 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationRunner
   typedef FileSystemOperation::StatusCallback StatusCallback;
   typedef FileSystemOperation::WriteCallback WriteCallback;
   typedef FileSystemOperation::OpenFileCallback OpenFileCallback;
+  typedef FileSystemOperation::CopyProgressCallback CopyProgressCallback;
+  typedef FileSystemOperation::CopyFileProgressCallback
+      CopyFileProgressCallback;
 
   typedef int OperationID;
-
-  static const OperationID kErrorOperationID;
 
   virtual ~FileSystemOperationRunner();
 
@@ -71,8 +67,10 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationRunner
   // |src_url| is a directory, the contents of |src_url| are copied to
   // |dest_url| recursively. A new file or directory is created at
   // |dest_url| as needed.
+  // For |progress_callback|, see file_system_operation.h for details.
   OperationID Copy(const FileSystemURL& src_url,
                    const FileSystemURL& dest_url,
+                   const CopyProgressCallback& progress_callback,
                    const StatusCallback& callback);
 
   // Moves a file or directory from |src_url| to |dest_url|. A new file
@@ -103,10 +101,10 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationRunner
                      const StatusCallback& callback);
 
   // Writes contents of |blob_url| to |url| at |offset|.
-  // |url_request_context| is used to read contents in |blob_url|.
+  // |url_request_context| is used to read contents in |blob|.
   OperationID Write(const net::URLRequestContext* url_request_context,
                     const FileSystemURL& url,
-                    const GURL& blob_url,
+                    scoped_ptr<webkit_blob::BlobDataHandle> blob,
                     int64 offset,
                     const WriteCallback& callback);
 
@@ -190,6 +188,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationRunner
   // Copies a file from |src_url| to |dest_url|.
   // This must be called for files that belong to the same filesystem
   // (i.e. type() and origin() of the |src_url| and |dest_url| must match).
+  // For |progress_callback|, see file_system_operation.h for details.
   //
   // This returns:
   // - PLATFORM_FILE_ERROR_NOT_FOUND if |src_url|
@@ -202,6 +201,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationRunner
   //
   OperationID CopyFileLocal(const FileSystemURL& src_url,
                             const FileSystemURL& dest_url,
+                            const CopyFileProgressCallback& progress_callback,
                             const StatusCallback& callback);
 
   // Moves a local file from |src_url| to |dest_url|.
@@ -228,54 +228,65 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationRunner
                                               base::FilePath* platform_path);
 
  private:
+  class BeginOperationScoper;
+
+  struct OperationHandle {
+    OperationID id;
+    base::WeakPtr<BeginOperationScoper> scope;
+
+    OperationHandle();
+    ~OperationHandle();
+  };
+
   friend class FileSystemContext;
   explicit FileSystemOperationRunner(FileSystemContext* file_system_context);
 
-  void DidFinish(OperationID id,
+  void DidFinish(const OperationHandle& handle,
                  const StatusCallback& callback,
                  base::PlatformFileError rv);
-  void DidGetMetadata(OperationID id,
+  void DidGetMetadata(const OperationHandle& handle,
                       const GetMetadataCallback& callback,
                       base::PlatformFileError rv,
                       const base::PlatformFileInfo& file_info);
-  void DidReadDirectory(OperationID id,
+  void DidReadDirectory(const OperationHandle& handle,
                         const ReadDirectoryCallback& callback,
                         base::PlatformFileError rv,
                         const std::vector<DirectoryEntry>& entries,
                         bool has_more);
-  void DidWrite(OperationID id,
+  void DidWrite(const OperationHandle& handle,
                 const WriteCallback& callback,
                 base::PlatformFileError rv,
                 int64 bytes,
                 bool complete);
   void DidOpenFile(
-      OperationID id,
+      const OperationHandle& handle,
       const OpenFileCallback& callback,
       base::PlatformFileError rv,
       base::PlatformFile file,
       const base::Closure& on_close_callback,
       base::ProcessHandle peer_handle);
   void DidCreateSnapshot(
-      OperationID id,
+      const OperationHandle& handle,
       const SnapshotFileCallback& callback,
       base::PlatformFileError rv,
       const base::PlatformFileInfo& file_info,
       const base::FilePath& platform_path,
       const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref);
 
-  // A helper method for creating FileSystemOperationImpl for operations
-  // that are supported only in FileSystemOperationImpl.
-  // Note that this returns FileSystemOperation, so the caller needs to
-  // call AsFileSystemOperationImpl() (which is guaranteed to be non-null
-  // if this method returns without error).
-  FileSystemOperation* CreateFileSystemOperationImpl(
-      const FileSystemURL& url,
-      base::PlatformFileError* error);
+  void OnCopyProgress(
+      const OperationHandle& handle,
+      const CopyProgressCallback& callback,
+      FileSystemOperation::CopyProgressType type,
+      const FileSystemURL& source_url,
+      const FileSystemURL& dest_url,
+      int64 size);
 
   void PrepareForWrite(OperationID id, const FileSystemURL& url);
   void PrepareForRead(OperationID id, const FileSystemURL& url);
 
-  // This must be called at the end of any async operations.
+  // These must be called at the beginning and end of any async operations.
+  OperationHandle BeginOperation(FileSystemOperation* operation,
+                                 base::WeakPtr<BeginOperationScoper> scope);
   void FinishOperation(OperationID id);
 
   // Not owned; file_system_context owns this.
@@ -288,6 +299,12 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationRunner
   // we can notify observers when we're done.
   typedef std::map<OperationID, FileSystemURLSet> OperationToURLSet;
   OperationToURLSet write_target_urls_;
+
+  // Operations that are finished but not yet fire their callbacks.
+  std::set<OperationID> finished_operations_;
+
+  // Callbacks for stray cancels whose target operation is already finished.
+  std::map<OperationID, StatusCallback> stray_cancel_callbacks_;
 
   DISALLOW_COPY_AND_ASSIGN(FileSystemOperationRunner);
 };

@@ -45,7 +45,7 @@ ScriptProfile::~ScriptProfile()
 
 String ScriptProfile::title() const
 {
-    v8::HandleScope scope;
+    v8::HandleScope scope(v8::Isolate::GetCurrent());
     return toWebCoreString(m_profile->GetTitle());
 }
 
@@ -71,7 +71,7 @@ double ScriptProfile::endTime() const
 
 static PassRefPtr<TypeBuilder::Profiler::CPUProfileNode> buildInspectorObjectFor(const v8::CpuProfileNode* node)
 {
-    v8::HandleScope handleScope;
+    v8::HandleScope handleScope(v8::Isolate::GetCurrent());
 
     RefPtr<TypeBuilder::Array<TypeBuilder::Profiler::CPUProfileNode> > children = TypeBuilder::Array<TypeBuilder::Profiler::CPUProfileNode>::create();
     const int childrenCount = node->GetChildrenCount();
@@ -85,9 +85,10 @@ static PassRefPtr<TypeBuilder::Profiler::CPUProfileNode> buildInspectorObjectFor
         .setScriptId(String::number(node->GetScriptId()))
         .setUrl(toWebCoreString(node->GetScriptResourceName()))
         .setLineNumber(node->GetLineNumber())
-        .setHitCount(node->GetSelfSamplesCount())
+        .setHitCount(node->GetHitCount())
         .setCallUID(node->GetCallUid())
-        .setChildren(children.release());
+        .setChildren(children.release())
+        .setDeoptReason(node->GetBailoutReason());
     result->setId(node->GetNodeId());
     return result.release();
 }

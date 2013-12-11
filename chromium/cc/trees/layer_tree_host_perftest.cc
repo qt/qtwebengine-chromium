@@ -8,14 +8,17 @@
 #include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "base/strings/string_piece.h"
+#include "base/time/time.h"
 #include "cc/layers/content_layer.h"
 #include "cc/layers/nine_patch_layer.h"
 #include "cc/layers/solid_color_layer.h"
 #include "cc/test/fake_content_layer_client.h"
+#include "cc/test/lap_timer.h"
 #include "cc/test/layer_tree_json_parser.h"
 #include "cc/test/layer_tree_test.h"
 #include "cc/test/paths.h"
 #include "cc/trees/layer_tree_impl.h"
+#include "testing/perf/perf_test.h"
 
 namespace cc {
 namespace {
@@ -27,8 +30,10 @@ static const int kTimeCheckInterval = 10;
 class LayerTreeHostPerfTest : public LayerTreeTest {
  public:
   LayerTreeHostPerfTest()
-      : num_draws_(0),
-        num_commits_(0),
+      : draw_timer_(kWarmupRuns,
+                    base::TimeDelta::FromMilliseconds(kTimeLimitMillis),
+                    kTimeCheckInterval),
+        commit_timer_(0, base::TimeDelta(), 1),
         full_damage_each_frame_(false),
         animation_driven_drawing_(false),
         measure_commit_cost_(false) {
@@ -47,28 +52,23 @@ class LayerTreeHostPerfTest : public LayerTreeTest {
 
   virtual void BeginCommitOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
     if (measure_commit_cost_)
-      commit_start_time_ = base::TimeTicks::HighResNow();
+      commit_timer_.Start();
   }
 
   virtual void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
-    if (measure_commit_cost_ && num_draws_ >= kWarmupRuns) {
-      total_commit_time_ += base::TimeTicks::HighResNow() - commit_start_time_;
-      ++num_commits_;
+    if (measure_commit_cost_ && draw_timer_.IsWarmedUp()) {
+      commit_timer_.NextLap();
     }
   }
 
   virtual void DrawLayersOnThread(LayerTreeHostImpl* impl) OVERRIDE {
-    ++num_draws_;
-    if (num_draws_ == kWarmupRuns)
-      start_time_ = base::TimeTicks::HighResNow();
-
-    if (!start_time_.is_null() && (num_draws_ % kTimeCheckInterval) == 0) {
-      base::TimeDelta elapsed = base::TimeTicks::HighResNow() - start_time_;
-      if (elapsed >= base::TimeDelta::FromMilliseconds(kTimeLimitMillis)) {
-        elapsed_ = elapsed;
-        EndTest();
-        return;
-      }
+    if (TestEnded()) {
+      return;
+    }
+    draw_timer_.NextLap();
+    if (draw_timer_.HasTimeLimitExpired()) {
+      EndTest();
+      return;
     }
     if (!animation_driven_drawing_)
       impl->SetNeedsRedraw();
@@ -79,34 +79,29 @@ class LayerTreeHostPerfTest : public LayerTreeTest {
   virtual void BuildTree() {}
 
   virtual void AfterTest() OVERRIDE {
-    num_draws_ -= kWarmupRuns;
-
-    // Format matches chrome/test/perf/perf_test.h:PrintResult
-    printf("*RESULT %s: frames: %d, %.2f ms/frame\n",
-           test_name_.c_str(),
-           num_draws_,
-           elapsed_.InMillisecondsF() / num_draws_);
+    CHECK(!test_name_.empty()) << "Must SetTestName() before AfterTest().";
+    perf_test::PrintResult("layer_tree_host_frame_count", "", test_name_,
+                           draw_timer_.NumLaps(), "frame_count", true);
+    perf_test::PrintResult("layer_tree_host_frame_time", "", test_name_,
+                           1000 * draw_timer_.MsPerLap(), "us", true);
     if (measure_commit_cost_) {
-      printf("*RESULT %s: commits: %d, %.2f ms/commit\n",
-             test_name_.c_str(),
-             num_commits_,
-             total_commit_time_.InMillisecondsF() / num_commits_);
+      perf_test::PrintResult("layer_tree_host_commit_count", "", test_name_,
+                             commit_timer_.NumLaps(), "commit_count", true);
+      perf_test::PrintResult("layer_tree_host_commit_time", "", test_name_,
+                             1000 * commit_timer_.MsPerLap(), "us", true);
     }
   }
 
  protected:
-  base::TimeTicks start_time_;
-  int num_draws_;
-  int num_commits_;
+  LapTimer draw_timer_;
+  LapTimer commit_timer_;
+
   std::string test_name_;
-  base::TimeDelta elapsed_;
   FakeContentLayerClient fake_content_layer_client_;
   bool full_damage_each_frame_;
   bool animation_driven_drawing_;
 
   bool measure_commit_cost_;
-  base::TimeTicks commit_start_time_;
-  base::TimeDelta total_commit_time_;
 };
 
 
@@ -116,12 +111,15 @@ class LayerTreeHostPerfTestJsonReader : public LayerTreeHostPerfTest {
       : LayerTreeHostPerfTest() {
   }
 
-  void ReadTestFile(std::string name) {
+  void SetTestName(const std::string& name) {
     test_name_ = name;
+  }
+
+  void ReadTestFile(const std::string& name) {
     base::FilePath test_data_dir;
     ASSERT_TRUE(PathService::Get(cc::DIR_TEST_DATA, &test_data_dir));
     base::FilePath json_file = test_data_dir.AppendASCII(name + ".json");
-    ASSERT_TRUE(file_util::ReadFileToString(json_file, &json_));
+    ASSERT_TRUE(base::ReadFileToString(json_file, &json_));
   }
 
   virtual void BuildTree() OVERRIDE {
@@ -139,6 +137,7 @@ class LayerTreeHostPerfTestJsonReader : public LayerTreeHostPerfTest {
 
 // Simulates a tab switcher scene with two stacks of 10 tabs each.
 TEST_F(LayerTreeHostPerfTestJsonReader, TenTenSingleThread) {
+  SetTestName("10_10_single_thread");
   ReadTestFile("10_10_layer_tree");
   RunTest(false, false, false);
 }
@@ -147,6 +146,7 @@ TEST_F(LayerTreeHostPerfTestJsonReader, TenTenSingleThread) {
 TEST_F(LayerTreeHostPerfTestJsonReader,
        TenTenSingleThread_FullDamageEachFrame) {
   full_damage_each_frame_ = true;
+  SetTestName("10_10_single_thread_full_damage_each_frame");
   ReadTestFile("10_10_layer_tree");
   RunTest(false, false, false);
 }
@@ -180,6 +180,7 @@ class LayerTreeHostPerfTestLeafInvalidates
 // Simulates a tab switcher scene with two stacks of 10 tabs each. Invalidate a
 // property on a leaf layer in the tree every commit.
 TEST_F(LayerTreeHostPerfTestLeafInvalidates, TenTenSingleThread) {
+  SetTestName("10_10_single_thread_leaf_invalidates");
   ReadTestFile("10_10_layer_tree");
   RunTest(false, false, false);
 }
@@ -207,6 +208,7 @@ class ScrollingLayerTreePerfTest : public LayerTreeHostPerfTestJsonReader {
 };
 
 TEST_F(ScrollingLayerTreePerfTest, LongScrollablePage) {
+  SetTestName("long_scrollable_page");
   ReadTestFile("long_scrollable_page");
   RunTest(false, false, false);
 }
@@ -221,6 +223,7 @@ class ImplSidePaintingPerfTest : public LayerTreeHostPerfTestJsonReader {
 TEST_F(ImplSidePaintingPerfTest, HeavyPage) {
   animation_driven_drawing_ = true;
   measure_commit_cost_ = true;
+  SetTestName("heavy_page");
   ReadTestFile("heavy_layer_tree");
   RunTestWithImplSidePainting();
 }
@@ -284,6 +287,7 @@ class PageScaleImplSidePaintingPerfTest : public ImplSidePaintingPerfTest {
 
 TEST_F(PageScaleImplSidePaintingPerfTest, HeavyPage) {
   measure_commit_cost_ = true;
+  SetTestName("heavy_page_page_scale");
   ReadTestFile("heavy_layer_tree");
   RunTestWithImplSidePainting();
 }

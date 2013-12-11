@@ -32,11 +32,12 @@
 
 #include "core/platform/audio/DirectConvolver.h"
 
-#if OS(DARWIN)
+#if OS(MACOSX)
 #include <Accelerate/Accelerate.h>
 #endif
 
 #include "core/platform/audio/VectorMath.h"
+#include "wtf/CPU.h"
 
 namespace WebCore {
 
@@ -89,12 +90,12 @@ void DirectConvolver::process(AudioFloatArray* convolutionKernel, const float* s
     // Copy samples to 2nd half of input buffer.
     memcpy(inputP, sourceP, sizeof(float) * framesToProcess);
 
-#if OS(DARWIN)
-#if defined(__ppc__) || defined(__i386__)
+#if OS(MACOSX)
+#if CPU(X86)
     conv(inputP - kernelSize + 1, 1, kernelP + kernelSize - 1, -1, destP, 1, framesToProcess, kernelSize);
 #else
     vDSP_conv(inputP - kernelSize + 1, 1, kernelP + kernelSize - 1, -1, destP, 1, framesToProcess, kernelSize);
-#endif // defined(__ppc__) || defined(__i386__)
+#endif // CPU(X86)
 #else
     // FIXME: The macro can be further optimized to avoid pipeline stalls. One possibility is to maintain 4 separate sums and change the macro to CONVOLVE_FOUR_SAMPLES.
 #define CONVOLVE_ONE_SAMPLE             \
@@ -365,7 +366,7 @@ void DirectConvolver::process(AudioFloatArray* convolutionKernel, const float* s
         }
         destP[i++] = sum;
     }
-#endif // OS(DARWIN)
+#endif // OS(MACOSX)
 
     // Copy 2nd half of input buffer to 1st half.
     memcpy(m_buffer.data(), inputP, sizeof(float) * framesToProcess);

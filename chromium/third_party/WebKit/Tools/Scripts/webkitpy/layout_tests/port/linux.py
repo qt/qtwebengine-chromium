@@ -66,7 +66,7 @@ class LinuxPort(chromium.ChromiumPort):
     @staticmethod
     def _determine_architecture(filesystem, executive, driver_path):
         file_output = ''
-        if filesystem.exists(driver_path):
+        if filesystem.isfile(driver_path):
             # The --dereference flag tells file to follow symlinks
             file_output = executive.run_command(['file', '--brief', '--dereference', driver_path], return_stderr=True)
 
@@ -112,8 +112,8 @@ class LinuxPort(chromium.ChromiumPort):
     def _modules_to_search_for_symbols(self):
         return [self._build_path('libffmpegsumo.so')]
 
-    def check_build(self, needs_http):
-        result = chromium.ChromiumPort.check_build(self, needs_http)
+    def check_build(self, needs_http, printer):
+        result = chromium.ChromiumPort.check_build(self, needs_http, printer)
         if not result:
             _log.error('For complete Linux build requirements, please see:')
             _log.error('')

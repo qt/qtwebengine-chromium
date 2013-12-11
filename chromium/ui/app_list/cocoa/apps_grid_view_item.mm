@@ -99,8 +99,12 @@ ItemModelObserverBridge::~ItemModelObserverBridge() {
 
 NSMenu* ItemModelObserverBridge::GetContextMenu() {
   if (!context_menu_controller_) {
+    ui::MenuModel* menu_model = model_->GetContextMenuModel();
+    if (!menu_model)
+      return nil;
+
     context_menu_controller_.reset(
-        [[MenuController alloc] initWithModel:model_->GetContextMenuModel()
+        [[MenuController alloc] initWithModel:menu_model
                        useWithPopUpButtonCell:NO]);
   }
   return [context_menu_controller_ menu];
@@ -255,6 +259,18 @@ void ItemModelObserverBridge::ItemPercentDownloadedChanged() {
       [[NSAttributedString alloc] initWithString:buttonTitle
                                       attributes:titleAttributes]);
   [[self button] setAttributedTitle:attributedTitle];
+
+  // If the app does not specify a distinct short name manifest property, check
+  // whether the title would be truncted in the NSButton. If it would be
+  // truncated, add a tooltip showing the full name.
+  NSRect titleRect =
+      [[[self button] cell] titleRectForBounds:[[self button] bounds]];
+  if ([self model]->title() == [self model]->full_name() &&
+      [attributedTitle size].width < NSWidth(titleRect)) {
+    [[self view] removeAllToolTips];
+  } else {
+    [[self view] setToolTip:base::SysUTF8ToNSString([self model]->full_name())];
+  }
 }
 
 - (void)updateButtonImage {
@@ -271,6 +287,7 @@ void ItemModelObserverBridge::ItemPercentDownloadedChanged() {
 }
 
 - (void)setModel:(app_list::AppListItemModel*)itemModel {
+  [trackingArea_.get() clearOwner];
   if (!itemModel) {
     observerBridge_.reset();
     return;
@@ -333,14 +350,6 @@ void ItemModelObserverBridge::ItemPercentDownloadedChanged() {
   // Button is always hidden until the drag animation completes.
   [button setHidden:YES];
   return imageRep;
-}
-
-- (void)onInitialModelBuilt {
-  if ([self model]->highlighted()) {
-    [self ensureVisible];
-    if (![self model]->is_installing())
-      [self setSelected:YES];
-  }
 }
 
 - (void)ensureVisible {

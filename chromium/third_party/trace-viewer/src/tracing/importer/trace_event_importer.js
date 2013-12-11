@@ -11,11 +11,14 @@
 base.require('base.quad');
 base.require('tracing.trace_model');
 base.require('tracing.color_scheme');
+base.require('tracing.importer.importer');
 base.require('tracing.trace_model.instant_event');
 base.require('tracing.trace_model.flow_event');
 base.require('tracing.trace_model.counter_series');
 
 base.exportTo('tracing.importer', function() {
+
+  var Importer = tracing.importer.Importer;
 
   function deepCopy(value) {
     if (!(value instanceof Object)) {
@@ -84,7 +87,7 @@ base.exportTo('tracing.importer', function() {
 
       // Some trace_event implementations put linux_perf_importer traces as a
       // huge string inside container.systemTraceEvents. If we see that, pull it
-      // out. It will be picked up by extractSubtrace later on.
+      // out. It will be picked up by extractSubtraces later on.
       this.systemTraceEvents_ = container.systemTraceEvents;
 
       // Any other fields in the container should be treated as metadata.
@@ -124,12 +127,12 @@ base.exportTo('tracing.importer', function() {
 
   TraceEventImporter.prototype = {
 
-    __proto__: Object.prototype,
+    __proto__: Importer.prototype,
 
-    extractSubtrace: function() {
+    extractSubtraces: function() {
       var tmp = this.systemTraceEvents_;
       this.systemTraceEvents_ = undefined;
-      return tmp;
+      return tmp ? [tmp] : [];
     },
 
     /**
@@ -251,6 +254,14 @@ base.exportTo('tracing.importer', function() {
       }
     },
 
+    processCompleteEvent: function(event) {
+      var thread = this.model_.getOrCreateProcess(event.pid)
+          .getOrCreateThread(event.tid);
+      thread.sliceGroup.pushCompleteSlice(event.cat, event.name,
+          event.ts / 1000, event.dur / 1000,
+          this.deepCopyIfNeeded_(event.args));
+    },
+
     processMetadataEvent: function(event) {
       if (event.name == 'process_name') {
         var process = this.model_.getOrCreateProcess(event.pid);
@@ -339,6 +350,9 @@ base.exportTo('tracing.importer', function() {
         if (event.ph === 'B' || event.ph === 'E') {
           this.processDurationEvent(event);
 
+        } else if (event.ph === 'X') {
+          this.processCompleteEvent(event);
+
         } else if (event.ph === 'S' || event.ph === 'F' || event.ph === 'T') {
           this.processAsyncEvent(event);
 
@@ -377,6 +391,7 @@ base.exportTo('tracing.importer', function() {
      * events.
      */
     finalizeImport: function() {
+      this.createSubSlices_();
       this.createAsyncSlices_();
       this.createFlowSlices_();
       this.createExplicitObjects_();
@@ -389,6 +404,14 @@ base.exportTo('tracing.importer', function() {
      */
     joinRefs: function() {
       this.joinObjectRefs_();
+    },
+
+    createSubSlices_: function() {
+      base.iterItems(this.model_.processes, function(pid, process) {
+        base.iterItems(process.threads, function(tid, thread) {
+          thread.createSubSlices();
+        }, this);
+      }, this);
     },
 
     createAsyncSlices_: function() {
@@ -514,6 +537,10 @@ base.exportTo('tracing.importer', function() {
       if (this.allFlowEvents_.length === 0)
         return;
 
+      this.allFlowEvents_.sort(function(x, y) {
+        return x.event.ts - y.event.ts;
+      });
+
       var flowIdToEvent = {};
       for (var i = 0; i < this.allFlowEvents_.length; ++i) {
         var data = this.allFlowEvents_[i];
@@ -543,41 +570,37 @@ base.exportTo('tracing.importer', function() {
             tracing.getStringColorId(event.name),
             event.ts / 1000,
             this.deepCopyIfNeeded_(event.args));
-
         thread.sliceGroup.pushSlice(slice);
-        this.model_.flowEvents.push(slice);
 
         if (event.ph === 's') {
+          if (flowIdToEvent[event.id] !== undefined) {
+            this.model_.importWarning({
+              type: 'flow_slice_start_error',
+              message: 'event id ' + event.id + ' already seen when ' +
+                  'encountering start of flow event.'});
+          }
           flowIdToEvent[event.id] = slice;
 
         } else if (event.ph === 't' || event.ph === 'f') {
           var flowPosition = flowIdToEvent[event.id];
           if (flowPosition === undefined) {
             this.model_.importWarning({
-              type: 'flow_slice_parse_error',
-              message: 'Found flow step for id: ' + event.id +
-                  ' but no start found'
+              type: 'flow_slice_ordering_error',
+              message: 'Found flow phase ' + event.ph + ' for id: ' + event.id +
+                  ' but no flow start found.'
             });
             continue;
           }
+          this.model_.flowEvents.push([flowPosition, slice]);
 
-          while (!flowPosition.isFlowEnd())
-            flowPosition = flowPosition.nextEvent;
-          flowPosition.nextEvent = slice;
-          slice.prevEvent = flowPosition;
-
-          if (event.ph === 'f')
-            delete flowIdToEvent[event.id];
+          if (event.ph === 'f') {
+            flowIdToEvent[event.id] = undefined;
+          } else {
+            // Make this slice the next start event in this flow.
+            flowIdToEvent[event.id] = slice;
+          }
         }
       }
-
-      this.model_.flowEvents = this.model_.flowEvents.sort(function(a, b) {
-        if (a.start < b.start)
-          return -1;
-        if (a.start === b.start)
-          return 0;
-        return 1;
-      });
     },
 
     /**

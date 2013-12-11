@@ -60,6 +60,7 @@ class ContentViewCoreImpl : public ContentViewCore,
   virtual float GetDpiScale() const OVERRIDE;
   virtual void RequestContentClipping(const gfx::Rect& clipping,
                                       const gfx::Size& content_size) OVERRIDE;
+  virtual void PauseVideo() OVERRIDE;
 
   // --------------------------------------------------------------------------
   // Methods called from Java via JNI
@@ -107,8 +108,7 @@ class ContentViewCoreImpl : public ContentViewCore,
   void ScrollBegin(JNIEnv* env, jobject obj, jlong time_ms, jfloat x, jfloat y);
   void ScrollEnd(JNIEnv* env, jobject obj, jlong time_ms);
   void ScrollBy(JNIEnv* env, jobject obj, jlong time_ms,
-                jfloat x, jfloat y, jfloat dx, jfloat dy,
-                jboolean last_input_event_for_vsync);
+                jfloat x, jfloat y, jfloat dx, jfloat dy);
   void FlingStart(JNIEnv* env, jobject obj, jlong time_ms,
                   jfloat x, jfloat y, jfloat vx, jfloat vy);
   void FlingCancel(JNIEnv* env, jobject obj, jlong time_ms);
@@ -132,8 +132,7 @@ class ContentViewCoreImpl : public ContentViewCore,
   void PinchBegin(JNIEnv* env, jobject obj, jlong time_ms, jfloat x, jfloat y);
   void PinchEnd(JNIEnv* env, jobject obj, jlong time_ms);
   void PinchBy(JNIEnv* env, jobject obj, jlong time_ms,
-               jfloat x, jfloat y, jfloat delta,
-               jboolean last_input_event_for_vsync);
+               jfloat x, jfloat y, jfloat delta);
   void SelectBetweenCoordinates(JNIEnv* env, jobject obj,
                                 jfloat x1, jfloat y1,
                                 jfloat x2, jfloat y2);
@@ -146,6 +145,8 @@ class ContentViewCoreImpl : public ContentViewCore,
   void GoForward(JNIEnv* env, jobject obj);
   void GoToOffset(JNIEnv* env, jobject obj, jint offset);
   void GoToNavigationIndex(JNIEnv* env, jobject obj, jint index);
+  void LoadIfNecessary(JNIEnv* env, jobject obj);
+  void RequestRestoreLoad(JNIEnv* env, jobject obj);
   void StopLoading(JNIEnv* env, jobject obj);
   void Reload(JNIEnv* env, jobject obj);
   void CancelPendingReload(JNIEnv* env, jobject obj);
@@ -268,10 +269,16 @@ class ContentViewCoreImpl : public ContentViewCore,
   void ShowDisambiguationPopup(
       const gfx::Rect& target_rect, const SkBitmap& zoomed_bitmap);
 
-  // Creates a java-side smooth scroller. Used by
+  // Creates a java-side touch gesture, e.g. used by
   // chrome.gpuBenchmarking.smoothScrollBy.
-  base::android::ScopedJavaLocalRef<jobject> CreateSmoothScroller(
-      bool scroll_down, int mouse_event_x, int mouse_event_y);
+  base::android::ScopedJavaLocalRef<jobject> CreateOnePointTouchGesture(
+      int start_x, int start_y, int delta_x, int delta_y);
+
+  // Creates a java-side touch gesture with two pointers, e.g. used by
+  // chrome.gpuBenchmarking.pinchBy.
+  base::android::ScopedJavaLocalRef<jobject> CreateTwoPointTouchGesture(
+      int start_x0, int start_y0, int delta_x0, int delta_y0,
+      int start_x1, int start_y1, int delta_x1, int delta_y1);
 
   // Notifies the java object about the external surface, requesting for one if
   // necessary.
@@ -334,6 +341,9 @@ class ContentViewCoreImpl : public ContentViewCore,
   // Checks if there there is a corresponding renderer process and updates
   // |tab_crashed_| accordingly.
   void UpdateTabCrashedFlag();
+
+  // Update focus state of the RenderWidgetHostView.
+  void SetFocusInternal(bool focused);
 
   // A weak reference to the Java ContentViewCore object.
   JavaObjectWeakGlobalRef java_ref_;

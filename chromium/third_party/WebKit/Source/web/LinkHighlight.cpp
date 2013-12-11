@@ -142,7 +142,7 @@ RenderLayer* LinkHighlight::computeEnclosingCompositingLayer()
             clearGraphicsLayerLinkHighlightPointer();
 
         m_currentGraphicsLayer = newGraphicsLayer;
-        m_currentGraphicsLayer->setLinkHighlight(this);
+        m_currentGraphicsLayer->addLinkHighlight(this);
     }
 
     return renderLayer;
@@ -242,7 +242,7 @@ void LinkHighlight::paintContents(WebCanvas* canvas, const WebRect& webClipRect,
     GraphicsContext gc(canvas);
     IntRect clipRect(IntPoint(webClipRect.x, webClipRect.y), IntSize(webClipRect.width, webClipRect.height));
     gc.clip(clipRect);
-    gc.setFillColor(m_node->renderer()->resolveColor(CSSPropertyWebkitTapHighlightColor));
+    gc.setFillColor(m_node->renderer()->style()->tapHighlightColor());
     gc.fillPath(m_path);
 }
 
@@ -283,7 +283,7 @@ void LinkHighlight::startHighlightAnimationIfNeeded()
 void LinkHighlight::clearGraphicsLayerLinkHighlightPointer()
 {
     if (m_currentGraphicsLayer) {
-        m_currentGraphicsLayer->setLinkHighlight(0);
+        m_currentGraphicsLayer->removeLinkHighlight(this);
         m_currentGraphicsLayer = 0;
     }
 }

@@ -81,7 +81,7 @@ void QuicClientSession::StreamRequest::OnRequestCompleteFailure(int rv) {
 
 QuicClientSession::QuicClientSession(
     QuicConnection* connection,
-    DatagramClientSocket* socket,
+    scoped_ptr<DatagramClientSocket> socket,
     QuicStreamFactory* stream_factory,
     QuicCryptoClientStreamFactory* crypto_client_stream_factory,
     const string& server_hostname,
@@ -89,14 +89,15 @@ QuicClientSession::QuicClientSession(
     QuicCryptoClientConfig* crypto_config,
     NetLog* net_log)
     : QuicSession(connection, config, false),
-      weak_factory_(this),
+      require_confirmation_(false),
       stream_factory_(stream_factory),
-      socket_(socket),
+      socket_(socket.Pass()),
       read_buffer_(new IOBufferWithSize(kMaxPacketSize)),
       read_pending_(false),
       num_total_streams_(0),
       net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_QUIC_SESSION)),
-      logger_(net_log_) {
+      logger_(net_log_),
+      weak_factory_(this) {
   crypto_stream_.reset(
       crypto_client_stream_factory ?
           crypto_client_stream_factory->CreateQuicCryptoClientStream(
@@ -209,7 +210,9 @@ bool QuicClientSession::GetSSLInfo(SSLInfo* ssl_info) {
   return crypto_stream_->GetSSLInfo(ssl_info);
 }
 
-int QuicClientSession::CryptoConnect(const CompletionCallback& callback) {
+int QuicClientSession::CryptoConnect(bool require_confirmation,
+                                     const CompletionCallback& callback) {
+  require_confirmation_ = require_confirmation;
   RecordHandshakeState(STATE_STARTED);
   if (!crypto_stream_->CryptoConnect()) {
     // TODO(wtc): change crypto_stream_.CryptoConnect() to return a
@@ -217,12 +220,18 @@ int QuicClientSession::CryptoConnect(const CompletionCallback& callback) {
     return ERR_CONNECTION_FAILED;
   }
 
-  if (IsEncryptionEstablished()) {
+  bool can_notify = require_confirmation_ ?
+      IsCryptoHandshakeConfirmed() : IsEncryptionEstablished();
+  if (can_notify) {
     return OK;
   }
 
   callback_ = callback;
   return ERR_IO_PENDING;
+}
+
+int QuicClientSession::GetNumSentClientHellos() const {
+  return crypto_stream_->num_sent_client_hellos();
 }
 
 ReliableQuicStream* QuicClientSession::CreateIncomingReliableStream(
@@ -233,7 +242,16 @@ ReliableQuicStream* QuicClientSession::CreateIncomingReliableStream(
 
 void QuicClientSession::CloseStream(QuicStreamId stream_id) {
   QuicSession::CloseStream(stream_id);
+  OnClosedStream();
+}
 
+void QuicClientSession::SendRstStream(QuicStreamId id,
+                                      QuicRstStreamErrorCode error) {
+  QuicSession::SendRstStream(id, error);
+  OnClosedStream();
+}
+
+void QuicClientSession::OnClosedStream() {
   if (GetNumOpenStreams() < get_max_open_streams() &&
       !stream_requests_.empty() &&
       crypto_stream_->encryption_established() &&
@@ -250,7 +268,8 @@ void QuicClientSession::CloseStream(QuicStreamId stream_id) {
 }
 
 void QuicClientSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
-  if (!callback_.is_null()) {
+  if (!callback_.is_null() &&
+      (!require_confirmation_ || event == HANDSHAKE_CONFIRMED)) {
     // TODO(rtenneti): Currently for all CryptoHandshakeEvent events, callback_
     // could be called because there are no error events in CryptoHandshakeEvent
     // enum. If error events are added to CryptoHandshakeEvent, then the
@@ -260,9 +279,32 @@ void QuicClientSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
   QuicSession::OnCryptoHandshakeEvent(event);
 }
 
+void QuicClientSession::OnCryptoHandshakeMessageSent(
+    const CryptoHandshakeMessage& message) {
+  logger_.OnCryptoHandshakeMessageSent(message);
+}
+
+void QuicClientSession::OnCryptoHandshakeMessageReceived(
+    const CryptoHandshakeMessage& message) {
+  logger_.OnCryptoHandshakeMessageReceived(message);
+}
+
 void QuicClientSession::ConnectionClose(QuicErrorCode error, bool from_peer) {
-  UMA_HISTOGRAM_SPARSE_SLOWLY("Net.QuicSession.ConnectionCloseErrorCode",
-                              error);
+  logger_.OnConnectionClose(error, from_peer);
+  if (from_peer) {
+    UMA_HISTOGRAM_SPARSE_SLOWLY(
+        "Net.QuicSession.ConnectionCloseErrorCodeServer", error);
+  } else {
+    UMA_HISTOGRAM_SPARSE_SLOWLY(
+        "Net.QuicSession.ConnectionCloseErrorCodeClient", error);
+  }
+
+  if (error == QUIC_CONNECTION_TIMED_OUT) {
+    UMA_HISTOGRAM_SPARSE_SLOWLY(
+        "Net.QuicSession.ConnectionClose.NumOpenStreams.TimedOut",
+        GetNumOpenStreams());
+  }
+
   UMA_HISTOGRAM_SPARSE_SLOWLY("Net.QuicSession.QuicVersion",
                               connection()->version());
   if (!callback_.is_null()) {
@@ -270,6 +312,12 @@ void QuicClientSession::ConnectionClose(QuicErrorCode error, bool from_peer) {
   }
   QuicSession::ConnectionClose(error, from_peer);
   NotifyFactoryOfSessionCloseLater();
+}
+
+void QuicClientSession::OnSuccessfulVersionNegotiation(
+    const QuicVersion& version) {
+  logger_.OnSuccessfulVersionNegotiation(version);
+  QuicSession::OnSuccessfulVersionNegotiation(version);
 }
 
 void QuicClientSession::StartReading() {
@@ -296,25 +344,26 @@ void QuicClientSession::StartReading() {
 
 void QuicClientSession::CloseSessionOnError(int error) {
   UMA_HISTOGRAM_SPARSE_SLOWLY("Net.QuicSession.CloseSessionOnError", -error);
-  CloseSessionOnErrorInner(error);
+  CloseSessionOnErrorInner(error, QUIC_INTERNAL_ERROR);
   NotifyFactoryOfSessionClose();
 }
 
-void QuicClientSession::CloseSessionOnErrorInner(int error) {
+void QuicClientSession::CloseSessionOnErrorInner(int net_error,
+                                                 QuicErrorCode quic_error) {
   if (!callback_.is_null()) {
-    base::ResetAndReturn(&callback_).Run(error);
+    base::ResetAndReturn(&callback_).Run(net_error);
   }
   while (!streams()->empty()) {
     ReliableQuicStream* stream = streams()->begin()->second;
     QuicStreamId id = stream->id();
-    static_cast<QuicReliableClientStream*>(stream)->OnError(error);
+    static_cast<QuicReliableClientStream*>(stream)->OnError(net_error);
     CloseStream(id);
   }
   net_log_.AddEvent(
       NetLog::TYPE_QUIC_SESSION_CLOSE_ON_ERROR,
-      NetLog::IntegerCallback("net_error", error));
+      NetLog::IntegerCallback("net_error", net_error));
 
-  connection()->CloseConnection(QUIC_INTERNAL_ERROR, false);
+  connection()->CloseConnection(quic_error, false);
   DCHECK(!connection()->connected());
 }
 
@@ -340,7 +389,8 @@ void QuicClientSession::OnReadComplete(int result) {
 
   if (result < 0) {
     DLOG(INFO) << "Closing session on read error: " << result;
-    CloseSessionOnErrorInner(result);
+    UMA_HISTOGRAM_SPARSE_SLOWLY("Net.QuicSession.ReadError", -result);
+    CloseSessionOnErrorInner(result, QUIC_PACKET_READ_ERROR);
     NotifyFactoryOfSessionCloseLater();
     return;
   }

@@ -71,6 +71,11 @@ WebInspector.ConsoleMessageImpl = function(source, level, message, linkifier, ty
 }
 
 WebInspector.ConsoleMessageImpl.prototype = {
+    request: function()
+    {
+        return this._request;
+    },
+
     wasShown: function()
     {
         for (var i = 0; this._dataGrids && i < this._dataGrids.length; ++i) {
@@ -163,7 +168,7 @@ WebInspector.ConsoleMessageImpl.prototype = {
         }
 
         if (this.source !== WebInspector.ConsoleMessage.MessageSource.Network || this._request) {
-            if (this._stackTrace && this._stackTrace.length && this._stackTrace[0].url) {
+            if (this._stackTrace && this._stackTrace.length && this._stackTrace[0].scriptId) {
                 this._anchorElement = this._linkifyCallFrame(this._stackTrace[0]);
             } else if (this.url && this.url !== "undefined") {
                 this._anchorElement = this._linkifyLocation(this.url, this.line, this.column);
@@ -245,7 +250,11 @@ WebInspector.ConsoleMessageImpl.prototype = {
      */
     _linkifyCallFrame: function(callFrame)
     {
-        return this._linkifyLocation(callFrame.url, callFrame.lineNumber, callFrame.columnNumber);
+        // FIXME(62725): stack trace line/column numbers are one-based.
+        var lineNumber = callFrame.lineNumber ? callFrame.lineNumber - 1 : 0;
+        var columnNumber = callFrame.columnNumber ? callFrame.columnNumber - 1 : 0;
+        var rawLocation = new WebInspector.DebuggerModel.Location(callFrame.scriptId, lineNumber, columnNumber);
+        return this._linkifier.linkifyRawLocation(rawLocation, "console-message-url");
     },
 
     /**
@@ -447,7 +456,7 @@ WebInspector.ConsoleMessageImpl.prototype = {
                 this._formatParameterAsObject(object, elem, false);
                 return;
             }
-            var treeOutline = new WebInspector.ElementsTreeOutline(false, false, true);
+            var treeOutline = new WebInspector.ElementsTreeOutline(false, false);
             treeOutline.setVisible(true);
             treeOutline.rootDOMNode = WebInspector.domAgent.nodeForId(nodeId);
             treeOutline.element.addStyleClass("outline-disclosure");
@@ -508,14 +517,18 @@ WebInspector.ConsoleMessageImpl.prototype = {
 
             var rowValue = {};
             const maxColumnsToRender = 20;
-            for (var j = 0; j < rowPreview.properties.length && j < maxColumnsToRender; ++j) {
+            for (var j = 0; j < rowPreview.properties.length; ++j) {
                 var cellProperty = rowPreview.properties[j];
-                if (columnNames.indexOf(cellProperty.name) === -1) {
+                var columnRendered = columnNames.indexOf(cellProperty.name) != -1;
+                if (!columnRendered) {
                     if (columnNames.length === maxColumnsToRender)
                         continue;
+                    columnRendered = true;
                     columnNames.push(cellProperty.name);
                 }
-                rowValue[cellProperty.name] = this._renderPropertyPreview(cellProperty);
+
+                if (columnRendered)
+                    rowValue[cellProperty.name] = this._renderPropertyPreview(cellProperty);
             }
             rows.push([rowProperty.name, rowValue]);
         }
@@ -767,7 +780,7 @@ WebInspector.ConsoleMessageImpl.prototype = {
             break;
         }
 
-        if (this.isGroupStart())
+        if (this.type === WebInspector.ConsoleMessage.MessageType.StartGroup || this.type === WebInspector.ConsoleMessage.MessageType.StartGroupCollapsed)
             element.addStyleClass("console-group-title");
 
         element.appendChild(this.formattedMessage);
@@ -790,9 +803,11 @@ WebInspector.ConsoleMessageImpl.prototype = {
             messageTextElement.appendChild(document.createTextNode(functionName));
             content.appendChild(messageTextElement);
 
-            if (frame.url) {
+            if (frame.scriptId) {
                 content.appendChild(document.createTextNode(" "));
                 var urlElement = this._linkifyCallFrame(frame);
+                if (!urlElement)
+                    continue;
                 content.appendChild(urlElement);
             }
 
@@ -906,14 +921,6 @@ WebInspector.ConsoleMessageImpl.prototype = {
     get text()
     {
         return this._messageText;
-    },
-
-    /**
-     * @return {boolean}
-     */
-    isGroupStart: function()
-    {
-        return this.type === WebInspector.ConsoleMessage.MessageType.StartGroup || this.type === WebInspector.ConsoleMessage.MessageType.StartGroupCollapsed;
     },
 
     location: function()

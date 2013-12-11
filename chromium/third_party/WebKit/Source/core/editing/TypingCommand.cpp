@@ -35,7 +35,7 @@
 #include "core/editing/InsertLineBreakCommand.h"
 #include "core/editing/InsertParagraphSeparatorCommand.h"
 #include "core/editing/InsertTextCommand.h"
-#include "core/editing/SpellChecker.h"
+#include "core/editing/SpellCheckRequester.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
@@ -73,7 +73,7 @@ private:
     const String& m_text;
 };
 
-TypingCommand::TypingCommand(Document *document, ETypingCommand commandType, const String &textToInsert, Options options, TextGranularity granularity, TextCompositionType compositionType)
+TypingCommand::TypingCommand(Document& document, ETypingCommand commandType, const String &textToInsert, Options options, TextGranularity granularity, TextCompositionType compositionType)
     : TextInsertionBaseCommand(document)
     , m_commandType(commandType)
     , m_textToInsert(textToInsert)
@@ -90,14 +90,12 @@ TypingCommand::TypingCommand(Document *document, ETypingCommand commandType, con
     updatePreservesTypingStyle(m_commandType);
 }
 
-void TypingCommand::deleteSelection(Document* document, Options options)
+void TypingCommand::deleteSelection(Document& document, Options options)
 {
-    ASSERT(document);
-
-    Frame* frame = document->frame();
+    Frame* frame = document.frame();
     ASSERT(frame);
 
-    if (!frame->selection()->isRange())
+    if (!frame->selection().isRange())
         return;
 
     if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(frame)) {
@@ -109,12 +107,11 @@ void TypingCommand::deleteSelection(Document* document, Options options)
     TypingCommand::create(document, DeleteSelection, "", options)->apply();
 }
 
-void TypingCommand::deleteKeyPressed(Document *document, Options options, TextGranularity granularity)
+void TypingCommand::deleteKeyPressed(Document& document, Options options, TextGranularity granularity)
 {
-    ASSERT(document);
     if (granularity == CharacterGranularity) {
-        if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(document->frame())) {
-            updateSelectionIfDifferentFromCurrentSelection(lastTypingCommand.get(), document->frame());
+        if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(document.frame())) {
+            updateSelectionIfDifferentFromCurrentSelection(lastTypingCommand.get(), document.frame());
             lastTypingCommand->setShouldPreventSpellChecking(options & PreventSpellChecking);
             lastTypingCommand->deleteKeyPressed(granularity, options & KillRing);
             return;
@@ -124,11 +121,10 @@ void TypingCommand::deleteKeyPressed(Document *document, Options options, TextGr
     TypingCommand::create(document, DeleteKey, "", options, granularity)->apply();
 }
 
-void TypingCommand::forwardDeleteKeyPressed(Document *document, Options options, TextGranularity granularity)
+void TypingCommand::forwardDeleteKeyPressed(Document& document, Options options, TextGranularity granularity)
 {
     // FIXME: Forward delete in TextEdit appears to open and close a new typing command.
-    ASSERT(document);
-    Frame* frame = document->frame();
+    Frame* frame = document.frame();
     if (granularity == CharacterGranularity) {
         if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(frame)) {
             updateSelectionIfDifferentFromCurrentSelection(lastTypingCommand.get(), frame);
@@ -144,7 +140,7 @@ void TypingCommand::forwardDeleteKeyPressed(Document *document, Options options,
 void TypingCommand::updateSelectionIfDifferentFromCurrentSelection(TypingCommand* typingCommand, Frame* frame)
 {
     ASSERT(frame);
-    VisibleSelection currentSelection = frame->selection()->selection();
+    VisibleSelection currentSelection = frame->selection().selection();
     if (currentSelection == typingCommand->endingSelection())
         return;
 
@@ -152,28 +148,24 @@ void TypingCommand::updateSelectionIfDifferentFromCurrentSelection(TypingCommand
     typingCommand->setEndingSelection(currentSelection);
 }
 
-void TypingCommand::insertText(Document* document, const String& text, Options options, TextCompositionType composition)
+void TypingCommand::insertText(Document& document, const String& text, Options options, TextCompositionType composition)
 {
-    ASSERT(document);
-
-    Frame* frame = document->frame();
+    Frame* frame = document.frame();
     ASSERT(frame);
 
     if (!text.isEmpty())
-        document->frame()->editor()->updateMarkersForWordsAffectedByEditing(isSpaceOrNewline(text[0]));
+        document.frame()->editor().updateMarkersForWordsAffectedByEditing(isSpaceOrNewline(text[0]));
 
-    insertText(document, text, frame->selection()->selection(), options, composition);
+    insertText(document, text, frame->selection().selection(), options, composition);
 }
 
 // FIXME: We shouldn't need to take selectionForInsertion. It should be identical to FrameSelection's current selection.
-void TypingCommand::insertText(Document* document, const String& text, const VisibleSelection& selectionForInsertion, Options options, TextCompositionType compositionType)
+void TypingCommand::insertText(Document& document, const String& text, const VisibleSelection& selectionForInsertion, Options options, TextCompositionType compositionType)
 {
-    ASSERT(document);
-
-    RefPtr<Frame> frame = document->frame();
+    RefPtr<Frame> frame = document.frame();
     ASSERT(frame);
 
-    VisibleSelection currentSelection = frame->selection()->selection();
+    VisibleSelection currentSelection = frame->selection().selection();
 
     String newText = dispatchBeforeTextInsertedEvent(text, selectionForInsertion, compositionType == TextCompositionUpdate);
 
@@ -197,46 +189,43 @@ void TypingCommand::insertText(Document* document, const String& text, const Vis
     applyTextInsertionCommand(frame.get(), cmd, selectionForInsertion, currentSelection);
 }
 
-void TypingCommand::insertLineBreak(Document *document, Options options)
+void TypingCommand::insertLineBreak(Document& document, Options options)
 {
-    ASSERT(document);
-    if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(document->frame())) {
+    if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(document.frame())) {
         lastTypingCommand->setShouldRetainAutocorrectionIndicator(options & RetainAutocorrectionIndicator);
         lastTypingCommand->insertLineBreak();
         return;
     }
 
-    applyCommand(TypingCommand::create(document, InsertLineBreak, "", options));
+    TypingCommand::create(document, InsertLineBreak, "", options)->apply();
 }
 
-void TypingCommand::insertParagraphSeparatorInQuotedContent(Document *document)
+void TypingCommand::insertParagraphSeparatorInQuotedContent(Document& document)
 {
-    ASSERT(document);
-    if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(document->frame())) {
+    if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(document.frame())) {
         lastTypingCommand->insertParagraphSeparatorInQuotedContent();
         return;
     }
 
-    applyCommand(TypingCommand::create(document, InsertParagraphSeparatorInQuotedContent));
+    TypingCommand::create(document, InsertParagraphSeparatorInQuotedContent)->apply();
 }
 
-void TypingCommand::insertParagraphSeparator(Document *document, Options options)
+void TypingCommand::insertParagraphSeparator(Document& document, Options options)
 {
-    ASSERT(document);
-    if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(document->frame())) {
+    if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(document.frame())) {
         lastTypingCommand->setShouldRetainAutocorrectionIndicator(options & RetainAutocorrectionIndicator);
         lastTypingCommand->insertParagraphSeparator();
         return;
     }
 
-    applyCommand(TypingCommand::create(document, InsertParagraphSeparator, "", options));
+    TypingCommand::create(document, InsertParagraphSeparator, "", options)->apply();
 }
 
 PassRefPtr<TypingCommand> TypingCommand::lastTypingCommandIfStillOpenForTyping(Frame* frame)
 {
     ASSERT(frame);
 
-    RefPtr<CompositeEditCommand> lastEditCommand = frame->editor()->lastEditCommand();
+    RefPtr<CompositeEditCommand> lastEditCommand = frame->editor().lastEditCommand();
     if (!lastEditCommand || !lastEditCommand->isTypingCommand() || !static_cast<TypingCommand*>(lastEditCommand.get())->isOpenForMoreTyping())
         return 0;
 
@@ -292,14 +281,14 @@ EditAction TypingCommand::editingAction() const
 
 void TypingCommand::markMisspellingsAfterTyping(ETypingCommand commandType)
 {
-    Frame* frame = document()->frame();
+    Frame* frame = document().frame();
     if (!frame)
         return;
 
-    if (!frame->editor()->isContinuousSpellCheckingEnabled())
+    if (!frame->editor().isContinuousSpellCheckingEnabled())
         return;
 
-    frame->editor()->spellChecker()->cancelCheck();
+    frame->editor().spellCheckRequester().cancelCheck();
 
     // Take a look at the selection that results after typing and determine whether we need to spellcheck.
     // Since the word containing the current selection is never marked, this does a check to
@@ -311,13 +300,13 @@ void TypingCommand::markMisspellingsAfterTyping(ETypingCommand commandType)
         VisiblePosition p1 = startOfWord(previous, LeftWordIfOnBoundary);
         VisiblePosition p2 = startOfWord(start, LeftWordIfOnBoundary);
         if (p1 != p2)
-            frame->editor()->markMisspellingsAfterTypingToWord(p1, endingSelection());
+            frame->editor().markMisspellingsAfterTypingToWord(p1, endingSelection());
     }
 }
 
 void TypingCommand::typingAddedToOpenCommand(ETypingCommand commandTypeForAddedTyping)
 {
-    Frame* frame = document()->frame();
+    Frame* frame = document().frame();
     if (!frame)
         return;
 
@@ -325,7 +314,7 @@ void TypingCommand::typingAddedToOpenCommand(ETypingCommand commandTypeForAddedT
 
     // The old spellchecking code requires that checking be done first, to prevent issues like that in 6864072, where <doesn't> is marked as misspelled.
     markMisspellingsAfterTyping(commandTypeForAddedTyping);
-    frame->editor()->appliedEditing(this);
+    frame->editor().appliedEditing(this);
 }
 
 void TypingCommand::insertText(const String &text, bool selectInsertedText)
@@ -388,7 +377,7 @@ bool TypingCommand::makeEditableRootEmpty()
 
     if (root->firstChild() == root->lastChild() && root->firstElementChild() && root->firstElementChild()->hasTagName(brTag)) {
         // If there is a single child and it could be a placeholder, leave it alone.
-        if (root->renderer() && root->renderer()->isBlockFlow())
+        if (root->renderer() && root->renderer()->isRenderBlockFlow())
             return false;
     }
 
@@ -403,11 +392,11 @@ bool TypingCommand::makeEditableRootEmpty()
 
 void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
 {
-    Frame* frame = document()->frame();
+    Frame* frame = document().frame();
     if (!frame)
         return;
 
-    frame->editor()->updateMarkersForWordsAffectedByEditing(false);
+    frame->editor().updateMarkersForWordsAffectedByEditing(false);
 
     VisibleSelection selectionToDelete;
     VisibleSelection selectionAfterUndo;
@@ -490,11 +479,11 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
     if (selectionToDelete.isNone())
         return;
 
-    if (selectionToDelete.isCaret() || !frame->selection()->shouldDeleteSelection(selectionToDelete))
+    if (selectionToDelete.isCaret() || !frame->selection().shouldDeleteSelection(selectionToDelete))
         return;
 
     if (killRing)
-        frame->editor()->addToKillRing(selectionToDelete.toNormalizedRange().get(), false);
+        frame->editor().addToKillRing(selectionToDelete.toNormalizedRange().get(), false);
     // Make undo select everything that has been deleted, unless an undo will undo more than just this deletion.
     // FIXME: This behaves like TextEdit except for the case where you open with text insertion and then delete
     // more text than you insert.  In that case all of the text that was around originally should be selected.
@@ -507,11 +496,11 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
 
 void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool killRing)
 {
-    Frame* frame = document()->frame();
+    Frame* frame = document().frame();
     if (!frame)
         return;
 
-    frame->editor()->updateMarkersForWordsAffectedByEditing(false);
+    frame->editor().updateMarkersForWordsAffectedByEditing(false);
 
     VisibleSelection selectionToDelete;
     VisibleSelection selectionAfterUndo;
@@ -583,11 +572,11 @@ void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool ki
     if (selectionToDelete.isNone())
         return;
 
-    if (selectionToDelete.isCaret() || !frame->selection()->shouldDeleteSelection(selectionToDelete))
+    if (selectionToDelete.isCaret() || !frame->selection().shouldDeleteSelection(selectionToDelete))
         return;
 
     if (killRing)
-        frame->editor()->addToKillRing(selectionToDelete.toNormalizedRange().get(), false);
+        frame->editor().addToKillRing(selectionToDelete.toNormalizedRange().get(), false);
     // make undo select what was deleted
     setStartingSelection(selectionAfterUndo);
     CompositeEditCommand::deleteSelection(selectionToDelete, m_smartDelete);

@@ -33,11 +33,13 @@
 
 #include "WebTask.h"
 #include "WebTestCommon.h"
+#include "public/platform/WebNonCopyable.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebURLError.h"
 #include "public/platform/WebURLRequest.h"
-#include "public/web/WebAccessibilityNotification.h"
+#include "public/web/WebAXEnums.h"
 #include "public/web/WebDOMMessageEvent.h"
+#include "public/web/WebDataSource.h"
 #include "public/web/WebDragOperation.h"
 #include "public/web/WebEditingAction.h"
 #include "public/web/WebIconURL.h"
@@ -51,7 +53,7 @@
 #include <string>
 
 namespace WebKit {
-class WebAccessibilityObject;
+class WebAXObject;
 class WebAudioDevice;
 class WebCachedURLRequest;
 class WebColorChooser;
@@ -60,12 +62,15 @@ class WebDataSource;
 class WebDeviceOrientationClient;
 class WebDeviceOrientationClientMock;
 class WebDragData;
+class WebFileChooserCompletion;
 class WebFrame;
 class WebGeolocationClient;
 class WebGeolocationClientMock;
 class WebImage;
 class WebMIDIAccessor;
 class WebMIDIAccessorClient;
+class WebMIDIClient;
+class WebMIDIClientMock;
 class WebNode;
 class WebNotificationPresenter;
 class WebPlugin;
@@ -84,6 +89,7 @@ class WebView;
 class WebWidget;
 struct WebConsoleMessage;
 struct WebContextMenuData;
+struct WebFileChooserParams;
 struct WebPluginParams;
 struct WebPoint;
 struct WebSize;
@@ -116,6 +122,7 @@ public:
     WebKit::WebSpellCheckClient *spellCheckClient() const;
     WebKit::WebValidationMessageClient* validationMessageClient();
     WebKit::WebColorChooser* createColorChooser(WebKit::WebColorChooserClient*, const WebKit::WebColor&);
+    bool runFileChooser(const WebKit::WebFileChooserParams&, WebKit::WebFileChooserCompletion*);
 
     std::string captureTree(bool debugRenderTree);
     SkCanvas* capturePixels();
@@ -136,11 +143,14 @@ public:
 
     WebKit::WebDeviceOrientationClientMock* deviceOrientationClientMock();
     WebKit::WebGeolocationClientMock* geolocationClientMock();
+    WebKit::WebMIDIClientMock* midiClientMock();
     MockWebSpeechInputController* speechInputControllerMock();
     MockWebSpeechRecognizer* speechRecognizerMock();
 #endif
 
     WebTaskList* taskList() { return &m_taskList; }
+
+    WebKit::WebView* webView();
 
 protected:
     WebTestProxyBase();
@@ -152,7 +162,7 @@ protected:
     void setWindowRect(const WebKit::WebRect&);
     void show(WebKit::WebNavigationPolicy);
     void didAutoResize(const WebKit::WebSize&);
-    void postAccessibilityNotification(const WebKit::WebAccessibilityObject&, WebKit::WebAccessibilityNotification);
+    void postAccessibilityEvent(const WebKit::WebAXObject&, WebKit::WebAXEvent);
     void startDragging(WebKit::WebFrame*, const WebKit::WebDragData&, WebKit::WebDragOperationsMask, const WebKit::WebImage&, const WebKit::WebPoint&);
     bool shouldBeginEditing(const WebKit::WebRange&);
     bool shouldEndEditing(const WebKit::WebRange&);
@@ -174,6 +184,7 @@ protected:
     void printPage(WebKit::WebFrame*);
     WebKit::WebNotificationPresenter* notificationPresenter();
     WebKit::WebGeolocationClient* geolocationClient();
+    WebKit::WebMIDIClient* webMIDIClient();
     WebKit::WebSpeechInputController* speechInputController(WebKit::WebSpeechInputListener*);
     WebKit::WebSpeechRecognizer* speechRecognizer();
     WebKit::WebDeviceOrientationClient* deviceOrientationClient();
@@ -208,7 +219,7 @@ protected:
     void didReceiveResponse(WebKit::WebFrame*, unsigned identifier, const WebKit::WebURLResponse&);
     void didChangeResourcePriority(WebKit::WebFrame*, unsigned identifier, const WebKit::WebURLRequest::Priority&);
     void didFinishResourceLoad(WebKit::WebFrame*, unsigned identifier);
-    WebKit::WebNavigationPolicy decidePolicyForNavigation(WebKit::WebFrame*, const WebKit::WebURLRequest&, WebKit::WebNavigationType, WebKit::WebNavigationPolicy defaultPolicy, bool isRedirect);
+    WebKit::WebNavigationPolicy decidePolicyForNavigation(WebKit::WebFrame*, WebKit::WebDataSource::ExtraData*, const WebKit::WebURLRequest&, WebKit::WebNavigationType, WebKit::WebNavigationPolicy defaultPolicy, bool isRedirect);
     bool willCheckAndDispatchMessageEvent(WebKit::WebFrame* sourceFrame, WebKit::WebFrame* targetFrame, WebKit::WebSecurityOrigin target, WebKit::WebDOMMessageEvent);
     void resetInputMethod();
 
@@ -224,7 +235,6 @@ private:
     void animateNow();
 
     WebKit::WebWidget* webWidget();
-    WebKit::WebView* webView();
 
     TestInterfaces* m_testInterfaces;
     WebTestDelegate* m_delegate;
@@ -247,11 +257,20 @@ private:
     int m_chooserCount;
 
     std::auto_ptr<WebKit::WebGeolocationClientMock> m_geolocationClient;
+    std::auto_ptr<WebKit::WebMIDIClientMock> m_midiClient;
     std::auto_ptr<WebKit::WebDeviceOrientationClientMock> m_deviceOrientationClient;
     std::auto_ptr<MockWebSpeechRecognizer> m_speechRecognizer;
     std::auto_ptr<MockWebSpeechInputController> m_speechInputController;
     std::auto_ptr<MockWebValidationMessageClient> m_validationMessageClient;
 
+    // FIXME:: We want to move away from this pattern and mark classes
+    // as Noncopyable, but this class is marked as WEBTESTRUNNER_EXPORT
+    // while WebNonCopyable is not, so we cannot inherit from WebNonCopyable.
+    // To overcome the problem, for now not inheriting from WebNonCopyable
+    // but plan to fix it when we make the change of making WebNonCopyable
+    // a macro rather than class. We will have a single way to mark all classes
+    // as Noncopyable.
+    // Tracked under: http://code.google.com/p/chromium/issues/detail?id=229178
 private:
     WebTestProxyBase(WebTestProxyBase&);
     WebTestProxyBase& operator=(const WebTestProxyBase&);
@@ -260,7 +279,7 @@ private:
 // Use this template to inject methods into your WebViewClient/WebFrameClient
 // implementation required for the running layout tests.
 template<class Base, typename T>
-class WebTestProxy : public Base, public WebTestProxyBase {
+class WebTestProxy : public Base, public WebTestProxyBase, public WebKit::WebNonCopyable {
 public:
     explicit WebTestProxy(T t)
         : Base(t)
@@ -301,10 +320,10 @@ public:
         WebTestProxyBase::didAutoResize(newSize);
         Base::didAutoResize(newSize);
     }
-    virtual void postAccessibilityNotification(const WebKit::WebAccessibilityObject& object, WebKit::WebAccessibilityNotification notification)
+    virtual void postAccessibilityEvent(const WebKit::WebAXObject& object, WebKit::WebAXEvent event)
     {
-        WebTestProxyBase::postAccessibilityNotification(object, notification);
-        Base::postAccessibilityNotification(object, notification);
+        WebTestProxyBase::postAccessibilityEvent(object, event);
+        Base::postAccessibilityEvent(object, event);
     }
     virtual void startDragging(WebKit::WebFrame* frame, const WebKit::WebDragData& data, WebKit::WebDragOperationsMask mask, const WebKit::WebImage& image, const WebKit::WebPoint& point)
     {
@@ -402,6 +421,10 @@ public:
     virtual WebKit::WebGeolocationClient* geolocationClient()
     {
         return WebTestProxyBase::geolocationClient();
+    }
+    virtual WebKit::WebMIDIClient* webMIDIClient()
+    {
+        return WebTestProxyBase::webMIDIClient();
     }
     virtual WebKit::WebSpeechInputController* speechInputController(WebKit::WebSpeechInputListener* listener)
     {
@@ -535,10 +558,10 @@ public:
         WebTestProxyBase::didFinishResourceLoad(frame, identifier);
         Base::didFinishResourceLoad(frame, identifier);
     }
-    virtual void didAddMessageToConsole(const WebKit::WebConsoleMessage& message, const WebKit::WebString& sourceName, unsigned sourceLine)
+    virtual void didAddMessageToConsole(const WebKit::WebConsoleMessage& message, const WebKit::WebString& sourceName, unsigned sourceLine, const WebKit::WebString& stackTrace)
     {
         WebTestProxyBase::didAddMessageToConsole(message, sourceName, sourceLine);
-        Base::didAddMessageToConsole(message, sourceName, sourceLine);
+        Base::didAddMessageToConsole(message, sourceName, sourceLine, stackTrace);
     }
     virtual void runModalAlertDialog(WebKit::WebFrame* frame, const WebKit::WebString& message)
     {
@@ -559,12 +582,12 @@ public:
     {
         return WebTestProxyBase::runModalBeforeUnloadDialog(frame, message);
     }
-    virtual WebKit::WebNavigationPolicy decidePolicyForNavigation(WebKit::WebFrame* frame, const WebKit::WebURLRequest& request, WebKit::WebNavigationType type, WebKit::WebNavigationPolicy defaultPolicy, bool isRedirect)
+    virtual WebKit::WebNavigationPolicy decidePolicyForNavigation(WebKit::WebFrame* frame, WebKit::WebDataSource::ExtraData* extraData, const WebKit::WebURLRequest& request, WebKit::WebNavigationType type, WebKit::WebNavigationPolicy defaultPolicy, bool isRedirect)
     {
-        WebKit::WebNavigationPolicy policy = WebTestProxyBase::decidePolicyForNavigation(frame, request, type, defaultPolicy, isRedirect);
+        WebKit::WebNavigationPolicy policy = WebTestProxyBase::decidePolicyForNavigation(frame, extraData, request, type, defaultPolicy, isRedirect);
         if (policy == WebKit::WebNavigationPolicyIgnore)
             return policy;
-        return Base::decidePolicyForNavigation(frame, request, type, defaultPolicy, isRedirect);
+        return Base::decidePolicyForNavigation(frame, extraData, request, type, defaultPolicy, isRedirect);
     }
     virtual bool willCheckAndDispatchMessageEvent(WebKit::WebFrame* sourceFrame, WebKit::WebFrame* targetFrame, WebKit::WebSecurityOrigin target, WebKit::WebDOMMessageEvent event)
     {
@@ -575,6 +598,10 @@ public:
     virtual WebKit::WebColorChooser* createColorChooser(WebKit::WebColorChooserClient* client, const WebKit::WebColor& color)
     {
         return WebTestProxyBase::createColorChooser(client, color);
+    }
+    virtual bool runFileChooser(const WebKit::WebFileChooserParams& params, WebKit::WebFileChooserCompletion* completion)
+    {
+        return WebTestProxyBase::runFileChooser(params, completion);
     }
 };
 

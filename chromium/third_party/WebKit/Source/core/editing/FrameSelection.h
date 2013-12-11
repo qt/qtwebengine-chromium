@@ -46,6 +46,7 @@ class MutableStylePropertySet;
 class RenderObject;
 class RenderView;
 class Settings;
+class Text;
 class VisiblePosition;
 
 enum EUserTriggered { NotUserTriggered = 0, UserTriggered = 1 };
@@ -154,7 +155,9 @@ public:
     void debugRenderer(RenderObject*, bool selected) const;
 
     void nodeWillBeRemoved(Node*);
-    void textWasReplaced(CharacterData*, unsigned offset, unsigned oldLength, unsigned newLength);
+    void didUpdateCharacterData(CharacterData*, unsigned offset, unsigned oldLength, unsigned newLength);
+    void didMergeTextNodes(const Text& oldNode, unsigned offset);
+    void didSplitTextNode(const Text& oldNode);
 
     void setCaretVisible(bool caretIsVisible) { setCaretVisibility(caretIsVisible ? Visible : Hidden); }
     bool recomputeCaretRect();
@@ -247,6 +250,8 @@ private:
     bool dispatchSelectStart();
 
     bool visualWordMovementEnabled() const;
+
+    void updateSelectionIfNeeded(const Position& base, const Position& extent, const Position& start, const Position& end);
 
     Frame* m_frame;
 

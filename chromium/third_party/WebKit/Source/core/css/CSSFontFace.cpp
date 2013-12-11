@@ -29,7 +29,7 @@
 #include "core/css/CSSFontFaceSource.h"
 #include "core/css/CSSFontSelector.h"
 #include "core/css/CSSSegmentedFontFace.h"
-#include "core/css/FontLoader.h"
+#include "core/css/FontFaceSet.h"
 #include "core/dom/Document.h"
 #include "core/platform/graphics/SimpleFontData.h"
 
@@ -55,20 +55,28 @@ bool CSSFontFace::isValid() const
     return false;
 }
 
-void CSSFontFace::addedToSegmentedFontFace(CSSSegmentedFontFace* segmentedFontFace)
-{
-    m_segmentedFontFaces.add(segmentedFontFace);
-}
-
-void CSSFontFace::removedFromSegmentedFontFace(CSSSegmentedFontFace* segmentedFontFace)
-{
-    m_segmentedFontFaces.remove(segmentedFontFace);
-}
-
 void CSSFontFace::addSource(PassOwnPtr<CSSFontFaceSource> source)
 {
     source->setFontFace(this);
     m_sources.append(source);
+}
+
+void CSSFontFace::setSegmentedFontFace(CSSSegmentedFontFace* segmentedFontFace)
+{
+    ASSERT(!m_segmentedFontFace);
+    m_segmentedFontFace = segmentedFontFace;
+}
+
+void CSSFontFace::beginLoadingFontSoon(FontResource* resource)
+{
+    if (!m_segmentedFontFace)
+        return;
+
+    CSSFontSelector* fontSelector = m_segmentedFontFace->fontSelector();
+    fontSelector->beginLoadingFontSoon(resource);
+
+    if (loadStatus() == FontFace::Unloaded)
+        setLoadStatus(FontFace::Loading);
 }
 
 void CSSFontFace::fontLoaded(CSSFontFaceSource* source)
@@ -76,27 +84,23 @@ void CSSFontFace::fontLoaded(CSSFontFaceSource* source)
     if (source != m_activeSource)
         return;
 
-    // FIXME: Can we assert that m_segmentedFontFaces is not empty? That may
+    // FIXME: Can we assert that m_segmentedFontFace is non-null? That may
     // require stopping in-progress font loading when the last
     // CSSSegmentedFontFace is removed.
-    if (m_segmentedFontFaces.isEmpty())
+    if (!m_segmentedFontFace)
         return;
 
-    // Use one of the CSSSegmentedFontFaces' font selector. They all have
-    // the same font selector, so it's wasteful to store it in the CSSFontFace.
-    CSSFontSelector* fontSelector = (*m_segmentedFontFaces.begin())->fontSelector();
+    CSSFontSelector* fontSelector = m_segmentedFontFace->fontSelector();
     fontSelector->fontLoaded();
 
-    if (fontSelector->document() && m_loadState == Loading) {
+    if (fontSelector->document() && loadStatus() == FontFace::Loading) {
         if (source->ensureFontData())
-            setLoadState(Loaded);
+            setLoadStatus(FontFace::Loaded);
         else if (!isValid())
-            setLoadState(Error);
+            setLoadStatus(FontFace::Error);
     }
 
-    HashSet<CSSSegmentedFontFace*>::iterator end = m_segmentedFontFaces.end();
-    for (HashSet<CSSSegmentedFontFace*>::iterator it = m_segmentedFontFaces.begin(); it != end; ++it)
-        (*it)->fontLoaded(this);
+    m_segmentedFontFace->fontLoaded(this);
 }
 
 PassRefPtr<SimpleFontData> CSSFontFace::getFontData(const FontDescription& fontDescription, bool syntheticBold, bool syntheticItalic)
@@ -105,44 +109,64 @@ PassRefPtr<SimpleFontData> CSSFontFace::getFontData(const FontDescription& fontD
     if (!isValid())
         return 0;
 
-    ASSERT(!m_segmentedFontFaces.isEmpty());
-    CSSFontSelector* fontSelector = (*m_segmentedFontFaces.begin())->fontSelector();
-
-    if (m_loadState == NotLoaded)
-        setLoadState(Loading);
+    ASSERT(m_segmentedFontFace);
+    CSSFontSelector* fontSelector = m_segmentedFontFace->fontSelector();
 
     size_t size = m_sources.size();
     for (size_t i = 0; i < size; ++i) {
         if (RefPtr<SimpleFontData> result = m_sources[i]->getFontData(fontDescription, syntheticBold, syntheticItalic, fontSelector)) {
             m_activeSource = m_sources[i].get();
-            if (m_loadState == Loading && m_sources[i]->isLoaded())
-                setLoadState(Loaded);
+            if (loadStatus() == FontFace::Unloaded && (m_sources[i]->isLoading() || m_sources[i]->isLoaded()))
+                setLoadStatus(FontFace::Loading);
+            if (loadStatus() == FontFace::Loading && m_sources[i]->isLoaded())
+                setLoadStatus(FontFace::Loaded);
             return result.release();
         }
     }
 
-    if (m_loadState == Loading)
-        setLoadState(Error);
+    if (loadStatus() == FontFace::Unloaded)
+        setLoadStatus(FontFace::Loading);
+    if (loadStatus() == FontFace::Loading)
+        setLoadStatus(FontFace::Error);
     return 0;
 }
 
-void CSSFontFace::setLoadState(LoadState newState)
+void CSSFontFace::willUseFontData(const FontDescription& fontDescription)
 {
-    m_loadState = newState;
+    if (loadStatus() != FontFace::Unloaded)
+        return;
 
-    Document* document = (*m_segmentedFontFaces.begin())->fontSelector()->document();
+    ASSERT(m_segmentedFontFace);
+    CSSFontSelector* fontSelector = m_segmentedFontFace->fontSelector();
+
+    size_t size = m_sources.size();
+    for (size_t i = 0; i < size; ++i) {
+        if (!m_sources[i]->isValid() || (m_sources[i]->isLocal() && !m_sources[i]->isLocalFontAvailable(fontDescription)))
+            continue;
+        if (!m_sources[i]->isLocal())
+            m_sources[i]->willUseFontData();
+        break;
+    }
+}
+
+void CSSFontFace::setLoadStatus(FontFace::LoadStatus newStatus)
+{
+    ASSERT(m_fontFace);
+    m_fontFace->setLoadStatus(newStatus);
+
+    Document* document = m_segmentedFontFace->fontSelector()->document();
     if (!document)
         return;
 
-    switch (newState) {
-    case Loading:
-        document->fontloader()->beginFontLoading(m_rule.get());
+    switch (newStatus) {
+    case FontFace::Loading:
+        document->fonts()->beginFontLoading(m_fontFace.get());
         break;
-    case Loaded:
-        document->fontloader()->fontLoaded(m_rule.get());
+    case FontFace::Loaded:
+        document->fonts()->fontLoaded(m_fontFace.get());
         break;
-    case Error:
-        document->fontloader()->loadError(m_rule.get(), m_activeSource);
+    case FontFace::Error:
+        document->fonts()->loadError(m_fontFace.get());
         break;
     default:
         break;

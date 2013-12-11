@@ -23,14 +23,14 @@
 #ifndef RenderListItem_h
 #define RenderListItem_h
 
-#include "core/rendering/RenderBlock.h"
+#include "core/rendering/RenderBlockFlow.h"
 
 namespace WebCore {
 
 class HTMLOListElement;
 class RenderListMarker;
 
-class RenderListItem FINAL : public RenderBlock {
+class RenderListItem FINAL : public RenderBlockFlow {
 public:
     explicit RenderListItem(Element*);
 
@@ -67,6 +67,8 @@ private:
     virtual void paint(PaintInfo&, const LayoutPoint&);
 
     virtual void layout();
+
+    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
 
     void positionListMarker();
 

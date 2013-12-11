@@ -36,7 +36,7 @@ class SVGCursorElement FINAL : public SVGElement,
                                public SVGExternalResourcesRequired,
                                public SVGURIReference {
 public:
-    static PassRefPtr<SVGCursorElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGCursorElement> create(const QualifiedName&, Document&);
 
     virtual ~SVGCursorElement();
 
@@ -45,7 +45,7 @@ public:
     void removeReferencedElement(SVGElement*);
 
 private:
-    SVGCursorElement(const QualifiedName&, Document*);
+    SVGCursorElement(const QualifiedName&, Document&);
 
     virtual bool isValid() const { return SVGTests::isValid(); }
 
@@ -55,7 +55,7 @@ private:
 
     virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
 
-    virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
 
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGCursorElement)
         DECLARE_ANIMATED_LENGTH(X, x)

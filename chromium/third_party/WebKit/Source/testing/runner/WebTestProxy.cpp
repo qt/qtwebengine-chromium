@@ -49,8 +49,8 @@
 #include "public/testing/WebTestDelegate.h"
 #include "public/testing/WebTestInterfaces.h"
 #include "public/testing/WebTestRunner.h"
-#include "public/web/WebAccessibilityNotification.h"
-#include "public/web/WebAccessibilityObject.h"
+#include "public/web/WebAXEnums.h"
+#include "public/web/WebAXObject.h"
 #include "public/web/WebCachedURLRequest.h"
 #include "public/web/WebConsoleMessage.h"
 #include "public/web/WebDataSource.h"
@@ -60,6 +60,7 @@
 #include "public/web/WebFrame.h"
 #include "public/web/WebGeolocationClientMock.h"
 #include "public/web/WebHistoryItem.h"
+#include "public/web/WebMIDIClientMock.h"
 #include "public/web/WebNode.h"
 #include "public/web/WebPluginParams.h"
 #include "public/web/WebPrintParams.h"
@@ -513,6 +514,8 @@ void WebTestProxyBase::reset()
     m_logConsoleOutput = true;
     if (m_geolocationClient.get())
         m_geolocationClient->resetMock();
+    if (m_midiClient.get())
+        m_midiClient->resetMock();
 #if ENABLE_INPUT_SPEECH
     if (m_speechInputController.get())
         m_speechInputController->clearResults();
@@ -533,6 +536,13 @@ WebColorChooser* WebTestProxyBase::createColorChooser(WebColorChooserClient* cli
 {
     // This instance is deleted by WebCore::ColorInputType
     return new MockColorChooser(client, m_delegate, this);
+}
+
+bool WebTestProxyBase::runFileChooser(const WebKit::WebFileChooserParams&, WebKit::WebFileChooserCompletion*)
+{
+    m_delegate->printMessage("Mock: Opening a file chooser.\n");
+    // FIXME: Add ability to set file names to a file upload control.
+    return false;
 }
 
 string WebTestProxyBase::captureTree(bool debugRenderTree)
@@ -728,6 +738,13 @@ WebGeolocationClientMock* WebTestProxyBase::geolocationClientMock()
     return m_geolocationClient.get();
 }
 
+WebMIDIClientMock* WebTestProxyBase::midiClientMock()
+{
+    if (!m_midiClient.get())
+        m_midiClient.reset(WebMIDIClientMock::create());
+    return m_midiClient.get();
+}
+
 WebDeviceOrientationClientMock* WebTestProxyBase::deviceOrientationClientMock()
 {
     if (!m_deviceOrientationClient.get())
@@ -818,83 +835,101 @@ void WebTestProxyBase::didAutoResize(const WebSize&)
     invalidateAll();
 }
 
-void WebTestProxyBase::postAccessibilityNotification(const WebKit::WebAccessibilityObject& obj, WebKit::WebAccessibilityNotification notification)
+void WebTestProxyBase::postAccessibilityEvent(const WebKit::WebAXObject& obj, WebKit::WebAXEvent event)
 {
-    if (notification == WebKit::WebAccessibilityNotificationFocusedUIElementChanged)
+    if (event == WebKit::WebAXEventFocus)
         m_testInterfaces->accessibilityController()->setFocusedElement(obj);
 
-    const char* notificationName;
-    switch (notification) {
-    case WebKit::WebAccessibilityNotificationActiveDescendantChanged:
-        notificationName = "ActiveDescendantChanged";
+    const char* eventName;
+    switch (event) {
+    case WebKit::WebAXEventActiveDescendantChanged:
+        eventName = "ActiveDescendantChanged";
         break;
-    case WebKit::WebAccessibilityNotificationAutocorrectionOccured:
-        notificationName = "AutocorrectionOccured";
+    case WebKit::WebAXEventAlert:
+        eventName = "Alert";
         break;
-    case WebKit::WebAccessibilityNotificationCheckedStateChanged:
-        notificationName = "CheckedStateChanged";
+    case WebKit::WebAXEventAriaAttributeChanged:
+        eventName = "AriaAttributeChanged";
         break;
-    case WebKit::WebAccessibilityNotificationChildrenChanged:
-        notificationName = "ChildrenChanged";
+    case WebKit::WebAXEventAutocorrectionOccured:
+        eventName = "AutocorrectionOccured";
         break;
-    case WebKit::WebAccessibilityNotificationFocusedUIElementChanged:
-        notificationName = "FocusedUIElementChanged";
+    case WebKit::WebAXEventBlur:
+        eventName = "Blur";
         break;
-    case WebKit::WebAccessibilityNotificationLayoutComplete:
-        notificationName = "LayoutComplete";
+    case WebKit::WebAXEventCheckedStateChanged:
+        eventName = "CheckedStateChanged";
         break;
-    case WebKit::WebAccessibilityNotificationLoadComplete:
-        notificationName = "LoadComplete";
+    case WebKit::WebAXEventChildrenChanged:
+        eventName = "ChildrenChanged";
         break;
-    case WebKit::WebAccessibilityNotificationSelectedChildrenChanged:
-        notificationName = "SelectedChildrenChanged";
+    case WebKit::WebAXEventFocus:
+        eventName = "Focus";
         break;
-    case WebKit::WebAccessibilityNotificationSelectedTextChanged:
-        notificationName = "SelectedTextChanged";
+    case WebKit::WebAXEventHide:
+        eventName = "Hide";
         break;
-    case WebKit::WebAccessibilityNotificationValueChanged:
-        notificationName = "ValueChanged";
+    case WebKit::WebAXEventInvalidStatusChanged:
+        eventName = "InvalidStatusChanged";
         break;
-    case WebKit::WebAccessibilityNotificationScrolledToAnchor:
-        notificationName = "ScrolledToAnchor";
+    case WebKit::WebAXEventLayoutComplete:
+        eventName = "LayoutComplete";
         break;
-    case WebKit::WebAccessibilityNotificationLiveRegionChanged:
-        notificationName = "LiveRegionChanged";
+    case WebKit::WebAXEventLiveRegionChanged:
+        eventName = "LiveRegionChanged";
         break;
-    case WebKit::WebAccessibilityNotificationMenuListItemSelected:
-        notificationName = "MenuListItemSelected";
+    case WebKit::WebAXEventLoadComplete:
+        eventName = "LoadComplete";
         break;
-    case WebKit::WebAccessibilityNotificationMenuListValueChanged:
-        notificationName = "MenuListValueChanged";
+    case WebKit::WebAXEventLocationChanged:
+        eventName = "LocationChanged";
         break;
-    case WebKit::WebAccessibilityNotificationRowCountChanged:
-        notificationName = "RowCountChanged";
+    case WebKit::WebAXEventMenuListItemSelected:
+        eventName = "MenuListItemSelected";
         break;
-    case WebKit::WebAccessibilityNotificationRowCollapsed:
-        notificationName = "RowCollapsed";
+    case WebKit::WebAXEventMenuListValueChanged:
+        eventName = "MenuListValueChanged";
         break;
-    case WebKit::WebAccessibilityNotificationRowExpanded:
-        notificationName = "RowExpanded";
+    case WebKit::WebAXEventRowCollapsed:
+        eventName = "RowCollapsed";
         break;
-    case WebKit::WebAccessibilityNotificationInvalidStatusChanged:
-        notificationName = "InvalidStatusChanged";
+    case WebKit::WebAXEventRowCountChanged:
+        eventName = "RowCountChanged";
         break;
-    case WebKit::WebAccessibilityNotificationTextChanged:
-        notificationName = "TextChanged";
+    case WebKit::WebAXEventRowExpanded:
+        eventName = "RowExpanded";
         break;
-    case WebKit::WebAccessibilityNotificationAriaAttributeChanged:
-        notificationName = "AriaAttributeChanged";
+    case WebKit::WebAXEventScrolledToAnchor:
+        eventName = "ScrolledToAnchor";
         break;
-    default:
-        notificationName = "UnknownNotification";
+    case WebKit::WebAXEventSelectedChildrenChanged:
+        eventName = "SelectedChildrenChanged";
+        break;
+    case WebKit::WebAXEventSelectedTextChanged:
+        eventName = "SelectedTextChanged";
+        break;
+    case WebKit::WebAXEventShow:
+        eventName = "Show";
+        break;
+    case WebKit::WebAXEventTextChanged:
+        eventName = "TextChanged";
+        break;
+    case WebKit::WebAXEventTextInserted:
+        eventName = "TextInserted";
+        break;
+    case WebKit::WebAXEventTextRemoved:
+        eventName = "TextRemoved";
+        break;
+    case WebKit::WebAXEventValueChanged:
+        eventName = "ValueChanged";
         break;
     }
 
-    m_testInterfaces->accessibilityController()->notificationReceived(obj, notificationName);
+    m_testInterfaces->accessibilityController()->notificationReceived(obj, eventName);
 
     if (m_testInterfaces->accessibilityController()->shouldLogAccessibilityEvents()) {
         string message("AccessibilityNotification - ");
-        message += notificationName;
+        message += eventName;
 
         WebKit::WebNode node = obj.node();
         if (!node.isNull() && node.isElementNode()) {
@@ -1072,16 +1107,17 @@ void WebTestProxyBase::printPage(WebFrame* frame)
 
 WebNotificationPresenter* WebTestProxyBase::notificationPresenter()
 {
-#if ENABLE_NOTIFICATIONS
     return m_testInterfaces->testRunner()->notificationPresenter();
-#else
-    return 0;
-#endif
 }
 
 WebGeolocationClient* WebTestProxyBase::geolocationClient()
 {
     return geolocationClientMock();
+}
+
+WebMIDIClient* WebTestProxyBase::webMIDIClient()
+{
+    return midiClientMock();
 }
 
 WebSpeechInputController* WebTestProxyBase::speechInputController(WebSpeechInputListener* listener)
@@ -1204,8 +1240,6 @@ void WebTestProxyBase::didReceiveTitle(WebFrame* frame, const WebString& title, 
 
     if (m_testInterfaces->testRunner()->shouldDumpTitleChanges())
         m_delegate->printMessage(string("TITLE CHANGED: '") + title8.data() + "'\n");
-
-    m_testInterfaces->testRunner()->setTitleTextDirection(direction);
 }
 
 void WebTestProxyBase::didChangeIcon(WebFrame* frame, WebIconURL::Type)
@@ -1443,7 +1477,7 @@ void WebTestProxyBase::locationChangeDone(WebFrame* frame)
     m_testInterfaces->testRunner()->setTopLoadingFrame(frame, true);
 }
 
-WebNavigationPolicy WebTestProxyBase::decidePolicyForNavigation(WebFrame*, const WebURLRequest& request, WebNavigationType type, WebNavigationPolicy defaultPolicy, bool isRedirect)
+WebNavigationPolicy WebTestProxyBase::decidePolicyForNavigation(WebFrame*, WebDataSource::ExtraData*, const WebURLRequest& request, WebNavigationType type, WebNavigationPolicy defaultPolicy, bool isRedirect)
 {
     WebNavigationPolicy result;
     if (!m_testInterfaces->testRunner()->policyDelegateEnabled())

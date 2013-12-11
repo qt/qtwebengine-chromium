@@ -17,6 +17,20 @@
 #include "ui/base/ime/text_input_client.h"
 #include "ui/keyboard/keyboard_switches.h"
 
+namespace {
+
+const char kKeyDown[] ="keydown";
+const char kKeyUp[] = "keyup";
+
+void SendProcessKeyEvent(ui::EventType type, aura::RootWindow* root_window) {
+  ui::TranslatedKeyEvent event(type == ui::ET_KEY_PRESSED,
+                               ui::VKEY_PROCESSKEY,
+                               ui::EF_NONE);
+  root_window->AsRootWindowHostDelegate()->OnHostKeyEvent(&event);
+}
+
+}  // namespace
+
 namespace keyboard {
 
 bool IsKeyboardEnabled() {
@@ -27,28 +41,6 @@ bool IsKeyboardEnabled() {
 bool InsertText(const base::string16& text, aura::RootWindow* root_window) {
   if (!root_window)
     return false;
-
-  // Handle Backspace and Enter specially: using TextInputClient::InsertText is
-  // very unreliable for these characters.
-  // TODO(bryeung): remove this code once virtual keyboards are able to send
-  // these events directly via the Input Injection API.
-  if (text.length() == 1) {
-    ui::KeyboardCode code = ui::VKEY_UNKNOWN;
-    if (text[0] == L'\n')
-      code = ui::VKEY_RETURN;
-    else if (text[0] == L'\b')
-      code = ui::VKEY_BACK;
-
-    if (code != ui::VKEY_UNKNOWN) {
-      ui::KeyEvent press_event(ui::ET_KEY_PRESSED, code, 0, 0);
-      root_window->AsRootWindowHostDelegate()->OnHostKeyEvent(&press_event);
-
-      ui::KeyEvent release_event(ui::ET_KEY_RELEASED, code, 0, 0);
-      root_window->AsRootWindowHostDelegate()->OnHostKeyEvent(&release_event);
-
-      return true;
-    }
-  }
 
   ui::InputMethod* input_method = root_window->GetProperty(
       aura::client::kRootWindowInputMethodKey);
@@ -103,6 +95,47 @@ bool MoveCursor(int swipe_direction,
   return true;
 }
 
+bool SendKeyEvent(const std::string type,
+                  int key_value,
+                  int key_code,
+                  bool shift_modifier,
+                  aura::RootWindow* root_window) {
+  ui::EventType event_type = ui::ET_UNKNOWN;
+  if (type == kKeyDown)
+    event_type = ui::ET_KEY_PRESSED;
+  else if (type == kKeyUp)
+    event_type = ui::ET_KEY_RELEASED;
+  if (event_type == ui::ET_UNKNOWN)
+    return false;
+
+  int flags = ui::EF_NONE;
+  if (shift_modifier)
+    flags = ui::EF_SHIFT_DOWN;
+
+  ui::KeyboardCode code = static_cast<ui::KeyboardCode>(key_code);
+
+  if (code == ui::VKEY_UNKNOWN) {
+    // Handling of special printable characters (e.g. accented characters) for
+    // which there is no key code.
+    if (event_type == ui::ET_KEY_RELEASED) {
+      ui::InputMethod* input_method = root_window->GetProperty(
+          aura::client::kRootWindowInputMethodKey);
+      if (!input_method)
+        return false;
+
+      ui::TextInputClient* tic = input_method->GetTextInputClient();
+
+      SendProcessKeyEvent(ui::ET_KEY_PRESSED, root_window);
+      tic->InsertChar(static_cast<uint16>(key_value), ui::EF_NONE);
+      SendProcessKeyEvent(ui::ET_KEY_RELEASED, root_window);
+    }
+  } else {
+    ui::KeyEvent event(event_type, code, flags, false);
+    root_window->AsRootWindowHostDelegate()->OnHostKeyEvent(&event);
+  }
+  return true;
+}
+
 const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
   // This looks a lot like the contents of a resource map; however it is
   // necessary to have a custom path for the extension path, so the resource
@@ -118,6 +151,7 @@ const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
     {"keyboard/elements/kb-altkey-set.html", IDR_KEYBOARD_ELEMENTS_ALTKEY_SET},
     {"keyboard/elements/kb-key.html", IDR_KEYBOARD_ELEMENTS_KEY},
     {"keyboard/elements/kb-key-base.html", IDR_KEYBOARD_ELEMENTS_KEY_BASE},
+    {"keyboard/elements/kb-key-codes.html", IDR_KEYBOARD_ELEMENTS_KEY_CODES},
     {"keyboard/elements/kb-key-import.html",
         IDR_KEYBOARD_ELEMENTS_KEY_IMPORT},
     {"keyboard/elements/kb-key-sequence.html",
@@ -125,6 +159,7 @@ const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
     {"keyboard/elements/kb-keyboard.html", IDR_KEYBOARD_ELEMENTS_KEYBOARD},
     {"keyboard/elements/kb-keyset.html", IDR_KEYBOARD_ELEMENTS_KEYSET},
     {"keyboard/elements/kb-row.html", IDR_KEYBOARD_ELEMENTS_ROW},
+    {"keyboard/elements/kb-shift-key.html", IDR_KEYBOARD_ELEMENTS_SHIFT_KEY},
     {"keyboard/images/keyboard.svg", IDR_KEYBOARD_IMAGES_KEYBOARD},
     {"keyboard/images/microphone.svg", IDR_KEYBOARD_IMAGES_MICROPHONE},
     {"keyboard/images/microphone-green.svg",
@@ -132,6 +167,7 @@ const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
     {"keyboard/index.html", IDR_KEYBOARD_INDEX},
     {"keyboard/layouts/dvorak.html", IDR_KEYBOARD_LAYOUTS_DVORAK},
     {"keyboard/layouts/latin-accents.js", IDR_KEYBOARD_LAYOUTS_LATIN_ACCENTS},
+    {"keyboard/layouts/numeric.html", IDR_KEYBOARD_LAYOUTS_NUMERIC},
     {"keyboard/layouts/qwerty.html", IDR_KEYBOARD_LAYOUTS_QWERTY},
     {"keyboard/layouts/symbol-altkeys.js",
         IDR_KEYBOARD_LAYOUTS_SYMBOL_ALTKEYS},

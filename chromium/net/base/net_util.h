@@ -112,11 +112,14 @@ NET_EXPORT std::string GetHostAndPort(const GURL& url);
 NET_EXPORT_PRIVATE std::string GetHostAndOptionalPort(const GURL& url);
 
 // Returns true if |hostname| contains a non-registerable or non-assignable
-// domain name (eg: a gTLD that has not been assigned by IANA)
-//
-// TODO(rsleevi): http://crbug.com/119212 - Also match internal IP
-// address ranges.
+// domain name (eg: a gTLD that has not been assigned by IANA) or an IP address
+// that falls in an IANA-reserved range.
 NET_EXPORT bool IsHostnameNonUnique(const std::string& hostname);
+
+// Returns true if an IP address hostname is in a range reserved by the IANA.
+// Works with both IPv4 and IPv6 addresses, and only compares against a given
+// protocols's reserved ranges.
+NET_EXPORT bool IsIPAddressReserved(const IPAddressNumber& address);
 
 // Convenience struct for when you need a |struct sockaddr|.
 struct SockaddrStorage {
@@ -162,6 +165,9 @@ NET_EXPORT std::string IPAddressToString(const IPAddressNumber& addr);
 // Same as IPAddressToStringWithPort() but for an IPAddressNumber.
 NET_EXPORT std::string IPAddressToStringWithPort(
     const IPAddressNumber& addr, uint16 port);
+
+// Returns the address as a sequence of bytes in network-byte-order.
+NET_EXPORT std::string IPAddressToPackedString(const IPAddressNumber& addr);
 
 // Returns the hostname of the current system. Returns empty string on failure.
 NET_EXPORT std::string GetHostName();
@@ -295,20 +301,17 @@ NET_EXPORT base::FilePath GenerateFileName(
     const std::string& mime_type,
     const std::string& default_name);
 
-// Valid basenames:
+// Valid components:
 // * are not empty
 // * are not Windows reserved names (CON, NUL.zip, etc.)
-// * are just basenames
 // * do not have trailing separators
 // * do not equal kCurrentDirectory
 // * do not reference the parent directory
-// * are valid path components, which:
-// - * are not the empty string
-// - * do not contain illegal characters
-// - * do not end with Windows shell-integrated extensions (even on posix)
-// - * do not begin with '.' (which would hide them in most file managers)
-// - * do not end with ' ' or '.'
-NET_EXPORT bool IsSafePortableBasename(const base::FilePath& path);
+// * do not contain illegal characters
+// * do not end with Windows shell-integrated extensions (even on posix)
+// * do not begin with '.' (which would hide them in most file managers)
+// * do not end with ' ' or '.'
+NET_EXPORT bool IsSafePortablePathComponent(const base::FilePath& component);
 
 // Basenames of valid relative paths are IsSafePortableBasename(), and internal
 // path components of valid relative paths are valid path components as
@@ -367,18 +370,28 @@ NET_EXPORT void AppendFormattedHost(const GURL& url,
 // UTF-8, decodes %-encoding and UTF-8.
 //
 // The last three parameters may be NULL.
+//
 // |new_parsed| will be set to the parsing parameters of the resultant URL.
+//
 // |prefix_end| will be the length before the hostname of the resultant URL.
 //
-// (|offset[s]_for_adjustment|) specifies one or more offsets into the original
-// |url|'s spec(); each offset will be modified to reflect changes this function
-// makes to the output string. For example, if |url| is "http://a:b@c.com/",
-// |omit_username_password| is true, and an offset is 12 (the offset of '.'),
-// then on return the output string will be "http://c.com/" and the offset will
-// be 8.  If an offset cannot be successfully adjusted (e.g. because it points
-// into the middle of a component that was entirely removed, past the end of the
-// string, or into the middle of an encoding sequence), it will be set to
-// base::string16::npos.
+// |offset[s]_for_adjustment| specifies one or more offsets into the original
+// URL, representing insertion or selection points between characters: if the
+// input is "http://foo.com/", offset 0 is before the entire URL, offset 7 is
+// between the scheme and the host, and offset 15 is after the end of the URL.
+// Valid input offsets range from 0 to the length of the input URL string.  On
+// exit, each offset will have been modified to reflect any changes made to the
+// output string.  For example, if |url| is "http://a:b@c.com/",
+// |omit_username_password| is true, and an offset is 12 (pointing between 'c'
+// and '.'), then on return the output string will be "http://c.com/" and the
+// offset will be 8.  If an offset cannot be successfully adjusted (e.g. because
+// it points into the middle of a component that was entirely removed or into
+// the middle of an encoding sequence), it will be set to base::string16::npos.
+// For consistency, if an input offset points between the scheme and the
+// username/password, and both are removed, on output this offset will be 0
+// rather than npos; this means that offsets at the starts and ends of removed
+// components are always transformed the same way regardless of what other
+// components are adjacent.
 NET_EXPORT base::string16 FormatUrl(const GURL& url,
                                     const std::string& languages,
                                     FormatUrlTypes format_types,
@@ -434,6 +447,9 @@ bool HaveOnlyLoopbackAddresses();
 // Returns AddressFamily of the address.
 NET_EXPORT_PRIVATE AddressFamily GetAddressFamily(
     const IPAddressNumber& address);
+
+// Maps the given AddressFamily to either AF_INET, AF_INET6 or AF_UNSPEC.
+int ConvertAddressFamily(AddressFamily address_family);
 
 // Parses an IP address literal (either IPv4 or IPv6) to its numeric value.
 // Returns true on success and fills |ip_number| with the numeric value.

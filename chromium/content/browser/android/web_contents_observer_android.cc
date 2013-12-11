@@ -67,8 +67,8 @@ void WebContentsObserverAndroid::DidStartLoading(
   ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
   if (obj.is_null())
     return;
-  ScopedJavaLocalRef<jstring> jstring_url(
-      ConvertUTF8ToJavaString(env, web_contents()->GetURL().spec()));
+  ScopedJavaLocalRef<jstring> jstring_url(ConvertUTF8ToJavaString(
+      env, web_contents()->GetVisibleURL().spec()));
   Java_WebContentsObserverAndroid_didStartLoading(
       env, obj.obj(), jstring_url.obj());
 }
@@ -87,7 +87,7 @@ void WebContentsObserverAndroid::DidStopLoading(
   if (entry && !entry->GetBaseURLForDataURL().is_empty()) {
     url_string = entry->GetBaseURLForDataURL().possibly_invalid_spec();
   } else {
-    url_string = web_contents()->GetURL().spec();
+    url_string = web_contents()->GetLastCommittedURL().spec();
   }
 
   ScopedJavaLocalRef<jstring> jstring_url(
@@ -210,6 +210,22 @@ void WebContentsObserverAndroid::DidChangeVisibleSSLState() {
   if (obj.is_null())
     return;
   Java_WebContentsObserverAndroid_didChangeVisibleSSLState(env, obj.obj());
+}
+
+void WebContentsObserverAndroid::DidAttachInterstitialPage() {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
+  if (obj.is_null())
+    return;
+  Java_WebContentsObserverAndroid_didAttachInterstitialPage(env, obj.obj());
+}
+
+void WebContentsObserverAndroid::DidDetachInterstitialPage() {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
+  if (obj.is_null())
+    return;
+  Java_WebContentsObserverAndroid_didDetachInterstitialPage(env, obj.obj());
 }
 
 void WebContentsObserverAndroid::DidFailLoadInternal(

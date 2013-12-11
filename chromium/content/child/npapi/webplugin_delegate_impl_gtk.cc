@@ -16,8 +16,8 @@
 #include "content/public/common/content_constants.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "ui/base/gtk/gtk_compat.h"
 #include "ui/gfx/blit.h"
+#include "ui/gfx/gtk_compat.h"
 #include "webkit/common/cursors/webcursor.h"
 
 #include "third_party/npapi/bindings/npapi_x11.h"
@@ -29,11 +29,12 @@ using WebKit::WebMouseEvent;
 namespace content {
 
 WebPluginDelegateImpl::WebPluginDelegateImpl(
+    WebPlugin* plugin,
     PluginInstance* instance)
     : windowed_handle_(0),
       windowed_did_set_window_(false),
       windowless_(false),
-      plugin_(NULL),
+      plugin_(plugin),
       instance_(instance),
       windowless_shm_pixmap_(None),
       pixmap_(NULL),
@@ -95,8 +96,7 @@ void WebPluginDelegateImpl::PlatformDestroyInstance() {
   // Nothing to do here.
 }
 
-void WebPluginDelegateImpl::Paint(WebKit::WebCanvas* canvas,
-                                  const gfx::Rect& rect) {
+void WebPluginDelegateImpl::Paint(SkCanvas* canvas, const gfx::Rect& rect) {
   if (!windowless_ || !skia::SupportsPlatformPaint(canvas))
     return;
   skia::ScopedPlatformPaint scoped_platform_paint(canvas);

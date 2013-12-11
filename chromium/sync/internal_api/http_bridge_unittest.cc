@@ -9,6 +9,7 @@
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_request_test_util.h"
+#include "sync/internal_api/public/base/cancelation_signal.h"
 #include "sync/internal_api/public/http_bridge.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -404,5 +405,116 @@ TEST_F(SyncHttpBridgeTest, AbortAndReleaseBeforeFetchComplete) {
   sync_thread.Stop();
   io_thread()->Stop();
 }
+
+void HttpBridgeRunOnSyncThread(
+    net::URLRequestContextGetter* baseline_context_getter,
+    CancelationSignal* factory_cancelation_signal,
+    syncer::HttpPostProviderFactory** bridge_factory_out,
+    syncer::HttpPostProviderInterface** bridge_out,
+    base::WaitableEvent* signal_when_created,
+    base::WaitableEvent* wait_for_shutdown) {
+  scoped_ptr<syncer::HttpBridgeFactory> bridge_factory(
+      new syncer::HttpBridgeFactory(baseline_context_getter,
+                                    NetworkTimeUpdateCallback(),
+                                    factory_cancelation_signal));
+  bridge_factory->Init("test");
+  *bridge_factory_out = bridge_factory.get();
+
+  HttpPostProviderInterface* bridge = bridge_factory->Create();
+  *bridge_out = bridge;
+
+  signal_when_created->Signal();
+  wait_for_shutdown->Wait();
+
+  bridge_factory->Destroy(bridge);
+}
+
+void WaitOnIOThread(base::WaitableEvent* signal_wait_start,
+                    base::WaitableEvent* wait_done) {
+  signal_wait_start->Signal();
+  wait_done->Wait();
+}
+
+// Tests RequestContextGetter is properly released on IO thread even when
+// IO thread stops before sync thread.
+TEST_F(SyncHttpBridgeTest, RequestContextGetterReleaseOrder) {
+  base::Thread sync_thread("SyncThread");
+  sync_thread.Start();
+
+  syncer::HttpPostProviderFactory* factory = NULL;
+  syncer::HttpPostProviderInterface* bridge = NULL;
+
+  scoped_refptr<net::URLRequestContextGetter> baseline_context_getter(
+      new net::TestURLRequestContextGetter(io_thread()->message_loop_proxy()));
+
+  base::WaitableEvent signal_when_created(false, false);
+  base::WaitableEvent wait_for_shutdown(false, false);
+
+  CancelationSignal release_request_context_signal;
+
+  // Create bridge factory and factory on sync thread and wait for the creation
+  // to finish.
+  sync_thread.message_loop()->PostTask(FROM_HERE,
+      base::Bind(&HttpBridgeRunOnSyncThread,
+                 base::Unretained(baseline_context_getter.get()),
+                 &release_request_context_signal ,&factory, &bridge,
+                 &signal_when_created, &wait_for_shutdown));
+  signal_when_created.Wait();
+
+  // Simulate sync shutdown by aborting bridge and shutting down factory on
+  // frontend.
+  bridge->Abort();
+  release_request_context_signal.Signal();
+
+  // Wait for sync's RequestContextGetter to be cleared on IO thread and
+  // check for reference count.
+  base::WaitableEvent signal_wait_start(false, false);
+  base::WaitableEvent wait_done(false, false);
+  io_thread()->message_loop()->PostTask(
+      FROM_HERE,
+      base::Bind(&WaitOnIOThread, &signal_wait_start, &wait_done));
+  signal_wait_start.Wait();
+  // |baseline_context_getter| should have only one reference from local
+  // variable.
+  EXPECT_TRUE(baseline_context_getter->HasOneRef());
+  baseline_context_getter = NULL;
+
+  // Unblock and stop IO thread before sync thread.
+  wait_done.Signal();
+  io_thread()->Stop();
+
+  // Unblock and stop sync thread.
+  wait_for_shutdown.Signal();
+  sync_thread.Stop();
+}
+
+// Attempt to release the URLRequestContextGetter before the HttpBridgeFactory
+// is initialized.
+TEST_F(SyncHttpBridgeTest, EarlyAbortFactory) {
+  // In a real scenario, the following would happen on many threads.  For
+  // simplicity, this test uses only one thread.
+
+  scoped_refptr<net::URLRequestContextGetter> baseline_context_getter(
+      new net::TestURLRequestContextGetter(io_thread()->message_loop_proxy()));
+  CancelationSignal release_request_context_signal;
+
+  // UI Thread: Initialize the HttpBridgeFactory.  The next step would be to
+  // post a task to SBH::Core to have it initialized.
+  scoped_ptr<syncer::HttpBridgeFactory> factory(new HttpBridgeFactory(
+      baseline_context_getter,
+      NetworkTimeUpdateCallback(),
+      &release_request_context_signal));
+
+  // UI Thread: A very early shutdown request arrives and executes on the UI
+  // thread before the posted sync thread task is run.
+  release_request_context_signal.Signal();
+
+  // Sync thread: Finally run the posted task, only to find that our
+  // HttpBridgeFactory has been neutered.  Should not crash.
+  factory->Init("TestUserAgent");
+
+  // At this point, attempting to use the factory would trigger a crash.  Both
+  // this test and the real world code should make sure this never happens.
+};
 
 }  // namespace syncer

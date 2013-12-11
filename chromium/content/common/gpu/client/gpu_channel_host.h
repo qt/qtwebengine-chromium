@@ -23,6 +23,7 @@
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_sync_channel.h"
 #include "media/video/video_decode_accelerator.h"
+#include "media/video/video_encode_accelerator.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 #include "ui/gl/gpu_preference.h"
@@ -108,7 +109,6 @@ class GpuChannelHost : public IPC::Sender,
   CommandBufferProxyImpl* CreateViewCommandBuffer(
       int32 surface_id,
       CommandBufferProxyImpl* share_group,
-      const std::string& allowed_extensions,
       const std::vector<int32>& attribs,
       const GURL& active_url,
       gfx::GpuPreference gpu_preference);
@@ -117,7 +117,6 @@ class GpuChannelHost : public IPC::Sender,
   CommandBufferProxyImpl* CreateOffscreenCommandBuffer(
       const gfx::Size& size,
       CommandBufferProxyImpl* share_group,
-      const std::string& allowed_extensions,
       const std::vector<int32>& attribs,
       const GURL& active_url,
       gfx::GpuPreference gpu_preference);
@@ -127,6 +126,10 @@ class GpuChannelHost : public IPC::Sender,
       int command_buffer_route_id,
       media::VideoCodecProfile profile,
       media::VideoDecodeAccelerator::Client* client);
+
+  // Creates a video encoder in the GPU process.
+  scoped_ptr<media::VideoEncodeAccelerator> CreateVideoEncoder(
+      media::VideoEncodeAccelerator::Client* client);
 
   // Destroy a command buffer created by this channel.
   void DestroyCommandBuffer(CommandBufferProxyImpl* command_buffer);

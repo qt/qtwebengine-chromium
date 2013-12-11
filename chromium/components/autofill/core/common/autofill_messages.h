@@ -7,27 +7,24 @@
 #include <string>
 
 #include "base/time/time.h"
-#include "components/autofill/core/common/autocheckout_status.h"
+#include "components/autofill/core/common/autofill_param_traits_macros.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_data_predictions.h"
 #include "components/autofill/core/common/form_field_data.h"
 #include "components/autofill/core/common/form_field_data_predictions.h"
 #include "components/autofill/core/common/forms_seen_state.h"
+#include "components/autofill/core/common/password_form.h"
 #include "components/autofill/core/common/password_form_fill_data.h"
 #include "components/autofill/core/common/web_element_descriptor.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/common_param_traits_macros.h"
-#include "content/public/common/password_form.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_message_utils.h"
 #include "third_party/WebKit/public/web/WebFormElement.h"
 #include "ui/gfx/rect.h"
-#include "url/gurl.h"
 
 #define IPC_MESSAGE_START AutofillMsgStart
 
-IPC_ENUM_TRAITS_MAX_VALUE(autofill::AutocheckoutStatus,
-                          autofill::AUTOCHECKOUT_STATUS_NUM_STATUS - 1)
 IPC_ENUM_TRAITS_MAX_VALUE(autofill::FormsSeenState,
                           autofill::FORMS_SEEN_STATE_NUM_STATES - 1)
 IPC_ENUM_TRAITS_MAX_VALUE(base::i18n::TextDirection,
@@ -38,7 +35,8 @@ IPC_STRUCT_TRAITS_BEGIN(autofill::WebElementDescriptor)
   IPC_STRUCT_TRAITS_MEMBER(retrieval_method)
 IPC_STRUCT_TRAITS_END()
 
-IPC_ENUM_TRAITS(autofill::WebElementDescriptor::RetrievalMethod)
+IPC_ENUM_TRAITS_MAX_VALUE(autofill::WebElementDescriptor::RetrievalMethod,
+                          autofill::WebElementDescriptor::NONE)
 
 IPC_STRUCT_TRAITS_BEGIN(autofill::FormFieldData)
   IPC_STRUCT_TRAITS_MEMBER(label)
@@ -63,15 +61,6 @@ IPC_STRUCT_TRAITS_BEGIN(autofill::FormFieldDataPredictions)
   IPC_STRUCT_TRAITS_MEMBER(heuristic_type)
   IPC_STRUCT_TRAITS_MEMBER(server_type)
   IPC_STRUCT_TRAITS_MEMBER(overall_type)
-IPC_STRUCT_TRAITS_END()
-
-IPC_STRUCT_TRAITS_BEGIN(autofill::FormData)
-  IPC_STRUCT_TRAITS_MEMBER(name)
-  IPC_STRUCT_TRAITS_MEMBER(method)
-  IPC_STRUCT_TRAITS_MEMBER(origin)
-  IPC_STRUCT_TRAITS_MEMBER(action)
-  IPC_STRUCT_TRAITS_MEMBER(user_submitted)
-  IPC_STRUCT_TRAITS_MEMBER(fields)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(autofill::FormDataPredictions)
@@ -99,12 +88,11 @@ IPC_STRUCT_TRAITS_BEGIN(autofill::PasswordAndRealm)
   IPC_STRUCT_TRAITS_MEMBER(realm)
 IPC_STRUCT_TRAITS_END()
 
-IPC_ENUM_TRAITS(WebKit::WebFormElement::AutocompleteResult)
+IPC_ENUM_TRAITS_MAX_VALUE(
+    WebKit::WebFormElement::AutocompleteResult,
+    WebKit::WebFormElement::AutocompleteResultErrorInvalid)
 
 // Autofill messages sent from the browser to the renderer.
-
-// Request to parse all the forms without field count limit.
-IPC_MESSAGE_ROUTED0(AutofillMsg_GetAllForms)
 
 // Reply to the AutofillHostMsg_FillAutofillFormData message with the
 // Autofill form data.
@@ -159,7 +147,7 @@ IPC_MESSAGE_ROUTED1(AutofillMsg_AcceptPasswordAutofillSuggestion,
 // Tells the renderer that this password form is not blacklisted.  A form can
 // be blacklisted if a user chooses "never save passwords for this site".
 IPC_MESSAGE_ROUTED1(AutofillMsg_FormNotBlacklisted,
-                    content::PasswordForm /* form checked */)
+                    autofill::PasswordForm /* form checked */)
 
 // Sent when requestAutocomplete() finishes (either succesfully or with an
 // error). If it was a success, the renderer fills the form that requested
@@ -168,24 +156,14 @@ IPC_MESSAGE_ROUTED2(AutofillMsg_RequestAutocompleteResult,
                     WebKit::WebFormElement::AutocompleteResult /* result */,
                     autofill::FormData /* form_data */)
 
-// Sent when a page should be filled using Autocheckout. This happens when the
-// Autofill server hints that a page is Autocheckout enabled.
-IPC_MESSAGE_ROUTED4(AutofillMsg_FillFormsAndClick,
-                    std::vector<autofill::FormData> /* form_data */,
-                    std::vector<autofill::WebElementDescriptor> /*
-                        click_elements_before_form_fill */,
-                    std::vector<autofill::WebElementDescriptor> /*
-                        click_elements_after_form_fill */,
-                    autofill::WebElementDescriptor /* element_descriptor */)
-
-// Sent when Autocheckout is supported for the current page. The page has to
-// be whitelisted and the Autofill server must have returned Autocheckout page
-// metadata.
-IPC_MESSAGE_ROUTED0(AutofillMsg_AutocheckoutSupported)
-
 // Sent when the current page is actually displayed in the browser, possibly
 // after being preloaded.
 IPC_MESSAGE_ROUTED0(AutofillMsg_PageShown)
+
+// Sent when Autofill manager gets the query response from the Autofill server
+// and there are fields classified as ACCOUNT_CREATION_PASSWORD in the response.
+IPC_MESSAGE_ROUTED1(AutofillMsg_AccountCreationFormsDetected,
+                    std::vector<autofill::FormData> /* forms */)
 
 // Autofill messages sent from the renderer to the browser.
 
@@ -202,12 +180,16 @@ IPC_MESSAGE_ROUTED3(AutofillHostMsg_FormsSeen,
 // Notification that password forms have been seen that are candidates for
 // filling/submitting by the password manager.
 IPC_MESSAGE_ROUTED1(AutofillHostMsg_PasswordFormsParsed,
-                    std::vector<content::PasswordForm> /* forms */)
+                    std::vector<autofill::PasswordForm> /* forms */)
 
 // Notification that initial layout has occurred and the following password
 // forms are visible on the page (e.g. not set to display:none.)
 IPC_MESSAGE_ROUTED1(AutofillHostMsg_PasswordFormsRendered,
-                    std::vector<content::PasswordForm> /* forms */)
+                    std::vector<autofill::PasswordForm> /* forms */)
+
+// Notification that this password form was submitted by the user.
+IPC_MESSAGE_ROUTED1(AutofillHostMsg_PasswordFormSubmitted,
+                    autofill::PasswordForm /* form */)
 
 // Notification that a form has been submitted.  The user hit the button.
 IPC_MESSAGE_ROUTED2(AutofillHostMsg_FormSubmitted,
@@ -219,11 +201,6 @@ IPC_MESSAGE_ROUTED3(AutofillHostMsg_TextFieldDidChange,
                     autofill::FormData /* the form */,
                     autofill::FormFieldData /* the form field */,
                     base::TimeTicks /* timestamp */)
-
-// Shows the Autocheckout bubble if the conditions are right.
-IPC_MESSAGE_ROUTED2(AutofillHostMsg_MaybeShowAutocheckoutBubble,
-                    autofill::FormData /* form */,
-                    gfx::RectF /* bounding_box */)
 
 // Queries the browser for Autofill suggestions for a form input field.
 IPC_MESSAGE_ROUTED5(AutofillHostMsg_QueryFormFieldAutofill,
@@ -262,18 +239,13 @@ IPC_MESSAGE_ROUTED0(AutofillHostMsg_DidEndTextFieldEditing)
 // Instructs the browser to hide the Autofill UI.
 IPC_MESSAGE_ROUTED0(AutofillHostMsg_HideAutofillUI)
 
-// Sent when the renderer filled an Autocheckout page and clicked the proceed
-// button or if there was an error.
-IPC_MESSAGE_ROUTED1(AutofillHostMsg_AutocheckoutPageCompleted,
-                    autofill::AutocheckoutStatus /* status */)
-
 // Instructs the browser to show the password generation bubble at the
 // specified location. This location should be specified in the renderers
 // coordinate system. Form is the form associated with the password field.
 IPC_MESSAGE_ROUTED3(AutofillHostMsg_ShowPasswordGenerationPopup,
                     gfx::Rect /* source location */,
                     int /* max length of the password */,
-                    content::PasswordForm)
+                    autofill::PasswordForm)
 
 // Instruct the browser that a password mapping has been found for a field.
 IPC_MESSAGE_ROUTED2(AutofillHostMsg_AddPasswordFormMapping,

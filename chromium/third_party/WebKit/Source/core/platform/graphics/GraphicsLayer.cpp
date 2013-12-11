@@ -39,7 +39,6 @@
 #include "core/platform/graphics/chromium/TransformSkMatrix44Conversions.h"
 #include "core/platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "core/platform/graphics/skia/NativeImageSkia.h"
-#include "core/platform/graphics/transforms/RotateTransformOperation.h"
 #include "core/platform/text/TextStream.h"
 
 #include "wtf/CurrentTime.h"
@@ -79,26 +78,6 @@ static RepaintMap& repaintRectMap()
     return map;
 }
 
-void KeyframeValueList::insert(PassOwnPtr<const AnimationValue> value)
-{
-    for (size_t i = 0; i < m_values.size(); ++i) {
-        const AnimationValue* curValue = m_values[i].get();
-        if (curValue->keyTime() == value->keyTime()) {
-            ASSERT_NOT_REACHED();
-            // insert after
-            m_values.insert(i + 1, value);
-            return;
-        }
-        if (curValue->keyTime() > value->keyTime()) {
-            // insert before
-            m_values.insert(i, value);
-            return;
-        }
-    }
-
-    m_values.append(value);
-}
-
 PassOwnPtr<GraphicsLayer> GraphicsLayer::create(GraphicsLayerFactory* factory, GraphicsLayerClient* client)
 {
     return factory->createGraphicsLayer(client);
@@ -115,19 +94,18 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     , m_masksToBounds(false)
     , m_drawsContent(false)
     , m_contentsVisible(true)
-    , m_showRepaintCounter(false)
     , m_paintingPhase(GraphicsLayerPaintAllWithOverflowClip)
     , m_contentsOrientation(CompositingCoordinatesTopDown)
     , m_parent(0)
     , m_maskLayer(0)
     , m_replicaLayer(0)
     , m_replicatedLayer(0)
-    , m_repaintCount(0)
+    , m_paintCount(0)
     , m_contentsLayer(0)
     , m_contentsLayerId(0)
-    , m_linkHighlight(0)
     , m_contentsLayerPurpose(NoContentsLayer)
     , m_scrollableArea(0)
+    , m_compositingReasons(WebKit::CompositingReasonUnknown)
 {
 #ifndef NDEBUG
     if (m_client)
@@ -137,15 +115,15 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     m_opaqueRectTrackingContentLayerDelegate = adoptPtr(new OpaqueRectTrackingContentLayerDelegate(this));
     m_layer = adoptPtr(Platform::current()->compositorSupport()->createContentLayer(m_opaqueRectTrackingContentLayerDelegate.get()));
     m_layer->layer()->setDrawsContent(m_drawsContent && m_contentsVisible);
+    m_layer->layer()->setWebLayerClient(this);
     m_layer->setAutomaticallyComputeRasterScale(true);
 }
 
 GraphicsLayer::~GraphicsLayer()
 {
-    if (m_linkHighlight) {
-        m_linkHighlight->clearCurrentGraphicsLayer();
-        m_linkHighlight = 0;
-    }
+    for (size_t i = 0; i < m_linkHighlights.size(); ++i)
+        m_linkHighlights[i]->clearCurrentGraphicsLayer();
+    m_linkHighlights.clear();
 
 #ifndef NDEBUG
     if (m_client)
@@ -357,8 +335,10 @@ void GraphicsLayer::setOffsetFromRenderer(const IntSize& offset, ShouldSetNeedsD
 
 void GraphicsLayer::paintGraphicsLayerContents(GraphicsContext& context, const IntRect& clip)
 {
-    if (m_client)
-        m_client->paintContents(this, context, m_paintingPhase, clip);
+    if (!m_client)
+        return;
+    incrementPaintCount();
+    m_client->paintContents(this, context, m_paintingPhase, clip);
 }
 
 String GraphicsLayer::animationNameForTransition(AnimatedPropertyID property)
@@ -399,134 +379,6 @@ void GraphicsLayer::distributeOpacity(float accumulatedOpacity)
     }
 }
 
-static inline const FilterOperations* filterOperationsAt(const KeyframeValueList& valueList, size_t index)
-{
-    return static_cast<const FilterAnimationValue*>(valueList.at(index))->value();
-}
-
-int GraphicsLayer::validateFilterOperations(const KeyframeValueList& valueList)
-{
-    ASSERT(valueList.property() == AnimatedPropertyWebkitFilter);
-
-    if (valueList.size() < 2)
-        return -1;
-
-    // Empty filters match anything, so find the first non-empty entry as the reference
-    size_t firstIndex = 0;
-    for ( ; firstIndex < valueList.size(); ++firstIndex) {
-        if (filterOperationsAt(valueList, firstIndex)->operations().size() > 0)
-            break;
-    }
-
-    if (firstIndex >= valueList.size())
-        return -1;
-
-    const FilterOperations* firstVal = filterOperationsAt(valueList, firstIndex);
-
-    for (size_t i = firstIndex + 1; i < valueList.size(); ++i) {
-        const FilterOperations* val = filterOperationsAt(valueList, i);
-
-        // An emtpy filter list matches anything.
-        if (val->operations().isEmpty())
-            continue;
-
-        if (!firstVal->operationsMatch(*val))
-            return -1;
-    }
-
-    return firstIndex;
-}
-
-// An "invalid" list is one whose functions don't match, and therefore has to be animated as a Matrix
-// The hasBigRotation flag will always return false if isValid is false. Otherwise hasBigRotation is
-// true if the rotation between any two keyframes is >= 180 degrees.
-
-static inline const TransformOperations* operationsAt(const KeyframeValueList& valueList, size_t index)
-{
-    return static_cast<const TransformAnimationValue*>(valueList.at(index))->value();
-}
-
-int GraphicsLayer::validateTransformOperations(const KeyframeValueList& valueList, bool& hasBigRotation)
-{
-    ASSERT(valueList.property() == AnimatedPropertyWebkitTransform);
-
-    hasBigRotation = false;
-
-    if (valueList.size() < 2)
-        return -1;
-
-    // Empty transforms match anything, so find the first non-empty entry as the reference.
-    size_t firstIndex = 0;
-    for ( ; firstIndex < valueList.size(); ++firstIndex) {
-        if (operationsAt(valueList, firstIndex)->operations().size() > 0)
-            break;
-    }
-
-    if (firstIndex >= valueList.size())
-        return -1;
-
-    const TransformOperations* firstVal = operationsAt(valueList, firstIndex);
-
-    // See if the keyframes are valid.
-    for (size_t i = firstIndex + 1; i < valueList.size(); ++i) {
-        const TransformOperations* val = operationsAt(valueList, i);
-
-        // An emtpy transform list matches anything.
-        if (val->operations().isEmpty())
-            continue;
-
-        if (!firstVal->operationsMatch(*val))
-            return -1;
-    }
-
-    // Keyframes are valid, check for big rotations.
-    double lastRotAngle = 0.0;
-    double maxRotAngle = -1.0;
-
-    for (size_t j = 0; j < firstVal->operations().size(); ++j) {
-        TransformOperation::OperationType type = firstVal->operations().at(j)->getOperationType();
-
-        // if this is a rotation entry, we need to see if any angle differences are >= 180 deg
-        if (type == TransformOperation::RotateX
-            || type == TransformOperation::RotateY
-            || type == TransformOperation::RotateZ
-            || type == TransformOperation::Rotate3D) {
-            lastRotAngle = static_cast<RotateTransformOperation*>(firstVal->operations().at(j).get())->angle();
-
-            if (maxRotAngle < 0)
-                maxRotAngle = fabs(lastRotAngle);
-
-            for (size_t i = firstIndex + 1; i < valueList.size(); ++i) {
-                const TransformOperations* val = operationsAt(valueList, i);
-                double rotAngle = val->operations().isEmpty() ? 0 : (static_cast<RotateTransformOperation*>(val->operations().at(j).get())->angle());
-                double diffAngle = fabs(rotAngle - lastRotAngle);
-                if (diffAngle > maxRotAngle)
-                    maxRotAngle = diffAngle;
-                lastRotAngle = rotAngle;
-            }
-        }
-    }
-
-    hasBigRotation = maxRotAngle >= 180.0;
-
-    return firstIndex;
-}
-
-void GraphicsLayer::updateNames()
-{
-    String debugName = "Layer for " + m_nameBase;
-    m_layer->layer()->setDebugName(debugName);
-
-    if (WebLayer* contentsLayer = contentsLayerIfRegistered()) {
-        String debugName = "ContentsLayer for " + m_nameBase;
-        contentsLayer->setDebugName(debugName);
-    }
-    if (m_linkHighlight) {
-        String debugName = "LinkHighlight for " + m_nameBase;
-        m_linkHighlight->layer()->setDebugName(debugName);
-    }
-}
-
 void GraphicsLayer::updateChildList()
 {
     WebLayer* childHost = m_layer->layer();
@@ -549,8 +401,8 @@ void GraphicsLayer::updateChildList()
         childHost->addChild(curChild->platformLayer());
     }
 
-    if (m_linkHighlight)
-        childHost->addChild(m_linkHighlight->layer());
+    for (size_t i = 0; i < m_linkHighlights.size(); ++i)
+        childHost->addChild(m_linkHighlights[i]->layer());
 }
 
 void GraphicsLayer::updateLayerIsDrawable()
@@ -566,8 +418,8 @@ void GraphicsLayer::updateLayerIsDrawable()
 
     if (m_drawsContent) {
         m_layer->layer()->invalidate();
-        if (m_linkHighlight)
-            m_linkHighlight->invalidate();
+        for (size_t i = 0; i < m_linkHighlights.size(); ++i)
+            m_linkHighlights[i]->invalidate();
     }
 }
 
@@ -619,6 +471,7 @@ void GraphicsLayer::setContentsTo(ContentsLayerPurpose purpose, WebLayer* layer)
 
             // The old contents layer will be removed via updateChildList.
             m_contentsLayer = 0;
+            m_contentsLayerId = 0;
         }
     }
 
@@ -632,6 +485,7 @@ void GraphicsLayer::setupContentsLayer(WebLayer* contentsLayer)
     m_contentsLayerId = m_contentsLayer->id();
 
     if (m_contentsLayer) {
+        m_contentsLayer->setWebLayerClient(this);
         m_contentsLayer->setAnchorPoint(FloatPoint(0, 0));
         m_contentsLayer->setUseParentBackfaceVisibility(true);
 
@@ -643,7 +497,6 @@ void GraphicsLayer::setupContentsLayer(WebLayer* contentsLayer)
         // shadow content that must display in front of the video.
         m_layer->layer()->insertChild(m_contentsLayer, 0);
     }
-    updateNames();
 }
 
 void GraphicsLayer::clearContentsLayerIfUnregistered()
@@ -705,7 +558,7 @@ void GraphicsLayer::dumpLayer(TextStream& ts, int indent, LayerTreeFlags flags) 
 
     if (flags & LayerTreeIncludesDebugInfo) {
         ts << " " << static_cast<void*>(const_cast<GraphicsLayer*>(this));
-        ts << " \"" << m_name << "\"";
+        ts << " \"" << m_client->debugName(this) << "\"";
     }
 
     ts << "\n";
@@ -776,7 +629,7 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags fl
         ts << ")\n";
     }
 
-    if (m_backgroundColor != Color::transparent) {
+    if (m_backgroundColor.isValid() && m_backgroundColor != Color::transparent) {
         writeIndent(ts, indent + 1);
         ts << "(backgroundColor " << m_backgroundColor.nameForRenderTreeAsText() << ")\n";
     }
@@ -885,15 +738,35 @@ String GraphicsLayer::layerTreeAsText(LayerTreeFlags flags) const
     return ts.release();
 }
 
-void GraphicsLayer::setName(const String& name)
+WebKit::WebString GraphicsLayer::debugName(WebKit::WebLayer* webLayer)
 {
-    m_nameBase = name;
-    m_name = String::format("GraphicsLayer(%p) ", this) + name;
-    updateNames();
+    String name;
+    if (!m_client)
+        return name;
+
+    String highlightDebugName;
+    for (size_t i = 0; i < m_linkHighlights.size(); ++i) {
+        if (webLayer == m_linkHighlights[i]->layer()) {
+            highlightDebugName = "LinkHighlight[" + String::number(i) + "] for " + m_client->debugName(this);
+            break;
+        }
+    }
+
+    if (webLayer == m_contentsLayer) {
+        name = "ContentsLayer for " + m_client->debugName(this);
+    } else if (!highlightDebugName.isEmpty()) {
+        name = highlightDebugName;
+    } else if (webLayer == m_layer->layer()) {
+        name = m_client->debugName(this);
+    } else {
+        ASSERT_NOT_REACHED();
+    }
+    return name;
 }
 
 void GraphicsLayer::setCompositingReasons(WebKit::WebCompositingReasons reasons)
 {
+    m_compositingReasons = reasons;
     m_layer->layer()->setCompositingReasons(reasons);
 }
 
@@ -1029,8 +902,8 @@ void GraphicsLayer::setNeedsDisplay()
     if (drawsContent()) {
         m_layer->layer()->invalidate();
         addRepaintRect(FloatRect(FloatPoint(), m_size));
-        if (m_linkHighlight)
-            m_linkHighlight->invalidate();
+        for (size_t i = 0; i < m_linkHighlights.size(); ++i)
+            m_linkHighlights[i]->invalidate();
     }
 }
 
@@ -1039,8 +912,8 @@ void GraphicsLayer::setNeedsDisplayInRect(const FloatRect& rect)
     if (drawsContent()) {
         m_layer->layer()->invalidateRect(rect);
         addRepaintRect(rect);
-        if (m_linkHighlight)
-            m_linkHighlight->invalidate();
+        for (size_t i = 0; i < m_linkHighlights.size(); ++i)
+            m_linkHighlights[i]->invalidate();
     }
 }
 
@@ -1082,6 +955,22 @@ void GraphicsLayer::setContentsToImage(Image* image)
 
     if (childrenChanged)
         updateChildList();
+}
+
+void GraphicsLayer::setContentsToNinePatch(Image* image, const IntRect& aperture)
+{
+    if (m_ninePatchLayer) {
+        unregisterContentsLayer(m_ninePatchLayer->layer());
+        m_ninePatchLayer.clear();
+    }
+    RefPtr<NativeImageSkia> nativeImage = image ? image->nativeImageForCurrentFrame() : 0;
+    if (nativeImage) {
+        m_ninePatchLayer = adoptPtr(Platform::current()->compositorSupport()->createNinePatchLayer());
+        m_ninePatchLayer->setBitmap(nativeImage->bitmap(), aperture);
+        m_ninePatchLayer->layer()->setOpaque(image->currentFrameKnownToBeOpaque());
+        registerContentsLayer(m_ninePatchLayer->layer());
+    }
+    setContentsTo(ContentsLayerForNinePatch, m_ninePatchLayer ? m_ninePatchLayer->layer() : 0);
 }
 
 void GraphicsLayer::setContentsToCanvas(WebLayer* layer)
@@ -1236,6 +1125,8 @@ bool GraphicsLayer::setFilters(const FilterOperations& filters)
             return false;
         }
         SkiaImageFilterBuilder builder;
+        FilterOutsets outsets = filters.outsets();
+        builder.setCropOffset(FloatSize(outsets.left(), outsets.top()));
         RefPtr<SkImageFilter> imageFilter = builder.build(filters);
         m_layer->layer()->setFilter(imageFilter.get());
     } else {
@@ -1263,9 +1154,17 @@ void GraphicsLayer::setBackgroundFilters(const FilterOperations& filters)
     m_layer->layer()->setBackgroundFilters(*webFilters);
 }
 
-void GraphicsLayer::setLinkHighlight(LinkHighlightClient* linkHighlight)
+void GraphicsLayer::addLinkHighlight(LinkHighlightClient* linkHighlight)
 {
-    m_linkHighlight = linkHighlight;
+    ASSERT(linkHighlight && !m_linkHighlights.contains(linkHighlight));
+    m_linkHighlights.append(linkHighlight);
+    linkHighlight->layer()->setWebLayerClient(this);
+    updateChildList();
+}
+
+void GraphicsLayer::removeLinkHighlight(LinkHighlightClient* linkHighlight)
+{
+    m_linkHighlights.remove(m_linkHighlights.find(linkHighlight));
     updateChildList();
 }
 

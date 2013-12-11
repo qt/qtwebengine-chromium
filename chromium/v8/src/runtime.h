@@ -87,20 +87,21 @@ namespace internal {
   F(NewStrictArgumentsFast, 3, 1) \
   F(LazyCompile, 1, 1) \
   F(LazyRecompile, 1, 1) \
-  F(ParallelRecompile, 1, 1) \
-  F(InstallRecompiledCode, 1, 1) \
+  F(ConcurrentRecompile, 1, 1) \
+  F(TryInstallRecompiledCode, 1, 1) \
   F(NotifyDeoptimized, 1, 1) \
   F(NotifyStubFailure, 0, 1) \
   F(NotifyOSR, 0, 1) \
   F(DeoptimizeFunction, 1, 1) \
   F(ClearFunctionTypeFeedback, 1, 1) \
   F(RunningInSimulator, 0, 1) \
-  F(IsParallelRecompilationSupported, 0, 1) \
+  F(IsConcurrentRecompilationSupported, 0, 1) \
   F(OptimizeFunctionOnNextCall, -1, 1) \
   F(NeverOptimizeFunction, 1, 1) \
   F(GetOptimizationStatus, -1, 1) \
   F(GetOptimizationCount, 1, 1) \
-  F(CompileForOnStackReplacement, 1, 1) \
+  F(CompileForOnStackReplacement, 2, 1) \
+  F(SetAllocationTimeout, 2, 1) \
   F(AllocateInNewSpace, 1, 1) \
   F(AllocateInOldPointerSpace, 1, 1) \
   F(AllocateInOldDataSpace, 1, 1) \
@@ -109,6 +110,9 @@ namespace internal {
   F(DebugCallbackSupportsStepping, 1, 1) \
   F(DebugPrepareStepInIfStepping, 1, 1) \
   F(FlattenString, 1, 1) \
+  F(MigrateInstance, 1, 1) \
+  F(NotifyContextDisposed, 0, 1) \
+  F(MaxSmi, 0, 1) \
   \
   /* Array join support */ \
   F(PushIfAbsent, 2, 1) \
@@ -157,7 +161,6 @@ namespace internal {
   F(NumberOr, 2, 1) \
   F(NumberAnd, 2, 1) \
   F(NumberXor, 2, 1) \
-  F(NumberNot, 1, 1) \
   \
   F(NumberShl, 2, 1) \
   F(NumberShr, 2, 1) \
@@ -219,7 +222,8 @@ namespace internal {
   F(NumberToRadixString, 2, 1) \
   F(NumberToFixed, 2, 1) \
   F(NumberToExponential, 2, 1) \
-  F(NumberToPrecision, 2, 1)
+  F(NumberToPrecision, 2, 1) \
+  F(IsValidSmi, 1, 1)
 
 
 #define RUNTIME_FUNCTION_LIST_ALWAYS_2(F) \
@@ -256,6 +260,7 @@ namespace internal {
   F(GetTemplateField, 2, 1) \
   F(DisableAccessChecks, 1, 1) \
   F(EnableAccessChecks, 1, 1) \
+  F(SetAccessorProperty, 6, 1) \
   \
   /* Dates */ \
   F(DateCurrentTime, 0, 1) \
@@ -354,6 +359,7 @@ namespace internal {
   F(GetObservationState, 0, 1) \
   F(ObservationWeakMapCreate, 0, 1) \
   F(UnwrapGlobalProxy, 1, 1) \
+  F(IsAccessAllowedForObserver, 3, 1) \
   \
   /* Harmony typed arrays */ \
   F(ArrayBufferInitialize, 2, 1)\
@@ -392,6 +398,7 @@ namespace internal {
   \
   /* Statements */ \
   F(NewClosure, 3, 1) \
+  F(NewClosureFromStubFailure, 1, 1) \
   F(NewObject, 1, 1) \
   F(NewObjectFromBound, 1, 1) \
   F(FinalizeInstanceSize, 1, 1) \
@@ -464,7 +471,8 @@ namespace internal {
   F(HasExternalDoubleElements, 1, 1) \
   F(HasFastProperties, 1, 1) \
   F(TransitionElementsKind, 2, 1) \
-  F(HaveSameMap, 2, 1)
+  F(HaveSameMap, 2, 1) \
+  F(IsAccessCheckNeeded, 1, 1)
 
 
 #ifdef ENABLE_DEBUGGER_SUPPORT
@@ -499,7 +507,7 @@ namespace internal {
   F(ClearBreakPoint, 1, 1) \
   F(ChangeBreakOnException, 2, 1) \
   F(IsBreakOnException, 1, 1) \
-  F(PrepareStep, 3, 1) \
+  F(PrepareStep, 4, 1) \
   F(ClearStepping, 0, 1) \
   F(DebugEvaluate, 6, 1) \
   F(DebugEvaluateGlobal, 4, 1) \
@@ -534,6 +542,43 @@ namespace internal {
 #define RUNTIME_FUNCTION_LIST_DEBUGGER_SUPPORT(F)
 #endif
 
+
+#ifdef V8_I18N_SUPPORT
+#define RUNTIME_FUNCTION_LIST_I18N_SUPPORT(F) \
+  /* i18n support */ \
+  /* Standalone, helper methods. */ \
+  F(CanonicalizeLanguageTag, 1, 1) \
+  F(AvailableLocalesOf, 1, 1) \
+  F(GetDefaultICULocale, 0, 1) \
+  F(GetLanguageTagVariants, 1, 1) \
+  \
+  /* Date format and parse. */ \
+  F(CreateDateTimeFormat, 3, 1) \
+  F(InternalDateFormat, 2, 1) \
+  F(InternalDateParse, 2, 1) \
+  \
+  /* Number format and parse. */ \
+  F(CreateNumberFormat, 3, 1) \
+  F(InternalNumberFormat, 2, 1) \
+  F(InternalNumberParse, 2, 1) \
+  \
+  /* Collator. */ \
+  F(CreateCollator, 3, 1) \
+  F(InternalCompare, 3, 1) \
+  \
+  /* Break iterator. */ \
+  F(CreateBreakIterator, 3, 1) \
+  F(BreakIteratorAdoptText, 2, 1) \
+  F(BreakIteratorFirst, 1, 1) \
+  F(BreakIteratorNext, 1, 1) \
+  F(BreakIteratorCurrent, 1, 1) \
+  F(BreakIteratorBreakType, 1, 1) \
+
+#else
+#define RUNTIME_FUNCTION_LIST_I18N_SUPPORT(F)
+#endif
+
+
 #ifdef DEBUG
 #define RUNTIME_FUNCTION_LIST_DEBUG(F) \
   /* Testing */ \
@@ -551,7 +596,8 @@ namespace internal {
   RUNTIME_FUNCTION_LIST_ALWAYS_1(F) \
   RUNTIME_FUNCTION_LIST_ALWAYS_2(F) \
   RUNTIME_FUNCTION_LIST_DEBUG(F) \
-  RUNTIME_FUNCTION_LIST_DEBUGGER_SUPPORT(F)
+  RUNTIME_FUNCTION_LIST_DEBUGGER_SUPPORT(F) \
+  RUNTIME_FUNCTION_LIST_I18N_SUPPORT(F)
 
 // ----------------------------------------------------------------------------
 // INLINE_FUNCTION_LIST defines all inlined functions accessed

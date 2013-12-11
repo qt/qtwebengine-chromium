@@ -23,7 +23,8 @@ namespace debug {
 
 class StackTrace;
 
-// Set or clear a specific key-value pair from the crash metadata.
+// Set or clear a specific key-value pair from the crash metadata. Keys and
+// values are terminated at the null byte.
 BASE_EXPORT void SetCrashKeyValue(const base::StringPiece& key,
                                   const base::StringPiece& value);
 BASE_EXPORT void ClearCrashKey(const base::StringPiece& key);
@@ -55,7 +56,7 @@ class BASE_EXPORT ScopedCrashKey {
 // Before setting values for a key, all the keys must be registered.
 struct BASE_EXPORT CrashKey {
   // The name of the crash key, used in the above functions.
-  const char* const key_name;
+  const char* key_name;
 
   // The maximum length for a value. If the value is longer than this, it will
   // be truncated. If the value is larger than the |chunk_max_length| passed to
@@ -75,6 +76,8 @@ BASE_EXPORT size_t InitCrashKeys(const CrashKey* const keys, size_t count,
 // Returns the correspnding crash key object or NULL for a given key.
 BASE_EXPORT const CrashKey* LookupCrashKey(const base::StringPiece& key);
 
+// In the platform crash reporting implementation, these functions set and
+// clear the NUL-termianted key-value pairs.
 typedef void (*SetCrashKeyValueFuncT)(const base::StringPiece&,
                                       const base::StringPiece&);
 typedef void (*ClearCrashKeyValueFuncT)(const base::StringPiece&);

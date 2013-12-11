@@ -13,7 +13,6 @@
 #include "cc/output/context_provider.h"
 #include "cc/output/software_output_device.h"
 #include "cc/scheduler/frame_rate_controller.h"
-#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 
 namespace base { class SingleThreadTaskRunner; }
 
@@ -31,7 +30,6 @@ class CompositorFrame;
 class CompositorFrameAck;
 struct ManagedMemoryPolicy;
 class OutputSurfaceClient;
-class OutputSurfaceCallbacks;
 
 // Represents the output surface for a compositor. The compositor owns
 // and manages its destruction. Its lifetime is:
@@ -46,11 +44,11 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
     DEFAULT_MAX_FRAMES_PENDING = 2
   };
 
-  explicit OutputSurface(scoped_ptr<WebKit::WebGraphicsContext3D> context3d);
+  explicit OutputSurface(scoped_refptr<ContextProvider> context_provider);
 
   explicit OutputSurface(scoped_ptr<cc::SoftwareOutputDevice> software_device);
 
-  OutputSurface(scoped_ptr<WebKit::WebGraphicsContext3D> context3d,
+  OutputSurface(scoped_refptr<ContextProvider> context_provider,
                 scoped_ptr<cc::SoftwareOutputDevice> software_device);
 
   virtual ~OutputSurface();
@@ -61,7 +59,8 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
           max_frames_pending(0),
           deferred_gl_initialization(false),
           draw_and_swap_full_viewport_every_frame(false),
-          adjust_deadline_for_parent(true) {}
+          adjust_deadline_for_parent(true),
+          uses_default_gl_framebuffer(true) {}
     bool delegated_rendering;
     int max_frames_pending;
     bool deferred_gl_initialization;
@@ -69,20 +68,24 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
     // This doesn't handle the <webview> case, but once BeginFrame is
     // supported natively, we shouldn't need adjust_deadline_for_parent.
     bool adjust_deadline_for_parent;
+    // Whether this output surface renders to the default OpenGL zero
+    // framebuffer or to an offscreen framebuffer.
+    bool uses_default_gl_framebuffer;
   };
 
   const Capabilities& capabilities() const {
     return capabilities_;
   }
 
+  virtual bool HasExternalStencilTest() const;
+
   // Obtain the 3d context or the software device associated with this output
   // surface. Either of these may return a null pointer, but not both.
   // In the event of a lost context, the entire output surface should be
   // recreated.
-  WebKit::WebGraphicsContext3D* context3d() const {
-    return context3d_.get();
+  scoped_refptr<ContextProvider> context_provider() const {
+    return context_provider_.get();
   }
-
   SoftwareOutputDevice* software_device() const {
     return software_device_.get();
   }
@@ -127,21 +130,22 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
   // OutputSurfaceClient::BeginFrame until the callback is disabled.
   virtual void SetNeedsBeginFrame(bool enable);
 
+  bool HasClient() { return !!client_; }
+
  protected:
   // Synchronously initialize context3d and enter hardware mode.
   // This can only supported in threaded compositing mode.
   // |offscreen_context_provider| should match what is returned by
   // LayerTreeClient::OffscreenContextProviderForCompositorThread.
-  bool InitializeAndSetContext3D(
-      scoped_ptr<WebKit::WebGraphicsContext3D> context3d,
+  bool InitializeAndSetContext3d(
+      scoped_refptr<ContextProvider> context_provider,
       scoped_refptr<ContextProvider> offscreen_context_provider);
   void ReleaseGL();
 
   void PostSwapBuffersComplete();
 
   struct cc::OutputSurface::Capabilities capabilities_;
-  scoped_ptr<OutputSurfaceCallbacks> callbacks_;
-  scoped_ptr<WebKit::WebGraphicsContext3D> context3d_;
+  scoped_refptr<ContextProvider> context_provider_;
   scoped_ptr<cc::SoftwareOutputDevice> software_device_;
   bool has_gl_discard_backbuffer_;
   bool has_swap_buffers_complete_callback_;
@@ -159,22 +163,28 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
   int max_frames_pending_;
   int pending_swap_buffers_;
   bool needs_begin_frame_;
-  bool begin_frame_pending_;
+  bool client_ready_for_begin_frame_;
+
+  // This stores a BeginFrame that we couldn't process immediately, but might
+  // process retroactively in the near future.
+  BeginFrameArgs skipped_begin_frame_args_;
 
   // Forwarded to OutputSurfaceClient but threaded through OutputSurface
   // first so OutputSurface has a chance to update the FrameRateController
-  bool HasClient() { return !!client_; }
   void SetNeedsRedrawRect(gfx::Rect damage_rect);
   void BeginFrame(const BeginFrameArgs& args);
   void DidSwapBuffers();
-  void OnSwapBuffersComplete(const CompositorFrameAck* ack);
+  void OnSwapBuffersComplete();
+  void ReclaimResources(const CompositorFrameAck* ack);
   void DidLoseOutputSurface();
   void SetExternalStencilTest(bool enabled);
   void SetExternalDrawConstraints(const gfx::Transform& transform,
-                                  gfx::Rect viewport);
+                                  gfx::Rect viewport,
+                                  gfx::Rect clip,
+                                  bool valid_for_tile_management);
 
   // virtual for testing.
-  virtual base::TimeDelta RetroactiveBeginFramePeriod();
+  virtual base::TimeTicks RetroactiveBeginFrameDeadline();
   virtual void PostCheckForRetroactiveBeginFrame();
   void CheckForRetroactiveBeginFrame();
 
@@ -182,18 +192,16 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
   OutputSurfaceClient* client_;
   friend class OutputSurfaceCallbacks;
 
-  void SetContext3D(scoped_ptr<WebKit::WebGraphicsContext3D> context3d);
-  void ResetContext3D();
+  void SetUpContext3d();
+  void ResetContext3d();
   void SetMemoryPolicy(const ManagedMemoryPolicy& policy,
                        bool discard_backbuffer_when_not_visible);
-
-  // This stores a BeginFrame that we couldn't process immediately, but might
-  // process retroactively in the near future.
-  BeginFrameArgs skipped_begin_frame_args_;
 
   // check_for_retroactive_begin_frame_pending_ is used to avoid posting
   // redundant checks for a retroactive BeginFrame.
   bool check_for_retroactive_begin_frame_pending_;
+
+  bool external_stencil_test_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(OutputSurface);
 };

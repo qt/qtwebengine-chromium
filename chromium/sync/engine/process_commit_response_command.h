@@ -70,7 +70,7 @@ class SYNC_EXPORT_PRIVATE ProcessCommitResponseCommand
       syncable::WriteTransaction* trans,
       const sync_pb::CommitResponse_EntryResponse& pb_commit_response,
       const sync_pb::SyncEntity& pb_committed_entry,
-      const syncable::Id& pre_commit_id,
+      int64 metahandle,
       std::set<syncable::Id>* deleted_folders);
 
   void ProcessSuccessfulCommitResponse(
@@ -97,17 +97,6 @@ class SYNC_EXPORT_PRIVATE ProcessCommitResponseCommand
   // Update the SERVER_ fields to reflect the server state after committing.
   // Helper for ProcessSuccessfulCommitResponse.
   void UpdateServerFieldsAfterCommit(
-      const sync_pb::SyncEntity& committed_entry,
-      const sync_pb::CommitResponse_EntryResponse& entry_response,
-      syncable::MutableEntry* local_entry);
-
-  // The server can override some values during a commit; the overridden values
-  // are returned as fields in the CommitResponse_EntryResponse.  This method
-  // stores the fields back in the client-visible (i.e. not the SERVER_* fields)
-  // fields of the entry.  This should only be done if the item did not change
-  // locally while the commit was in flight.
-  // Helper for ProcessSuccessfulCommitResponse.
-  void OverrideClientFieldsAfterCommit(
       const sync_pb::SyncEntity& committed_entry,
       const sync_pb::CommitResponse_EntryResponse& entry_response,
       syncable::MutableEntry* local_entry);

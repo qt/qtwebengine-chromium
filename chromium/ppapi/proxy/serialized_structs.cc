@@ -80,6 +80,14 @@ void SerializedFontDescription::SetToPPBrowserFontDescription(
   desc->word_spacing = word_spacing;
 }
 
+SerializedNetworkInfo::SerializedNetworkInfo()
+    : type(PP_NETWORKLIST_TYPE_UNKNOWN),
+      state(PP_NETWORKLIST_STATE_DOWN),
+      mtu(0) {
+}
+
+SerializedNetworkInfo::~SerializedNetworkInfo() {}
+
 SerializedTrueTypeFontDesc::SerializedTrueTypeFontDesc()
     : family(),
       generic_family(),

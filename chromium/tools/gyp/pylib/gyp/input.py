@@ -69,7 +69,6 @@ base_non_configuration_keys = [
   'default_configuration',
   'dependencies',
   'dependencies_original',
-  'link_languages',
   'libraries',
   'postbuilds',
   'product_dir',
@@ -1443,6 +1442,9 @@ class DependencyGraphNode(object):
     self.dependencies = []
     self.dependents = []
 
+  def __repr__(self):
+    return '<DependencyGraphNode: %r>' % self.ref
+
   def FlattenToList(self):
     # flat_list is the sorted list of dependencies - actually, the list items
     # are the "ref" attributes of DependencyGraphNodes.  Every target will
@@ -1484,6 +1486,27 @@ class DependencyGraphNode(object):
           in_degree_zeros.add(node_dependent)
 
     return flat_list
+
+  def FindCycles(self, path=None):
+    """
+    Returns a list of cycles in the graph, where each cycle is its own list.
+    """
+    if path is None:
+      path = [self]
+
+    results = []
+    for node in self.dependents:
+      if node in path:
+        cycle = [node]
+        for part in path:
+          cycle.append(part)
+          if part == node:
+            break
+        results.append(tuple(cycle))
+      else:
+        results.extend(node.FindCycles([node] + path))
+
+    return list(set(results))
 
   def DirectDependencies(self, dependencies=None):
     """Returns a list of just direct dependencies."""
@@ -1560,7 +1583,8 @@ class DependencyGraphNode(object):
 
     return dependencies
 
-  def LinkDependencies(self, targets, dependencies=None, initial=True):
+  def _LinkDependenciesInternal(self, targets, include_shared_libraries,
+                                dependencies=None, initial=True):
     """Returns a list of dependency targets that are linked into this target.
 
     This function has a split personality, depending on the setting of
@@ -1570,6 +1594,9 @@ class DependencyGraphNode(object):
     When adding a target to the list of dependencies, this function will
     recurse into itself with |initial| set to False, to collect dependencies
     that are linked into the linkable target for which the list is being built.
+
+    If |include_shared_libraries| is False, the resulting dependencies will not
+    include shared_library targets that are linked into this target.
     """
     if dependencies == None:
       dependencies = []
@@ -1614,6 +1641,16 @@ class DependencyGraphNode(object):
     if not initial and target_type in ('executable', 'loadable_module'):
       return dependencies
 
+    # Shared libraries are already fully linked.  They should only be included
+    # in |dependencies| when adjusting static library dependencies (in order to
+    # link against the shared_library's import lib), but should not be included
+    # in |dependencies| when propagating link_settings.
+    # The |include_shared_libraries| flag controls which of these two cases we
+    # are handling.
+    if (not initial and target_type == 'shared_library' and
+        not include_shared_libraries):
+      return dependencies
+
     # The target is linkable, add it to the list of link dependencies.
     if self.ref not in dependencies:
       dependencies.append(self.ref)
@@ -1623,9 +1660,31 @@ class DependencyGraphNode(object):
         # this target linkable.  Always look at dependencies of the initial
         # target, and always look at dependencies of non-linkables.
         for dependency in self.dependencies:
-          dependency.LinkDependencies(targets, dependencies, False)
+          dependency._LinkDependenciesInternal(targets,
+                                               include_shared_libraries,
+                                               dependencies, False)
 
     return dependencies
+
+  def DependenciesForLinkSettings(self, targets):
+    """
+    Returns a list of dependency targets whose link_settings should be merged
+    into this target.
+    """
+
+    # TODO(sbaig) Currently, chrome depends on the bug that shared libraries'
+    # link_settings are propagated.  So for now, we will allow it, unless the
+    # 'allow_sharedlib_linksettings_propagation' flag is explicitly set to
+    # False.  Once chrome is fixed, we can remove this flag.
+    include_shared_libraries = \
+        targets[self.ref].get('allow_sharedlib_linksettings_propagation', True)
+    return self._LinkDependenciesInternal(targets, include_shared_libraries)
+
+  def DependenciesToLinkAgainst(self, targets):
+    """
+    Returns a list of dependency targets that are linked into this target.
+    """
+    return self._LinkDependenciesInternal(targets, True)
 
 
 def BuildDependencyList(targets):
@@ -1717,10 +1776,16 @@ def VerifyNoGYPFileCircularDependencies(targets):
     for file in dependency_nodes.iterkeys():
       if not file in flat_list:
         bad_files.append(file)
+    common_path_prefix = os.path.commonprefix(dependency_nodes)
+    cycles = []
+    for cycle in root_node.FindCycles():
+      simplified_paths = []
+      for node in cycle:
+        assert(node.ref.startswith(common_path_prefix))
+        simplified_paths.append(node.ref[len(common_path_prefix):])
+      cycles.append('Cycle: %s' % ' -> '.join(simplified_paths))
     raise DependencyGraphNode.CircularException, \
-        'Some files not reachable, cycle in .gyp file dependency graph ' + \
-        'detected involving some or all of: ' + \
-        ' '.join(bad_files)
+        'Cycles in .gyp file dependency graph detected:\n' + '\n'.join(cycles)
 
 
 def DoDependentSettings(key, flat_list, targets, dependency_nodes):
@@ -1737,7 +1802,8 @@ def DoDependentSettings(key, flat_list, targets, dependency_nodes):
       dependencies = \
           dependency_nodes[target].DirectAndImportedDependencies(targets)
     elif key == 'link_settings':
-      dependencies = dependency_nodes[target].LinkDependencies(targets)
+      dependencies = \
+          dependency_nodes[target].DependenciesForLinkSettings(targets)
     else:
       raise GypError("DoDependentSettings doesn't know how to determine "
                       'dependencies for ' + key)
@@ -1810,7 +1876,8 @@ def AdjustStaticLibraryDependencies(flat_list, targets, dependency_nodes,
       # target.  Add them to the dependencies list if they're not already
       # present.
 
-      link_dependencies = dependency_nodes[target].LinkDependencies(targets)
+      link_dependencies = \
+          dependency_nodes[target].DependenciesToLinkAgainst(targets)
       for dependency in link_dependencies:
         if dependency == target:
           continue

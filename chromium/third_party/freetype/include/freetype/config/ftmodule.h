@@ -21,4 +21,16 @@ FT_USE_MODULE( FT_Renderer_Class, ft_smooth_renderer_class )
 FT_USE_MODULE( FT_Renderer_Class, ft_smooth_lcd_renderer_class )
 FT_USE_MODULE( FT_Renderer_Class, ft_smooth_lcdv_renderer_class )
 
+/*
+ * New modules in 2.4.7:
+FT_USE_MODULE( FT_Driver_ClassRec, t1_driver_class )
+FT_USE_MODULE( FT_Driver_ClassRec, t1cid_driver_class )
+FT_USE_MODULE( FT_Driver_ClassRec, pfr_driver_class )
+FT_USE_MODULE( FT_Driver_ClassRec, t42_driver_class )
+FT_USE_MODULE( FT_Driver_ClassRec, winfnt_driver_class )
+FT_USE_MODULE( FT_Driver_ClassRec, pcf_driver_class )
+FT_USE_MODULE( FT_Module_Class, psaux_module_class )
+FT_USE_MODULE( FT_Driver_ClassRec, bdf_driver_class )
+ */
+
 /* EOF */

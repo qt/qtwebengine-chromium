@@ -35,7 +35,7 @@
  * @param {NetworkAgent.RequestId} requestId
  * @param {string} url
  * @param {string} documentURL
- * @param {NetworkAgent.FrameId} frameId
+ * @param {PageAgent.FrameId} frameId
  * @param {NetworkAgent.LoaderId} loaderId
  */
 WebInspector.NetworkRequest = function(requestId, url, documentURL, frameId, loaderId)
@@ -52,7 +52,6 @@ WebInspector.NetworkRequest = function(requestId, url, documentURL, frameId, loa
     this.statusText = "";
     this.requestMethod = "";
     this.requestTime = 0;
-    this.receiveHeadersEnd = 0;
 
     this._type = WebInspector.resourceTypes.Other;
     this._contentEncoded = false;
@@ -128,7 +127,7 @@ WebInspector.NetworkRequest.prototype = {
     },
 
     /**
-     * @return {NetworkAgent.FrameId}
+     * @return {PageAgent.FrameId}
      */
     get frameId()
     {
@@ -208,16 +207,6 @@ WebInspector.NetworkRequest.prototype = {
         if (this._responseReceivedTime === -1 || this._startTime === -1)
             return -1;
         return this._responseReceivedTime - this._startTime;
-    },
-
-    /**
-     * @return {number}
-     */
-    get receiveDuration()
-    {
-        if (this._endTime === -1 || this._responseReceivedTime === -1)
-            return -1;
-        return this._endTime - this._responseReceivedTime;
     },
 
     /**
@@ -319,7 +308,7 @@ WebInspector.NetworkRequest.prototype = {
      */
     get cached()
     {
-        return this._cached && !this._transferSize;
+        return !!this._cached && !this._transferSize;
     },
 
     set cached(x)
@@ -442,6 +431,14 @@ WebInspector.NetworkRequest.prototype = {
     get domain()
     {
         return this._parsedURL.host;
+    },
+
+    /**
+     * @return {string}
+     */
+    get scheme()
+    {
+        return this._parsedURL.scheme;
     },
 
     /**

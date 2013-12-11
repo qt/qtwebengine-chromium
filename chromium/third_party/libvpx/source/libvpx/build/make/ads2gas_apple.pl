@@ -9,7 +9,6 @@
 ##  be found in the AUTHORS file in the root of the source tree.
 ##
 
-
 # ads2gas_apple.pl
 # Author: Eric Fung (efung (at) acm.org)
 #
@@ -210,5 +209,13 @@ while (<STDIN>)
 #   s/\$/\\/g;                  # End macro definition
     s/MEND/.endm/;              # No need to tell it where to stop assembling
     next if /^\s*END\s*$/;
+
+    s/qsubaddx/qsax/i;
+    s/qaddsubx/qasx/i;
+    s/ldrneb/ldrbne/i;
+    s/ldrneh/ldrhne/i;
+    s/(vqshrun\.s16 .*, \#)0$/${1}8/i;
+    s/\.include/#include/;
+
     print;
 }

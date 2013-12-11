@@ -135,21 +135,15 @@ WebInspector.ResourcesPanel.prototype = {
         this._initialize();
     },
 
-    /**
-     * @param {KeyboardEvent} event
-     */
-    handleShortcut: function(event)
-    {
-        if (this.visibleView && typeof this.visibleView.handleShortcut === "function")
-            return this.visibleView.handleShortcut(event);
-    },
-
     _initialize: function()
     {
         if (!this._initialized && this.isShowing() && this._cachedResourcesWereLoaded) {
             this._populateResourceTree();
             this._populateDOMStorageTree();
             this._populateApplicationCacheTree();
+            this.indexedDBListTreeElement._initialize();
+            if (WebInspector.experimentsSettings.fileSystemInspection.isEnabled())
+                this.fileSystemListTreeElement._initialize();
             this._initDefaultSelection();
             this._initialized = true;
         }
@@ -515,7 +509,7 @@ WebInspector.ResourcesPanel.prototype = {
         var view;
         view = this._domStorageViews.get(domStorage);
         if (!view) {
-            view = new WebInspector.DOMStorageItemsView(domStorage, WebInspector.domStorageModel);
+            view = new WebInspector.DOMStorageItemsView(domStorage);
             this._domStorageViews.put(domStorage, view);
         }
 
@@ -1085,7 +1079,7 @@ WebInspector.BaseStorageTreeElement.prototype = {
  */
 WebInspector.StorageCategoryTreeElement = function(storagePanel, categoryName, settingsKey, iconClasses, noIcon)
 {
-    WebInspector.BaseStorageTreeElement.call(this, storagePanel, null, categoryName, iconClasses, true, noIcon);
+    WebInspector.BaseStorageTreeElement.call(this, storagePanel, null, categoryName, iconClasses, false, noIcon);
     this._expandedSettingKey = "resources" + settingsKey + "Expanded";
     WebInspector.settings[this._expandedSettingKey] = WebInspector.settings.createSetting(this._expandedSettingKey, settingsKey === "Frames");
     this._categoryName = categoryName;
@@ -1310,8 +1304,6 @@ WebInspector.FrameResourceTreeElement.prototype = {
     {
         var contextMenu = new WebInspector.ContextMenu(event);
         contextMenu.appendApplicableItems(this._resource);
-        if (this._resource.request)
-            contextMenu.appendApplicableItems(this._resource.request);
         contextMenu.show();
     },
 
@@ -1494,11 +1486,9 @@ WebInspector.IndexedDBTreeElement = function(storagePanel)
 }
 
 WebInspector.IndexedDBTreeElement.prototype = {
-    onexpand: function()
+    _initialize: function()
     {
-        WebInspector.StorageCategoryTreeElement.prototype.onexpand.call(this);
-        if (!this._indexedDBModel)
-            this._createIndexedDBModel();
+        this._createIndexedDBModel();
     },
 
     onattach: function()
@@ -1609,9 +1599,8 @@ WebInspector.FileSystemListTreeElement = function(storagePanel)
 }
 
 WebInspector.FileSystemListTreeElement.prototype = {
-    onexpand: function()
+    _initialize: function()
     {
-        WebInspector.StorageCategoryTreeElement.prototype.onexpand.call(this);
         this._refreshFileSystem();
     },
 

@@ -53,7 +53,7 @@ using WebCore::TypeBuilder::Canvas::ResourceId;
 using WebCore::TypeBuilder::Canvas::ResourceState;
 using WebCore::TypeBuilder::Canvas::TraceLog;
 using WebCore::TypeBuilder::Canvas::TraceLogId;
-using WebCore::TypeBuilder::Network::FrameId;
+using WebCore::TypeBuilder::Page::FrameId;
 using WebCore::TypeBuilder::Runtime::RemoteObject;
 
 namespace WebCore {
@@ -272,10 +272,10 @@ void InspectorCanvasAgent::findFramesWithUninstrumentedCanvases()
 
         virtual void visitNode(Node* node) OVERRIDE
         {
-            if (!node->hasTagName(HTMLNames::canvasTag) || !node->document() || !node->document()->frame())
+            if (!node->hasTagName(HTMLNames::canvasTag) || !node->document().frame())
                 return;
 
-            Frame* frame = node->document()->frame();
+            Frame* frame = node->document().frame();
             if (frame->page() != m_page)
                 return;
 

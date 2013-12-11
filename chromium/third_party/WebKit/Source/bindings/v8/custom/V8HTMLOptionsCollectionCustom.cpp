@@ -36,7 +36,6 @@
 #include "V8NodeList.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/custom/V8HTMLSelectElementCustom.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NamedNodesCollection.h"
 #include "core/html/HTMLOptionElement.h"
@@ -57,24 +56,18 @@ static void getNamedItems(HTMLOptionsCollection* collection, const AtomicString&
     }
 
     if (namedItems.size() == 1) {
-        v8SetReturnValue(callbackInfo, toV8Fast(namedItems.at(0).release(), callbackInfo, collection));
+        v8SetReturnValueFast(callbackInfo, namedItems.at(0).release(), collection);
         return;
     }
 
-    v8SetReturnValue(callbackInfo, toV8Fast(NamedNodesCollection::create(namedItems), callbackInfo, collection));
+    v8SetReturnValueFast(callbackInfo, NamedNodesCollection::create(namedItems), collection);
 }
 
 void V8HTMLOptionsCollection::namedItemMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, name, args[0]);
     HTMLOptionsCollection* imp = V8HTMLOptionsCollection::toNative(args.Holder());
-    getNamedItems(imp, toWebCoreString(args[0]), args);
-}
-
-void V8HTMLOptionsCollection::removeMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
-{
-    HTMLOptionsCollection* imp = V8HTMLOptionsCollection::toNative(args.Holder());
-    HTMLSelectElement* base = toHTMLSelectElement(imp->ownerNode());
-    removeElement(base, args);
+    getNamedItems(imp, name, args);
 }
 
 void V8HTMLOptionsCollection::addMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
@@ -101,7 +94,7 @@ void V8HTMLOptionsCollection::addMethodCustom(const v8::FunctionCallbackInfo<v8:
     es.throwIfNeeded();
 }
 
-void V8HTMLOptionsCollection::lengthAttrSetterCustom(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void>& info)
+void V8HTMLOptionsCollection::lengthAttributeSetterCustom(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void>& info)
 {
     HTMLOptionsCollection* imp = V8HTMLOptionsCollection::toNative(info.Holder());
     double v = value->NumberValue();

@@ -28,7 +28,7 @@
 
 #include "core/css/CSSFontFace.h"
 #include "core/css/CSSFontSelector.h"
-#include "core/loader/cache/FontResource.h"
+#include "core/fetch/FontResource.h"
 #include "core/platform/HistogramSupport.h"
 #include "core/platform/graphics/FontCache.h"
 #include "core/platform/graphics/FontDescription.h"
@@ -68,7 +68,29 @@ void CSSFontFaceSource::pruneTable()
     if (m_fontDataTable.isEmpty())
         return;
 
+    for (FontDataTable::iterator it = m_fontDataTable.begin(); it != m_fontDataTable.end(); ++it) {
+        if (SimpleFontData* fontData = it->value.get())
+            fontData->clearCSSFontFaceSource();
+    }
     m_fontDataTable.clear();
+}
+
+bool CSSFontFaceSource::isLocal() const
+{
+    if (m_font)
+        return false;
+#if ENABLE(SVG_FONTS)
+    if (m_svgFontFaceElement)
+        return false;
+#endif
+    return true;
+}
+
+bool CSSFontFaceSource::isLoading() const
+{
+    if (m_font)
+        return !m_font->stillNeedsLoad() && !m_font->isLoaded();
+    return false;
 }
 
 bool CSSFontFaceSource::isLoaded() const
@@ -109,11 +131,7 @@ PassRefPtr<SimpleFontData> CSSFontFaceSource::getFontData(const FontDescription&
     if (!isValid())
         return 0;
 
-    if (!m_font
-#if ENABLE(SVG_FONTS)
-            && !m_svgFontFaceElement
-#endif
-    ) {
+    if (isLocal()) {
         // We're local. Just return a SimpleFontData from the normal cache.
         // We don't want to check alternate font family names here, so pass true as the checkingAlternateName parameter.
         RefPtr<SimpleFontData> fontData = fontCache()->getFontResourceData(fontDescription, m_string, true);
@@ -141,7 +159,7 @@ PassRefPtr<SimpleFontData> CSSFontFaceSource::getFontData(const FontDescription&
                 if (!m_externalSVGFontElement) {
                     String fragmentIdentifier;
                     size_t start = m_string.find('#');
-                    if (start != notFound)
+                    if (start != kNotFound)
                         fragmentIdentifier = m_string.string().substring(start + 1);
                     m_externalSVGFontElement = m_font->getSVGFontById(fragmentIdentifier);
                 }
@@ -186,14 +204,11 @@ PassRefPtr<SimpleFontData> CSSFontFaceSource::getFontData(const FontDescription&
 #endif
         }
     } else {
-        // Kick off the load. Do it soon rather than now, because we may be in the middle of layout,
-        // and the loader may invoke arbitrary delegate or event handler code.
-        fontSelector->beginLoadingFontSoon(m_font.get());
-
         // This temporary font is not retained and should not be returned.
         FontCachePurgePreventer fontCachePurgePreventer;
         SimpleFontData* temporaryFont = fontCache()->getNonRetainedLastResortFallbackFont(fontDescription);
         fontData = SimpleFontData::create(temporaryFont->platformData(), true, true);
+        fontData->setCSSFontFaceSource(this);
     }
 
     return fontData; // No release, because fontData is a reference to a RefPtr that is held in the m_fontDataTable.
@@ -232,6 +247,26 @@ bool CSSFontFaceSource::ensureFontData()
         return m_font->ensureSVGFontData();
 #endif
     return m_font->ensureCustomFontData();
+}
+
+bool CSSFontFaceSource::isLocalFontAvailable(const FontDescription& fontDescription)
+{
+    if (!isLocal())
+        return false;
+    return fontCache()->isPlatformFontAvailable(fontDescription, m_string, true);
+}
+
+void CSSFontFaceSource::willUseFontData()
+{
+    if (m_font)
+        m_font->willUseFontData();
+}
+
+void CSSFontFaceSource::beginLoadingFontSoon()
+{
+    ASSERT(m_face);
+    ASSERT(m_font);
+    m_face->beginLoadingFontSoon(m_font.get());
 }
 
 void CSSFontFaceSource::FontLoadHistograms::loadStarted()

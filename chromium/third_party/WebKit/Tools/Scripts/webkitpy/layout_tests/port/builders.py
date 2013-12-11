@@ -41,8 +41,7 @@ from webkitpy.common.memoized import memoized
 _exact_matches = {
     "WebKit XP": {"port_name": "win-xp"},
     "WebKit Win7": {"port_name": "win-win7"},
-    "WebKit Win7 (dbg)(1)": {"port_name": "win-win7"},
-    "WebKit Win7 (dbg)(2)": {"port_name": "win-win7"},
+    "WebKit Win7 (dbg)": {"port_name": "win-win7"},
     "WebKit Linux": {"port_name": "linux-x86_64"},
     "WebKit Linux 32": {"port_name": "linux-x86"},
     "WebKit Linux (dbg)": {"port_name": "linux-x86_64"},
@@ -51,6 +50,8 @@ _exact_matches = {
     "WebKit Mac10.7": {"port_name": "mac-lion"},
     "WebKit Mac10.7 (dbg)": {"port_name": "mac-lion"},
     "WebKit Mac10.8": {"port_name": "mac-mountainlion"},
+    "WebKit Mac10.8 (retina)": {"port_name": "mac-retina"},
+    "WebKit Android (Nexus4)": {"port_name": "android"},
 }
 
 
@@ -63,12 +64,11 @@ _deps_builders = {
     "mac-snowleopard": "WebKit Mac10.6 (deps)",
     "mac-lion": "WebKit Mac10.6 (deps)",
     "mac-mountainlion": "WebKit Mac10.6 (deps)",
+    "mac-retina": "WebKit Mac10.6 (deps)",
 }
 
 
 _ports_without_builders = [
-    # FIXME: Move to _exact_matches.
-    "android",
 ]
 
 

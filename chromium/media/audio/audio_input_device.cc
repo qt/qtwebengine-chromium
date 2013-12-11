@@ -291,9 +291,12 @@ void AudioInputDevice::AudioThreadCallback::Process(int pending_data) {
   uint8* ptr = static_cast<uint8*>(shared_memory_.memory());
   ptr += current_segment_id_ * segment_length_;
   AudioInputBuffer* buffer = reinterpret_cast<AudioInputBuffer*>(ptr);
-  DCHECK_EQ(buffer->params.size,
+  // Usually this will be equal but in the case of low sample rate (e.g. 8kHz,
+  // the buffer may be bigger (on mac at least)).
+  DCHECK_GE(buffer->params.size,
             segment_length_ - sizeof(AudioInputBufferParameters));
   double volume = buffer->params.volume;
+  bool key_pressed = buffer->params.key_pressed;
 
   int audio_delay_milliseconds = pending_data / bytes_per_ms_;
   int16* memory = reinterpret_cast<int16*>(&buffer->audio[0]);
@@ -308,8 +311,8 @@ void AudioInputDevice::AudioThreadCallback::Process(int pending_data) {
 
   // Deliver captured data to the client in floating point format
   // and update the audio-delay measurement.
-  capture_callback_->Capture(audio_bus_.get(),
-                             audio_delay_milliseconds, volume);
+  capture_callback_->Capture(
+      audio_bus_.get(), audio_delay_milliseconds, volume, key_pressed);
 }
 
 }  // namespace media

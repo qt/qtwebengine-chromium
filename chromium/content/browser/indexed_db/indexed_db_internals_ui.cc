@@ -257,9 +257,6 @@ void IndexedDBInternalsUI::ForceCloseOriginOnIndexedDBThread(
 void IndexedDBInternalsUI::OnForcedClose(const base::FilePath& partition_path,
                                          const GURL& origin_url,
                                          size_t connection_count) {
-
-  scoped_refptr<IndexedDBContextImpl> context;
-
   web_ui()->CallJavascriptFunction(
       "indexeddb.onForcedClose",
       base::StringValue(partition_path.value()),
@@ -281,7 +278,7 @@ void IndexedDBInternalsUI::OnDownloadDataReady(
       DownloadUrlParameters::FromWebContents(web_ui()->GetWebContents(), url));
   DownloadManager* dlm = BrowserContext::GetDownloadManager(browser_context);
 
-  const GURL referrer(web_ui()->GetWebContents()->GetURL());
+  const GURL referrer(web_ui()->GetWebContents()->GetLastCommittedURL());
   dl_params->set_referrer(
       content::Referrer(referrer, WebKit::WebReferrerPolicyDefault));
 

@@ -5,7 +5,9 @@
 #include "cc/resources/raster_worker_pool.h"
 
 #include "base/time/time.h"
+#include "cc/test/lap_timer.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "testing/perf/perf_test.h"
 
 namespace cc {
 
@@ -37,6 +39,10 @@ class PerfRasterWorkerPool : public RasterWorkerPool {
   // Overridden from RasterWorkerPool:
   virtual void ScheduleTasks(RasterTask::Queue* queue) OVERRIDE {
     NOTREACHED();
+  }
+  virtual ResourceFormat GetResourceFormat() const OVERRIDE {
+    NOTREACHED();
+    return RGBA_8888;
   }
   virtual void OnRasterTasksFinished() OVERRIDE {
     NOTREACHED();
@@ -116,7 +122,10 @@ class PerfRasterWorkerPool : public RasterWorkerPool {
 
 class RasterWorkerPoolPerfTest : public testing::Test {
  public:
-  RasterWorkerPoolPerfTest() : num_runs_(0) {}
+  RasterWorkerPoolPerfTest()
+      : timer_(kWarmupRuns,
+               base::TimeDelta::FromMilliseconds(kTimeLimitMillis),
+               kTimeCheckInterval) {}
 
   // Overridden from testing::Test:
   virtual void SetUp() OVERRIDE {
@@ -124,33 +133,6 @@ class RasterWorkerPoolPerfTest : public testing::Test {
   }
   virtual void TearDown() OVERRIDE {
     raster_worker_pool_->Shutdown();
-  }
-
-  void EndTest() {
-    elapsed_ = base::TimeTicks::HighResNow() - start_time_;
-  }
-
-  void AfterTest(const std::string test_name) {
-    // Format matches chrome/test/perf/perf_test.h:PrintResult
-    printf("*RESULT %s: %.2f runs/s\n",
-           test_name.c_str(),
-           num_runs_ / elapsed_.InSecondsF());
-  }
-
-  bool DidRun() {
-    ++num_runs_;
-    if (num_runs_ == kWarmupRuns)
-      start_time_ = base::TimeTicks::HighResNow();
-
-    if (!start_time_.is_null() && (num_runs_ % kTimeCheckInterval) == 0) {
-      base::TimeDelta elapsed = base::TimeTicks::HighResNow() - start_time_;
-      if (elapsed >= base::TimeDelta::FromMilliseconds(kTimeLimitMillis)) {
-        elapsed_ = elapsed;
-        return false;
-      }
-    }
-
-    return true;
   }
 
   void CreateTasks(RasterWorkerPool::RasterTask::Queue* tasks,
@@ -194,19 +176,20 @@ class RasterWorkerPoolPerfTest : public testing::Test {
     }
   }
 
-  void RunBuildTaskGraphTest(const std::string test_name,
+  void RunBuildTaskGraphTest(const std::string& test_name,
                              unsigned num_raster_tasks,
                              unsigned num_image_decode_tasks) {
-    start_time_ = base::TimeTicks();
-    num_runs_ = 0;
+    timer_.Reset();
     RasterWorkerPool::RasterTask::Queue tasks;
     CreateTasks(&tasks, num_raster_tasks, num_image_decode_tasks);
     raster_worker_pool_->SetRasterTasks(&tasks);
     do {
       raster_worker_pool_->BuildTaskGraph();
-    } while (DidRun());
+      timer_.NextLap();
+    } while (!timer_.HasTimeLimitExpired());
 
-    AfterTest(test_name);
+    perf_test::PrintResult("build_task_graph", "", test_name,
+                           timer_.LapsPerSecond(), "runs/s", true);
   }
 
  protected:
@@ -215,24 +198,22 @@ class RasterWorkerPoolPerfTest : public testing::Test {
   static void OnImageDecodeTaskCompleted(bool was_canceled) {}
 
   scoped_ptr<PerfRasterWorkerPool> raster_worker_pool_;
-  base::TimeTicks start_time_;
-  base::TimeDelta elapsed_;
-  int num_runs_;
+  LapTimer timer_;
 };
 
 TEST_F(RasterWorkerPoolPerfTest, BuildTaskGraph) {
-  RunBuildTaskGraphTest("build_task_graph_10_0", 10, 0);
-  RunBuildTaskGraphTest("build_task_graph_100_0", 100, 0);
-  RunBuildTaskGraphTest("build_task_graph_1000_0", 1000, 0);
-  RunBuildTaskGraphTest("build_task_graph_10_1", 10, 1);
-  RunBuildTaskGraphTest("build_task_graph_100_1", 100, 1);
-  RunBuildTaskGraphTest("build_task_graph_1000_1", 1000, 1);
-  RunBuildTaskGraphTest("build_task_graph_10_4", 10, 4);
-  RunBuildTaskGraphTest("build_task_graph_100_4", 100, 4);
-  RunBuildTaskGraphTest("build_task_graph_1000_4", 1000, 4);
-  RunBuildTaskGraphTest("build_task_graph_10_16", 10, 16);
-  RunBuildTaskGraphTest("build_task_graph_100_16", 100, 16);
-  RunBuildTaskGraphTest("build_task_graph_1000_16", 1000, 16);
+  RunBuildTaskGraphTest("10_0", 10, 0);
+  RunBuildTaskGraphTest("100_0", 100, 0);
+  RunBuildTaskGraphTest("1000_0", 1000, 0);
+  RunBuildTaskGraphTest("10_1", 10, 1);
+  RunBuildTaskGraphTest("100_1", 100, 1);
+  RunBuildTaskGraphTest("1000_1", 1000, 1);
+  RunBuildTaskGraphTest("10_4", 10, 4);
+  RunBuildTaskGraphTest("100_4", 100, 4);
+  RunBuildTaskGraphTest("1000_4", 1000, 4);
+  RunBuildTaskGraphTest("10_16", 10, 16);
+  RunBuildTaskGraphTest("100_16", 100, 16);
+  RunBuildTaskGraphTest("1000_16", 1000, 16);
 }
 
 }  // namespace

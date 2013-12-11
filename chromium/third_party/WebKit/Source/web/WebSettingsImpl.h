@@ -47,7 +47,7 @@ public:
     virtual bool deviceSupportsTouch();
     virtual bool scrollAnimatorEnabled() const;
     virtual bool touchEditingEnabled() const;
-    virtual bool viewportEnabled() const { return m_viewportEnabled; }
+    virtual bool viewportEnabled() const;
     virtual void setAccelerated2dCanvasEnabled(bool);
     virtual void setAcceleratedCompositingEnabled(bool);
     virtual void setAcceleratedCompositingFor3DTransformsEnabled(bool);
@@ -56,6 +56,7 @@ public:
     virtual void setAcceleratedCompositingForFiltersEnabled(bool);
     virtual void setAcceleratedCompositingForFixedPositionEnabled(bool);
     virtual void setAcceleratedCompositingForOverflowScrollEnabled(bool);
+    virtual void setCompositorDrivenAcceleratedScrollingEnabled(bool);
     virtual void setAcceleratedCompositingForTransitionEnabled(bool);
     virtual void setAcceleratedCompositingForFixedRootBackgroundEnabled(bool);
     virtual void setAcceleratedCompositingForPluginsEnabled(bool);
@@ -104,6 +105,7 @@ public:
     virtual void setFullScreenEnabled(bool);
     virtual void setGestureTapHighlightEnabled(bool);
     virtual void setHyperlinkAuditingEnabled(bool);
+    virtual void setIgnoreMainFrameOverflowHiddenQuirk(bool);
     virtual void setImagesEnabled(bool);
     virtual void setJavaEnabled(bool);
     virtual void setJavaScriptCanAccessClipboard(bool);
@@ -114,6 +116,7 @@ public:
     virtual void setLoadWithOverviewMode(bool);
     virtual void setLocalStorageEnabled(bool);
     virtual void setMediaPlaybackRequiresUserGesture(bool);
+    virtual void setMediaFullscreenRequiresUserGesture(bool);
     virtual void setMemoryInfoEnabled(bool);
     virtual void setMinimumAccelerated2dCanvasSize(int);
     virtual void setMinimumFontSize(int);
@@ -159,13 +162,18 @@ public:
     virtual void setUnsafePluginPastingEnabled(bool);
     virtual void setUserStyleSheetLocation(const WebURL&);
     virtual void setUsesEncodingDetector(bool);
+    virtual void setUseLegacyBackgroundSizeShorthandBehavior(bool);
+    virtual void setUseSolidColorScrollbars(bool);
     virtual void setUseWideViewport(bool);
     virtual void setValidationMessageTimerMagnification(int);
     virtual void setViewportEnabled(bool);
+    virtual void setViewportMetaLayoutSizeQuirk(bool);
+    virtual void setViewportMetaZeroValuesQuirk(bool);
     virtual void setVisualWordMovementEnabled(bool);
     virtual void setWebAudioEnabled(bool);
     virtual void setWebGLErrorsToConsoleEnabled(bool);
     virtual void setWebSecurityEnabled(bool);
+    virtual void setWideViewportQuirkEnabled(bool);
     virtual void setXSSAuditorEnabled(bool);
 
     bool showFPSCounter() const { return m_showFPSCounter; }
@@ -176,6 +184,7 @@ public:
     bool doubleTapToZoomEnabled() const { return m_doubleTapToZoomEnabled; }
     bool perTilePaintingEnabled() const { return m_perTilePaintingEnabled; }
     bool supportDeprecatedTargetDensityDPI() const { return m_supportDeprecatedTargetDensityDPI; }
+    bool viewportMetaLayoutSizeQuirk() const { return m_viewportMetaLayoutSizeQuirk; }
     int pinchOverlayScrollbarThickness() const { return m_pinchOverlayScrollbarThickness; }
 
 private:
@@ -183,13 +192,16 @@ private:
     bool m_showFPSCounter;
     bool m_showPaintRects;
     bool m_renderVSyncNotificationEnabled;
-    bool m_viewportEnabled;
     bool m_gestureTapHighlightEnabled;
     bool m_autoZoomFocusedNodeToLegibleScale;
     bool m_deferredImageDecodingEnabled;
     bool m_doubleTapToZoomEnabled;
     bool m_perTilePaintingEnabled;
     bool m_supportDeprecatedTargetDensityDPI;
+    // This quirk is to maintain compatibility with Android apps built on
+    // the Android SDK prior to and including version 18. Presumably, this
+    // can be removed any time after 2015. See http://crbug.com/277369.
+    bool m_viewportMetaLayoutSizeQuirk;
     int m_pinchOverlayScrollbarThickness;
 };
 

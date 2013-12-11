@@ -30,8 +30,10 @@
 #include "core/accessibility/AccessibilitySlider.h"
 
 #include "core/accessibility/AXObjectCache.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/html/shadow/SliderThumbElement.h"
+#include "core/html/shadow/ShadowElementNames.h"
+#include "core/rendering/RenderObject.h"
 
 namespace WebCore {
 
@@ -81,7 +83,7 @@ void AccessibilitySlider::addChildren()
 
     m_haveChildren = true;
 
-    AXObjectCache* cache = m_renderer->document()->axObjectCache();
+    AXObjectCache* cache = m_renderer->document().axObjectCache();
 
     AccessibilitySliderThumb* thumb = static_cast<AccessibilitySliderThumb*>(cache->getOrCreate(SliderThumbRole));
     thumb->setParent(this);
@@ -108,21 +110,6 @@ AccessibilityObject* AccessibilitySlider::elementAccessibilityHitTest(const IntP
     }
 
     return axObjectCache()->getOrCreate(m_renderer);
-}
-
-float AccessibilitySlider::valueForRange() const
-{
-    return element()->value().toFloat();
-}
-
-float AccessibilitySlider::maxValueForRange() const
-{
-    return static_cast<float>(element()->maximum());
-}
-
-float AccessibilitySlider::minValueForRange() const
-{
-    return static_cast<float>(element()->minimum());
 }
 
 void AccessibilitySlider::setValue(const String& value)
@@ -161,7 +148,7 @@ LayoutRect AccessibilitySliderThumb::elementRect() const
     RenderObject* sliderRenderer = m_parent->renderer();
     if (!sliderRenderer || !sliderRenderer->isSlider())
         return LayoutRect();
-    return sliderThumbElementOf(sliderRenderer->node())->boundingBox();
+    return toElement(sliderRenderer->node())->userAgentShadowRoot()->getElementById(ShadowElementNames::sliderThumb())->boundingBox();
 }
 
 bool AccessibilitySliderThumb::computeAccessibilityIsIgnored() const

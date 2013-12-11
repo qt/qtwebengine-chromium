@@ -21,6 +21,7 @@
 #include "build/build_config.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
+#include "net/socket/socket_descriptor.h"
 
 namespace net {
 
@@ -48,12 +49,12 @@ bool GetPeerIds(int socket, uid_t* user_id, gid_t* group_id) {
 }  // namespace
 
 // static
-UnixDomainSocket::AuthCallback NoAuthentication() {
+UnixDomainSocket::AuthCallback UnixDomainSocket::NoAuthentication() {
   return base::Bind(NoAuthenticationCallback);
 }
 
 // static
-UnixDomainSocket* UnixDomainSocket::CreateAndListenInternal(
+scoped_ptr<UnixDomainSocket> UnixDomainSocket::CreateAndListenInternal(
     const std::string& path,
     const std::string& fallback_path,
     StreamListenSocket::Delegate* del,
@@ -63,14 +64,15 @@ UnixDomainSocket* UnixDomainSocket::CreateAndListenInternal(
   if (s == kInvalidSocket && !fallback_path.empty())
     s = CreateAndBind(fallback_path, use_abstract_namespace);
   if (s == kInvalidSocket)
-    return NULL;
-  UnixDomainSocket* sock = new UnixDomainSocket(s, del, auth_callback);
+    return scoped_ptr<UnixDomainSocket>();
+  scoped_ptr<UnixDomainSocket> sock(
+      new UnixDomainSocket(s, del, auth_callback));
   sock->Listen();
-  return sock;
+  return sock.Pass();
 }
 
 // static
-scoped_refptr<UnixDomainSocket> UnixDomainSocket::CreateAndListen(
+scoped_ptr<UnixDomainSocket> UnixDomainSocket::CreateAndListen(
     const std::string& path,
     StreamListenSocket::Delegate* del,
     const AuthCallback& auth_callback) {
@@ -79,14 +81,14 @@ scoped_refptr<UnixDomainSocket> UnixDomainSocket::CreateAndListen(
 
 #if defined(SOCKET_ABSTRACT_NAMESPACE_SUPPORTED)
 // static
-scoped_refptr<UnixDomainSocket>
+scoped_ptr<UnixDomainSocket>
 UnixDomainSocket::CreateAndListenWithAbstractNamespace(
     const std::string& path,
     const std::string& fallback_path,
     StreamListenSocket::Delegate* del,
     const AuthCallback& auth_callback) {
-  return make_scoped_refptr(
-      CreateAndListenInternal(path, fallback_path, del, auth_callback, true));
+  return
+      CreateAndListenInternal(path, fallback_path, del, auth_callback, true);
 }
 #endif
 
@@ -106,7 +108,7 @@ SocketDescriptor UnixDomainSocket::CreateAndBind(const std::string& path,
   static const size_t kPathMax = sizeof(addr.sun_path);
   if (use_abstract_namespace + path.size() + 1 /* '\0' */ > kPathMax)
     return kInvalidSocket;
-  const SocketDescriptor s = socket(PF_UNIX, SOCK_STREAM, 0);
+  const SocketDescriptor s = CreatePlatformSocket(PF_UNIX, SOCK_STREAM, 0);
   if (s == kInvalidSocket)
     return kInvalidSocket;
   memset(&addr, 0, sizeof(addr));
@@ -147,11 +149,11 @@ void UnixDomainSocket::Accept() {
       LOG(ERROR) << "close() error";
     return;
   }
-  scoped_refptr<UnixDomainSocket> sock(
+  scoped_ptr<UnixDomainSocket> sock(
       new UnixDomainSocket(conn, socket_delegate_, auth_callback_));
   // It's up to the delegate to AddRef if it wants to keep it around.
   sock->WatchSocket(WAITING_READ);
-  socket_delegate_->DidAccept(this, sock.get());
+  socket_delegate_->DidAccept(this, sock.PassAs<StreamListenSocket>());
 }
 
 UnixDomainSocketFactory::UnixDomainSocketFactory(
@@ -162,10 +164,10 @@ UnixDomainSocketFactory::UnixDomainSocketFactory(
 
 UnixDomainSocketFactory::~UnixDomainSocketFactory() {}
 
-scoped_refptr<StreamListenSocket> UnixDomainSocketFactory::CreateAndListen(
+scoped_ptr<StreamListenSocket> UnixDomainSocketFactory::CreateAndListen(
     StreamListenSocket::Delegate* delegate) const {
   return UnixDomainSocket::CreateAndListen(
-      path_, delegate, auth_callback_);
+      path_, delegate, auth_callback_).PassAs<StreamListenSocket>();
 }
 
 #if defined(SOCKET_ABSTRACT_NAMESPACE_SUPPORTED)
@@ -181,11 +183,12 @@ UnixDomainSocketWithAbstractNamespaceFactory(
 UnixDomainSocketWithAbstractNamespaceFactory::
 ~UnixDomainSocketWithAbstractNamespaceFactory() {}
 
-scoped_refptr<StreamListenSocket>
+scoped_ptr<StreamListenSocket>
 UnixDomainSocketWithAbstractNamespaceFactory::CreateAndListen(
     StreamListenSocket::Delegate* delegate) const {
   return UnixDomainSocket::CreateAndListenWithAbstractNamespace(
-      path_, fallback_path_, delegate, auth_callback_);
+             path_, fallback_path_, delegate, auth_callback_)
+         .PassAs<StreamListenSocket>();
 }
 
 #endif

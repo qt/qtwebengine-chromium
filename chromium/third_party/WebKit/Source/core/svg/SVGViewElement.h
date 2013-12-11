@@ -21,6 +21,7 @@
 #ifndef SVGViewElement_h
 #define SVGViewElement_h
 
+#include "SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedPreserveAspectRatio.h"
 #include "core/svg/SVGAnimatedRect.h"
@@ -37,7 +38,7 @@ class SVGViewElement FINAL : public SVGElement,
                              public SVGFitToViewBox,
                              public SVGZoomAndPan {
 public:
-    static PassRefPtr<SVGViewElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGViewElement> create(const QualifiedName&, Document&);
 
     using SVGElement::ref;
     using SVGElement::deref;
@@ -47,13 +48,13 @@ public:
     void setZoomAndPan(unsigned short zoomAndPan) { m_zoomAndPan = SVGZoomAndPan::parseFromNumber(zoomAndPan); }
 
 private:
-    SVGViewElement(const QualifiedName&, Document*);
+    SVGViewElement(const QualifiedName&, Document&);
 
     // FIXME: svgAttributeChanged missing.
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
 
-    virtual bool rendererIsNeeded(const NodeRenderingContext&) { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) { return false; }
 
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGViewElement)
         DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
@@ -64,6 +65,12 @@ private:
     SVGZoomAndPanType m_zoomAndPan;
     SVGStringList m_viewTarget;
 };
+
+inline SVGViewElement* toSVGViewElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::viewTag));
+    return static_cast<SVGViewElement*>(node);
+}
 
 } // namespace WebCore
 

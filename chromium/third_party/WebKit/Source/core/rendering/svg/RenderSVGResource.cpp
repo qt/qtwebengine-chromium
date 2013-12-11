@@ -24,6 +24,7 @@
 
 #include "core/rendering/svg/RenderSVGResource.h"
 
+#include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "core/rendering/svg/RenderSVGResourceClipper.h"
 #include "core/rendering/svg/RenderSVGResourceFilter.h"
@@ -34,7 +35,7 @@
 
 namespace WebCore {
 
-static inline bool inheritColorFromParentStyleIfNeeded(RenderObject* object, bool applyToFill, StyleColor& color)
+static inline bool inheritColorFromParentStyleIfNeeded(RenderObject* object, bool applyToFill, Color& color)
 {
     if (color.isValid())
         return true;
@@ -45,7 +46,7 @@ static inline bool inheritColorFromParentStyleIfNeeded(RenderObject* object, boo
     return true;
 }
 
-static inline RenderSVGResource* requestPaintingResource(RenderSVGResourceMode mode, RenderObject* object, const RenderStyle* style, StyleColor& fallbackColor)
+static inline RenderSVGResource* requestPaintingResource(RenderSVGResourceMode mode, RenderObject* object, const RenderStyle* style, Color& fallbackColor)
 {
     ASSERT(object);
     ASSERT(style);
@@ -80,7 +81,7 @@ static inline RenderSVGResource* requestPaintingResource(RenderSVGResourceMode m
     if (paintType == SVGPaint::SVG_PAINTTYPE_NONE)
         return 0;
 
-    StyleColor color;
+    Color color;
     switch (paintType) {
     case SVGPaint::SVG_PAINTTYPE_CURRENTCOLOR:
     case SVGPaint::SVG_PAINTTYPE_RGBCOLOR:
@@ -100,7 +101,8 @@ static inline RenderSVGResource* requestPaintingResource(RenderSVGResourceMode m
         // For SVG_PAINTTYPE_CURRENTCOLOR, 'color' already contains the 'visitedColor'.
         if (visitedPaintType < SVGPaint::SVG_PAINTTYPE_URI_NONE && visitedPaintType != SVGPaint::SVG_PAINTTYPE_CURRENTCOLOR) {
             const Color& visitedColor = applyToFill ? svgStyle->visitedLinkFillPaintColor() : svgStyle->visitedLinkStrokePaintColor();
-            color = Color(visitedColor.red(), visitedColor.green(), visitedColor.blue(), color.alpha());
+            if (visitedColor.isValid())
+                color = Color(visitedColor.red(), visitedColor.green(), visitedColor.blue(), color.alpha());
         }
     }
 
@@ -110,7 +112,7 @@ static inline RenderSVGResource* requestPaintingResource(RenderSVGResourceMode m
         if (!inheritColorFromParentStyleIfNeeded(object, applyToFill, color))
             return 0;
 
-        colorResource->setColor(color.color());
+        colorResource->setColor(color);
         return colorResource;
     }
 
@@ -120,7 +122,7 @@ static inline RenderSVGResource* requestPaintingResource(RenderSVGResourceMode m
         if (paintType == SVGPaint::SVG_PAINTTYPE_URI_NONE || !inheritColorFromParentStyleIfNeeded(object, applyToFill, color))
             return 0;
 
-        colorResource->setColor(color.color());
+        colorResource->setColor(color);
         return colorResource;
     }
 
@@ -130,7 +132,7 @@ static inline RenderSVGResource* requestPaintingResource(RenderSVGResourceMode m
         if (!inheritColorFromParentStyleIfNeeded(object, applyToFill, color))
             return 0;
 
-        colorResource->setColor(color.color());
+        colorResource->setColor(color);
         return colorResource;
     }
 
@@ -140,12 +142,12 @@ static inline RenderSVGResource* requestPaintingResource(RenderSVGResourceMode m
     return uriResource;
 }
 
-RenderSVGResource* RenderSVGResource::fillPaintingResource(RenderObject* object, const RenderStyle* style, StyleColor& fallbackColor)
+RenderSVGResource* RenderSVGResource::fillPaintingResource(RenderObject* object, const RenderStyle* style, Color& fallbackColor)
 {
     return requestPaintingResource(ApplyToFillMode, object, style, fallbackColor);
 }
 
-RenderSVGResource* RenderSVGResource::strokePaintingResource(RenderObject* object, const RenderStyle* style, StyleColor& fallbackColor)
+RenderSVGResource* RenderSVGResource::strokePaintingResource(RenderObject* object, const RenderStyle* style, Color& fallbackColor)
 {
     return requestPaintingResource(ApplyToStrokeMode, object, style, fallbackColor);
 }
@@ -174,7 +176,7 @@ static inline void removeFromCacheAndInvalidateDependencies(RenderObject* object
 
     if (!object->node() || !object->node()->isSVGElement())
         return;
-    HashSet<SVGElement*>* dependencies = object->document()->accessSVGExtensions()->setOfElementsReferencingTarget(toSVGElement(object->node()));
+    HashSet<SVGElement*>* dependencies = object->document().accessSVGExtensions()->setOfElementsReferencingTarget(toSVGElement(object->node()));
     if (!dependencies)
         return;
     HashSet<SVGElement*>::iterator end = dependencies->end();
@@ -187,10 +189,9 @@ static inline void removeFromCacheAndInvalidateDependencies(RenderObject* object
 void RenderSVGResource::markForLayoutAndParentResourceInvalidation(RenderObject* object, bool needsLayout)
 {
     ASSERT(object);
-    ASSERT(object->document());
     ASSERT(object->node());
 
-    if (needsLayout)
+    if (needsLayout && !object->documentBeingDestroyed())
         object->setNeedsLayout();
 
     removeFromCacheAndInvalidateDependencies(object, needsLayout);

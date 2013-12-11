@@ -34,18 +34,14 @@
 #include "bindings/v8/ScriptScope.h"
 #include "bindings/v8/ScriptState.h"
 
-#include "V8InjectedScriptHost.h"
 #include "V8InspectorFrontendHost.h"
-#include "bindings/v8/V8Binding.h"
-#include "core/dom/Document.h"
-#include "core/page/Frame.h"
 
 #include <v8.h>
 
 namespace WebCore {
 
 ScriptObject::ScriptObject(ScriptState* scriptState, v8::Handle<v8::Object> v8Object)
-    : ScriptValue(v8Object)
+    : ScriptValue(v8Object, scriptState->isolate())
     , m_scriptState(scriptState)
 {
 }

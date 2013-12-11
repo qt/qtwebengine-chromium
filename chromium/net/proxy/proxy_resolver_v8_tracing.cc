@@ -849,6 +849,7 @@ void ProxyResolverV8Tracing::Job::DoDnsOperation() {
   HostResolver::RequestHandle dns_request = NULL;
   int result = host_resolver()->Resolve(
       MakeDnsRequestInfo(pending_dns_host_, pending_dns_op_),
+      DEFAULT_PRIORITY,
       &pending_dns_addresses_,
       base::Bind(&Job::OnDnsOperationComplete, this),
       &dns_request,

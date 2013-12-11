@@ -30,24 +30,13 @@
 
 namespace WebCore {
 
-    class NavigatorBase {
-    public:
-        String appName() const;
-        String appVersion() const;
-        virtual String userAgent() const = 0;
-        String platform() const;
+class NavigatorBase {
+public:
+    virtual String userAgent() const = 0;
 
-        String appCodeName() const;
-        String product() const;
-        String productSub() const;
-        String vendor() const;
-        String vendorSub() const;
-
-        bool onLine() const;
-
-    protected:
-        virtual ~NavigatorBase();
-    };
+protected:
+    virtual ~NavigatorBase() { }
+};
 
 } // namespace WebCore
 

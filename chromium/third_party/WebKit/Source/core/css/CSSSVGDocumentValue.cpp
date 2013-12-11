@@ -29,9 +29,9 @@
 #include "FetchInitiatorTypeNames.h"
 #include "core/css/CSSParser.h"
 #include "core/dom/Document.h"
-#include "core/loader/cache/DocumentResource.h"
-#include "core/loader/cache/FetchRequest.h"
-#include "core/loader/cache/ResourceFetcher.h"
+#include "core/fetch/DocumentResource.h"
+#include "core/fetch/FetchRequest.h"
+#include "core/fetch/ResourceFetcher.h"
 
 namespace WebCore {
 
@@ -54,7 +54,7 @@ DocumentResource* CSSSVGDocumentValue::load(ResourceFetcher* loader)
         m_loadRequested = true;
 
         FetchRequest request(ResourceRequest(loader->document()->completeURL(m_url)), FetchInitiatorTypeNames::css);
-        m_document = loader->requestSVGDocument(request);
+        m_document = loader->fetchSVGDocument(request);
     }
 
     return m_document.get();

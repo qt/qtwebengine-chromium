@@ -22,7 +22,7 @@
 #include "skia/ext/opacity_draw_filter.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "third_party/skia/include/core/SkDevice.h"
+#include "third_party/skia/include/core/SkImageFilter.h"
 #include "third_party/skia/include/core/SkMatrix.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "third_party/skia/include/effects/SkLayerRasterizer.h"
@@ -52,20 +52,23 @@ bool IsScaleAndIntegerTranslate(const SkMatrix& matrix) {
 
 scoped_ptr<SoftwareRenderer> SoftwareRenderer::Create(
     RendererClient* client,
+    const LayerTreeSettings* settings,
     OutputSurface* output_surface,
     ResourceProvider* resource_provider) {
-  return make_scoped_ptr(
-      new SoftwareRenderer(client, output_surface, resource_provider));
+  return make_scoped_ptr(new SoftwareRenderer(
+      client, settings, output_surface, resource_provider));
 }
 
 SoftwareRenderer::SoftwareRenderer(RendererClient* client,
+                                   const LayerTreeSettings* settings,
                                    OutputSurface* output_surface,
                                    ResourceProvider* resource_provider)
-  : DirectRenderer(client, output_surface, resource_provider),
-    visible_(true),
-    is_scissor_enabled_(false),
-    output_device_(output_surface->software_device()),
-    current_canvas_(NULL) {
+    : DirectRenderer(client, settings, output_surface, resource_provider),
+      visible_(true),
+      is_scissor_enabled_(false),
+      is_backbuffer_discarded_(false),
+      output_device_(output_surface->software_device()),
+      current_canvas_(NULL) {
   if (resource_provider_) {
     capabilities_.max_texture_size = resource_provider_->max_texture_size();
     capabilities_.best_texture_format =
@@ -76,7 +79,7 @@ SoftwareRenderer::SoftwareRenderer(RendererClient* client,
   capabilities_.allow_partial_texture_updates = true;
   capabilities_.using_partial_swap = true;
 
-  capabilities_.using_map_image = Settings().use_map_image;
+  capabilities_.using_map_image = settings_->use_map_image;
   capabilities_.using_shared_memory_resources = true;
 }
 
@@ -128,14 +131,14 @@ void SoftwareRenderer::EnsureScissorTestDisabled() {
   // clipRect on the current SkCanvas. This is done by setting clipRect to
   // the viewport's dimensions.
   is_scissor_enabled_ = false;
-  SkDevice* device = current_canvas_->getDevice();
+  SkBaseDevice* device = current_canvas_->getDevice();
   SetClipRect(gfx::Rect(device->width(), device->height()));
 }
 
 void SoftwareRenderer::Finish() {}
 
 void SoftwareRenderer::BindFramebufferToOutputSurface(DrawingFrame* frame) {
-  DCHECK(!client_->ExternalStencilTestEnabled());
+  DCHECK(!output_surface_->HasExternalStencilTest());
   current_framebuffer_lock_.reset();
   current_canvas_ = root_canvas_;
 }
@@ -179,7 +182,11 @@ void SoftwareRenderer::ClearCanvas(SkColor color) {
     current_canvas_->clear(color);
 }
 
-void SoftwareRenderer::ClearFramebuffer(DrawingFrame* frame) {
+void SoftwareRenderer::DiscardPixels(bool has_external_stencil_test,
+                                     bool draw_rect_covers_full_surface) {}
+
+void SoftwareRenderer::ClearFramebuffer(DrawingFrame* frame,
+                                        bool has_external_stencil_test) {
   if (frame->current_render_pass->has_transparent_background) {
     ClearCanvas(SkColorSetARGB(0, 0, 0, 0));
   } else {
@@ -228,8 +235,7 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
                                        quad->IsLeftEdge() &&
                                        quad->IsBottomEdge() &&
                                        quad->IsRightEdge();
-    if (Settings().allow_antialiasing &&
-        all_four_edges_are_exterior)
+    if (settings_->allow_antialiasing && all_four_edges_are_exterior)
       current_paint_.setAntiAlias(true);
     current_paint_.setFilterBitmap(true);
   }
@@ -277,9 +283,11 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
 
 void SoftwareRenderer::DrawCheckerboardQuad(const DrawingFrame* frame,
                                             const CheckerboardDrawQuad* quad) {
+  gfx::RectF visible_quad_vertex_rect = MathUtil::ScaleRectProportional(
+      QuadVertexRect(), quad->rect, quad->visible_rect);
   current_paint_.setColor(quad->color);
   current_paint_.setAlpha(quad->opacity() * SkColorGetA(quad->color));
-  current_canvas_->drawRect(gfx::RectFToSkRect(QuadVertexRect()),
+  current_canvas_->drawRect(gfx::RectFToSkRect(visible_quad_vertex_rect),
                             current_paint_);
 }
 
@@ -329,9 +337,11 @@ void SoftwareRenderer::DrawPictureQuad(const DrawingFrame* frame,
 
 void SoftwareRenderer::DrawSolidColorQuad(const DrawingFrame* frame,
                                           const SolidColorDrawQuad* quad) {
+  gfx::RectF visible_quad_vertex_rect = MathUtil::ScaleRectProportional(
+      QuadVertexRect(), quad->rect, quad->visible_rect);
   current_paint_.setColor(quad->color);
   current_paint_.setAlpha(quad->opacity() * SkColorGetA(quad->color));
-  current_canvas_->drawRect(gfx::RectFToSkRect(QuadVertexRect()),
+  current_canvas_->drawRect(gfx::RectFToSkRect(visible_quad_vertex_rect),
                             current_paint_);
 }
 
@@ -350,8 +360,12 @@ void SoftwareRenderer::DrawTextureQuad(const DrawingFrame* frame,
                                                         quad->uv_bottom_right),
                                       bitmap->width(),
                                       bitmap->height());
-  SkRect sk_uv_rect = gfx::RectFToSkRect(uv_rect);
-  SkRect quad_rect = gfx::RectFToSkRect(QuadVertexRect());
+  gfx::RectF visible_uv_rect =
+      MathUtil::ScaleRectProportional(uv_rect, quad->rect, quad->visible_rect);
+  SkRect sk_uv_rect = gfx::RectFToSkRect(visible_uv_rect);
+  gfx::RectF visible_quad_vertex_rect = MathUtil::ScaleRectProportional(
+      QuadVertexRect(), quad->rect, quad->visible_rect);
+  SkRect quad_rect = gfx::RectFToSkRect(visible_quad_vertex_rect);
 
   if (quad->flipped)
     current_canvas_->scale(1, -1);
@@ -384,12 +398,18 @@ void SoftwareRenderer::DrawTileQuad(const DrawingFrame* frame,
   DCHECK(IsSoftwareResource(quad->resource_id));
   ResourceProvider::ScopedReadLockSoftware lock(resource_provider_,
                                                 quad->resource_id);
+  gfx::RectF visible_tex_coord_rect = MathUtil::ScaleRectProportional(
+      quad->tex_coord_rect, quad->rect, quad->visible_rect);
+  gfx::RectF visible_quad_vertex_rect = MathUtil::ScaleRectProportional(
+      QuadVertexRect(), quad->rect, quad->visible_rect);
 
-  SkRect uv_rect = gfx::RectFToSkRect(quad->tex_coord_rect);
+  SkRect uv_rect = gfx::RectFToSkRect(visible_tex_coord_rect);
   current_paint_.setFilterBitmap(true);
-  current_canvas_->drawBitmapRectToRect(*lock.sk_bitmap(), &uv_rect,
-                                        gfx::RectFToSkRect(QuadVertexRect()),
-                                        &current_paint_);
+  current_canvas_->drawBitmapRectToRect(
+      *lock.sk_bitmap(),
+      &uv_rect,
+      gfx::RectFToSkRect(visible_quad_vertex_rect),
+      &current_paint_);
 }
 
 void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
@@ -404,6 +424,8 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
                                                 content_texture->id());
 
   SkRect dest_rect = gfx::RectFToSkRect(QuadVertexRect());
+  SkRect dest_visible_rect = gfx::RectFToSkRect(MathUtil::ScaleRectProportional(
+      QuadVertexRect(), quad->rect, quad->visible_rect));
   SkRect content_rect = SkRect::MakeWH(quad->rect.width(), quad->rect.height());
 
   SkMatrix content_mat;
@@ -451,10 +473,10 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
     mask_rasterizer->addLayer(mask_paint);
 
     current_paint_.setRasterizer(mask_rasterizer.get());
-    current_canvas_->drawRect(dest_rect, current_paint_);
+    current_canvas_->drawRect(dest_visible_rect, current_paint_);
   } else {
     // TODO(skaslev): Apply background filters and blend with content
-    current_canvas_->drawRect(dest_rect, current_paint_);
+    current_canvas_->drawRect(dest_visible_rect, current_paint_);
   }
 }
 
@@ -474,11 +496,8 @@ void SoftwareRenderer::CopyCurrentRenderPassToBitmap(
     DrawingFrame* frame,
     scoped_ptr<CopyOutputRequest> request) {
   gfx::Rect copy_rect = frame->current_render_pass->output_rect;
-  if (request->has_area()) {
-    // Intersect with the request's area, positioned with its origin at the
-    // origin of the full copy_rect.
-    copy_rect.Intersect(request->area() - copy_rect.OffsetFromOrigin());
-  }
+  if (request->has_area())
+    copy_rect.Intersect(request->area());
   gfx::Rect window_copy_rect = MoveFromDrawToWindowSpace(copy_rect);
 
   scoped_ptr<SkBitmap> bitmap(new SkBitmap);
@@ -489,6 +508,26 @@ void SoftwareRenderer::CopyCurrentRenderPassToBitmap(
       bitmap.get(), window_copy_rect.x(), window_copy_rect.y());
 
   request->SendBitmapResult(bitmap.Pass());
+}
+
+void SoftwareRenderer::DiscardBackbuffer() {
+  if (is_backbuffer_discarded_)
+    return;
+
+  output_surface_->DiscardBackbuffer();
+
+  is_backbuffer_discarded_ = true;
+
+  // Damage tracker needs a full reset every time framebuffer is discarded.
+  client_->SetFullRootLayerDamage();
+}
+
+void SoftwareRenderer::EnsureBackbuffer() {
+  if (!is_backbuffer_discarded_)
+    return;
+
+  output_surface_->EnsureBackbuffer();
+  is_backbuffer_discarded_ = false;
 }
 
 void SoftwareRenderer::GetFramebufferPixels(void* pixels, gfx::Rect rect) {
@@ -505,12 +544,15 @@ void SoftwareRenderer::SetVisible(bool visible) {
   if (visible_ == visible)
     return;
   visible_ = visible;
+
+  if (visible_)
+    EnsureBackbuffer();
+  else
+    DiscardBackbuffer();
 }
 
 void SoftwareRenderer::SetDiscardBackBufferWhenNotVisible(bool discard) {
-  // TODO(piman, skaslev): Can we release the backbuffer? We don't currently
-  // receive memory policy yet anyway.
-  NOTIMPLEMENTED();
+  // The software renderer always discards the backbuffer when not visible.
 }
 
 }  // namespace cc

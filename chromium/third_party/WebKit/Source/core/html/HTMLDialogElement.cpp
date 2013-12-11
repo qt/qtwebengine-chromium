@@ -41,7 +41,7 @@ static bool needsCenteredPositioning(const RenderStyle* style)
     return style->position() == AbsolutePosition && style->hasAutoTopAndBottom();
 }
 
-HTMLDialogElement::HTMLDialogElement(const QualifiedName& tagName, Document* document)
+HTMLDialogElement::HTMLDialogElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
     , m_topIsValid(false)
     , m_top(0)
@@ -52,7 +52,7 @@ HTMLDialogElement::HTMLDialogElement(const QualifiedName& tagName, Document* doc
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLDialogElement> HTMLDialogElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLDialogElement> HTMLDialogElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLDialogElement(tagName, document));
 }
@@ -63,12 +63,19 @@ void HTMLDialogElement::close(const String& returnValue, ExceptionState& es)
         es.throwDOMException(InvalidStateError);
         return;
     }
+    closeDialog(returnValue);
+}
+
+void HTMLDialogElement::closeDialog(const String& returnValue)
+{
     setBooleanAttribute(openAttr, false);
-    document()->removeFromTopLayer(this);
+    document().removeFromTopLayer(this);
     m_topIsValid = false;
 
     if (!returnValue.isNull())
         m_returnValue = returnValue;
+
+    dispatchEvent(Event::create(eventNames().closeEvent));
 }
 
 PassRefPtr<RenderStyle> HTMLDialogElement::customStyleForRenderer()
@@ -86,7 +93,7 @@ PassRefPtr<RenderStyle> HTMLDialogElement::customStyleForRenderer()
 void HTMLDialogElement::reposition()
 {
     // Layout because we need to know our ancestors' positions and our own height.
-    document()->updateLayoutIgnorePendingStylesheets();
+    document().updateLayoutIgnorePendingStylesheets();
 
     RenderBox* box = renderBox();
     if (!box || !needsCenteredPositioning(box->style()))
@@ -94,7 +101,7 @@ void HTMLDialogElement::reposition()
 
     // Set up dialog's position to be safe-centered in the viewport.
     // FIXME: Figure out what to do in vertical writing mode.
-    FrameView* frameView = document()->view();
+    FrameView* frameView = document().view();
     int scrollTop = frameView->scrollOffset().height();
     int visibleHeight = frameView->visibleContentRect(ScrollableArea::IncludeScrollbars).height();
     m_top = scrollTop;
@@ -119,7 +126,7 @@ void HTMLDialogElement::showModal(ExceptionState& es)
         es.throwDOMException(InvalidStateError);
         return;
     }
-    document()->addToTopLayer(this);
+    document().addToTopLayer(this);
     setBooleanAttribute(openAttr, true);
     reposition();
 }
@@ -132,6 +139,16 @@ bool HTMLDialogElement::isPresentationAttribute(const QualifiedName& name) const
         return true;
 
     return HTMLElement::isPresentationAttribute(name);
+}
+
+void HTMLDialogElement::defaultEventHandler(Event* event)
+{
+    if (event->type() == eventNames().cancelEvent) {
+        closeDialog();
+        event->setDefaultHandled();
+        return;
+    }
+    HTMLElement::defaultEventHandler(event);
 }
 
 bool HTMLDialogElement::shouldBeReparentedUnderRenderView(const RenderStyle* style) const

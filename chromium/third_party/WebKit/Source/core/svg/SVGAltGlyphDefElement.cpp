@@ -28,14 +28,14 @@
 
 namespace WebCore {
 
-inline SVGAltGlyphDefElement::SVGAltGlyphDefElement(const QualifiedName& tagName, Document* document)
+inline SVGAltGlyphDefElement::SVGAltGlyphDefElement(const QualifiedName& tagName, Document& document)
     : SVGElement(tagName, document)
 {
     ASSERT(hasTagName(SVGNames::altGlyphDefTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGAltGlyphDefElement> SVGAltGlyphDefElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<SVGAltGlyphDefElement> SVGAltGlyphDefElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new SVGAltGlyphDefElement(tagName, document));
 }
@@ -94,7 +94,7 @@ bool SVGAltGlyphDefElement::hasValidGlyphElements(Vector<String>& glyphNames) co
             fountFirstGlyphRef = true;
             String referredGlyphName;
 
-            if (static_cast<SVGGlyphRefElement*>(child)->hasValidGlyphElement(referredGlyphName))
+            if (toSVGGlyphRefElement(child)->hasValidGlyphElement(referredGlyphName))
                 glyphNames.append(referredGlyphName);
             else {
                 // As the spec says "If any of the referenced glyphs are unavailable,

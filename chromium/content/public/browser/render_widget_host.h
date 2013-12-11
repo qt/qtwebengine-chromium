@@ -7,7 +7,6 @@
 
 #include "base/callback.h"
 #include "content/common/content_export.h"
-#include "content/public/browser/keyboard_listener.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_sender.h"
@@ -29,6 +28,7 @@ class Rect;
 }
 
 namespace WebKit {
+class WebMouseEvent;
 struct WebScreenInfo;
 }
 
@@ -36,6 +36,7 @@ namespace content {
 
 class RenderProcessHost;
 class RenderWidgetHostImpl;
+class RenderWidgetHostIterator;
 class RenderWidgetHostView;
 
 // A RenderWidgetHost manages the browser side of a browser<->renderer
@@ -121,10 +122,9 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   // Returns NULL if the IDs do not correspond to a live RenderWidgetHost.
   static RenderWidgetHost* FromID(int32 process_id, int32 routing_id);
 
-  typedef std::vector<RenderWidgetHost*> List;
-
-  // Returns the global list of active render widget hosts.
-  static RenderWidgetHost::List GetRenderWidgetHosts();
+  // Returns an iterator to iterate over the global list of active render widget
+  // hosts.
+  static scoped_ptr<RenderWidgetHostIterator> GetRenderWidgetHosts();
 
   virtual ~RenderWidgetHost() {}
 
@@ -289,12 +289,18 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   // Access to the implementation's IPC::Listener::OnMessageReceived. Intended
   // only for test code.
 
-  // Add a keyboard listener that can handle key presses without requiring
-  // focus.
-  virtual void AddKeyboardListener(KeyboardListener* listener) = 0;
+  // Add/remove a callback that can handle key presses without requiring focus.
+  typedef base::Callback<bool(const NativeWebKeyboardEvent&)>
+      KeyPressEventCallback;
+  virtual void AddKeyPressEventCallback(
+      const KeyPressEventCallback& callback) = 0;
+  virtual void RemoveKeyPressEventCallback(
+      const KeyPressEventCallback& callback) = 0;
 
-  // Remove a keyboard listener.
-  virtual void RemoveKeyboardListener(KeyboardListener* listener) = 0;
+  // Add/remove a callback that can handle all kinds of mouse events.
+  typedef base::Callback<bool(const WebKit::WebMouseEvent&)> MouseEventCallback;
+  virtual void AddMouseEventCallback(const MouseEventCallback& callback) = 0;
+  virtual void RemoveMouseEventCallback(const MouseEventCallback& callback) = 0;
 
   // Get the screen info corresponding to this render widget.
   virtual void GetWebScreenInfo(WebKit::WebScreenInfo* result) = 0;

@@ -50,7 +50,7 @@
         'video_coding/codecs/test_framework/test_framework.gypi',
         'video_coding/codecs/tools/video_codecs_tools.gypi',
       ], # includes
-     'variables': {
+      'variables': {
         'conditions': [
           # Desktop capturer is supported only on Windows, OSX and Linux.
           ['OS=="win" or OS=="mac" or OS=="linux"', {
@@ -87,13 +87,14 @@
             'webrtc_utility',
             'webrtc_video_coding',
             '<@(neteq_dependencies)',
-            '<(rbe_components_path)/remote_bitrate_estimator_components.gyp:rbe_components_unittests',
+            '<(rbe_components_path)/remote_bitrate_estimator_components.gyp:rbe_components',
             '<(DEPTH)/testing/gmock.gyp:gmock',
             '<(DEPTH)/testing/gtest.gyp:gtest',
             '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
             '<(webrtc_root)/modules/video_coding/codecs/vp8/vp8.gyp:webrtc_vp8',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
             '<(webrtc_root)/test/test.gyp:test_support_main',
+            '<(webrtc_root)/common_video/common_video.gyp:frame_generator',
           ],
           'sources': [
             'audio_coding/main/source/acm_neteq_unittest.cc',
@@ -164,14 +165,17 @@
             'pacing/paced_sender_unittest.cc',
             'remote_bitrate_estimator/include/mock/mock_remote_bitrate_observer.h',
             'remote_bitrate_estimator/bitrate_estimator_unittest.cc',
+            'remote_bitrate_estimator/remote_bitrate_estimator_single_stream_unittest.cc',
+            'remote_bitrate_estimator/remote_bitrate_estimator_unittest_helper.cc',
+            'remote_bitrate_estimator/remote_bitrate_estimator_unittest_helper.h',
             'remote_bitrate_estimator/rtp_to_ntp_unittest.cc',
             'rtp_rtcp/source/mock/mock_rtp_payload_strategy.h',
-            'rtp_rtcp/source/mock/mock_rtp_receiver_video.h',
+            'rtp_rtcp/source/fec_receiver_unittest.cc',
             'rtp_rtcp/source/fec_test_helper.cc',
             'rtp_rtcp/source/fec_test_helper.h',
             'rtp_rtcp/source/nack_rtx_unittest.cc',
             'rtp_rtcp/source/producer_fec_unittest.cc',
-            'rtp_rtcp/source/receiver_fec_unittest.cc',
+            'rtp_rtcp/source/receive_statistics_unittest.cc',
             'rtp_rtcp/source/rtcp_format_remb_unittest.cc',
             'rtp_rtcp/source/rtcp_sender_unittest.cc',
             'rtp_rtcp/source/rtcp_receiver_unittest.cc',
@@ -201,12 +205,13 @@
             'video_coding/main/source/jitter_buffer_unittest.cc',
             'video_coding/main/source/receiver_unittest.cc',
             'video_coding/main/source/session_info_unittest.cc',
-            'video_coding/main/source/stream_generator.cc',
-            'video_coding/main/source/stream_generator.h',
             'video_coding/main/source/timing_unittest.cc',
             'video_coding/main/source/video_coding_robustness_unittest.cc',
-            'video_coding/main/source/video_coding_impl_unittest.cc',
+            'video_coding/main/source/video_receiver_unittest.cc',
+            'video_coding/main/source/video_sender_unittest.cc',
             'video_coding/main/source/qm_select_unittest.cc',
+            'video_coding/main/source/test/stream_generator.cc',
+            'video_coding/main/source/test/stream_generator.h',
             'video_coding/main/test/pcap_file_reader.cc',
             'video_coding/main/test/pcap_file_reader_unittest.cc',
             'video_coding/main/test/rtp_file_reader.cc',
@@ -258,7 +263,7 @@
           ],
         },
         {
-          'target_name': 'modules_integrationtests',
+          'target_name': 'modules_tests',
           'type': '<(gtest_target_type)',
           'dependencies': [
             'audio_coding_module',
@@ -327,10 +332,42 @@
               ],
             },
             {
-              'target_name': 'modules_integrationtests_apk_target',
+              'target_name': 'modules_tests_apk_target',
               'type': 'none',
               'dependencies': [
-                '<(apk_tests_path):modules_integrationtests_apk',
+                '<(apk_tests_path):modules_tests_apk',
+              ],
+            },
+          ],
+        }],
+        ['test_isolation_mode != "noop"', {
+          'targets': [
+            {
+              'target_name': 'modules_tests_run',
+              'type': 'none',
+              'dependencies': [
+                '<(import_isolate_path):import_isolate_gypi',
+                'modules_tests',
+              ],
+              'includes': [
+                'modules_tests.isolate',
+              ],
+              'sources': [
+                'modules_tests.isolate',
+              ],
+            },
+            {
+              'target_name': 'modules_unittests_run',
+              'type': 'none',
+              'dependencies': [
+                '<(import_isolate_path):import_isolate_gypi',
+                'modules_unittests',
+              ],
+              'includes': [
+                'modules_unittests.isolate',
+              ],
+              'sources': [
+                'modules_unittests.isolate',
               ],
             },
           ],

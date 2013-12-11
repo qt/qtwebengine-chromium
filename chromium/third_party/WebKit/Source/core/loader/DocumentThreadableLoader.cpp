@@ -33,17 +33,19 @@
 #include "core/loader/DocumentThreadableLoader.h"
 
 #include "core/dom/Document.h"
+#include "core/fetch/CrossOriginAccessControl.h"
+#include "core/fetch/FetchRequest.h"
+#include "core/fetch/RawResource.h"
+#include "core/fetch/Resource.h"
+#include "core/fetch/ResourceFetcher.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/loader/CrossOriginAccessControl.h"
 #include "core/loader/CrossOriginPreflightResultCache.h"
 #include "core/loader/DocumentThreadableLoaderClient.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/ThreadableLoaderClient.h"
-#include "core/loader/cache/FetchRequest.h"
-#include "core/loader/cache/RawResource.h"
-#include "core/loader/cache/ResourceFetcher.h"
 #include "core/page/ContentSecurityPolicy.h"
 #include "core/page/Frame.h"
+#include "core/platform/SharedBuffer.h"
 #include "core/platform/network/ResourceError.h"
 #include "core/platform/network/ResourceRequest.h"
 #include "weborigin/SchemeRegistry.h"
@@ -206,13 +208,17 @@ void DocumentThreadableLoader::redirectReceived(Resource* resource, ResourceRequ
     // scheme and not contain the userinfo production. In addition, the redirect response must pass the access control check if the
     // original request was not same-origin.
     if (m_options.crossOriginRequestPolicy == UseAccessControl) {
+
+        InspectorInstrumentation::didReceiveCORSRedirectResponse(m_document->frame(), resource->identifier(), m_document->frame()->loader()->documentLoader(), redirectResponse, 0);
+
         bool allowRedirect = false;
+        String accessControlErrorDescription;
+
         if (m_simpleRequest) {
-            String accessControlErrorDescription;
-            allowRedirect = SchemeRegistry::shouldTreatURLSchemeAsCORSEnabled(request.url().protocol())
-                            && request.url().user().isEmpty()
-                            && request.url().pass().isEmpty()
+            allowRedirect = checkCrossOriginAccessRedirectionUrl(request.url(), accessControlErrorDescription)
                             && (m_sameOriginRequest || passesAccessControlCheck(redirectResponse, m_options.allowCredentials, securityOrigin(), accessControlErrorDescription));
+        } else {
+            accessControlErrorDescription = "The request was redirected to '"+ request.url().string() + "', which is disallowed for cross-origin requests that require preflight.";
         }
 
         if (allowRedirect) {
@@ -243,9 +249,12 @@ void DocumentThreadableLoader::redirectReceived(Resource* resource, ResourceRequ
             makeCrossOriginAccessRequest(request);
             return;
         }
-    }
 
-    m_client->didFailRedirectCheck();
+        ResourceError error(errorDomainWebKitInternal, 0, redirectResponse.url().string(), accessControlErrorDescription);
+        m_client->didFailAccessControlCheck(error);
+    } else {
+        m_client->didFailRedirectCheck();
+    }
     request = ResourceRequest();
 }
 
@@ -279,7 +288,7 @@ void DocumentThreadableLoader::didReceiveResponse(unsigned long identifier, cons
     if (m_actualRequest) {
         DocumentLoader* loader = m_document->frame()->loader()->documentLoader();
         InspectorInstrumentationCookie cookie = InspectorInstrumentation::willReceiveResourceResponse(m_document->frame(), identifier, response);
-        InspectorInstrumentation::didReceiveResourceResponse(cookie, identifier, loader, response, 0);
+        InspectorInstrumentation::didReceiveResourceResponse(cookie, identifier, loader, response, m_resource ? m_resource->loader() : 0);
 
         if (!passesAccessControlCheck(response, m_options.allowCredentials, securityOrigin(), accessControlErrorDescription)) {
             preflightFailure(identifier, response.url().string(), accessControlErrorDescription);
@@ -405,8 +414,8 @@ void DocumentThreadableLoader::loadRequest(const ResourceRequest& request, Secur
     ASSERT(m_sameOriginRequest || requestURL.user().isEmpty());
     ASSERT(m_sameOriginRequest || requestURL.pass().isEmpty());
 
+    ThreadableLoaderOptions options = m_options;
     if (m_async) {
-        ThreadableLoaderOptions options = m_options;
         options.crossOriginCredentialPolicy = DoNotAskClientForCrossOriginCredentials;
         if (m_actualRequest) {
             // Don't sniff content or send load callbacks for the preflight request.
@@ -421,7 +430,7 @@ void DocumentThreadableLoader::loadRequest(const ResourceRequest& request, Secur
 
         FetchRequest newRequest(request, m_options.initiator, options);
         ASSERT(!m_resource);
-        m_resource = m_document->fetcher()->requestRawResource(newRequest);
+        m_resource = m_document->fetcher()->fetchRawResource(newRequest);
         if (m_resource) {
             if (m_resource->loader()) {
                 unsigned long identifier = m_resource->identifier();
@@ -432,21 +441,18 @@ void DocumentThreadableLoader::loadRequest(const ResourceRequest& request, Secur
         return;
     }
 
-    // FIXME: ThreadableLoaderOptions.sniffContent is not supported for synchronous requests.
-    Vector<char> data;
-    ResourceError error;
-    ResourceResponse response;
-    unsigned long identifier = std::numeric_limits<unsigned long>::max();
-    if (Frame* frame = m_document->frame()) {
-        Frame* top = frame->tree()->top();
-        if (!top->loader()->mixedContentChecker()->canDisplayInsecureContent(top->document()->securityOrigin(), requestURL)) {
-            m_client->didFail(error);
-            return;
-        }
-        identifier = frame->loader()->loadResourceSynchronously(request, m_options.allowCredentials, error, response, data);
-    }
+    FetchRequest fetchRequest(request, m_options.initiator, options);
+    ResourcePtr<Resource> resource = m_document->fetcher()->fetchSynchronously(fetchRequest);
+    ResourceResponse response = resource ? resource->response() : ResourceResponse();
+    unsigned long identifier = resource ? resource->identifier() : std::numeric_limits<unsigned long>::max();
+    ResourceError error = resource ? resource->resourceError() : ResourceError();
 
     InspectorInstrumentation::documentThreadableLoaderStartedLoadingForClient(m_document, identifier, m_client);
+
+    if (!resource) {
+        m_client->didFail(error);
+        return;
+    }
 
     // No exception for file:/// resources, see <rdar://problem/4962298>.
     // Also, if we have an HTTP response, then it wasn't a network error in fact.
@@ -455,7 +461,7 @@ void DocumentThreadableLoader::loadRequest(const ResourceRequest& request, Secur
         return;
     }
 
-    // FIXME: FrameLoader::loadSynchronously() does not tell us whether a redirect happened or not, so we guess by comparing the
+    // FIXME: A synchronous request does not tell us whether a redirect happened or not, so we guess by comparing the
     // request and response URLs. This isn't a perfect test though, since a server can serve a redirect to the same URL that was
     // requested. Also comparing the request and response URLs as strings will fail if the requestURL still has its credentials.
     if (requestURL != response.url() && (!isAllowedByPolicy(response.url()) || !isAllowedRedirect(response.url()))) {
@@ -465,9 +471,9 @@ void DocumentThreadableLoader::loadRequest(const ResourceRequest& request, Secur
 
     didReceiveResponse(identifier, response);
 
-    const char* bytes = static_cast<const char*>(data.data());
-    int len = static_cast<int>(data.size());
-    didReceiveData(identifier, bytes, len);
+    SharedBuffer* data = resource->resourceBuffer();
+    if (data)
+        didReceiveData(identifier, data->data(), data->size());
 
     didFinishLoading(identifier, 0.0);
 }
@@ -490,6 +496,21 @@ bool DocumentThreadableLoader::isAllowedByPolicy(const KURL& url) const
 SecurityOrigin* DocumentThreadableLoader::securityOrigin() const
 {
     return m_options.securityOrigin ? m_options.securityOrigin.get() : m_document->securityOrigin();
+}
+
+bool DocumentThreadableLoader::checkCrossOriginAccessRedirectionUrl(const KURL& requestUrl, String& errorDescription)
+{
+    if (!SchemeRegistry::shouldTreatURLSchemeAsCORSEnabled(requestUrl.protocol())) {
+        errorDescription = "The request was redirected to a URL ('" + requestUrl.string() + "') which has a disallowed scheme for cross-origin requests.";
+        return false;
+    }
+
+    if (!(requestUrl.user().isEmpty() && requestUrl.pass().isEmpty())) {
+        errorDescription = "The request was redirected to a URL ('" + requestUrl.string() + "') containing userinfo, which is disallowed for cross-origin requests.";
+        return false;
+    }
+
+    return true;
 }
 
 } // namespace WebCore

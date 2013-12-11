@@ -136,17 +136,7 @@
                   ]
                 }
               ],
-            }],
-            ['OS=="linux" and chromeos==1 and branding=="Chrome"', {
-              'copies': [
-                {
-                  'destination': '<(PRODUCT_DIR)',
-                  'files': [
-                    'browser/extensions/default_extensions/chromeos/extensions/'
-                  ]
-                }
-              ],
-            }],
+            }]
           ],
         },
         {
@@ -187,6 +177,8 @@
             'browser/devtools/browser_list_tabcontents_provider.h',
             'browser/devtools/devtools_adb_bridge.cc',
             'browser/devtools/devtools_adb_bridge.h',
+            'browser/devtools/devtools_embedder_message_dispatcher.cc',
+            'browser/devtools/devtools_embedder_message_dispatcher.h',
             'browser/devtools/devtools_file_helper.cc',
             'browser/devtools/devtools_file_helper.h',
             'browser/devtools/devtools_file_system_indexer.cc',
@@ -196,10 +188,10 @@
             'browser/devtools/devtools_toggle_action.h',
             'browser/devtools/devtools_window.cc',
             'browser/devtools/devtools_window.h',
+            'browser/devtools/port_forwarding_controller.cc',
+            'browser/devtools/port_forwarding_controller.h',
             'browser/devtools/remote_debugging_server.cc',
             'browser/devtools/remote_debugging_server.h',
-            'browser/devtools/tethering_adb_filter.cc',
-            'browser/devtools/tethering_adb_filter.h',
           ],
           'conditions': [
             ['toolkit_uses_gtk == 1', {
@@ -212,7 +204,9 @@
                 '../third_party/libusb/libusb.gyp:libusb',
               ],
               'sources!': [
+                'browser/devtools/adb/android_rsa.cc',
                 'browser/devtools/browser_list_tabcontents_provider.cc',
+                'browser/devtools/devtools_file_system_indexer.cc',
                 'browser/devtools/devtools_window.cc',
                 'browser/devtools/remote_debugging_server.cc',
               ],
@@ -790,8 +784,6 @@
                 {
                   'action_name': 'strip_reliability_tests',
                   'inputs': [
-                    '<(PRODUCT_DIR)/automated_ui_tests',
-                    '<(PRODUCT_DIR)/reliability_tests',
                     '<(PRODUCT_DIR)/_pyautolib.so',
                   ],
                   'outputs': [
@@ -802,10 +794,6 @@
                              '<@(_inputs)'],
                   'message': 'Stripping reliability tests',
                 },
-              ],
-              'dependencies': [
-                'automated_ui_tests',
-                'reliability_tests',
               ],
             }],
           ],
@@ -878,7 +866,6 @@
             ],
           },
           'sources': [
-            'app/app_host_exe.ver',
             'app/chrome_exe.ver',
             'app/chrome_dll.ver',
             'app/nacl64_exe.ver',

@@ -18,6 +18,9 @@ class TestVarTracker : public VarTracker {
  public:
   TestVarTracker() : VarTracker(THREAD_SAFE) {}
   virtual ~TestVarTracker() {}
+  virtual ResourceVar* MakeResourceVar(PP_Resource pp_resource) OVERRIDE {
+    return NULL;
+  }
   virtual ArrayBufferVar* CreateArrayBuffer(uint32 size_in_bytes) OVERRIDE {
     return NULL;
   }
@@ -61,7 +64,6 @@ class TestGlobals : public PpapiGlobals {
   virtual PP_Module GetModuleForInstance(PP_Instance instance) OVERRIDE;
   virtual std::string GetCmdLine() OVERRIDE;
   virtual void PreCacheFontForFlash(const void* logfontw) OVERRIDE;
-  virtual base::Lock* GetProxyLock() OVERRIDE;
   virtual void LogWithSource(PP_Instance instance,
                              PP_LogLevel level,
                              const std::string& source,

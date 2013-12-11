@@ -31,6 +31,7 @@
 #include <math.h>
 #include "HTMLNames.h"
 #include "RuntimeEnabledFeatures.h"
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScriptController.h"
 #include "core/dom/Document.h"
@@ -65,7 +66,7 @@ static const float MaxCanvasArea = 32768 * 8192; // Maximum canvas area in CSS p
 //In Skia, we will also limit width/height to 32767.
 static const float MaxSkiaDim = 32767.0F; // Maximum width/height in CSS pixels.
 
-HTMLCanvasElement::HTMLCanvasElement(const QualifiedName& tagName, Document* document)
+HTMLCanvasElement::HTMLCanvasElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
     , m_size(DefaultWidth, DefaultHeight)
     , m_rendererIsCanvas(false)
@@ -81,12 +82,12 @@ HTMLCanvasElement::HTMLCanvasElement(const QualifiedName& tagName, Document* doc
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLCanvasElement> HTMLCanvasElement::create(Document* document)
+PassRefPtr<HTMLCanvasElement> HTMLCanvasElement::create(Document& document)
 {
     return adoptRef(new HTMLCanvasElement(canvasTag, document));
 }
 
-PassRefPtr<HTMLCanvasElement> HTMLCanvasElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLCanvasElement> HTMLCanvasElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLCanvasElement(tagName, document));
 }
@@ -110,7 +111,7 @@ void HTMLCanvasElement::parseAttribute(const QualifiedName& name, const AtomicSt
 
 RenderObject* HTMLCanvasElement::createRenderer(RenderStyle* style)
 {
-    Frame* frame = document()->frame();
+    Frame* frame = document().frame();
     if (frame && frame->script()->canExecuteScripts(NotAboutToExecuteScript)) {
         m_rendererIsCanvas = true;
         return new RenderHTMLCanvas(this);
@@ -169,14 +170,14 @@ CanvasRenderingContext* HTMLCanvasElement::getContext(const String& type, Canvas
             return 0;
         if (!m_context) {
             HistogramSupport::histogramEnumeration("Canvas.ContextType", Context2d, ContextTypeCount);
-            m_context = CanvasRenderingContext2D::create(this, RuntimeEnabledFeatures::experimentalCanvasFeaturesEnabled() ? static_cast<Canvas2DContextAttributes*>(attrs) : 0, document()->inQuirksMode());
+            m_context = CanvasRenderingContext2D::create(this, RuntimeEnabledFeatures::experimentalCanvasFeaturesEnabled() ? static_cast<Canvas2DContextAttributes*>(attrs) : 0, document().inQuirksMode());
             if (m_context)
                 scheduleLayerUpdate();
         }
         return m_context.get();
     }
 
-    Settings* settings = document()->settings();
+    Settings* settings = document().settings();
     if (settings && settings->webGLEnabled()) {
         // Accept the legacy "webkit-3d" name as well as the provisional "experimental-webgl" name.
         // Now that WebGL is ratified, we will also accept "webgl" as the context name in Chrome.
@@ -317,7 +318,7 @@ void HTMLCanvasElement::paint(GraphicsContext* context, const LayoutRect& r, boo
         return;
 
     if (m_context) {
-        if (!paintsIntoCanvasBuffer() && !document()->printing())
+        if (!paintsIntoCanvasBuffer() && !document().printing())
             return;
         m_context->paintRenderingResultsToCanvas();
     }
@@ -340,12 +341,6 @@ void HTMLCanvasElement::paint(GraphicsContext* context, const LayoutRect& r, boo
 bool HTMLCanvasElement::is3D() const
 {
     return m_context && m_context->is3d();
-}
-
-void HTMLCanvasElement::makeRenderingResultsAvailable()
-{
-    if (m_context)
-        m_context->paintRenderingResultsToCanvas();
 }
 
 void HTMLCanvasElement::makePresentationCopy()
@@ -385,7 +380,7 @@ String HTMLCanvasElement::toEncodingMimeType(const String& mimeType)
 String HTMLCanvasElement::toDataURL(const String& mimeType, const double* quality, ExceptionState& es)
 {
     if (!m_originClean) {
-        es.throwDOMException(SecurityError);
+        es.throwSecurityError(ExceptionMessages::failedToExecute("toDataURL", "HTMLCanvasElement", "tainted canvases may not be exported."));
         return String();
     }
 
@@ -400,7 +395,8 @@ String HTMLCanvasElement::toDataURL(const String& mimeType, const double* qualit
     if (imageData)
         return ImageDataToDataURL(*imageData, encodingMimeType, quality);
 
-    makeRenderingResultsAvailable();
+    if (m_context)
+        m_context->paintRenderingResultsToCanvas();
 
     return buffer()->toDataURL(encodingMimeType, quality);
 }
@@ -448,12 +444,12 @@ FloatSize HTMLCanvasElement::convertDeviceToLogical(const FloatSize& deviceSize)
 
 SecurityOrigin* HTMLCanvasElement::securityOrigin() const
 {
-    return document()->securityOrigin();
+    return document().securityOrigin();
 }
 
 StyleResolver* HTMLCanvasElement::styleResolver()
 {
-    return document()->styleResolver();
+    return document().styleResolver();
 }
 
 bool HTMLCanvasElement::shouldAccelerate(const IntSize& size) const
@@ -464,7 +460,7 @@ bool HTMLCanvasElement::shouldAccelerate(const IntSize& size) const
     if (m_accelerationDisabled)
         return false;
 
-    Settings* settings = document()->settings();
+    Settings* settings = document().settings();
     if (!settings || !settings->accelerated2dCanvasEnabled())
         return false;
 
@@ -506,8 +502,9 @@ void HTMLCanvasElement::createImageBuffer()
     if (!m_imageBuffer)
         return;
     setExternallyAllocatedMemory(4 * width() * height());
+    m_imageBuffer->context()->setShouldClampToSourceRect(false);
     m_imageBuffer->context()->setImageInterpolationQuality(DefaultInterpolationQuality);
-    if (document()->settings() && !document()->settings()->antialiased2dCanvasEnabled())
+    if (document().settings() && !document().settings()->antialiased2dCanvasEnabled())
         m_imageBuffer->context()->setShouldAntialias(false);
     // GraphicsContext's defaults don't always agree with the 2d canvas spec.
     // See CanvasRenderingContext2D::State::State() for more information.

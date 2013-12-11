@@ -88,7 +88,7 @@ WebInspector.NetworkLogView = function(coulmnsVisibilitySetting)
 WebInspector.NetworkLogView.HTTPSchemas = {"http": true, "https": true, "ws": true, "wss": true};
 WebInspector.NetworkLogView._responseHeaderColumns = ["Cache-Control", "Connection", "Content-Encoding", "Content-Length", "ETag", "Keep-Alive", "Last-Modified", "Server", "Vary"];
 WebInspector.NetworkLogView._defaultColumnsVisibility = {
-    method: true, status: true, domain: false, type: true, initiator: true, cookies: false, setCookies: false, size: true, time: true,
+    method: true, status: true, scheme: false, domain: false, type: true, initiator: true, cookies: false, setCookies: false, size: true, time: true,
     "Cache-Control": false, "Connection": false, "Content-Encoding": false, "Content-Length": false, "ETag": false, "Keep-Alive": false, "Last-Modified": false, "Server": false, "Vary": false
 };
 WebInspector.NetworkLogView._defaultRefreshDelay = 500;
@@ -175,6 +175,13 @@ WebInspector.NetworkLogView.prototype = {
             id: "status",
             titleDOMFragment: this._makeHeaderFragment(WebInspector.UIString("Status"), WebInspector.UIString("Text")),
             title: WebInspector.UIString("Status"),
+            sortable: true,
+            weight: 6
+        });
+
+        columns.push({
+            id: "scheme",
+            title: WebInspector.UIString("Scheme"),
             sortable: true,
             weight: 6
         });
@@ -328,6 +335,7 @@ WebInspector.NetworkLogView.prototype = {
         this._sortingFunctions.name = WebInspector.NetworkDataGridNode.NameComparator;
         this._sortingFunctions.method = WebInspector.NetworkDataGridNode.RequestPropertyComparator.bind(null, "method", false);
         this._sortingFunctions.status = WebInspector.NetworkDataGridNode.RequestPropertyComparator.bind(null, "statusCode", false);
+        this._sortingFunctions.scheme = WebInspector.NetworkDataGridNode.RequestPropertyComparator.bind(null, "scheme", false);
         this._sortingFunctions.domain = WebInspector.NetworkDataGridNode.RequestPropertyComparator.bind(null, "domain", false);
         this._sortingFunctions.type = WebInspector.NetworkDataGridNode.RequestPropertyComparator.bind(null, "mimeType", false);
         this._sortingFunctions.initiator = WebInspector.NetworkDataGridNode.InitiatorComparator;
@@ -1375,19 +1383,41 @@ WebInspector.NetworkLogView.prototype = {
         var command = ["curl"];
         var ignoredHeaders = {};
 
-        function escapeCharacter(x)
+        function escapeStringWin(str)
         {
-           var code = x.charCodeAt(0);
-           if (code < 256) {
-             // Add leading zero when needed to not care about the next character.
-             return code < 16 ? "\\x0" + code.toString(16) : "\\x" + code.toString(16);
-           }
-           code = code.toString(16);
-           return "\\u" + ("0000" + code).substr(code.length, 4);
+            /* Replace quote by double quote (but not by \") because it is
+               recognized by both cmd.exe and MS Crt arguments parser.
+
+               Replace % by "%" because it could be expanded to an environment
+               variable value. So %% becomes "%""%". Even if an env variable ""
+               (2 doublequotes) is declared, the cmd.exe will not
+               substitute it with its value.
+
+               Replace each backslash with double backslash to make sure
+               MS Crt arguments parser won't collapse them.
+
+               Replace new line outside of quotes since cmd.exe doesn't let
+               to do it inside.
+            */
+            return "\"" + str.replace(/"/g, "\"\"")
+                             .replace(/%/g, "\"%\"")
+                             .replace(/\\/g, "\\\\")
+                             .replace(/[\r\n]+/g, "\"^$&\"") + "\"";
         }
 
-        function escape(str)
+        function escapeStringPosix(str)
         {
+            function escapeCharacter(x)
+            {
+                var code = x.charCodeAt(0);
+                if (code < 256) {
+                    // Add leading zero when needed to not care about the next character.
+                    return code < 16 ? "\\x0" + code.toString(16) : "\\x" + code.toString(16);
+                 }
+                 code = code.toString(16);
+                 return "\\u" + ("0000" + code).substr(code.length, 4);
+             }
+
             if (/[^\x20-\x7E]|\'/.test(str)) {
                 // Use ANSI-C quoting syntax.
                 return "$\'" + str.replace(/\\/g, "\\\\")
@@ -1400,19 +1430,24 @@ WebInspector.NetworkLogView.prototype = {
                 return "'" + str + "'";
             }
         }
-        command.push(escape(request.url));
+
+        // cURL command expected to run on the same platform that DevTools run
+        // (it may be different from the inspected page platform).
+        var escapeString = WebInspector.isWin() ? escapeStringWin : escapeStringPosix;
+
+        command.push(escapeString(request.url).replace(/[[{}\]]/g, "\\$&"));
 
         var inferredMethod = "GET";
         var data = [];
         var requestContentType = request.requestContentType();
         if (requestContentType && requestContentType.startsWith("application/x-www-form-urlencoded") && request.requestFormData) {
            data.push("--data");
-           data.push(escape(request.requestFormData));
+           data.push(escapeString(request.requestFormData));
            ignoredHeaders["Content-Length"] = true;
            inferredMethod = "POST";
         } else if (request.requestFormData) {
            data.push("--data-binary");
-           data.push(escape(request.requestFormData));
+           data.push(escapeString(request.requestFormData));
            ignoredHeaders["Content-Length"] = true;
            inferredMethod = "POST";
         }
@@ -1427,7 +1462,7 @@ WebInspector.NetworkLogView.prototype = {
             if (header.name in ignoredHeaders)
                 continue;
             command.push("-H");
-            command.push(escape(header.name + ": " + header.value));
+            command.push(escapeString(header.name + ": " + header.value));
         }
         command = command.concat(data);
         command.push("--compressed");
@@ -1443,7 +1478,7 @@ WebInspector.NetworkLogView.prototype = {
  */
 WebInspector.NetworkLogView.HTTPRequestsFilter = function(request)
 {
-    return request.parsedURL.isValid && (request.parsedURL.scheme in WebInspector.NetworkLogView.HTTPSchemas);
+    return request.parsedURL.isValid && (request.scheme in WebInspector.NetworkLogView.HTTPSchemas);
 }
 
 
@@ -1697,17 +1732,39 @@ WebInspector.NetworkPanel.prototype = {
      */
     appendApplicableItems: function(event, contextMenu, target)
     {
-        if (!(target instanceof WebInspector.NetworkRequest))
-            return;
-        if (this.visibleView && this.visibleView.isShowing() && this.visibleView.request() === target)
-            return;
-
-        function reveal()
+        function reveal(request)
         {
             WebInspector.inspectorView.setCurrentPanel(this);
-            this.revealAndHighlightRequest(/** @type {WebInspector.NetworkRequest} */ (target));
+            this.revealAndHighlightRequest(request);
         }
-        contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Reveal in Network panel" : "Reveal in Network Panel"), reveal.bind(this));
+
+        function appendRevealItem(request)
+        {
+            var revealText = WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Reveal in Network panel" : "Reveal in Network Panel");
+            contextMenu.appendItem(revealText, reveal.bind(this, request));
+        }
+
+        if (target instanceof WebInspector.Resource) {
+            var resource = /** @type {WebInspector.Resource} */ (target);
+            if (resource.request)
+                appendRevealItem.call(this, resource.request);
+            return;
+        }
+        if (target instanceof WebInspector.UISourceCode) {
+            var uiSourceCode = /** @type {WebInspector.UISourceCode} */ (target);
+            var resource = WebInspector.resourceForURL(uiSourceCode.url);
+            if (resource && resource.request)
+                appendRevealItem.call(this, resource.request);
+            return;
+        }
+
+        if (!(target instanceof WebInspector.NetworkRequest))
+            return;
+        var request = /** @type {WebInspector.NetworkRequest} */ (target);
+        if (this.visibleView && this.visibleView.isShowing() && this.visibleView.request() === request)
+            return;
+
+        appendRevealItem.call(this, request);
     },
 
     _injectStyles: function()
@@ -1723,7 +1780,7 @@ WebInspector.NetworkPanel.prototype = {
             hideSelectors.push("#network-container .hide-" + columnId + "-column ." + columnId + "-column");
             bgSelectors.push(".network-log-grid.data-grid td." + columnId + "-column");
         }
-        rules.push(hideSelectors.join(", ") + "{border-right: 0 none transparent;}");
+        rules.push(hideSelectors.join(", ") + "{border-left: 0 none transparent;}");
         rules.push(bgSelectors.join(", ") + "{background-color: rgba(0, 0, 0, 0.07);}");
 
         style.textContent = rules.join("\n");
@@ -2017,6 +2074,7 @@ WebInspector.NetworkDataGridNode.prototype = {
         this._nameCell = this._createDivInTD("name");
         this._methodCell = this._createDivInTD("method");
         this._statusCell = this._createDivInTD("status");
+        this._schemeCell = this._createDivInTD("scheme");
         this._domainCell = this._createDivInTD("domain");
         this._typeCell = this._createDivInTD("type");
         this._initiatorCell = this._createDivInTD("initiator");
@@ -2130,6 +2188,7 @@ WebInspector.NetworkDataGridNode.prototype = {
         this._refreshNameCell();
         this._refreshMethodCell();
         this._refreshStatusCell();
+        this._refreshSchemeCell();
         this._refreshDomainCell();
         this._refreshTypeCell();
         this._refreshInitiatorCell();
@@ -2231,11 +2290,14 @@ WebInspector.NetworkDataGridNode.prototype = {
         }
     },
 
+    _refreshSchemeCell: function()
+    {
+        this._schemeCell.setTextAndTitle(this._request.scheme);
+    },
+
     _refreshDomainCell: function()
     {
-        this._domainCell.removeChildren();
-        this._domainCell.appendChild(document.createTextNode(this._request.domain));
-        this._domainCell.title = this._request.parsedURL.host;
+        this._typeCell.setTextAndTitle(this._request.domain);
     },
 
     _refreshTypeCell: function()

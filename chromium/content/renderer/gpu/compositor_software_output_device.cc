@@ -7,8 +7,8 @@
 #include "base/logging.h"
 #include "cc/output/software_frame_data.h"
 #include "content/renderer/render_process.h"
+#include "third_party/skia/include/core/SkBitmapDevice.h"
 #include "third_party/skia/include/core/SkCanvas.h"
-#include "third_party/skia/include/core/SkDevice.h"
 #include "third_party/skia/include/core/SkPixelRef.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/gfx/skia_util.h"
@@ -116,6 +116,21 @@ void CompositorSoftwareOutputDevice::Resize(gfx::Size viewport_size) {
   viewport_size_ = viewport_size;
 }
 
+void CompositorSoftwareOutputDevice::DiscardBackbuffer() {
+  // Keep non-ACKed buffers in awaiting_ack_ until they get acknowledged.
+  for (size_t i = 0; i < buffers_.size(); ++i) {
+    if (!buffers_[i]->free()) {
+      awaiting_ack_.push_back(buffers_[i]);
+      buffers_[i] = NULL;
+    }
+  }
+  buffers_.clear();
+  current_index_ = -1;
+}
+
+void CompositorSoftwareOutputDevice::EnsureBackbuffer() {
+}
+
 SkCanvas* CompositorSoftwareOutputDevice::BeginPaint(gfx::Rect damage_rect) {
   DCHECK(CalledOnValidThread());
 
@@ -132,7 +147,7 @@ SkCanvas* CompositorSoftwareOutputDevice::BeginPaint(gfx::Rect damage_rect) {
                     viewport_size_.width(),
                     viewport_size_.height());
   bitmap_.setPixels(current->memory());
-  device_ = skia::AdoptRef(new SkDevice(bitmap_));
+  device_ = skia::AdoptRef(new SkBitmapDevice(bitmap_));
   canvas_ = skia::AdoptRef(new SkCanvas(device_.get()));
 
   if (!previous) {

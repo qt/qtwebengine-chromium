@@ -27,8 +27,9 @@
 #include "core/platform/graphics/chromium/AnimationTranslationUtil.h"
 
 #include "core/css/LengthFunctions.h"
+#include "core/platform/animation/CSSAnimationData.h"
+#include "core/platform/animation/KeyframeValueList.h"
 #include "core/platform/graphics/FloatSize.h"
-#include "core/platform/graphics/GraphicsLayer.h"
 #include "core/platform/graphics/chromium/TransformSkMatrix44Conversions.h"
 #include "core/platform/graphics/transforms/InterpolatedTransformOperation.h"
 #include "core/platform/graphics/transforms/Matrix3DTransformOperation.h"
@@ -221,7 +222,7 @@ PassOwnPtr<WebKit::WebAnimation> createWebAnimation(const KeyframeValueList& val
         // If there hasn't been a timing function associated with this keyframe, use the
         // animation's timing function, if we have one.
         if (!originalTimingFunction && animation->isTimingFunctionSet())
-            originalTimingFunction = animation->timingFunction().get();
+            originalTimingFunction = animation->timingFunction();
 
         // Ease is the default timing function.
         WebKit::WebAnimationCurve::TimingFunctionType timingFunctionType = WebKit::WebAnimationCurve::TimingFunctionTypeEase;
@@ -241,13 +242,17 @@ PassOwnPtr<WebKit::WebAnimation> createWebAnimation(const KeyframeValueList& val
                 timingFunctionType = WebKit::WebAnimationCurve::TimingFunctionTypeLinear;
                 break;
             case TimingFunction::CubicBezierFunction:
-                const CubicBezierTimingFunction* originalBezierTimingFunction = static_cast<const CubicBezierTimingFunction*>(originalTimingFunction);
-                isUsingCustomBezierTimingFunction = true;
-                x1 = originalBezierTimingFunction->x1();
-                y1 = originalBezierTimingFunction->y1();
-                x2 = originalBezierTimingFunction->x2();
-                y2 = originalBezierTimingFunction->y2();
-                break;
+                {
+                    const CubicBezierTimingFunction* originalBezierTimingFunction = static_cast<const CubicBezierTimingFunction*>(originalTimingFunction);
+                    isUsingCustomBezierTimingFunction = true;
+                    x1 = originalBezierTimingFunction->x1();
+                    y1 = originalBezierTimingFunction->y1();
+                    x2 = originalBezierTimingFunction->x2();
+                    y2 = originalBezierTimingFunction->y2();
+                    break;
+                }
+            default:
+                ASSERT_NOT_REACHED();
             } // switch
         }
 

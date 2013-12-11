@@ -96,7 +96,7 @@ FloatPoint WebVTTParser::parseFloatPercentageValuePair(const String& value, char
     // percentages (x%,y%) implies that at least the first two characters
     // are the first percentage value.
     size_t delimiterOffset = value.find(delimiter, 2);
-    if (delimiterOffset == notFound || delimiterOffset == value.length() - 1) {
+    if (delimiterOffset == kNotFound || delimiterOffset == value.length() - 1) {
         isValidSetting = false;
         return FloatPoint(0, 0);
     }
@@ -280,7 +280,7 @@ WebVTTParser::ParseState WebVTTParser::collectTimingsAndSettings(const String& l
     skipWhiteSpace(line, &position);
 
     // 6-9 - If the next three characters are not "-->", abort and return failure.
-    if (line.find("-->", position) == notFound)
+    if (line.find("-->", position) == kNotFound)
         return BadCue;
     position += 3;
     if (position >= line.length())
@@ -330,11 +330,12 @@ PassRefPtr<DocumentFragment>  WebVTTParser::createDocumentFragmentFromCueText(co
 
     ASSERT(m_scriptExecutionContext->isDocument());
     Document* document = toDocument(m_scriptExecutionContext);
+    ASSERT(document);
 
-    RefPtr<DocumentFragment> fragment = DocumentFragment::create(document);
+    RefPtr<DocumentFragment> fragment = DocumentFragment::create(*document);
 
     if (!text.length()) {
-        fragment->parserAppendChild(Text::create(document, ""));
+        fragment->parserAppendChild(Text::create(*document, ""));
         return fragment;
     }
 
@@ -345,7 +346,7 @@ PassRefPtr<DocumentFragment>  WebVTTParser::createDocumentFragmentFromCueText(co
     m_languageStack.clear();
     SegmentedString content(text);
     while (m_tokenizer->nextToken(content, m_token))
-        constructTreeFromToken(document);
+        constructTreeFromToken(*document);
 
     return fragment.release();
 }
@@ -483,7 +484,7 @@ static WebVTTNodeType tokenToNodeType(WebVTTToken& token)
     return WebVTTNodeTypeNone;
 }
 
-void WebVTTParser::constructTreeFromToken(Document* document)
+void WebVTTParser::constructTreeFromToken(Document& document)
 {
     QualifiedName tagName(nullAtom, AtomicString(m_token.name()), xhtmlNamespaceURI);
 
@@ -500,7 +501,7 @@ void WebVTTParser::constructTreeFromToken(Document* document)
         RefPtr<WebVTTElement> child;
         WebVTTNodeType nodeType = tokenToNodeType(m_token);
         if (nodeType != WebVTTNodeTypeNone)
-            child = WebVTTElement::create(nodeType, document);
+            child = WebVTTElement::create(nodeType, &document);
         if (child) {
             if (m_token.classes().size() > 0)
                 child->setAttribute(classAttr, AtomicString(m_token.classes()));

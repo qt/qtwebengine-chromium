@@ -22,7 +22,6 @@
 #define CSSComputedStyleDeclaration_h
 
 #include "core/css/CSSStyleDeclaration.h"
-#include "core/css/StyleColor.h"
 #include "core/rendering/style/RenderStyleConstants.h"
 #include "wtf/HashMap.h"
 #include "wtf/RefPtr.h"
@@ -110,17 +109,16 @@ private:
 
     virtual bool cssPropertyMatches(CSSPropertyID, const CSSValue*) const OVERRIDE;
 
-    PassRefPtr<CSSValue> valueForShadow(const RenderObject*, const ShadowData*, CSSPropertyID, const RenderStyle*) const;
-    PassRefPtr<CSSPrimitiveValue> currentColorOrValidColor(RenderStyle*, const StyleColor&) const;
-    PassRefPtr<CSSPrimitiveValue> currentColorOrValidColor(const RenderObject*, const RenderStyle*, int colorProperty) const;
+    PassRefPtr<CSSValue> valueForShadow(const ShadowData*, CSSPropertyID, const RenderStyle*) const;
+    PassRefPtr<CSSPrimitiveValue> currentColorOrValidColor(RenderStyle*, const Color&) const;
     PassRefPtr<SVGPaint> adjustSVGPaintForCurrentColor(PassRefPtr<SVGPaint>, RenderStyle*) const;
 
     PassRefPtr<CSSValue> valueForFilter(const RenderObject*, const RenderStyle*) const;
 
-    PassRefPtr<CSSValueList> getCSSPropertyValuesForShorthandProperties(const StylePropertyShorthand&) const;
-    PassRefPtr<CSSValueList> getCSSPropertyValuesForSidesShorthand(const StylePropertyShorthand&) const;
-    PassRefPtr<CSSValueList> getBackgroundShorthandValue() const;
-    PassRefPtr<CSSValueList> getCSSPropertyValuesForGridShorthand(const StylePropertyShorthand&) const;
+    PassRefPtr<CSSValueList> valuesForShorthandProperty(const StylePropertyShorthand&) const;
+    PassRefPtr<CSSValueList> valuesForSidesShorthand(const StylePropertyShorthand&) const;
+    PassRefPtr<CSSValueList> valuesForBackgroundShorthand() const;
+    PassRefPtr<CSSValueList> valuesForGridShorthand(const StylePropertyShorthand&) const;
 
     RefPtr<Node> m_node;
     PseudoId m_pseudoElementSpecifier;

@@ -248,5 +248,12 @@ This directory contains the source code of ICU 4.6 for C/C++
     - patches/utext.patch
     - upstream change : http://bugs.icu-project.org/trac/changeset/29356
 
-24. Fix compilation errors on VS2012.
+24. Fix compilation errors on VS2012 and above.
     - patches/vs2012.patch
+
+25. Fix a buffer overflow in UTF-16/32 detection.
+    - patches/csetdet.patch
+    - upstream bug: http://bugs.icu-project.org/trac/ticket/10318
+
+
+

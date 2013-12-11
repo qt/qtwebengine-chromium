@@ -22,9 +22,9 @@
 
 #include "core/dom/ClientRectList.h"
 #include "core/dom/DocumentMarkerController.h"
-#include "core/dom/DocumentStyleSheetCollection.h"
 #include "core/dom/Event.h"
 #include "core/dom/EventNames.h"
+#include "core/dom/StyleEngine.h"
 #include "core/dom/VisitedLinkState.h"
 #include "core/editing/Caret.h"
 #include "core/history/BackForwardController.h"
@@ -47,10 +47,10 @@
 #include "core/page/PageLifecycleNotifier.h"
 #include "core/page/PointerLockController.h"
 #include "core/page/Settings.h"
+#include "core/page/ValidationMessageClient.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
 #include "core/platform/network/NetworkStateNotifier.h"
 #include "core/plugins/PluginData.h"
-#include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
 #include "core/storage/StorageNamespace.h"
 #include "wtf/HashMap.h"
@@ -78,7 +78,7 @@ static void networkStateChanged()
 
     AtomicString eventName = networkStateNotifier().onLine() ? eventNames().onlineEvent : eventNames().offlineEvent;
     for (unsigned i = 0; i < frames.size(); i++)
-        frames[i]->document()->dispatchWindowEvent(Event::create(eventName, false, false));
+        frames[i]->document()->dispatchWindowEvent(Event::create(eventName));
 }
 
 float deviceScaleFactor(Frame* frame)
@@ -103,7 +103,6 @@ Page::Page(PageClients& pageClients)
     , m_settings(Settings::create(this))
     , m_progress(ProgressTracker::create())
     , m_backForwardController(BackForwardController::create(this, pageClients.backForwardClient))
-    , m_theme(RenderTheme::themeForPage(this))
     , m_editorClient(pageClients.editorClient)
     , m_validationMessageClient(0)
     , m_subframeCount(0)
@@ -156,8 +155,6 @@ Page::~Page()
     if (m_scrollingCoordinator)
         m_scrollingCoordinator->pageDestroyed();
 
-    backForward()->close();
-
 #ifndef NDEBUG
     pageCounter.decrement();
 #endif
@@ -209,7 +206,7 @@ void Page::updateDragAndDrop(Node* dropTargetNode, const IntPoint& eventPosition
     m_autoscrollController->updateDragAndDrop(dropTargetNode, eventPosition, eventTime);
 }
 
-#if OS(WINDOWS)
+#if OS(WIN)
 void Page::handleMouseReleaseForPanScrolling(Frame* frame, const PlatformMouseEvent& point)
 {
     m_autoscrollController->handleMouseReleaseForPanScrolling(frame, point);
@@ -260,6 +257,14 @@ void Page::setMainFrame(PassRefPtr<Frame> mainFrame)
 {
     ASSERT(!m_mainFrame); // Should only be called during initialization
     m_mainFrame = mainFrame;
+}
+
+void Page::documentDetached(Document* document)
+{
+    m_pointerLockController->documentDetached(document);
+    m_contextMenuController->documentDetached(document);
+    if (m_validationMessageClient)
+        m_validationMessageClient->documentDetached(*document);
 }
 
 bool Page::openedByDOM() const
@@ -324,7 +329,7 @@ void Page::scheduleForcedStyleRecalcForAllPages()
 void Page::setNeedsRecalcStyleInAllFrames()
 {
     for (Frame* frame = mainFrame(); frame; frame = frame->tree()->traverseNext())
-        frame->document()->styleResolverChanged(DeferRecalcStyle);
+        frame->document()->styleResolverChanged(RecalcStyleDeferred);
 }
 
 void Page::refreshPlugins(bool reload)
@@ -399,9 +404,6 @@ void Page::setPageScaleFactor(float scale, const IntPoint& origin)
 {
     FrameView* view = mainFrame()->view();
 
-    bool oldProgrammaticScroll = view->inProgrammaticScroll();
-    view->setInProgrammaticScroll(false);
-
     if (scale != m_pageScaleFactor) {
         m_pageScaleFactor = scale;
 
@@ -416,8 +418,6 @@ void Page::setPageScaleFactor(float scale, const IntPoint& origin)
 
     if (view && view->scrollPosition() != origin)
         view->notifyScrollPositionChanged(origin);
-
-    view->setInProgrammaticScroll(oldProgrammaticScroll);
 }
 
 void Page::setDeviceScaleFactor(float scaleFactor)
@@ -463,7 +463,7 @@ void Page::userStyleSheetLocationChanged()
 
     for (Frame* frame = mainFrame(); frame; frame = frame->tree()->traverseNext()) {
         if (frame->document())
-            frame->document()->styleSheetCollection()->updatePageUserSheet();
+            frame->document()->styleEngine()->updatePageUserSheet();
     }
 }
 
@@ -625,7 +625,7 @@ void Page::addRelevantRepaintedObject(RenderObject* object, const LayoutRect& ob
         return;
 
     // Objects inside sub-frames are not considered to be relevant.
-    if (object->document()->frame() != mainFrame())
+    if (object->document().frame() != mainFrame())
         return;
 
     RenderView* view = object->view();
@@ -722,6 +722,8 @@ void Page::multisamplingChanged()
 void Page::didCommitLoad(Frame* frame)
 {
     lifecycleNotifier()->notifyDidCommitLoad(frame);
+    if (m_mainFrame == frame)
+        useCounter().didCommitLoad();
 }
 
 PageLifecycleNotifier* Page::lifecycleNotifier()

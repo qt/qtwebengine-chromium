@@ -13,6 +13,7 @@
 
 #include "GrPoint.h"
 #include "GrTexture.h"
+#include "GrDrawTarget.h"
 
 class GrGpu;
 class GrRectanizer;
@@ -36,32 +37,25 @@ public:
         }
     }
 
-    static void MarkAllUnused(GrAtlas* atlas) {
-        while (NULL != atlas) {
-            atlas->fUsed = false;
-            atlas = atlas->fNext;
-        }
-    }
-
     static bool RemoveUnusedAtlases(GrAtlasMgr* atlasMgr, GrAtlas** startAtlas);
 
-    bool used() const { return fUsed; }
-    void setUsed(bool used) { fUsed = used; }
+    GrDrawTarget::DrawToken drawToken() const { return fDrawToken; }
+    void setDrawToken(GrDrawTarget::DrawToken draw) { fDrawToken = draw; }
 
 private:
     GrAtlas(GrAtlasMgr*, int plotX, int plotY, GrMaskFormat format);
     ~GrAtlas(); // does not try to delete the fNext field
 
-    GrAtlas*        fNext;
-
     // for recycling
-    bool            fUsed;
+    GrDrawTarget::DrawToken fDrawToken;
 
-    GrTexture*      fTexture;
-    GrRectanizer*   fRects;
-    GrAtlasMgr*     fAtlasMgr;
-    GrIPoint16      fPlot;
-    GrMaskFormat    fMaskFormat;
+    GrAtlas*                fNext;
+
+    GrTexture*              fTexture;
+    GrRectanizer*           fRects;
+    GrAtlasMgr*             fAtlasMgr;
+    GrIPoint16              fPlot;
+    GrMaskFormat            fMaskFormat;
 
     friend class GrAtlasMgr;
 };
@@ -78,7 +72,7 @@ public:
     void deleteAtlas(GrAtlas* atlas) { delete atlas; }
 
     GrTexture* getTexture(GrMaskFormat format) const {
-        GrAssert((unsigned)format < kCount_GrMaskFormats);
+        SkASSERT((unsigned)format < kCount_GrMaskFormats);
         return fTexture[format];
     }
 
@@ -88,7 +82,7 @@ public:
 private:
     GrGpu*      fGpu;
     GrTexture*  fTexture[kCount_GrMaskFormats];
-    GrPlotMgr*  fPlotMgr;
+    GrPlotMgr*  fPlotMgr[kCount_GrMaskFormats];
 };
 
 #endif

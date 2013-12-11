@@ -193,6 +193,96 @@ TEST_P(SpdySessionTest, InitialReadError) {
       spdy_session_pool_, key_, ERR_FAILED);
 }
 
+namespace {
+
+// A helper class that vends a callback that, when fired, destroys a
+// given SpdyStreamRequest.
+class StreamRequestDestroyingCallback : public TestCompletionCallbackBase {
+ public:
+  StreamRequestDestroyingCallback() {}
+
+  virtual ~StreamRequestDestroyingCallback() {}
+
+  void SetRequestToDestroy(scoped_ptr<SpdyStreamRequest> request) {
+    request_ = request.Pass();
+  }
+
+  CompletionCallback MakeCallback() {
+    return base::Bind(&StreamRequestDestroyingCallback::OnComplete,
+                      base::Unretained(this));
+  }
+
+ private:
+  void OnComplete(int result) {
+    request_.reset();
+    SetResult(result);
+  }
+
+  scoped_ptr<SpdyStreamRequest> request_;
+};
+
+}  // namespace
+
+// Request kInitialMaxConcurrentStreams streams.  Request two more
+// streams, but have the callback for one destroy the second stream
+// request. Close the session. Nothing should blow up. This is a
+// regression test for http://crbug.com/250841 .
+TEST_P(SpdySessionTest, PendingStreamCancellingAnother) {
+  session_deps_.host_resolver->set_synchronous_mode(true);
+
+  MockRead reads[] = {MockRead(ASYNC, 0, 0), };
+
+  DeterministicSocketData data(reads, arraysize(reads), NULL, 0);
+  MockConnect connect_data(SYNCHRONOUS, OK);
+  data.set_connect_data(connect_data);
+  session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
+
+  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
+  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
+
+  CreateDeterministicNetworkSession();
+
+  base::WeakPtr<SpdySession> session =
+      CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
+
+  // Create the maximum number of concurrent streams.
+  for (size_t i = 0; i < kInitialMaxConcurrentStreams; ++i) {
+    base::WeakPtr<SpdyStream> spdy_stream = CreateStreamSynchronously(
+        SPDY_BIDIRECTIONAL_STREAM, session, test_url_, MEDIUM, BoundNetLog());
+    ASSERT_TRUE(spdy_stream != NULL);
+  }
+
+  SpdyStreamRequest request1;
+  scoped_ptr<SpdyStreamRequest> request2(new SpdyStreamRequest);
+
+  StreamRequestDestroyingCallback callback1;
+  ASSERT_EQ(ERR_IO_PENDING,
+            request1.StartRequest(SPDY_BIDIRECTIONAL_STREAM,
+                                  session,
+                                  test_url_,
+                                  MEDIUM,
+                                  BoundNetLog(),
+                                  callback1.MakeCallback()));
+
+  // |callback2| is never called.
+  TestCompletionCallback callback2;
+  ASSERT_EQ(ERR_IO_PENDING,
+            request2->StartRequest(SPDY_BIDIRECTIONAL_STREAM,
+                                   session,
+                                   test_url_,
+                                   MEDIUM,
+                                   BoundNetLog(),
+                                   callback2.callback()));
+
+  callback1.SetRequestToDestroy(request2.Pass());
+
+  session->CloseSessionOnError(ERR_ABORTED, "Aborting session");
+
+  EXPECT_EQ(ERR_ABORTED, callback1.WaitForResult());
+
+  data.RunFor(1);
+}
+
 // A session receiving a GOAWAY frame with no active streams should
 // immediately close.
 TEST_P(SpdySessionTest, GoAwayWithNoActiveStreams) {
@@ -2669,7 +2759,7 @@ TEST_P(SpdySessionTest, CloseOneIdleConnection) {
   TestCompletionCallback callback2;
   HostPortPair host_port2("2.com", 80);
   scoped_refptr<TransportSocketParams> params2(
-      new TransportSocketParams(host_port2, DEFAULT_PRIORITY, false, false,
+      new TransportSocketParams(host_port2, false, false,
                                 OnHostResolutionCallback()));
   scoped_ptr<ClientSocketHandle> connection2(new ClientSocketHandle);
   EXPECT_EQ(ERR_IO_PENDING,
@@ -2731,8 +2821,12 @@ TEST_P(SpdySessionTest, CloseOneIdleConnectionWithAlias) {
   AddressList addresses;
   // Pre-populate the DNS cache, since a synchronous resolution is required in
   // order to create the alias.
-  session_deps_.host_resolver->Resolve(
-      info, &addresses, CompletionCallback(), NULL, BoundNetLog());
+  session_deps_.host_resolver->Resolve(info,
+                                       DEFAULT_PRIORITY,
+                                       &addresses,
+                                       CompletionCallback(),
+                                       NULL,
+                                       BoundNetLog());
   // Get a session for |key2|, which should return the session created earlier.
   base::WeakPtr<SpdySession> session2 =
       spdy_session_pool_->FindAvailableSession(key2, BoundNetLog());
@@ -2744,7 +2838,7 @@ TEST_P(SpdySessionTest, CloseOneIdleConnectionWithAlias) {
   TestCompletionCallback callback3;
   HostPortPair host_port3("3.com", 80);
   scoped_refptr<TransportSocketParams> params3(
-      new TransportSocketParams(host_port3, DEFAULT_PRIORITY, false, false,
+      new TransportSocketParams(host_port3, false, false,
                                 OnHostResolutionCallback()));
   scoped_ptr<ClientSocketHandle> connection3(new ClientSocketHandle);
   EXPECT_EQ(ERR_IO_PENDING,
@@ -2760,9 +2854,9 @@ TEST_P(SpdySessionTest, CloseOneIdleConnectionWithAlias) {
   EXPECT_TRUE(session2 == NULL);
 }
 
-// Tests that a non-SPDY request can't close a SPDY session that's currently in
-// use.
-TEST_P(SpdySessionTest, CloseOneIdleConnectionFailsWhenSessionInUse) {
+// Tests that when a SPDY session becomes idle, it closes itself if there is
+// a lower layer pool stalled on the per-pool socket limit.
+TEST_P(SpdySessionTest, CloseSessionOnIdleWhenPoolStalled) {
   ClientSocketPoolManager::set_max_sockets_per_group(
       HttpNetworkSession::NORMAL_SOCKET_POOL, 1);
   ClientSocketPoolManager::set_max_sockets_per_pool(
@@ -2781,9 +2875,18 @@ TEST_P(SpdySessionTest, CloseOneIdleConnectionFailsWhenSessionInUse) {
     CreateMockWrite(*cancel1, 1),
   };
   StaticSocketDataProvider data(reads, arraysize(reads),
-                                     writes, arraysize(writes));
+                                writes, arraysize(writes));
   data.set_connect_data(connect_data);
   session_deps_.socket_factory->AddSocketDataProvider(&data);
+
+  MockRead http_reads[] = {
+    MockRead(SYNCHRONOUS, ERR_IO_PENDING)  // Stall forever.
+  };
+  StaticSocketDataProvider http_data(http_reads, arraysize(http_reads),
+                                     NULL, 0);
+  http_data.set_connect_data(connect_data);
+  session_deps_.socket_factory->AddSocketDataProvider(&http_data);
+
 
   CreateNetworkSession();
 
@@ -2824,7 +2927,7 @@ TEST_P(SpdySessionTest, CloseOneIdleConnectionFailsWhenSessionInUse) {
   TestCompletionCallback callback2;
   HostPortPair host_port2("2.com", 80);
   scoped_refptr<TransportSocketParams> params2(
-      new TransportSocketParams(host_port2, DEFAULT_PRIORITY, false, false,
+      new TransportSocketParams(host_port2, false, false,
                                 OnHostResolutionCallback()));
   scoped_ptr<ClientSocketHandle> connection2(new ClientSocketHandle);
   EXPECT_EQ(ERR_IO_PENDING,
@@ -2839,14 +2942,13 @@ TEST_P(SpdySessionTest, CloseOneIdleConnectionFailsWhenSessionInUse) {
   EXPECT_TRUE(pool->IsStalled());
   EXPECT_FALSE(callback2.have_result());
 
-  // Cancelling the request should still not release the session's socket,
-  // since the session is still kept alive by the SpdySessionPool.
+  // Cancelling the request should result in the session's socket being
+  // closed, since the pool is stalled.
   ASSERT_TRUE(spdy_stream1.get());
   spdy_stream1->Cancel();
   base::RunLoop().RunUntilIdle();
-  EXPECT_TRUE(pool->IsStalled());
-  EXPECT_FALSE(callback2.have_result());
-  EXPECT_TRUE(session1 != NULL);
+  ASSERT_FALSE(pool->IsStalled());
+  EXPECT_EQ(OK, callback2.WaitForResult());
 }
 
 // Verify that SpdySessionKey and therefore SpdySession is different when

@@ -18,6 +18,7 @@ class URLRequest;
 
 namespace content {
 class ResourceBuffer;
+class ResourceContext;
 class ResourceDispatcherHostImpl;
 class ResourceMessageFilter;
 class SharedIOBuffer;
@@ -28,7 +29,7 @@ class AsyncResourceHandler : public ResourceHandler,
                              public ResourceMessageDelegate {
  public:
   AsyncResourceHandler(ResourceMessageFilter* filter,
-                       int routing_id,
+                       ResourceContext* resource_context,
                        net::URLRequest* request,
                        ResourceDispatcherHostImpl* rdh);
   virtual ~AsyncResourceHandler();
@@ -75,7 +76,7 @@ class AsyncResourceHandler : public ResourceHandler,
 
   scoped_refptr<ResourceBuffer> buffer_;
   scoped_refptr<ResourceMessageFilter> filter_;
-  int routing_id_;
+  ResourceContext* resource_context_;
   net::URLRequest* request_;
   ResourceDispatcherHostImpl* rdh_;
 

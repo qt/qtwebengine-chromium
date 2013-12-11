@@ -40,6 +40,8 @@
 #include "core/platform/AsyncFileSystemCallbacks.h"
 #include "modules/filesystem/FileSystemClient.h"
 #include "modules/filesystem/WorkerLocalFileSystem.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebFileSystem.h"
 
 namespace WebCore {
 
@@ -56,22 +58,24 @@ LocalFileSystemBase::~LocalFileSystemBase()
 {
 }
 
-void LocalFileSystemBase::readFileSystem(ScriptExecutionContext* context, FileSystemType type, PassOwnPtr<AsyncFileSystemCallbacks> callbacks, FileSystemSynchronousType synchronousType)
+void LocalFileSystemBase::readFileSystem(ScriptExecutionContext* context, FileSystemType type, PassOwnPtr<AsyncFileSystemCallbacks> callbacks)
 {
     if (!client() || !client()->allowFileSystem(context)) {
         context->postTask(createCallbackTask(&fileSystemNotAllowed, callbacks));
         return;
     }
-    client()->openFileSystem(context, type, callbacks, synchronousType, 0, OpenExistingFileSystem);
+    KURL storagePartition = KURL(KURL(), context->securityOrigin()->toString());
+    WebKit::Platform::current()->fileSystem()->openFileSystem(storagePartition, static_cast<WebKit::WebFileSystemType>(type), false, callbacks);
 }
 
-void LocalFileSystemBase::requestFileSystem(ScriptExecutionContext* context, FileSystemType type, long long size, PassOwnPtr<AsyncFileSystemCallbacks> callbacks, FileSystemSynchronousType synchronousType)
+void LocalFileSystemBase::requestFileSystem(ScriptExecutionContext* context, FileSystemType type, long long size, PassOwnPtr<AsyncFileSystemCallbacks> callbacks)
 {
     if (!client() || !client()->allowFileSystem(context)) {
         context->postTask(createCallbackTask(&fileSystemNotAllowed, callbacks));
         return;
     }
-    client()->openFileSystem(context, type, callbacks, synchronousType, size, CreateFileSystemIfNotPresent);
+    KURL storagePartition = KURL(KURL(), context->securityOrigin()->toString());
+    WebKit::Platform::current()->fileSystem()->openFileSystem(storagePartition, static_cast<WebKit::WebFileSystemType>(type), true, callbacks);
 }
 
 void LocalFileSystemBase::deleteFileSystem(ScriptExecutionContext* context, FileSystemType type, PassOwnPtr<AsyncFileSystemCallbacks> callbacks)
@@ -83,7 +87,8 @@ void LocalFileSystemBase::deleteFileSystem(ScriptExecutionContext* context, File
         context->postTask(createCallbackTask(&fileSystemNotAllowed, callbacks));
         return;
     }
-    client()->deleteFileSystem(context, type, callbacks);
+    KURL storagePartition = KURL(KURL(), context->securityOrigin()->toString());
+    WebKit::Platform::current()->fileSystem()->deleteFileSystem(storagePartition, static_cast<WebKit::WebFileSystemType>(type), callbacks);
 }
 
 LocalFileSystemBase::LocalFileSystemBase(PassOwnPtr<FileSystemClient> client)

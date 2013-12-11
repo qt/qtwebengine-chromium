@@ -10,7 +10,6 @@
 
 #include "base/callback.h"
 #include "base/time/time.h"
-#include "media/base/android/demuxer_stream_player_params.h"
 #include "media/base/media_export.h"
 #include "ui/gl/android/scoped_java_surface.h"
 #include "url/gurl.h"
@@ -35,25 +34,6 @@ class MEDIA_EXPORT MediaPlayerAndroid {
     MEDIA_ERROR_INVALID_CODE,
   };
 
-  // Types of media source that this object will play.
-  enum SourceType {
-    SOURCE_TYPE_URL,
-    SOURCE_TYPE_MSE,     // W3C Media Source Extensions
-    SOURCE_TYPE_STREAM,  // W3C Media Stream, e.g. getUserMedia().
-  };
-
-  // Construct a MediaPlayerAndroid object with all the needed media player
-  // callbacks. This object needs to call |manager_|'s RequestMediaResources()
-  // before decoding the media stream. This allows |manager_| to track
-  // unused resources and free them when needed. On the other hand, it needs
-  // to call ReleaseMediaResources() when it is done with decoding.
-  static MediaPlayerAndroid* Create(int player_id,
-                                    const GURL& url,
-                                    SourceType source_type,
-                                    const GURL& first_party_for_cookies,
-                                    bool hide_url_log,
-                                    MediaPlayerManager* manager);
-
   // Passing an external java surface object to the player.
   virtual void SetVideoSurface(gfx::ScopedJavaSurface surface) = 0;
 
@@ -61,7 +41,7 @@ class MEDIA_EXPORT MediaPlayerAndroid {
   virtual void Start() = 0;
 
   // Pause the media.
-  virtual void Pause() = 0;
+  virtual void Pause(bool is_media_related_action) = 0;
 
   // Seek to a particular position. When succeeds, OnSeekComplete() will be
   // called. Otherwise, nothing will happen.
@@ -86,22 +66,12 @@ class MEDIA_EXPORT MediaPlayerAndroid {
   virtual GURL GetUrl();
   virtual GURL GetFirstPartyForCookies();
 
-  // Methods for DemuxerStreamPlayer.
-  // Informs DemuxerStreamPlayer that the demuxer is ready.
-  virtual void DemuxerReady(
-      const MediaPlayerHostMsg_DemuxerReady_Params& params);
-  // Called when the requested data is received from the demuxer.
-  virtual void ReadFromDemuxerAck(
-      const MediaPlayerHostMsg_ReadFromDemuxerAck_Params& params);
-
-  // Called when a seek request is acked by the render process.
-  virtual void OnSeekRequestAck(unsigned seek_request_id);
-
-  // Called when the demuxer has changed the duration.
-  virtual void DurationChanged(const base::TimeDelta& duration);
-
   // Pass a drm bridge to a player.
   virtual void SetDrmBridge(MediaDrmBridge* drm_bridge);
+
+  // Notifies the player that a decryption key has been added. The player
+  // may want to start/resume playback if it is waiting for a key.
+  virtual void OnKeyAdded();
 
   int player_id() { return player_id_; }
 

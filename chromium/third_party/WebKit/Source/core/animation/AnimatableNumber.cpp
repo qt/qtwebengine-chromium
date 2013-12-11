@@ -81,9 +81,9 @@ bool AnimatableNumber::canCreateFrom(const CSSValue* value)
     return value->isCalculationValue();
 }
 
-PassRefPtr<CSSValue> AnimatableNumber::toCSSValue() const
+PassRefPtr<CSSValue> AnimatableNumber::toCSSValue(NumberRange range) const
 {
-    return toCSSPrimitiveValue();
+    return toCSSPrimitiveValue(range);
 }
 
 double AnimatableNumber::toDouble() const
@@ -92,14 +92,16 @@ double AnimatableNumber::toDouble() const
     return m_number;
 }
 
-Length AnimatableNumber::toLength(const RenderStyle* style, const RenderStyle* rootStyle, double zoom) const
+Length AnimatableNumber::toLength(const RenderStyle* style, const RenderStyle* rootStyle, double zoom, NumberRange range) const
 {
-    // Avoid creating a CSSValue in the common cases
-    if (m_unitType == UnitTypeLength)
-        return Length(m_number, Fixed);
-    if (m_unitType == UnitTypePercentage)
-        return Length(m_number, Percent);
-    return toCSSPrimitiveValue()->convertToLength<AnyConversion>(style, rootStyle, zoom);
+    if (!m_isCalc) {
+        // Avoid creating a CSSValue in the common cases
+        if (m_unitType == UnitTypeLength)
+            return Length(clampedNumber(range) * zoom, Fixed);
+        if (m_unitType == UnitTypePercentage)
+            return Length(clampedNumber(range), Percent);
+    }
+    return toCSSPrimitiveValue(range)->convertToLength<AnyConversion>(style, rootStyle, zoom);
 }
 
 PassRefPtr<AnimatableValue> AnimatableNumber::interpolateTo(const AnimatableValue* value, double fraction) const
@@ -124,17 +126,27 @@ PassRefPtr<CSSCalcExpressionNode> AnimatableNumber::toCSSCalcExpressionNode() co
 {
     if (m_isCalc)
         return m_calcExpression;
-    return CSSCalcValue::createExpressionNode(toCSSPrimitiveValue(), m_number == trunc(m_number));
+    return CSSCalcValue::createExpressionNode(toCSSPrimitiveValue(AllValues), m_number == trunc(m_number));
 }
 
-PassRefPtr<CSSPrimitiveValue> AnimatableNumber::toCSSPrimitiveValue() const
+static bool isCompatibleWithRange(const CSSPrimitiveValue* primitiveValue, NumberRange range)
+{
+    ASSERT(primitiveValue);
+    if (range == AllValues)
+        return true;
+    if (primitiveValue->isCalculated())
+        return primitiveValue->cssCalcValue()->permittedValueRange() == CalculationRangeNonNegative;
+    return primitiveValue->getDoubleValue() >= 0;
+}
+
+PassRefPtr<CSSPrimitiveValue> AnimatableNumber::toCSSPrimitiveValue(NumberRange range) const
 {
     ASSERT(m_unitType != UnitTypeInvalid);
-    if (!m_cachedCSSPrimitiveValue) {
+    if (!m_cachedCSSPrimitiveValue || !isCompatibleWithRange(m_cachedCSSPrimitiveValue.get(), range)) {
         if (m_isCalc)
-            m_cachedCSSPrimitiveValue = CSSPrimitiveValue::create(CSSCalcValue::create(m_calcExpression));
+            m_cachedCSSPrimitiveValue = CSSPrimitiveValue::create(CSSCalcValue::create(m_calcExpression, range == AllValues ? CalculationRangeAll : CalculationRangeNonNegative));
         else
-            m_cachedCSSPrimitiveValue = CSSPrimitiveValue::create(m_number, static_cast<CSSPrimitiveValue::UnitTypes>(numberTypeToPrimitiveUnit(m_unitType)));
+            m_cachedCSSPrimitiveValue = CSSPrimitiveValue::create(clampedNumber(range), static_cast<CSSPrimitiveValue::UnitTypes>(numberTypeToPrimitiveUnit(m_unitType)));
     }
     return m_cachedCSSPrimitiveValue;
 }

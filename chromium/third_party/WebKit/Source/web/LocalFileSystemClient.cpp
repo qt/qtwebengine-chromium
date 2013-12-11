@@ -31,16 +31,17 @@
 #include "config.h"
 #include "LocalFileSystemClient.h"
 
-#include "WebFileSystemCallbacksImpl.h"
 #include "WebFrameImpl.h"
 #include "WebViewImpl.h"
 #include "core/dom/Document.h"
 #include "core/platform/AsyncFileSystemCallbacks.h"
+#include "public/platform/Platform.h"
 #include "public/platform/WebFileError.h"
 #include "public/platform/WebFileSystem.h"
+#include "public/platform/WebFileSystemCallbacks.h"
 #include "public/platform/WebFileSystemType.h"
-#include "public/web/WebFrameClient.h"
 #include "public/web/WebPermissionClient.h"
+#include "weborigin/SecurityOrigin.h"
 #include "wtf/text/WTFString.h"
 
 using namespace WebCore;
@@ -63,22 +64,6 @@ bool LocalFileSystemClient::allowFileSystem(ScriptExecutionContext* context)
     WebKit::WebViewImpl* webView = webFrame->viewImpl();
 
     return !webView->permissionClient() || webView->permissionClient()->allowFileSystem(webFrame);
-}
-
-void LocalFileSystemClient::openFileSystem(ScriptExecutionContext* context, WebCore::FileSystemType type, PassOwnPtr<AsyncFileSystemCallbacks> callbacks, FileSystemSynchronousType, long long size, OpenFileSystemMode openMode)
-{
-    Document* document = toDocument(context);
-    WebFrameImpl* webFrame = WebFrameImpl::fromFrame(document->frame());
-
-    webFrame->client()->openFileSystem(webFrame, static_cast<WebFileSystemType>(type), size, openMode == CreateFileSystemIfNotPresent, new WebFileSystemCallbacksImpl(callbacks));
-}
-
-void LocalFileSystemClient::deleteFileSystem(ScriptExecutionContext* context, WebCore::FileSystemType type, PassOwnPtr<AsyncFileSystemCallbacks> callbacks)
-{
-    Document* document = toDocument(context);
-    WebFrameImpl* webFrame = WebFrameImpl::fromFrame(document->frame());
-
-    webFrame->client()->deleteFileSystem(webFrame, static_cast<WebFileSystemType>(type), new WebFileSystemCallbacksImpl(callbacks));
 }
 
 LocalFileSystemClient::LocalFileSystemClient()

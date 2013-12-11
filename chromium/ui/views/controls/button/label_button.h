@@ -73,6 +73,9 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
   // Fill |params| with information about the button.
   virtual void GetExtraParams(ui::NativeTheme::ExtraParams* params) const;
 
+  // Resets colors from the NativeTheme, explicitly set colors are unchanged.
+  virtual void ResetColorsFromNativeTheme();
+
   // Updates the image view to contain the appropriate button state image.
   void UpdateImage();
 
@@ -82,9 +85,6 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
   FRIEND_TEST_ALL_PREFIXES(LabelButtonTest, Image);
   FRIEND_TEST_ALL_PREFIXES(LabelButtonTest, LabelAndImage);
   FRIEND_TEST_ALL_PREFIXES(LabelButtonTest, Font);
-
-  // Resets colors from the NativeTheme, explicitly set colors are unchanged.
-  void ResetColorsFromNativeTheme();
 
   // Overridden from CustomButton:
   virtual void StateChanged() OVERRIDE;
@@ -98,7 +98,7 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
   virtual gfx::Rect GetThemePaintRect() const OVERRIDE;
   virtual ui::NativeTheme::State GetThemeState(
       ui::NativeTheme::ExtraParams* params) const OVERRIDE;
-  virtual const ui::Animation* GetThemeAnimation() const OVERRIDE;
+  virtual const gfx::Animation* GetThemeAnimation() const OVERRIDE;
   virtual ui::NativeTheme::State GetBackgroundThemeState(
       ui::NativeTheme::ExtraParams* params) const OVERRIDE;
   virtual ui::NativeTheme::State GetForegroundThemeState(

@@ -31,22 +31,21 @@
 #include "config.h"
 #include "core/html/HTMLImportLoader.h"
 
+#include "core/dom/CustomElementRegistrationContext.h"
 #include "core/dom/Document.h"
+#include "core/fetch/ResourceFetcher.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/HTMLImportLoaderClient.h"
 #include "core/loader/DocumentWriter.h"
-#include "core/loader/cache/ResourceFetcher.h"
 #include "core/page/ContentSecurityPolicyResponseHeaders.h"
 
 namespace WebCore {
 
-HTMLImportLoader::HTMLImportLoader(HTMLImport* parent, const KURL& url, const ResourcePtr<RawResource>& resource)
+HTMLImportLoader::HTMLImportLoader(HTMLImport* parent, const KURL& url)
     : m_parent(parent)
     , m_state(StateLoading)
-    , m_resource(resource)
     , m_url(url)
 {
-    m_resource->addClient(this);
 }
 
 HTMLImportLoader::~HTMLImportLoader()
@@ -56,6 +55,12 @@ HTMLImportLoader::~HTMLImportLoader()
     ASSERT(!m_importedDocument);
     if (m_resource)
         m_resource->removeClient(this);
+}
+
+void HTMLImportLoader::setResource(const ResourcePtr<RawResource>& resource)
+{
+    m_resource = resource;
+    m_resource->addClient(this);
 }
 
 void HTMLImportLoader::responseReceived(Resource*, const ResourceResponse& response)
@@ -111,7 +116,9 @@ HTMLImportLoader::State HTMLImportLoader::startWritingAndParsing(const ResourceR
     if (!m_parent->document()->fetcher()->canAccess(m_resource.get()))
         return StateError;
 
-    m_importedDocument = HTMLDocument::create(DocumentInit(response.url(), 0, this).withRegistrationContext(root()->document()->registrationContext()));
+    DocumentInit init = DocumentInit(response.url(), 0, root()->document()->contextDocument(), this)
+        .withRegistrationContext(root()->document()->registrationContext());
+    m_importedDocument = HTMLDocument::create(init);
     m_importedDocument->initContentSecurityPolicy(ContentSecurityPolicyResponseHeaders(response));
     m_writer = DocumentWriter::create(m_importedDocument.get(), response.mimeType(), response.textEncodingName());
 
@@ -146,7 +153,7 @@ Document* HTMLImportLoader::importedDocument() const
 
 void HTMLImportLoader::addClient(HTMLImportLoaderClient* client)
 {
-    ASSERT(notFound == m_clients.find(client));
+    ASSERT(kNotFound == m_clients.find(client));
     m_clients.append(client);
     if (isDone())
         client->didFinish();
@@ -154,7 +161,7 @@ void HTMLImportLoader::addClient(HTMLImportLoaderClient* client)
 
 void HTMLImportLoader::removeClient(HTMLImportLoaderClient* client)
 {
-    ASSERT(notFound != m_clients.find(client));
+    ASSERT(kNotFound != m_clients.find(client));
     m_clients.remove(m_clients.find(client));
 }
 

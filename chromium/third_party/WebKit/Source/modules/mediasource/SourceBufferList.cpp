@@ -58,7 +58,7 @@ void SourceBufferList::add(PassRefPtr<SourceBuffer> buffer)
 void SourceBufferList::remove(SourceBuffer* buffer)
 {
     size_t index = m_list.find(buffer);
-    if (index == notFound)
+    if (index == kNotFound)
         return;
     m_list.remove(index);
     scheduleEvent(eventNames().removesourcebufferEvent);
@@ -74,7 +74,7 @@ void SourceBufferList::scheduleEvent(const AtomicString& eventName)
 {
     ASSERT(m_asyncEventQueue);
 
-    RefPtr<Event> event = Event::create(eventName, false, false);
+    RefPtr<Event> event = Event::create(eventName);
     event->setTarget(this);
 
     m_asyncEventQueue->enqueueEvent(event.release());

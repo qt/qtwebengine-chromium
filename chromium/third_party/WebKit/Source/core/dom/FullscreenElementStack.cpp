@@ -52,7 +52,7 @@ static bool isAttributeOnAllOwners(const WebCore::QualifiedName& attribute, cons
     do {
         if (!(owner->hasAttribute(attribute) || owner->hasAttribute(prefixedAttribute)))
             return false;
-    } while ((owner = owner->document()->ownerElement()));
+    } while ((owner = owner->document().ownerElement()));
     return true;
 }
 
@@ -134,7 +134,7 @@ void FullscreenElementStack::documentWasDisposed()
 bool FullscreenElementStack::fullScreenIsAllowedForElement(Element* element) const
 {
     ASSERT(element);
-    return isAttributeOnAllOwners(allowfullscreenAttr, webkitallowfullscreenAttr, element->document()->ownerElement());
+    return isAttributeOnAllOwners(allowfullscreenAttr, webkitallowfullscreenAttr, element->document().ownerElement());
 }
 
 void FullscreenElementStack::requestFullScreenForElement(Element* element, unsigned short flags, FullScreenCheckType checkType)
@@ -186,9 +186,10 @@ void FullscreenElementStack::requestFullScreenForElement(Element* element, unsig
         //   - the event listener for a trusted click event is being handled.
         if (!ScriptController::processingUserGesture())
             break;
+        UserGestureIndicator::consumeUserGesture();
 
         // There is a previously-established user preference, security risk, or platform limitation.
-        if (!document()->page() || !document()->page()->settings()->fullScreenEnabled())
+        if (!document()->page() || !document()->page()->settings().fullScreenEnabled())
             break;
 
         // 2. Let doc be element's node document. (i.e. "this")
@@ -199,7 +200,7 @@ void FullscreenElementStack::requestFullScreenForElement(Element* element, unsig
 
         do {
             docs.prepend(currentDoc);
-            currentDoc = currentDoc->ownerElement() ? currentDoc->ownerElement()->document() : 0;
+            currentDoc = currentDoc->ownerElement() ? &currentDoc->ownerElement()->document() : 0;
         } while (currentDoc);
 
         // 4. For each document in docs, run these substeps:
@@ -240,7 +241,7 @@ void FullscreenElementStack::requestFullScreenForElement(Element* element, unsig
         // 5. Return, and run the remaining steps asynchronously.
         // 6. Optionally, perform some animation.
         m_areKeysEnabledInFullScreen = flags & Element::ALLOW_KEYBOARD_INPUT;
-        document()->page()->chrome().client()->enterFullScreenForElement(element);
+        document()->page()->chrome().client().enterFullScreenForElement(element);
 
         // 7. Optionally, display a message indicating how the user can exit displaying the context object fullscreen.
         return;
@@ -304,7 +305,7 @@ void FullscreenElementStack::webkitExitFullscreen()
         //    If doc's fullscreen element stack is non-empty and the element now at the top is either
         //    not in a document or its node document is not doc, repeat this substep.
         newTop = fullscreenElementFrom(currentDoc);
-        if (newTop && (!newTop->inDocument() || newTop->document() != currentDoc))
+        if (newTop && (!newTop->inDocument() || &newTop->document() != currentDoc))
             continue;
 
         // 2. Queue a task to fire an event named fullscreenchange with its bubbles attribute set to true
@@ -314,7 +315,7 @@ void FullscreenElementStack::webkitExitFullscreen()
         // 3. If doc's fullscreen element stack is empty and doc's browsing context has a browsing context
         // container, set doc to that browsing context container's node document.
         if (!newTop && currentDoc->ownerElement()) {
-            currentDoc = currentDoc->ownerElement()->document();
+            currentDoc = &currentDoc->ownerElement()->document();
             continue;
         }
 
@@ -331,12 +332,12 @@ void FullscreenElementStack::webkitExitFullscreen()
     // Only exit out of full screen window mode if there are no remaining elements in the
     // full screen stack.
     if (!newTop) {
-        document()->page()->chrome().client()->exitFullScreenForElement(m_fullScreenElement.get());
+        document()->page()->chrome().client().exitFullScreenForElement(m_fullScreenElement.get());
         return;
     }
 
     // Otherwise, notify the chrome of the new full screen element.
-    document()->page()->chrome().client()->enterFullScreenForElement(newTop);
+    document()->page()->chrome().client().enterFullScreenForElement(newTop);
 }
 
 bool FullscreenElementStack::webkitFullscreenEnabled(Document* document)
@@ -360,17 +361,12 @@ void FullscreenElementStack::webkitWillEnterFullScreenForElement(Element* elemen
     if (!document()->page())
         return;
 
-    ASSERT(document()->page()->settings()->fullScreenEnabled());
+    ASSERT(document()->page()->settings().fullScreenEnabled());
 
     if (m_fullScreenRenderer)
         m_fullScreenRenderer->unwrapRenderer();
 
     m_fullScreenElement = element;
-
-#if USE(NATIVE_FULLSCREEN_VIDEO)
-    if (element && element->isMediaElement())
-        return;
-#endif
 
     // Create a placeholder block for a the full-screen element, to keep the page from reflowing
     // when the element is removed from the normal flow. Only do this for a RenderBox, as only
@@ -388,7 +384,7 @@ void FullscreenElementStack::webkitWillEnterFullScreenForElement(Element* elemen
 
     m_fullScreenElement->setContainsFullScreenElementOnAncestorsCrossingFrameBoundaries(true);
 
-    document()->recalcStyle(Node::Force);
+    document()->recalcStyle(Force);
 }
 
 void FullscreenElementStack::webkitDidEnterFullScreenForElement(Element*)
@@ -490,7 +486,7 @@ void FullscreenElementStack::fullScreenChangeDelayTimerFired(Timer<FullscreenEle
         if (!document()->contains(node.get()) && !node->inDocument())
             changeQueue.append(document()->documentElement());
 
-        node->dispatchEvent(Event::create(eventNames().webkitfullscreenchangeEvent, true, false));
+        node->dispatchEvent(Event::createBubble(eventNames().webkitfullscreenchangeEvent));
     }
 
     while (!errorQueue.isEmpty()) {
@@ -506,7 +502,7 @@ void FullscreenElementStack::fullScreenChangeDelayTimerFired(Timer<FullscreenEle
         if (!document()->contains(node.get()) && !node->inDocument())
             errorQueue.append(document()->documentElement());
 
-        node->dispatchEvent(Event::create(eventNames().webkitfullscreenerrorEvent, true, false));
+        node->dispatchEvent(Event::createBubble(eventNames().webkitfullscreenerrorEvent));
     }
 }
 

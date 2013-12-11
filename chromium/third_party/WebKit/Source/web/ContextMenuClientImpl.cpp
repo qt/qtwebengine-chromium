@@ -122,7 +122,7 @@ static String selectMisspelledWord(Frame* selectedFrame)
 
     // Selection is empty, so change the selection to the word under the cursor.
     HitTestResult hitTestResult = selectedFrame->eventHandler()->
-        hitTestResultAtPoint(selectedFrame->page()->contextMenuController()->hitTestResult().pointInInnerNodeFrame());
+        hitTestResultAtPoint(selectedFrame->page()->contextMenuController().hitTestResult().pointInInnerNodeFrame());
     Node* innerNode = hitTestResult.innerNode();
     VisiblePosition pos(innerNode->renderer()->positionForPoint(
         hitTestResult.localPoint()));
@@ -133,14 +133,14 @@ static String selectMisspelledWord(Frame* selectedFrame)
     WebFrameImpl::selectWordAroundPosition(selectedFrame, pos);
     misspelledWord = selectedFrame->selectedText().stripWhiteSpace();
 
-#if OS(DARWIN)
+#if OS(MACOSX)
     // If misspelled word is still empty, then that portion should not be
     // selected. Set the selection to that position only, and do not expand.
     if (misspelledWord.isEmpty())
-        selectedFrame->selection()->setSelection(VisibleSelection(pos));
+        selectedFrame->selection().setSelection(VisibleSelection(pos));
 #else
     // On non-Mac, right-click should not make a range selection in any case.
-    selectedFrame->selection()->setSelection(VisibleSelection(pos));
+    selectedFrame->selection().setSelection(VisibleSelection(pos));
 #endif
     return misspelledWord;
 }
@@ -152,13 +152,13 @@ static bool IsWhiteSpaceOrPunctuation(UChar c)
 
 static String selectMisspellingAsync(Frame* selectedFrame, DocumentMarker& marker)
 {
-    VisibleSelection selection = selectedFrame->selection()->selection();
+    VisibleSelection selection = selectedFrame->selection().selection();
     if (!selection.isCaretOrRange())
         return String();
 
     // Caret and range selections always return valid normalized ranges.
     RefPtr<Range> selectionRange = selection.toNormalizedRange();
-    Vector<DocumentMarker*> markers = selectedFrame->document()->markers()->markersInRange(selectionRange.get(), DocumentMarker::Spelling | DocumentMarker::Grammar);
+    Vector<DocumentMarker*> markers = selectedFrame->document()->markers()->markersInRange(selectionRange.get(), DocumentMarker::MisspellingMarkers());
     if (markers.size() != 1)
         return String();
     marker = *markers[0];
@@ -184,7 +184,7 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
     if (!m_webView->contextMenuAllowed())
         return;
 
-    HitTestResult r = m_webView->page()->contextMenuController()->hitTestResult();
+    HitTestResult r = m_webView->page()->contextMenuController().hitTestResult();
     Frame* selectedFrame = r.innerNodeFrame();
 
     WebContextMenuData data;
@@ -192,17 +192,17 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
 
     // Compute edit flags.
     data.editFlags = WebContextMenuData::CanDoNone;
-    if (m_webView->focusedWebCoreFrame()->editor()->canUndo())
+    if (m_webView->focusedWebCoreFrame()->editor().canUndo())
         data.editFlags |= WebContextMenuData::CanUndo;
-    if (m_webView->focusedWebCoreFrame()->editor()->canRedo())
+    if (m_webView->focusedWebCoreFrame()->editor().canRedo())
         data.editFlags |= WebContextMenuData::CanRedo;
-    if (m_webView->focusedWebCoreFrame()->editor()->canCut())
+    if (m_webView->focusedWebCoreFrame()->editor().canCut())
         data.editFlags |= WebContextMenuData::CanCut;
-    if (m_webView->focusedWebCoreFrame()->editor()->canCopy())
+    if (m_webView->focusedWebCoreFrame()->editor().canCopy())
         data.editFlags |= WebContextMenuData::CanCopy;
-    if (m_webView->focusedWebCoreFrame()->editor()->canPaste())
+    if (m_webView->focusedWebCoreFrame()->editor().canPaste())
         data.editFlags |= WebContextMenuData::CanPaste;
-    if (m_webView->focusedWebCoreFrame()->editor()->canDelete())
+    if (m_webView->focusedWebCoreFrame()->editor().canDelete())
         data.editFlags |= WebContextMenuData::CanDelete;
     // We can always select all...
     data.editFlags |= WebContextMenuData::CanSelectAll;
@@ -221,8 +221,7 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
 
         // We know that if absoluteMediaURL() is not empty, then this
         // is a media element.
-        HTMLMediaElement* mediaElement =
-            toMediaElement(r.innerNonSharedNode());
+        HTMLMediaElement* mediaElement = toHTMLMediaElement(r.innerNonSharedNode());
         if (isHTMLVideoElement(mediaElement))
             data.mediaType = WebContextMenuData::MediaTypeVideo;
         else if (mediaElement->hasTagName(HTMLNames::audioTag))
@@ -251,7 +250,7 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
             Widget* widget = toRenderWidget(object)->widget();
             if (widget && widget->isPluginContainer()) {
                 data.mediaType = WebContextMenuData::MediaTypePlugin;
-                WebPluginContainerImpl* plugin = static_cast<WebPluginContainerImpl*>(widget);
+                WebPluginContainerImpl* plugin = toPluginContainerImpl(widget);
                 WebString text = plugin->plugin()->selectionAsText();
                 if (!text.isEmpty()) {
                     data.selectedText = text;
@@ -263,7 +262,7 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
                     data.mediaFlags |= WebContextMenuData::MediaCanPrint;
 
                 HTMLPlugInImageElement* pluginElement = toHTMLPlugInImageElement(r.innerNonSharedNode());
-                data.srcURL = pluginElement->document()->completeURL(pluginElement->url());
+                data.srcURL = pluginElement->document().completeURL(pluginElement->url());
                 data.mediaFlags |= WebContextMenuData::MediaCanSave;
 
                 // Add context menu commands that are supported by the plugin.
@@ -273,13 +272,16 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
         }
     }
 
-    data.isImageBlocked =
-        (data.mediaType == WebContextMenuData::MediaTypeImage) && !r.image();
+    // An image can to be null for many reasons, like being blocked, no image
+    // data received from server yet.
+    data.hasImageContents =
+        (data.mediaType == WebContextMenuData::MediaTypeImage)
+        && r.image() && !(r.image()->isNull());
 
     // If it's not a link, an image, a media element, or an image/media link,
     // show a selection menu or a more generic page menu.
     if (selectedFrame->document()->loader())
-        data.frameEncoding = selectedFrame->document()->encoding();
+        data.frameEncoding = selectedFrame->document()->encodingName();
 
     // Send the frame and page URLs in any case.
     data.pageURL = urlFromFrame(m_webView->mainFrameImpl()->frame());
@@ -318,9 +320,9 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
             }
         } else {
             data.isSpellCheckingEnabled =
-                m_webView->focusedWebCoreFrame()->editor()->isContinuousSpellCheckingEnabled();
+                m_webView->focusedWebCoreFrame()->editor().isContinuousSpellCheckingEnabled();
             // Spellchecking might be enabled for the field, but could be disabled on the node.
-            if (m_webView->focusedWebCoreFrame()->editor()->isSpellCheckingEnabledInFocusedNode()) {
+            if (m_webView->focusedWebCoreFrame()->editor().isSpellCheckingEnabledInFocusedNode()) {
                 data.misspelledWord = selectMisspelledWord(selectedFrame);
                 if (m_webView->spellCheckClient()) {
                     int misspelledOffset, misspelledLength;
@@ -332,7 +334,7 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
                 }
             }
         }
-        HTMLFormElement* form = selectedFrame->selection()->currentForm();
+        HTMLFormElement* form = selectedFrame->selection().currentForm();
         if (form && r.innerNonSharedNode()->hasTagName(HTMLNames::inputTag)) {
             HTMLInputElement* selectedElement = toHTMLInputElement(r.innerNonSharedNode());
             if (selectedElement) {
@@ -343,12 +345,12 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
         }
     }
 
-#if OS(DARWIN)
-    if (selectedFrame->editor()->selectionHasStyle(CSSPropertyDirection, "ltr") != FalseTriState)
+#if OS(MACOSX)
+    if (selectedFrame->editor().selectionHasStyle(CSSPropertyDirection, "ltr") != FalseTriState)
         data.writingDirectionLeftToRight |= WebContextMenuData::CheckableMenuItemChecked;
-    if (selectedFrame->editor()->selectionHasStyle(CSSPropertyDirection, "rtl") != FalseTriState)
+    if (selectedFrame->editor().selectionHasStyle(CSSPropertyDirection, "rtl") != FalseTriState)
         data.writingDirectionRightToLeft |= WebContextMenuData::CheckableMenuItemChecked;
-#endif // OS(DARWIN)
+#endif // OS(MACOSX)
 
     // Now retrieve the security info.
     DocumentLoader* dl = selectedFrame->loader()->documentLoader();
@@ -366,6 +368,12 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
     WebFrame* selected_web_frame = WebFrameImpl::fromFrame(selectedFrame);
     if (m_webView->client())
         m_webView->client()->showContextMenu(selected_web_frame, data);
+}
+
+void ContextMenuClientImpl::clearContextMenu()
+{
+    if (m_webView->client())
+        m_webView->client()->clearContextMenu();
 }
 
 static void populateSubMenuItems(const Vector<ContextMenuItem>& inputMenu, WebVector<WebMenuItemInfo>& subMenuItems)

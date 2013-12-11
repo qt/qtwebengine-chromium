@@ -38,7 +38,7 @@ namespace WebCore {
 
 class WEBPImageDecoder : public ImageDecoder {
 public:
-    WEBPImageDecoder(ImageSource::AlphaOption, ImageSource::GammaAndColorProfileOption);
+    WEBPImageDecoder(ImageSource::AlphaOption, ImageSource::GammaAndColorProfileOption, size_t maxDecodedBytes);
     virtual ~WEBPImageDecoder();
 
     virtual String filenameExtension() const OVERRIDE { return "webp"; }
@@ -65,12 +65,11 @@ private:
     void readColorProfile();
 
     bool m_haveReadProfile;
-    bool m_hasProfile;
     qcms_transform* m_transform;
 #endif
 
     bool updateDemuxer();
-    bool initFrameBuffer(const WebPIterator&, size_t frameIndex);
+    bool initFrameBuffer(size_t frameIndex);
     void applyPostProcessing(size_t frameIndex);
     virtual void clearFrameBuffer(size_t frameIndex) OVERRIDE;
 

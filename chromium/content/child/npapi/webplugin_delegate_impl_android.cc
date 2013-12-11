@@ -15,11 +15,12 @@ using WebKit::WebInputEvent;
 namespace content {
 
 WebPluginDelegateImpl::WebPluginDelegateImpl(
+    WebPlugin* plugin,
     PluginInstance* instance)
     : windowed_handle_(0),
       windowed_did_set_window_(false),
       windowless_(false),
-      plugin_(NULL),
+      plugin_(plugin),
       instance_(instance),
       quirks_(0),
       handle_event_depth_(0),
@@ -38,8 +39,7 @@ void WebPluginDelegateImpl::PlatformDestroyInstance() {
   // Nothing to do here.
 }
 
-void WebPluginDelegateImpl::Paint(WebKit::WebCanvas* canvas,
-                                  const gfx::Rect& rect) {
+void WebPluginDelegateImpl::Paint(SkCanvas* canvas, const gfx::Rect& rect) {
 }
 
 bool WebPluginDelegateImpl::WindowedCreatePlugin() {

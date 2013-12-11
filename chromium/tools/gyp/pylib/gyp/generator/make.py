@@ -166,15 +166,11 @@ cmd_alink = rm -f $@ && ./gyp-mac-tool filter-libtool libtool $(GYP_LIBTOOLFLAGS
 quiet_cmd_link = LINK($(TOOLSET)) $@
 cmd_link = $(LINK.$(TOOLSET)) $(GYP_LDFLAGS) $(LDFLAGS.$(TOOLSET)) -o "$@" $(LD_INPUTS) $(LIBS)
 
-# TODO(thakis): Find out and document the difference between shared_library and
-# loadable_module on mac.
 quiet_cmd_solink = SOLINK($(TOOLSET)) $@
 cmd_solink = $(LINK.$(TOOLSET)) -shared $(GYP_LDFLAGS) $(LDFLAGS.$(TOOLSET)) -o "$@" $(LD_INPUTS) $(LIBS)
 
-# TODO(thakis): The solink_module rule is likely wrong. Xcode seems to pass
-# -bundle -single_module here (for osmesa.so).
 quiet_cmd_solink_module = SOLINK_MODULE($(TOOLSET)) $@
-cmd_solink_module = $(LINK.$(TOOLSET)) -shared $(GYP_LDFLAGS) $(LDFLAGS.$(TOOLSET)) -o $@ $(filter-out FORCE_DO_CMD, $^) $(LIBS)
+cmd_solink_module = $(LINK.$(TOOLSET)) -bundle $(GYP_LDFLAGS) $(LDFLAGS.$(TOOLSET)) -o $@ $(filter-out FORCE_DO_CMD, $^) $(LIBS)
 """
 
 LINK_COMMANDS_ANDROID = """\
@@ -250,6 +246,14 @@ all_deps :=
 
 %(make_global_settings)s
 
+CC.target ?= %(CC.target)s
+CFLAGS.target ?= $(CFLAGS)
+CXX.target ?= %(CXX.target)s
+CXXFLAGS.target ?= $(CXXFLAGS)
+LINK.target ?= %(LINK.target)s
+LDFLAGS.target ?= $(LDFLAGS)
+AR.target ?= $(AR)
+
 # C++ apps need to be linked with g++.
 #
 # Note: flock is used to seralize linking. Linking is a memory-intensive
@@ -260,14 +264,6 @@ all_deps :=
 #
 # This will allow make to invoke N linker processes as specified in -jN.
 LINK ?= %(flock)s $(builddir)/linker.lock $(CXX.target)
-
-CC.target ?= %(CC.target)s
-CFLAGS.target ?= $(CFLAGS)
-CXX.target ?= %(CXX.target)s
-CXXFLAGS.target ?= $(CXXFLAGS)
-LINK.target ?= %(LINK.target)s
-LDFLAGS.target ?= $(LDFLAGS)
-AR.target ?= $(AR)
 
 # TODO(evan): move all cross-compilation logic to gyp-time so we don't need
 # to replicate this environment fallback in make as well.
@@ -2004,11 +2000,11 @@ def GenerateOutput(target_list, target_dicts, data, params):
     'CC.target':   GetEnvironFallback(('CC_target', 'CC'), '$(CC)'),
     'AR.target':   GetEnvironFallback(('AR_target', 'AR'), '$(AR)'),
     'CXX.target':  GetEnvironFallback(('CXX_target', 'CXX'), '$(CXX)'),
-    'LINK.target': GetEnvironFallback(('LD_target', 'LD'), '$(LINK)'),
+    'LINK.target': GetEnvironFallback(('LINK_target', 'LINK'), '$(LINK)'),
     'CC.host':     GetEnvironFallback(('CC_host',), 'gcc'),
     'AR.host':     GetEnvironFallback(('AR_host',), 'ar'),
     'CXX.host':    GetEnvironFallback(('CXX_host',), 'g++'),
-    'LINK.host':   GetEnvironFallback(('LD_host',), 'g++'),
+    'LINK.host':   GetEnvironFallback(('LINK_host',), '$(CXX.host)'),
   })
 
   build_file, _, _ = gyp.common.ParseQualifiedTarget(target_list[0])

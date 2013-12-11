@@ -19,21 +19,28 @@ AnimatedWebP status=experimental
 ApplicationCache status=stable
 AuthorShadowDOMForAnyElement
 Crypto status=test
+CSSAnimationUnprefixed status=experimental
 CSSCompositing status=experimental
 CSSExclusions status=experimental
 CSSGridLayout status=experimental
+CSSMaskSourceType status=experimental
 CSSRegions status=experimental
+CSSShapes status=experimental
 CSSTouchAction status=test
 CSSVariables status=experimental
+CSSViewport status=experimental
 CSS3Text status=experimental
 CSS3TextDecorations status=experimental
-CustomDOMElements status=experimental
+CustomElements status=experimental
 Database status=stable
 DataListElement status=stable
-DeviceMotion status=test
+DeviceMotion status=stable
 DeviceOrientation status=stable
+DevicePixelRatioIncludesZoom status=stable
 DialogElement status=experimental
 DirectoryUpload status=stable
+// FIXME: Remove this separate feature when CustomElements are always enabled
+EmbedderCustomElements
 EncodingAPI status=experimental
 EncryptedMedia status=experimental
 EncryptedMediaAnyVersion status=stable
@@ -42,7 +49,6 @@ ExperimentalContentSecurityPolicyFeatures status=experimental
 FileSystem status=stable
 FontLoadEvents status=experimental
 Fullscreen status=stable
-CSSViewport status=experimental
 Gamepad status=stable
 Geolocation status=stable
 HTMLImports status=test
@@ -53,15 +59,17 @@ InputModeAttribute status=test
 InputTypeColor status=stable
 InputTypeWeek status=stable
 LangAttributeAwareFormControlUI
-LazyLayout
 LegacyEncryptedMedia status=stable
 LocalStorage status=stable
 Media status=stable
-MediaSource status=experimental
+MediaSource status=stable
 MediaStream status=stable
 Notifications status=stable
+ObjectFitPosition status=experimental
+// Only enabled on Android, and for certain layout tests on Linux.
+OverlayFullscreenVideo
 PagePopup status=stable
-ParseSVGAsHTML
+PartialLayout status=experimental
 PathOpsSVGClipping
 PeerConnection depends_on=MediaStream, status=stable
 ProgrammaticScrollNotifications status=test
@@ -72,13 +80,17 @@ RequestAutocomplete status=test
 RowSpanLogicalHeightSpreading status=test
 ScriptedSpeech status=stable
 SeamlessIFrames status=experimental
+ServiceWorker status=experimental
 SessionStorage status=stable
 ShadowDOM status=experimental
 SharedWorker custom
 SpeechInput status=stable
 SpeechSynthesis status=experimental
+Srcset status=experimental
 Stream status=experimental
 StyleScoped status=experimental
+SubpixelFontScaling
+SVGPaintOrder status=experimental
 Touch status=stable
 UserSelectAll status=experimental
 Vibration status=experimental

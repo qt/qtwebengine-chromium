@@ -31,12 +31,12 @@
 import logging
 import optparse
 import os
-import signal
 import sys
 import traceback
 
 from webkitpy.common.host import Host
 from webkitpy.layout_tests.controllers.manager import Manager
+from webkitpy.layout_tests.models.test_run_results import INTERRUPTED_EXIT_STATUS
 from webkitpy.layout_tests.port import configuration_options, platform_options
 from webkitpy.layout_tests.views import buildbot_results
 from webkitpy.layout_tests.views import printing
@@ -44,9 +44,6 @@ from webkitpy.layout_tests.views import printing
 
 _log = logging.getLogger(__name__)
 
-
-# This mirrors what the shell normally does.
-INTERRUPTED_EXIT_STATUS = signal.SIGINT + 128
 
 # This is a randomly chosen exit code that can be tested against to
 # indicate that an unexpected exception occurred.
@@ -78,11 +75,12 @@ def main(argv, stdout, stderr):
 
     try:
         run_details = run(port, options, args, stderr)
-        if run_details.exit_code != -1:
+        if run_details.exit_code != -1 and not run_details.initial_results.keyboard_interrupted:
             bot_printer = buildbot_results.BuildBotPrinter(stdout, options.debug_rwt_logging)
             bot_printer.print_results(run_details)
 
         return run_details.exit_code
+    # We need to still handle KeyboardInterrupt, atleast for webkitpy unittest cases.
     except KeyboardInterrupt:
         return INTERRUPTED_EXIT_STATUS
     except BaseException as e:
@@ -99,14 +97,15 @@ def parse_args(args):
     option_group_definitions.append(("Configuration options", configuration_options()))
     option_group_definitions.append(("Printing Options", printing.print_options()))
 
-    # FIXME: These options should move onto the ChromiumPort.
-    option_group_definitions.append(("Chromium-specific Options", [
-        optparse.make_option("--nocheck-sys-deps", action="store_true",
-            default=False,
-            help="Don't check the system dependencies (themes)"),
+    option_group_definitions.append(("Android-specific Options", [
         optparse.make_option("--adb-device",
             action="append", default=[],
             help="Run Android layout tests on these devices."),
+
+        # FIXME: Flip this to be off by default once we can log the device setup more cleanly.
+        optparse.make_option("--no-android-logging",
+            action="store_false", dest='android_logging', default=True,
+            help="Do not log android-specific debug messages (default is to log as part of --debug-rwt-logging"),
     ]))
 
     option_group_definitions.append(("Results Options", [
@@ -166,6 +165,10 @@ def parse_args(args):
             help="Show all failures in results.html, rather than only regressions"),
         optparse.make_option("--clobber-old-results", action="store_true",
             default=False, help="Clobbers test results from previous runs."),
+        optparse.make_option("--smoke", action="store_true",
+            help="Run just the SmokeTests"),
+        optparse.make_option("--no-smoke", dest="smoke", action="store_false",
+            help="Do not run just the SmokeTests"),
     ]))
 
     option_group_definitions.append(("Testing Options", [
@@ -177,6 +180,9 @@ def parse_args(args):
         optparse.make_option("-n", "--dry-run", action="store_true",
             default=False,
             help="Do everything but actually run the tests or upload results."),
+        optparse.make_option("--nocheck-sys-deps", action="store_true",
+            default=False,
+            help="Don't check the system dependencies (themes)"),
         optparse.make_option("--wrapper",
             help="wrapper command to insert before invocations of "
                  "the driver; option is split on whitespace before "
@@ -193,7 +199,7 @@ def parse_args(args):
                 "option ('layout' or 'deps').")),
         optparse.make_option("--test-list", action="append",
             help="read list of tests to run from file", metavar="FILE"),
-        optparse.make_option("--skipped", action="store", default="default",
+        optparse.make_option("--skipped", action="store", default=None,
             help=("control how tests marked SKIP are run. "
                  "'default' == Skip tests unless explicitly listed on the command line, "
                  "'ignore' == Run them anyway, "
@@ -216,7 +222,7 @@ def parse_args(args):
             help=("Run a the tests in batches (n), after every n tests, "
                   "the driver is relaunched."), type="int", default=None),
         optparse.make_option("--run-singly", action="store_true",
-            default=False, help="run a separate driver for each test (implies --verbose)"),
+            default=False, help="DEPRECATED, same as --batch-size=1 --verbose"),
         optparse.make_option("--child-processes",
             help="Number of drivers to run in parallel."),
         # FIXME: Display default number of child processes that will run.
@@ -236,11 +242,6 @@ def parse_args(args):
             dest="retry_failures",
             help="Don't re-try any tests that produce unexpected results."),
 
-        # FIXME: Remove this after we remove the flag from the v8 bot.
-        optparse.make_option("--retry-crashes", action="store_true",
-            default=False,
-            help="ignored (we now always retry crashes when we retry failures)."),
-
         optparse.make_option("--max-locked-shards", type="int", default=0,
             help="Set the maximum number of locked shards"),
         optparse.make_option("--additional-env-var", type="string", action="append", default=[],
@@ -249,6 +250,8 @@ def parse_args(args):
             help="Output per-test profile information."),
         optparse.make_option("--profiler", action="store",
             help="Output per-test profile information, using the specified profiler."),
+        optparse.make_option("--driver-logging", action="store_true",
+            help="Print detailed logging of the driver/content_shell"),
     ]))
 
     option_group_definitions.append(("Miscellaneous Options", [
@@ -283,7 +286,7 @@ def parse_args(args):
     return option_parser.parse_args(args)
 
 
-def _set_up_derived_options(port, options):
+def _set_up_derived_options(port, options, args):
     """Sets the options values that depend on other options values."""
     if not options.child_processes:
         options.child_processes = os.environ.get("WEBKIT_TEST_CHILD_PROCESSES",
@@ -330,8 +333,24 @@ def _set_up_derived_options(port, options):
         options.pixel_test_directories = list(varified_dirs)
 
     if options.run_singly:
+        options.batch_size = 1
         options.verbose = True
 
+    if not args and not options.test_list and options.smoke is None:
+        options.smoke = port.default_smoke_test_only()
+    if options.smoke:
+        if not args and not options.test_list and options.retry_failures is None:
+            # Retry failures by default if we're doing just a smoke test (no additional tests).
+            options.retry_failures = True
+
+        if not options.test_list:
+            options.test_list = []
+        options.test_list.append(port.host.filesystem.join(port.layout_tests_dir(), 'SmokeTests'))
+        if not options.skipped:
+            options.skipped = 'always'
+
+    if not options.skipped:
+        options.skipped = 'default'
 
 def run(port, options, args, logging_stream):
     logger = logging.getLogger()
@@ -340,7 +359,7 @@ def run(port, options, args, logging_stream):
     try:
         printer = printing.Printer(port, options, logging_stream, logger=logger)
 
-        _set_up_derived_options(port, options)
+        _set_up_derived_options(port, options, args)
         manager = Manager(port, options, printer)
         printer.print_config(port.results_directory())
 

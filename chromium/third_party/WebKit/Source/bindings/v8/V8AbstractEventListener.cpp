@@ -37,11 +37,10 @@
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8EventListenerList.h"
 #include "bindings/v8/V8HiddenPropertyName.h"
-#include "core/dom/Document.h"
+#include "core/dom/BeforeUnloadEvent.h"
 #include "core/dom/Event.h"
 #include "core/dom/EventNames.h"
 #include "core/inspector/InspectorCounters.h"
-#include "core/page/Frame.h"
 #include "core/workers/WorkerGlobalScope.h"
 
 namespace WebCore {
@@ -59,7 +58,7 @@ V8AbstractEventListener::~V8AbstractEventListener()
 {
     if (!m_listener.isEmpty()) {
         v8::HandleScope scope(m_isolate);
-        V8EventListenerList::clearWrapper(m_listener.newLocal(m_isolate), m_isAttribute);
+        V8EventListenerList::clearWrapper(m_listener.newLocal(m_isolate), m_isAttribute, m_isolate);
     }
     ThreadLocalInspectorCounters::current().decrementCounter(ThreadLocalInspectorCounters::JSEventListenerCounter);
 }
@@ -110,7 +109,7 @@ void V8AbstractEventListener::invokeEventHandler(ScriptExecutionContext* context
         return;
 
     // We push the event being processed into the global object, so that it can be exposed by DOMWindow's bindings.
-    v8::Handle<v8::String> eventSymbol = V8HiddenPropertyName::event();
+    v8::Handle<v8::String> eventSymbol = V8HiddenPropertyName::event(v8Context->GetIsolate());
     v8::Local<v8::Value> returnValue;
 
     // In beforeunload/unload handlers, we want to avoid sleeps which do tight loops of calling Date.getTime().
@@ -143,7 +142,7 @@ void V8AbstractEventListener::invokeEventHandler(ScriptExecutionContext* context
 
         // Restore the old event. This must be done for all exit paths through this method.
         if (savedEvent.IsEmpty())
-            v8Context->Global()->SetHiddenValue(eventSymbol, v8::Undefined());
+            v8Context->Global()->SetHiddenValue(eventSymbol, v8::Undefined(v8Context->GetIsolate()));
         else
             v8Context->Global()->SetHiddenValue(eventSymbol, savedEvent);
         tryCatch.Reset();
@@ -157,8 +156,10 @@ void V8AbstractEventListener::invokeEventHandler(ScriptExecutionContext* context
     if (returnValue.IsEmpty())
         return;
 
-    if (!returnValue->IsNull() && !returnValue->IsUndefined() && event->storesResultAsString())
-        event->storeResult(toWebCoreString(returnValue));
+    if (!returnValue->IsNull() && !returnValue->IsUndefined() && event->isBeforeUnloadEvent()) {
+        V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, stringReturnValue, returnValue);
+        toBeforeUnloadEvent(event)->setReturnValue(stringReturnValue);
+    }
 
     if (m_isAttribute && shouldPreventDefault(returnValue))
         event->preventDefault();
@@ -182,7 +183,7 @@ v8::Local<v8::Object> V8AbstractEventListener::getReceiverObject(ScriptExecution
     v8::Handle<v8::Value> value = toV8(target, v8::Handle<v8::Object>(), isolate);
     if (value.IsEmpty())
         return v8::Local<v8::Object>();
-    return v8::Local<v8::Object>::New(v8::Handle<v8::Object>::Cast(value));
+    return v8::Local<v8::Object>::New(isolate, v8::Handle<v8::Object>::Cast(value));
 }
 
 void V8AbstractEventListener::makeWeakCallback(v8::Isolate*, v8::Persistent<v8::Object>*, V8AbstractEventListener* listener)

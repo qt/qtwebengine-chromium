@@ -22,6 +22,7 @@
 #include "core/html/HTMLPlugInImageElement.h"
 
 #include "bindings/v8/ScriptController.h"
+#include "core/dom/PostAttachCallbacks.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/PluginDocument.h"
 #include "core/loader/FrameLoader.h"
@@ -52,7 +53,7 @@ static const int sizingMediumHeightThreshold = 300;
 static const float sizingFullPageAreaRatioThreshold = 0.96;
 static const float autostartSoonAfterUserGestureThreshold = 5.0;
 
-HTMLPlugInImageElement::HTMLPlugInImageElement(const QualifiedName& tagName, Document* document, bool createdByParser, PreferPlugInsForImagesOption preferPlugInsForImagesOption)
+HTMLPlugInImageElement::HTMLPlugInImageElement(const QualifiedName& tagName, Document& document, bool createdByParser, PreferPlugInsForImagesOption preferPlugInsForImagesOption)
     : HTMLPlugInElement(tagName, document)
     // m_needsWidgetUpdate(!createdByParser) allows HTMLObjectElement to delay
     // widget updates until after all children are parsed.  For HTMLEmbedElement
@@ -88,8 +89,8 @@ bool HTMLPlugInImageElement::isImageType()
     if (m_serviceType.isEmpty() && protocolIs(m_url, "data"))
         m_serviceType = mimeTypeFromDataURL(m_url);
 
-    if (Frame* frame = document()->frame()) {
-        KURL completedURL = document()->completeURL(m_url);
+    if (Frame* frame = document().frame()) {
+        KURL completedURL = document().completeURL(m_url);
         return frame->loader()->client()->objectContentType(completedURL, m_serviceType, shouldPreferPlugInsForImages()) == ObjectContentImage;
     }
 
@@ -100,26 +101,25 @@ bool HTMLPlugInImageElement::isImageType()
 // depending on <param> values.
 bool HTMLPlugInImageElement::allowedToLoadFrameURL(const String& url)
 {
-    KURL completeURL = document()->completeURL(url);
+    KURL completeURL = document().completeURL(url);
 
     if (contentFrame() && protocolIsJavaScript(completeURL)
-        && !document()->securityOrigin()->canAccess(contentDocument()->securityOrigin()))
+        && !document().securityOrigin()->canAccess(contentDocument()->securityOrigin()))
         return false;
 
-    return document()->frame()->isURLAllowed(completeURL);
+    return document().frame()->isURLAllowed(completeURL);
 }
 
 // We don't use m_url, or m_serviceType as they may not be the final values
 // that <object> uses depending on <param> values.
 bool HTMLPlugInImageElement::wouldLoadAsNetscapePlugin(const String& url, const String& serviceType)
 {
-    ASSERT(document());
-    ASSERT(document()->frame());
+    ASSERT(document().frame());
     KURL completedURL;
     if (!url.isEmpty())
-        completedURL = document()->completeURL(url);
+        completedURL = document().completeURL(url);
 
-    FrameLoader* frameLoader = document()->frame()->loader();
+    FrameLoader* frameLoader = document().frame()->loader();
     ASSERT(frameLoader);
     if (frameLoader->client()->objectContentType(completedURL, serviceType, shouldPreferPlugInsForImages()) == ObjectContentNetscapePlugin)
         return true;
@@ -143,7 +143,7 @@ RenderObject* HTMLPlugInImageElement::createRenderer(RenderStyle* style)
     return new RenderEmbeddedObject(this);
 }
 
-void HTMLPlugInImageElement::willRecalcStyle(StyleChange)
+void HTMLPlugInImageElement::willRecalcStyle(StyleRecalcChange)
 {
     // FIXME: Why is this necessary?  Manual re-attach is almost always wrong.
     if (!useFallbackContent() && needsWidgetUpdate() && renderer() && !isImageType())
@@ -152,12 +152,10 @@ void HTMLPlugInImageElement::willRecalcStyle(StyleChange)
 
 void HTMLPlugInImageElement::attach(const AttachContext& context)
 {
-    PostAttachCallbackDisabler disabler(this);
-
     bool isImage = isImageType();
 
     if (!isImage)
-        queuePostAttachCallback(&HTMLPlugInImageElement::updateWidgetCallback, this);
+        PostAttachCallbacks::queueCallback(HTMLPlugInImageElement::updateWidgetCallback, this);
 
     HTMLPlugInElement::attach(context);
 
@@ -181,7 +179,7 @@ void HTMLPlugInImageElement::detach(const AttachContext& context)
 
 void HTMLPlugInImageElement::updateWidgetIfNecessary()
 {
-    document()->updateStyleIfNeeded();
+    document().updateStyleIfNeeded();
 
     if (!needsWidgetUpdate() || useFallbackContent() || isImageType())
         return;
@@ -226,7 +224,7 @@ bool HTMLPlugInImageElement::requestObject(const String& url, const String& mime
     if (!renderer)
         return false;
 
-    KURL completedURL = document()->completeURL(url);
+    KURL completedURL = document().completeURL(url);
 
     bool useFallback;
     if (shouldUsePlugin(completedURL, mimeType, renderer->hasFallbackContent(), useFallback)) {
@@ -242,7 +240,7 @@ bool HTMLPlugInImageElement::requestObject(const String& url, const String& mime
 
 bool HTMLPlugInImageElement::loadPlugin(const KURL& url, const String& mimeType, const Vector<String>& paramNames, const Vector<String>& paramValues, bool useFallback)
 {
-    Frame* frame = document()->frame();
+    Frame* frame = document().frame();
 
     if (!frame->loader()->allowPlugins(AboutToInstantiatePlugin))
         return false;
@@ -261,7 +259,7 @@ bool HTMLPlugInImageElement::loadPlugin(const KURL& url, const String& mimeType,
     m_loadedUrl = url;
 
     IntSize contentSize = roundedIntSize(LayoutSize(renderer->contentWidth(), renderer->contentHeight()));
-    bool loadManually = document()->isPluginDocument() && !frame->loader()->containsPlugins() && toPluginDocument(document())->shouldLoadPluginManually();
+    bool loadManually = document().isPluginDocument() && !frame->loader()->containsPlugins() && toPluginDocument(document()).shouldLoadPluginManually();
     RefPtr<Widget> widget = frame->loader()->client()->createPlugin(contentSize, this, url, paramNames, paramValues, mimeType, loadManually);
 
     if (!widget) {
@@ -280,14 +278,14 @@ bool HTMLPlugInImageElement::shouldUsePlugin(const KURL& url, const String& mime
 {
     // Allow other plug-ins to win over QuickTime because if the user has installed a plug-in that
     // can handle TIFF (which QuickTime can also handle) they probably intended to override QT.
-    if (document()->frame()->page() && (mimeType == "image/tiff" || mimeType == "image/tif" || mimeType == "image/x-tiff")) {
-        const PluginData* pluginData = document()->frame()->page()->pluginData();
+    if (document().frame()->page() && (mimeType == "image/tiff" || mimeType == "image/tif" || mimeType == "image/x-tiff")) {
+        const PluginData* pluginData = document().frame()->page()->pluginData();
         String pluginName = pluginData ? pluginData->pluginNameForMimeType(mimeType) : String();
         if (!pluginName.isEmpty() && !pluginName.contains("QuickTime", false))
             return true;
     }
 
-    ObjectContentType objectType = document()->frame()->loader()->client()->objectContentType(url, mimeType, shouldPreferPlugInsForImages());
+    ObjectContentType objectType = document().frame()->loader()->client()->objectContentType(url, mimeType, shouldPreferPlugInsForImages());
     // If an object's content can't be handled and it has no fallback, let
     // it be handled as a plugin to show the broken plugin icon.
     useFallback = objectType == ObjectContentNone && hasFallback;
@@ -297,7 +295,7 @@ bool HTMLPlugInImageElement::shouldUsePlugin(const KURL& url, const String& mime
 
 bool HTMLPlugInImageElement::pluginIsLoadable(const KURL& url, const String& mimeType)
 {
-    Frame* frame = document()->frame();
+    Frame* frame = document().frame();
     Settings* settings = frame->settings();
     if (!settings)
         return false;
@@ -307,24 +305,24 @@ bool HTMLPlugInImageElement::pluginIsLoadable(const KURL& url, const String& mim
             return false;
     }
 
-    if (document()->isSandboxed(SandboxPlugins))
+    if (document().isSandboxed(SandboxPlugins))
         return false;
 
-    if (!document()->securityOrigin()->canDisplay(url)) {
+    if (!document().securityOrigin()->canDisplay(url)) {
         FrameLoader::reportLocalLoadFailed(frame, url.string());
         return false;
     }
 
-    String declaredMimeType = document()->isPluginDocument() && document()->ownerElement() ?
-        document()->ownerElement()->fastGetAttribute(HTMLNames::typeAttr) :
+    String declaredMimeType = document().isPluginDocument() && document().ownerElement() ?
+        document().ownerElement()->fastGetAttribute(HTMLNames::typeAttr) :
         fastGetAttribute(HTMLNames::typeAttr);
-    if (!document()->contentSecurityPolicy()->allowObjectFromSource(url)
-        || !document()->contentSecurityPolicy()->allowPluginType(mimeType, declaredMimeType, url)) {
+    if (!document().contentSecurityPolicy()->allowObjectFromSource(url)
+        || !document().contentSecurityPolicy()->allowPluginType(mimeType, declaredMimeType, url)) {
         renderEmbeddedObject()->setPluginUnavailabilityReason(RenderEmbeddedObject::PluginBlockedByContentSecurityPolicy);
         return false;
     }
 
-    if (frame->loader() && !frame->loader()->mixedContentChecker()->canRunInsecureContent(document()->securityOrigin(), url))
+    if (frame->loader() && !frame->loader()->mixedContentChecker()->canRunInsecureContent(document().securityOrigin(), url))
         return false;
     return true;
 }

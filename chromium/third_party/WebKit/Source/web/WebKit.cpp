@@ -39,7 +39,6 @@
 #include "bindings/v8/V8RecursionScope.h"
 #include "core/Init.h"
 #include "core/dom/Microtask.h"
-#include "core/page/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
 #include "core/platform/LayoutTestSupport.h"
@@ -102,8 +101,6 @@ void initialize(Platform* platform)
 
     v8::V8::SetEntropySource(&generateEntropy);
     v8::V8::SetArrayBufferAllocator(WebCore::v8ArrayBufferAllocator());
-    static const char* kTypedArraysFlag = "--harmony_array_buffer --harmony_typed_arrays";
-    v8::V8::SetFlagsFromString(kTypedArraysFlag, strlen(kTypedArraysFlag));
     v8::V8::Initialize();
     WebCore::V8PerIsolateData::ensureInitialized(v8::Isolate::GetCurrent());
 
@@ -182,10 +179,10 @@ void shutdown()
         s_endOfTaskRunner = 0;
     }
 
-    shutdownWithoutV8();
-
     WebCore::V8PerIsolateData::dispose(v8::Isolate::GetCurrent());
     v8::V8::Dispose();
+
+    shutdownWithoutV8();
 }
 
 void shutdownWithoutV8()

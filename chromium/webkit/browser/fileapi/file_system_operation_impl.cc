@@ -20,7 +20,7 @@
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/file_writer_delegate.h"
 #include "webkit/browser/fileapi/remove_operation_delegate.h"
-#include "webkit/browser/fileapi/sandbox_file_stream_writer.h"
+#include "webkit/browser/fileapi/sandbox_file_system_backend.h"
 #include "webkit/browser/quota/quota_manager.h"
 #include "webkit/common/blob/shareable_file_reference.h"
 #include "webkit/common/fileapi/file_system_types.h"
@@ -31,19 +31,12 @@ using webkit_blob::ScopedFile;
 
 namespace fileapi {
 
-FileSystemOperationImpl::FileSystemOperationImpl(
+FileSystemOperation* FileSystemOperation::Create(
     const FileSystemURL& url,
     FileSystemContext* file_system_context,
-    scoped_ptr<FileSystemOperationContext> operation_context)
-    : file_system_context_(file_system_context),
-      operation_context_(operation_context.Pass()),
-      async_file_util_(NULL),
-      peer_handle_(base::kNullProcessHandle),
-      pending_operation_(kOperationNone) {
-  DCHECK(operation_context_.get());
-  operation_context_->DetachUserDataThread();
-  async_file_util_ = file_system_context_->GetAsyncFileUtil(url.type());
-  DCHECK(async_file_util_);
+    scoped_ptr<FileSystemOperationContext> operation_context) {
+  return new FileSystemOperationImpl(url, file_system_context,
+                                     operation_context.Pass());
 }
 
 FileSystemOperationImpl::~FileSystemOperationImpl() {
@@ -56,7 +49,7 @@ void FileSystemOperationImpl::CreateFile(const FileSystemURL& url,
   GetUsageAndQuotaThenRunTask(
       url,
       base::Bind(&FileSystemOperationImpl::DoCreateFile,
-                 AsWeakPtr(), url, callback, exclusive),
+                 weak_factory_.GetWeakPtr(), url, callback, exclusive),
       base::Bind(callback, base::PLATFORM_FILE_ERROR_FAILED));
 }
 
@@ -68,22 +61,28 @@ void FileSystemOperationImpl::CreateDirectory(const FileSystemURL& url,
   GetUsageAndQuotaThenRunTask(
       url,
       base::Bind(&FileSystemOperationImpl::DoCreateDirectory,
-                 AsWeakPtr(), url, callback, exclusive, recursive),
+                 weak_factory_.GetWeakPtr(), url, callback,
+                 exclusive, recursive),
       base::Bind(callback, base::PLATFORM_FILE_ERROR_FAILED));
 }
 
-void FileSystemOperationImpl::Copy(const FileSystemURL& src_url,
-                                   const FileSystemURL& dest_url,
-                                   const StatusCallback& callback) {
+void FileSystemOperationImpl::Copy(
+    const FileSystemURL& src_url,
+    const FileSystemURL& dest_url,
+    const CopyProgressCallback& progress_callback,
+    const StatusCallback& callback) {
   DCHECK(SetPendingOperationType(kOperationCopy));
   DCHECK(!recursive_operation_delegate_);
+
+  // TODO(hidehiko): Support |progress_callback|. (crbug.com/278038).
   recursive_operation_delegate_.reset(
       new CopyOrMoveOperationDelegate(
           file_system_context(),
           src_url, dest_url,
           CopyOrMoveOperationDelegate::OPERATION_COPY,
+          progress_callback,
           base::Bind(&FileSystemOperationImpl::DidFinishOperation,
-                     AsWeakPtr(), callback)));
+                     weak_factory_.GetWeakPtr(), callback)));
   recursive_operation_delegate_->RunRecursively();
 }
 
@@ -97,8 +96,9 @@ void FileSystemOperationImpl::Move(const FileSystemURL& src_url,
           file_system_context(),
           src_url, dest_url,
           CopyOrMoveOperationDelegate::OPERATION_MOVE,
+          FileSystemOperation::CopyProgressCallback(),
           base::Bind(&FileSystemOperationImpl::DidFinishOperation,
-                     AsWeakPtr(), callback)));
+                     weak_factory_.GetWeakPtr(), callback)));
   recursive_operation_delegate_->RunRecursively();
 }
 
@@ -108,7 +108,7 @@ void FileSystemOperationImpl::DirectoryExists(const FileSystemURL& url,
   async_file_util_->GetFileInfo(
       operation_context_.Pass(), url,
       base::Bind(&FileSystemOperationImpl::DidDirectoryExists,
-                 AsWeakPtr(), callback));
+                 weak_factory_.GetWeakPtr(), callback));
 }
 
 void FileSystemOperationImpl::FileExists(const FileSystemURL& url,
@@ -117,7 +117,7 @@ void FileSystemOperationImpl::FileExists(const FileSystemURL& url,
   async_file_util_->GetFileInfo(
       operation_context_.Pass(), url,
       base::Bind(&FileSystemOperationImpl::DidFileExists,
-                 AsWeakPtr(), callback));
+                 weak_factory_.GetWeakPtr(), callback));
 }
 
 void FileSystemOperationImpl::GetMetadata(
@@ -146,7 +146,7 @@ void FileSystemOperationImpl::Remove(const FileSystemURL& url,
     async_file_util_->DeleteRecursively(
         operation_context_.Pass(), url,
         base::Bind(&FileSystemOperationImpl::DidDeleteRecursively,
-                   AsWeakPtr(), url, callback));
+                   weak_factory_.GetWeakPtr(), url, callback));
     return;
   }
 
@@ -154,7 +154,7 @@ void FileSystemOperationImpl::Remove(const FileSystemURL& url,
       new RemoveOperationDelegate(
           file_system_context(), url,
           base::Bind(&FileSystemOperationImpl::DidFinishOperation,
-                     AsWeakPtr(), callback)));
+                     weak_factory_.GetWeakPtr(), callback)));
   recursive_operation_delegate_->Run();
 }
 
@@ -167,8 +167,8 @@ void FileSystemOperationImpl::Write(
   file_writer_delegate_ = writer_delegate.Pass();
   file_writer_delegate_->Start(
       blob_request.Pass(),
-      base::Bind(&FileSystemOperationImpl::DidWrite, AsWeakPtr(),
-                 url, callback));
+      base::Bind(&FileSystemOperationImpl::DidWrite,
+                 weak_factory_.GetWeakPtr(), url, callback));
 }
 
 void FileSystemOperationImpl::Truncate(const FileSystemURL& url, int64 length,
@@ -177,7 +177,7 @@ void FileSystemOperationImpl::Truncate(const FileSystemURL& url, int64 length,
   GetUsageAndQuotaThenRunTask(
       url,
       base::Bind(&FileSystemOperationImpl::DoTruncate,
-                 AsWeakPtr(), url, callback, length),
+                 weak_factory_.GetWeakPtr(), url, callback, length),
       base::Bind(callback, base::PLATFORM_FILE_ERROR_FAILED));
 }
 
@@ -190,7 +190,7 @@ void FileSystemOperationImpl::TouchFile(const FileSystemURL& url,
       operation_context_.Pass(), url,
       last_access_time, last_modified_time,
       base::Bind(&FileSystemOperationImpl::DidFinishOperation,
-                 AsWeakPtr(), callback));
+                 weak_factory_.GetWeakPtr(), callback));
 }
 
 void FileSystemOperationImpl::OpenFile(const FileSystemURL& url,
@@ -212,7 +212,7 @@ void FileSystemOperationImpl::OpenFile(const FileSystemURL& url,
   GetUsageAndQuotaThenRunTask(
       url,
       base::Bind(&FileSystemOperationImpl::DoOpenFile,
-                 AsWeakPtr(),
+                 weak_factory_.GetWeakPtr(),
                  url, callback, file_flags),
       base::Bind(callback, base::PLATFORM_FILE_ERROR_FAILED,
                  base::kInvalidPlatformFileValue,
@@ -230,27 +230,14 @@ void FileSystemOperationImpl::Cancel(const StatusCallback& cancel_callback) {
     DCHECK_EQ(kOperationWrite, pending_operation_);
     // This will call DidWrite() with ABORT status code.
     file_writer_delegate_->Cancel();
+  } else if (recursive_operation_delegate_) {
+    // This will call DidFinishOperation() with ABORT status code.
+    recursive_operation_delegate_->Cancel();
   } else {
     // For truncate we have no way to cancel the inflight operation (for now).
     // Let it just run and dispatch cancel callback later.
     DCHECK_EQ(kOperationTruncate, pending_operation_);
   }
-}
-
-FileSystemOperationImpl* FileSystemOperationImpl::AsFileSystemOperationImpl() {
-  return this;
-}
-
-base::PlatformFileError FileSystemOperationImpl::SyncGetPlatformPath(
-    const FileSystemURL& url,
-    base::FilePath* platform_path) {
-  DCHECK(SetPendingOperationType(kOperationGetLocalPath));
-  FileSystemFileUtil* file_util = file_system_context()->GetFileUtil(
-      url.type());
-  if (!file_util)
-    return base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
-  file_util->GetLocalFilePath(operation_context_.get(), url, platform_path);
-  return base::PLATFORM_FILE_OK;
 }
 
 void FileSystemOperationImpl::CreateSnapshotFile(
@@ -269,7 +256,7 @@ void FileSystemOperationImpl::CopyInForeignFile(
   GetUsageAndQuotaThenRunTask(
       dest_url,
       base::Bind(&FileSystemOperationImpl::DoCopyInForeignFile,
-                 AsWeakPtr(), src_local_disk_file_path, dest_url,
+                 weak_factory_.GetWeakPtr(), src_local_disk_file_path, dest_url,
                  callback),
       base::Bind(callback, base::PLATFORM_FILE_ERROR_FAILED));
 }
@@ -281,7 +268,7 @@ void FileSystemOperationImpl::RemoveFile(
   async_file_util_->DeleteFile(
       operation_context_.Pass(), url,
       base::Bind(&FileSystemOperationImpl::DidFinishOperation,
-                 AsWeakPtr(), callback));
+                 weak_factory_.GetWeakPtr(), callback));
 }
 
 void FileSystemOperationImpl::RemoveDirectory(
@@ -291,19 +278,22 @@ void FileSystemOperationImpl::RemoveDirectory(
   async_file_util_->DeleteDirectory(
       operation_context_.Pass(), url,
       base::Bind(&FileSystemOperationImpl::DidFinishOperation,
-                 AsWeakPtr(), callback));
+                 weak_factory_.GetWeakPtr(), callback));
 }
 
 void FileSystemOperationImpl::CopyFileLocal(
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
+    const CopyFileProgressCallback& progress_callback,
     const StatusCallback& callback) {
   DCHECK(SetPendingOperationType(kOperationCopy));
   DCHECK(src_url.IsInSameFileSystem(dest_url));
+
   GetUsageAndQuotaThenRunTask(
       dest_url,
       base::Bind(&FileSystemOperationImpl::DoCopyFileLocal,
-                 AsWeakPtr(), src_url, dest_url, callback),
+                 weak_factory_.GetWeakPtr(), src_url, dest_url,
+                 progress_callback, callback),
       base::Bind(callback, base::PLATFORM_FILE_ERROR_FAILED));
 }
 
@@ -316,8 +306,36 @@ void FileSystemOperationImpl::MoveFileLocal(
   GetUsageAndQuotaThenRunTask(
       dest_url,
       base::Bind(&FileSystemOperationImpl::DoMoveFileLocal,
-                 AsWeakPtr(), src_url, dest_url, callback),
+                 weak_factory_.GetWeakPtr(), src_url, dest_url, callback),
       base::Bind(callback, base::PLATFORM_FILE_ERROR_FAILED));
+}
+
+base::PlatformFileError FileSystemOperationImpl::SyncGetPlatformPath(
+    const FileSystemURL& url,
+    base::FilePath* platform_path) {
+  DCHECK(SetPendingOperationType(kOperationGetLocalPath));
+  if (!file_system_context()->IsSandboxFileSystem(url.type()))
+    return base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
+  FileSystemFileUtil* file_util =
+      file_system_context()->sandbox_delegate()->sync_file_util();
+  file_util->GetLocalFilePath(operation_context_.get(), url, platform_path);
+  return base::PLATFORM_FILE_OK;
+}
+
+FileSystemOperationImpl::FileSystemOperationImpl(
+    const FileSystemURL& url,
+    FileSystemContext* file_system_context,
+    scoped_ptr<FileSystemOperationContext> operation_context)
+    : file_system_context_(file_system_context),
+      operation_context_(operation_context.Pass()),
+      async_file_util_(NULL),
+      peer_handle_(base::kNullProcessHandle),
+      pending_operation_(kOperationNone),
+      weak_factory_(this) {
+  DCHECK(operation_context_.get());
+  operation_context_->DetachUserDataThread();
+  async_file_util_ = file_system_context_->GetAsyncFileUtil(url.type());
+  DCHECK(async_file_util_);
 }
 
 void FileSystemOperationImpl::GetUsageAndQuotaThenRunTask(
@@ -341,7 +359,7 @@ void FileSystemOperationImpl::GetUsageAndQuotaThenRunTask(
       url.origin(),
       FileSystemTypeToQuotaStorageType(url.type()),
       base::Bind(&FileSystemOperationImpl::DidGetUsageAndQuotaAndRunTask,
-                 AsWeakPtr(), task, error_callback));
+                 weak_factory_.GetWeakPtr(), task, error_callback));
 }
 
 void FileSystemOperationImpl::DidGetUsageAndQuotaAndRunTask(
@@ -369,7 +387,7 @@ void FileSystemOperationImpl::DoCreateFile(
           exclusive ?
               &FileSystemOperationImpl::DidEnsureFileExistsExclusive :
               &FileSystemOperationImpl::DidEnsureFileExistsNonExclusive,
-          AsWeakPtr(), callback));
+          weak_factory_.GetWeakPtr(), callback));
 }
 
 void FileSystemOperationImpl::DoCreateDirectory(
@@ -380,17 +398,18 @@ void FileSystemOperationImpl::DoCreateDirectory(
       operation_context_.Pass(),
       url, exclusive, recursive,
       base::Bind(&FileSystemOperationImpl::DidFinishOperation,
-                 AsWeakPtr(), callback));
+                 weak_factory_.GetWeakPtr(), callback));
 }
 
 void FileSystemOperationImpl::DoCopyFileLocal(
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
+    const CopyFileProgressCallback& progress_callback,
     const StatusCallback& callback) {
   async_file_util_->CopyFileLocal(
-      operation_context_.Pass(), src_url, dest_url,
+      operation_context_.Pass(), src_url, dest_url, progress_callback,
       base::Bind(&FileSystemOperationImpl::DidFinishOperation,
-                 AsWeakPtr(), callback));
+                 weak_factory_.GetWeakPtr(), callback));
 }
 
 void FileSystemOperationImpl::DoMoveFileLocal(
@@ -400,7 +419,7 @@ void FileSystemOperationImpl::DoMoveFileLocal(
   async_file_util_->MoveFileLocal(
       operation_context_.Pass(), src_url, dest_url,
       base::Bind(&FileSystemOperationImpl::DidFinishOperation,
-                 AsWeakPtr(), callback));
+                 weak_factory_.GetWeakPtr(), callback));
 }
 
 void FileSystemOperationImpl::DoCopyInForeignFile(
@@ -411,7 +430,7 @@ void FileSystemOperationImpl::DoCopyInForeignFile(
       operation_context_.Pass(),
       src_local_disk_file_path, dest_url,
       base::Bind(&FileSystemOperationImpl::DidFinishOperation,
-                 AsWeakPtr(), callback));
+                 weak_factory_.GetWeakPtr(), callback));
 }
 
 void FileSystemOperationImpl::DoTruncate(const FileSystemURL& url,
@@ -420,7 +439,7 @@ void FileSystemOperationImpl::DoTruncate(const FileSystemURL& url,
   async_file_util_->Truncate(
       operation_context_.Pass(), url, length,
       base::Bind(&FileSystemOperationImpl::DidFinishOperation,
-                 AsWeakPtr(), callback));
+                 weak_factory_.GetWeakPtr(), callback));
 }
 
 void FileSystemOperationImpl::DoOpenFile(const FileSystemURL& url,
@@ -429,7 +448,7 @@ void FileSystemOperationImpl::DoOpenFile(const FileSystemURL& url,
   async_file_util_->CreateOrOpen(
       operation_context_.Pass(), url, file_flags,
       base::Bind(&FileSystemOperationImpl::DidOpenFile,
-                 AsWeakPtr(), callback));
+                 weak_factory_.GetWeakPtr(), callback));
 }
 
 void FileSystemOperationImpl::DidEnsureFileExistsExclusive(
@@ -452,11 +471,13 @@ void FileSystemOperationImpl::DidFinishOperation(
     const StatusCallback& callback,
     base::PlatformFileError rv) {
   if (!cancel_callback_.is_null()) {
-    DCHECK_EQ(kOperationTruncate, pending_operation_);
-
     StatusCallback cancel_callback = cancel_callback_;
-    callback.Run(base::PLATFORM_FILE_ERROR_ABORT);
-    cancel_callback.Run(base::PLATFORM_FILE_OK);
+    callback.Run(rv);
+
+    // Return OK only if we succeeded to stop the operation.
+    cancel_callback.Run(rv == base::PLATFORM_FILE_ERROR_ABORT ?
+                        base::PLATFORM_FILE_OK :
+                        base::PLATFORM_FILE_ERROR_INVALID_OPERATION);
   } else {
     callback.Run(rv);
   }
@@ -491,7 +512,7 @@ void FileSystemOperationImpl::DidDeleteRecursively(
         new RemoveOperationDelegate(
             file_system_context(), url,
             base::Bind(&FileSystemOperationImpl::DidFinishOperation,
-                       AsWeakPtr(), callback)));
+                       weak_factory_.GetWeakPtr(), callback)));
     recursive_operation_delegate_->RunRecursively();
     return;
   }

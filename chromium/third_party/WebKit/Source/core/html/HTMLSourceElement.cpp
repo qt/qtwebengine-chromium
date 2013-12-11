@@ -38,7 +38,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLSourceElement::HTMLSourceElement(const QualifiedName& tagName, Document* document)
+inline HTMLSourceElement::HTMLSourceElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
     , m_errorEventTimer(this, &HTMLSourceElement::errorEventTimerFired)
 {
@@ -47,7 +47,7 @@ inline HTMLSourceElement::HTMLSourceElement(const QualifiedName& tagName, Docume
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLSourceElement> HTMLSourceElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLSourceElement> HTMLSourceElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLSourceElement(tagName, document));
 }
@@ -57,7 +57,7 @@ Node::InsertionNotificationRequest HTMLSourceElement::insertedInto(ContainerNode
     HTMLElement::insertedInto(insertionPoint);
     Element* parent = parentElement();
     if (parent && parent->isMediaElement())
-        static_cast<HTMLMediaElement*>(parentNode())->sourceWasAdded(this);
+        toHTMLMediaElement(parentNode())->sourceWasAdded(this);
     return InsertionDone;
 }
 
@@ -67,7 +67,7 @@ void HTMLSourceElement::removedFrom(ContainerNode* removalRoot)
     if (!parent && removalRoot->isElementNode())
         parent = toElement(removalRoot);
     if (parent && parent->isMediaElement())
-        toMediaElement(parent)->sourceWasRemoved(this);
+        toHTMLMediaElement(parent)->sourceWasRemoved(this);
     HTMLElement::removedFrom(removalRoot);
 }
 
@@ -114,7 +114,7 @@ void HTMLSourceElement::cancelPendingErrorEvent()
 void HTMLSourceElement::errorEventTimerFired(Timer<HTMLSourceElement>*)
 {
     LOG(Media, "HTMLSourceElement::errorEventTimerFired - %p", this);
-    dispatchEvent(Event::create(eventNames().errorEvent, false, true));
+    dispatchEvent(Event::createCancelable(eventNames().errorEvent));
 }
 
 bool HTMLSourceElement::isURLAttribute(const Attribute& attribute) const

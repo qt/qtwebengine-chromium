@@ -44,8 +44,6 @@
         '<(libvpx_source)/vp8/encoder/x86/vp8_enc_stubs_sse2.c',
         '<(libvpx_source)/vp9/common/x86/vp9_idct_intrin_sse2.c',
         '<(libvpx_source)/vp9/common/x86/vp9_loopfilter_intrin_sse2.c',
-        '<(libvpx_source)/vp9/common/x86/vp9_recon_wrapper_sse2.c',
-        '<(libvpx_source)/vp9/common/x86/vp9_sadmxn_sse2.c',
         '<(libvpx_source)/vp9/decoder/x86/vp9_dequantize_sse2.c',
       ],
       'conditions': [

@@ -42,8 +42,8 @@ public:
 
     virtual ~LifecycleNotifier();
 
-    virtual void addObserver(LifecycleObserver*, LifecycleObserver::Type);
-    virtual void removeObserver(LifecycleObserver*, LifecycleObserver::Type);
+    virtual void addObserver(LifecycleObserver*);
+    virtual void removeObserver(LifecycleObserver*);
 
 protected:
     explicit LifecycleNotifier(LifecycleContext*);
@@ -55,7 +55,8 @@ protected:
         IteratingOverActiveDOMObjects,
         IteratingOverContextObservers,
         IteratingOverDocumentObservers,
-        IteratingOverPageObservers
+        IteratingOverPageObservers,
+        IteratingOverDOMWindowObservers
     };
 
     IterationType m_iterating;

@@ -8,7 +8,6 @@
  * @fileoverview ProfilingView glues the View control to
  * TracingController.
  */
-base.requireStylesheet('ui.trace_viewer');
 base.requireStylesheet('about_tracing.profiling_view');
 base.requireStylesheet('ui.trace_viewer');
 base.require('about_tracing.tracing_controller');
@@ -24,6 +23,8 @@ base.require('ui.overlay');
 base.require('tracing.importer');
 base.require('cc');
 base.require('tcmalloc');
+base.require('system_stats');
+base.require('gpu');
 
 base.exportTo('about_tracing', function() {
   /**
@@ -39,12 +40,14 @@ base.exportTo('about_tracing', function() {
     decorate: function() {
       this.classList.add('profiling-view');
 
+      this.canImportAsynchronously_ = true;
+
       // make the <list>/add/save/record element
       this.recordBn_ = document.createElement('button');
       this.recordBn_.className = 'record';
       this.recordBn_.textContent = 'Record';
       this.recordBn_.addEventListener('click',
-                                      this.onSelectCategories_.bind(this));
+          this.onProfilingViewRecordButtonClicked_.bind(this));
 
       this.saveBn_ = document.createElement('button');
       this.saveBn_.className = 'save';
@@ -80,10 +83,10 @@ base.exportTo('about_tracing', function() {
       document.addEventListener('dragover', this.ignoreHandler_, false);
       document.addEventListener('drop', this.dropHandler_, false);
 
-      this.selectingCategories = false;
+      this.currentRecordSelectionDialog_ = undefined;
 
       this.addEventListener('tracingControllerChange',
-          this.refresh_.bind(this), true);
+          this.beginRefresh_.bind(this), true);
     },
 
     // Detach all document event listeners. Without this the tests can get
@@ -98,14 +101,18 @@ base.exportTo('about_tracing', function() {
       document.removeEventListener('drop', this.dropHandler_);
     },
 
-    refresh_: function() {
+    beginRefresh_: function() {
       if (!this.tracingController)
         return;
+      if (this.refreshPending_)
+        throw new Error('Cant refresh while a refresh is pending.');
+      this.refreshPending_ = true;
 
       this.saveBn_.disabled = true;
 
       if (!this.tracingController.traceEventData) {
         this.infoBar_.visible = false;
+        this.refreshPending_ = false;
         return;
       }
       this.saveBn_.disabled = false;
@@ -116,35 +123,48 @@ base.exportTo('about_tracing', function() {
         traces.push(this.tracingController.systemTraceEvents);
 
       var m = new tracing.TraceModel();
+      if (this.canImportAsynchronously_) {
+        // Async import path.
+        var p = m.importTracesWithProgressDialog(traces, true);
+        p.then(
+            function() {
+              this.importDone_(m);
+            }.bind(this),
+            this.importFailed_.bind(this));
+        return;
+      }
+      // Sync import path.
       try {
         m.importTraces(traces, true);
       } catch (e) {
-        this.timelineView_.model = undefined;
-        this.infoBar_.message =
-            'There was an error while importing the traceData: ' +
-            base.normalizeException(e).message;
-        this.infoBar_.visible = true;
+        this.importFailed_(e);
         return;
       }
+      this.importDone_(m);
+    },
+
+    importDone_: function(m) {
       this.infoBar_.visible = false;
       this.timelineView_.model = m;
+      this.refreshPending_ = false;
+    },
+
+    importFailed_: function(e) {
+      this.timelineView_.model = undefined;
+      this.infoBar_.message =
+          'There was an error while importing the traceData: ' +
+          base.normalizeException(e).message;
+      this.infoBar_.visible = true;
+      this.refreshPending_ = false;
     },
 
     onKeypress_: function(event) {
       if (event.keyCode === 114 &&  // r
           !this.tracingController.isTracingEnabled &&
-          !this.selectingCategories &&
+          !this.currentRecordSelectionDialog &&
           document.activeElement.nodeName !== 'INPUT') {
-        this.onSelectCategories_();
+        this.onProfilingViewRecordButtonClicked_();
       }
-    },
-
-    get selectingCategories() {
-      return this.selectingCategories_;
-    },
-
-    set selectingCategories(val) {
-      this.selectingCategories_ = val;
     },
 
     get timelineView() {
@@ -161,40 +181,71 @@ base.exportTo('about_tracing', function() {
       base.setPropertyAndDispatchChange(this, 'tracingController', newValue);
     },
 
+    get canImportAsynchronously() {
+      return this.canImportAsynchronously_;
+    },
+
+    set canImportAsynchronously(canImportAsynchronously) {
+      this.canImportAsynchronously_ = canImportAsynchronously;
+    },
+
     ///////////////////////////////////////////////////////////////////////////
 
-    onSelectCategories_: function() {
-      this.selectingCategories = true;
+    clickRecordButton: function() {
+      this.recordBn_.click();
+    },
+
+    get currentRecordSelectionDialog() {
+      return this.currentRecordSelectionDialog_;
+    },
+
+    onProfilingViewRecordButtonClicked_: function() {
+      if (this.categoryCollectionPending_)
+        return;
+      this.categoryCollectionPending_ = true;
       var tc = this.tracingController;
       tc.collectCategories();
       tc.addEventListener('categoriesCollected', this.onCategoriesCollected_);
     },
 
     onCategoriesCollected_: function(event) {
+      this.categoryCollectionPending_ = false;
       var tc = this.tracingController;
 
-      var categories = event.categories;
-      var categories_length = categories.length;
+      var knownCategories = event.categories;
       // Do not allow categories with ,'s in their name.
-      for (var i = 0; i < categories_length; ++i) {
-        var split = categories[i].split(',');
-        categories[i] = split.shift();
+      for (var i = 0; i < knownCategories.length; ++i) {
+        var split = knownCategories[i].split(',');
+        knownCategories[i] = split.shift();
         if (split.length > 0)
-          categories = categories.concat(split);
+          knownCategories = knownCategories.concat(split);
       }
 
       var dlg = new tracing.RecordSelectionDialog();
-      dlg.categories = categories;
-      dlg.settings = this.timelineView_.settings;
+      dlg.categories = knownCategories;
       dlg.settings_key = 'record_categories';
-      dlg.recordCallback = this.onRecord_.bind(this);
-      dlg.showSystemTracing = this.tracingController.supportsSystemTracing;
+      dlg.supportsSystemTracing = this.tracingController.supportsSystemTracing;
       dlg.visible = true;
-      dlg.addEventListener('visibleChange', function(ev) {
-        if (!dlg.visible)
-          this.selectingCategories = false;
+      dlg.addEventListener('recordclicked', function() {
+        this.currentRecordSelectionDialog_ = undefined;
+
+        var categories = dlg.categoryFilter();
+        console.log('Recording: ' + categories);
+
+        this.timelineView_.viewTitle = '-_-';
+        tc.beginTracing(dlg.useSystemTracing,
+                        dlg.useContinuousTracing,
+                        dlg.useSampling,
+                        categories);
+
+        tc.addEventListener('traceEnded', this.onTraceEnded_);
       }.bind(this));
-      this.recordSelectionDialog_ = dlg;
+      dlg.addEventListener('visibleChange', function(ev) {
+        if (dlg.visible)
+          return;
+        this.currentRecordSelectionDialog_ = undefined;
+      }.bind(this));
+      this.currentRecordSelectionDialog_ = dlg;
 
       setTimeout(function() {
         tc.removeEventListener('categoriesCollected',
@@ -202,27 +253,10 @@ base.exportTo('about_tracing', function() {
       }, 0);
     },
 
-    onRecord_: function() {
-      this.selectingCategories = false;
-
-      var tc = this.tracingController;
-
-      var categories = this.recordSelectionDialog_.categoryFilter();
-      console.log('Recording: ' + categories);
-
-      this.timelineView_.viewTitle = '-_-';
-      tc.beginTracing(this.recordSelectionDialog_.isSystemTracingEnabled(),
-                      this.recordSelectionDialog_.isContinuousTracingEnabled(),
-                      this.recordSelectionDialog_.isSamplingEnabled(),
-                      categories);
-
-      tc.addEventListener('traceEnded', this.onTraceEnded_);
-    },
-
     onTraceEnded_: function() {
       var tc = this.tracingController;
       this.timelineView_.viewTitle = '^_^';
-      this.refresh_();
+      this.beginRefresh_();
       setTimeout(function() {
         tc.removeEventListener('traceEnded', this.onTraceEnded_);
       }, 0);
@@ -232,11 +266,12 @@ base.exportTo('about_tracing', function() {
 
     onSave_: function() {
       this.overlayEl_ = new ui.Overlay();
-      this.overlayEl_.className = 'profiling-overlay';
+      this.overlayEl_.classList.add('profiling-overlay');
 
       var labelEl = document.createElement('div');
       labelEl.className = 'label';
       labelEl.textContent = 'Saving...';
+      this.overlayEl_.userCanClose = false;
       this.overlayEl_.appendChild(labelEl);
       this.overlayEl_.visible = true;
 
@@ -259,12 +294,13 @@ base.exportTo('about_tracing', function() {
 
     onLoad_: function() {
       this.overlayEl_ = new ui.Overlay();
-      this.overlayEl_.className = 'profiling-overlay';
+      this.overlayEl_.classList.add('profiling-overlay');
 
       var labelEl = document.createElement('div');
       labelEl.className = 'label';
       labelEl.textContent = 'Loading...';
       this.overlayEl_.appendChild(labelEl);
+      this.overlayEl_.userCanClose = false;
       this.overlayEl_.visible = true;
 
       var that = this;
@@ -279,7 +315,7 @@ base.exportTo('about_tracing', function() {
             that.timelineView_.viewTitle = nameParts[nameParts.length - 1];
           else
             that.timelineView_.viewTitle = '^_^';
-          that.refresh_();
+          that.beginRefresh_();
         }
 
         setTimeout(function() {
@@ -314,12 +350,16 @@ base.exportTo('about_tracing', function() {
             that.tracingController.onLoadTraceFileComplete(data.target.result,
                                                            filename);
             that.timelineView_.viewTitle = filename;
-            that.refresh_();
+            that.beginRefresh_();
           } catch (e) {
             console.log('Unable to import the provided trace file.', e.message);
           }
         };
-        reader.readAsText(files[i]);
+        var is_binary = /[.]gz$/.test(filename) || /[.]zip$/.test(filename);
+        if (is_binary)
+          reader.readAsArrayBuffer(files[i]);
+        else
+          reader.readAsText(files[i]);
       }
       return false;
     }

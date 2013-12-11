@@ -21,14 +21,14 @@
 #ifndef RenderMeter_h
 #define RenderMeter_h
 
-#include "core/rendering/RenderBlock.h"
+#include "core/rendering/RenderBlockFlow.h"
 #include "core/rendering/RenderWidget.h"
 
 namespace WebCore {
 
 class HTMLMeterElement;
 
-class RenderMeter FINAL : public RenderBlock {
+class RenderMeter FINAL : public RenderBlockFlow {
 public:
     explicit RenderMeter(HTMLElement*);
     virtual ~RenderMeter();
@@ -39,6 +39,8 @@ public:
 private:
     virtual void updateLogicalWidth() OVERRIDE;
     virtual void computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues&) const OVERRIDE;
+
+    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
 
     virtual const char* renderName() const { return "RenderMeter"; }
     virtual bool isMeter() const { return true; }

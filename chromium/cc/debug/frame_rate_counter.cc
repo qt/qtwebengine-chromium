@@ -44,7 +44,7 @@ base::TimeDelta FrameRateCounter::RecentFrameInterval(size_t n) const {
 FrameRateCounter::FrameRateCounter(bool has_impl_thread)
     : has_impl_thread_(has_impl_thread), dropped_frame_count_(0) {}
 
-void FrameRateCounter::SaveTimeStamp(base::TimeTicks timestamp) {
+void FrameRateCounter::SaveTimeStamp(base::TimeTicks timestamp, bool software) {
   ring_buffer_.SaveToBuffer(timestamp);
 
   // Check if frame interval can be computed.
@@ -55,16 +55,26 @@ void FrameRateCounter::SaveTimeStamp(base::TimeTicks timestamp) {
       RecentFrameInterval(ring_buffer_.BufferSize() - 1);
 
   if (has_impl_thread_ && ring_buffer_.CurrentIndex() > 0) {
-    UMA_HISTOGRAM_CUSTOM_COUNTS("Renderer4.CompositorThreadImplDrawDelay",
-                                frame_interval_seconds.InMilliseconds(),
-                                1,
-                                120,
-                                60);
+    if (software) {
+      UMA_HISTOGRAM_CUSTOM_COUNTS(
+          "Renderer4.SoftwareCompositorThreadImplDrawDelay",
+          frame_interval_seconds.InMilliseconds(),
+          1,
+          120,
+          60);
+    } else {
+      UMA_HISTOGRAM_CUSTOM_COUNTS("Renderer4.CompositorThreadImplDrawDelay",
+                                  frame_interval_seconds.InMilliseconds(),
+                                  1,
+                                  120,
+                                  60);
+    }
   }
 
   if (!IsBadFrameInterval(frame_interval_seconds) &&
       frame_interval_seconds.InSecondsF() > kDroppedFrameTime)
-    ++dropped_frame_count_;
+    dropped_frame_count_ +=
+        frame_interval_seconds.InSecondsF() / kDroppedFrameTime;
 }
 
 bool FrameRateCounter::IsBadFrameInterval(

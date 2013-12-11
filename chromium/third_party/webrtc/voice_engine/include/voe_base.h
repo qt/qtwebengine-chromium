@@ -40,6 +40,7 @@ namespace webrtc {
 
 class AudioDeviceModule;
 class AudioProcessing;
+class Config;
 
 const int kVoEDefault = -1;
 
@@ -63,6 +64,7 @@ public:
     // Creates a VoiceEngine object, which can then be used to acquire
     // sub-APIs. Returns NULL on failure.
     static VoiceEngine* Create();
+    static VoiceEngine* Create(const Config& config);
 
     // Deletes a created VoiceEngine object and releases the utilized resources.
     // Note that if there are outstanding references held via other interfaces,
@@ -129,9 +131,6 @@ public:
 
     // Terminates all VoiceEngine functions and releses allocated resources.
     virtual int Terminate() = 0;
-
-    // Retrieves the maximum number of channels that can be created.
-    virtual int MaxNumOfChannels() = 0;
 
     // Creates a new channel and allocates the required resources for it.
     virtual int CreateChannel() = 0;

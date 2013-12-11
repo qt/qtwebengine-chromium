@@ -5,9 +5,12 @@
 #include "components/autofill/content/renderer/password_generation_manager.h"
 
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
+#include "components/autofill/content/renderer/password_form_conversion_utils.h"
 #include "components/autofill/core/common/autofill_messages.h"
+#include "components/autofill/core/common/form_data.h"
+#include "components/autofill/core/common/password_form.h"
 #include "components/autofill/core/common/password_generation_util.h"
-#include "content/public/renderer/password_form_conversion_utils.h"
 #include "content/public/renderer/render_view.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
@@ -64,6 +67,27 @@ bool GetAccountCreationPasswordFields(
   return false;
 }
 
+bool ContainsURL(const std::vector<GURL>& urls, const GURL& url) {
+  return std::find(urls.begin(), urls.end(), url) != urls.end();
+}
+
+// Returns true if the |form1| is essentially equal to |form2|.
+bool FormEquals(const autofill::FormData& form1,
+                const PasswordForm& form2) {
+  // TODO(zysxqn): use more signals than just origin to compare.
+  return form1.origin == form2.origin;
+}
+
+bool ContainsForm(const std::vector<autofill::FormData>& forms,
+                  const PasswordForm& form) {
+  for (std::vector<autofill::FormData>::const_iterator it =
+           forms.begin(); it != forms.end(); ++it) {
+    if (FormEquals(*it, form))
+      return true;
+  }
+  return false;
+}
+
 }  // namespace
 
 PasswordGenerationManager::PasswordGenerationManager(
@@ -83,10 +107,13 @@ void PasswordGenerationManager::DidFinishDocumentLoad(WebKit::WebFrame* frame) {
   // as we don't want subframe loads to clear state that we have recieved from
   // the main frame. Note that we assume there is only one account creation
   // form, but there could be multiple password forms in each frame.
+  //
+  // TODO(zysxqn): Add stat when local heuristic fires but we don't show the
+  // password generation icon.
   if (!frame->parent()) {
     not_blacklisted_password_form_origins_.clear();
-    // Initialize to an empty and invalid GURL.
-    account_creation_form_origin_ = GURL();
+    account_creation_forms_.clear();
+    possible_account_creation_form_.reset(new PasswordForm());
     passwords_.clear();
   }
 }
@@ -108,8 +135,8 @@ void PasswordGenerationManager::DidFinishLoad(WebKit::WebFrame* frame) {
 
     // If we can't get a valid PasswordForm, we skip this form because the
     // the password won't get saved even if we generate it.
-    scoped_ptr<content::PasswordForm> password_form(
-        content::CreatePasswordForm(forms[i]));
+    scoped_ptr<PasswordForm> password_form(
+        CreatePasswordForm(forms[i]));
     if (!password_form.get()) {
       DVLOG(2) << "Skipping form as it would not be saved";
       continue;
@@ -118,7 +145,7 @@ void PasswordGenerationManager::DidFinishLoad(WebKit::WebFrame* frame) {
     // Do not generate password for GAIA since it is used to retrieve the
     // generated paswords.
     GURL realm(password_form->signon_realm);
-    if (realm == GURL(GaiaUrls::GetInstance()->gaia_login_form_realm()))
+    if (realm == GaiaUrls::GetInstance()->gaia_login_form_realm())
       continue;
 
     std::vector<WebKit::WebInputElement> passwords;
@@ -127,7 +154,7 @@ void PasswordGenerationManager::DidFinishLoad(WebKit::WebFrame* frame) {
       password_generation::LogPasswordGenerationEvent(
           password_generation::SIGN_UP_DETECTED);
       passwords_ = passwords;
-      account_creation_form_origin_ = password_form->origin;
+      possible_account_creation_form_.swap(password_form);
       MaybeShowIcon();
       // We assume that there is only one account creation field per URL.
       return;
@@ -154,8 +181,8 @@ void PasswordGenerationManager::openPasswordGenerator(
     WebKit::WebInputElement& element) {
   WebKit::WebElement button(element.passwordGeneratorButtonElement());
   gfx::Rect rect(button.boundsInViewportSpace());
-  scoped_ptr<content::PasswordForm> password_form(
-      content::CreatePasswordForm(element.form()));
+  scoped_ptr<PasswordForm> password_form(
+      CreatePasswordForm(element.form()));
   // We should not have shown the icon we can't create a valid PasswordForm.
   DCHECK(password_form.get());
 
@@ -176,13 +203,14 @@ bool PasswordGenerationManager::OnMessageReceived(const IPC::Message& message) {
                         OnPasswordAccepted)
     IPC_MESSAGE_HANDLER(AutofillMsg_PasswordGenerationEnabled,
                         OnPasswordGenerationEnabled)
+    IPC_MESSAGE_HANDLER(AutofillMsg_AccountCreationFormsDetected,
+                        OnAccountCreationFormsDetected)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
 }
 
-void PasswordGenerationManager::OnFormNotBlacklisted(
-    const content::PasswordForm& form) {
+void PasswordGenerationManager::OnFormNotBlacklisted(const PasswordForm& form) {
   not_blacklisted_password_form_origins_.push_back(form.origin);
   MaybeShowIcon();
 }
@@ -203,27 +231,39 @@ void PasswordGenerationManager::OnPasswordGenerationEnabled(bool enabled) {
   enabled_ = enabled;
 }
 
+void PasswordGenerationManager::OnAccountCreationFormsDetected(
+    const std::vector<autofill::FormData>& forms) {
+  account_creation_forms_.insert(
+      account_creation_forms_.end(), forms.begin(), forms.end());
+  MaybeShowIcon();
+}
+
 void PasswordGenerationManager::MaybeShowIcon() {
   // We should show the password generation icon only when we have detected
-  // account creation form and we have confirmed from browser that this form
-  // is not blacklisted by the users.
-  if (!account_creation_form_origin_.is_valid() ||
+  // account creation form, we have confirmed from browser that this form
+  // is not blacklisted by the users, and the Autofill server has marked one
+  // of its field as ACCOUNT_CREATION_PASSWORD.
+  if (!possible_account_creation_form_.get() ||
       passwords_.empty() ||
-      not_blacklisted_password_form_origins_.empty()) {
+      not_blacklisted_password_form_origins_.empty() ||
+      account_creation_forms_.empty()) {
     return;
   }
 
-  for (std::vector<GURL>::iterator it =
-           not_blacklisted_password_form_origins_.begin();
-       it != not_blacklisted_password_form_origins_.end(); ++it) {
-    if (*it == account_creation_form_origin_) {
-      passwords_[0].passwordGeneratorButtonElement().setAttribute("style",
-                                                            "display:block");
-      password_generation::LogPasswordGenerationEvent(
-          password_generation::ICON_SHOWN);
-      return;
-    }
+  if (!ContainsURL(not_blacklisted_password_form_origins_,
+                   possible_account_creation_form_->origin)) {
+    return;
   }
+
+  if (!ContainsForm(account_creation_forms_,
+                    *possible_account_creation_form_)) {
+    return;
+  }
+
+  passwords_[0].passwordGeneratorButtonElement().setAttribute("style",
+                                                              "display:block");
+  password_generation::LogPasswordGenerationEvent(
+      password_generation::ICON_SHOWN);
 }
 
 }  // namespace autofill

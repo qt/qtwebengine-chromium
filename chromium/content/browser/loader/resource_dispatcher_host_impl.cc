@@ -58,7 +58,6 @@
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/download_url_parameters.h"
 #include "content/public/browser/global_request_id.h"
-#include "content/public/browser/notification_service.h"
 #include "content/public/browser/resource_dispatcher_host_delegate.h"
 #include "content/public/browser/resource_request_details.h"
 #include "content/public/browser/resource_throttle.h"
@@ -78,16 +77,17 @@
 #include "net/base/upload_data_stream.h"
 #include "net/cert/cert_status_flags.h"
 #include "net/cookies/cookie_monster.h"
-#include "net/http/http_cache.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
-#include "net/http/http_transaction_factory.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_job_factory.h"
 #include "webkit/browser/appcache/appcache_interceptor.h"
-#include "webkit/browser/blob/blob_storage_controller.h"
+#include "webkit/common/blob/blob_data.h"
+#include "webkit/browser/blob/blob_data_handle.h"
+#include "webkit/browser/blob/blob_storage_context.h"
+#include "webkit/browser/blob/blob_url_request_job_factory.h"
 #include "webkit/browser/fileapi/file_permission_policy.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/common/appcache/appcache_interfaces.h"
@@ -139,7 +139,6 @@ const int kAllNetErrorCodes[] = {
 // Aborts a request before an URLRequest has actually been created.
 void AbortRequestBeforeItStarts(ResourceMessageFilter* filter,
                                 IPC::Message* sync_result,
-                                int route_id,
                                 int request_id) {
   if (sync_result) {
     SyncLoadResult result;
@@ -149,7 +148,6 @@ void AbortRequestBeforeItStarts(ResourceMessageFilter* filter,
   } else {
     // Tell the renderer that this request was disallowed.
     filter->Send(new ResourceMsg_RequestComplete(
-        route_id,
         request_id,
         net::ERR_ABORTED,
         false,
@@ -216,11 +214,11 @@ bool ShouldServiceRequest(int process_type,
         return false;
       }
       if (iter->type() == ResourceRequestBody::Element::TYPE_FILE_FILESYSTEM) {
-        fileapi::FileSystemURL url = file_system_context->CrackURL(iter->url());
-        if (!policy->HasPermissionsForFileSystemFile(
-                child_id, url, fileapi::kReadFilePermissions)) {
+        fileapi::FileSystemURL url =
+            file_system_context->CrackURL(iter->filesystem_url());
+        if (!policy->CanReadFileSystemFile(child_id, url)) {
           NOTREACHED() << "Denied unauthorized upload of "
-                       << iter->url().spec();
+                       << iter->filesystem_url().spec();
           return false;
         }
       }
@@ -266,17 +264,28 @@ int GetCertID(net::URLRequest* request, int child_id) {
   return 0;
 }
 
-template <class T>
-void NotifyOnUI(int type, int render_process_id, int render_view_id,
-                scoped_ptr<T> detail) {
+void NotifyRedirectOnUI(int render_process_id,
+                        int render_view_id,
+                        scoped_ptr<ResourceRedirectDetails> details) {
   RenderViewHostImpl* host =
       RenderViewHostImpl::FromID(render_process_id, render_view_id);
-  if (host) {
-    RenderViewHostDelegate* delegate = host->GetDelegate();
-    NotificationService::current()->Notify(
-        type, Source<WebContents>(delegate->GetAsWebContents()),
-        Details<T>(detail.get()));
-  }
+  if (!host)
+    return;
+
+  RenderViewHostDelegate* delegate = host->GetDelegate();
+  delegate->DidGetRedirectForResourceRequest(*details.get());
+}
+
+void NotifyResponseOnUI(int render_process_id,
+                        int render_view_id,
+                        scoped_ptr<ResourceRequestDetails> details) {
+  RenderViewHostImpl* host =
+      RenderViewHostImpl::FromID(render_process_id, render_view_id);
+  if (!host)
+    return;
+
+  RenderViewHostDelegate* delegate = host->GetDelegate();
+  delegate->DidGetResourceResponseStart(*details.get());
 }
 
 }  // namespace
@@ -502,6 +511,14 @@ net::Error ResourceDispatcherHostImpl::BeginDownload(
       CreateRequestInfo(child_id, route_id, true, context);
   extra_info->AssociateWithRequest(request.get());  // Request takes ownership.
 
+  if (request->url().SchemeIs(chrome::kBlobScheme)) {
+    ChromeBlobStorageContext* blob_context =
+        GetChromeBlobStorageContextForResourceContext(context);
+    webkit_blob::BlobProtocolHandler::SetRequestedBlobDataHandle(
+        request.get(),
+        blob_context->context()->GetBlobDataFromPublicURL(request->url()));
+  }
+
   // From this point forward, the |DownloadResourceHandler| is responsible for
   // |started_callback|.
   scoped_ptr<ResourceHandler> handler(
@@ -681,8 +698,7 @@ void ResourceDispatcherHostImpl::DidReceiveRedirect(ResourceLoader* loader,
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(
-          &NotifyOnUI<ResourceRedirectDetails>,
-          static_cast<int>(NOTIFICATION_RESOURCE_RECEIVED_REDIRECT),
+          &NotifyRedirectOnUI,
           render_process_id, render_view_id, base::Passed(&detail)));
 }
 
@@ -713,8 +729,7 @@ void ResourceDispatcherHostImpl::DidReceiveResponse(ResourceLoader* loader) {
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(
-          &NotifyOnUI<ResourceRequestDetails>,
-          static_cast<int>(NOTIFICATION_RESOURCE_RESPONSE_STARTED),
+          &NotifyResponseOnUI,
           render_process_id, render_view_id, base::Passed(&detail)));
 }
 
@@ -817,8 +832,6 @@ bool ResourceDispatcherHostImpl::OnMessageReceived(
     IPC_MESSAGE_HANDLER(ResourceHostMsg_DataDownloaded_ACK, OnDataDownloadedACK)
     IPC_MESSAGE_HANDLER(ResourceHostMsg_UploadProgress_ACK, OnUploadProgressACK)
     IPC_MESSAGE_HANDLER(ResourceHostMsg_CancelRequest, OnCancelRequest)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_DidLoadResourceFromMemoryCache,
-                        OnDidLoadResourceFromMemoryCache)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP_EX()
 
@@ -836,12 +849,6 @@ bool ResourceDispatcherHostImpl::OnMessageReceived(
         handled = delegate->OnMessageReceived(message, message_was_ok);
       }
     }
-  }
-
-  if (message.type() == ViewHostMsg_DidLoadResourceFromMemoryCache::ID) {
-    // We just needed to peek at this message. We still want it to reach its
-    // normal destination.
-    handled = false;
   }
 
   filter_ = NULL;
@@ -914,14 +921,16 @@ void ResourceDispatcherHostImpl::BeginRequest(
     }
   }
 
-  ResourceContext* resource_context = filter_->resource_context();
+  ResourceContext* resource_context = NULL;
+  net::URLRequestContext* request_context = NULL;
+  filter_->GetContexts(request_data, &resource_context, &request_context);
   // http://crbug.com/90971
   CHECK(ContainsKey(active_resource_contexts_, resource_context));
 
   if (is_shutdown_ ||
       !ShouldServiceRequest(process_type, child_id, request_data,
                             filter_->file_system_context())) {
-    AbortRequestBeforeItStarts(filter_, sync_result, route_id, request_id);
+    AbortRequestBeforeItStarts(filter_, sync_result, request_id);
     return;
   }
 
@@ -934,7 +943,7 @@ void ResourceDispatcherHostImpl::BeginRequest(
                                                   request_data.url,
                                                   request_data.resource_type,
                                                   resource_context)) {
-    AbortRequestBeforeItStarts(filter_, sync_result, route_id, request_id);
+    AbortRequestBeforeItStarts(filter_, sync_result, request_id);
     return;
   }
 
@@ -958,9 +967,7 @@ void ResourceDispatcherHostImpl::BeginRequest(
     // chance to reset some state before we complete the transfer.
     deferred_loader->WillCompleteTransfer();
   } else {
-    net::URLRequestContext* context =
-        filter_->GetURLRequestContext(request_data.resource_type);
-    new_request.reset(context->CreateRequest(request_data.url, NULL));
+    new_request.reset(request_context->CreateRequest(request_data.url, NULL));
     request = new_request.get();
 
     request->set_method(request_data.method);
@@ -980,9 +987,12 @@ void ResourceDispatcherHostImpl::BeginRequest(
 
   // Resolve elements from request_body and prepare upload data.
   if (request_data.request_body.get()) {
+    webkit_blob::BlobStorageContext* blob_context = NULL;
+    if (filter_->blob_storage_context())
+      blob_context = filter_->blob_storage_context()->context();
     request->set_upload(UploadDataStreamBuilder::Build(
         request_data.request_body.get(),
-        filter_->blob_storage_context()->controller(),
+        blob_context,
         filter_->file_system_context(),
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)
             .get()));
@@ -1017,9 +1027,10 @@ void ResourceDispatcherHostImpl::BeginRequest(
   if (request->url().SchemeIs(chrome::kBlobScheme)) {
     // Hang on to a reference to ensure the blob is not released prior
     // to the job being started.
-    extra_info->set_requested_blob_data(
-        filter_->blob_storage_context()->controller()->
-            GetBlobDataFromUrl(request->url()));
+    webkit_blob::BlobProtocolHandler::SetRequestedBlobDataHandle(
+        request,
+        filter_->blob_storage_context()->context()->
+            GetBlobDataFromPublicURL(request->url()));
   }
 
   // Have the appcache associate its extra info with the request.
@@ -1031,10 +1042,10 @@ void ResourceDispatcherHostImpl::BeginRequest(
   scoped_ptr<ResourceHandler> handler;
   if (sync_result) {
     handler.reset(new SyncResourceHandler(
-        filter_, request, sync_result, this));
+        filter_, resource_context, request, sync_result, this));
   } else {
     handler.reset(new AsyncResourceHandler(
-        filter_, route_id, request, this));
+        filter_, resource_context, request, this));
   }
 
   // The RedirectToFileResourceHandler depends on being next in the chain.
@@ -1182,20 +1193,6 @@ ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
       WebKit::WebReferrerPolicyDefault,
       context,
       true);     // is_async
-}
-
-
-void ResourceDispatcherHostImpl::OnDidLoadResourceFromMemoryCache(
-    const GURL& url,
-    const std::string& security_info,
-    const std::string& http_method,
-    const std::string& mime_type,
-    ResourceType::Type resource_type) {
-  if (!url.is_valid() || !(url.SchemeIs("http") || url.SchemeIs("https")))
-    return;
-
-  filter_->GetURLRequestContext(resource_type)->http_transaction_factory()->
-      GetCache()->OnExternalCacheHit(url, http_method);
 }
 
 void ResourceDispatcherHostImpl::OnRenderViewHostCreated(
@@ -1813,7 +1810,7 @@ void ResourceDispatcherHostImpl::UnregisterResourceMessageDelegate(
   DelegateMap::iterator it = delegate_map_.find(id);
   DCHECK(it->second->HasObserver(delegate));
   it->second->RemoveObserver(delegate);
-  if (it->second->size() == 0) {
+  if (!it->second->might_have_observers()) {
     delete it->second;
     delegate_map_.erase(it);
   }
@@ -1850,7 +1847,7 @@ int ResourceDispatcherHostImpl::BuildLoadFlagsForRequest(
     HttpAuthRelationType relation_type = HttpAuthRelationTypeOf(
         request_data.url, request_data.first_party_for_cookies);
     if (relation_type == HTTP_AUTH_RELATION_BLOCKED_CROSS) {
-      load_flags |= (net::LOAD_DO_NOT_SEND_AUTH_DATA |
+      load_flags |= (net::LOAD_DO_NOT_USE_EMBEDDED_IDENTITY |
                      net::LOAD_DO_NOT_PROMPT_FOR_LOGIN);
     }
   }

@@ -80,9 +80,9 @@ const int defaultSize = 4;
 const int baselineAdjustment = 7;
 
 RenderListBox::RenderListBox(Element* element)
-    : RenderBlock(element)
+    : RenderBlockFlow(element)
     , m_optionsChanged(true)
-    , m_scrollToRevealSelectionAfterLayout(false)
+    , m_scrollToRevealSelectionAfterLayout(true)
     , m_inAutoscroll(false)
     , m_optionsWidth(0)
     , m_indexOffset(0)
@@ -128,7 +128,7 @@ void RenderListBox::updateFromElement()
                 FontDescription d = itemFont.fontDescription();
                 d.setWeight(d.bolderWeight());
                 itemFont = Font(d, itemFont.letterSpacing(), itemFont.wordSpacing());
-                itemFont.update(document()->styleResolver()->fontSelector());
+                itemFont.update(document().styleResolver()->fontSelector());
             }
 
             if (!text.isEmpty()) {
@@ -164,14 +164,13 @@ void RenderListBox::selectionChanged()
             scrollToRevealSelection();
     }
 
-    if (AXObjectCache* cache = document()->existingAXObjectCache())
+    if (AXObjectCache* cache = document().existingAXObjectCache())
         cache->selectedChildrenChanged(this);
 }
 
 void RenderListBox::layout()
 {
-    StackStats::LayoutCheckPoint layoutCheckPoint;
-    RenderBlock::layout();
+    RenderBlockFlow::layout();
 
     if (m_vBar) {
         bool enabled = numVisibleItems() < numItems();
@@ -235,7 +234,7 @@ void RenderListBox::computePreferredLogicalWidths()
     m_minPreferredLogicalWidth += toAdd;
     m_maxPreferredLogicalWidth += toAdd;
 
-    setPreferredLogicalWidthsDirty(false);
+    clearPreferredLogicalWidthsDirty();
 }
 
 int RenderListBox::size() const
@@ -277,8 +276,8 @@ int RenderListBox::baselinePosition(FontBaseline baselineType, bool firstLine, L
 LayoutRect RenderListBox::itemBoundingBoxRect(const LayoutPoint& additionalOffset, int index)
 {
     return LayoutRect(additionalOffset.x() + borderLeft() + paddingLeft(),
-                   additionalOffset.y() + borderTop() + paddingTop() + itemHeight() * (index - m_indexOffset),
-                   contentWidth(), itemHeight());
+        additionalOffset.y() + borderTop() + paddingTop() + itemHeight() * (index - m_indexOffset),
+        contentWidth(), itemHeight());
 }
 
 void RenderListBox::paintObject(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
@@ -408,11 +407,11 @@ void RenderListBox::paintItemForeground(PaintInfo& paintInfo, const LayoutPoint&
 
     Color textColor = element->renderStyle() ? resolveColor(element->renderStyle(), CSSPropertyColor) : resolveColor(CSSPropertyColor);
     if (isOptionElement && toHTMLOptionElement(element)->selected()) {
-        if (frame()->selection()->isFocusedAndActive() && document()->focusedElement() == node())
-            textColor = theme()->activeListBoxSelectionForegroundColor();
+        if (frame()->selection().isFocusedAndActive() && document().focusedElement() == node())
+            textColor = RenderTheme::theme().activeListBoxSelectionForegroundColor();
         // Honor the foreground color for disabled items
         else if (!element->isDisabledFormControl() && !select->isDisabledFormControl())
-            textColor = theme()->inactiveListBoxSelectionForegroundColor();
+            textColor = RenderTheme::theme().inactiveListBoxSelectionForegroundColor();
     }
 
     paintInfo.context->setFillColor(textColor);
@@ -426,7 +425,7 @@ void RenderListBox::paintItemForeground(PaintInfo& paintInfo, const LayoutPoint&
         FontDescription d = itemFont.fontDescription();
         d.setWeight(d.bolderWeight());
         itemFont = Font(d, itemFont.letterSpacing(), itemFont.wordSpacing());
-        itemFont.update(document()->styleResolver()->fontSelector());
+        itemFont.update(document().styleResolver()->fontSelector());
     }
 
     // Draw the item text
@@ -442,10 +441,10 @@ void RenderListBox::paintItemBackground(PaintInfo& paintInfo, const LayoutPoint&
 
     Color backColor;
     if (element->hasTagName(optionTag) && toHTMLOptionElement(element)->selected()) {
-        if (frame()->selection()->isFocusedAndActive() && document()->focusedElement() == node())
-            backColor = theme()->activeListBoxSelectionBackgroundColor();
+        if (frame()->selection().isFocusedAndActive() && document().focusedElement() == node())
+            backColor = RenderTheme::theme().activeListBoxSelectionBackgroundColor();
         else
-            backColor = theme()->inactiveListBoxSelectionBackgroundColor();
+            backColor = RenderTheme::theme().inactiveListBoxSelectionBackgroundColor();
     } else {
         backColor = element->renderStyle() ? resolveColor(element->renderStyle(), CSSPropertyBackgroundColor) : resolveColor(CSSPropertyBackgroundColor);
     }
@@ -605,14 +604,9 @@ bool RenderListBox::listIndexIsVisible(int index)
     return index >= m_indexOffset && index < m_indexOffset + numVisibleItems();
 }
 
-bool RenderListBox::scroll(ScrollDirection direction, ScrollGranularity granularity, float multiplier, Node**)
+bool RenderListBox::scrollImpl(ScrollDirection direction, ScrollGranularity granularity, float multiplier)
 {
     return ScrollableArea::scroll(direction, granularity, multiplier);
-}
-
-bool RenderListBox::logicalScroll(ScrollLogicalDirection direction, ScrollGranularity granularity, float multiplier, Node**)
-{
-    return ScrollableArea::scroll(logicalToPhysical(direction, style()->isHorizontalWritingMode(), style()->isFlippedBlocksWritingMode()), granularity, multiplier);
 }
 
 void RenderListBox::valueChanged(unsigned listIndex)
@@ -644,7 +638,7 @@ void RenderListBox::scrollTo(int newOffset)
 
     m_indexOffset = newOffset;
     repaint();
-    node()->document()->eventQueue()->enqueueOrDispatchScrollEvent(node(), DocumentEventQueue::ScrollEventElementTarget);
+    node()->document().eventQueue()->enqueueOrDispatchScrollEvent(node(), DocumentEventQueue::ScrollEventElementTarget);
 }
 
 LayoutUnit RenderListBox::itemHeight() const
@@ -849,6 +843,11 @@ bool RenderListBox::userInputScrollable(ScrollbarOrientation orientation) const
     return orientation == VerticalScrollbar;
 }
 
+bool RenderListBox::shouldPlaceVerticalScrollbarOnLeft() const
+{
+    return false;
+}
+
 int RenderListBox::lineStep(ScrollbarOrientation) const
 {
     return 1;
@@ -882,10 +881,10 @@ PassRefPtr<Scrollbar> RenderListBox::createScrollbar()
     if (hasCustomScrollbarStyle)
         widget = RenderScrollbar::createCustomScrollbar(this, VerticalScrollbar, this->node());
     else {
-        widget = Scrollbar::createNativeScrollbar(this, VerticalScrollbar, theme()->scrollbarControlSizeForPart(ListboxPart));
+        widget = Scrollbar::create(this, VerticalScrollbar, RenderTheme::theme().scrollbarControlSizeForPart(ListboxPart));
         didAddVerticalScrollbar(widget.get());
     }
-    document()->view()->addChild(widget.get());
+    document().view()->addChild(widget.get());
     return widget.release();
 }
 
@@ -915,8 +914,8 @@ void RenderListBox::setHasVerticalScrollbar(bool hasScrollbar)
         m_vBar->styleChanged();
 
     // Force an update since we know the scrollbars have changed things.
-    if (document()->hasAnnotatedRegions())
-        document()->setAnnotatedRegionsDirty(true);
+    if (document().hasAnnotatedRegions())
+        document().setAnnotatedRegionsDirty(true);
 }
 
 } // namespace WebCore

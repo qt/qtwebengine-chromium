@@ -6,9 +6,9 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "ui/base/events/event.h"
 #include "ui/base/ime/text_input_client.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/event.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/widget/widget.h"
 
 namespace views {
