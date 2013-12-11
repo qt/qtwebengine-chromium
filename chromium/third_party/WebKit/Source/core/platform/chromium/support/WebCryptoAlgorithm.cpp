@@ -39,36 +39,29 @@ namespace WebKit {
 
 class WebCryptoAlgorithmPrivate : public ThreadSafeRefCounted<WebCryptoAlgorithmPrivate> {
 public:
-    WebCryptoAlgorithmPrivate(WebCryptoAlgorithmId id, const char* name, PassOwnPtr<WebCryptoAlgorithmParams> params)
+    WebCryptoAlgorithmPrivate(WebCryptoAlgorithmId id, PassOwnPtr<WebCryptoAlgorithmParams> params)
         : id(id)
-        , name(name)
         , params(params)
     {
     }
 
     WebCryptoAlgorithmId id;
-    const char* const name;
     OwnPtr<WebCryptoAlgorithmParams> params;
 };
 
-WebCryptoAlgorithm::WebCryptoAlgorithm(WebCryptoAlgorithmId id, const char* name, PassOwnPtr<WebCryptoAlgorithmParams> params)
-    : m_private(adoptRef(new WebCryptoAlgorithmPrivate(id, name, params)))
+WebCryptoAlgorithm::WebCryptoAlgorithm(WebCryptoAlgorithmId id, PassOwnPtr<WebCryptoAlgorithmParams> params)
+    : m_private(adoptRef(new WebCryptoAlgorithmPrivate(id, params)))
 {
 }
 
-WebCryptoAlgorithm WebCryptoAlgorithm::adoptParamsAndCreate(WebCryptoAlgorithmId id, const char* name, WebCryptoAlgorithmParams* params)
+WebCryptoAlgorithm WebCryptoAlgorithm::adoptParamsAndCreate(WebCryptoAlgorithmId id, WebCryptoAlgorithmParams* params)
 {
-    return WebCryptoAlgorithm(id, name, adoptPtr(params));
+    return WebCryptoAlgorithm(id, adoptPtr(params));
 }
 
 WebCryptoAlgorithmId WebCryptoAlgorithm::id() const
 {
     return m_private->id;
-}
-
-const char* WebCryptoAlgorithm::name() const
-{
-    return m_private->name;
 }
 
 WebCryptoAlgorithmParamsType WebCryptoAlgorithm::paramsType() const
@@ -78,35 +71,42 @@ WebCryptoAlgorithmParamsType WebCryptoAlgorithm::paramsType() const
     return m_private->params->type();
 }
 
-WebCryptoAesCbcParams* WebCryptoAlgorithm::aesCbcParams() const
+const WebCryptoAesCbcParams* WebCryptoAlgorithm::aesCbcParams() const
 {
     if (paramsType() == WebCryptoAlgorithmParamsTypeAesCbcParams)
         return static_cast<WebCryptoAesCbcParams*>(m_private->params.get());
     return 0;
 }
 
-WebCryptoAesKeyGenParams* WebCryptoAlgorithm::aesKeyGenParams() const
+const WebCryptoAesKeyGenParams* WebCryptoAlgorithm::aesKeyGenParams() const
 {
     if (paramsType() == WebCryptoAlgorithmParamsTypeAesKeyGenParams)
         return static_cast<WebCryptoAesKeyGenParams*>(m_private->params.get());
     return 0;
 }
 
-WebCryptoHmacParams* WebCryptoAlgorithm::hmacParams() const
+const WebCryptoHmacParams* WebCryptoAlgorithm::hmacParams() const
 {
     if (paramsType() == WebCryptoAlgorithmParamsTypeHmacParams)
         return static_cast<WebCryptoHmacParams*>(m_private->params.get());
     return 0;
 }
 
-WebCryptoRsaSsaParams* WebCryptoAlgorithm::rsaSsaParams() const
+const WebCryptoHmacKeyParams* WebCryptoAlgorithm::hmacKeyParams() const
+{
+    if (paramsType() == WebCryptoAlgorithmParamsTypeHmacKeyParams)
+        return static_cast<WebCryptoHmacKeyParams*>(m_private->params.get());
+    return 0;
+}
+
+const WebCryptoRsaSsaParams* WebCryptoAlgorithm::rsaSsaParams() const
 {
     if (paramsType() == WebCryptoAlgorithmParamsTypeRsaSsaParams)
         return static_cast<WebCryptoRsaSsaParams*>(m_private->params.get());
     return 0;
 }
 
-WebCryptoRsaKeyGenParams* WebCryptoAlgorithm::rsaKeyGenParams() const
+const WebCryptoRsaKeyGenParams* WebCryptoAlgorithm::rsaKeyGenParams() const
 {
     if (paramsType() == WebCryptoAlgorithmParamsTypeRsaKeyGenParams)
         return static_cast<WebCryptoRsaKeyGenParams*>(m_private->params.get());

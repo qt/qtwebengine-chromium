@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/common/accessibility_messages.h"
 
@@ -64,21 +65,19 @@ void BrowserAccessibility::InitializeTreeStructure(
 
 void BrowserAccessibility::InitializeData(const AccessibilityNodeData& src) {
   DCHECK_EQ(renderer_id_, src.id);
-  name_ = src.name;
-  value_ = src.value;
   role_ = src.role;
   state_ = src.state;
   string_attributes_ = src.string_attributes;
   int_attributes_ = src.int_attributes;
   float_attributes_ = src.float_attributes;
   bool_attributes_ = src.bool_attributes;
+  intlist_attributes_ = src.intlist_attributes;
   html_attributes_ = src.html_attributes;
   location_ = src.location;
-  indirect_child_ids_ = src.indirect_child_ids;
-  line_breaks_ = src.line_breaks;
-  cell_ids_ = src.cell_ids;
-  unique_cell_ids_ = src.unique_cell_ids;
   instance_active_ = true;
+
+  GetStringAttribute(AccessibilityNodeData::ATTR_NAME, &name_);
+  GetStringAttribute(AccessibilityNodeData::ATTR_VALUE, &value_);
 
   PreInitialize();
 }
@@ -143,8 +142,8 @@ gfx::Rect BrowserAccessibility::GetLocalBoundsRect() const {
   // nested web area.
   BrowserAccessibility* parent = parent_;
   bool need_to_offset_web_area =
-      (role_ == AccessibilityNodeData::ROLE_WEB_AREA ||
-       role_ == AccessibilityNodeData::ROLE_ROOT_WEB_AREA);
+      (role_ == WebKit::WebAXRoleWebArea ||
+       role_ == WebKit::WebAXRoleRootWebArea);
   while (parent) {
     if (need_to_offset_web_area &&
         parent->location().width() > 0 &&
@@ -155,13 +154,13 @@ gfx::Rect BrowserAccessibility::GetLocalBoundsRect() const {
 
     // On some platforms, we don't want to take the root scroll offsets
     // into account.
-    if (parent->role() == AccessibilityNodeData::ROLE_ROOT_WEB_AREA &&
+    if (parent->role() == WebKit::WebAXRoleRootWebArea &&
         !manager()->UseRootScrollOffsetsWhenComputingBounds()) {
       break;
     }
 
-    if (parent->role() == AccessibilityNodeData::ROLE_WEB_AREA ||
-        parent->role() == AccessibilityNodeData::ROLE_ROOT_WEB_AREA) {
+    if (parent->role() == WebKit::WebAXRoleWebArea ||
+        parent->role() == WebKit::WebAXRoleRootWebArea) {
       int sx = 0;
       int sy = 0;
       if (parent->GetIntAttribute(AccessibilityNodeData::ATTR_SCROLL_X, &sx) &&
@@ -212,7 +211,7 @@ void BrowserAccessibility::Destroy() {
   PostInitialize();
 
   manager_->NotifyAccessibilityEvent(
-      AccessibilityNotificationObjectHide, this);
+      WebKit::WebAXEventHide, this);
 
   instance_active_ = false;
   manager_->RemoveNode(this);
@@ -223,55 +222,197 @@ void BrowserAccessibility::NativeReleaseReference() {
   delete this;
 }
 
-bool BrowserAccessibility::GetBoolAttribute(
-    BoolAttribute attribute, bool* value) const {
-  BoolAttrMap::const_iterator iter = bool_attributes_.find(attribute);
-  if (iter != bool_attributes_.end()) {
-    *value = iter->second;
-    return true;
+bool BrowserAccessibility::HasBoolAttribute(BoolAttribute attribute) const {
+  for (size_t i = 0; i < bool_attributes_.size(); ++i) {
+    if (bool_attributes_[i].first == attribute)
+      return true;
   }
 
   return false;
+}
+
+
+bool BrowserAccessibility::GetBoolAttribute(BoolAttribute attribute) const {
+  for (size_t i = 0; i < bool_attributes_.size(); ++i) {
+    if (bool_attributes_[i].first == attribute)
+      return bool_attributes_[i].second;
+  }
+
+  return false;
+}
+
+bool BrowserAccessibility::GetBoolAttribute(
+    BoolAttribute attribute, bool* value) const {
+  for (size_t i = 0; i < bool_attributes_.size(); ++i) {
+    if (bool_attributes_[i].first == attribute) {
+      *value = bool_attributes_[i].second;
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool BrowserAccessibility::HasFloatAttribute(FloatAttribute attribute) const {
+  for (size_t i = 0; i < float_attributes_.size(); ++i) {
+    if (float_attributes_[i].first == attribute)
+      return true;
+  }
+
+  return false;
+}
+
+float BrowserAccessibility::GetFloatAttribute(FloatAttribute attribute) const {
+  for (size_t i = 0; i < float_attributes_.size(); ++i) {
+    if (float_attributes_[i].first == attribute)
+      return float_attributes_[i].second;
+  }
+
+  return 0.0;
 }
 
 bool BrowserAccessibility::GetFloatAttribute(
     FloatAttribute attribute, float* value) const {
-  FloatAttrMap::const_iterator iter = float_attributes_.find(attribute);
-  if (iter != float_attributes_.end()) {
-    *value = iter->second;
-    return true;
+  for (size_t i = 0; i < float_attributes_.size(); ++i) {
+    if (float_attributes_[i].first == attribute) {
+      *value = float_attributes_[i].second;
+      return true;
+    }
   }
 
   return false;
+}
+
+bool BrowserAccessibility::HasIntAttribute(IntAttribute attribute) const {
+  for (size_t i = 0; i < int_attributes_.size(); ++i) {
+    if (int_attributes_[i].first == attribute)
+      return true;
+  }
+
+  return false;
+}
+
+int BrowserAccessibility::GetIntAttribute(IntAttribute attribute) const {
+  for (size_t i = 0; i < int_attributes_.size(); ++i) {
+    if (int_attributes_[i].first == attribute)
+      return int_attributes_[i].second;
+  }
+
+  return 0;
 }
 
 bool BrowserAccessibility::GetIntAttribute(
     IntAttribute attribute, int* value) const {
-  IntAttrMap::const_iterator iter = int_attributes_.find(attribute);
-  if (iter != int_attributes_.end()) {
-    *value = iter->second;
-    return true;
+  for (size_t i = 0; i < int_attributes_.size(); ++i) {
+    if (int_attributes_[i].first == attribute) {
+      *value = int_attributes_[i].second;
+      return true;
+    }
   }
 
   return false;
 }
 
+bool BrowserAccessibility::HasStringAttribute(StringAttribute attribute) const {
+  for (size_t i = 0; i < string_attributes_.size(); ++i) {
+    if (string_attributes_[i].first == attribute)
+      return true;
+  }
+
+  return false;
+}
+
+const std::string& BrowserAccessibility::GetStringAttribute(
+    StringAttribute attribute) const {
+  CR_DEFINE_STATIC_LOCAL(std::string, empty_string, ());
+  for (size_t i = 0; i < string_attributes_.size(); ++i) {
+    if (string_attributes_[i].first == attribute)
+      return string_attributes_[i].second;
+  }
+
+  return empty_string;
+}
+
 bool BrowserAccessibility::GetStringAttribute(
+    StringAttribute attribute, std::string* value) const {
+  for (size_t i = 0; i < string_attributes_.size(); ++i) {
+    if (string_attributes_[i].first == attribute) {
+      *value = string_attributes_[i].second;
+      return true;
+    }
+  }
+
+  return false;
+}
+
+string16 BrowserAccessibility::GetString16Attribute(
+    StringAttribute attribute) const {
+  std::string value_utf8;
+  if (!GetStringAttribute(attribute, &value_utf8))
+    return string16();
+  return UTF8ToUTF16(value_utf8);
+}
+
+bool BrowserAccessibility::GetString16Attribute(
     StringAttribute attribute,
     string16* value) const {
-  StringAttrMap::const_iterator iter = string_attributes_.find(attribute);
-  if (iter != string_attributes_.end()) {
-    *value = iter->second;
-    return true;
+  std::string value_utf8;
+  if (!GetStringAttribute(attribute, &value_utf8))
+    return false;
+  *value = UTF8ToUTF16(value_utf8);
+  return true;
+}
+
+void BrowserAccessibility::SetStringAttribute(
+    StringAttribute attribute, const std::string& value) {
+  for (size_t i = 0; i < string_attributes_.size(); ++i) {
+    if (string_attributes_[i].first == attribute) {
+      string_attributes_[i].second = value;
+      return;
+    }
+  }
+  if (!value.empty())
+    string_attributes_.push_back(std::make_pair(attribute, value));
+}
+
+bool BrowserAccessibility::HasIntListAttribute(
+    AccessibilityNodeData::IntListAttribute attribute) const {
+  for (size_t i = 0; i < intlist_attributes_.size(); ++i) {
+    if (intlist_attributes_[i].first == attribute)
+      return true;
+  }
+
+  return false;
+}
+
+const std::vector<int32>& BrowserAccessibility::GetIntListAttribute(
+    AccessibilityNodeData::IntListAttribute attribute) const {
+  CR_DEFINE_STATIC_LOCAL(std::vector<int32>, empty_vector, ());
+  for (size_t i = 0; i < intlist_attributes_.size(); ++i) {
+    if (intlist_attributes_[i].first == attribute)
+      return intlist_attributes_[i].second;
+  }
+
+  return empty_vector;
+}
+
+bool BrowserAccessibility::GetIntListAttribute(
+    AccessibilityNodeData::IntListAttribute attribute,
+    std::vector<int32>* value) const {
+  for (size_t i = 0; i < intlist_attributes_.size(); ++i) {
+    if (intlist_attributes_[i].first == attribute) {
+      *value = intlist_attributes_[i].second;
+      return true;
+    }
   }
 
   return false;
 }
 
 bool BrowserAccessibility::GetHtmlAttribute(
-    const char* html_attr, string16* value) const {
+    const char* html_attr, std::string* value) const {
   for (size_t i = 0; i < html_attributes_.size(); i++) {
-    const string16& attr = html_attributes_[i].first;
+    const std::string& attr = html_attributes_[i].first;
     if (LowerCaseEqualsASCII(attr, html_attr)) {
       *value = html_attributes_[i].second;
       return true;
@@ -279,6 +420,15 @@ bool BrowserAccessibility::GetHtmlAttribute(
   }
 
   return false;
+}
+
+bool BrowserAccessibility::GetHtmlAttribute(
+    const char* html_attr, string16* value) const {
+  std::string value_utf8;
+  if (!GetHtmlAttribute(html_attr, &value_utf8))
+    return false;
+  *value = UTF8ToUTF16(value_utf8);
+  return true;
 }
 
 bool BrowserAccessibility::GetAriaTristate(
@@ -306,33 +456,32 @@ bool BrowserAccessibility::GetAriaTristate(
   return false;  // Not set
 }
 
-bool BrowserAccessibility::HasState(
-    AccessibilityNodeData::State state_enum) const {
+bool BrowserAccessibility::HasState(WebKit::WebAXState state_enum) const {
   return (state_ >> state_enum) & 1;
 }
 
 bool BrowserAccessibility::IsEditableText() const {
   // These roles don't have readonly set, but they're not editable text.
-  if (role_ == AccessibilityNodeData::ROLE_SCROLLAREA ||
-      role_ == AccessibilityNodeData::ROLE_COLUMN ||
-      role_ == AccessibilityNodeData::ROLE_TABLE_HEADER_CONTAINER) {
+  if (role_ == WebKit::WebAXRoleScrollArea ||
+      role_ == WebKit::WebAXRoleColumn ||
+      role_ == WebKit::WebAXRoleTableHeaderContainer) {
     return false;
   }
 
-  // Note: STATE_READONLY being false means it's either a text control,
+  // Note: WebAXStateReadonly being false means it's either a text control,
   // or contenteditable. We also check for editable text roles to cover
   // another element that has role=textbox set on it.
-  return (!HasState(AccessibilityNodeData::STATE_READONLY) ||
-          role_ == AccessibilityNodeData::ROLE_TEXT_FIELD ||
-          role_ == AccessibilityNodeData::ROLE_TEXTAREA);
+  return (!HasState(WebKit::WebAXStateReadonly) ||
+          role_ == WebKit::WebAXRoleTextField ||
+          role_ == WebKit::WebAXRoleTextArea);
 }
 
-string16 BrowserAccessibility::GetTextRecursive() const {
+std::string BrowserAccessibility::GetTextRecursive() const {
   if (!name_.empty()) {
     return name_;
   }
 
-  string16 result;
+  std::string result;
   for (size_t i = 0; i < children_.size(); ++i)
     result += children_[i]->GetTextRecursive();
   return result;

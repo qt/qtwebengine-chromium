@@ -21,11 +21,11 @@
 #ifndef RenderDetailsMarker_h
 #define RenderDetailsMarker_h
 
-#include "core/rendering/RenderBlock.h"
+#include "core/rendering/RenderBlockFlow.h"
 
 namespace WebCore {
 
-class RenderDetailsMarker FINAL : public RenderBlock {
+class RenderDetailsMarker FINAL : public RenderBlockFlow {
 public:
     RenderDetailsMarker(Element*);
 
@@ -35,6 +35,7 @@ public:
 
 private:
     virtual const char* renderName() const { return "RenderDetailsMarker"; }
+    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
     virtual bool isDetailsMarker() const { return true; }
     virtual void paint(PaintInfo&, const LayoutPoint&);
 

@@ -221,5 +221,24 @@
   fun:av_buffer_unref
   fun:av_frame_unref
   ...
-  fun:media::FFmpegVideoDecoder::Decode
+}
+{
+  bug_287796
+  ThreadSanitizer:Race
+  fun:ServerLicensingOpenW
+  fun:NdrPointerFree
+  fun:NdrPointerFree
+  fun:NdrPointerFree
+  fun:NdrPointerFree
+  fun:NdrPointerFree
+  fun:NdrUserMarshalMemorySize
+  fun:NdrPointerFree
+  fun:I_RpcReceive
+  fun:I_RpcReceive
+  fun:I_RpcReceive
+  fun:NdrRpcSsDefaultFree
+  fun:NdrRpcSsDefaultFree
+  fun:NdrOleFree
+  fun:NdrNonEncapsulatedUnionBufferSize
+  fun:NdrNonEncapsulatedUnionBufferSize
 }

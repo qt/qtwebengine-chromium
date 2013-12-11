@@ -29,7 +29,6 @@
 */
 
 #include "config.h"
-#include "core/html/HTMLPlugInElement.h"
 
 #include "V8HTMLAppletElement.h"
 #include "V8HTMLEmbedElement.h"
@@ -37,6 +36,7 @@
 #include "bindings/v8/ScriptInstance.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8NPObject.h"
+#include "core/page/UseCounter.h"
 
 namespace WebCore {
 
@@ -51,7 +51,7 @@ static void npObjectNamedGetter(v8::Local<v8::String> name, const v8::PropertyCa
     if (!scriptInstance)
         return;
 
-    v8::Local<v8::Object> instance = scriptInstance->newLocal(v8::Isolate::GetCurrent());
+    v8::Local<v8::Object> instance = scriptInstance->newLocal(info.GetIsolate());
     if (instance.IsEmpty())
         return;
 
@@ -66,7 +66,7 @@ static void npObjectNamedSetter(v8::Local<v8::String> name, v8::Local<v8::Value>
     if (!scriptInstance)
         return;
 
-    v8::Local<v8::Object> instance = scriptInstance->newLocal(v8::Isolate::GetCurrent());
+    v8::Local<v8::Object> instance = scriptInstance->newLocal(info.GetIsolate());
     if (instance.IsEmpty())
         return;
 
@@ -105,16 +105,22 @@ void V8HTMLObjectElement::namedPropertySetterCustom(v8::Local<v8::String> name, 
 
 void V8HTMLAppletElement::legacyCallCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
+    HTMLPlugInElement* imp = V8HTMLAppletElement::toNative(args.Holder());
+    UseCounter::count(&imp->document(), UseCounter::HTMLAppletElementLegacyCall);
     npObjectInvokeDefaultHandler(args);
 }
 
 void V8HTMLEmbedElement::legacyCallCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
+    HTMLPlugInElement* imp = V8HTMLEmbedElement::toNative(args.Holder());
+    UseCounter::count(&imp->document(), UseCounter::HTMLEmbedElementLegacyCall);
     npObjectInvokeDefaultHandler(args);
 }
 
 void V8HTMLObjectElement::legacyCallCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
+    HTMLPlugInElement* imp = V8HTMLObjectElement::toNative(args.Holder());
+    UseCounter::count(&imp->document(), UseCounter::HTMLObjectElementLegacyCall);
     npObjectInvokeDefaultHandler(args);
 }
 
@@ -126,7 +132,7 @@ void npObjectIndexedGetter(uint32_t index, const v8::PropertyCallbackInfo<v8::Va
     if (!scriptInstance)
         return;
 
-    v8::Local<v8::Object> instance = scriptInstance->newLocal(v8::Isolate::GetCurrent());
+    v8::Local<v8::Object> instance = scriptInstance->newLocal(info.GetIsolate());
     if (instance.IsEmpty())
         return;
 
@@ -141,7 +147,7 @@ void npObjectIndexedSetter(uint32_t index, v8::Local<v8::Value> value, const v8:
     if (!scriptInstance)
         return;
 
-    v8::Local<v8::Object> instance = scriptInstance->newLocal(v8::Isolate::GetCurrent());
+    v8::Local<v8::Object> instance = scriptInstance->newLocal(info.GetIsolate());
     if (instance.IsEmpty())
         return;
 

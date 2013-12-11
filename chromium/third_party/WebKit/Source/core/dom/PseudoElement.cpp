@@ -27,7 +27,6 @@
 #include "config.h"
 #include "core/dom/PseudoElement.h"
 
-#include "core/dom/NodeRenderingContext.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderQuote.h"
 #include "core/rendering/style/ContentData.h"
@@ -55,16 +54,12 @@ String PseudoElement::pseudoElementNameForEvents(PseudoId pseudoId)
 }
 
 PseudoElement::PseudoElement(Element* parent, PseudoId pseudoId)
-    : Element(pseudoElementTagName(), parent->document(), CreatePseudoElement)
+    : Element(pseudoElementTagName(), &parent->document(), CreatePseudoElement)
     , m_pseudoId(pseudoId)
 {
     ASSERT(pseudoId != NOPSEUDO);
     setParentOrShadowHostNode(parent);
     setHasCustomStyleCallbacks();
-}
-
-PseudoElement::~PseudoElement()
-{
 }
 
 PassRefPtr<RenderStyle> PseudoElement::customStyleForRenderer()
@@ -99,12 +94,12 @@ void PseudoElement::attach(const AttachContext& context)
     }
 }
 
-bool PseudoElement::rendererIsNeeded(const NodeRenderingContext& context)
+bool PseudoElement::rendererIsNeeded(const RenderStyle& style)
 {
-    return pseudoElementRendererIsNeeded(context.style());
+    return pseudoElementRendererIsNeeded(&style);
 }
 
-void PseudoElement::didRecalcStyle(StyleChange)
+void PseudoElement::didRecalcStyle(StyleRecalcChange)
 {
     if (!renderer())
         return;

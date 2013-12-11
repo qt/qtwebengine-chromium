@@ -15,7 +15,7 @@
 // If the Delegate is not writable, then no operations will cause
 // a packet to be serialized.  In particular:
 // * SetShouldSendAck will simply record that an ack is to be sent.
-// * AddControlFram will enqueue the control frame.
+// * AddControlFrame will enqueue the control frame.
 // * ConsumeData will do nothing.
 //
 // If the Delegate is writable, then the behavior depends on the second
@@ -57,6 +57,8 @@
 
 namespace net {
 
+class QuicAckNotifier;
+
 class NET_EXPORT_PRIVATE QuicPacketGenerator {
  public:
   class NET_EXPORT_PRIVATE DelegateInterface {
@@ -69,6 +71,7 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
     virtual QuicCongestionFeedbackFrame* CreateFeedbackFrame() = 0;
     // Takes ownership of |packet.packet| and |packet.retransmittable_frames|.
     virtual bool OnSerializedPacket(const SerializedPacket& packet) = 0;
+    virtual void CloseConnection(QuicErrorCode error, bool from_peer) = 0;
   };
 
   // Interface which gets callbacks from the QuicPacketGenerator at interesting
@@ -88,13 +91,28 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
 
   virtual ~QuicPacketGenerator();
 
+  // Indicates that an ACK frame should be sent.  If |also_send_feedback| is
+  // true, then it also indicates a CONGESTION_FEEDBACK frame should be sent.
+  // The contents of the frame(s) will be generated via a call to the delegates
+  // CreateAckFrame() and CreateFeedbackFrame() when the packet is serialized.
   void SetShouldSendAck(bool also_send_feedback);
   void AddControlFrame(const QuicFrame& frame);
+
+  // Given some data, may consume part or all of it and pass it to the
+  // packet creator to be serialized into packets. If not in batch
+  // mode, these packets will also be sent during this call. Also
+  // attaches a QuicAckNotifier to any created stream frames, which
+  // will be called once the frame is ACKed by the peer. The
+  // QuicAckNotifier is owned by the QuicConnection. |notifier| may
+  // be NULL.
   QuicConsumedData ConsumeData(QuicStreamId id,
                                base::StringPiece data,
                                QuicStreamOffset offset,
-                               bool fin);
+                               bool fin,
+                               QuicAckNotifier* notifier);
 
+  // Indicates whether batch mode is currently enabled.
+  bool InBatchMode();
   // Disables flushing.
   void StartBatchOperations();
   // Enables flushing and flushes queued data.
@@ -119,6 +137,7 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
   bool AddNextPendingFrame();
 
   bool AddFrame(const QuicFrame& frame);
+
   void SerializeAndSendPacket();
 
   DelegateInterface* delegate_;
@@ -126,7 +145,10 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
 
   QuicPacketCreator* packet_creator_;
   QuicFrames queued_control_frames_;
-  bool should_flush_;
+
+  // True if batch mode is currently enabled.
+  bool batch_mode_;
+
   // Flags to indicate the need for just-in-time construction of a frame.
   bool should_send_ack_;
   bool should_send_feedback_;

@@ -5,12 +5,15 @@
 #ifndef CC_LAYERS_DELEGATED_RENDERER_LAYER_H_
 #define CC_LAYERS_DELEGATED_RENDERER_LAYER_H_
 
+#include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
+#include "base/synchronization/lock.h"
 #include "cc/base/cc_export.h"
 #include "cc/layers/layer.h"
-#include "cc/resources/transferable_resource.h"
+#include "cc/resources/returned_resource.h"
 
 namespace cc {
-
+class BlockingTaskRunner;
 class DelegatedFrameData;
 class DelegatedRendererLayerClient;
 
@@ -21,6 +24,7 @@ class CC_EXPORT DelegatedRendererLayer : public Layer {
 
   virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
       OVERRIDE;
+  virtual void SetLayerTreeHost(LayerTreeHost* host) OVERRIDE;
   virtual void PushPropertiesTo(LayerImpl* impl) OVERRIDE;
   virtual bool DrawsContent() const OVERRIDE;
 
@@ -34,25 +38,34 @@ class CC_EXPORT DelegatedRendererLayer : public Layer {
 
   // Passes ownership of any unused resources that had been given by the child
   // compositor to the given array, so they can be given back to the child.
-  void TakeUnusedResourcesForChildCompositor(TransferableResourceArray* array);
-
-  virtual bool BlocksPendingCommit() const OVERRIDE;
+  void TakeUnusedResourcesForChildCompositor(ReturnedResourceArray* array);
 
  protected:
   explicit DelegatedRendererLayer(DelegatedRendererLayerClient* client);
   virtual ~DelegatedRendererLayer();
 
  private:
+  void ReceiveUnusedResources(const ReturnedResourceArray& unused);
+  static void ReceiveUnusedResourcesOnImplThread(
+      scoped_refptr<BlockingTaskRunner> task_runner,
+      base::WeakPtr<DelegatedRendererLayer> self,
+      const ReturnedResourceArray& unused);
+
   scoped_ptr<DelegatedFrameData> frame_data_;
   gfx::RectF damage_in_frame_;
   gfx::Size frame_size_;
   gfx::Size display_size_;
-  TransferableResourceArray unused_resources_for_child_compositor_;
 
   DelegatedRendererLayerClient* client_;
+  bool needs_filter_context_;
+
+  ReturnedResourceArray unused_resources_for_child_compositor_;
+  scoped_refptr<BlockingTaskRunner> main_thread_runner_;
+  base::WeakPtrFactory<DelegatedRendererLayer> weak_ptrs_;
 
   DISALLOW_COPY_AND_ASSIGN(DelegatedRendererLayer);
 };
 
 }  // namespace cc
+
 #endif  // CC_LAYERS_DELEGATED_RENDERER_LAYER_H_

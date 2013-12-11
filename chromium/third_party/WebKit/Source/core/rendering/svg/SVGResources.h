@@ -43,6 +43,7 @@ public:
     SVGResources();
 
     bool buildResources(const RenderObject*, const SVGRenderStyle*);
+    void layoutIfNeeded();
 
     // Ordinary resources
     RenderSVGResourceClipper* clipper() const { return m_clipperFilterMaskerData ? m_clipperFilterMaskerData->clipper : 0; }
@@ -150,7 +151,7 @@ private:
     // From SVG 1.1 2nd Edition
     // fill:       'shapes' and 'text content elements'
     // stroke:     'shapes' and 'text content elements'
-    // -> altGlyph, circle, ellipse, line, path, polygon, polyline, rect, text, textPath, tref, tspan
+    // -> altGlyph, circle, ellipse, line, path, polygon, polyline, rect, text, textPath, tspan
     struct FillStrokeData {
         WTF_MAKE_FAST_ALLOCATED;
     public:

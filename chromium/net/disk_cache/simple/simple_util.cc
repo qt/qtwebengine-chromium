@@ -21,6 +21,25 @@ namespace {
 // Size of the uint64 hash_key number in Hex format in a string.
 const size_t kEntryHashKeyAsHexStringSize = 2 * sizeof(uint64);
 
+// TODO(clamy, gavinp): this should go in base
+bool GetNanoSecsFromStat(const struct stat& st,
+                         time_t* out_sec,
+                         long* out_nsec) {
+#if defined(OS_ANDROID)
+  *out_sec = st.st_mtime;
+  *out_nsec = st.st_mtime_nsec;
+#elif defined(OS_LINUX)
+  *out_sec = st.st_mtim.tv_sec;
+  *out_nsec = st.st_mtim.tv_nsec;
+#elif defined(OS_MACOSX) || defined(OS_IOS) || defined(OS_BSD)
+  *out_sec = st.st_mtimespec.tv_sec;
+  *out_nsec = st.st_mtimespec.tv_nsec;
+#else
+  return false;
+#endif
+  return true;
+}
+
 }  // namespace
 
 namespace disk_cache {
@@ -58,13 +77,15 @@ uint64 GetEntryHashKey(const std::string& key) {
   return u.key_hash;
 }
 
-std::string GetFilenameFromEntryHashAndIndex(uint64 entry_hash,
-                                             int index) {
-  return base::StringPrintf("%016" PRIx64 "_%1d", entry_hash, index);
+std::string GetFilenameFromEntryHashAndFileIndex(uint64 entry_hash,
+                                                 int file_index) {
+  return base::StringPrintf("%016" PRIx64 "_%1d", entry_hash, file_index);
 }
 
-std::string GetFilenameFromKeyAndIndex(const std::string& key, int index) {
-  return GetEntryHashKeyAsHexString(key) + base::StringPrintf("_%1d", index);
+std::string GetFilenameFromKeyAndFileIndex(const std::string& key,
+                                           int file_index) {
+  return GetEntryHashKeyAsHexString(key) +
+         base::StringPrintf("_%1d", file_index);
 }
 
 int32 GetDataSizeFromKeyAndFileSize(const std::string& key, int64 file_size) {
@@ -79,15 +100,27 @@ int64 GetFileSizeFromKeyAndDataSize(const std::string& key, int32 data_size) {
       sizeof(SimpleFileEOF);
 }
 
-int64 GetFileOffsetFromKeyAndDataOffset(const std::string& key,
-                                        int data_offset) {
-  const int64 headers_size = sizeof(disk_cache::SimpleFileHeader) + key.size();
-  return headers_size + data_offset;
+int GetFileIndexFromStreamIndex(int stream_index) {
+  return (stream_index == 2) ? 1 : 0;
 }
 
 // TODO(clamy, gavinp): this should go in base
 bool GetMTime(const base::FilePath& path, base::Time* out_mtime) {
   DCHECK(out_mtime);
+#if defined(OS_POSIX)
+  base::ThreadRestrictions::AssertIOAllowed();
+  struct stat file_stat;
+  if (stat(path.value().c_str(), &file_stat) != 0)
+    return false;
+  time_t sec;
+  long nsec;
+  if (GetNanoSecsFromStat(file_stat, &sec, &nsec)) {
+    int64 usec = (nsec / base::Time::kNanosecondsPerMicrosecond);
+    *out_mtime = base::Time::FromTimeT(sec)
+        + base::TimeDelta::FromMicroseconds(usec);
+    return true;
+  }
+#endif
   base::PlatformFileInfo file_info;
   if (!file_util::GetFileInfo(path, &file_info))
     return false;

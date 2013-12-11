@@ -47,10 +47,21 @@ base.exportTo('tracing.analysis', function() {
         this.currentView_ = undefined;
         throw e;
       }
-      if (this.currentView_ instanceof tracing.analysis. AnalysisResults)
-        this.classList.remove('viewing-object');
+
+      this.updateClassList_();
+    },
+    updateClassList_: function() {
+      if (this.currentView_ instanceof tracing.analysis.AnalysisResults)
+        this.classList.remove('viewing-old-style-analysis');
       else
-        this.classList.add('viewing-object');
+        this.classList.add('viewing-old-style-analysis');
+
+      if (this.currentView_ &&
+          this.currentView_.requiresTallView) {
+        this.classList.add('tall-mode');
+      } else {
+        this.classList.remove('tall-mode');
+      }
     },
 
     get currentView() {
@@ -96,36 +107,36 @@ base.exportTo('tracing.analysis', function() {
     },
 
     processSelection: function(selection) {
-      var hitsByType = selection.getHitsOrganizedByType();
+      var eventsByType = selection.getEventsOrganizedByType();
       if (selection.length == 1 &&
-          hitsByType.counterSamples.length == 0) {
-        if (this.tryToProcessSelectionUsingCustomViewer(selection[0]))
+          eventsByType.counterSamples.length == 0) {
+        if (this.tryToProcessSelectionUsingCustomView(selection[0]))
           return;
       }
 
       this.changeViewType(tracing.analysis.AnalysisResults);
+
       this.currentView.clear();
       this.currentSelection_ = selection;
-      tracing.analysis.analyzeHitsByType(this.currentView, hitsByType);
+      tracing.analysis.analyzeEventsByType(this.currentView, eventsByType);
     },
 
-    tryToProcessSelectionUsingCustomViewer: function(hit) {
+    tryToProcessSelectionUsingCustomView: function(event) {
       var obj;
       var typeName;
       var viewBaseType;
       var defaultViewType;
       var viewProperty;
-      var obj = hit.modelObject;
-      if (hit instanceof tracing.SelectionObjectSnapshotHit) {
-        typeName = obj.objectInstance.typeName;
+      if (event instanceof tracing.trace_model.ObjectSnapshot) {
+        typeName = event.objectInstance.typeName;
         viewBaseType = tracing.analysis.ObjectSnapshotView;
         defaultViewType = tracing.analysis.DefaultObjectSnapshotView;
-      } else if (hit instanceof tracing.SelectionObjectInstanceHit) {
-        typeName = obj.typeName;
+      } else if (event instanceof tracing.trace_model.ObjectInstance) {
+        typeName = event.typeName;
         viewBaseType = tracing.analysis.ObjectInstanceView;
         defaultViewType = tracing.analysis.DefaultObjectInstanceView;
-      } else if (hit instanceof tracing.SelectionSliceHit) {
-        typeName = obj.title;
+      } else if (event instanceof tracing.trace_model.Slice) {
+        typeName = event.analysisTypeName;
         viewBaseType = tracing.analysis.SliceView;
         defaultViewType = undefined;
       } else {
@@ -137,13 +148,13 @@ base.exportTo('tracing.analysis', function() {
       var viewType = customViewInfo ?
           customViewInfo.constructor : defaultViewType;
 
-      // Some view types don't have default viewers. In those cases, we fall
+      // Some view types don't have default views. In those cases, we fall
       // back to the standard analysis sytem.
       if (!viewType)
         return false;
 
       this.changeViewType(viewType);
-      this.currentView.modelObject = obj;
+      this.currentView.modelEvent = event;
       return true;
     }
   };

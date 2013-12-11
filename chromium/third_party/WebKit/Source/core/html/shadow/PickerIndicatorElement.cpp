@@ -44,13 +44,13 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline PickerIndicatorElement::PickerIndicatorElement(Document* document, PickerIndicatorOwner& pickerIndicatorOwner)
+inline PickerIndicatorElement::PickerIndicatorElement(Document& document, PickerIndicatorOwner& pickerIndicatorOwner)
     : HTMLDivElement(divTag, document)
     , m_pickerIndicatorOwner(&pickerIndicatorOwner)
 {
 }
 
-PassRefPtr<PickerIndicatorElement> PickerIndicatorElement::create(Document* document, PickerIndicatorOwner& pickerIndicatorOwner)
+PassRefPtr<PickerIndicatorElement> PickerIndicatorElement::create(Document& document, PickerIndicatorOwner& pickerIndicatorOwner)
 {
     RefPtr<PickerIndicatorElement> element = adoptRef(new PickerIndicatorElement(document, pickerIndicatorOwner));
     element->setPart(AtomicString("-webkit-calendar-picker-indicator", AtomicString::ConstructFromLiteral));
@@ -109,14 +109,14 @@ void PickerIndicatorElement::openPopup()
 {
     if (m_chooser)
         return;
-    if (!document()->page())
+    if (!document().page())
         return;
     if (!m_pickerIndicatorOwner)
         return;
     DateTimeChooserParameters parameters;
     if (!m_pickerIndicatorOwner->setupDateTimeChooserParameters(parameters))
         return;
-    m_chooser = document()->page()->chrome().openDateTimeChooser(this, parameters);
+    m_chooser = document().page()->chrome().openDateTimeChooser(this, parameters);
 }
 
 void PickerIndicatorElement::closePopup()

@@ -4,8 +4,9 @@
   -- found in the LICENSE file.
   -->
 
-<polymer-element name="kb-keyset" attributes="nextKeyset isDefault"
-    on-key-up="keyUp" on-key-longpress="keyLongpress">
+<polymer-element name="kb-keyset" attributes="nextKeyset isDefault
+    capsLocksTo capsLockable" on-key-up="keyUp"
+    on-key-longpress="keyLongpress">
   <template>
     <style>
       @host {
@@ -40,7 +41,7 @@
 
         var altkeyMetadata = this.$.altkeyMetadata;
         var altkeys = altkeyMetadata.getAltkeys(detail.char,
-                                                !!detail.superscript);
+                                                !!detail.hintText);
         if (!altkeys)
           return;
 
@@ -55,7 +56,7 @@
           activeAltKeySet = altkeyMetadata.createAltkeySet(detail.char,
                                                            maxLeftOffset,
                                                            maxRightOffset,
-                                                           detail.superscript);
+                                                           detail.hintText);
           altkeyContainer.appendChild(activeAltKeySet);
         }
 

@@ -990,7 +990,9 @@ class P2PTestConductor : public testing::Test {
 typedef P2PTestConductor<JsepTestClient> JsepPeerConnectionP2PTestClient;
 
 // This test sets up a Jsep call between two parties and test Dtmf.
-TEST_F(JsepPeerConnectionP2PTestClient, LocalP2PTestDtmf) {
+// TODO(holmer): Disabled due to sometimes crashing on buildbots.
+// See issue webrtc/2378.
+TEST_F(JsepPeerConnectionP2PTestClient, DISABLED_LocalP2PTestDtmf) {
   ASSERT_TRUE(CreateTestClients());
   LocalP2PTest();
   VerifyDtmf();
@@ -1087,7 +1089,8 @@ TEST_F(JsepPeerConnectionP2PTestClient, LocalP2PTestOfferDtlsButNotSdes) {
 
 // This test sets up a Jsep call between two parties, and the callee only
 // accept to receive video.
-TEST_F(JsepPeerConnectionP2PTestClient, LocalP2PTestAnswerVideo) {
+// BUG=https://code.google.com/p/webrtc/issues/detail?id=2288
+TEST_F(JsepPeerConnectionP2PTestClient, DISABLED_LocalP2PTestAnswerVideo) {
   ASSERT_TRUE(CreateTestClients());
   receiving_client()->SetReceiveAudioVideo(false, true);
   LocalP2PTest();
@@ -1095,7 +1098,7 @@ TEST_F(JsepPeerConnectionP2PTestClient, LocalP2PTestAnswerVideo) {
 
 // This test sets up a Jsep call between two parties, and the callee only
 // accept to receive audio.
-TEST_F(JsepPeerConnectionP2PTestClient, LocalP2PTestAnswerAudio) {
+TEST_F(JsepPeerConnectionP2PTestClient, DISABLED_LocalP2PTestAnswerAudio) {
   ASSERT_TRUE(CreateTestClients());
   receiving_client()->SetReceiveAudioVideo(true, false);
   LocalP2PTest();
@@ -1369,7 +1372,10 @@ TEST_F(JsepPeerConnectionP2PTestClient, IceRestart) {
 
 // This test sets up a Jsep call between two parties with external
 // VideoDecoderFactory.
-TEST_F(JsepPeerConnectionP2PTestClient, LocalP2PTestWithVideoDecoderFactory) {
+// TODO(holmer): Disabled due to sometimes crashing on buildbots.
+// See issue webrtc/2378.
+TEST_F(JsepPeerConnectionP2PTestClient,
+       DISABLED_LocalP2PTestWithVideoDecoderFactory) {
   ASSERT_TRUE(CreateTestClients());
   EnableVideoDecoderFactory();
   LocalP2PTest();

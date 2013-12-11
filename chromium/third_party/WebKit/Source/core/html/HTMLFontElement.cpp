@@ -38,14 +38,14 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLFontElement::HTMLFontElement(const QualifiedName& tagName, Document* document)
+HTMLFontElement::HTMLFontElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
 {
     ASSERT(hasTagName(fontTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLFontElement> HTMLFontElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLFontElement> HTMLFontElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLFontElement(tagName, document));
 }
@@ -62,7 +62,7 @@ static bool parseFontSize(const CharacterType* characters, unsigned length, int&
 
     // Step 3
     while (position < end) {
-        if (!isHTMLSpace(*position))
+        if (!isHTMLSpace<CharacterType>(*position))
             break;
         ++position;
     }

@@ -239,13 +239,11 @@ WebInspector.TimelinePresentationModel.prototype = {
     },
 
     /**
-     * @param {!WebInspector.TimelinePresentationModel.Filter} filter
+     * @param {?WebInspector.TimelinePresentationModel.Filter} filter
      */
-    removeFilter: function(filter)
+    setSearchFilter: function(filter)
     {
-        var index = this._filters.indexOf(filter);
-        if (index !== -1)
-            this._filters.splice(index, 1);
+        this._searchFilter = filter;
     },
 
     rootRecord: function()
@@ -501,32 +499,52 @@ WebInspector.TimelinePresentationModel.prototype = {
             return this._filteredRecords;
 
         var recordsInWindow = [];
+        var stack = [{children: this._rootRecord.children, index: 0, parentIsCollapsed: false, parentRecord: {}}];
+        var revealedDepth = 0;
 
-        var stack = [{children: this._rootRecord.children, index: 0, parentIsCollapsed: false}];
+        function revealRecordsInStack() {
+            for (var depth = revealedDepth + 1; depth < stack.length; ++depth) {
+                if (stack[depth - 1].parentIsCollapsed) {
+                    stack[depth].parentRecord.parent._expandable = true;
+                    return;
+                }
+                stack[depth - 1].parentRecord.collapsed = false;
+                recordsInWindow.push(stack[depth].parentRecord);
+                stack[depth].windowLengthBeforeChildrenTraversal = recordsInWindow.length;
+                stack[depth].parentIsRevealed = true;
+                revealedDepth = depth;
+            }
+        }
+
         while (stack.length) {
             var entry = stack[stack.length - 1];
             var records = entry.children;
             if (records && entry.index < records.length) {
-                 var record = records[entry.index];
-                 ++entry.index;
+                var record = records[entry.index];
+                ++entry.index;
 
-                 if (this.isVisible(record)) {
-                     ++record.parent._invisibleChildrenCount;
-                     if (!entry.parentIsCollapsed)
-                         recordsInWindow.push(record);
-                 }
+                if (this.isVisible(record)) {
+                    record.parent._expandable = true;
+                    if (this._searchFilter)
+                        revealRecordsInStack();
+                    if (!entry.parentIsCollapsed) {
+                        recordsInWindow.push(record);
+                        revealedDepth = stack.length;
+                        entry.parentRecord.collapsed = false;
+                    }
+                }
 
-                 record._invisibleChildrenCount = 0;
+                record._expandable = false;
 
-                 stack.push({children: record.children,
-                             index: 0,
-                             parentIsCollapsed: (entry.parentIsCollapsed || record.collapsed),
-                             parentRecord: record,
-                             windowLengthBeforeChildrenTraversal: recordsInWindow.length});
+                stack.push({children: record.children,
+                            index: 0,
+                            parentIsCollapsed: (entry.parentIsCollapsed || (record.collapsed && (!this._searchFilter || record.clicked))),
+                            parentRecord: record,
+                            windowLengthBeforeChildrenTraversal: recordsInWindow.length});
             } else {
                 stack.pop();
-                if (entry.parentRecord)
-                    entry.parentRecord._visibleChildrenCount = recordsInWindow.length - entry.windowLengthBeforeChildrenTraversal;
+                revealedDepth = Math.min(revealedDepth, stack.length - 1);
+                entry.parentRecord._visibleChildrenCount = recordsInWindow.length - entry.windowLengthBeforeChildrenTraversal;
             }
         }
 
@@ -562,7 +580,7 @@ WebInspector.TimelinePresentationModel.prototype = {
             if (!this._filters[i].accept(record))
                 return false;
         }
-        return true;
+        return !this._searchFilter || this._searchFilter.accept(record);
     },
 
     /**
@@ -632,6 +650,8 @@ WebInspector.TimelinePresentationModel.Record = function(presentationModel, reco
             this.url = record.data["url"];
         if (record.data["layerRootNode"])
             this._relatedBackendNodeId = record.data["layerRootNode"];
+        else if (record.data["elementId"])
+            this._relatedBackendNodeId = record.data["elementId"];
     }
     if (scriptDetails) {
         this.scriptName = scriptDetails.scriptName;
@@ -865,11 +885,11 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
     },
 
     /**
-     * @return {number}
+     * @return {boolean}
      */
-    get invisibleChildrenCount()
+    get expandable()
     {
-        return this._invisibleChildrenCount || 0;
+        return !!this._expandable;
     },
 
     /**
@@ -1096,6 +1116,13 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
                 if (this._relatedNode)
                     contentHelper.appendElementRow(WebInspector.UIString("Layer root"), this._createNodeAnchor(this._relatedNode));
                 break;
+            case recordTypes.DecodeImage:
+            case recordTypes.ResizeImage:
+                if (this._relatedNode)
+                    contentHelper.appendElementRow(WebInspector.UIString("Image element"), this._createNodeAnchor(this._relatedNode));
+                if (this.url)
+                    contentHelper.appendElementRow(WebInspector.UIString("Image URL"), WebInspector.linkifyResourceAsNode(this.url));
+                break;
             case recordTypes.RecalculateStyles: // We don't want to see default details.
                 if (this.data["elementCount"])
                     contentHelper.appendTextRow(WebInspector.UIString("Elements affected"), this.data["elementCount"]);
@@ -1237,12 +1264,6 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
             if (width && height)
                 details = WebInspector.UIString("%d\u2009\u00d7\u2009%d", width, height);
             break;
-        case WebInspector.TimelineModel.RecordType.DecodeImage:
-            details = this.data["imageType"];
-            break;
-        case WebInspector.TimelineModel.RecordType.ResizeImage:
-            details = this.data["cached"] ? WebInspector.UIString("cached") : WebInspector.UIString("non-cached");
-            break;
         case WebInspector.TimelineModel.RecordType.TimerInstall:
         case WebInspector.TimelineModel.RecordType.TimerRemove:
             details = this._linkifyTopCallFrame(this.data["timerId"]);
@@ -1265,6 +1286,8 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
         case WebInspector.TimelineModel.RecordType.ResourceReceivedData:
         case WebInspector.TimelineModel.RecordType.ResourceReceiveResponse:
         case WebInspector.TimelineModel.RecordType.ResourceFinish:
+        case WebInspector.TimelineModel.RecordType.DecodeImage:
+        case WebInspector.TimelineModel.RecordType.ResizeImage:
             details = WebInspector.displayNameForURL(this.url);
             break;
         case WebInspector.TimelineModel.RecordType.Time:

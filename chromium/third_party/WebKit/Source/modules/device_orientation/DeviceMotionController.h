@@ -28,14 +28,17 @@
 #define DeviceMotionController_h
 
 #include "core/dom/Event.h"
+#include "core/page/DOMWindowLifecycleObserver.h"
+#include "core/page/PageLifecycleObserver.h"
 #include "core/platform/Supplementable.h"
 #include "modules/device_orientation/DeviceSensorEventController.h"
 
 namespace WebCore {
 
 class DeviceMotionData;
+class DOMWindow;
 
-class DeviceMotionController : public DeviceSensorEventController, public Supplement<ScriptExecutionContext> {
+class DeviceMotionController : public DeviceSensorEventController, public Supplement<ScriptExecutionContext>, public DOMWindowLifecycleObserver, public PageLifecycleObserver {
 
 public:
     virtual ~DeviceMotionController();
@@ -50,9 +53,19 @@ private:
     virtual void registerWithDispatcher() OVERRIDE;
     virtual void unregisterWithDispatcher() OVERRIDE;
 
+    // Inherited from DOMWindowLifecycleObserver.
+    virtual void didAddEventListener(DOMWindow*, const AtomicString&) OVERRIDE;
+    virtual void didRemoveEventListener(DOMWindow*, const AtomicString&) OVERRIDE;
+    virtual void didRemoveAllEventListeners(DOMWindow*) OVERRIDE;
+
+    // Inherited from PageLifecycleObserver.
+    virtual void pageVisibilityChanged() OVERRIDE;
+
     virtual bool hasLastData() OVERRIDE;
     virtual PassRefPtr<Event> getLastEvent() OVERRIDE;
     virtual bool isNullEvent(Event*) OVERRIDE;
+
+    bool m_hasEventListener;
 };
 
 } // namespace WebCore

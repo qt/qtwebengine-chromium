@@ -26,8 +26,8 @@
 #include "cc/layers/heads_up_display_layer_impl.h"
 #include "cc/layers/layer.h"
 #include "cc/layers/layer_iterator.h"
+#include "cc/layers/painted_scrollbar_layer.h"
 #include "cc/layers/render_surface.h"
-#include "cc/layers/scrollbar_layer.h"
 #include "cc/resources/prioritized_resource_manager.h"
 #include "cc/resources/ui_resource_client.h"
 #include "cc/trees/layer_tree_host_client.h"
@@ -47,7 +47,7 @@ static int s_num_layer_tree_instances;
 namespace cc {
 
 RendererCapabilities::RendererCapabilities()
-    : best_texture_format(0),
+    : best_texture_format(RGBA_8888),
       using_partial_swap(false),
       using_set_visibility(false),
       using_egl_image(false),
@@ -56,12 +56,36 @@ RendererCapabilities::RendererCapabilities()
       max_texture_size(0),
       avoid_pow2_textures(false),
       using_map_image(false),
-      using_shared_memory_resources(false) {}
+      using_shared_memory_resources(false),
+      using_discard_framebuffer(false) {}
 
 RendererCapabilities::~RendererCapabilities() {}
 
-UIResourceRequest::UIResourceRequest()
-    : type(UIResourceInvalidRequest), id(0), bitmap(NULL) {}
+UIResourceRequest::UIResourceRequest(UIResourceRequestType type,
+                                     UIResourceId id)
+    : type_(type), id_(id) {}
+
+UIResourceRequest::UIResourceRequest(UIResourceRequestType type,
+                                     UIResourceId id,
+                                     const UIResourceBitmap& bitmap)
+    : type_(type), id_(id), bitmap_(new UIResourceBitmap(bitmap)) {}
+
+UIResourceRequest::UIResourceRequest(const UIResourceRequest& request) {
+  (*this) = request;
+}
+
+UIResourceRequest& UIResourceRequest::operator=(
+    const UIResourceRequest& request) {
+  type_ = request.type_;
+  id_ = request.id_;
+  if (request.bitmap_) {
+    bitmap_ = make_scoped_ptr(new UIResourceBitmap(*request.bitmap_.get()));
+  } else {
+    bitmap_.reset();
+  }
+
+  return *this;
+}
 
 UIResourceRequest::~UIResourceRequest() {}
 
@@ -142,6 +166,9 @@ bool LayerTreeHost::InitializeProxy(scoped_ptr<Proxy> proxy) {
 
 LayerTreeHost::~LayerTreeHost() {
   TRACE_EVENT0("cc", "LayerTreeHost::~LayerTreeHost");
+
+  overhang_ui_resource_.reset();
+
   if (root_layer_.get())
     root_layer_->SetLayerTreeHost(NULL);
 
@@ -193,7 +220,7 @@ LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted(bool success) {
       contents_texture_manager_ =
           PrioritizedResourceManager::Create(proxy_.get());
       surface_memory_placeholder_ =
-          contents_texture_manager_->CreateTexture(gfx::Size(), GL_RGBA);
+          contents_texture_manager_->CreateTexture(gfx::Size(), RGBA_8888);
     }
 
     client_->DidInitializeOutputSurface(true);
@@ -326,6 +353,19 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
 
   sync_tree->FindRootScrollLayer();
 
+  // TODO(wjmaclean) For now, not all LTH clients will register viewports, so
+  // only set them when available..
+  if (page_scale_layer_) {
+    DCHECK(inner_viewport_scroll_layer_);
+    sync_tree->SetViewportLayersFromIds(
+        page_scale_layer_->id(),
+        inner_viewport_scroll_layer_->id(),
+        outer_viewport_scroll_layer_ ? outer_viewport_scroll_layer_->id()
+                                     : Layer::INVALID_ID);
+  } else {
+    sync_tree->ClearViewportLayers();
+  }
+
   float page_scale_delta, sent_page_scale_delta;
   if (settings_.impl_side_painting) {
     // Update the delta from the active tree, which may have
@@ -356,7 +396,6 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
         pending_page_scale_animation_->target_offset,
         pending_page_scale_animation_->use_anchor,
         pending_page_scale_animation_->scale,
-        base::TimeTicks::Now(),
         pending_page_scale_animation_->duration);
     pending_page_scale_animation_.reset();
   }
@@ -368,6 +407,11 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
     // the queue is processed in LayerTreeHostImpl::ActivatePendingTree.
     if (!settings_.impl_side_painting)
       sync_tree->ProcessUIResourceRequestQueue();
+  }
+  if (overhang_ui_resource_) {
+    host_impl->SetOverhangUIResource(
+        overhang_ui_resource_->id(),
+        GetUIResourceSize(overhang_ui_resource_->id()));
   }
 
   DCHECK(!sync_tree->ViewportSizeInvalid());
@@ -434,8 +478,6 @@ void LayerTreeHost::DidLoseOutputSurface() {
 
   if (output_surface_lost_)
     return;
-
-  DidLoseUIResources();
 
   num_failed_recreate_attempts_ = 0;
   output_surface_lost_ = true;
@@ -518,6 +560,10 @@ bool LayerTreeHost::CommitRequested() const {
   return proxy_->CommitRequested();
 }
 
+void LayerTreeHost::SetNextCommitWaitsForActivation() {
+  proxy_->SetNextCommitWaitsForActivation();
+}
+
 void LayerTreeHost::SetAnimationEvents(scoped_ptr<AnimationEventsVector> events,
                                        base::Time wall_clock_time) {
   DCHECK(proxy_->IsMainThread());
@@ -545,9 +591,6 @@ void LayerTreeHost::SetAnimationEvents(scoped_ptr<AnimationEventsVector> events,
         case AnimationEvent::PropertyUpdate:
           (*iter).second->NotifyAnimationPropertyUpdate((*events)[event_index]);
           break;
-
-        default:
-          NOTREACHED();
       }
     }
   }
@@ -622,6 +665,22 @@ void LayerTreeHost::SetPageScaleFactorAndLimits(float page_scale_factor,
   SetNeedsCommit();
 }
 
+void LayerTreeHost::SetOverhangBitmap(const SkBitmap& bitmap) {
+  DCHECK(bitmap.width() && bitmap.height());
+  DCHECK_EQ(bitmap.bytesPerPixel(), 4);
+
+  SkBitmap bitmap_copy;
+  if (bitmap.isImmutable()) {
+    bitmap_copy = bitmap;
+  } else {
+    bitmap.copyTo(&bitmap_copy, bitmap.config());
+    bitmap_copy.setImmutable();
+  }
+
+  overhang_ui_resource_ = ScopedUIResource::Create(
+      this, UIResourceBitmap(bitmap_copy, UIResourceBitmap::REPEAT));
+}
+
 void LayerTreeHost::SetVisible(bool visible) {
   if (visible_ == visible)
     return;
@@ -673,19 +732,13 @@ bool LayerTreeHost::InitializeOutputSurfaceIfNeeded() {
   return !output_surface_lost_;
 }
 
-bool LayerTreeHost::UpdateLayers(ResourceUpdateQueue* queue,
-                                 size_t memory_allocation_limit_bytes) {
+bool LayerTreeHost::UpdateLayers(ResourceUpdateQueue* queue) {
   DCHECK(!output_surface_lost_);
 
   if (!root_layer())
     return false;
 
   DCHECK(!root_layer()->parent());
-
-  if (contents_texture_manager_ && memory_allocation_limit_bytes) {
-    contents_texture_manager_->SetMaxMemoryLimitBytes(
-        memory_allocation_limit_bytes);
-  }
 
   return UpdateLayers(root_layer(), queue);
 }
@@ -734,6 +787,9 @@ bool LayerTreeHost::UpdateLayers(Layer* root_layer,
     UpdateHudLayer();
 
     Layer* root_scroll = FindFirstScrollableLayer(root_layer);
+    Layer* page_scale_layer = page_scale_layer_;
+    if (!page_scale_layer && root_scroll)
+      page_scale_layer = root_scroll->parent();
 
     if (hud_layer_) {
       hud_layer_->PrepareForCalculateDrawProperties(
@@ -747,7 +803,7 @@ bool LayerTreeHost::UpdateLayers(Layer* root_layer,
         gfx::Transform(),
         device_scale_factor_,
         page_scale_factor_,
-        root_scroll ? root_scroll->parent() : NULL,
+        page_scale_layer,
         GetRendererCapabilities().max_texture_size,
         settings_.can_use_lcd_text,
         settings_.layer_transforms_should_scale_layer_contents,
@@ -890,7 +946,7 @@ size_t LayerTreeHost::CalculateMemoryForRenderSurfaces(
 
     size_t bytes =
         Resource::MemorySizeBytes(render_surface->content_rect().size(),
-                                  GL_RGBA);
+                                  RGBA_8888);
     contents_texture_bytes += bytes;
 
     if (render_surface_layer->background_filters().IsEmpty())
@@ -900,7 +956,7 @@ size_t LayerTreeHost::CalculateMemoryForRenderSurfaces(
       max_background_texture_bytes = bytes;
     if (!readback_bytes) {
       readback_bytes = Resource::MemorySizeBytes(device_viewport_size_,
-                                                 GL_RGBA);
+                                                 RGBA_8888);
     }
   }
   return readback_bytes + max_background_texture_bytes + contents_texture_bytes;
@@ -1092,12 +1148,6 @@ void LayerTreeHost::UpdateTopControlsState(TopControlsState constraints,
                  animate));
 }
 
-bool LayerTreeHost::BlocksPendingCommit() const {
-  if (!root_layer_.get())
-    return false;
-  return root_layer_->BlocksPendingCommitRecursive();
-}
-
 scoped_ptr<base::Value> LayerTreeHost::AsValue() const {
   scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue());
   state->Set("proxy", proxy_->AsValue().release());
@@ -1128,18 +1178,22 @@ void LayerTreeHost::AnimateLayers(base::TimeTicks time) {
 UIResourceId LayerTreeHost::CreateUIResource(UIResourceClient* client) {
   DCHECK(client);
 
-  UIResourceRequest request;
-  bool resource_lost = false;
-  request.type = UIResourceRequest::UIResourceCreate;
-  request.id = next_ui_resource_id_++;
-
-  DCHECK(ui_resource_client_map_.find(request.id) ==
+  UIResourceId next_id = next_ui_resource_id_++;
+  DCHECK(ui_resource_client_map_.find(next_id) ==
          ui_resource_client_map_.end());
 
-  request.bitmap = client->GetBitmap(request.id, resource_lost);
+  bool resource_lost = false;
+  UIResourceRequest request(UIResourceRequest::UIResourceCreate,
+                            next_id,
+                            client->GetBitmap(next_id, resource_lost));
   ui_resource_request_queue_.push_back(request);
-  ui_resource_client_map_[request.id] = client;
-  return request.id;
+
+  UIResourceClientData data;
+  data.client = client;
+  data.size = request.GetBitmap().GetSize();
+
+  ui_resource_client_map_[request.GetId()] = data;
+  return request.GetId();
 }
 
 // Deletes a UI resource.  May safely be called more than once.
@@ -1148,34 +1202,42 @@ void LayerTreeHost::DeleteUIResource(UIResourceId uid) {
   if (iter == ui_resource_client_map_.end())
     return;
 
-  UIResourceRequest request;
-  request.type = UIResourceRequest::UIResourceDelete;
-  request.id = uid;
+  UIResourceRequest request(UIResourceRequest::UIResourceDelete, uid);
   ui_resource_request_queue_.push_back(request);
-  ui_resource_client_map_.erase(uid);
+  ui_resource_client_map_.erase(iter);
 }
 
-void LayerTreeHost::UIResourceLost(UIResourceId uid) {
-  UIResourceClientMap::iterator iter = ui_resource_client_map_.find(uid);
-  if (iter == ui_resource_client_map_.end())
-    return;
-
-  UIResourceRequest request;
-  bool resource_lost = true;
-  request.type = UIResourceRequest::UIResourceCreate;
-  request.id = uid;
-  request.bitmap = iter->second->GetBitmap(uid, resource_lost);
-  DCHECK(request.bitmap.get());
-  ui_resource_request_queue_.push_back(request);
-}
-
-void LayerTreeHost::DidLoseUIResources() {
-  // When output surface is lost, we need to recreate the resource.
+void LayerTreeHost::RecreateUIResources() {
   for (UIResourceClientMap::iterator iter = ui_resource_client_map_.begin();
        iter != ui_resource_client_map_.end();
        ++iter) {
-    UIResourceLost(iter->first);
+    UIResourceId uid = iter->first;
+    const UIResourceClientData& data = iter->second;
+    bool resource_lost = true;
+    UIResourceRequest request(UIResourceRequest::UIResourceCreate,
+                              uid,
+                              data.client->GetBitmap(uid, resource_lost));
+    ui_resource_request_queue_.push_back(request);
   }
+}
+
+// Returns the size of a resource given its id.
+gfx::Size LayerTreeHost::GetUIResourceSize(UIResourceId uid) const {
+  UIResourceClientMap::const_iterator iter = ui_resource_client_map_.find(uid);
+  if (iter == ui_resource_client_map_.end())
+    return gfx::Size();
+
+  const UIResourceClientData& data = iter->second;
+  return data.size;
+}
+
+void LayerTreeHost::RegisterViewportLayers(
+    scoped_refptr<Layer> page_scale_layer,
+    scoped_refptr<Layer> inner_viewport_scroll_layer,
+    scoped_refptr<Layer> outer_viewport_scroll_layer) {
+  page_scale_layer_ = page_scale_layer;
+  inner_viewport_scroll_layer_ = inner_viewport_scroll_layer;
+  outer_viewport_scroll_layer_ = outer_viewport_scroll_layer;
 }
 
 }  // namespace cc

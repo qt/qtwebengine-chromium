@@ -82,9 +82,9 @@ v8::Handle<v8::Value> throwError(V8ErrorType errorType, const String& message, v
     return V8ThrowException::throwError(errorType, message, isolate);
 }
 
-v8::Handle<v8::Value> throwError(v8::Handle<v8::Value> exception)
+v8::Handle<v8::Value> throwError(v8::Handle<v8::Value> exception, v8::Isolate* isolate)
 {
-    return V8ThrowException::throwError(exception);
+    return V8ThrowException::throwError(exception, isolate);
 }
 
 v8::Handle<v8::Value> throwTypeError(v8::Isolate* isolate)
@@ -161,7 +161,7 @@ PassRefPtr<NodeFilter> toNodeFilter(v8::Handle<v8::Value> callback, v8::Isolate*
     // FIXME: Should pass in appropriate creationContext
     v8::Handle<v8::Object> filterWrapper = toV8(filter, v8::Handle<v8::Object>(), isolate).As<v8::Object>();
 
-    RefPtr<NodeFilterCondition> condition = V8NodeFilterCondition::create(callback, filterWrapper);
+    RefPtr<NodeFilterCondition> condition = V8NodeFilterCondition::create(callback, filterWrapper, isolate);
     filter->setCondition(condition.release());
 
     return filter.release();
@@ -397,7 +397,7 @@ v8::Handle<v8::FunctionTemplate> createRawTemplate(v8::Isolate* isolate)
 
 PassRefPtr<DOMStringList> toDOMStringList(v8::Handle<v8::Value> value, v8::Isolate* isolate)
 {
-    v8::Local<v8::Value> v8Value(v8::Local<v8::Value>::New(value));
+    v8::Local<v8::Value> v8Value(v8::Local<v8::Value>::New(isolate, value));
 
     if (V8DOMStringList::HasInstance(v8Value, isolate, worldType(isolate))) {
         RefPtr<DOMStringList> ret = V8DOMStringList::toNative(v8::Handle<v8::Object>::Cast(v8Value));
@@ -411,7 +411,8 @@ PassRefPtr<DOMStringList> toDOMStringList(v8::Handle<v8::Value> value, v8::Isola
     v8::Local<v8::Array> v8Array = v8::Local<v8::Array>::Cast(v8Value);
     for (size_t i = 0; i < v8Array->Length(); ++i) {
         v8::Local<v8::Value> indexedValue = v8Array->Get(v8::Integer::New(i, isolate));
-        ret->append(toWebCoreString(indexedValue));
+        V8TRYCATCH_FOR_V8STRINGRESOURCE_RETURN(V8StringResource<>, stringValue, indexedValue, 0);
+        ret->append(stringValue);
     }
     return ret.release();
 }
@@ -471,6 +472,18 @@ DOMWindow* activeDOMWindow()
     return toDOMWindow(context);
 }
 
+ScriptExecutionContext* activeScriptExecutionContext()
+{
+    v8::Handle<v8::Context> context = v8::Context::GetCalling();
+    if (context.IsEmpty()) {
+        // Unfortunately, when processing script from a plug-in, we might not
+        // have a calling context. In those cases, we fall back to the
+        // entered context.
+        context = v8::Context::GetEntered();
+    }
+    return toScriptExecutionContext(context);
+}
+
 DOMWindow* firstDOMWindow()
 {
     return toDOMWindow(v8::Context::GetEntered());
@@ -527,9 +540,9 @@ bool handleOutOfMemory()
     return true;
 }
 
-v8::Local<v8::Value> handleMaxRecursionDepthExceeded()
+v8::Local<v8::Value> handleMaxRecursionDepthExceeded(v8::Isolate* isolate)
 {
-    throwError(v8RangeError, "Maximum call stack size exceeded.", v8::Isolate::GetCurrent());
+    throwError(v8RangeError, "Maximum call stack size exceeded.", isolate);
     return v8::Local<v8::Value>();
 }
 
@@ -576,6 +589,22 @@ v8::Local<v8::Value> getHiddenValueFromMainWorldWrapper(v8::Isolate* isolate, Sc
 {
     v8::Local<v8::Object> wrapper = wrappable->newLocalWrapper(isolate);
     return wrapper.IsEmpty() ? v8::Local<v8::Value>() : wrapper->GetHiddenValue(key);
+}
+
+v8::Isolate* toIsolate(ScriptExecutionContext* context)
+{
+    if (context && context->isDocument()) {
+        static v8::Isolate* mainWorldIsolate = 0;
+        if (!mainWorldIsolate)
+            mainWorldIsolate = v8::Isolate::GetCurrent();
+        return mainWorldIsolate;
+    }
+    return v8::Isolate::GetCurrent();
+}
+
+v8::Isolate* toIsolate(Frame* frame)
+{
+    return frame->script()->isolate();
 }
 
 } // namespace WebCore

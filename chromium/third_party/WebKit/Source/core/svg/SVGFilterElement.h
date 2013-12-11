@@ -39,12 +39,14 @@ class SVGFilterElement FINAL : public SVGElement,
                                public SVGURIReference,
                                public SVGExternalResourcesRequired {
 public:
-    static PassRefPtr<SVGFilterElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGFilterElement> create(const QualifiedName&, Document&);
 
     void setFilterRes(unsigned filterResX, unsigned filterResY);
+    void addClient(Node*);
+    void removeClient(Node*);
 
 private:
-    SVGFilterElement(const QualifiedName&, Document*);
+    SVGFilterElement(const QualifiedName&, Document&);
 
     virtual bool needsPendingResourceHandling() const { return false; }
 
@@ -54,7 +56,7 @@ private:
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
 
     virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
-    virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const OVERRIDE;
+    virtual bool childShouldCreateRenderer(const Node& child) const OVERRIDE;
 
     virtual bool selfHasRelativeLengths() const;
 
@@ -73,6 +75,8 @@ private:
         DECLARE_ANIMATED_STRING(Href, href)
         DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
     END_DECLARE_ANIMATED_PROPERTIES
+
+    HashSet<RefPtr<Node> > m_clientsToAdd;
 };
 
 inline SVGFilterElement* toSVGFilterElement(Node* node)

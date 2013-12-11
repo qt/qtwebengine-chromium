@@ -1046,6 +1046,7 @@ static const struct arg_enum_list end_usage_enum[] = {
   {"vbr", VPX_VBR},
   {"cbr", VPX_CBR},
   {"cq",  VPX_CQ},
+  {"q",   VPX_Q},
   {NULL, 0}
 };
 static const arg_def_t end_usage          = ARG_DEF_ENUM(NULL, "end-usage", 1,
@@ -1126,7 +1127,7 @@ static const struct arg_enum_list tuning_enum[] = {
 static const arg_def_t tune_ssim = ARG_DEF_ENUM(NULL, "tune", 1,
                                                 "Material to favor", tuning_enum);
 static const arg_def_t cq_level = ARG_DEF(NULL, "cq-level", 1,
-                                          "Constrained Quality Level");
+                                          "Constant/Constrained Quality level");
 static const arg_def_t max_intra_rate_pct = ARG_DEF(NULL, "max-intra-rate", 1,
                                                     "Max I-frame bitrate (pct)");
 static const arg_def_t lossless = ARG_DEF(NULL, "lossless", 1, "Lossless mode");
@@ -1180,22 +1181,22 @@ static void usage_exit() {
           exec_name);
 
   fprintf(stderr, "\nOptions:\n");
-  arg_show_usage(stdout, main_args);
+  arg_show_usage(stderr, main_args);
   fprintf(stderr, "\nEncoder Global Options:\n");
-  arg_show_usage(stdout, global_args);
+  arg_show_usage(stderr, global_args);
   fprintf(stderr, "\nRate Control Options:\n");
-  arg_show_usage(stdout, rc_args);
+  arg_show_usage(stderr, rc_args);
   fprintf(stderr, "\nTwopass Rate Control Options:\n");
-  arg_show_usage(stdout, rc_twopass_args);
+  arg_show_usage(stderr, rc_twopass_args);
   fprintf(stderr, "\nKeyframe Placement Options:\n");
-  arg_show_usage(stdout, kf_args);
+  arg_show_usage(stderr, kf_args);
 #if CONFIG_VP8_ENCODER
   fprintf(stderr, "\nVP8 Specific Options:\n");
-  arg_show_usage(stdout, vp8_args);
+  arg_show_usage(stderr, vp8_args);
 #endif
 #if CONFIG_VP9_ENCODER
   fprintf(stderr, "\nVP9 Specific Options:\n");
-  arg_show_usage(stdout, vp9_args);
+  arg_show_usage(stderr, vp9_args);
 #endif
   fprintf(stderr, "\nStream timebase (--timebase):\n"
           "  The desired precision of timestamps in the output, expressed\n"
@@ -1688,8 +1689,10 @@ static void parse_global_config(struct global_config *global, char **argv) {
   /* Initialize default parameters */
   memset(global, 0, sizeof(*global));
   global->codec = codecs;
-  global->passes = 1;
+  global->passes = 0;
   global->use_i420 = 1;
+  /* Assign default deadline to good quality */
+  global->deadline = VPX_DL_GOOD_QUALITY;
 
   for (argi = argj = argv; (*argj = *argi); argi += arg.argv_step) {
     arg.argv_step = 1;
@@ -1761,6 +1764,11 @@ static void parse_global_config(struct global_config *global, char **argv) {
   }
 
   /* Validate global config */
+  if (global->passes == 0) {
+    // Make default VP9 passes = 2 until there is a better quality 1-pass
+    // encoder
+    global->passes = (global->codec->iface == vpx_codec_vp9_cx ? 2 : 1);
+  }
 
   if (global->pass) {
     /* DWIM: Assume the user meant passes=2 if pass=2 is specified */
@@ -2631,8 +2639,8 @@ int main(int argc, const char **argv_) {
                                          &global.framerate));
     }
 
-    FOREACH_STREAM(open_output_file(stream, &global));
     FOREACH_STREAM(setup_pass(stream, &global, pass));
+    FOREACH_STREAM(open_output_file(stream, &global));
     FOREACH_STREAM(initialize_encoder(stream, &global));
 
     frame_avail = 1;

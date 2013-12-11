@@ -14,7 +14,7 @@
 #import "ui/base/cocoa/hover_image_button.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/base/text/text_elider.h"
+#include "ui/gfx/text_elider.h"
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/message_center_style.h"
 #include "ui/message_center/notification.h"
@@ -150,6 +150,14 @@
   [controller_ notificationClicked];
 }
 
+- (NSView*)hitTest:(NSPoint)point {
+  // Route the mouse click events on NSTextView to the container view.
+  NSView* hitView = [super hitTest:point];
+  if (hitView)
+    return [hitView isKindOfClass:[NSTextView class]] ? self : hitView;
+  return nil;
+}
+
 - (BOOL)accessibilityIsIgnored {
   return NO;
 }
@@ -181,12 +189,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 @interface MCNotificationController (Private)
-// Returns a string with item's title in title color and item's message in
-// message color.
-+ (NSAttributedString*)
-    attributedStringForItem:(const message_center::NotificationItem&)item
-                       font:(NSFont*)font;
-
 // Configures a NSBox to be borderless, titleless, and otherwise appearance-
 // free.
 - (void)configureCustomBox:(NSBox*)box;
@@ -203,20 +205,24 @@
 // Initializes message_ in the given frame.
 - (void)configureBodyInFrame:(NSRect)rootFrame;
 
-// Creates a NSTextField that the caller owns configured as a label in a
+// Initializes contextMessage_ in the given frame.
+- (void)configureContextMessageInFrame:(NSRect)rootFrame;
+
+// Creates a NSTextView that the caller owns configured as a label in a
 // notification.
-- (NSTextField*)newLabelWithFrame:(NSRect)frame;
+- (NSTextView*)newLabelWithFrame:(NSRect)frame;
 
 // Gets the rectangle in which notification content should be placed. This
 // rectangle is to the right of the icon and left of the control buttons.
 // This depends on the icon_ and closeButton_ being initialized.
 - (NSRect)currentContentRect;
 
-// Returns the wrapped text that could fit within the given text field with not
-// more than the given number of lines. The Ellipsis could be added at the end
-// of the last line if it is too long.
+// Returns the wrapped text that could fit within the content rect with not
+// more than the given number of lines. The wrapped text would be painted using
+// the given font. The Ellipsis could be added at the end of the last line if
+// it is too long.
 - (string16)wrapText:(const string16&)text
-            forField:(NSTextField*)field
+             forFont:(NSFont*)font
     maxNumberOfLines:(size_t)lines;
 @end
 
@@ -260,6 +266,10 @@
   [self configureBodyInFrame:rootFrame];
   [rootView addSubview:message_];
 
+  // Create the context message body.
+  [self configureContextMessageInFrame:rootFrame];
+  [rootView addSubview:contextMessage_];
+
   // Populate the data.
   [self updateNotification:notification_];
 }
@@ -285,48 +295,78 @@
 
   CGFloat messageTopGap =
       roundf([[message_ font] ascender] - [[message_ font] capHeight]);
+  CGFloat messageBottomGap = roundf(fabs([[message_ font] descender]));
   CGFloat messagePadding =
       message_center::kTextTopPadding - titleBottomGap - messageTopGap;
 
+  CGFloat contextMessageTopGap = roundf(
+      [[contextMessage_ font] ascender] - [[contextMessage_ font] capHeight]);
+  CGFloat contextMessagePadding =
+      message_center::kTextTopPadding - messageBottomGap - contextMessageTopGap;
+
   // Set the title and recalculate the frame.
-  [title_ setStringValue:base::SysUTF16ToNSString(
+  [title_ setString:base::SysUTF16ToNSString(
       [self wrapText:notification_->title()
-            forField:title_
+             forFont:[title_ font]
        maxNumberOfLines:message_center::kTitleLineLimit])];
   [title_ sizeToFit];
   NSRect titleFrame = [title_ frame];
   titleFrame.origin.y = NSMaxY(rootFrame) - titlePadding - NSHeight(titleFrame);
 
   // Set the message and recalculate the frame.
-  [message_ setStringValue:base::SysUTF16ToNSString(
+  [message_ setString:base::SysUTF16ToNSString(
       [self wrapText:notification_->message()
-            forField:title_
+             forFont:[message_ font]
        maxNumberOfLines:message_center::kMessageExpandedLineLimit])];
-  [message_ setHidden:NO];
   [message_ sizeToFit];
   NSRect messageFrame = [message_ frame];
-  messageFrame.origin.y =
-      NSMinY(titleFrame) - messagePadding - NSHeight(messageFrame);
-  messageFrame.size.height = NSHeight([message_ frame]);
 
-  // Create the list item views (up to a maximum).
-  [listItemView_ removeFromSuperview];
+  // If there are list items, then the message_ view should not be displayed.
   const std::vector<message_center::NotificationItem>& items =
       notification->items();
-  NSRect listFrame = NSZeroRect;
   if (items.size() > 0) {
-    // If there are list items, then the message_ view should not be displayed.
     [message_ setHidden:YES];
     messageFrame.origin.y = titleFrame.origin.y;
     messageFrame.size.height = 0;
+  } else {
+    [message_ setHidden:NO];
+    messageFrame.origin.y =
+        NSMinY(titleFrame) - messagePadding - NSHeight(messageFrame);
+    messageFrame.size.height = NSHeight([message_ frame]);
+  }
 
+  // Set the context message and recalculate the frame.
+  [contextMessage_ setString:base::SysUTF16ToNSString(
+      [self wrapText:notification_->context_message()
+             forFont:[contextMessage_ font]
+       maxNumberOfLines:message_center::kContextMessageLineLimit])];
+  [contextMessage_ sizeToFit];
+  NSRect contextMessageFrame = [contextMessage_ frame];
+
+  if (notification_->context_message().empty()) {
+    [contextMessage_ setHidden:YES];
+    contextMessageFrame.origin.y = messageFrame.origin.y;
+    contextMessageFrame.size.height = 0;
+  } else {
+    [contextMessage_ setHidden:NO];
+    contextMessageFrame.origin.y =
+        NSMinY(messageFrame) -
+        contextMessagePadding -
+        NSHeight(contextMessageFrame);
+    contextMessageFrame.size.height = NSHeight([contextMessage_ frame]);
+  }
+
+  // Create the list item views (up to a maximum).
+  [listView_ removeFromSuperview];
+  NSRect listFrame = NSZeroRect;
+  if (items.size() > 0) {
     listFrame = [self currentContentRect];
     listFrame.origin.y = 0;
     listFrame.size.height = 0;
-    listItemView_.reset([[NSView alloc] initWithFrame:listFrame]);
-    [listItemView_ accessibilitySetOverrideValue:NSAccessibilityListRole
+    listView_.reset([[NSView alloc] initWithFrame:listFrame]);
+    [listView_ accessibilitySetOverrideValue:NSAccessibilityListRole
                                     forAttribute:NSAccessibilityRoleAttribute];
-    [listItemView_
+    [listView_
         accessibilitySetOverrideValue:NSAccessibilityContentListSubrole
                          forAttribute:NSAccessibilitySubroleAttribute];
     CGFloat y = 0;
@@ -337,23 +377,50 @@
     const int kNumNotifications =
         std::min(items.size(), message_center::kNotificationMaximumItems);
     for (int i = kNumNotifications - 1; i >= 0; --i) {
-      NSTextField* field = [self newLabelWithFrame:
+      NSTextView* itemView = [self newLabelWithFrame:
           NSMakeRect(0, y, NSWidth(listFrame), lineHeight)];
-      [[field cell] setUsesSingleLineMode:YES];
-      [field setAttributedStringValue:
-          [MCNotificationController attributedStringForItem:items[i]
-                                                       font:font]];
-      [listItemView_ addSubview:field];
+      [itemView setFont:font];
+
+      // Disable the word-wrap in order to show the text in single line.
+      [[itemView textContainer] setContainerSize:NSMakeSize(FLT_MAX, FLT_MAX)];
+      [[itemView textContainer] setWidthTracksTextView:NO];
+
+      // Construct the text from the title and message.
+      string16 text =
+          items[i].title + base::UTF8ToUTF16(" ") + items[i].message;
+      string16 ellidedText =
+          [self wrapText:text forFont:font maxNumberOfLines:1];
+      [itemView setString:base::SysUTF16ToNSString(ellidedText)];
+
+      // Use dim color for the title part.
+      NSColor* titleColor =
+          gfx::SkColorToCalibratedNSColor(message_center::kRegularTextColor);
+      NSRange titleRange = NSMakeRange(
+          0,
+          std::min(ellidedText.size(), items[i].title.size()));
+      [itemView setTextColor:titleColor range:titleRange];
+
+      // Use dim color for the message part if it has not been truncated.
+      if (ellidedText.size() > items[i].title.size() + 1) {
+        NSColor* messageColor =
+            gfx::SkColorToCalibratedNSColor(message_center::kDimTextColor);
+        NSRange messageRange = NSMakeRange(
+            items[i].title.size() + 1,
+            ellidedText.size() - items[i].title.size() - 1);
+        [itemView setTextColor:messageColor range:messageRange];
+      }
+
+      [listView_ addSubview:itemView];
       y += lineHeight;
     }
     // TODO(thakis): The spacing is not completely right.
     CGFloat listTopPadding =
-        message_center::kTextTopPadding - messageTopGap;
+        message_center::kTextTopPadding - contextMessageTopGap;
     listFrame.size.height = y;
     listFrame.origin.y =
-        NSMinY(titleFrame) - listTopPadding - NSHeight(listFrame);
-    [listItemView_ setFrame:listFrame];
-    [[self view] addSubview:listItemView_];
+        NSMinY(contextMessageFrame) - listTopPadding - NSHeight(listFrame);
+    [listView_ setFrame:listFrame];
+    [[self view] addSubview:listView_];
   }
 
   // Create the progress bar view if needed.
@@ -361,7 +428,7 @@
   NSRect progressBarFrame = NSZeroRect;
   if (notification->type() == message_center::NOTIFICATION_TYPE_PROGRESS) {
     progressBarFrame = [self currentContentRect];
-    progressBarFrame.origin.y = NSMinY(messageFrame) -
+    progressBarFrame.origin.y = NSMinY(contextMessageFrame) -
         message_center::kProgressBarTopPadding -
         message_center::kProgressBarThickness;
     progressBarFrame.size.height = message_center::kProgressBarThickness;
@@ -376,8 +443,8 @@
 
   // If the bottom-most element so far is out of the rootView's bounds, resize
   // the view.
-  CGFloat minY = NSMinY(messageFrame);
-  if (listItemView_ && NSMinY(listFrame) < minY)
+  CGFloat minY = NSMinY(contextMessageFrame);
+  if (listView_ && NSMinY(listFrame) < minY)
     minY = NSMinY(listFrame);
   if (progressBarView_ && NSMinY(progressBarFrame) < minY)
     minY = NSMinY(progressBarFrame);
@@ -386,6 +453,7 @@
     rootFrame.size.height += delta;
     titleFrame.origin.y += delta;
     messageFrame.origin.y += delta;
+    contextMessageFrame.origin.y += delta;
     listFrame.origin.y += delta;
     progressBarFrame.origin.y += delta;
   }
@@ -456,6 +524,7 @@
   rootFrame.size.height += NSHeight(frame);
   titleFrame.origin.y += NSHeight(frame);
   messageFrame.origin.y += NSHeight(frame);
+  contextMessageFrame.origin.y += NSHeight(frame);
   listFrame.origin.y += NSHeight(frame);
   progressBarFrame.origin.y += NSHeight(frame);
 
@@ -467,6 +536,7 @@
     rootFrame.size.height += bottomAdjust;
     titleFrame.origin.y += bottomAdjust;
     messageFrame.origin.y += bottomAdjust;
+    contextMessageFrame.origin.y += bottomAdjust;
     listFrame.origin.y += bottomAdjust;
     progressBarFrame.origin.y += bottomAdjust;
   }
@@ -474,7 +544,8 @@
   [[self view] setFrame:rootFrame];
   [title_ setFrame:titleFrame];
   [message_ setFrame:messageFrame];
-  [listItemView_ setFrame:listFrame];
+  [contextMessage_ setFrame:contextMessageFrame];
+  [listView_ setFrame:listFrame];
   [progressBarView_ setFrame:progressBarFrame];
 
   return rootFrame;
@@ -503,42 +574,6 @@
 }
 
 // Private /////////////////////////////////////////////////////////////////////
-
-+ (NSAttributedString*)
-    attributedStringForItem:(const message_center::NotificationItem&)item
-                       font:(NSFont*)font {
-  NSString* text = base::SysUTF16ToNSString(
-      item.title + base::UTF8ToUTF16(" ") + item.message);
-  NSMutableAttributedString* formattedText =
-      [[[NSMutableAttributedString alloc] initWithString:text] autorelease];
-
-  base::scoped_nsobject<NSMutableParagraphStyle> paragraphStyle(
-      [[NSParagraphStyle defaultParagraphStyle] mutableCopy]);
-  [paragraphStyle setLineBreakMode:NSLineBreakByTruncatingTail];
-  NSDictionary* sharedAttribs = @{
-    NSFontAttributeName : font,
-    NSParagraphStyleAttributeName : paragraphStyle,
-  };
-  const NSRange range = NSMakeRange(0, [formattedText length] - 1);
-  [formattedText addAttributes:sharedAttribs range:range];
-
-  NSDictionary* titleAttribs = @{
-    NSForegroundColorAttributeName :
-        gfx::SkColorToCalibratedNSColor(message_center::kRegularTextColor),
-  };
-  const NSRange titleRange = NSMakeRange(0, item.title.size());
-  [formattedText addAttributes:titleAttribs range:titleRange];
-
-  NSDictionary* messageAttribs = @{
-    NSForegroundColorAttributeName :
-        gfx::SkColorToCalibratedNSColor(message_center::kDimTextColor),
-  };
-  const NSRange messageRange =
-      NSMakeRange(item.title.size() + 1, item.message.size());
-  [formattedText addAttributes:messageAttribs range:messageRange];
-
-  return formattedText;
-}
 
 - (void)configureCustomBox:(NSBox*)box {
   [box setBoxType:NSBoxCustom];
@@ -611,17 +646,29 @@
   message_.reset([self newLabelWithFrame:frame]);
   [message_ setAutoresizingMask:NSViewMinYMargin];
   [message_ setTextColor:gfx::SkColorToCalibratedNSColor(
-      message_center::kDimTextColor)];
+      message_center::kRegularTextColor)];
   [message_ setFont:
       [NSFont messageFontOfSize:message_center::kMessageFontSize]];
 }
 
-- (NSTextField*)newLabelWithFrame:(NSRect)frame {
-  NSTextField* label = [[NSTextField alloc] initWithFrame:frame];
+- (void)configureContextMessageInFrame:(NSRect)rootFrame {
+  NSRect frame = [self currentContentRect];
+  frame.size.height = 0;
+  contextMessage_.reset([self newLabelWithFrame:frame]);
+  [contextMessage_ setAutoresizingMask:NSViewMinYMargin];
+  [contextMessage_ setTextColor:gfx::SkColorToCalibratedNSColor(
+      message_center::kDimTextColor)];
+  [contextMessage_ setFont:
+      [NSFont messageFontOfSize:message_center::kMessageFontSize]];
+}
+
+- (NSTextView*)newLabelWithFrame:(NSRect)frame {
+  NSTextView* label = [[NSTextView alloc] initWithFrame:frame];
   [label setDrawsBackground:NO];
-  [label setBezeled:NO];
   [label setEditable:NO];
   [label setSelectable:NO];
+  [label setTextContainerInset:NSMakeSize(0.0f, 0.0f)];
+  [[label textContainer] setLineFragmentPadding:0.0f];
   return label;
 }
 
@@ -638,27 +685,33 @@
 }
 
 - (string16)wrapText:(const string16&)text
-            forField:(NSTextField*)field
+             forFont:(NSFont*)nsfont
     maxNumberOfLines:(size_t)lines {
-  gfx::Font font([field font]);
+  if (text.empty())
+    return text;
+  gfx::Font font(nsfont);
   int width = NSWidth([self currentContentRect]);
   int height = (lines + 1) * font.GetHeight();
 
   std::vector<string16> wrapped;
-  ui::ElideRectangleText(text, font, width, height,
-                         ui::WRAP_LONG_WORDS, &wrapped);
+  gfx::ElideRectangleText(text, font, width, height,
+                          gfx::WRAP_LONG_WORDS, &wrapped);
+
+  // This could be possible when the input text contains only spaces.
+  if (wrapped.empty())
+    return string16();
 
   if (wrapped.size() > lines) {
     // Add an ellipsis to the last line. If this ellipsis makes the last line
-    // too wide, that line will be further elided by the ui::ElideText below.
-    string16 last = wrapped[lines - 1] + UTF8ToUTF16(ui::kEllipsis);
+    // too wide, that line will be further elided by the gfx::ElideText below.
+    string16 last = wrapped[lines - 1] + UTF8ToUTF16(gfx::kEllipsis);
     if (font.GetStringWidth(last) > width)
-      last = ui::ElideText(last, font, width, ui::ELIDE_AT_END);
+      last = gfx::ElideText(last, font, width, gfx::ELIDE_AT_END);
     wrapped.resize(lines - 1);
     wrapped.push_back(last);
   }
 
-  return JoinString(wrapped, '\n');
+  return lines == 1 ? wrapped[0] : JoinString(wrapped, '\n');
 }
 
 @end

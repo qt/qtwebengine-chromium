@@ -27,10 +27,10 @@
 #include "core/dom/ActiveDOMObject.h"
 #include "core/dom/EventListener.h"
 #include "core/dom/EventNames.h"
-#include "core/dom/EventTarget.h"
 #include "core/loader/ThreadableLoaderClient.h"
 #include "core/platform/network/FormData.h"
 #include "core/platform/network/ResourceResponse.h"
+#include "core/xml/XMLHttpRequestEventTarget.h"
 #include "core/xml/XMLHttpRequestProgressEventThrottle.h"
 #include "weborigin/SecurityOrigin.h"
 #include "wtf/OwnPtr.h"
@@ -46,12 +46,13 @@ class ExceptionState;
 class ResourceRequest;
 class SecurityOrigin;
 class SharedBuffer;
+class Stream;
 class TextResourceDecoder;
 class ThreadableLoader;
 
 typedef int ExceptionCode;
 
-class XMLHttpRequest : public ScriptWrappable, public RefCounted<XMLHttpRequest>, public EventTarget, private ThreadableLoaderClient, public ActiveDOMObject {
+class XMLHttpRequest : public ScriptWrappable, public RefCounted<XMLHttpRequest>, public XMLHttpRequestEventTarget, private ThreadableLoaderClient, public ActiveDOMObject {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     static PassRefPtr<XMLHttpRequest> create(ScriptExecutionContext*, PassRefPtr<SecurityOrigin> = 0);
@@ -69,20 +70,26 @@ public:
     enum ResponseTypeCode {
         ResponseTypeDefault,
         ResponseTypeText,
+        ResponseTypeJSON,
         ResponseTypeDocument,
         ResponseTypeBlob,
-        ResponseTypeArrayBuffer
+        ResponseTypeArrayBuffer,
+        ResponseTypeStream
+    };
+
+    enum DropProtection {
+        DropProtectionSync,
+        DropProtectionAsync,
     };
 
     virtual void contextDestroyed();
-    virtual void didTimeout();
     virtual bool canSuspend() const;
     virtual void suspend(ReasonForSuspension);
     virtual void resume();
     virtual void stop();
 
-    virtual const AtomicString& interfaceName() const;
-    virtual ScriptExecutionContext* scriptExecutionContext() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual ScriptExecutionContext* scriptExecutionContext() const OVERRIDE;
 
     const KURL& url() const { return m_url; }
     String statusText(ExceptionState&) const;
@@ -107,8 +114,10 @@ public:
     String getAllResponseHeaders(ExceptionState&) const;
     String getResponseHeader(const AtomicString& name, ExceptionState&) const;
     ScriptString responseText(ExceptionState&);
+    ScriptString responseJSONSource();
     Document* responseXML(ExceptionState&);
-    Blob* responseBlob(ExceptionState&);
+    Blob* responseBlob();
+    Stream* responseStream();
     unsigned long timeout() const { return m_timeoutMilliseconds; }
     void setTimeout(unsigned long timeout, ExceptionState&);
 
@@ -124,7 +133,7 @@ public:
     ResponseTypeCode responseTypeCode() const { return m_responseTypeCode; }
 
     // response attribute has custom getter.
-    ArrayBuffer* responseArrayBuffer(ExceptionState&);
+    ArrayBuffer* responseArrayBuffer();
 
     void setLastSendLineNumber(unsigned lineNumber) { m_lastSendLineNumber = lineNumber; }
     void setLastSendURL(const String& url) { m_lastSendURL = url; }
@@ -132,13 +141,6 @@ public:
     XMLHttpRequestUpload* upload();
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(readystatechange);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(abort);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(error);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(load);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(loadend);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(loadstart);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(progress);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(timeout);
 
     using RefCounted<XMLHttpRequest>::ref;
     using RefCounted<XMLHttpRequest>::deref;
@@ -146,10 +148,8 @@ public:
 private:
     XMLHttpRequest(ScriptExecutionContext*, PassRefPtr<SecurityOrigin>);
 
-    virtual void refEventTarget() { ref(); }
-    virtual void derefEventTarget() { deref(); }
-    virtual EventTargetData* eventTargetData();
-    virtual EventTargetData* ensureEventTargetData();
+    virtual void refEventTarget() OVERRIDE { ref(); }
+    virtual void derefEventTarget() OVERRIDE { deref(); }
 
     Document* document() const;
     SecurityOrigin* securityOrigin() const;
@@ -172,20 +172,31 @@ private:
     String getRequestHeader(const AtomicString& name) const;
     void setRequestHeaderInternal(const AtomicString& name, const String& value);
 
+    // Changes m_state and dispatches a readyStateChange event if new m_state
+    // value is different from last one.
     void changeState(State newState);
     void callReadyStateChangeListener();
     void dropProtectionSoon();
     void dropProtection(Timer<XMLHttpRequest>* = 0);
-    void internalAbort();
+    // Returns false iff reentry happened and a new load is started.
+    bool internalAbort(DropProtection = DropProtectionSync);
     void clearResponse();
     void clearResponseBuffers();
     void clearRequest();
 
     void createRequest(ExceptionState&);
 
-    void genericError();
-    void networkError();
-    void abortError();
+    // Dispatches an event of the specified type to m_upload and
+    // m_progressEventThrottle.
+    void dispatchEventAndLoadEnd(const AtomicString&);
+    // Does clean up common for all kind of didFail() call.
+    void handleDidFailGeneric();
+    // Handles didFail() call not caused by cancellation or timeout.
+    void handleNetworkError();
+    // Handles didFail() call triggered by m_loader->cancel().
+    void handleDidCancel();
+    // Handles didFail() call for timeout.
+    void handleDidTimeout();
 
     OwnPtr<XMLHttpRequestUpload> m_upload;
 
@@ -198,6 +209,7 @@ private:
     bool m_includeCredentials;
     unsigned long m_timeoutMilliseconds;
     RefPtr<Blob> m_responseBlob;
+    RefPtr<Stream> m_responseStream;
 
     RefPtr<ThreadableLoader> m_loader;
     State m_state;
@@ -220,16 +232,16 @@ private:
     bool m_uploadComplete;
 
     bool m_sameOriginRequest;
-    bool m_allowCrossOriginRequests;
 
     // Used for onprogress tracking
     long long m_receivedLength;
 
     unsigned m_lastSendLineNumber;
     String m_lastSendURL;
+    // An exception to throw in synchronous mode. It's set when failure
+    // notification is received from m_loader and thrown at the end of send() if
+    // any.
     ExceptionCode m_exceptionCode;
-
-    EventTargetData m_eventTargetData;
 
     XMLHttpRequestProgressEventThrottle m_progressEventThrottle;
 

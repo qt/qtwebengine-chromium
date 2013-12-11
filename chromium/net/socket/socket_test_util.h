@@ -13,6 +13,7 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/logging.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
@@ -592,17 +593,17 @@ class MockClientSocketFactory : public ClientSocketFactory {
   }
 
   // ClientSocketFactory
-  virtual DatagramClientSocket* CreateDatagramClientSocket(
+  virtual scoped_ptr<DatagramClientSocket> CreateDatagramClientSocket(
       DatagramSocket::BindType bind_type,
       const RandIntCallback& rand_int_cb,
       NetLog* net_log,
       const NetLog::Source& source) OVERRIDE;
-  virtual StreamSocket* CreateTransportClientSocket(
+  virtual scoped_ptr<StreamSocket> CreateTransportClientSocket(
       const AddressList& addresses,
       NetLog* net_log,
       const NetLog::Source& source) OVERRIDE;
-  virtual SSLClientSocket* CreateSSLClientSocket(
-      ClientSocketHandle* transport_socket,
+  virtual scoped_ptr<SSLClientSocket> CreateSSLClientSocket(
+      scoped_ptr<ClientSocketHandle> transport_socket,
       const HostPortPair& host_and_port,
       const SSLConfig& ssl_config,
       const SSLClientSocketContext& context) OVERRIDE;
@@ -857,7 +858,7 @@ class DeterministicMockTCPClientSocket
 class MockSSLClientSocket : public MockClientSocket, public AsyncSocket {
  public:
   MockSSLClientSocket(
-      ClientSocketHandle* transport_socket,
+      scoped_ptr<ClientSocketHandle> transport_socket,
       const HostPortPair& host_and_port,
       const SSLConfig& ssl_config,
       SSLSocketDataProvider* socket);
@@ -1001,11 +1002,12 @@ class ClientSocketPoolTest {
   ClientSocketPoolTest();
   ~ClientSocketPoolTest();
 
-  template <typename PoolType, typename SocketParams>
-  int StartRequestUsingPool(PoolType* socket_pool,
-                            const std::string& group_name,
-                            RequestPriority priority,
-                            const scoped_refptr<SocketParams>& socket_params) {
+  template <typename PoolType>
+  int StartRequestUsingPool(
+      PoolType* socket_pool,
+      const std::string& group_name,
+      RequestPriority priority,
+      const scoped_refptr<typename PoolType::SocketParams>& socket_params) {
     DCHECK(socket_pool);
     TestSocketRequest* request = new TestSocketRequest(&request_order_,
                                                        &completion_count_);
@@ -1045,11 +1047,20 @@ class ClientSocketPoolTest {
   size_t completion_count_;
 };
 
+class MockTransportSocketParams
+    : public base::RefCounted<MockTransportSocketParams> {
+ private:
+  friend class base::RefCounted<MockTransportSocketParams>;
+  ~MockTransportSocketParams() {}
+};
+
 class MockTransportClientSocketPool : public TransportClientSocketPool {
  public:
+  typedef MockTransportSocketParams SocketParams;
+
   class MockConnectJob {
    public:
-    MockConnectJob(StreamSocket* socket, ClientSocketHandle* handle,
+    MockConnectJob(scoped_ptr<StreamSocket> socket, ClientSocketHandle* handle,
                    const CompletionCallback& callback);
     ~MockConnectJob();
 
@@ -1074,6 +1085,9 @@ class MockTransportClientSocketPool : public TransportClientSocketPool {
 
   virtual ~MockTransportClientSocketPool();
 
+  RequestPriority last_request_priority() const {
+    return last_request_priority_;
+  }
   int release_count() const { return release_count_; }
   int cancel_count() const { return cancel_count_; }
 
@@ -1088,11 +1102,13 @@ class MockTransportClientSocketPool : public TransportClientSocketPool {
   virtual void CancelRequest(const std::string& group_name,
                              ClientSocketHandle* handle) OVERRIDE;
   virtual void ReleaseSocket(const std::string& group_name,
-                             StreamSocket* socket, int id) OVERRIDE;
+                             scoped_ptr<StreamSocket> socket,
+                             int id) OVERRIDE;
 
  private:
   ClientSocketFactory* client_socket_factory_;
   ScopedVector<MockConnectJob> job_list_;
+  RequestPriority last_request_priority_;
   int release_count_;
   int cancel_count_;
 
@@ -1123,17 +1139,17 @@ class DeterministicMockClientSocketFactory : public ClientSocketFactory {
   }
 
   // ClientSocketFactory
-  virtual DatagramClientSocket* CreateDatagramClientSocket(
+  virtual scoped_ptr<DatagramClientSocket> CreateDatagramClientSocket(
       DatagramSocket::BindType bind_type,
       const RandIntCallback& rand_int_cb,
       NetLog* net_log,
       const NetLog::Source& source) OVERRIDE;
-  virtual StreamSocket* CreateTransportClientSocket(
+  virtual scoped_ptr<StreamSocket> CreateTransportClientSocket(
       const AddressList& addresses,
       NetLog* net_log,
       const NetLog::Source& source) OVERRIDE;
-  virtual SSLClientSocket* CreateSSLClientSocket(
-      ClientSocketHandle* transport_socket,
+  virtual scoped_ptr<SSLClientSocket> CreateSSLClientSocket(
+      scoped_ptr<ClientSocketHandle> transport_socket,
       const HostPortPair& host_and_port,
       const SSLConfig& ssl_config,
       const SSLClientSocketContext& context) OVERRIDE;
@@ -1170,7 +1186,8 @@ class MockSOCKSClientSocketPool : public SOCKSClientSocketPool {
   virtual void CancelRequest(const std::string& group_name,
                              ClientSocketHandle* handle) OVERRIDE;
   virtual void ReleaseSocket(const std::string& group_name,
-                             StreamSocket* socket, int id) OVERRIDE;
+                             scoped_ptr<StreamSocket> socket,
+                             int id) OVERRIDE;
 
  private:
   TransportClientSocketPool* const transport_pool_;

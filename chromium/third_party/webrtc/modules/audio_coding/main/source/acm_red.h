@@ -15,6 +15,8 @@
 
 namespace webrtc {
 
+namespace acm1 {
+
 class ACMRED : public ACMGenericCodec {
  public:
   explicit ACMRED(int16_t codec_id);
@@ -24,7 +26,7 @@ class ACMRED : public ACMGenericCodec {
   virtual ACMGenericCodec* CreateInstance(void) OVERRIDE;
 
   virtual int16_t InternalEncode(uint8_t* bitstream,
-                         int16_t* bitstream_len_byte) OVERRIDE;
+                                 int16_t* bitstream_len_byte) OVERRIDE;
 
   virtual int16_t InternalInitEncoder(
       WebRtcACMCodecParams* codec_params) OVERRIDE;
@@ -34,13 +36,13 @@ class ACMRED : public ACMGenericCodec {
 
  protected:
   virtual int16_t DecodeSafe(uint8_t* bitstream,
-                     int16_t bitstream_len_byte,
-                     int16_t* audio,
-                     int16_t* audio_samples,
-                     int8_t* speech_type) OVERRIDE;
+                             int16_t bitstream_len_byte,
+                             int16_t* audio,
+                             int16_t* audio_samples,
+                             int8_t* speech_type) OVERRIDE;
 
   virtual int32_t CodecDef(WebRtcNetEQ_CodecDef& codec_def,
-                   const CodecInst& codec_inst) OVERRIDE;
+                           const CodecInst& codec_inst) OVERRIDE;
 
   virtual void DestructEncoderSafe() OVERRIDE;
 
@@ -52,6 +54,8 @@ class ACMRED : public ACMGenericCodec {
 
   virtual void InternalDestructEncoderInst(void* ptr_inst) OVERRIDE;
 };
+
+}  // namespace acm1
 
 }  // namespace webrtc
 

@@ -22,6 +22,7 @@
 #include "content/browser/devtools/devtools_browser_target.h"
 #include "content/browser/devtools/devtools_protocol.h"
 #include "content/browser/devtools/devtools_protocol_constants.h"
+#include "content/browser/devtools/devtools_system_info_handler.h"
 #include "content/browser/devtools/devtools_tracing_handler.h"
 #include "content/browser/devtools/tethering_handler.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -347,7 +348,7 @@ void DevToolsHttpHandlerImpl::OnHttpRequest(
   if (!frontend_dir.empty()) {
     base::FilePath path = frontend_dir.AppendASCII(filename);
     std::string data;
-    file_util::ReadFileToString(path, &data);
+    base::ReadFileToString(path, &data);
     server_->Send200(connection_id, data, mime_type);
     return;
   }
@@ -383,6 +384,10 @@ void DevToolsHttpHandlerImpl::OnWebSocketRequest(
         TetheringHandler::kDomain,
         new TetheringHandler(delegate_.get()),
         false /* handle on this thread */);
+    browser_target_->RegisterDomainHandler(
+        devtools::SystemInfo::kName,
+        new DevToolsSystemInfoHandler(),
+        true /* handle on UI thread */);
 
     server_->AcceptWebSocket(connection_id, request);
     return;

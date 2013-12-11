@@ -49,16 +49,10 @@ base.exportTo('tracing.tracks', function() {
       return this.children.length > 0;
     },
 
-    applyCategoryFilter_: function() {
-      this.updateContents_();
-    },
-
     updateContents_: function() {
       this.textContent = '';
-      if (!this.model_ || !this.categoryFilter)
+      if (!this.model_)
         return;
-
-      var categoryFilter = this.categoryFilter;
 
       this.appendKernelTrack_();
 
@@ -68,45 +62,37 @@ base.exportTo('tracing.tracks', function() {
 
       for (var i = 0; i < processes.length; ++i) {
         var process = processes[i];
-        if (!categoryFilter.matchProcess(process))
-          return;
 
         var track = new tracing.tracks.ProcessTrack(this.viewport);
-        track.categoryFilter = categoryFilter;
         track.process = process;
         if (!track.hasVisibleContent)
           continue;
 
         this.appendChild(track);
       }
-      this.memoizeSlices_();
+      this.viewport_.rebuildEventToTrackMap();
     },
 
-    memoizeSlices_: function() {
-      if (!this.model_ || !this.categoryFilter)
+    addEventsToTrackMap: function(eventToTrackMap) {
+      if (!this.model_)
         return;
-
-      this.viewport_.clearSliceMemoization();
 
       var tracks = this.children;
       for (var i = 0; i < tracks.length; ++i)
-        tracks[i].memoizeSlices_();
+        tracks[i].addEventsToTrackMap(eventToTrackMap);
 
       if (this.instantEvents === undefined)
         return;
 
       var vp = this.viewport_;
       this.instantEvents.forEach(function(ev) {
-        vp.sliceMemoization(ev, this);
+        eventToTrackMap.addEvent(ev, this);
       }.bind(this));
     },
 
     appendKernelTrack_: function() {
       var kernel = this.model.kernel;
-      if (!this.categoryFilter.matchProcess(kernel))
-        return;
       var track = new tracing.tracks.KernelTrack(this.viewport);
-      track.categoryFilter = this.categoryFilter;
       track.kernel = this.model.kernel;
       if (!track.hasVisibleContent)
         return;
@@ -123,8 +109,9 @@ base.exportTo('tracing.tracks', function() {
       ctx.save();
       ctx.translate(0, pixelRatio * (bounds.top - canvasBounds.top));
 
-      var viewLWorld = this.viewport.xViewToWorld(0);
-      var viewRWorld = this.viewport.xViewToWorld(bounds.width * pixelRatio);
+      var dt = this.viewport.currentDisplayTransform;
+      var viewLWorld = dt.xViewToWorld(0);
+      var viewRWorld = dt.xViewToWorld(bounds.width * pixelRatio);
 
       switch (type) {
         case tracing.tracks.DrawType.GRID:
@@ -134,8 +121,7 @@ base.exportTo('tracing.tracks', function() {
           return;
 
         case tracing.tracks.DrawType.FLOW_ARROWS:
-          if (!this.model_.flowEvents ||
-              this.model_.flowEvents.length === 0) {
+          if (this.model_.flowIntervalTree.size === 0) {
             ctx.restore();
             return;
           }
@@ -149,15 +135,22 @@ base.exportTo('tracing.tracks', function() {
               this.model_.instantEvents.length === 0)
             break;
 
-          tracing.drawSlices(
+          tracing.drawInstantSlicesAsLines(
               ctx,
-              this.viewport,
+              this.viewport.currentDisplayTransform,
               viewLWorld,
               viewRWorld,
               bounds.height,
-              this.model_.instantEvents);
+              this.model_.instantEvents,
+              1);
 
           break;
+
+        case tracing.tracks.DrawType.MARKERS:
+          this.viewport.drawMarkerLines(ctx, viewLWorld, viewRWorld);
+          this.viewport.drawMarkerIndicators(ctx, viewLWorld, viewRWorld);
+          ctx.restore();
+          return;
       }
       ctx.restore();
 
@@ -166,45 +159,32 @@ base.exportTo('tracing.tracks', function() {
 
     drawFlowArrows_: function(viewLWorld, viewRWorld) {
       var ctx = this.context();
-      this.viewport.applyTransformToCanvas(ctx);
+      var dt = this.viewport.currentDisplayTransform;
+      dt.applyTransformToCanvas(ctx);
 
-      var pixWidth = this.viewport.xViewVectorToWorld(1);
+      var pixWidth = dt.xViewVectorToWorld(1);
 
-      ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
       ctx.lineWidth = pixWidth > 1.0 ? 1 : pixWidth;
 
-      var events = this.model_.flowEvents;
-      var lowEvent = base.findLowIndexInSortedArray(
-          events,
-          function(event) { return event.start + event.duration; },
-          viewLWorld);
+      var events =
+          this.model_.flowIntervalTree.findIntersection(viewLWorld, viewRWorld);
 
+      var minWidth = 2 * pixWidth;
       var canvasBounds = ctx.canvas.getBoundingClientRect();
 
-      for (var i = lowEvent; i < events.length; ++i) {
-        var startEvent = events[i];
-        if (startEvent.start > viewRWorld)
-          break;
+      for (var i = 0; i < events.length; ++i) {
+        var startEvent = events[i][0];
+        var endEvent = events[i][1];
 
-        if (startEvent.isFlowStart() && startEvent.isFlowEnd())
+        // Skip lines that will be, essentially, vertical.
+        var distance = endEvent.start - startEvent.start;
+        if (distance <= minWidth)
           continue;
 
-        if (!startEvent.isFlowEnd()) {
-          this.drawFlowArrowBetween_(
-              ctx, startEvent, startEvent.nextEvent, canvasBounds, pixWidth);
-        }
-
-        if (startEvent.isFlowStart())
-          continue;
-
-        var prevEvent = startEvent.prevEvent;
-        // We want to force the line to draw from our previous event if it is
-        // outside the world left view.
-        if ((prevEvent.start + prevEvent.duration) < viewLWorld) {
-          this.drawFlowArrowBetween_(
-              ctx, prevEvent, startEvent, canvasBounds, pixWidth);
-        }
+        this.drawFlowArrowBetween_(
+            ctx, startEvent, endEvent, canvasBounds, pixWidth);
       }
     },
 
@@ -212,38 +192,37 @@ base.exportTo('tracing.tracks', function() {
                                     canvasBounds, pixWidth) {
       var pixelRatio = window.devicePixelRatio || 1;
 
-      var startTrack = this.viewport.trackForSlice(startEvent);
-      var endTrack = this.viewport.trackForSlice(endEvent);
+      var startTrack = this.viewport.trackForEvent(startEvent);
+      var endTrack = this.viewport.trackForEvent(endEvent);
 
       var startBounds = startTrack.getBoundingClientRect();
       var endBounds = endTrack.getBoundingClientRect();
 
-      var startY =
-          (startBounds.top - canvasBounds.top + (startBounds.height / 2));
-      var endY = (endBounds.top - canvasBounds.top + (endBounds.height / 2));
+      var startSize = startBounds.left + startBounds.top +
+          startBounds.bottom + startBounds.right;
+      var endSize = endBounds.left + endBounds.top +
+          endBounds.bottom + endBounds.right;
+      // Nothing to do if both ends of the track are collapsed.
+      if (startSize === 0 && endSize === 0)
+        return;
+
+      var startY = this.calculateTrackY_(startTrack, canvasBounds);
+      var endY = this.calculateTrackY_(endTrack, canvasBounds);
 
       var pixelStartY = pixelRatio * startY;
       var pixelEndY = pixelRatio * endY;
-
-      // Skip lines that will be, essentially, vertical.
-      var minWidth = 2 * pixWidth;
-      var distance =
-          Math.abs((startEvent.start + startEvent.duration) - endEvent.start);
-      if (distance <= minWidth)
-        return;
-
-      var half =
-          (endEvent.start - (startEvent.start + startEvent.duration)) / 2;
+      var half = (endEvent.start - startEvent.start) / 2;
 
       ctx.beginPath();
-      ctx.moveTo(startEvent.start + startEvent.duration, pixelStartY);
+      ctx.moveTo(startEvent.start, pixelStartY);
       ctx.bezierCurveTo(
-          startEvent.start + startEvent.duration + half, pixelStartY,
-          startEvent.start + startEvent.duration + half, pixelEndY,
+          startEvent.start + half, pixelStartY,
+          startEvent.start + half, pixelEndY,
           endEvent.start, pixelEndY);
       ctx.stroke();
 
       var arrowWidth = 5 * pixWidth * pixelRatio;
+      var distance = endEvent.start - startEvent.start;
       if (distance <= (2 * arrowWidth))
         return;
 
@@ -257,11 +236,19 @@ base.exportTo('tracing.tracks', function() {
       ctx.fill();
     },
 
+    calculateTrackY_: function(track, canvasBounds) {
+      var bounds = track.getBoundingClientRect();
+      var size = bounds.left + bounds.top + bounds.bottom + bounds.right;
+      if (size === 0)
+        return this.calculateTrackY_(track.parentNode, canvasBounds);
+
+      return bounds.top - canvasBounds.top + (bounds.height / 2);
+    },
+
     addIntersectingItemsInRangeToSelectionInWorldSpace: function(
         loWX, hiWX, viewPixWidthWorld, selection) {
       function onPickHit(instantEvent) {
-        var hit = selection.addSlice(this, instantEvent);
-        this.decorateHit(hit);
+        selection.push(instantEvent);
       }
       base.iterateOverIntersectingIntervals(this.model_.instantEvents,
           function(x) { return x.start; },
@@ -271,6 +258,14 @@ base.exportTo('tracing.tracks', function() {
 
       tracing.tracks.ContainerTrack.prototype.
           addIntersectingItemsInRangeToSelectionInWorldSpace.
+          apply(this, arguments);
+    },
+
+    addClosestEventToSelection: function(worldX, worldMaxDist, loY, hiY,
+                                         selection) {
+      this.addClosestInstantEventToSelection(this.model_.instantEvents,
+                                             worldX, worldMaxDist, selection);
+      tracing.tracks.ContainerTrack.prototype.addClosestEventToSelection.
           apply(this, arguments);
     }
   };

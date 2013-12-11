@@ -6,7 +6,7 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "ui/base/accessibility/accessible_view_state.h"
-#include "ui/base/animation/throb_animation.h"
+#include "ui/gfx/animation/throb_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/views/widget/widget.h"
@@ -15,6 +15,8 @@ namespace views {
 
 static const int kDefaultWidth = 16;   // Default button width if no theme.
 static const int kDefaultHeight = 14;  // Default button height if no theme.
+
+const char ImageButton::kViewClassName[] = "ImageButton";
 
 ////////////////////////////////////////////////////////////////////////////////
 // ImageButton, public:
@@ -82,6 +84,10 @@ gfx::Size ImageButton::GetPreferredSize() {
   gfx::Insets insets = GetInsets();
   size.Enlarge(insets.width(), insets.height());
   return size;
+}
+
+const char* ImageButton::GetClassName() const {
+  return kViewClassName;
 }
 
 void ImageButton::OnPaint(gfx::Canvas* canvas) {

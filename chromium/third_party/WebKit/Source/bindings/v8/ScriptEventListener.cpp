@@ -60,15 +60,19 @@ PassRefPtr<V8LazyEventListener> createAttributeEventListener(Node* node, const Q
     TextPosition position(OrdinalNumber::fromZeroBasedInt(1), OrdinalNumber::first());
     String sourceURL;
 
-    if (Frame* frame = node->document()->frame()) {
+    v8::Isolate* isolate;
+    if (Frame* frame = node->document().frame()) {
+        isolate = toIsolate(frame);
         ScriptController* scriptController = frame->script();
         if (!scriptController->canExecuteScripts(AboutToExecuteScript))
             return 0;
         position = scriptController->eventHandlerPosition();
-        sourceURL = node->document()->url().string();
+        sourceURL = node->document().url().string();
+    } else {
+        isolate = v8::Isolate::GetCurrent();
     }
 
-    return V8LazyEventListener::create(name.localName().string(), eventParameterName(node->isSVGElement()), value, sourceURL, position, node);
+    return V8LazyEventListener::create(name.localName().string(), eventParameterName(node->isSVGElement()), value, sourceURL, position, node, isolate);
 }
 
 PassRefPtr<V8LazyEventListener> createAttributeEventListener(Frame* frame, const QualifiedName& name, const AtomicString& value)
@@ -86,7 +90,7 @@ PassRefPtr<V8LazyEventListener> createAttributeEventListener(Frame* frame, const
     TextPosition position = scriptController->eventHandlerPosition();
     String sourceURL = frame->document()->url().string();
 
-    return V8LazyEventListener::create(name.localName().string(), eventParameterName(frame->document()->isSVGDocument()), value, sourceURL, position, 0);
+    return V8LazyEventListener::create(name.localName().string(), eventParameterName(frame->document()->isSVGDocument()), value, sourceURL, position, 0, toIsolate(frame));
 }
 
 String eventListenerHandlerBody(Document* document, EventListener* listener)
@@ -94,11 +98,11 @@ String eventListenerHandlerBody(Document* document, EventListener* listener)
     if (listener->type() != EventListener::JSEventListenerType)
         return "";
 
-    v8::HandleScope scope;
+    v8::HandleScope scope(toIsolate(document));
     V8AbstractEventListener* v8Listener = static_cast<V8AbstractEventListener*>(listener);
     v8::Handle<v8::Context> context = toV8Context(document, v8Listener->world());
     v8::Context::Scope contextScope(context);
-    v8::Handle<v8::Object> function = v8Listener->getListenerObject(document);
+    v8::Handle<v8::Value> function = v8Listener->getListenerObject(document);
     if (function.IsEmpty())
         return "";
 
@@ -110,14 +114,15 @@ ScriptValue eventListenerHandler(Document* document, EventListener* listener)
     if (listener->type() != EventListener::JSEventListenerType)
         return ScriptValue();
 
-    v8::HandleScope scope;
+    v8::Isolate* isolate = toIsolate(document);
+    v8::HandleScope scope(isolate);
     V8AbstractEventListener* v8Listener = static_cast<V8AbstractEventListener*>(listener);
     v8::Handle<v8::Context> context = toV8Context(document, v8Listener->world());
     v8::Context::Scope contextScope(context);
     v8::Handle<v8::Object> function = v8Listener->getListenerObject(document);
     if (function.IsEmpty())
         return ScriptValue();
-    return ScriptValue(function);
+    return ScriptValue(function, isolate);
 }
 
 ScriptState* eventListenerHandlerScriptState(Frame* frame, EventListener* listener)
@@ -125,7 +130,7 @@ ScriptState* eventListenerHandlerScriptState(Frame* frame, EventListener* listen
     if (listener->type() != EventListener::JSEventListenerType)
         return 0;
     V8AbstractEventListener* v8Listener = static_cast<V8AbstractEventListener*>(listener);
-    v8::HandleScope scope;
+    v8::HandleScope scope(toIsolate(frame));
     v8::Handle<v8::Context> v8Context = frame->script()->windowShell(v8Listener->world())->context();
     return ScriptState::forContext(v8Context);
 }
@@ -135,7 +140,7 @@ bool eventListenerHandlerLocation(Document* document, EventListener* listener, S
     if (listener->type() != EventListener::JSEventListenerType)
         return false;
 
-    v8::HandleScope scope;
+    v8::HandleScope scope(toIsolate(document));
     V8AbstractEventListener* v8Listener = static_cast<V8AbstractEventListener*>(listener);
     v8::Handle<v8::Context> context = toV8Context(document, v8Listener->world());
     v8::Context::Scope contextScope(context);
@@ -147,8 +152,8 @@ bool eventListenerHandlerLocation(Document* document, EventListener* listener, S
     v8::Handle<v8::Value> scriptIdValue = function->GetScriptId();
     scriptId = toWebCoreStringWithUndefinedOrNullCheck(scriptIdValue);
     v8::ScriptOrigin origin = function->GetScriptOrigin();
-    if (origin.ResourceName()->IsString() && !origin.ResourceName().IsEmpty())
-        sourceName = toWebCoreString(origin.ResourceName());
+    if (!origin.ResourceName().IsEmpty() && origin.ResourceName()->IsString())
+        sourceName = toWebCoreString(origin.ResourceName().As<v8::String>());
     else
         sourceName = "";
     lineNumber = function->GetScriptLineNumber();

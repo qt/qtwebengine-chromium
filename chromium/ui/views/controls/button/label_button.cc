@@ -6,8 +6,8 @@
 
 #include "base/logging.h"
 #include "grit/ui_resources.h"
-#include "ui/base/animation/throb_animation.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/animation/throb_animation.h"
 #include "ui/gfx/sys_color_change_listener.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/controls/button/label_button_border.h"
@@ -128,7 +128,7 @@ void LabelButton::SetIsDefault(bool is_default) {
   // STYLE_BUTTON uses bold text to indicate default buttons.
   if (style_ == STYLE_BUTTON) {
     int style = label_->font().GetStyle();
-    style = is_default ? style | gfx::Font::BOLD : style & !gfx::Font::BOLD;
+    style = is_default ? style | gfx::Font::BOLD : style & ~gfx::Font::BOLD;
     label_->SetFont(label_->font().DeriveFont(0, style));
   }
 }
@@ -257,10 +257,6 @@ void LabelButton::GetExtraParams(ui::NativeTheme::ExtraParams* params) const {
   params->button.background_color = label()->background_color();
 }
 
-void LabelButton::UpdateImage() {
-  image_->SetImage(GetImage(state()));
-}
-
 void LabelButton::ResetColorsFromNativeTheme() {
   const ui::NativeTheme* theme = GetNativeTheme();
   SkColor colors[STATE_COUNT] = {
@@ -277,9 +273,6 @@ void LabelButton::ResetColorsFromNativeTheme() {
                           theme == ui::NativeThemeWin::instance());
 #endif
 
-  label_->SetBackgroundColor(theme->GetSystemColor(
-      ui::NativeTheme::kColorId_ButtonBackgroundColor));
-
   // Use hardcoded colors for inverted color scheme support and STYLE_BUTTON.
   if (gfx::IsInvertedColorScheme()) {
     constant_text_color = true;
@@ -290,6 +283,8 @@ void LabelButton::ResetColorsFromNativeTheme() {
   } else if (style() == STYLE_BUTTON) {
     constant_text_color = true;
     colors[STATE_NORMAL] = kStyleButtonTextColor;
+    label_->SetBackgroundColor(theme->GetSystemColor(
+        ui::NativeTheme::kColorId_ButtonBackgroundColor));
     label_->SetAutoColorReadabilityEnabled(false);
     label_->SetShadowColors(kStyleButtonShadowColor, kStyleButtonShadowColor);
     label_->SetShadowOffset(0, 1);
@@ -304,6 +299,10 @@ void LabelButton::ResetColorsFromNativeTheme() {
       explicitly_set_colors_[state] = false;
     }
   }
+}
+
+void LabelButton::UpdateImage() {
+  image_->SetImage(GetImage(state()));
 }
 
 void LabelButton::StateChanged() {
@@ -346,7 +345,7 @@ ui::NativeTheme::State LabelButton::GetThemeState(
   return ui::NativeTheme::kNormal;
 }
 
-const ui::Animation* LabelButton::GetThemeAnimation() const {
+const gfx::Animation* LabelButton::GetThemeAnimation() const {
 #if defined(OS_WIN)
   if (style() == STYLE_NATIVE_TEXTBUTTON &&
       GetNativeTheme() == ui::NativeThemeWin::instance()) {

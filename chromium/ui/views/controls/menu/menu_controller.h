@@ -15,7 +15,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/timer/timer.h"
-#include "ui/base/events/event_constants.h"
+#include "ui/events/event_constants.h"
 #include "ui/views/controls/menu/menu_delegate.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/widget/widget_observer.h"
@@ -137,7 +137,7 @@ class VIEWS_EXPORT MenuController : public base::MessageLoop::Dispatcher,
   virtual void OnWidgetDestroying(Widget* widget) OVERRIDE;
 
   // Only used for testing.
-  static void TurnOffContextMenuSelectionHoldForTest();
+  static void TurnOffMenuSelectionHoldForTest();
 
  private:
   friend class internal::MenuRunnerImpl;
@@ -445,7 +445,7 @@ class VIEWS_EXPORT MenuController : public base::MessageLoop::Dispatcher,
   // Stops scrolling.
   void StopScrolling();
 
-  // Updates |active_mouse_view_| from the location of the event and sends it
+  // Updates active mouse view from the location of the event and sends it
   // the appropriate events. This is used to send mouse events to child views so
   // that they react to click-drag-release as if the user clicked on the view
   // itself.
@@ -453,14 +453,18 @@ class VIEWS_EXPORT MenuController : public base::MessageLoop::Dispatcher,
                              const ui::MouseEvent& event,
                              View* target_menu);
 
-  // Sends a mouse release event to the current |active_mouse_view_| and sets
+  // Sends a mouse release event to the current active mouse view and sets
   // it to null.
   void SendMouseReleaseToActiveView(SubmenuView* event_source,
                                     const ui::MouseEvent& event);
 
-  // Sends a mouse capture lost event to the current |active_mouse_view_| and
-  // sets it to null.
+  // Sends a mouse capture lost event to the current active mouse view and sets
+  // it to null.
   void SendMouseCaptureLostToActiveView();
+
+  // Sets/gets the active mouse view. See UpdateActiveMouseView() for details.
+  void SetActiveMouseView(View* view);
+  View* GetActiveMouseView();
 
   // Sets exit type.
   void SetExitType(ExitType type);
@@ -556,9 +560,9 @@ class VIEWS_EXPORT MenuController : public base::MessageLoop::Dispatcher,
 
   MenuButton* menu_button_;
 
-  // If non-null mouse drag events are forwarded to this view. See
-  // UpdateActiveMouseView for details.
-  View* active_mouse_view_;
+  // ViewStorage id used to store the view mouse drag events are forwarded to.
+  // See UpdateActiveMouseView() for details.
+  const int active_mouse_view_id_;
 
   internal::MenuControllerDelegate* delegate_;
 
@@ -573,6 +577,10 @@ class VIEWS_EXPORT MenuController : public base::MessageLoop::Dispatcher,
 
   // Time when the menu is first shown.
   base::TimeTicks menu_start_time_;
+
+  // If a mouse press triggered this menu, this will have its location (in
+  // screen coordinates). Otherwise this will be (0, 0).
+  gfx::Point menu_start_mouse_press_loc_;
 
   DISALLOW_COPY_AND_ASSIGN(MenuController);
 };

@@ -20,13 +20,13 @@
 #ifndef RenderTableCaption_h
 #define RenderTableCaption_h
 
-#include "core/rendering/RenderBlock.h"
+#include "core/rendering/RenderBlockFlow.h"
 
 namespace WebCore {
 
 class RenderTable;
 
-class RenderTableCaption FINAL : public RenderBlock {
+class RenderTableCaption FINAL : public RenderBlockFlow {
 public:
     explicit RenderTableCaption(Element*);
     virtual ~RenderTableCaption();
@@ -34,6 +34,8 @@ public:
 
 private:
     virtual bool isTableCaption() const OVERRIDE { return true; }
+
+    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
 
     virtual void insertedIntoTree() OVERRIDE;
     virtual void willBeRemovedFromTree() OVERRIDE;

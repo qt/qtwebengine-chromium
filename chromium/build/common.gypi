@@ -143,6 +143,13 @@
             'toolkit_uses_gtk%': 0,
           }],
 
+          # Whether we're a traditional desktop unix.
+          ['(OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris") and chromeos==0', {
+            'desktop_linux%': 1,
+          }, {
+            'desktop_linux%': 0,
+          }],
+
           # Enable HiDPI on Mac OS and Chrome OS.
           ['OS=="mac" or chromeos==1', {
             'enable_hidpi%': 1,
@@ -165,14 +172,6 @@
           }, {
             'use_default_render_theme%': 0,
           }],
-
-          # TODO(thestig) Remove the linux_lsb_release check after all the
-          # official Ubuntu Lucid builder are gone.
-          ['OS=="linux" and branding=="Chrome" and buildtype=="Official" and chromeos==0', {
-            'linux_lsb_release%': '<!(lsb_release -r -s)',
-          }, {
-            'linux_lsb_release%': '',
-          }], # OS=="linux" and branding=="Chrome" and buildtype=="Official" and chromeos==0
         ],
       },
 
@@ -182,6 +181,7 @@
       'target_arch%': '<(target_arch)',
       'toolkit_views%': '<(toolkit_views)',
       'toolkit_uses_gtk%': '<(toolkit_uses_gtk)',
+      'desktop_linux%': '<(desktop_linux)',
       'use_aura%': '<(use_aura)',
       'use_ash%': '<(use_ash)',
       'use_cras%': '<(use_cras)',
@@ -197,7 +197,6 @@
       'buildtype%': '<(buildtype)',
       'branding%': '<(branding)',
       'arm_version%': '<(arm_version)',
-      'linux_lsb_release%': '<(linux_lsb_release)',
 
       # Set to 1 to enable fast builds. Set to 2 for even faster builds
       # (it disables debug info for fastest compilation - only for use
@@ -350,6 +349,12 @@
       # print, UI, etc.
       'enable_printing%': 1,
 
+      # Set the version of CLD.
+      #   0: Don't specify the version. This option is for the Finch testing.
+      #   1: Use only CLD1.
+      #   2: Use only CLD2.
+      'cld_version%': 1,
+
       # Enable spell checker.
       'enable_spellcheck%': 1,
 
@@ -376,11 +381,11 @@
       # Enable FTP support by default.
       'disable_ftp_support%': 0,
 
-      # XInput2 multitouch support is disabled by default (use_xi2_mt=0).
-      # Setting to non-zero value enables XI2 MT. When XI2 MT is enabled,
+      # XInput2 multitouch support is enabled by default (use_xi2_mt=2).
+      # Setting to zero value disables XI2 MT. When XI2 MT is enabled,
       # the input value also defines the required XI2 minor minimum version.
       # For example, use_xi2_mt=2 means XI2.2 or above version is required.
-      'use_xi2_mt%': 0,
+      'use_xi2_mt%': 2,
 
       # Use of precompiled headers on Windows.
       #
@@ -523,9 +528,9 @@
           'enable_automation%': 0,
           'enable_extensions%': 0,
           'enable_google_now%': 0,
+          'cld_version%': 1,
           'enable_spellcheck%': 0,
           'enable_themes%': 0,
-          'proprietary_codecs%': 1,
           'remoting%': 0,
           'arm_neon%': 0,
           'arm_neon_optional%': 1,
@@ -533,13 +538,22 @@
           'native_memory_pressure_signals%': 1,
         }],
 
-	# Enable basic printing for Chrome for Android but disable printing
-	# completely for WebView.
+        # Enable basic printing for Chrome for Android but disable printing
+        # completely for WebView.
         ['OS=="android" and android_webview_build==0', {
           'enable_printing%': 2,
         }],
         ['OS=="android" and android_webview_build==1', {
           'enable_printing%': 0,
+        }],
+
+        # Android OS includes support for proprietary codecs regardless of
+        # building Chromium or Google Chrome. We also ship Google Chrome with
+        # proprietary codecs.
+        ['OS=="android" or branding=="Chrome"', {
+          'proprietary_codecs%': 1,
+        }, {
+          'proprietary_codecs%': 0,
         }],
 
         # Enable autofill dialog for Android, Mac and Views-enabled platforms.
@@ -564,6 +578,7 @@
           'enable_automation%': 0,
           'enable_extensions%': 0,
           'enable_google_now%': 0,
+          'cld_version%': 1,
           'enable_printing%': 0,
           'enable_session_service%': 0,
           'enable_themes%': 0,
@@ -636,7 +651,7 @@
         #
         # On Aura, this allows per-tile painting to be used in the browser
         # compositor.
-        ['OS!="mac" and OS!="android"', {
+        ['OS!="android"', {
           'use_canvas_skia%': 1,
         }],
 
@@ -666,7 +681,8 @@
           'sysroot%': '<!(cd <(DEPTH) && pwd -P)/arm-sysroot',
         }], # OS=="linux" and target_arch=="arm" and chromeos==0
 
-        ['linux_lsb_release=="12.04"', {
+
+        ['OS=="linux" and branding=="Chrome" and buildtype=="Official" and chromeos==0', {
           'conditions': [
             ['target_arch=="x64"', {
               'sysroot%': '<!(cd <(DEPTH) && pwd -P)/chrome/installer/linux/debian_wheezy_amd64-sysroot',
@@ -675,7 +691,7 @@
               'sysroot%': '<!(cd <(DEPTH) && pwd -P)/chrome/installer/linux/debian_wheezy_i386-sysroot',
             }],
         ],
-        }], # linux_lsb_release=="12.04"
+        }], # OS=="linux" and branding=="Chrome" and buildtype=="Official" and chromeos==0
 
         ['OS=="linux" and target_arch=="mipsel"', {
           'sysroot%': '<!(cd <(DEPTH) && pwd -P)/mipsel-sysroot/sysroot',
@@ -791,6 +807,7 @@
     'use_pango%': '<(use_pango)',
     'use_ozone%': '<(use_ozone)',
     'toolkit_uses_gtk%': '<(toolkit_uses_gtk)',
+    'desktop_linux%': '<(desktop_linux)',
     'use_x11%': '<(use_x11)',
     'use_gnome_keyring%': '<(use_gnome_keyring)',
     'linux_fpic%': '<(linux_fpic)',
@@ -851,6 +868,7 @@
     'enable_printing%': '<(enable_printing)',
     'enable_spellcheck%': '<(enable_spellcheck)',
     'enable_google_now%': '<(enable_google_now)',
+    'cld_version%': '<(cld_version)',
     'enable_captive_portal_detection%': '<(enable_captive_portal_detection)',
     'disable_ftp_support%': '<(disable_ftp_support)',
     'enable_task_manager%': '<(enable_task_manager)',
@@ -876,6 +894,7 @@
     'spdy_proxy_auth_value%': '<(spdy_proxy_auth_value)',
     'enable_mdns%' : '<(enable_mdns)',
     'v8_optimized_debug': '<(v8_optimized_debug)',
+    'proprietary_codecs%': '<(proprietary_codecs)',
 
     # Use system nspr instead of the bundled one.
     'use_system_nspr%': 0,
@@ -918,6 +937,10 @@
     # Currently ignored on Windows.
     'coverage%': 0,
 
+    # Set to 1 to enable java code coverage. Instruments classes during build
+    # to produce .ec files during runtime.
+    'emma_coverage%': 0,
+
     # Set to 1 to force Visual C++ to use legacy debug information format /Z7.
     # This is useful for parallel compilation tools which can't support /Zi.
     # Only used on Windows.
@@ -930,13 +953,6 @@
     #  'win_release_RuntimeLibrary': 2
     # to ~/.gyp/include.gypi, gclient runhooks --force, and do a release build.
     'win_use_allocator_shim%': 1, # 1 = shim allocator via libcmt; 0 = msvcrt
-
-    # Whether usage of OpenMAX is enabled.
-    'enable_openmax%': 0,
-
-    # Whether proprietary audio/video codecs are assumed to be included with
-    # this build (only meaningful if branding!=Chrome).
-    'proprietary_codecs%': 0,
 
     # TODO(bradnelson): eliminate this when possible.
     # To allow local gyp files to prevent release.vsprops from being included.
@@ -1137,6 +1153,12 @@
     # Use the chromium skia by default.
     'use_system_skia%': '0',
 
+    # Use brlapi from brltty for braille display support.
+    'use_brlapi%': 0,
+
+    # Relative path to icu.gyp from this file.
+    'icu_gyp_path': '../third_party/icu/icu.gyp',
+
     'conditions': [
       # The version of GCC in use, set later in platforms that use GCC and have
       # not explicitly chosen to build with clang. Currently, this means all
@@ -1194,10 +1216,10 @@
         'use_system_libxml%': 1,
         'use_system_sqlite%': 1,
         'locales==': [
-          'ar', 'ca', 'cs', 'da', 'de', 'el', 'en-GB', 'en-US', 'es', 'fi',
-          'fr', 'he', 'hr', 'hu', 'id', 'it', 'ja', 'ko', 'ms', 'nb', 'nl',
-          'pl', 'pt', 'pt-PT', 'ro', 'ru', 'sk', 'sv', 'th', 'tr', 'uk', 'vi',
-          'zh-CN', 'zh-TW',
+          'ar', 'ca', 'cs', 'da', 'de', 'el', 'en-GB', 'en-US', 'es', 'es-MX',
+          'fi', 'fr', 'he', 'hr', 'hu', 'id', 'it', 'ja', 'ko', 'ms', 'nb',
+          'nl', 'pl', 'pt', 'pt-PT', 'ro', 'ru', 'sk', 'sv', 'th', 'tr', 'uk',
+          'vi', 'zh-CN', 'zh-TW',
         ],
 
         # The Mac SDK is set for iOS builds and passed through to Mac
@@ -1447,6 +1469,9 @@
           }],
           ['component=="shared_library"', {
             'win_use_allocator_shim%': 0,
+          },{
+            # Turn on multiple dll by default on Windows when in static_library.
+            'chrome_multiple_dll%': 1,
           }],
           ['component=="shared_library" and "<(GENERATOR)"=="ninja"', {
             # Only enabled by default for ninja because it's buggy in VS.
@@ -1535,6 +1560,9 @@
       ['chromeos==1', {
         'grit_defines': ['-D', 'chromeos', '-D', 'scale_factors=2x'],
       }],
+      ['desktop_linux==1', {
+        'grit_defines': ['-D', 'desktop_linux'],
+      }],
       ['toolkit_views==1', {
         'grit_defines': ['-D', 'toolkit_views'],
       }],
@@ -1583,8 +1611,7 @@
       }],
       ['OS == "ios"', {
         'grit_defines': [
-          # define for iOS specific resources.
-          '-D', 'ios',
+          '-t', 'ios',
           # iOS uses a whitelist to filter resources.
           '-w', '<(DEPTH)/build/ios/grit_whitelist.txt'
         ],
@@ -1620,6 +1647,9 @@
       }],
       ['enable_webrtc==1', {
         'grit_defines': ['-D', 'enable_webrtc'],
+      }],
+      ['enable_mdns==1', {
+        'grit_defines': ['-D', 'enable_mdns'],
       }],
       ['clang_use_chrome_plugins==1 and OS!="win"', {
         'clang_chrome_plugins_flags': [
@@ -1911,9 +1941,6 @@
           '<(DEPTH)/base/allocator/allocator.gyp:type_profiler',
         ],
       }],
-      ['chrome_multiple_dll', {
-        'defines': ['CHROME_MULTIPLE_DLL'],
-      }],
       ['OS=="linux" and clang==1 and host_arch=="ia32"', {
         # TODO(dmikurube): Remove -Wno-sentinel when Clang/LLVM is fixed.
         # See http://crbug.com/162818.
@@ -1998,7 +2025,7 @@
       ['google_tv==1', {
         'defines': ['GOOGLE_TV=1'],
       }],
-      ['use_xi2_mt!=0', {
+      ['use_xi2_mt!=0 and use_x11==1', {
         'defines': ['USE_XI2_MT=<(use_xi2_mt)'],
       }],
       ['file_manager_extension==1', {
@@ -2286,6 +2313,9 @@
       ['enable_google_now==1', {
         'defines': ['ENABLE_GOOGLE_NOW=1'],
       }],
+      ['cld_version!=0', {
+        'defines': ['CLD_VERSION=<(cld_version)'],
+      }],
       ['enable_printing==1', {
         'defines': ['ENABLE_FULL_PRINTING=1', 'ENABLE_PRINTING=1'],
       }],
@@ -2531,7 +2561,6 @@
           'WTF_USE_DYNAMIC_ANNOTATIONS=1',
         ],
         'xcode_settings': {
-          'COPY_PHASE_STRIP': 'NO',
           'GCC_OPTIMIZATION_LEVEL': '<(mac_debug_optimization)',
           'OTHER_CFLAGS': [
             '<@(debug_extra_cflags)',
@@ -3285,13 +3314,6 @@
                 ],
               }],
             ],
-            'conditions': [
-              ['OS=="mac"', {
-                'cflags': [
-                  '-mllvm -asan-globals=0',  # http://crbug.com/196561
-                ],
-              }],
-            ],
           }],
           ['lsan==1', {
             'target_conditions': [
@@ -3304,6 +3326,7 @@
                 ],
                 'defines': [
                   'LEAK_SANITIZER',
+                  'WTF_USE_LEAK_SANITIZER=1',
                 ],
               }],
             ],
@@ -3831,6 +3854,7 @@
           'ALWAYS_SEARCH_USER_PATHS': 'NO',
           # Don't link in libarclite_macosx.a, see http://crbug.com/156530.
           'CLANG_LINK_OBJC_RUNTIME': 'NO',          # -fno-objc-link-runtime
+          'COPY_PHASE_STRIP': 'NO',
           'GCC_C_LANGUAGE_STANDARD': 'c99',         # -std=c99
           'GCC_CW_ASM_SYNTAX': 'NO',                # No -fasm-blocks
           'GCC_ENABLE_CPP_EXCEPTIONS': 'NO',        # -fno-exceptions
@@ -3865,11 +3889,12 @@
               'CC': '$(SOURCE_ROOT)/<(clang_dir)/clang',
               'LDPLUSPLUS': '$(SOURCE_ROOT)/<(clang_dir)/clang++',
 
-              # Don't use -Wc++0x-extensions, which Xcode 4 enables by default
-              # when building with clang. This warning is triggered when the
-              # override keyword is used via the OVERRIDE macro from
-              # base/compiler_specific.h.
-              'CLANG_WARN_CXX0X_EXTENSIONS': 'NO',
+              # gnu++11 instead of c++11 is needed because some code uses
+              # typeof() (a GNU extension).
+              # TODO(thakis): Eventually switch this to c++11 instead of
+              # gnu++11 (once typeof can be removed, which is blocked on c++11
+              # being available everywhere).
+              'CLANG_CXX_LANGUAGE_STANDARD': 'gnu++11',  # -std=gnu++11
               # Warn if automatic synthesis is triggered with
               # the -Wobjc-missing-property-synthesis flag.
               'CLANG_WARN_OBJC_MISSING_PROPERTY_SYNTHESIS': 'YES',
@@ -3901,16 +3926,6 @@
                 # code generated by flex (used in angle) contains that keyword.
                 # http://crbug.com/255186
                 '-Wno-deprecated',
-              ],
-              'OTHER_CPLUSPLUSFLAGS': [
-                # gnu++11 instead of c++11 is needed because some code uses
-                # typeof() (a GNU extension).
-                # TODO(thakis): Eventually switch this to c++11 instead of
-                # gnu++11 (once typeof can be removed, which is blocked on c++11
-                # being available everywhere).
-                # TODO(thakis): Use CLANG_CXX_LANGUAGE_STANDARD instead once all
-                # bots use xcode 4 -- http://crbug.com/147515).
-                '$(inherited)', '-std=gnu++11',
               ],
             }],
             ['use_libcpp==1', {
@@ -3957,7 +3972,6 @@
             'xcode_settings': {
               'OTHER_CFLAGS': [
                 '-fsanitize=address',
-                '-mllvm -asan-globals=0',  # http://crbug.com/196561
                 '-w',  # http://crbug.com/162783
               ],
             },
@@ -4182,16 +4196,11 @@
 
           # This next block is mostly common with the 'mac' section above,
           # but keying off (or setting) 'clang' isn't valid for iOS as it
-          # also seems to mean using the custom build of clang.
+          # also means using Chromium's build of clang.
 
           # TODO(stuartmorgan): switch to c++0x (see TODOs in the clang
           # section above).
           'CLANG_CXX_LANGUAGE_STANDARD': 'gnu++0x',
-          # Don't use -Wc++0x-extensions, which Xcode 4 enables by default
-          # when building with clang. This warning is triggered when the
-          # override keyword is used via the OVERRIDE macro from
-          # base/compiler_specific.h.
-          'CLANG_WARN_CXX0X_EXTENSIONS': 'NO',
           # Warn if automatic synthesis is triggered with
           # the -Wobjc-missing-property-synthesis flag.
           'CLANG_WARN_OBJC_MISSING_PROPERTY_SYNTHESIS': 'YES',
@@ -4673,6 +4682,35 @@
       ],
     }],
   ],
+  'configurations': {
+    # DON'T ADD ANYTHING NEW TO THIS BLOCK UNLESS YOU REALLY REALLY NEED IT!
+    # This block adds *project-wide* configuration settings to each project
+    # file.  It's almost always wrong to put things here.  Specify your
+    # custom |configurations| in target_defaults to add them to targets instead.
+    'conditions': [
+      ['OS=="ios"', {
+        'Debug': {
+          'xcode_settings': {
+            # Enable 'Build Active Architecture Only' for Debug. This
+            # avoids a project-level warning in Xcode.
+            # Note that this configuration uses the default VALID_ARCHS value
+            # because if there is a device connected Xcode sets the active arch
+            # to the arch of the device. In cases where the device's arch is not
+            # in VALID_ARCHS (e.g. iPhone5 is armv7s) Xcode complains because it
+            # can't determine what arch to compile for.
+            'ONLY_ACTIVE_ARCH': 'YES',
+          },
+        },
+        'Release': {
+          'xcode_settings': {
+            # Override VALID_ARCHS and omit armv7s. Otherwise Xcode compiles for
+            # both armv7 and armv7s, doubling the binary size.
+            'VALID_ARCHS': 'armv7 i386',
+          },
+        },
+      }],
+    ],
+  },
   'xcode_settings': {
     # DON'T ADD ANYTHING NEW TO THIS BLOCK UNLESS YOU REALLY REALLY NEED IT!
     # This block adds *project-wide* configuration settings to each project
@@ -4710,8 +4748,6 @@
         ],
       }],
       ['OS=="ios"', {
-        # Just build armv7, until armv7s is correctly tested.
-        'VALID_ARCHS': 'armv7 i386',
         # Target both iPhone and iPad.
         'TARGETED_DEVICE_FAMILY': '1,2',
       }],

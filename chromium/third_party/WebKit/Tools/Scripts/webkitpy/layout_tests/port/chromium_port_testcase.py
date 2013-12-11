@@ -42,11 +42,19 @@ from webkitpy.layout_tests.models.test_configuration import TestConfiguration
 from webkitpy.layout_tests.port import port_testcase
 
 
+class FakePrinter(object):
+    def write_update(self, msg):
+        pass
+
+    def write_throttled_update(self, msg):
+        pass
+
+
 class ChromiumPortTestCase(port_testcase.PortTestCase):
 
     def test_check_build(self):
         port = self.make_port()
-        port.check_build(needs_http=True)
+        port.check_build(needs_http=True, printer=FakePrinter())
 
     def test_default_max_locked_shards(self):
         port = self.make_port()
@@ -76,6 +84,8 @@ class ChromiumPortTestCase(port_testcase.PortTestCase):
             TestConfiguration('snowleopard', 'x86', 'release'),
             TestConfiguration('lion', 'x86', 'debug'),
             TestConfiguration('lion', 'x86', 'release'),
+            TestConfiguration('retina', 'x86', 'debug'),
+            TestConfiguration('retina', 'x86', 'release'),
             TestConfiguration('mountainlion', 'x86', 'debug'),
             TestConfiguration('mountainlion', 'x86', 'release'),
             TestConfiguration('xp', 'x86', 'debug'),
@@ -86,6 +96,8 @@ class ChromiumPortTestCase(port_testcase.PortTestCase):
             TestConfiguration('lucid', 'x86', 'release'),
             TestConfiguration('lucid', 'x86_64', 'debug'),
             TestConfiguration('lucid', 'x86_64', 'release'),
+            TestConfiguration('icecreamsandwich', 'x86', 'debug'),
+            TestConfiguration('icecreamsandwich', 'x86', 'release'),
         ]))
 
     class TestMacPort(mac.MacPort):

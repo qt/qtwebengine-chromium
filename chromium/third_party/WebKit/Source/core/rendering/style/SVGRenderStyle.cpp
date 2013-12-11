@@ -169,7 +169,10 @@ StyleDifference SVGRenderStyle::diff(const SVGRenderStyle* other) const
             || stroke->paintUri != other->stroke->paintUri
             || stroke->miterLimit != other->stroke->miterLimit
             || stroke->dashArray != other->stroke->dashArray
-            || stroke->dashOffset != other->stroke->dashOffset)
+            || stroke->dashOffset != other->stroke->dashOffset
+            || stroke->visitedLinkPaintColor != other->stroke->visitedLinkPaintColor
+            || stroke->visitedLinkPaintUri != other->stroke->visitedLinkPaintUri
+            || stroke->visitedLinkPaintType != other->stroke->visitedLinkPaintType)
             return StyleDifferenceLayout;
 
         // Only the stroke-opacity case remains, where we only need a repaint.
@@ -216,6 +219,13 @@ StyleDifference SVGRenderStyle::diff(const SVGRenderStyle* other) const
         return StyleDifferenceRepaint;
 
     return StyleDifferenceEqual;
+}
+
+EPaintOrderType SVGRenderStyle::paintOrderType(unsigned index) const
+{
+    ASSERT(index < ((1 << kPaintOrderBitwidth)-1));
+    unsigned pt = (paintOrder() >> (kPaintOrderBitwidth*index)) & ((1u << kPaintOrderBitwidth) - 1);
+    return (EPaintOrderType)pt;
 }
 
 }

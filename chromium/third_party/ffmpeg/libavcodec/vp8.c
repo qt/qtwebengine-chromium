@@ -1680,6 +1680,11 @@ static void vp8_decode_mb_row_no_filter(AVCodecContext *avctx, void *tdata,
     if (s->mb_layout == 1)
         mb = s->macroblocks_base + ((s->mb_width+1)*(mb_y + 1) + 1);
     else {
+        // Make sure the previous frame has read its segmentation map,
+        // if we re-use the same map.
+        if (prev_frame && s->segmentation.enabled &&
+            !s->segmentation.update_map)
+            ff_thread_await_progress(&prev_frame->tf, mb_y, 0);
         mb = s->macroblocks + (s->mb_height - mb_y - 1)*2;
         memset(mb - 1, 0, sizeof(*mb)); // zero left macroblock
         AV_WN32A(s->intra4x4_pred_mode_left, DC_PRED*0x01010101);
@@ -1959,13 +1964,14 @@ static int vp8_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     memset(s->ref_count, 0, sizeof(s->ref_count));
 
 
-    // Make sure the previous frame has read its segmentation map,
-    // if we re-use the same map.
-    if (prev_frame && s->segmentation.enabled && !s->segmentation.update_map)
-        ff_thread_await_progress(&prev_frame->tf, 1, 0);
-
-    if (s->mb_layout == 1)
+    if (s->mb_layout == 1) {
+        // Make sure the previous frame has read its segmentation map,
+        // if we re-use the same map.
+        if (prev_frame && s->segmentation.enabled &&
+            !s->segmentation.update_map)
+            ff_thread_await_progress(&prev_frame->tf, 1, 0);
         vp8_decode_mv_mb_modes(avctx, curframe, prev_frame);
+    }
 
     if (avctx->active_thread_type == FF_THREAD_FRAME)
         num_jobs = 1;
@@ -2034,6 +2040,13 @@ static av_cold int vp8_decode_init(AVCodecContext *avctx)
     s->avctx = avctx;
     avctx->pix_fmt = AV_PIX_FMT_YUV420P;
     avctx->internal->allocate_progress = 1;
+
+    // TODO(dalecurtis): w32pthreads.h includes static variables which result
+    // in multiple copies for each includer.  Hack around our version not being
+    // initialized by calling initialize again.
+#if HAVE_W32THREADS
+    w32thread_init();
+#endif
 
     ff_videodsp_init(&s->vdsp, 8);
     ff_h264_pred_init(&s->hpc, AV_CODEC_ID_VP8, 8, 1);

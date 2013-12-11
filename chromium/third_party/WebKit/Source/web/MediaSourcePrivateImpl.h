@@ -36,11 +36,11 @@
 
 namespace WebKit {
 
-class WebMediaSourceClient;
+class WebMediaSource;
 
 class MediaSourcePrivateImpl : public WebCore::MediaSourcePrivate {
 public:
-    explicit MediaSourcePrivateImpl(PassOwnPtr<WebMediaSourceClient>);
+    explicit MediaSourcePrivateImpl(PassOwnPtr<WebMediaSource>);
     virtual ~MediaSourcePrivateImpl() { }
 
     // MediaSourcePrivate methods.
@@ -52,7 +52,7 @@ public:
     virtual void unmarkEndOfStream() OVERRIDE;
 
 private:
-    OwnPtr<WebKit::WebMediaSourceClient> m_client;
+    OwnPtr<WebKit::WebMediaSource> m_webMediaSource;
 };
 
 }

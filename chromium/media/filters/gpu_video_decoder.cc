@@ -14,10 +14,11 @@
 #include "base/task_runner_util.h"
 #include "media/base/bind_to_loop.h"
 #include "media/base/decoder_buffer.h"
+#include "media/base/media_log.h"
 #include "media/base/pipeline.h"
 #include "media/base/pipeline_status.h"
 #include "media/base/video_decoder_config.h"
-#include "media/filters/gpu_video_decoder_factories.h"
+#include "media/filters/gpu_video_accelerator_factories.h"
 
 namespace media {
 
@@ -52,12 +53,14 @@ GpuVideoDecoder::BufferData::BufferData(
 GpuVideoDecoder::BufferData::~BufferData() {}
 
 GpuVideoDecoder::GpuVideoDecoder(
-    const scoped_refptr<GpuVideoDecoderFactories>& factories)
+    const scoped_refptr<GpuVideoAcceleratorFactories>& factories,
+    const scoped_refptr<MediaLog>& media_log)
     : needs_bitstream_conversion_(false),
       gvd_loop_proxy_(factories->GetMessageLoop()),
       weak_factory_(this),
       factories_(factories),
       state_(kNormal),
+      media_log_(media_log),
       decoder_texture_target_(0),
       next_picture_buffer_id_(0),
       next_bitstream_buffer_id_(0),
@@ -137,7 +140,7 @@ void GpuVideoDecoder::Initialize(const VideoDecoderConfig& config,
       BindToCurrentLoop(orig_status_cb));
 
   bool previously_initialized = config_.IsValidConfig();
-#if !defined(OS_CHROMEOS)
+#if !defined(OS_CHROMEOS) && !defined(OS_WIN)
   if (previously_initialized) {
     // TODO(xhwang): Make GpuVideoDecoder reinitializable.
     // See http://crbug.com/233608
@@ -173,13 +176,15 @@ void GpuVideoDecoder::Initialize(const VideoDecoderConfig& config,
     return;
   }
 
-  vda_.reset(factories_->CreateVideoDecodeAccelerator(config.profile(), this));
+  vda_ =
+      factories_->CreateVideoDecodeAccelerator(config.profile(), this).Pass();
   if (!vda_) {
     status_cb.Run(DECODER_ERROR_NOT_SUPPORTED);
     return;
   }
 
   DVLOG(3) << "GpuVideoDecoder::Initialize() succeeded.";
+  media_log_->SetStringProperty("video_decoder", "gpu");
   status_cb.Run(PIPELINE_OK);
 }
 
@@ -245,6 +250,11 @@ void GpuVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
     if (state_ == kNormal) {
       state_ = kDrainingDecoder;
       vda_->Flush();
+      // If we have ready frames, go ahead and process them to ensure that the
+      // Flush operation does not block in the VDA due to lack of picture
+      // buffers.
+      if (!ready_video_frames_.empty())
+        EnqueueFrameAndTriggerFrameDelivery(NULL);
     }
     return;
   }
@@ -435,7 +445,7 @@ void GpuVideoDecoder::PictureReady(const media::Picture& picture) {
       visible_rect,
       natural_size,
       timestamp,
-      base::Bind(&GpuVideoDecoderFactories::ReadPixels,
+      base::Bind(&GpuVideoAcceleratorFactories::ReadPixels,
                  factories_,
                  pb.texture_id(),
                  decoder_texture_target_,

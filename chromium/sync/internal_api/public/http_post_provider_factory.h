@@ -5,6 +5,8 @@
 #ifndef SYNC_INTERNAL_API_PUBLIC_HTTP_POST_PROVIDER_FACTORY_H_
 #define SYNC_INTERNAL_API_PUBLIC_HTTP_POST_PROVIDER_FACTORY_H_
 
+#include <string>
+
 #include "sync/base/sync_export.h"
 
 namespace syncer {
@@ -18,6 +20,8 @@ class HttpPostProviderInterface;
 class SYNC_EXPORT HttpPostProviderFactory {
  public:
   virtual ~HttpPostProviderFactory() {}
+
+  virtual void Init(const std::string& user_agent) = 0;
 
   // Obtain a new HttpPostProviderInterface instance, owned by caller.
   virtual HttpPostProviderInterface* Create() = 0;

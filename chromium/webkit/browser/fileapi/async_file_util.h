@@ -42,7 +42,7 @@ class FileSystemURL;
 // It is NOT valid to give null callback to this class, and implementors
 // can assume that they don't get any null callbacks.
 //
-class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
+class AsyncFileUtil {
  public:
   typedef base::Callback<
       void(base::PlatformFileError result)> StatusCallback;
@@ -75,6 +75,15 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
            const base::FilePath& platform_path,
            const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref
            )> CreateSnapshotFileCallback;
+
+
+  typedef base::Callback<void(int64 size)> CopyFileProgressCallback;
+
+  // Creates an AsyncFileUtil instance which performs file operations on
+  // local native file system. The created instance assumes
+  // FileSystemURL::path() has the target platform path.
+  WEBKIT_STORAGE_BROWSER_EXPORT static AsyncFileUtil*
+      CreateForLocalFileSystem();
 
   AsyncFileUtil() {}
   virtual ~AsyncFileUtil() {}
@@ -198,6 +207,12 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
   // Copies a file from |src_url| to |dest_url|.
   // This must be called for files that belong to the same filesystem
   // (i.e. type() and origin() of the |src_url| and |dest_url| must match).
+  // |progress_callback| is a callback to report the progress update.
+  // See file_system_operations.h for details. This should be called on the
+  // same thread as where the method's called (IO thread). Calling this
+  // is optional. It is recommended to use this callback for heavier operations
+  // (such as file network downloading), so that, e.g., clients (UIs) can
+  // update its state to show progress to users. This may be a null callback.
   //
   // FileSystemOperationImpl::Copy calls this for same-filesystem copy case.
   //
@@ -214,6 +229,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
       scoped_ptr<FileSystemOperationContext> context,
       const FileSystemURL& src_url,
       const FileSystemURL& dest_url,
+      const CopyFileProgressCallback& progress_callback,
       const StatusCallback& callback) = 0;
 
   // Moves a local file from |src_url| to |dest_url|.

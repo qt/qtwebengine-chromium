@@ -48,8 +48,9 @@ class TransportClientSocketTest
 
   // Implement StreamListenSocket::Delegate methods
   virtual void DidAccept(StreamListenSocket* server,
-                         StreamListenSocket* connection) OVERRIDE {
-    connected_sock_ = reinterpret_cast<TCPListenSocket*>(connection);
+                         scoped_ptr<StreamListenSocket> connection) OVERRIDE {
+    connected_sock_.reset(
+        static_cast<TCPListenSocket*>(connection.release()));
   }
   virtual void DidRead(StreamListenSocket*, const char* str, int len) OVERRIDE {
     // TODO(dkegel): this might not be long enough to tickle some bugs.
@@ -65,7 +66,7 @@ class TransportClientSocketTest
 
   void CloseServerSocket() {
     // delete the connected_sock_, which will close it.
-    connected_sock_ = NULL;
+    connected_sock_.reset();
   }
 
   void PauseServerReads() {
@@ -94,8 +95,8 @@ class TransportClientSocketTest
   scoped_ptr<StreamSocket> sock_;
 
  private:
-  scoped_refptr<TCPListenSocket> listen_sock_;
-  scoped_refptr<TCPListenSocket> connected_sock_;
+  scoped_ptr<TCPListenSocket> listen_sock_;
+  scoped_ptr<TCPListenSocket> connected_sock_;
   bool close_server_socket_on_next_send_;
 };
 
@@ -103,7 +104,7 @@ void TransportClientSocketTest::SetUp() {
   ::testing::TestWithParam<ClientSocketTestTypes>::SetUp();
 
   // Find a free port to listen on
-  scoped_refptr<TCPListenSocket> sock;
+  scoped_ptr<TCPListenSocket> sock;
   int port;
   // Range of ports to listen on.  Shouldn't need to try many.
   const int kMinPort = 10100;
@@ -117,7 +118,7 @@ void TransportClientSocketTest::SetUp() {
       break;
   }
   ASSERT_TRUE(sock.get() != NULL);
-  listen_sock_ = sock;
+  listen_sock_ = sock.Pass();
   listen_port_ = port;
 
   AddressList addr;
@@ -125,15 +126,15 @@ void TransportClientSocketTest::SetUp() {
   scoped_ptr<HostResolver> resolver(new MockHostResolver());
   HostResolver::RequestInfo info(HostPortPair("localhost", listen_port_));
   TestCompletionCallback callback;
-  int rv = resolver->Resolve(info, &addr, callback.callback(), NULL,
-                             BoundNetLog());
+  int rv = resolver->Resolve(
+      info, DEFAULT_PRIORITY, &addr, callback.callback(), NULL, BoundNetLog());
   CHECK_EQ(ERR_IO_PENDING, rv);
   rv = callback.WaitForResult();
   CHECK_EQ(rv, OK);
-  sock_.reset(
+  sock_ =
       socket_factory_->CreateTransportClientSocket(addr,
                                                    &net_log_,
-                                                   NetLog::Source()));
+                                                   NetLog::Source());
 }
 
 int TransportClientSocketTest::DrainClientSocket(

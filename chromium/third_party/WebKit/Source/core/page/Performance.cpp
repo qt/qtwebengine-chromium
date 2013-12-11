@@ -54,7 +54,9 @@ Performance::Performance(Frame* frame)
     : DOMWindowProperty(frame)
     , m_resourceTimingBufferSize(defaultResourceTimingBufferSize)
     , m_userTiming(0)
+    , m_referenceTime(frame->document()->loader()->timing()->referenceMonotonicTime())
 {
+    ASSERT(m_referenceTime);
     ScriptWrappable::init(this);
 }
 
@@ -158,7 +160,7 @@ void Performance::webkitSetResourceTimingBufferSize(unsigned size)
 {
     m_resourceTimingBufferSize = size;
     if (isResourceTimingBufferFull())
-        dispatchEvent(Event::create(eventNames().webkitresourcetimingbufferfullEvent, false, false));
+        dispatchEvent(Event::create(eventNames().webkitresourcetimingbufferfullEvent));
 }
 
 static bool passesTimingAllowCheck(const ResourceResponse& response, Document* requestingDocument)
@@ -238,7 +240,7 @@ void Performance::addResourceTimingBuffer(PassRefPtr<PerformanceEntry> entry)
     m_resourceTimingBuffer.append(entry);
 
     if (isResourceTimingBufferFull())
-        dispatchEvent(Event::create(eventNames().webkitresourcetimingbufferfullEvent, false, false));
+        dispatchEvent(Event::create(eventNames().webkitresourcetimingbufferfullEvent));
 }
 
 bool Performance::isResourceTimingBufferFull()
@@ -286,7 +288,7 @@ void Performance::clearMeasures(const String& measureName)
 
 double Performance::now() const
 {
-    return 1000.0 * m_frame->document()->loader()->timing()->monotonicTimeToZeroBasedDocumentTime(monotonicallyIncreasingTime());
+    return 1000.0 * (monotonicallyIncreasingTime() - m_referenceTime);
 }
 
 } // namespace WebCore

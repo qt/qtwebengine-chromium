@@ -16,6 +16,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/pickle.h"
 #include "base/port.h"
+#include "net/base/cache_type.h"
 #include "net/base/net_export.h"
 #include "net/disk_cache/simple/simple_index.h"
 
@@ -75,6 +76,7 @@ class NET_EXPORT_PRIVATE SimpleIndexFile {
 
   SimpleIndexFile(base::SingleThreadTaskRunner* cache_thread,
                   base::TaskRunner* worker_pool,
+                  net::CacheType cache_type,
                   const base::FilePath& cache_directory);
   virtual ~SimpleIndexFile();
 
@@ -89,11 +91,6 @@ class NET_EXPORT_PRIVATE SimpleIndexFile {
                            const base::TimeTicks& start,
                            bool app_on_background);
 
-  // Doom the entries specified in |entry_hashes|, calling |reply_callback|
-  // with the result on the current thread when done.
-  virtual void DoomEntrySet(scoped_ptr<std::vector<uint64> > entry_hashes,
-                            const base::Callback<void(int)>& reply_callback);
-
  private:
   friend class WrappedSimpleIndexFile;
 
@@ -105,25 +102,35 @@ class NET_EXPORT_PRIVATE SimpleIndexFile {
   static const int kExtraSizeForMerge = 512;
 
   // Synchronous (IO performing) implementation of LoadIndexEntries.
-  static void SyncLoadIndexEntries(base::Time cache_last_modified,
+  static void SyncLoadIndexEntries(net::CacheType cache_type,
+                                   base::Time cache_last_modified,
                                    const base::FilePath& cache_directory,
                                    const base::FilePath& index_file_path,
                                    SimpleIndexLoadResult* out_result);
 
-  // Load the index file from disk returning an EntrySet. Upon failure, returns
-  // NULL.
+  // Load the index file from disk returning an EntrySet.
   static void SyncLoadFromDisk(const base::FilePath& index_filename,
+                               base::Time* out_last_cache_seen_by_index,
                                SimpleIndexLoadResult* out_result);
 
   // Returns a scoped_ptr for a newly allocated Pickle containing the serialized
-  // data to be written to a file.
+  // data to be written to a file. Note: the pickle is not in a consistent state
+  // immediately after calling this menthod, one needs to call
+  // SerializeFinalData to make it ready to write to a file.
   static scoped_ptr<Pickle> Serialize(
       const SimpleIndexFile::IndexMetadata& index_metadata,
       const SimpleIndex::EntrySet& entries);
 
+  // Appends cache modification time data to the serialized format. This is
+  // performed on a thread accessing the disk. It is not combined with the main
+  // serialization path to avoid extra thread hops or copying the pickle to the
+  // worker thread.
+  static bool SerializeFinalData(base::Time cache_modified, Pickle* pickle);
+
   // Given the contents of an index file |data| of length |data_len|, returns
   // the corresponding EntrySet. Returns NULL on error.
   static void Deserialize(const char* data, int data_len,
+                          base::Time* out_cache_last_modified,
                           SimpleIndexLoadResult* out_result);
 
   // Implemented either in simple_index_file_posix.cc or
@@ -135,6 +142,15 @@ class NET_EXPORT_PRIVATE SimpleIndexFile {
       const base::FilePath& cache_path,
       const EntryFileCallback& entry_file_callback);
 
+  // Writes the index file to disk atomically.
+  static void SyncWriteToDisk(net::CacheType cache_type,
+                              const base::FilePath& cache_directory,
+                              const base::FilePath& index_filename,
+                              const base::FilePath& temp_index_filename,
+                              scoped_ptr<Pickle> pickle,
+                              const base::TimeTicks& start_time,
+                              bool app_on_background);
+
   // Scan the index directory for entries, returning an EntrySet of all entries
   // found.
   static void SyncRestoreFromDisk(const base::FilePath& cache_directory,
@@ -142,9 +158,11 @@ class NET_EXPORT_PRIVATE SimpleIndexFile {
                                   SimpleIndexLoadResult* out_result);
 
   // Determines if an index file is stale relative to the time of last
-  // modification of the cache directory.
-  static bool IsIndexFileStale(base::Time cache_last_modified,
-                               const base::FilePath& index_file_path);
+  // modification of the cache directory. Obsolete, used only for a histogram to
+  // compare with the new method.
+  // TODO(pasko): remove this method after getting enough data.
+  static bool LegacyIsIndexFileStale(base::Time cache_last_modified,
+                                     const base::FilePath& index_file_path);
 
   struct PickleHeader : public Pickle::Header {
     uint32 crc;
@@ -152,9 +170,14 @@ class NET_EXPORT_PRIVATE SimpleIndexFile {
 
   const scoped_refptr<base::SingleThreadTaskRunner> cache_thread_;
   const scoped_refptr<base::TaskRunner> worker_pool_;
+  const net::CacheType cache_type_;
   const base::FilePath cache_directory_;
   const base::FilePath index_file_;
   const base::FilePath temp_index_file_;
+
+  static const char kIndexDirectory[];
+  static const char kIndexFileName[];
+  static const char kTempIndexFileName[];
 
   DISALLOW_COPY_AND_ASSIGN(SimpleIndexFile);
 };

@@ -143,9 +143,6 @@ WebInspector.CPUProfileView.prototype = {
 
         this._calculateTimes(profile);
 
-        if (profile.idleTime)
-            this._injectIdleTimeNode(profile);
-
         this._assignParentsInProfile();
         if (this.samples)
             this._buildIdToNodeMap();
@@ -419,7 +416,7 @@ WebInspector.CPUProfileView.prototype = {
         var uiLocation = script.rawLocationToUILocation(node.lineNumber);
         if (!uiLocation)
             return;
-        WebInspector.showPanel("scripts").showUISourceCode(uiLocation.uiSourceCode, uiLocation.lineNumber, uiLocation.columnNumber);
+        WebInspector.showPanel("sources").showUILocation(uiLocation);
     },
 
     _changeView: function()
@@ -576,16 +573,17 @@ WebInspector.CPUProfileView.prototype = {
         }
         profile.totalHitCount = totalHitCount(profile.head);
 
-        var durationMs = 1000 * profile.endTime - 1000 * profile.startTime;
-        var samplingRate = profile.totalHitCount / durationMs;
+        var durationMs = 1000 * (profile.endTime - profile.startTime);
+        var samplingInterval = durationMs / profile.totalHitCount;
+        this.samplingIntervalMs = samplingInterval;
 
         function calculateTimesForNode(node) {
-            node.selfTime = node.hitCount * samplingRate;
-            var totalTime = node.selfTime;
+            node.selfTime = node.hitCount * samplingInterval;
+            var totalHitCount = node.hitCount;
             for (var i = 0; i < node.children.length; i++)
-                totalTime += calculateTimesForNode(node.children[i]);
-            node.totalTime = totalTime;
-            return totalTime;
+                totalHitCount += calculateTimesForNode(node.children[i]);
+            node.totalTime = totalHitCount * samplingInterval;
+            return totalHitCount;
         }
         calculateTimesForNode(profile.head);
     },
@@ -629,39 +627,6 @@ WebInspector.CPUProfileView.prototype = {
                 break;
             }
         }
-    },
-
-    /**
-     * @param {ProfilerAgent.CPUProfile} profile
-     */
-    _injectIdleTimeNode: function(profile)
-    {
-        var idleTime = profile.idleTime;
-        var nodes = profile.head.children;
-
-        var programNode = {selfTime: 0};
-        for (var i = nodes.length - 1; i >= 0; --i) {
-            if (nodes[i].functionName === "(program)") {
-                programNode = nodes[i];
-                break;
-            }
-        }
-        var programTime = programNode.selfTime;
-        if (idleTime > programTime)
-            idleTime = programTime;
-        programTime = programTime - idleTime;
-        programNode.selfTime = programTime;
-        programNode.totalTime = programTime;
-        var idleNode = {
-            functionName: "(idle)",
-            url: null,
-            lineNumber: 0,
-            totalTime: idleTime,
-            selfTime: idleTime,
-            callUID: 0,
-            children: []
-        };
-        nodes.push(idleNode);
     },
 
     __proto__: WebInspector.View.prototype

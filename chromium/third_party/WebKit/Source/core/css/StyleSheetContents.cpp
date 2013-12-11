@@ -28,7 +28,7 @@
 #include "core/css/StyleRule.h"
 #include "core/css/StyleRuleImport.h"
 #include "core/dom/Node.h"
-#include "core/loader/cache/CSSStyleSheetResource.h"
+#include "core/fetch/CSSStyleSheetResource.h"
 #include "weborigin/SecurityOrigin.h"
 #include "wtf/Deque.h"
 
@@ -326,12 +326,11 @@ void StyleSheetContents::checkLoaded()
     if (isLoading())
         return;
 
-    RefPtr<StyleSheetContents> protect(this);
-
     // Avoid |this| being deleted by scripts that run via
     // ScriptableDocumentParser::executeScriptsWaitingForResources().
-    // See <rdar://problem/6622300>.
-    RefPtr<StyleSheetContents> protector(this);
+    // See https://bugs.webkit.org/show_bug.cgi?id=95106
+    RefPtr<StyleSheetContents> protect(this);
+
     StyleSheetContents* parentSheet = parentStyleSheet();
     if (parentSheet) {
         parentSheet->checkLoaded();
@@ -388,7 +387,7 @@ Node* StyleSheetContents::singleOwnerNode() const
 Document* StyleSheetContents::singleOwnerDocument() const
 {
     Node* ownerNode = singleOwnerNode();
-    return ownerNode ? ownerNode->document() : 0;
+    return ownerNode ? &ownerNode->document() : 0;
 }
 
 KURL StyleSheetContents::completeURL(const String& url) const
@@ -414,7 +413,7 @@ void StyleSheetContents::addSubresourceStyleURLs(ListHashSet<KURL>& urls)
         for (unsigned i = 0; i < styleSheet->m_childRules.size(); ++i) {
             StyleRuleBase* rule = styleSheet->m_childRules[i].get();
             if (rule->isStyleRule())
-                static_cast<StyleRule*>(rule)->properties()->addSubresourceStyleURLs(urls, this);
+                toStyleRule(rule)->properties()->addSubresourceStyleURLs(urls, this);
             else if (rule->isFontFaceRule())
                 static_cast<StyleRuleFontFace*>(rule)->properties()->addSubresourceStyleURLs(urls, this);
         }
@@ -482,7 +481,7 @@ void StyleSheetContents::registerClient(CSSStyleSheet* sheet)
 void StyleSheetContents::unregisterClient(CSSStyleSheet* sheet)
 {
     size_t position = m_clients.find(sheet);
-    ASSERT(position != notFound);
+    ASSERT(position != kNotFound);
     m_clients.remove(position);
 }
 

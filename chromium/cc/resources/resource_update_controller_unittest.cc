@@ -5,11 +5,12 @@
 #include "cc/resources/resource_update_controller.h"
 
 #include "base/test/test_simple_task_runner.h"
+#include "cc/debug/test_web_graphics_context_3d.h"
 #include "cc/resources/prioritized_resource_manager.h"
 #include "cc/test/fake_output_surface.h"
+#include "cc/test/fake_output_surface_client.h"
 #include "cc/test/fake_proxy.h"
 #include "cc/test/scheduler_test_common.h"
-#include "cc/test/test_web_graphics_context_3d.h"
 #include "cc/test/tiled_layer_test_common.h"
 #include "cc/trees/single_thread_proxy.h"  // For DebugScopedSetImplThread
 #include "testing/gtest/include/gtest/gtest.h"
@@ -34,8 +35,9 @@ class ResourceUpdateControllerTest;
 class WebGraphicsContext3DForUploadTest : public TestWebGraphicsContext3D {
  public:
   explicit WebGraphicsContext3DForUploadTest(ResourceUpdateControllerTest* test)
-      : test_(test),
-        support_shallow_flush_(true) {}
+      : test_(test) {
+    test_capabilities_.shallow_flush = true;
+  }
 
   virtual void flush(void) OVERRIDE;
   virtual void shallowFlushCHROMIUM(void) OVERRIDE;
@@ -51,12 +53,6 @@ class WebGraphicsContext3DForUploadTest : public TestWebGraphicsContext3D {
       const void* pixels) OVERRIDE;
   virtual GrGLInterface* onCreateGrGLInterface() OVERRIDE { return NULL; }
 
-  virtual WebString getString(WGC3Denum name) OVERRIDE {
-    if (support_shallow_flush_)
-      return WebString("GL_CHROMIUM_shallow_flush");
-    return WebString("");
-  }
-
   virtual void getQueryObjectuivEXT(
       WebGLId id,
       WGC3Denum pname,
@@ -64,7 +60,6 @@ class WebGraphicsContext3DForUploadTest : public TestWebGraphicsContext3D {
 
  private:
   ResourceUpdateControllerTest* test_;
-  bool support_shallow_flush_;
 };
 
 class ResourceUpdateControllerTest : public Test {
@@ -124,21 +119,25 @@ class ResourceUpdateControllerTest : public Test {
 
  protected:
   virtual void SetUp() {
-    output_surface_ =
-        FakeOutputSurface::Create3d(scoped_ptr<WebKit::WebGraphicsContext3D>(
-            new WebGraphicsContext3DForUploadTest(this)));
     bitmap_.setConfig(SkBitmap::kARGB_8888_Config, 300, 150);
     bitmap_.allocPixels();
 
     for (int i = 0; i < 4; i++) {
       textures_[i] = PrioritizedResource::Create(resource_manager_.get(),
-                                                 gfx::Size(300, 150), GL_RGBA);
+                                                 gfx::Size(300, 150),
+                                                 RGBA_8888);
       textures_[i]->
           set_request_priority(PriorityCalculator::VisiblePriority(true));
     }
     resource_manager_->PrioritizeTextures();
 
-    resource_provider_ = ResourceProvider::Create(output_surface_.get(), 0);
+    output_surface_ = FakeOutputSurface::Create3d(
+        scoped_ptr<TestWebGraphicsContext3D>(
+            new WebGraphicsContext3DForUploadTest(this)));
+    CHECK(output_surface_->BindToClient(&output_surface_client_));
+
+    resource_provider_ =
+        ResourceProvider::Create(output_surface_.get(), 0, false);
   }
 
   void AppendFullUploadsOfIndexedTextureToUpdateQueue(int count,
@@ -193,6 +192,7 @@ class ResourceUpdateControllerTest : public Test {
  protected:
   // Classes required to interact and test the ResourceUpdateController
   FakeProxy proxy_;
+  FakeOutputSurfaceClient output_surface_client_;
   scoped_ptr<OutputSurface> output_surface_;
   scoped_ptr<ResourceProvider> resource_provider_;
   scoped_ptr<ResourceUpdateQueue> queue_;

@@ -125,16 +125,19 @@ static const int kOpusStereoBitrate = 64000;
 static const int kOpusMinBitrate = 6000;
 static const int kOpusMaxBitrate = 510000;
 
-#if defined(CHROMEOS)
-// Ensure we open the file in a writeable path on ChromeOS. This workaround
-// can be removed when it's possible to specify a filename for audio option
-// based AEC dumps.
+// Ensure we open the file in a writeable path on ChromeOS and Android. This
+// workaround can be removed when it's possible to specify a filename for audio
+// option based AEC dumps.
 //
 // TODO(grunell): Use a string in the options instead of hardcoding it here
 // and let the embedder choose the filename (crbug.com/264223).
 //
-// NOTE(ajm): Don't use this hardcoded /tmp path on non-ChromeOS platforms.
+// NOTE(ajm): Don't use hardcoded paths on platforms not explicitly specified
+// below.
+#if defined(CHROMEOS)
 static const char kAecDumpByAudioOptionFilename[] = "/tmp/audio.aecdump";
+#elif defined(ANDROID)
+static const char kAecDumpByAudioOptionFilename[] = "/sdcard/audio.aecdump";
 #else
 static const char kAecDumpByAudioOptionFilename[] = "audio.aecdump";
 #endif
@@ -1482,6 +1485,7 @@ WebRtcVoiceMediaChannel::WebRtcVoiceMediaChannel(WebRtcVoiceEngine *engine)
       desired_playout_(false),
       nack_enabled_(false),
       playout_(false),
+      typing_noise_detected_(false),
       desired_send_(SEND_NOTHING),
       send_(SEND_NOTHING),
       default_receive_ssrc_(0) {
@@ -1619,18 +1623,11 @@ bool WebRtcVoiceMediaChannel::SetRecvCodecs(
 }
 
 bool WebRtcVoiceMediaChannel::SetSendCodecs(
-    const std::vector<AudioCodec>& codecs) {
-  // TODO(xians): Break down this function into SetSendCodecs(channel, codecs)
-  // to support per-channel codecs.
-
-  // Disable DTMF, VAD, and FEC unless we know the other side wants them.
-  dtmf_allowed_ = false;
-  for (ChannelMap::iterator iter = send_channels_.begin();
-       iter != send_channels_.end(); ++iter) {
-    engine()->voe()->codec()->SetVADStatus(iter->second.channel, false);
-    engine()->voe()->rtp()->SetNACKStatus(iter->second.channel, false, 0);
-    engine()->voe()->rtp()->SetFECStatus(iter->second.channel, false);
-  }
+    int channel, const std::vector<AudioCodec>& codecs) {
+  // Disable VAD, and FEC unless we know the other side wants them.
+  engine()->voe()->codec()->SetVADStatus(channel, false);
+  engine()->voe()->rtp()->SetNACKStatus(channel, false, 0);
+  engine()->voe()->rtp()->SetFECStatus(channel, false);
 
   // Scan through the list to figure out the codec to use for sending, along
   // with the proper configuration for VAD and DTMF.
@@ -1687,16 +1684,11 @@ bool WebRtcVoiceMediaChannel::SetSendCodecs(
     // about it.
     if (_stricmp(it->name.c_str(), "telephone-event") == 0 ||
         _stricmp(it->name.c_str(), "audio/telephone-event") == 0) {
-      for (ChannelMap::iterator iter = send_channels_.begin();
-           iter != send_channels_.end(); ++iter) {
-        if (engine()->voe()->dtmf()->SetSendTelephoneEventPayloadType(
-                iter->second.channel, it->id) == -1) {
-          LOG_RTCERR2(SetSendTelephoneEventPayloadType,
-                      iter->second.channel, it->id);
-          return false;
-        }
+      if (engine()->voe()->dtmf()->SetSendTelephoneEventPayloadType(
+              channel, it->id) == -1) {
+        LOG_RTCERR2(SetSendTelephoneEventPayloadType, channel, it->id);
+        return false;
       }
-      dtmf_allowed_ = true;
     }
 
     // Turn voice activity detection/comfort noise on if supported.
@@ -1719,35 +1711,30 @@ bool WebRtcVoiceMediaChannel::SetSendCodecs(
                           << " not supported.";
           continue;
       }
-      // Loop through the existing send channels and set the CN payloadtype
-      // and the VAD status.
-      for (ChannelMap::iterator iter = send_channels_.begin();
-           iter != send_channels_.end(); ++iter) {
-        int channel = iter->second.channel;
-        // The CN payload type for 8000 Hz clockrate is fixed at 13.
-        if (cn_freq != webrtc::kFreq8000Hz) {
-          if (engine()->voe()->codec()->SetSendCNPayloadType(
-                  channel, it->id, cn_freq) == -1) {
-            LOG_RTCERR3(SetSendCNPayloadType, channel, it->id, cn_freq);
-            // TODO(ajm): This failure condition will be removed from VoE.
-            // Restore the return here when we update to a new enough webrtc.
-            //
-            // Not returning false because the SetSendCNPayloadType will fail if
-            // the channel is already sending.
-            // This can happen if the remote description is applied twice, for
-            // example in the case of ROAP on top of JSEP, where both side will
-            // send the offer.
-          }
+      // Set the CN payloadtype and the VAD status.
+      // The CN payload type for 8000 Hz clockrate is fixed at 13.
+      if (cn_freq != webrtc::kFreq8000Hz) {
+        if (engine()->voe()->codec()->SetSendCNPayloadType(
+                channel, it->id, cn_freq) == -1) {
+          LOG_RTCERR3(SetSendCNPayloadType, channel, it->id, cn_freq);
+          // TODO(ajm): This failure condition will be removed from VoE.
+          // Restore the return here when we update to a new enough webrtc.
+          //
+          // Not returning false because the SetSendCNPayloadType will fail if
+          // the channel is already sending.
+          // This can happen if the remote description is applied twice, for
+          // example in the case of ROAP on top of JSEP, where both side will
+          // send the offer.
         }
+      }
 
-        // Only turn on VAD if we have a CN payload type that matches the
-        // clockrate for the codec we are going to use.
-        if (it->clockrate == send_codec.plfreq) {
-          LOG(LS_INFO) << "Enabling VAD";
-          if (engine()->voe()->codec()->SetVADStatus(channel, true) == -1) {
-            LOG_RTCERR2(SetVADStatus, channel, true);
-            return false;
-          }
+      // Only turn on VAD if we have a CN payload type that matches the
+      // clockrate for the codec we are going to use.
+      if (it->clockrate == send_codec.plfreq) {
+        LOG(LS_INFO) << "Enabling VAD";
+        if (engine()->voe()->codec()->SetVADStatus(channel, true) == -1) {
+          LOG_RTCERR2(SetVADStatus, channel, true);
+          return false;
         }
       }
     }
@@ -1767,28 +1754,22 @@ bool WebRtcVoiceMediaChannel::SetSendCodecs(
         // Enable redundant encoding of the specified codec. Treat any
         // failure as a fatal internal error.
         LOG(LS_INFO) << "Enabling FEC";
-        for (ChannelMap::iterator iter = send_channels_.begin();
-             iter != send_channels_.end(); ++iter) {
-          if (engine()->voe()->rtp()->SetFECStatus(iter->second.channel,
-                                                   true, it->id) == -1) {
-            LOG_RTCERR3(SetFECStatus, iter->second.channel, true, it->id);
-            return false;
-          }
+        if (engine()->voe()->rtp()->SetFECStatus(channel, true, it->id) == -1) {
+          LOG_RTCERR3(SetFECStatus, channel, true, it->id);
+          return false;
         }
       } else {
         send_codec = voe_codec;
         nack_enabled_ = IsNackEnabled(*it);
-        SetNack(send_channels_, nack_enabled_);
+        SetNack(channel, nack_enabled_);
       }
       first = false;
       // Set the codec immediately, since SetVADStatus() depends on whether
       // the current codec is mono or stereo.
-      if (!SetSendCodec(send_codec))
+      if (!SetSendCodec(channel, send_codec))
         return false;
     }
   }
-  SetNack(receive_channels_, nack_enabled_);
-
 
   // If we're being asked to set an empty list of codecs, due to a buggy client,
   // choose the most common format: PCMU
@@ -1796,9 +1777,38 @@ bool WebRtcVoiceMediaChannel::SetSendCodecs(
     LOG(LS_WARNING) << "Received empty list of codecs; using PCMU/8000";
     AudioCodec codec(0, "PCMU", 8000, 0, 1, 0);
     engine()->FindWebRtcCodec(codec, &send_codec);
-    if (!SetSendCodec(send_codec))
+    if (!SetSendCodec(channel, send_codec))
       return false;
   }
+
+  // Always update the |send_codec_| to the currently set send codec.
+  send_codec_.reset(new webrtc::CodecInst(send_codec));
+
+  return true;
+}
+
+bool WebRtcVoiceMediaChannel::SetSendCodecs(
+    const std::vector<AudioCodec>& codecs) {
+  dtmf_allowed_ = false;
+  for (std::vector<AudioCodec>::const_iterator it = codecs.begin();
+       it != codecs.end(); ++it) {
+    // Find the DTMF telephone event "codec".
+    if (_stricmp(it->name.c_str(), "telephone-event") == 0 ||
+        _stricmp(it->name.c_str(), "audio/telephone-event") == 0) {
+      dtmf_allowed_ = true;
+    }
+  }
+
+  // Cache the codecs in order to configure the channel created later.
+  send_codecs_ = codecs;
+  for (ChannelMap::iterator iter = send_channels_.begin();
+       iter != send_channels_.end(); ++iter) {
+    if (!SetSendCodecs(iter->second.channel, codecs)) {
+      return false;
+    }
+  }
+
+  SetNack(receive_channels_, nack_enabled_);
 
   return true;
 }
@@ -1807,17 +1817,16 @@ void WebRtcVoiceMediaChannel::SetNack(const ChannelMap& channels,
                                       bool nack_enabled) {
   for (ChannelMap::const_iterator it = channels.begin();
        it != channels.end(); ++it) {
-    SetNack(it->first, it->second.channel, nack_enabled_);
+    SetNack(it->second.channel, nack_enabled);
   }
 }
 
-void WebRtcVoiceMediaChannel::SetNack(uint32 ssrc, int channel,
-                                      bool nack_enabled) {
+void WebRtcVoiceMediaChannel::SetNack(int channel, bool nack_enabled) {
   if (nack_enabled) {
-    LOG(LS_INFO) << "Enabling NACK for stream " << ssrc;
+    LOG(LS_INFO) << "Enabling NACK for channel " << channel;
     engine()->voe()->rtp()->SetNACKStatus(channel, true, kNackMaxPackets);
   } else {
-    LOG(LS_INFO) << "Disabling NACK for stream " << ssrc;
+    LOG(LS_INFO) << "Disabling NACK for channel " << channel;
     engine()->voe()->rtp()->SetNACKStatus(channel, false, 0);
   }
 }
@@ -1831,10 +1840,6 @@ bool WebRtcVoiceMediaChannel::SetSendCodec(
     if (!SetSendCodec(iter->second.channel, send_codec))
       return false;
   }
-
-  // All SetSendCodec calls were successful. Update the global state
-  // accordingly.
-  send_codec_.reset(new webrtc::CodecInst(send_codec));
 
   return true;
 }
@@ -2085,8 +2090,8 @@ bool WebRtcVoiceMediaChannel::AddSendStream(const StreamParams& sp) {
      return false;
   }
 
-  // Set the current codec to be used for the new channel.
-  if (send_codec_ && !SetSendCodec(channel, *send_codec_))
+  // Set the current codecs to be used for the new channel.
+  if (!send_codecs_.empty() && !SetSendCodecs(channel, send_codecs_))
     return false;
 
   return ChangeSend(channel, desired_send_);
@@ -2210,7 +2215,7 @@ bool WebRtcVoiceMediaChannel::AddRecvStream(const StreamParams& sp) {
       SetPlayout(voe_channel(), false);
     }
   }
-  SetNack(ssrc, channel, nack_enabled_);
+  SetNack(channel, nack_enabled_);
 
   receive_channels_.insert(
       std::make_pair(ssrc, WebRtcVoiceChannelInfo(channel, NULL)));
@@ -2534,7 +2539,24 @@ bool WebRtcVoiceMediaChannel::InsertDtmf(uint32 ssrc, int event,
 
   // Send the event.
   if (flags & cricket::DF_SEND) {
-    int channel = (ssrc == 0) ? voe_channel() : GetSendChannelNum(ssrc);
+    int channel = -1;
+    if (ssrc == 0) {
+      bool default_channel_is_inuse = false;
+      for (ChannelMap::const_iterator iter = send_channels_.begin();
+           iter != send_channels_.end(); ++iter) {
+        if (IsDefaultChannel(iter->second.channel)) {
+          default_channel_is_inuse = true;
+          break;
+        }
+      }
+      if (default_channel_is_inuse) {
+        channel = voe_channel();
+      } else if (!send_channels_.empty()) {
+        channel = send_channels_.begin()->second.channel;
+      }
+    } else {
+      channel = GetSendChannelNum(ssrc);
+    }
     if (channel == -1) {
       LOG(LS_WARNING) << "InsertDtmf - The specified ssrc "
                       << ssrc << " is not in use.";
@@ -2784,6 +2806,7 @@ bool WebRtcVoiceMediaChannel::GetStats(VoiceMediaInfo* info) {
     sinfo.echo_return_loss_enhancement = echo_return_loss_enhancement;
     sinfo.echo_delay_median_ms = echo_delay_median_ms;
     sinfo.echo_delay_std_ms = echo_delay_std_ms;
+    sinfo.typing_noise_detected = typing_noise_detected_;
 
     info->senders.push_back(sinfo);
   }
@@ -2892,6 +2915,13 @@ bool WebRtcVoiceMediaChannel::FindSsrc(int channel_num, uint32* ssrc) {
 }
 
 void WebRtcVoiceMediaChannel::OnError(uint32 ssrc, int error) {
+#ifdef USE_WEBRTC_DEV_BRANCH
+  if (error == VE_TYPING_NOISE_WARNING) {
+    typing_noise_detected_ = true;
+  } else if (error == VE_TYPING_NOISE_OFF_WARNING) {
+    typing_noise_detected_ = false;
+  }
+#endif
   SignalMediaError(ssrc, WebRtcErrorToChannelError(error));
 }
 

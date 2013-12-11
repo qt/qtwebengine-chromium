@@ -30,9 +30,9 @@
 #include "core/css/CSSImageValue.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/dom/Document.h"
-#include "core/loader/cache/FetchRequest.h"
-#include "core/loader/cache/ImageResource.h"
-#include "core/loader/cache/ResourceFetcher.h"
+#include "core/fetch/FetchRequest.h"
+#include "core/fetch/ImageResource.h"
+#include "core/fetch/ResourceFetcher.h"
 #include "core/rendering/style/StyleFetchedImageSet.h"
 #include "core/rendering/style/StylePendingImage.h"
 #include "wtf/text/StringBuilder.h"
@@ -104,7 +104,7 @@ StyleFetchedImageSet* CSSImageSetValue::cachedImageSet(ResourceFetcher* loader, 
         ImageWithScale image = bestImageForScaleFactor();
         if (Document* document = loader->document()) {
             FetchRequest request(ResourceRequest(document->completeURL(image.imageURL)), FetchInitiatorTypeNames::css);
-            if (ResourcePtr<ImageResource> cachedImage = loader->requestImage(request)) {
+            if (ResourcePtr<ImageResource> cachedImage = loader->fetchImage(request)) {
                 m_imageSet = StyleFetchedImageSet::create(cachedImage.get(), image.scaleFactor, this);
                 m_accessedBestFitImage = true;
             }

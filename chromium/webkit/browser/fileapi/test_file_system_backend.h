@@ -41,7 +41,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE TestFileSystemBackend
       FileSystemType type,
       OpenFileSystemMode mode,
       const OpenFileSystemCallback& callback) OVERRIDE;
-  virtual FileSystemFileUtil* GetFileUtil(FileSystemType type) OVERRIDE;
   virtual AsyncFileUtil* GetAsyncFileUtil(FileSystemType type) OVERRIDE;
   virtual CopyOrMoveFileValidatorFactory* GetCopyOrMoveFileValidatorFactory(
       FileSystemType type,
@@ -81,7 +80,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE TestFileSystemBackend
 
   base::FilePath base_path_;
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
-  scoped_ptr<AsyncFileUtilAdapter> local_file_util_;
+  scoped_ptr<AsyncFileUtilAdapter> file_util_;
   scoped_ptr<QuotaUtil> quota_util_;
 
   bool require_copy_or_move_validator_;

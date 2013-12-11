@@ -30,10 +30,10 @@ namespace WebCore {
 class SVGGElement FINAL : public SVGGraphicsElement,
                           public SVGExternalResourcesRequired {
 public:
-    static PassRefPtr<SVGGElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGGElement> create(const QualifiedName&, Document&);
 
 protected:
-    SVGGElement(const QualifiedName&, Document*, ConstructionType = CreateSVGElement);
+    SVGGElement(const QualifiedName&, Document&, ConstructionType = CreateSVGElement);
 
     virtual RenderObject* createRenderer(RenderStyle*);
 
@@ -45,7 +45,7 @@ private:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual void svgAttributeChanged(const QualifiedName&);
 
-    virtual bool rendererIsNeeded(const NodeRenderingContext&);
+    virtual bool rendererIsNeeded(const RenderStyle&);
 
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGGElement)
         DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)

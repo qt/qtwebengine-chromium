@@ -8,7 +8,7 @@
 
 #include "base/basictypes.h"
 #include "ipc/ipc_message_macros.h"
-#include "ui/base/events/event_constants.h"
+#include "ui/events/event_constants.h"
 #include "ui/gfx/native_widget_types.h"
 
 #define IPC_MESSAGE_START MetroViewerMsgStart
@@ -92,6 +92,11 @@ IPC_MESSAGE_CONTROL2(MetroViewerHostMsg_SelectFolderDone,
 
 // Messages sent from the browser to the viewer:
 
+// Requests the viewer to open a URL in desktop mode.
+IPC_MESSAGE_CONTROL2(MetroViewerHostMsg_OpenURLOnDesktop,
+                     base::FilePath,  /* shortcut */
+                     string16         /* url */);
+
 // Requests the viewer to change the pointer to a new cursor.
 IPC_MESSAGE_CONTROL1(MetroViewerHostMsg_SetCursor,
                      int64         /* cursor */);
@@ -131,11 +136,6 @@ IPC_MESSAGE_CONTROL4(MetroViewerHostMsg_DisplayFileOpen,
 // Requests the viewer to display the select folder dialog.
 IPC_MESSAGE_CONTROL1(MetroViewerHostMsg_DisplaySelectFolder,
                      string16)   /* title */
-
-// Informs the browser about the viewer activation state, i.e. active, lost
-// activation etc.
-IPC_MESSAGE_CONTROL1(MetroViewerHostMsg_WindowActivated,
-                     bool) /* active */
 
 // Sent to the viewer process to set the cursor position.
 IPC_MESSAGE_CONTROL2(MetroViewerHostMsg_SetCursorPos,

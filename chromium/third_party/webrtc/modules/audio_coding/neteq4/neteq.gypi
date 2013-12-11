@@ -112,10 +112,6 @@
         'time_stretch.cc',
         'time_stretch.h',
       ],
-      # Disable warnings to enable Win64 build, issue 1323.
-      'msvs_disabled_warnings': [
-        4267,  # size_t to int truncation.
-      ],
     },
   ], # targets
   'conditions': [
@@ -156,10 +152,6 @@
               ],
             }],
           ],
-          # Disable warnings to enable Win64 build, issue 1323.
-          'msvs_disabled_warnings': [
-            4267,  # size_t to int truncation.
-          ],
         }, # audio_decoder_unittests
 
         {
@@ -179,14 +171,12 @@
             'tools',
           ],
           'sources': [
+            'tools/audio_loop.cc',
+            'tools/audio_loop.h',
             'tools/input_audio_file.cc',
             'tools/input_audio_file.h',
             'tools/rtp_generator.cc',
             'tools/rtp_generator.h',
-          ],
-          # Disable warnings to enable Win64 build, issue 1323.
-          'msvs_disabled_warnings': [
-            4267,  # size_t to int truncation.
           ],
         }, # neteq_unittest_tools
       ], # targets
@@ -200,6 +190,24 @@
               'type': 'none',
               'dependencies': [
                 '<(apk_tests_path):audio_decoder_unittests_apk',
+              ],
+            },
+          ],
+        }],
+        ['test_isolation_mode != "noop"', {
+          'targets': [
+            {
+              'target_name': 'audio_decoder_unittests_run',
+              'type': 'none',
+              'dependencies': [
+                '<(import_isolate_path):import_isolate_gypi',
+                'audio_decoder_unittests',
+              ],
+              'includes': [
+                'audio_decoder_unittests.isolate',
+              ],
+              'sources': [
+                'audio_decoder_unittests.isolate',
               ],
             },
           ],

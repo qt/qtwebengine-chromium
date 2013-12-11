@@ -118,6 +118,11 @@ WebScrollbar::Orientation WebScrollbarImpl::orientation() const
     return static_cast<WebScrollbar::Orientation>(m_scrollbar->orientation());
 }
 
+bool WebScrollbarImpl::isLeftSideVerticalScrollbar() const
+{
+    return m_scrollbar->isLeftSideVerticalScrollbar();
+}
+
 bool WebScrollbarImpl::isCustomScrollbar() const
 {
     return m_scrollbar->isCustomScrollbar();

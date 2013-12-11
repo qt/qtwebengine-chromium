@@ -66,7 +66,7 @@ static KeyValueMap retrieveKeyValuePairs(WebCore::SharedBufferChunkReader* buffe
             value.clear();
         }
         size_t semiColonIndex = line.find(':');
-        if (semiColonIndex == notFound) {
+        if (semiColonIndex == kNotFound) {
             // This is not a key value pair, ignore.
             continue;
         }
@@ -120,6 +120,8 @@ MIMEHeader::Encoding MIMEHeader::parseContentTransferEncoding(const String& text
         return Base64;
     if (encoding == "quoted-printable")
         return QuotedPrintable;
+    if (encoding == "8bit")
+        return EightBit;
     if (encoding == "7bit")
         return SevenBit;
     if (encoding == "binary")

@@ -26,8 +26,8 @@
 #ifndef CSSFontFaceSource_h
 #define CSSFontFaceSource_h
 
-#include "core/loader/cache/FontResource.h"
-#include "core/loader/cache/ResourcePtr.h"
+#include "core/fetch/FontResource.h"
+#include "core/fetch/ResourcePtr.h"
 #include "core/platform/Timer.h"
 #include "wtf/HashMap.h"
 #include "wtf/text/AtomicString.h"
@@ -50,6 +50,8 @@ public:
     CSSFontFaceSource(const String&, FontResource* = 0);
     virtual ~CSSFontFaceSource();
 
+    bool isLocal() const;
+    bool isLoading() const;
     bool isLoaded() const;
     bool isValid() const;
 
@@ -73,11 +75,17 @@ public:
 
     bool isDecodeError() const;
     bool ensureFontData();
+    bool isLocalFontAvailable(const FontDescription&);
+    void willUseFontData();
+    void beginLoadingFontSoon();
 
 private:
+    typedef HashMap<unsigned, RefPtr<SimpleFontData> > FontDataTable; // The hash key is composed of size synthetic styles.
+
     class FontLoadHistograms {
     public:
         FontLoadHistograms() : m_loadStartTime(0) { }
+        void willUseFontData();
         void loadStarted();
         void recordLocalFont(bool loadSuccess);
         void recordRemoteFont(const FontResource*);
@@ -91,7 +99,7 @@ private:
     AtomicString m_string; // URI for remote, built-in font name for local.
     ResourcePtr<FontResource> m_font; // For remote fonts, a pointer to our cached resource.
     CSSFontFace* m_face; // Our owning font face.
-    HashMap<unsigned, RefPtr<SimpleFontData> > m_fontDataTable; // The hash key is composed of size synthetic styles.
+    FontDataTable m_fontDataTable;
     FontLoadHistograms m_histograms;
 
 #if ENABLE(SVG_FONTS)

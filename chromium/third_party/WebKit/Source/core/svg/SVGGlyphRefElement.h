@@ -21,6 +21,7 @@
 #define SVGGlyphRefElement_h
 
 #if ENABLE(SVG_FONTS)
+#include "SVGNames.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGURIReference.h"
 
@@ -29,7 +30,7 @@ namespace WebCore {
 class SVGGlyphRefElement FINAL : public SVGElement,
                                  public SVGURIReference {
 public:
-    static PassRefPtr<SVGGlyphRefElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGGlyphRefElement> create(const QualifiedName&, Document&);
 
     bool hasValidGlyphElement(String& glyphName) const;
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
@@ -47,12 +48,12 @@ public:
     void setDy(float);
 
 private:
-    SVGGlyphRefElement(const QualifiedName&, Document*);
+    SVGGlyphRefElement(const QualifiedName&, Document&);
 
     template<typename CharType>
     void parseAttributeInternal(const QualifiedName&, const AtomicString&);
 
-    virtual bool rendererIsNeeded(const NodeRenderingContext&) { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) { return false; }
 
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGGlyphRefElement)
         DECLARE_ANIMATED_STRING(Href, href)
@@ -63,6 +64,12 @@ private:
     float m_dx;
     float m_dy;
 };
+
+inline SVGGlyphRefElement* toSVGGlyphRefElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::glyphRefTag));
+    return static_cast<SVGGlyphRefElement*>(node);
+}
 
 }
 

@@ -29,7 +29,7 @@ class WebContentsModalDialogManager
   virtual ~WebContentsModalDialogManager();
 
   WebContentsModalDialogManagerDelegate* delegate() const { return delegate_; }
-  void set_delegate(WebContentsModalDialogManagerDelegate* d) { delegate_ = d; }
+  void SetDelegate(WebContentsModalDialogManagerDelegate* d);
 
   static NativeWebContentsModalDialogManager* CreateNativeManager(
       NativeWebContentsModalDialogManagerDelegate* native_delegate);
@@ -38,12 +38,16 @@ class WebContentsModalDialogManager
   // WillClose() when it is being destroyed.
   void ShowDialog(NativeWebContentsModalDialog dialog);
 
-  // Returns true if a dialog is currently being shown.
-  bool IsShowingDialog() const;
+  // Returns true if any dialogs are active and not closed.
+  bool IsDialogActive() const;
 
-  // Focus the topmost modal dialog.  IsShowingDialog() must be true when
-  // calling this function.
+  // Focus the topmost modal dialog.  IsDialogActive() must be true when calling
+  // this function.
   void FocusTopmostDialog();
+
+  // Set to true to close the window when a page load starts on the WebContents.
+  void SetCloseOnInterstitialWebUI(NativeWebContentsModalDialog dialog,
+                                   bool close);
 
   // Overriden from NativeWebContentsModalDialogManagerDelegate:
   virtual content::WebContents* GetWebContents() const OVERRIDE;
@@ -62,6 +66,7 @@ class WebContentsModalDialogManager
         : manager_(manager) {}
 
     void CloseAllDialogs() { manager_->CloseAllDialogs(); }
+    void DidAttachInterstitialPage() { manager_->DidAttachInterstitialPage(); }
     void ResetNativeManager(NativeWebContentsModalDialogManager* delegate) {
       manager_->native_manager_.reset(delegate);
     }
@@ -76,7 +81,18 @@ class WebContentsModalDialogManager
   explicit WebContentsModalDialogManager(content::WebContents* web_contents);
   friend class content::WebContentsUserData<WebContentsModalDialogManager>;
 
-  typedef std::deque<NativeWebContentsModalDialog> WebContentsModalDialogList;
+  struct DialogState {
+    explicit DialogState(NativeWebContentsModalDialog dialog);
+
+    NativeWebContentsModalDialog dialog;
+    bool close_on_interstitial_webui;
+  };
+
+  typedef std::deque<DialogState> WebContentsModalDialogList;
+
+  // Utility function to get the dialog state for a dialog.
+  WebContentsModalDialogList::iterator FindDialogState(
+      NativeWebContentsModalDialog dialog);
 
   // Blocks/unblocks interaction with renderer process.
   void BlockWebContentsInteraction(bool blocked);
@@ -92,6 +108,7 @@ class WebContentsModalDialogManager
       const content::FrameNavigateParams& params) OVERRIDE;
   virtual void DidGetIgnoredUIEvent() OVERRIDE;
   virtual void WebContentsDestroyed(content::WebContents* tab) OVERRIDE;
+  virtual void DidAttachInterstitialPage() OVERRIDE;
 
   // Delegate for notifying our owner about stuff. Not owned by us.
   WebContentsModalDialogManagerDelegate* delegate_;

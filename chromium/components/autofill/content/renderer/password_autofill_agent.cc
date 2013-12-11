@@ -10,11 +10,11 @@
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/content/renderer/form_autofill_util.h"
+#include "components/autofill/content/renderer/password_form_conversion_utils.h"
 #include "components/autofill/core/common/autofill_messages.h"
 #include "components/autofill/core/common/form_field_data.h"
+#include "components/autofill/core/common/password_form.h"
 #include "components/autofill/core/common/password_form_fill_data.h"
-#include "content/public/common/password_form.h"
-#include "content/public/renderer/password_form_conversion_utils.h"
 #include "content/public/renderer/render_view.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebAutofillClient.h"
@@ -23,9 +23,12 @@
 #include "third_party/WebKit/public/web/WebFormElement.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebNode.h"
+#include "third_party/WebKit/public/web/WebNodeList.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
+#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
 #include "third_party/WebKit/public/web/WebView.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 
 namespace autofill {
 namespace {
@@ -348,27 +351,39 @@ bool PasswordAutofillAgent::ShowSuggestions(
   return ShowSuggestionPopup(iter->second.fill_data, element);
 }
 
+bool PasswordAutofillAgent::OriginCanAccessPasswordManager(
+    const WebKit::WebSecurityOrigin& origin) {
+  return origin.canAccessPasswordManager();
+}
+
+void PasswordAutofillAgent::OnDynamicFormsSeen(WebKit::WebFrame* frame) {
+  SendPasswordForms(frame, false /* only_visible */);
+}
+
 void PasswordAutofillAgent::SendPasswordForms(WebKit::WebFrame* frame,
-                                                bool only_visible) {
+                                              bool only_visible) {
   // Make sure that this security origin is allowed to use password manager.
   WebKit::WebSecurityOrigin origin = frame->document().securityOrigin();
-  if (!origin.canAccessPasswordManager())
+  if (!OriginCanAccessPasswordManager(origin))
+    return;
+
+  // Checks whether the webpage is a redirect page or an empty page.
+  if (IsWebpageEmpty(frame))
     return;
 
   WebKit::WebVector<WebKit::WebFormElement> forms;
   frame->document().forms(forms);
 
-  std::vector<content::PasswordForm> password_forms;
+  std::vector<PasswordForm> password_forms;
   for (size_t i = 0; i < forms.size(); ++i) {
     const WebKit::WebFormElement& form = forms[i];
 
     // If requested, ignore non-rendered forms, e.g. those styled with
     // display:none.
-    if (only_visible && !form.hasNonEmptyBoundingBox())
+    if (only_visible && !IsWebNodeVisible(form))
       continue;
 
-    scoped_ptr<content::PasswordForm> password_form(
-        content::CreatePasswordForm(form));
+    scoped_ptr<PasswordForm> password_form(CreatePasswordForm(form));
     if (password_form.get())
       password_forms.push_back(*password_form);
   }
@@ -381,8 +396,8 @@ void PasswordAutofillAgent::SendPasswordForms(WebKit::WebFrame* frame,
   }
 
   if (only_visible) {
-    Send(new AutofillHostMsg_PasswordFormsRendered(
-        routing_id(), password_forms));
+    Send(new AutofillHostMsg_PasswordFormsRendered(routing_id(),
+                                                   password_forms));
   } else {
     Send(new AutofillHostMsg_PasswordFormsParsed(routing_id(), password_forms));
   }
@@ -426,6 +441,63 @@ void PasswordAutofillAgent::FrameDetached(WebKit::WebFrame* frame) {
 
 void PasswordAutofillAgent::FrameWillClose(WebKit::WebFrame* frame) {
   FrameClosing(frame);
+}
+
+void PasswordAutofillAgent::WillSendSubmitEvent(
+    WebKit::WebFrame* frame,
+    const WebKit::WebFormElement& form) {
+  // Some login forms have onSubmit handlers that put a hash of the password
+  // into a hidden field and then clear the password (http://crbug.com/28910).
+  // This method gets called before any of those handlers run, so save away
+  // a copy of the password in case it gets lost.
+  provisionally_saved_forms_[frame].reset(CreatePasswordForm(form).release());
+}
+
+void PasswordAutofillAgent::WillSubmitForm(WebKit::WebFrame* frame,
+                                           const WebKit::WebFormElement& form) {
+  scoped_ptr<PasswordForm> submitted_form = CreatePasswordForm(form);
+
+  // If there is a provisionally saved password, copy over the previous
+  // password value so we get the user's typed password, not the value that
+  // may have been transformed for submit.
+  // TODO(gcasto): Do we need to have this action equality check? Is it trying
+  // to prevent accidentally copying over passwords from a different form?
+  if (submitted_form) {
+    if (provisionally_saved_forms_[frame].get() &&
+        submitted_form->action == provisionally_saved_forms_[frame]->action) {
+      submitted_form->password_value =
+          provisionally_saved_forms_[frame]->password_value;
+    }
+
+    // Some observers depend on sending this information now instead of when
+    // the frame starts loading. If there are redirects that cause a new
+    // RenderView to be instantiated (such as redirects to the WebStore)
+    // we will never get to finish the load.
+    Send(new AutofillHostMsg_PasswordFormSubmitted(routing_id(),
+                                                   *submitted_form));
+    // Remove reference since we have already submitted this form.
+    provisionally_saved_forms_.erase(frame);
+  }
+}
+
+void PasswordAutofillAgent::DidStartProvisionalLoad(WebKit::WebFrame* frame) {
+  if (!frame->parent()) {
+    // If the navigation is not triggered by a user gesture, e.g. by some ajax
+    // callback, then inherit the submitted password form from the previous
+    // state. This fixes the no password save issue for ajax login, tracked in
+    // [http://crbug/43219]. Note that there are still some sites that this
+    // fails for because they use some element other than a submit button to
+    // trigger submission (which means WillSendSubmitEvent will not be called).
+    if (!WebKit::WebUserGestureIndicator::isProcessingUserGesture() &&
+        provisionally_saved_forms_[frame].get()) {
+      Send(new AutofillHostMsg_PasswordFormSubmitted(
+          routing_id(),
+          *provisionally_saved_forms_[frame]));
+      provisionally_saved_forms_.erase(frame);
+    }
+    // Clear the whole map during main frame navigation.
+    provisionally_saved_forms_.clear();
+  }
 }
 
 void PasswordAutofillAgent::OnFillPasswordForm(

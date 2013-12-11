@@ -9,6 +9,7 @@
 #include <set>
 #include <vector>
 
+#include "base/containers/hash_tables.h"
 #include "cc/resources/raster_worker_pool.h"
 
 namespace cc {
@@ -18,9 +19,13 @@ class CC_EXPORT PixelBufferRasterWorkerPool : public RasterWorkerPool {
   virtual ~PixelBufferRasterWorkerPool();
 
   static scoped_ptr<RasterWorkerPool> Create(
-      ResourceProvider* resource_provider, size_t num_threads) {
+      ResourceProvider* resource_provider,
+      size_t num_threads,
+      size_t max_transfer_buffer_usage_bytes) {
     return make_scoped_ptr<RasterWorkerPool>(
-        new PixelBufferRasterWorkerPool(resource_provider, num_threads));
+        new PixelBufferRasterWorkerPool(resource_provider,
+                                        num_threads,
+                                        max_transfer_buffer_usage_bytes));
   }
 
   // Overridden from WorkerPool:
@@ -29,12 +34,14 @@ class CC_EXPORT PixelBufferRasterWorkerPool : public RasterWorkerPool {
 
   // Overridden from RasterWorkerPool:
   virtual void ScheduleTasks(RasterTask::Queue* queue) OVERRIDE;
+  virtual ResourceFormat GetResourceFormat() const OVERRIDE;
   virtual void OnRasterTasksFinished() OVERRIDE;
   virtual void OnRasterTasksRequiredForActivationFinished() OVERRIDE;
 
  private:
   PixelBufferRasterWorkerPool(ResourceProvider* resource_provider,
-                              size_t num_threads);
+                              size_t num_threads,
+                              size_t max_transfer_buffer_usage_bytes);
 
   void FlushUploads();
   void CheckForCompletedUploads();
@@ -62,17 +69,19 @@ class CC_EXPORT PixelBufferRasterWorkerPool : public RasterWorkerPool {
   TaskDeque tasks_with_pending_upload_;
   TaskDeque completed_tasks_;
 
-  typedef std::set<internal::RasterWorkerPoolTask*> TaskSet;
+  typedef base::hash_set<internal::RasterWorkerPoolTask*> TaskSet;
   TaskSet tasks_required_for_activation_;
 
   size_t scheduled_raster_task_count_;
   size_t bytes_pending_upload_;
+  size_t max_bytes_pending_upload_;
   bool has_performed_uploads_since_last_flush_;
   base::CancelableClosure check_for_completed_raster_tasks_callback_;
   bool check_for_completed_raster_tasks_pending_;
 
   bool should_notify_client_if_no_tasks_are_pending_;
   bool should_notify_client_if_no_tasks_required_for_activation_are_pending_;
+  ResourceFormat format_;
 
   DISALLOW_COPY_AND_ASSIGN(PixelBufferRasterWorkerPool);
 };

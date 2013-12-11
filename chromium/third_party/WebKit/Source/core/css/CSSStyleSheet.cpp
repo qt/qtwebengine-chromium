@@ -357,7 +357,7 @@ Document* CSSStyleSheet::ownerDocument() const
     const CSSStyleSheet* root = this;
     while (root->parentStyleSheet())
         root = root->parentStyleSheet();
-    return root->ownerNode() ? root->ownerNode()->document() : 0;
+    return root->ownerNode() ? &root->ownerNode()->document() : 0;
 }
 
 void CSSStyleSheet::clearChildRuleCSSOMWrappers()

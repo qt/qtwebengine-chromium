@@ -39,6 +39,7 @@ class GraphicsLayerClient;
 }
 
 namespace WebKit {
+class OverlayGraphicsLayerClientImpl;
 class WebPageOverlay;
 class WebViewImpl;
 struct WebRect;

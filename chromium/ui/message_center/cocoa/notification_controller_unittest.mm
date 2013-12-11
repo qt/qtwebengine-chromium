@@ -76,16 +76,20 @@ class MockMessageCenter : public message_center::FakeMessageCenter {
   return icon_.get();
 }
 
-- (NSTextField*)titleView {
+- (NSTextView*)titleView {
   return title_.get();
 }
 
-- (NSTextField*)messageView {
+- (NSTextView*)messageView {
   return message_.get();
 }
 
-- (NSView*)listItemView {
-  return listItemView_.get();
+- (NSTextView*)contextMessageView {
+  return contextMessage_.get();
+}
+
+- (NSView*)listView {
+  return listView_.get();
 }
 @end
 
@@ -105,7 +109,7 @@ TEST_F(NotificationControllerTest, BasicLayout) {
           ASCIIToUTF16("Jonathan and 5 others"),
           gfx::Image(),
           string16(),
-          std::string(),
+          message_center::NotifierId(),
           message_center::RichNotificationData(),
           NULL));
   notification->set_icon(gfx::Image([TestIcon() retain]));
@@ -116,9 +120,9 @@ TEST_F(NotificationControllerTest, BasicLayout) {
   [controller view];
 
   EXPECT_EQ(TestIcon(), [[controller iconView] image]);
-  EXPECT_EQ(base::SysNSStringToUTF16([[controller titleView] stringValue]),
+  EXPECT_EQ(base::SysNSStringToUTF16([[controller titleView] string]),
             notification->title());
-  EXPECT_EQ(base::SysNSStringToUTF16([[controller messageView] stringValue]),
+  EXPECT_EQ(base::SysNSStringToUTF16([[controller messageView] string]),
             notification->message());
   EXPECT_EQ(controller.get(), [[controller closeButton] target]);
 }
@@ -135,7 +139,7 @@ TEST_F(NotificationControllerTest, OverflowText) {
                        "entire thing?"),
           gfx::Image(),
           string16(),
-          std::string(),
+          message_center::NotifierId(),
           message_center::RichNotificationData(),
           NULL));
   base::scoped_nsobject<MCNotificationController> controller(
@@ -156,7 +160,7 @@ TEST_F(NotificationControllerTest, Close) {
           string16(),
           gfx::Image(),
           string16(),
-          std::string(),
+          message_center::NotifierId(),
           message_center::RichNotificationData(),
           NULL));
   MockMessageCenter message_center;
@@ -183,7 +187,7 @@ TEST_F(NotificationControllerTest, Update) {
                        "default bounds."),
           gfx::Image(),
           string16(),
-          std::string(),
+          message_center::NotifierId(),
           message_center::RichNotificationData(),
           NULL));
   base::scoped_nsobject<MCNotificationController> controller(
@@ -219,7 +223,7 @@ TEST_F(NotificationControllerTest, Buttons) {
           string16(),
           gfx::Image(),
           string16(),
-          std::string(),
+          message_center::NotifierId(),
           optional,
           NULL));
   MockMessageCenter message_center;
@@ -244,7 +248,7 @@ TEST_F(NotificationControllerTest, Image) {
           string16(),
           gfx::Image(),
           string16(),
-          std::string(),
+          message_center::NotifierId(),
           message_center::RichNotificationData(),
           NULL));
   NSImage* image = [NSImage imageNamed:NSImageNameFolder];
@@ -272,6 +276,11 @@ TEST_F(NotificationControllerTest, List) {
       UTF8ToUTF16("Second title"),
       UTF8ToUTF16("second slightly longer message"));
   optional.items.push_back(item2);
+  message_center::NotificationItem item3(
+      UTF8ToUTF16(""),    // Test for empty string.
+      UTF8ToUTF16(" "));  // Test for string containing only spaces.
+  optional.items.push_back(item3);
+  optional.context_message = UTF8ToUTF16("Context Message");
 
   scoped_ptr<message_center::Notification> notification(
       new message_center::Notification(
@@ -281,7 +290,7 @@ TEST_F(NotificationControllerTest, List) {
           UTF8ToUTF16("Notification Message - should be hidden"),
           gfx::Image(),
           string16(),
-          std::string(),
+          message_center::NotifierId(),
           optional,
           NULL));
 
@@ -293,8 +302,9 @@ TEST_F(NotificationControllerTest, List) {
 
   EXPECT_FALSE([[controller titleView] isHidden]);
   EXPECT_TRUE([[controller messageView] isHidden]);
+  EXPECT_FALSE([[controller contextMessageView] isHidden]);
 
-  EXPECT_EQ(2u, [[[controller listItemView] subviews] count]);
-  EXPECT_LT(NSMaxY([[controller listItemView] frame]),
+  EXPECT_EQ(3u, [[[controller listView] subviews] count]);
+  EXPECT_LT(NSMaxY([[controller listView] frame]),
             NSMinY([[controller titleView] frame]));
 }

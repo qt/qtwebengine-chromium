@@ -5,6 +5,7 @@
 #import "ui/app_list/cocoa/apps_search_results_controller.h"
 
 #include "base/mac/scoped_nsobject.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -20,15 +21,18 @@
  @private
   app_list::test::AppListTestModel appListModel_;
   app_list::SearchResult* lastOpenedResult_;
+  int redoSearchCount_;
 }
 
 @property(readonly, nonatomic) app_list::SearchResult* lastOpenedResult;
+@property(readonly, nonatomic) int redoSearchCount;
 
 @end
 
 @implementation TestAppsSearchResultsDelegate
 
 @synthesize lastOpenedResult = lastOpenedResult_;
+@synthesize redoSearchCount = redoSearchCount_;
 
 - (app_list::AppListModel*)appListModel {
   return &appListModel_;
@@ -36,6 +40,10 @@
 
 - (void)openResult:(app_list::SearchResult*)result {
   lastOpenedResult_ = result;
+}
+
+- (void)redoSearch {
+  ++redoSearchCount_;
 }
 
 @end
@@ -48,19 +56,28 @@ const int kDefaultResultsCount = 3;
 
 class SearchResultWithMenu : public SearchResult {
  public:
-  SearchResultWithMenu(const std::string& title,
-                       const std::string& details) : menu_model_(NULL) {
+  SearchResultWithMenu(const std::string& title, const std::string& details)
+      : menu_model_(NULL),
+        menu_ready_(true) {
     set_title(ASCIIToUTF16(title));
     set_details(ASCIIToUTF16(details));
     menu_model_.AddItem(0, UTF8ToUTF16("Menu For: " + title));
   }
 
+  void SetMenuReadyForTesting(bool ready) {
+    menu_ready_ = ready;
+  }
+
   virtual ui::MenuModel* GetContextMenuModel() OVERRIDE {
+    if (!menu_ready_)
+      return NULL;
+
     return &menu_model_;
   }
 
  private:
   ui::SimpleMenuModel menu_model_;
+  bool menu_ready_;
 
   DISALLOW_COPY_AND_ASSIGN(SearchResultWithMenu);
 };
@@ -85,6 +102,12 @@ class AppsSearchResultsControllerTest : public ui::CocoaTest {
     NSTableView* table_view = [apps_search_results_controller_ tableView];
     return [table_view preparedCellAtColumn:0
                                         row:index];
+  }
+
+  void SetMenuReadyAt(size_t index, bool ready) {
+    SearchResultWithMenu* result =
+        static_cast<SearchResultWithMenu*>(ModelResultAt(index));
+    result->SetMenuReadyForTesting(ready);
   }
 
   BOOL SimulateKeyAction(SEL c) {
@@ -260,9 +283,25 @@ TEST_F(AppsSearchResultsControllerTest, ContextMenus) {
   EXPECT_EQ(1, [menu numberOfItems]);
   EXPECT_NSEQ(@"Menu For: Result 0", [[menu itemAtIndex:0] title]);
 
+  // Test a context menu request while the item is still installing.
+  SetMenuReadyAt(1, false);
+  menu = [table_view menuForEvent:mouse_in_row_1];
+  EXPECT_EQ(nil, menu);
+
+  SetMenuReadyAt(1, true);
   menu = [table_view menuForEvent:mouse_in_row_1];
   EXPECT_EQ(1, [menu numberOfItems]);
   EXPECT_NSEQ(@"Menu For: Result 1", [[menu itemAtIndex:0] title]);
+}
+
+// Test that observing a search result item uninstall performs the search again.
+TEST_F(AppsSearchResultsControllerTest, UninstallRedperformsSearch) {
+  base::MessageLoopForUI message_loop;
+  EXPECT_EQ(0, [delegate_ redoSearchCount]);
+  ModelResultAt(0)->NotifyItemUninstalled();
+  message_loop.PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
+  message_loop.Run();
+  EXPECT_EQ(1, [delegate_ redoSearchCount]);
 }
 
 }  // namespace test

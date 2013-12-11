@@ -7,7 +7,7 @@
 
 #include <vector>
 
-#include "ui/base/events/event_constants.h"
+#include "ui/events/event_constants.h"
 #include "ui/views/views_export.h"
 
 namespace gfx {
@@ -60,6 +60,9 @@ class VIEWS_EXPORT NativeWidgetDelegate {
   // Called when native focus moves from one native view to another.
   virtual void OnNativeFocus(gfx::NativeView focused_view) = 0;
   virtual void OnNativeBlur(gfx::NativeView focused_view) = 0;
+
+  // Called when the window is about to be shown/hidden.
+  virtual void OnNativeWidgetVisibilityChanging(bool visible) = 0;
 
   // Called when the window is shown/hidden.
   virtual void OnNativeWidgetVisibilityChanged(bool visible) = 0;

@@ -33,7 +33,9 @@
 
 #include "modules/crypto/AesCbcParams.h"
 #include "modules/crypto/AesKeyGenParams.h"
+#include "modules/crypto/HmacKeyParams.h"
 #include "modules/crypto/HmacParams.h"
+#include "modules/crypto/NormalizeAlgorithm.h"
 #include "modules/crypto/RsaKeyGenParams.h"
 #include "modules/crypto/RsaSsaParams.h"
 #include "wtf/text/WTFString.h"
@@ -51,6 +53,8 @@ PassRefPtr<Algorithm> Algorithm::create(const WebKit::WebCryptoAlgorithm& algori
         return AesKeyGenParams::create(algorithm);
     case WebKit::WebCryptoAlgorithmParamsTypeHmacParams:
         return HmacParams::create(algorithm);
+    case WebKit::WebCryptoAlgorithmParamsTypeHmacKeyParams:
+        return HmacKeyParams::create(algorithm);
     case WebKit::WebCryptoAlgorithmParamsTypeRsaSsaParams:
         return RsaSsaParams::create(algorithm);
     case WebKit::WebCryptoAlgorithmParamsTypeRsaKeyGenParams:
@@ -68,7 +72,7 @@ Algorithm::Algorithm(const WebKit::WebCryptoAlgorithm& algorithm)
 
 String Algorithm::name()
 {
-    return m_algorithm.name();
+    return algorithmIdToName(m_algorithm.id());
 }
 
 } // namespace WebCore

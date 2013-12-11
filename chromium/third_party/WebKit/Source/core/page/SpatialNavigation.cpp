@@ -292,7 +292,7 @@ bool hasOffscreenRect(Node* node, FocusDirection direction)
     // Get the FrameView in which |node| is (which means the current viewport if |node|
     // is not in an inner document), so we can check if its content rect is visible
     // before we actually move the focus to it.
-    FrameView* frameView = node->document()->view();
+    FrameView* frameView = node->document().view();
     if (!frameView)
         return true;
 
@@ -378,18 +378,18 @@ bool scrollInDirection(Node* container, FocusDirection direction)
         LayoutUnit dy = 0;
         switch (direction) {
         case FocusDirectionLeft:
-            dx = - min<LayoutUnit>(ScrollableArea::pixelsPerLineStep(), container->renderBox()->scrollLeft());
+            dx = - std::min<LayoutUnit>(ScrollableArea::pixelsPerLineStep(), container->renderBox()->scrollLeft());
             break;
         case FocusDirectionRight:
             ASSERT(container->renderBox()->scrollWidth() > (container->renderBox()->scrollLeft() + container->renderBox()->clientWidth()));
-            dx = min<LayoutUnit>(ScrollableArea::pixelsPerLineStep(), container->renderBox()->scrollWidth() - (container->renderBox()->scrollLeft() + container->renderBox()->clientWidth()));
+            dx = std::min<LayoutUnit>(ScrollableArea::pixelsPerLineStep(), container->renderBox()->scrollWidth() - (container->renderBox()->scrollLeft() + container->renderBox()->clientWidth()));
             break;
         case FocusDirectionUp:
-            dy = - min<LayoutUnit>(ScrollableArea::pixelsPerLineStep(), container->renderBox()->scrollTop());
+            dy = - std::min<LayoutUnit>(ScrollableArea::pixelsPerLineStep(), container->renderBox()->scrollTop());
             break;
         case FocusDirectionDown:
             ASSERT(container->renderBox()->scrollHeight() - (container->renderBox()->scrollTop() + container->renderBox()->clientHeight()));
-            dy = min<LayoutUnit>(ScrollableArea::pixelsPerLineStep(), container->renderBox()->scrollHeight() - (container->renderBox()->scrollTop() + container->renderBox()->clientHeight()));
+            dy = std::min<LayoutUnit>(ScrollableArea::pixelsPerLineStep(), container->renderBox()->scrollHeight() - (container->renderBox()->scrollTop() + container->renderBox()->clientHeight()));
             break;
         default:
             ASSERT_NOT_REACHED();
@@ -437,9 +437,9 @@ Node* scrollableEnclosingBoxOrParentFrameForNodeInDirection(FocusDirection direc
     Node* parent = node;
     do {
         if (parent->isDocumentNode())
-            parent = toDocument(parent)->document()->frame()->ownerElement();
+            parent = toDocument(parent)->document().frame()->ownerElement();
         else
-            parent = parent->parentNode();
+            parent = parent->parentOrShadowHostNode();
     } while (parent && !canScrollInDirection(parent, direction) && !parent->isDocumentNode());
 
     return parent;
@@ -515,11 +515,11 @@ static LayoutRect rectToAbsoluteCoordinates(Frame* initialFrame, const LayoutRec
 
 LayoutRect nodeRectInAbsoluteCoordinates(Node* node, bool ignoreBorder)
 {
-    ASSERT(node && node->renderer() && !node->document()->view()->needsLayout());
+    ASSERT(node && node->renderer() && !node->document().view()->needsLayout());
 
     if (node->isDocumentNode())
         return frameRectInAbsoluteCoordinates(toDocument(node)->frame());
-    LayoutRect rect = rectToAbsoluteCoordinates(node->document()->frame(), node->boundingBox());
+    LayoutRect rect = rectToAbsoluteCoordinates(node->document().frame(), node->boundingBox());
 
     // For authors that use border instead of outline in their CSS, we compensate by ignoring the border when calculating
     // the rect of the focused element.
@@ -671,7 +671,7 @@ void distanceDataForNode(FocusDirection direction, const FocusCandidate& current
 
     float distance = euclidianDistance + sameAxisDistance + 2 * otherAxisDistance;
     candidate.distance = roundf(distance);
-    LayoutSize viewSize = candidate.visibleNode->document()->page()->mainFrame()->view()->visibleContentRect().size();
+    LayoutSize viewSize = candidate.visibleNode->document().page()->mainFrame()->view()->visibleContentRect().size();
     candidate.alignment = alignmentForRects(direction, currentRect, nodeRect, viewSize);
 }
 
@@ -727,13 +727,13 @@ LayoutRect virtualRectForAreaElementAndDirection(HTMLAreaElement* area, FocusDir
     ASSERT(area->imageElement());
     // Area elements tend to overlap more than other focusable elements. We flatten the rect of the area elements
     // to minimize the effect of overlapping areas.
-    LayoutRect rect = virtualRectForDirection(direction, rectToAbsoluteCoordinates(area->document()->frame(), area->computeRect(area->imageElement()->renderer())), 1);
+    LayoutRect rect = virtualRectForDirection(direction, rectToAbsoluteCoordinates(area->document().frame(), area->computeRect(area->imageElement()->renderer())), 1);
     return rect;
 }
 
 HTMLFrameOwnerElement* frameOwnerElement(FocusCandidate& candidate)
 {
-    return candidate.isFrameOwnerElement() ? static_cast<HTMLFrameOwnerElement*>(candidate.visibleNode) : 0;
+    return candidate.isFrameOwnerElement() ? toHTMLFrameOwnerElement(candidate.visibleNode) : 0;
 };
 
 } // namespace WebCore

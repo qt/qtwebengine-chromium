@@ -53,7 +53,7 @@ KeyframeAnimation::KeyframeAnimation(const CSSAnimationData* animation, RenderOb
 {
     // Get the keyframe RenderStyles
     if (m_object && m_object->node() && m_object->node()->isElementNode())
-        m_object->document()->styleResolver()->keyframeStylesForAnimation(toElement(m_object->node()), unanimatedStyle, m_keyframes);
+        m_object->document().styleResolver()->keyframeStylesForAnimation(toElement(m_object->node()), unanimatedStyle, m_keyframes);
 
     // Update the m_transformFunctionListValid flag based on whether the function lists in the keyframes match.
     validateTransformFunctionList();
@@ -68,20 +68,6 @@ KeyframeAnimation::~KeyframeAnimation()
     // Make sure to tell the renderer that we are ending. This will make sure any accelerated animations are removed.
     if (!postActive())
         endAnimation();
-}
-
-static const CSSAnimationData* getAnimationFromStyleByName(const RenderStyle* style, const AtomicString& name)
-{
-    if (!style->animations())
-        return 0;
-
-    size_t animationCount = style->animations()->size();
-    for (size_t i = 0; i < animationCount; i++) {
-        if (name == style->animations()->animation(i)->name())
-            return style->animations()->animation(i);
-    }
-
-    return 0;
 }
 
 void KeyframeAnimation::fetchIntervalEndpointsForProperty(CSSPropertyID property, const RenderStyle*& fromStyle, const RenderStyle*& toStyle, double& prog) const
@@ -108,7 +94,7 @@ void KeyframeAnimation::fetchIntervalEndpointsForProperty(CSSPropertyID property
     // Find keyframe that is closest to elapsed time.
     while (distance > 1) {
         currentIndex = (lastIndex + firstIndex) >> 1;
-        float key = m_keyframes[currentIndex].key();
+        double key = m_keyframes[currentIndex].key();
         distance = lastIndex - currentIndex;
 
         if (key < fractionalTime) {
@@ -133,7 +119,7 @@ void KeyframeAnimation::fetchIntervalEndpointsForProperty(CSSPropertyID property
     }
 
     // Iterate backward to find previous keyframe.
-    for (size_t i = currentIndex; i < numKeyframes; --i) {
+    for (int i = currentIndex; i >= 0; --i) {
         const KeyframeValue& keyFrame = m_keyframes[i];
         if (keyFrame.key() <= fractionalTime && keyFrame.containsProperty(property)) {
             prevIndex = i;
@@ -158,11 +144,11 @@ void KeyframeAnimation::fetchIntervalEndpointsForProperty(CSSPropertyID property
 
     offset = prevKeyframe.key();
     scale = 1.0 / (nextKeyframe.key() - prevKeyframe.key());
+    // A scale of infinity is handled in AnimationBase::fractionalTime().
+    ASSERT(scale >= 0 && (!std::isinf(scale) || prevIndex == nextIndex));
 
-    const TimingFunction* timingFunction = 0;
-    if (const CSSAnimationData* matchedAnimation = getAnimationFromStyleByName(fromStyle, name()))
-        timingFunction = matchedAnimation->timingFunction().get();
-
+    // FIXME: This sometimes gets the wrong timing function. See crbug.com/288540.
+    const TimingFunction* timingFunction = KeyframeValue::timingFunction(prevKeyframe.style(), name());
     prog = progress(scale, offset, timingFunction);
 }
 
@@ -287,22 +273,22 @@ void KeyframeAnimation::endAnimation()
 
 bool KeyframeAnimation::shouldSendEventForListener(Document::ListenerType listenerType) const
 {
-    return m_object->document()->hasListenerType(listenerType);
+    return m_object->document().hasListenerType(listenerType);
 }
 
 void KeyframeAnimation::onAnimationStart(double elapsedTime)
 {
-    sendAnimationEvent(eventNames().webkitAnimationStartEvent, elapsedTime);
+    sendAnimationEvent(eventNames().animationstartEvent, elapsedTime);
 }
 
 void KeyframeAnimation::onAnimationIteration(double elapsedTime)
 {
-    sendAnimationEvent(eventNames().webkitAnimationIterationEvent, elapsedTime);
+    sendAnimationEvent(eventNames().animationiterationEvent, elapsedTime);
 }
 
 void KeyframeAnimation::onAnimationEnd(double elapsedTime)
 {
-    sendAnimationEvent(eventNames().webkitAnimationEndEvent, elapsedTime);
+    sendAnimationEvent(eventNames().animationendEvent, elapsedTime);
     // End the animation if we don't fill forwards. Forward filling
     // animations are ended properly in the class destructor.
     if (!m_animation->fillsForwards())
@@ -312,12 +298,12 @@ void KeyframeAnimation::onAnimationEnd(double elapsedTime)
 bool KeyframeAnimation::sendAnimationEvent(const AtomicString& eventType, double elapsedTime)
 {
     Document::ListenerType listenerType;
-    if (eventType == eventNames().webkitAnimationIterationEvent)
+    if (eventType == eventNames().animationiterationEvent)
         listenerType = Document::ANIMATIONITERATION_LISTENER;
-    else if (eventType == eventNames().webkitAnimationEndEvent)
+    else if (eventType == eventNames().animationendEvent)
         listenerType = Document::ANIMATIONEND_LISTENER;
     else {
-        ASSERT(eventType == eventNames().webkitAnimationStartEvent);
+        ASSERT(eventType == eventNames().animationstartEvent);
         if (m_startEventDispatched)
             return false;
         m_startEventDispatched = true;
@@ -337,7 +323,7 @@ bool KeyframeAnimation::sendAnimationEvent(const AtomicString& eventType, double
         m_compAnim->animationController()->addEventToDispatch(element, eventType, m_keyframes.animationName(), elapsedTime);
 
         // Restore the original (unanimated) style
-        if (eventType == eventNames().webkitAnimationEndEvent && element->renderer())
+        if (eventType == eventNames().animationendEvent && element->renderer())
             setNeedsStyleRecalc(element.get());
 
         return true; // Did dispatch an event

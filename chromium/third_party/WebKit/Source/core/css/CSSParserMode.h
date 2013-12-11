@@ -42,9 +42,14 @@ enum CSSParserMode {
     CSSStrictMode,
     // SVG should always be in strict mode. For SVG attributes, the rules differ to strict sometimes.
     SVGAttributeMode,
+    // CSS attribute are parsed in quirks mode. They also allow internal only properties and values.
+    CSSAttributeMode,
     // User agent style sheet should always be in strict mode. Enables internal
     // only properties and values.
-    UASheetMode
+    UASheetMode,
+    // Parsing @viewport descriptors. Always strict. Set as mode on StylePropertySet
+    // to make sure CSSOM modifications use CSSParser::parseViewportProperty.
+    ViewportMode
 };
 
 inline CSSParserMode strictToCSSParserMode(bool inStrictMode)
@@ -54,14 +59,14 @@ inline CSSParserMode strictToCSSParserMode(bool inStrictMode)
 
 inline bool isStrictParserMode(CSSParserMode cssParserMode)
 {
-    return cssParserMode == CSSStrictMode || cssParserMode == SVGAttributeMode || cssParserMode == UASheetMode;
+    return cssParserMode != CSSQuirksMode;
 }
 
 struct CSSParserContext {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     CSSParserContext(CSSParserMode, const KURL& baseURL = KURL());
-    CSSParserContext(Document*, const KURL& baseURL = KURL(), const String& charset = emptyString());
+    CSSParserContext(const Document&, const KURL& baseURL = KURL(), const String& charset = emptyString());
 
     KURL baseURL;
     String charset;
@@ -72,6 +77,10 @@ public:
     bool isCSSCompositingEnabled;
     bool isCSSTouchActionEnabled;
     bool needsSiteSpecificQuirks;
+    // This quirk is to maintain compatibility with Android apps built on
+    // the Android SDK prior to and including version 18. Presumably, this
+    // can be removed any time after 2015. See http://crbug.com/277157.
+    bool useLegacyBackgroundSizeShorthandBehavior;
 };
 
 bool operator==(const CSSParserContext&, const CSSParserContext&);

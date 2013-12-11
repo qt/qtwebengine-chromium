@@ -35,9 +35,9 @@ class HTMLSelectElement;
 
 class HTMLOptionElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLOptionElement> create(Document*);
-    static PassRefPtr<HTMLOptionElement> create(const QualifiedName&, Document*);
-    static PassRefPtr<HTMLOptionElement> createForJSConstructor(Document*, const String& data, const String& value,
+    static PassRefPtr<HTMLOptionElement> create(Document&);
+    static PassRefPtr<HTMLOptionElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<HTMLOptionElement> createForJSConstructor(Document&, const String& data, const String& value,
         bool defaultSelected, bool selected, ExceptionState&);
 
     virtual String text() const;
@@ -66,10 +66,10 @@ public:
     void setSelectedState(bool);
 
 private:
-    HTMLOptionElement(const QualifiedName&, Document*);
+    HTMLOptionElement(const QualifiedName&, Document&);
 
     virtual bool rendererIsFocusable() const OVERRIDE;
-    virtual bool rendererIsNeeded(const NodeRenderingContext&) { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) { return false; }
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
 
@@ -85,7 +85,7 @@ private:
     virtual RenderStyle* nonRendererStyle() const OVERRIDE;
     virtual PassRefPtr<RenderStyle> customStyleForRenderer() OVERRIDE;
 
-    void didRecalcStyle(StyleChange) OVERRIDE;
+    void didRecalcStyle(StyleRecalcChange) OVERRIDE;
 
     String collectOptionInnerText() const;
 

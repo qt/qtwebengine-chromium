@@ -30,6 +30,20 @@ enum ParsingState {
   KEY_VALUE
 };
 
+#ifdef OS_CHROMEOS
+// Read a file with a single number string and return the number as a uint64.
+static uint64 ReadFileToUint64(const base::FilePath file) {
+  std::string file_as_string;
+  if (!ReadFileToString(file, &file_as_string))
+    return 0;
+  TrimWhitespaceASCII(file_as_string, TRIM_ALL, &file_as_string);
+  uint64 file_as_uint64 = 0;
+  if (!base::StringToUint64(file_as_string, &file_as_uint64))
+    return 0;
+  return file_as_uint64;
+}
+#endif
+
 // Read /proc/<pid>/status and returns the value for |field|, or 0 on failure.
 // Only works for fields in the form of "Field: value kB".
 size_t ReadProcStatusAndGetFieldAsSizeT(pid_t pid, const std::string& field) {
@@ -38,7 +52,7 @@ size_t ReadProcStatusAndGetFieldAsSizeT(pid_t pid, const std::string& field) {
   {
     // Synchronously reading files in /proc is safe.
     ThreadRestrictions::ScopedAllowIO allow_io;
-    if (!file_util::ReadFileToString(stat_file, &status))
+    if (!ReadFileToString(stat_file, &status))
       return 0;
   }
 
@@ -103,7 +117,7 @@ int GetProcessCPU(pid_t pid) {
     std::string stat;
     FilePath stat_path =
         task_path.Append(ent->d_name).Append(internal::kStatFile);
-    if (file_util::ReadFileToString(stat_path, &stat)) {
+    if (ReadFileToString(stat_path, &stat)) {
       int cpu = ParseProcStatCPU(stat);
       if (cpu > 0)
         total_cpu += cpu;
@@ -209,7 +223,7 @@ bool ProcessMetrics::GetIOCounters(IoCounters* io_counters) const {
 
   std::string proc_io_contents;
   FilePath io_file = internal::GetProcPidDir(process_).Append("io");
-  if (!file_util::ReadFileToString(io_file, &proc_io_contents))
+  if (!ReadFileToString(io_file, &proc_io_contents))
     return false;
 
   (*io_counters).OtherOperationCount = 0;
@@ -281,7 +295,7 @@ bool ProcessMetrics::GetWorkingSetKBytesTotmaps(WorkingSetKBytes *ws_usage)
   {
     FilePath totmaps_file = internal::GetProcPidDir(process_).Append("totmaps");
     ThreadRestrictions::ScopedAllowIO allow_io;
-    bool ret = file_util::ReadFileToString(totmaps_file, &totmaps_data);
+    bool ret = ReadFileToString(totmaps_file, &totmaps_data);
     if (!ret || totmaps_data.length() == 0)
       return false;
   }
@@ -333,7 +347,7 @@ bool ProcessMetrics::GetWorkingSetKBytesStatm(WorkingSetKBytes* ws_usage)
     FilePath statm_file = internal::GetProcPidDir(process_).Append("statm");
     // Synchronously reading files in /proc is safe.
     ThreadRestrictions::ScopedAllowIO allow_io;
-    bool ret = file_util::ReadFileToString(statm_file, &statm);
+    bool ret = ReadFileToString(statm_file, &statm);
     if (!ret || statm.length() == 0)
       return false;
   }
@@ -382,6 +396,13 @@ int ParseProcStatCPU(const std::string& input) {
   return utime + stime;
 }
 
+const char kProcSelfExe[] = "/proc/self/exe";
+
+int GetNumberOfThreads(ProcessHandle process) {
+  return internal::ReadProcStatsAndGetFieldAsInt(process,
+                                                 internal::VM_NUMTHREADS);
+}
+
 namespace {
 
 // The format of /proc/meminfo is:
@@ -400,20 +421,121 @@ const size_t kMemInactiveAnonIndex = 25;
 const size_t kMemActiveFileIndex = 28;
 const size_t kMemInactiveFileIndex = 31;
 
+// The format of /proc/vmstat is:
+//
+// nr_free_pages 299878
+// nr_inactive_anon 239863
+// nr_active_anon 1318966
+// nr_inactive_file 2015629
+// ...
+const size_t kVMPagesSwappedIn = 75;
+const size_t kVMPagesSwappedOut = 77;
+const size_t kVMPageMajorFaults = 95;
+
+// The format of /proc/diskstats is:
+//  Device major number
+//  Device minor number
+//  Device name
+//  Field  1 -- # of reads completed
+//      This is the total number of reads completed successfully.
+//  Field  2 -- # of reads merged, field 6 -- # of writes merged
+//      Reads and writes which are adjacent to each other may be merged for
+//      efficiency.  Thus two 4K reads may become one 8K read before it is
+//      ultimately handed to the disk, and so it will be counted (and queued)
+//      as only one I/O.  This field lets you know how often this was done.
+//  Field  3 -- # of sectors read
+//      This is the total number of sectors read successfully.
+//  Field  4 -- # of milliseconds spent reading
+//      This is the total number of milliseconds spent by all reads (as
+//      measured from __make_request() to end_that_request_last()).
+//  Field  5 -- # of writes completed
+//      This is the total number of writes completed successfully.
+//  Field  6 -- # of writes merged
+//      See the description of field 2.
+//  Field  7 -- # of sectors written
+//      This is the total number of sectors written successfully.
+//  Field  8 -- # of milliseconds spent writing
+//      This is the total number of milliseconds spent by all writes (as
+//      measured from __make_request() to end_that_request_last()).
+//  Field  9 -- # of I/Os currently in progress
+//      The only field that should go to zero. Incremented as requests are
+//      given to appropriate struct request_queue and decremented as they
+//      finish.
+//  Field 10 -- # of milliseconds spent doing I/Os
+//      This field increases so long as field 9 is nonzero.
+//  Field 11 -- weighted # of milliseconds spent doing I/Os
+//      This field is incremented at each I/O start, I/O completion, I/O
+//      merge, or read of these stats by the number of I/Os in progress
+//      (field 9) times the number of milliseconds spent doing I/O since the
+//      last update of this field.  This can provide an easy measure of both
+//      I/O completion time and the backlog that may be accumulating.
+
+const size_t kDiskDriveName = 2;
+const size_t kDiskReads = 3;
+const size_t kDiskReadsMerged = 4;
+const size_t kDiskSectorsRead = 5;
+const size_t kDiskReadTime = 6;
+const size_t kDiskWrites = 7;
+const size_t kDiskWritesMerged = 8;
+const size_t kDiskSectorsWritten = 9;
+const size_t kDiskWriteTime = 10;
+const size_t kDiskIO = 11;
+const size_t kDiskIOTime = 12;
+const size_t kDiskWeightedIOTime = 13;
+
 }  // namespace
 
-SystemMemoryInfoKB::SystemMemoryInfoKB()
-    : total(0),
-      free(0),
-      buffers(0),
-      cached(0),
-      active_anon(0),
-      inactive_anon(0),
-      active_file(0),
-      inactive_file(0),
-      shmem(0),
-      gem_objects(-1),
-      gem_size(-1) {
+SystemMemoryInfoKB::SystemMemoryInfoKB() {
+  total = 0;
+  free = 0;
+  buffers = 0;
+  cached = 0;
+  active_anon = 0;
+  inactive_anon = 0;
+  active_file = 0;
+  inactive_file = 0;
+  swap_total = 0;
+  swap_free = 0;
+  dirty = 0;
+
+  pswpin = 0;
+  pswpout = 0;
+  pgmajfault = 0;
+
+#ifdef OS_CHROMEOS
+  shmem = 0;
+  slab = 0;
+  gem_objects = -1;
+  gem_size = -1;
+#endif
+}
+
+scoped_ptr<Value> SystemMemoryInfoKB::ToValue() const {
+  scoped_ptr<DictionaryValue> res(new base::DictionaryValue());
+
+  res->SetInteger("total", total);
+  res->SetInteger("free", free);
+  res->SetInteger("buffers", buffers);
+  res->SetInteger("cached", cached);
+  res->SetInteger("active_anon", active_anon);
+  res->SetInteger("inactive_anon", inactive_anon);
+  res->SetInteger("active_file", active_file);
+  res->SetInteger("inactive_file", inactive_file);
+  res->SetInteger("swap_total", swap_total);
+  res->SetInteger("swap_free", swap_free);
+  res->SetInteger("swap_used", swap_total - swap_free);
+  res->SetInteger("dirty", dirty);
+  res->SetInteger("pswpin", pswpin);
+  res->SetInteger("pswpout", pswpout);
+  res->SetInteger("pgmajfault", pgmajfault);
+#ifdef OS_CHROMEOS
+  res->SetInteger("shmem", shmem);
+  res->SetInteger("slab", slab);
+  res->SetInteger("gem_objects", gem_objects);
+  res->SetInteger("gem_size", gem_size);
+#endif
+
+  return res.PassAs<Value>();
 }
 
 bool GetSystemMemoryInfo(SystemMemoryInfoKB* meminfo) {
@@ -423,7 +545,7 @@ bool GetSystemMemoryInfo(SystemMemoryInfoKB* meminfo) {
   // Used memory is: total - free - buffers - caches
   FilePath meminfo_file("/proc/meminfo");
   std::string meminfo_data;
-  if (!file_util::ReadFileToString(meminfo_file, &meminfo_data)) {
+  if (!ReadFileToString(meminfo_file, &meminfo_data)) {
     DLOG(WARNING) << "Failed to open " << meminfo_file.value();
     return false;
   }
@@ -450,21 +572,30 @@ bool GetSystemMemoryInfo(SystemMemoryInfoKB* meminfo) {
   StringToInt(meminfo_fields[kMemBuffersIndex], &meminfo->buffers);
   StringToInt(meminfo_fields[kMemCachedIndex], &meminfo->cached);
   StringToInt(meminfo_fields[kMemActiveAnonIndex], &meminfo->active_anon);
-  StringToInt(meminfo_fields[kMemInactiveAnonIndex],
-                    &meminfo->inactive_anon);
+  StringToInt(meminfo_fields[kMemInactiveAnonIndex], &meminfo->inactive_anon);
   StringToInt(meminfo_fields[kMemActiveFileIndex], &meminfo->active_file);
-  StringToInt(meminfo_fields[kMemInactiveFileIndex],
-                    &meminfo->inactive_file);
+  StringToInt(meminfo_fields[kMemInactiveFileIndex], &meminfo->inactive_file);
+
+  // We don't know when these fields appear, so we must search for them.
+  for (size_t i = kMemCachedIndex+2; i < meminfo_fields.size(); i += 3) {
+    if (meminfo_fields[i] == "SwapTotal:")
+      StringToInt(meminfo_fields[i+1], &meminfo->swap_total);
+    if (meminfo_fields[i] == "SwapFree:")
+      StringToInt(meminfo_fields[i+1], &meminfo->swap_free);
+    if (meminfo_fields[i] == "Dirty:")
+      StringToInt(meminfo_fields[i+1], &meminfo->dirty);
+  }
+
 #if defined(OS_CHROMEOS)
   // Chrome OS has a tweaked kernel that allows us to query Shmem, which is
   // usually video memory otherwise invisible to the OS.  Unfortunately, the
   // meminfo format varies on different hardware so we have to search for the
   // string.  It always appears after "Cached:".
   for (size_t i = kMemCachedIndex+2; i < meminfo_fields.size(); i += 3) {
-    if (meminfo_fields[i] == "Shmem:") {
+    if (meminfo_fields[i] == "Shmem:")
       StringToInt(meminfo_fields[i+1], &meminfo->shmem);
-      break;
-    }
+    if (meminfo_fields[i] == "Slab:")
+      StringToInt(meminfo_fields[i+1], &meminfo->slab);
   }
 
   // Report on Chrome OS GEM object graphics memory. /var/run/debugfs_gpu is a
@@ -478,7 +609,7 @@ bool GetSystemMemoryInfo(SystemMemoryInfoKB* meminfo) {
   std::string geminfo_data;
   meminfo->gem_objects = -1;
   meminfo->gem_size = -1;
-  if (file_util::ReadFileToString(geminfo_file, &geminfo_data)) {
+  if (ReadFileToString(geminfo_file, &geminfo_data)) {
     int gem_objects = -1;
     long long gem_size = -1;
     int num_res = sscanf(geminfo_data.c_str(),
@@ -492,9 +623,9 @@ bool GetSystemMemoryInfo(SystemMemoryInfoKB* meminfo) {
 
 #if defined(ARCH_CPU_ARM_FAMILY)
   // Incorporate Mali graphics memory if present.
-  FilePath mali_memory_file("/sys/devices/platform/mali.0/memory");
+  FilePath mali_memory_file("/sys/class/misc/mali0/device/memory");
   std::string mali_memory_data;
-  if (file_util::ReadFileToString(mali_memory_file, &mali_memory_data)) {
+  if (ReadFileToString(mali_memory_file, &mali_memory_data)) {
     long long mali_size = -1;
     int num_res = sscanf(mali_memory_data.c_str(), "%lld bytes", &mali_size);
     if (num_res == 1)
@@ -503,14 +634,207 @@ bool GetSystemMemoryInfo(SystemMemoryInfoKB* meminfo) {
 #endif  // defined(ARCH_CPU_ARM_FAMILY)
 #endif  // defined(OS_CHROMEOS)
 
+  FilePath vmstat_file("/proc/vmstat");
+  std::string vmstat_data;
+  if (!ReadFileToString(vmstat_file, &vmstat_data)) {
+    DLOG(WARNING) << "Failed to open " << vmstat_file.value();
+    return false;
+  }
+
+  std::vector<std::string> vmstat_fields;
+  SplitStringAlongWhitespace(vmstat_data, &vmstat_fields);
+  if (vmstat_fields[kVMPagesSwappedIn-1] == "pswpin")
+    StringToInt(vmstat_fields[kVMPagesSwappedIn], &meminfo->pswpin);
+  if (vmstat_fields[kVMPagesSwappedOut-1] == "pswpout")
+    StringToInt(vmstat_fields[kVMPagesSwappedOut], &meminfo->pswpout);
+  if (vmstat_fields[kVMPageMajorFaults-1] == "pgmajfault")
+    StringToInt(vmstat_fields[kVMPageMajorFaults], &meminfo->pgmajfault);
+
   return true;
 }
 
-const char kProcSelfExe[] = "/proc/self/exe";
-
-int GetNumberOfThreads(ProcessHandle process) {
-  return internal::ReadProcStatsAndGetFieldAsInt(process,
-                                                 internal::VM_NUMTHREADS);
+SystemDiskInfo::SystemDiskInfo() {
+  reads = 0;
+  reads_merged = 0;
+  sectors_read = 0;
+  read_time = 0;
+  writes = 0;
+  writes_merged = 0;
+  sectors_written = 0;
+  write_time = 0;
+  io = 0;
+  io_time = 0;
+  weighted_io_time = 0;
 }
+
+scoped_ptr<Value> SystemDiskInfo::ToValue() const {
+  scoped_ptr<DictionaryValue> res(new base::DictionaryValue());
+
+  // Write out uint64 variables as doubles.
+  // Note: this may discard some precision, but for JS there's no other option.
+  res->SetDouble("reads", static_cast<double>(reads));
+  res->SetDouble("reads_merged", static_cast<double>(reads_merged));
+  res->SetDouble("sectors_read", static_cast<double>(sectors_read));
+  res->SetDouble("read_time", static_cast<double>(read_time));
+  res->SetDouble("writes", static_cast<double>(writes));
+  res->SetDouble("writes_merged", static_cast<double>(writes_merged));
+  res->SetDouble("sectors_written", static_cast<double>(sectors_written));
+  res->SetDouble("write_time", static_cast<double>(write_time));
+  res->SetDouble("io", static_cast<double>(io));
+  res->SetDouble("io_time", static_cast<double>(io_time));
+  res->SetDouble("weighted_io_time", static_cast<double>(weighted_io_time));
+
+  return res.PassAs<Value>();
+}
+
+bool IsValidDiskName(const std::string& candidate) {
+  if (candidate.length() < 3)
+    return false;
+  if (candidate.substr(0,2) == "sd" || candidate.substr(0,2) == "hd") {
+    // [sh]d[a-z]+ case
+    for (size_t i = 2; i < candidate.length(); i++) {
+      if (!islower(candidate[i]))
+        return false;
+    }
+  } else {
+    if (candidate.length() < 7) {
+      return false;
+    }
+    if (candidate.substr(0,6) == "mmcblk") {
+      // mmcblk[0-9]+ case
+      for (size_t i = 6; i < candidate.length(); i++) {
+        if (!isdigit(candidate[i]))
+          return false;
+      }
+    } else {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool GetSystemDiskInfo(SystemDiskInfo* diskinfo) {
+  // Synchronously reading files in /proc is safe.
+  ThreadRestrictions::ScopedAllowIO allow_io;
+
+  FilePath diskinfo_file("/proc/diskstats");
+  std::string diskinfo_data;
+  if (!ReadFileToString(diskinfo_file, &diskinfo_data)) {
+    DLOG(WARNING) << "Failed to open " << diskinfo_file.value();
+    return false;
+  }
+
+  std::vector<std::string> diskinfo_lines;
+  size_t line_count = Tokenize(diskinfo_data, "\n", &diskinfo_lines);
+  if (line_count == 0) {
+    DLOG(WARNING) << "No lines found";
+    return false;
+  }
+
+  diskinfo->reads = 0;
+  diskinfo->reads_merged = 0;
+  diskinfo->sectors_read = 0;
+  diskinfo->read_time = 0;
+  diskinfo->writes = 0;
+  diskinfo->writes_merged = 0;
+  diskinfo->sectors_written = 0;
+  diskinfo->write_time = 0;
+  diskinfo->io = 0;
+  diskinfo->io_time = 0;
+  diskinfo->weighted_io_time = 0;
+
+  uint64 reads = 0;
+  uint64 reads_merged = 0;
+  uint64 sectors_read = 0;
+  uint64 read_time = 0;
+  uint64 writes = 0;
+  uint64 writes_merged = 0;
+  uint64 sectors_written = 0;
+  uint64 write_time = 0;
+  uint64 io = 0;
+  uint64 io_time = 0;
+  uint64 weighted_io_time = 0;
+
+  for (size_t i = 0; i < line_count; i++) {
+    std::vector<std::string> disk_fields;
+    SplitStringAlongWhitespace(diskinfo_lines[i], &disk_fields);
+
+    // Fields may have overflowed and reset to zero.
+    if (IsValidDiskName(disk_fields[kDiskDriveName])) {
+      StringToUint64(disk_fields[kDiskReads], &reads);
+      StringToUint64(disk_fields[kDiskReadsMerged], &reads_merged);
+      StringToUint64(disk_fields[kDiskSectorsRead], &sectors_read);
+      StringToUint64(disk_fields[kDiskReadTime], &read_time);
+      StringToUint64(disk_fields[kDiskWrites], &writes);
+      StringToUint64(disk_fields[kDiskWritesMerged], &writes_merged);
+      StringToUint64(disk_fields[kDiskSectorsWritten], &sectors_written);
+      StringToUint64(disk_fields[kDiskWriteTime], &write_time);
+      StringToUint64(disk_fields[kDiskIO], &io);
+      StringToUint64(disk_fields[kDiskIOTime], &io_time);
+      StringToUint64(disk_fields[kDiskWeightedIOTime], &weighted_io_time);
+
+      diskinfo->reads += reads;
+      diskinfo->reads_merged += reads_merged;
+      diskinfo->sectors_read += sectors_read;
+      diskinfo->read_time += read_time;
+      diskinfo->writes += writes;
+      diskinfo->writes_merged += writes_merged;
+      diskinfo->sectors_written += sectors_written;
+      diskinfo->write_time += write_time;
+      diskinfo->io += io;
+      diskinfo->io_time += io_time;
+      diskinfo->weighted_io_time += weighted_io_time;
+    }
+  }
+
+  return true;
+}
+
+#if defined(OS_CHROMEOS)
+scoped_ptr<Value> SwapInfo::ToValue() const {
+  scoped_ptr<DictionaryValue> res(new DictionaryValue());
+
+  // Write out uint64 variables as doubles.
+  // Note: this may discard some precision, but for JS there's no other option.
+  res->SetDouble("num_reads", static_cast<double>(num_reads));
+  res->SetDouble("num_writes", static_cast<double>(num_writes));
+  res->SetDouble("orig_data_size", static_cast<double>(orig_data_size));
+  res->SetDouble("compr_data_size", static_cast<double>(compr_data_size));
+  res->SetDouble("mem_used_total", static_cast<double>(mem_used_total));
+  if (compr_data_size > 0)
+    res->SetDouble("compression_ratio", static_cast<double>(orig_data_size) /
+                                        static_cast<double>(compr_data_size));
+  else
+    res->SetDouble("compression_ratio", 0);
+
+  return res.PassAs<Value>();
+}
+
+void GetSwapInfo(SwapInfo* swap_info) {
+  // Synchronously reading files in /sys/block/zram0 is safe.
+  ThreadRestrictions::ScopedAllowIO allow_io;
+
+  base::FilePath zram_path("/sys/block/zram0");
+  uint64 orig_data_size = ReadFileToUint64(zram_path.Append("orig_data_size"));
+  if (orig_data_size <= 4096) {
+    // A single page is compressed at startup, and has a high compression
+    // ratio. We ignore this as it doesn't indicate any real swapping.
+    swap_info->orig_data_size = 0;
+    swap_info->num_reads = 0;
+    swap_info->num_writes = 0;
+    swap_info->compr_data_size = 0;
+    swap_info->mem_used_total = 0;
+    return;
+  }
+  swap_info->orig_data_size = orig_data_size;
+  swap_info->num_reads = ReadFileToUint64(zram_path.Append("num_reads"));
+  swap_info->num_writes = ReadFileToUint64(zram_path.Append("num_writes"));
+  swap_info->compr_data_size =
+      ReadFileToUint64(zram_path.Append("compr_data_size"));
+  swap_info->mem_used_total =
+      ReadFileToUint64(zram_path.Append("mem_used_total"));
+}
+#endif  // defined(OS_CHROMEOS)
 
 }  // namespace base

@@ -40,43 +40,46 @@ namespace WebCore {
 
 class Frame;
 class Node;
+class SpellCheckRequester;
 class TextCheckerClient;
-class SpellChecker;
 
 class SpellCheckRequest : public TextCheckingRequest {
 public:
-    static PassRefPtr<SpellCheckRequest> create(TextCheckingTypeMask, TextCheckingProcessType, PassRefPtr<Range> checkingRange, PassRefPtr<Range> paragraphRange);
+    static PassRefPtr<SpellCheckRequest> create(TextCheckingTypeMask, TextCheckingProcessType, PassRefPtr<Range> checkingRange, PassRefPtr<Range> paragraphRange, int requestNumber = 0);
     virtual ~SpellCheckRequest();
 
     PassRefPtr<Range> checkingRange() const { return m_checkingRange; }
     PassRefPtr<Range> paragraphRange() const { return m_paragraphRange; }
     PassRefPtr<Element> rootEditableElement() const { return m_rootEditableElement; }
 
-    void setCheckerAndSequence(SpellChecker*, int sequence);
+    void setCheckerAndSequence(SpellCheckRequester*, int sequence);
     void requesterDestroyed();
-    bool isStarted() const { return m_checker; }
+    bool isStarted() const { return m_requester; }
 
     virtual const TextCheckingRequestData& data() const OVERRIDE;
     virtual void didSucceed(const Vector<TextCheckingResult>&) OVERRIDE;
     virtual void didCancel() OVERRIDE;
 
-private:
-    SpellCheckRequest(PassRefPtr<Range> checkingRange, PassRefPtr<Range> paragraphRange, const String&, TextCheckingTypeMask, TextCheckingProcessType, const Vector<uint32_t>& documentMarkersInRange, const Vector<unsigned>& documentMarkerOffsets);
+    int requestNumber() const { return m_requestNumber; }
 
-    SpellChecker* m_checker;
+private:
+    SpellCheckRequest(PassRefPtr<Range> checkingRange, PassRefPtr<Range> paragraphRange, const String&, TextCheckingTypeMask, TextCheckingProcessType, const Vector<uint32_t>& documentMarkersInRange, const Vector<unsigned>& documentMarkerOffsets, int requestNumber);
+
+    SpellCheckRequester* m_requester;
     RefPtr<Range> m_checkingRange;
     RefPtr<Range> m_paragraphRange;
     RefPtr<Element> m_rootEditableElement;
     TextCheckingRequestData m_requestData;
+    int m_requestNumber;
 };
 
-class SpellChecker {
-    WTF_MAKE_NONCOPYABLE(SpellChecker); WTF_MAKE_FAST_ALLOCATED;
+class SpellCheckRequester {
+    WTF_MAKE_NONCOPYABLE(SpellCheckRequester); WTF_MAKE_FAST_ALLOCATED;
 public:
     friend class SpellCheckRequest;
 
-    explicit SpellChecker(Frame*);
-    ~SpellChecker();
+    explicit SpellCheckRequester(Frame&);
+    ~SpellCheckRequester();
 
     bool isAsynchronousEnabled() const;
     bool isCheckable(Range*) const;
@@ -98,19 +101,19 @@ private:
     typedef Deque<RefPtr<SpellCheckRequest> > RequestQueue;
 
     bool canCheckAsynchronously(Range*) const;
-    TextCheckerClient* client() const;
-    void timerFiredToProcessQueuedRequest(Timer<SpellChecker>*);
+    TextCheckerClient& client() const;
+    void timerFiredToProcessQueuedRequest(Timer<SpellCheckRequester>*);
     void invokeRequest(PassRefPtr<SpellCheckRequest>);
     void enqueueRequest(PassRefPtr<SpellCheckRequest>);
     void didCheckSucceed(int sequence, const Vector<TextCheckingResult>&);
     void didCheckCancel(int sequence);
     void didCheck(int sequence, const Vector<TextCheckingResult>&);
 
-    Frame* m_frame;
+    Frame& m_frame;
     int m_lastRequestSequence;
     int m_lastProcessedSequence;
 
-    Timer<SpellChecker> m_timerToProcessQueuedRequest;
+    Timer<SpellCheckRequester> m_timerToProcessQueuedRequest;
 
     RefPtr<SpellCheckRequest> m_processingRequest;
     RequestQueue m_requestQueue;

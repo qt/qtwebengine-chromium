@@ -112,7 +112,7 @@ void BrowserPluginTest::TearDown() {
 
 std::string BrowserPluginTest::ExecuteScriptAndReturnString(
     const std::string& script) {
-  v8::HandleScope handle_scope;
+  v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
   v8::Handle<v8::Value> value = GetMainFrame()->executeScriptAndReturnValue(
       WebKit::WebScriptSource(WebKit::WebString::fromUTF8(script.c_str())));
   if (value.IsEmpty() || !value->IsString())
@@ -127,7 +127,7 @@ std::string BrowserPluginTest::ExecuteScriptAndReturnString(
 
 int BrowserPluginTest::ExecuteScriptAndReturnInt(
     const std::string& script) {
-  v8::HandleScope handle_scope;
+  v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
   v8::Handle<v8::Value> value = GetMainFrame()->executeScriptAndReturnValue(
       WebKit::WebScriptSource(WebKit::WebString::fromUTF8(script.c_str())));
   if (value.IsEmpty() || !value->IsInt32())
@@ -140,7 +140,7 @@ int BrowserPluginTest::ExecuteScriptAndReturnInt(
 // of the script is stored in |result|
 bool BrowserPluginTest::ExecuteScriptAndReturnBool(
     const std::string& script, bool* result) {
-  v8::HandleScope handle_scope;
+  v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
   v8::Handle<v8::Value> value = GetMainFrame()->executeScriptAndReturnValue(
       WebKit::WebScriptSource(WebKit::WebString::fromUTF8(script.c_str())));
   if (value.IsEmpty() || !value->IsBoolean())
@@ -172,8 +172,13 @@ MockBrowserPlugin* BrowserPluginTest::GetCurrentPluginWithAttachParams(
       msg, &iter, params))
     return NULL;
 
-  return static_cast<MockBrowserPlugin*>(
+  MockBrowserPlugin* browser_plugin = static_cast<MockBrowserPlugin*>(
       browser_plugin_manager()->GetBrowserPlugin(instance_id));
+
+  BrowserPluginMsg_Attach_ACK_Params attach_ack_params;
+  browser_plugin->OnAttachACK(instance_id, attach_ack_params);
+
+  return browser_plugin;
 }
 
 // This test verifies that an initial resize occurs when we instantiate the

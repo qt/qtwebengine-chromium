@@ -12,16 +12,11 @@
 #include "vp9/common/vp9_onyxc_int.h"
 #include "vp9/common/vp9_entropymv.h"
 
-//#define MV_COUNT_TESTING
-
 #define MV_COUNT_SAT 20
 #define MV_MAX_UPDATE_FACTOR 128
 
 /* Integer pel reference mv threshold for use of high-precision 1/8 mv */
-#define COMPANDED_MVREF_THRESH    8
-
-/* Smooth or bias the mv-counts before prob computation */
-/* #define SMOOTH_MV_COUNTS */
+#define COMPANDED_MVREF_THRESH 8
 
 const vp9_tree_index vp9_mv_joint_tree[2 * MV_JOINTS - 2] = {
   -MV_JOINT_ZERO, 2,
@@ -56,7 +51,7 @@ const vp9_tree_index vp9_mv_fp_tree [2 * 4 - 2] = {
 };
 struct vp9_token vp9_mv_fp_encodings[4];
 
-const nmv_context vp9_default_nmv_context = {
+static const nmv_context default_nmv_context = {
   {32, 64, 96},
   {
     { /* vert component */
@@ -82,33 +77,61 @@ const nmv_context vp9_default_nmv_context = {
   },
 };
 
-MV_JOINT_TYPE vp9_get_mv_joint(const MV *mv) {
-  if (mv->row == 0 && mv->col == 0)
-    return MV_JOINT_ZERO;
-  else if (mv->row == 0 && mv->col != 0)
-    return MV_JOINT_HNZVZ;
-  else if (mv->row != 0 && mv->col == 0)
-    return MV_JOINT_HZVNZ;
-  else
-    return MV_JOINT_HNZVNZ;
-}
-
 #define mv_class_base(c) ((c) ? (CLASS0_SIZE << (c + 2)) : 0)
 
+static const uint8_t log_in_base_2[] = {
+  0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4,
+  4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+  5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6,
+  6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
+  6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
+  6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
+  7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
+  7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
+  7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
+  7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
+  7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8,
+  8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+  8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+  8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+  8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+  8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+  8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+  8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+  8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+  8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+  8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+  8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+  9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+  9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+  9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+  9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+  9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+  9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+  9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+  9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+  9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+  9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+  9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+  9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+  9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+  9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+  9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+  9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+  9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+  9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+  9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+  9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+  9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 10
+};
+
 MV_CLASS_TYPE vp9_get_mv_class(int z, int *offset) {
-  MV_CLASS_TYPE c;
-  if      (z < CLASS0_SIZE * 8)    c = MV_CLASS_0;
-  else if (z < CLASS0_SIZE * 16)   c = MV_CLASS_1;
-  else if (z < CLASS0_SIZE * 32)   c = MV_CLASS_2;
-  else if (z < CLASS0_SIZE * 64)   c = MV_CLASS_3;
-  else if (z < CLASS0_SIZE * 128)  c = MV_CLASS_4;
-  else if (z < CLASS0_SIZE * 256)  c = MV_CLASS_5;
-  else if (z < CLASS0_SIZE * 512)  c = MV_CLASS_6;
-  else if (z < CLASS0_SIZE * 1024) c = MV_CLASS_7;
-  else if (z < CLASS0_SIZE * 2048) c = MV_CLASS_8;
-  else if (z < CLASS0_SIZE * 4096) c = MV_CLASS_9;
-  else if (z < CLASS0_SIZE * 8192) c = MV_CLASS_10;
-  else assert(0);
+  MV_CLASS_TYPE c = MV_CLASS_0;
+  if (z >= CLASS0_SIZE * 4096)
+    c = MV_CLASS_10;
+  else
+    c = log_in_base_2[z >> 3];
+
   if (offset)
     *offset = z - mv_class_base(c);
   return c;
@@ -123,17 +146,9 @@ int vp9_get_mv_mag(MV_CLASS_TYPE c, int offset) {
   return mv_class_base(c) + offset;
 }
 
-static void inc_mv_component_count(int v, nmv_component_counts *comp_counts,
-                                   int incr) {
-  assert (v != 0);
-  comp_counts->mvcount[MV_MAX + v] += incr;
-}
-
 static void inc_mv_component(int v, nmv_component_counts *comp_counts,
                              int incr, int usehp) {
   int s, z, c, o, d, e, f;
-  if (!incr)
-    return;
   assert (v != 0);            /* should not be zero */
   s = v < 0;
   comp_counts->sign[s] += incr;
@@ -145,158 +160,37 @@ static void inc_mv_component(int v, nmv_component_counts *comp_counts,
   d = (o >> 3);               /* int mv data */
   f = (o >> 1) & 3;           /* fractional pel mv data */
   e = (o & 1);                /* high precision mv data */
+
   if (c == MV_CLASS_0) {
     comp_counts->class0[d] += incr;
+    comp_counts->class0_fp[d][f] += incr;
+    comp_counts->class0_hp[e] += usehp * incr;
   } else {
     int i;
     int b = c + CLASS0_BITS - 1;  // number of bits
     for (i = 0; i < b; ++i)
       comp_counts->bits[i][((d >> i) & 1)] += incr;
-  }
-
-  /* Code the fractional pel bits */
-  if (c == MV_CLASS_0) {
-    comp_counts->class0_fp[d][f] += incr;
-  } else {
     comp_counts->fp[f] += incr;
-  }
-
-  /* Code the high precision bit */
-  if (usehp) {
-    if (c == MV_CLASS_0) {
-      comp_counts->class0_hp[e] += incr;
-    } else {
-      comp_counts->hp[e] += incr;
-    }
+    comp_counts->hp[e] += usehp * incr;
   }
 }
 
-#ifdef SMOOTH_MV_COUNTS
-static void smooth_counts(nmv_component_counts *mvcomp) {
-  static const int flen = 3;  // (filter_length + 1) / 2
-  static const int fval[] = {8, 3, 1};
-  static const int fvalbits = 4;
-  int i;
-  unsigned int smvcount[MV_VALS];
-  vpx_memcpy(smvcount, mvcomp->mvcount, sizeof(smvcount));
-  smvcount[MV_MAX] = (smvcount[MV_MAX - 1] + smvcount[MV_MAX + 1]) >> 1;
-  for (i = flen - 1; i <= MV_VALS - flen; ++i) {
-    int j, s = smvcount[i] * fval[0];
-    for (j = 1; j < flen; ++j)
-      s += (smvcount[i - j] + smvcount[i + j]) * fval[j];
-    mvcomp->mvcount[i] = (s + (1 << (fvalbits - 1))) >> fvalbits;
-  }
-}
-#endif
 
-static void counts_to_context(nmv_component_counts *mvcomp, int usehp) {
-  int v;
-  vpx_memset(mvcomp->sign, 0, sizeof(nmv_component_counts) - sizeof(mvcomp->mvcount));
-  for (v = 1; v <= MV_MAX; v++) {
-    inc_mv_component(-v, mvcomp, mvcomp->mvcount[MV_MAX - v], usehp);
-    inc_mv_component( v, mvcomp, mvcomp->mvcount[MV_MAX + v], usehp);
-  }
-}
-
-void vp9_increment_nmv(const MV *mv, const MV *ref, nmv_context_counts *mvctx,
-                       int usehp) {
+void vp9_inc_mv(const MV *mv,  nmv_context_counts *counts) {
   const MV_JOINT_TYPE j = vp9_get_mv_joint(mv);
-  mvctx->joints[j]++;
-  usehp = usehp && vp9_use_mv_hp(ref);
-  if (mv_joint_vertical(j))
-    inc_mv_component_count(mv->row, &mvctx->comps[0], 1);
+  ++counts->joints[j];
 
-  if (mv_joint_horizontal(j))
-    inc_mv_component_count(mv->col, &mvctx->comps[1], 1);
-}
+  if (mv_joint_vertical(j)) {
+    inc_mv_component(mv->row, &counts->comps[0], 1, 1);
+  }
 
-static void adapt_prob(vp9_prob *dest, vp9_prob prep, unsigned int ct[2]) {
-  const int count = MIN(ct[0] + ct[1], MV_COUNT_SAT);
-  if (count) {
-    const vp9_prob newp = get_binary_prob(ct[0], ct[1]);
-    const int factor = MV_MAX_UPDATE_FACTOR * count / MV_COUNT_SAT;
-    *dest = weighted_prob(prep, newp, factor);
-  } else {
-    *dest = prep;
+  if (mv_joint_horizontal(j)) {
+    inc_mv_component(mv->col, &counts->comps[1], 1, 1);
   }
 }
 
-void vp9_counts_process(nmv_context_counts *nmv_count, int usehp) {
-  counts_to_context(&nmv_count->comps[0], usehp);
-  counts_to_context(&nmv_count->comps[1], usehp);
-}
-
-void vp9_counts_to_nmv_context(
-    nmv_context_counts *nmv_count,
-    nmv_context *prob,
-    int usehp,
-    unsigned int (*branch_ct_joint)[2],
-    unsigned int (*branch_ct_sign)[2],
-    unsigned int (*branch_ct_classes)[MV_CLASSES - 1][2],
-    unsigned int (*branch_ct_class0)[CLASS0_SIZE - 1][2],
-    unsigned int (*branch_ct_bits)[MV_OFFSET_BITS][2],
-    unsigned int (*branch_ct_class0_fp)[CLASS0_SIZE][4 - 1][2],
-    unsigned int (*branch_ct_fp)[4 - 1][2],
-    unsigned int (*branch_ct_class0_hp)[2],
-    unsigned int (*branch_ct_hp)[2]) {
-  int i, j, k;
-  vp9_counts_process(nmv_count, usehp);
-  vp9_tree_probs_from_distribution(vp9_mv_joint_tree,
-                                   prob->joints,
-                                   branch_ct_joint,
-                                   nmv_count->joints, 0);
-  for (i = 0; i < 2; ++i) {
-    const uint32_t s0 = nmv_count->comps[i].sign[0];
-    const uint32_t s1 = nmv_count->comps[i].sign[1];
-
-    prob->comps[i].sign = get_binary_prob(s0, s1);
-    branch_ct_sign[i][0] = s0;
-    branch_ct_sign[i][1] = s1;
-    vp9_tree_probs_from_distribution(vp9_mv_class_tree,
-                                     prob->comps[i].classes,
-                                     branch_ct_classes[i],
-                                     nmv_count->comps[i].classes, 0);
-    vp9_tree_probs_from_distribution(vp9_mv_class0_tree,
-                                     prob->comps[i].class0,
-                                     branch_ct_class0[i],
-                                     nmv_count->comps[i].class0, 0);
-    for (j = 0; j < MV_OFFSET_BITS; ++j) {
-      const uint32_t b0 = nmv_count->comps[i].bits[j][0];
-      const uint32_t b1 = nmv_count->comps[i].bits[j][1];
-
-      prob->comps[i].bits[j] = get_binary_prob(b0, b1);
-      branch_ct_bits[i][j][0] = b0;
-      branch_ct_bits[i][j][1] = b1;
-    }
-  }
-  for (i = 0; i < 2; ++i) {
-    for (k = 0; k < CLASS0_SIZE; ++k) {
-      vp9_tree_probs_from_distribution(vp9_mv_fp_tree,
-                                       prob->comps[i].class0_fp[k],
-                                       branch_ct_class0_fp[i][k],
-                                       nmv_count->comps[i].class0_fp[k], 0);
-    }
-    vp9_tree_probs_from_distribution(vp9_mv_fp_tree,
-                                     prob->comps[i].fp,
-                                     branch_ct_fp[i],
-                                     nmv_count->comps[i].fp, 0);
-  }
-  if (usehp) {
-    for (i = 0; i < 2; ++i) {
-      const uint32_t c0_hp0 = nmv_count->comps[i].class0_hp[0];
-      const uint32_t c0_hp1 = nmv_count->comps[i].class0_hp[1];
-      const uint32_t hp0 = nmv_count->comps[i].hp[0];
-      const uint32_t hp1 = nmv_count->comps[i].hp[1];
-
-      prob->comps[i].class0_hp = get_binary_prob(c0_hp0, c0_hp1);
-      branch_ct_class0_hp[i][0] = c0_hp0;
-      branch_ct_class0_hp[i][1] = c0_hp1;
-
-      prob->comps[i].hp = get_binary_prob(hp0, hp1);
-      branch_ct_hp[i][0] = hp0;
-      branch_ct_hp[i][1] = hp1;
-    }
-  }
+static vp9_prob adapt_prob(vp9_prob prep, const unsigned int ct[2]) {
+  return merge_probs2(prep, ct, MV_COUNT_SAT, MV_MAX_UPDATE_FACTOR);
 }
 
 static unsigned int adapt_probs(unsigned int i,
@@ -304,134 +198,54 @@ static unsigned int adapt_probs(unsigned int i,
                                 vp9_prob this_probs[],
                                 const vp9_prob last_probs[],
                                 const unsigned int num_events[]) {
-  vp9_prob this_prob;
 
-  const uint32_t left = tree[i] <= 0
+
+  const unsigned int left = tree[i] <= 0
           ? num_events[-tree[i]]
           : adapt_probs(tree[i], tree, this_probs, last_probs, num_events);
 
-  const uint32_t right = tree[i + 1] <= 0
+  const unsigned int right = tree[i + 1] <= 0
           ? num_events[-tree[i + 1]]
           : adapt_probs(tree[i + 1], tree, this_probs, last_probs, num_events);
-
-  uint32_t weight = left + right;
-  if (weight) {
-    this_prob = get_binary_prob(left, right);
-    weight = weight > MV_COUNT_SAT ? MV_COUNT_SAT : weight;
-    this_prob = weighted_prob(last_probs[i >> 1], this_prob,
-                              MV_MAX_UPDATE_FACTOR * weight / MV_COUNT_SAT);
-  } else {
-    this_prob = last_probs[i >> 1];
-  }
-  this_probs[i >> 1] = this_prob;
+  const unsigned int ct[2] = { left, right };
+  this_probs[i >> 1] = adapt_prob(last_probs[i >> 1], ct);
   return left + right;
 }
 
 
-void vp9_adapt_mv_probs(VP9_COMMON *cm, int usehp) {
+void vp9_adapt_mv_probs(VP9_COMMON *cm, int allow_hp) {
   int i, j;
-#ifdef MV_COUNT_TESTING
-  printf("joints count: ");
-  for (j = 0; j < MV_JOINTS; ++j) printf("%d ", cm->fc.NMVcount.joints[j]);
-  printf("\n"); fflush(stdout);
-  printf("signs count:\n");
-  for (i = 0; i < 2; ++i)
-    printf("%d/%d ", cm->fc.NMVcount.comps[i].sign[0], cm->fc.NMVcount.comps[i].sign[1]);
-  printf("\n"); fflush(stdout);
-  printf("classes count:\n");
+
+  FRAME_CONTEXT *pre_fc = &cm->frame_contexts[cm->frame_context_idx];
+
+  nmv_context *ctx = &cm->fc.nmvc;
+  nmv_context *pre_ctx = &pre_fc->nmvc;
+  nmv_context_counts *cts = &cm->counts.mv;
+
+  adapt_probs(0, vp9_mv_joint_tree, ctx->joints, pre_ctx->joints, cts->joints);
+
   for (i = 0; i < 2; ++i) {
-    for (j = 0; j < MV_CLASSES; ++j)
-      printf("%d ", cm->fc.NMVcount.comps[i].classes[j]);
-    printf("\n"); fflush(stdout);
-  }
-  printf("class0 count:\n");
-  for (i = 0; i < 2; ++i) {
-    for (j = 0; j < CLASS0_SIZE; ++j)
-      printf("%d ", cm->fc.NMVcount.comps[i].class0[j]);
-    printf("\n"); fflush(stdout);
-  }
-  printf("bits count:\n");
-  for (i = 0; i < 2; ++i) {
+    ctx->comps[i].sign = adapt_prob(pre_ctx->comps[i].sign, cts->comps[i].sign);
+    adapt_probs(0, vp9_mv_class_tree, ctx->comps[i].classes,
+                pre_ctx->comps[i].classes, cts->comps[i].classes);
+    adapt_probs(0, vp9_mv_class0_tree, ctx->comps[i].class0,
+                pre_ctx->comps[i].class0, cts->comps[i].class0);
+
     for (j = 0; j < MV_OFFSET_BITS; ++j)
-      printf("%d/%d ", cm->fc.NMVcount.comps[i].bits[j][0],
-                       cm->fc.NMVcount.comps[i].bits[j][1]);
-    printf("\n"); fflush(stdout);
-  }
-  printf("class0_fp count:\n");
-  for (i = 0; i < 2; ++i) {
-    for (j = 0; j < CLASS0_SIZE; ++j) {
-      printf("{");
-      for (k = 0; k < 4; ++k)
-        printf("%d ", cm->fc.NMVcount.comps[i].class0_fp[j][k]);
-      printf("}, ");
-    }
-    printf("\n"); fflush(stdout);
-  }
-  printf("fp count:\n");
-  for (i = 0; i < 2; ++i) {
-    for (j = 0; j < 4; ++j)
-      printf("%d ", cm->fc.NMVcount.comps[i].fp[j]);
-    printf("\n"); fflush(stdout);
-  }
-  if (usehp) {
-    printf("class0_hp count:\n");
-    for (i = 0; i < 2; ++i)
-      printf("%d/%d ", cm->fc.NMVcount.comps[i].class0_hp[0],
-                       cm->fc.NMVcount.comps[i].class0_hp[1]);
-    printf("\n"); fflush(stdout);
-    printf("hp count:\n");
-    for (i = 0; i < 2; ++i)
-      printf("%d/%d ", cm->fc.NMVcount.comps[i].hp[0],
-                       cm->fc.NMVcount.comps[i].hp[1]);
-    printf("\n"); fflush(stdout);
-  }
-#endif
-#ifdef SMOOTH_MV_COUNTS
-  smooth_counts(&cm->fc.NMVcount.comps[0]);
-  smooth_counts(&cm->fc.NMVcount.comps[1]);
-#endif
-  vp9_counts_process(&cm->fc.NMVcount, usehp);
+        ctx->comps[i].bits[j] = adapt_prob(pre_ctx->comps[i].bits[j],
+                                           cts->comps[i].bits[j]);
 
-  adapt_probs(0, vp9_mv_joint_tree,
-              cm->fc.nmvc.joints, cm->fc.pre_nmvc.joints,
-              cm->fc.NMVcount.joints);
+    for (j = 0; j < CLASS0_SIZE; ++j)
+      adapt_probs(0, vp9_mv_fp_tree, ctx->comps[i].class0_fp[j],
+                  pre_ctx->comps[i].class0_fp[j], cts->comps[i].class0_fp[j]);
 
-  for (i = 0; i < 2; ++i) {
-    adapt_prob(&cm->fc.nmvc.comps[i].sign,
-               cm->fc.pre_nmvc.comps[i].sign,
-               cm->fc.NMVcount.comps[i].sign);
-    adapt_probs(0, vp9_mv_class_tree,
-                cm->fc.nmvc.comps[i].classes, cm->fc.pre_nmvc.comps[i].classes,
-                cm->fc.NMVcount.comps[i].classes);
-    adapt_probs(0, vp9_mv_class0_tree,
-                cm->fc.nmvc.comps[i].class0, cm->fc.pre_nmvc.comps[i].class0,
-                cm->fc.NMVcount.comps[i].class0);
-    for (j = 0; j < MV_OFFSET_BITS; ++j) {
-      adapt_prob(&cm->fc.nmvc.comps[i].bits[j],
-                 cm->fc.pre_nmvc.comps[i].bits[j],
-                 cm->fc.NMVcount.comps[i].bits[j]);
-    }
-  }
-  for (i = 0; i < 2; ++i) {
-    for (j = 0; j < CLASS0_SIZE; ++j) {
-      adapt_probs(0, vp9_mv_fp_tree,
-                  cm->fc.nmvc.comps[i].class0_fp[j],
-                  cm->fc.pre_nmvc.comps[i].class0_fp[j],
-                  cm->fc.NMVcount.comps[i].class0_fp[j]);
-    }
-    adapt_probs(0, vp9_mv_fp_tree,
-                cm->fc.nmvc.comps[i].fp,
-                cm->fc.pre_nmvc.comps[i].fp,
-                cm->fc.NMVcount.comps[i].fp);
-  }
-  if (usehp) {
-    for (i = 0; i < 2; ++i) {
-      adapt_prob(&cm->fc.nmvc.comps[i].class0_hp,
-                 cm->fc.pre_nmvc.comps[i].class0_hp,
-                 cm->fc.NMVcount.comps[i].class0_hp);
-      adapt_prob(&cm->fc.nmvc.comps[i].hp,
-                 cm->fc.pre_nmvc.comps[i].hp,
-                 cm->fc.NMVcount.comps[i].hp);
+    adapt_probs(0, vp9_mv_fp_tree, ctx->comps[i].fp, pre_ctx->comps[i].fp,
+                cts->comps[i].fp);
+
+    if (allow_hp) {
+      ctx->comps[i].class0_hp = adapt_prob(pre_ctx->comps[i].class0_hp,
+                                           cts->comps[i].class0_hp);
+      ctx->comps[i].hp = adapt_prob(pre_ctx->comps[i].hp, cts->comps[i].hp);
     }
   }
 }
@@ -444,5 +258,5 @@ void vp9_entropy_mv_init() {
 }
 
 void vp9_init_mv_probs(VP9_COMMON *cm) {
-  vpx_memcpy(&cm->fc.nmvc, &vp9_default_nmv_context, sizeof(nmv_context));
+  cm->fc.nmvc = default_nmv_context;
 }

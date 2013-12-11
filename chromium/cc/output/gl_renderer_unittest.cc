@@ -7,6 +7,7 @@
 #include <set>
 
 #include "cc/base/math_util.h"
+#include "cc/debug/test_web_graphics_context_3d.h"
 #include "cc/output/compositor_frame_metadata.h"
 #include "cc/resources/prioritized_resource_manager.h"
 #include "cc/resources/resource_provider.h"
@@ -14,11 +15,11 @@
 #include "cc/test/fake_impl_proxy.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/fake_output_surface.h"
+#include "cc/test/fake_output_surface_client.h"
 #include "cc/test/mock_quad_culler.h"
 #include "cc/test/pixel_test.h"
 #include "cc/test/render_pass_test_common.h"
 #include "cc/test/render_pass_test_utils.h"
-#include "cc/test/test_web_graphics_context_3d.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -31,7 +32,9 @@
 
 using testing::_;
 using testing::AnyNumber;
+using testing::Args;
 using testing::AtLeast;
+using testing::ElementsAre;
 using testing::Expectation;
 using testing::InSequence;
 using testing::Mock;
@@ -116,19 +119,16 @@ TEST_F(GLRendererShaderPixelTest, AllShadersCompile) { TestShaders(); }
 
 class FrameCountingContext : public TestWebGraphicsContext3D {
  public:
-  FrameCountingContext() : frame_(0) {}
+  FrameCountingContext()
+      : frame_(0) {
+    test_capabilities_.set_visibility = true;
+    test_capabilities_.discard_backbuffer = true;
+  }
 
   // WebGraphicsContext3D methods.
 
   // This method would normally do a glSwapBuffers under the hood.
   virtual void prepareTexture() { frame_++; }
-  virtual WebString getString(WebKit::WGC3Denum name) {
-    if (name == GL_EXTENSIONS)
-      return WebString(
-          "GL_CHROMIUM_set_visibility GL_CHROMIUM_gpu_memory_manager "
-          "GL_CHROMIUM_discard_backbuffer");
-    return WebString();
-  }
 
   // Methods added for test.
   int frame_count() { return frame_; }
@@ -143,9 +143,8 @@ class FakeRendererClient : public RendererClient {
       : host_impl_(&proxy_),
         set_full_root_layer_damage_count_(0),
         root_layer_(LayerImpl::Create(host_impl_.active_tree(), 1)),
-        viewport_size_(gfx::Size(1, 1)),
-        scale_factor_(1.f),
-        external_stencil_test_enabled_(false) {
+        viewport_(gfx::Rect(0, 0, 1, 1)),
+        clip_(gfx::Rect(0, 0, 1, 1)) {
     root_layer_->CreateRenderSurface();
     RenderPass::Id render_pass_id =
         root_layer_->render_surface()->RenderPassId();
@@ -156,45 +155,21 @@ class FakeRendererClient : public RendererClient {
   }
 
   // RendererClient methods.
-  virtual gfx::Rect DeviceViewport() const OVERRIDE {
-    static gfx::Size fake_size(1, 1);
-    return gfx::Rect(fake_size);
-  }
-  virtual float DeviceScaleFactor() const OVERRIDE {
-    return scale_factor_;
-  }
-  virtual const LayerTreeSettings& Settings() const OVERRIDE {
-    static LayerTreeSettings fake_settings;
-    return fake_settings;
-  }
+  virtual gfx::Rect DeviceViewport() const OVERRIDE { return viewport_; }
+  virtual gfx::Rect DeviceClip() const OVERRIDE { return clip_; }
   virtual void SetFullRootLayerDamage() OVERRIDE {
     set_full_root_layer_damage_count_++;
   }
-  virtual bool HasImplThread() const OVERRIDE { return false; }
-  virtual bool ShouldClearRootRenderPass() const OVERRIDE { return true; }
   virtual CompositorFrameMetadata MakeCompositorFrameMetadata() const OVERRIDE {
     return CompositorFrameMetadata();
-  }
-  virtual bool AllowPartialSwap() const OVERRIDE {
-    return true;
-  }
-  virtual bool ExternalStencilTestEnabled() const OVERRIDE {
-    return external_stencil_test_enabled_;
-  }
-
-  void EnableExternalStencilTest() {
-    external_stencil_test_enabled_ = true;
   }
 
   // Methods added for test.
   int set_full_root_layer_damage_count() const {
     return set_full_root_layer_damage_count_;
   }
-  void set_viewport_and_scale(
-      gfx::Size viewport_size, float scale_factor) {
-    viewport_size_ = viewport_size;
-    scale_factor_ = scale_factor;
-  }
+  void set_viewport(gfx::Rect viewport) { viewport_ = viewport; }
+  void set_clip(gfx::Rect clip) { clip_ = clip; }
 
   RenderPass* root_render_pass() { return render_passes_in_draw_order_.back(); }
   RenderPassList* render_passes_in_draw_order() {
@@ -207,17 +182,22 @@ class FakeRendererClient : public RendererClient {
   int set_full_root_layer_damage_count_;
   scoped_ptr<LayerImpl> root_layer_;
   RenderPassList render_passes_in_draw_order_;
-  gfx::Size viewport_size_;
-  float scale_factor_;
-  bool external_stencil_test_enabled_;
+  gfx::Rect viewport_;
+  gfx::Rect clip_;
 };
 
 class FakeRendererGL : public GLRenderer {
  public:
   FakeRendererGL(RendererClient* client,
+                 const LayerTreeSettings* settings,
                  OutputSurface* output_surface,
                  ResourceProvider* resource_provider)
-      : GLRenderer(client, output_surface, resource_provider, 0) {}
+      : GLRenderer(client,
+                   settings,
+                   output_surface,
+                   resource_provider,
+                   NULL,
+                   0) {}
 
   // GLRenderer methods.
 
@@ -232,27 +212,33 @@ class FakeRendererGL : public GLRenderer {
 
 class GLRendererTest : public testing::Test {
  protected:
-  GLRendererTest()
-      : output_surface_(FakeOutputSurface::Create3d(
-            scoped_ptr<WebKit::WebGraphicsContext3D>(
-                new FrameCountingContext()))),
-        resource_provider_(ResourceProvider::Create(output_surface_.get(), 0)),
-        renderer_(&mock_client_,
-                  output_surface_.get(),
-                  resource_provider_.get()) {}
+  GLRendererTest() {
+    scoped_ptr<FrameCountingContext> context3d(new FrameCountingContext);
+    context3d_ = context3d.get();
 
-  virtual void SetUp() { renderer_.Initialize(); }
+    output_surface_ = FakeOutputSurface::Create3d(
+        context3d.PassAs<TestWebGraphicsContext3D>()).Pass();
+    CHECK(output_surface_->BindToClient(&output_surface_client_));
 
-  void SwapBuffers() { renderer_.SwapBuffers(); }
-
-  FrameCountingContext* Context() {
-    return static_cast<FrameCountingContext*>(output_surface_->context3d());
+    resource_provider_ =
+        ResourceProvider::Create(output_surface_.get(), 0, false).Pass();
+    renderer_ = make_scoped_ptr(new FakeRendererGL(&renderer_client_,
+                                                   &settings_,
+                                                   output_surface_.get(),
+                                                   resource_provider_.get()));
   }
 
-  scoped_ptr<OutputSurface> output_surface_;
-  FakeRendererClient mock_client_;
+  virtual void SetUp() { renderer_->Initialize(); }
+
+  void SwapBuffers() { renderer_->SwapBuffers(); }
+
+  LayerTreeSettings settings_;
+  FrameCountingContext* context3d_;
+  FakeOutputSurfaceClient output_surface_client_;
+  scoped_ptr<FakeOutputSurface> output_surface_;
+  FakeRendererClient renderer_client_;
   scoped_ptr<ResourceProvider> resource_provider_;
-  FakeRendererGL renderer_;
+  scoped_ptr<FakeRendererGL> renderer_;
 };
 
 // Closing the namespace here so that GLRendererShaderTest can take advantage
@@ -320,15 +306,18 @@ class ShaderCreatorMockGraphicsContext : public TestWebGraphicsContext3D {
 
 class GLRendererShaderTest : public testing::Test {
  protected:
-  GLRendererShaderTest()
-      : output_surface_(FakeOutputSurface::Create3d(
-            scoped_ptr<WebKit::WebGraphicsContext3D>(
-                new ShaderCreatorMockGraphicsContext()))),
-        resource_provider_(ResourceProvider::Create(output_surface_.get(), 0)),
-        renderer_(scoped_ptr<FakeRendererGL>(
-            new FakeRendererGL(&mock_client_,
-                               output_surface_.get(),
-                               resource_provider_.get()))) {
+  GLRendererShaderTest() {
+    output_surface_ = FakeOutputSurface::Create3d(
+        scoped_ptr<TestWebGraphicsContext3D>(
+            new ShaderCreatorMockGraphicsContext())).Pass();
+    CHECK(output_surface_->BindToClient(&output_surface_client_));
+
+    resource_provider_ = ResourceProvider::Create(
+        output_surface_.get(), 0, false).Pass();
+    renderer_.reset(new FakeRendererGL(&renderer_client_,
+                                       &settings_,
+                                       output_surface_.get(),
+                                       resource_provider_.get()));
     renderer_->Initialize();
   }
 
@@ -386,8 +375,10 @@ class GLRendererShaderTest : public testing::Test {
               renderer_->program_shadow_);
   }
 
-  scoped_ptr<OutputSurface> output_surface_;
-  FakeRendererClient mock_client_;
+  LayerTreeSettings settings_;
+  FakeOutputSurfaceClient output_surface_client_;
+  scoped_ptr<FakeOutputSurface> output_surface_;
+  FakeRendererClient renderer_client_;
   scoped_ptr<ResourceProvider> resource_provider_;
   scoped_ptr<FakeRendererGL> renderer_;
 };
@@ -398,12 +389,12 @@ namespace {
 // Suggest recreating framebuffer when one already exists.
 // Expected: it does nothing.
 TEST_F(GLRendererTest, SuggestBackbufferYesWhenItAlreadyExistsShouldDoNothing) {
-  renderer_.SetDiscardBackBufferWhenNotVisible(false);
-  EXPECT_EQ(0, mock_client_.set_full_root_layer_damage_count());
-  EXPECT_FALSE(renderer_.IsBackbufferDiscarded());
+  renderer_->SetDiscardBackBufferWhenNotVisible(false);
+  EXPECT_EQ(0, renderer_client_.set_full_root_layer_damage_count());
+  EXPECT_FALSE(renderer_->IsBackbufferDiscarded());
 
   SwapBuffers();
-  EXPECT_EQ(1, Context()->frame_count());
+  EXPECT_EQ(1, context3d_->frame_count());
 }
 
 // Test GLRenderer DiscardBackbuffer functionality:
@@ -413,76 +404,79 @@ TEST_F(GLRendererTest, SuggestBackbufferYesWhenItAlreadyExistsShouldDoNothing) {
 TEST_F(
     GLRendererTest,
     SuggestBackbufferNoShouldDiscardBackbufferAndDamageRootLayerIfNotVisible) {
-  renderer_.SetVisible(false);
-  renderer_.SetDiscardBackBufferWhenNotVisible(true);
-  EXPECT_EQ(1, mock_client_.set_full_root_layer_damage_count());
-  EXPECT_TRUE(renderer_.IsBackbufferDiscarded());
+  renderer_->SetVisible(false);
+  renderer_->SetDiscardBackBufferWhenNotVisible(true);
+  EXPECT_EQ(1, renderer_client_.set_full_root_layer_damage_count());
+  EXPECT_TRUE(renderer_->IsBackbufferDiscarded());
 }
 
 // Test GLRenderer DiscardBackbuffer functionality:
 // Suggest discarding framebuffer when one exists and the renderer is visible.
 // Expected: the allocation is ignored.
 TEST_F(GLRendererTest, SuggestBackbufferNoDoNothingWhenVisible) {
-  renderer_.SetVisible(true);
-  renderer_.SetDiscardBackBufferWhenNotVisible(true);
-  EXPECT_EQ(0, mock_client_.set_full_root_layer_damage_count());
-  EXPECT_FALSE(renderer_.IsBackbufferDiscarded());
+  renderer_->SetVisible(true);
+  renderer_->SetDiscardBackBufferWhenNotVisible(true);
+  EXPECT_EQ(0, renderer_client_.set_full_root_layer_damage_count());
+  EXPECT_FALSE(renderer_->IsBackbufferDiscarded());
 }
 
 // Test GLRenderer DiscardBackbuffer functionality:
 // Suggest discarding framebuffer when one does not exist.
 // Expected: it does nothing.
 TEST_F(GLRendererTest, SuggestBackbufferNoWhenItDoesntExistShouldDoNothing) {
-  renderer_.SetVisible(false);
-  renderer_.SetDiscardBackBufferWhenNotVisible(true);
-  EXPECT_EQ(1, mock_client_.set_full_root_layer_damage_count());
-  EXPECT_TRUE(renderer_.IsBackbufferDiscarded());
+  renderer_->SetVisible(false);
+  renderer_->SetDiscardBackBufferWhenNotVisible(true);
+  EXPECT_EQ(1, renderer_client_.set_full_root_layer_damage_count());
+  EXPECT_TRUE(renderer_->IsBackbufferDiscarded());
 
-  renderer_.SetDiscardBackBufferWhenNotVisible(true);
-  EXPECT_EQ(1, mock_client_.set_full_root_layer_damage_count());
-  EXPECT_TRUE(renderer_.IsBackbufferDiscarded());
+  renderer_->SetDiscardBackBufferWhenNotVisible(true);
+  EXPECT_EQ(1, renderer_client_.set_full_root_layer_damage_count());
+  EXPECT_TRUE(renderer_->IsBackbufferDiscarded());
 }
 
 // Test GLRenderer DiscardBackbuffer functionality:
 // Begin drawing a frame while a framebuffer is discarded.
 // Expected: will recreate framebuffer.
 TEST_F(GLRendererTest, DiscardedBackbufferIsRecreatedForScopeDuration) {
-  renderer_.SetVisible(false);
-  renderer_.SetDiscardBackBufferWhenNotVisible(true);
-  EXPECT_TRUE(renderer_.IsBackbufferDiscarded());
-  EXPECT_EQ(1, mock_client_.set_full_root_layer_damage_count());
+  renderer_->SetVisible(false);
+  renderer_->SetDiscardBackBufferWhenNotVisible(true);
+  EXPECT_TRUE(renderer_->IsBackbufferDiscarded());
+  EXPECT_EQ(1, renderer_client_.set_full_root_layer_damage_count());
 
-  renderer_.SetVisible(true);
-  renderer_.DrawFrame(mock_client_.render_passes_in_draw_order());
-  EXPECT_FALSE(renderer_.IsBackbufferDiscarded());
+  renderer_->SetVisible(true);
+  renderer_->DrawFrame(
+      renderer_client_.render_passes_in_draw_order(), NULL, 1.f, true);
+  EXPECT_FALSE(renderer_->IsBackbufferDiscarded());
 
   SwapBuffers();
-  EXPECT_EQ(1, Context()->frame_count());
+  EXPECT_EQ(1, context3d_->frame_count());
 }
 
 TEST_F(GLRendererTest, FramebufferDiscardedAfterReadbackWhenNotVisible) {
-  renderer_.SetVisible(false);
-  renderer_.SetDiscardBackBufferWhenNotVisible(true);
-  EXPECT_TRUE(renderer_.IsBackbufferDiscarded());
-  EXPECT_EQ(1, mock_client_.set_full_root_layer_damage_count());
+  renderer_->SetVisible(false);
+  renderer_->SetDiscardBackBufferWhenNotVisible(true);
+  EXPECT_TRUE(renderer_->IsBackbufferDiscarded());
+  EXPECT_EQ(1, renderer_client_.set_full_root_layer_damage_count());
 
   char pixels[4];
-  renderer_.DrawFrame(mock_client_.render_passes_in_draw_order());
-  EXPECT_FALSE(renderer_.IsBackbufferDiscarded());
+  renderer_->DrawFrame(
+      renderer_client_.render_passes_in_draw_order(), NULL, 1.f, true);
+  EXPECT_FALSE(renderer_->IsBackbufferDiscarded());
 
-  renderer_.GetFramebufferPixels(pixels, gfx::Rect(0, 0, 1, 1));
-  EXPECT_TRUE(renderer_.IsBackbufferDiscarded());
-  EXPECT_EQ(2, mock_client_.set_full_root_layer_damage_count());
+  renderer_->GetFramebufferPixels(pixels, gfx::Rect(0, 0, 1, 1));
+  EXPECT_TRUE(renderer_->IsBackbufferDiscarded());
+  EXPECT_EQ(2, renderer_client_.set_full_root_layer_damage_count());
 }
 
 TEST_F(GLRendererTest, ExternalStencil) {
-  EXPECT_FALSE(renderer_.stencil_enabled());
+  EXPECT_FALSE(renderer_->stencil_enabled());
 
-  mock_client_.EnableExternalStencilTest();
-  mock_client_.root_render_pass()->has_transparent_background = false;
+  output_surface_->set_has_external_stencil_test(true);
+  renderer_client_.root_render_pass()->has_transparent_background = false;
 
-  renderer_.DrawFrame(mock_client_.render_passes_in_draw_order());
-  EXPECT_TRUE(renderer_.stencil_enabled());
+  renderer_->DrawFrame(
+      renderer_client_.render_passes_in_draw_order(), NULL, 1.f, true);
+  EXPECT_TRUE(renderer_->stencil_enabled());
 }
 
 class ForbidSynchronousCallContext : public TestWebGraphicsContext3D {
@@ -562,11 +556,7 @@ class ForbidSynchronousCallContext : public TestWebGraphicsContext3D {
   }
 
   virtual WebString getString(WGC3Denum name) {
-    // We allow querying the extension string.
-    // TODO(enne): It'd be better to check that we only do this before starting
-    // any other expensive work (like starting a compilation)
-    if (name != GL_EXTENSIONS)
-      ADD_FAILURE();
+    ADD_FAILURE() << name;
     return WebString();
   }
 
@@ -638,14 +628,20 @@ class ForbidSynchronousCallContext : public TestWebGraphicsContext3D {
 // This test isn't using the same fixture as GLRendererTest, and you can't mix
 // TEST() and TEST_F() with the same name, Hence LRC2.
 TEST(GLRendererTest2, InitializationDoesNotMakeSynchronousCalls) {
-  FakeRendererClient mock_client;
-  scoped_ptr<OutputSurface> output_surface(
-      FakeOutputSurface::Create3d(scoped_ptr<WebKit::WebGraphicsContext3D>(
-          new ForbidSynchronousCallContext)));
+  FakeOutputSurfaceClient output_surface_client;
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+      scoped_ptr<TestWebGraphicsContext3D>(new ForbidSynchronousCallContext)));
+  CHECK(output_surface->BindToClient(&output_surface_client));
+
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), 0));
-  FakeRendererGL renderer(
-      &mock_client, output_surface.get(), resource_provider.get());
+      ResourceProvider::Create(output_surface.get(), 0, false));
+
+  LayerTreeSettings settings;
+  FakeRendererClient renderer_client;
+  FakeRendererGL renderer(&renderer_client,
+                          &settings,
+                          output_surface.get(),
+                          resource_provider.get());
 
   EXPECT_TRUE(renderer.Initialize());
 }
@@ -677,81 +673,145 @@ class LoseContextOnFirstGetContext : public TestWebGraphicsContext3D {
 };
 
 TEST(GLRendererTest2, InitializationWithQuicklyLostContextDoesNotAssert) {
-  FakeRendererClient mock_client;
-  scoped_ptr<OutputSurface> output_surface(
-      FakeOutputSurface::Create3d(scoped_ptr<WebKit::WebGraphicsContext3D>(
-          new LoseContextOnFirstGetContext)));
+  FakeOutputSurfaceClient output_surface_client;
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+      scoped_ptr<TestWebGraphicsContext3D>(new LoseContextOnFirstGetContext)));
+  CHECK(output_surface->BindToClient(&output_surface_client));
+
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), 0));
-  FakeRendererGL renderer(
-      &mock_client, output_surface.get(), resource_provider.get());
+      ResourceProvider::Create(output_surface.get(), 0, false));
+
+  LayerTreeSettings settings;
+  FakeRendererClient renderer_client;
+  FakeRendererGL renderer(&renderer_client,
+                          &settings,
+                          output_surface.get(),
+                          resource_provider.get());
 
   renderer.Initialize();
 }
 
 class ClearCountingContext : public TestWebGraphicsContext3D {
  public:
-  ClearCountingContext() : clear_(0) {}
+  ClearCountingContext() {
+    test_capabilities_.discard_framebuffer = true;
+  }
 
-  virtual void clear(WGC3Dbitfield) { clear_++; }
-
-  int clear_count() const { return clear_; }
-
- private:
-  int clear_;
+  MOCK_METHOD3(discardFramebufferEXT,
+               void(WGC3Denum target,
+                    WGC3Dsizei numAttachments,
+                    const WGC3Denum* attachments));
+  MOCK_METHOD1(clear, void(WGC3Dbitfield mask));
 };
 
 TEST(GLRendererTest2, OpaqueBackground) {
-  FakeRendererClient mock_client;
-  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
-      scoped_ptr<WebKit::WebGraphicsContext3D>(new ClearCountingContext)));
-  ClearCountingContext* context =
-      static_cast<ClearCountingContext*>(output_surface->context3d());
-  scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), 0));
-  FakeRendererGL renderer(
-      &mock_client, output_surface.get(), resource_provider.get());
+  scoped_ptr<ClearCountingContext> context_owned(new ClearCountingContext);
+  ClearCountingContext* context = context_owned.get();
 
-  mock_client.root_render_pass()->has_transparent_background = false;
+  FakeOutputSurfaceClient output_surface_client;
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+      context_owned.PassAs<TestWebGraphicsContext3D>()));
+  CHECK(output_surface->BindToClient(&output_surface_client));
+
+  scoped_ptr<ResourceProvider> resource_provider(
+      ResourceProvider::Create(output_surface.get(), 0, false));
+
+  LayerTreeSettings settings;
+  FakeRendererClient renderer_client;
+  FakeRendererGL renderer(&renderer_client,
+                          &settings,
+                          output_surface.get(),
+                          resource_provider.get());
+
+  renderer_client.root_render_pass()->has_transparent_background = false;
 
   EXPECT_TRUE(renderer.Initialize());
 
-  renderer.DrawFrame(mock_client.render_passes_in_draw_order());
-
-// On DEBUG builds, render passes with opaque background clear to blue to
-// easily see regions that were not drawn on the screen.
+  // On DEBUG builds, render passes with opaque background clear to blue to
+  // easily see regions that were not drawn on the screen.
+  EXPECT_CALL(*context, discardFramebufferEXT(GL_FRAMEBUFFER, _, _))
+      .With(Args<2, 1>(ElementsAre(GL_COLOR_EXT)))
+      .Times(1);
 #ifdef NDEBUG
-  EXPECT_EQ(0, context->clear_count());
+  EXPECT_CALL(*context, clear(_)).Times(0);
 #else
-  EXPECT_EQ(1, context->clear_count());
+  EXPECT_CALL(*context, clear(_)).Times(1);
 #endif
+  renderer.DrawFrame(
+      renderer_client.render_passes_in_draw_order(), NULL, 1.f, true);
+  Mock::VerifyAndClearExpectations(context);
 }
 
 TEST(GLRendererTest2, TransparentBackground) {
-  FakeRendererClient mock_client;
-  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
-      scoped_ptr<WebKit::WebGraphicsContext3D>(new ClearCountingContext)));
-  ClearCountingContext* context =
-      static_cast<ClearCountingContext*>(output_surface->context3d());
-  scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), 0));
-  FakeRendererGL renderer(
-      &mock_client, output_surface.get(), resource_provider.get());
+  scoped_ptr<ClearCountingContext> context_owned(new ClearCountingContext);
+  ClearCountingContext* context = context_owned.get();
 
-  mock_client.root_render_pass()->has_transparent_background = true;
+  FakeOutputSurfaceClient output_surface_client;
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+      context_owned.PassAs<TestWebGraphicsContext3D>()));
+  CHECK(output_surface->BindToClient(&output_surface_client));
+
+  scoped_ptr<ResourceProvider> resource_provider(
+      ResourceProvider::Create(output_surface.get(), 0, false));
+
+  LayerTreeSettings settings;
+  FakeRendererClient renderer_client;
+  FakeRendererGL renderer(&renderer_client,
+                          &settings,
+                          output_surface.get(),
+                          resource_provider.get());
+
+  renderer_client.root_render_pass()->has_transparent_background = true;
 
   EXPECT_TRUE(renderer.Initialize());
 
-  renderer.DrawFrame(mock_client.render_passes_in_draw_order());
+  EXPECT_CALL(*context, discardFramebufferEXT(GL_FRAMEBUFFER, 1, _))
+      .Times(1);
+  EXPECT_CALL(*context, clear(_)).Times(1);
+  renderer.DrawFrame(
+      renderer_client.render_passes_in_draw_order(), NULL, 1.f, true);
 
-  EXPECT_EQ(1, context->clear_count());
+  Mock::VerifyAndClearExpectations(context);
+}
+
+TEST(GLRendererTest2, OffscreenOutputSurface) {
+  scoped_ptr<ClearCountingContext> context_owned(new ClearCountingContext);
+  ClearCountingContext* context = context_owned.get();
+
+  FakeOutputSurfaceClient output_surface_client;
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::CreateOffscreen(
+      context_owned.PassAs<TestWebGraphicsContext3D>()));
+  CHECK(output_surface->BindToClient(&output_surface_client));
+
+  scoped_ptr<ResourceProvider> resource_provider(
+      ResourceProvider::Create(output_surface.get(), 0, false));
+
+  LayerTreeSettings settings;
+  FakeRendererClient renderer_client;
+  FakeRendererGL renderer(&renderer_client,
+                          &settings,
+                          output_surface.get(),
+                          resource_provider.get());
+
+  EXPECT_TRUE(renderer.Initialize());
+
+  EXPECT_CALL(*context, discardFramebufferEXT(GL_FRAMEBUFFER, _, _))
+      .With(Args<2, 1>(ElementsAre(GL_COLOR_ATTACHMENT0)))
+      .Times(1);
+  EXPECT_CALL(*context, clear(_)).Times(AnyNumber());
+  renderer.DrawFrame(
+      renderer_client.render_passes_in_draw_order(), NULL, 1.f, true);
+  Mock::VerifyAndClearExpectations(context);
 }
 
 class VisibilityChangeIsLastCallTrackingContext
     : public TestWebGraphicsContext3D {
  public:
   VisibilityChangeIsLastCallTrackingContext()
-      : last_call_was_set_visibility_(false) {}
+      : last_call_was_set_visibility_(false) {
+    test_capabilities_.set_visibility = true;
+    test_capabilities_.discard_backbuffer = true;
+  }
 
   // WebGraphicsContext3D methods.
   virtual void setVisibilityCHROMIUM(bool visible) {
@@ -780,15 +840,6 @@ class VisibilityChangeIsLastCallTrackingContext
     last_call_was_set_visibility_ = false;
   }
 
-  // This method would normally do a glSwapBuffers under the hood.
-  virtual WebString getString(WebKit::WGC3Denum name) {
-    if (name == GL_EXTENSIONS)
-      return WebString(
-          "GL_CHROMIUM_set_visibility GL_CHROMIUM_gpu_memory_manager "
-          "GL_CHROMIUM_discard_backbuffer");
-    return WebString();
-  }
-
   // Methods added for test.
   bool last_call_was_set_visibility() const {
     return last_call_was_set_visibility_;
@@ -799,17 +850,24 @@ class VisibilityChangeIsLastCallTrackingContext
 };
 
 TEST(GLRendererTest2, VisibilityChangeIsLastCall) {
-  FakeRendererClient mock_client;
-  scoped_ptr<OutputSurface> output_surface(
-      FakeOutputSurface::Create3d(scoped_ptr<WebKit::WebGraphicsContext3D>(
-          new VisibilityChangeIsLastCallTrackingContext)));
-  VisibilityChangeIsLastCallTrackingContext* context =
-      static_cast<VisibilityChangeIsLastCallTrackingContext*>(
-          output_surface->context3d());
+  scoped_ptr<VisibilityChangeIsLastCallTrackingContext> context_owned(
+      new VisibilityChangeIsLastCallTrackingContext);
+  VisibilityChangeIsLastCallTrackingContext* context = context_owned.get();
+
+  FakeOutputSurfaceClient output_surface_client;
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+      context_owned.PassAs<TestWebGraphicsContext3D>()));
+  CHECK(output_surface->BindToClient(&output_surface_client));
+
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), 0));
-  FakeRendererGL renderer(
-      &mock_client, output_surface.get(), resource_provider.get());
+      ResourceProvider::Create(output_surface.get(), 0, false));
+
+  LayerTreeSettings settings;
+  FakeRendererClient renderer_client;
+  FakeRendererGL renderer(&renderer_client,
+                          &settings,
+                          output_surface.get(),
+                          resource_provider.get());
 
   EXPECT_TRUE(renderer.Initialize());
 
@@ -819,19 +877,17 @@ TEST(GLRendererTest2, VisibilityChangeIsLastCall) {
   // RenderClient and the Context by giving them both a pointer to a variable on
   // the stack.
   renderer.SetVisible(true);
-  renderer.DrawFrame(mock_client.render_passes_in_draw_order());
+  renderer.DrawFrame(
+      renderer_client.render_passes_in_draw_order(), NULL, 1.f, true);
   renderer.SetVisible(false);
   EXPECT_TRUE(context->last_call_was_set_visibility());
 }
 
 class TextureStateTrackingContext : public TestWebGraphicsContext3D {
  public:
-  TextureStateTrackingContext() : active_texture_(GL_INVALID_ENUM) {}
-
-  virtual WebString getString(WGC3Denum name) {
-    if (name == GL_EXTENSIONS)
-      return WebString("GL_OES_EGL_image_external");
-    return WebString();
+  TextureStateTrackingContext()
+      : active_texture_(GL_INVALID_ENUM) {
+    test_capabilities_.egl_image_external = true;
   }
 
   MOCK_METHOD3(texParameteri,
@@ -854,16 +910,24 @@ class TextureStateTrackingContext : public TestWebGraphicsContext3D {
 };
 
 TEST(GLRendererTest2, ActiveTextureState) {
-  FakeRendererClient fake_client;
-  scoped_ptr<OutputSurface> output_surface(
-      FakeOutputSurface::Create3d(scoped_ptr<WebKit::WebGraphicsContext3D>(
-          new TextureStateTrackingContext)));
-  TextureStateTrackingContext* context =
-      static_cast<TextureStateTrackingContext*>(output_surface->context3d());
+  scoped_ptr<TextureStateTrackingContext> context_owned(
+      new TextureStateTrackingContext);
+  TextureStateTrackingContext* context = context_owned.get();
+
+  FakeOutputSurfaceClient output_surface_client;
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+      context_owned.PassAs<TestWebGraphicsContext3D>()));
+  CHECK(output_surface->BindToClient(&output_surface_client));
+
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), 0));
-  FakeRendererGL renderer(
-      &fake_client, output_surface.get(), resource_provider.get());
+      ResourceProvider::Create(output_surface.get(), 0, false));
+
+  LayerTreeSettings settings;
+  FakeRendererClient renderer_client;
+  FakeRendererGL renderer(&renderer_client,
+                          &settings,
+                          output_surface.get(),
+                          resource_provider.get());
 
   // During initialization we are allowed to set any texture parameters.
   EXPECT_CALL(*context, texParameteri(_, _, _)).Times(AnyNumber());
@@ -922,11 +986,6 @@ TEST(GLRendererTest2, ActiveTextureState) {
   Mock::VerifyAndClearExpectations(context);
 }
 
-class NoClearRootRenderPassFakeClient : public FakeRendererClient {
- public:
-  virtual bool ShouldClearRootRenderPass() const OVERRIDE { return false; }
-};
-
 class NoClearRootRenderPassMockContext : public TestWebGraphicsContext3D {
  public:
   MOCK_METHOD1(clear, void(WGC3Dbitfield mask));
@@ -938,22 +997,31 @@ class NoClearRootRenderPassMockContext : public TestWebGraphicsContext3D {
 };
 
 TEST(GLRendererTest2, ShouldClearRootRenderPass) {
-  NoClearRootRenderPassFakeClient mock_client;
-  scoped_ptr<OutputSurface> output_surface(
-      FakeOutputSurface::Create3d(scoped_ptr<WebKit::WebGraphicsContext3D>(
-          new NoClearRootRenderPassMockContext)));
-  NoClearRootRenderPassMockContext* mock_context =
-      static_cast<NoClearRootRenderPassMockContext*>(
-          output_surface->context3d());
+  scoped_ptr<NoClearRootRenderPassMockContext> mock_context_owned(
+      new NoClearRootRenderPassMockContext);
+  NoClearRootRenderPassMockContext* mock_context = mock_context_owned.get();
+
+  FakeOutputSurfaceClient output_surface_client;
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+          mock_context_owned.PassAs<TestWebGraphicsContext3D>()));
+  CHECK(output_surface->BindToClient(&output_surface_client));
+
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), 0));
-  FakeRendererGL renderer(
-      &mock_client, output_surface.get(), resource_provider.get());
+      ResourceProvider::Create(output_surface.get(), 0, false));
+
+  LayerTreeSettings settings;
+  settings.should_clear_root_render_pass = false;
+
+  FakeRendererClient renderer_client;
+  FakeRendererGL renderer(&renderer_client,
+                          &settings,
+                          output_surface.get(),
+                          resource_provider.get());
   EXPECT_TRUE(renderer.Initialize());
 
-  gfx::Rect viewport_rect(mock_client.DeviceViewport());
+  gfx::Rect viewport_rect(renderer_client.DeviceViewport());
   ScopedPtrVector<RenderPass>& render_passes =
-      *mock_client.render_passes_in_draw_order();
+      *renderer_client.render_passes_in_draw_order();
   render_passes.clear();
 
   RenderPass::Id root_pass_id(1, 0);
@@ -988,8 +1056,9 @@ TEST(GLRendererTest2, ShouldClearRootRenderPass) {
       .After(first_render_pass);
 
   renderer.DecideRenderPassAllocationsForFrame(
-      *mock_client.render_passes_in_draw_order());
-  renderer.DrawFrame(mock_client.render_passes_in_draw_order());
+      *renderer_client.render_passes_in_draw_order());
+  renderer.DrawFrame(
+      renderer_client.render_passes_in_draw_order(), NULL, 1.f, true);
 
   // In multiple render passes all but the root pass should clear the
   // framebuffer.
@@ -1017,20 +1086,29 @@ class ScissorTestOnClearCheckingContext : public TestWebGraphicsContext3D {
 };
 
 TEST(GLRendererTest2, ScissorTestWhenClearing) {
-  FakeRendererClient mock_client;
-  scoped_ptr<OutputSurface> output_surface(
-      FakeOutputSurface::Create3d(scoped_ptr<WebKit::WebGraphicsContext3D>(
-          new ScissorTestOnClearCheckingContext)));
+  scoped_ptr<ScissorTestOnClearCheckingContext> context_owned(
+      new ScissorTestOnClearCheckingContext);
+
+  FakeOutputSurfaceClient output_surface_client;
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+      context_owned.PassAs<TestWebGraphicsContext3D>()));
+  CHECK(output_surface->BindToClient(&output_surface_client));
+
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), 0));
-  FakeRendererGL renderer(
-      &mock_client, output_surface.get(), resource_provider.get());
+      ResourceProvider::Create(output_surface.get(), 0, false));
+
+  LayerTreeSettings settings;
+  FakeRendererClient renderer_client;
+  FakeRendererGL renderer(&renderer_client,
+                          &settings,
+                          output_surface.get(),
+                          resource_provider.get());
   EXPECT_TRUE(renderer.Initialize());
   EXPECT_FALSE(renderer.Capabilities().using_partial_swap);
 
-  gfx::Rect viewport_rect(mock_client.DeviceViewport());
+  gfx::Rect viewport_rect(renderer_client.DeviceViewport());
   ScopedPtrVector<RenderPass>& render_passes =
-      *mock_client.render_passes_in_draw_order();
+      *renderer_client.render_passes_in_draw_order();
   render_passes.clear();
 
   gfx::Rect grand_child_rect(25, 25);
@@ -1054,24 +1132,189 @@ TEST(GLRendererTest2, ScissorTestWhenClearing) {
   AddRenderPassQuad(child_pass, grand_child_pass);
 
   renderer.DecideRenderPassAllocationsForFrame(
-      *mock_client.render_passes_in_draw_order());
-  renderer.DrawFrame(mock_client.render_passes_in_draw_order());
+      *renderer_client.render_passes_in_draw_order());
+  renderer.DrawFrame(
+      renderer_client.render_passes_in_draw_order(), NULL, 1.f, true);
 }
+
+class DiscardCheckingContext : public TestWebGraphicsContext3D {
+ public:
+  DiscardCheckingContext() : discarded_(0) {
+    set_have_post_sub_buffer(true);
+    set_have_discard_framebuffer(true);
+  }
+
+  virtual void discardFramebufferEXT(WGC3Denum target,
+                                     WGC3Dsizei numAttachments,
+                                     const WGC3Denum* attachments) {
+    ++discarded_;
+  }
+
+  int discarded() const { return discarded_; }
+  void reset() { discarded_ = 0; }
+
+ private:
+  int discarded_;
+};
 
 class NonReshapableOutputSurface : public FakeOutputSurface {
  public:
   explicit NonReshapableOutputSurface(
-      scoped_ptr<WebKit::WebGraphicsContext3D> context3d)
-      : FakeOutputSurface(context3d.Pass(), false) {}
-  virtual gfx::Size SurfaceSize() const OVERRIDE { return gfx::Size(500, 500); }
+      scoped_ptr<TestWebGraphicsContext3D> context3d)
+      : FakeOutputSurface(TestContextProvider::Create(context3d.Pass()),
+                          false) {
+    surface_size_ = gfx::Size(500, 500);
+  }
+  virtual void Reshape(gfx::Size size, float scale_factor) OVERRIDE {}
+  void set_fixed_size(gfx::Size size) { surface_size_ = size; }
 };
 
-class OffsetViewportRendererClient : public FakeRendererClient {
- public:
-  virtual gfx::Rect DeviceViewport() const OVERRIDE {
-    return gfx::Rect(10, 10, 100, 100);
+TEST(GLRendererTest2, NoDiscardOnPartialUpdates) {
+  scoped_ptr<DiscardCheckingContext> context_owned(new DiscardCheckingContext);
+  DiscardCheckingContext* context = context_owned.get();
+
+  FakeOutputSurfaceClient output_surface_client;
+  scoped_ptr<NonReshapableOutputSurface> output_surface(
+      new NonReshapableOutputSurface(
+          context_owned.PassAs<TestWebGraphicsContext3D>()));
+  CHECK(output_surface->BindToClient(&output_surface_client));
+  output_surface->set_fixed_size(gfx::Size(100, 100));
+
+  scoped_ptr<ResourceProvider> resource_provider(
+      ResourceProvider::Create(output_surface.get(), 0, false));
+
+  LayerTreeSettings settings;
+  settings.partial_swap_enabled = true;
+  FakeRendererClient renderer_client;
+  renderer_client.set_viewport(gfx::Rect(0, 0, 100, 100));
+  renderer_client.set_clip(gfx::Rect(0, 0, 100, 100));
+  FakeRendererGL renderer(&renderer_client,
+                          &settings,
+                          output_surface.get(),
+                          resource_provider.get());
+  EXPECT_TRUE(renderer.Initialize());
+  EXPECT_TRUE(renderer.Capabilities().using_partial_swap);
+
+  gfx::Rect viewport_rect(renderer_client.DeviceViewport());
+  ScopedPtrVector<RenderPass>& render_passes =
+      *renderer_client.render_passes_in_draw_order();
+  render_passes.clear();
+
+  {
+    // Partial frame, should not discard.
+    RenderPass::Id root_pass_id(1, 0);
+    TestRenderPass* root_pass = AddRenderPass(
+        &render_passes, root_pass_id, viewport_rect, gfx::Transform());
+    AddQuad(root_pass, viewport_rect, SK_ColorGREEN);
+    root_pass->damage_rect = gfx::RectF(2.f, 2.f, 3.f, 3.f);
+
+    renderer.DecideRenderPassAllocationsForFrame(
+        *renderer_client.render_passes_in_draw_order());
+    renderer.DrawFrame(
+        renderer_client.render_passes_in_draw_order(), NULL, 1.f, true);
+    EXPECT_EQ(0, context->discarded());
+    context->reset();
   }
-};
+  {
+    // Full frame, should discard.
+    RenderPass::Id root_pass_id(1, 0);
+    TestRenderPass* root_pass = AddRenderPass(
+        &render_passes, root_pass_id, viewport_rect, gfx::Transform());
+    AddQuad(root_pass, viewport_rect, SK_ColorGREEN);
+    root_pass->damage_rect = gfx::RectF(root_pass->output_rect);
+
+    renderer.DecideRenderPassAllocationsForFrame(
+        *renderer_client.render_passes_in_draw_order());
+    renderer.DrawFrame(
+        renderer_client.render_passes_in_draw_order(), NULL, 1.f, true);
+    EXPECT_EQ(1, context->discarded());
+    context->reset();
+  }
+  {
+    // Partial frame, disallow partial swap, should discard.
+    RenderPass::Id root_pass_id(1, 0);
+    TestRenderPass* root_pass = AddRenderPass(
+        &render_passes, root_pass_id, viewport_rect, gfx::Transform());
+    AddQuad(root_pass, viewport_rect, SK_ColorGREEN);
+    root_pass->damage_rect = gfx::RectF(2.f, 2.f, 3.f, 3.f);
+
+    renderer.DecideRenderPassAllocationsForFrame(
+        *renderer_client.render_passes_in_draw_order());
+    renderer.DrawFrame(
+        renderer_client.render_passes_in_draw_order(), NULL, 1.f, false);
+    EXPECT_EQ(1, context->discarded());
+    context->reset();
+  }
+  {
+    // Full frame, external scissor is set, should not discard.
+    output_surface->set_has_external_stencil_test(true);
+    RenderPass::Id root_pass_id(1, 0);
+    TestRenderPass* root_pass = AddRenderPass(
+        &render_passes, root_pass_id, viewport_rect, gfx::Transform());
+    AddQuad(root_pass, viewport_rect, SK_ColorGREEN);
+    root_pass->damage_rect = gfx::RectF(root_pass->output_rect);
+    root_pass->has_transparent_background = false;
+
+    renderer.DecideRenderPassAllocationsForFrame(
+        *renderer_client.render_passes_in_draw_order());
+    renderer.DrawFrame(
+        renderer_client.render_passes_in_draw_order(), NULL, 1.f, true);
+    EXPECT_EQ(0, context->discarded());
+    context->reset();
+    output_surface->set_has_external_stencil_test(false);
+  }
+  {
+    // Full frame, clipped, should not discard.
+    renderer_client.set_clip(gfx::Rect(10, 10, 10, 10));
+    RenderPass::Id root_pass_id(1, 0);
+    TestRenderPass* root_pass = AddRenderPass(
+        &render_passes, root_pass_id, viewport_rect, gfx::Transform());
+    AddQuad(root_pass, viewport_rect, SK_ColorGREEN);
+    root_pass->damage_rect = gfx::RectF(root_pass->output_rect);
+
+    renderer.DecideRenderPassAllocationsForFrame(
+        *renderer_client.render_passes_in_draw_order());
+    renderer.DrawFrame(
+        renderer_client.render_passes_in_draw_order(), NULL, 1.f, true);
+    EXPECT_EQ(0, context->discarded());
+    context->reset();
+  }
+  {
+    // Full frame, doesn't cover the surface, should not discard.
+    renderer_client.set_viewport(gfx::Rect(10, 10, 10, 10));
+    viewport_rect = renderer_client.DeviceViewport();
+    RenderPass::Id root_pass_id(1, 0);
+    TestRenderPass* root_pass = AddRenderPass(
+        &render_passes, root_pass_id, viewport_rect, gfx::Transform());
+    AddQuad(root_pass, viewport_rect, SK_ColorGREEN);
+    root_pass->damage_rect = gfx::RectF(root_pass->output_rect);
+
+    renderer.DecideRenderPassAllocationsForFrame(
+        *renderer_client.render_passes_in_draw_order());
+    renderer.DrawFrame(
+        renderer_client.render_passes_in_draw_order(), NULL, 1.f, true);
+    EXPECT_EQ(0, context->discarded());
+    context->reset();
+  }
+  {
+    // Full frame, doesn't cover the surface (no offset), should not discard.
+    renderer_client.set_viewport(gfx::Rect(0, 0, 50, 50));
+    renderer_client.set_clip(gfx::Rect(0, 0, 100, 100));
+    viewport_rect = renderer_client.DeviceViewport();
+    RenderPass::Id root_pass_id(1, 0);
+    TestRenderPass* root_pass = AddRenderPass(
+        &render_passes, root_pass_id, viewport_rect, gfx::Transform());
+    AddQuad(root_pass, viewport_rect, SK_ColorGREEN);
+    root_pass->damage_rect = gfx::RectF(root_pass->output_rect);
+
+    renderer.DecideRenderPassAllocationsForFrame(
+        *renderer_client.render_passes_in_draw_order());
+    renderer.DrawFrame(
+        renderer_client.render_passes_in_draw_order(), NULL, 1.f, true);
+    EXPECT_EQ(0, context->discarded());
+    context->reset();
+  }
+}
 
 class FlippedScissorAndViewportContext : public TestWebGraphicsContext3D {
  public:
@@ -1108,21 +1351,32 @@ TEST(GLRendererTest2, ScissorAndViewportWithinNonreshapableSurface) {
   // and maintains a fixed size. This test verifies that glViewport and
   // glScissor's Y coordinate is flipped correctly in this environment, and that
   // the glViewport can be at a nonzero origin within the surface.
-  OffsetViewportRendererClient mock_client;
-  scoped_ptr<OutputSurface> output_surface(make_scoped_ptr(
-      new NonReshapableOutputSurface(scoped_ptr<WebKit::WebGraphicsContext3D>(
-          new FlippedScissorAndViewportContext))));
+  scoped_ptr<FlippedScissorAndViewportContext> context_owned(
+      new FlippedScissorAndViewportContext);
+
+  FakeOutputSurfaceClient output_surface_client;
+  scoped_ptr<OutputSurface> output_surface(new NonReshapableOutputSurface(
+      context_owned.PassAs<TestWebGraphicsContext3D>()));
+  CHECK(output_surface->BindToClient(&output_surface_client));
+
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), 0));
-  FakeRendererGL renderer(
-      &mock_client, output_surface.get(), resource_provider.get());
+      ResourceProvider::Create(output_surface.get(), 0, false));
+
+  LayerTreeSettings settings;
+  FakeRendererClient renderer_client;
+  renderer_client.set_viewport(gfx::Rect(10, 10, 100, 100));
+  renderer_client.set_clip(gfx::Rect(10, 10, 100, 100));
+  FakeRendererGL renderer(&renderer_client,
+                          &settings,
+                          output_surface.get(),
+                          resource_provider.get());
   EXPECT_TRUE(renderer.Initialize());
   EXPECT_FALSE(renderer.Capabilities().using_partial_swap);
 
-  gfx::Rect viewport_rect(mock_client.DeviceViewport().size());
+  gfx::Rect viewport_rect(renderer_client.DeviceViewport().size());
   gfx::Rect quad_rect = gfx::Rect(20, 20, 20, 20);
   ScopedPtrVector<RenderPass>& render_passes =
-      *mock_client.render_passes_in_draw_order();
+      *renderer_client.render_passes_in_draw_order();
   render_passes.clear();
 
   RenderPass::Id root_pass_id(1, 0);
@@ -1131,14 +1385,15 @@ TEST(GLRendererTest2, ScissorAndViewportWithinNonreshapableSurface) {
   AddClippedQuad(root_pass, quad_rect, SK_ColorGREEN);
 
   renderer.DecideRenderPassAllocationsForFrame(
-      *mock_client.render_passes_in_draw_order());
-  renderer.DrawFrame(mock_client.render_passes_in_draw_order());
+      *renderer_client.render_passes_in_draw_order());
+  renderer.DrawFrame(
+      renderer_client.render_passes_in_draw_order(), NULL, 1.f, true);
 }
 
 TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
-  gfx::Rect viewport_rect(mock_client_.DeviceViewport());
+  gfx::Rect viewport_rect(renderer_client_.DeviceViewport());
   ScopedPtrVector<RenderPass>* render_passes =
-      mock_client_.render_passes_in_draw_order();
+      renderer_client_.render_passes_in_draw_order();
 
   gfx::Rect child_rect(50, 50);
   RenderPass::Id child_pass_id(2, 0);
@@ -1149,8 +1404,9 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
 
   cc::ResourceProvider::ResourceId mask =
   resource_provider_->CreateResource(gfx::Size(20, 12),
-                                     resource_provider_->best_texture_format(),
-                                     ResourceProvider::TextureUsageAny);
+                                     GL_CLAMP_TO_EDGE,
+                                     ResourceProvider::TextureUsageAny,
+                                     resource_provider_->best_texture_format());
   resource_provider_->AllocateForTesting(mask);
 
   SkScalar matrix[20];
@@ -1193,8 +1449,9 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
                     gfx::Transform());
 
   renderer_->DecideRenderPassAllocationsForFrame(
-      *mock_client_.render_passes_in_draw_order());
-  renderer_->DrawFrame(mock_client_.render_passes_in_draw_order());
+      *renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(
+      renderer_client_.render_passes_in_draw_order(), NULL, 1.f, true);
   TestRenderPassProgram();
 
   // RenderPassColorMatrixProgram
@@ -1209,8 +1466,9 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
   AddRenderPassQuad(root_pass, child_pass, 0, filter, gfx::Transform());
 
   renderer_->DecideRenderPassAllocationsForFrame(
-      *mock_client_.render_passes_in_draw_order());
-  renderer_->DrawFrame(mock_client_.render_passes_in_draw_order());
+      *renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(
+      renderer_client_.render_passes_in_draw_order(), NULL, 1.f, true);
   TestRenderPassColorMatrixProgram();
 
   // RenderPassMaskProgram
@@ -1229,8 +1487,9 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
                     gfx::Transform());
 
   renderer_->DecideRenderPassAllocationsForFrame(
-      *mock_client_.render_passes_in_draw_order());
-  renderer_->DrawFrame(mock_client_.render_passes_in_draw_order());
+      *renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(
+      renderer_client_.render_passes_in_draw_order(), NULL, 1.f, true);
   TestRenderPassMaskProgram();
 
   // RenderPassMaskColorMatrixProgram
@@ -1245,8 +1504,9 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
   AddRenderPassQuad(root_pass, child_pass, mask, filter, gfx::Transform());
 
   renderer_->DecideRenderPassAllocationsForFrame(
-      *mock_client_.render_passes_in_draw_order());
-  renderer_->DrawFrame(mock_client_.render_passes_in_draw_order());
+      *renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(
+      renderer_client_.render_passes_in_draw_order(), NULL, 1.f, true);
   TestRenderPassMaskColorMatrixProgram();
 
   // RenderPassProgramAA
@@ -1265,8 +1525,9 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
                     transform_causing_aa);
 
   renderer_->DecideRenderPassAllocationsForFrame(
-      *mock_client_.render_passes_in_draw_order());
-  renderer_->DrawFrame(mock_client_.render_passes_in_draw_order());
+      *renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(
+      renderer_client_.render_passes_in_draw_order(), NULL, 1.f, true);
   TestRenderPassProgramAA();
 
   // RenderPassColorMatrixProgramAA
@@ -1281,8 +1542,9 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
   AddRenderPassQuad(root_pass, child_pass, 0, filter, transform_causing_aa);
 
   renderer_->DecideRenderPassAllocationsForFrame(
-      *mock_client_.render_passes_in_draw_order());
-  renderer_->DrawFrame(mock_client_.render_passes_in_draw_order());
+      *renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(
+      renderer_client_.render_passes_in_draw_order(), NULL, 1.f, true);
   TestRenderPassColorMatrixProgramAA();
 
   // RenderPassMaskProgramAA
@@ -1298,8 +1560,9 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
       transform_causing_aa);
 
   renderer_->DecideRenderPassAllocationsForFrame(
-      *mock_client_.render_passes_in_draw_order());
-  renderer_->DrawFrame(mock_client_.render_passes_in_draw_order());
+      *renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(
+      renderer_client_.render_passes_in_draw_order(), NULL, 1.f, true);
   TestRenderPassMaskProgramAA();
 
   // RenderPassMaskColorMatrixProgramAA
@@ -1314,8 +1577,9 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
   AddRenderPassQuad(root_pass, child_pass, mask, filter, transform_causing_aa);
 
   renderer_->DecideRenderPassAllocationsForFrame(
-      *mock_client_.render_passes_in_draw_order());
-  renderer_->DrawFrame(mock_client_.render_passes_in_draw_order());
+      *renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(
+      renderer_client_.render_passes_in_draw_order(), NULL, 1.f, true);
   TestRenderPassMaskColorMatrixProgramAA();
 }
 
@@ -1326,7 +1590,7 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadSkipsAAForClippingTransform) {
   RenderPass::Id child_pass_id(2, 0);
   TestRenderPass* child_pass;
 
-  gfx::Rect viewport_rect(mock_client_.DeviceViewport());
+  gfx::Rect viewport_rect(renderer_client_.DeviceViewport());
   RenderPass::Id root_pass_id(1, 0);
   TestRenderPass* root_pass;
 
@@ -1345,7 +1609,7 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadSkipsAAForClippingTransform) {
 
   // Set up the render pass quad to be drawn
   ScopedPtrVector<RenderPass>* render_passes =
-      mock_client_.render_passes_in_draw_order();
+      renderer_client_.render_passes_in_draw_order();
 
   render_passes->clear();
 
@@ -1362,8 +1626,9 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadSkipsAAForClippingTransform) {
                     transform_preventing_aa);
 
   renderer_->DecideRenderPassAllocationsForFrame(
-      *mock_client_.render_passes_in_draw_order());
-  renderer_->DrawFrame(mock_client_.render_passes_in_draw_order());
+      *renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(
+      renderer_client_.render_passes_in_draw_order(), NULL, 1.f, true);
 
   // If use_aa incorrectly ignores clipping, it will use the
   // RenderPassProgramAA shader instead of the RenderPassProgram.
@@ -1371,9 +1636,9 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadSkipsAAForClippingTransform) {
 }
 
 TEST_F(GLRendererShaderTest, DrawSolidColorShader) {
-  gfx::Rect viewport_rect(mock_client_.DeviceViewport());
+  gfx::Rect viewport_rect(renderer_client_.DeviceViewport());
   ScopedPtrVector<RenderPass>* render_passes =
-      mock_client_.render_passes_in_draw_order();
+      renderer_client_.render_passes_in_draw_order();
 
   RenderPass::Id root_pass_id(1, 0);
   TestRenderPass* root_pass;
@@ -1392,14 +1657,20 @@ TEST_F(GLRendererShaderTest, DrawSolidColorShader) {
                      pixel_aligned_transform_causing_aa);
 
   renderer_->DecideRenderPassAllocationsForFrame(
-      *mock_client_.render_passes_in_draw_order());
-  renderer_->DrawFrame(mock_client_.render_passes_in_draw_order());
+      *renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(
+      renderer_client_.render_passes_in_draw_order(), NULL, 1.f, true);
 
   TestSolidColorProgramAA();
 }
 
 class OutputSurfaceMockContext : public TestWebGraphicsContext3D {
  public:
+  OutputSurfaceMockContext() {
+    test_capabilities_.discard_backbuffer = true;
+    test_capabilities_.post_sub_buffer = true;
+  }
+
   // Specifically override methods even if they are unused (used in conjunction
   // with StrictMock). We need to make sure that GLRenderer does not issue
   // framebuffer-related GL calls directly. Instead these are supposed to go
@@ -1415,20 +1686,14 @@ class OutputSurfaceMockContext : public TestWebGraphicsContext3D {
                     WGC3Dsizei count,
                     WGC3Denum type,
                     WGC3Dintptr offset));
-
-  virtual WebString getString(WebKit::WGC3Denum name) {
-    if (name == GL_EXTENSIONS)
-      return WebString(
-          "GL_CHROMIUM_post_sub_buffer GL_CHROMIUM_discard_backbuffer");
-    return WebString();
-  }
 };
 
 class MockOutputSurface : public OutputSurface {
  public:
   MockOutputSurface()
-      : OutputSurface(scoped_ptr<WebKit::WebGraphicsContext3D>(
-            new StrictMock<OutputSurfaceMockContext>)) {
+      : OutputSurface(TestContextProvider::Create(
+          scoped_ptr<TestWebGraphicsContext3D>(
+              new StrictMock<OutputSurfaceMockContext>))) {
     surface_size_ = gfx::Size(100, 100);
   }
   virtual ~MockOutputSurface() {}
@@ -1442,15 +1707,21 @@ class MockOutputSurface : public OutputSurface {
 
 class MockOutputSurfaceTest : public testing::Test, public FakeRendererClient {
  protected:
-  MockOutputSurfaceTest()
-      : resource_provider_(ResourceProvider::Create(&output_surface_, 0)),
-        renderer_(this, &output_surface_, resource_provider_.get()) {}
+  virtual void SetUp() {
+    FakeOutputSurfaceClient output_surface_client_;
+    CHECK(output_surface_.BindToClient(&output_surface_client_));
 
-  virtual void SetUp() { EXPECT_TRUE(renderer_.Initialize()); }
+    resource_provider_ =
+        ResourceProvider::Create(&output_surface_, 0, false).Pass();
 
-  void SwapBuffers() { renderer_.SwapBuffers(); }
+    renderer_.reset(new FakeRendererGL(
+        this, &settings_, &output_surface_, resource_provider_.get()));
+    EXPECT_TRUE(renderer_->Initialize());
+  }
 
-  void DrawFrame() {
+  void SwapBuffers() { renderer_->SwapBuffers(); }
+
+  void DrawFrame(float device_scale_factor) {
     gfx::Rect viewport_rect(DeviceViewport());
     ScopedPtrVector<RenderPass>* render_passes = render_passes_in_draw_order();
     render_passes->clear();
@@ -1463,55 +1734,59 @@ class MockOutputSurfaceTest : public testing::Test, public FakeRendererClient {
     EXPECT_CALL(output_surface_, EnsureBackbuffer()).WillRepeatedly(Return());
 
     EXPECT_CALL(output_surface_,
-                Reshape(DeviceViewport().size(), DeviceScaleFactor())).Times(1);
+                Reshape(DeviceViewport().size(), device_scale_factor)).Times(1);
 
     EXPECT_CALL(output_surface_, BindFramebuffer()).Times(1);
 
     EXPECT_CALL(*Context(), drawElements(_, _, _, _)).Times(1);
 
-    renderer_.DecideRenderPassAllocationsForFrame(
+    renderer_->DecideRenderPassAllocationsForFrame(
         *render_passes_in_draw_order());
-    renderer_.DrawFrame(render_passes_in_draw_order());
+    renderer_->DrawFrame(
+        render_passes_in_draw_order(), NULL, device_scale_factor, true);
   }
 
   OutputSurfaceMockContext* Context() {
-    return static_cast<OutputSurfaceMockContext*>(output_surface_.context3d());
+    return static_cast<OutputSurfaceMockContext*>(
+        output_surface_.context_provider()->Context3d());
   }
 
+  LayerTreeSettings settings_;
+  FakeOutputSurfaceClient output_surface_client_;
   StrictMock<MockOutputSurface> output_surface_;
   scoped_ptr<ResourceProvider> resource_provider_;
-  FakeRendererGL renderer_;
+  scoped_ptr<FakeRendererGL> renderer_;
 };
 
 TEST_F(MockOutputSurfaceTest, DrawFrameAndSwap) {
-  DrawFrame();
+  DrawFrame(1.f);
 
   EXPECT_CALL(output_surface_, SwapBuffers(_)).Times(1);
-  renderer_.SwapBuffers();
+  renderer_->SwapBuffers();
 }
 
 TEST_F(MockOutputSurfaceTest, DrawFrameAndResizeAndSwap) {
-  DrawFrame();
+  DrawFrame(1.f);
   EXPECT_CALL(output_surface_, SwapBuffers(_)).Times(1);
-  renderer_.SwapBuffers();
+  renderer_->SwapBuffers();
 
-  set_viewport_and_scale(gfx::Size(2, 2), 2.f);
-  renderer_.ViewportChanged();
+  set_viewport(gfx::Rect(0, 0, 2, 2));
+  renderer_->ViewportChanged();
 
-  DrawFrame();
+  DrawFrame(2.f);
   EXPECT_CALL(output_surface_, SwapBuffers(_)).Times(1);
-  renderer_.SwapBuffers();
+  renderer_->SwapBuffers();
 
-  DrawFrame();
+  DrawFrame(2.f);
   EXPECT_CALL(output_surface_, SwapBuffers(_)).Times(1);
-  renderer_.SwapBuffers();
+  renderer_->SwapBuffers();
 
-  set_viewport_and_scale(gfx::Size(1, 1), 1.f);
-  renderer_.ViewportChanged();
+  set_viewport(gfx::Rect(0, 0, 1, 1));
+  renderer_->ViewportChanged();
 
-  DrawFrame();
+  DrawFrame(1.f);
   EXPECT_CALL(output_surface_, SwapBuffers(_)).Times(1);
-  renderer_.SwapBuffers();
+  renderer_->SwapBuffers();
 }
 
 class GLRendererTestSyncPoint : public GLRendererPixelTest {
@@ -1531,20 +1806,21 @@ class GLRendererTestSyncPoint : public GLRendererPixelTest {
 TEST_F(GLRendererTestSyncPoint, SignalSyncPointOnLostContext) {
   int sync_point_callback_count = 0;
   int other_callback_count = 0;
-  unsigned sync_point = output_surface_->context3d()->insertSyncPoint();
+  unsigned sync_point =
+      output_surface_->context_provider()->Context3d()->insertSyncPoint();
 
-  output_surface_->context3d()->loseContextCHROMIUM(
+  output_surface_->context_provider()->Context3d()->loseContextCHROMIUM(
       GL_GUILTY_CONTEXT_RESET_ARB, GL_INNOCENT_CONTEXT_RESET_ARB);
 
   SyncPointHelper::SignalSyncPoint(
-      output_surface_->context3d(),
+      output_surface_->context_provider()->Context3d(),
       sync_point,
       base::Bind(&SyncPointCallback, &sync_point_callback_count));
   EXPECT_EQ(0, sync_point_callback_count);
   EXPECT_EQ(0, other_callback_count);
 
   // Make the sync point happen.
-  output_surface_->context3d()->finish();
+  output_surface_->context_provider()->Context3d()->finish();
   // Post a task after the sync point.
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
@@ -1560,17 +1836,18 @@ TEST_F(GLRendererTestSyncPoint, SignalSyncPointOnLostContext) {
 TEST_F(GLRendererTestSyncPoint, SignalSyncPoint) {
   int sync_point_callback_count = 0;
   int other_callback_count = 0;
-  unsigned sync_point = output_surface_->context3d()->insertSyncPoint();
+  unsigned sync_point =
+      output_surface_->context_provider()->Context3d()->insertSyncPoint();
 
   SyncPointHelper::SignalSyncPoint(
-      output_surface_->context3d(),
+      output_surface_->context_provider()->Context3d(),
       sync_point,
       base::Bind(&SyncPointCallback, &sync_point_callback_count));
   EXPECT_EQ(0, sync_point_callback_count);
   EXPECT_EQ(0, other_callback_count);
 
   // Make the sync point happen.
-  output_surface_->context3d()->finish();
+  output_surface_->context_provider()->Context3d()->finish();
   // Post a task after the sync point.
   base::MessageLoop::current()->PostTask(
       FROM_HERE,

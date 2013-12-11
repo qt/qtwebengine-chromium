@@ -37,9 +37,9 @@
 #include "core/dom/NodeRenderStyle.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/fetch/ImageResource.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/HTMLShadowElement.h"
-#include "core/loader/cache/ImageResource.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
@@ -52,7 +52,7 @@ using namespace HTMLNames;
 
 // FIXME: This class is only used in Chromium and has no layout tests.
 
-PasswordGeneratorButtonElement::PasswordGeneratorButtonElement(Document* document)
+PasswordGeneratorButtonElement::PasswordGeneratorButtonElement(Document& document)
     : HTMLDivElement(HTMLNames::divTag, document)
     , m_isInHoverState(false)
 {
@@ -171,8 +171,8 @@ void PasswordGeneratorButtonElement::defaultEventHandler(Event* event)
 
     RefPtr<PasswordGeneratorButtonElement> protector(this);
     if (event->type() == eventNames().clickEvent) {
-        if (ChromeClient* chromeClient = document()->page() ? document()->page()->chrome().client() : 0)
-            chromeClient->openPasswordGenerator(input.get());
+        if (Page* page = document().page())
+            page->chrome().client().openPasswordGenerator(input.get());
         event->setDefaultHandled();
     }
 

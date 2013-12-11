@@ -46,7 +46,7 @@
 
 #include "core/platform/Length.h"
 #include "core/platform/Timer.h"
-#include "core/rendering/RenderBlock.h"
+#include "core/rendering/RenderBlockFlow.h"
 #include "core/rendering/style/RenderStyleConstants.h"
 
 namespace WebCore {
@@ -54,7 +54,7 @@ namespace WebCore {
 class RenderLayer;
 
 // This class handles the auto-scrolling for <marquee>
-class RenderMarquee FINAL : public RenderBlock {
+class RenderMarquee FINAL : public RenderBlockFlow {
 public:
     explicit RenderMarquee(Element*);
     virtual ~RenderMarquee();
@@ -87,6 +87,8 @@ private:
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE FINAL;
 
     virtual void layoutBlock(bool relayoutChildren, LayoutUnit pageLogicalHeight = 0) OVERRIDE FINAL;
+
+    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
 
     void timerFired(Timer<RenderMarquee>*);
 

@@ -82,7 +82,6 @@ protected:
     AccessibilityRole determineAriaRoleAttribute() const;
     void elementsFromAttribute(Vector<Element*>& elements, const QualifiedName&) const;
     bool hasContentEditableAttributeSet() const;
-    bool isARIARange() const;
     bool isDescendantOfBarrenParent() const;
     // This returns true if it's focusable but it's not content editable and it's not a control or ARIA control.
     bool isGenericFocusableElement() const;
@@ -93,6 +92,8 @@ protected:
     AccessibilityRole remapAriaRoleDueToParent(AccessibilityRole) const;
     bool isNativeCheckboxOrRadio() const;
     void setNode(Node*);
+    AccessibilityObject* correspondingControlForLabelElement() const;
+    HTMLLabelElement* labelElementContainer() const;
 
     //
     // Overridden from AccessibilityObject.
@@ -125,6 +126,7 @@ protected:
 
     // Check object state.
     virtual bool isChecked() const OVERRIDE;
+    virtual bool isClickable() const OVERRIDE;
     virtual bool isEnabled() const OVERRIDE;
     virtual bool isIndeterminate() const OVERRIDE;
     virtual bool isPressed() const OVERRIDE;
@@ -133,12 +135,15 @@ protected:
 
     // Check whether certain properties can be modified.
     virtual bool canSetFocusAttribute() const OVERRIDE;
+    virtual bool canSetValueAttribute() const OVERRIDE;
 
     // Properties of static elements.
     virtual bool canvasHasFallbackContent() const OVERRIDE;
+    virtual bool exposesTitleUIElement() const OVERRIDE;
     virtual int headingLevel() const OVERRIDE;
     virtual unsigned hierarchicalLevel() const OVERRIDE;
     virtual String text() const OVERRIDE;
+    virtual AccessibilityObject* titleUIElement() const OVERRIDE;
 
     // Properties of interactive elements.
     virtual AccessibilityButtonState checkboxOrRadioValue() const OVERRIDE;
@@ -185,6 +190,7 @@ protected:
     virtual Node* node() const OVERRIDE { return m_node; }
 
     // Modify or take an action on an object.
+    virtual void setFocused(bool) OVERRIDE;
     virtual void increment() OVERRIDE;
     virtual void decrement() OVERRIDE;
 

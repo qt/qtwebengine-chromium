@@ -72,6 +72,13 @@ class MessagePortService {
     // The globally unique id of the entangled message port.
     int entangled_message_port_id;
     // If true, all messages to this message port are queued and not delivered.
+    // This is needed so that when a message port is sent between processes all
+    // pending message get transferred. There are two possibilities for pending
+    // messages: either they are already received by the child process, or they're
+    // in-flight. This flag ensures that the latter type get flushed through the
+    // system.
+    // This flag should only be set to true in response to
+    // WorkerProcessHostMsg_QueueMessages.
     bool queue_messages;
     QueuedMessages queued_messages;
   };

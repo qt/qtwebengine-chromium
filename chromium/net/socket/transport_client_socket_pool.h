@@ -34,7 +34,6 @@ class NET_EXPORT_PRIVATE TransportSocketParams
   // connection will be aborted with that value.
   TransportSocketParams(
       const HostPortPair& host_port_pair,
-      RequestPriority priority,
       bool disable_resolver_cache,
       bool ignore_limits,
       const OnHostResolutionCallback& host_resolution_callback);
@@ -48,8 +47,6 @@ class NET_EXPORT_PRIVATE TransportSocketParams
  private:
   friend class base::RefCounted<TransportSocketParams>;
   ~TransportSocketParams();
-
-  void Initialize(RequestPriority priority, bool disable_resolver_cache);
 
   HostResolver::RequestInfo destination_;
   bool ignore_limits_;
@@ -69,6 +66,7 @@ class NET_EXPORT_PRIVATE TransportSocketParams
 class NET_EXPORT_PRIVATE TransportConnectJob : public ConnectJob {
  public:
   TransportConnectJob(const std::string& group_name,
+                      RequestPriority priority,
                       const scoped_refptr<TransportSocketParams>& params,
                       base::TimeDelta timeout_duration,
                       ClientSocketFactory* client_socket_factory,
@@ -132,6 +130,8 @@ class NET_EXPORT_PRIVATE TransportConnectJob : public ConnectJob {
 
 class NET_EXPORT_PRIVATE TransportClientSocketPool : public ClientSocketPool {
  public:
+  typedef TransportSocketParams SocketParams;
+
   TransportClientSocketPool(
       int max_sockets,
       int max_sockets_per_group,
@@ -156,10 +156,9 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool : public ClientSocketPool {
   virtual void CancelRequest(const std::string& group_name,
                              ClientSocketHandle* handle) OVERRIDE;
   virtual void ReleaseSocket(const std::string& group_name,
-                             StreamSocket* socket,
+                             scoped_ptr<StreamSocket> socket,
                              int id) OVERRIDE;
   virtual void FlushWithError(int error) OVERRIDE;
-  virtual bool IsStalled() const OVERRIDE;
   virtual void CloseIdleSockets() OVERRIDE;
   virtual int IdleSocketCount() const OVERRIDE;
   virtual int IdleSocketCountInGroup(
@@ -167,14 +166,17 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool : public ClientSocketPool {
   virtual LoadState GetLoadState(
       const std::string& group_name,
       const ClientSocketHandle* handle) const OVERRIDE;
-  virtual void AddLayeredPool(LayeredPool* layered_pool) OVERRIDE;
-  virtual void RemoveLayeredPool(LayeredPool* layered_pool) OVERRIDE;
   virtual base::DictionaryValue* GetInfoAsValue(
       const std::string& name,
       const std::string& type,
       bool include_nested_pools) const OVERRIDE;
   virtual base::TimeDelta ConnectionTimeout() const OVERRIDE;
   virtual ClientSocketPoolHistograms* histograms() const OVERRIDE;
+
+  // HigherLayeredPool implementation.
+  virtual bool IsStalled() const OVERRIDE;
+  virtual void AddHigherLayeredPool(HigherLayeredPool* higher_pool) OVERRIDE;
+  virtual void RemoveHigherLayeredPool(HigherLayeredPool* higher_pool) OVERRIDE;
 
  private:
   typedef ClientSocketPoolBase<TransportSocketParams> PoolBase;
@@ -193,7 +195,7 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool : public ClientSocketPool {
 
     // ClientSocketPoolBase::ConnectJobFactory methods.
 
-    virtual ConnectJob* NewConnectJob(
+    virtual scoped_ptr<ConnectJob> NewConnectJob(
         const std::string& group_name,
         const PoolBase::Request& request,
         ConnectJob::Delegate* delegate) const OVERRIDE;
@@ -212,9 +214,6 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool : public ClientSocketPool {
 
   DISALLOW_COPY_AND_ASSIGN(TransportClientSocketPool);
 };
-
-REGISTER_SOCKET_PARAMS_FOR_POOL(TransportClientSocketPool,
-                                TransportSocketParams);
 
 }  // namespace net
 

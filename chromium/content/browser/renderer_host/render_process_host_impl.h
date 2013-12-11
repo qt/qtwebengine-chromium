@@ -33,6 +33,7 @@ class Size;
 }
 
 namespace content {
+class BrowserDemuxerAndroid;
 class GpuMessageFilter;
 class PeerConnectionTrackerHost;
 class RendererMainThread;
@@ -177,6 +178,12 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   static base::MessageLoop* GetInProcessRendererThreadForTesting();
 
+#if defined(OS_ANDROID)
+  const scoped_refptr<BrowserDemuxerAndroid>& browser_demuxer_android() {
+    return browser_demuxer_android_;
+  }
+#endif
+
  protected:
   // A proxy for our IPC::Channel that lives on the IO thread (see
   // browser_process.h)
@@ -264,10 +271,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // This is used to clear our cache five seconds after the last use.
   base::DelayTimer<RenderProcessHostImpl> cached_dibs_cleaner_;
 
-#if !defined(CHROME_MULTIPLE_DLL)
   // Used in single-process mode.
-  scoped_ptr<RendererMainThread> in_process_renderer_;
-#endif
+  scoped_ptr<base::Thread> in_process_renderer_;
 
   // True after Init() has been called. We can't just check channel_ because we
   // also reset that in the case of process termination.
@@ -323,6 +328,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // Forwards power state messages to the renderer process.
   PowerMonitorMessageBroadcaster power_monitor_broadcaster_;
+
+#if defined(OS_ANDROID)
+  scoped_refptr<BrowserDemuxerAndroid> browser_demuxer_android_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(RenderProcessHostImpl);
 };

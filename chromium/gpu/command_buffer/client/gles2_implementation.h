@@ -20,7 +20,7 @@
 #include "gpu/command_buffer/client/gles2_cmd_helper.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/client/gpu_memory_buffer_tracker.h"
-#include "gpu/command_buffer/client/image_factory.h"
+#include "gpu/command_buffer/client/mapped_memory.h"
 #include "gpu/command_buffer/client/query_tracker.h"
 #include "gpu/command_buffer/client/ref_counted.h"
 #include "gpu/command_buffer/client/ring_buffer.h"
@@ -98,7 +98,7 @@ struct GLUniformDefinitionCHROMIUM;
 
 namespace gpu {
 
-class MappedMemoryManager;
+class GpuControl;
 class ScopedTransferBufferPtr;
 class TransferBufferInterface;
 
@@ -115,6 +115,9 @@ class VertexArrayObjectManager;
 // shared memory and synchronization issues.
 class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface {
  public:
+  enum MappedMemoryLimit {
+    kNoLimit = MappedMemoryManager::kNoLimit,
+  };
   class ErrorMessageCallback {
    public:
     virtual ~ErrorMessageCallback() { }
@@ -177,14 +180,15 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface {
       ShareGroup* share_group,
       TransferBufferInterface* transfer_buffer,
       bool bind_generates_resource,
-      ImageFactory* image_factory);
+      GpuControl* gpu_control);
 
   virtual ~GLES2Implementation();
 
   bool Initialize(
       unsigned int starting_transfer_buffer_size,
       unsigned int min_transfer_buffer_size,
-      unsigned int max_transfer_buffer_size);
+      unsigned int max_transfer_buffer_size,
+      unsigned int mapped_memory_limit);
 
   // The GLES2CmdHelper being used by this GLES2Implementation. You can use
   // this to issue cmds at a lower level for certain kinds of optimization.
@@ -215,7 +219,6 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface {
       GLuint program, GLuint index, GLsizei bufsize, GLsizei* length,
       GLint* size, GLenum* type, char* name);
 
-  void SetSharedMemoryChunkSizeMultiple(unsigned int multiple);
 
   void FreeUnusedSharedMemory();
   void FreeEverything();
@@ -668,7 +671,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface {
 
   scoped_ptr<std::string> current_trace_name_;
 
-  ImageFactory* image_factory_;
+  GpuControl* gpu_control_;
 
   DISALLOW_COPY_AND_ASSIGN(GLES2Implementation);
 };

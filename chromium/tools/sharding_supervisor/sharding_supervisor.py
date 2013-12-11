@@ -18,9 +18,9 @@ def pop_known_arguments(args):
   rest = []
   run_test_cases_extra_args = []
   for arg in args:
-    if arg.startswith(('--gtest_filter=', '--gtest_output=')):
+    if arg.startswith(('--gtest_filter=', '--gtest_output=', '--clusters=')):
       run_test_cases_extra_args.append(arg)
-    elif arg == '--run-manual':
+    elif arg in ('--run-manual', '--verbose'):
       run_test_cases_extra_args.append(arg)
     elif arg == '--gtest_print_time':
       # Ignore.
@@ -37,6 +37,13 @@ def pop_known_arguments(args):
       rest.append(arg)
     else:
       rest.append(arg)
+
+  # Use --jobs arg if exist.
+  for arg in args:
+    if arg.startswith('--jobs='):
+      run_test_cases_extra_args.append(arg)
+      break
+
   return run_test_cases_extra_args, rest
 
 
@@ -56,6 +63,13 @@ def main():
   group.add_option(
       '--slave-index', type='int', default=0, help='Converted to --shards')
   parser.add_option_group(group)
+  group = optparse.OptionGroup(
+      parser, 'Options of run_test_cases.py passed through')
+  group.add_option(
+      '--retries', type='int', help='Kept as --retries')
+  group.add_option(
+      '--verbose', action='count', default=0, help='Kept as --verbose')
+  parser.add_option_group(group)
 
   parser.disable_interspersed_args()
   options, args = parser.parse_args()
@@ -72,6 +86,10 @@ def main():
   ]
   if options.timeout is not None:
     cmd.extend(['--timeout', str(options.timeout)])
+  if options.retries is not None:
+    cmd.extend(['--retries', str(options.retries)])
+  if options.verbose is not None:
+    cmd.extend(['--verbose'] * options.verbose)
 
   run_test_cases_extra_args, rest = pop_known_arguments(args)
 

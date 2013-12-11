@@ -41,7 +41,7 @@
 #include "PopupContainer.h"
 #include "PopupMenuChromium.h"
 #include "RuntimeEnabledFeatures.h"
-#include "WebAccessibilityObject.h"
+#include "WebAXObject.h"
 #include "WebAutofillClient.h"
 #include "WebColorChooser.h"
 #include "WebConsoleMessage.h"
@@ -75,7 +75,6 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoadRequest.h"
-#include "core/loader/NavigationAction.h"
 #include "core/page/Console.h"
 #include "core/page/FrameView.h"
 #include "core/page/Page.h"
@@ -122,11 +121,11 @@ static WebPopupType convertPopupType(PopupContainer::PopupType type)
     }
 }
 
-// Converts a WebCore::AXObjectCache::AXNotification to a WebKit::WebAccessibilityNotification
-static WebAccessibilityNotification toWebAccessibilityNotification(AXObjectCache::AXNotification notification)
+// Converts a WebCore::AXObjectCache::AXNotification to a WebKit::WebAXEvent
+static WebAXEvent toWebAXEvent(AXObjectCache::AXNotification notification)
 {
     // These enums have the same values; enforced in AssertMatchingEnums.cpp.
-    return static_cast<WebAccessibilityNotification>(notification);
+    return static_cast<WebAXEvent>(notification);
 }
 
 ChromeClientImpl::ChromeClientImpl(WebViewImpl* webView)
@@ -230,7 +229,7 @@ void ChromeClientImpl::focusedNodeChanged(Node* node)
 }
 
 Page* ChromeClientImpl::createWindow(
-    Frame* frame, const FrameLoadRequest& r, const WindowFeatures& features, const NavigationAction& action, NavigationPolicy navigationPolicy)
+    Frame* frame, const FrameLoadRequest& r, const WindowFeatures& features, NavigationPolicy navigationPolicy)
 {
     if (!m_webView->client())
         return 0;
@@ -239,13 +238,8 @@ Page* ChromeClientImpl::createWindow(
     if (policy == WebNavigationPolicyIgnore)
         policy = getNavigationPolicy();
 
-    WrappedResourceRequest request;
-    if (!r.resourceRequest().isEmpty())
-        request.bind(r.resourceRequest());
-    else if (!action.resourceRequest().isEmpty())
-        request.bind(action.resourceRequest());
-    WebViewImpl* newView = static_cast<WebViewImpl*>(
-        m_webView->client()->createView(WebFrameImpl::fromFrame(frame), request, features, r.frameName(), policy));
+    WebViewImpl* newView = toWebViewImpl(
+        m_webView->client()->createView(WebFrameImpl::fromFrame(frame), WrappedResourceRequest(r.resourceRequest()), features, r.frameName(), policy));
     if (!newView)
         return 0;
     return newView->page();
@@ -349,7 +343,7 @@ bool ChromeClientImpl::statusbarVisible()
 void ChromeClientImpl::setScrollbarsVisible(bool value)
 {
     m_scrollbarsVisible = value;
-    WebFrameImpl* webFrame = static_cast<WebFrameImpl*>(m_webView->mainFrame());
+    WebFrameImpl* webFrame = toWebFrameImpl(m_webView->mainFrame());
     if (webFrame)
         webFrame->setCanHaveScrollbars(value);
 }
@@ -374,17 +368,19 @@ void ChromeClientImpl::setResizable(bool value)
     m_resizable = value;
 }
 
-void ChromeClientImpl::addMessageToConsole(MessageSource source,
-                                           MessageLevel level,
-                                           const String& message,
-                                           unsigned lineNumber,
-                                           const String& sourceID)
+bool ChromeClientImpl::shouldReportDetailedMessageForSource(const String& url)
+{
+    return m_webView->client() && m_webView->client()->shouldReportDetailedMessageForSource(url);
+}
+
+void ChromeClientImpl::addMessageToConsole(MessageSource source, MessageLevel level, const String& message, unsigned lineNumber, const String& sourceID, const String& stackTrace)
 {
     if (m_webView->client()) {
         m_webView->client()->didAddMessageToConsole(
             WebConsoleMessage(static_cast<WebConsoleMessage::Level>(level), message),
             sourceID,
-            lineNumber);
+            lineNumber,
+            stackTrace);
     }
 }
 
@@ -583,7 +579,7 @@ void ChromeClientImpl::mouseDidMoveOverElement(
         if (object && object->isWidget()) {
             Widget* widget = toRenderWidget(object)->widget();
             if (widget && widget->isPluginContainer()) {
-                WebPluginContainerImpl* plugin = static_cast<WebPluginContainerImpl*>(widget);
+                WebPluginContainerImpl* plugin = toPluginContainerImpl(widget);
                 url = plugin->plugin()->linkAtPosition(result.roundedPointInInnerNodeFrame());
             }
         }
@@ -734,7 +730,7 @@ void ChromeClientImpl::setCursor(const WebCore::Cursor& cursor)
 
 void ChromeClientImpl::setCursor(const WebCursorInfo& cursor)
 {
-#if OS(DARWIN)
+#if OS(MACOSX)
     // On Mac the mousemove event propagates to both the popup and main window.
     // If a popup is open we don't want the main window to change the cursor.
     if (m_webView->hasOpenedPopup())
@@ -756,7 +752,7 @@ void ChromeClientImpl::formStateDidChange(const Node* node)
 
     // The current history item is not updated yet.  That happens lazily when
     // WebFrame::currentHistoryItem is requested.
-    WebFrameImpl* webframe = WebFrameImpl::fromFrame(node->document()->frame());
+    WebFrameImpl* webframe = WebFrameImpl::fromFrame(node->document().frame());
     if (webframe->client())
         webframe->client()->didUpdateCurrentHistoryItem(webframe);
 }
@@ -805,8 +801,10 @@ void ChromeClientImpl::getPopupMenuInfo(PopupContainer* popupContainer,
 void ChromeClientImpl::postAccessibilityNotification(AccessibilityObject* obj, AXObjectCache::AXNotification notification)
 {
     // Alert assistive technology about the accessibility object notification.
-    if (obj)
-        m_webView->client()->postAccessibilityNotification(WebAccessibilityObject(obj), toWebAccessibilityNotification(notification));
+    if (!obj)
+        return;
+
+    m_webView->client()->postAccessibilityEvent(WebAXObject(obj), toWebAXEvent(notification));
 }
 
 String ChromeClientImpl::acceptLanguages()
@@ -844,20 +842,20 @@ ChromeClient::CompositingTriggerFlags ChromeClientImpl::allowedCompositingTrigge
         return 0;
 
     CompositingTriggerFlags flags = 0;
-    Settings* settings = m_webView->page()->settings();
-    if (settings->acceleratedCompositingFor3DTransformsEnabled())
+    Settings& settings = m_webView->page()->settings();
+    if (settings.acceleratedCompositingFor3DTransformsEnabled())
         flags |= ThreeDTransformTrigger;
-    if (settings->acceleratedCompositingForVideoEnabled())
+    if (settings.acceleratedCompositingForVideoEnabled())
         flags |= VideoTrigger;
-    if (settings->acceleratedCompositingForPluginsEnabled())
+    if (settings.acceleratedCompositingForPluginsEnabled())
         flags |= PluginTrigger;
-    if (settings->acceleratedCompositingForAnimationEnabled())
+    if (settings.acceleratedCompositingForAnimationEnabled())
         flags |= AnimationTrigger;
-    if (settings->acceleratedCompositingForCanvasEnabled())
+    if (settings.acceleratedCompositingForCanvasEnabled())
         flags |= CanvasTrigger;
-    if (settings->acceleratedCompositingForScrollableFramesEnabled())
+    if (settings.acceleratedCompositingForScrollableFramesEnabled())
         flags |= ScrollableInnerFrameTrigger;
-    if (settings->acceleratedCompositingForFiltersEnabled())
+    if (settings.acceleratedCompositingForFiltersEnabled())
         flags |= FilterTrigger;
 
     return flags;
@@ -921,7 +919,7 @@ void ChromeClientImpl::openPasswordGenerator(HTMLInputElement* input)
     m_webView->passwordGeneratorClient()->openPasswordGenerator(webInput);
 }
 
-bool ChromeClientImpl::shouldRunModalDialogDuringPageDismissal(const DialogType& dialogType, const String& dialogMessage, FrameLoader::PageDismissalType dismissalType) const
+bool ChromeClientImpl::shouldRunModalDialogDuringPageDismissal(const DialogType& dialogType, const String& dialogMessage, Document::PageDismissalType dismissalType) const
 {
     const char* kDialogs[] = {"alert", "confirm", "prompt", "showModalDialog"};
     int dialog = static_cast<int>(dialogType);

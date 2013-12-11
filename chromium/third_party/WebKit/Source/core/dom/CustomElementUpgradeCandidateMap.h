@@ -33,6 +33,7 @@
 
 #include "core/dom/CustomElementDescriptor.h"
 #include "core/dom/CustomElementDescriptorHash.h"
+#include "core/dom/CustomElementObserver.h"
 #include "wtf/HashMap.h"
 #include "wtf/ListHashSet.h"
 #include "wtf/Noncopyable.h"
@@ -41,26 +42,26 @@ namespace WebCore {
 
 class Element;
 
-class CustomElementUpgradeCandidateMap {
+class CustomElementUpgradeCandidateMap : CustomElementObserver {
     WTF_MAKE_NONCOPYABLE(CustomElementUpgradeCandidateMap);
 public:
     CustomElementUpgradeCandidateMap() { }
     ~CustomElementUpgradeCandidateMap();
 
-    static void elementWasDestroyed(Element*);
+    // API for CustomElementRegistrationContext to save and take candidates
+
+    typedef ListHashSet<Element*> ElementSet;
 
     void add(const CustomElementDescriptor&, Element*);
     void remove(Element*);
-
-    typedef ListHashSet<Element*> ElementSet;
     ElementSet takeUpgradeCandidatesFor(const CustomElementDescriptor&);
 
 private:
-    // Maps elements to upgrade candidate maps observing their destruction
-    typedef HashMap<Element*, CustomElementUpgradeCandidateMap*> DestructionObserverMap;
-    static DestructionObserverMap& destructionObservers();
-    static void registerForElementDestructionNotification(Element*, CustomElementUpgradeCandidateMap*);
-    static void unregisterForElementDestructionNotification(Element*, CustomElementUpgradeCandidateMap*);
+    virtual void elementWasDestroyed(Element*) OVERRIDE;
+    void removeCommon(Element*);
+
+    virtual void elementDidFinishParsingChildren(Element*) OVERRIDE;
+    void moveToEnd(Element*);
 
     typedef HashMap<Element*, CustomElementDescriptor> UpgradeCandidateMap;
     UpgradeCandidateMap m_upgradeCandidates;

@@ -14,7 +14,8 @@ base.require('tracing.elided_cache');
  */
 base.exportTo('tracing', function() {
   var elidedTitleCache = new tracing.ElidedTitleCache();
-  var highlightIdBoost = tracing.getColorPaletteHighlightIdBoost();
+  var palette = tracing.getColorPalette();
+  var EventPresenter = tracing.EventPresenter;
 
   /**
    * Should we elide text on trace labels?
@@ -26,10 +27,9 @@ base.exportTo('tracing', function() {
   var SHOULD_ELIDE_TEXT = true;
 
   /**
-   * Draw the define line into |ctx| in the given |color|.
+   * Draw the define line into |ctx|.
    *
    * @param {Context} ctx The context to draw into.
-   * @param {String} color The color to draw the lines.
    * @param {float} x1 The start x position of the line.
    * @param {float} y1 The start y position of the line.
    * @param {float} x2 The end x position of the line.
@@ -42,12 +42,6 @@ base.exportTo('tracing', function() {
 
   /**
    * Draw the defined triangle into |ctx|.
-   *
-   * Each arrow must have the following API:
-   *   * x1, y1
-   *   * x2, y2
-   *   * x3, y3
-   *   * color  optional
    *
    * @param {Context} ctx The context to draw into.
    * @param {float} x1 The first corner x.
@@ -62,8 +56,41 @@ base.exportTo('tracing', function() {
     ctx.moveTo(x1, y1);
     ctx.lineTo(x2, y2);
     ctx.lineTo(x3, y3);
-    ctx.lineTo(x1, y1);
     ctx.closePath();
+  }
+
+  /**
+   * Draw an arrow into |ctx|.
+   *
+   * @param {Context} ctx The context to draw into.
+   * @param {float} x1 The shaft x.
+   * @param {float} y1 The shaft y.
+   * @param {float} x2 The head x.
+   * @param {float} y2 The head y.
+   * @param {float} arrowLength The length of the head.
+   * @param {float} arrowWidth The width of the head.
+   */
+  function drawArrow(ctx, x1, y1, x2, y2, arrowLength, arrowWidth) {
+    var dx = x2 - x1;
+    var dy = y2 - y1;
+    var len = Math.sqrt(dx * dx + dy * dy);
+    var perc = (len - arrowLength) / len;
+    var bx = x1 + perc * dx;
+    var by = y1 + perc * dy;
+    var ux = dx / len;
+    var uy = dy / len;
+    var ax = uy * arrowWidth;
+    var ay = -ux * arrowWidth;
+
+    ctx.beginPath();
+    drawLine(ctx, x1, y1, x2, y2);
+    ctx.stroke();
+
+    drawTriangle(ctx,
+        bx + ax, by + ay,
+        x2, y2,
+        bx - ax, by - ay);
+    ctx.fill();
   }
 
   /**
@@ -76,22 +103,22 @@ base.exportTo('tracing', function() {
    *   * selected
    *
    * @param {Context} ctx The canvas context.
-   * @param {TimelineViewport} vp The viewport.
+   * @param {TimelineDrawTransform} dt The draw transform.
    * @param {float} viewLWorld The left most point of the world viewport.
    * @param {float} viewLWorld The right most point of the world viewport.
    * @param {float} viewHeight The height of the viewport.
    * @param {Array} slices The slices to draw.
+   * @param {bool} async Whether the slices are drawn with async style.
    */
-  function drawSlices(ctx, vp, viewLWorld, viewRWorld, viewHeight, slices) {
+  function drawSlices(ctx, dt, viewLWorld, viewRWorld, viewHeight, slices,
+                      async) {
     var pixelRatio = window.devicePixelRatio || 1;
+    var pixWidth = dt.xViewVectorToWorld(1);
     var height = viewHeight * pixelRatio;
-
-    var pixWidth = vp.xViewVectorToWorld(1);
-    var palette = tracing.getColorPalette();
 
     // Begin rendering in world space.
     ctx.save();
-    vp.applyTransformToCanvas(ctx);
+    dt.applyTransformToCanvas(ctx);
 
     var tr = new tracing.FastRectRenderer(
         ctx, 2 * pixWidth, 2 * pixWidth, palette);
@@ -115,11 +142,9 @@ base.exportTo('tracing', function() {
           w = pixWidth;
       }
 
-      var colorId = slice.selected ?
-          slice.colorId + highlightIdBoost :
-          slice.colorId;
-
-      tr.fillRect(x, w, colorId);
+      var colorId = EventPresenter.getSliceColorId(slice);
+      var alpha = EventPresenter.getSliceAlpha(slice, async);
+      tr.fillRect(x, w, colorId, alpha);
     }
     tr.flush();
     ctx.restore();
@@ -135,7 +160,7 @@ base.exportTo('tracing', function() {
    *   * selected
    *
    * @param {Context} ctx The canvas context.
-   * @param {TimelineViewport} vp The viewport.
+   * @param {TimelineDrawTransform} dt The draw transform.
    * @param {float} viewLWorld The left most point of the world viewport.
    * @param {float} viewLWorld The right most point of the world viewport.
    * @param {float} viewHeight The height of the viewport.
@@ -143,17 +168,16 @@ base.exportTo('tracing', function() {
    * @param {Numer} lineWidthInPixels The width of the lines.
    */
   function drawInstantSlicesAsLines(
-      ctx, vp, viewLWorld, viewRWorld, viewHeight, slices, lineWidthInPixels) {
+      ctx, dt, viewLWorld, viewRWorld, viewHeight, slices, lineWidthInPixels) {
     var pixelRatio = window.devicePixelRatio || 1;
     var height = viewHeight * pixelRatio;
 
-    var pixWidth = vp.xViewVectorToWorld(1);
-    var palette = tracing.getColorPalette();
+    var pixWidth = dt.xViewVectorToWorld(1);
 
     // Begin rendering in world space.
     ctx.save();
     ctx.lineWidth = pixWidth * lineWidthInPixels;
-    vp.applyTransformToCanvas(ctx);
+    dt.applyTransformToCanvas(ctx);
     ctx.beginPath();
 
     var lowSlice = base.findLowIndexInSortedArray(
@@ -167,11 +191,8 @@ base.exportTo('tracing', function() {
       if (x > viewRWorld)
         break;
 
-      var colorId = slice.selected ?
-          slice.colorId + highlightIdBoost :
-          slice.colorId;
+      ctx.strokeStyle = EventPresenter.getInstantSliceColor(slice);
 
-      ctx.strokeStyle = palette[colorId];
       ctx.moveTo(x, 0);
       ctx.lineTo(x, height);
     }
@@ -189,22 +210,24 @@ base.exportTo('tracing', function() {
    *   * didNotFinish (optional)
    *
    * @param {Context} ctx The graphics context.
-   * @param {TimelineViewport} vp The viewport.
+   * @param {TimelineDrawTransform} dt The draw transform.
    * @param {float} viewLWorld The left most point of the world viewport.
    * @param {float} viewLWorld The right most point of the world viewport.
    * @param {Array} slices The slices to label.
+   * @param {bool} async Whether the slice labels are drawn with async style.
    */
-  function drawLabels(ctx, vp, viewLWorld, viewRWorld, slices) {
+  function drawLabels(ctx, dt, viewLWorld, viewRWorld, slices, async) {
     var pixelRatio = window.devicePixelRatio || 1;
-    var pixWidth = vp.xViewVectorToWorld(1);
+    var pixWidth = dt.xViewVectorToWorld(1);
 
     ctx.save();
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.font = (10 * pixelRatio) + 'px sans-serif';
-    ctx.strokeStyle = 'rgb(0,0,0)';
-    ctx.fillStyle = 'rgb(0,0,0)';
+
+    if (async)
+      ctx.font = 'italic ' + ctx.font;
 
     var lowSlice = base.findLowIndexInSortedArray(
         slices,
@@ -238,7 +261,8 @@ base.exportTo('tracing', function() {
       }
 
       if (drawnWidth * pixWidth < slice.duration) {
-        var cX = vp.xWorldToView(slice.start + 0.5 * slice.duration);
+        ctx.fillStyle = EventPresenter.getTextColor(slice);
+        var cX = dt.xWorldToView(slice.start + 0.5 * slice.duration);
         ctx.fillText(drawnTitle, cX, 2.5 * pixelRatio, drawnWidth);
       }
     }
@@ -252,6 +276,7 @@ base.exportTo('tracing', function() {
 
     drawLine: drawLine,
     drawTriangle: drawTriangle,
+    drawArrow: drawArrow,
 
     elidedTitleCache_: elidedTitleCache
   };

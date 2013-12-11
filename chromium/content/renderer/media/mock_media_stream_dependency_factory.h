@@ -14,6 +14,8 @@
 
 namespace content {
 
+class WebAudioCapturerSource;
+
 class MockVideoSource : public webrtc::VideoSourceInterface {
  public:
   MockVideoSource();
@@ -24,6 +26,7 @@ class MockVideoSource : public webrtc::VideoSourceInterface {
   virtual cricket::VideoCapturer* GetVideoCapturer() OVERRIDE;
   virtual void AddSink(cricket::VideoRenderer* output) OVERRIDE;
   virtual void RemoveSink(cricket::VideoRenderer* output) OVERRIDE;
+  virtual cricket::VideoRenderer* FrameInput() OVERRIDE;
   virtual const cricket::VideoOptions* options() const OVERRIDE;
 
   // Changes the state of the source to live and notifies the observer.
@@ -84,7 +87,6 @@ class MockLocalVideoTrack : public webrtc::VideoTrackInterface {
   virtual void AddRenderer(webrtc::VideoRendererInterface* renderer) OVERRIDE;
   virtual void RemoveRenderer(
       webrtc::VideoRendererInterface* renderer) OVERRIDE;
-  virtual cricket::VideoRenderer* FrameInput() OVERRIDE;
   virtual std::string kind() const OVERRIDE;
   virtual std::string id() const OVERRIDE;
   virtual bool enabled() const OVERRIDE;
@@ -126,8 +128,9 @@ class MockMediaStreamDependencyFactory : public MediaStreamDependencyFactory {
           int video_session_id,
           bool is_screencast,
           const webrtc::MediaConstraintsInterface* constraints) OVERRIDE;
-  virtual scoped_refptr<WebRtcAudioCapturer> CreateWebAudioSource(
-      WebKit::WebMediaStreamSource* source) OVERRIDE;
+  virtual scoped_refptr<WebAudioCapturerSource> CreateWebAudioSource(
+      WebKit::WebMediaStreamSource* source,
+      RTCMediaConstraints* constraints) OVERRIDE;
   virtual scoped_refptr<webrtc::MediaStreamInterface>
       CreateLocalMediaStream(const std::string& label) OVERRIDE;
   virtual scoped_refptr<webrtc::VideoTrackInterface>
@@ -136,10 +139,12 @@ class MockMediaStreamDependencyFactory : public MediaStreamDependencyFactory {
   virtual scoped_refptr<webrtc::VideoTrackInterface>
       CreateLocalVideoTrack(const std::string& id,
                             cricket::VideoCapturer* capturer) OVERRIDE;
-  virtual scoped_refptr<webrtc::AudioTrackInterface>
-      CreateLocalAudioTrack(const std::string& id,
-                            const scoped_refptr<WebRtcAudioCapturer>& capturer,
-                            webrtc::AudioSourceInterface* source) OVERRIDE;
+  virtual scoped_refptr<webrtc::AudioTrackInterface> CreateLocalAudioTrack(
+      const std::string& id,
+      const scoped_refptr<WebRtcAudioCapturer>& capturer,
+      WebAudioCapturerSource* webaudio_source,
+      webrtc::AudioSourceInterface* source,
+      const webrtc::MediaConstraintsInterface* constraints) OVERRIDE;
   virtual webrtc::SessionDescriptionInterface* CreateSessionDescription(
       const std::string& type,
       const std::string& sdp,

@@ -282,6 +282,7 @@
         '<(libjingle_source)/talk/base/cryptstring.h',
         '<(libjingle_source)/talk/base/diskcache.cc',
         '<(libjingle_source)/talk/base/diskcache.h',
+        '<(libjingle_source)/talk/base/dscp.h',
         '<(libjingle_source)/talk/base/event.cc',
         '<(libjingle_source)/talk/base/event.h',
         '<(libjingle_source)/talk/base/fileutils.cc',
@@ -448,6 +449,8 @@
         '<(libjingle_source)/talk/p2p/base/transportchannelimpl.h',
         '<(libjingle_source)/talk/p2p/base/transportchannelproxy.cc',
         '<(libjingle_source)/talk/p2p/base/transportchannelproxy.h',
+        '<(libjingle_source)/talk/p2p/base/transportdescription.cc',
+        '<(libjingle_source)/talk/p2p/base/transportdescription.h',
         '<(libjingle_source)/talk/p2p/base/transportdescriptionfactory.cc',
         '<(libjingle_source)/talk/p2p/base/transportdescriptionfactory.h',
         '<(libjingle_source)/talk/p2p/base/turnport.cc',
@@ -650,8 +653,6 @@
             '<(libjingle_source)/talk/app/webrtc/jsepsessiondescription.h',
             '<(libjingle_source)/talk/app/webrtc/localaudiosource.cc',
             '<(libjingle_source)/talk/app/webrtc/localaudiosource.h',
-            '<(libjingle_source)/talk/app/webrtc/localvideosource.cc',
-            '<(libjingle_source)/talk/app/webrtc/localvideosource.h',
             '<(libjingle_source)/talk/app/webrtc/mediaconstraintsinterface.cc',
             '<(libjingle_source)/talk/app/webrtc/mediaconstraintsinterface.h',
             '<(libjingle_source)/talk/app/webrtc/mediastream.cc',
@@ -673,10 +674,14 @@
             '<(libjingle_source)/talk/app/webrtc/peerconnectioninterface.h',
             '<(libjingle_source)/talk/app/webrtc/portallocatorfactory.cc',
             '<(libjingle_source)/talk/app/webrtc/portallocatorfactory.h',
+            '<(libjingle_source)/talk/app/webrtc/remotevideocapturer.cc',
+            '<(libjingle_source)/talk/app/webrtc/remotevideocapturer.h',
             '<(libjingle_source)/talk/app/webrtc/statscollector.cc',
             '<(libjingle_source)/talk/app/webrtc/statscollector.h',
             '<(libjingle_source)/talk/app/webrtc/statstypes.h',
             '<(libjingle_source)/talk/app/webrtc/streamcollection.h',
+            '<(libjingle_source)/talk/app/webrtc/videosource.cc',
+            '<(libjingle_source)/talk/app/webrtc/videosource.h',
             '<(libjingle_source)/talk/app/webrtc/videosourceinterface.h',
             '<(libjingle_source)/talk/app/webrtc/videosourceproxy.h',
             '<(libjingle_source)/talk/app/webrtc/videotrack.cc',
@@ -781,12 +786,8 @@
             }],
             # TODO(mallinath) - Enable SCTP for Android and iOS platforms.
             ['OS!="android" and OS!="ios"', {
-              'conditions': [
-                ['OS!="win"', {
-                  'defines': [
-                    'HAVE_SCTP',
-                  ],
-                }],
+              'defines': [
+                'HAVE_SCTP',
               ],
               'sources': [
                 '<(libjingle_source)/talk/media/sctp/sctpdataengine.cc',

@@ -30,7 +30,7 @@
 
 namespace WebCore {
 
-LabelableElement::LabelableElement(const QualifiedName& tagName, Document* document)
+LabelableElement::LabelableElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
 {
 }
@@ -42,8 +42,6 @@ LabelableElement::~LabelableElement()
 PassRefPtr<NodeList> LabelableElement::labels()
 {
     if (!supportLabels())
-        return 0;
-    if (!document())
         return 0;
 
     return ensureRareData()->ensureNodeLists()->addCacheWithAtomicName<LabelsNodeList>(this, LabelsNodeListType, starAtom);

@@ -43,17 +43,16 @@ DecryptingDemuxerStream::DecryptingDemuxerStream(
       key_added_while_decrypt_pending_(false) {
 }
 
-void DecryptingDemuxerStream::Initialize(
-    DemuxerStream* stream,
-    const PipelineStatusCB& status_cb) {
-  DVLOG(2) << "Initialize()";
+void DecryptingDemuxerStream::Initialize(DemuxerStream* stream,
+                                         const PipelineStatusCB& status_cb) {
+  DVLOG(2) << __FUNCTION__;
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK_EQ(state_, kUninitialized) << state_;
 
   DCHECK(!demuxer_stream_);
   weak_this_ = weak_factory_.GetWeakPtr();
   demuxer_stream_ = stream;
-  init_cb_ = status_cb;
+  init_cb_ = BindToCurrentLoop(status_cb);
 
   InitializeDecoderConfig();
 
@@ -63,26 +62,33 @@ void DecryptingDemuxerStream::Initialize(
 }
 
 void DecryptingDemuxerStream::Read(const ReadCB& read_cb) {
-  DVLOG(3) << "Read()";
+  DVLOG(3) << __FUNCTION__;
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK_EQ(state_, kIdle) << state_;
   DCHECK(!read_cb.is_null());
   CHECK(read_cb_.is_null()) << "Overlapping reads are not supported.";
 
-  read_cb_ = read_cb;
+  read_cb_ = BindToCurrentLoop(read_cb);
   state_ = kPendingDemuxerRead;
   demuxer_stream_->Read(
       base::Bind(&DecryptingDemuxerStream::DecryptBuffer, weak_this_));
 }
 
 void DecryptingDemuxerStream::Reset(const base::Closure& closure) {
-  DVLOG(2) << "Reset() - state: " << state_;
+  DVLOG(2) << __FUNCTION__ << " - state: " << state_;
   DCHECK(message_loop_->BelongsToCurrentThread());
-  DCHECK(state_ != kUninitialized && state_ != kDecryptorRequested) << state_;
-  DCHECK(init_cb_.is_null());  // No Reset() during pending initialization.
+  DCHECK(state_ != kUninitialized) << state_;
   DCHECK(reset_cb_.is_null());
 
   reset_cb_ = BindToCurrentLoop(closure);
+
+  if (state_ == kDecryptorRequested) {
+    DCHECK(!init_cb_.is_null());
+    set_decryptor_ready_cb_.Run(DecryptorReadyCB());
+    base::ResetAndReturn(&init_cb_).Run(PIPELINE_ERROR_ABORT);
+    DoReset();
+    return;
+  }
 
   decryptor_->CancelDecrypt(GetDecryptorStreamType());
 
@@ -126,10 +132,12 @@ void DecryptingDemuxerStream::EnableBitstreamConverter() {
   demuxer_stream_->EnableBitstreamConverter();
 }
 
-DecryptingDemuxerStream::~DecryptingDemuxerStream() {}
+DecryptingDemuxerStream::~DecryptingDemuxerStream() {
+  DVLOG(2) << __FUNCTION__ << " : state_ = " << state_;
+}
 
 void DecryptingDemuxerStream::SetDecryptor(Decryptor* decryptor) {
-  DVLOG(2) << "SetDecryptor()";
+  DVLOG(2) << __FUNCTION__;
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK_EQ(state_, kDecryptorRequested) << state_;
   DCHECK(!init_cb_.is_null());
@@ -138,8 +146,8 @@ void DecryptingDemuxerStream::SetDecryptor(Decryptor* decryptor) {
   set_decryptor_ready_cb_.Reset();
 
   if (!decryptor) {
-    base::ResetAndReturn(&init_cb_).Run(DECODER_ERROR_NOT_SUPPORTED);
     state_ = kUninitialized;
+    base::ResetAndReturn(&init_cb_).Run(DECODER_ERROR_NOT_SUPPORTED);
     return;
   }
 
@@ -156,7 +164,7 @@ void DecryptingDemuxerStream::SetDecryptor(Decryptor* decryptor) {
 void DecryptingDemuxerStream::DecryptBuffer(
     DemuxerStream::Status status,
     const scoped_refptr<DecoderBuffer>& buffer) {
-  DVLOG(3) << "DecryptBuffer()";
+  DVLOG(3) << __FUNCTION__;
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK_EQ(state_, kPendingDemuxerRead) << state_;
   DCHECK(!read_cb_.is_null());
@@ -212,7 +220,7 @@ void DecryptingDemuxerStream::DecryptPendingBuffer() {
 void DecryptingDemuxerStream::DeliverBuffer(
     Decryptor::Status status,
     const scoped_refptr<DecoderBuffer>& decrypted_buffer) {
-  DVLOG(3) << "DeliverBuffer() - status: " << status;
+  DVLOG(3) << __FUNCTION__ << " - status: " << status;
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK_EQ(state_, kPendingDecrypt) << state_;
   DCHECK_NE(status, Decryptor::kNeedMoreData);
@@ -272,9 +280,15 @@ void DecryptingDemuxerStream::OnKeyAdded() {
 }
 
 void DecryptingDemuxerStream::DoReset() {
+  DCHECK(state_ != kUninitialized);
   DCHECK(init_cb_.is_null());
   DCHECK(read_cb_.is_null());
-  state_ = kIdle;
+
+  if (state_ == kDecryptorRequested)
+    state_ = kUninitialized;
+  else
+    state_ = kIdle;
+
   base::ResetAndReturn(&reset_cb_).Run();
 }
 
@@ -302,7 +316,9 @@ void DecryptingDemuxerStream::InitializeDecoderConfig() {
                                input_audio_config.extra_data(),
                                input_audio_config.extra_data_size(),
                                false,  // Output audio is not encrypted.
-                               false);
+                               false,
+                               base::TimeDelta(),
+                               base::TimeDelta());
       break;
     }
 

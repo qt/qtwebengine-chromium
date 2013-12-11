@@ -48,16 +48,19 @@ namespace gpu {
 class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
     : public NON_EXPORTED_BASE(WebKit::WebGraphicsContext3D) {
  public:
-  static scoped_ptr<WebKit::WebGraphicsContext3D> CreateViewContext(
-      const WebKit::WebGraphicsContext3D::Attributes& attributes,
-      gfx::AcceleratedWidget window);
+  static scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>
+      CreateViewContext(
+          const WebKit::WebGraphicsContext3D::Attributes& attributes,
+          gfx::AcceleratedWidget window);
 
-  static scoped_ptr<WebKit::WebGraphicsContext3D> CreateOffscreenContext(
-      const WebKit::WebGraphicsContext3D::Attributes& attributes);
+  static scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>
+      CreateOffscreenContext(
+          const WebKit::WebGraphicsContext3D::Attributes& attributes);
 
-  static scoped_ptr<WebKit::WebGraphicsContext3D> WrapContext(
-      scoped_ptr< ::gpu::GLInProcessContext> context,
-      const WebKit::WebGraphicsContext3D::Attributes& attributes);
+  static scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>
+      WrapContext(
+          scoped_ptr< ::gpu::GLInProcessContext> context,
+          const WebKit::WebGraphicsContext3D::Attributes& attributes);
 
   virtual ~WebGraphicsContext3DInProcessCommandBufferImpl();
 
@@ -70,6 +73,8 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
   //----------------------------------------------------------------------
   // WebGraphicsContext3D methods
   virtual bool makeContextCurrent();
+
+  virtual uint32_t lastFlushID();
 
   virtual int width();
   virtual int height();
@@ -465,6 +470,9 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
   virtual void bindTexImage2DCHROMIUM(WGC3Denum target, WGC3Dint imageId);
   virtual void releaseTexImage2DCHROMIUM(WGC3Denum target, WGC3Dint imageId);
 
+  virtual WebGLId createStreamTextureCHROMIUM(WebGLId texture);
+  virtual void destroyStreamTextureCHROMIUM(WebGLId texture);
+
   virtual void texStorage2DEXT(
       WGC3Denum target, WGC3Dint levels, WGC3Duint internalformat,
       WGC3Dint width, WGC3Dint height);
@@ -562,7 +570,6 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
   // instead of going through WebGraphicsContext3D.
   void ClearContext();
 
-
   bool is_offscreen_;
   // Only used when not offscreen.
   gfx::AcceleratedWidget window_;
@@ -583,6 +590,8 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
 
   // Errors raised by synthesizeGLError().
   std::vector<WGC3Denum> synthetic_errors_;
+
+  uint32_t flush_id_;
 };
 
 }  // namespace gpu

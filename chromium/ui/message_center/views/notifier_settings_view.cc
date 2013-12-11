@@ -13,10 +13,10 @@
 #include "grit/ui_strings.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/size.h"
@@ -419,7 +419,7 @@ void NotifierSettingsView::UpdateContentsView(
   contents_title_view->AddChildView(top_label);
 
   string16 notifier_group_text;
-  if (provider_) {
+  if (provider_ && provider_->GetNotifierGroupCount() > 0) {
     const NotifierGroup& active_group = provider_->GetActiveNotifierGroup();
     notifier_group_text = active_group.login_info.empty()
                               ? active_group.name
@@ -478,7 +478,6 @@ gfx::Size NotifierSettingsView::GetMinimumSize() {
 
 gfx::Size NotifierSettingsView::GetPreferredSize() {
   gfx::Size preferred_size;
-  std::vector<gfx::Size> child_sizes;
   gfx::Size title_size = title_label_->GetPreferredSize();
   gfx::Size content_size = scroller_->contents()->GetPreferredSize();
   return gfx::Size(std::max(title_size.width(), content_size.width()),

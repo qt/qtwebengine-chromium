@@ -36,8 +36,6 @@
 
 namespace WebCore {
 
-class CSSValue;
-
 class AnimatableValue : public RefCounted<AnimatableValue> {
 public:
     virtual ~AnimatableValue() { }
@@ -48,15 +46,25 @@ public:
     // For noncommutative values read add(A, B) to mean the value A with B composed onto it.
     static PassRefPtr<AnimatableValue> add(const AnimatableValue*, const AnimatableValue*);
 
+    bool isColor() const { return m_type == TypeColor; }
+    bool isImage() const { return m_type == TypeImage; }
+    bool isLengthBox() const { return m_type == TypeLengthBox; }
     bool isNumber() const { return m_type == TypeNumber; }
     bool isNeutral() const { return m_type == TypeNeutral; }
+    bool isTransform() const { return m_type == TypeTransform; }
     bool isUnknown() const { return m_type == TypeUnknown; }
+    bool isVisibility() const { return m_type == TypeVisibility; }
 
 protected:
     enum AnimatableType {
+        TypeColor,
+        TypeImage,
+        TypeLengthBox,
         TypeNeutral,
         TypeNumber,
+        TypeTransform,
         TypeUnknown,
+        TypeVisibility,
     };
 
     AnimatableValue(AnimatableType type) : m_type(type) { }
@@ -71,7 +79,7 @@ protected:
     static PassRefPtr<AnimatableValue> defaultInterpolateTo(const AnimatableValue* left, const AnimatableValue* right, double fraction) { return takeConstRef((fraction < 0.5) ? left : right); }
 
     // For noncommutative values read A->addWith(B) to mean the value A with B composed onto it.
-    virtual PassRefPtr<AnimatableValue> addWith(const AnimatableValue*) const = 0;
+    virtual PassRefPtr<AnimatableValue> addWith(const AnimatableValue*) const;
     static PassRefPtr<AnimatableValue> defaultAddWith(const AnimatableValue* left, const AnimatableValue* right) { return takeConstRef(right); }
 
     template <class T>

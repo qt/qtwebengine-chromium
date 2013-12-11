@@ -4,10 +4,15 @@
 
 'use strict';
 
+base.requireTemplate('cc.picture_debugger');
 base.requireStylesheet('cc.picture_debugger');
 
+base.require('base.key_event_manager');
+base.require('base.utils');
 base.require('cc.picture');
 base.require('cc.picture_ops_list_view');
+base.require('cc.picture_ops_chart_summary_view');
+base.require('cc.picture_ops_chart_view');
 base.require('tracing.analysis.generic_object_view');
 base.require('ui.drag_handle');
 base.require('ui.info_bar');
@@ -28,63 +33,99 @@ base.exportTo('cc', function() {
     __proto__: HTMLUnknownElement.prototype,
 
     decorate: function() {
+      var node = base.instantiateTemplate('#picture-debugger-template');
+      this.appendChild(node);
+
       this.pictureAsImageData_ = undefined;
       this.showOverdraw_ = false;
 
-      this.leftPanel_ = document.createElement('left-panel');
+      this.sizeInfo_ = this.querySelector('.size');
+      this.rasterArea_ = this.querySelector('raster-area');
+      this.filename_ = this.querySelector('.filename');
 
-      this.pictureInfo_ = document.createElement('picture-info');
+      this.drawOpsChartSummaryView_ = new cc.PictureOpsChartSummaryView();
+      this.drawOpsChartView_ = new cc.PictureOpsChartView();
+      this.drawOpsChartView_.addEventListener(
+          'selection-changed', this.onChartBarClicked_.bind(this));
 
-      this.title_ = document.createElement('span');
-      this.title_.textContent = 'Skia Picture';
-      this.title_.classList.add('title');
-      this.sizeInfo_ = document.createElement('span');
-      this.sizeInfo_.classList.add('size');
-      this.filename_ = document.createElement('input');
-      this.filename_.classList.add('filename');
-      this.filename_.type = 'text';
-      this.filename_.value = 'skpicture.skp';
-      var exportButton = document.createElement('button');
-      exportButton.textContent = 'Export';
+      var exportButton = this.querySelector('.export');
       exportButton.addEventListener(
           'click', this.onSaveAsSkPictureClicked_.bind(this));
+
       var overdrawCheckbox = ui.createCheckBox(
           this, 'showOverdraw',
-          'pictureViewer.showOverdraw', false,
+          'pictureView.showOverdraw', false,
           'Show overdraw');
-      this.pictureInfo_.appendChild(this.title_);
-      this.pictureInfo_.appendChild(this.sizeInfo_);
-      this.pictureInfo_.appendChild(document.createElement('br'));
-      this.pictureInfo_.appendChild(this.filename_);
-      this.pictureInfo_.appendChild(exportButton);
-      this.pictureInfo_.appendChild(document.createElement('br'));
-      this.pictureInfo_.appendChild(overdrawCheckbox);
 
-      this.titleDragHandle_ = new ui.DragHandle();
-      this.titleDragHandle_.horizontal = true;
-      this.titleDragHandle_.target = this.pictureInfo_;
+      var chartCheckbox = ui.createCheckBox(
+          this, 'showSummaryChart',
+          'pictureView.showSummaryChart', false,
+          'Show timing summary');
+
+      var pictureInfo = this.querySelector('picture-info');
+      pictureInfo.appendChild(overdrawCheckbox);
+      pictureInfo.appendChild(chartCheckbox);
 
       this.drawOpsView_ = new cc.PictureOpsListView();
       this.drawOpsView_.addEventListener(
           'selection-changed', this.onChangeDrawOps_.bind(this));
 
-      this.leftPanel_.appendChild(this.pictureInfo_);
-      this.leftPanel_.appendChild(this.titleDragHandle_);
-      this.leftPanel_.appendChild(this.drawOpsView_);
+      var leftPanel = this.querySelector('left-panel');
+      leftPanel.appendChild(this.drawOpsChartSummaryView_);
+      leftPanel.appendChild(this.drawOpsView_);
 
-      this.middleDragHandle_ = new ui.DragHandle();
-      this.middleDragHandle_.horizontal = false;
-      this.middleDragHandle_.target = this.leftPanel_;
+      var middleDragHandle = new ui.DragHandle();
+      middleDragHandle.horizontal = false;
+      middleDragHandle.target = leftPanel;
+
+      var rightPanel = this.querySelector('right-panel');
+      rightPanel.replaceChild(
+          this.drawOpsChartView_,
+          rightPanel.querySelector('picture-ops-chart-view'));
 
       this.infoBar_ = new ui.InfoBar();
-      this.rasterArea_ = document.createElement('raster-area');
-
-      this.appendChild(this.leftPanel_);
-      this.appendChild(this.middleDragHandle_);
       this.rasterArea_.appendChild(this.infoBar_);
-      this.appendChild(this.rasterArea_);
+
+      this.insertBefore(middleDragHandle, rightPanel);
 
       this.picture_ = undefined;
+
+      base.KeyEventManager.instance.addListener(
+          'keypress', this.onKeyPress_, this);
+
+      // Add a mutation observer so that when the view is resized we can
+      // update the chart summary view.
+      this.mutationObserver_ = new MutationObserver(
+          this.onMutation_.bind(this));
+      this.mutationObserver_.observe(leftPanel, { attributes: true });
+    },
+
+    onKeyPress_: function(e) {
+      if (e.keyCode == 'h'.charCodeAt(0)) {
+        this.moveSelectedOpBy(-1);
+        e.preventDefault();
+        e.stopPropagation();
+      } else if (e.keyCode == 'l'.charCodeAt(0)) {
+        this.moveSelectedOpBy(1);
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    },
+
+    onMutation_: function(mutations) {
+
+      for (var m = 0; m < mutations.length; m++) {
+        // A style change would indicate that the element has resized
+        // so we should re-render the chart.
+        if (mutations[m].attributeName === 'style') {
+          this.drawOpsChartSummaryView_.requiresRedraw = true;
+          this.drawOpsChartSummaryView_.updateChartContents();
+
+          this.drawOpsChartView_.dimensionsHaveChanged = true;
+          this.drawOpsChartView_.updateChartContents();
+          break;
+        }
+      }
     },
 
     onSaveAsSkPictureClicked_: function() {
@@ -119,6 +160,8 @@ base.exportTo('cc', function() {
 
     set picture(picture) {
       this.drawOpsView_.picture = picture;
+      this.drawOpsChartView_.picture = picture;
+      this.drawOpsChartSummaryView_.picture = picture;
       this.picture_ = picture;
       this.rasterize_();
 
@@ -143,6 +186,9 @@ base.exportTo('cc', function() {
             this.picture_.layerRect.height + ')';
       }
 
+      this.drawOpsChartView_.updateChartContents();
+      this.drawOpsChartView_.scrollSelectedItemIntoViewIfNecessary();
+
       // Return if picture hasn't finished rasterizing.
       if (!this.pictureAsImageData_)
         return;
@@ -151,11 +197,12 @@ base.exportTo('cc', function() {
       this.infoBar_.removeAllButtons();
       if (this.pictureAsImageData_.error) {
         this.infoBar_.message = 'Cannot rasterize...';
-        this.infoBar_.addButton('More info...', function() {
+        this.infoBar_.addButton('More info...', function(e) {
           var overlay = new ui.Overlay();
           overlay.textContent = this.pictureAsImageData_.error;
           overlay.visible = true;
-          overlay.obeyCloseEvents = true;
+          e.stopPropagation();
+          return false;
         }.bind(this));
         this.infoBar_.visible = true;
       }
@@ -187,14 +234,52 @@ base.exportTo('cc', function() {
       this.scheduleUpdateContents_();
     },
 
-    onChangeDrawOps_: function() {
+    moveSelectedOpBy: function(increment) {
+      if (this.selectedOpIndex === undefined) {
+        this.selectedOpIndex = 0;
+        return;
+      }
+      this.selectedOpIndex = base.clamp(
+          this.selectedOpIndex + increment,
+          0, this.numOps);
+    },
+
+    get numOps() {
+      return this.drawOpsView_.numOps;
+    },
+
+    get selectedOpIndex() {
+      return this.drawOpsView_.selectedOpIndex;
+    },
+
+    set selectedOpIndex(index) {
+      this.drawOpsView_.selectedOpIndex = index;
+      this.drawOpsChartView_.selectedOpIndex = index;
+    },
+
+    onChartBarClicked_: function(e) {
+      this.drawOpsView_.selectedOpIndex =
+          this.drawOpsChartView_.selectedOpIndex;
+    },
+
+    onChangeDrawOps_: function(e) {
       this.rasterize_();
       this.scheduleUpdateContents_();
+
+      this.drawOpsChartView_.selectedOpIndex =
+          this.drawOpsView_.selectedOpIndex;
     },
 
     set showOverdraw(v) {
       this.showOverdraw_ = v;
       this.rasterize_();
+    },
+
+    set showSummaryChart(chartShouldBeVisible) {
+      if (chartShouldBeVisible)
+        this.drawOpsChartSummaryView_.show();
+      else
+        this.drawOpsChartSummaryView_.hide();
     }
   };
 

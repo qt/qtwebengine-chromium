@@ -5,8 +5,8 @@
 #include "webkit/browser/fileapi/sandbox_file_system_test_helper.h"
 
 #include "base/file_util.h"
-#include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/run_loop.h"
 #include "url/gurl.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
@@ -57,11 +57,11 @@ void SandboxFileSystemTestHelper::SetUp(
 
 void SandboxFileSystemTestHelper::TearDown() {
   file_system_context_ = NULL;
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 base::FilePath SandboxFileSystemTestHelper::GetOriginRootPath() {
-  return file_system_context_->sandbox_context()->
+  return file_system_context_->sandbox_delegate()->
       GetBaseDirectoryForOriginAndType(origin_, type_, false);
 }
 
@@ -80,8 +80,8 @@ base::FilePath SandboxFileSystemTestHelper::GetLocalPathFromASCII(
 }
 
 base::FilePath SandboxFileSystemTestHelper::GetUsageCachePath() const {
-  return file_system_context_->
-      sandbox_context()->GetUsageCachePathForOriginAndType(origin_, type_);
+  return file_system_context_->sandbox_delegate()->
+      GetUsageCachePathForOriginAndType(origin_, type_);
 }
 
 FileSystemURL SandboxFileSystemTestHelper::CreateURL(
@@ -124,23 +124,23 @@ SandboxFileSystemTestHelper::NewOperationContext() {
 
 void SandboxFileSystemTestHelper::AddFileChangeObserver(
     FileChangeObserver* observer) {
-  file_system_context_->sandbox_backend()->
+  file_system_context_->sandbox_backend()->GetQuotaUtil()->
       AddFileChangeObserver(type_, observer, NULL);
 }
 
 FileSystemUsageCache* SandboxFileSystemTestHelper::usage_cache() {
-  return file_system_context()->sandbox_context()->usage_cache();
+  return file_system_context()->sandbox_delegate()->usage_cache();
 }
 
 void SandboxFileSystemTestHelper::SetUpFileSystem() {
   DCHECK(file_system_context_.get());
   DCHECK(file_system_context_->sandbox_backend()->CanHandleType(type_));
 
-  file_util_ = file_system_context_->GetFileUtil(type_);
+  file_util_ = file_system_context_->sandbox_delegate()->sync_file_util();
   DCHECK(file_util_);
 
   // Prepare the origin's root directory.
-  file_system_context_->sandbox_context()->
+  file_system_context_->sandbox_delegate()->
       GetBaseDirectoryForOriginAndType(origin_, type_, true /* create */);
 
   // Initialize the usage cache file.

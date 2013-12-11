@@ -10,15 +10,16 @@
 
 #include "GrBinHashKey.h"
 #include "GrDrawState.h"
-#include "GrGpu.h"
 #include "GrGLContext.h"
-#include "GrGLIndexBuffer.h"
 #include "GrGLIRect.h"
+#include "GrGLIndexBuffer.h"
 #include "GrGLProgram.h"
 #include "GrGLStencilBuffer.h"
 #include "GrGLTexture.h"
 #include "GrGLVertexArray.h"
 #include "GrGLVertexBuffer.h"
+#include "GrGpu.h"
+#include "SkTypes.h"
 #include "../GrTHashCache.h"
 
 #ifdef SK_DEVELOPER
@@ -31,6 +32,7 @@ public:
     virtual ~GrGpuGL();
 
     const GrGLInterface* glInterface() const { return fGLContext.interface(); }
+    const GrGLContextInfo& ctxInfo() const { return fGLContext.info(); }
     GrGLBinding glBinding() const { return fGLContext.info().binding(); }
     GrGLVersion glVersion() const { return fGLContext.info().version(); }
     GrGLSLGeneration glslGeneration() const { return fGLContext.info().glslGeneration(); }
@@ -169,9 +171,9 @@ private:
 
     static bool BlendCoeffReferencesConstant(GrBlendCoeff coeff);
 
-    class ProgramCache : public ::GrNoncopyable {
+    class ProgramCache : public ::SkNoncopyable {
     public:
-        ProgramCache(const GrGLContext& gl);
+        ProgramCache(GrGpuGL* gpu);
         ~ProgramCache();
 
         void abandon();
@@ -203,7 +205,7 @@ private:
 
         int                         fCount;
         unsigned int                fCurrLRUStamp;
-        const GrGLContext&          fGL;
+        GrGpuGL*                    fGpu;
 #ifdef PROGRAM_CACHE_STATS
         int                         fTotalRequests;
         int                         fCacheMisses;
@@ -302,6 +304,9 @@ private:
             fDefaultVertexArrayBoundIndexBufferID = false;
             fDefaultVertexArrayBoundIndexBufferIDIsValid = false;
             fDefaultVertexArrayAttribState.invalidate();
+            if (NULL != fVBOVertexArray) {
+                fVBOVertexArray->invalidateCachedState();
+            }
         }
 
         void notifyVertexArrayDelete(GrGLuint id) {
@@ -313,7 +318,7 @@ private:
 
         void setVertexArrayID(GrGpuGL* gpu, GrGLuint arrayID) {
             if (!gpu->glCaps().vertexArrayObjectSupport()) {
-                GrAssert(0 == arrayID);
+                SkASSERT(0 == arrayID);
                 return;
             }
             if (!fBoundVertexArrayIDIsValid || arrayID != fBoundVertexArrayID) {
@@ -417,7 +422,7 @@ private:
     } fHWAAState;
 
 
-    GrGLProgram::MatrixState    fHWPathStencilMatrixState;
+    GrGLProgram::MatrixState    fHWProjectionMatrixState;
 
     GrStencilSettings           fHWStencilSettings;
     TriState                    fHWStencilTestEnabled;

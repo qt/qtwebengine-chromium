@@ -43,7 +43,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline SpinButtonElement::SpinButtonElement(Document* document, SpinButtonOwner& spinButtonOwner)
+inline SpinButtonElement::SpinButtonElement(Document& document, SpinButtonOwner& spinButtonOwner)
     : HTMLDivElement(divTag, document)
     , m_spinButtonOwner(&spinButtonOwner)
     , m_capturing(false)
@@ -53,7 +53,7 @@ inline SpinButtonElement::SpinButtonElement(Document* document, SpinButtonOwner&
 {
 }
 
-PassRefPtr<SpinButtonElement> SpinButtonElement::create(Document* document, SpinButtonOwner& spinButtonOwner)
+PassRefPtr<SpinButtonElement> SpinButtonElement::create(Document& document, SpinButtonOwner& spinButtonOwner)
 {
     RefPtr<SpinButtonElement> element = adoptRef(new SpinButtonElement(document, spinButtonOwner));
     element->setPart(AtomicString("-webkit-inner-spin-button", AtomicString::ConstructFromLiteral));
@@ -116,10 +116,10 @@ void SpinButtonElement::defaultEventHandler(Event* event)
     else if (event->type() == eventNames().mousemoveEvent) {
         if (box->pixelSnappedBorderBoxRect().contains(local)) {
             if (!m_capturing) {
-                if (Frame* frame = document()->frame()) {
+                if (Frame* frame = document().frame()) {
                     frame->eventHandler()->setCapturingMouseEventsNode(this);
                     m_capturing = true;
-                    if (Page* page = document()->page())
+                    if (Page* page = document().page())
                         page->chrome().registerPopupOpeningObserver(this);
                 }
             }
@@ -192,10 +192,10 @@ void SpinButtonElement::releaseCapture()
 {
     stopRepeatingTimer();
     if (m_capturing) {
-        if (Frame* frame = document()->frame()) {
+        if (Frame* frame = document().frame()) {
             frame->eventHandler()->setCapturingMouseEventsNode(0);
             m_capturing = false;
-            if (Page* page = document()->page())
+            if (Page* page = document().page())
                 page->chrome().unregisterPopupOpeningObserver(this);
         }
     }
@@ -230,7 +230,7 @@ void SpinButtonElement::step(int amount)
     // On Mac OS, NSStepper updates the value for the button under the mouse
     // cursor regardless of the button pressed at the beginning. So the
     // following check is not needed for Mac OS.
-#if !OS(DARWIN)
+#if !OS(MACOSX)
     if (m_upDownState != m_pressStartingState)
         return;
 #endif

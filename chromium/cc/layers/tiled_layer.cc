@@ -86,7 +86,7 @@ class UpdatableTile : public LayerTilingData::Tile {
 
 TiledLayer::TiledLayer()
     : ContentsScalingLayer(),
-      texture_format_(GL_INVALID_ENUM),
+      texture_format_(RGBA_8888),
       skips_draw_(false),
       failed_update_(false),
       tiling_option_(AUTO_TILE) {
@@ -235,9 +235,7 @@ void TiledLayer::PushPropertiesTo(LayerImpl* layer) {
   needs_push_properties_ = true;
 }
 
-bool TiledLayer::BlocksPendingCommit() const { return true; }
-
-PrioritizedResourceManager* TiledLayer::ResourceManager() const {
+PrioritizedResourceManager* TiledLayer::ResourceManager() {
   if (!layer_tree_host())
     return NULL;
   return layer_tree_host()->contents_texture_manager();
@@ -730,6 +728,10 @@ void TiledLayer::UpdateScrollPrediction() {
 bool TiledLayer::Update(ResourceUpdateQueue* queue,
                         const OcclusionTracker* occlusion) {
   DCHECK(!skips_draw_ && !failed_update_);  // Did ResetUpdateState get skipped?
+
+  // Tiled layer always causes commits to wait for activation, as it does
+  // not support pending trees.
+  SetNextCommitWaitsForActivation();
 
   bool updated = false;
 

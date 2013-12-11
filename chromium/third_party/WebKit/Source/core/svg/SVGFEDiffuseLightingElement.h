@@ -22,6 +22,7 @@
 #ifndef SVGFEDiffuseLightingElement_h
 #define SVGFEDiffuseLightingElement_h
 
+#include "SVGNames.h"
 #include "core/svg/SVGFELightElement.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 
@@ -32,11 +33,11 @@ class SVGColor;
 
 class SVGFEDiffuseLightingElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
-    static PassRefPtr<SVGFEDiffuseLightingElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGFEDiffuseLightingElement> create(const QualifiedName&, Document&);
     void lightElementAttributeChanged(const SVGFELightElement*, const QualifiedName&);
 
 private:
-    SVGFEDiffuseLightingElement(const QualifiedName&, Document*);
+    SVGFEDiffuseLightingElement(const QualifiedName&, Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
@@ -55,6 +56,12 @@ private:
         DECLARE_ANIMATED_NUMBER(KernelUnitLengthY, kernelUnitLengthY)
     END_DECLARE_ANIMATED_PROPERTIES
 };
+
+inline SVGFEDiffuseLightingElement* toSVGFEDiffuseLightingElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::feDiffuseLightingTag));
+    return static_cast<SVGFEDiffuseLightingElement*>(node);
+}
 
 } // namespace WebCore
 

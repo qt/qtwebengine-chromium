@@ -270,6 +270,8 @@
             'installer/mini_installer/chrome.release',
             'installer/setup/archive_patch_helper.cc',
             'installer/setup/archive_patch_helper.h',
+            'installer/setup/cf_migration.cc',
+            'installer/setup/cf_migration.h',
             'installer/setup/chrome_frame_quick_enable.cc',
             'installer/setup/chrome_frame_quick_enable.h',
             'installer/setup/chrome_frame_ready_mode.cc',
@@ -553,7 +555,6 @@
           # TODO(mmoss) Any convenient way to get all the relevant build
           # files? (e.g. all locales, resources, etc.)
           '<(PRODUCT_DIR)/chrome',
-          '<(PRODUCT_DIR)/chrome.pak',
           '<(PRODUCT_DIR)/chrome_sandbox',
           '<(PRODUCT_DIR)/libffmpegsumo.so',
           '<(PRODUCT_DIR)/libppGoogleNaClPluginChrome.so',

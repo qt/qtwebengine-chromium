@@ -5,8 +5,9 @@
 #include "net/test/embedded_test_server/embedded_test_server.h"
 
 #include "base/bind.h"
-#include "base/files/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/stl_util.h"
@@ -59,7 +60,7 @@ scoped_ptr<HttpResponse> HandleFileRequest(
 
   base::FilePath file_path(server_root.AppendASCII(request_path));
   std::string file_contents;
-  if (!file_util::ReadFileToString(file_path, &file_contents))
+  if (!base::ReadFileToString(file_path, &file_contents))
     return scoped_ptr<HttpResponse>();
 
   base::FilePath headers_path(
@@ -67,7 +68,7 @@ scoped_ptr<HttpResponse> HandleFileRequest(
 
   if (base::PathExists(headers_path)) {
     std::string headers_contents;
-    if (!file_util::ReadFileToString(headers_path, &headers_contents))
+    if (!base::ReadFileToString(headers_path, &headers_contents))
       return scoped_ptr<HttpResponse>();
 
     scoped_ptr<CustomHttpResponse> http_response(
@@ -118,15 +119,10 @@ EmbeddedTestServer::~EmbeddedTestServer() {
 bool EmbeddedTestServer::InitializeAndWaitUntilReady() {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  base::RunLoop run_loop;
-  if (!io_thread_->PostTaskAndReply(
-          FROM_HERE,
-          base::Bind(&EmbeddedTestServer::InitializeOnIOThread,
-                     base::Unretained(this)),
-          run_loop.QuitClosure())) {
+  if (!PostTaskToIOThreadAndWait(base::Bind(
+          &EmbeddedTestServer::InitializeOnIOThread, base::Unretained(this)))) {
     return false;
   }
-  run_loop.Run();
 
   return Started() && base_url_.is_valid();
 }
@@ -134,17 +130,8 @@ bool EmbeddedTestServer::InitializeAndWaitUntilReady() {
 bool EmbeddedTestServer::ShutdownAndWaitUntilComplete() {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  base::RunLoop run_loop;
-  if (!io_thread_->PostTaskAndReply(
-          FROM_HERE,
-          base::Bind(&EmbeddedTestServer::ShutdownOnIOThread,
-                     base::Unretained(this)),
-          run_loop.QuitClosure())) {
-    return false;
-  }
-  run_loop.Run();
-
-  return true;
+  return PostTaskToIOThreadAndWait(base::Bind(
+      &EmbeddedTestServer::ShutdownOnIOThread, base::Unretained(this)));
 }
 
 void EmbeddedTestServer::InitializeOnIOThread() {
@@ -153,10 +140,10 @@ void EmbeddedTestServer::InitializeOnIOThread() {
 
   SocketDescriptor socket_descriptor =
       TCPListenSocket::CreateAndBindAnyPort("127.0.0.1", &port_);
-  if (socket_descriptor == TCPListenSocket::kInvalidSocket)
+  if (socket_descriptor == kInvalidSocket)
     return;
 
-  listen_socket_ = new HttpListenSocket(socket_descriptor, this);
+  listen_socket_.reset(new HttpListenSocket(socket_descriptor, this));
   listen_socket_->Listen();
 
   IPEndPoint address;
@@ -171,7 +158,7 @@ void EmbeddedTestServer::InitializeOnIOThread() {
 void EmbeddedTestServer::ShutdownOnIOThread() {
   DCHECK(io_thread_->BelongsToCurrentThread());
 
-  listen_socket_ = NULL;  // Release the listen socket.
+  listen_socket_.reset();
   STLDeleteContainerPairSecondPointers(connections_.begin(),
                                        connections_.end());
   connections_.clear();
@@ -224,15 +211,17 @@ void EmbeddedTestServer::RegisterRequestHandler(
   request_handlers_.push_back(callback);
 }
 
-void EmbeddedTestServer::DidAccept(StreamListenSocket* server,
-                           StreamListenSocket* connection) {
+void EmbeddedTestServer::DidAccept(
+    StreamListenSocket* server,
+    scoped_ptr<StreamListenSocket> connection) {
   DCHECK(io_thread_->BelongsToCurrentThread());
 
   HttpConnection* http_connection = new HttpConnection(
-      connection,
+      connection.Pass(),
       base::Bind(&EmbeddedTestServer::HandleRequest,
                  weak_factory_.GetWeakPtr()));
-  connections_[connection] = http_connection;
+  // TODO(szym): Make HttpConnection the StreamListenSocket delegate.
+  connections_[http_connection->socket_.get()] = http_connection;
 }
 
 void EmbeddedTestServer::DidRead(StreamListenSocket* connection,
@@ -270,6 +259,28 @@ HttpConnection* EmbeddedTestServer::FindConnection(
     return NULL;
   }
   return it->second;
+}
+
+bool EmbeddedTestServer::PostTaskToIOThreadAndWait(
+    const base::Closure& closure) {
+  // Note that PostTaskAndReply below requires base::MessageLoopProxy::current()
+  // to return a loop for posting the reply task. However, in order to make
+  // EmbeddedTestServer universally usable, it needs to cope with the situation
+  // where it's running on a thread on which a message loop is not (yet)
+  // available or as has been destroyed already.
+  //
+  // To handle this situation, create temporary message loop to support the
+  // PostTaskAndReply operation if the current thread as no message loop.
+  scoped_ptr<base::MessageLoop> temporary_loop;
+  if (!base::MessageLoop::current())
+    temporary_loop.reset(new base::MessageLoop());
+
+  base::RunLoop run_loop;
+  if (!io_thread_->PostTaskAndReply(FROM_HERE, closure, run_loop.QuitClosure()))
+    return false;
+  run_loop.Run();
+
+  return true;
 }
 
 }  // namespace test_server

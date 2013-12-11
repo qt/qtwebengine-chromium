@@ -40,9 +40,27 @@
 #define CKM_NSS_TLS_MASTER_KEY_DERIVE_DH_SHA256 (CKM_NSS + 24)
 #endif
 
+/* This is a bodge to allow this code to be compiled against older NSS
+ * headers. */
+#ifndef CKM_NSS_CHACHA20_POLY1305
+#define CKM_NSS_CHACHA20_POLY1305               (CKM_NSS + 26)
+
+typedef struct CK_NSS_AEAD_PARAMS {
+    CK_BYTE_PTR  pIv;  /* This is the nonce. */
+    CK_ULONG     ulIvLen;
+    CK_BYTE_PTR  pAAD;
+    CK_ULONG     ulAADLen;
+    CK_ULONG     ulTagLen;
+} CK_NSS_AEAD_PARAMS;
+
+#endif
+
 #include <stdio.h>
 #ifdef NSS_ENABLE_ZLIB
 #include "zlib.h"
+#endif
+#ifdef LINUX
+#include <dlfcn.h>
 #endif
 
 #ifndef PK11_SETATTRS
@@ -78,6 +96,13 @@ static int       ssl3_OIDToTLSHashAlgorithm(SECOidTag oid);
 static SECStatus Null_Cipher(void *ctx, unsigned char *output, int *outputLen,
 			     int maxOutputLen, const unsigned char *input,
 			     int inputLen);
+#ifndef NO_PKCS11_BYPASS
+static SECStatus ssl3_AESGCMBypass(ssl3KeyMaterial *keys, PRBool doDecrypt,
+				   unsigned char *out, int *outlen, int maxout,
+				   const unsigned char *in, int inlen,
+				   const unsigned char *additionalData,
+				   int additionalDataLen);
+#endif
 
 #define MAX_SEND_BUF_LENGTH 32000 /* watch for 16-bit integer overflow */
 #define MIN_SEND_BUF_LENGTH  4000
@@ -89,6 +114,15 @@ static SECStatus Null_Cipher(void *ctx, unsigned char *output, int *outputLen,
  */
 static ssl3CipherSuiteCfg cipherSuites[ssl_V3_SUITES_IMPLEMENTED] = {
    /*      cipher_suite                         policy      enabled is_present*/
+#ifdef NSS_ENABLE_ECC
+ { TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305, SSL_NOT_ALLOWED, PR_FALSE,PR_FALSE},
+ { TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,   SSL_NOT_ALLOWED, PR_FALSE,PR_FALSE},
+ { TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,SSL_NOT_ALLOWED, PR_FALSE,PR_FALSE},
+ { TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,  SSL_NOT_ALLOWED, PR_FALSE,PR_FALSE},
+#endif /* NSS_ENABLE_ECC */
+ { TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,    SSL_NOT_ALLOWED, PR_TRUE,PR_FALSE},
+ { TLS_RSA_WITH_AES_128_GCM_SHA256,        SSL_NOT_ALLOWED, PR_TRUE,PR_FALSE},
+
 #ifdef NSS_ENABLE_ECC
  { TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,   SSL_NOT_ALLOWED, PR_FALSE,PR_FALSE},
  { TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,     SSL_NOT_ALLOWED, PR_FALSE,PR_FALSE},
@@ -233,23 +267,31 @@ static SSL3Statistics ssl3stats;
 
 /* indexed by SSL3BulkCipher */
 static const ssl3BulkCipherDef bulk_cipher_defs[] = {
-    /* cipher          calg        keySz secretSz  type  ivSz BlkSz keygen */
-    {cipher_null,      calg_null,      0,  0, type_stream,  0, 0, kg_null},
-    {cipher_rc4,       calg_rc4,      16, 16, type_stream,  0, 0, kg_strong},
-    {cipher_rc4_40,    calg_rc4,      16,  5, type_stream,  0, 0, kg_export},
-    {cipher_rc4_56,    calg_rc4,      16,  7, type_stream,  0, 0, kg_export},
-    {cipher_rc2,       calg_rc2,      16, 16, type_block,   8, 8, kg_strong},
-    {cipher_rc2_40,    calg_rc2,      16,  5, type_block,   8, 8, kg_export},
-    {cipher_des,       calg_des,       8,  8, type_block,   8, 8, kg_strong},
-    {cipher_3des,      calg_3des,     24, 24, type_block,   8, 8, kg_strong},
-    {cipher_des40,     calg_des,       8,  5, type_block,   8, 8, kg_export},
-    {cipher_idea,      calg_idea,     16, 16, type_block,   8, 8, kg_strong},
-    {cipher_aes_128,   calg_aes,      16, 16, type_block,  16,16, kg_strong},
-    {cipher_aes_256,   calg_aes,      32, 32, type_block,  16,16, kg_strong},
-    {cipher_camellia_128, calg_camellia,16, 16, type_block,  16,16, kg_strong},
-    {cipher_camellia_256, calg_camellia,32, 32, type_block,  16,16, kg_strong},
-    {cipher_seed,      calg_seed,     16, 16, type_block,  16,16, kg_strong},
-    {cipher_missing,   calg_null,      0,  0, type_stream,  0, 0, kg_null},
+    /*                                       |--------- Lengths --------| */
+    /* cipher             calg               k  s  type         i  b  t  n */
+    /*                                       e  e               v  l  a  o */
+    /*                                       y  c               |  o  g  n */
+    /*                                       |  r               |  c  |  c */
+    /*                                       |  e               |  k  |  e */
+    /*                                       |  t               |  |  |  | */
+    {cipher_null,         calg_null,         0, 0, type_stream, 0, 0, 0, 0},
+    {cipher_rc4,          calg_rc4,         16,16, type_stream, 0, 0, 0, 0},
+    {cipher_rc4_40,       calg_rc4,         16, 5, type_stream, 0, 0, 0, 0},
+    {cipher_rc4_56,       calg_rc4,         16, 7, type_stream, 0, 0, 0, 0},
+    {cipher_rc2,          calg_rc2,         16,16, type_block,  8, 8, 0, 0},
+    {cipher_rc2_40,       calg_rc2,         16, 5, type_block,  8, 8, 0, 0},
+    {cipher_des,          calg_des,          8, 8, type_block,  8, 8, 0, 0},
+    {cipher_3des,         calg_3des,        24,24, type_block,  8, 8, 0, 0},
+    {cipher_des40,        calg_des,          8, 5, type_block,  8, 8, 0, 0},
+    {cipher_idea,         calg_idea,        16,16, type_block,  8, 8, 0, 0},
+    {cipher_aes_128,      calg_aes,         16,16, type_block, 16,16, 0, 0},
+    {cipher_aes_256,      calg_aes,         32,32, type_block, 16,16, 0, 0},
+    {cipher_camellia_128, calg_camellia,    16,16, type_block, 16,16, 0, 0},
+    {cipher_camellia_256, calg_camellia,    32,32, type_block, 16,16, 0, 0},
+    {cipher_seed,         calg_seed,        16,16, type_block, 16,16, 0, 0},
+    {cipher_aes_128_gcm,  calg_aes_gcm,     16,16, type_aead,   4, 0,16, 8},
+    {cipher_chacha20,     calg_chacha20,    32,32, type_aead,   0, 0,16, 0},
+    {cipher_missing,      calg_null,         0, 0, type_stream, 0, 0, 0, 0},
 };
 
 static const ssl3KEADef kea_defs[] = 
@@ -371,6 +413,13 @@ static const ssl3CipherSuiteDef cipher_suite_defs[] =
     {SSL_RSA_FIPS_WITH_3DES_EDE_CBC_SHA, cipher_3des, mac_sha, kea_rsa_fips},
     {SSL_RSA_FIPS_WITH_DES_CBC_SHA, cipher_des,    mac_sha, kea_rsa_fips},
 
+    {TLS_DHE_RSA_WITH_AES_128_GCM_SHA256, cipher_aes_128_gcm, mac_aead, kea_dhe_rsa},
+    {TLS_RSA_WITH_AES_128_GCM_SHA256, cipher_aes_128_gcm, mac_aead, kea_rsa},
+    {TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, cipher_aes_128_gcm, mac_aead, kea_ecdhe_rsa},
+    {TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, cipher_aes_128_gcm, mac_aead, kea_ecdhe_ecdsa},
+    {TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305, cipher_chacha20, mac_aead, kea_ecdhe_rsa},
+    {TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305, cipher_chacha20, mac_aead, kea_ecdhe_ecdsa},
+
 #ifdef NSS_ENABLE_ECC
     {TLS_ECDH_ECDSA_WITH_NULL_SHA,        cipher_null, mac_sha, kea_ecdh_ecdsa},
     {TLS_ECDH_ECDSA_WITH_RC4_128_SHA,      cipher_rc4, mac_sha, kea_ecdh_ecdsa},
@@ -434,25 +483,30 @@ static const SSLCipher2Mech alg2Mech[] = {
     { calg_aes      , CKM_AES_CBC			},
     { calg_camellia , CKM_CAMELLIA_CBC			},
     { calg_seed     , CKM_SEED_CBC			},
+    { calg_aes_gcm  , CKM_AES_GCM			},
+    { calg_chacha20 , CKM_NSS_CHACHA20_POLY1305		},
 /*  { calg_init     , (CK_MECHANISM_TYPE)0x7fffffffL    }  */
 };
 
-#define mmech_null     (CK_MECHANISM_TYPE)0x80000000L
+#define mmech_invalid  (CK_MECHANISM_TYPE)0x80000000L
 #define mmech_md5      CKM_SSL3_MD5_MAC
 #define mmech_sha      CKM_SSL3_SHA1_MAC
 #define mmech_md5_hmac CKM_MD5_HMAC
 #define mmech_sha_hmac CKM_SHA_1_HMAC
 #define mmech_sha256_hmac CKM_SHA256_HMAC
+#define mmech_sha384_hmac CKM_SHA384_HMAC
+#define mmech_sha512_hmac CKM_SHA512_HMAC
 
 static const ssl3MACDef mac_defs[] = { /* indexed by SSL3MACAlgorithm */
     /* pad_size is only used for SSL 3.0 MAC. See RFC 6101 Sec. 5.2.3.1. */
     /* mac      mmech       pad_size  mac_size                       */
-    { mac_null, mmech_null,       0,  0          },
+    { mac_null, mmech_invalid,    0,  0          },
     { mac_md5,  mmech_md5,       48,  MD5_LENGTH },
     { mac_sha,  mmech_sha,       40,  SHA1_LENGTH},
     {hmac_md5,  mmech_md5_hmac,   0,  MD5_LENGTH },
     {hmac_sha,  mmech_sha_hmac,   0,  SHA1_LENGTH},
     {hmac_sha256, mmech_sha256_hmac, 0, SHA256_LENGTH},
+    { mac_aead, mmech_invalid,    0,  0          },
 };
 
 /* indexed by SSL3BulkCipher */
@@ -472,6 +526,7 @@ const char * const ssl3_cipherName[] = {
     "Camellia-128",
     "Camellia-256",
     "SEED-CBC",
+    "AES-128-GCM",
     "missing"
 };
 
@@ -576,8 +631,9 @@ void SSL_AtomicIncrementLong(long * x)
 }
 
 static PRBool
-ssl3_CipherSuiteAllowedForVersion(ssl3CipherSuite cipherSuite,
-				  SSL3ProtocolVersion version)
+ssl3_CipherSuiteAllowedForVersionRange(
+    ssl3CipherSuite cipherSuite,
+    const SSLVersionRange *vrange)
 {
     switch (cipherSuite) {
     /* See RFC 4346 A.5. Export cipher suites must not be used in TLS 1.1 or
@@ -594,15 +650,21 @@ ssl3_CipherSuiteAllowedForVersion(ssl3CipherSuite cipherSuite,
      *   SSL_DH_ANON_EXPORT_WITH_RC4_40_MD5:     never implemented
      *   SSL_DH_ANON_EXPORT_WITH_DES40_CBC_SHA:  never implemented
      */
-	return version <= SSL_LIBRARY_VERSION_TLS_1_0;
+	return vrange->min <= SSL_LIBRARY_VERSION_TLS_1_0;
+    case TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305:
+    case TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305:
     case TLS_DHE_RSA_WITH_AES_256_CBC_SHA256:
     case TLS_RSA_WITH_AES_256_CBC_SHA256:
     case TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256:
+    case TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256:
     case TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256:
+    case TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256:
     case TLS_DHE_RSA_WITH_AES_128_CBC_SHA256:
+    case TLS_DHE_RSA_WITH_AES_128_GCM_SHA256:
     case TLS_RSA_WITH_AES_128_CBC_SHA256:
+    case TLS_RSA_WITH_AES_128_GCM_SHA256:
     case TLS_RSA_WITH_NULL_SHA256:
-	return version >= SSL_LIBRARY_VERSION_TLS_1_2;
+	return vrange->max >= SSL_LIBRARY_VERSION_TLS_1_2;
     default:
 	return PR_TRUE;
     }
@@ -745,7 +807,8 @@ ssl3_config_match_init(sslSocket *ss)
 }
 
 
-/* return PR_TRUE if suite matches policy and enabled state */
+/* return PR_TRUE if suite matches policy, enabled state and is applicable to
+ * the given version range. */
 /* It would be a REALLY BAD THING (tm) if we ever permitted the use
 ** of a cipher that was NOT_ALLOWED.  So, if this is ever called with
 ** policy == SSL_NOT_ALLOWED, report no match.
@@ -753,7 +816,8 @@ ssl3_config_match_init(sslSocket *ss)
 /* adjust suite enabled to the availability of a token that can do the
  * cipher suite. */
 static PRBool
-config_match(ssl3CipherSuiteCfg *suite, int policy, PRBool enabled)
+config_match(ssl3CipherSuiteCfg *suite, int policy, PRBool enabled,
+	     const SSLVersionRange *vrange)
 {
     PORT_Assert(policy != SSL_NOT_ALLOWED && enabled != PR_FALSE);
     if (policy == SSL_NOT_ALLOWED || !enabled)
@@ -761,10 +825,13 @@ config_match(ssl3CipherSuiteCfg *suite, int policy, PRBool enabled)
     return (PRBool)(suite->enabled &&
                     suite->isPresent &&
 	            suite->policy != SSL_NOT_ALLOWED &&
-		    suite->policy <= policy);
+		    suite->policy <= policy &&
+		    ssl3_CipherSuiteAllowedForVersionRange(
+                        suite->cipher_suite, vrange));
 }
 
-/* return number of cipher suites that match policy and enabled state */
+/* return number of cipher suites that match policy, enabled state and are
+ * applicable for the configured protocol version range. */
 /* called from ssl3_SendClientHello and ssl3_ConstructV2CipherSpecsHack */
 static int
 count_cipher_suites(sslSocket *ss, int policy, PRBool enabled)
@@ -775,7 +842,7 @@ count_cipher_suites(sslSocket *ss, int policy, PRBool enabled)
     	return 0;
     }
     for (i = 0; i < ssl_V3_SUITES_IMPLEMENTED; i++) {
-	if (config_match(&ss->cipherSuites[i], policy, enabled))
+	if (config_match(&ss->cipherSuites[i], policy, enabled, &ss->vrange))
 	    count++;
     }
     if (count <= 0) {
@@ -792,6 +859,11 @@ static SECStatus
 Null_Cipher(void *ctx, unsigned char *output, int *outputLen, int maxOutputLen,
 	    const unsigned char *input, int inputLen)
 {
+    if (inputLen > maxOutputLen) {
+        *outputLen = 0;  /* Match PK11_CipherOp in setting outputLen */
+        PORT_SetError(SEC_ERROR_OUTPUT_LEN);
+        return SECFailure;
+    }
     *outputLen = inputLen;
     if (input != output)
 	PORT_Memcpy(output, input, inputLen);
@@ -1360,7 +1432,7 @@ ssl3_SetupPendingCipherSpec(sslSocket *ss)
     cipher = suite_def->bulk_cipher_alg;
     kea    = suite_def->key_exchange_alg;
     mac    = suite_def->mac_alg;
-    if (mac <= ssl_mac_sha && isTLS)
+    if (mac <= ssl_mac_sha && mac != ssl_mac_null && isTLS)
 	mac += 2;
 
     ss->ssl3.hs.suite_def = suite_def;
@@ -1554,7 +1626,6 @@ ssl3_InitPendingContextsBypass(sslSocket *ss)
       unsigned int       optArg2  = 0;
       PRBool             server_encrypts = ss->sec.isServer;
       SSLCipherAlgorithm calg;
-      SSLCompressionMethod compression_method;
       SECStatus          rv;
 
     PORT_Assert(ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
@@ -1565,7 +1636,17 @@ ssl3_InitPendingContextsBypass(sslSocket *ss)
     cipher_def    = pwSpec->cipher_def;
 
     calg = cipher_def->calg;
-    compression_method = pwSpec->compression_method;
+
+    if (calg == calg_aes_gcm) {
+	pwSpec->encode = NULL;
+	pwSpec->decode = NULL;
+	pwSpec->destroy = NULL;
+	pwSpec->encodeContext = NULL;
+	pwSpec->decodeContext = NULL;
+	pwSpec->aead = ssl3_AESGCMBypass;
+	ssl3_InitCompressionContext(pwSpec);
+	return SECSuccess;
+    }
 
     serverContext = pwSpec->server.cipher_context;
     clientContext = pwSpec->client.cipher_context;
@@ -1721,6 +1802,298 @@ ssl3_ParamFromIV(CK_MECHANISM_TYPE mtype, SECItem *iv, CK_ULONG ulEffectiveBits)
     return param;
 }
 
+/* ssl3_BuildRecordPseudoHeader writes the SSL/TLS pseudo-header (the data
+ * which is included in the MAC or AEAD additional data) to |out| and returns
+ * its length. See https://tools.ietf.org/html/rfc5246#section-6.2.3.3 for the
+ * definition of the AEAD additional data.
+ *
+ * TLS pseudo-header includes the record's version field, SSL's doesn't. Which
+ * pseudo-header defintiion to use should be decided based on the version of
+ * the protocol that was negotiated when the cipher spec became current, NOT
+ * based on the version value in the record itself, and the decision is passed
+ * to this function as the |includesVersion| argument. But, the |version|
+ * argument should be the record's version value.
+ */
+static unsigned int
+ssl3_BuildRecordPseudoHeader(unsigned char *out,
+			     SSL3SequenceNumber seq_num,
+			     SSL3ContentType type,
+			     PRBool includesVersion,
+			     SSL3ProtocolVersion version,
+			     PRBool isDTLS,
+			     int length)
+{
+    out[0] = (unsigned char)(seq_num.high >> 24);
+    out[1] = (unsigned char)(seq_num.high >> 16);
+    out[2] = (unsigned char)(seq_num.high >>  8);
+    out[3] = (unsigned char)(seq_num.high >>  0);
+    out[4] = (unsigned char)(seq_num.low  >> 24);
+    out[5] = (unsigned char)(seq_num.low  >> 16);
+    out[6] = (unsigned char)(seq_num.low  >>  8);
+    out[7] = (unsigned char)(seq_num.low  >>  0);
+    out[8] = type;
+
+    /* SSL3 MAC doesn't include the record's version field. */
+    if (!includesVersion) {
+	out[9]  = MSB(length);
+	out[10] = LSB(length);
+	return 11;
+    }
+
+    /* TLS MAC and AEAD additional data include version. */
+    if (isDTLS) {
+	SSL3ProtocolVersion dtls_version;
+
+	dtls_version = dtls_TLSVersionToDTLSVersion(version);
+	out[9]  = MSB(dtls_version);
+	out[10] = LSB(dtls_version);
+    } else {
+	out[9]  = MSB(version);
+	out[10] = LSB(version);
+    }
+    out[11] = MSB(length);
+    out[12] = LSB(length);
+    return 13;
+}
+
+typedef SECStatus (*PK11CryptFcn)(
+    PK11SymKey *symKey, CK_MECHANISM_TYPE mechanism, SECItem *param,
+    unsigned char *out, unsigned int *outLen, unsigned int maxLen,
+    const unsigned char *in, unsigned int inLen);
+
+static PK11CryptFcn pk11_encrypt = NULL;
+static PK11CryptFcn pk11_decrypt = NULL;
+
+static PRCallOnceType resolvePK11CryptOnce;
+
+static PRStatus
+ssl3_ResolvePK11CryptFunctions(void)
+{
+#ifdef LINUX
+    /* On Linux we use the system NSS libraries. Look up the PK11_Encrypt and
+     * PK11_Decrypt functions at run time. */
+    void *handle = dlopen(NULL, RTLD_LAZY);
+    if (!handle) {
+	PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+	return PR_FAILURE;
+    }
+    pk11_encrypt = (PK11CryptFcn)dlsym(handle, "PK11_Encrypt");
+    pk11_decrypt = (PK11CryptFcn)dlsym(handle, "PK11_Decrypt");
+    dlclose(handle);
+    return PR_SUCCESS;
+#else
+    /* On other platforms we use our own copy of NSS. PK11_Encrypt and
+     * PK11_Decrypt are known to be available. */
+    pk11_encrypt = PK11_Encrypt;
+    pk11_decrypt = PK11_Decrypt;
+    return PR_SUCCESS;
+#endif
+}
+
+/* 
+ * In NSS 3.15, PK11_Encrypt and PK11_Decrypt were added to provide access
+ * to the AES GCM implementation in the NSS softoken. So the presence of
+ * these two functions implies the NSS version supports AES GCM.
+ */
+static PRBool
+ssl3_HasGCMSupport(void)
+{
+    (void)PR_CallOnce(&resolvePK11CryptOnce, ssl3_ResolvePK11CryptFunctions);
+    return pk11_encrypt != NULL;
+}
+
+/* On this socket, disable the GCM cipher suites */
+SECStatus
+ssl3_DisableGCMSuites(sslSocket * ss)
+{
+    unsigned int i;
+
+    for (i = 0; i < PR_ARRAY_SIZE(cipher_suite_defs); i++) {
+	const ssl3CipherSuiteDef *cipher_def = &cipher_suite_defs[i];
+	if (cipher_def->bulk_cipher_alg == cipher_aes_128_gcm) {
+	    SECStatus rv = ssl3_CipherPrefSet(ss, cipher_def->cipher_suite,
+					      PR_FALSE);
+	    PORT_Assert(rv == SECSuccess); /* else is coding error */
+	}
+    }
+    return SECSuccess;
+}
+
+static SECStatus
+ssl3_AESGCM(ssl3KeyMaterial *keys,
+	    PRBool doDecrypt,
+	    unsigned char *out,
+	    int *outlen,
+	    int maxout,
+	    const unsigned char *in,
+	    int inlen,
+	    const unsigned char *additionalData,
+	    int additionalDataLen)
+{
+    SECItem            param;
+    SECStatus          rv = SECFailure;
+    unsigned char      nonce[12];
+    unsigned int       uOutLen;
+    CK_GCM_PARAMS      gcmParams;
+
+    static const int   tagSize = 16;
+    static const int   explicitNonceLen = 8;
+
+    /* See https://tools.ietf.org/html/rfc5288#section-3 for details of how the
+     * nonce is formed. */
+    memcpy(nonce, keys->write_iv, 4);
+    if (doDecrypt) {
+	memcpy(nonce + 4, in, explicitNonceLen);
+	in += explicitNonceLen;
+	inlen -= explicitNonceLen;
+	*outlen = 0;
+    } else {
+	if (maxout < explicitNonceLen) {
+	    PORT_SetError(SEC_ERROR_INPUT_LEN);
+	    return SECFailure;
+        }
+	/* Use the 64-bit sequence number as the explicit nonce. */
+	memcpy(nonce + 4, additionalData, explicitNonceLen);
+	memcpy(out, additionalData, explicitNonceLen);
+	out += explicitNonceLen;
+	maxout -= explicitNonceLen;
+	*outlen = explicitNonceLen;
+    }
+
+    param.type = siBuffer;
+    param.data = (unsigned char *) &gcmParams;
+    param.len = sizeof(gcmParams);
+    gcmParams.pIv = nonce;
+    gcmParams.ulIvLen = sizeof(nonce);
+    gcmParams.pAAD = (unsigned char *)additionalData;  /* const cast */
+    gcmParams.ulAADLen = additionalDataLen;
+    gcmParams.ulTagBits = tagSize * 8;
+
+    if (doDecrypt) {
+	rv = pk11_decrypt(keys->write_key, CKM_AES_GCM, &param, out, &uOutLen,
+			  maxout, in, inlen);
+    } else {
+	rv = pk11_encrypt(keys->write_key, CKM_AES_GCM, &param, out, &uOutLen,
+			  maxout, in, inlen);
+    }
+    *outlen += (int) uOutLen;
+
+    return rv;
+}
+
+#ifndef NO_PKCS11_BYPASS
+static SECStatus
+ssl3_AESGCMBypass(ssl3KeyMaterial *keys,
+		  PRBool doDecrypt,
+		  unsigned char *out,
+		  int *outlen,
+		  int maxout,
+		  const unsigned char *in,
+		  int inlen,
+		  const unsigned char *additionalData,
+		  int additionalDataLen)
+{
+    SECStatus          rv = SECFailure;
+    unsigned char      nonce[12];
+    unsigned int       uOutLen;
+    AESContext        *cx;
+    CK_GCM_PARAMS      gcmParams;
+
+    static const int   tagSize = 16;
+    static const int   explicitNonceLen = 8;
+
+    /* See https://tools.ietf.org/html/rfc5288#section-3 for details of how the
+     * nonce is formed. */
+    PORT_Assert(keys->write_iv_item.len == 4);
+    if (keys->write_iv_item.len != 4) {
+	PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+	return SECFailure;
+    }
+    memcpy(nonce, keys->write_iv_item.data, 4);
+    if (doDecrypt) {
+	memcpy(nonce + 4, in, explicitNonceLen);
+	in += explicitNonceLen;
+	inlen -= explicitNonceLen;
+	*outlen = 0;
+    } else {
+	if (maxout < explicitNonceLen) {
+	    PORT_SetError(SEC_ERROR_INPUT_LEN);
+	    return SECFailure;
+        }
+	/* Use the 64-bit sequence number as the explicit nonce. */
+	memcpy(nonce + 4, additionalData, explicitNonceLen);
+	memcpy(out, additionalData, explicitNonceLen);
+	out += explicitNonceLen;
+	maxout -= explicitNonceLen;
+	*outlen = explicitNonceLen;
+    }
+
+    gcmParams.pIv = nonce;
+    gcmParams.ulIvLen = sizeof(nonce);
+    gcmParams.pAAD = (unsigned char *)additionalData;  /* const cast */
+    gcmParams.ulAADLen = additionalDataLen;
+    gcmParams.ulTagBits = tagSize * 8;
+
+    cx = (AESContext *)keys->cipher_context;
+    rv = AES_InitContext(cx, keys->write_key_item.data,
+			 keys->write_key_item.len,
+			 (unsigned char *)&gcmParams, NSS_AES_GCM, !doDecrypt,
+			 AES_BLOCK_SIZE);
+    if (rv != SECSuccess) {
+	return rv;
+    }
+    if (doDecrypt) {
+	rv = AES_Decrypt(cx, out, &uOutLen, maxout, in, inlen);
+    } else {
+	rv = AES_Encrypt(cx, out, &uOutLen, maxout, in, inlen);
+    }
+    AES_DestroyContext(cx, PR_FALSE);
+    *outlen += (int) uOutLen;
+
+    return rv;
+}
+#endif
+
+static SECStatus
+ssl3_ChaCha20Poly1305(
+	ssl3KeyMaterial *keys,
+	PRBool doDecrypt,
+	unsigned char *out,
+	int *outlen,
+	int maxout,
+	const unsigned char *in,
+	int inlen,
+	const unsigned char *additionalData,
+	int additionalDataLen)
+{
+    SECItem            param;
+    SECStatus          rv = SECFailure;
+    unsigned int       uOutLen;
+    CK_NSS_AEAD_PARAMS aeadParams;
+    static const int   tagSize = 16;
+
+    param.type = siBuffer;
+    param.len = sizeof(aeadParams);
+    param.data = (unsigned char *) &aeadParams;
+    memset(&aeadParams, 0, sizeof(aeadParams));
+    aeadParams.pIv = (unsigned char *) additionalData;
+    aeadParams.ulIvLen = 8;
+    aeadParams.pAAD = (unsigned char *) additionalData;
+    aeadParams.ulAADLen = additionalDataLen;
+    aeadParams.ulTagLen = tagSize;
+
+    if (doDecrypt) {
+	rv = pk11_decrypt(keys->write_key, CKM_NSS_CHACHA20_POLY1305, &param,
+			  out, &uOutLen, maxout, in, inlen);
+    } else {
+	rv = pk11_encrypt(keys->write_key, CKM_NSS_CHACHA20_POLY1305, &param,
+			  out, &uOutLen, maxout, in, inlen);
+    }
+    *outlen = (int) uOutLen;
+
+    return rv;
+}
+
 /* Initialize encryption and MAC contexts for pending spec.
  * Master Secret already is derived.
  * Caller holds Spec write lock.
@@ -1748,14 +2121,31 @@ ssl3_InitPendingContextsPKCS11(sslSocket *ss)
     pwSpec        = ss->ssl3.pwSpec;
     cipher_def    = pwSpec->cipher_def;
     macLength     = pwSpec->mac_size;
+    calg          = cipher_def->calg;
+    PORT_Assert(alg2Mech[calg].calg == calg);
+
+    pwSpec->client.write_mac_context = NULL;
+    pwSpec->server.write_mac_context = NULL;
+
+    if (calg == calg_aes_gcm || calg == calg_chacha20) {
+	pwSpec->encode = NULL;
+	pwSpec->decode = NULL;
+	pwSpec->destroy = NULL;
+	pwSpec->encodeContext = NULL;
+	pwSpec->decodeContext = NULL;
+	if (calg == calg_aes_gcm) {
+	    pwSpec->aead = ssl3_AESGCM;
+	} else {
+	    pwSpec->aead = ssl3_ChaCha20Poly1305;
+	}
+	return SECSuccess;
+    }
 
     /* 
     ** Now setup the MAC contexts, 
     **   crypto contexts are setup below.
     */
 
-    pwSpec->client.write_mac_context = NULL;
-    pwSpec->server.write_mac_context = NULL;
     mac_mech       = pwSpec->mac_def->mmech;
     mac_param.data = (unsigned char *)&macLength;
     mac_param.len  = sizeof(macLength);
@@ -1777,9 +2167,6 @@ ssl3_InitPendingContextsPKCS11(sslSocket *ss)
     /* 
     ** Now setup the crypto contexts.
     */
-
-    calg = cipher_def->calg;
-    PORT_Assert(alg2Mech[calg].calg == calg);
 
     if (calg == calg_null) {
 	pwSpec->encode  = Null_Cipher;
@@ -1988,10 +2375,8 @@ static SECStatus
 ssl3_ComputeRecordMAC(
     ssl3CipherSpec *   spec,
     PRBool             useServerMacKey,
-    PRBool             isDTLS,
-    SSL3ContentType    type,
-    SSL3ProtocolVersion version,
-    SSL3SequenceNumber seq_num,
+    const unsigned char *header,
+    unsigned int       headerLen,
     const SSL3Opaque * input,
     int                inputLength,
     unsigned char *    outbuf,
@@ -1999,56 +2384,8 @@ ssl3_ComputeRecordMAC(
 {
     const ssl3MACDef * mac_def;
     SECStatus          rv;
-#ifndef NO_PKCS11_BYPASS
-    PRBool             isTLS;
-#endif
-    unsigned int       tempLen;
-    unsigned char      temp[MAX_MAC_LENGTH];
 
-    temp[0] = (unsigned char)(seq_num.high >> 24);
-    temp[1] = (unsigned char)(seq_num.high >> 16);
-    temp[2] = (unsigned char)(seq_num.high >>  8);
-    temp[3] = (unsigned char)(seq_num.high >>  0);
-    temp[4] = (unsigned char)(seq_num.low  >> 24);
-    temp[5] = (unsigned char)(seq_num.low  >> 16);
-    temp[6] = (unsigned char)(seq_num.low  >>  8);
-    temp[7] = (unsigned char)(seq_num.low  >>  0);
-    temp[8] = type;
-
-    /* TLS MAC includes the record's version field, SSL's doesn't.
-    ** We decide which MAC defintiion to use based on the version of 
-    ** the protocol that was negotiated when the spec became current,
-    ** NOT based on the version value in the record itself.
-    ** But, we use the record'v version value in the computation.
-    */
-    if (spec->version <= SSL_LIBRARY_VERSION_3_0) {
-	temp[9]  = MSB(inputLength);
-	temp[10] = LSB(inputLength);
-	tempLen  = 11;
-#ifndef NO_PKCS11_BYPASS
-	isTLS    = PR_FALSE;
-#endif
-    } else {
-    	/* New TLS hash includes version. */
-	if (isDTLS) {
-	    SSL3ProtocolVersion dtls_version;
-
-	    dtls_version = dtls_TLSVersionToDTLSVersion(version);
-	    temp[9]  = MSB(dtls_version);
-	    temp[10] = LSB(dtls_version);
-        } else {
-	    temp[9]  = MSB(version);
-	    temp[10] = LSB(version);
-        }
-	temp[11] = MSB(inputLength);
-	temp[12] = LSB(inputLength);
-	tempLen  = 13;
-#ifndef NO_PKCS11_BYPASS
-	isTLS    = PR_TRUE;
-#endif
-    }
-
-    PRINT_BUF(95, (NULL, "frag hash1: temp", temp, tempLen));
+    PRINT_BUF(95, (NULL, "frag hash1: header", header, headerLen));
     PRINT_BUF(95, (NULL, "frag hash1: input", input, inputLength));
 
     mac_def = spec->mac_def;
@@ -2093,7 +2430,10 @@ ssl3_ComputeRecordMAC(
 	    return SECFailure;
 	}
 
-	if (!isTLS) {
+	if (spec->version <= SSL_LIBRARY_VERSION_3_0) {
+	    unsigned int tempLen;
+	    unsigned char temp[MAX_MAC_LENGTH];
+
 	    /* compute "inner" part of SSL3 MAC */
 	    hashObj->begin(write_mac_context);
 	    if (useServerMacKey)
@@ -2105,7 +2445,7 @@ ssl3_ComputeRecordMAC(
 				spec->client.write_mac_key_item.data,
 				spec->client.write_mac_key_item.len);
 	    hashObj->update(write_mac_context, mac_pad_1, pad_bytes);
-	    hashObj->update(write_mac_context, temp,  tempLen);
+	    hashObj->update(write_mac_context, header, headerLen);
 	    hashObj->update(write_mac_context, input, inputLength);
 	    hashObj->end(write_mac_context,    temp, &tempLen, sizeof temp);
 
@@ -2136,7 +2476,7 @@ ssl3_ComputeRecordMAC(
 	    }
 	    if (rv == SECSuccess) {
 		HMAC_Begin(cx);
-		HMAC_Update(cx, temp, tempLen);
+		HMAC_Update(cx, header, headerLen);
 		HMAC_Update(cx, input, inputLength);
 		rv = HMAC_Finish(cx, outbuf, outLength, spec->mac_size);
 		HMAC_Destroy(cx, PR_FALSE);
@@ -2150,7 +2490,7 @@ ssl3_ComputeRecordMAC(
 	    (useServerMacKey ? spec->server.write_mac_context
 	                     : spec->client.write_mac_context);
 	rv  = PK11_DigestBegin(mac_context);
-	rv |= PK11_DigestOp(mac_context, temp, tempLen);
+	rv |= PK11_DigestOp(mac_context, header, headerLen);
 	rv |= PK11_DigestOp(mac_context, input, inputLength);
 	rv |= PK11_DigestFinal(mac_context, outbuf, outLength, spec->mac_size);
     }
@@ -2190,10 +2530,8 @@ static SECStatus
 ssl3_ComputeRecordMACConstantTime(
     ssl3CipherSpec *   spec,
     PRBool             useServerMacKey,
-    PRBool             isDTLS,
-    SSL3ContentType    type,
-    SSL3ProtocolVersion version,
-    SSL3SequenceNumber seq_num,
+    const unsigned char *header,
+    unsigned int       headerLen,
     const SSL3Opaque * input,
     int                inputLen,
     int                originalLen,
@@ -2205,9 +2543,7 @@ ssl3_ComputeRecordMACConstantTime(
     PK11Context *                mac_context;
     SECItem                      param;
     SECStatus                    rv;
-    unsigned char                header[13];
     PK11SymKey *                 key;
-    int                          recordLength;
 
     PORT_Assert(inputLen >= spec->mac_size);
     PORT_Assert(originalLen >= inputLen);
@@ -2223,42 +2559,15 @@ ssl3_ComputeRecordMACConstantTime(
 	return SECSuccess;
     }
 
-    header[0] = (unsigned char)(seq_num.high >> 24);
-    header[1] = (unsigned char)(seq_num.high >> 16);
-    header[2] = (unsigned char)(seq_num.high >>  8);
-    header[3] = (unsigned char)(seq_num.high >>  0);
-    header[4] = (unsigned char)(seq_num.low  >> 24);
-    header[5] = (unsigned char)(seq_num.low  >> 16);
-    header[6] = (unsigned char)(seq_num.low  >>  8);
-    header[7] = (unsigned char)(seq_num.low  >>  0);
-    header[8] = type;
-
     macType = CKM_NSS_HMAC_CONSTANT_TIME;
-    recordLength = inputLen - spec->mac_size;
     if (spec->version <= SSL_LIBRARY_VERSION_3_0) {
 	macType = CKM_NSS_SSL3_MAC_CONSTANT_TIME;
-	header[9] = recordLength >> 8;
-	header[10] = recordLength;
-	params.ulHeaderLen = 11;
-    } else {
-	if (isDTLS) {
-	    SSL3ProtocolVersion dtls_version;
-
-	    dtls_version = dtls_TLSVersionToDTLSVersion(version);
-	    header[9] = dtls_version >> 8;
-	    header[10] = dtls_version;
-	} else {
-	    header[9] = version >> 8;
-	    header[10] = version;
-	}
-	header[11] = recordLength >> 8;
-	header[12] = recordLength;
-	params.ulHeaderLen = 13;
     }
 
     params.macAlg = spec->mac_def->mmech;
     params.ulBodyTotalLen = originalLen;
-    params.pHeader = header;
+    params.pHeader = (unsigned char *) header;  /* const cast */
+    params.ulHeaderLen = headerLen;
 
     param.data = (unsigned char*) &params;
     param.len = sizeof(params);
@@ -2291,9 +2600,8 @@ fallback:
     /* ssl3_ComputeRecordMAC expects the MAC to have been removed from the
      * length already. */
     inputLen -= spec->mac_size;
-    return ssl3_ComputeRecordMAC(spec, useServerMacKey, isDTLS, type,
-				 version, seq_num, input, inputLen,
-				 outbuf, outLen);
+    return ssl3_ComputeRecordMAC(spec, useServerMacKey, header, headerLen,
+				 input, inputLen, outbuf, outLen);
 }
 
 static PRBool
@@ -2345,6 +2653,8 @@ ssl3_CompressMACEncryptRecord(ssl3CipherSpec *   cwSpec,
     PRUint16                  headerLen;
     int                       ivLen = 0;
     int                       cipherBytes = 0;
+    unsigned char             pseudoHeader[13];
+    unsigned int              pseudoHeaderLen;
 
     cipher_def = cwSpec->cipher_def;
     headerLen = isDTLS ? DTLS_RECORD_HEADER_LENGTH : SSL3_RECORD_HEADER_LENGTH;
@@ -2390,86 +2700,117 @@ ssl3_CompressMACEncryptRecord(ssl3CipherSpec *   cwSpec,
 	contentLen = outlen;
     }
 
-    /*
-     * Add the MAC
-     */
-    rv = ssl3_ComputeRecordMAC( cwSpec, isServer, isDTLS,
-	type, cwSpec->version, cwSpec->write_seq_num, pIn, contentLen,
-	wrBuf->buf + headerLen + ivLen + contentLen, &macLen);
-    if (rv != SECSuccess) {
-	ssl_MapLowLevelError(SSL_ERROR_MAC_COMPUTATION_FAILURE);
-	return SECFailure;
-    }
-    p1Len   = contentLen;
-    p2Len   = macLen;
-    fragLen = contentLen + macLen;	/* needs to be encrypted */
-    PORT_Assert(fragLen <= MAX_FRAGMENT_LENGTH + 1024);
+    pseudoHeaderLen = ssl3_BuildRecordPseudoHeader(
+	pseudoHeader, cwSpec->write_seq_num, type,
+	cwSpec->version >= SSL_LIBRARY_VERSION_TLS_1_0, cwSpec->version,
+	isDTLS, contentLen);
+    PORT_Assert(pseudoHeaderLen <= sizeof(pseudoHeader));
+    if (cipher_def->type == type_aead) {
+	const int nonceLen = cipher_def->explicit_nonce_size;
+	const int tagLen = cipher_def->tag_size;
 
-    /*
-     * Pad the text (if we're doing a block cipher)
-     * then Encrypt it
-     */
-    if (cipher_def->type == type_block) {
-	unsigned char * pBuf;
-	int             padding_length;
-	int             i;
-
-	oddLen = contentLen % cipher_def->block_size;
-	/* Assume blockSize is a power of two */
-	padding_length = cipher_def->block_size - 1 -
-			((fragLen) & (cipher_def->block_size - 1));
-	fragLen += padding_length + 1;
-	PORT_Assert((fragLen % cipher_def->block_size) == 0);
-
-	/* Pad according to TLS rules (also acceptable to SSL3). */
-	pBuf = &wrBuf->buf[headerLen + ivLen + fragLen - 1];
-	for (i = padding_length + 1; i > 0; --i) {
-	    *pBuf-- = padding_length;
+	if (headerLen + nonceLen + contentLen + tagLen > wrBuf->space) {
+	    PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+	    return SECFailure;
 	}
-	/* now, if contentLen is not a multiple of block size, fix it */
-	p2Len = fragLen - p1Len;
-    }
-    if (p1Len < 256) {
-	oddLen = p1Len;
-	p1Len = 0;
+
+	cipherBytes = contentLen;
+	rv = cwSpec->aead(
+		isServer ? &cwSpec->server : &cwSpec->client,
+		PR_FALSE,                                   /* do encrypt */
+		wrBuf->buf + headerLen,                     /* output  */
+		&cipherBytes,                               /* out len */
+		wrBuf->space - headerLen,                   /* max out */
+		pIn, contentLen,                            /* input   */
+		pseudoHeader, pseudoHeaderLen);
+	if (rv != SECSuccess) {
+	    PORT_SetError(SSL_ERROR_ENCRYPTION_FAILURE);
+	    return SECFailure;
+	}
     } else {
-	p1Len -= oddLen;
-    }
-    if (oddLen) {
-	p2Len += oddLen;
-	PORT_Assert( (cipher_def->block_size < 2) || \
-		     (p2Len % cipher_def->block_size) == 0);
-	memmove(wrBuf->buf + headerLen + ivLen + p1Len, pIn + p1Len, oddLen);
-    }
-    if (p1Len > 0) {
-	int cipherBytesPart1 = -1;
-	rv = cwSpec->encode( cwSpec->encodeContext, 
-	    wrBuf->buf + headerLen + ivLen,         /* output */
-	    &cipherBytesPart1,                      /* actual outlen */
-	    p1Len,                                  /* max outlen */
-	    pIn, p1Len);                      /* input, and inputlen */
-	PORT_Assert(rv == SECSuccess && cipherBytesPart1 == (int) p1Len);
-	if (rv != SECSuccess || cipherBytesPart1 != (int) p1Len) {
-	    PORT_SetError(SSL_ERROR_ENCRYPTION_FAILURE);
+	/*
+	 * Add the MAC
+	 */
+	rv = ssl3_ComputeRecordMAC(cwSpec, isServer,
+	    pseudoHeader, pseudoHeaderLen, pIn, contentLen,
+	    wrBuf->buf + headerLen + ivLen + contentLen, &macLen);
+	if (rv != SECSuccess) {
+	    ssl_MapLowLevelError(SSL_ERROR_MAC_COMPUTATION_FAILURE);
 	    return SECFailure;
 	}
-	cipherBytes += cipherBytesPart1;
-    }
-    if (p2Len > 0) {
-	int cipherBytesPart2 = -1;
-	rv = cwSpec->encode( cwSpec->encodeContext, 
-	    wrBuf->buf + headerLen + ivLen + p1Len,
-	    &cipherBytesPart2,          /* output and actual outLen */
-	    p2Len,                             /* max outlen */
-	    wrBuf->buf + headerLen + ivLen + p1Len,
-	    p2Len);                            /* input and inputLen*/
-	PORT_Assert(rv == SECSuccess && cipherBytesPart2 == (int) p2Len);
-	if (rv != SECSuccess || cipherBytesPart2 != (int) p2Len) {
-	    PORT_SetError(SSL_ERROR_ENCRYPTION_FAILURE);
-	    return SECFailure;
+	p1Len   = contentLen;
+	p2Len   = macLen;
+	fragLen = contentLen + macLen;	/* needs to be encrypted */
+	PORT_Assert(fragLen <= MAX_FRAGMENT_LENGTH + 1024);
+
+	/*
+	 * Pad the text (if we're doing a block cipher)
+	 * then Encrypt it
+	 */
+	if (cipher_def->type == type_block) {
+	    unsigned char * pBuf;
+	    int             padding_length;
+	    int             i;
+
+	    oddLen = contentLen % cipher_def->block_size;
+	    /* Assume blockSize is a power of two */
+	    padding_length = cipher_def->block_size - 1 -
+			    ((fragLen) & (cipher_def->block_size - 1));
+	    fragLen += padding_length + 1;
+	    PORT_Assert((fragLen % cipher_def->block_size) == 0);
+
+	    /* Pad according to TLS rules (also acceptable to SSL3). */
+	    pBuf = &wrBuf->buf[headerLen + ivLen + fragLen - 1];
+	    for (i = padding_length + 1; i > 0; --i) {
+		*pBuf-- = padding_length;
+	    }
+	    /* now, if contentLen is not a multiple of block size, fix it */
+	    p2Len = fragLen - p1Len;
 	}
-	cipherBytes += cipherBytesPart2;
-    }	
+	if (p1Len < 256) {
+	    oddLen = p1Len;
+	    p1Len = 0;
+	} else {
+	    p1Len -= oddLen;
+	}
+	if (oddLen) {
+	    p2Len += oddLen;
+	    PORT_Assert( (cipher_def->block_size < 2) || \
+			 (p2Len % cipher_def->block_size) == 0);
+	    memmove(wrBuf->buf + headerLen + ivLen + p1Len, pIn + p1Len,
+		    oddLen);
+	}
+	if (p1Len > 0) {
+	    int cipherBytesPart1 = -1;
+	    rv = cwSpec->encode( cwSpec->encodeContext, 
+		wrBuf->buf + headerLen + ivLen,         /* output */
+		&cipherBytesPart1,                      /* actual outlen */
+		p1Len,                                  /* max outlen */
+		pIn, p1Len);                      /* input, and inputlen */
+	    PORT_Assert(rv == SECSuccess && cipherBytesPart1 == (int) p1Len);
+	    if (rv != SECSuccess || cipherBytesPart1 != (int) p1Len) {
+		PORT_SetError(SSL_ERROR_ENCRYPTION_FAILURE);
+		return SECFailure;
+	    }
+	    cipherBytes += cipherBytesPart1;
+	}
+	if (p2Len > 0) {
+	    int cipherBytesPart2 = -1;
+	    rv = cwSpec->encode( cwSpec->encodeContext, 
+		wrBuf->buf + headerLen + ivLen + p1Len,
+		&cipherBytesPart2,          /* output and actual outLen */
+		p2Len,                             /* max outlen */
+		wrBuf->buf + headerLen + ivLen + p1Len,
+		p2Len);                            /* input and inputLen*/
+	    PORT_Assert(rv == SECSuccess && cipherBytesPart2 == (int) p2Len);
+	    if (rv != SECSuccess || cipherBytesPart2 != (int) p2Len) {
+		PORT_SetError(SSL_ERROR_ENCRYPTION_FAILURE);
+		return SECFailure;
+	    }
+	    cipherBytes += cipherBytesPart2;
+	}
+    }
+
     PORT_Assert(cipherBytes <= MAX_FRAGMENT_LENGTH + 1024);
 
     wrBuf->len    = cipherBytes + headerLen;
@@ -2529,12 +2870,14 @@ ssl3_CompressMACEncryptRecord(ssl3CipherSpec *   cwSpec,
  *    Forces the use of the provided epoch
  * ssl_SEND_FLAG_CAP_RECORD_VERSION
  *    Caps the record layer version number of TLS ClientHello to { 3, 1 }
- *    (TLS 1.0). Some TLS 1.0 servers (which seem to use F5 BIG-IP) ignore 
+ *    (TLS 1.0). Some TLS 1.0 servers (which seem to use F5 BIG-IP) ignore
  *    ClientHello.client_version and use the record layer version number
  *    (TLSPlaintext.version) instead when negotiating protocol versions. In
  *    addition, if the record layer version number of ClientHello is { 3, 2 }
- *    (TLS 1.1) or higher, these servers reset the TCP connections. Set this
- *    flag to work around such servers.
+ *    (TLS 1.1) or higher, these servers reset the TCP connections. Lastly,
+ *    some F5 BIG-IP servers hang if a record containing a ClientHello has a
+ *    version greater than 0x0301 and a length greater than 255. Set this flag
+ *    to work around such servers.
  */
 PRInt32
 ssl3_SendRecord(   sslSocket *        ss,
@@ -2552,7 +2895,7 @@ ssl3_SendRecord(   sslSocket *        ss,
     SSL_TRC(3, ("%d: SSL3[%d] SendRecord type: %s nIn=%d",
 		SSL_GETPID(), ss->fd, ssl3_DecodeContentType(type),
 		nIn));
-    PRINT_BUF(3, (ss, "Send record (plain text)", pIn, nIn));
+    PRINT_BUF(50, (ss, "Send record (plain text)", pIn, nIn));
 
     PORT_Assert( ss->opt.noLocks || ssl_HaveXmitBufLock(ss) );
 
@@ -3012,9 +3355,6 @@ SSL3_SendAlert(sslSocket *ss, SSL3AlertLevel level, SSL3AlertDescription desc)
 static SECStatus
 ssl3_IllegalParameter(sslSocket *ss)
 {
-    PRBool isTLS;
-
-    isTLS = (PRBool)(ss->ssl3.pwSpec->version > SSL_LIBRARY_VERSION_3_0);
     (void)SSL3_SendAlert(ss, alert_fatal, illegal_parameter);
     PORT_SetError(ss->sec.isServer ? SSL_ERROR_BAD_CLIENT
                                    : SSL_ERROR_BAD_SERVER );
@@ -3538,7 +3878,6 @@ ssl3_DeriveConnectionKeysPKCS11(sslSocket *ss)
     }
 
     key_material_params.bIsExport = (CK_BBOOL)(kea_def->is_limited);
-    /* was:	(CK_BBOOL)(cipher_def->keygen_mode != kg_strong); */
 
     key_material_params.RandomInfo.pClientRandom     = cr;
     key_material_params.RandomInfo.ulClientRandomLen = SSL3_RANDOM_LENGTH;
@@ -4875,6 +5214,10 @@ ssl3_SendClientHello(sslSocket *ss, PRBool resending)
 	ssl3_DisableNonDTLSSuites(ss);
     }
 
+    if (!ssl3_HasGCMSupport()) {
+	ssl3_DisableGCMSuites(ss);
+    }
+
     /* how many suites are permitted by policy and user preference? */
     num_suites = count_cipher_suites(ss, ss->ssl3.policy, PR_TRUE);
     if (!num_suites)
@@ -4966,7 +5309,7 @@ ssl3_SendClientHello(sslSocket *ss, PRBool resending)
     }
     for (i = 0; i < ssl_V3_SUITES_IMPLEMENTED; i++) {
 	ssl3CipherSuiteCfg *suite = &ss->cipherSuites[i];
-	if (config_match(suite, ss->ssl3.policy, PR_TRUE)) {
+	if (config_match(suite, ss->ssl3.policy, PR_TRUE, &ss->vrange)) {
 	    actual_count++;
 	    if (actual_count > num_suites) {
 		/* set error card removal/insertion error */
@@ -5027,7 +5370,7 @@ ssl3_SendClientHello(sslSocket *ss, PRBool resending)
     }
 
     flags = 0;
-    if (!ss->firstHsDone && !requestingResume && !IS_DTLS(ss)) {
+    if (!ss->firstHsDone && !IS_DTLS(ss)) {
 	flags |= ssl_SEND_FLAG_CAP_RECORD_VERSION;
     }
     rv = ssl3_FlushHandshake(ss, flags);
@@ -5265,7 +5608,6 @@ SSL3_ShutdownServerCache(void)
     }
 
     PZ_Unlock(symWrapKeysLock);
-    ssl_FreeSessionCacheLocks();
     return SECSuccess;
 }
 
@@ -5317,7 +5659,7 @@ getWrappingKey( sslSocket *       ss,
 
     pSymWrapKey = &symWrapKeys[symWrapMechIndex].symWrapKey[exchKeyType];
 
-    ssl_InitSessionCacheLocks(PR_TRUE);
+    ssl_InitSessionCacheLocks();
 
     PZ_Lock(symWrapKeysLock);
 
@@ -6032,14 +6374,18 @@ ssl3_HandleServerHello(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
     for (i = 0; i < ssl_V3_SUITES_IMPLEMENTED; i++) {
 	ssl3CipherSuiteCfg *suite = &ss->cipherSuites[i];
 	if (temp == suite->cipher_suite) {
-	    if (!config_match(suite, ss->ssl3.policy, PR_TRUE)) {
+	    SSLVersionRange vrange = {ss->version, ss->version};
+	    if (!config_match(suite, ss->ssl3.policy, PR_TRUE, &vrange)) {
+		/* config_match already checks whether the cipher suite is
+		 * acceptable for the version, but the check is repeated here
+		 * in order to give a more precise error code. */
+		if (!ssl3_CipherSuiteAllowedForVersionRange(temp, &vrange)) {
+		    desc    = handshake_failure;
+		    errCode = SSL_ERROR_CIPHER_DISALLOWED_FOR_VERSION;
+		    goto alert_loser;
+		}
+
 		break;	/* failure */
-	    }
-	    if (!ssl3_CipherSuiteAllowedForVersion(suite->cipher_suite,
-						   ss->version)) {
-		desc    = handshake_failure;
-		errCode = SSL_ERROR_CIPHER_DISALLOWED_FOR_VERSION;
-		goto alert_loser;
 	    }
 	
 	    suite_found = PR_TRUE;
@@ -7003,35 +7349,42 @@ ssl3_RestartHandshakeAfterCertReq(sslSocket *         ss,
     return rv;
 }
 
-PRBool
-ssl3_CanFalseStart(sslSocket *ss) {
-    PRBool rv;
+static SECStatus
+ssl3_CheckFalseStart(sslSocket *ss)
+{
+    SECStatus rv;
+    PRBool maybeFalseStart = PR_TRUE;
 
     PORT_Assert( ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss) );
+    PORT_Assert( !ss->ssl3.hs.authCertificatePending );
 
-    /* XXX: does not take into account whether we are waiting for
-     * SSL_AuthCertificateComplete or SSL_RestartHandshakeAfterCertReq. If/when
-     * that is done, this function could return different results each time it
-     * would be called.
-     */
+    /* An attacker can control the selected ciphersuite so we only wish to
+     * do False Start in the case that the selected ciphersuite is
+     * sufficiently strong that the attack can gain no advantage.
+     * Therefore we always require an 80-bit cipher. */
 
     ssl_GetSpecReadLock(ss);
-    rv = ss->opt.enableFalseStart &&
-	 !ss->sec.isServer &&
-	 !ss->ssl3.hs.isResuming &&
-	 ss->ssl3.cwSpec &&
-
-	 /* An attacker can control the selected ciphersuite so we only wish to
-	  * do False Start in the case that the selected ciphersuite is
-	  * sufficiently strong that the attack can gain no advantage.
-	  * Therefore we require an 80-bit cipher and a forward-secret key
-	  * exchange. */
-	 ss->ssl3.cwSpec->cipher_def->secret_key_size >= 10 &&
-	(ss->ssl3.hs.kea_def->kea == kea_dhe_dss ||
-	 ss->ssl3.hs.kea_def->kea == kea_dhe_rsa ||
-	 ss->ssl3.hs.kea_def->kea == kea_ecdhe_ecdsa ||
-	 ss->ssl3.hs.kea_def->kea == kea_ecdhe_rsa);
+    if (ss->ssl3.cwSpec->cipher_def->secret_key_size < 10) {
+	ss->ssl3.hs.canFalseStart = PR_FALSE;
+	maybeFalseStart = PR_FALSE;
+    }
     ssl_ReleaseSpecReadLock(ss);
+    if (!maybeFalseStart) {
+	return SECSuccess;
+    }
+
+    if (!ss->canFalseStartCallback) {
+	rv = SSL_DefaultCanFalseStart(ss->fd, &ss->ssl3.hs.canFalseStart);
+    } else {
+	rv = (ss->canFalseStartCallback)(ss->fd,
+ 					 ss->canFalseStartCallbackData,
+					 &ss->ssl3.hs.canFalseStart);
+    }
+
+    if (rv != SECSuccess) {
+	ss->ssl3.hs.canFalseStart = PR_FALSE;
+    }
+
     return rv;
 }
 
@@ -7159,18 +7512,57 @@ ssl3_SendClientSecondRound(sslSocket *ss)
 	goto loser;	/* err code was set. */
     }
 
-    /* XXX: If the server's certificate hasn't been authenticated by this
-     * point, then we may be leaking this NPN message to an attacker.
+    /* This must be done after we've set ss->ssl3.cwSpec in
+     * ssl3_SendChangeCipherSpecs because SSL_GetChannelInfo uses information
+     * from cwSpec. This must be done before we call ssl3_CheckFalseStart
+     * because the false start callback (if any) may need the information from
+     * the functions that depend on this being set.
      */
+    ss->enoughFirstHsDone = PR_TRUE;
+
     if (!ss->firstHsDone) {
+	/* XXX: If the server's certificate hasn't been authenticated by this
+	 * point, then we may be leaking this NPN message to an attacker.
+	 */
 	rv = ssl3_SendNextProto(ss);
 	if (rv != SECSuccess) {
 	    goto loser;	/* err code was set. */
 	}
     }
+
     rv = ssl3_SendEncryptedExtensions(ss);
     if (rv != SECSuccess) {
 	goto loser; /* err code was set. */
+    }
+
+    if (!ss->firstHsDone) {
+	if (ss->opt.enableFalseStart) {
+	    if (!ss->ssl3.hs.authCertificatePending) {
+		/* When we fix bug 589047, we will need to know whether we are
+		 * false starting before we try to flush the client second
+		 * round to the network. With that in mind, we purposefully
+		 * call ssl3_CheckFalseStart before calling ssl3_SendFinished,
+		 * which includes a call to ssl3_FlushHandshake, so that
+		 * no application develops a reliance on such flushing being
+                 * done before its false start callback is called.
+		 */
+		ssl_ReleaseXmitBufLock(ss);
+		rv = ssl3_CheckFalseStart(ss);
+		ssl_GetXmitBufLock(ss);
+		if (rv != SECSuccess) {
+		    goto loser;
+		}
+	    } else {
+		/* The certificate authentication and the server's Finished
+		 * message are racing each other. If the certificate
+		 * authentication wins, then we will try to false start in
+		 * ssl3_AuthCertificateComplete.
+		 */
+		SSL_TRC(3, ("%d: SSL3[%p]: deferring false start check because"
+			    " certificate authentication is still pending.",
+			    SSL_GETPID(), ss->fd));
+	    }
+	}
     }
 
     rv = ssl3_SendFinished(ss, 0);
@@ -7185,8 +7577,16 @@ ssl3_SendClientSecondRound(sslSocket *ss)
     else
 	ss->ssl3.hs.ws = wait_change_cipher;
 
-    /* Do the handshake callback for sslv3 here, if we can false start. */
-    if (ss->handshakeCallback != NULL && ssl3_CanFalseStart(ss)) {
+    if (ss->handshakeCallback &&
+	(ss->ssl3.hs.canFalseStart && !ss->canFalseStartCallback)) {
+	/* Call the handshake callback here for backwards compatibility with
+	 * applications that were using false start before
+	 * canFalseStartCallback was added. Note that we do this after calling
+	 * ssl3_SendFinished, which includes a call to ssl3_FlushHandshake,
+	 * just in case the application is relying on having the handshake
+	 * messages flushed to the network before its handshake callback is
+	 * called.
+	 */
 	(ss->handshakeCallback)(ss->fd, ss->handshakeCallbackData);
     }
 
@@ -7662,6 +8062,10 @@ ssl3_HandleClientHello(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
 	ssl3_DisableNonDTLSSuites(ss);
     }
 
+    if (!ssl3_HasGCMSupport()) {
+	ssl3_DisableGCMSuites(ss);
+    }
+
 #ifdef PARANOID
     /* Look for a matching cipher suite. */
     j = ssl3_config_match_init(ss);
@@ -7677,6 +8081,9 @@ ssl3_HandleClientHello(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
     */
     if (sid) do {
 	ssl3CipherSuiteCfg *suite;
+#ifdef PARANOID
+	SSLVersionRange vrange = {ss->version, ss->version};
+#endif
 
 	/* Check that the cached compression method is still enabled. */
 	if (!compressionEnabled(ss, sid->u.ssl3.compression))
@@ -7705,7 +8112,7 @@ ssl3_HandleClientHello(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
 	 * The product policy won't change during the process lifetime.  
 	 * Implemented ("isPresent") shouldn't change for servers.
 	 */
-	if (!config_match(suite, ss->ssl3.policy, PR_TRUE))
+	if (!config_match(suite, ss->ssl3.policy, PR_TRUE, &vrange))
 	    break;
 #else
 	if (!suite->enabled)
@@ -7753,9 +8160,8 @@ ssl3_HandleClientHello(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
     */
     for (j = 0; j < ssl_V3_SUITES_IMPLEMENTED; j++) {
 	ssl3CipherSuiteCfg *suite = &ss->cipherSuites[j];
-	if (!config_match(suite, ss->ssl3.policy, PR_TRUE) ||
-	    !ssl3_CipherSuiteAllowedForVersion(suite->cipher_suite,
-					       ss->version)) {
+	SSLVersionRange vrange = {ss->version, ss->version};
+	if (!config_match(suite, ss->ssl3.policy, PR_TRUE, &vrange)) {
 	    continue;
 	}
 	for (i = 0; i + 1 < suites.len; i += 2) {
@@ -8288,9 +8694,8 @@ ssl3_HandleV2ClientHello(sslSocket *ss, unsigned char *buffer, int length)
     */
     for (j = 0; j < ssl_V3_SUITES_IMPLEMENTED; j++) {
 	ssl3CipherSuiteCfg *suite = &ss->cipherSuites[j];
-	if (!config_match(suite, ss->ssl3.policy, PR_TRUE) ||
-	    !ssl3_CipherSuiteAllowedForVersion(suite->cipher_suite,
-					       ss->version)) {
+	SSLVersionRange vrange = {ss->version, ss->version};
+	if (!config_match(suite, ss->ssl3.policy, PR_TRUE, &vrange)) {
 	    continue;
 	}
 	for (i = 0; i+2 < suite_length; i += 3) {
@@ -9801,13 +10206,6 @@ ssl3_AuthCertificate(sslSocket *ss)
 
 	    ss->ssl3.hs.authCertificatePending = PR_TRUE;
 	    rv = SECSuccess;
-
-	    /* XXX: Async cert validation and False Start don't work together
-	     * safely yet; if we leave False Start enabled, we may end up false
-	     * starting (sending application data) before we
-	     * SSL_AuthCertificateComplete has been called.
-	     */
-	    ss->opt.enableFalseStart = PR_FALSE;
 	}
 
 	if (rv != SECSuccess) {
@@ -9932,6 +10330,12 @@ ssl3_AuthCertificateComplete(sslSocket *ss, PRErrorCode error)
     } else if (ss->ssl3.hs.restartTarget != NULL) {
 	sslRestartTarget target = ss->ssl3.hs.restartTarget;
 	ss->ssl3.hs.restartTarget = NULL;
+
+	if (target == ssl3_FinishHandshake) {
+	    SSL_TRC(3,("%d: SSL3[%p]: certificate authentication lost the race"
+		       " with peer's finished message", SSL_GETPID(), ss->fd));
+	}
+
 	rv = target(ss);
 	/* Even if we blocked here, we have accomplished enough to claim
 	 * success. Any remaining work will be taken care of by subsequent
@@ -9941,7 +10345,39 @@ ssl3_AuthCertificateComplete(sslSocket *ss, PRErrorCode error)
 	    rv = SECSuccess;
 	}
     } else {
-	rv = SECSuccess;
+	SSL_TRC(3, ("%d: SSL3[%p]: certificate authentication won the race"
+        	    " with peer's finished message", SSL_GETPID(), ss->fd));
+
+	PORT_Assert(!ss->firstHsDone);
+	PORT_Assert(!ss->sec.isServer);
+	PORT_Assert(!ss->ssl3.hs.isResuming);
+	PORT_Assert(ss->ssl3.hs.ws == wait_change_cipher ||
+		    ss->ssl3.hs.ws == wait_finished ||		
+		    ss->ssl3.hs.ws == wait_new_session_ticket);
+
+	/* ssl3_SendClientSecondRound deferred the false start check because
+	 * certificate authentication was pending, so we have to do it now.
+	 */
+	if (ss->opt.enableFalseStart &&
+	    !ss->firstHsDone &&
+	    !ss->sec.isServer &&
+	    !ss->ssl3.hs.isResuming &&
+	    (ss->ssl3.hs.ws == wait_change_cipher ||
+	     ss->ssl3.hs.ws == wait_finished ||		
+	     ss->ssl3.hs.ws == wait_new_session_ticket)) {
+	    rv = ssl3_CheckFalseStart(ss);
+	    if (rv == SECSuccess &&
+		ss->handshakeCallback &&
+		(ss->ssl3.hs.canFalseStart && !ss->canFalseStartCallback)) {
+		/* Call the handshake callback here for backwards compatibility
+		 * with applications that were using false start before
+		 * canFalseStartCallback was added.
+		 */
+		(ss->handshakeCallback)(ss->fd, ss->handshakeCallbackData);
+	    }
+	} else {
+	    rv = SECSuccess;
+	}
     }
 
 done:
@@ -10073,7 +10509,6 @@ ssl3_SendNextProto(sslSocket *ss)
 static void
 ssl3_RecordKeyLog(sslSocket *ss)
 {
-    sslSessionID *sid;
     SECStatus rv;
     SECItem *keyData;
     char buf[14 /* "CLIENT_RANDOM " */ +
@@ -10084,8 +10519,6 @@ ssl3_RecordKeyLog(sslSocket *ss)
     unsigned int j;
 
     PORT_Assert( ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
-
-    sid = ss->sec.ci.sid;
 
     if (!ssl_keylog_iob)
 	return;
@@ -10640,6 +11073,8 @@ xmit_loser:
 SECStatus
 ssl3_FinishHandshake(sslSocket * ss)
 {
+    PRBool falseStarted;
+
     PORT_Assert( ss->opt.noLocks || ssl_HaveRecvBufLock(ss) );
     PORT_Assert( ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss) );
     PORT_Assert( ss->ssl3.hs.restartTarget == NULL );
@@ -10647,6 +11082,7 @@ ssl3_FinishHandshake(sslSocket * ss)
     /* The first handshake is now completed. */
     ss->handshake           = NULL;
     ss->firstHsDone         = PR_TRUE;
+    ss->enoughFirstHsDone   = PR_TRUE;
 
     if (ss->ssl3.hs.cacheSID) {
 	(*ss->sec.cache)(ss->sec.ci.sid);
@@ -10654,9 +11090,14 @@ ssl3_FinishHandshake(sslSocket * ss)
     }
 
     ss->ssl3.hs.ws = idle_handshake;
+    falseStarted = ss->ssl3.hs.canFalseStart;
+    ss->ssl3.hs.canFalseStart = PR_FALSE; /* False Start phase is complete */
 
-    /* Do the handshake callback for sslv3 here, if we cannot false start. */
-    if (ss->handshakeCallback != NULL && !ssl3_CanFalseStart(ss)) {
+    /* Call the handshake callback for sslv3 here, unless we called it already
+     * for the case where false start was done without a canFalseStartCallback.
+     */
+    if (ss->handshakeCallback &&
+	!(falseStarted && !ss->canFalseStartCallback)) {
 	(ss->handshakeCallback)(ss->fd, ss->handshakeCallbackData);
     }
 
@@ -11222,6 +11663,8 @@ ssl3_HandleRecord(sslSocket *ss, SSL3Ciphertext *cText, sslBuffer *databuf)
     unsigned int         originalLen = 0;
     unsigned int         good;
     unsigned int         minLength;
+    unsigned char        header[13];
+    unsigned int         headerLen;
 
     PORT_Assert( ss->opt.noLocks || ssl_HaveRecvBufLock(ss) );
 
@@ -11298,12 +11741,14 @@ ssl3_HandleRecord(sslSocket *ss, SSL3Ciphertext *cText, sslBuffer *databuf)
 	    /* With >= TLS 1.1, CBC records have an explicit IV. */
 	    minLength += cipher_def->iv_size;
 	}
+    } else if (cipher_def->type == type_aead) {
+	minLength = cipher_def->explicit_nonce_size + cipher_def->tag_size;
     }
 
     /* We can perform this test in variable time because the record's total
      * length and the ciphersuite are both public knowledge. */
     if (cText->buf->len < minLength) {
-        goto decrypt_loser;
+	goto decrypt_loser;
     }
 
     if (cipher_def->type == type_block &&
@@ -11371,78 +11816,104 @@ ssl3_HandleRecord(sslSocket *ss, SSL3Ciphertext *cText, sslBuffer *databuf)
 	return SECFailure;
     }
 
-    if (cipher_def->type == type_block &&
-	((cText->buf->len - ivLen) % cipher_def->block_size) != 0) {
-	goto decrypt_loser;
-    }
-
-    /* decrypt from cText buf to plaintext. */
-    rv = crSpec->decode(
-	crSpec->decodeContext, plaintext->buf, (int *)&plaintext->len,
-	plaintext->space, cText->buf->buf + ivLen, cText->buf->len - ivLen);
-    if (rv != SECSuccess) {
-	goto decrypt_loser;
-    }
-
-    PRINT_BUF(80, (ss, "cleartext:", plaintext->buf, plaintext->len));
-
-    originalLen = plaintext->len;
-
-    /* If it's a block cipher, check and strip the padding. */
-    if (cipher_def->type == type_block) {
-	const unsigned int blockSize = cipher_def->block_size;
-	const unsigned int macSize = crSpec->mac_size;
-
-	if (crSpec->version <= SSL_LIBRARY_VERSION_3_0) {
-	    good &= SECStatusToMask(ssl_RemoveSSLv3CBCPadding(
-			plaintext, blockSize, macSize));
-	} else {
-	    good &= SECStatusToMask(ssl_RemoveTLSCBCPadding(
-			plaintext, macSize));
-	}
-    }
-
-    /* compute the MAC */
     rType = cText->type;
-    if (cipher_def->type == type_block) {
-	rv = ssl3_ComputeRecordMACConstantTime(
-	    crSpec, (PRBool)(!ss->sec.isServer),
-	    IS_DTLS(ss), rType, cText->version,
-	    IS_DTLS(ss) ? cText->seq_num : crSpec->read_seq_num,
-	    plaintext->buf, plaintext->len, originalLen,
-	    hash, &hashBytes);
-
-	ssl_CBCExtractMAC(plaintext, originalLen, givenHashBuf,
-			  crSpec->mac_size);
-	givenHash = givenHashBuf;
-
-	/* plaintext->len will always have enough space to remove the MAC
-	 * because in ssl_Remove{SSLv3|TLS}CBCPadding we only adjust
-	 * plaintext->len if the result has enough space for the MAC and we
-	 * tested the unadjusted size against minLength, above. */
-	plaintext->len -= crSpec->mac_size;
+    if (cipher_def->type == type_aead) {
+	/* XXX For many AEAD ciphers, the plaintext is shorter than the
+	 * ciphertext by a fixed byte count, but it is not true in general.
+	 * Each AEAD cipher should provide a function that returns the
+	 * plaintext length for a given ciphertext. */
+	unsigned int decryptedLen =
+	    cText->buf->len - cipher_def->explicit_nonce_size -
+	    cipher_def->tag_size;
+	headerLen = ssl3_BuildRecordPseudoHeader(
+	    header, IS_DTLS(ss) ? cText->seq_num : crSpec->read_seq_num,
+	    rType, isTLS, cText->version, IS_DTLS(ss), decryptedLen);
+	PORT_Assert(headerLen <= sizeof(header));
+	rv = crSpec->aead(
+		ss->sec.isServer ? &crSpec->client : &crSpec->server,
+		PR_TRUE,                          /* do decrypt */
+		plaintext->buf,                   /* out */
+		(int*) &plaintext->len,           /* outlen */
+		plaintext->space,                 /* maxout */
+		cText->buf->buf,                  /* in */
+		cText->buf->len,                  /* inlen */
+		header, headerLen);
+	if (rv != SECSuccess) {
+	    good = 0;
+	}
     } else {
-	/* This is safe because we checked the minLength above. */
-	plaintext->len -= crSpec->mac_size;
+	if (cipher_def->type == type_block &&
+	    ((cText->buf->len - ivLen) % cipher_def->block_size) != 0) {
+	    goto decrypt_loser;
+	}
 
-	rv = ssl3_ComputeRecordMAC(
-	    crSpec, (PRBool)(!ss->sec.isServer),
-	    IS_DTLS(ss), rType, cText->version,
-	    IS_DTLS(ss) ? cText->seq_num : crSpec->read_seq_num,
-	    plaintext->buf, plaintext->len,
-	    hash, &hashBytes);
+	/* decrypt from cText buf to plaintext. */
+	rv = crSpec->decode(
+	    crSpec->decodeContext, plaintext->buf, (int *)&plaintext->len,
+	    plaintext->space, cText->buf->buf + ivLen, cText->buf->len - ivLen);
+	if (rv != SECSuccess) {
+	    goto decrypt_loser;
+	}
 
-	/* We can read the MAC directly from the record because its location is
-	 * public when a stream cipher is used. */
-	givenHash = plaintext->buf + plaintext->len;
-    }
+	PRINT_BUF(80, (ss, "cleartext:", plaintext->buf, plaintext->len));
 
-    good &= SECStatusToMask(rv);
+	originalLen = plaintext->len;
 
-    if (hashBytes != (unsigned)crSpec->mac_size ||
-	NSS_SecureMemcmp(givenHash, hash, crSpec->mac_size) != 0) {
-	/* We're allowed to leak whether or not the MAC check was correct */
-	good = 0;
+	/* If it's a block cipher, check and strip the padding. */
+	if (cipher_def->type == type_block) {
+	    const unsigned int blockSize = cipher_def->block_size;
+	    const unsigned int macSize = crSpec->mac_size;
+
+	    if (!isTLS) {
+		good &= SECStatusToMask(ssl_RemoveSSLv3CBCPadding(
+			    plaintext, blockSize, macSize));
+	    } else {
+		good &= SECStatusToMask(ssl_RemoveTLSCBCPadding(
+			    plaintext, macSize));
+	    }
+	}
+
+	/* compute the MAC */
+	headerLen = ssl3_BuildRecordPseudoHeader(
+	    header, IS_DTLS(ss) ? cText->seq_num : crSpec->read_seq_num,
+	    rType, isTLS, cText->version, IS_DTLS(ss),
+	    plaintext->len - crSpec->mac_size);
+	PORT_Assert(headerLen <= sizeof(header));
+	if (cipher_def->type == type_block) {
+	    rv = ssl3_ComputeRecordMACConstantTime(
+		crSpec, (PRBool)(!ss->sec.isServer), header, headerLen,
+		plaintext->buf, plaintext->len, originalLen,
+		hash, &hashBytes);
+
+	    ssl_CBCExtractMAC(plaintext, originalLen, givenHashBuf,
+			      crSpec->mac_size);
+	    givenHash = givenHashBuf;
+
+	    /* plaintext->len will always have enough space to remove the MAC
+	     * because in ssl_Remove{SSLv3|TLS}CBCPadding we only adjust
+	     * plaintext->len if the result has enough space for the MAC and we
+	     * tested the unadjusted size against minLength, above. */
+	    plaintext->len -= crSpec->mac_size;
+	} else {
+	    /* This is safe because we checked the minLength above. */
+	    plaintext->len -= crSpec->mac_size;
+
+	    rv = ssl3_ComputeRecordMAC(
+		crSpec, (PRBool)(!ss->sec.isServer), header, headerLen,
+		plaintext->buf, plaintext->len, hash, &hashBytes);
+
+	    /* We can read the MAC directly from the record because its location
+	     * is public when a stream cipher is used. */
+	    givenHash = plaintext->buf + plaintext->len;
+	}
+
+	good &= SECStatusToMask(rv);
+
+	if (hashBytes != (unsigned)crSpec->mac_size ||
+	    NSS_SecureMemcmp(givenHash, hash, crSpec->mac_size) != 0) {
+	    /* We're allowed to leak whether or not the MAC check was correct */
+	    good = 0;
+	}
     }
 
     if (good == 0) {
@@ -11966,7 +12437,7 @@ ssl3_ConstructV2CipherSpecsHack(sslSocket *ss, unsigned char *cs, int *size)
     /* ssl3_config_match_init was called by the caller of this function. */
     for (i = 0; i < ssl_V3_SUITES_IMPLEMENTED; i++) {
 	ssl3CipherSuiteCfg *suite = &ss->cipherSuites[i];
-	if (config_match(suite, SSL_ALLOWED, PR_TRUE)) {
+	if (config_match(suite, SSL_ALLOWED, PR_TRUE, &ss->vrange)) {
 	    if (cs != NULL) {
 		*cs++ = 0x00;
 		*cs++ = (suite->cipher_suite >> 8) & 0xFF;

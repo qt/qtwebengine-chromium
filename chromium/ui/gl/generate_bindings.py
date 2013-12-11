@@ -432,6 +432,13 @@ GL_FUNCTIONS = [
 { 'return_type': 'void*',
   'names': ['glMapBuffer', 'glMapBufferOES'],
   'arguments': 'GLenum target, GLenum access', },
+{ 'return_type': 'void*',
+  'names': ['glMapBufferRange'],
+  'arguments':
+      'GLenum target, GLintptr offset, GLsizeiptr length, GLenum access', },
+{ 'return_type': 'void',
+  'names': ['glFlushMappedBufferRange'],
+  'arguments': 'GLenum target, GLintptr offset, GLsizeiptr length', },
 { 'return_type': 'void',
   'names': ['glPixelStorei'],
   'arguments': 'GLenum pname, GLint param', },
@@ -740,7 +747,7 @@ GL_FUNCTIONS = [
                        'APPLE_vertex_array_object',
                        'ARB_vertex_array_object'] },
 { 'return_type': 'void',
-  'names': ['glDiscardFramebufferEXT'],
+  'names': ['glDiscardFramebufferEXT', 'glInvalidateFramebuffer'],
   'arguments': 'GLenum target, GLsizei numAttachments, '
       'const GLenum* attachments' },
 ]
@@ -945,6 +952,10 @@ EGL_FUNCTIONS = [
       'EGLDisplay dpy, EGLSurface surface, '
       'EGLuint64CHROMIUM* ust, EGLuint64CHROMIUM* msc, '
       'EGLuint64CHROMIUM* sbc', },
+{ 'return_type': 'EGLint',
+  'names': ['eglWaitSyncKHR'],
+  'arguments': 'EGLDisplay dpy, EGLSyncKHR sync, EGLint flags',
+  'other_extensions': ['EGL_KHR_wait_sync'] },
 ]
 
 WGL_FUNCTIONS = [

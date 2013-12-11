@@ -66,7 +66,9 @@ WebInspector.ResourceTreeModel.EventTypes = {
     Load: "Load",
     InspectedURLChanged: "InspectedURLChanged",
     SecurityOriginAdded: "SecurityOriginAdded",
-    SecurityOriginRemoved: "SecurityOriginRemoved"
+    SecurityOriginRemoved: "SecurityOriginRemoved",
+    ScreencastFrame: "ScreencastFrame",
+    ScreencastVisibilityChanged: "ScreencastVisibilityChanged"
 }
 
 WebInspector.ResourceTreeModel.prototype = {
@@ -222,7 +224,7 @@ WebInspector.ResourceTreeModel.prototype = {
     },
 
     /**
-     * @param {NetworkAgent.FrameId} frameId
+     * @param {PageAgent.FrameId} frameId
      */
     _frameDetached: function(frameId)
     {
@@ -282,7 +284,7 @@ WebInspector.ResourceTreeModel.prototype = {
     },
 
     /**
-     * @param {NetworkAgent.FrameId} frameId
+     * @param {PageAgent.FrameId} frameId
      * @return {WebInspector.ResourceTreeFrame}
      */
     frameForId: function(frameId)
@@ -670,6 +672,10 @@ WebInspector.PageDispatcher.prototype = {
         this._resourceTreeModel.dispatchEventToListeners(WebInspector.ResourceTreeModel.EventTypes.Load, time);
     },
 
+    frameAttached: function(frameId)
+    {
+    },
+
     frameNavigated: function(frame)
     {
         this._resourceTreeModel._frameNavigated(frame);
@@ -707,6 +713,27 @@ WebInspector.PageDispatcher.prototype = {
     scriptsEnabled: function(isEnabled)
     {
         WebInspector.settings.javaScriptDisabled.set(!isEnabled);
+    },
+
+    /**
+     * @param {string} data
+     * @param {number=} deviceScaleFactor
+     * @param {number=} pageScaleFactor
+     * @param {DOMAgent.Rect=} viewport
+     * @param {number=} offsetTop
+     * @param {number=} offsetBottom
+     */
+    screencastFrame: function(data, deviceScaleFactor, pageScaleFactor, viewport, offsetTop, offsetBottom)
+    {
+        this._resourceTreeModel.dispatchEventToListeners(WebInspector.ResourceTreeModel.EventTypes.ScreencastFrame, {data:data, deviceScaleFactor: deviceScaleFactor, pageScaleFactor: pageScaleFactor, viewport:viewport, offsetTop: offsetTop, offsetBottom: offsetBottom});
+    },
+
+    /**
+     * @param {boolean} visible
+     */
+    screencastVisibilityChanged: function(visible)
+    {
+        this._resourceTreeModel.dispatchEventToListeners(WebInspector.ResourceTreeModel.EventTypes.ScreencastVisibilityChanged, {visible:visible});
     }
 }
 

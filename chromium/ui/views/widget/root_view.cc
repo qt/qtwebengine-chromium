@@ -10,15 +10,19 @@
 #include "base/message_loop/message_loop.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
-#include "ui/base/events/event.h"
-#include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/compositor/layer.h"
+#include "ui/events/event.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/focus/view_storage.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/widget_deletion_observer.h"
+
+#if defined(USE_AURA)
+#include "ui/base/cursor/cursor.h"
+#endif
 
 namespace views {
 namespace internal {
@@ -102,9 +106,8 @@ View* RootView::GetContentsView() {
   return child_count() > 0 ? child_at(0) : NULL;
 }
 
-void RootView::NotifyNativeViewHierarchyChanged(bool attached,
-                                                gfx::NativeView native_view) {
-  PropagateNativeViewHierarchyChanged(attached, native_view, this);
+void RootView::NotifyNativeViewHierarchyChanged() {
+  PropagateNativeViewHierarchyChanged();
 }
 
 // Input -----------------------------------------------------------------------
@@ -123,8 +126,7 @@ void RootView::DispatchKeyEvent(ui::KeyEvent* event) {
     return;
   }
 
-  for (; v && v != this && !event->handled(); v = v->parent())
-    DispatchEventToTarget(v, event);
+  DispatchKeyEventStartAt(v, event);
 }
 
 void RootView::DispatchScrollEvent(ui::ScrollEvent* event) {
@@ -362,6 +364,11 @@ Widget* RootView::GetWidget() {
 
 bool RootView::IsDrawn() const {
   return visible();
+}
+
+void RootView::Layout() {
+  View::Layout();
+  widget_->OnRootViewLayout();
 }
 
 const char* RootView::GetClassName() const {
@@ -637,10 +644,6 @@ void RootView::OnPaint(gfx::Canvas* canvas) {
   if (!layer() || !layer()->fills_bounds_opaquely())
     canvas->DrawColor(SK_ColorBLACK, SkXfermode::kClear_Mode);
 
-  // TODO (pkotwicz): Remove this once we switch over to Aura desktop.
-  // This is needed so that we can set the background behind the RWHV when the
-  // RWHV is not visible. Not needed once there is a view between the RootView
-  // and RWHV.
   View::OnPaint(canvas);
 }
 
@@ -696,6 +699,19 @@ void RootView::NotifyEnterExitOfDescendant(const ui::MouseEvent& event,
     // incorrect event dispatch.
     MouseEnterExitEvent notify_event(event, type);
     DispatchEventToTarget(p, &notify_event);
+  }
+}
+
+
+void RootView::DispatchKeyEventStartAt(View* view, ui::KeyEvent* event) {
+  if (event->handled() || !view)
+    return;
+
+  for (; view && view != this; view = view->parent()) {
+    DispatchEventToTarget(view, event);
+    // Do this check here rather than in the if as |view| may have been deleted.
+    if (event->handled())
+      return;
   }
 }
 

@@ -23,8 +23,6 @@ namespace media {
  @private
   // Settings.
   int frameRate_;
-  int frameWidth_;
-  int frameHeight_;
 
   NSLock *lock_;
   media::VideoCaptureDeviceMac *frameReceiver_;
@@ -59,6 +57,9 @@ namespace media {
 
 // Stops video capturing.
 - (void)stopCapture;
+
+// Handle any QTCaptureSessionRuntimeErrorNotifications.
+- (void)handleNotification:(NSNotification *)errorNotification;
 
 @end
 

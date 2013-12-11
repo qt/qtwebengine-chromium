@@ -62,7 +62,7 @@ void SplitTextNodeCommand::doApply()
 
     m_text1 = Text::create(document(), prefixText);
     ASSERT(m_text1);
-    document()->markers()->copyMarkers(m_text2.get(), 0, m_offset, m_text1.get(), 0);
+    document().markers()->copyMarkers(m_text2.get(), 0, m_offset, m_text1.get(), 0);
 
     insertText1AndTrimText2();
 }
@@ -72,13 +72,13 @@ void SplitTextNodeCommand::doUnapply()
     if (!m_text1 || !m_text1->rendererIsEditable())
         return;
 
-    ASSERT(m_text1->document() == document());
+    ASSERT(&m_text1->document() == &document());
 
     String prefixText = m_text1->data();
 
-    m_text2->insertData(0, prefixText, ASSERT_NO_EXCEPTION);
+    m_text2->insertData(0, prefixText, ASSERT_NO_EXCEPTION, CharacterData::DeprecatedRecalcStyleImmediatlelyForEditing);
 
-    document()->markers()->copyMarkers(m_text1.get(), 0, prefixText.length(), m_text2.get(), 0);
+    document().markers()->copyMarkers(m_text1.get(), 0, prefixText.length(), m_text2.get(), 0);
     m_text1->remove(ASSERT_NO_EXCEPTION);
 }
 
@@ -100,15 +100,7 @@ void SplitTextNodeCommand::insertText1AndTrimText2()
     m_text2->parentNode()->insertBefore(m_text1.get(), m_text2.get(), es);
     if (es.hadException())
         return;
-    m_text2->deleteData(0, m_offset, es);
+    m_text2->deleteData(0, m_offset, es, CharacterData::DeprecatedRecalcStyleImmediatlelyForEditing);
 }
-
-#ifndef NDEBUG
-void SplitTextNodeCommand::getNodesInCommand(HashSet<Node*>& nodes)
-{
-    addNodeAndDescendants(m_text1.get(), nodes);
-    addNodeAndDescendants(m_text2.get(), nodes);
-}
-#endif
 
 } // namespace WebCore

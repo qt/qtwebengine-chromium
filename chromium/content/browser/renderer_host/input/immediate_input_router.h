@@ -21,6 +21,7 @@ struct LatencyInfo;
 namespace content {
 
 class GestureEventFilter;
+class InputAckHandler;
 class InputRouterClient;
 class RenderProcessHost;
 class RenderWidgetHostImpl;
@@ -33,11 +34,13 @@ class CONTENT_EXPORT ImmediateInputRouter
  public:
   ImmediateInputRouter(RenderProcessHost* process,
                        InputRouterClient* client,
+                       InputAckHandler* ack_handler,
                        int routing_id);
   virtual ~ImmediateInputRouter();
 
   // InputRouter
-  virtual bool SendInput(IPC::Message* message) OVERRIDE;
+  virtual void Flush() OVERRIDE;
+  virtual bool SendInput(scoped_ptr<IPC::Message> message) OVERRIDE;
   virtual void SendMouseEvent(
       const MouseEventWithLatencyInfo& mouse_event) OVERRIDE;
   virtual void SendWheelEvent(
@@ -59,7 +62,6 @@ class CONTENT_EXPORT ImmediateInputRouter
   virtual bool ShouldForwardTouchEvent() const OVERRIDE;
   virtual bool ShouldForwardGestureEvent(
       const GestureEventWithLatencyInfo& gesture_event) const OVERRIDE;
-  virtual bool HasQueuedGestureEvents() const OVERRIDE;
 
   // IPC::Listener
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
@@ -73,12 +75,14 @@ class CONTENT_EXPORT ImmediateInputRouter
   }
 
 private:
+  friend class ImmediateInputRouterTest;
+
   // TouchEventQueueClient
   virtual void OnTouchEventAck(const TouchEventWithLatencyInfo& event,
                                InputEventAckState ack_result) OVERRIDE;
 
-  bool SendMoveCaret(IPC::Message* message);
-  bool SendSelectRange(IPC::Message* message);
+  bool SendMoveCaret(scoped_ptr<IPC::Message> message);
+  bool SendSelectRange(scoped_ptr<IPC::Message> message);
   bool Send(IPC::Message* message);
 
   // Transmits the given input event an as an IPC::Message. This is an internal
@@ -127,11 +131,15 @@ private:
   void ProcessTouchAck(InputEventAckState ack_result,
                        const ui::LatencyInfo& latency_info);
 
+  void HandleGestureScroll(
+      const GestureEventWithLatencyInfo& gesture_event);
+
   int routing_id() const { return routing_id_; }
 
 
   RenderProcessHost* process_;
   InputRouterClient* client_;
+  InputAckHandler* ack_handler_;
   int routing_id_;
 
   // (Similar to |mouse_move_pending_|.) True while waiting for SelectRange_ACK.
@@ -185,6 +193,10 @@ private:
   // then touch events are sent to the renderer. Otherwise, the touch events are
   // not sent to the renderer.
   bool has_touch_handler_;
+
+  // Whether enabling the optimization that sending no touch move events to
+  // renderer while scrolling.
+  bool enable_no_touch_to_renderer_while_scrolling_;
 
   scoped_ptr<TouchEventQueue> touch_event_queue_;
   scoped_ptr<GestureEventFilter> gesture_event_filter_;

@@ -68,8 +68,8 @@ GpuMemoryManager::GpuMemoryManager(
   CommandLine* command_line = CommandLine::ForCurrentProcess();
 
 #if defined(OS_ANDROID)
-  bytes_default_per_client_ = 16 * 1024 * 1024;
-  bytes_minimum_per_client_ = 16 * 1024 * 1024;
+  bytes_default_per_client_ = 8 * 1024 * 1024;
+  bytes_minimum_per_client_ = 8 * 1024 * 1024;
 #elif defined(OS_CHROMEOS)
   bytes_default_per_client_ = 64 * 1024 * 1024;
   bytes_minimum_per_client_ = 4 * 1024 * 1024;
@@ -79,8 +79,12 @@ GpuMemoryManager::GpuMemoryManager(
 #endif
 
   // On Android, always discard everything that is nonvisible.
-  // On Mac, use as little memory as possible to avoid stability issues.
-#if defined(OS_ANDROID) || defined(OS_MACOSX)
+  // On Linux and Mac, use as little memory as possible to avoid stability
+  // issues.
+  // http://crbug.com/145600 (Linux)
+  // http://crbug.com/141377 (Mac)
+#if defined(OS_ANDROID) || defined(OS_MACOSX) || \
+    (defined(OS_LINUX) && !defined(OS_CHROMEOS))
   allow_nonvisible_memory_ = false;
 #else
   allow_nonvisible_memory_ = true;
@@ -496,8 +500,10 @@ uint64 GpuMemoryManager::ComputeClientAllocationWhenVisible(
 
 uint64 GpuMemoryManager::ComputeClientAllocationWhenNonvisible(
     GpuMemoryManagerClientState* client_state) {
-
   if (!client_state->managed_memory_stats_received_)
+    return 0;
+
+  if (!allow_nonvisible_memory_)
     return 0;
 
   return 9 * client_state->managed_memory_stats_.bytes_required / 8;
@@ -644,10 +650,6 @@ void GpuMemoryManager::ComputeNonvisibleSurfacesAllocations() {
         bytes_available_total - bytes_allocated_visible);
   }
 
-  // Clamp the amount of memory available to non-visible clients.
-  if (!allow_nonvisible_memory_)
-    bytes_available_nonvisible = 0;
-
   // Determine which now-visible clients should keep their contents when
   // they are made nonvisible.
   for (ClientStateList::const_iterator it = clients_visible_mru_.begin();
@@ -774,11 +776,12 @@ void GpuMemoryManager::AssignSurfacesAllocations() {
 
     allocation.renderer_allocation.bytes_limit_when_visible =
         client_state->bytes_allocation_when_visible_;
-    // Use a more conservative memory allocation policy on Mac because the
-    // platform is unstable when under memory pressure.
-    // http://crbug.com/141377
+    // Use a more conservative memory allocation policy on Linux and Mac
+    // because the platform is unstable when under memory pressure.
+    // http://crbug.com/145600 (Linux)
+    // http://crbug.com/141377 (Mac)
     allocation.renderer_allocation.priority_cutoff_when_visible =
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) || (defined(OS_LINUX) && !defined(OS_CHROMEOS))
         GpuMemoryAllocationForRenderer::kPriorityCutoffAllowNiceToHave;
 #else
         GpuMemoryAllocationForRenderer::kPriorityCutoffAllowEverything;

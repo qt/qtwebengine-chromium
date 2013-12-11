@@ -90,21 +90,6 @@ const char* RenderFlexibleBox::renderName() const
     return "RenderFlexibleBox";
 }
 
-static LayoutUnit marginLogicalWidthForChild(RenderBox* child, RenderStyle* parentStyle)
-{
-    // A margin has three types: fixed, percentage, and auto (variable).
-    // Auto and percentage margins become 0 when computing min/max width.
-    // Fixed margins can be added in as is.
-    Length marginLeft = child->style()->marginStartUsing(parentStyle);
-    Length marginRight = child->style()->marginEndUsing(parentStyle);
-    LayoutUnit margin = 0;
-    if (marginLeft.isFixed())
-        margin += marginLeft.value();
-    if (marginRight.isFixed())
-        margin += marginRight.value();
-    return margin;
-}
-
 void RenderFlexibleBox::computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const
 {
     // FIXME: We're ignoring flex-basis here and we shouldn't. We can't start honoring it though until
@@ -114,7 +99,7 @@ void RenderFlexibleBox::computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidt
         if (child->isOutOfFlowPositioned())
             continue;
 
-        LayoutUnit margin = marginLogicalWidthForChild(child, style());
+        LayoutUnit margin = marginIntrinsicLogicalWidthForChild(child);
         bool hasOrthogonalWritingMode = child->isHorizontalWritingMode() != isHorizontalWritingMode();
         LayoutUnit minPreferredLogicalWidth = hasOrthogonalWritingMode ? child->logicalHeight() : child->minPreferredLogicalWidth();
         LayoutUnit maxPreferredLogicalWidth = hasOrthogonalWritingMode ? child->logicalHeight() : child->maxPreferredLogicalWidth();
@@ -325,7 +310,7 @@ void RenderFlexibleBox::repaintChildrenDuringLayoutIfMoved(const ChildFrameRects
 void RenderFlexibleBox::paintChildren(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
     for (RenderBox* child = m_orderIterator.first(); child; child = m_orderIterator.next())
-        paintChild(child, paintInfo, paintOffset);
+        paintChildAsInlineBlock(child, paintInfo, paintOffset);
 }
 
 void RenderFlexibleBox::repositionLogicalHeightDependentFlexItems(Vector<LineContext>& lineContexts)
@@ -455,9 +440,8 @@ LayoutUnit RenderFlexibleBox::computeMainAxisExtentForChild(RenderBox* child, Si
         return child->computeContentLogicalHeight(size, child->logicalHeight() - child->borderAndPaddingLogicalHeight());
     }
     // FIXME: Figure out how this should work for regions and pass in the appropriate values.
-    LayoutUnit offsetFromLogicalTopOfFirstPage = 0;
     RenderRegion* region = 0;
-    return child->computeLogicalWidthInRegionUsing(sizeType, size, contentLogicalWidth(), this, region, offsetFromLogicalTopOfFirstPage) - child->borderAndPaddingLogicalWidth();
+    return child->computeLogicalWidthInRegionUsing(sizeType, size, contentLogicalWidth(), this, region) - child->borderAndPaddingLogicalWidth();
 }
 
 WritingMode RenderFlexibleBox::transformedWritingMode() const
@@ -901,18 +885,19 @@ bool RenderFlexibleBox::computeNextFlexLine(OrderedFlexItemList& orderedChildren
         LayoutUnit childMainAxisExtent = preferredMainAxisContentExtentForChild(child, hasInfiniteLineLength);
         LayoutUnit childMainAxisMarginBorderPadding = mainAxisBorderAndPaddingExtentForChild(child)
             + (isHorizontalFlow() ? child->marginWidth() : child->marginHeight());
-        LayoutUnit childMainAxisMarginBoxExtent = childMainAxisExtent + childMainAxisMarginBorderPadding;
+        LayoutUnit childFlexBaseSize = childMainAxisExtent + childMainAxisMarginBorderPadding;
 
-        if (isMultiline() && sumFlexBaseSize + childMainAxisMarginBoxExtent > lineBreakLength && lineHasInFlowItem)
+        LayoutUnit childMinMaxAppliedMainAxisExtent = adjustChildSizeForMinAndMax(child, childMainAxisExtent);
+        LayoutUnit childHypotheticalMainSize = childMinMaxAppliedMainAxisExtent + childMainAxisMarginBorderPadding;
+
+        if (isMultiline() && sumHypotheticalMainSize + childHypotheticalMainSize > lineBreakLength && lineHasInFlowItem)
             break;
         orderedChildren.append(child);
         lineHasInFlowItem  = true;
-        sumFlexBaseSize += childMainAxisMarginBoxExtent;
+        sumFlexBaseSize += childFlexBaseSize;
         totalFlexGrow += child->style()->flexGrow();
         totalWeightedFlexShrink += child->style()->flexShrink() * childMainAxisExtent;
-
-        LayoutUnit childMinMaxAppliedMainAxisExtent = adjustChildSizeForMinAndMax(child, childMainAxisExtent);
-        sumHypotheticalMainSize += childMinMaxAppliedMainAxisExtent + childMainAxisMarginBorderPadding;
+        sumHypotheticalMainSize += childHypotheticalMainSize;
     }
     return true;
 }

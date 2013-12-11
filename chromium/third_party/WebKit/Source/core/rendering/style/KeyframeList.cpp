@@ -22,6 +22,7 @@
 #include "config.h"
 #include "core/rendering/style/KeyframeList.h"
 
+#include "core/animation/Animation.h"
 #include "core/css/StylePropertySet.h"
 #include "core/rendering/RenderObject.h"
 
@@ -36,9 +37,20 @@ void KeyframeValue::addProperties(const StylePropertySet* propertySet)
         CSSPropertyID property = propertySet->propertyAt(i).id();
         // Timing-function within keyframes is special, because it is not animated; it just
         // describes the timing function between this keyframe and the next.
-        if (property != CSSPropertyWebkitAnimationTimingFunction)
+        if (property != CSSPropertyWebkitAnimationTimingFunction && property != CSSPropertyAnimationTimingFunction)
             addProperty(property);
     }
+}
+
+TimingFunction* KeyframeValue::timingFunction(const RenderStyle* keyframeStyle, const AtomicString& name)
+{
+    ASSERT(keyframeStyle && keyframeStyle->animations());
+    for (size_t i = 0; i < keyframeStyle->animations()->size(); i++) {
+        if (name == keyframeStyle->animations()->animation(i)->name())
+            return keyframeStyle->animations()->animation(i)->timingFunction();
+    }
+    ASSERT_NOT_REACHED();
+    return 0;
 }
 
 KeyframeList::~KeyframeList()

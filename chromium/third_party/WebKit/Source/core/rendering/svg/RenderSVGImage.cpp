@@ -57,7 +57,7 @@ RenderSVGImage::~RenderSVGImage()
 
 bool RenderSVGImage::updateImageViewport()
 {
-    SVGImageElement* image = toSVGImageElement(node());
+    SVGImageElement* image = toSVGImageElement(element());
     FloatRect oldBoundaries = m_objectBoundingBox;
     bool updatedViewport = false;
 
@@ -89,7 +89,6 @@ bool RenderSVGImage::updateImageViewport()
 
 void RenderSVGImage::layout()
 {
-    StackStats::LayoutCheckPoint layoutCheckPoint;
     ASSERT(needsLayout());
 
     LayoutRepainter repainter(*this, SVGRenderSupport::checkForSVGRepaintDuringLayout(this) && selfNeedsLayout());
@@ -97,7 +96,7 @@ void RenderSVGImage::layout()
 
     bool transformOrBoundariesUpdate = m_needsTransformUpdate || m_needsBoundariesUpdate;
     if (m_needsTransformUpdate) {
-        m_localTransform = toSVGImageElement(node())->animatedLocalTransform();
+        m_localTransform = toSVGImageElement(element())->animatedLocalTransform();
         m_needsTransformUpdate = false;
     }
 
@@ -159,7 +158,7 @@ void RenderSVGImage::paintForeground(PaintInfo& paintInfo)
     FloatRect destRect = m_objectBoundingBox;
     FloatRect srcRect(0, 0, image->width(), image->height());
 
-    SVGImageElement* imageElement = toSVGImageElement(node());
+    SVGImageElement* imageElement = toSVGImageElement(element());
     imageElement->preserveAspectRatioCurrentValue().transformRect(destRect, srcRect);
 
     bool useLowQualityScaling = false;

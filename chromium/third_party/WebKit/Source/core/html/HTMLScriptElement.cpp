@@ -37,7 +37,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLScriptElement::HTMLScriptElement(const QualifiedName& tagName, Document* document, bool wasInsertedByParser, bool alreadyStarted)
+inline HTMLScriptElement::HTMLScriptElement(const QualifiedName& tagName, Document& document, bool wasInsertedByParser, bool alreadyStarted)
     : HTMLElement(tagName, document)
     , m_loader(ScriptLoader::create(this, wasInsertedByParser, alreadyStarted))
 {
@@ -45,7 +45,7 @@ inline HTMLScriptElement::HTMLScriptElement(const QualifiedName& tagName, Docume
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLScriptElement> HTMLScriptElement::create(const QualifiedName& tagName, Document* document, bool wasInsertedByParser, bool alreadyStarted)
+PassRefPtr<HTMLScriptElement> HTMLScriptElement::create(const QualifiedName& tagName, Document& document, bool wasInsertedByParser, bool alreadyStarted)
 {
     return adoptRef(new HTMLScriptElement(tagName, document, wasInsertedByParser, alreadyStarted));
 }
@@ -76,25 +76,25 @@ void HTMLScriptElement::parseAttribute(const QualifiedName& name, const AtomicSt
 Node::InsertionNotificationRequest HTMLScriptElement::insertedInto(ContainerNode* insertionPoint)
 {
     HTMLElement::insertedInto(insertionPoint);
-    m_loader->insertedInto(insertionPoint);
-    return InsertionDone;
+    return InsertionShouldCallDidNotifySubtreeInsertions;
+}
+
+void HTMLScriptElement::didNotifySubtreeInsertionsToDocument()
+{
+    m_loader->didNotifySubtreeInsertionsToDocument();
 }
 
 void HTMLScriptElement::setText(const String &value)
 {
     RefPtr<Node> protectFromMutationEvents(this);
 
-    int numChildren = childNodeCount();
-
-    if (numChildren == 1 && firstChild()->isTextNode()) {
+    if (hasOneTextChild()) {
         toText(firstChild())->setData(value);
         return;
     }
 
-    if (numChildren > 0)
-        removeChildren();
-
-    appendChild(document()->createTextNode(value.impl()), IGNORE_EXCEPTION);
+    removeChildren();
+    appendChild(document().createTextNode(value.impl()), IGNORE_EXCEPTION);
 }
 
 void HTMLScriptElement::setAsync(bool async)
@@ -110,7 +110,7 @@ bool HTMLScriptElement::async() const
 
 KURL HTMLScriptElement::src() const
 {
-    return document()->completeURL(sourceAttributeValue());
+    return document().completeURL(sourceAttributeValue());
 }
 
 void HTMLScriptElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) const
@@ -168,7 +168,7 @@ bool HTMLScriptElement::hasSourceAttribute() const
 void HTMLScriptElement::dispatchLoadEvent()
 {
     ASSERT(!m_loader->haveFiredLoadEvent());
-    dispatchEvent(Event::create(eventNames().loadEvent, false, false));
+    dispatchEvent(Event::create(eventNames().loadEvent));
 }
 
 PassRefPtr<Element> HTMLScriptElement::cloneElementWithoutAttributesAndChildren()

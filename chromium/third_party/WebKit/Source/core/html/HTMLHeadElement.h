@@ -30,12 +30,18 @@ namespace WebCore {
 
 class HTMLHeadElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLHeadElement> create(Document*);
-    static PassRefPtr<HTMLHeadElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<HTMLHeadElement> create(Document&);
+    static PassRefPtr<HTMLHeadElement> create(const QualifiedName&, Document&);
 
 private:
-    HTMLHeadElement(const QualifiedName&, Document*);
+    HTMLHeadElement(const QualifiedName&, Document&);
 };
+
+inline HTMLHeadElement* toHTMLHeadElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::headTag));
+    return static_cast<HTMLHeadElement*>(node);
+}
 
 } // namespace
 

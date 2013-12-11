@@ -31,14 +31,14 @@
 
 #include "core/rendering/RenderLayerFilterInfo.h"
 
-#include "core/loader/cache/DocumentResource.h"
-#include "core/loader/cache/DocumentResourceReference.h"
+#include "core/fetch/DocumentResource.h"
+#include "core/fetch/DocumentResourceReference.h"
 #include "core/platform/graphics/filters/custom/CustomFilterOperation.h"
 #include "core/platform/graphics/filters/custom/CustomFilterProgram.h"
 #include "core/rendering/FilterEffectRenderer.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/svg/RenderSVGResourceContainer.h"
-#include "core/svg/SVGElement.h"
+#include "core/svg/SVGFilterElement.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "core/svg/graphics/filters/SVGFilter.h"
 
@@ -129,10 +129,13 @@ void RenderLayerFilterInfo::updateReferenceFilterClients(const FilterOperations&
         } else {
             // Reference is internal; add layer as a client so we can trigger
             // filter repaint on SVG attribute change.
-            Element* filter = m_layer->renderer()->node()->document()->getElementById(referenceFilterOperation->fragment());
-            if (!filter || !filter->renderer() || !filter->renderer()->isSVGResourceFilter())
+            Element* filter = m_layer->renderer()->node()->document().getElementById(referenceFilterOperation->fragment());
+            if (!filter || !filter->hasTagName(SVGNames::filterTag))
                 continue;
-            filter->renderer()->toRenderSVGResourceContainer()->addClientRenderLayer(m_layer);
+            if (filter->renderer())
+                filter->renderer()->toRenderSVGResourceContainer()->addClientRenderLayer(m_layer);
+            else
+                toSVGFilterElement(filter)->addClient(m_layer->renderer()->node());
             m_internalSVGReferences.append(filter);
         }
     }
@@ -145,9 +148,10 @@ void RenderLayerFilterInfo::removeReferenceFilterClients()
     m_externalSVGReferences.clear();
     for (size_t i = 0; i < m_internalSVGReferences.size(); ++i) {
         Element* filter = m_internalSVGReferences.at(i).get();
-        if (!filter->renderer())
-            continue;
-        filter->renderer()->toRenderSVGResourceContainer()->removeClientRenderLayer(m_layer);
+        if (filter->renderer())
+            filter->renderer()->toRenderSVGResourceContainer()->removeClientRenderLayer(m_layer);
+        else
+            toSVGFilterElement(filter)->removeClient(m_layer->renderer()->node());
     }
     m_internalSVGReferences.clear();
 }

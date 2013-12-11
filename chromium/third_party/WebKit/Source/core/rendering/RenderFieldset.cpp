@@ -37,7 +37,7 @@ namespace WebCore {
 using namespace HTMLNames;
 
 RenderFieldset::RenderFieldset(Element* element)
-    : RenderBlock(element)
+    : RenderBlockFlow(element)
 {
 }
 
@@ -60,7 +60,7 @@ void RenderFieldset::computePreferredLogicalWidths()
     }
 }
 
-RenderObject* RenderFieldset::layoutSpecialExcludedChild(bool relayoutChildren)
+RenderObject* RenderFieldset::layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope&)
 {
     RenderBox* legend = findLegend();
     if (legend) {

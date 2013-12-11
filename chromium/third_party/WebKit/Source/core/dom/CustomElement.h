@@ -46,13 +46,13 @@ class Element;
 
 class CustomElement {
 public:
-    // FIXME: CustomElementRegistry requires isValidTypeName to be a
-    // superset of isCustomTagName; consider either merging these or
-    // separating them completely into
-    // isCustomTagName/isTypeExtensionName.
-    static bool isValidTypeName(const AtomicString& type);
-    static bool isCustomTagName(const AtomicString& localName);
-    static void allowTagName(const AtomicString& localName);
+    enum NameSet {
+        EmbedderNames = 1 << 0,
+        StandardNames = 1 << 1,
+        AllNames = EmbedderNames | StandardNames
+    };
+    static bool isValidName(const AtomicString& name, NameSet validNames = AllNames);
+    static void addEmbedderCustomElementName(const AtomicString& name);
 
     // API for registration contexts
     static void define(Element*, PassRefPtr<CustomElementDefinition>);
@@ -62,15 +62,16 @@ public:
 
     // API for Element to kick off changes
 
+    static void didFinishParsingChildren(Element*);
     static void attributeDidChange(Element*, const AtomicString& name, const AtomicString& oldValue, const AtomicString& newValue);
-    static void didEnterDocument(Element*, Document*);
-    static void didLeaveDocument(Element*, Document*);
+    static void didEnterDocument(Element*, const Document&);
+    static void didLeaveDocument(Element*, const Document&);
     static void wasDestroyed(Element*);
 
 private:
     CustomElement();
 
-    static Vector<AtomicString>& allowedCustomTagNames();
+    static Vector<AtomicString>& embedderCustomElementNames();
 
     // Maps resolved elements to their definitions
 
@@ -81,8 +82,8 @@ private:
         ~DefinitionMap() { }
 
         void add(Element*, PassRefPtr<CustomElementDefinition>);
-        void remove(Element*);
-        CustomElementDefinition* get(Element*);
+        void remove(Element* element) { m_definitions.remove(element); }
+        CustomElementDefinition* get(Element* element) const { return m_definitions.get(element); }
 
     private:
         typedef HashMap<Element*, RefPtr<CustomElementDefinition> > ElementDefinitionHashMap;

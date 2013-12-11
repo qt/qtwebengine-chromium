@@ -82,8 +82,7 @@ void MIDIAccess::didAddInputPort(const String& id, const String& manufacturer, c
 {
     ASSERT(isMainThread());
 
-    // FIXME: Pass in |this| to create() method so we can filter system exclusive messages correctly.
-    m_inputs.append(MIDIInput::create(scriptExecutionContext(), id, manufacturer, name, version));
+    m_inputs.append(MIDIInput::create(this, scriptExecutionContext(), id, manufacturer, name, version));
 }
 
 void MIDIAccess::didAddOutputPort(const String& id, const String& manufacturer, const String& name, const String& version)
@@ -94,12 +93,15 @@ void MIDIAccess::didAddOutputPort(const String& id, const String& manufacturer, 
     m_outputs.append(MIDIOutput::create(this, portIndex, scriptExecutionContext(), id, manufacturer, name, version));
 }
 
-void MIDIAccess::didStartSession()
+void MIDIAccess::didStartSession(bool success)
 {
     ASSERT(isMainThread());
 
-    m_hasAccess = true;
-    m_promise->fulfill();
+    m_hasAccess = success;
+    if (success)
+        m_promise->fulfill();
+    else
+        m_promise->reject(DOMError::create("InvalidStateError"));
 }
 
 void MIDIAccess::didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp)
@@ -178,8 +180,7 @@ void MIDIAccess::permissionDenied()
     ASSERT(isMainThread());
 
     m_hasAccess = false;
-    RefPtr<DOMError> error = DOMError::create("SecurityError");
-    m_promise->reject(error);
+    m_promise->reject(DOMError::create("SecurityError"));
 }
 
 } // namespace WebCore

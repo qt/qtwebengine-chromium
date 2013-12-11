@@ -21,6 +21,7 @@
 #ifndef SVGFEMergeNodeElement_h
 #define SVGFEMergeNodeElement_h
 
+#include "SVGNames.h"
 #include "core/svg/SVGAnimatedString.h"
 #include "core/svg/SVGElement.h"
 
@@ -28,21 +29,27 @@ namespace WebCore {
 
 class SVGFEMergeNodeElement FINAL : public SVGElement {
 public:
-    static PassRefPtr<SVGFEMergeNodeElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGFEMergeNodeElement> create(const QualifiedName&, Document&);
 
 private:
-    SVGFEMergeNodeElement(const QualifiedName&, Document*);
+    SVGFEMergeNodeElement(const QualifiedName&, Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual void svgAttributeChanged(const QualifiedName&);
 
-    virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
 
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGFEMergeNodeElement)
         DECLARE_ANIMATED_STRING(In1, in1)
     END_DECLARE_ANIMATED_PROPERTIES
 };
+
+inline SVGFEMergeNodeElement* toSVGFEMergeNodeElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::feMergeNodeTag));
+    return static_cast<SVGFEMergeNodeElement*>(node);
+}
 
 } // namespace WebCore
 

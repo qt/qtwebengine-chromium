@@ -46,9 +46,6 @@ bool FileSystemURL::ParseFileSystemSchemeURL(
 
   if (!url.is_valid() || !url.SchemeIsFileSystem())
     return false;
-  DCHECK(url.inner_url());
-
-  std::string inner_path = url.inner_url()->path();
 
   const struct {
     FileSystemType type;
@@ -61,8 +58,11 @@ bool FileSystemURL::ParseFileSystemSchemeURL(
     { kFileSystemTypeTest, kTestDir },
   };
 
+  // A path of the inner_url contains only mount type part (e.g. "/temporary").
+  DCHECK(url.inner_url());
+  std::string inner_path = url.inner_url()->path();
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kValidTypes); ++i) {
-    if (StartsWithASCII(inner_path, kValidTypes[i].dir, true)) {
+    if (inner_path == kValidTypes[i].dir) {
       file_system_type = kValidTypes[i].type;
       break;
     }
@@ -134,6 +134,20 @@ FileSystemURL::FileSystemURL(const GURL& origin,
 }
 
 FileSystemURL::~FileSystemURL() {}
+
+GURL FileSystemURL::ToGURL() const {
+  if (!is_valid_)
+    return GURL();
+
+  std::string url = GetFileSystemRootURI(origin_, mount_type_).spec();
+  if (url.empty())
+    return GURL();
+
+  url.append(virtual_path_.AsUTF8Unsafe());
+
+  // Build nested GURL.
+  return GURL(url);
+}
 
 std::string FileSystemURL::DebugString() const {
   if (!is_valid_)

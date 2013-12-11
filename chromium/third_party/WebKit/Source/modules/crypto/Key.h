@@ -32,6 +32,7 @@
 #define Key_h
 
 #include "bindings/v8/ScriptWrappable.h"
+#include "modules/crypto/NormalizeAlgorithm.h"
 #include "public/platform/WebCryptoKey.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
@@ -41,6 +42,7 @@
 namespace WebCore {
 
 class Algorithm;
+class ExceptionState;
 
 class Key : public ScriptWrappable, public RefCounted<Key> {
 public:
@@ -55,11 +57,10 @@ public:
 
     const WebKit::WebCryptoKey& key() const { return m_key; }
 
-    static bool parseFormat(const String&, WebKit::WebCryptoKeyFormat&);
+    bool canBeUsedForAlgorithm(const WebKit::WebCryptoAlgorithm&, AlgorithmOperation, ExceptionState&) const;
 
-    // Parses KeyUsage strings to a WebCryptoKeyUsageMask. If any element is
-    // unrecognized, returns false.
-    static bool parseUsageMask(const Vector<String>&, WebKit::WebCryptoKeyUsageMask&);
+    static bool parseFormat(const String&, WebKit::WebCryptoKeyFormat&, ExceptionState&);
+    static bool parseUsageMask(const Vector<String>&, WebKit::WebCryptoKeyUsageMask&, ExceptionState&);
 
 protected:
     explicit Key(const WebKit::WebCryptoKey&);

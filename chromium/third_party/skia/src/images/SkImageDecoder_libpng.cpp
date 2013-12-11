@@ -124,7 +124,9 @@ static void sk_read_fn(png_structp png_ptr, png_bytep data, png_size_t length) {
 #ifdef SK_BUILD_FOR_ANDROID
 static void sk_seek_fn(png_structp png_ptr, png_uint_32 offset) {
     SkStream* sk_stream = (SkStream*) png_get_io_ptr(png_ptr);
-    sk_stream->rewind();
+    if (!sk_stream->rewind()) {
+        png_error(png_ptr, "Failed to rewind stream!");
+    }
     (void)sk_stream->skip(offset);
 }
 #endif
@@ -1172,8 +1174,6 @@ DEFINE_DECODER_CREATOR(PNGImageDecoder);
 DEFINE_ENCODER_CREATOR(PNGImageEncoder);
 ///////////////////////////////////////////////////////////////////////////////
 
-#include "SkTRegistry.h"
-
 static bool is_png(SkStream* stream) {
     char buf[PNG_BYTES_TO_CHECK];
     if (stream->read(buf, PNG_BYTES_TO_CHECK) == PNG_BYTES_TO_CHECK &&
@@ -1201,6 +1201,6 @@ SkImageEncoder* sk_libpng_efactory(SkImageEncoder::Type t) {
     return (SkImageEncoder::kPNG_Type == t) ? SkNEW(SkPNGImageEncoder) : NULL;
 }
 
-static SkTRegistry<SkImageEncoder*, SkImageEncoder::Type> gEReg(sk_libpng_efactory);
-static SkTRegistry<SkImageDecoder::Format, SkStream*> gFormatReg(get_format_png);
-static SkTRegistry<SkImageDecoder*, SkStream*> gDReg(sk_libpng_dfactory);
+static SkImageDecoder_DecodeReg gDReg(sk_libpng_dfactory);
+static SkImageDecoder_FormatReg gFormatReg(get_format_png);
+static SkImageEncoder_EncodeReg gEReg(sk_libpng_efactory);

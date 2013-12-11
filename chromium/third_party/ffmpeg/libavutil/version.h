@@ -75,7 +75,7 @@
  */
 
 #define LIBAVUTIL_VERSION_MAJOR  52
-#define LIBAVUTIL_VERSION_MINOR  27
+#define LIBAVUTIL_VERSION_MINOR  42
 #define LIBAVUTIL_VERSION_MICRO 100
 
 #define LIBAVUTIL_VERSION_INT   AV_VERSION_INT(LIBAVUTIL_VERSION_MAJOR, \
@@ -114,9 +114,11 @@
 #ifndef FF_API_CONTEXT_SIZE
 #define FF_API_CONTEXT_SIZE             (LIBAVUTIL_VERSION_MAJOR < 53)
 #endif
-#ifndef FF_API_PIX_FMT_DESC
-#define FF_API_PIX_FMT_DESC             (LIBAVUTIL_VERSION_MAJOR < 53)
-#endif
+// TODO(dalecurtis): Remove when libavutil > 52.  We don't care about this API,
+// but without this it'll generate spammy deprecation warnings.
+// #ifndef FF_API_PIX_FMT_DESC
+// #define FF_API_PIX_FMT_DESC             (LIBAVUTIL_VERSION_MAJOR < 53)
+// #endif
 #ifndef FF_API_AV_REVERSE
 #define FF_API_AV_REVERSE               (LIBAVUTIL_VERSION_MAJOR < 53)
 #endif
@@ -134,6 +136,9 @@
 #endif
 #ifndef FF_API_AVFRAME_LAVC
 #define FF_API_AVFRAME_LAVC             (LIBAVUTIL_VERSION_MAJOR < 53)
+#endif
+#ifndef FF_API_VDPAU
+#define FF_API_VDPAU                    (LIBAVUTIL_VERSION_MAJOR < 53)
 #endif
 
 /**

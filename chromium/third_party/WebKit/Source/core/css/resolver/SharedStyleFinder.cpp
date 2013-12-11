@@ -36,10 +36,10 @@
 #include "core/dom/ContainerNode.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/dom/FullscreenElementStack.h"
 #include "core/dom/Node.h"
 #include "core/dom/NodeRenderStyle.h"
-#include "core/dom/NodeTraversal.h"
 #include "core/dom/QualifiedName.h"
 #include "core/dom/SpaceSplitString.h"
 #include "core/dom/shadow/ElementShadow.h"
@@ -56,63 +56,10 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-static const unsigned cStyleSearchThreshold = 10;
-static const unsigned cStyleSearchLevelThreshold = 10;
-
 static inline bool parentElementPreventsSharing(const Element* parentElement)
 {
-    if (!parentElement)
-        return false;
     return parentElement->hasFlagsSetDuringStylingOfChildren();
 }
-
-Node* SharedStyleFinder::locateCousinList(Element* parent, unsigned& visitedNodeCount) const
-{
-    if (visitedNodeCount >= cStyleSearchThreshold * cStyleSearchLevelThreshold)
-        return 0;
-    if (!parent || !parent->isStyledElement())
-        return 0;
-    if (parent->hasScopedHTMLStyleChild())
-        return 0;
-    if (parent->inlineStyle())
-        return 0;
-    if (parent->isSVGElement() && toSVGElement(parent)->animatedSMILStyleProperties())
-        return 0;
-    if (parent->hasID() && m_features.idsInRules.contains(parent->idForStyleResolution().impl()))
-        return 0;
-    if (isShadowHost(parent) && parent->shadow()->containsActiveStyles())
-        return 0;
-
-    RenderStyle* parentStyle = parent->renderStyle();
-    unsigned subcount = 0;
-    Node* thisCousin = parent;
-    Node* currentNode = parent->previousSibling();
-
-    // Reserve the tries for this level. This effectively makes sure that the algorithm
-    // will never go deeper than cStyleSearchLevelThreshold levels into recursion.
-    visitedNodeCount += cStyleSearchThreshold;
-    while (thisCousin) {
-        while (currentNode) {
-            ++subcount;
-            if (!currentNode->hasScopedHTMLStyleChild() && currentNode->renderStyle() == parentStyle && currentNode->lastChild()
-                && currentNode->isElementNode() && !parentElementPreventsSharing(toElement(currentNode))
-                && !toElement(currentNode)->shadow()
-                ) {
-                // Adjust for unused reserved tries.
-                visitedNodeCount -= cStyleSearchThreshold - subcount;
-                return currentNode->lastChild();
-            }
-            if (subcount >= cStyleSearchThreshold)
-                return 0;
-            currentNode = currentNode->previousSibling();
-        }
-        currentNode = locateCousinList(thisCousin->parentElement(), visitedNodeCount);
-        thisCousin = currentNode;
-    }
-
-    return 0;
-}
-
 
 bool SharedStyleFinder::canShareStyleWithControl(const ElementResolveContext& context, Element* element) const
 {
@@ -143,7 +90,7 @@ bool SharedStyleFinder::canShareStyleWithControl(const ElementResolveContext& co
     if (element->isDefaultButtonForForm() != context.element()->isDefaultButtonForForm())
         return false;
 
-    if (context.document()->containsValidityStyleRules()) {
+    if (context.document().containsValidityStyleRules()) {
         bool willValidate = element->willValidate();
 
         if (willValidate != context.element()->willValidate())
@@ -214,8 +161,15 @@ bool SharedStyleFinder::sharingCandidateHasIdenticalStyleAffectingAttributes(con
 
 bool SharedStyleFinder::canShareStyleWithElement(const ElementResolveContext& context, Element* element) const
 {
+    if (context.element() == element)
+        return false;
+    Element* parent = element->parentElement();
     RenderStyle* style = element->renderStyle();
     if (!style)
+        return false;
+    if (!parent)
+        return false;
+    if (context.element()->parentElement()->renderStyle() != parent->renderStyle())
         return false;
     if (style->unique())
         return false;
@@ -239,7 +193,7 @@ bool SharedStyleFinder::canShareStyleWithElement(const ElementResolveContext& co
         return false;
     if (element->shadowPseudoId() != context.element()->shadowPseudoId())
         return false;
-    if (element == element->document()->cssTarget())
+    if (element == element->document().cssTarget())
         return false;
     if (!sharingCandidateHasIdenticalStyleAffectingAttributes(context, element))
         return false;
@@ -291,31 +245,33 @@ bool SharedStyleFinder::canShareStyleWithElement(const ElementResolveContext& co
     if (element->isWebVTTElement() && context.element()->isWebVTTElement() && toWebVTTElement(element)->isPastNode() != toWebVTTElement(context.element())->isPastNode())
         return false;
 
-    if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(context.document())) {
+    if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(&context.document())) {
         if (element == fullscreen->webkitCurrentFullScreenElement() || context.element() == fullscreen->webkitCurrentFullScreenElement())
+            return false;
+    }
+
+    if (context.element()->parentElement() != parent) {
+        if (!parent->isStyledElement())
+            return false;
+        if (parent->hasScopedHTMLStyleChild())
+            return false;
+        if (parent->inlineStyle())
+            return false;
+        if (parent->isSVGElement() && toSVGElement(parent)->animatedSMILStyleProperties())
+            return false;
+        if (parent->hasID() && m_features.idsInRules.contains(parent->idForStyleResolution().impl()))
+            return false;
+        if (parentElementPreventsSharing(parent))
             return false;
     }
 
     return true;
 }
 
-inline Element* SharedStyleFinder::findSiblingForStyleSharing(const ElementResolveContext& context, Node* node, unsigned& count) const
-{
-    for (; node; node = node->previousSibling()) {
-        if (!node->isStyledElement())
-            continue;
-        if (canShareStyleWithElement(context, toElement(node)))
-            break;
-        if (count++ == cStyleSearchThreshold)
-            return 0;
-    }
-    return toElement(node);
-}
-
 #ifdef STYLE_STATS
 Element* SharedStyleFinder::searchDocumentForSharedStyle(const ElementResolveContext& context) const
 {
-    for (Element* element = context.element()->document()->documentElement(); element; element = ElementTraversal::next(element)) {
+    for (Element* element = context.element()->document().documentElement(); element; element = ElementTraversal::next(element)) {
         if (canShareStyleWithElement(context, element))
             return element;
     }
@@ -323,45 +279,29 @@ Element* SharedStyleFinder::searchDocumentForSharedStyle(const ElementResolveCon
 }
 #endif
 
+inline Element* SharedStyleFinder::findElementForStyleSharing(const ElementResolveContext& context) const
+{
+    StyleSharingList& styleSharingList = m_styleResolver->styleSharingList();
+    for (StyleSharingList::iterator it = styleSharingList.begin(); it != styleSharingList.end(); ++it) {
+        if (!canShareStyleWithElement(context, it->get()))
+            continue;
+        Element* element = it->get();
+        if (it != styleSharingList.begin()) {
+            // Move the element to the front of the LRU
+            styleSharingList.remove(it);
+            styleSharingList.prepend(element);
+        }
+        return element;
+    }
+    m_styleResolver->addToStyleSharingList(context.element());
+    return 0;
+}
+
 RenderStyle* SharedStyleFinder::locateSharedStyle(const ElementResolveContext& context, RenderStyle* newStyle)
 {
     STYLE_STATS_ADD_SEARCH();
-    if (!context.element() || !context.element()->isStyledElement())
-        return 0;
 
-    // If the element has inline style it is probably unique.
-    if (context.element()->inlineStyle())
-        return 0;
-    if (context.element()->isSVGElement() && toSVGElement(context.element())->animatedSMILStyleProperties())
-        return 0;
-    // Ids stop style sharing if they show up in the stylesheets.
-    if (context.element()->hasID() && m_features.idsInRules.contains(context.element()->idForStyleResolution().impl()))
-        return 0;
-    // Active and hovered elements always make a chain towards the document node
-    // and no siblings or cousins will have the same state.
-    if (context.element()->hovered())
-        return 0;
-    if (context.element()->active())
-        return 0;
-    // There is always only one focused element.
-    if (context.element()->focused())
-        return 0;
-    if (parentElementPreventsSharing(context.element()->parentElement()))
-        return 0;
-    if (context.element()->hasScopedHTMLStyleChild())
-        return 0;
-    if (context.element() == context.document()->cssTarget())
-        return 0;
-    if (elementHasDirectionAuto(context.element()))
-        return 0;
-    if (context.element()->hasActiveAnimations())
-        return 0;
-    // When a dialog is first shown, its style is mutated to center it in the
-    // viewport. So the styles can't be shared since the viewport position and
-    // size may be different each time a dialog is opened.
-    if (context.element()->hasTagName(dialogTag))
-        return 0;
-    if (isShadowHost(context.element()) && context.element()->shadow()->containsActiveStyles())
+    if (!m_styleResolver->supportsStyleSharing(context.element()))
         return 0;
 
     STYLE_STATS_ADD_ELEMENT_ELIGIBLE_FOR_SHARING();
@@ -370,17 +310,7 @@ RenderStyle* SharedStyleFinder::locateSharedStyle(const ElementResolveContext& c
     // FIXME: This should be an explicit out parameter, instead of a member variable.
     m_elementAffectedByClassRules = context.element() && context.element()->hasClass() && classNamesAffectedByRules(context.element()->classNames());
 
-    // Check previous siblings and their cousins.
-    unsigned count = 0;
-    unsigned visitedNodeCount = 0;
-    Element* shareElement = 0;
-    Node* cousinList = context.element()->previousSibling();
-    while (cousinList) {
-        shareElement = findSiblingForStyleSharing(context, cousinList, count);
-        if (shareElement)
-            break;
-        cousinList = locateCousinList(cousinList->parentElement(), visitedNodeCount);
-    }
+    Element* shareElement = findElementForStyleSharing(context);
 
 #ifdef STYLE_STATS
     // FIXME: these stats don't to into account whether or not sibling/attribute

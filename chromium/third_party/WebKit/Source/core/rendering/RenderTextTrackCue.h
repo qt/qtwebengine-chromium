@@ -27,20 +27,20 @@
 #define RenderTextTrackCue_h
 
 #include "core/platform/graphics/FloatPoint.h"
-#include "core/rendering/RenderBlock.h"
+#include "core/rendering/RenderBlockFlow.h"
 #include "core/rendering/RenderInline.h"
-#include "core/rendering/RenderView.h"
 
 namespace WebCore {
 
 class TextTrackCueBox;
 
-class RenderTextTrackCue FINAL : public RenderBlock {
+class RenderTextTrackCue FINAL : public RenderBlockFlow {
 public:
     explicit RenderTextTrackCue(TextTrackCueBox*);
 
 private:
     virtual void layout() OVERRIDE;
+    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
 
     bool isOutside() const;
     bool isOverlapping() const;

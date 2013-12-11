@@ -8,11 +8,11 @@
 #include "cc/quads/draw_quad.h"
 #include "cc/quads/picture_draw_quad.h"
 #include "cc/quads/texture_draw_quad.h"
-#include "cc/resources/platform_color.h"
 #include "cc/resources/sync_point_helper.h"
 #include "cc/test/fake_picture_pile_impl.h"
 #include "cc/test/pixel_test.h"
 #include "gpu/GLES2/gl2extchromium.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "third_party/skia/include/core/SkMatrix.h"
 #include "third_party/skia/include/effects/SkColorFilterImageFilter.h"
@@ -110,8 +110,11 @@ scoped_ptr<TextureDrawQuad> CreateTestTextureDrawQuad(
                           SkColorGetB(texel_color));
   std::vector<uint32_t> pixels(rect.size().GetArea(), pixel_color);
 
-  ResourceProvider::ResourceId resource = resource_provider->CreateResource(
-      rect.size(), GL_RGBA, ResourceProvider::TextureUsageAny);
+  ResourceProvider::ResourceId resource =
+      resource_provider->CreateResource(rect.size(),
+                                        GL_CLAMP_TO_EDGE,
+                                        ResourceProvider::TextureUsageAny,
+                                        RGBA_8888);
   resource_provider->SetPixels(
       resource,
       reinterpret_cast<uint8_t*>(&pixels.front()),
@@ -214,6 +217,7 @@ TYPED_TEST(RendererPixelTest, SimpleGreenRect) {
 
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
+      PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("green.png")),
       ExactPixelComparator(true)));
 }
@@ -255,6 +259,7 @@ TYPED_TEST(RendererPixelTest, SimpleGreenRect_NonRootRenderPass) {
   EXPECT_TRUE(this->RunPixelTestWithReadbackTarget(
       &pass_list,
       child_pass_ptr,
+      PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("green_small.png")),
       ExactPixelComparator(true)));
 }
@@ -286,6 +291,7 @@ TYPED_TEST(RendererPixelTest, PremultipliedTextureWithoutBackground) {
 
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
+      PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("green_alpha.png")),
       FuzzyPixelOffByOneComparator(true)));
 }
@@ -320,6 +326,7 @@ TYPED_TEST(RendererPixelTest, PremultipliedTextureWithBackground) {
 
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
+      PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("green_alpha.png")),
       FuzzyPixelOffByOneComparator(true)));
 }
@@ -352,6 +359,7 @@ TEST_F(GLRendererPixelTest, NonPremultipliedTextureWithoutBackground) {
 
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
+      PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("green_alpha.png")),
       FuzzyPixelOffByOneComparator(true)));
 }
@@ -387,6 +395,7 @@ TEST_F(GLRendererPixelTest, NonPremultipliedTextureWithBackground) {
 
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
+      PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("green_alpha.png")),
       FuzzyPixelOffByOneComparator(true)));
 }
@@ -401,24 +410,28 @@ class VideoGLRendererPixelTest : public GLRendererPixelTest {
     ResourceProvider::ResourceId y_resource =
         resource_provider_->CreateResource(
             this->device_viewport_size_,
-            GL_LUMINANCE,
-            ResourceProvider::TextureUsageAny);
+            GL_CLAMP_TO_EDGE,
+            ResourceProvider::TextureUsageAny,
+            LUMINANCE_8);
     ResourceProvider::ResourceId u_resource =
         resource_provider_->CreateResource(
             this->device_viewport_size_,
-            GL_LUMINANCE,
-            ResourceProvider::TextureUsageAny);
+            GL_CLAMP_TO_EDGE,
+            ResourceProvider::TextureUsageAny,
+            LUMINANCE_8);
     ResourceProvider::ResourceId v_resource =
         resource_provider_->CreateResource(
             this->device_viewport_size_,
-            GL_LUMINANCE,
-            ResourceProvider::TextureUsageAny);
+            GL_CLAMP_TO_EDGE,
+            ResourceProvider::TextureUsageAny,
+            LUMINANCE_8);
     ResourceProvider::ResourceId a_resource = 0;
     if (with_alpha) {
       a_resource = resource_provider_->CreateResource(
                        this->device_viewport_size_,
-                       GL_LUMINANCE,
-                       ResourceProvider::TextureUsageAny);
+                       GL_CLAMP_TO_EDGE,
+                       ResourceProvider::TextureUsageAny,
+                       LUMINANCE_8);
     }
 
     int w = this->device_viewport_size_.width();
@@ -476,6 +489,7 @@ TEST_F(VideoGLRendererPixelTest, SimpleYUVRect) {
 
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
+      PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("green.png")),
       ExactPixelComparator(true)));
 }
@@ -504,6 +518,7 @@ TEST_F(VideoGLRendererPixelTest, SimpleYUVARect) {
 
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
+      PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("green_alpha.png")),
       ExactPixelComparator(true)));
 }
@@ -532,6 +547,7 @@ TEST_F(VideoGLRendererPixelTest, FullyTransparentYUVARect) {
 
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
+      PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("black.png")),
       ExactPixelComparator(true)));
 }
@@ -631,6 +647,7 @@ TYPED_TEST(RendererPixelTest, FastPassColorFilterAlpha) {
   // renderer so use a fuzzy comparator.
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
+      PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("blue_yellow_alpha.png")),
       FuzzyForSoftwareOnlyPixelComparator<TypeParam>(false)));
 }
@@ -733,6 +750,7 @@ TYPED_TEST(RendererPixelTest, FastPassColorFilterAlphaTranslation) {
   // renderer so use a fuzzy comparator.
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
+      PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("blue_yellow_alpha_translate.png")),
       FuzzyForSoftwareOnlyPixelComparator<TypeParam>(false)));
 }
@@ -789,6 +807,7 @@ TYPED_TEST(RendererPixelTest, EnlargedRenderPassTexture) {
 
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
+      PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("blue_yellow.png")),
       ExactPixelComparator(true)));
 }
@@ -857,6 +876,7 @@ TYPED_TEST(RendererPixelTest, EnlargedRenderPassTextureWithAntiAliasing) {
 
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
+      PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("blue_yellow_anti_aliasing.png")),
       FuzzyPixelOffByOneComparator(true)));
 }
@@ -996,6 +1016,7 @@ TEST_F(GLRendererPixelTestWithBackgroundFilter, InvertFilter) {
   this->SetUpRenderPassList();
   EXPECT_TRUE(this->RunPixelTest(
       &this->pass_list_,
+      PixelTest::WithOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("background_filter.png")),
       ExactPixelComparator(true)));
 }
@@ -1003,7 +1024,8 @@ TEST_F(GLRendererPixelTestWithBackgroundFilter, InvertFilter) {
 class ExternalStencilPixelTest : public GLRendererPixelTest {
  protected:
   void ClearBackgroundToGreen() {
-    WebKit::WebGraphicsContext3D* context3d = output_surface_->context3d();
+    WebKit::WebGraphicsContext3D* context3d =
+        output_surface_->context_provider()->Context3d();
     output_surface_->EnsureBackbuffer();
     output_surface_->Reshape(device_viewport_size_, 1);
     context3d->clearColor(0.f, 1.f, 0.f, 1.f);
@@ -1012,7 +1034,8 @@ class ExternalStencilPixelTest : public GLRendererPixelTest {
 
   void PopulateStencilBuffer() {
     // Set two quadrants of the stencil buffer to 1.
-    WebKit::WebGraphicsContext3D* context3d = output_surface_->context3d();
+    WebKit::WebGraphicsContext3D* context3d =
+        output_surface_->context_provider()->Context3d();
     ASSERT_TRUE(context3d->getContextAttributes().stencil);
     output_surface_->EnsureBackbuffer();
     output_surface_->Reshape(device_viewport_size_, 1);
@@ -1054,6 +1077,7 @@ TEST_F(ExternalStencilPixelTest, StencilTestEnabled) {
 
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
+      PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("four_blue_green_checkers.png")),
       ExactPixelComparator(true)));
 }
@@ -1076,6 +1100,7 @@ TEST_F(ExternalStencilPixelTest, StencilTestDisabled) {
 
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
+      PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("green.png")),
       ExactPixelComparator(true)));
 }
@@ -1125,7 +1150,33 @@ TEST_F(ExternalStencilPixelTest, RenderSurfacesIgnoreStencil) {
 
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
+      PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("four_blue_green_checkers.png")),
+      ExactPixelComparator(true)));
+}
+
+TEST_F(ExternalStencilPixelTest, DeviceClip) {
+  ClearBackgroundToGreen();
+  gfx::Rect clip_rect(gfx::Point(150, 150), gfx::Size(50, 50));
+  this->ForceDeviceClip(clip_rect);
+
+  // Draw a blue quad that covers the entire device viewport. It should be
+  // clipped to the bottom right corner by the device clip.
+  gfx::Rect rect(this->device_viewport_size_);
+  RenderPass::Id id(1, 1);
+  scoped_ptr<RenderPass> pass = CreateTestRootRenderPass(id, rect);
+  scoped_ptr<SharedQuadState> blue_shared_state =
+      CreateTestSharedQuadState(gfx::Transform(), rect);
+  scoped_ptr<SolidColorDrawQuad> blue = SolidColorDrawQuad::Create();
+  blue->SetNew(blue_shared_state.get(), rect, SK_ColorBLUE, false);
+  pass->quad_list.push_back(blue.PassAs<DrawQuad>());
+  RenderPassList pass_list;
+  pass_list.push_back(pass.Pass());
+
+  EXPECT_TRUE(this->RunPixelTest(
+      &pass_list,
+      PixelTest::NoOffscreenContext,
+      base::FilePath(FILE_PATH_LITERAL("green_with_blue_corner.png")),
       ExactPixelComparator(true)));
 }
 
@@ -1170,6 +1221,7 @@ TEST_F(GLRendererPixelTest, AntiAliasing) {
 
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
+      PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("anti_aliasing.png")),
       FuzzyPixelOffByOneComparator(true)));
 }
@@ -1222,6 +1274,7 @@ TEST_F(GLRendererPixelTest, AxisAligned) {
 
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
+      PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("axis_aligned.png")),
       ExactPixelComparator(true)));
 }
@@ -1263,6 +1316,7 @@ TEST_F(GLRendererPixelTest, ForceAntiAliasingOff) {
 
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
+      PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("force_anti_aliasing_off.png")),
       ExactPixelComparator(false)));
 }
@@ -1303,6 +1357,7 @@ TEST_F(GLRendererPixelTest, AntiAliasingPerspective) {
 
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
+      PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("anti_aliasing_perspective.png")),
       FuzzyPixelOffByOneComparator(true)));
 }
@@ -1312,7 +1367,7 @@ TYPED_TEST(RendererPixelTestWithSkiaGPUBackend, PictureDrawQuadIdentityScale) {
   gfx::Rect viewport(this->device_viewport_size_);
   bool use_skia_gpu_backend = this->UseSkiaGPUBackend();
   // TODO(enne): the renderer should figure this out on its own.
-  bool contents_swizzled = !PlatformColor::SameComponentOrder(GL_RGBA);
+  ResourceFormat texture_format = RGBA_8888;
 
   RenderPass::Id id(1, 1);
   gfx::Transform transform_to_root;
@@ -1350,7 +1405,7 @@ TYPED_TEST(RendererPixelTestWithSkiaGPUBackend, PictureDrawQuadIdentityScale) {
                     gfx::Rect(),
                     viewport,
                     viewport.size(),
-                    contents_swizzled,
+                    texture_format,
                     viewport,
                     1.f,
                     use_skia_gpu_backend,
@@ -1375,7 +1430,7 @@ TYPED_TEST(RendererPixelTestWithSkiaGPUBackend, PictureDrawQuadIdentityScale) {
                      gfx::Rect(),
                      gfx::RectF(0.f, 0.f, 1.f, 1.f),
                      viewport.size(),
-                     contents_swizzled,
+                     texture_format,
                      viewport,
                      1.f,
                      use_skia_gpu_backend,
@@ -1387,8 +1442,82 @@ TYPED_TEST(RendererPixelTestWithSkiaGPUBackend, PictureDrawQuadIdentityScale) {
 
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
+      PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("green_with_blue_corner.png")),
       ExactPixelComparator(true)));
+}
+
+// Not WithSkiaGPUBackend since that path currently requires tiles for opacity.
+TYPED_TEST(RendererPixelTest, PictureDrawQuadOpacity) {
+  gfx::Size pile_tile_size(1000, 1000);
+  gfx::Rect viewport(this->device_viewport_size_);
+  bool use_skia_gpu_backend = this->UseSkiaGPUBackend();
+  ResourceFormat texture_format = RGBA_8888;
+
+  RenderPass::Id id(1, 1);
+  gfx::Transform transform_to_root;
+  scoped_ptr<RenderPass> pass =
+      CreateTestRenderPass(id, viewport, transform_to_root);
+
+  // One viewport-filling 0.5-opacity green quad.
+  scoped_refptr<FakePicturePileImpl> green_pile =
+      FakePicturePileImpl::CreateFilledPile(pile_tile_size, viewport.size());
+  SkPaint green_paint;
+  green_paint.setColor(SK_ColorGREEN);
+  green_pile->add_draw_rect_with_paint(viewport, green_paint);
+  green_pile->RerecordPile();
+
+  gfx::Transform green_content_to_target_transform;
+  scoped_ptr<SharedQuadState> green_shared_state =
+      CreateTestSharedQuadState(green_content_to_target_transform, viewport);
+  green_shared_state->opacity = 0.5f;
+
+  scoped_ptr<PictureDrawQuad> green_quad = PictureDrawQuad::Create();
+  green_quad->SetNew(green_shared_state.get(),
+                     viewport,
+                     gfx::Rect(),
+                     gfx::RectF(0, 0, 1, 1),
+                     viewport.size(),
+                     texture_format,
+                     viewport,
+                     1.f,
+                     use_skia_gpu_backend,
+                     green_pile);
+  pass->quad_list.push_back(green_quad.PassAs<DrawQuad>());
+
+  // One viewport-filling white quad.
+  scoped_refptr<FakePicturePileImpl> white_pile =
+      FakePicturePileImpl::CreateFilledPile(pile_tile_size, viewport.size());
+  SkPaint white_paint;
+  white_paint.setColor(SK_ColorWHITE);
+  white_pile->add_draw_rect_with_paint(viewport, white_paint);
+  white_pile->RerecordPile();
+
+  gfx::Transform white_content_to_target_transform;
+  scoped_ptr<SharedQuadState> white_shared_state =
+      CreateTestSharedQuadState(white_content_to_target_transform, viewport);
+
+  scoped_ptr<PictureDrawQuad> white_quad = PictureDrawQuad::Create();
+  white_quad->SetNew(white_shared_state.get(),
+                     viewport,
+                     gfx::Rect(),
+                     gfx::RectF(0, 0, 1, 1),
+                     viewport.size(),
+                     texture_format,
+                     viewport,
+                     1.f,
+                     use_skia_gpu_backend,
+                     white_pile);
+  pass->quad_list.push_back(white_quad.PassAs<DrawQuad>());
+
+  RenderPassList pass_list;
+  pass_list.push_back(pass.Pass());
+
+  EXPECT_TRUE(this->RunPixelTest(
+      &pass_list,
+      PixelTest::NoOffscreenContext,
+      base::FilePath(FILE_PATH_LITERAL("green_alpha.png")),
+      FuzzyPixelOffByOneComparator(true)));
 }
 
 TYPED_TEST(RendererPixelTestWithSkiaGPUBackend,
@@ -1397,7 +1526,7 @@ TYPED_TEST(RendererPixelTestWithSkiaGPUBackend,
   gfx::Rect viewport(this->device_viewport_size_);
   bool use_skia_gpu_backend = this->UseSkiaGPUBackend();
   // TODO(enne): the renderer should figure this out on its own.
-  bool contents_swizzled = !PlatformColor::SameComponentOrder(GL_RGBA);
+  ResourceFormat texture_format = RGBA_8888;
 
   RenderPass::Id id(1, 1);
   gfx::Transform transform_to_root;
@@ -1431,7 +1560,7 @@ TYPED_TEST(RendererPixelTestWithSkiaGPUBackend,
                       gfx::Rect(),
                       gfx::RectF(green_rect1.size()),
                       green_rect1.size(),
-                      contents_swizzled,
+                      texture_format,
                       green_rect1,
                       1.f,
                       use_skia_gpu_backend,
@@ -1444,7 +1573,7 @@ TYPED_TEST(RendererPixelTestWithSkiaGPUBackend,
                       gfx::Rect(),
                       gfx::RectF(green_rect2.size()),
                       green_rect2.size(),
-                      contents_swizzled,
+                      texture_format,
                       green_rect2,
                       1.f,
                       use_skia_gpu_backend,
@@ -1516,7 +1645,7 @@ TYPED_TEST(RendererPixelTestWithSkiaGPUBackend,
                     gfx::Rect(),
                     quad_content_rect,
                     content_union_rect.size(),
-                    contents_swizzled,
+                    texture_format,
                     content_union_rect,
                     contents_scale,
                     use_skia_gpu_backend,
@@ -1539,6 +1668,7 @@ TYPED_TEST(RendererPixelTestWithSkiaGPUBackend,
 
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
+      PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("four_blue_green_checkers.png")),
       ExactPixelComparator(true)));
 }

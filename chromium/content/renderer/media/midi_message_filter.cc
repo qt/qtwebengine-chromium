@@ -137,10 +137,7 @@ void MIDIMessageFilter::HandleSessionStarted(
           UTF8ToUTF16(outputs[i].version));
     }
   }
-  // TODO(toyoshim): Reports device initialization failure to JavaScript as
-  // "NotSupportedError" or something when |success| is false.
-  // http://crbug.com/260315
-  client->didStartSession();
+  client->didStartSession(success);
 }
 
 WebKit::WebMIDIAccessorClient*
@@ -156,7 +153,7 @@ MIDIMessageFilter::GetClientFromId(int client_id) {
   return NULL;
 }
 
-void MIDIMessageFilter::OnDataReceived(int port,
+void MIDIMessageFilter::OnDataReceived(uint32 port,
                                        const std::vector<uint8>& data,
                                        double timestamp) {
   TRACE_EVENT0("midi", "MIDIMessageFilter::OnDataReceived");
@@ -173,21 +170,17 @@ void MIDIMessageFilter::OnAcknowledgeSentData(size_t bytes_sent) {
     unacknowledged_bytes_sent_ -= bytes_sent;
 }
 
-void MIDIMessageFilter::HandleDataReceived(int port,
+void MIDIMessageFilter::HandleDataReceived(uint32 port,
                                            const std::vector<uint8>& data,
                                            double timestamp) {
+  DCHECK(!data.empty());
   TRACE_EVENT0("midi", "MIDIMessageFilter::HandleDataReceived");
 
-#if defined(OS_ANDROID)
-  // TODO(crogers): figure out why data() method does not compile on Android.
-  NOTIMPLEMENTED();
-#else
   for (ClientsMap::iterator i = clients_.begin(); i != clients_.end(); ++i)
-    (*i).first->didReceiveMIDIData(port, data.data(), data.size(), timestamp);
-#endif
+    (*i).first->didReceiveMIDIData(port, &data[0], data.size(), timestamp);
 }
 
-void MIDIMessageFilter::SendMIDIData(int port,
+void MIDIMessageFilter::SendMIDIData(uint32 port,
                                      const uint8* data,
                                      size_t length,
                                      double timestamp) {
@@ -203,7 +196,7 @@ void MIDIMessageFilter::SendMIDIData(int port,
                  port, v, timestamp));
 }
 
-void MIDIMessageFilter::SendMIDIDataOnIOThread(int port,
+void MIDIMessageFilter::SendMIDIDataOnIOThread(uint32 port,
                                                const std::vector<uint8>& data,
                                                double timestamp) {
   size_t n = data.size();

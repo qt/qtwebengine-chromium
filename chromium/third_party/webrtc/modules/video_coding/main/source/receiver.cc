@@ -61,8 +61,8 @@ void VCMReceiver::Reset() {
 }
 
 int32_t VCMReceiver::Initialize() {
-  CriticalSectionScoped cs(crit_sect_);
   Reset();
+  CriticalSectionScoped cs(crit_sect_);
   if (!master_) {
     SetNackMode(kNoNack, -1, -1);
   }
@@ -156,11 +156,12 @@ VCMEncodedFrame* VCMReceiver::FrameForDecoding(
   // Assume that render timing errors are due to changes in the video stream.
   if (next_render_time_ms < 0) {
     timing_error = true;
-  } else if (next_render_time_ms < now_ms - max_video_delay_ms_) {
+  } else if (abs(next_render_time_ms - now_ms) > max_video_delay_ms_) {
     WEBRTC_TRACE(webrtc::kTraceWarning, webrtc::kTraceVideoCoding,
                  VCMId(vcm_id_, receiver_id_),
-                 "This frame should have been rendered more than %u ms ago."
-                 "Flushing jitter buffer and resetting timing.",
+                 "This frame is out of our delay bounds, resetting jitter "
+                 "buffer: %d > %d",
+                 static_cast<int>(abs(next_render_time_ms - now_ms)),
                  max_video_delay_ms_);
     timing_error = true;
   } else if (static_cast<int>(timing_->TargetVideoDelay()) >
@@ -313,14 +314,11 @@ VCMReceiverState VCMReceiver::State() const {
   return state_;
 }
 
-void VCMReceiver::SetDecodeErrorMode(
-    VCMDecodeErrorMode decode_error_mode) {
-  CriticalSectionScoped cs(crit_sect_);
-  jitter_buffer_.DecodeErrorMode(decode_error_mode);
+void VCMReceiver::SetDecodeErrorMode(VCMDecodeErrorMode decode_error_mode) {
+  jitter_buffer_.SetDecodeErrorMode(decode_error_mode);
 }
 
 VCMDecodeErrorMode VCMReceiver::DecodeErrorMode() const {
-  CriticalSectionScoped cs(crit_sect_);
   return jitter_buffer_.decode_error_mode();
 }
 

@@ -35,7 +35,7 @@
 
 namespace WebCore {
 
-SVGAnimateElement::SVGAnimateElement(const QualifiedName& tagName, Document* document)
+SVGAnimateElement::SVGAnimateElement(const QualifiedName& tagName, Document& document)
     : SVGAnimationElement(tagName, document)
     , m_animatedPropertyType(AnimatedString)
 {
@@ -43,7 +43,7 @@ SVGAnimateElement::SVGAnimateElement(const QualifiedName& tagName, Document* doc
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGAnimateElement> SVGAnimateElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<SVGAnimateElement> SVGAnimateElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new SVGAnimateElement(tagName, document));
 }
@@ -111,12 +111,7 @@ void SVGAnimateElement::calculateAnimatedValue(float percentage, unsigned repeat
     ASSERT(m_fromType->type() == m_animatedPropertyType);
     ASSERT(m_toType);
 
-    ASSERT(resultElement->hasTagName(SVGNames::animateTag)
-        || resultElement->hasTagName(SVGNames::animateColorTag)
-        || resultElement->hasTagName(SVGNames::animateTransformTag)
-        || resultElement->hasTagName(SVGNames::setTag));
-
-    SVGAnimateElement* resultAnimationElement = static_cast<SVGAnimateElement*>(resultElement);
+    SVGAnimateElement* resultAnimationElement = toSVGAnimateElement(resultElement);
     ASSERT(resultAnimationElement->m_animatedType);
     ASSERT(resultAnimationElement->m_animatedPropertyType == m_animatedPropertyType);
 
@@ -168,6 +163,10 @@ bool SVGAnimateElement::calculateFromAndByValues(const String& fromString, const
         return false;
 
     if (animationMode() == ByAnimation && !isAdditive())
+        return false;
+
+    // from-by animation may only be used with attributes that support addition (e.g. most numeric attributes).
+    if (animationMode() == FromByAnimation && !animatedPropertyTypeSupportsAddition())
         return false;
 
     ASSERT(!hasTagName(SVGNames::setTag));
@@ -372,21 +371,26 @@ void SVGAnimateElement::applyResultsToTarget()
     notifyTargetAndInstancesAboutAnimValChange(targetElement(), attributeName());
 }
 
+bool SVGAnimateElement::animatedPropertyTypeSupportsAddition() const
+{
+    // Spec: http://www.w3.org/TR/SVG/animate.html#AnimationAttributesAndProperties.
+    switch (m_animatedPropertyType) {
+    case AnimatedBoolean:
+    case AnimatedEnumeration:
+    case AnimatedPreserveAspectRatio:
+    case AnimatedString:
+    case AnimatedUnknown:
+        return false;
+    default:
+        return true;
+    }
+}
+
 bool SVGAnimateElement::isAdditive() const
 {
-    if (animationMode() == ByAnimation || animationMode() == FromByAnimation) {
-        // Spec: http://www.w3.org/TR/SVG/animate.html#AnimationAttributesAndProperties.
-        switch (m_animatedPropertyType) {
-        case AnimatedBoolean:
-        case AnimatedEnumeration:
-        case AnimatedPreserveAspectRatio:
-        case AnimatedString:
-        case AnimatedUnknown:
+    if (animationMode() == ByAnimation || animationMode() == FromByAnimation)
+        if (!animatedPropertyTypeSupportsAddition())
             return false;
-        default:
-            break;
-        }
-    }
 
     return SVGAnimationElement::isAdditive();
 }

@@ -40,7 +40,7 @@ namespace WebCore {
 class ScriptString : public ScriptValue {
 public:
     ScriptString() { }
-    explicit ScriptString(v8::Handle<v8::String> value) : ScriptValue(value) { }
+    ScriptString(v8::Handle<v8::String> value, v8::Isolate* isolate) : ScriptValue(value, isolate) { }
 
     ScriptString concatenateWith(const String&);
     String flattenToString() const;

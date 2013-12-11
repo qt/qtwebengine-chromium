@@ -10,8 +10,6 @@
 
 #include "GrColor.h"
 #include "GrEffectUnitTest.h"
-#include "GrNoncopyable.h"
-#include "GrRefCnt.h"
 #include "GrTexture.h"
 #include "GrTextureAccess.h"
 #include "GrTypesPriv.h"
@@ -74,13 +72,13 @@ private:
     member function of a GrEffect subclass.
 
     Because almost no code should ever handle a GrEffect directly outside of a GrEffectRef, we
-    privately inherit from GrRefCnt to help prevent accidental direct ref'ing/unref'ing of effects.
+    privately inherit from SkRefCnt to help prevent accidental direct ref'ing/unref'ing of effects.
 
     Dynamically allocated GrEffects and their corresponding GrEffectRefs are managed by a per-thread
     memory pool. The ref count of an effect must reach 0 before the thread terminates and the pool
     is destroyed. To create a static effect use the macro GR_CREATE_STATIC_EFFECT declared below.
   */
-class GrEffect : private GrRefCnt {
+class GrEffect : private SkRefCnt {
 public:
     SK_DECLARE_INST_COUNT(GrEffect)
 
@@ -167,7 +165,7 @@ public:
     /** Useful for effects that want to insert a texture matrix that is implied by the texture
         dimensions */
     static inline SkMatrix MakeDivByTextureWHMatrix(const GrTexture* texture) {
-        GrAssert(NULL != texture);
+        SkASSERT(NULL != texture);
         SkMatrix mat;
         mat.setIDiv(texture->width(), texture->height());
         return mat;
@@ -204,8 +202,9 @@ public:
 protected:
     /**
      * Subclasses call this from their constructor to register GrTextureAccesses. The effect
-     * subclass manages the lifetime of the accesses (this function only stores a pointer). This
-     * must only be called from the constructor because GrEffects are immutable.
+     * subclass manages the lifetime of the accesses (this function only stores a pointer). The
+     * GrTextureAccess is typically a member field of the GrEffet subclass. This must only be
+     * called from the constructor because GrEffects are immutable.
      */
     void addTextureAccess(const GrTextureAccess* textureAccess);
 
@@ -235,7 +234,7 @@ protected:
 
     /** Used by GR_CREATE_STATIC_EFFECT below */
     static GrEffectRef* CreateStaticEffectRef(void* refStorage, GrEffect* effect) {
-        GrAssert(NULL == effect->fEffectRef);
+        SkASSERT(NULL == effect->fEffectRef);
         effect->fEffectRef = SkNEW_PLACEMENT_ARGS(refStorage, GrEffectRef, (effect));
         return effect->fEffectRef;
     }
@@ -287,11 +286,11 @@ private:
             return false;
         }
         bool result = this->onIsEqual(other);
-#if GR_DEBUG
+#ifdef SK_DEBUG
         if (result) {
-            GrAssert(this->numTextures() == other.numTextures());
+            SkASSERT(this->numTextures() == other.numTextures());
             for (int i = 0; i < this->numTextures(); ++i) {
-                GrAssert(*fTextureAccesses[i] == *other.fTextureAccesses[i]);
+                SkASSERT(*fTextureAccesses[i] == *other.fTextureAccesses[i]);
             }
         }
 #endif
@@ -316,11 +315,11 @@ private:
     bool                                         fWillReadFragmentPosition;
     GrEffectRef*                                 fEffectRef;
 
-    typedef GrRefCnt INHERITED;
+    typedef SkRefCnt INHERITED;
 };
 
 inline GrEffectRef::GrEffectRef(GrEffect* effect) {
-    GrAssert(NULL != effect);
+    SkASSERT(NULL != effect);
     effect->ref();
     fEffect = effect;
 }

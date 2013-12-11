@@ -32,7 +32,6 @@
 #include "core/dom/EventNames.h"
 #include "core/dom/KeyboardEvent.h"
 #include "core/dom/MouseEvent.h"
-#include "core/dom/NodeRenderingContext.h"
 #include "core/html/HTMLAnchorElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
@@ -67,7 +66,7 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGAElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGAElement::SVGAElement(const QualifiedName& tagName, Document* document)
+inline SVGAElement::SVGAElement(const QualifiedName& tagName, Document& document)
     : SVGGraphicsElement(tagName, document)
 {
     ASSERT(hasTagName(SVGNames::aTag));
@@ -75,7 +74,7 @@ inline SVGAElement::SVGAElement(const QualifiedName& tagName, Document* document
     registerAnimatedPropertiesForSVGAElement();
 }
 
-PassRefPtr<SVGAElement> SVGAElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<SVGAElement> SVGAElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new SVGAElement(tagName, document));
 }
@@ -163,7 +162,7 @@ void SVGAElement::defaultEventHandler(Event* event)
             String url = stripLeadingAndTrailingHTMLSpaces(hrefCurrentValue());
 
             if (url[0] == '#') {
-                Element* targetElement = treeScope()->getElementById(url.substring(1));
+                Element* targetElement = treeScope().getElementById(url.substring(1));
                 if (SVGSMILElement::isSMILElement(targetElement)) {
                     toSVGSMILElement(targetElement)->beginByLinkActivation();
                     event->setDefaultHandled();
@@ -179,10 +178,10 @@ void SVGAElement::defaultEventHandler(Event* event)
                 target = "_blank";
             event->setDefaultHandled();
 
-            Frame* frame = document()->frame();
+            Frame* frame = document().frame();
             if (!frame)
                 return;
-            FrameLoadRequest frameRequest(document()->securityOrigin(), ResourceRequest(document()->completeURL(url)), target);
+            FrameLoadRequest frameRequest(document().securityOrigin(), ResourceRequest(document().completeURL(url)), target);
             frameRequest.setTriggeringEvent(event);
             frame->loader()->load(frameRequest);
             return;
@@ -217,28 +216,26 @@ bool SVGAElement::isMouseFocusable() const
     return false;
 }
 
-bool SVGAElement::isKeyboardFocusable(KeyboardEvent*) const
+bool SVGAElement::isKeyboardFocusable() const
 {
     if (!isFocusable())
         return false;
 
-    Page* page = document()->page();
-    if (!page)
-        return false;
-
-    return page->chrome().client()->tabsToLinks();
+    if (Page* page = document().page())
+        return page->chrome().client().tabsToLinks();
+    return false;
 }
 
-bool SVGAElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
+bool SVGAElement::childShouldCreateRenderer(const Node& child) const
 {
     // http://www.w3.org/2003/01/REC-SVG11-20030114-errata#linking-text-environment
     // The 'a' element may contain any element that its parent may contain, except itself.
-    if (childContext.node()->hasTagName(SVGNames::aTag))
+    if (child.hasTagName(SVGNames::aTag))
         return false;
     if (parentNode() && parentNode()->isSVGElement())
-        return parentNode()->childShouldCreateRenderer(childContext);
+        return parentNode()->childShouldCreateRenderer(child);
 
-    return SVGElement::childShouldCreateRenderer(childContext);
+    return SVGElement::childShouldCreateRenderer(child);
 }
 
 } // namespace WebCore

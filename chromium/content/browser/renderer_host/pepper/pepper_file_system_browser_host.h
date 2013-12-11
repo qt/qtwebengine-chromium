@@ -47,6 +47,9 @@ class PepperFileSystemBrowserHost :
       ppapi::host::ReplyMessageContext reply_context,
       fileapi::FileSystemType file_system_type,
       scoped_refptr<fileapi::FileSystemContext> fs_context);
+  void GotIsolatedFileSystemContext(
+      ppapi::host::ReplyMessageContext reply_context,
+      scoped_refptr<fileapi::FileSystemContext> fs_context);
   void OpenFileSystemComplete(
       ppapi::host::ReplyMessageContext reply_context,
       base::PlatformFileError error,
@@ -60,13 +63,14 @@ class PepperFileSystemBrowserHost :
       const std::string& fsid);
 
   BrowserPpapiHost* browser_ppapi_host_;
-  base::WeakPtrFactory<PepperFileSystemBrowserHost> weak_factory_;
 
   PP_FileSystemType type_;
   bool opened_;  // whether open is successful.
   GURL root_url_;
   scoped_refptr<fileapi::FileSystemContext> fs_context_;
   bool called_open_;  // whether open has been called.
+
+  base::WeakPtrFactory<PepperFileSystemBrowserHost> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PepperFileSystemBrowserHost);
 };

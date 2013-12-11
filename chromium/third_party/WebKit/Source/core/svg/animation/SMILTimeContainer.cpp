@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/svg/animation/SMILTimeContainer.h"
 
-#include "core/dom/NodeTraversal.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/svg/SVGSVGElement.h"
 #include "core/svg/animation/SVGSMILElement.h"
 #include "wtf/CurrentTime.h"
@@ -93,7 +93,7 @@ void SMILTimeContainer::unschedule(SVGSMILElement* animation, SVGElement* target
     AnimationsVector* scheduled = m_scheduledAnimations.get(key);
     ASSERT(scheduled);
     size_t idx = scheduled->find(animation);
-    ASSERT(idx != notFound);
+    ASSERT(idx != kNotFound);
     scheduled->remove(idx);
 }
 
@@ -271,6 +271,15 @@ void SMILTimeContainer::updateAnimations(SMILTime elapsed, bool seekToTime)
 
     AnimationsVector animationsToApply;
     GroupedAnimationsMap::iterator end = m_scheduledAnimations.end();
+    for (GroupedAnimationsMap::iterator it = m_scheduledAnimations.begin(); it != end; ++it) {
+        AnimationsVector* scheduled = it->value.get();
+        unsigned size = scheduled->size();
+        for (unsigned n = 0; n < size; n++) {
+            SVGSMILElement* animation = scheduled->at(n);
+            animation->connectConditions();
+        }
+    }
+
     for (GroupedAnimationsMap::iterator it = m_scheduledAnimations.begin(); it != end; ++it) {
         AnimationsVector* scheduled = it->value.get();
 

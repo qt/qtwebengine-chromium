@@ -48,6 +48,9 @@ class NET_EXPORT_PRIVATE QuicReliableClientStream : public ReliableQuicStream {
     // Called when the stream is closed because of an error.
     virtual void OnError(int error) = 0;
 
+    // Returns true if sending of headers has completed.
+    virtual bool HasSendHeadersComplete() = 0;
+
    protected:
     virtual ~Delegate() {}
 
@@ -64,8 +67,16 @@ class NET_EXPORT_PRIVATE QuicReliableClientStream : public ReliableQuicStream {
   // ReliableQuicStream
   virtual uint32 ProcessData(const char* data, uint32 data_len) OVERRIDE;
   virtual void TerminateFromPeer(bool half_close) OVERRIDE;
-  using ReliableQuicStream::WriteData;
+  virtual void OnCanWrite() OVERRIDE;
+  virtual QuicPriority EffectivePriority() const OVERRIDE;
 
+  // While the server's set_priority shouldn't be called externally, the creator
+  // of client-side streams should be able to set the priority.
+  using ReliableQuicStream::set_priority;
+
+  int WriteStreamData(base::StringPiece data,
+                      bool fin,
+                      const CompletionCallback& callback);
   // Set new |delegate|. |delegate| must not be NULL.
   // If this stream has already received data, OnDataReceived() will be
   // called on the delegate.
@@ -78,6 +89,8 @@ class NET_EXPORT_PRIVATE QuicReliableClientStream : public ReliableQuicStream {
  private:
   BoundNetLog net_log_;
   Delegate* delegate_;
+
+  CompletionCallback callback_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicReliableClientStream);
 };

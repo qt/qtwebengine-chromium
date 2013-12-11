@@ -16,6 +16,7 @@
 #include "content/child/npapi/plugin_string_stream.h"
 #include "content/child/npapi/webplugin.h"
 #include "content/child/npapi/webplugin_delegate.h"
+#include "content/child/npapi/webplugin_resource_client.h"
 #include "content/public/common/content_constants.h"
 #include "net/base/escape.h"
 
@@ -189,8 +190,9 @@ bool PluginInstance::GetFormValue(base::string16* value) {
 }
 
 // WebPluginLoadDelegate methods
-void PluginInstance::DidFinishLoadWithReason(
-    const GURL& url, NPReason reason, int notify_id) {
+void PluginInstance::DidFinishLoadWithReason(const GURL& url,
+                                             NPReason reason,
+                                             int notify_id) {
   bool notify;
   void* notify_data;
   GetNotifyData(notify_id, &notify, &notify_data);
@@ -210,8 +212,8 @@ unsigned PluginInstance::GetBackingTextureId() {
 // NPAPI methods
 NPError PluginInstance::NPP_New(unsigned short mode,
                                 short argc,
-                                char *argn[],
-                                char *argv[]) {
+                                char* argn[],
+                                char* argv[]) {
   DCHECK(npp_functions_ != 0);
   DCHECK(npp_functions_->newp != 0);
   DCHECK(argc >= 0);
@@ -249,7 +251,7 @@ void PluginInstance::NPP_Destroy() {
   timers_.clear();
 }
 
-NPError PluginInstance::NPP_SetWindow(NPWindow *window) {
+NPError PluginInstance::NPP_SetWindow(NPWindow* window) {
   DCHECK(npp_functions_ != 0);
   DCHECK(npp_functions_->setwindow != 0);
 
@@ -260,9 +262,9 @@ NPError PluginInstance::NPP_SetWindow(NPWindow *window) {
 }
 
 NPError PluginInstance::NPP_NewStream(NPMIMEType type,
-                                      NPStream *stream,
+                                      NPStream* stream,
                                       NPBool seekable,
-                                      unsigned short *stype) {
+                                      unsigned short* stype) {
   DCHECK(npp_functions_ != 0);
   DCHECK(npp_functions_->newstream != 0);
   if (npp_functions_->newstream != 0) {
@@ -271,7 +273,7 @@ NPError PluginInstance::NPP_NewStream(NPMIMEType type,
   return NPERR_INVALID_FUNCTABLE_ERROR;
 }
 
-NPError PluginInstance::NPP_DestroyStream(NPStream *stream, NPReason reason) {
+NPError PluginInstance::NPP_DestroyStream(NPStream* stream, NPReason reason) {
   DCHECK(npp_functions_ != 0);
   DCHECK(npp_functions_->destroystream != 0);
 
@@ -286,7 +288,7 @@ NPError PluginInstance::NPP_DestroyStream(NPStream *stream, NPReason reason) {
   return NPERR_INVALID_FUNCTABLE_ERROR;
 }
 
-int PluginInstance::NPP_WriteReady(NPStream *stream) {
+int PluginInstance::NPP_WriteReady(NPStream* stream) {
   DCHECK(npp_functions_ != 0);
   DCHECK(npp_functions_->writeready != 0);
   if (npp_functions_->writeready != 0) {
@@ -295,10 +297,10 @@ int PluginInstance::NPP_WriteReady(NPStream *stream) {
   return 0;
 }
 
-int PluginInstance::NPP_Write(NPStream *stream,
+int PluginInstance::NPP_Write(NPStream* stream,
                               int offset,
                               int len,
-                              void *buffer) {
+                              void* buffer) {
   DCHECK(npp_functions_ != 0);
   DCHECK(npp_functions_->write != 0);
   if (npp_functions_->write != 0) {
@@ -307,7 +309,7 @@ int PluginInstance::NPP_Write(NPStream *stream,
   return 0;
 }
 
-void PluginInstance::NPP_StreamAsFile(NPStream *stream, const char *fname) {
+void PluginInstance::NPP_StreamAsFile(NPStream* stream, const char* fname) {
   DCHECK(npp_functions_ != 0);
   DCHECK(npp_functions_->asfile != 0);
   if (npp_functions_->asfile != 0) {
@@ -317,13 +319,13 @@ void PluginInstance::NPP_StreamAsFile(NPStream *stream, const char *fname) {
   // Creating a temporary FilePath instance on the stack as the explicit
   // FilePath constructor with StringType as an argument causes a compiler
   // error when invoked via vector push back.
-  base::FilePath file_name = base::FilePath::FromWStringHack(UTF8ToWide(fname));
+  base::FilePath file_name = base::FilePath::FromUTF8Unsafe(fname);
   files_created_.push_back(file_name);
 }
 
-void PluginInstance::NPP_URLNotify(const char *url,
+void PluginInstance::NPP_URLNotify(const char* url,
                                    NPReason reason,
-                                   void *notifyData) {
+                                   void* notifyData) {
   DCHECK(npp_functions_ != 0);
   DCHECK(npp_functions_->urlnotify != 0);
   if (npp_functions_->urlnotify != 0) {
@@ -331,7 +333,7 @@ void PluginInstance::NPP_URLNotify(const char *url,
   }
 }
 
-NPError PluginInstance::NPP_GetValue(NPPVariable variable, void *value) {
+NPError PluginInstance::NPP_GetValue(NPPVariable variable, void* value) {
   DCHECK(npp_functions_ != 0);
   // getvalue is NULL for Shockwave
   if (npp_functions_->getvalue != 0) {
@@ -340,7 +342,7 @@ NPError PluginInstance::NPP_GetValue(NPPVariable variable, void *value) {
   return NPERR_INVALID_FUNCTABLE_ERROR;
 }
 
-NPError PluginInstance::NPP_SetValue(NPNVariable variable, void *value) {
+NPError PluginInstance::NPP_SetValue(NPNVariable variable, void* value) {
   DCHECK(npp_functions_ != 0);
   if (npp_functions_->setvalue != 0) {
     return npp_functions_->setvalue(npp_, variable, value);
@@ -431,15 +433,15 @@ void PluginInstance::DidManualLoadFail() {
   }
 }
 
-void PluginInstance::PluginThreadAsyncCall(void (*func)(void *),
-                                           void *user_data) {
+void PluginInstance::PluginThreadAsyncCall(void (*func)(void*),
+                                           void* user_data) {
   message_loop_->PostTask(
       FROM_HERE, base::Bind(&PluginInstance::OnPluginThreadAsyncCall, this,
                             func, user_data));
 }
 
-void PluginInstance::OnPluginThreadAsyncCall(void (*func)(void *),
-                                             void *user_data) {
+void PluginInstance::OnPluginThreadAsyncCall(void (*func)(void*),
+                                             void* user_data) {
   // Do not invoke the callback if NPP_Destroy has already been invoked.
   if (webplugin_)
     func(user_data);
@@ -652,8 +654,9 @@ bool PluginInstance::ConvertPoint(double source_x, double source_y,
 #endif
 }
 
-void PluginInstance::GetNotifyData(
-    int notify_id, bool* notify, void** notify_data) {
+void PluginInstance::GetNotifyData(int notify_id,
+                                   bool* notify,
+                                   void** notify_data) {
   PendingRequestMap::iterator iter = pending_requests_.find(notify_id);
   if (iter != pending_requests_.end()) {
     *notify = true;
@@ -672,13 +675,9 @@ void PluginInstance::URLRedirectResponse(bool allow, void* notify_data) {
           stream_index != open_streams_.end(); ++stream_index) {
     PluginStream* plugin_stream = stream_index->get();
     if (plugin_stream->notify_data() == notify_data) {
-      WebPluginResourceClient* resource_client =
-          plugin_stream->AsResourceClient();
-      webplugin_->URLRedirectResponse(allow, resource_client->ResourceId());
-      if (allow) {
-        plugin_stream->UpdateUrl(
-            plugin_stream->pending_redirect_url().c_str());
-      }
+      PluginStreamUrl* plugin_stream_url =
+          static_cast<PluginStreamUrl*>(plugin_stream);
+      plugin_stream_url->URLRedirectResponse(allow);
       break;
     }
   }

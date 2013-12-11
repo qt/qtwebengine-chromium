@@ -355,8 +355,9 @@ TEST_F(NavigationControllerTest, LoadURL) {
   EXPECT_FALSE(controller.CanGoForward());
   EXPECT_EQ(contents()->GetMaxPageID(), -1);
 
-  // The timestamp should not have been set yet.
+  // Neither the timestamp nor the status code should have been set yet.
   EXPECT_TRUE(controller.GetPendingEntry()->GetTimestamp().is_null());
+  EXPECT_EQ(0, controller.GetPendingEntry()->GetHttpStatusCode());
 
   // We should have gotten no notifications from the preceeding checks.
   EXPECT_EQ(0U, notifications.size());
@@ -2655,6 +2656,20 @@ TEST_F(NavigationControllerTest, RendererInitiatedPendingEntries) {
   contents()->DidStartProvisionalLoadForFrame(
       test_rvh(), 1, -1, true, GURL(kUnreachableWebDataURL));
   EXPECT_EQ(url1, controller.GetPendingEntry()->GetURL());
+
+  // We should remember if the pending entry will replace the current one.
+  // http://crbug.com/308444.
+  contents()->DidStartProvisionalLoadForFrame(
+      test_rvh(), 1, -1, true, url1);
+  NavigationEntryImpl::FromNavigationEntry(controller.GetPendingEntry())->
+      set_should_replace_entry(true);
+  contents()->DidStartProvisionalLoadForFrame(
+      test_rvh(), 1, -1, true, url2);
+  EXPECT_TRUE(
+      NavigationEntryImpl::FromNavigationEntry(controller.GetPendingEntry())->
+          should_replace_entry());
+  test_rvh()->SendNavigate(0, url2);
+  EXPECT_EQ(url2, controller.GetLastCommittedEntry()->GetURL());
 }
 
 // Tests that the URLs for renderer-initiated navigations are not displayed to
@@ -2910,6 +2925,23 @@ TEST_F(NavigationControllerTest, CloneOmitsInterstitials) {
   scoped_ptr<WebContents> clone(controller.GetWebContents()->Clone());
 
   ASSERT_EQ(2, clone->GetController().GetEntryCount());
+}
+
+// Test requesting and triggering a lazy reload.
+TEST_F(NavigationControllerTest, LazyReload) {
+  NavigationControllerImpl& controller = controller_impl();
+  const GURL url("http://foo");
+  NavigateAndCommit(url);
+  ASSERT_FALSE(controller.NeedsReload());
+
+  // Request a reload to happen when the controller becomes active (e.g. after
+  // the renderer gets killed in background on Android).
+  controller.SetNeedsReload();
+  ASSERT_TRUE(controller.NeedsReload());
+
+  // Set the controller as active, triggering the requested reload.
+  controller.SetActive(true);
+  ASSERT_FALSE(controller.NeedsReload());
 }
 
 // Tests a subframe navigation while a toplevel navigation is pending.

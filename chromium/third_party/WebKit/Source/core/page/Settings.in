@@ -89,6 +89,7 @@ forceCompositingMode initial=false
 allowDisplayOfInsecureContent initial=true
 allowRunningOfInsecureContent initial=true
 mediaPlaybackRequiresUserGesture initial=false
+mediaFullscreenRequiresUserGesture initial=true
 passwordEchoEnabled initial=false
 visualWordMovementEnabled initial=false
 shouldDisplaySubtitles initial=false
@@ -131,9 +132,21 @@ smartInsertDeleteEnabled initial=defaultSmartInsertDeleteEnabled
 selectTrailingWhitespaceEnabled initial=defaultSelectTrailingWhitespaceEnabled
 
 selectionIncludesAltImageText initial=false
+useLegacyBackgroundSizeShorthandBehavior initial=false
+# This quirk is to maintain compatibility with Android apps built on
+# the Android SDK prior to and including version 18. Presumably, this
+# can be removed any time after 2015. See http://crbug.com/282130.
+viewportMetaZeroValuesQuirk initial=false
+# Another Android SDK <= 18 quirk, removable 2015.  http://crbug.com/295287
+ignoreMainFrameOverflowHiddenQuirk initial=false
+# This quirk is to maintain compatibility with Android apps.
+# It will be possible to remove it once WebSettings.{get|set}UseWideViewPort
+# API function will be removed. See http://crbug.com/288037.
+wideViewportQuirkEnabled initial=false
 
 # This setting enables touch based text selection and editing.
 touchEditingEnabled initial=false
 
 experimentalWebSocketEnabled initial=false
 pinchVirtualViewportEnabled initial=false
+useSolidColorScrollbars initial=false

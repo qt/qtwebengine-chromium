@@ -25,8 +25,8 @@
 
 #include "HTMLNames.h"
 #include "core/dom/Element.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/dom/NodeRareData.h"
-#include "core/dom/NodeTraversal.h"
 #include "core/html/HTMLObjectElement.h"
 
 namespace WebCore {
@@ -87,7 +87,7 @@ Element* HTMLNameCollection::virtualItemAfter(unsigned& offsetInArray, Element* 
                     return current;
             } else if (current->hasTagName(objectTag)) {
                 if ((current->getNameAttribute() == m_name || current->getIdAttribute() == m_name)
-                    && static_cast<HTMLObjectElement*>(current)->isDocNamedItem())
+                    && toHTMLObjectElement(current)->isDocNamedItem())
                     return current;
             } else if (current->hasTagName(imgTag)) {
                 if (current->getNameAttribute() == m_name || (current->getIdAttribute() == m_name && current->hasName()))

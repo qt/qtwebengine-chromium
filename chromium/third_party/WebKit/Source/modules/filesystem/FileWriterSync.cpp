@@ -32,11 +32,13 @@
 
 #include "modules/filesystem/FileWriterSync.h"
 
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/fileapi/Blob.h"
 #include "core/fileapi/FileError.h"
-#include "modules/filesystem/AsyncFileWriter.h"
+#include "public/platform/WebFileWriter.h"
+#include "public/platform/WebURL.h"
 
 namespace WebCore {
 
@@ -45,13 +47,12 @@ void FileWriterSync::write(Blob* data, ExceptionState& es)
     ASSERT(writer());
     ASSERT(m_complete);
     if (!data) {
-        es.throwDOMException(TypeMismatchError, FileError::typeMismatchErrorMessage);
+        es.throwDOMException(TypeMismatchError, ExceptionMessages::failedToExecute("write", "FileReaderSync", FileError::typeMismatchErrorMessage));
         return;
     }
 
     prepareForWrite();
-    writer()->write(position(), data);
-    writer()->waitForOperationToComplete();
+    writer()->write(position(), WebKit::WebURL(data->url()));
     ASSERT(m_complete);
     if (m_error) {
         FileError::throwDOMException(es, m_error);
@@ -74,12 +75,11 @@ void FileWriterSync::truncate(long long offset, ExceptionState& es)
     ASSERT(writer());
     ASSERT(m_complete);
     if (offset < 0) {
-        es.throwDOMException(InvalidStateError, FileError::invalidStateErrorMessage);
+        es.throwDOMException(InvalidStateError, ExceptionMessages::failedToExecute("truncate", "FileWriterSync", FileError::invalidStateErrorMessage));
         return;
     }
     prepareForWrite();
     writer()->truncate(offset);
-    writer()->waitForOperationToComplete();
     ASSERT(m_complete);
     if (m_error) {
         FileError::throwDOMException(es, m_error);
@@ -110,10 +110,10 @@ void FileWriterSync::didTruncate()
 #endif
 }
 
-void FileWriterSync::didFail(FileError::ErrorCode error)
+void FileWriterSync::didFail(WebKit::WebFileError error)
 {
     ASSERT(m_error == FileError::OK);
-    m_error = error;
+    m_error = static_cast<FileError::ErrorCode>(error);
     ASSERT(!m_complete);
 #ifndef NDEBUG
     m_complete = true;

@@ -158,7 +158,6 @@ int InitSocketPoolHelper(const GURL& request_url,
   bool ignore_limits = (request_load_flags & LOAD_IGNORE_LIMITS) != 0;
   if (proxy_info.is_direct()) {
     tcp_params = new TransportSocketParams(origin_host_port,
-                                           request_priority,
                                            disable_resolver_cache,
                                            ignore_limits,
                                            resolution_callback);
@@ -167,7 +166,6 @@ int InitSocketPoolHelper(const GURL& request_url,
     proxy_host_port.reset(new HostPortPair(proxy_server.host_port_pair()));
     scoped_refptr<TransportSocketParams> proxy_tcp_params(
         new TransportSocketParams(*proxy_host_port,
-                                  request_priority,
                                   disable_resolver_cache,
                                   ignore_limits,
                                   resolution_callback));
@@ -182,7 +180,6 @@ int InitSocketPoolHelper(const GURL& request_url,
         ssl_params = new SSLSocketParams(proxy_tcp_params,
                                          NULL,
                                          NULL,
-                                         ProxyServer::SCHEME_DIRECT,
                                          *proxy_host_port.get(),
                                          ssl_config_for_proxy,
                                          kPrivacyModeDisabled,
@@ -214,8 +211,7 @@ int InitSocketPoolHelper(const GURL& request_url,
 
       socks_params = new SOCKSSocketParams(proxy_tcp_params,
                                            socks_version == '5',
-                                           origin_host_port,
-                                           request_priority);
+                                           origin_host_port);
     }
   }
 
@@ -229,7 +225,6 @@ int InitSocketPoolHelper(const GURL& request_url,
         new SSLSocketParams(tcp_params,
                             socks_params,
                             http_proxy_params,
-                            proxy_info.proxy_server().scheme(),
                             origin_host_port,
                             ssl_config_for_origin,
                             privacy_mode,

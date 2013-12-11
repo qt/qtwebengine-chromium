@@ -54,33 +54,13 @@ base.exportTo('tracing.tracks', function() {
         this.classList.add('ruler-track-with-distance-measurements');
     },
 
-    drawArrow: function(ctx, x1, y1, x2, y2, arrowWidth) {
-      var dx = x2 - x1;
-      var dy = y2 - y1;
-      var len = Math.sqrt(dx * dx + dy * dy);
-      var perc = (len - 10) / len;
-      var bx = x1 + perc * dx;
-      var by = y1 + perc * dy;
-      var ux = dx / len;
-      var uy = dy / len;
-      var ax = uy * arrowWidth;
-      var ay = -ux * arrowWidth;
-
-      ctx.beginPath();
-      tracing.drawLine(ctx, x1, y1, x2, y2);
-      ctx.stroke();
-
-      tracing.drawTriangle(ctx,
-          bx + ax, by + ay,
-          x2, y2,
-          bx - ax, by - ay);
-      ctx.fill();
-    },
-
     draw: function(type, viewLWorld, viewRWorld) {
       switch (type) {
         case tracing.tracks.DrawType.SLICE:
           this.drawSlices_(viewLWorld, viewRWorld);
+          break;
+        case tracing.tracks.DrawType.MARKERS:
+          this.viewport.drawMarkerLines(this.context(), viewLWorld, viewRWorld);
           break;
       }
     },
@@ -99,11 +79,11 @@ base.exportTo('tracing.tracks', function() {
       var rulerHeight = measurements ? (height * 2) / 5 : height;
 
       var vp = this.viewport;
-      vp.drawMarkerArrows(ctx, viewLWorld, viewRWorld, rulerHeight);
+      var dt = vp.currentDisplayTransform;
 
       var idealMajorMarkDistancePix = 150 * pixelRatio;
       var idealMajorMarkDistanceWorld =
-          vp.xViewVectorToWorld(idealMajorMarkDistancePix);
+          dt.xViewVectorToWorld(idealMajorMarkDistancePix);
 
       var majorMarkDistanceWorld;
 
@@ -117,7 +97,7 @@ base.exportTo('tracing.tracks', function() {
       var divisors = [10, 5, 2, 1];
       for (var i = 0; i < divisors.length; ++i) {
         var tightenedGuess = conservativeGuess / divisors[i];
-        if (vp.xWorldVectorToView(tightenedGuess) < idealMajorMarkDistancePix)
+        if (dt.xWorldVectorToView(tightenedGuess) < idealMajorMarkDistancePix)
           continue;
         majorMarkDistanceWorld = conservativeGuess / divisors[i - 1];
         break;
@@ -138,7 +118,7 @@ base.exportTo('tracing.tracks', function() {
 
       var numTicksPerMajor = 5;
       var minorMarkDistanceWorld = majorMarkDistanceWorld / numTicksPerMajor;
-      var minorMarkDistancePx = vp.xWorldVectorToView(minorMarkDistanceWorld);
+      var minorMarkDistancePx = dt.xWorldVectorToView(minorMarkDistanceWorld);
 
       var firstMajorMark =
           Math.floor(viewLWorld / majorMarkDistanceWorld) *
@@ -175,7 +155,7 @@ base.exportTo('tracing.tracks', function() {
            curX < viewRWorld;
            curX += majorMarkDistanceWorld) {
 
-        var curXView = Math.floor(vp.xWorldToView(curX));
+        var curXView = Math.floor(dt.xWorldToView(curX));
 
         var unitValue = curX / unitDivisor;
         var roundedUnitValue = Math.floor(unitValue * 100000) / 100000;
@@ -223,10 +203,11 @@ base.exportTo('tracing.tracks', function() {
       var displayTextColor = 'rgb(0,0,0)';
 
       // Arrow Variables.
-      var arrowSpacing = 10;
+      var arrowSpacing = 10 * pixelRatio;
       var arrowColor = 'rgb(128,121,121)';
       var arrowPosY = rulerHeight * 1.75;
-      var arrowWidthView = 3;
+      var arrowWidthView = 3 * pixelRatio;
+      var arrowLengthView = 10 * pixelRatio;
       var spaceForArrowsView = 2 * (arrowWidthView + arrowSpacing);
 
       ctx.textBaseline = 'middle';
@@ -236,7 +217,7 @@ base.exportTo('tracing.tracks', function() {
       // If there is only on marker, draw it's timestamp next to the line.
       if (sortedMarkers.length === 1) {
         var markerWorld = sortedMarkers[0].positionWorld;
-        var markerView = vp.xWorldToView(markerWorld);
+        var markerView = dt.xWorldToView(markerWorld);
         var displayValue = markerWorld / unitDivisor;
         displayValue = Math.abs((Math.floor(displayValue * 1000) / 1000));
 
@@ -255,13 +236,13 @@ base.exportTo('tracing.tracks', function() {
       for (i = 0; i < sortedMarkers.length - 1; i++) {
         var leftMarker = sortedMarkers[i];
         var rightMarker = sortedMarkers[i + 1];
-        var leftMarkerView = vp.xWorldToView(leftMarker.positionWorld);
-        var rightMarkerView = vp.xWorldToView(rightMarker.positionWorld);
+        var leftMarkerView = dt.xWorldToView(leftMarker.positionWorld);
+        var rightMarkerView = dt.xWorldToView(rightMarker.positionWorld);
 
         var distanceBetweenMarkers =
             rightMarker.positionWorld - leftMarker.positionWorld;
         var distanceBetweenMarkersView =
-            vp.xWorldVectorToView(distanceBetweenMarkers);
+            dt.xWorldVectorToView(distanceBetweenMarkers);
         var positionInMiddleOfMarkersView =
             leftMarkerView + (distanceBetweenMarkersView / 2);
 
@@ -307,10 +288,14 @@ base.exportTo('tracing.tracks', function() {
           ctx.stroke();
 
           ctx.fillStyle = arrowColor;
-          this.drawArrow(ctx, leftMarkerView - 1.5 * arrowSpacing, arrowPosY,
-              leftMarkerView, arrowPosY, arrowWidthView);
-          this.drawArrow(ctx, rightMarkerView + 1.5 * arrowSpacing,
-              arrowPosY, rightMarkerView, arrowPosY, arrowWidthView);
+          tracing.drawArrow(ctx,
+              leftMarkerView - 1.5 * arrowSpacing, arrowPosY,
+              leftMarkerView, arrowPosY,
+              arrowLengthView, arrowWidthView);
+          tracing.drawArrow(ctx,
+              rightMarkerView + 1.5 * arrowSpacing, arrowPosY,
+              rightMarkerView, arrowPosY,
+              arrowLengthView, arrowWidthView);
 
         } else if (spaceForArrowsView <= distanceBetweenMarkersView) {
           var leftArrowStart;
@@ -330,10 +315,14 @@ base.exportTo('tracing.tracks', function() {
           // Draw the arrows pointing inside out.
           ctx.strokeStyle = arrowColor;
           ctx.fillStyle = arrowColor;
-          this.drawArrow(ctx, leftArrowStart, arrowPosY,
-              leftMarkerView, arrowPosY, arrowWidthView);
-          this.drawArrow(ctx, rightArrowStart, arrowPosY,
-              rightMarkerView, arrowPosY, arrowWidthView);
+          tracing.drawArrow(ctx,
+              leftArrowStart, arrowPosY,
+              leftMarkerView, arrowPosY,
+              arrowLengthView, arrowWidthView);
+          tracing.drawArrow(ctx,
+              rightArrowStart, arrowPosY,
+              rightMarkerView, arrowPosY,
+              arrowLengthView, arrowWidthView);
         }
       }
 
@@ -350,7 +339,7 @@ base.exportTo('tracing.tracks', function() {
      *     viewspace.
      * @param {number} hiVY Upper Y bound of the interval to search, in
      *     viewspace.
-     * @param {Selection} selection Selection to which to add hits.
+     * @param {Selection} selection Selection to which to add results.
      */
     addIntersectingItemsInRangeToSelection: function(
         loVX, hiVX, loY, hiY, selection) {

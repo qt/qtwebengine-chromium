@@ -31,7 +31,7 @@
 #ifndef RenderRuby_h
 #define RenderRuby_h
 
-#include "core/rendering/RenderBlock.h"
+#include "core/rendering/RenderBlockFlow.h"
 #include "core/rendering/RenderInline.h"
 
 namespace WebCore {
@@ -65,12 +65,13 @@ protected:
 private:
     virtual bool isRuby() const { return true; }
     virtual const char* renderName() const { return "RenderRuby (inline)"; }
+    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
     virtual bool createsAnonymousWrapper() const { return true; }
     virtual void removeLeftoverAnonymousBlock(RenderBlock*) { ASSERT_NOT_REACHED(); }
 };
 
 // <ruby> when used as 'display:block' or 'display:inline-block'
-class RenderRubyAsBlock FINAL : public RenderBlock {
+class RenderRubyAsBlock FINAL : public RenderBlockFlow {
 public:
     RenderRubyAsBlock(Element*);
     virtual ~RenderRubyAsBlock();
@@ -84,6 +85,7 @@ protected:
 private:
     virtual bool isRuby() const { return true; }
     virtual const char* renderName() const { return "RenderRuby (block)"; }
+    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
     virtual bool createsAnonymousWrapper() const { return true; }
     virtual void removeLeftoverAnonymousBlock(RenderBlock*) { ASSERT_NOT_REACHED(); }
 };

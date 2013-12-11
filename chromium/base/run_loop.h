@@ -29,12 +29,14 @@ class MessagePumpUIApplication;
 class BASE_EXPORT RunLoop {
  public:
   RunLoop();
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
+#if !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
+    !defined(USE_GTK_MESSAGE_PUMP)
   explicit RunLoop(MessageLoop::Dispatcher* dispatcher);
 #endif
   ~RunLoop();
 
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
+#if !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
+    !defined(USE_GTK_MESSAGE_PUMP)
   void set_dispatcher(MessageLoop::Dispatcher* dispatcher) {
     dispatcher_ = dispatcher;
   }
@@ -101,7 +103,8 @@ class BASE_EXPORT RunLoop {
   // Parent RunLoop or NULL if this is the top-most RunLoop.
   RunLoop* previous_run_loop_;
 
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
+#if !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
+    !defined(USE_GTK_MESSAGE_PUMP)
   MessageLoop::Dispatcher* dispatcher_;
 #endif
 

@@ -386,6 +386,18 @@
    fun:allocateBranchIsland
    fun:mach_override_ptr
 }
+{
+   # Intentional leak of a time-based self-deleting object.
+   bug_264886
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN4base26MessagePumpInstrumentation6CreateERKNS_9TimeDeltaES3_
+   fun:_ZN4base24MessagePumpCFRunLoopBase21EnableInstrumentationEv
+   fun:_ZN4base24MessagePumpNSApplicationC2Ev
+   fun:_ZN4base24MessagePumpCrApplicationC2Ev
+   fun:_ZN4base24MessagePumpCrApplicationC1Ev
+   fun:_ZN4base14MessagePumpMac6CreateEv
+}
 
 # 3. Suppressions for real chromium bugs that are not yet fixed.
 {
@@ -2340,18 +2352,6 @@
    fun:_ZN3WTF20TCMalloc_ThreadCache10DeallocateENS_11HardenedSLLEm
 }
 {
-   bug_178424c
-   Memcheck:Param
-   write(buf)
-   fun:write$UNIX2003
-}
-{
-   bug_178424d
-   Memcheck:Param
-   read(buf)
-   fun:read$UNIX2003
-}
-{
    bug_231969
    Memcheck:Uninitialized
    fun:rangematch
@@ -2594,4 +2594,43 @@
    fun:_ZN4base14FileEnumerator4NextEv
    fun:_ZN10disk_cache15SimpleIndexFile19SyncRestoreFromDiskERKN4base8FilePathE
    fun:_ZN10disk_cache15SimpleIndexFile20SyncLoadIndexEntriesERKN4base8FilePathE13scoped_refptrINS1_22SingleThreadTaskRunnerEERKNS1_8CallbackIFv10scoped_ptrIN9__gnu_cxx8hash_mapIyNS_13EntryMetadataENSA_4hashIyEESt8equal_toIyESaISC_EEENS1_14DefaultDeleterISI_EEEbEEE
+}
+{
+   bug_280583
+   Memcheck:Unaddressable
+   ...
+   fun:_ZN6libyuv21ScaleARGBBilinearDownEiiiiiPKhPhiiii
+   fun:_ZN6libyuv16ScaleARGBAnySizeEiiiiiiiiPKhPhiiiiNS_10FilterModeE
+   fun:_ZN6libyuv9ScaleARGBEPKhiiiPhiiiiiiiNS_10FilterModeE
+   fun:ARGBScale
+   fun:_ZN7content20DesktopCaptureDevice4Core18OnCaptureCompletedEPN6webrtc12DesktopFrameE
+   fun:_ZN6webrtc12_GLOBAL__N_117ScreenCapturerMac7CaptureERKNS_13DesktopRegionE
+   fun:_ZN7content20DesktopCaptureDevice4Core9DoCaptureEv
+}
+{
+   bug_292913_a
+   Memcheck:Leak
+   fun:malloc_zone_malloc
+   fun:_CFRuntimeCreateInstance
+   fun:_ZN7TCFBaseI11TDescriptorEnwEm
+   fun:_ZNK17TDescriptorSource14CopyDescriptorEPK7__CFURL
+   fun:_ZNK17TDescriptorSource32CopySystemWideFallbackDescriptorEP6CGFontPKtl
+   fun:_ZNK17TDescriptorSource32CopySystemWideFallbackDescriptorEP6CGFontPK10__CFString7CFRange
+   fun:_ZNK12TFontCascade24CreateSystemWideFallbackEPK8__CTFontPK10__CFString7CFRange
+   fun:_ZNK12TFontCascade14CreateFallbackEPK8__CTFontPK10__CFString7CFRange
+   ...
+   fun:_ZN3gfx13RenderTextMac12EnsureLayoutEv
+}
+{
+   bug_292913_b
+   Memcheck:Uninitialized
+   fun:_ZL10AddEncHashP12EncHashTablePKhij
+   fun:_Z16BuildMacEncTablev
+   fun:_ZN15TParsingContext13GetParseProcsEv
+   fun:_ZN19TSFNTParsingContext13GetParseProcsEv
+   fun:_ZN18TCIDParsingContext13GetParseProcsEv
+   fun:_ZN16TType1OTFCIDFont20ParseCFFCIDFontDictsERK19TType1CFFDescriptorP32Type1ProtectionEvaluationContextRVt
+   fun:_ZN16TType1OTFCIDFont15ParseCFFCIDFontERK19TType1CFFDescriptorP32Type1ProtectionEvaluationContext
+   fun:_ZN16TType1OTFCIDFontC2ERK19TType1CFFDescriptor
+   fun:_ZN10TType1Font7GetFontEPK5TFont
 }

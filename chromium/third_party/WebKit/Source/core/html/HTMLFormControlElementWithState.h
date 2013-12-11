@@ -43,7 +43,7 @@ public:
     void notifyFormStateChanged();
 
 protected:
-    HTMLFormControlElementWithState(const QualifiedName& tagName, Document*, HTMLFormElement*);
+    HTMLFormControlElementWithState(const QualifiedName& tagName, Document&, HTMLFormElement*);
 
     virtual bool shouldAutocomplete() const;
     virtual void finishParsingChildren();
@@ -51,6 +51,12 @@ protected:
     virtual void removedFrom(ContainerNode*) OVERRIDE;
     virtual bool isFormControlElementWithState() const OVERRIDE;
 };
+
+inline HTMLFormControlElementWithState* toHTMLFormControlElementWithState(FormAssociatedElement* element)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!element || element->isFormControlElementWithState());
+    return static_cast<HTMLFormControlElementWithState*>(element);
+}
 
 } // namespace
 

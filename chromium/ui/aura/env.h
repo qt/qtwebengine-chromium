@@ -9,8 +9,8 @@
 #include "base/message_loop/message_loop.h"
 #include "base/observer_list.h"
 #include "ui/aura/aura_export.h"
-#include "ui/base/events/event_handler.h"
-#include "ui/base/events/event_target.h"
+#include "ui/events/event_handler.h"
+#include "ui/events/event_target.h"
 #include "ui/gfx/point.h"
 
 #if defined(USE_X11)
@@ -60,9 +60,7 @@ class AURA_EXPORT Env : public ui::EventTarget {
   // Returns the native event dispatcher. The result should only be passed to
   // base::RunLoop(dispatcher), or used to dispatch an event by
   // |Dispatch(const NativeEvent&)| on it. It must never be stored.
-#if !defined(OS_MACOSX)
   base::MessageLoop::Dispatcher* GetDispatcher();
-#endif
 
   // Invoked by RootWindow when its host is activated.
   void RootWindowActivated(RootWindow* root_window);

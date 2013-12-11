@@ -38,16 +38,11 @@ class ResourceCreationProxy : public InterfaceProxy,
 
   // ResourceCreationAPI (called in plugin).
   virtual PP_Resource CreateFileIO(PP_Instance instance) OVERRIDE;
-  virtual PP_Resource CreateFileRef(PP_Instance instance,
-                                    PP_Resource file_system,
-                                    const char* path) OVERRIDE;
   virtual PP_Resource CreateFileRef(
-      const PPB_FileRef_CreateInfo& create_info) OVERRIDE;
+      PP_Instance instance,
+      const FileRefCreateInfo& create_info) OVERRIDE;
   virtual PP_Resource CreateFileSystem(PP_Instance instance,
                                        PP_FileSystemType type) OVERRIDE;
-  virtual PP_Resource CreateIsolatedFileSystem(
-      PP_Instance instance,
-      const char* fsid) OVERRIDE;
   virtual PP_Resource CreateIMEInputEvent(PP_Instance instance,
                                           PP_InputEvent_Type type,
                                           PP_TimeTicks time_stamp,
@@ -94,7 +89,10 @@ class ResourceCreationProxy : public InterfaceProxy,
       const PP_FloatPoint* wheel_delta,
       const PP_FloatPoint* wheel_ticks,
       PP_Bool scroll_by_page) OVERRIDE;
-
+  virtual PP_Resource CreateAudio1_0(PP_Instance instance,
+                                     PP_Resource config_id,
+                                     PPB_Audio_Callback_1_0 audio_callback,
+                                     void* user_data) OVERRIDE;
   virtual PP_Resource CreateAudio(PP_Instance instance,
                                   PP_Resource config_id,
                                   PPB_Audio_Callback audio_callback,
@@ -135,13 +133,11 @@ class ResourceCreationProxy : public InterfaceProxy,
   virtual PP_Resource CreateNetAddressFromNetAddressPrivate(
       PP_Instance instance,
       const PP_NetAddress_Private& private_addr) OVERRIDE;
-  virtual PP_Resource CreateNetworkMonitor(
-      PP_Instance instance,
-      PPB_NetworkMonitor_Callback callback,
-      void* user_data) OVERRIDE;
+  virtual PP_Resource CreateNetworkMonitor(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreatePrinting(PP_Instance) OVERRIDE;
   virtual PP_Resource CreateTCPServerSocketPrivate(
       PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateTCPSocket1_0(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateTCPSocket(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateTCPSocketPrivate(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateUDPSocket(PP_Instance instance) OVERRIDE;
@@ -167,6 +163,8 @@ class ResourceCreationProxy : public InterfaceProxy,
   virtual PP_Resource CreateFlashMenu(PP_Instance instance,
                                       const PP_Flash_Menu* menu_data) OVERRIDE;
   virtual PP_Resource CreateFlashMessageLoop(PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreatePlatformVerificationPrivate(
+      PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateScrollbar(PP_Instance instance,
                                       PP_Bool vertical) OVERRIDE;
   virtual PP_Resource CreateTalk(PP_Instance instance) OVERRIDE;

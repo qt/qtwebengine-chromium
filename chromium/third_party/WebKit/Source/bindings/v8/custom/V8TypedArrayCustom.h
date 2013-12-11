@@ -35,9 +35,7 @@
 #include "bindings/v8/V8DOMWrapper.h"
 #include "bindings/v8/WrapperTypeInfo.h"
 #include "bindings/v8/custom/V8ArrayBufferCustom.h"
-
 #include "wtf/ArrayBuffer.h"
-
 #include <v8.h>
 
 namespace WebCore {
@@ -67,7 +65,7 @@ public:
     static v8::Handle<v8::Object> wrap(TypedArray* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
     {
         ASSERT(impl);
-        ASSERT((DOMDataStore::template getWrapper<Binding>(impl, isolate).IsEmpty()));
+        ASSERT(!DOMDataStore::containsWrapper<Binding>(impl, isolate));
         return V8TypedArray<TypedArray>::createWrapper(impl, creationContext, isolate);
     }
 
@@ -81,38 +79,44 @@ public:
         return wrap(impl, creationContext, isolate);
     }
 
-    static v8::Handle<v8::Value> toV8ForMainWorld(TypedArray* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+    template<typename CallbackInfo>
+    static void v8SetReturnValue(const CallbackInfo& callbackInfo, TypedArray* impl, v8::Handle<v8::Object> creationContext)
     {
-        ASSERT(worldType(isolate) == MainWorld);
-        if (UNLIKELY(!impl))
-            return v8NullWithCheck(isolate);
-        v8::Handle<v8::Value> wrapper = DOMDataStore::getWrapperForMainWorld<Binding>(impl);
-        if (!wrapper.IsEmpty())
-            return wrapper;
-        return wrap(impl, creationContext, isolate);
+        if (UNLIKELY(!impl)) {
+            v8SetReturnValueNull(callbackInfo);
+            return;
+        }
+        if (DOMDataStore::setReturnValueFromWrapper<Binding>(callbackInfo.GetReturnValue(), impl))
+            return;
+        v8::Handle<v8::Object> wrapper = wrap(impl, creationContext, callbackInfo.GetIsolate());
+        callbackInfo.GetReturnValue().Set(wrapper);
     }
 
-    template<class HolderContainer, class Wrappable>
-    static v8::Handle<v8::Value> toV8Fast(TypedArray* impl, const HolderContainer& container, Wrappable* wrappable)
+    template<typename CallbackInfo>
+    static void v8SetReturnValueForMainWorld(const CallbackInfo& callbackInfo, TypedArray* impl, v8::Handle<v8::Object> creationContext)
     {
-        if (UNLIKELY(!impl))
-            return v8::Null(container.GetIsolate());
-        v8::Handle<v8::Object> wrapper = DOMDataStore::getWrapperFast<Binding>(impl, container, wrappable);
-        if (!wrapper.IsEmpty())
-            return wrapper;
-        return wrap(impl, container.Holder(), container.GetIsolate());
+        ASSERT(worldType(callbackInfo.GetIsolate()) == MainWorld);
+        if (UNLIKELY(!impl)) {
+            v8SetReturnValueNull(callbackInfo);
+            return;
+        }
+        if (DOMDataStore::setReturnValueFromWrapperForMainWorld<Binding>(callbackInfo.GetReturnValue(), impl))
+            return;
+        v8::Handle<v8::Value> wrapper = wrap(impl, creationContext, callbackInfo.GetIsolate());
+        callbackInfo.GetReturnValue().Set(wrapper);
     }
 
-    template<class HolderContainer, class Wrappable>
-    static v8::Handle<v8::Value> toV8FastForMainWorld(TypedArray* impl, const HolderContainer& container, Wrappable* wrappable)
+    template<class CallbackInfo, class Wrappable>
+    static void v8SetReturnValueFast(const CallbackInfo& callbackInfo, TypedArray* impl, Wrappable* wrappable)
     {
-        ASSERT(worldType(container.GetIsolate()) == MainWorld);
-        if (UNLIKELY(!impl))
-            return v8::Null(container.GetIsolate());
-        v8::Handle<v8::Object> wrapper = DOMDataStore::getWrapperForMainWorld<Binding>(impl);
-        if (!wrapper.IsEmpty())
-            return wrapper;
-        return wrap(impl, container.Holder(), container.GetIsolate());
+        if (UNLIKELY(!impl)) {
+            v8SetReturnValueNull(callbackInfo);
+            return;
+        }
+        if (DOMDataStore::setReturnValueFromWrapperFast<Binding>(callbackInfo.GetReturnValue(), impl, callbackInfo.Holder(), wrappable))
+            return;
+        v8::Handle<v8::Object> wrapper = wrap(impl, callbackInfo.Holder(), callbackInfo.GetIsolate());
+        callbackInfo.GetReturnValue().Set(wrapper);
     }
 
     static inline void* toInternalPointer(TypedArray* impl)
@@ -138,7 +142,7 @@ template <typename TypedArray>
 v8::Handle<v8::Object> V8TypedArray<TypedArray>::createWrapper(PassRefPtr<TypedArray> impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
     ASSERT(impl.get());
-    ASSERT(DOMDataStore::getWrapper<Binding>(impl.get(), isolate).IsEmpty());
+    ASSERT(!DOMDataStore::containsWrapper<Binding>(impl.get(), isolate));
 
     RefPtr<ArrayBuffer> buffer = impl->buffer();
     v8::Local<v8::Value> v8Buffer = v8::Local<v8::Value>::New(WebCore::toV8(buffer.get(), creationContext, isolate));

@@ -15,13 +15,13 @@
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
-#include "ui/base/events/event.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/base/text/text_elider.h"
+#include "ui/events/event.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/screen.h"
+#include "ui/gfx/text_elider.h"
 #include "ui/views/background.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/label.h"
@@ -102,10 +102,7 @@ class TooltipController::Tooltip : public views::WidgetObserver {
   }
 
   virtual ~Tooltip() {
-    if (widget_) {
-      widget_->RemoveObserver(this);
-      widget_->Close();
-    }
+    DestroyWidget();
   }
 
   // Updates the text on the tooltip and resizes to fit.
@@ -126,7 +123,7 @@ class TooltipController::Tooltip : public views::WidgetObserver {
       width += 2 * kTooltipBorderWidth;
       height += 2 * kTooltipBorderWidth;
     }
-    CreateWidgetIfNecessary(window);
+    GetWidgetForWindow(window);
     SetTooltipBounds(location, width, height);
   }
 
@@ -180,12 +177,28 @@ class TooltipController::Tooltip : public views::WidgetObserver {
     widget_->SetBounds(tooltip_rect);
   }
 
-  void CreateWidgetIfNecessary(aura::Window* tooltip_window) {
-    if (widget_)
-      return;
+  void GetWidgetForWindow(aura::Window* tooltip_window) {
+    if (widget_) {
+      // If the window for which the tooltip is being displayed changes and if
+      // the tooltip window and the tooltip widget belong to different
+      // rootwindows then we need to recreate the tooltip widget under the
+      // active root window hierarchy to get it to display.
+      if (widget_->GetNativeWindow()->GetRootWindow() ==
+          tooltip_window->GetRootWindow())
+        return;
+      DestroyWidget();
+    }
     widget_ = CreateTooltip(tooltip_window);
     widget_->SetContentsView(&label_);
     widget_->AddObserver(this);
+  }
+
+  void DestroyWidget() {
+    if (widget_) {
+      widget_->RemoveObserver(this);
+      widget_->Close();
+      widget_ = NULL;
+    }
   }
 
   views::Label label_;
@@ -256,13 +269,17 @@ void TooltipController::OnKeyEvent(ui::KeyEvent* event) {
 void TooltipController::OnMouseEvent(ui::MouseEvent* event) {
   aura::Window* target = static_cast<aura::Window*>(event->target());
   switch (event->type()) {
+    case ui::ET_MOUSE_EXITED:
+      target = NULL;
+      // Fall through.
     case ui::ET_MOUSE_MOVED:
     case ui::ET_MOUSE_DRAGGED:
       if (tooltip_window_ != target) {
         if (tooltip_window_)
           tooltip_window_->RemoveObserver(this);
         tooltip_window_ = target;
-        tooltip_window_->AddObserver(this);
+        if (tooltip_window_)
+          tooltip_window_->AddObserver(this);
       }
       curr_mouse_loc_ = event->location();
       if (tooltip_timer_.IsRunning())
@@ -403,7 +420,7 @@ void TooltipController::TrimTooltipToFit(int max_width,
   if (result_lines.size() > kMaxLines) {
     result_lines.resize(kMaxLines);
     // Add ellipses character to last line.
-    result_lines[kMaxLines - 1] = ui::TruncateString(
+    result_lines[kMaxLines - 1] = gfx::TruncateString(
         result_lines.back(), result_lines.back().length() - 1);
   }
   *line_count = result_lines.size();
@@ -420,7 +437,8 @@ void TooltipController::TrimTooltipToFit(int max_width,
     // case, we simply truncate at available_width and add ellipses at the end.
     if (line_width > available_width) {
       *width = available_width;
-      result.append(ui::ElideText(*l, font, available_width, ui::ELIDE_AT_END));
+      result.append(gfx::ElideText(*l, font, available_width,
+                                   gfx::ELIDE_AT_END));
     } else {
       *width = std::max(*width, line_width);
       result.append(*l);

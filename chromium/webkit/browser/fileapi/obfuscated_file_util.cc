@@ -12,6 +12,7 @@
 #include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
@@ -98,6 +99,12 @@ void TouchDirectory(SandboxDirectoryDatabase* db, FileId dir_id) {
 const base::FilePath::CharType kTemporaryDirectoryName[] = FILE_PATH_LITERAL("t");
 const base::FilePath::CharType kPersistentDirectoryName[] = FILE_PATH_LITERAL("p");
 const base::FilePath::CharType kSyncableDirectoryName[] = FILE_PATH_LITERAL("s");
+
+enum IsolatedOriginStatus {
+  kIsolatedOriginMatch,
+  kIsolatedOriginDontMatch,
+  kIsolatedOriginStatusMax,
+};
 
 }  // namespace
 
@@ -276,7 +283,7 @@ PlatformFileError ObfuscatedFileUtil::CreateOrOpen(
       file_flags & base::PLATFORM_FILE_WRITE &&
       context->quota_limit_type() == quota::kQuotaLimitTypeUnlimited) {
     DCHECK_EQ(base::PLATFORM_FILE_OK, error);
-    context->file_system_context()->GetQuotaUtil(url.type())->
+    context->file_system_context()->sandbox_delegate()->
         StickyInvalidateUsageCache(url.origin(), url.type());
   }
   return error;
@@ -380,10 +387,9 @@ PlatformFileError ObfuscatedFileUtil::CreateDirectory(
     int64 growth = UsageForPath(file_info.name.size());
     if (!AllocateQuota(context, growth))
       return base::PLATFORM_FILE_ERROR_NO_SPACE;
-    if (!db->AddFileInfo(file_info, &parent_id)) {
-      NOTREACHED();
-      return base::PLATFORM_FILE_ERROR_FAILED;
-    }
+    base::PlatformFileError error = db->AddFileInfo(file_info, &parent_id);
+    if (error != base::PLATFORM_FILE_OK)
+      return error;
     UpdateUsage(context, url, growth);
     context->change_observers()->Notify(
         &FileChangeObserver::OnCreateDirectory, MakeTuple(url));
@@ -1123,6 +1129,7 @@ PlatformFileError ObfuscatedFileUtil::CreateFile(
       DCHECK_NE(base::kInvalidPlatformFileValue, *handle);
       base::ClosePlatformFile(*handle);
       base::DeleteFile(dest_local_path, false /* recursive */);
+      *handle = base::kInvalidPlatformFileValue;
     }
     return base::PLATFORM_FILE_ERROR_FAILED;
   }
@@ -1133,13 +1140,15 @@ PlatformFileError ObfuscatedFileUtil::CreateFile(
       dest_local_path.value().substr(root.value().length() + 1));
 
   FileId file_id;
-  if (!db->AddFileInfo(*dest_file_info, &file_id)) {
+  error = db->AddFileInfo(*dest_file_info, &file_id);
+  if (error != base::PLATFORM_FILE_OK) {
     if (handle) {
       DCHECK_NE(base::kInvalidPlatformFileValue, *handle);
       base::ClosePlatformFile(*handle);
+      *handle = base::kInvalidPlatformFileValue;
     }
     base::DeleteFile(dest_local_path, false /* recursive */);
-    return base::PLATFORM_FILE_ERROR_FAILED;
+    return error;
   }
   TouchDirectory(db, dest_file_info->parent_id);
 
@@ -1261,7 +1270,7 @@ void ObfuscatedFileUtil::InvalidateUsageCache(
     FileSystemOperationContext* context,
     const GURL& origin,
     FileSystemType type) {
-  context->file_system_context()->GetQuotaUtil(type)->
+  context->file_system_context()->sandbox_delegate()->
       InvalidateUsageCache(origin, type);
 }
 
@@ -1436,6 +1445,15 @@ bool ObfuscatedFileUtil::HasIsolatedStorage(const GURL& origin) {
       isolated_origin_ = origin;
     // Record isolated_origin_, but always disable for now.
     // crbug.com/264429
+    if (isolated_origin_ != origin) {
+      UMA_HISTOGRAM_ENUMERATION("FileSystem.IsolatedOriginStatus",
+                                kIsolatedOriginDontMatch,
+                                kIsolatedOriginStatusMax);
+    } else {
+      UMA_HISTOGRAM_ENUMERATION("FileSystem.IsolatedOriginStatus",
+                                kIsolatedOriginMatch,
+                                kIsolatedOriginStatusMax);
+    }
     return false;
   }
   return false;

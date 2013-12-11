@@ -29,9 +29,15 @@ class APP_LIST_EXPORT AppListViewDelegate {
   // AppListView owns the delegate.
   virtual ~AppListViewDelegate() {}
 
-  // Invoked to set the model that AppListView uses.
+  // Sets the delegate to use the profile at |profile_path|. This is currently
+  // only used by non-Ash Windows.
+  virtual void SetProfileByPath(const base::FilePath& profile_path) = 0;
+
+  // Invoked to initialize the model that AppListView uses. This binds the given
+  // model to this AppListViewDelegate and makes the AppListViewDelegate
+  // responsible for updating the model.
   // Note that AppListView owns the model.
-  virtual void SetModel(AppListModel* model) = 0;
+  virtual void InitModel(AppListModel* model) = 0;
 
   // Gets the SigninDelegate for the app list. Owned by the AppListViewDelegate.
   virtual SigninDelegate* GetSigninDelegate() = 0;
@@ -70,17 +76,8 @@ class APP_LIST_EXPORT AppListViewDelegate {
   // Invoked when the app list is closing.
   virtual void ViewClosing() = 0;
 
-  // Invoked when the app list's activated state changes.
-  virtual void ViewActivationChanged(bool active) = 0;
-
   // Returns the icon to be displayed in the window and taskbar.
   virtual gfx::ImageSkia GetWindowIcon() = 0;
-
-  // Returns the name of the current user.
-  virtual base::string16 GetCurrentUserName() = 0;
-
-  // Returns the email of the current user.
-  virtual base::string16 GetCurrentUserEmail() = 0;
 
   // Open the settings UI.
   virtual void OpenSettings() = 0;
@@ -90,6 +87,9 @@ class APP_LIST_EXPORT AppListViewDelegate {
 
   // Open the feedback UI.
   virtual void OpenFeedback() = 0;
+
+  // Shows the app list for the profile specified by |profile_path|.
+  virtual void ShowForProfileByPath(const base::FilePath& profile_path) = 0;
 };
 
 }  // namespace app_list

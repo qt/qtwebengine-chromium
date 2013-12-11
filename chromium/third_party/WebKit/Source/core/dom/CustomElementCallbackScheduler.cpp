@@ -43,7 +43,7 @@ void CustomElementCallbackScheduler::scheduleAttributeChangedCallback(PassRefPtr
     if (!callbacks->hasAttributeChangedCallback())
         return;
 
-    CustomElementCallbackQueue* queue = CustomElementCallbackDispatcher::instance().ensureInCurrentElementQueue(element);
+    CustomElementCallbackQueue* queue = instance().schedule(element);
     queue->append(CustomElementCallbackInvocation::createAttributeChangedInvocation(callbacks, name, oldValue, newValue));
 }
 
@@ -52,26 +52,71 @@ void CustomElementCallbackScheduler::scheduleCreatedCallback(PassRefPtr<CustomEl
     if (!callbacks->hasCreatedCallback())
         return;
 
-    CustomElementCallbackQueue* queue = CustomElementCallbackDispatcher::instance().createAtFrontOfCurrentElementQueue(element);
+    CustomElementCallbackQueue* queue = instance().scheduleInCurrentElementQueue(element);
     queue->append(CustomElementCallbackInvocation::createInvocation(callbacks, CustomElementLifecycleCallbacks::Created));
 }
 
-void CustomElementCallbackScheduler::scheduleEnteredDocumentCallback(PassRefPtr<CustomElementLifecycleCallbacks> callbacks, PassRefPtr<Element> element)
+void CustomElementCallbackScheduler::scheduleEnteredViewCallback(PassRefPtr<CustomElementLifecycleCallbacks> callbacks, PassRefPtr<Element> element)
 {
-    if (!callbacks->hasEnteredDocumentCallback())
+    if (!callbacks->hasEnteredViewCallback())
         return;
 
-    CustomElementCallbackQueue* queue = CustomElementCallbackDispatcher::instance().ensureInCurrentElementQueue(element);
-    queue->append(CustomElementCallbackInvocation::createInvocation(callbacks, CustomElementLifecycleCallbacks::EnteredDocument));
+    CustomElementCallbackQueue* queue = instance().schedule(element);
+    queue->append(CustomElementCallbackInvocation::createInvocation(callbacks, CustomElementLifecycleCallbacks::EnteredView));
 }
 
-void CustomElementCallbackScheduler::scheduleLeftDocumentCallback(PassRefPtr<CustomElementLifecycleCallbacks> callbacks, PassRefPtr<Element> element)
+void CustomElementCallbackScheduler::scheduleLeftViewCallback(PassRefPtr<CustomElementLifecycleCallbacks> callbacks, PassRefPtr<Element> element)
 {
-    if (!callbacks->hasLeftDocumentCallback())
+    if (!callbacks->hasLeftViewCallback())
         return;
 
-    CustomElementCallbackQueue* queue = CustomElementCallbackDispatcher::instance().ensureInCurrentElementQueue(element);
-    queue->append(CustomElementCallbackInvocation::createInvocation(callbacks, CustomElementLifecycleCallbacks::LeftDocument));
+    CustomElementCallbackQueue* queue = instance().schedule(element);
+    queue->append(CustomElementCallbackInvocation::createInvocation(callbacks, CustomElementLifecycleCallbacks::LeftView));
+}
+
+CustomElementCallbackScheduler& CustomElementCallbackScheduler::instance()
+{
+    DEFINE_STATIC_LOCAL(CustomElementCallbackScheduler, instance, ());
+    return instance;
+}
+
+CustomElementCallbackQueue* CustomElementCallbackScheduler::ensureCallbackQueue(PassRefPtr<Element> element)
+{
+    Element* key = element.get();
+    ElementCallbackQueueMap::iterator it = m_elementCallbackQueueMap.find(key);
+    if (it == m_elementCallbackQueueMap.end())
+        it = m_elementCallbackQueueMap.add(key, CustomElementCallbackQueue::create(element)).iterator;
+    return it->value.get();
+}
+
+void CustomElementCallbackScheduler::clearElementCallbackQueueMap()
+{
+    ElementCallbackQueueMap emptyMap;
+    instance().m_elementCallbackQueueMap.swap(emptyMap);
+}
+
+// Finds or creates the callback queue for element. If the
+// createdCallback has not finished running, the callback queue is not
+// moved to the top-of-stack. Otherwise like
+// scheduleInCurrentElementQueue.
+CustomElementCallbackQueue* CustomElementCallbackScheduler::schedule(PassRefPtr<Element> element)
+{
+    CustomElementCallbackQueue* callbackQueue = ensureCallbackQueue(element);
+    if (!callbackQueue->inCreatedCallback())
+        CustomElementCallbackDispatcher::instance().enqueue(callbackQueue);
+    return callbackQueue;
+}
+
+// Finds or creates the callback queue for element. If the element's
+// callback queue is scheduled in an earlier processing stack frame,
+// its owner is set to the element queue on the top of the processing
+// stack. Because callback queues are processed exhaustively, this
+// effectively moves the callback queue to the top of the stack.
+CustomElementCallbackQueue* CustomElementCallbackScheduler::scheduleInCurrentElementQueue(PassRefPtr<Element> element)
+{
+    CustomElementCallbackQueue* callbackQueue = ensureCallbackQueue(element);
+    CustomElementCallbackDispatcher::instance().enqueue(callbackQueue);
+    return callbackQueue;
 }
 
 } // namespace WebCore

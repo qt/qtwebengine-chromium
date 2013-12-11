@@ -104,6 +104,7 @@ FeatureInfo::FeatureFlags::FeatureFlags()
       use_img_for_multisampled_render_to_texture(false),
       oes_standard_derivatives(false),
       oes_egl_image_external(false),
+      oes_depth24(false),
       npot_ok(false),
       enable_texture_float_linear(false),
       enable_texture_half_float_linear(false),
@@ -120,7 +121,8 @@ FeatureInfo::FeatureFlags::FeatureFlags()
       enable_samplers(false),
       ext_draw_buffers(false),
       ext_frag_depth(false),
-      use_async_readpixels(false) {
+      use_async_readpixels(false),
+      map_buffer_range(false) {
 }
 
 FeatureInfo::Workarounds::Workarounds() :
@@ -132,6 +134,22 @@ FeatureInfo::Workarounds::Workarounds() :
 }
 
 FeatureInfo::FeatureInfo() {
+  InitializeBasicState(*CommandLine::ForCurrentProcess());
+}
+
+FeatureInfo::FeatureInfo(const CommandLine& command_line) {
+  InitializeBasicState(command_line);
+}
+
+void FeatureInfo::InitializeBasicState(const CommandLine& command_line) {
+  if (command_line.HasSwitch(switches::kGpuDriverBugWorkarounds)) {
+    std::string types = command_line.GetSwitchValueASCII(
+        switches::kGpuDriverBugWorkarounds);
+    StringToWorkarounds(types, &workarounds_);
+  }
+  feature_flags_.enable_shader_name_hashing =
+      !command_line.HasSwitch(switches::kDisableShaderNameHashing);
+
   static const GLenum kAlphaTypes[] = {
       GL_UNSIGNED_BYTE,
   };
@@ -167,32 +185,22 @@ FeatureInfo::FeatureInfo() {
   }
 }
 
-bool FeatureInfo::Initialize(const char* allowed_features) {
+bool FeatureInfo::Initialize() {
   disallowed_features_ = DisallowedFeatures();
-  AddFeatures(*CommandLine::ForCurrentProcess());
+  InitializeFeatures();
   return true;
 }
 
-bool FeatureInfo::Initialize(const DisallowedFeatures& disallowed_features,
-                             const char* allowed_features) {
+bool FeatureInfo::Initialize(const DisallowedFeatures& disallowed_features) {
   disallowed_features_ = disallowed_features;
-  AddFeatures(*CommandLine::ForCurrentProcess());
+  InitializeFeatures();
   return true;
 }
 
-void FeatureInfo::AddFeatures(const CommandLine& command_line) {
+void FeatureInfo::InitializeFeatures() {
   // Figure out what extensions to turn on.
   StringSet extensions(
       reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS)));
-
-  if (command_line.HasSwitch(switches::kGpuDriverBugWorkarounds)) {
-    std::string types = command_line.GetSwitchValueASCII(
-        switches::kGpuDriverBugWorkarounds);
-    StringToWorkarounds(types, &workarounds_);
-  }
-
-  feature_flags_.enable_shader_name_hashing =
-      !command_line.HasSwitch(switches::kDisableShaderNameHashing);
 
   bool npot_ok = false;
 
@@ -490,6 +498,7 @@ void FeatureInfo::AddFeatures(const CommandLine& command_line) {
 
   if (extensions.Contains("GL_OES_depth24") || gfx::HasDesktopGLFeatures()) {
     AddExtensionString("GL_OES_depth24");
+    feature_flags_.oes_depth24 = true;
     validators_.render_buffer_format.AddValue(GL_DEPTH_COMPONENT24);
   }
 
@@ -644,16 +653,6 @@ void FeatureInfo::AddFeatures(const CommandLine& command_line) {
     feature_flags_.ext_frag_depth = true;
   }
 
-  bool ui_gl_fence_works =
-      extensions.Contains("GL_NV_fence") ||
-      extensions.Contains("GL_ARB_sync");
-
-  if (ui_gl_fence_works &&
-      extensions.Contains("GL_ARB_pixel_buffer_object") &&
-      !workarounds_.disable_async_readpixels) {
-    feature_flags_.use_async_readpixels = true;
-  }
-
   if (!disallowed_features_.swap_buffer_complete_callback)
     AddExtensionString("GL_CHROMIUM_swapbuffers_complete_callback");
 
@@ -664,10 +663,34 @@ void FeatureInfo::AddFeatures(const CommandLine& command_line) {
     is_es3 = (lstr.substr(0, 12) == "opengl es 3.");
   }
 
+  bool ui_gl_fence_works = extensions.Contains("GL_NV_fence") ||
+                           extensions.Contains("GL_ARB_sync") ||
+                           extensions.Contains("EGL_KHR_fence_sync");
+
+  feature_flags_.map_buffer_range =
+      is_es3 || extensions.Contains("GL_ARB_map_buffer_range");
+
+  // Really it's part of core OpenGL 2.1 and up, but let's assume the
+  // extension is still advertised.
+  bool has_pixel_buffers =
+      is_es3 || extensions.Contains("GL_ARB_pixel_buffer_object");
+
+  // We will use either glMapBuffer() or glMapBufferRange() for async readbacks.
+  if (has_pixel_buffers && ui_gl_fence_works &&
+      !workarounds_.disable_async_readpixels) {
+    feature_flags_.use_async_readpixels = true;
+  }
+
   if (is_es3 || extensions.Contains("GL_ARB_sampler_objects")) {
     feature_flags_.enable_samplers = true;
     // TODO(dsinclair): Add AddExtensionString("GL_CHROMIUM_sampler_objects")
     // when available.
+  }
+
+  if ((is_es3 || extensions.Contains("GL_EXT_discard_framebuffer")) &&
+      !workarounds_.disable_ext_discard_framebuffer) {
+    // DiscardFramebufferEXT is automatically bound to InvalidateFramebuffer.
+    AddExtensionString("GL_EXT_discard_framebuffer");
   }
 }
 

@@ -21,7 +21,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/url_constants.h"
-#include "content/shell/shell.h"
+#include "content/shell/browser/shell.h"
 #include "content/test/accessibility_browser_test_utils.h"
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
@@ -140,14 +140,14 @@ void DumpAccessibilityTreeTest::RunTest(
   printf("Testing: %s\n", html_file.MaybeAsASCII().c_str());
 
   std::string html_contents;
-  file_util::ReadFileToString(html_file, &html_contents);
+  base::ReadFileToString(html_file, &html_contents);
 
   // Read the expected file.
   std::string expected_contents_raw;
   base::FilePath expected_file =
     base::FilePath(html_file.RemoveExtension().value() +
                    AccessibilityTreeFormatter::GetExpectedFileSuffix());
-  file_util::ReadFileToString(expected_file, &expected_contents_raw);
+  base::ReadFileToString(expected_file, &expected_contents_raw);
 
   // Tolerate Windows-style line endings (\r\n) in the expected file:
   // normalize by deleting all \r from the file (if any) to leave only \n.
@@ -166,7 +166,7 @@ void DumpAccessibilityTreeTest::RunTest(
                         html_file.BaseName().MaybeAsASCII().c_str());
   AccessibilityNotificationWaiter waiter(
       shell(), AccessibilityModeComplete,
-      AccessibilityNotificationLoadComplete);
+      WebKit::WebAXEventLoadComplete);
   NavigateToURL(shell(), url);
   waiter.WaitForNotification();
 

@@ -31,17 +31,21 @@
 #include "config.h"
 #include "bindings/v8/V8ErrorHandler.h"
 
+#include "V8ErrorEvent.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8HiddenPropertyName.h"
 #include "bindings/v8/V8ScriptRunner.h"
+#include "core/dom/Document.h"
 #include "core/dom/ErrorEvent.h"
 #include "core/dom/EventNames.h"
+#include "core/dom/ScriptExecutionContext.h"
+#include "core/page/Frame.h"
 
 namespace WebCore {
 
-V8ErrorHandler::V8ErrorHandler(v8::Local<v8::Object> listener, bool isInline)
-    : V8EventListener(listener, isInline)
+V8ErrorHandler::V8ErrorHandler(v8::Local<v8::Object> listener, bool isInline, v8::Isolate* isolate)
+    : V8EventListener(listener, isInline, isolate)
 {
 }
 
@@ -51,14 +55,18 @@ v8::Local<v8::Value> V8ErrorHandler::callListenerFunction(ScriptExecutionContext
         return V8EventListener::callListenerFunction(context, jsEvent, event);
 
     ErrorEvent* errorEvent = static_cast<ErrorEvent*>(event);
-    v8::Local<v8::Object> listener = getListenerObject(context);
+
     v8::Isolate* isolate = toV8Context(context, world())->GetIsolate();
+    if (errorEvent->world() && errorEvent->world() != world())
+        return v8::Null(isolate);
+
+    v8::Local<v8::Object> listener = getListenerObject(context);
     v8::Local<v8::Value> returnValue;
     if (!listener.IsEmpty() && listener->IsFunction()) {
         v8::Local<v8::Function> callFunction = v8::Local<v8::Function>::Cast(listener);
         v8::Local<v8::Object> thisValue = v8::Context::GetCurrent()->Global();
 
-        v8::Local<v8::Value> error = jsEvent->ToObject()->GetHiddenValue(V8HiddenPropertyName::error());
+        v8::Local<v8::Value> error = jsEvent->ToObject()->GetHiddenValue(V8HiddenPropertyName::error(isolate));
         if (error.IsEmpty())
             error = v8::Null(isolate);
 
@@ -66,11 +74,21 @@ v8::Local<v8::Value> V8ErrorHandler::callListenerFunction(ScriptExecutionContext
         v8::TryCatch tryCatch;
         tryCatch.SetVerbose(true);
         if (worldType(isolate) == WorkerWorld)
-            returnValue = V8ScriptRunner::callFunction(callFunction, context, thisValue, WTF_ARRAY_LENGTH(parameters), parameters);
+            returnValue = V8ScriptRunner::callFunction(callFunction, context, thisValue, WTF_ARRAY_LENGTH(parameters), parameters, isolate);
         else
-            returnValue = ScriptController::callFunctionWithInstrumentation(0, callFunction, thisValue, WTF_ARRAY_LENGTH(parameters), parameters);
+            returnValue = ScriptController::callFunctionWithInstrumentation(0, callFunction, thisValue, WTF_ARRAY_LENGTH(parameters), parameters, isolate);
     }
     return returnValue;
+}
+
+// static
+void V8ErrorHandler::storeExceptionOnErrorEventWrapper(ErrorEvent* event, v8::Handle<v8::Value> data, v8::Isolate* isolate)
+{
+    v8::Local<v8::Value> wrappedEvent = toV8(event, v8::Handle<v8::Object>(), isolate);
+    if (!wrappedEvent.IsEmpty()) {
+        ASSERT(wrappedEvent->IsObject());
+        v8::Local<v8::Object>::Cast(wrappedEvent)->SetHiddenValue(V8HiddenPropertyName::error(isolate), data);
+    }
 }
 
 bool V8ErrorHandler::shouldPreventDefault(v8::Local<v8::Value> returnValue)

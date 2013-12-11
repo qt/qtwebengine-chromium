@@ -57,16 +57,9 @@ base.exportTo('tracing.tracks', function() {
       this.updateContents_();
     },
 
-    set decorateHit(f) {
-      this.decorateHit_ = f;
-      this.updateContents_();
-    },
-
     addSliceTrack_: function(slices) {
       var track = new tracing.tracks.SliceTrack(this.viewport);
       track.slices = slices;
-      track.decorateHit = this.decorateHit_;
-      track.categoryFilter_ = this.categoryFilter;
       this.appendChild(track);
       return track;
     },
@@ -87,8 +80,7 @@ base.exportTo('tracing.tracks', function() {
         return;
       }
 
-      var slices = tracing.filterSliceArray(this.categoryFilter,
-                                            this.group_.slices);
+      var slices = this.group_.slices;
       if (this.areArrayContentsSame_(this.filteredSlices_, slices)) {
         this.updateHeadingAndTooltip_();
         return;

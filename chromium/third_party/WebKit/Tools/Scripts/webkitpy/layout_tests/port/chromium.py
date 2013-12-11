@@ -51,6 +51,12 @@ class ChromiumPort(Port):
     ALL_SYSTEMS = (
         ('snowleopard', 'x86'),
         ('lion', 'x86'),
+
+        # FIXME: We treat Retina (High-DPI) devices as if they are running
+        # a different operating system version. This isn't accurate, but will work until
+        # we need to test and support baselines across multiple O/S versions.
+        ('retina', 'x86'),
+
         ('mountainlion', 'x86'),
         ('xp', 'x86'),
         ('win7', 'x86'),
@@ -58,22 +64,20 @@ class ChromiumPort(Port):
         ('lucid', 'x86_64'),
         # FIXME: Technically this should be 'arm', but adding a third architecture type breaks TestConfigurationConverter.
         # If we need this to be 'arm' in the future, then we first have to fix TestConfigurationConverter.
-        # FIXME: Until we have an android bot to do rebaselines, we need to not include it in ALL_SYSTEMS
-        # because otherwise rebaselines won't correclty remove lines from TestExpectations.
-        #('icecreamsandwich', 'x86'),
+        ('icecreamsandwich', 'x86'),
         )
 
     ALL_BASELINE_VARIANTS = [
-        'mac-mountainlion', 'mac-lion', 'mac-snowleopard',
+        'mac-mountainlion', 'mac-retina', 'mac-lion', 'mac-snowleopard',
         'win-win7', 'win-xp',
         'linux-x86_64', 'linux-x86',
     ]
 
     CONFIGURATION_SPECIFIER_MACROS = {
-        'mac': ['snowleopard', 'lion', 'mountainlion'],
+        'mac': ['snowleopard', 'lion', 'retina', 'mountainlion'],
         'win': ['xp', 'win7'],
         'linux': ['lucid'],
-        # 'android': ['icecreamsandwich'],  # FIXME: see comment above next to 'icecreamsandwich'.
+        'android': ['icecreamsandwich'],
     }
 
     DEFAULT_BUILD_DIRECTORIES = ('out',)
@@ -159,7 +163,7 @@ class ChromiumPort(Port):
             return False
         return True
 
-    def check_build(self, needs_http):
+    def check_build(self, needs_http, printer):
         result = True
 
         dump_render_tree_binary_path = self._path_to_driver()
@@ -349,6 +353,23 @@ class ChromiumPort(Port):
             VirtualTestSuite('virtual/threaded/transitions',
                              'transitions',
                              ['--enable-threaded-compositing']),
+            VirtualTestSuite('virtual/web-animations-css/animations',
+                             'animations',
+                             ['--enable-web-animations-css']),
+            VirtualTestSuite('virtual/stable/webexposed',
+                             'webexposed',
+                             ['--stable-release-mode']),
+            VirtualTestSuite('virtual/stable/media',
+                             'media/stable',
+                             ['--stable-release-mode']),
+            VirtualTestSuite('virtual/android/fullscreen',
+                             'fullscreen',
+                             ['--force-compositing-mode', '--allow-webui-compositing', '--enable-threaded-compositing',
+                              '--enable-fixed-position-compositing', '--enable-accelerated-overflow-scroll', '--enable-accelerated-scrollable-frames',
+                              '--enable-composited-scrolling-for-frames', '--enable-gesture-tap-highlight', '--enable-pinch',
+                              '--enable-overlay-fullscreen-video', '--enable-overlay-scrollbars', '--enable-overscroll-notifications',
+                              '--enable-fixed-layout', '--enable-viewport', '--disable-canvas-aa',
+                              '--disable-composited-antialiasing']),
         ]
 
     #

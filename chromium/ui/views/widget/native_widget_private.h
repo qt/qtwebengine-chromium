@@ -61,6 +61,8 @@ class VIEWS_EXPORT NativeWidgetPrivate : public NativeWidget {
 
   static void GetAllChildWidgets(gfx::NativeView native_view,
                                  Widget::Widgets* children);
+  static void GetAllOwnedWidgets(gfx::NativeView native_view,
+                                 Widget::Widgets* owned);
   static void ReparentNativeView(gfx::NativeView native_view,
                                  gfx::NativeView new_parent);
 
@@ -213,6 +215,7 @@ class VIEWS_EXPORT NativeWidgetPrivate : public NativeWidget {
   virtual void EndMoveLoop() = 0;
   virtual void SetVisibilityChangedAnimationsEnabled(bool value) = 0;
   virtual ui::NativeTheme* GetNativeTheme() const = 0;
+  virtual void OnRootViewLayout() const = 0;
 
   // Overridden from NativeWidget:
   virtual internal::NativeWidgetPrivate* AsNativeWidgetPrivate() OVERRIDE;

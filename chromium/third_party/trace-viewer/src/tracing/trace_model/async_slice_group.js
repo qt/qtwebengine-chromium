@@ -83,6 +83,15 @@ base.exportTo('tracing.trace_model', function() {
         groups.push(group);
       }
       return groups;
+    },
+
+    iterateAllEvents: function(callback) {
+      for (var i = 0; i < this.slices.length; i++) {
+        var slice = this.slices[i];
+        callback(slice);
+        if (slice.subSlices)
+          slice.subSlices.forEach(callback);
+      }
     }
   };
 

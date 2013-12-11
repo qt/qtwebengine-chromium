@@ -46,14 +46,7 @@ class WebPlugin {
   // Called by the plugin delegate to let it know that the window is being
   // destroyed.
   virtual void WillDestroyWindow(gfx::PluginWindowHandle window) = 0;
-#if defined(OS_WIN)
-  // |pump_messages_event| is a event handle which is used in NPP_HandleEvent
-  // calls to pump messages if the plugin enters a modal loop.
-  // |dummy_activation_window} is used to ensure correct keyboard activation.
-  // It needs to be a child of the parent window.
-  virtual void SetWindowlessData(HANDLE pump_messages_event,
-                                 gfx::NativeViewId dummy_activation_window) = 0;
-#endif
+
   // Cancels a pending request.
   virtual void CancelResource(unsigned long id) = 0;
   virtual void Invalidate() = 0;
@@ -97,6 +90,9 @@ class WebPlugin {
                                         const char* range_info,
                                         int range_request_id) = 0;
 
+  virtual void DidStartLoading() = 0;
+  virtual void DidStopLoading() = 0;
+
   // Returns true iff in incognito mode.
   virtual bool IsOffTheRecord() = 0;
 
@@ -108,6 +104,23 @@ class WebPlugin {
   // controlled by the defer parameter.
   virtual void SetDeferResourceLoading(unsigned long resource_id,
                                        bool defer) = 0;
+
+  // Handles NPN_URLRedirectResponse calls issued by plugins in response to
+  // HTTP URL redirect notifications.
+  virtual void URLRedirectResponse(bool allow, int resource_id) = 0;
+
+  // Returns true if the new url is a secure transition. This is to catch a
+  // plugin src url transitioning from https to http.
+  virtual bool CheckIfRunInsecureContent(const GURL& url) = 0;
+
+#if defined(OS_WIN)
+  // |pump_messages_event| is a event handle which is used in NPP_HandleEvent
+  // calls to pump messages if the plugin enters a modal loop.
+  // |dummy_activation_window} is used to ensure correct keyboard activation.
+  // It needs to be a child of the parent window.
+  virtual void SetWindowlessData(HANDLE pump_messages_event,
+                                 gfx::NativeViewId dummy_activation_window) = 0;
+#endif
 
 #if defined(OS_MACOSX)
   // Called to inform the WebPlugin that the plugin has gained or lost focus.
@@ -128,37 +141,6 @@ class WebPlugin {
                                                    uint32 surface_id) = 0;
   virtual void AcceleratedPluginSwappedIOSurface() = 0;
 #endif
-
-  // Handles NPN_URLRedirectResponse calls issued by plugins in response to
-  // HTTP URL redirect notifications.
-  virtual void URLRedirectResponse(bool allow, int resource_id) = 0;
-};
-
-// Simpler version of ResourceHandleClient that lends itself to proxying.
-class WebPluginResourceClient {
- public:
-  virtual ~WebPluginResourceClient() {}
-
-  virtual void WillSendRequest(const GURL& url, int http_status_code) = 0;
-  // The request_is_seekable parameter indicates whether byte range requests
-  // can be issued for the underlying stream.
-  virtual void DidReceiveResponse(const std::string& mime_type,
-                                  const std::string& headers,
-                                  uint32 expected_length,
-                                  uint32 last_modified,
-                                  bool request_is_seekable) = 0;
-  virtual void DidReceiveData(const char* buffer, int length,
-                              int data_offset) = 0;
-  // The resource ids passed here ensures that data for range requests
-  // is cleared. This applies for seekable streams.
-  virtual void DidFinishLoading(unsigned long resource_id) = 0;
-  virtual void DidFail(unsigned long resource_id) = 0;
-  virtual bool IsMultiByteResponseExpected() = 0;
-  virtual int ResourceId() = 0;
-  // Tells this object that it will get responses from multiple resources.
-  // This is necessary since the plugin process uses a single instance of
-  // PluginStreamUrl object for multiple range requests.
-  virtual void AddRangeRequestResourceId(unsigned long resource_id) { }
 };
 
 }  // namespace content

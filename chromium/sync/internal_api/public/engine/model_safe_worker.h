@@ -16,7 +16,6 @@
 #include "base/synchronization/waitable_event.h"
 #include "sync/base/sync_export.h"
 #include "sync/internal_api/public/base/model_type.h"
-#include "sync/internal_api/public/base/model_type_invalidation_map.h"
 #include "sync/internal_api/public/util/syncer_error.h"
 
 namespace base {
@@ -84,8 +83,8 @@ class SYNC_EXPORT ModelSafeWorker
   SyncerError DoWorkAndWaitUntilDone(const WorkCallback& work);
 
   // Soft stop worker by setting stopped_ flag. Called when sync is disabled
-  // or browser is shutting down.
-  void RequestStop();
+  // or browser is shutting down. Called on UI loop.
+  virtual void RequestStop();
 
   virtual ModelSafeGroup GetModelSafeGroup() = 0;
 
@@ -148,13 +147,6 @@ SYNC_EXPORT_PRIVATE base::DictionaryValue* ModelSafeRoutingInfoToValue(
 
 SYNC_EXPORT std::string ModelSafeRoutingInfoToString(
     const ModelSafeRoutingInfo& routing_info);
-
-// Make a ModelTypeInvalidationMap for all the enabled types in a
-// ModelSafeRoutingInfo using a default payload.
-SYNC_EXPORT_PRIVATE ModelTypeInvalidationMap
-    ModelSafeRoutingInfoToInvalidationMap(
-        const ModelSafeRoutingInfo& routes,
-        const std::string& payload);
 
 SYNC_EXPORT ModelTypeSet GetRoutingInfoTypes(
     const ModelSafeRoutingInfo& routing_info);

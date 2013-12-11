@@ -11,9 +11,12 @@
 
 namespace WebKit {
 class WebDocument;
+class WebElement;
 class WebFormElement;
 class WebFormControlElement;
+class WebFrame;
 class WebInputElement;
+class WebNode;
 }
 
 namespace autofill {
@@ -60,6 +63,10 @@ bool IsCheckableElement(const WebKit::WebInputElement* element);
 // Returns true if |element| is one of the input element types that can be
 // autofilled. {Text, Radiobutton, Checkbox}.
 bool IsAutofillableInputElement(const WebKit::WebInputElement* element);
+
+// Recursively checks whether |node| or any of its children have a non-empty
+// bounding box.
+bool IsWebNodeVisible(const WebKit::WebNode& node);
 
 // Returns the form's |name| attribute if non-empty; otherwise the form's |id|
 // attribute.
@@ -138,6 +145,21 @@ bool ClearPreviewedFormWithElement(const WebKit::WebInputElement& element,
 
 // Returns true if |form| has any auto-filled fields.
 bool FormWithElementIsAutofilled(const WebKit::WebInputElement& element);
+
+// Checks if the webpage is empty.
+// This kind of webpage is considered as empty:
+// <html>
+//    <head>
+//    <head/>
+//    <body>
+//    <body/>
+// <html/>
+// Meta, script and title tags don't influence the emptiness of a webpage.
+bool IsWebpageEmpty(const WebKit::WebFrame* frame);
+
+// This function checks whether the children of |element|
+// are of the type <script>, <meta>, or <title>.
+bool IsWebElementEmpty(const WebKit::WebElement& element);
 
 }  // namespace autofill
 

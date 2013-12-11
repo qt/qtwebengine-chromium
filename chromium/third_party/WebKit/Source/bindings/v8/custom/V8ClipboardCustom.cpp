@@ -32,18 +32,17 @@
 #include "V8Clipboard.h"
 
 #include "HTMLNames.h"
+#include "V8Node.h"
+#include "bindings/v8/V8Binding.h"
 #include "core/dom/Clipboard.h"
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/platform/graphics/IntPoint.h"
 
-#include "V8Node.h"
-#include "bindings/v8/V8Binding.h"
-
 namespace WebCore {
 
-void V8Clipboard::typesAttrGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
+void V8Clipboard::typesAttributeGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     Clipboard* clipboard = V8Clipboard::toNative(info.Holder());
 
@@ -76,7 +75,7 @@ void V8Clipboard::clearDataMethodCustom(const v8::FunctionCallbackInfo<v8::Value
         return;
     }
 
-    String type = toWebCoreString(args[0]);
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, type, args[0]);
     clipboard->clearData(type);
 }
 

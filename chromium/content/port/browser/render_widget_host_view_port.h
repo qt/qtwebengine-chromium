@@ -18,13 +18,13 @@
 #include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
-#include "ui/base/range/range.h"
+#include "ui/gfx/range/range.h"
 #include "ui/surface/transport_dib.h"
 
 class SkBitmap;
 class WebCursor;
 
-struct AccessibilityHostMsg_NotificationParams;
+struct AccessibilityHostMsg_EventParams;
 struct GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params;
 struct GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params;
 struct ViewHostMsg_TextInputState_Params;
@@ -41,7 +41,7 @@ struct WebScreenInfo;
 namespace content {
 class BackingStore;
 class RenderWidgetHostViewFrameSubscriber;
-class SmoothScrollGesture;
+class SyntheticGesture;
 struct WebPluginGeometry;
 struct NativeWebKeyboardEvent;
 
@@ -97,8 +97,8 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
 
   // Updates the type of the input method attached to the view.
   virtual void TextInputTypeChanged(ui::TextInputType type,
-                                    bool can_compose_inline,
-                                    ui::TextInputMode mode) = 0;
+                                    ui::TextInputMode mode,
+                                    bool can_compose_inline) = 0;
 
   // Cancel the ongoing composition of the input method attached to the view.
   virtual void ImeCancelComposition() = 0;
@@ -106,7 +106,7 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
 #if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
   // Updates the range of the marked text in an IME composition.
   virtual void ImeCompositionRangeChanged(
-      const ui::Range& range,
+      const gfx::Range& range,
       const std::vector<gfx::Rect>& character_bounds) = 0;
 #endif
 
@@ -148,7 +148,7 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   // Notifies the View that the renderer text selection has changed.
   virtual void SelectionChanged(const string16& text,
                                 size_t offset,
-                                const ui::Range& range) = 0;
+                                const gfx::Range& range) = 0;
 
   // Notifies the View that the renderer selection bounds has changed.
   // |start_rect| and |end_rect| are the bounds end of the selection in the
@@ -263,11 +263,16 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   virtual void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                                       InputEventAckState ack_result) = 0;
 
-  // Asks the view to create a smooth scroll gesture that will be used to
+  // Asks the view to create a synthetic gesture that will be used to
   // simulate a user-initiated scroll.
-  virtual SmoothScrollGesture* CreateSmoothScrollGesture(
+  virtual SyntheticGesture* CreateSmoothScrollGesture(
       bool scroll_down, int pixels_to_scroll, int mouse_event_x,
       int mouse_event_y) = 0;
+
+  // Asks the view to create a synthetic gesture that will be used to
+  // simulate a user-initiated pinch-to-zoom.
+  virtual SyntheticGesture* CreatePinchGesture(
+      bool zoom_in, int pixels_to_move, int anchor_x, int anchor_y) = 0;
 
   virtual void SetHasHorizontalScrollbar(bool has_horizontal_scrollbar) = 0;
   virtual void SetScrollOffsetPinning(
@@ -294,8 +299,8 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
 
   virtual BrowserAccessibilityManager*
       GetBrowserAccessibilityManager() const = 0;
-  virtual void OnAccessibilityNotifications(
-      const std::vector<AccessibilityHostMsg_NotificationParams>& params) = 0;
+  virtual void OnAccessibilityEvents(
+      const std::vector<AccessibilityHostMsg_EventParams>& params) = 0;
 
   // Return a value that is incremented each time the renderer swaps a new frame
   // to the view.

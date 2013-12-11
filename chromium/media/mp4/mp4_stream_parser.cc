@@ -257,7 +257,8 @@ bool MP4StreamParser::ParseMoov(BoxReader* reader) {
       audio_config.Initialize(
           codec, sample_format, channel_layout, sample_per_second,
           extra_data.size() ? &extra_data[0] : NULL, extra_data.size(),
-          is_audio_track_encrypted_, false);
+          is_audio_track_encrypted_, false, base::TimeDelta(),
+          base::TimeDelta());
       has_audio_ = true;
       audio_track_id_ = track->header.track_id;
     }
@@ -339,14 +340,14 @@ void MP4StreamParser::EmitNeedKeyIfNecessary(
   for (size_t i = 0; i < headers.size(); i++)
     total_size += headers[i].raw_box.size();
 
-  scoped_ptr<uint8[]> init_data(new uint8[total_size]);
+  std::vector<uint8> init_data(total_size);
   size_t pos = 0;
   for (size_t i = 0; i < headers.size(); i++) {
-    memcpy(&init_data.get()[pos], &headers[i].raw_box[0],
+    memcpy(&init_data[pos], &headers[i].raw_box[0],
            headers[i].raw_box.size());
     pos += headers[i].raw_box.size();
   }
-  need_key_cb_.Run(kMp4InitDataType, init_data.Pass(), total_size);
+  need_key_cb_.Run(kMp4InitDataType, init_data);
 }
 
 bool MP4StreamParser::PrepareAVCBuffer(

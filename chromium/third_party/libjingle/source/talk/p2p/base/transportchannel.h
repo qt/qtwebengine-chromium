@@ -32,6 +32,7 @@
 #include <vector>
 
 #include "talk/base/basictypes.h"
+#include "talk/base/dscp.h"
 #include "talk/base/sigslot.h"
 #include "talk/base/socket.h"
 #include "talk/base/sslidentity.h"
@@ -80,7 +81,9 @@ class TransportChannel : public sigslot::has_slots<> {
 
   // Attempts to send the given packet.  The return value is < 0 on failure.
   // TODO: Remove the default argument once channel code is updated.
-  virtual int SendPacket(const char* data, size_t len, int flags = 0) = 0;
+  virtual int SendPacket(const char* data, size_t len,
+                         talk_base::DiffServCodePoint dscp,
+                         int flags = 0) = 0;
 
   // Sets a socket option on this channel.  Note that not all options are
   // supported by all transport types.
@@ -89,30 +92,20 @@ class TransportChannel : public sigslot::has_slots<> {
   // Returns the most recent error that occurred on this channel.
   virtual int GetError() = 0;
 
-  // TODO(mallinath) - Move this to TransportChannelImpl, after channel.cc
-  // no longer needs it.
-  // Returns current transportchannel ICE role.
-  virtual IceRole GetIceRole() const = 0;
-
   // Returns the current stats for this connection.
-  virtual bool GetStats(ConnectionInfos* infos) {
-    return false;
-  }
+  virtual bool GetStats(ConnectionInfos* infos) = 0;
 
   // Is DTLS active?
-  virtual bool IsDtlsActive() const {
-    return false;
-  }
+  virtual bool IsDtlsActive() const = 0;
+
+  // Default implementation.
+  virtual bool GetSslRole(talk_base::SSLRole* role) const = 0;
 
   // Set up the ciphers to use for DTLS-SRTP.
-  virtual bool SetSrtpCiphers(const std::vector<std::string>& ciphers) {
-    return false;
-  }
+  virtual bool SetSrtpCiphers(const std::vector<std::string>& ciphers) = 0;
 
   // Find out which DTLS-SRTP cipher was negotiated
-  virtual bool GetSrtpCipher(std::string* cipher) {
-    return false;
-  }
+  virtual bool GetSrtpCipher(std::string* cipher) = 0;
 
   // Allows key material to be extracted for external encryption.
   virtual bool ExportKeyingMaterial(const std::string& label,
@@ -120,9 +113,7 @@ class TransportChannel : public sigslot::has_slots<> {
       size_t context_len,
       bool use_context,
       uint8* result,
-      size_t result_len) {
-    return false;
-  }
+      size_t result_len) = 0;
 
   // Signalled each time a packet is received on this channel.
   sigslot::signal4<TransportChannel*, const char*,

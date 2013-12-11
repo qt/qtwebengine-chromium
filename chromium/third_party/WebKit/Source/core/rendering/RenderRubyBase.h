@@ -31,13 +31,13 @@
 #ifndef RenderRubyBase_h
 #define RenderRubyBase_h
 
-#include "core/rendering/RenderBlock.h"
+#include "core/rendering/RenderBlockFlow.h"
 
 namespace WebCore {
 
 class RenderRubyRun;
 
-class RenderRubyBase FINAL : public RenderBlock {
+class RenderRubyBase FINAL : public RenderBlockFlow {
 public:
     virtual ~RenderRubyBase();
 
@@ -54,6 +54,8 @@ private:
 
     virtual ETextAlign textAlignmentForLine(bool endsWithSoftBreak) const;
     virtual void adjustInlineDirectionLineBounds(int expansionOpportunityCount, float& logicalLeft, float& logicalWidth) const;
+
+    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
 
     void moveChildren(RenderRubyBase* toBase, RenderObject* beforeChild = 0);
     void moveInlineChildren(RenderRubyBase* toBase, RenderObject* beforeChild = 0);

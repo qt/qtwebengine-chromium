@@ -40,14 +40,6 @@
 
 */
 
-#include "wtf/Platform.h"
-
-#include <stddef.h>
-
-#if !COMPILER(MSVC)
-#include <inttypes.h>
-#endif
-
 #include "wtf/WTFExport.h"
 
 #ifdef NDEBUG
@@ -124,7 +116,7 @@ WTF_EXPORT void WTFLogVerbose(const char* file, int line, const char* function, 
 WTF_EXPORT void WTFLogAlways(const char* format, ...) WTF_ATTRIBUTE_PRINTF(1, 2);
 
 WTF_EXPORT void WTFGetBacktrace(void** stack, int* size);
-WTF_EXPORT void WTFReportBacktrace();
+WTF_EXPORT void WTFReportBacktrace(int framesToShow = 31);
 WTF_EXPORT void WTFPrintBacktrace(void** stack, int size);
 
 typedef void (*WTFCrashHookFunction)();
@@ -157,7 +149,7 @@ WTF_EXPORT void WTFInstallReportBacktraceOnCrashHook();
 #define CRASH() \
     (WTFReportBacktrace(), \
      WTFInvokeCrashHook(), \
-     (*(int *)(uintptr_t)0xbbadbeef = 0), \
+     (*(int*)0xbbadbeef = 0), \
      IMMEDIATE_CRASH())
 #endif
 
@@ -188,7 +180,7 @@ WTF_EXPORT void WTFInstallReportBacktraceOnCrashHook();
   These macros are compiled out of release builds.
   Expressions inside them are evaluated in debug builds only.
 */
-#if OS(WINDOWS)
+#if OS(WIN)
 /* FIXME: Change to use something other than ASSERT to avoid this conflict with the underlying platform */
 #undef ASSERT
 #endif

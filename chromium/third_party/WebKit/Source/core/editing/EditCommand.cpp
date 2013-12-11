@@ -34,13 +34,13 @@
 
 namespace WebCore {
 
-EditCommand::EditCommand(Document* document)
-    : m_document(document)
+EditCommand::EditCommand(Document& document)
+    : m_document(&document)
     , m_parent(0)
 {
     ASSERT(m_document);
     ASSERT(m_document->frame());
-    setStartingSelection(m_document->frame()->selection()->selection());
+    setStartingSelection(m_document->frame()->selection().selection());
     setEndingSelection(m_startingSelection);
 }
 
@@ -109,13 +109,5 @@ void SimpleEditCommand::doReapply()
 {
     doApply();
 }
-
-#ifndef NDEBUG
-void SimpleEditCommand::addNodeAndDescendants(Node* startNode, HashSet<Node*>& nodes)
-{
-    for (Node* node = startNode; node; node = NodeTraversal::next(node, startNode))
-        nodes.add(node);
-}
-#endif
 
 } // namespace WebCore

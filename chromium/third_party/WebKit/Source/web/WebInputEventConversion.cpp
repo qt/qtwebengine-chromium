@@ -138,7 +138,7 @@ PlatformWheelEventBuilder::PlatformWheelEventBuilder(Widget* widget, const WebMo
         m_modifiers |= PlatformEvent::MetaKey;
 
     m_hasPreciseScrollingDeltas = e.hasPreciseScrollingDeltas;
-#if OS(DARWIN)
+#if OS(MACOSX)
     m_phase = static_cast<WebCore::PlatformWheelEventPhase>(e.phase);
     m_momentumPhase = static_cast<WebCore::PlatformWheelEventPhase>(e.momentumPhase);
     m_timestamp = e.timeStampSeconds;
@@ -578,15 +578,14 @@ WebMouseEventBuilder::WebMouseEventBuilder(const WebCore::Widget* widget, const 
 
 WebMouseWheelEventBuilder::WebMouseWheelEventBuilder(const Widget* widget, const WebCore::RenderObject* renderObject, const WheelEvent& event)
 {
-    if (event.type() != eventNames().mousewheelEvent)
+    if (event.type() != eventNames().wheelEvent && event.type() != eventNames().mousewheelEvent)
         return;
     type = WebInputEvent::MouseWheel;
     updateWebMouseEventFromWebCoreMouseEvent(event, *widget, *renderObject, *this);
-    deltaX = static_cast<float>(event.rawDeltaX());
-    deltaY = static_cast<float>(event.rawDeltaY());
-    // The 120 is from WheelEvent::initWheelEvent().
-    wheelTicksX = static_cast<float>(event.wheelDeltaX()) / 120;
-    wheelTicksY = static_cast<float>(event.wheelDeltaY()) / 120;
+    deltaX = -event.deltaX();
+    deltaY = -event.deltaY();
+    wheelTicksX = event.ticksX();
+    wheelTicksY = event.ticksY();
     scrollByPage = event.deltaMode() == WheelEvent::DOM_DELTA_PAGE;
 }
 

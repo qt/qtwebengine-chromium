@@ -11,6 +11,7 @@
 #include "ppapi/proxy/ext_crx_file_system_private_resource.h"
 #include "ppapi/proxy/file_chooser_resource.h"
 #include "ppapi/proxy/file_io_resource.h"
+#include "ppapi/proxy/file_ref_resource.h"
 #include "ppapi/proxy/file_system_resource.h"
 #include "ppapi/proxy/flash_drm_resource.h"
 #include "ppapi/proxy/flash_font_file_resource.h"
@@ -19,6 +20,8 @@
 #include "ppapi/proxy/host_resolver_private_resource.h"
 #include "ppapi/proxy/host_resolver_resource.h"
 #include "ppapi/proxy/net_address_resource.h"
+#include "ppapi/proxy/network_monitor_resource.h"
+#include "ppapi/proxy/platform_verification_private_resource.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
 #include "ppapi/proxy/plugin_globals.h"
 #include "ppapi/proxy/plugin_resource_tracker.h"
@@ -26,18 +29,16 @@
 #include "ppapi/proxy/ppb_audio_proxy.h"
 #include "ppapi/proxy/ppb_broker_proxy.h"
 #include "ppapi/proxy/ppb_buffer_proxy.h"
-#include "ppapi/proxy/ppb_file_ref_proxy.h"
 #include "ppapi/proxy/ppb_flash_message_loop_proxy.h"
 #include "ppapi/proxy/ppb_graphics_3d_proxy.h"
 #include "ppapi/proxy/ppb_image_data_proxy.h"
-#include "ppapi/proxy/ppb_network_monitor_private_proxy.h"
-#include "ppapi/proxy/ppb_tcp_socket_private_proxy.h"
-#include "ppapi/proxy/ppb_tcp_socket_proxy.h"
 #include "ppapi/proxy/ppb_video_decoder_proxy.h"
 #include "ppapi/proxy/ppb_x509_certificate_private_proxy.h"
 #include "ppapi/proxy/printing_resource.h"
 #include "ppapi/proxy/talk_resource.h"
 #include "ppapi/proxy/tcp_server_socket_private_resource.h"
+#include "ppapi/proxy/tcp_socket_private_resource.h"
+#include "ppapi/proxy/tcp_socket_resource.h"
 #include "ppapi/proxy/truetype_font_resource.h"
 #include "ppapi/proxy/udp_socket_private_resource.h"
 #include "ppapi/proxy/udp_socket_resource.h"
@@ -51,6 +52,7 @@
 #include "ppapi/shared_impl/api_id.h"
 #include "ppapi/shared_impl/host_resource.h"
 #include "ppapi/shared_impl/ppb_audio_config_shared.h"
+#include "ppapi/shared_impl/ppb_audio_shared.h"
 #include "ppapi/shared_impl/ppb_input_event_shared.h"
 #include "ppapi/shared_impl/ppb_resource_array_shared.h"
 #include "ppapi/shared_impl/var.h"
@@ -78,15 +80,10 @@ PP_Resource ResourceCreationProxy::CreateFileIO(PP_Instance instance) {
   return (new FileIOResource(GetConnection(), instance))->GetReference();
 }
 
-PP_Resource ResourceCreationProxy::CreateFileRef(PP_Instance instance,
-                                                 PP_Resource file_system,
-                                                 const char* path) {
-  return PPB_FileRef_Proxy::CreateProxyResource(instance, file_system, path);
-}
-
 PP_Resource ResourceCreationProxy::CreateFileRef(
-    const PPB_FileRef_CreateInfo& create_info) {
-  return PPB_FileRef_Proxy::DeserializeFileRef(create_info);
+    PP_Instance instance,
+    const FileRefCreateInfo& create_info) {
+  return FileRefResource::CreateFileRef(GetConnection(), instance, create_info);
 }
 
 PP_Resource ResourceCreationProxy::CreateFileSystem(
@@ -94,15 +91,6 @@ PP_Resource ResourceCreationProxy::CreateFileSystem(
     PP_FileSystemType type) {
   return (new FileSystemResource(GetConnection(), instance,
                                  type))->GetReference();
-}
-
-PP_Resource ResourceCreationProxy::CreateIsolatedFileSystem(
-    PP_Instance instance,
-    const char* fsid) {
-  FileSystemResource* fs = new FileSystemResource(
-      GetConnection(), instance, PP_FILESYSTEMTYPE_ISOLATED);
-  fs->InitIsolatedFileSystem(fsid);
-  return fs->GetReference();
 }
 
 PP_Resource ResourceCreationProxy::CreateIMEInputEvent(
@@ -194,13 +182,22 @@ PP_Resource ResourceCreationProxy::CreateWheelInputEvent(
       wheel_delta, wheel_ticks, scroll_by_page);
 }
 
+PP_Resource ResourceCreationProxy::CreateAudio1_0(
+    PP_Instance instance,
+    PP_Resource config_id,
+    PPB_Audio_Callback_1_0 audio_callback,
+    void* user_data) {
+  return PPB_Audio_Proxy::CreateProxyResource(
+      instance, config_id, AudioCallbackCombined(audio_callback), user_data);
+}
+
 PP_Resource ResourceCreationProxy::CreateAudio(
     PP_Instance instance,
     PP_Resource config_id,
     PPB_Audio_Callback audio_callback,
     void* user_data) {
-  return PPB_Audio_Proxy::CreateProxyResource(instance, config_id,
-                                              audio_callback, user_data);
+  return PPB_Audio_Proxy::CreateProxyResource(
+      instance, config_id, AudioCallbackCombined(audio_callback), user_data);
 }
 
 PP_Resource ResourceCreationProxy::CreateAudioTrusted(PP_Instance instance) {
@@ -311,11 +308,9 @@ PP_Resource ResourceCreationProxy::CreateNetAddressFromNetAddressPrivate(
 }
 
 PP_Resource ResourceCreationProxy::CreateNetworkMonitor(
-    PP_Instance instance,
-    PPB_NetworkMonitor_Callback callback,
-    void* user_data) {
-  return PPB_NetworkMonitor_Private_Proxy::CreateProxyResource(
-      instance, callback, user_data);
+    PP_Instance instance) {
+  return (new NetworkMonitorResource(GetConnection(), instance))->
+      GetReference();
 }
 
 PP_Resource ResourceCreationProxy::CreatePrinting(PP_Instance instance) {
@@ -328,14 +323,23 @@ PP_Resource ResourceCreationProxy::CreateTCPServerSocketPrivate(
       GetReference();
 }
 
+PP_Resource ResourceCreationProxy::CreateTCPSocket1_0(
+    PP_Instance instance) {
+  return (new TCPSocketResource(GetConnection(), instance,
+                                TCP_SOCKET_VERSION_1_0))->GetReference();
+}
+
 PP_Resource ResourceCreationProxy::CreateTCPSocket(
     PP_Instance instance) {
-  return PPB_TCPSocket_Proxy::CreateProxyResource(instance);
+  return (new TCPSocketResource(
+      GetConnection(), instance, TCP_SOCKET_VERSION_1_1_OR_ABOVE))->
+          GetReference();
 }
 
 PP_Resource ResourceCreationProxy::CreateTCPSocketPrivate(
     PP_Instance instance) {
-  return PPB_TCPSocket_Private_Proxy::CreateProxyResource(instance);
+  return (new TCPSocketPrivateResource(GetConnection(), instance))->
+      GetReference();
 }
 
 PP_Resource ResourceCreationProxy::CreateUDPSocket(PP_Instance instance) {
@@ -418,6 +422,12 @@ PP_Resource ResourceCreationProxy::CreateFlashMenu(
 PP_Resource ResourceCreationProxy::CreateFlashMessageLoop(
     PP_Instance instance) {
   return PPB_Flash_MessageLoop_Proxy::CreateProxyResource(instance);
+}
+
+PP_Resource ResourceCreationProxy::CreatePlatformVerificationPrivate(
+    PP_Instance instance) {
+  return (new PlatformVerificationPrivateResource(GetConnection(), instance))->
+      GetReference();
 }
 
 PP_Resource ResourceCreationProxy::CreateScrollbar(PP_Instance instance,

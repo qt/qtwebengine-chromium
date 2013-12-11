@@ -25,30 +25,22 @@
 
 #include "HTMLNames.h"
 #include "core/dom/Document.h"
-#include "core/dom/DocumentStyleSheetCollection.h"
+#include "core/dom/StyleEngine.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLQuoteElement::HTMLQuoteElement(const QualifiedName& tagName, Document* document)
+inline HTMLQuoteElement::HTMLQuoteElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
 {
     ASSERT(hasTagName(qTag) || hasTagName(blockquoteTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLQuoteElement> HTMLQuoteElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLQuoteElement> HTMLQuoteElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLQuoteElement(tagName, document));
-}
-
-Node::InsertionNotificationRequest HTMLQuoteElement::insertedInto(ContainerNode* insertionPoint)
-{
-    if (hasTagName(qTag))
-        document()->styleSheetCollection()->setUsesBeforeAfterRulesOverride(true);
-
-    return HTMLElement::insertedInto(insertionPoint);
 }
 
 bool HTMLQuoteElement::isURLAttribute(const Attribute& attribute) const

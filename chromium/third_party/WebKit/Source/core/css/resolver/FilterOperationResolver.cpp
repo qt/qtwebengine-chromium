@@ -233,7 +233,7 @@ static PassRefPtr<CustomFilterProgram> createCustomFilterProgram(CSSShaderValue*
     CustomFilterProgramType programType, const CustomFilterProgramMixSettings& mixSettings, CustomFilterMeshType meshType,
     StyleResolverState& state)
 {
-    ResourceFetcher* fetcher = state.document()->fetcher();
+    ResourceFetcher* fetcher = state.document().fetcher();
     KURL vertexShaderURL = vertexShader ? vertexShader->completeURL(fetcher) : KURL();
     KURL fragmentShaderURL = fragmentShader ? fragmentShader->completeURL(fetcher) : KURL();
     RefPtr<StyleCustomFilterProgram> program = StyleCustomFilterProgram::create(vertexShaderURL, vertexShader ? styleShader(vertexShader, state) : 0,
@@ -402,7 +402,7 @@ bool FilterOperationResolver::createFilterOperations(CSSValue* inValue, const Re
                 continue;
 
             CSSSVGDocumentValue* svgDocumentValue = static_cast<CSSSVGDocumentValue*>(argument);
-            KURL url = state.document()->completeURL(svgDocumentValue->url());
+            KURL url = state.document().completeURL(svgDocumentValue->url());
 
             RefPtr<ReferenceFilterOperation> operation = ReferenceFilterOperation::create(svgDocumentValue->url(), url.fragmentIdentifier(), operationType);
             if (SVGURIReference::isExternalURIReference(svgDocumentValue->url(), state.document())) {
@@ -487,11 +487,11 @@ bool FilterOperationResolver::createFilterOperations(CSSValue* inValue, const Re
             ShadowValue* item = static_cast<ShadowValue*>(cssValue);
             IntPoint location(item->x->computeLength<int>(style, rootStyle, zoomFactor), item->y->computeLength<int>(style, rootStyle, zoomFactor));
             int blur = item->blur ? item->blur->computeLength<int>(style, rootStyle, zoomFactor) : 0;
-            StyleColor shadowColor;
+            Color shadowColor;
             if (item->color)
-                shadowColor = state.document()->textLinkColors().colorFromPrimitiveValue(item->color.get());
+                shadowColor = state.document().textLinkColors().colorFromPrimitiveValue(item->color.get(), state.style()->visitedDependentColor(CSSPropertyColor));
 
-            operations.operations().append(DropShadowFilterOperation::create(location, blur, shadowColor.isValid() ? shadowColor.color() : Color::transparent, operationType));
+            operations.operations().append(DropShadowFilterOperation::create(location, blur, shadowColor.isValid() ? shadowColor : Color::transparent, operationType));
             break;
         }
         case CSSFilterValue::UnknownFilterOperation:

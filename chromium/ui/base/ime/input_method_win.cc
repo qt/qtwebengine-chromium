@@ -5,12 +5,12 @@
 #include "ui/base/ime/input_method_win.h"
 
 #include "base/basictypes.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_constants.h"
-#include "ui/base/events/event_utils.h"
 #include "ui/base/ime/text_input_client.h"
-#include "ui/base/keycodes/keyboard_codes.h"
-#include "ui/base/win/hwnd_util.h"
+#include "ui/events/event.h"
+#include "ui/events/event_constants.h"
+#include "ui/events/event_utils.h"
+#include "ui/events/keycodes/keyboard_codes.h"
+#include "ui/gfx/win/hwnd_util.h"
 
 namespace ui {
 namespace {
@@ -148,13 +148,17 @@ LRESULT InputMethodWin::OnChar(HWND window_handle,
   if (GetTextInputClient()) {
     GetTextInputClient()->InsertChar(static_cast<char16>(wparam),
                                      ui::GetModifiersFromKeyState());
+
+    // If Windows sends a WM_CHAR, then any previously sent WM_DEADCHARs (which
+    // are displayed as the composition text) should be cleared.
+    GetTextInputClient()->ClearCompositionText();
   }
 
   // Explicitly show the system menu at a good location on [Alt]+[Space].
   // Note: Setting |handled| to FALSE for DefWindowProc triggering of the system
   //       menu causes undesirable titlebar artifacts in the classic theme.
   if (message == WM_SYSCHAR && wparam == VK_SPACE)
-    ui::ShowSystemMenu(window_handle);
+    gfx::ShowSystemMenu(window_handle);
 
   return 0;
 }
@@ -175,7 +179,7 @@ LRESULT InputMethodWin::OnDeadChar(UINT message,
   // what dead key was pressed.
   ui::CompositionText composition;
   composition.text.assign(1, static_cast<char16>(wparam));
-  composition.selection = ui::Range(0, 1);
+  composition.selection = gfx::Range(0, 1);
   composition.underlines.push_back(
       ui::CompositionUnderline(0, 1, SK_ColorBLACK, false));
   GetTextInputClient()->SetCompositionText(composition);
@@ -187,12 +191,12 @@ LRESULT InputMethodWin::OnDocumentFeed(RECONVERTSTRING* reconv) {
   if (!client)
     return 0;
 
-  ui::Range text_range;
+  gfx::Range text_range;
   if (!client->GetTextRange(&text_range) || text_range.is_empty())
     return 0;
 
   bool result = false;
-  ui::Range target_range;
+  gfx::Range target_range;
   if (client->HasCompositionText())
     result = client->GetCompositionTextRange(&target_range);
 
@@ -254,11 +258,11 @@ LRESULT InputMethodWin::OnReconvertString(RECONVERTSTRING* reconv) {
   if (client->HasCompositionText())
     return 0;
 
-  ui::Range text_range;
+  gfx::Range text_range;
   if (!client->GetTextRange(&text_range) || text_range.is_empty())
     return 0;
 
-  ui::Range selection_range;
+  gfx::Range selection_range;
   if (!client->GetSelectionRange(&selection_range) ||
       selection_range.is_empty()) {
     return 0;
@@ -344,6 +348,22 @@ HWND InputMethodWin::GetAttachedWindowHandle(
   if (!text_input_client)
     return NULL;
   return text_input_client->GetAttachedWindow();
+#endif
+}
+
+bool InputMethodWin::IsWindowFocused(const TextInputClient* client) const {
+  if (!client)
+    return false;
+  HWND attached_window_handle = GetAttachedWindowHandle(client);
+#if defined(USE_AURA)
+  // When Aura is enabled, |attached_window_handle| should always be a top-level
+  // window. So we can safely assume that |attached_window_handle| is ready for
+  // receiving keyboard input as long as it is an active window. This works well
+  // even when the |attached_window_handle| becomes active but has not received
+  // WM_FOCUS yet.
+  return attached_window_handle && GetActiveWindow() == attached_window_handle;
+#else
+  return attached_window_handle && GetFocus() == attached_window_handle;
 #endif
 }
 

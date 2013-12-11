@@ -51,6 +51,17 @@ enum MediaStreamRequestType {
   MEDIA_OPEN_DEVICE
 };
 
+// Facing mode for video capture.
+enum VideoFacingMode {
+  MEDIA_VIDEO_FACING_NONE = 0,
+  MEDIA_VIDEO_FACING_USER,
+  MEDIA_VIDEO_FACING_ENVIRONMENT,
+  MEDIA_VIDEO_FACING_LEFT,
+  MEDIA_VIDEO_FACING_RIGHT,
+
+  NUM_MEDIA_VIDEO_FACING_MODE
+};
+
 // Convenience predicates to determine whether the given type represents some
 // audio or some video device.
 CONTENT_EXPORT bool IsAudioMediaType(MediaStreamType type);
@@ -71,7 +82,8 @@ struct CONTENT_EXPORT MediaStreamDevice {
       const std::string& id,
       const std::string& name,
       int sample_rate,
-      int channel_layout);
+      int channel_layout,
+      int frames_per_buffer);
 
   ~MediaStreamDevice();
 
@@ -81,20 +93,56 @@ struct CONTENT_EXPORT MediaStreamDevice {
   // The device's unique ID.
   std::string id;
 
+  // The facing mode for video capture device.
+  VideoFacingMode video_facing;
+
+  // The device id of a matched output device if any (otherwise empty).
+  // Only applicable to audio devices.
+  std::string matched_output_device_id;
+
   // The device's "friendly" name. Not guaranteed to be unique.
   std::string name;
 
-  // Preferred sample rate in samples per second for the device.
-  // Only utilized for audio devices. Will be set to 0 if the constructor
-  // with three parameters (intended for video) is used.
-  int sample_rate;
+  // Contains properties that match directly with those with the same name
+  // in media::AudioParameters.
+  struct AudioDeviceParameters {
+    AudioDeviceParameters()
+        : sample_rate(), channel_layout(), frames_per_buffer() {
+    }
 
-  // Preferred channel configuration for the device.
-  // Only utilized for audio devices. Will be set to 0 if the constructor
-  // with three parameters (intended for video) is used.
-  // TODO(henrika): ideally, we would like to use media::ChannelLayout here
-  // but including media/base/channel_layout.h violates checkdeps rules.
-  int channel_layout;
+    AudioDeviceParameters(int sample_rate, int channel_layout,
+                          int frames_per_buffer)
+        : sample_rate(sample_rate),
+          channel_layout(channel_layout),
+          frames_per_buffer(frames_per_buffer) {
+    }
+
+    // Preferred sample rate in samples per second for the device.
+    int sample_rate;
+
+    // Preferred channel configuration for the device.
+    // TODO(henrika): ideally, we would like to use media::ChannelLayout here
+    // but including media/base/channel_layout.h violates checkdeps rules.
+    int channel_layout;
+
+    // Preferred number of frames per buffer for the device.  This is filled
+    // in on the browser side and can be used by the renderer to match the
+    // expected browser side settings and avoid unnecessary buffering.
+    // See media::AudioParameters for more.
+    int frames_per_buffer;
+  };
+
+  // These below two member variables are valid only when the type of device is
+  // audio (i.e. IsAudioMediaType returns true).
+
+  // Contains the device properties of the capture device.
+  AudioDeviceParameters input;
+
+  // If the capture device has an associated output device (e.g. headphones),
+  // this will contain the properties for the output device.  If no such device
+  // exists (e.g. webcam w/mic), then the value of this member will be all
+  // zeros.
+  AudioDeviceParameters matched_output;
 };
 
 typedef std::vector<MediaStreamDevice> MediaStreamDevices;

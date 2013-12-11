@@ -32,92 +32,21 @@
 #include "core/animation/css/CSSAnimatableValueFactory.h"
 
 #include "CSSValueKeywords.h"
+#include "core/animation/AnimatableColor.h"
+#include "core/animation/AnimatableImage.h"
+#include "core/animation/AnimatableLengthBox.h"
 #include "core/animation/AnimatableNumber.h"
+#include "core/animation/AnimatableTransform.h"
 #include "core/animation/AnimatableUnknown.h"
+#include "core/animation/AnimatableVisibility.h"
+#include "core/animation/css/CSSAnimations.h"
+#include "core/css/CSSPrimitiveValue.h"
 #include "core/platform/Length.h"
+#include "core/platform/LengthBox.h"
 #include "core/rendering/style/RenderStyle.h"
 
 
 namespace WebCore {
-
-// FIXME: Handle remaining animatable properties (pulled from CSSPropertyAnimation):
-// CSSPropertyBackgroundColor
-// CSSPropertyBackgroundImage
-// CSSPropertyBackgroundPositionX
-// CSSPropertyBackgroundPositionY
-// CSSPropertyBackgroundSize
-// CSSPropertyBaselineShift
-// CSSPropertyBorderBottomColor
-// CSSPropertyBorderBottomLeftRadius
-// CSSPropertyBorderBottomRightRadius
-// CSSPropertyBorderBottomWidth
-// CSSPropertyBorderImageOutset
-// CSSPropertyBorderImageSlice
-// CSSPropertyBorderImageSource
-// CSSPropertyBorderImageWidth
-// CSSPropertyBorderLeftColor
-// CSSPropertyBorderLeftWidth
-// CSSPropertyBorderRightColor
-// CSSPropertyBorderRightWidth
-// CSSPropertyBorderTopColor
-// CSSPropertyBorderTopLeftRadius
-// CSSPropertyBorderTopRightRadius
-// CSSPropertyBorderTopWidth
-// CSSPropertyBoxShadow
-// CSSPropertyClip
-// CSSPropertyColor
-// CSSPropertyFill
-// CSSPropertyFillOpacity
-// CSSPropertyFloodColor
-// CSSPropertyFloodOpacity
-// CSSPropertyFontSize
-// CSSPropertyKerning
-// CSSPropertyLetterSpacing
-// CSSPropertyLightingColor
-// CSSPropertyLineHeight
-// CSSPropertyListStyleImage
-// CSSPropertyOpacity
-// CSSPropertyOrphans
-// CSSPropertyOutlineColor
-// CSSPropertyOutlineOffset
-// CSSPropertyOutlineWidth
-// CSSPropertyStopColor
-// CSSPropertyStopOpacity
-// CSSPropertyStroke
-// CSSPropertyStrokeDashoffset
-// CSSPropertyStrokeMiterlimit
-// CSSPropertyStrokeOpacity
-// CSSPropertyStrokeWidth
-// CSSPropertyTextIndent
-// CSSPropertyTextShadow
-// CSSPropertyVisibility
-// CSSPropertyWebkitBackgroundSize
-// CSSPropertyWebkitBorderHorizontalSpacing
-// CSSPropertyWebkitBorderVerticalSpacing
-// CSSPropertyWebkitBoxShadow
-// CSSPropertyWebkitClipPath
-// CSSPropertyWebkitColumnCount
-// CSSPropertyWebkitColumnGap
-// CSSPropertyWebkitColumnRuleColor
-// CSSPropertyWebkitColumnRuleWidth
-// CSSPropertyWebkitColumnWidth
-// CSSPropertyWebkitFilter
-// CSSPropertyWebkitMaskBoxImage
-// CSSPropertyWebkitMaskBoxImageSource
-// CSSPropertyWebkitMaskImage
-// CSSPropertyWebkitMaskPositionX
-// CSSPropertyWebkitMaskPositionY
-// CSSPropertyWebkitMaskSize
-// CSSPropertyWebkitPerspective
-// CSSPropertyWebkitShapeInside
-// CSSPropertyWebkitTextFillColor
-// CSSPropertyWebkitTextStrokeColor
-// CSSPropertyWebkitTransform
-// CSSPropertyWebkitTransformOriginZ
-// CSSPropertyWidows
-// CSSPropertyWordSpacing
-// CSSPropertyZIndex
-// CSSPropertyZoom
 
 static PassRefPtr<AnimatableValue> createFromLength(const Length& length, const RenderStyle* style)
 {
@@ -163,14 +92,74 @@ inline static PassRefPtr<AnimatableValue> createFromDouble(double value)
     return AnimatableNumber::create(value, AnimatableNumber::UnitTypeNumber);
 }
 
+inline static PassRefPtr<AnimatableValue> createFromLengthBox(const LengthBox lengthBox, const RenderStyle* style)
+{
+    return AnimatableLengthBox::create(
+        createFromLength(lengthBox.left(), style),
+        createFromLength(lengthBox.right(), style),
+        createFromLength(lengthBox.top(), style),
+        createFromLength(lengthBox.bottom(), style));
+}
+
+PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::createFromColor(CSSPropertyID property, const RenderStyle* style)
+{
+    Color color = style->colorIncludingFallback(property, false);
+    Color visitedLinkColor = style->colorIncludingFallback(property, true);
+    Color fallbackColor = style->color();
+    Color fallbackVisitedLinkColor = style->visitedLinkColor();
+    Color resolvedColor;
+    if (color.isValid())
+        resolvedColor = color;
+    else
+        resolvedColor = fallbackColor;
+    Color resolvedVisitedLinkColor;
+    if (visitedLinkColor.isValid())
+        resolvedVisitedLinkColor = visitedLinkColor;
+    else
+        resolvedVisitedLinkColor = fallbackVisitedLinkColor;
+    return AnimatableColor::create(resolvedColor, resolvedVisitedLinkColor);
+}
+
 // FIXME: Generate this function.
 PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPropertyID property, const RenderStyle* style)
 {
     switch (property) {
+    case CSSPropertyBackgroundColor:
+        return createFromColor(property, style);
+    case CSSPropertyBorderBottomColor:
+        return createFromColor(property, style);
+    case CSSPropertyBorderBottomWidth:
+        return createFromDouble(style->borderBottomWidth());
+    case CSSPropertyBorderImageOutset:
+        return createFromLengthBox(style->borderImageOutset(), style);
+    case CSSPropertyBorderImageSlice:
+        return createFromLengthBox(style->borderImageSlices(), style);
+    case CSSPropertyBorderImageSource:
+        return AnimatableImage::create(style->borderImageSource());
+    case CSSPropertyBorderImageWidth:
+        return createFromLengthBox(style->borderImageWidth(), style);
+    case CSSPropertyBorderLeftColor:
+        return createFromColor(property, style);
+    case CSSPropertyBorderLeftWidth:
+        return createFromDouble(style->borderLeftWidth());
+    case CSSPropertyBorderRightColor:
+        return createFromColor(property, style);
+    case CSSPropertyBorderRightWidth:
+        return createFromDouble(style->borderRightWidth());
+    case CSSPropertyBorderTopColor:
+        return createFromColor(property, style);
+    case CSSPropertyBorderTopWidth:
+        return createFromDouble(style->borderTopWidth());
     case CSSPropertyBottom:
         return createFromLength(style->bottom(), style);
+    case CSSPropertyClip:
+        return createFromLengthBox(style->clip(), style);
+    case CSSPropertyColor:
+        return createFromColor(property, style);
     case CSSPropertyHeight:
         return createFromLength(style->height(), style);
+    case CSSPropertyListStyleImage:
+        return AnimatableImage::create(style->listStyleImage());
     case CSSPropertyLeft:
         return createFromLength(style->left(), style);
     case CSSPropertyMarginBottom:
@@ -191,6 +180,12 @@ PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPropertyID prop
         return createFromLength(style->minWidth(), style);
     case CSSPropertyOpacity:
         return createFromDouble(style->opacity());
+    case CSSPropertyOutlineColor:
+        return createFromColor(property, style);
+    case CSSPropertyOutlineOffset:
+        return createFromDouble(style->outlineOffset());
+    case CSSPropertyOutlineWidth:
+        return createFromDouble(style->outlineWidth());
     case CSSPropertyPaddingBottom:
         return createFromLength(style->paddingBottom(), style);
     case CSSPropertyPaddingLeft:
@@ -201,20 +196,41 @@ PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPropertyID prop
         return createFromLength(style->paddingTop(), style);
     case CSSPropertyRight:
         return createFromLength(style->right(), style);
+    case CSSPropertyTextDecorationColor:
+        return createFromColor(property, style);
     case CSSPropertyTop:
         return createFromLength(style->top(), style);
+    case CSSPropertyWebkitColumnRuleColor:
+        return createFromColor(property, style);
+    case CSSPropertyWebkitMaskBoxImageSource:
+        return AnimatableImage::create(style->maskBoxImageSource());
+    case CSSPropertyWebkitMaskImage:
+        return AnimatableImage::create(style->maskImage());
     case CSSPropertyWebkitPerspectiveOriginX:
         return createFromLength(style->perspectiveOriginX(), style);
     case CSSPropertyWebkitPerspectiveOriginY:
         return createFromLength(style->perspectiveOriginY(), style);
+    case CSSPropertyWebkitTextEmphasisColor:
+        return createFromColor(property, style);
+    case CSSPropertyWebkitTextFillColor:
+        return createFromColor(property, style);
+    case CSSPropertyWebkitTextStrokeColor:
+        return createFromColor(property, style);
+    case CSSPropertyWebkitTransform:
+        return AnimatableTransform::create(style->transform());
     case CSSPropertyWebkitTransformOriginX:
         return createFromLength(style->transformOriginX(), style);
     case CSSPropertyWebkitTransformOriginY:
         return createFromLength(style->transformOriginY(), style);
     case CSSPropertyWidth:
         return createFromLength(style->width(), style);
+    case CSSPropertyVisibility:
+        return AnimatableVisibility::create(style->visibility());
+    case CSSPropertyZIndex:
+        return createFromDouble(style->zIndex());
     default:
-        RELEASE_ASSERT_WITH_MESSAGE(false, "Web Animations not yet implemented: Create AnimatableValue from render style");
+        RELEASE_ASSERT_WITH_MESSAGE(!CSSAnimations::isAnimatableProperty(property), "Web Animations not yet implemented: Create AnimatableValue from render style: %s", getPropertyNameString(property).utf8().data());
+        ASSERT_NOT_REACHED();
         return 0;
     }
 }

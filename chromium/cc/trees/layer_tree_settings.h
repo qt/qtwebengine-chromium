@@ -5,8 +5,6 @@
 #ifndef CC_TREES_LAYER_TREE_SETTINGS_H_
 #define CC_TREES_LAYER_TREE_SETTINGS_H_
 
-#include <string>
-
 #include "base/basictypes.h"
 #include "cc/base/cc_export.h"
 #include "cc/debug/layer_tree_debug_state.h"
@@ -24,6 +22,7 @@ class CC_EXPORT LayerTreeSettings {
   bool allow_antialiasing;
   bool throttle_frame_production;
   bool begin_frame_scheduling_enabled;
+  bool deadline_scheduling_enabled;
   bool using_synchronous_renderer_compositor;
   bool per_tile_painting_enabled;
   bool partial_swap_enabled;
@@ -33,15 +32,21 @@ class CC_EXPORT LayerTreeSettings {
   bool show_overdraw_in_tracing;
   bool can_use_lcd_text;
   bool should_clear_root_render_pass;
-  bool use_linear_fade_scrollbar_animator;
+
+  enum ScrollbarAnimator {
+    NoAnimator,
+    LinearFade,
+    Thinning,
+  };
+  ScrollbarAnimator scrollbar_animator;
   int scrollbar_linear_fade_delay_ms;
   int scrollbar_linear_fade_length_ms;
   bool solid_color_scrollbars;
   SkColor solid_color_scrollbar_color;
-  int solid_color_scrollbar_thickness_dip;
   bool calculate_top_controls_position;
   bool use_memory_management;
   bool timeout_and_draw_when_animation_checkerboards;
+  int maximum_number_of_failed_draws_before_draw_is_forced_;
   bool layer_transforms_should_scale_layer_contents;
   float minimum_contents_scale;
   float low_res_contents_scale_factor;
@@ -62,8 +67,8 @@ class CC_EXPORT LayerTreeSettings {
   bool force_direct_layer_drawing;  // With Skia GPU backend.
   bool strict_layer_property_change_checking;
   bool use_map_image;
-  std::string compositor_name;
   bool ignore_root_layer_flings;
+  bool use_rgba_4444_textures;
 
   LayerTreeDebugState initial_debug_state;
 };

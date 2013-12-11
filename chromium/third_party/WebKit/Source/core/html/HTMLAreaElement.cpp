@@ -37,7 +37,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLAreaElement::HTMLAreaElement(const QualifiedName& tagName, Document* document)
+inline HTMLAreaElement::HTMLAreaElement(const QualifiedName& tagName, Document& document)
     : HTMLAnchorElement(tagName, document)
     , m_lastSize(-1, -1)
     , m_shape(Unknown)
@@ -46,7 +46,7 @@ inline HTMLAreaElement::HTMLAreaElement(const QualifiedName& tagName, Document* 
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLAreaElement> HTMLAreaElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLAreaElement> HTMLAreaElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLAreaElement(tagName, document));
 }
@@ -142,7 +142,7 @@ Path HTMLAreaElement::getRegion(const LayoutSize& size) const
     }
 
     Path path;
-    RenderView* renderView = document()->renderView();
+    RenderView* renderView = document().renderView();
     switch (shape) {
         case Poly:
             if (m_coords.size() >= 6) {

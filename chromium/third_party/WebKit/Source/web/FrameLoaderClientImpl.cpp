@@ -33,28 +33,7 @@
 #include "FrameLoaderClientImpl.h"
 
 #include "HTMLNames.h"
-#include "core/dom/Document.h"
-#include "core/dom/MessageEvent.h"
-#include "core/dom/MouseEvent.h"
-#include "core/history/HistoryItem.h"
-#include "core/html/HTMLAppletElement.h"
-#include "core/html/HTMLFormElement.h"  // needed by core/loader/FormState.h
-#include "core/loader/DocumentLoader.h"
-#include "core/loader/FormState.h"
-#include "core/loader/FrameLoadRequest.h"
-#include "core/loader/FrameLoader.h"
-#include "core/loader/ProgressTracker.h"
-#include "core/loader/ResourceLoader.h"
-#include "core/page/Chrome.h"
-#include "core/page/EventHandler.h"
-#include "core/page/FrameView.h"
-#include "core/page/Page.h"
-#include "core/platform/MIMETypeRegistry.h"
-#include "core/platform/mediastream/RTCPeerConnectionHandler.h"
-#include "core/platform/network/HTTPParsers.h"
-#include "core/plugins/PluginData.h"
-#include "core/rendering/HitTestResult.h"
-#include <v8.h>
+#include "RuntimeEnabledFeatures.h"
 #include "WebAutofillClient.h"
 #include "WebCachedURLRequest.h"
 #include "WebDOMEvent.h"
@@ -74,12 +53,34 @@
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
 #include "bindings/v8/ScriptController.h"
+#include "core/dom/Document.h"
+#include "core/dom/MessageEvent.h"
+#include "core/dom/MouseEvent.h"
 #include "core/dom/UserGestureIndicator.h"
+#include "core/dom/WheelController.h"
+#include "core/history/HistoryItem.h"
+#include "core/html/HTMLAppletElement.h"
+#include "core/html/HTMLFormElement.h" // needed by core/loader/FormState.h
+#include "core/loader/DocumentLoader.h"
+#include "core/loader/FormState.h"
+#include "core/loader/FrameLoadRequest.h"
+#include "core/loader/FrameLoader.h"
+#include "core/loader/ProgressTracker.h"
+#include "core/page/Chrome.h"
+#include "core/page/EventHandler.h"
+#include "core/page/FrameView.h"
+#include "core/page/Page.h"
 #include "core/page/Settings.h"
 #include "core/page/WindowFeatures.h"
+#include "core/platform/MIMETypeRegistry.h"
 #include "core/platform/chromium/support/WrappedResourceRequest.h"
 #include "core/platform/chromium/support/WrappedResourceResponse.h"
+#include "core/platform/mediastream/RTCPeerConnectionHandler.h"
+#include "core/platform/network/HTTPParsers.h"
 #include "core/platform/network/SocketStreamHandleInternal.h"
+#include "core/plugins/PluginData.h"
+#include "core/rendering/HitTestResult.h"
+#include "modules/device_orientation/DeviceMotionController.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebMimeRegistry.h"
 #include "public/platform/WebSocketStreamHandle.h"
@@ -89,19 +90,11 @@
 #include "wtf/StringExtras.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
+#include <v8.h>
 
 using namespace WebCore;
 
 namespace WebKit {
-
-// Domain for internal error codes.
-static const char internalErrorDomain[] = "WebKit";
-
-// An internal error code.  Used to note a policy change error resulting from
-// dispatchDecidePolicyForMIMEType not passing the PolicyUse option.
-enum {
-    PolicyChangeError = -10000,
-};
 
 FrameLoaderClientImpl::FrameLoaderClientImpl(WebFrameImpl* frame)
     : m_webFrame(frame)
@@ -125,8 +118,15 @@ void FrameLoaderClientImpl::frameLoaderDestroyed()
 
 void FrameLoaderClientImpl::dispatchDidClearWindowObjectInWorld(DOMWrapperWorld*)
 {
-    if (m_webFrame->client())
+    if (m_webFrame->client()) {
         m_webFrame->client()->didClearWindowObject(m_webFrame);
+        Document* document = m_webFrame->frame()->document();
+        if (document) {
+            WheelController::from(document);
+            if (RuntimeEnabledFeatures::deviceMotionEnabled())
+                DeviceMotionController::from(document);
+        }
+    }
 }
 
 void FrameLoaderClientImpl::documentElementAvailable()
@@ -326,18 +326,10 @@ void FrameLoaderClientImpl::dispatchDidFinishDocumentLoad()
         m_webFrame->client()->didFinishDocumentLoad(m_webFrame);
 }
 
-void FrameLoaderClientImpl::dispatchDidLoadResourceFromMemoryCache(
-    DocumentLoader* loader,
-    const ResourceRequest& request,
-    const ResourceResponse& response,
-    int length)
+void FrameLoaderClientImpl::dispatchDidLoadResourceFromMemoryCache(const ResourceRequest& request, const ResourceResponse& response)
 {
-    if (m_webFrame->client()) {
-        WrappedResourceRequest webreq(request);
-        WrappedResourceResponse webresp(response);
-        m_webFrame->client()->didLoadResourceFromMemoryCache(
-            m_webFrame, webreq, webresp);
-    }
+    if (m_webFrame->client())
+        m_webFrame->client()->didLoadResourceFromMemoryCache(m_webFrame, WrappedResourceRequest(request), WrappedResourceResponse(response));
 }
 
 void FrameLoaderClientImpl::dispatchDidHandleOnloadEvents()
@@ -372,10 +364,10 @@ void FrameLoaderClientImpl::dispatchDidStartProvisionalLoad()
         m_webFrame->client()->didStartProvisionalLoad(m_webFrame);
 }
 
-void FrameLoaderClientImpl::dispatchDidReceiveTitle(const StringWithDirection& title)
+void FrameLoaderClientImpl::dispatchDidReceiveTitle(const String& title)
 {
     if (m_webFrame->client())
-        m_webFrame->client()->didReceiveTitle(m_webFrame, title.string(), title.direction() == LTR ? WebTextDirectionLeftToRight : WebTextDirectionRightToLeft);
+        m_webFrame->client()->didReceiveTitle(m_webFrame, title, WebTextDirectionLeftToRight);
 }
 
 void FrameLoaderClientImpl::dispatchDidChangeIcons(WebCore::IconType type)
@@ -397,17 +389,6 @@ void FrameLoaderClientImpl::dispatchDidCommitLoad()
 void FrameLoaderClientImpl::dispatchDidFailProvisionalLoad(
     const ResourceError& error)
 {
-
-    // If a policy change occured, then we do not want to inform the plugin
-    // delegate.  See http://b/907789 for details.  FIXME: This means the
-    // plugin won't receive NPP_URLNotify, which seems like it could result in
-    // a memory leak in the plugin!!
-    if (error.domain() == internalErrorDomain
-        && error.errorCode() == PolicyChangeError) {
-        m_webFrame->didFail(ResourceError::cancelledError(error.failingURL()), true);
-        return;
-    }
-
     OwnPtr<WebPluginLoadObserver> observer = pluginLoadObserver();
     m_webFrame->didFail(error, true);
     if (observer)
@@ -452,22 +433,13 @@ void FrameLoaderClientImpl::dispatchDidLayout(LayoutMilestones milestones)
         m_webFrame->client()->didFirstVisuallyNonEmptyLayout(m_webFrame);
 }
 
-NavigationPolicy FrameLoaderClientImpl::decidePolicyForNavigation(const ResourceRequest& request, NavigationType type, NavigationPolicy policy, bool /*isRedirect*/)
+NavigationPolicy FrameLoaderClientImpl::decidePolicyForNavigation(const ResourceRequest& request, DocumentLoader* loader, NavigationPolicy policy)
 {
-
     if (!m_webFrame->client())
         return NavigationPolicyIgnore;
-
-    // FIXME: We need to pull isRedirect off of provisionalDataSourceImpl() for compat reasons,
-    // but it seems wrong, since the request that triggered this policy check might not be the
-    // provisional data source.
-    WebDataSourceImpl* ds = m_webFrame->provisionalDataSourceImpl();
-    if (!ds)
-        return policy;
-
-    WrappedResourceRequest webRequest(request);
-    WebNavigationPolicy webPolicy = m_webFrame->client()->decidePolicyForNavigation(
-        m_webFrame, webRequest, WebDataSourceImpl::toWebNavigationType(type), static_cast<WebNavigationPolicy>(policy), ds->isRedirect());
+    WebDataSourceImpl* ds = WebDataSourceImpl::fromDocumentLoader(loader);
+    WebNavigationPolicy webPolicy = m_webFrame->client()->decidePolicyForNavigation(m_webFrame, ds->extraData(), WrappedResourceRequest(request),
+        ds->navigationType(), static_cast<WebNavigationPolicy>(policy), ds->isRedirect());
     return static_cast<NavigationPolicy>(webPolicy);
 }
 
@@ -503,7 +475,7 @@ void FrameLoaderClientImpl::postProgressEstimateChangedNotification()
     WebViewImpl* webview = m_webFrame->viewImpl();
     if (webview && webview->client()) {
         webview->client()->didChangeLoadProgress(
-            m_webFrame, m_webFrame->frame()->page()->progress()->estimatedProgress());
+            m_webFrame, m_webFrame->frame()->page()->progress().estimatedProgress());
     }
 }
 
@@ -524,36 +496,11 @@ void FrameLoaderClientImpl::loadURLExternally(const ResourceRequest& request, Na
     }
 }
 
-bool FrameLoaderClientImpl::shouldGoToHistoryItem(HistoryItem* item) const
+void FrameLoaderClientImpl::navigateBackForward(int offset) const
 {
-    const KURL& url = item->url();
-    if (!url.protocolIs(backForwardNavigationScheme))
-        return true;
-
-    // Else, we'll punt this history navigation to the embedder.  It is
-    // necessary that we intercept this here, well before the FrameLoader
-    // has made any state changes for this history traversal.
-
-    bool ok;
-    int offset = url.lastPathComponent().toIntStrict(&ok);
-    if (!ok) {
-        ASSERT_NOT_REACHED();
-        return false;
-    }
-
     WebViewImpl* webview = m_webFrame->viewImpl();
     if (webview->client())
         webview->client()->navigateBackForwardSoon(offset);
-
-    return false;
-}
-
-bool FrameLoaderClientImpl::shouldStopLoadingForHistoryItem(HistoryItem* targetItem) const
-{
-    // Don't stop loading for pseudo-back-forward URLs, since they will get
-    // translated and then pass through again.
-    const KURL& url = targetItem->url();
-    return !url.protocolIs(backForwardNavigationScheme);
 }
 
 void FrameLoaderClientImpl::didAccessInitialDocument()
@@ -590,13 +537,6 @@ void FrameLoaderClientImpl::didDispatchPingLoader(const KURL& url)
 {
     if (m_webFrame->client())
         m_webFrame->client()->didDispatchPingLoader(m_webFrame, url);
-}
-
-ResourceError FrameLoaderClientImpl::interruptedForPolicyChangeError(
-    const ResourceRequest& request)
-{
-    return ResourceError(internalErrorDomain, PolicyChangeError,
-                         request.url().string(), String());
 }
 
 PassRefPtr<DocumentLoader> FrameLoaderClientImpl::createDocumentLoader(
@@ -636,11 +576,8 @@ void FrameLoaderClientImpl::transitionToCommittedForNewPage()
 PassRefPtr<Frame> FrameLoaderClientImpl::createFrame(
     const KURL& url,
     const String& name,
-    HTMLFrameOwnerElement* ownerElement,
     const String& referrer,
-    bool allowsScrolling,
-    int marginWidth,
-    int marginHeight)
+    HTMLFrameOwnerElement* ownerElement)
 {
     FrameLoadRequest frameRequest(m_webFrame->frame()->document()->securityOrigin(),
         ResourceRequest(url, referrer), name);
@@ -765,8 +702,8 @@ bool FrameLoaderClientImpl::willCheckAndDispatchMessageEvent(
         return false;
 
     WebFrame* source = 0;
-    if (event && event->source() && event->source()->document())
-        source = WebFrameImpl::fromFrame(event->source()->document()->frame());
+    if (event && event->source() && event->source()->toDOMWindow() && event->source()->toDOMWindow()->document())
+        source = WebFrameImpl::fromFrame(event->source()->toDOMWindow()->document()->frame());
     return m_webFrame->client()->willCheckAndDispatchMessageEvent(
         source, m_webFrame, WebSecurityOrigin(target), WebDOMMessageEvent(event));
 }
@@ -808,10 +745,25 @@ void FrameLoaderClientImpl::didLoseWebGLContext(int arbRobustnessContextLostReas
         m_webFrame->client()->didLoseWebGLContext(m_webFrame, arbRobustnessContextLostReason);
 }
 
+bool FrameLoaderClientImpl::allowWebGLDebugRendererInfo()
+{
+    WebViewImpl* webview = m_webFrame->viewImpl();
+    if (webview && webview->permissionClient())
+        return webview->permissionClient()->allowWebGLDebugRendererInfo(m_webFrame);
+    return false;
+}
+
 void FrameLoaderClientImpl::dispatchWillInsertBody()
 {
     if (m_webFrame->client())
         m_webFrame->client()->willInsertBody(m_webFrame);
+}
+
+WebServiceWorkerRegistry* FrameLoaderClientImpl::serviceWorkerRegistry()
+{
+    if (!m_webFrame->client())
+        return 0;
+    return m_webFrame->client()->serviceWorkerRegistry(m_webFrame);
 }
 
 } // namespace WebKit

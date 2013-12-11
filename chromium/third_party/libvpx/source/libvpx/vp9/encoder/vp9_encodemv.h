@@ -16,7 +16,7 @@
 
 void vp9_write_nmv_probs(VP9_COMP* const, int usehp, vp9_writer* const);
 
-void vp9_encode_mv(vp9_writer* w, const MV* mv, const MV* ref,
+void vp9_encode_mv(VP9_COMP *cpi, vp9_writer* w, const MV* mv, const MV* ref,
                    const nmv_context* mvctx, int usehp);
 
 void vp9_build_nmv_cost_table(int *mvjoint,
@@ -27,7 +27,5 @@ void vp9_build_nmv_cost_table(int *mvjoint,
                               int mvc_flag_h);
 void vp9_update_nmv_count(VP9_COMP *cpi, MACROBLOCK *x,
                           int_mv *best_ref_mv, int_mv *second_best_ref_mv);
-
-void print_nmvcounts(nmv_context_counts tnmvcounts);
 
 #endif  // VP9_ENCODER_VP9_ENCODEMV_H_

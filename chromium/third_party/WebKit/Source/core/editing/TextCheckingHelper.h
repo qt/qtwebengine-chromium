@@ -59,10 +59,10 @@ public:
 
     bool checkingRangeCovers(int location, int length) const { return location < checkingEnd() && location + length > checkingStart(); }
     PassRefPtr<Range> paragraphRange() const;
+    PassRefPtr<Range> checkingRange() const { return m_checkingRange; }
 
 private:
     void invalidateParagraphRangeValues();
-    PassRefPtr<Range> checkingRange() const { return m_checkingRange; }
     PassRefPtr<Range> offsetAsRange() const;
 
     RefPtr<Range> m_checkingRange;
@@ -77,7 +77,7 @@ private:
 class TextCheckingHelper {
     WTF_MAKE_NONCOPYABLE(TextCheckingHelper);
 public:
-    TextCheckingHelper(EditorClient*, PassRefPtr<Range>);
+    TextCheckingHelper(EditorClient&, PassRefPtr<Range>);
     ~TextCheckingHelper();
 
     String findFirstMisspelling(int& firstMisspellingOffset, bool markAll, RefPtr<Range>& firstMisspellingRange);
@@ -94,7 +94,7 @@ private:
     bool unifiedTextCheckerEnabled() const;
 };
 
-void checkTextOfParagraph(TextCheckerClient*, const String&, TextCheckingTypeMask, Vector<TextCheckingResult>&);
+void checkTextOfParagraph(TextCheckerClient&, const String&, TextCheckingTypeMask, Vector<TextCheckingResult>&);
 
 bool unifiedTextCheckerEnabled(const Frame*);
 

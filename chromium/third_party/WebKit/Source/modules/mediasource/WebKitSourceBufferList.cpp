@@ -65,7 +65,7 @@ void WebKitSourceBufferList::add(PassRefPtr<WebKitSourceBuffer> buffer)
 bool WebKitSourceBufferList::remove(WebKitSourceBuffer* buffer)
 {
     size_t index = m_list.find(buffer);
-    if (index == notFound)
+    if (index == kNotFound)
         return false;
 
     buffer->removedFromMediaSource();
@@ -86,7 +86,7 @@ void WebKitSourceBufferList::createAndFireEvent(const AtomicString& eventName)
 {
     ASSERT(m_asyncEventQueue);
 
-    RefPtr<Event> event = Event::create(eventName, false, false);
+    RefPtr<Event> event = Event::create(eventName);
     event->setTarget(this);
 
     m_asyncEventQueue->enqueueEvent(event.release());

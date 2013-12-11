@@ -61,13 +61,18 @@ void GenerateBody(string* body, int length) {
 // Simple wrapper class to run server in a thread.
 class ServerThread : public base::SimpleThread {
  public:
-  explicit ServerThread(IPEndPoint address, const QuicConfig& config)
+  ServerThread(IPEndPoint address,
+               const QuicConfig& config,
+               bool strike_register_no_startup_period)
       : SimpleThread("server_thread"),
         listening_(true, false),
         quit_(true, false),
         server_(config),
         address_(address),
         port_(0) {
+    if (strike_register_no_startup_period) {
+      server_.SetStrikeRegisterNoStartupPeriod();
+    }
   }
   virtual ~ServerThread() {
   }
@@ -116,7 +121,8 @@ class EndToEndTest : public ::testing::TestWithParam<QuicVersion> {
  protected:
   EndToEndTest()
       : server_hostname_("example.com"),
-        server_started_(false) {
+        server_started_(false),
+        strike_register_no_startup_period_(false) {
     net::IPAddressNumber ip;
     CHECK(net::ParseIPLiteralToNumber("127.0.0.1", &ip));
     server_address_ = IPEndPoint(ip, 0);
@@ -154,7 +160,8 @@ class EndToEndTest : public ::testing::TestWithParam<QuicVersion> {
   }
 
   void StartServer() {
-    server_thread_.reset(new ServerThread(server_address_, server_config_));
+    server_thread_.reset(new ServerThread(server_address_, server_config_,
+                                          strike_register_no_startup_period_));
     server_thread_->Start();
     server_thread_->listening()->Wait();
     server_address_ = IPEndPoint(server_address_.address(),
@@ -210,6 +217,7 @@ class EndToEndTest : public ::testing::TestWithParam<QuicVersion> {
   QuicConfig client_config_;
   QuicConfig server_config_;
   QuicVersion version_;
+  bool strike_register_no_startup_period_;
 };
 
 // Run all end to end tests with all supported versions.
@@ -415,7 +423,29 @@ TEST_P(EndToEndTest, PostMissingBytes) {
   EXPECT_EQ(500u, client_->response_headers()->parsed_response_code());
 }
 
-TEST_P(EndToEndTest, LargePost) {
+TEST_P(EndToEndTest, LargePostNoPacketLoss) {
+  // TODO(rtenneti): Delete this when NSS is supported.
+  if (!Aes128Gcm12Encrypter::IsSupported()) {
+    LOG(INFO) << "AES GCM not supported. Test skipped.";
+    return;
+  }
+
+  ASSERT_TRUE(Initialize());
+
+  client_->client()->WaitForCryptoHandshakeConfirmed();
+
+  // 1 Mb body.
+  string body;
+  GenerateBody(&body, 1024 * 1024);
+
+  HTTPMessage request(HttpConstants::HTTP_1_1,
+                      HttpConstants::POST, "/foo");
+  request.AddBody(body, true);
+
+  EXPECT_EQ(kFooResponseBody, client_->SendCustomSynchronousRequest(request));
+}
+
+TEST_P(EndToEndTest, LargePostWithPacketLoss) {
   // TODO(rtenneti): Delete this when NSS is supported.
   if (!Aes128Gcm12Encrypter::IsSupported()) {
     LOG(INFO) << "AES GCM not supported. Test skipped.";
@@ -431,14 +461,53 @@ TEST_P(EndToEndTest, LargePost) {
   client_->client()->WaitForCryptoHandshakeConfirmed();
   // FLAGS_fake_packet_loss_percentage = 30;
 
+  // 10 Kb body.
   string body;
-  GenerateBody(&body, 10240);
+  GenerateBody(&body, 1024 * 10);
 
   HTTPMessage request(HttpConstants::HTTP_1_1,
                       HttpConstants::POST, "/foo");
   request.AddBody(body, true);
 
   EXPECT_EQ(kFooResponseBody, client_->SendCustomSynchronousRequest(request));
+}
+
+TEST_P(EndToEndTest, LargePostZeroRTTFailure) {
+  // Have the server accept 0-RTT without waiting a startup period.
+  strike_register_no_startup_period_ = true;
+
+  // Send a request and then disconnect. This prepares the client to attempt
+  // a 0-RTT handshake for the next request.
+  ASSERT_TRUE(Initialize());
+
+  string body;
+  GenerateBody(&body, 20480);
+
+  HTTPMessage request(HttpConstants::HTTP_1_1,
+                      HttpConstants::POST, "/foo");
+  request.AddBody(body, true);
+
+  EXPECT_EQ(kFooResponseBody, client_->SendCustomSynchronousRequest(request));
+  EXPECT_EQ(2, client_->client()->session()->GetNumSentClientHellos());
+
+  client_->Disconnect();
+
+  // The 0-RTT handshake should succeed.
+  client_->Connect();
+  ASSERT_TRUE(client_->client()->connected());
+  EXPECT_EQ(kFooResponseBody, client_->SendCustomSynchronousRequest(request));
+  EXPECT_EQ(1, client_->client()->session()->GetNumSentClientHellos());
+
+  client_->Disconnect();
+
+  // Restart the server so that the 0-RTT handshake will take 1 RTT.
+  StopServer();
+  StartServer();
+
+  client_->Connect();
+  ASSERT_TRUE(client_->client()->connected());
+  EXPECT_EQ(kFooResponseBody, client_->SendCustomSynchronousRequest(request));
+  EXPECT_EQ(2, client_->client()->session()->GetNumSentClientHellos());
 }
 
 // TODO(ianswett): Enable once b/9295090 is fixed.
@@ -517,7 +586,6 @@ TEST_P(EndToEndTest, DISABLED_MultipleTermination) {
   }
 
   ASSERT_TRUE(Initialize());
-  scoped_ptr<QuicTestClient> client2(CreateQuicClient());
 
   HTTPMessage request(HttpConstants::HTTP_1_1,
                       HttpConstants::POST, "/foo");
@@ -595,6 +663,28 @@ TEST_P(EndToEndTest, ResetConnection) {
   client_->ResetConnection();
   EXPECT_EQ(kBarResponseBody, client_->SendSynchronousRequest("/bar"));
   EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
+}
+
+TEST_P(EndToEndTest, MaxStreamsUberTest) {
+  //  FLAGS_fake_packet_loss_percentage = 1;
+  ASSERT_TRUE(Initialize());
+  string large_body;
+  GenerateBody(&large_body, 10240);
+  int max_streams = 100;
+
+  AddToCache("GET", "/large_response", "HTTP/1.1", "200", "OK", large_body);;
+
+  client_->client()->WaitForCryptoHandshakeConfirmed();
+  // FLAGS_fake_packet_loss_percentage = 10;
+
+  for (int i = 0; i < max_streams; ++i) {
+    EXPECT_LT(0, client_->SendRequest("/large_response"));
+  }
+
+  // WaitForEvents waits 50ms and returns true if there are outstanding
+  // requests.
+  while (client_->client()->WaitForEvents() == true) {
+  }
 }
 
 class WrongAddressWriter : public QuicPacketWriter {

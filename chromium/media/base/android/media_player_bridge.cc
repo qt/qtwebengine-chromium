@@ -12,7 +12,6 @@
 #include "jni/MediaPlayerBridge_jni.h"
 #include "media/base/android/media_player_manager.h"
 #include "media/base/android/media_resource_getter.h"
-#include "media/base/android/media_source_player.h"
 
 using base::android::ConvertUTF8ToJavaString;
 using base::android::ScopedJavaLocalRef;
@@ -20,40 +19,7 @@ using base::android::ScopedJavaLocalRef;
 // Time update happens every 250ms.
 static const int kTimeUpdateInterval = 250;
 
-// Android MediaMetadataRetriever may fail to extract the metadata from the
-// media under some circumstances. This makes the user unable to perform
-// seek. To solve this problem, we use a temporary duration of 100 seconds when
-// the duration is unknown. And we scale the seek position later when duration
-// is available.
-static const int kTemporaryDuration = 100;
-
 namespace media {
-
-#if !defined(GOOGLE_TV)
-// static
-MediaPlayerAndroid* MediaPlayerAndroid::Create(
-    int player_id,
-    const GURL& url,
-    SourceType source_type,
-    const GURL& first_party_for_cookies,
-    bool hide_url_log,
-    MediaPlayerManager* manager) {
-  if (source_type == SOURCE_TYPE_URL) {
-    MediaPlayerBridge* media_player_bridge = new MediaPlayerBridge(
-        player_id,
-        url,
-        first_party_for_cookies,
-        hide_url_log,
-        manager);
-    media_player_bridge->Initialize();
-    return media_player_bridge;
-  } else {
-    return new MediaSourcePlayer(
-        player_id,
-        manager);
-  }
-}
-#endif
 
 MediaPlayerBridge::MediaPlayerBridge(
     int player_id,
@@ -68,7 +34,6 @@ MediaPlayerBridge::MediaPlayerBridge(
       url_(url),
       first_party_for_cookies_(first_party_for_cookies),
       hide_url_log_(hide_url_log),
-      duration_(base::TimeDelta::FromSeconds(kTemporaryDuration)),
       width_(0),
       height_(0),
       can_pause_(true),
@@ -216,7 +181,7 @@ void MediaPlayerBridge::Start() {
   }
 }
 
-void MediaPlayerBridge::Pause() {
+void MediaPlayerBridge::Pause(bool is_media_related_action) {
   if (j_media_player_bridge_.is_null()) {
     pending_play_ = false;
   } else {
@@ -331,15 +296,7 @@ void MediaPlayerBridge::OnMediaPrepared() {
     return;
 
   prepared_ = true;
-
-  base::TimeDelta dur = duration_;
   duration_ = GetDuration();
-
-  if (duration_ != dur && 0 != dur.InMilliseconds()) {
-    // Scale the |pending_seek_| according to the new duration.
-    pending_seek_ = base::TimeDelta::FromSeconds(
-        pending_seek_.InSecondsF() * duration_.InSecondsF() / dur.InSecondsF());
-  }
 
   // If media player was recovered from a saved state, consume all the pending
   // events.
@@ -402,7 +359,6 @@ void MediaPlayerBridge::SeekInternal(base::TimeDelta time) {
 
   JNIEnv* env = base::android::AttachCurrentThread();
   CHECK(env);
-
   int time_msec = static_cast<int>(time.InMilliseconds());
   Java_MediaPlayerBridge_seekTo(
       env, j_media_player_bridge_.obj(), time_msec);

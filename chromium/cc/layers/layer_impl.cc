@@ -9,13 +9,14 @@
 #include "cc/animation/animation_registrar.h"
 #include "cc/animation/scrollbar_animation_controller.h"
 #include "cc/animation/scrollbar_animation_controller_linear_fade.h"
+#include "cc/animation/scrollbar_animation_controller_thinning.h"
 #include "cc/base/math_util.h"
 #include "cc/debug/debug_colors.h"
 #include "cc/debug/layer_tree_debug_state.h"
 #include "cc/debug/traced_value.h"
 #include "cc/input/layer_scroll_offset_delegate.h"
+#include "cc/layers/painted_scrollbar_layer_impl.h"
 #include "cc/layers/quad_sink.h"
-#include "cc/layers/scrollbar_layer_impl.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/quads/debug_border_draw_quad.h"
 #include "cc/trees/layer_tree_impl.h"
@@ -29,6 +30,8 @@ namespace cc {
 
 LayerImpl::LayerImpl(LayerTreeImpl* tree_impl, int id)
     : parent_(NULL),
+      scroll_parent_(NULL),
+      clip_parent_(NULL),
       mask_layer_id_(-1),
       replica_layer_id_(-1),
       layer_id_(id),
@@ -73,6 +76,24 @@ LayerImpl::~LayerImpl() {
 
   layer_tree_impl_->UnregisterLayer(this);
   layer_animation_controller_->RemoveValueObserver(this);
+
+  if (scroll_children_) {
+    for (std::set<LayerImpl*>::iterator it = scroll_children_->begin();
+        it != scroll_children_->end(); ++it)
+      (*it)->scroll_parent_ = NULL;
+  }
+
+  if (scroll_parent_)
+    scroll_parent_->RemoveScrollChild(this);
+
+  if (clip_children_) {
+    for (std::set<LayerImpl*>::iterator it = clip_children_->begin();
+        it != clip_children_->end(); ++it)
+      (*it)->clip_parent_ = NULL;
+  }
+
+  if (clip_parent_)
+    clip_parent_->RemoveClipChild(this);
 }
 
 void LayerImpl::AddChild(scoped_ptr<LayerImpl> child) {
@@ -102,6 +123,67 @@ void LayerImpl::ClearChildList() {
 
   children_.clear();
   layer_tree_impl()->set_needs_update_draw_properties();
+}
+
+bool LayerImpl::HasAncestor(const LayerImpl* ancestor) const {
+  if (!ancestor)
+    return false;
+
+  for (const LayerImpl* layer = this; layer; layer = layer->parent()) {
+    if (layer == ancestor)
+      return true;
+  }
+
+  return false;
+}
+
+void LayerImpl::SetScrollParent(LayerImpl* parent) {
+  if (scroll_parent_ == parent)
+    return;
+
+  // Having both a scroll parent and a scroll offset delegate is unsupported.
+  DCHECK(!scroll_offset_delegate_);
+
+  if (scroll_parent_)
+    scroll_parent_->RemoveScrollChild(this);
+
+  scroll_parent_ = parent;
+}
+
+void LayerImpl::SetScrollChildren(std::set<LayerImpl*>* children) {
+  if (scroll_children_.get() == children)
+    return;
+  scroll_children_.reset(children);
+}
+
+void LayerImpl::RemoveScrollChild(LayerImpl* child) {
+  DCHECK(scroll_children_);
+  scroll_children_->erase(child);
+  if (scroll_children_->empty())
+    scroll_children_.reset();
+}
+
+void LayerImpl::SetClipParent(LayerImpl* ancestor) {
+  if (clip_parent_ == ancestor)
+    return;
+
+  if (clip_parent_)
+    clip_parent_->RemoveClipChild(this);
+
+  clip_parent_ = ancestor;
+}
+
+void LayerImpl::SetClipChildren(std::set<LayerImpl*>* children) {
+  if (clip_children_.get() == children)
+    return;
+  clip_children_.reset(children);
+}
+
+void LayerImpl::RemoveClipChild(LayerImpl* child) {
+  DCHECK(clip_children_);
+  clip_children_->erase(child);
+  if (clip_children_->empty())
+    clip_children_.reset();
 }
 
 void LayerImpl::PassCopyRequests(ScopedPtrVector<CopyOutputRequest>* requests) {
@@ -272,7 +354,7 @@ gfx::Vector2dF LayerImpl::ScrollBy(gfx::Vector2dF scroll) {
   return unscrolled;
 }
 
-void LayerImpl::ApplySentScrollDeltas() {
+void LayerImpl::ApplySentScrollDeltasFromAbortedCommit() {
   // Pending tree never has sent scroll deltas
   DCHECK(layer_tree_impl()->IsActiveTree());
 
@@ -290,6 +372,25 @@ void LayerImpl::ApplySentScrollDeltas() {
   scroll_offset_ += sent_scroll_delta_;
   scroll_delta_ -= sent_scroll_delta_;
   sent_scroll_delta_ = gfx::Vector2d();
+}
+
+void LayerImpl::ApplyScrollDeltasSinceBeginFrame() {
+  // Only the pending tree can have missing scrolls.
+  DCHECK(layer_tree_impl()->IsPendingTree());
+  if (!scrollable())
+    return;
+
+  // Pending tree should never have sent scroll deltas.
+  DCHECK(sent_scroll_delta().IsZero());
+
+  LayerImpl* active_twin = layer_tree_impl()->FindActiveTreeLayerById(id());
+  if (active_twin) {
+    // Scrolls that happens after begin frame (where the sent scroll delta
+    // comes from) and commit need to be applied to the pending tree
+    // so that it is up to date with the total scroll.
+    SetScrollDelta(active_twin->ScrollDelta() -
+                   active_twin->sent_scroll_delta());
+  }
 }
 
 InputHandler::ScrollStatus LayerImpl::TryScroll(
@@ -419,8 +520,39 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
   layer->SetTransform(transform_);
 
   layer->SetScrollable(scrollable_);
-  layer->SetScrollOffset(scroll_offset_);
+  layer->SetScrollOffsetAndDelta(
+      scroll_offset_, layer->ScrollDelta() - layer->sent_scroll_delta());
+  layer->SetSentScrollDelta(gfx::Vector2d());
+
   layer->SetMaxScrollOffset(max_scroll_offset_);
+
+  LayerImpl* scroll_parent = NULL;
+  if (scroll_parent_)
+    scroll_parent = layer->layer_tree_impl()->LayerById(scroll_parent_->id());
+
+  layer->SetScrollParent(scroll_parent);
+  if (scroll_children_) {
+    std::set<LayerImpl*>* scroll_children = new std::set<LayerImpl*>;
+    for (std::set<LayerImpl*>::iterator it = scroll_children_->begin();
+        it != scroll_children_->end(); ++it)
+      scroll_children->insert(layer->layer_tree_impl()->LayerById((*it)->id()));
+    layer->SetScrollChildren(scroll_children);
+  }
+
+  LayerImpl* clip_parent = NULL;
+  if (clip_parent_) {
+    clip_parent = layer->layer_tree_impl()->LayerById(
+        clip_parent_->id());
+  }
+
+  layer->SetClipParent(clip_parent);
+  if (clip_children_) {
+    std::set<LayerImpl*>* clip_children = new std::set<LayerImpl*>;
+    for (std::set<LayerImpl*>::iterator it = clip_children_->begin();
+        it != clip_children_->end(); ++it)
+      clip_children->insert(layer->layer_tree_impl()->LayerById((*it)->id()));
+    layer->SetClipChildren(clip_children);
+  }
 
   layer->PassCopyRequests(&copy_requests_);
 
@@ -430,9 +562,6 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
   // union) any update changes that have occurred on the main thread.
   update_rect_.Union(layer->update_rect());
   layer->set_update_rect(update_rect_);
-
-  layer->SetScrollDelta(layer->ScrollDelta() - layer->sent_scroll_delta());
-  layer->SetSentScrollDelta(gfx::Vector2d());
 
   layer->SetStackingOrderChanged(stacking_order_changed_);
 
@@ -622,7 +751,7 @@ scoped_ptr<LayerImpl> LayerImpl::TakeReplicaLayer() {
   return replica_layer_.Pass();
 }
 
-ScrollbarLayerImpl* LayerImpl::ToScrollbarLayer() {
+ScrollbarLayerImplBase* LayerImpl::ToScrollbarLayer() {
   return NULL;
 }
 
@@ -847,10 +976,11 @@ void LayerImpl::UpdateScrollbarPositions() {
     return;
   last_scroll_offset_ = current_offset;
 
-  if (scrollbar_animation_controller_ &&
-      !scrollbar_animation_controller_->IsScrollGestureInProgress()) {
-    scrollbar_animation_controller_->DidProgrammaticallyUpdateScroll(
+  if (scrollbar_animation_controller_) {
+    bool should_animate = scrollbar_animation_controller_->DidScrollUpdate(
         layer_tree_impl_->CurrentPhysicalTimeTicks());
+    if (should_animate)
+      layer_tree_impl_->StartScrollbarAnimation();
   }
 
   // Get the current_offset_.y() value for a sanity-check on scrolling
@@ -863,6 +993,8 @@ void LayerImpl::UpdateScrollbarPositions() {
 
 void LayerImpl::SetScrollOffsetDelegate(
     LayerScrollOffsetDelegate* scroll_offset_delegate) {
+  // Having both a scroll parent and a scroll offset delegate is unsupported.
+  DCHECK(!scroll_parent_);
   if (!scroll_offset_delegate && scroll_offset_delegate_) {
     scroll_delta_ =
         scroll_offset_delegate_->GetTotalScrollOffset() - scroll_offset_;
@@ -874,16 +1006,49 @@ void LayerImpl::SetScrollOffsetDelegate(
 }
 
 void LayerImpl::SetScrollOffset(gfx::Vector2d scroll_offset) {
-  if (scroll_offset_ == scroll_offset)
-    return;
+  SetScrollOffsetAndDelta(scroll_offset, ScrollDelta());
+}
 
-  scroll_offset_ = scroll_offset;
+void LayerImpl::SetScrollOffsetAndDelta(gfx::Vector2d scroll_offset,
+                                        gfx::Vector2dF scroll_delta) {
+  bool changed = false;
 
-  if (scroll_offset_delegate_)
-    scroll_offset_delegate_->SetTotalScrollOffset(TotalScrollOffset());
+  if (scroll_offset_ != scroll_offset) {
+    changed = true;
+    scroll_offset_ = scroll_offset;
 
-  NoteLayerPropertyChangedForSubtree();
-  UpdateScrollbarPositions();
+    if (scroll_offset_delegate_)
+      scroll_offset_delegate_->SetTotalScrollOffset(TotalScrollOffset());
+  }
+
+  if (ScrollDelta() != scroll_delta) {
+    changed = true;
+    if (layer_tree_impl()->IsActiveTree()) {
+      LayerImpl* pending_twin =
+          layer_tree_impl()->FindPendingTreeLayerById(id());
+      if (pending_twin) {
+        // The pending twin can't mirror the scroll delta of the active
+        // layer.  Although the delta - sent scroll delta difference is
+        // identical for both twins, the sent scroll delta for the pending
+        // layer is zero, as anything that has been sent has been baked
+        // into the layer's position/scroll offset as a part of commit.
+        DCHECK(pending_twin->sent_scroll_delta().IsZero());
+        pending_twin->SetScrollDelta(scroll_delta - sent_scroll_delta());
+      }
+    }
+
+    if (scroll_offset_delegate_) {
+      scroll_offset_delegate_->SetTotalScrollOffset(scroll_offset_ +
+                                                    scroll_delta);
+    } else {
+      scroll_delta_ = scroll_delta;
+    }
+  }
+
+  if (changed) {
+    NoteLayerPropertyChangedForSubtree();
+    UpdateScrollbarPositions();
+  }
 }
 
 gfx::Vector2dF LayerImpl::ScrollDelta() const {
@@ -893,31 +1058,7 @@ gfx::Vector2dF LayerImpl::ScrollDelta() const {
 }
 
 void LayerImpl::SetScrollDelta(gfx::Vector2dF scroll_delta) {
-  if (ScrollDelta() == scroll_delta)
-    return;
-
-  if (layer_tree_impl()->IsActiveTree()) {
-    LayerImpl* pending_twin = layer_tree_impl()->FindPendingTreeLayerById(id());
-    if (pending_twin) {
-      // The pending twin can't mirror the scroll delta of the active
-      // layer.  Although the delta - sent scroll delta difference is
-      // identical for both twins, the sent scroll delta for the pending
-      // layer is zero, as anything that has been sent has been baked
-      // into the layer's position/scroll offset as a part of commit.
-      DCHECK(pending_twin->sent_scroll_delta().IsZero());
-      pending_twin->SetScrollDelta(scroll_delta - sent_scroll_delta());
-    }
-  }
-
-  if (scroll_offset_delegate_) {
-    scroll_offset_delegate_->SetTotalScrollOffset(
-        scroll_offset_ + scroll_delta);
-  } else {
-    scroll_delta_ = scroll_delta;
-  }
-
-  NoteLayerPropertyChangedForSubtree();
-  UpdateScrollbarPositions();
+  SetScrollOffsetAndDelta(scroll_offset_, scroll_delta);
 }
 
 gfx::Vector2dF LayerImpl::TotalScrollOffset() const {
@@ -951,42 +1092,55 @@ void LayerImpl::SetMaxScrollOffset(gfx::Vector2d max_scroll_offset) {
   UpdateScrollbarPositions();
 }
 
-void LayerImpl::SetScrollbarOpacity(float opacity) {
-  if (horizontal_scrollbar_layer_)
-    horizontal_scrollbar_layer_->SetOpacity(opacity);
-  if (vertical_scrollbar_layer_)
-    vertical_scrollbar_layer_->SetOpacity(opacity);
-}
-
 void LayerImpl::DidBecomeActive() {
-  if (!layer_tree_impl_->settings().use_linear_fade_scrollbar_animator)
+  if (layer_tree_impl_->settings().scrollbar_animator ==
+      LayerTreeSettings::NoAnimator) {
     return;
+  }
 
   bool need_scrollbar_animation_controller = horizontal_scrollbar_layer_ ||
                                              vertical_scrollbar_layer_;
-  if (need_scrollbar_animation_controller) {
-    if (!scrollbar_animation_controller_) {
-      base::TimeDelta fadeout_delay = base::TimeDelta::FromMilliseconds(
-          layer_tree_impl_->settings().scrollbar_linear_fade_delay_ms);
-      base::TimeDelta fadeout_length = base::TimeDelta::FromMilliseconds(
-          layer_tree_impl_->settings().scrollbar_linear_fade_length_ms);
-      scrollbar_animation_controller_ =
-          ScrollbarAnimationControllerLinearFade::Create(
-              this, fadeout_delay, fadeout_length)
-              .PassAs<ScrollbarAnimationController>();
-    }
-  } else {
+  if (!need_scrollbar_animation_controller) {
     scrollbar_animation_controller_.reset();
+    return;
+  }
+
+  if (scrollbar_animation_controller_)
+    return;
+
+  switch (layer_tree_impl_->settings().scrollbar_animator) {
+  case LayerTreeSettings::LinearFade: {
+    base::TimeDelta fadeout_delay = base::TimeDelta::FromMilliseconds(
+        layer_tree_impl_->settings().scrollbar_linear_fade_delay_ms);
+    base::TimeDelta fadeout_length = base::TimeDelta::FromMilliseconds(
+        layer_tree_impl_->settings().scrollbar_linear_fade_length_ms);
+
+    scrollbar_animation_controller_ =
+        ScrollbarAnimationControllerLinearFade::Create(
+            this, fadeout_delay, fadeout_length)
+            .PassAs<ScrollbarAnimationController>();
+    break;
+  }
+  case LayerTreeSettings::Thinning: {
+    scrollbar_animation_controller_ =
+        ScrollbarAnimationControllerThinning::Create(this)
+            .PassAs<ScrollbarAnimationController>();
+    break;
+  }
+  case LayerTreeSettings::NoAnimator:
+    NOTREACHED();
+    break;
   }
 }
 void LayerImpl::SetHorizontalScrollbarLayer(
-    ScrollbarLayerImpl* scrollbar_layer) {
+    ScrollbarLayerImplBase* scrollbar_layer) {
   horizontal_scrollbar_layer_ = scrollbar_layer;
   if (horizontal_scrollbar_layer_)
     horizontal_scrollbar_layer_->set_scroll_layer_id(id());
 }
 
-void LayerImpl::SetVerticalScrollbarLayer(ScrollbarLayerImpl* scrollbar_layer) {
+void LayerImpl::SetVerticalScrollbarLayer(
+    ScrollbarLayerImplBase* scrollbar_layer) {
   vertical_scrollbar_layer_ = scrollbar_layer;
   if (vertical_scrollbar_layer_)
     vertical_scrollbar_layer_->set_scroll_layer_id(id());
@@ -1033,9 +1187,6 @@ CompositingReasonsAsValue(CompositingReasons reasons) {
 
   if (reasons & kCompositingReasonOverflowScrollingTouch)
     reason_list->AppendString("Is a scrollable overflow element");
-
-  if (reasons & kCompositingReasonBlending)
-    reason_list->AppendString("Has a blend mode");
 
   if (reasons & kCompositingReasonAssumedOverlap)
     reason_list->AppendString("Might overlap a composited animation");
@@ -1109,12 +1260,19 @@ CompositingReasonsAsValue(CompositingReasons reasons) {
   if (reasons & kCompositingReasonLayerForMask)
     reason_list->AppendString("Is a mask layer");
 
+  if (reasons & kCompositingReasonOverflowScrollingParent)
+    reason_list->AppendString("Scroll parent is not an ancestor");
+
+  if (reasons & kCompositingReasonOutOfFlowClipping)
+    reason_list->AppendString("Has clipping ancestor");
+
   return reason_list.PassAs<base::Value>();
 }
 
 void LayerImpl::AsValueInto(base::DictionaryValue* state) const {
   TracedValue::MakeDictIntoImplicitSnapshot(state, LayerTypeAsString(), this);
   state->SetInteger("layer_id", id());
+  state->SetString("layer_name", debug_name());
   state->Set("bounds", MathUtil::AsValue(bounds()).release());
   state->SetInteger("draws_content", DrawsContent());
   state->SetInteger("gpu_memory_usage", GPUMemoryUsageInBytes());
@@ -1128,6 +1286,20 @@ void LayerImpl::AsValueInto(base::DictionaryValue* state) const {
       &clipped);
   state->Set("layer_quad", MathUtil::AsValue(layer_quad).release());
 
+  if (!touch_event_handler_region_.IsEmpty()) {
+    state->Set("touch_event_handler_region",
+               touch_event_handler_region_.AsValue().release());
+  }
+  if (have_wheel_event_handlers_) {
+    gfx::Rect wheel_rect(content_bounds());
+    Region wheel_region(wheel_rect);
+    state->Set("wheel_event_handler_region",
+               wheel_region.AsValue().release());
+  }
+  if (!non_fast_scrollable_region_.IsEmpty()) {
+    state->Set("non_fast_scrollable_region",
+               non_fast_scrollable_region_.AsValue().release());
+  }
 
   scoped_ptr<base::ListValue> children_list(new base::ListValue());
   for (size_t i = 0; i < children_.size(); ++i)
@@ -1137,6 +1309,12 @@ void LayerImpl::AsValueInto(base::DictionaryValue* state) const {
     state->Set("mask_layer", mask_layer_->AsValue().release());
   if (replica_layer_)
     state->Set("replica_layer", replica_layer_->AsValue().release());
+
+  if (scroll_parent_)
+    state->SetInteger("scroll_parent", scroll_parent_->id());
+
+  if (clip_parent_)
+    state->SetInteger("clip_parent", clip_parent_->id());
 }
 
 size_t LayerImpl::GPUMemoryUsageInBytes() const { return 0; }

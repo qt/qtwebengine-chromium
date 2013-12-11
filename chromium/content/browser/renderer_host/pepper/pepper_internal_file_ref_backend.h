@@ -46,8 +46,6 @@ class PepperInternalFileRefBackend : public PepperFileRefBackend {
       OVERRIDE;
 
   virtual fileapi::FileSystemURL GetFileSystemURL() const OVERRIDE;
-  virtual std::string GetFileSystemURLSpec() const OVERRIDE;
-  virtual base::FilePath GetExternalPath() const OVERRIDE;
 
   virtual int32_t CanRead() const OVERRIDE;
   virtual int32_t CanWrite() const OVERRIDE;
@@ -82,6 +80,8 @@ class PepperInternalFileRefBackend : public PepperFileRefBackend {
   mutable fileapi::FileSystemURL fs_url_;
 
   base::WeakPtrFactory<PepperInternalFileRefBackend> weak_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(PepperInternalFileRefBackend);
 };
 
 }  // namespace content

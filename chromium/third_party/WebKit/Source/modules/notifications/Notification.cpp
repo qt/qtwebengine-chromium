@@ -31,11 +31,10 @@
 
 #include "config.h"
 
-#if ENABLE(NOTIFICATIONS) || ENABLE(LEGACY_NOTIFICATIONS)
-
 #include "modules/notifications/Notification.h"
 
 #include "bindings/v8/Dictionary.h"
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ErrorEvent.h"
@@ -66,23 +65,24 @@ Notification::Notification(const String& title, const String& body, const String
     , m_title(title)
     , m_body(body)
     , m_state(Idle)
-    , m_notificationCenter(provider)
+    , m_notificationClient(provider->client())
 {
+    ASSERT(m_notificationClient);
+
     ScriptWrappable::init(this);
-    if (m_notificationCenter->checkPermission() != NotificationClient::PermissionAllowed) {
-        es.throwDOMException(SecurityError);
+    if (provider->checkPermission() != NotificationClient::PermissionAllowed) {
+        es.throwSecurityError(ExceptionMessages::failedToExecute("createNotification", "NotificationCenter", "Notification permission has not been granted."));
         return;
     }
 
     m_icon = iconURI.isEmpty() ? KURL() : scriptExecutionContext()->completeURL(iconURI);
     if (!m_icon.isEmpty() && !m_icon.isValid()) {
-        es.throwDOMException(SyntaxError);
+        es.throwDOMException(SyntaxError, ExceptionMessages::failedToExecute("createNotification", "NotificationCenter", "'" + iconURI + "' is not a valid icon URL."));
         return;
     }
 }
 #endif
 
-#if ENABLE(NOTIFICATIONS)
 Notification::Notification(ScriptExecutionContext* context, const String& title)
     : ActiveDOMObject(context)
     , m_title(title)
@@ -90,12 +90,12 @@ Notification::Notification(ScriptExecutionContext* context, const String& title)
     , m_taskTimer(adoptPtr(new Timer<Notification>(this, &Notification::taskTimerFired)))
 {
     ScriptWrappable::init(this);
-    m_notificationCenter = DOMWindowNotifications::webkitNotifications(toDocument(context)->domWindow());
 
-    ASSERT(m_notificationCenter->client());
+    m_notificationClient = NotificationController::clientFrom(toDocument(context)->page());
+    ASSERT(m_notificationClient);
+
     m_taskTimer->startOneShot(0);
 }
-#endif
 
 Notification::~Notification()
 {
@@ -110,7 +110,6 @@ PassRefPtr<Notification> Notification::create(const String& title, const String&
 }
 #endif
 
-#if ENABLE(NOTIFICATIONS)
 PassRefPtr<Notification> Notification::create(ScriptExecutionContext* context, const String& title, const Dictionary& options)
 {
     RefPtr<Notification> notification(adoptRef(new Notification(context, title)));
@@ -132,7 +131,6 @@ PassRefPtr<Notification> Notification::create(ScriptExecutionContext* context, c
     notification->suspendIfNeeded();
     return notification.release();
 }
-#endif
 
 const AtomicString& Notification::interfaceName() const
 {
@@ -142,16 +140,14 @@ const AtomicString& Notification::interfaceName() const
 void Notification::show()
 {
     // prevent double-showing
-    if (m_state == Idle && m_notificationCenter->client()) {
-#if ENABLE(NOTIFICATIONS)
+    if (m_state == Idle) {
         if (!toDocument(scriptExecutionContext())->page())
             return;
         if (NotificationController::from(toDocument(scriptExecutionContext())->page())->client()->checkPermission(scriptExecutionContext()) != NotificationClient::PermissionAllowed) {
             dispatchErrorEvent();
             return;
         }
-#endif
-        if (m_notificationCenter->client()->show(this)) {
+        if (m_notificationClient->show(this)) {
             m_state = Showing;
             setPendingActivity(this);
         }
@@ -164,8 +160,7 @@ void Notification::close()
     case Idle:
         break;
     case Showing:
-        if (m_notificationCenter->client())
-            m_notificationCenter->client()->cancel(this);
+        m_notificationClient->cancel(this);
         break;
     case Closed:
         break;
@@ -185,8 +180,7 @@ EventTargetData* Notification::ensureEventTargetData()
 void Notification::contextDestroyed()
 {
     ActiveDOMObject::contextDestroyed();
-    if (m_notificationCenter->client())
-        m_notificationCenter->client()->notificationObjectDestroyed(this);
+    m_notificationClient->notificationObjectDestroyed(this);
 }
 
 void Notification::finalize()
@@ -199,37 +193,46 @@ void Notification::finalize()
 
 void Notification::dispatchShowEvent()
 {
-    dispatchEvent(Event::create(eventNames().showEvent, false, false));
+#if ENABLE(LEGACY_NOTIFICATIONS)
+    dispatchEvent(Event::create(eventNames().displayEvent));
+#endif
+    dispatchEvent(Event::create(eventNames().showEvent));
 }
 
 void Notification::dispatchClickEvent()
 {
+    UserGestureIndicator gestureIndicator(DefinitelyProcessingNewUserGesture);
     WindowFocusAllowedIndicator windowFocusAllowed;
-    dispatchEvent(Event::create(eventNames().clickEvent, false, false));
+    dispatchEvent(Event::create(eventNames().clickEvent));
 }
 
 void Notification::dispatchCloseEvent()
 {
-    dispatchEvent(Event::create(eventNames().closeEvent, false, false));
+    dispatchEvent(Event::create(eventNames().closeEvent));
     finalize();
 }
 
 void Notification::dispatchErrorEvent()
 {
-    dispatchEvent(Event::create(eventNames().errorEvent, false, false));
+    dispatchEvent(Event::create(eventNames().errorEvent));
 }
 
-#if ENABLE(NOTIFICATIONS)
 void Notification::taskTimerFired(Timer<Notification>* timer)
 {
     ASSERT(scriptExecutionContext()->isDocument());
     ASSERT_UNUSED(timer, timer == m_taskTimer.get());
     show();
 }
-#endif
 
+bool Notification::dispatchEvent(PassRefPtr<Event> event)
+{
+    // Do not dispatch if the context is gone.
+    if (!scriptExecutionContext())
+        return false;
 
-#if ENABLE(NOTIFICATIONS)
+    return EventTarget::dispatchEvent(event);
+}
+
 const String& Notification::permission(ScriptExecutionContext* context)
 {
     ASSERT(toDocument(context)->page());
@@ -260,8 +263,5 @@ void Notification::requestPermission(ScriptExecutionContext* context, PassRefPtr
     ASSERT(toDocument(context)->page());
     NotificationController::from(toDocument(context)->page())->client()->requestPermission(context, callback);
 }
-#endif
 
 } // namespace WebCore
-
-#endif // ENABLE(NOTIFICATIONS) || ENABLE(LEGACY_NOTIFICATIONS)

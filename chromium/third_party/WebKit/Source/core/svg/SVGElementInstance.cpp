@@ -59,6 +59,7 @@ DEFINE_FORWARDING_ATTRIBUTE_EVENT_LISTENER(SVGElementInstance, correspondingElem
 DEFINE_FORWARDING_ATTRIBUTE_EVENT_LISTENER(SVGElementInstance, correspondingElement(), mouseover);
 DEFINE_FORWARDING_ATTRIBUTE_EVENT_LISTENER(SVGElementInstance, correspondingElement(), mouseup);
 DEFINE_FORWARDING_ATTRIBUTE_EVENT_LISTENER(SVGElementInstance, correspondingElement(), mousewheel);
+DEFINE_FORWARDING_ATTRIBUTE_EVENT_LISTENER(SVGElementInstance, correspondingElement(), wheel);
 DEFINE_FORWARDING_ATTRIBUTE_EVENT_LISTENER(SVGElementInstance, correspondingElement(), beforecut);
 DEFINE_FORWARDING_ATTRIBUTE_EVENT_LISTENER(SVGElementInstance, correspondingElement(), cut);
 DEFINE_FORWARDING_ATTRIBUTE_EVENT_LISTENER(SVGElementInstance, correspondingElement(), beforecopy);
@@ -194,7 +195,7 @@ void SVGElementInstance::invalidateAllInstancesOfElement(SVGElement* element)
         }
     }
 
-    element->document()->updateStyleIfNeeded();
+    element->document().updateStyleIfNeeded();
 }
 
 const AtomicString& SVGElementInstance::interfaceName() const
@@ -204,7 +205,7 @@ const AtomicString& SVGElementInstance::interfaceName() const
 
 ScriptExecutionContext* SVGElementInstance::scriptExecutionContext() const
 {
-    return m_element->document();
+    return &m_element->document();
 }
 
 bool SVGElementInstance::addEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)

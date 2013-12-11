@@ -28,9 +28,19 @@
 
 #include "core/dom/Element.h"
 #include "core/dom/shadow/ElementShadow.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 
 namespace WebCore {
+
+class ShadowRootVector : public Vector<RefPtr<ShadowRoot> > {
+public:
+    explicit ShadowRootVector(ElementShadow* tree)
+    {
+        for (ShadowRoot* root = tree->youngestShadowRoot(); root; root = root->olderShadowRoot())
+            append(root);
+    }
+};
 
 void ChildNodeInsertionNotifier::notifyDescendantInsertedIntoDocument(ContainerNode* node)
 {
@@ -80,8 +90,8 @@ void ChildNodeRemovalNotifier::notifyDescendantRemovedFromDocument(ContainerNode
     if (!node->isElementNode())
         return;
 
-    if (node->document()->cssTarget() == node)
-        node->document()->setCSSTarget(0);
+    if (node->document().cssTarget() == node)
+        node->document().setCSSTarget(0);
 
     if (ElementShadow* shadow = toElement(node)->shadow()) {
         ShadowRootVector roots(shadow);
@@ -121,7 +131,7 @@ unsigned assertConnectedSubrameCountIsConsistent(Node* node)
     unsigned count = 0;
 
     if (node->isElementNode()) {
-        if (node->isFrameOwnerElement() && toFrameOwnerElement(node)->contentFrame())
+        if (node->isFrameOwnerElement() && toHTMLFrameOwnerElement(node)->contentFrame())
             count++;
 
         if (ElementShadow* shadow = toElement(node)->shadow()) {

@@ -33,8 +33,8 @@ namespace WebCore {
 
 class HTMLSourceElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLSourceElement> create(Document* document) { return create(HTMLNames::sourceTag, document); }
-    static PassRefPtr<HTMLSourceElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<HTMLSourceElement> create(Document& document) { return create(HTMLNames::sourceTag, document); }
+    static PassRefPtr<HTMLSourceElement> create(const QualifiedName&, Document&);
 
     String media() const;
     String type() const;
@@ -46,7 +46,7 @@ public:
     void cancelPendingErrorEvent();
 
 private:
-    HTMLSourceElement(const QualifiedName&, Document*);
+    HTMLSourceElement(const QualifiedName&, Document&);
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
@@ -57,6 +57,12 @@ private:
     Timer<HTMLSourceElement> m_errorEventTimer;
 };
 
-} //namespace
+inline HTMLSourceElement* toHTMLSourceElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::sourceTag));
+    return static_cast<HTMLSourceElement*>(node);
+}
+
+} // namespace WebCore
 
 #endif

@@ -10,11 +10,11 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
-#include "content/public/test/test_utils.h"
 #include "content/public/test/browser_test_utils.h"
-#include "content/shell/shell.h"
-#include "content/test/content_browser_test_utils.h"
+#include "content/public/test/test_utils.h"
+#include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test.h"
+#include "content/test/content_browser_test_utils.h"
 #include "ui/base/ime/composition_text.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/base/ime/win/imm32_manager.h"
@@ -87,16 +87,16 @@ IN_PROC_BROWSER_TEST_F(RenderWidgetHostViewWinBrowserTest,
   MockIMM32Manager* mock = new MockIMM32Manager();
   mock->Reset();
   view_->imm32_manager_.reset(mock);
-  view_->TextInputTypeChanged(ui::TEXT_INPUT_TYPE_NONE, false,
-                              ui::TEXT_INPUT_MODE_EMAIL);
+  view_->TextInputTypeChanged(ui::TEXT_INPUT_TYPE_NONE,
+                              ui::TEXT_INPUT_MODE_EMAIL, false);
 
   EXPECT_EQ(1, mock->call_count());
   EXPECT_EQ(view_->m_hWnd, mock->window_handle());
   EXPECT_EQ(ui::TEXT_INPUT_MODE_EMAIL, mock->input_mode());
 
   mock->Reset();
-  view_->TextInputTypeChanged(ui::TEXT_INPUT_TYPE_NONE, false,
-                              ui::TEXT_INPUT_MODE_EMAIL);
+  view_->TextInputTypeChanged(ui::TEXT_INPUT_TYPE_NONE,
+                              ui::TEXT_INPUT_MODE_EMAIL, false);
   EXPECT_EQ(0, mock->call_count());
 }
 

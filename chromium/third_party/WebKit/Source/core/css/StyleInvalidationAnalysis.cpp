@@ -31,7 +31,7 @@
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/ContainerNode.h"
 #include "core/dom/Document.h"
-#include "core/dom/NodeTraversal.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLStyleElement.h"
 
@@ -80,10 +80,21 @@ static bool hasDistributedRule(StyleSheetContents* styleSheetContents)
 
         const StyleRule* styleRule = toStyleRule(rule);
         const CSSSelectorList& selectorList = styleRule->selectorList();
-        for (size_t selectorIndex = 0; selectorIndex != notFound; selectorIndex = selectorList.indexOfNextSelectorAfter(selectorIndex)) {
+        for (size_t selectorIndex = 0; selectorIndex != kNotFound; selectorIndex = selectorList.indexOfNextSelectorAfter(selectorIndex)) {
             if (selectorList.hasShadowDistributedAt(selectorIndex))
                 return true;
         }
+    }
+    return false;
+}
+
+static bool hasAtHostRule(StyleSheetContents* styleSheetContents)
+{
+    const Vector<RefPtr<StyleRuleBase> >& rules = styleSheetContents->childRules();
+    for (unsigned i = 0; i < rules.size(); i++) {
+        const StyleRuleBase* rule = rules[i].get();
+        if (rule->isHostRule())
+            return true;
     }
     return false;
 }
@@ -92,14 +103,19 @@ static Node* determineScopingNodeForStyleScoped(HTMLStyleElement* ownerElement, 
 {
     ASSERT(ownerElement && ownerElement->isRegisteredAsScoped());
 
-    if (ownerElement->isInShadowTree() && hasDistributedRule(styleSheetContents)) {
-        ContainerNode* scope = ownerElement;
-        do {
-            scope = scope->containingShadowRoot()->shadowHost();
-        } while (scope->isInShadowTree());
+    if (ownerElement->isInShadowTree()) {
+        if (hasDistributedRule(styleSheetContents)) {
+            ContainerNode* scope = ownerElement;
+            do {
+                scope = scope->containingShadowRoot()->shadowHost();
+            } while (scope->isInShadowTree());
 
-        return scope;
+            return scope;
+        }
+        if (ownerElement->isRegisteredAsScoped() && hasAtHostRule(styleSheetContents))
+            return ownerElement->containingShadowRoot()->shadowHost();
     }
+
     return ownerElement->isRegisteredInShadowRoot() ? ownerElement->containingShadowRoot()->shadowHost() : ownerElement->parentNode();
 }
 
@@ -133,7 +149,7 @@ void StyleInvalidationAnalysis::analyzeStyleSheet(StyleSheetContents* styleSheet
             m_dirtiesAllStyle = true;
             return;
         }
-        StyleRule* styleRule = static_cast<StyleRule*>(rule);
+        StyleRule* styleRule = toStyleRule(rule);
         if (!determineSelectorScopes(styleRule->selectorList(), m_idScopes, m_classScopes)) {
             m_dirtiesAllStyle = true;
             return;

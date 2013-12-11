@@ -10,9 +10,10 @@
 #include "base/basictypes.h"
 #include "base/event_types.h"
 #include "base/i18n/rtl.h"
+#include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
-#include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/ui_export.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 
 namespace ui {
 
@@ -82,8 +83,21 @@ class InputMethod {
   // SetCompositionText(). |client| can be NULL. A gfx::NativeWindow which
   // implementes TextInputClient interface, e.g. NWA and RWHVA, should register
   // itself by calling the method when it is focused, and unregister itself by
-  // calling the metho with NULL when it is unfocused.
+  // calling the method with NULL when it is unfocused.
   virtual void SetFocusedTextInputClient(TextInputClient* client) = 0;
+
+  // A variant of SetFocusedTextInputClient. Unlike SetFocusedTextInputClient,
+  // all the subsequent calls of SetFocusedTextInputClient will be ignored
+  // until |client| is detached. This method is introduced as a workaround
+  // against crbug.com/287620.
+  // NOTE: You can pass NULL to |client| to detach the sticky client.
+  // NOTE: You can also use DetachTextInputClient to remove the sticky client.
+  virtual void SetStickyFocusedTextInputClient(TextInputClient* client) = 0;
+
+  // Detaches and forgets the |client| regardless of whether it has the focus or
+  // not.  This method is meant to be called when the |client| is going to be
+  // destroyed.
+  virtual void DetachTextInputClient(TextInputClient* client) = 0;
 
   // Gets the current text input client. Returns NULL when no client is set.
   virtual TextInputClient* GetTextInputClient() const = 0;
@@ -140,9 +154,17 @@ class InputMethod {
   // is not active.
   virtual bool IsActive() = 0;
 
+  // TODO(yoichio): Following 3 methods(GetTextInputType, GetTextInputMode and
+  // CanComposeInline) calls client's same method and returns its value. It is
+  // not InputMethod itself's infomation. So rename these to
+  // GetClientTextInputType and so on.
   // Gets the text input type of the focused text input client. Returns
   // ui::TEXT_INPUT_TYPE_NONE if there is no focused client.
   virtual TextInputType GetTextInputType() const = 0;
+
+  // Gets the text input mode of the focused text input client. Returns
+  // ui::TEXT_INPUT_TYPE_DEFAULT if there is no focused client.
+  virtual TextInputMode GetTextInputMode() const = 0;
 
   // Checks if the focused text input client supports inline composition.
   virtual bool CanComposeInline() const = 0;

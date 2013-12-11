@@ -334,7 +334,7 @@ class MsvsSettings(object):
     cl = self._GetWrapper(self, self.msvs_settings[config],
                           'VCCLCompilerTool', append=cflags)
     cl('Optimization',
-       map={'0': 'd', '1': '1', '2': '2', '3': 'x'}, prefix='/O')
+       map={'0': 'd', '1': '1', '2': '2', '3': 'x'}, prefix='/O', default='2')
     cl('InlineFunctionExpansion', prefix='/Ob')
     cl('StringPooling', map={'true': '/GF'})
     cl('EnableFiberSafeOptimizations', map={'true': '/GT'})
@@ -361,6 +361,9 @@ class MsvsSettings(object):
     cl('AdditionalOptions', prefix='')
     cflags.extend(['/FI' + f for f in self._Setting(
         ('VCCLCompilerTool', 'ForcedIncludeFiles'), config, default=[])])
+    if self.vs_version.short_name == '2013' or self.vs_version == '2013e':
+      # New flag required in 2013 to maintain previous PDB behavior.
+      cflags.append('/FS')
     # ninja handles parallelism by itself, don't have the compiler do it too.
     cflags = filter(lambda x: not x.startswith('/MP'), cflags)
     return cflags

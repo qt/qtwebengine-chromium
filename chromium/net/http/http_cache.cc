@@ -392,7 +392,7 @@ void HttpCache::CloseAllConnections() {
   HttpNetworkSession* session = network->GetSession();
   if (session)
     session->CloseAllConnections();
-  }
+}
 
 void HttpCache::CloseIdleConnections() {
   net::HttpNetworkLayer* network =
@@ -595,6 +595,9 @@ int HttpCache::AsyncDoomEntry(const std::string& key, Transaction* trans) {
 }
 
 void HttpCache::DoomMainEntryForUrl(const GURL& url) {
+  if (!disk_cache_)
+    return;
+
   HttpRequestInfo temp_info;
   temp_info.url = url;
   temp_info.method = "GET";

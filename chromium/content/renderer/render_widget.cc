@@ -19,6 +19,7 @@
 #include "cc/output/output_surface.h"
 #include "cc/trees/layer_tree_host.h"
 #include "content/child/npapi/webplugin.h"
+#include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/input_messages.h"
 #include "content/common/swapped_out_messages.h"
@@ -34,7 +35,6 @@
 #include "content/renderer/ime_event_guard.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/render_process.h"
-#include "content/renderer/render_process_visibility_manager.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
 #include "ipc/ipc_sync_message.h"
@@ -62,6 +62,7 @@
 #include "webkit/renderer/compositor_bindings/web_rendering_stats_impl.h"
 
 #if defined(OS_ANDROID)
+#include "base/android/sys_utils.h"
 #include "content/renderer/android/synchronous_compositor_factory.h"
 #endif
 
@@ -188,7 +189,8 @@ namespace content {
 
 RenderWidget::RenderWidget(WebKit::WebPopupType popup_type,
                            const WebKit::WebScreenInfo& screen_info,
-                           bool swapped_out)
+                           bool swapped_out,
+                           bool hidden)
     : routing_id_(MSG_ROUTING_NONE),
       surface_id_(0),
       webwidget_(NULL),
@@ -204,7 +206,7 @@ RenderWidget::RenderWidget(WebKit::WebPopupType popup_type,
       using_asynchronous_swapbuffers_(false),
       num_swapbuffers_complete_pending_(0),
       did_show_(false),
-      is_hidden_(false),
+      is_hidden_(hidden),
       is_fullscreen_(false),
       needs_repainting_on_restore_(false),
       has_focus_(false),
@@ -214,12 +216,13 @@ RenderWidget::RenderWidget(WebKit::WebPopupType popup_type,
       is_swapped_out_(swapped_out),
       input_method_is_active_(false),
       text_input_type_(ui::TEXT_INPUT_TYPE_NONE),
-      can_compose_inline_(true),
       text_input_mode_(ui::TEXT_INPUT_MODE_DEFAULT),
+      can_compose_inline_(true),
       popup_type_(popup_type),
       pending_window_rect_count_(0),
       suppress_next_char_events_(false),
       is_accelerated_compositing_active_(false),
+      was_accelerated_compositing_ever_active_(false),
       animation_update_pending_(false),
       invalidation_task_posted_(false),
       screen_info_(screen_info),
@@ -239,7 +242,10 @@ RenderWidget::RenderWidget(WebKit::WebPopupType popup_type,
       CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableThreadedCompositing);
 
-  RenderProcessVisibilityManager::GetInstance()->WidgetVisibilityChanged(true);
+  legacy_software_mode_stats_ = cc::RenderingStatsInstrumentation::Create();
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableGpuBenchmarking))
+    legacy_software_mode_stats_->set_record_rendering_stats(true);
 }
 
 RenderWidget::~RenderWidget() {
@@ -254,7 +260,7 @@ RenderWidget::~RenderWidget() {
     current_paint_buf_ = NULL;
   }
   // If we are swapped out, we have released already.
-  if (!is_swapped_out_)
+  if (!is_swapped_out_ && RenderProcess::current())
     RenderProcess::current()->ReleaseProcess();
 }
 
@@ -264,7 +270,7 @@ RenderWidget* RenderWidget::Create(int32 opener_id,
                                    const WebKit::WebScreenInfo& screen_info) {
   DCHECK(opener_id != MSG_ROUTING_NONE);
   scoped_refptr<RenderWidget> widget(
-      new RenderWidget(popup_type, screen_info, false));
+      new RenderWidget(popup_type, screen_info, false, false));
   if (widget->Init(opener_id)) {  // adds reference on success.
     return widget.get();
   }
@@ -312,6 +318,8 @@ bool RenderWidget::DoInit(int32 opener_id,
     // Take a reference on behalf of the RenderThread.  This will be balanced
     // when we receive ViewMsg_Close.
     AddRef();
+    if (is_hidden_)
+      RenderThread::Get()->WidgetHidden();
     return true;
   } else {
     // The above Send can fail when the tab is closing.
@@ -385,7 +393,8 @@ bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_ImeConfirmComposition, OnImeConfirmComposition)
     IPC_MESSAGE_HANDLER(ViewMsg_PaintAtSize, OnPaintAtSize)
     IPC_MESSAGE_HANDLER(ViewMsg_Repaint, OnRepaint)
-    IPC_MESSAGE_HANDLER(ViewMsg_SmoothScrollCompleted, OnSmoothScrollCompleted)
+    IPC_MESSAGE_HANDLER(ViewMsg_SyntheticGestureCompleted,
+                        OnSyntheticGestureCompleted)
     IPC_MESSAGE_HANDLER(ViewMsg_SetTextDirection, OnSetTextDirection)
     IPC_MESSAGE_HANDLER(ViewMsg_Move_ACK, OnRequestMoveAck)
     IPC_MESSAGE_HANDLER(ViewMsg_UpdateScreenRects, OnUpdateScreenRects)
@@ -640,16 +649,13 @@ bool RenderWidget::ForceCompositingModeEnabled() {
 }
 
 scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface(bool fallback) {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
 #if defined(OS_ANDROID)
-   if (SynchronousCompositorFactory* factory =
-       SynchronousCompositorFactory::GetInstance()) {
+  if (SynchronousCompositorFactory* factory =
+      SynchronousCompositorFactory::GetInstance()) {
     return factory->CreateOutputSurface(routing_id());
   }
 #endif
-
-  uint32 output_surface_id = next_output_surface_id_++;
 
   // Explicitly disable antialiasing for the compositor. As of the time of
   // this writing, the only platform that supported antialiasing for the
@@ -667,39 +673,67 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface(bool fallback) {
   attributes.noAutomaticFlushes = true;
   attributes.depth = false;
   attributes.stencil = false;
+
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(cc::switches::kForceDirectLayerDrawing))
     attributes.stencil = true;
-  WebGraphicsContext3DCommandBufferImpl* context = NULL;
-  if (!fallback)
-    context = CreateGraphicsContext3D(attributes);
 
-  if (!context) {
+  scoped_refptr<ContextProviderCommandBuffer> context_provider;
+  if (!fallback) {
+    context_provider = ContextProviderCommandBuffer::Create(
+        CreateGraphicsContext3D(attributes),
+        "RenderCompositor");
+  }
+
+  uint32 output_surface_id = next_output_surface_id_++;
+  if (!context_provider.get()) {
     if (!command_line.HasSwitch(switches::kEnableSoftwareCompositing))
       return scoped_ptr<cc::OutputSurface>();
-    return scoped_ptr<cc::OutputSurface>(
-        new CompositorOutputSurface(routing_id(),
-                                    output_surface_id,
-                                    NULL,
-                                    new CompositorSoftwareOutputDevice(),
-                                    true));
+
+    scoped_ptr<cc::SoftwareOutputDevice> software_device(
+        new CompositorSoftwareOutputDevice());
+
+    return scoped_ptr<cc::OutputSurface>(new CompositorOutputSurface(
+        routing_id(),
+        output_surface_id,
+        NULL,
+        software_device.Pass(),
+        true));
   }
 
   if (command_line.HasSwitch(switches::kEnableDelegatedRenderer) &&
       !command_line.HasSwitch(switches::kDisableDelegatedRenderer)) {
     DCHECK(is_threaded_compositing_enabled_);
     return scoped_ptr<cc::OutputSurface>(
-        new DelegatedCompositorOutputSurface(routing_id(), output_surface_id,
-                                             context, NULL));
+        new DelegatedCompositorOutputSurface(
+            routing_id(),
+            output_surface_id,
+            context_provider,
+            scoped_ptr<cc::SoftwareOutputDevice>()));
   }
   if (command_line.HasSwitch(cc::switches::kCompositeToMailbox)) {
     DCHECK(is_threaded_compositing_enabled_);
+    cc::ResourceFormat format = cc::RGBA_8888;
+#if defined(OS_ANDROID)
+    if (base::android::SysUtils::IsLowEndDevice())
+      format = cc::RGB_565;
+#endif
     return scoped_ptr<cc::OutputSurface>(
-        new MailboxOutputSurface(routing_id(), output_surface_id,
-                                 context, NULL));
+        new MailboxOutputSurface(
+            routing_id(),
+            output_surface_id,
+            context_provider,
+            scoped_ptr<cc::SoftwareOutputDevice>(),
+            format));
   }
+  bool use_swap_compositor_frame_message = false;
   return scoped_ptr<cc::OutputSurface>(
-      new CompositorOutputSurface(routing_id(), output_surface_id,
-                                  context, NULL, false));
+      new CompositorOutputSurface(
+          routing_id(),
+          output_surface_id,
+          context_provider,
+          scoped_ptr<cc::SoftwareOutputDevice>(),
+          use_swap_compositor_frame_message));
 }
 
 void RenderWidget::OnViewContextSwapBuffersAborted() {
@@ -947,9 +981,6 @@ void RenderWidget::PaintRect(const gfx::Rect& rect,
   TRACE_EVENT2("renderer", "PaintRect",
                "width", rect.width(), "height", rect.height());
 
-  const bool kEnableGpuBenchmarking =
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableGpuBenchmarking);
   canvas->save();
 
   // Bring the canvas into the coordinate system of the paint rect.
@@ -1008,34 +1039,24 @@ void RenderWidget::PaintRect(const gfx::Rect& rect,
     // WebKit and filling the background (which can be slow) and just painting
     // the plugin. Unlike the DoDeferredUpdate case, an extra copy is still
     // required.
-    base::TimeTicks paint_begin_ticks;
-    if (kEnableGpuBenchmarking)
-      paint_begin_ticks = base::TimeTicks::HighResNow();
-
     SkAutoCanvasRestore auto_restore(canvas, true);
     canvas->scale(device_scale_factor_, device_scale_factor_);
     optimized_instance->Paint(canvas, optimized_copy_location, rect);
     canvas->restore();
-    if (kEnableGpuBenchmarking) {
-      base::TimeDelta paint_time =
-          base::TimeTicks::HighResNow() - paint_begin_ticks;
-      if (!is_accelerated_compositing_active_)
-        software_stats_.total_paint_time += paint_time;
-    }
 #endif
   } else {
     // Normal painting case.
-    base::TimeTicks paint_begin_ticks;
-    if (kEnableGpuBenchmarking)
-      paint_begin_ticks = base::TimeTicks::HighResNow();
+    base::TimeTicks start_time;
+    if (!is_accelerated_compositing_active_)
+      start_time = legacy_software_mode_stats_->StartRecording();
 
     webwidget_->paint(canvas, rect);
 
-    if (kEnableGpuBenchmarking) {
+    if (!is_accelerated_compositing_active_) {
       base::TimeDelta paint_time =
-          base::TimeTicks::HighResNow() - paint_begin_ticks;
-      if (!is_accelerated_compositing_active_)
-        software_stats_.total_paint_time += paint_time;
+          legacy_software_mode_stats_->EndRecording(start_time);
+      int64 painted_pixel_count = rect.width() * rect.height();
+      legacy_software_mode_stats_->AddPaint(paint_time, painted_pixel_count);
     }
 
     // Flush to underlying bitmap.  TODO(darin): is this needed?
@@ -1044,11 +1065,6 @@ void RenderWidget::PaintRect(const gfx::Rect& rect,
 
   PaintDebugBorder(rect, canvas);
   canvas->restore();
-
-  if (kEnableGpuBenchmarking) {
-    int64 num_pixels_processed = rect.width() * rect.height();
-    software_stats_.total_pixels_painted += num_pixels_processed;
-  }
 }
 
 void RenderWidget::PaintDebugBorder(const gfx::Rect& rect,
@@ -1226,7 +1242,8 @@ void RenderWidget::DoDeferredUpdate() {
 
   if (!is_accelerated_compositing_active_ &&
       !is_threaded_compositing_enabled_ &&
-      ForceCompositingModeEnabled()) {
+      (ForceCompositingModeEnabled() ||
+          was_accelerated_compositing_ever_active_)) {
     webwidget_->enterForceCompositingMode(true);
   }
 
@@ -1254,8 +1271,10 @@ void RenderWidget::DoDeferredUpdate() {
   last_do_deferred_update_time_ = frame_begin_ticks;
 
   if (!is_accelerated_compositing_active_) {
-    software_stats_.animation_frame_count++;
-    software_stats_.screen_frame_count++;
+    legacy_software_mode_stats_->IncrementAnimationFrameCount();
+    legacy_software_mode_stats_->IncrementScreenFrameCount(1, true);
+    legacy_software_mode_stats_->IssueTraceEventForMainThreadStats();
+    legacy_software_mode_stats_->AccumulateAndClearMainThreadStats();
   }
 
   // OK, save the pending update to a local since painting may cause more
@@ -1543,6 +1562,11 @@ void RenderWidget::didActivateCompositor(int input_handler_identifier) {
   is_accelerated_compositing_active_ = true;
   Send(new ViewHostMsg_DidActivateAcceleratedCompositing(
       routing_id_, is_accelerated_compositing_active_));
+
+  if (!was_accelerated_compositing_ever_active_) {
+    was_accelerated_compositing_ever_active_ = true;
+    webwidget_->enterForceCompositingMode(true);
+  }
 }
 
 void RenderWidget::didDeactivateCompositor() {
@@ -1835,7 +1859,7 @@ void RenderWidget::OnImeSetComposition(
 }
 
 void RenderWidget::OnImeConfirmComposition(const string16& text,
-                                           const ui::Range& replacement_range,
+                                           const gfx::Range& replacement_range,
                                            bool keep_selection) {
   if (!ShouldHandleImeEvent())
     return;
@@ -1997,8 +2021,8 @@ void RenderWidget::OnRepaint(gfx::Size size_to_paint) {
   }
 }
 
-void RenderWidget::OnSmoothScrollCompleted() {
-  pending_smooth_scroll_gesture_.Run();
+void RenderWidget::OnSyntheticGestureCompleted() {
+  pending_synthetic_gesture_.Run();
 }
 
 void RenderWidget::OnSetTextDirection(WebTextDirection direction) {
@@ -2177,8 +2201,8 @@ void RenderWidget::UpdateTextInputType() {
       || text_input_mode_ != new_mode) {
     Send(new ViewHostMsg_TextInputTypeChanged(routing_id(),
                                               new_type,
-                                              new_can_compose_inline,
-                                              new_mode));
+                                              new_mode,
+                                              new_can_compose_inline));
     text_input_type_ = new_type;
     can_compose_inline_ = new_can_compose_inline;
     text_input_mode_ = new_mode;
@@ -2309,7 +2333,7 @@ ui::TextInputType RenderWidget::GetTextInputType() {
 
 #if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
 void RenderWidget::UpdateCompositionInfo(bool should_update_range) {
-  ui::Range range = ui::Range();
+  gfx::Range range = gfx::Range();
   if (should_update_range) {
     GetCompositionRange(&range);
   } else {
@@ -2332,7 +2356,7 @@ void RenderWidget::GetCompositionCharacterBounds(
   bounds->clear();
 }
 
-void RenderWidget::GetCompositionRange(ui::Range* range) {
+void RenderWidget::GetCompositionRange(gfx::Range* range) {
   size_t location, length;
   if (webwidget_->compositionRange(&location, &length)) {
     range->set_start(location);
@@ -2341,12 +2365,12 @@ void RenderWidget::GetCompositionRange(ui::Range* range) {
     range->set_start(location);
     range->set_end(location + length);
   } else {
-    *range = ui::Range::InvalidRange();
+    *range = gfx::Range::InvalidRange();
   }
 }
 
 bool RenderWidget::ShouldUpdateCompositionInfo(
-    const ui::Range& range,
+    const gfx::Range& range,
     const std::vector<gfx::Rect>& bounds) {
   if (composition_range_ != range)
     return true;
@@ -2436,14 +2460,8 @@ void RenderWidget::GetRenderingStats(
   if (compositor_)
     compositor_->GetRenderingStats(&stats.rendering_stats);
 
-  stats.rendering_stats.animation_frame_count +=
-      software_stats_.animation_frame_count;
-  stats.rendering_stats.screen_frame_count +=
-      software_stats_.screen_frame_count;
-  stats.rendering_stats.total_paint_time +=
-      software_stats_.total_paint_time;
-  stats.rendering_stats.total_pixels_painted +=
-      software_stats_.total_pixels_painted;
+  stats.rendering_stats.Add(
+      legacy_software_mode_stats_->GetRenderingStats());
 }
 
 bool RenderWidget::GetGpuRenderingStats(GpuRenderingStats* stats) const {
@@ -2469,7 +2487,7 @@ void RenderWidget::GetBrowserRenderingStats(BrowserRenderingStats* stats) {
 
 void RenderWidget::BeginSmoothScroll(
     bool down,
-    const SmoothScrollCompletionCallback& callback,
+    const SyntheticGestureCompletionCallback& callback,
     int pixels_to_scroll,
     int mouse_event_x,
     int mouse_event_y) {
@@ -2482,7 +2500,25 @@ void RenderWidget::BeginSmoothScroll(
   params.mouse_event_y = mouse_event_y;
 
   Send(new ViewHostMsg_BeginSmoothScroll(routing_id_, params));
-  pending_smooth_scroll_gesture_ = callback;
+  pending_synthetic_gesture_ = callback;
+}
+
+void RenderWidget::BeginPinch(
+    bool zoom_in,
+    int pixels_to_move,
+    int anchor_x,
+    int anchor_y,
+    const SyntheticGestureCompletionCallback& callback) {
+  DCHECK(!callback.is_null());
+
+  ViewHostMsg_BeginPinch_Params params;
+  params.zoom_in = zoom_in;
+  params.pixels_to_move = pixels_to_move;
+  params.anchor_x = anchor_x;
+  params.anchor_y = anchor_y;
+
+  Send(new ViewHostMsg_BeginPinch(routing_id_, params));
+  pending_synthetic_gesture_ = callback;
 }
 
 bool RenderWidget::WillHandleMouseEvent(const WebKit::WebMouseEvent& event) {
@@ -2506,13 +2542,14 @@ bool RenderWidget::HasTouchEventHandlersAt(const gfx::Point& point) const {
   return true;
 }
 
-WebGraphicsContext3DCommandBufferImpl* RenderWidget::CreateGraphicsContext3D(
+scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
+RenderWidget::CreateGraphicsContext3D(
     const WebKit::WebGraphicsContext3D::Attributes& attributes) {
   if (!webwidget_)
-    return NULL;
+    return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableGpuCompositing))
-    return NULL;
+    return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context(
       new WebGraphicsContext3DCommandBufferImpl(
           surface_id(),
@@ -2520,12 +2557,42 @@ WebGraphicsContext3DCommandBufferImpl* RenderWidget::CreateGraphicsContext3D(
           RenderThreadImpl::current(),
           weak_ptr_factory_.GetWeakPtr()));
 
-  if (!context->InitializeWithDefaultBufferSizes(
+#if defined(OS_ANDROID)
+  // If we raster too fast we become upload bound, and pending
+  // uploads consume memory. For maximum upload throughput, we would
+  // want to allow for upload_throughput * pipeline_time of pending
+  // uploads, after which we are just wasting memory. Since we don't
+  // know our upload throughput yet, this just caps our memory usage.
+  size_t divider = 1;
+  if (base::android::SysUtils::IsLowEndDevice())
+    divider = 6;
+  // For reference Nexus10 can upload 1MB in about 2.5ms.
+  const double max_mb_uploaded_per_ms = 2.0 / (5 * divider);
+  // Deadline to draw a frame to achieve 60 frames per second.
+  const size_t kMillisecondsPerFrame = 16;
+  // Assuming a two frame deep pipeline between the CPU and the GPU.
+  size_t max_transfer_buffer_usage_mb =
+      static_cast<size_t>(2 * kMillisecondsPerFrame * max_mb_uploaded_per_ms);
+  static const size_t kBytesPerMegabyte = 1024 * 1024;
+  // We keep the MappedMemoryReclaimLimit the same as the upload limit
+  // to avoid unnecessarily stalling the compositor thread.
+  const size_t mapped_memory_reclaim_limit =
+      max_transfer_buffer_usage_mb * kBytesPerMegabyte;
+#else
+  const size_t mapped_memory_reclaim_limit =
+      WebGraphicsContext3DCommandBufferImpl::kNoLimit;
+#endif
+  if (!context->Initialize(
           attributes,
           false /* bind generates resources */,
-          CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE))
-    return NULL;
-  return context.release();
+          CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE,
+          kDefaultCommandBufferSize,
+          kDefaultStartTransferBufferSize,
+          kDefaultMinTransferBufferSize,
+          kDefaultMaxTransferBufferSize,
+          mapped_memory_reclaim_limit))
+    return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
+  return context.Pass();
 }
 
 }  // namespace content

@@ -78,6 +78,9 @@ class WebUIDataSource {
   // NOTE: it's not acceptable to call DisableContentSecurityPolicy for new
   // pages, see URLDataSource::ShouldAddContentSecurityPolicy and talk to
   // tsepez.
+
+  // Currently only used by embedders for WebUIs with multiple instances.
+  virtual void DisableReplaceExistingSource() = 0;
   virtual void DisableContentSecurityPolicy() = 0;
   virtual void OverrideContentSecurityPolicyObjectSrc(
       const std::string& data) = 0;

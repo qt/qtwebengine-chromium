@@ -12,11 +12,11 @@
 #include "base/i18n/break_iterator.h"
 #include "base/logging.h"
 #include "third_party/skia/include/core/SkTypeface.h"
-#include "ui/base/text/utf16_indexing.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/font_render_params_linux.h"
 #include "ui/gfx/pango_util.h"
+#include "ui/gfx/utf16_indexing.h"
 
 namespace gfx {
 
@@ -40,9 +40,9 @@ bool IsForwardMotion(VisualCursorDirection direction, const PangoItem* item) {
 }
 
 // Checks whether |range| contains |index|. This is not the same as calling
-// |range.Contains(ui::Range(index))| - as that would return true when
+// |range.Contains(gfx::Range(index))| - as that would return true when
 // |index| == |range.end()|.
-bool IndexInRange(const ui::Range& range, size_t index) {
+bool IndexInRange(const Range& range, size_t index) {
   return index >= range.start() && index < range.end();
 }
 
@@ -137,7 +137,7 @@ std::vector<RenderText::FontSpan> RenderTextLinux::GetFontSpansForTesting() {
     PangoItem* item = reinterpret_cast<PangoLayoutRun*>(it->data)->item;
     const int start = LayoutIndexToTextIndex(item->offset);
     const int end = LayoutIndexToTextIndex(item->offset + item->length);
-    const ui::Range range(start, end);
+    const Range range(start, end);
 
     ScopedPangoFontDescription desc(pango_font_describe(item->analysis.font));
     spans.push_back(RenderText::FontSpan(Font(desc.get()), range));
@@ -214,14 +214,14 @@ SelectionModel RenderTextLinux::AdjacentWordSelectionModel(
   return cur;
 }
 
-ui::Range RenderTextLinux::GetGlyphBounds(size_t index) {
+Range RenderTextLinux::GetGlyphBounds(size_t index) {
   PangoRectangle pos;
   pango_layout_index_to_pos(layout_, TextIndexToLayoutIndex(index), &pos);
   // TODO(derat): Support fractional ranges for subpixel positioning?
-  return ui::Range(PANGO_PIXELS(pos.x), PANGO_PIXELS(pos.x + pos.width));
+  return Range(PANGO_PIXELS(pos.x), PANGO_PIXELS(pos.x + pos.width));
 }
 
-std::vector<Rect> RenderTextLinux::GetSubstringBounds(const ui::Range& range) {
+std::vector<Rect> RenderTextLinux::GetSubstringBounds(const Range& range) {
   DCHECK_LE(range.GetMax(), text().length());
   if (range.is_empty())
     return std::vector<Rect>();
@@ -252,7 +252,7 @@ std::vector<Rect> RenderTextLinux::GetSubstringBounds(const ui::Range& range) {
 
 size_t RenderTextLinux::TextIndexToLayoutIndex(size_t index) const {
   DCHECK(layout_);
-  ptrdiff_t offset = ui::UTF16IndexToOffset(text(), 0, index);
+  ptrdiff_t offset = gfx::UTF16IndexToOffset(text(), 0, index);
   // Clamp layout indices to the length of the text actually used for layout.
   offset = std::min<size_t>(offset, g_utf8_strlen(layout_text_, -1));
   const char* layout_pointer = g_utf8_offset_to_pointer(layout_text_, offset);
@@ -263,7 +263,7 @@ size_t RenderTextLinux::LayoutIndexToTextIndex(size_t index) const {
   DCHECK(layout_);
   const char* layout_pointer = layout_text_ + index;
   const long offset = g_utf8_pointer_to_offset(layout_text_, layout_pointer);
-  return ui::UTF16OffsetToIndex(text(), 0, offset);
+  return gfx::UTF16OffsetToIndex(text(), 0, offset);
 }
 
 bool RenderTextLinux::IsCursorablePosition(size_t position) {
@@ -271,11 +271,11 @@ bool RenderTextLinux::IsCursorablePosition(size_t position) {
     return true;
   if (position >= text().length())
     return position == text().length();
-  if (!ui::IsValidCodePointIndex(text(), position))
+  if (!gfx::IsValidCodePointIndex(text(), position))
     return false;
 
   EnsureLayout();
-  ptrdiff_t offset = ui::UTF16IndexToOffset(text(), 0, position);
+  ptrdiff_t offset = gfx::UTF16IndexToOffset(text(), 0, position);
   // Check that the index corresponds with a valid text code point, that it is
   // marked as a legitimate cursor position by Pango, and that it is not
   // truncated from layout text (its glyph is shown on screen).
@@ -287,6 +287,7 @@ void RenderTextLinux::ResetLayout() {
   // set_cached_bounds_and_offset_valid(false) is done in RenderText for every
   // operation that triggers ResetLayout().
   if (layout_) {
+    // TODO(msw): Keep |layout_| across text changes, etc.; it can be re-used.
     g_object_unref(layout_);
     layout_ = NULL;
   }
@@ -306,9 +307,12 @@ void RenderTextLinux::EnsureLayout() {
   if (layout_ == NULL) {
     cairo_surface_t* surface =
         cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 0, 0);
+    CHECK_EQ(CAIRO_STATUS_SUCCESS, cairo_surface_status(surface));
     cairo_t* cr = cairo_create(surface);
+    CHECK_EQ(CAIRO_STATUS_SUCCESS, cairo_status(cr));
 
     layout_ = pango_cairo_create_layout(cr);
+    CHECK_NE(static_cast<PangoLayout*>(NULL), layout_);
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
 
@@ -331,6 +335,7 @@ void RenderTextLinux::EnsureLayout() {
     SetupPangoAttributes(layout_);
 
     current_line_ = pango_layout_get_line_readonly(layout_, 0);
+    CHECK_NE(static_cast<PangoLayoutLine*>(NULL), current_line_);
     pango_layout_line_ref(current_line_);
 
     pango_layout_get_log_attrs(layout_, &log_attrs_, &num_log_attrs_);
@@ -376,7 +381,7 @@ void RenderTextLinux::DrawVisualText(Canvas* canvas) {
   DCHECK(layout_);
 
   // Skia will draw glyphs with respect to the baseline.
-  Vector2d offset(GetTextOffset() + Vector2d(0, GetBaseline()));
+  Vector2d offset(GetLineOffset(0) + Vector2d(0, GetBaseline()));
 
   SkScalar x = SkIntToScalar(offset.x());
   SkScalar y = SkIntToScalar(offset.y());
@@ -428,7 +433,7 @@ void RenderTextLinux::DrawVisualText(Canvas* canvas) {
 
     // Track the current style and its text (not layout) index range.
     style.UpdatePosition(GetGlyphTextIndex(run, style_start_glyph_index));
-    ui::Range style_range = style.GetRange();
+    Range style_range = style.GetRange();
 
     do {
       const PangoGlyphInfo& glyph = run->glyphs->glyphs[glyph_index];
@@ -478,7 +483,7 @@ GSList* RenderTextLinux::GetRunContainingCaret(
   GSList* run = current_line_->runs;
   while (run) {
     PangoItem* item = reinterpret_cast<PangoLayoutRun*>(run->data)->item;
-    ui::Range item_range(item->offset, item->offset + item->length);
+    Range item_range(item->offset, item->offset + item->length);
     if (RangeContainsCaret(item_range, position, affinity))
       return run;
     run = run->next;

@@ -5,7 +5,9 @@
 #ifndef MEDIA_BASE_ANDROID_DEMUXER_STREAM_PLAYER_PARAMS_H_
 #define MEDIA_BASE_ANDROID_DEMUXER_STREAM_PLAYER_PARAMS_H_
 
+#if defined(GOOGLE_TV)
 #include <string>
+#endif  // defined(GOOGLE_TV)
 #include <vector>
 
 #include "media/base/audio_decoder_config.h"
@@ -17,9 +19,9 @@
 
 namespace media {
 
-struct MEDIA_EXPORT MediaPlayerHostMsg_DemuxerReady_Params {
-  MediaPlayerHostMsg_DemuxerReady_Params();
-  ~MediaPlayerHostMsg_DemuxerReady_Params();
+struct MEDIA_EXPORT DemuxerConfigs {
+  DemuxerConfigs();
+  ~DemuxerConfigs();
 
   AudioCodec audio_codec;
   int audio_channels;
@@ -33,7 +35,10 @@ struct MEDIA_EXPORT MediaPlayerHostMsg_DemuxerReady_Params {
   std::vector<uint8> video_extra_data;
 
   int duration_ms;
+
+#if defined(GOOGLE_TV)
   std::string key_system;
+#endif  // defined(GOOGLE_TV)
 };
 
 struct MEDIA_EXPORT AccessUnit {
@@ -50,9 +55,9 @@ struct MEDIA_EXPORT AccessUnit {
   std::vector<media::SubsampleEntry> subsamples;
 };
 
-struct MEDIA_EXPORT MediaPlayerHostMsg_ReadFromDemuxerAck_Params {
-  MediaPlayerHostMsg_ReadFromDemuxerAck_Params();
-  ~MediaPlayerHostMsg_ReadFromDemuxerAck_Params();
+struct MEDIA_EXPORT DemuxerData {
+  DemuxerData();
+  ~DemuxerData();
 
   DemuxerStream::Type type;
   std::vector<AccessUnit> access_units;

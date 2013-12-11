@@ -35,7 +35,10 @@ base.unittest.testSuite('tracing.tracks.slice_track', function() {
       new Slice('', 'b', 1, 7, {}, 0.5),
       new Slice('', 'c', 2, 7.6, {}, 0.4)
     ];
-    track.viewport.xSetWorldBounds(0, 8.8, track.clientWidth);
+
+    var dt = new tracing.TimelineDisplayTransform();
+    dt.xSetWorldBounds(0, 8.8, track.clientWidth);
+    track.viewport.setDisplayTransformImmediately(dt);
   });
 
   test('instantiate_shrinkingSliceSize', function() {
@@ -60,7 +63,9 @@ base.unittest.testSuite('tracing.tracks.slice_track', function() {
       slices.push(s);
     }
     track.slices = slices;
-    track.viewport.xSetWorldBounds(0, 1.1 * x, track.clientWidth);
+    var dt = new tracing.TimelineDisplayTransform();
+    dt.xSetWorldBounds(0, 1.1 * x, track.clientWidth);
+    track.viewport.setDisplayTransformImmediately(dt);
   });
 
   test('instantiate_elide', function() {
@@ -95,7 +100,9 @@ base.unittest.testSuite('tracing.tracks.slice_track', function() {
         new Slice('', 'cccc cccc cccc', 1, 7, {}, 0.5),
         new Slice('', 'd', 2, 7.6, {}, 1.0)
       ];
-      track.viewport.xSetWorldBounds(0, 9.5, track.clientWidth);
+      var dt = new tracing.TimelineDisplayTransform();
+      dt.xSetWorldBounds(0, 9.5, track.clientWidth);
+      track.viewport.setDisplayTransformImmediately(dt);
     }
   });
 
@@ -112,8 +119,8 @@ base.unittest.testSuite('tracing.tracks.slice_track', function() {
         new tracing.TitleFilter('b'), selection);
 
     assertEquals(2, selection.length);
-    assertEquals(track.slices[1], selection[0].slice);
-    assertEquals(track.slices[2], selection[1].slice);
+    assertEquals(track.slices[1], selection[0]);
+    assertEquals(track.slices[2], selection[1]);
   });
 
   test('selectionHitTesting', function() {
@@ -139,12 +146,15 @@ base.unittest.testSuite('tracing.tracks.slice_track', function() {
     var pixelRatio = window.devicePixelRatio || 1;
     var wW = 10;
     var vW = drawingContainer.canvas.getBoundingClientRect().width;
-    track.viewport.xSetWorldBounds(0, wW, vW * pixelRatio);
+
+    var dt = new tracing.TimelineDisplayTransform();
+    dt.xSetWorldBounds(0, wW, vW * pixelRatio);
+    track.viewport.setDisplayTransformImmediately(dt);
 
     var selection = new Selection();
     var x = (1.5 / wW) * vW;
     track.addIntersectingItemsInRangeToSelection(x, x + 1, y, y + 1, selection);
-    assertEquals(track.slices[0], selection[0].slice);
+    assertEquals(track.slices[0], selection[0]);
 
     var selection = new Selection();
     x = (2.1 / wW) * vW;
@@ -154,7 +164,7 @@ base.unittest.testSuite('tracing.tracks.slice_track', function() {
     var selection = new Selection();
     x = (6.8 / wW) * vW;
     track.addIntersectingItemsInRangeToSelection(x, x + 1, y, y + 1, selection);
-    assertEquals(track.slices[1], selection[0].slice);
+    assertEquals(track.slices[1], selection[0]);
 
     var selection = new Selection();
     x = (9.9 / wW) * vW;
@@ -183,10 +193,12 @@ base.unittest.testSuite('tracing.tracks.slice_track', function() {
       new Slice('', bigtitle, 0, 1, {}, 1),
       new Slice('', smalltitle, 1, 2, {}, 1)
     ];
-    track.viewport.xSetWorldBounds(0, 3.3, track.clientWidth);
+    var dt = new tracing.TimelineDisplayTransform();
+    dt.xSetWorldBounds(0, 3.3, track.clientWidth);
+    track.viewport.setDisplayTransformImmediately(dt);
 
     var stringWidthPair = undefined;
-    var pixWidth = track.viewport.xViewVectorToWorld(1);
+    var pixWidth = dt.xViewVectorToWorld(1);
 
     // Small titles on big slices are not elided.
     stringWidthPair =
@@ -240,7 +252,7 @@ base.unittest.testSuite('tracing.tracks.slice_track', function() {
     assertEquals('...', stringWidthPair.string.substring(len - 3, len));
   });
 
-  test('sliceTrackAddItemNearToProvidedHit', function() {
+  test('sliceTrackAddItemNearToProvidedEvent', function() {
     var track = new SliceTrack(new tracing.TimelineViewport());
     track.slices = [
       new Slice('', 'a', 0, 1, {}, 1),
@@ -255,26 +267,26 @@ base.unittest.testSuite('tracing.tracks.slice_track', function() {
 
     // Select to the right of B.
     var selRight = new Selection();
-    ret = track.addItemNearToProvidedHitToSelection(sel[0], 1, selRight);
+    ret = track.addItemNearToProvidedEventToSelection(sel[0], 1, selRight);
     assertTrue(ret);
-    assertEquals(track.slices[2], selRight[0].slice);
+    assertEquals(track.slices[2], selRight[0]);
 
     // Select to the right of the 2nd b.
     var selRight2 = new Selection();
-    ret = track.addItemNearToProvidedHitToSelection(sel[0], 2, selRight2);
+    ret = track.addItemNearToProvidedEventToSelection(sel[0], 2, selRight2);
     assertTrue(ret);
-    assertEquals(track.slices[3], selRight2[0].slice);
+    assertEquals(track.slices[3], selRight2[0]);
 
     // Select to 2 to the right of the 2nd b.
     var selRightOfRight = new Selection();
-    ret = track.addItemNearToProvidedHitToSelection(
+    ret = track.addItemNearToProvidedEventToSelection(
         selRight[0], 1, selRightOfRight);
     assertTrue(ret);
-    assertEquals(track.slices[3], selRightOfRight[0].slice);
+    assertEquals(track.slices[3], selRightOfRight[0]);
 
     // Select to the right of the rightmost slice.
     var selNone = new Selection();
-    ret = track.addItemNearToProvidedHitToSelection(
+    ret = track.addItemNearToProvidedEventToSelection(
         selRightOfRight[0], 1, selNone);
     assertFalse(ret);
     assertEquals(0, selNone.length);
@@ -286,8 +298,69 @@ base.unittest.testSuite('tracing.tracks.slice_track', function() {
     var ret;
 
     selNone = new Selection();
-    ret = track.addItemNearToProvidedHitToSelection(sel[0], -1, selNone);
+    ret = track.addItemNearToProvidedEventToSelection(sel[0], -1, selNone);
     assertFalse(ret);
     assertEquals(0, selNone.length);
+  });
+
+  test('sliceTrackAddClosestEventToSelection', function() {
+    var track = new SliceTrack(new tracing.TimelineViewport());
+    track.slices = [
+      new Slice('', 'a', 0, 1, {}, 1),
+      new Slice('', 'b', 1, 2.1, {}, 4.8),
+      new Slice('', 'b', 1, 7, {}, 0.5),
+      new Slice('', 'c', 2, 7.6, {}, 0.4)
+    ];
+
+    // Before with not range.
+    var sel = new Selection();
+    track.addClosestEventToSelection(0, 0, 0, 0, sel);
+    assertEquals(0, sel.length);
+
+    // Before with negative range.
+    var sel = new Selection();
+    track.addClosestEventToSelection(1.5, -10, 0, 0, sel);
+    assertEquals(0, sel.length);
+
+    // Before first slice.
+    var sel = new Selection();
+    track.addClosestEventToSelection(0.5, 1, 0, 0, sel);
+    assertEquals(1, sel.length);
+    assertEquals(track.slices[0], sel[0]);
+
+    // Within first slice closer to start.
+    var sel = new Selection();
+    track.addClosestEventToSelection(1.3, 1, 0, 0, sel);
+    assertEquals(track.slices[0], sel[0]);
+
+    // Between slices with good range.
+    var sel = new Selection();
+    track.addClosestEventToSelection(2.08, 3, 0, 0, sel);
+    assertEquals(track.slices[1], sel[0]);
+
+    // Between slices with bad range.
+    var sel = new Selection();
+    track.addClosestEventToSelection(2.05, 0.03, 0, 0, sel);
+    assertEquals(0, sel.length);
+
+    // Within slice closer to end.
+    var sel = new Selection();
+    track.addClosestEventToSelection(6, 100, 0, 0, sel);
+    assertEquals(track.slices[1], sel[0]);
+
+    // Within slice with bad range.
+    var sel = new Selection();
+    track.addClosestEventToSelection(1.8, 0.1, 0, 0, sel);
+    assertEquals(0, sel.length);
+
+    // After last slice with good range.
+    var sel = new Selection();
+    track.addClosestEventToSelection(8.5, 1, 0, 0, sel);
+    assertEquals(track.slices[3], sel[0]);
+
+    // After last slice with bad range.
+    var sel = new Selection();
+    track.addClosestEventToSelection(10, 1, 0, 0, sel);
+    assertEquals(0, sel.length);
   });
 });

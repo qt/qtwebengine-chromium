@@ -21,7 +21,7 @@ namespace {
 
 template<SkDisplacementMapEffect::ChannelSelectorType type>
 uint32_t getValue(SkColor, const SkUnPreMultiply::Scale*) {
-    SkASSERT(!"Unknown channel selector");
+    SkDEBUGFAIL("Unknown channel selector");
     return 0;
 }
 
@@ -97,7 +97,7 @@ void computeDisplacement(SkDisplacementMapEffect::ChannelSelectorType yChannelSe
         break;
       case SkDisplacementMapEffect::kUnknown_ChannelSelectorType:
       default:
-        SkASSERT(!"Unknown Y channel selector");
+        SkDEBUGFAIL("Unknown Y channel selector");
     }
 }
 
@@ -124,7 +124,7 @@ void computeDisplacement(SkDisplacementMapEffect::ChannelSelectorType xChannelSe
         break;
       case SkDisplacementMapEffect::kUnknown_ChannelSelectorType:
       default:
-        SkASSERT(!"Unknown X channel selector");
+        SkDEBUGFAIL("Unknown X channel selector");
     }
 }
 
@@ -366,7 +366,7 @@ void GrDisplacementMapEffect::getConstantColorComponents(GrColor*,
 
 GR_DEFINE_EFFECT_TEST(GrDisplacementMapEffect);
 
-GrEffectRef* GrDisplacementMapEffect::TestCreate(SkMWCRandom* random,
+GrEffectRef* GrDisplacementMapEffect::TestCreate(SkRandom* random,
                                                  GrContext*,
                                                  const GrDrawTargetCaps&,
                                                  GrTexture* textures[]) {
@@ -409,14 +409,14 @@ void GrGLDisplacementMapEffect::emitCode(GrGLShaderBuilder* builder,
                                          const TextureSamplerArray& samplers) {
     sk_ignore_unused_variable(inputColor);
 
-    fScaleUni = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType,
+    fScaleUni = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility,
                                     kVec2f_GrSLType, "Scale");
     const char* scaleUni = builder->getUniformCStr(fScaleUni);
 
-    const char* dCoordsIn;
+    SkString dCoordsIn;
     GrSLType dCoordsType = fDisplacementEffectMatrix.emitCode(
                                 builder, key, &dCoordsIn, NULL, "DISPL");
-    const char* cCoordsIn;
+    SkString cCoordsIn;
     GrSLType cCoordsType = fColorEffectMatrix.emitCode(
                                 builder, key, &cCoordsIn, NULL, "COLOR");
 
@@ -428,10 +428,7 @@ void GrGLDisplacementMapEffect::emitCode(GrGLShaderBuilder* builder,
                                    // leave room for 32-bit float GPU rounding errors.
 
     builder->fsCodeAppendf("\t\tvec4 %s = ", dColor);
-    builder->appendTextureLookup(GrGLShaderBuilder::kFragment_ShaderType,
-                                 samplers[0],
-                                 dCoordsIn,
-                                 dCoordsType);
+    builder->fsAppendTextureLookup(samplers[0], dCoordsIn.c_str(), dCoordsType);
     builder->fsCodeAppend(";\n");
 
     // Unpremultiply the displacement
@@ -439,7 +436,7 @@ void GrGLDisplacementMapEffect::emitCode(GrGLShaderBuilder* builder,
                            dColor, dColor, nearZero, dColor, dColor);
 
     builder->fsCodeAppendf("\t\tvec2 %s = %s + %s*(%s.",
-                           cCoords, cCoordsIn, scaleUni, dColor);
+                           cCoords, cCoordsIn.c_str(), scaleUni, dColor);
 
     switch (fXChannelSelector) {
       case SkDisplacementMapEffect::kR_ChannelSelectorType:
@@ -456,7 +453,7 @@ void GrGLDisplacementMapEffect::emitCode(GrGLShaderBuilder* builder,
         break;
       case SkDisplacementMapEffect::kUnknown_ChannelSelectorType:
       default:
-        SkASSERT(!"Unknown X channel selector");
+        SkDEBUGFAIL("Unknown X channel selector");
     }
 
     switch (fYChannelSelector) {
@@ -474,7 +471,7 @@ void GrGLDisplacementMapEffect::emitCode(GrGLShaderBuilder* builder,
         break;
       case SkDisplacementMapEffect::kUnknown_ChannelSelectorType:
       default:
-        SkASSERT(!"Unknown Y channel selector");
+        SkDEBUGFAIL("Unknown Y channel selector");
     }
     builder->fsCodeAppend("-vec2(0.5));\t\t");
 
@@ -484,10 +481,7 @@ void GrGLDisplacementMapEffect::emitCode(GrGLShaderBuilder* builder,
         "bool %s = (%s.x < 0.0) || (%s.y < 0.0) || (%s.x > 1.0) || (%s.y > 1.0);\t\t",
         outOfBounds, cCoords, cCoords, cCoords, cCoords);
     builder->fsCodeAppendf("%s = %s ? vec4(0.0) : ", outputColor, outOfBounds);
-    builder->appendTextureLookup(GrGLShaderBuilder::kFragment_ShaderType,
-                                 samplers[1],
-                                 cCoords,
-                                 cCoordsType);
+    builder->fsAppendTextureLookup(samplers[1], cCoords, cCoordsType);
     builder->fsCodeAppend(";\n");
 }
 

@@ -31,14 +31,14 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLParamElement::HTMLParamElement(const QualifiedName& tagName, Document* document)
+inline HTMLParamElement::HTMLParamElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
 {
     ASSERT(hasTagName(paramTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLParamElement> HTMLParamElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLParamElement> HTMLParamElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLParamElement(tagName, document));
 }
@@ -47,7 +47,7 @@ String HTMLParamElement::name() const
 {
     if (hasName())
         return getNameAttribute();
-    return document()->isHTMLDocument() ? emptyAtom : getIdAttribute();
+    return document().isHTMLDocument() ? emptyAtom : getIdAttribute();
 }
 
 String HTMLParamElement::value() const
@@ -74,7 +74,7 @@ void HTMLParamElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) cons
     if (!isURLParameter(name()))
         return;
 
-    addSubresourceURL(urls, document()->completeURL(value()));
+    addSubresourceURL(urls, document().completeURL(value()));
 }
 
 }

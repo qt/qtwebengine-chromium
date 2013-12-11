@@ -42,7 +42,7 @@ DateTimeFieldElement::FieldOwner::~FieldOwner()
 {
 }
 
-DateTimeFieldElement::DateTimeFieldElement(Document* document, FieldOwner& fieldOwner)
+DateTimeFieldElement::DateTimeFieldElement(Document& document, FieldOwner& fieldOwner)
     : HTMLSpanElement(spanTag, document)
     , m_fieldOwner(&fieldOwner)
 {
@@ -179,7 +179,7 @@ bool DateTimeFieldElement::isDisabled() const
 
 Locale& DateTimeFieldElement::localeForOwner() const
 {
-    return document()->getCachedLocale(localeIdentifier());
+    return document().getCachedLocale(localeIdentifier());
 }
 
 AtomicString DateTimeFieldElement::localeIdentifier() const

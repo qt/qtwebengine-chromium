@@ -275,7 +275,8 @@ class WebRtcSessionTest : public testing::Test {
       ss_scope_(fss_.get()),
       stun_server_(talk_base::Thread::Current(), kStunAddr),
       allocator_(&network_manager_, kStunAddr,
-                 SocketAddress(), SocketAddress(), SocketAddress()) {
+                 SocketAddress(), SocketAddress(), SocketAddress()),
+      mediastream_signaling_(channel_manager_.get()) {
     tdesc_factory_->set_protocol(cricket::ICEPROTO_HYBRID);
     allocator_.set_flags(cricket::PORTALLOCATOR_DISABLE_TCP |
                          cricket::PORTALLOCATOR_DISABLE_RELAY |
@@ -313,18 +314,7 @@ class WebRtcSessionTest : public testing::Test {
     Init(NULL);
   }
 
-  void InitWithDtls() {
-    constraints_.reset(new FakeConstraints());
-    constraints_->AddOptional(
-        webrtc::MediaConstraintsInterface::kEnableDtlsSrtp, true);
-
-    Init(NULL);
-  }
-
-  void InitWithAsyncDtls(bool identity_request_should_fail) {
-    constraints_.reset(new FakeConstraints());
-    constraints_->AddOptional(
-        webrtc::MediaConstraintsInterface::kEnableDtlsSrtp, true);
+  void InitWithDtls(bool identity_request_should_fail = false) {
     FakeIdentityService* identity_service = new FakeIdentityService();
     identity_service->set_should_fail(identity_request_should_fail);
     Init(identity_service);
@@ -348,7 +338,7 @@ class WebRtcSessionTest : public testing::Test {
     session_->CreateOffer(observer, constraints);
     EXPECT_TRUE_WAIT(
         observer->state() != WebRtcSessionCreateSDPObserverForTest::kInit,
-        1000);
+        2000);
     return observer->ReleaseDescription();
   }
 
@@ -359,7 +349,7 @@ class WebRtcSessionTest : public testing::Test {
     session_->CreateAnswer(observer, constraints);
     EXPECT_TRUE_WAIT(
         observer->state() != WebRtcSessionCreateSDPObserverForTest::kInit,
-        1000);
+        2000);
     return observer->ReleaseDescription();
   }
 
@@ -819,7 +809,7 @@ class WebRtcSessionTest : public testing::Test {
 
   void VerifyMultipleAsyncCreateDescription(
       bool success, CreateSessionDescriptionRequest::Type type) {
-    InitWithAsyncDtls(!success);
+    InitWithDtls(!success);
 
     if (type == CreateSessionDescriptionRequest::kAnswer) {
       cricket::MediaSessionOptions options;
@@ -2490,19 +2480,54 @@ TEST_F(WebRtcSessionTest, TestRtpDataChannelConstraintTakesPrecedence) {
       webrtc::MediaConstraintsInterface::kEnableRtpDataChannels, true);
   constraints_->AddOptional(
     webrtc::MediaConstraintsInterface::kEnableSctpDataChannels, true);
-  constraints_->AddOptional(
-      webrtc::MediaConstraintsInterface::kEnableDtlsSrtp, true);
-  Init(NULL);
+  InitWithDtls(false);
 
   SetLocalDescriptionWithDataChannel();
   EXPECT_EQ(cricket::DCT_RTP, data_engine_->last_channel_type());
+}
+
+TEST_F(WebRtcSessionTest, TestCreateOfferWithSctpEnabledWithoutStreams) {
+  MAYBE_SKIP_TEST(talk_base::SSLStreamAdapter::HaveDtlsSrtp);
+
+  constraints_.reset(new FakeConstraints());
+  constraints_->AddOptional(
+      webrtc::MediaConstraintsInterface::kEnableSctpDataChannels, true);
+  InitWithDtls(false);
+
+  talk_base::scoped_ptr<SessionDescriptionInterface> offer(CreateOffer(NULL));
+  EXPECT_TRUE(offer->description()->GetContentByName("data") == NULL);
+  EXPECT_TRUE(offer->description()->GetTransportInfoByName("data") == NULL);
+}
+
+TEST_F(WebRtcSessionTest, TestCreateAnswerWithSctpInOfferAndNoStreams) {
+  MAYBE_SKIP_TEST(talk_base::SSLStreamAdapter::HaveDtlsSrtp);
+  SetFactoryDtlsSrtp();
+  constraints_.reset(new FakeConstraints());
+  constraints_->AddOptional(
+      webrtc::MediaConstraintsInterface::kEnableSctpDataChannels, true);
+  InitWithDtls(false);
+
+  // Create remote offer with SCTP.
+  cricket::MediaSessionOptions options;
+  options.data_channel_type = cricket::DCT_SCTP;
+  JsepSessionDescription* offer =
+      CreateRemoteOffer(options, cricket::SEC_ENABLED);
+  SetRemoteDescriptionWithoutError(offer);
+
+  // Verifies the answer contains SCTP.
+  talk_base::scoped_ptr<SessionDescriptionInterface> answer(CreateAnswer(NULL));
+  EXPECT_TRUE(answer != NULL);
+  EXPECT_TRUE(answer->description()->GetContentByName("data") != NULL);
+  EXPECT_TRUE(answer->description()->GetTransportInfoByName("data") != NULL);
 }
 
 TEST_F(WebRtcSessionTest, TestSctpDataChannelWithoutDtls) {
   constraints_.reset(new FakeConstraints());
   constraints_->AddOptional(
       webrtc::MediaConstraintsInterface::kEnableSctpDataChannels, true);
-  Init(NULL);
+  constraints_->AddOptional(
+      webrtc::MediaConstraintsInterface::kEnableDtlsSrtp, false);
+  InitWithDtls(false);
 
   SetLocalDescriptionWithDataChannel();
   EXPECT_EQ(cricket::DCT_NONE, data_engine_->last_channel_type());
@@ -2514,9 +2539,7 @@ TEST_F(WebRtcSessionTest, TestSctpDataChannelWithDtls) {
   constraints_.reset(new FakeConstraints());
   constraints_->AddOptional(
       webrtc::MediaConstraintsInterface::kEnableSctpDataChannels, true);
-  constraints_->AddOptional(
-      webrtc::MediaConstraintsInterface::kEnableDtlsSrtp, true);
-  Init(NULL);
+  InitWithDtls(false);
 
   SetLocalDescriptionWithDataChannel();
   EXPECT_EQ(cricket::DCT_SCTP, data_engine_->last_channel_type());
@@ -2526,7 +2549,7 @@ TEST_F(WebRtcSessionTest, TestSctpDataChannelWithDtls) {
 // identity generation is finished.
 TEST_F(WebRtcSessionTest, TestCreateOfferBeforeIdentityRequestReturnSuccess) {
   MAYBE_SKIP_TEST(talk_base::SSLStreamAdapter::HaveDtlsSrtp);
-  InitWithAsyncDtls(false);
+  InitWithDtls(false);
 
   EXPECT_TRUE(session_->waiting_for_identity());
   talk_base::scoped_ptr<SessionDescriptionInterface> offer(CreateOffer(NULL));
@@ -2537,7 +2560,7 @@ TEST_F(WebRtcSessionTest, TestCreateOfferBeforeIdentityRequestReturnSuccess) {
 // identity generation is finished.
 TEST_F(WebRtcSessionTest, TestCreateAnswerBeforeIdentityRequestReturnSuccess) {
   MAYBE_SKIP_TEST(talk_base::SSLStreamAdapter::HaveDtlsSrtp);
-  InitWithAsyncDtls(false);
+  InitWithDtls(false);
 
   cricket::MediaSessionOptions options;
   scoped_ptr<JsepSessionDescription> offer(
@@ -2553,7 +2576,7 @@ TEST_F(WebRtcSessionTest, TestCreateAnswerBeforeIdentityRequestReturnSuccess) {
 // identity generation is finished.
 TEST_F(WebRtcSessionTest, TestCreateOfferAfterIdentityRequestReturnSuccess) {
   MAYBE_SKIP_TEST(talk_base::SSLStreamAdapter::HaveDtlsSrtp);
-  InitWithAsyncDtls(false);
+  InitWithDtls(false);
 
   EXPECT_TRUE_WAIT(!session_->waiting_for_identity(), 1000);
   talk_base::scoped_ptr<SessionDescriptionInterface> offer(CreateOffer(NULL));
@@ -2564,7 +2587,7 @@ TEST_F(WebRtcSessionTest, TestCreateOfferAfterIdentityRequestReturnSuccess) {
 // identity generation fails.
 TEST_F(WebRtcSessionTest, TestCreateOfferAfterIdentityRequestReturnFailure) {
   MAYBE_SKIP_TEST(talk_base::SSLStreamAdapter::HaveDtlsSrtp);
-  InitWithAsyncDtls(true);
+  InitWithDtls(true);
 
   EXPECT_TRUE_WAIT(!session_->waiting_for_identity(), 1000);
   talk_base::scoped_ptr<SessionDescriptionInterface> offer(CreateOffer(NULL));

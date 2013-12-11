@@ -28,7 +28,7 @@ class GpuMemoryTrackingGroup;
 class CONTENT_EXPORT GpuMemoryManager :
     public base::SupportsWeakPtr<GpuMemoryManager> {
  public:
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || (defined(OS_LINUX) && !defined(OS_CHROMEOS))
   enum { kDefaultMaxSurfacesWithFrontbufferSoftLimit = 1 };
 #else
   enum { kDefaultMaxSurfacesWithFrontbufferSoftLimit = 8 };
@@ -91,6 +91,8 @@ class CONTENT_EXPORT GpuMemoryManager :
                            TestManagedUsageTracking);
   FRIEND_TEST_ALL_PREFIXES(GpuMemoryManagerTest,
                            BackgroundMru);
+  FRIEND_TEST_ALL_PREFIXES(GpuMemoryManagerTest,
+                           AllowNonvisibleMemory);
   FRIEND_TEST_ALL_PREFIXES(GpuMemoryManagerTest,
                            BackgroundDiscardPersistent);
   FRIEND_TEST_ALL_PREFIXES(GpuMemoryManagerTest,

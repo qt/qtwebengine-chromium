@@ -35,6 +35,11 @@ namespace WebCore {
 // optionally notifying a BidiResolver every time it steps into/out of a RenderInline.
 class InlineIterator {
 public:
+    enum IncrementRule {
+        FastIncrementInIsolatedRenderer,
+        FastIncrementInTextNode
+    };
+
     InlineIterator()
         : m_root(0)
         , m_obj(0)
@@ -70,7 +75,7 @@ public:
     RenderObject* root() const { return m_root; }
 
     void fastIncrementInTextNode();
-    void increment(InlineBidiResolver* = 0);
+    void increment(InlineBidiResolver* = 0, IncrementRule = FastIncrementInTextNode);
     bool atEnd() const;
 
     inline bool atTextParagraphSeparator()
@@ -352,10 +357,16 @@ private:
     bool m_atEndOfInline;
 };
 
-inline void InlineIterator::increment(InlineBidiResolver* resolver)
+inline void InlineIterator::increment(InlineBidiResolver* resolver, IncrementRule rule)
 {
     if (!m_obj)
         return;
+
+    if (resolver && resolver->inIsolate() && rule == FastIncrementInIsolatedRenderer) {
+        moveTo(bidiNextSkippingEmptyInlines(m_root, m_obj, resolver), 0);
+        return;
+    }
+
     if (m_obj->isText()) {
         fastIncrementInTextNode();
         if (m_pos < toRenderText(m_obj)->textLength())
@@ -405,7 +416,19 @@ ALWAYS_INLINE WTF::Unicode::Direction InlineIterator::direction() const
 template<>
 inline void InlineBidiResolver::increment()
 {
-    m_current.increment(this);
+    m_current.increment(this, InlineIterator::FastIncrementInIsolatedRenderer);
+}
+
+template <>
+inline bool InlineBidiResolver::isEndOfParagraph(const InlineIterator& end)
+{
+    bool inEndOfParagraph = m_current == end || m_current.atEnd() || (inIsolate() && m_current.m_obj == end.m_obj);
+    if (inIsolate() && inEndOfParagraph) {
+        m_current.moveTo(m_current.m_obj, end.m_pos, m_current.m_nextBreakablePosition);
+        m_last = m_current;
+        updateStatusLastFromCurrentDirection(WTF::Unicode::OtherNeutral);
+    }
+    return inEndOfParagraph;
 }
 
 static inline bool isIsolatedInline(RenderObject* object)
@@ -414,15 +437,17 @@ static inline bool isIsolatedInline(RenderObject* object)
     return object->isRenderInline() && isIsolated(object->style()->unicodeBidi());
 }
 
-static inline RenderObject* containingIsolate(RenderObject* object, RenderObject* root)
+static inline RenderObject* highestContainingIsolateWithinRoot(RenderObject* object, RenderObject* root)
 {
     ASSERT(object);
+    RenderObject* containingIsolateObj = 0;
     while (object && object != root) {
         if (isIsolatedInline(object))
-            return object;
+            containingIsolateObj = object;
+
         object = object->parent();
     }
-    return 0;
+    return containingIsolateObj;
 }
 
 static inline unsigned numberOfIsolateAncestors(const InlineIterator& iter)

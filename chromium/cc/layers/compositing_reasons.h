@@ -22,7 +22,6 @@ const uint64 kCompositingReasonFilters = GG_UINT64_C(1) << 7;
 const uint64 kCompositingReasonPositionFixed = GG_UINT64_C(1) << 8;
 const uint64 kCompositingReasonPositionSticky = GG_UINT64_C(1) << 9;
 const uint64 kCompositingReasonOverflowScrollingTouch = GG_UINT64_C(1) << 10;
-const uint64 kCompositingReasonBlending = GG_UINT64_C(1) << 11;
 const uint64 kCompositingReasonAssumedOverlap = GG_UINT64_C(1) << 12;
 const uint64 kCompositingReasonOverlap = GG_UINT64_C(1) << 13;
 const uint64 kCompositingReasonNegativeZIndexChildren = GG_UINT64_C(1) << 14;
@@ -52,6 +51,8 @@ const uint64 kCompositingReasonLayerForScrollingContainer =
 const uint64 kCompositingReasonLayerForForeground = GG_UINT64_C(1) << 29;
 const uint64 kCompositingReasonLayerForBackground = GG_UINT64_C(1) << 30;
 const uint64 kCompositingReasonLayerForMask = GG_UINT64_C(1) << 31;
+const uint64 kCompositingReasonOverflowScrollingParent = GG_UINT64_C(1) << 32;
+const uint64 kCompositingReasonOutOfFlowClipping = GG_UINT64_C(1) << 33;
 
 typedef uint64 CompositingReasons;
 

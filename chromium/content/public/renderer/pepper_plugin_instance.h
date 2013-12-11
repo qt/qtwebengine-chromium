@@ -56,11 +56,6 @@ class PepperPluginInstance {
   // Returns the location of this module.
   virtual base::FilePath GetModulePath() = 0;
 
-  // Returns a reference to a file with the given path.
-  // The returned object will have a refcount of 0 (just like "new").
-  virtual PP_Resource CreateExternalFileReference(
-      const base::FilePath& external_file_path) = 0;
-
   // Creates a PPB_ImageData given a Skia image.
   virtual PP_Resource CreateImage(gfx::ImageSkia* source_image,
                                   float scale) = 0;
@@ -84,8 +79,11 @@ class PepperPluginInstance {
   // Switches between fullscreen and normal mode. If |delay_report| is set to
   // false, it may report the new state through DidChangeView immediately. If
   // true, it will delay it. When called from the plugin, delay_report should
-  // be true to avoid re-entrancy.
-  virtual void FlashSetFullscreen(bool fullscreen, bool delay_report) = 0;
+  // be true to avoid re-entrancy. Returns true if the switch will be carried
+  // out, because of this call or because a switch was pending already anyway.
+  // Returns false if the switch will not be carried out because fullscreen mode
+  // is disallowed by a preference.
+  virtual bool FlashSetFullscreen(bool fullscreen, bool delay_report) = 0;
 
   virtual bool IsRectTopmost(const gfx::Rect& rect) = 0;
 
@@ -93,6 +91,8 @@ class PepperPluginInstance {
                            const char* target,
                            bool from_user_action) = 0;
 
+  // Creates a pending PepperFileRefRendererHost. Returns 0 on failure.
+  virtual int MakePendingFileRefRendererHost(const base::FilePath& path) = 0;
 };
 
 }  // namespace content

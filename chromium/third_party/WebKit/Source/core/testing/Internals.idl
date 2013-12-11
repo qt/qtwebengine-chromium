@@ -96,20 +96,20 @@
     [RaisesException] ClientRectList inspectorHighlightRects(Document document);
 
     [RaisesException] unsigned long markerCountForNode(Node node, DOMString markerType);
+    [RaisesException] unsigned long activeMarkerCountForNode(Node node);
     [RaisesException] Range markerRangeForNode(Node node, DOMString markerType, unsigned long index);
     [RaisesException] DOMString markerDescriptionForNode(Node node, DOMString markerType, unsigned long index);
     void addTextMatchMarker(Range range, boolean isActive);
+    [RaisesException] void setMarkersActive(Node node, unsigned long startOffset, unsigned long endOffset, boolean active);
 
     [RaisesException] void setScrollViewPosition(Document document, long x, long y);
 
     [RaisesException] void setPagination(Document document, DOMString mode, long gap, optional long pageLength);
 
-    [RaisesException] DOMString configurationForViewport(Document document,
-                                       float devicePixelRatio,
-                                       long deviceWidth,
-                                       long deviceHeight,
-                                       long availableWidth,
-                                       long availableHeight);
+    [RaisesException] DOMString viewportAsText(Document document,
+                                               float devicePixelRatio,
+                                               long availableWidth,
+                                               long availableHeight);
 
     [RaisesException] boolean wasLastChangeUserEdit(Element textField);
     [RaisesException] boolean elementShouldAutoComplete(Element inputElement);
@@ -142,7 +142,7 @@
     [RaisesException] unsigned long wheelEventHandlerCount(Document document);
     [RaisesException] unsigned long touchEventHandlerCount(Document document);
     [RaisesException] LayerRectList touchEventTargetLayerRects(Document document);
-    [RaisesException] unsigned long touchEventTargetLayerRectsUpdateCount(Document document);
+
 
     [RaisesException] NodeList nodesFromRect(Document document, long x, long y,
         unsigned long topPadding, unsigned long rightPadding, unsigned long bottomPadding, unsigned long leftPadding,
@@ -177,6 +177,9 @@
 
     [RaisesException] NodeList paintOrderListBeforePromote(Element element);
     [RaisesException] NodeList paintOrderListAfterPromote(Element element);
+
+    [RaisesException] boolean scrollsWithRespectTo(Element element1, Element element2);
+    [RaisesException] boolean isUnclippedDescendant(Element element);
 
     // The values of these constants must be kept in sync with those in RenderLayer.
     const unsigned short DO_NOT_FORCE_COMPOSITED_SCROLLING = 0;
@@ -245,8 +248,6 @@
 
     SerializedScriptValue deserializeBuffer(ArrayBuffer buffer);
     ArrayBuffer serializeObject(SerializedScriptValue obj);
-
-    void setUsesOverlayScrollbars(boolean enabled);
 
     void forceReload(boolean endToEnd);
 

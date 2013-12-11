@@ -51,7 +51,7 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGRadialGradientElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGradientElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGRadialGradientElement::SVGRadialGradientElement(const QualifiedName& tagName, Document* document)
+inline SVGRadialGradientElement::SVGRadialGradientElement(const QualifiedName& tagName, Document& document)
     : SVGGradientElement(tagName, document)
     , m_cx(LengthModeWidth, "50%")
     , m_cy(LengthModeHeight, "50%")
@@ -66,7 +66,7 @@ inline SVGRadialGradientElement::SVGRadialGradientElement(const QualifiedName& t
     registerAnimatedPropertiesForSVGRadialGradientElement();
 }
 
-PassRefPtr<SVGRadialGradientElement> SVGRadialGradientElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<SVGRadialGradientElement> SVGRadialGradientElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new SVGRadialGradientElement(tagName, document));
 }
@@ -159,7 +159,7 @@ bool SVGRadialGradientElement::collectGradientAttributes(RadialGradientAttribute
         }
 
         if (isRadial) {
-            SVGRadialGradientElement* radial = static_cast<SVGRadialGradientElement*>(current);
+            SVGRadialGradientElement* radial = toSVGRadialGradientElement(current);
 
             if (!attributes.hasCx() && current->hasAttribute(SVGNames::cxAttr))
                 attributes.setCx(radial->cxCurrentValue());

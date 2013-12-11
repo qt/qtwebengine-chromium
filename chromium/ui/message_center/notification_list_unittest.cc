@@ -11,7 +11,9 @@
 #include "base/values.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/message_center/message_center_style.h"
+#include "ui/message_center/notification_blocker.h"
 #include "ui/message_center/notification_types.h"
+#include "ui/message_center/notifier_settings.h"
 
 namespace message_center {
 namespace test {
@@ -40,7 +42,7 @@ class NotificationListTest : public testing::Test {
         UTF8ToUTF16(base::StringPrintf(kMessageFormat, counter_)),
         gfx::Image(),
         UTF8ToUTF16(kDisplaySource),
-        kExtensionId,
+        NotifierId(NotifierId::APPLICATION, kExtensionId),
         optional_fields,
         NULL));
     notification_list_->AddNotification(notification.Pass());
@@ -59,8 +61,13 @@ class NotificationListTest : public testing::Test {
     return AddNotification(optional);
   }
 
+  NotificationList::PopupNotifications GetPopups() {
+    return notification_list()->GetPopupNotifications(
+        std::vector<NotificationBlocker*>(), NULL);
+  }
+
   size_t GetPopupCounts() {
-    return notification_list()->GetPopupNotifications().size();
+    return GetPopups().size();
   }
 
   Notification* GetNotification(const std::string& id) {
@@ -112,14 +119,16 @@ TEST_F(NotificationListTest, Basic) {
   EXPECT_EQ(2u, notification_list()->NotificationCount());
   EXPECT_EQ(2u, notification_list()->unread_count());
 
-  EXPECT_TRUE(notification_list()->HasPopupNotifications());
+  EXPECT_TRUE(notification_list()->HasPopupNotifications(
+      std::vector<NotificationBlocker*>()));
   EXPECT_TRUE(notification_list()->HasNotification(id0));
   EXPECT_TRUE(notification_list()->HasNotification(id1));
   EXPECT_FALSE(notification_list()->HasNotification(id1 + "foo"));
 
   EXPECT_EQ(2u, GetPopupCounts());
 
-  notification_list()->MarkPopupsAsShown(0);
+  notification_list()->MarkSinglePopupAsShown(id0, true);
+  notification_list()->MarkSinglePopupAsShown(id1, true);
   EXPECT_EQ(2u, notification_list()->NotificationCount());
   EXPECT_EQ(0u, GetPopupCounts());
 
@@ -172,7 +181,7 @@ TEST_F(NotificationListTest, UpdateNotification) {
                        UTF8ToUTF16("newbody"),
                        gfx::Image(),
                        UTF8ToUTF16(kDisplaySource),
-                       kExtensionId,
+                       NotifierId(NotifierId::APPLICATION, kExtensionId),
                        message_center::RichNotificationData(),
                        NULL));
   notification_list()->UpdateNotificationMessage(id0, notification.Pass());
@@ -184,7 +193,11 @@ TEST_F(NotificationListTest, UpdateNotification) {
   EXPECT_EQ(UTF8ToUTF16("newbody"), (*notifications.begin())->message());
 }
 
-TEST_F(NotificationListTest, GetNotificationsBySourceOrExtensions) {
+TEST_F(NotificationListTest, GetNotificationsByNotifierId) {
+  NotifierId id0(NotifierId::APPLICATION, "ext0");
+  NotifierId id1(NotifierId::APPLICATION, "ext1");
+  NotifierId id2(GURL("http://example.com"));
+  NotifierId id3(0);
   scoped_ptr<Notification> notification(
       new Notification(message_center::NOTIFICATION_TYPE_SIMPLE,
                        "id0",
@@ -192,7 +205,7 @@ TEST_F(NotificationListTest, GetNotificationsBySourceOrExtensions) {
                        UTF8ToUTF16("message0"),
                        gfx::Image(),
                        UTF8ToUTF16("source0"),
-                       "ext0",
+                       id0,
                        message_center::RichNotificationData(),
                        NULL));
   notification_list()->AddNotification(notification.Pass());
@@ -202,7 +215,7 @@ TEST_F(NotificationListTest, GetNotificationsBySourceOrExtensions) {
                                       UTF8ToUTF16("message1"),
                                       gfx::Image(),
                                       UTF8ToUTF16("source0"),
-                                      "ext0",
+                                      id0,
                                       message_center::RichNotificationData(),
                                       NULL));
   notification_list()->AddNotification(notification.Pass());
@@ -212,7 +225,7 @@ TEST_F(NotificationListTest, GetNotificationsBySourceOrExtensions) {
                                       UTF8ToUTF16("message1"),
                                       gfx::Image(),
                                       UTF8ToUTF16("source1"),
-                                      "ext0",
+                                      id0,
                                       message_center::RichNotificationData(),
                                       NULL));
   notification_list()->AddNotification(notification.Pass());
@@ -222,24 +235,63 @@ TEST_F(NotificationListTest, GetNotificationsBySourceOrExtensions) {
                                       UTF8ToUTF16("message1"),
                                       gfx::Image(),
                                       UTF8ToUTF16("source2"),
-                                      "ext1",
+                                      id1,
+                                      message_center::RichNotificationData(),
+                                      NULL));
+  notification_list()->AddNotification(notification.Pass());
+  notification.reset(new Notification(message_center::NOTIFICATION_TYPE_SIMPLE,
+                                      "id4",
+                                      UTF8ToUTF16("title1"),
+                                      UTF8ToUTF16("message1"),
+                                      gfx::Image(),
+                                      UTF8ToUTF16("source2"),
+                                      id2,
+                                      message_center::RichNotificationData(),
+                                      NULL));
+  notification_list()->AddNotification(notification.Pass());
+  notification.reset(new Notification(message_center::NOTIFICATION_TYPE_SIMPLE,
+                                      "id5",
+                                      UTF8ToUTF16("title1"),
+                                      UTF8ToUTF16("message1"),
+                                      gfx::Image(),
+                                      UTF8ToUTF16("source2"),
+                                      id3,
                                       message_center::RichNotificationData(),
                                       NULL));
   notification_list()->AddNotification(notification.Pass());
 
-  NotificationList::Notifications by_source =
-      notification_list()->GetNotificationsBySource("id0");
-  EXPECT_TRUE(IsInNotifications(by_source, "id0"));
-  EXPECT_TRUE(IsInNotifications(by_source, "id1"));
-  EXPECT_FALSE(IsInNotifications(by_source, "id2"));
-  EXPECT_FALSE(IsInNotifications(by_source, "id3"));
+  NotificationList::Notifications by_notifier_id =
+      notification_list()->GetNotificationsByNotifierId(id0);
+  EXPECT_TRUE(IsInNotifications(by_notifier_id, "id0"));
+  EXPECT_TRUE(IsInNotifications(by_notifier_id, "id1"));
+  EXPECT_TRUE(IsInNotifications(by_notifier_id, "id2"));
+  EXPECT_FALSE(IsInNotifications(by_notifier_id, "id3"));
+  EXPECT_FALSE(IsInNotifications(by_notifier_id, "id4"));
+  EXPECT_FALSE(IsInNotifications(by_notifier_id, "id5"));
 
-  NotificationList::Notifications by_extension =
-      notification_list()->GetNotificationsByExtension("id0");
-  EXPECT_TRUE(IsInNotifications(by_extension, "id0"));
-  EXPECT_TRUE(IsInNotifications(by_extension, "id1"));
-  EXPECT_TRUE(IsInNotifications(by_extension, "id2"));
-  EXPECT_FALSE(IsInNotifications(by_extension, "id3"));
+  by_notifier_id = notification_list()->GetNotificationsByNotifierId(id1);
+  EXPECT_FALSE(IsInNotifications(by_notifier_id, "id0"));
+  EXPECT_FALSE(IsInNotifications(by_notifier_id, "id1"));
+  EXPECT_FALSE(IsInNotifications(by_notifier_id, "id2"));
+  EXPECT_TRUE(IsInNotifications(by_notifier_id, "id3"));
+  EXPECT_FALSE(IsInNotifications(by_notifier_id, "id4"));
+  EXPECT_FALSE(IsInNotifications(by_notifier_id, "id5"));
+
+  by_notifier_id = notification_list()->GetNotificationsByNotifierId(id2);
+  EXPECT_FALSE(IsInNotifications(by_notifier_id, "id0"));
+  EXPECT_FALSE(IsInNotifications(by_notifier_id, "id1"));
+  EXPECT_FALSE(IsInNotifications(by_notifier_id, "id2"));
+  EXPECT_FALSE(IsInNotifications(by_notifier_id, "id3"));
+  EXPECT_TRUE(IsInNotifications(by_notifier_id, "id4"));
+  EXPECT_FALSE(IsInNotifications(by_notifier_id, "id5"));
+
+  by_notifier_id = notification_list()->GetNotificationsByNotifierId(id3);
+  EXPECT_FALSE(IsInNotifications(by_notifier_id, "id0"));
+  EXPECT_FALSE(IsInNotifications(by_notifier_id, "id1"));
+  EXPECT_FALSE(IsInNotifications(by_notifier_id, "id2"));
+  EXPECT_FALSE(IsInNotifications(by_notifier_id, "id3"));
+  EXPECT_FALSE(IsInNotifications(by_notifier_id, "id4"));
+  EXPECT_TRUE(IsInNotifications(by_notifier_id, "id5"));
 }
 
 TEST_F(NotificationListTest, OldPopupShouldNotBeHidden) {
@@ -247,8 +299,7 @@ TEST_F(NotificationListTest, OldPopupShouldNotBeHidden) {
   for (size_t i = 0; i <= kMaxVisiblePopupNotifications; i++)
     ids.push_back(AddNotification());
 
-  NotificationList::PopupNotifications popups =
-      notification_list()->GetPopupNotifications();
+  NotificationList::PopupNotifications popups = GetPopups();
   // The popup should contain the oldest kMaxVisiblePopupNotifications. Newer
   // one should come earlier in the popup list. It means, the last element
   // of |popups| should be the firstly added one, and so on.
@@ -259,9 +310,12 @@ TEST_F(NotificationListTest, OldPopupShouldNotBeHidden) {
     EXPECT_EQ(ids[i], (*iter)->id()) << i;
   }
 
-  notification_list()->MarkPopupsAsShown(message_center::DEFAULT_PRIORITY);
+  for (NotificationList::PopupNotifications::const_iterator iter =
+           popups.begin(); iter != popups.end(); ++iter) {
+    notification_list()->MarkSinglePopupAsShown((*iter)->id(), false);
+  }
   popups.clear();
-  popups = notification_list()->GetPopupNotifications();
+  popups = GetPopups();
   EXPECT_EQ(1u, popups.size());
   EXPECT_EQ(ids[ids.size() - 1], (*popups.begin())->id());
 }
@@ -355,7 +409,7 @@ TEST_F(NotificationListTest, PriorityPromotion) {
                        UTF8ToUTF16("newbody"),
                        gfx::Image(),
                        UTF8ToUTF16(kDisplaySource),
-                       kExtensionId,
+                       NotifierId(NotifierId::APPLICATION, kExtensionId),
                        optional,
                        NULL));
   notification_list()->UpdateNotificationMessage(id0, notification.Pass());
@@ -386,7 +440,7 @@ TEST_F(NotificationListTest, PriorityPromotionWithPopups) {
                        UTF8ToUTF16("newbody"),
                        gfx::Image(),
                        UTF8ToUTF16(kDisplaySource),
-                       kExtensionId,
+                       NotifierId(NotifierId::APPLICATION, kExtensionId),
                        priority,
                        NULL));
   notification_list()->UpdateNotificationMessage(id0, notification.Pass());
@@ -401,7 +455,8 @@ TEST_F(NotificationListTest, PriorityPromotionWithPopups) {
                                       UTF8ToUTF16("newbody2"),
                                       gfx::Image(),
                                       UTF8ToUTF16(kDisplaySource),
-                                      kExtensionId,
+                                      NotifierId(NotifierId::APPLICATION,
+                                                 kExtensionId),
                                       priority,
                                       NULL));
   notification_list()->UpdateNotificationMessage(id0, notification.Pass());
@@ -415,7 +470,8 @@ TEST_F(NotificationListTest, PriorityPromotionWithPopups) {
                                       UTF8ToUTF16("newbody"),
                                       gfx::Image(),
                                       UTF8ToUTF16(kDisplaySource),
-                                      kExtensionId,
+                                      NotifierId(NotifierId::APPLICATION,
+                                                 kExtensionId),
                                       priority,
                                       NULL));
   notification_list()->UpdateNotificationMessage(id1, notification.Pass());
@@ -431,7 +487,8 @@ TEST_F(NotificationListTest, PriorityPromotionWithPopups) {
                                       UTF8ToUTF16("newbody2"),
                                       gfx::Image(),
                                       UTF8ToUTF16(kDisplaySource),
-                                      kExtensionId,
+                                      NotifierId(NotifierId::APPLICATION,
+                                                 kExtensionId),
                                       priority,
                                       NULL));
   notification_list()->UpdateNotificationMessage(id1, notification.Pass());
@@ -447,7 +504,8 @@ TEST_F(NotificationListTest, PriorityPromotionWithPopups) {
                                       UTF8ToUTF16("newbody3"),
                                       gfx::Image(),
                                       UTF8ToUTF16(kDisplaySource),
-                                      kExtensionId,
+                                      NotifierId(NotifierId::APPLICATION,
+                                                 kExtensionId),
                                       priority,
                                       NULL));
   notification_list()->UpdateNotificationMessage(id1, notification.Pass());
@@ -473,8 +531,7 @@ TEST_F(NotificationListTest, NotificationOrderAndPriority) {
 
   {
     // Popups: latest comes first.
-    NotificationList::PopupNotifications popups =
-        notification_list()->GetPopupNotifications();
+    NotificationList::PopupNotifications popups = GetPopups();
     EXPECT_EQ(3u, popups.size());
     NotificationList::PopupNotifications::const_iterator iter = popups.begin();
     EXPECT_EQ(default_id, (*iter)->id());
@@ -514,47 +571,13 @@ TEST_F(NotificationListTest, MarkSinglePopupAsShown) {
   EXPECT_EQ(3u, notification_list()->NotificationCount());
   EXPECT_EQ(1u, notification_list()->unread_count());
   EXPECT_EQ(1u, GetPopupCounts());
-  NotificationList::PopupNotifications popups =
-      notification_list()->GetPopupNotifications();
+  NotificationList::PopupNotifications popups = GetPopups();
   EXPECT_EQ(id1, (*popups.begin())->id());
 
   // The notifications in the NotificationCenter are unaffected by popups shown.
   NotificationList::Notifications notifications =
       notification_list()->GetNotifications();
   NotificationList::Notifications::const_iterator iter = notifications.begin();
-  EXPECT_EQ(id3, (*iter)->id());
-  iter++;
-  EXPECT_EQ(id2, (*iter)->id());
-  iter++;
-  EXPECT_EQ(id1, (*iter)->id());
-
-  // Trickier scenario.
-  notification_list()->MarkPopupsAsShown(message_center::DEFAULT_PRIORITY);
-  std::string id4 = AddNotification();
-  std::string id5 = AddNotification();
-  std::string id6 = AddNotification();
-  notification_list()->MarkSinglePopupAsShown(id5, true);
-
-  {
-    popups.clear();
-    popups = notification_list()->GetPopupNotifications();
-    EXPECT_EQ(2u, popups.size());
-    NotificationList::PopupNotifications::const_iterator iter = popups.begin();
-    EXPECT_EQ(id6, (*iter)->id());
-    iter++;
-    EXPECT_EQ(id4, (*iter)->id());
-  }
-
-  notifications.clear();
-  notifications = notification_list()->GetNotifications();
-  EXPECT_EQ(6u, notifications.size());
-  iter = notifications.begin();
-  EXPECT_EQ(id6, (*iter)->id());
-  iter++;
-  EXPECT_EQ(id5, (*iter)->id());
-  iter++;
-  EXPECT_EQ(id4, (*iter)->id());
-  iter++;
   EXPECT_EQ(id3, (*iter)->id());
   iter++;
   EXPECT_EQ(id2, (*iter)->id());
@@ -588,7 +611,7 @@ TEST_F(NotificationListTest, UpdateAfterMarkedAsShown) {
                        UTF8ToUTF16("newbody"),
                        gfx::Image(),
                        UTF8ToUTF16(kDisplaySource),
-                       kExtensionId,
+                       NotifierId(NotifierId::APPLICATION, kExtensionId),
                        message_center::RichNotificationData(),
                        NULL));
   notification_list()->UpdateNotificationMessage(id1, notification.Pass());
@@ -634,11 +657,37 @@ TEST_F(NotificationListTest, UnreadCountNoNegative) {
       UTF8ToUTF16("updated"),
       gfx::Image(),
       base::string16(),
-      std::string(),
+      NotifierId(),
       RichNotificationData(),
       NULL));
   notification_list()->AddNotification(updated_notification.Pass());
   EXPECT_EQ(1u, notification_list()->unread_count());
+}
+
+TEST_F(NotificationListTest, TestHasNotificationOfType) {
+  std::string id = AddNotification();
+
+  EXPECT_TRUE(notification_list()->HasNotificationOfType(
+      id, message_center::NOTIFICATION_TYPE_SIMPLE));
+  EXPECT_FALSE(notification_list()->HasNotificationOfType(
+      id, message_center::NOTIFICATION_TYPE_PROGRESS));
+
+  scoped_ptr<Notification> updated_notification(new Notification(
+      message_center::NOTIFICATION_TYPE_PROGRESS,
+      id,
+      UTF8ToUTF16("updated"),
+      UTF8ToUTF16("updated"),
+      gfx::Image(),
+      base::string16(),
+      NotifierId(),
+      RichNotificationData(),
+      NULL));
+  notification_list()->AddNotification(updated_notification.Pass());
+
+  EXPECT_FALSE(notification_list()->HasNotificationOfType(
+      id, message_center::NOTIFICATION_TYPE_SIMPLE));
+  EXPECT_TRUE(notification_list()->HasNotificationOfType(
+      id, message_center::NOTIFICATION_TYPE_PROGRESS));
 }
 
 }  // namespace test

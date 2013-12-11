@@ -30,8 +30,8 @@
 #include "core/dom/EventNames.h"
 #include "core/xml/XMLHttpRequest.h"
 #include "core/xml/XMLHttpRequestProgressEvent.h"
-#include <wtf/Assertions.h>
-#include <wtf/text/AtomicString.h>
+#include "wtf/Assertions.h"
+#include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
@@ -49,16 +49,6 @@ const AtomicString& XMLHttpRequestUpload::interfaceName() const
 ScriptExecutionContext* XMLHttpRequestUpload::scriptExecutionContext() const
 {
     return m_xmlHttpRequest->scriptExecutionContext();
-}
-
-EventTargetData* XMLHttpRequestUpload::eventTargetData()
-{
-    return &m_eventTargetData;
-}
-
-EventTargetData* XMLHttpRequestUpload::ensureEventTargetData()
-{
-    return &m_eventTargetData;
 }
 
 void XMLHttpRequestUpload::dispatchEventAndLoadEnd(PassRefPtr<Event> event)

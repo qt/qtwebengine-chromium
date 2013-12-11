@@ -17,6 +17,7 @@
 #include "base/threading/non_thread_safe.h"
 #include "base/win/scoped_comptr.h"
 #include "content/common/content_export.h"
+#include "content/common/gpu/media/video_decode_accelerator_impl.h"
 #include "media/video/video_decode_accelerator.h"
 
 interface IMFSample;
@@ -29,7 +30,7 @@ namespace content {
 // This class lives on a single thread and DCHECKs that it is never accessed
 // from any other.
 class CONTENT_EXPORT DXVAVideoDecodeAccelerator
-    : public media::VideoDecodeAccelerator,
+    : public VideoDecodeAcceleratorImpl,
       NON_EXPORTED_BASE(public base::NonThreadSafe) {
  public:
   enum State {
@@ -147,6 +148,15 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   // Helper for handling the Decode operation.
   void DecodeInternal(const base::win::ScopedComPtr<IMFSample>& input_sample);
 
+  // Handles mid stream resolution changes.
+  void HandleResolutionChanged(int width, int height);
+
+  struct DXVAPictureBuffer;
+  typedef std::map<int32, linked_ptr<DXVAPictureBuffer> > OutputBuffers;
+
+  // Tells the client to dismiss the stale picture buffers passed in.
+  void DismissStaleBuffers(const OutputBuffers& picture_buffers);
+
   // To expose client callbacks from VideoDecodeAccelerator.
   media::VideoDecodeAccelerator::Client* client_;
 
@@ -186,11 +196,8 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   // List of decoded output samples.
   PendingOutputSamples pending_output_samples_;
 
-  struct DXVAPictureBuffer;
-
   // This map maintains the picture buffers passed the client for decoding.
   // The key is the picture buffer id.
-  typedef std::map<int32, linked_ptr<DXVAPictureBuffer> > OutputBuffers;
   OutputBuffers output_picture_buffers_;
 
   // Set to true if we requested picture slots from the client.

@@ -8,7 +8,7 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
-#include "ui/base/events/event_dispatcher.h"
+#include "ui/events/event_dispatcher.h"
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/focus/focus_search.h"
 #include "ui/views/view.h"
@@ -16,6 +16,7 @@
 namespace views {
 
 namespace test {
+class RootViewTestHelper;
 class WidgetTest;
 }
 
@@ -60,8 +61,7 @@ class VIEWS_EXPORT RootView : public View,
   View* GetContentsView();
 
   // Called when parent of the host changed.
-  void NotifyNativeViewHierarchyChanged(bool attached,
-                                        gfx::NativeView native_view);
+  void NotifyNativeViewHierarchyChanged();
 
   // Input ---------------------------------------------------------------------
 
@@ -101,6 +101,7 @@ class VIEWS_EXPORT RootView : public View,
   virtual const Widget* GetWidget() const OVERRIDE;
   virtual Widget* GetWidget() OVERRIDE;
   virtual bool IsDrawn() const OVERRIDE;
+  virtual void Layout() OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
   virtual void SchedulePaintInRect(const gfx::Rect& rect) OVERRIDE;
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
@@ -127,6 +128,7 @@ class VIEWS_EXPORT RootView : public View,
  private:
   friend class ::views::View;
   friend class ::views::Widget;
+  friend class ::views::test::RootViewTestHelper;
   friend class ::views::test::WidgetTest;
 
   // Input ---------------------------------------------------------------------
@@ -152,6 +154,10 @@ class VIEWS_EXPORT RootView : public View,
                                    ui::EventType type,
                                    View* view,
                                    View* sibling);
+
+  // Dispatches the KeyEvent to |view| and ancestors until the event is
+  // handled.
+  void DispatchKeyEventStartAt(View* view, ui::KeyEvent* event);
 
   // Overridden from ui::EventDispatcherDelegate:
   virtual bool CanDispatchToTarget(ui::EventTarget* target) OVERRIDE;

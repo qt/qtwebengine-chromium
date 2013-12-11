@@ -101,13 +101,7 @@ PpapiThread::PpapiThread(const CommandLine& command_line, bool is_broker)
 
   // Register interfaces that expect messages from the browser process. Please
   // note that only those InterfaceProxy-based ones require registration.
-  AddRoute(ppapi::API_ID_PPB_TCPSOCKET,
-           &dispatcher_message_listener_);
-  AddRoute(ppapi::API_ID_PPB_TCPSOCKET_PRIVATE,
-           &dispatcher_message_listener_);
   AddRoute(ppapi::API_ID_PPB_HOSTRESOLVER_PRIVATE,
-           &dispatcher_message_listener_);
-  AddRoute(ppapi::API_ID_PPB_NETWORKMANAGER_PRIVATE,
            &dispatcher_message_listener_);
 }
 
@@ -119,11 +113,6 @@ void PpapiThread::Shutdown() {
   if (plugin_entry_points_.shutdown_module)
     plugin_entry_points_.shutdown_module();
   WebKit::shutdown();
-
-#if defined(OS_WIN)
-  if (permissions_.HasPermission(ppapi::PERMISSION_FLASH))
-    base::win::SetShouldCrashOnProcessDetach(false);
-#endif
 }
 
 bool PpapiThread::Send(IPC::Message* msg) {
@@ -312,11 +301,6 @@ void PpapiThread::OnLoadPlugin(const base::FilePath& path,
   // If code subsequently tries to exit using abort(), force a crash (since
   // otherwise these would be silent terminations and fly under the radar).
   base::win::SetAbortBehaviorForCrashReporting();
-  if (permissions.HasPermission(ppapi::PERMISSION_FLASH)) {
-    // Force a crash for exit(), _exit(), or ExitProcess(), but only do that for
-    // Pepper Flash.
-    base::win::SetShouldCrashOnProcessDetach(true);
-  }
 
   // Once we lower the token the sandbox is locked down and no new modules
   // can be loaded. TODO(cpu): consider changing to the loading style of

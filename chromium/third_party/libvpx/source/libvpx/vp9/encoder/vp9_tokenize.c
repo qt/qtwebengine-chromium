@@ -25,8 +25,8 @@
    compressions, then generating vp9_context.c = initial stats. */
 
 #ifdef ENTROPY_STATS
-vp9_coeff_accum context_counters[TX_SIZE_MAX_SB][BLOCK_TYPES];
-extern vp9_coeff_stats tree_update_hist[TX_SIZE_MAX_SB][BLOCK_TYPES];
+vp9_coeff_accum context_counters[TX_SIZES][BLOCK_TYPES];
+extern vp9_coeff_stats tree_update_hist[TX_SIZES][BLOCK_TYPES];
 #endif  /* ENTROPY_STATS */
 
 DECLARE_ALIGNED(16, extern const uint8_t,
@@ -40,7 +40,7 @@ const int *vp9_dct_value_cost_ptr;
 static void fill_value_tokens() {
 
   TOKENVALUE *const t = dct_value_tokens + DCT_MAX_VALUE;
-  vp9_extra_bit *const e = vp9_extra_bits;
+  const vp9_extra_bit *const e = vp9_extra_bits;
 
   int i = -DCT_MAX_VALUE;
   int sign = 1;
@@ -69,7 +69,7 @@ static void fill_value_tokens() {
     // initialize the cost for extra bits for all possible coefficient value.
     {
       int cost = 0;
-      vp9_extra_bit *p = vp9_extra_bits + t[i].token;
+      const vp9_extra_bit *p = vp9_extra_bits + t[i].token;
 
       if (p->base_val) {
         const int extra = t[i].extra;
@@ -90,107 +90,58 @@ static void fill_value_tokens() {
   vp9_dct_value_cost_ptr   = dct_value_cost + DCT_MAX_VALUE;
 }
 
-extern const int *vp9_get_coef_neighbors_handle(const int *scan, int *pad);
-
 struct tokenize_b_args {
   VP9_COMP *cpi;
   MACROBLOCKD *xd;
   TOKENEXTRA **tp;
   TX_SIZE tx_size;
-  int dry_run;
 };
 
-static void tokenize_b(int plane, int block, BLOCK_SIZE_TYPE bsize,
-                       int ss_txfrm_size, void *arg) {
+static void set_entropy_context_b(int plane, int block, BLOCK_SIZE plane_bsize,
+                                  TX_SIZE tx_size, void *arg) {
+  struct tokenize_b_args* const args = arg;
+  MACROBLOCKD *const xd = args->xd;
+  struct macroblockd_plane *pd = &xd->plane[plane];
+  int aoff, loff;
+  txfrm_block_to_raster_xy(plane_bsize, tx_size, block, &aoff, &loff);
+  set_contexts(xd, pd, plane_bsize, tx_size, pd->eobs[block] > 0, aoff, loff);
+}
+
+static void tokenize_b(int plane, int block, BLOCK_SIZE plane_bsize,
+                       TX_SIZE tx_size, void *arg) {
   struct tokenize_b_args* const args = arg;
   VP9_COMP *cpi = args->cpi;
   MACROBLOCKD *xd = args->xd;
   TOKENEXTRA **tp = args->tp;
-  PLANE_TYPE type = plane ? PLANE_TYPE_UV : PLANE_TYPE_Y_WITH_DC;
-  TX_SIZE tx_size = ss_txfrm_size / 2;
-  int dry_run = args->dry_run;
-
-  MB_MODE_INFO *mbmi = &xd->mode_info_context->mbmi;
+  struct macroblockd_plane *pd = &xd->plane[plane];
+  MB_MODE_INFO *mbmi = &xd->this_mi->mbmi;
   int pt; /* near block/prev token context index */
   int c = 0, rc = 0;
   TOKENEXTRA *t = *tp;        /* store tokens starting here */
-  const int eob = xd->plane[plane].eobs[block];
-  const int16_t *qcoeff_ptr = BLOCK_OFFSET(xd->plane[plane].qcoeff, block, 16);
-  const BLOCK_SIZE_TYPE sb_type = (mbmi->sb_type < BLOCK_SIZE_SB8X8) ?
-                                   BLOCK_SIZE_SB8X8 : mbmi->sb_type;
-  const int bwl = b_width_log2(sb_type);
-  const int off = block >> (2 * tx_size);
-  const int mod = bwl - tx_size - xd->plane[plane].subsampling_x;
-  const int aoff = (off & ((1 << mod) - 1)) << tx_size;
-  const int loff = (off >> mod) << tx_size;
-  ENTROPY_CONTEXT *A = xd->plane[plane].above_context + aoff;
-  ENTROPY_CONTEXT *L = xd->plane[plane].left_context + loff;
-  int seg_eob, default_eob, pad;
+  const int eob = pd->eobs[block];
+  const PLANE_TYPE type = pd->plane_type;
+  const int16_t *qcoeff_ptr = BLOCK_OFFSET(pd->qcoeff, block);
+
   const int segment_id = mbmi->segment_id;
-  const int *scan, *nb;
-  vp9_coeff_count *counts;
-  vp9_coeff_probs_model *coef_probs;
-  const int ref = mbmi->ref_frame[0] != INTRA_FRAME;
-  ENTROPY_CONTEXT above_ec, left_ec;
+  const int16_t *scan, *nb;
+  vp9_coeff_count *const counts = cpi->coef_counts[tx_size];
+  vp9_coeff_probs_model *const coef_probs = cpi->common.fc.coef_probs[tx_size];
+  const int ref = is_inter_block(mbmi);
   uint8_t token_cache[1024];
-  TX_TYPE tx_type = DCT_DCT;
-  const uint8_t * band_translate;
+  const uint8_t *band_translate;
+  ENTROPY_CONTEXT *A, *L;
+  const int seg_eob = get_tx_eob(&cpi->common.seg, segment_id, tx_size);
+  int aoff, loff;
+  txfrm_block_to_raster_xy(plane_bsize, tx_size, block, &aoff, &loff);
+
+  A = pd->above_context + aoff;
+  L = pd->left_context + loff;
+
   assert((!type && !plane) || (type && plane));
 
-  counts = cpi->coef_counts[tx_size];
-  coef_probs = cpi->common.fc.coef_probs[tx_size];
-  switch (tx_size) {
-    default:
-    case TX_4X4: {
-      tx_type = (type == PLANE_TYPE_Y_WITH_DC) ?
-          get_tx_type_4x4(xd, block) : DCT_DCT;
-      above_ec = A[0] != 0;
-      left_ec = L[0] != 0;
-      seg_eob = 16;
-      scan = get_scan_4x4(tx_type);
-      band_translate = vp9_coefband_trans_4x4;
-      break;
-    }
-    case TX_8X8: {
-      const int sz = 1 + b_width_log2(sb_type);
-      const int x = block & ((1 << sz) - 1), y = block - x;
-      tx_type = (type == PLANE_TYPE_Y_WITH_DC) ?
-          get_tx_type_8x8(xd, y + (x >> 1)) : DCT_DCT;
-      above_ec = (A[0] + A[1]) != 0;
-      left_ec = (L[0] + L[1]) != 0;
-      seg_eob = 64;
-      scan = get_scan_8x8(tx_type);
-      band_translate = vp9_coefband_trans_8x8plus;
-      break;
-    }
-    case TX_16X16: {
-      const int sz = 2 + b_width_log2(sb_type);
-      const int x = block & ((1 << sz) - 1), y = block - x;
-      tx_type = (type == PLANE_TYPE_Y_WITH_DC) ?
-          get_tx_type_16x16(xd, y + (x >> 2)) : DCT_DCT;
-      above_ec = (A[0] + A[1] + A[2] + A[3]) != 0;
-      left_ec = (L[0] + L[1] + L[2] + L[3]) != 0;
-      seg_eob = 256;
-      scan = get_scan_16x16(tx_type);
-      band_translate = vp9_coefband_trans_8x8plus;
-      break;
-    }
-    case TX_32X32:
-      above_ec = (A[0] + A[1] + A[2] + A[3] + A[4] + A[5] + A[6] + A[7]) != 0;
-      left_ec = (L[0] + L[1] + L[2] + L[3] + L[4] + L[5] + L[6] + L[7]) != 0;
-      seg_eob = 1024;
-      scan = vp9_default_scan_32x32;
-      band_translate = vp9_coefband_trans_8x8plus;
-      break;
-  }
-
-  pt = combine_entropy_contexts(above_ec, left_ec);
-  nb = vp9_get_coef_neighbors_handle(scan, &pad);
-  default_eob = seg_eob;
-
-  if (vp9_segfeature_active(xd, segment_id, SEG_LVL_SKIP))
-    seg_eob = 0;
-
+  pt = get_entropy_context(xd, tx_size, type, block, A, L,
+                           &scan, &band_translate);
+  nb = vp9_get_coef_neighbors_handle(scan);
   c = 0;
   do {
     const int band = get_coef_band(band_translate, c);
@@ -198,7 +149,7 @@ static void tokenize_b(int plane, int block, BLOCK_SIZE_TYPE bsize,
     int v = 0;
     rc = scan[c];
     if (c)
-      pt = vp9_get_coef_context(scan, nb, pad, token_cache, c, default_eob);
+      pt = get_coef_context(nb, token_cache, c);
     if (c < eob) {
       v = qcoeff_ptr[rc];
       assert(-DCT_MAX_VALUE <= v  &&  v < DCT_MAX_VALUE);
@@ -213,101 +164,76 @@ static void tokenize_b(int plane, int block, BLOCK_SIZE_TYPE bsize,
     t->context_tree = coef_probs[type][ref][band][pt];
     t->skip_eob_node = (c > 0) && (token_cache[scan[c - 1]] == 0);
 
-#if CONFIG_BALANCED_COEFTREE
-    assert(token <= ZERO_TOKEN ||
-           vp9_coef_encodings[t->token].len - t->skip_eob_node > 0);
-#else
     assert(vp9_coef_encodings[t->token].len - t->skip_eob_node > 0);
-#endif
 
-    if (!dry_run) {
-      ++counts[type][ref][band][pt][token];
-#if CONFIG_BALANCED_COEFTREE
-      if (!t->skip_eob_node && token > ZERO_TOKEN)
-#else
-      if (!t->skip_eob_node)
-#endif
-        ++cpi->common.fc.eob_branch_counts[tx_size][type][ref][band][pt];
-    }
-    token_cache[scan[c]] = vp9_pt_energy_class[token];
+    ++counts[type][ref][band][pt][token];
+    if (!t->skip_eob_node)
+      ++cpi->common.counts.eob_branch[tx_size][type][ref][band][pt];
+
+    token_cache[rc] = vp9_pt_energy_class[token];
     ++t;
   } while (c < eob && ++c < seg_eob);
 
   *tp = t;
-  if (xd->mb_to_right_edge < 0 || xd->mb_to_bottom_edge < 0) {
-    set_contexts_on_border(xd, bsize, plane, tx_size, c, aoff, loff, A, L);
-  } else {
-    for (pt = 0; pt < (1 << tx_size); pt++) {
-      A[pt] = L[pt] = c > 0;
-    }
-  }
+
+  set_contexts(xd, pd, plane_bsize, tx_size, c > 0, aoff, loff);
 }
 
 struct is_skippable_args {
   MACROBLOCKD *xd;
   int *skippable;
 };
+
 static void is_skippable(int plane, int block,
-                         BLOCK_SIZE_TYPE bsize, int ss_txfrm_size, void *argv) {
+                         BLOCK_SIZE plane_bsize, TX_SIZE tx_size,
+                         void *argv) {
   struct is_skippable_args *args = argv;
   args->skippable[0] &= (!args->xd->plane[plane].eobs[block]);
 }
 
-int vp9_sb_is_skippable(MACROBLOCKD *xd, BLOCK_SIZE_TYPE bsize) {
+int vp9_sb_is_skippable(MACROBLOCKD *xd, BLOCK_SIZE bsize) {
   int result = 1;
   struct is_skippable_args args = {xd, &result};
   foreach_transformed_block(xd, bsize, is_skippable, &args);
   return result;
 }
 
-int vp9_sby_is_skippable(MACROBLOCKD *xd, BLOCK_SIZE_TYPE bsize) {
+int vp9_is_skippable_in_plane(MACROBLOCKD *xd, BLOCK_SIZE bsize,
+                              int plane) {
   int result = 1;
   struct is_skippable_args args = {xd, &result};
-  foreach_transformed_block_in_plane(xd, bsize, 0,
-                                     is_skippable, &args);
+  foreach_transformed_block_in_plane(xd, bsize, plane, is_skippable, &args);
   return result;
 }
 
-int vp9_sbuv_is_skippable(MACROBLOCKD *xd, BLOCK_SIZE_TYPE bsize) {
-  int result = 1;
-  struct is_skippable_args args = {xd, &result};
-  foreach_transformed_block_uv(xd, bsize, is_skippable, &args);
-  return result;
-}
-
-void vp9_tokenize_sb(VP9_COMP *cpi,
-                     MACROBLOCKD *xd,
-                     TOKENEXTRA **t,
-                     int dry_run, BLOCK_SIZE_TYPE bsize) {
-  VP9_COMMON * const cm = &cpi->common;
-  MB_MODE_INFO * const mbmi = &xd->mode_info_context->mbmi;
+void vp9_tokenize_sb(VP9_COMP *cpi, TOKENEXTRA **t, int dry_run,
+                     BLOCK_SIZE bsize) {
+  VP9_COMMON *const cm = &cpi->common;
+  MACROBLOCKD *const xd = &cpi->mb.e_mbd;
+  MB_MODE_INFO *const mbmi = &xd->this_mi->mbmi;
   TOKENEXTRA *t_backup = *t;
-  const int mb_skip_context = vp9_get_pred_context(cm, xd, PRED_MBSKIP);
-  const int segment_id = mbmi->segment_id;
-  const int skip_inc = !vp9_segfeature_active(xd, segment_id, SEG_LVL_SKIP);
-  const TX_SIZE txfm_size = mbmi->txfm_size;
-  struct tokenize_b_args arg = {
-    cpi, xd, t, txfm_size, dry_run
-  };
+  const int mb_skip_context = vp9_get_pred_context_mbskip(xd);
+  const int skip_inc = !vp9_segfeature_active(&cm->seg, mbmi->segment_id,
+                                              SEG_LVL_SKIP);
+  struct tokenize_b_args arg = {cpi, xd, t, mbmi->tx_size};
 
-  mbmi->mb_skip_coeff = vp9_sb_is_skippable(xd, bsize);
-
-  if (mbmi->mb_skip_coeff) {
+  mbmi->skip_coeff = vp9_sb_is_skippable(xd, bsize);
+  if (mbmi->skip_coeff) {
     if (!dry_run)
-      cm->fc.mbskip_count[mb_skip_context][1] += skip_inc;
-    vp9_reset_sb_tokens_context(xd, bsize);
+      cm->counts.mbskip[mb_skip_context][1] += skip_inc;
+    reset_skip_context(xd, bsize);
     if (dry_run)
       *t = t_backup;
     return;
   }
 
-  if (!dry_run)
-    cm->fc.mbskip_count[mb_skip_context][0] += skip_inc;
-
-  foreach_transformed_block(xd, bsize, tokenize_b, &arg);
-
-  if (dry_run)
+  if (!dry_run) {
+    cm->counts.mbskip[mb_skip_context][0] += skip_inc;
+    foreach_transformed_block(xd, bsize, tokenize_b, &arg);
+  } else {
+    foreach_transformed_block(xd, bsize, set_entropy_context_b, &arg);
     *t = t_backup;
+  }
 }
 
 #ifdef ENTROPY_STATS

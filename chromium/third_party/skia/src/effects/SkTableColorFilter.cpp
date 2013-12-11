@@ -312,19 +312,19 @@ void GLColorTableEffect::emitCode(GrGLShaderBuilder* builder,
     }
 
     builder->fsCodeAppendf("\t\t%s.a = ", outputColor);
-    builder->appendTextureLookup(GrGLShaderBuilder::kFragment_ShaderType, samplers[0], "vec2(coord.a, 0.125)");
+    builder->fsAppendTextureLookup(samplers[0], "vec2(coord.a, 0.125)");
     builder->fsCodeAppend(";\n");
 
     builder->fsCodeAppendf("\t\t%s.r = ", outputColor);
-    builder->appendTextureLookup(GrGLShaderBuilder::kFragment_ShaderType, samplers[0], "vec2(coord.r, 0.375)");
+    builder->fsAppendTextureLookup(samplers[0], "vec2(coord.r, 0.375)");
     builder->fsCodeAppend(";\n");
 
     builder->fsCodeAppendf("\t\t%s.g = ", outputColor);
-    builder->appendTextureLookup(GrGLShaderBuilder::kFragment_ShaderType, samplers[0], "vec2(coord.g, 0.625)");
+    builder->fsAppendTextureLookup(samplers[0], "vec2(coord.g, 0.625)");
     builder->fsCodeAppend(";\n");
 
     builder->fsCodeAppendf("\t\t%s.b = ", outputColor);
-    builder->appendTextureLookup(GrGLShaderBuilder::kFragment_ShaderType, samplers[0], "vec2(coord.b, 0.875)");
+    builder->fsAppendTextureLookup(samplers[0], "vec2(coord.b, 0.875)");
     builder->fsCodeAppend(";\n");
 
     builder->fsCodeAppendf("\t\t%s.rgb *= %s.a;\n", outputColor, outputColor);
@@ -375,7 +375,7 @@ void ColorTableEffect::getConstantColorComponents(GrColor* color, uint32_t* vali
 
 GR_DEFINE_EFFECT_TEST(ColorTableEffect);
 
-GrEffectRef* ColorTableEffect::TestCreate(SkMWCRandom* random,
+GrEffectRef* ColorTableEffect::TestCreate(SkRandom* random,
                                           GrContext* context,
                                           const GrDrawTargetCaps&,
                                           GrTexture* textures[]) {

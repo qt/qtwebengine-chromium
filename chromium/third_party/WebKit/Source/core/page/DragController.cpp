@@ -44,14 +44,14 @@
 #include "core/editing/ReplaceSelectionCommand.h"
 #include "core/editing/htmlediting.h"
 #include "core/editing/markup.h"
+#include "core/fetch/ImageResource.h"
+#include "core/fetch/ResourceFetcher.h"
 #include "core/html/HTMLAnchorElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLPlugInElement.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
-#include "core/loader/cache/ImageResource.h"
-#include "core/loader/cache/ResourceFetcher.h"
 #include "core/page/DragActions.h"
 #include "core/page/DragClient.h"
 #include "core/page/DragSession.h"
@@ -78,7 +78,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
 
-#if OS(WINDOWS)
+#if OS(WIN)
 #include <windows.h>
 #endif
 
@@ -149,9 +149,8 @@ static PassRefPtr<DocumentFragment> documentFragmentFromDragData(DragData* dragD
     ASSERT(dragData);
     chosePlainText = false;
 
-    Document* document = context->ownerDocument();
-    ASSERT(document);
-    if (document && dragData->containsCompatibleContent()) {
+    Document& document = context->ownerDocument();
+    if (dragData->containsCompatibleContent()) {
         if (PassRefPtr<DocumentFragment> fragment = dragData->asFragment(frame, context, allowPlainText, chosePlainText))
             return fragment;
 
@@ -168,11 +167,11 @@ static PassRefPtr<DocumentFragment> documentFragmentFromDragData(DragData* dragD
                     if (title.isEmpty())
                         title = url;
                 }
-                RefPtr<Node> anchorText = document->createTextNode(title);
-                anchor->appendChild(anchorText, IGNORE_EXCEPTION);
-                RefPtr<DocumentFragment> fragment = document->createDocumentFragment();
-                fragment->appendChild(anchor, IGNORE_EXCEPTION);
-                return fragment.get();
+                RefPtr<Node> anchorText = document.createTextNode(title);
+                anchor->appendChild(anchorText);
+                RefPtr<DocumentFragment> fragment = document.createDocumentFragment();
+                fragment->appendChild(anchor);
+                return fragment.release();
             }
         }
     }
@@ -184,9 +183,9 @@ static PassRefPtr<DocumentFragment> documentFragmentFromDragData(DragData* dragD
     return 0;
 }
 
-bool DragController::dragIsMove(FrameSelection* selection, DragData* dragData)
+bool DragController::dragIsMove(FrameSelection& selection, DragData* dragData)
 {
-    return m_documentUnderMouse == m_dragInitiator && selection->isContentEditable() && selection->isRange() && !isCopyKeyDown(dragData);
+    return m_documentUnderMouse == m_dragInitiator && selection.isContentEditable() && selection.isRange() && !isCopyKeyDown(dragData);
 }
 
 // FIXME: This method is poorly named.  We're just clearing the selection from the document this drag is exiting.
@@ -297,19 +296,11 @@ DragSession DragController::dragEnteredOrUpdated(DragData* dragData)
 static HTMLInputElement* asFileInput(Node* node)
 {
     ASSERT(node);
-
-    if (!node->hasTagName(HTMLNames::inputTag))
-        return 0;
-    HTMLInputElement* inputElement = toHTMLInputElement(node);
-    // If this is a button inside of the a file input, move up to the file input.
-    if (inputElement->isTextButton() && inputElement->treeScope()->rootNode()->isShadowRoot()) {
-        Element* host = toShadowRoot(inputElement->treeScope()->rootNode())->host();
-        if (!host->hasTagName(HTMLNames::inputTag))
-            return 0;
-        inputElement = toHTMLInputElement(host);
+    for (; node; node = node->shadowHost()) {
+        if (node->hasTagName(HTMLNames::inputTag) && toHTMLInputElement(node)->isFileUpload())
+            return toHTMLInputElement(node);
     }
-
-    return inputElement->isFileUpload() ? inputElement : 0;
+    return 0;
 }
 
 // This can return null if an empty document is loaded.
@@ -325,7 +316,7 @@ static Element* elementUnderMouse(Document* documentUnderMouse, const IntPoint& 
 
     Node* n = result.innerNode();
     while (n && !n->isElementNode())
-        n = n->parentNode();
+        n = n->parentOrShadowHostNode();
     if (n)
         n = n->deprecatedShadowAncestorNode();
 
@@ -381,7 +372,7 @@ bool DragController::tryDocumentDrag(DragData* dragData, DragDestinationAction a
         if (!m_fileInputElementUnderMouse)
             m_page->dragCaretController().setCaretPosition(m_documentUnderMouse->frame()->visiblePositionForPoint(point));
 
-        Frame* innerFrame = element->document()->frame();
+        Frame* innerFrame = element->document().frame();
         dragSession.operation = dragIsMove(innerFrame->selection(), dragData) ? DragOperationMove : DragOperationCopy;
         dragSession.mouseIsOverFileInput = m_fileInputElementUnderMouse;
         dragSession.numberOfItemsToBeAccepted = 0;
@@ -429,20 +420,20 @@ DragOperation DragController::operationForLoad(DragData* dragData)
 
 static bool setSelectionToDragCaret(Frame* frame, VisibleSelection& dragCaret, RefPtr<Range>& range, const IntPoint& point)
 {
-    frame->selection()->setSelection(dragCaret);
-    if (frame->selection()->isNone()) {
+    frame->selection().setSelection(dragCaret);
+    if (frame->selection().isNone()) {
         dragCaret = frame->visiblePositionForPoint(point);
-        frame->selection()->setSelection(dragCaret);
+        frame->selection().setSelection(dragCaret);
         range = dragCaret.toNormalizedRange();
     }
-    return !frame->selection()->isNone() && frame->selection()->isContentEditable();
+    return !frame->selection().isNone() && frame->selection().isContentEditable();
 }
 
 bool DragController::dispatchTextInputEventFor(Frame* innerFrame, DragData* dragData)
 {
     ASSERT(m_page->dragCaretController().hasCaret());
     String text = m_page->dragCaretController().isContentRichlyEditable() ? "" : dragData->asPlainText(innerFrame);
-    Node* target = innerFrame->editor()->findEventTargetFrom(m_page->dragCaretController().caretPosition());
+    Node* target = innerFrame->editor().findEventTargetFrom(m_page->dragCaretController().caretPosition());
     return target->dispatchEvent(TextEvent::createForDrop(innerFrame->domWindow(), text), IGNORE_EXCEPTION);
 }
 
@@ -487,27 +478,27 @@ bool DragController::concludeEditDrag(DragData* dragData)
     VisibleSelection dragCaret = m_page->dragCaretController().caretPosition();
     m_page->dragCaretController().clear();
     RefPtr<Range> range = dragCaret.toNormalizedRange();
-    RefPtr<Element> rootEditableElement = innerFrame->selection()->rootEditableElement();
+    RefPtr<Element> rootEditableElement = innerFrame->selection().rootEditableElement();
 
     // For range to be null a WebKit client must have done something bad while
     // manually controlling drag behaviour
     if (!range)
         return false;
-    ResourceFetcher* fetcher = range->ownerDocument()->fetcher();
+    ResourceFetcher* fetcher = range->ownerDocument().fetcher();
     ResourceCacheValidationSuppressor validationSuppressor(fetcher);
     if (dragIsMove(innerFrame->selection(), dragData) || dragCaret.isContentRichlyEditable()) {
         bool chosePlainText = false;
         RefPtr<DocumentFragment> fragment = documentFragmentFromDragData(dragData, innerFrame.get(), range, true, chosePlainText);
-        if (!fragment || !innerFrame->editor()->shouldInsertFragment(fragment, range, EditorInsertActionDropped)) {
+        if (!fragment || !innerFrame->editor().shouldInsertFragment(fragment, range, EditorInsertActionDropped)) {
             return false;
         }
 
         if (dragIsMove(innerFrame->selection(), dragData)) {
             // NSTextView behavior is to always smart delete on moving a selection,
             // but only to smart insert if the selection granularity is word granularity.
-            bool smartDelete = innerFrame->editor()->smartInsertDeleteEnabled();
-            bool smartInsert = smartDelete && innerFrame->selection()->granularity() == WordGranularity && dragData->canSmartReplace();
-            applyCommand(MoveSelectionCommand::create(fragment, dragCaret.base(), smartInsert, smartDelete));
+            bool smartDelete = innerFrame->editor().smartInsertDeleteEnabled();
+            bool smartInsert = smartDelete && innerFrame->selection().granularity() == WordGranularity && dragData->canSmartReplace();
+            MoveSelectionCommand::create(fragment, dragCaret.base(), smartInsert, smartDelete)->apply();
         } else {
             if (setSelectionToDragCaret(innerFrame.get(), dragCaret, range, point)) {
                 ReplaceSelectionCommand::CommandOptions options = ReplaceSelectionCommand::SelectReplacement | ReplaceSelectionCommand::PreventNesting;
@@ -515,21 +506,24 @@ bool DragController::concludeEditDrag(DragData* dragData)
                     options |= ReplaceSelectionCommand::SmartReplace;
                 if (chosePlainText)
                     options |= ReplaceSelectionCommand::MatchStyle;
-                applyCommand(ReplaceSelectionCommand::create(m_documentUnderMouse.get(), fragment, options));
+                ASSERT(m_documentUnderMouse);
+                ReplaceSelectionCommand::create(*m_documentUnderMouse.get(), fragment, options)->apply();
             }
         }
     } else {
         String text = dragData->asPlainText(innerFrame.get());
-        if (text.isEmpty() || !innerFrame->editor()->shouldInsertText(text, range.get(), EditorInsertActionDropped)) {
+        if (text.isEmpty() || !innerFrame->editor().shouldInsertText(text, range.get(), EditorInsertActionDropped)) {
             return false;
         }
 
-        if (setSelectionToDragCaret(innerFrame.get(), dragCaret, range, point))
-            applyCommand(ReplaceSelectionCommand::create(m_documentUnderMouse.get(), createFragmentFromText(range.get(), text),  ReplaceSelectionCommand::SelectReplacement | ReplaceSelectionCommand::MatchStyle | ReplaceSelectionCommand::PreventNesting));
+        if (setSelectionToDragCaret(innerFrame.get(), dragCaret, range, point)) {
+            ASSERT(m_documentUnderMouse);
+            ReplaceSelectionCommand::create(*m_documentUnderMouse.get(), createFragmentFromText(range.get(), text),  ReplaceSelectionCommand::SelectReplacement | ReplaceSelectionCommand::MatchStyle | ReplaceSelectionCommand::PreventNesting)->apply();
+        }
     }
 
     if (rootEditableElement) {
-        if (Frame* frame = rootEditableElement->document()->frame())
+        if (Frame* frame = rootEditableElement->document().frame())
             frame->eventHandler()->updateDragStateAfterEditDragIfNeeded(rootEditableElement.get());
     }
 
@@ -557,7 +551,7 @@ bool DragController::canProcessDrag(DragData* dragData)
         return true;
 
     if (result.innerNonSharedNode()->isPluginElement()) {
-        HTMLPlugInElement* plugin = static_cast<HTMLPlugInElement*>(result.innerNonSharedNode());
+        HTMLPlugInElement* plugin = toHTMLPlugInElement(result.innerNonSharedNode());
         if (!plugin->canProcessDrag() && !result.innerNonSharedNode()->rendererIsEditable())
             return false;
     } else if (!result.innerNonSharedNode()->rendererIsEditable())
@@ -622,7 +616,7 @@ bool DragController::tryDHTMLDrag(DragData* dragData, DragOperation& operation)
 
 Node* DragController::draggableNode(const Frame* src, Node* startNode, const IntPoint& dragOrigin, DragState& state) const
 {
-    state.m_dragType = (src->selection()->contains(dragOrigin)) ? DragSourceActionSelection : DragSourceActionNone;
+    state.m_dragType = (src->selection().contains(dragOrigin)) ? DragSourceActionSelection : DragSourceActionNone;
 
     for (const RenderObject* renderer = startNode->renderer(); renderer; renderer = renderer->parent()) {
         Node* node = renderer->nonPseudoNode();
@@ -687,7 +681,7 @@ static void prepareClipboardForImageDrag(Frame* source, Clipboard* clipboard, El
     if (node->isContentRichlyEditable()) {
         RefPtr<Range> range = source->document()->createRange();
         range->selectNode(node, ASSERT_NO_EXCEPTION);
-        source->selection()->setSelection(VisibleSelection(range.get(), DOWNSTREAM));
+        source->selection().setSelection(VisibleSelection(range.get(), DOWNSTREAM));
     }
     clipboard->declareAndWriteDragImage(node, !linkURL.isEmpty() ? linkURL : imageURL, label, source);
 }
@@ -715,10 +709,10 @@ bool DragController::populateDragClipboard(Frame* src, const DragState& state, c
     Node* node = state.m_dragSrc.get();
 
     if (state.m_dragType == DragSourceActionSelection) {
-        if (enclosingTextFormControl(src->selection()->start())) {
+        if (enclosingTextFormControl(src->selection().start())) {
             clipboard->writePlainText(src->selectedTextForClipboard());
         } else {
-            RefPtr<Range> selectionRange = src->selection()->toNormalizedRange();
+            RefPtr<Range> selectionRange = src->selection().toNormalizedRange();
             ASSERT(selectionRange);
 
             clipboard->writeRange(selectionRange.get(), src);
@@ -752,7 +746,7 @@ static IntPoint dragLocationForDHTMLDrag(const IntPoint& mouseDraggedPoint, cons
 
 static IntPoint dragLocationForSelectionDrag(Frame* sourceFrame)
 {
-    IntRect draggingRect = enclosingIntRect(sourceFrame->selection()->bounds());
+    IntRect draggingRect = enclosingIntRect(sourceFrame->selection().bounds());
     int xpos = draggingRect.maxX();
     xpos = draggingRect.x() < xpos ? draggingRect.x() : xpos;
     int ypos = draggingRect.maxY();
@@ -762,7 +756,7 @@ static IntPoint dragLocationForSelectionDrag(Frame* sourceFrame)
 
 static const IntSize& maxDragImageSize()
 {
-#if OS(DARWIN)
+#if OS(MACOSX)
     // Match Safari's drag image size.
     static const IntSize maxDragImageSize(400, 400);
 #else
@@ -802,7 +796,7 @@ static PassOwnPtr<DragImage> dragImageForImage(Element* element, Image* image, c
 static PassOwnPtr<DragImage> dragImageForLink(const KURL& linkURL, const String& linkText, float deviceScaleFactor, const IntPoint& mouseDraggedPoint, IntPoint& dragLoc)
 {
     FontDescription fontDescription;
-    RenderTheme::defaultTheme()->systemFont(WebCore::CSSValueNone, fontDescription);
+    RenderTheme::theme().systemFont(WebCore::CSSValueNone, fontDescription);
     OwnPtr<DragImage> dragImage = DragImage::create(linkURL, linkText, fontDescription, deviceScaleFactor);
 
     IntSize size = dragImage ? dragImage->size() : IntSize();
@@ -867,14 +861,12 @@ bool DragController::startDrag(Frame* src, const DragState& state, const Platfor
     } else if (state.m_dragType == DragSourceActionLink) {
         if (linkURL.isEmpty())
             return false;
-        if (src->selection()->isCaret() && src->selection()->isContentEditable()) {
+        if (src->selection().isCaret() && src->selection().isContentEditable()) {
             // a user can initiate a drag on a link without having any text
             // selected.  In this case, we should expand the selection to
             // the enclosing anchor element
-            Position pos = src->selection()->base();
-            Node* node = enclosingAnchorElement(pos);
-            if (node)
-                src->selection()->setSelection(VisibleSelection::selectionFromContentsOfNode(node));
+            if (Node* node = enclosingAnchorElement(src->selection().base()))
+                src->selection().setSelection(VisibleSelection::selectionFromContentsOfNode(node));
         }
 
         if (!dragImage) {
@@ -924,7 +916,7 @@ DragOperation DragController::dragOperation(DragData* dragData)
 bool DragController::isCopyKeyDown(DragData*)
 {
     // FIXME: This should not be OS specific.  Delegate to the embedder instead.
-#if OS(WINDOWS)
+#if OS(WIN)
     return ::GetAsyncKeyState(VK_CONTROL);
 #else
     return false;

@@ -242,16 +242,19 @@ int CertVerifyProc::Verify(X509Certificate* cert,
       rv = MapCertStatusToNetError(verify_result->cert_status);
   }
 
+#if !defined(OS_ANDROID)
   // Flag certificates from publicly-trusted CAs that are issued to intranet
   // hosts. While the CA/Browser Forum Baseline Requirements (v1.1) permit
   // these to be issued until 1 November 2015, they represent a real risk for
   // the deployment of gTLDs and are being phased out ahead of the hard
   // deadline.
-  // TODO(rsleevi): http://crbug.com/119212 - Also match internal IP address
-  // ranges.
+  //
+  // TODO(ppi): is_issued_by_known_root is incorrect on Android. Once this is
+  // fixed, re-enable this check for Android. crbug.com/116838
   if (verify_result->is_issued_by_known_root && IsHostnameNonUnique(hostname)) {
     verify_result->cert_status |= CERT_STATUS_NON_UNIQUE_NAME;
   }
+#endif
 
   return rv;
 }
@@ -371,7 +374,7 @@ bool CertVerifyProc::IsPublicKeyBlacklisted(
     // in 2036, but we can probably remove in a couple of years (2014).
     {0xd9, 0xf5, 0xc6, 0xce, 0x57, 0xff, 0xaa, 0x39, 0xcc, 0x7e,
      0xd1, 0x72, 0xbd, 0x53, 0xe0, 0xd3, 0x07, 0x83, 0x4b, 0xd1},
-    // Win32/Sirefef.gen!C generates fake certifciates with this public key.
+    // Win32/Sirefef.gen!C generates fake certificates with this public key.
     {0xa4, 0xf5, 0x6e, 0x9e, 0x1d, 0x9a, 0x3b, 0x7b, 0x1a, 0xc3,
      0x31, 0xcf, 0x64, 0xfc, 0x76, 0x2c, 0xd0, 0x51, 0xfb, 0xa4},
   };

@@ -19,8 +19,8 @@
 #include "sync/engine/sync_scheduler.h"
 #include "sync/engine/syncer_types.h"
 #include "sync/internal_api/change_reorder_buffer.h"
+#include "sync/internal_api/public/base/cancelation_signal.h"
 #include "sync/internal_api/public/base/model_type.h"
-#include "sync/internal_api/public/base/model_type_invalidation_map.h"
 #include "sync/internal_api/public/base_node.h"
 #include "sync/internal_api/public/configure_reason.h"
 #include "sync/internal_api/public/engine/polling_constants.h"
@@ -355,12 +355,14 @@ void SyncManagerImpl::Init(
     Encryptor* encryptor,
     scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
     ReportUnrecoverableErrorFunction report_unrecoverable_error_function,
-    bool use_oauth2_token) {
+    bool use_oauth2_token,
+    CancelationSignal* cancelation_signal) {
   CHECK(!initialized_);
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(post_factory.get());
   DCHECK(!credentials.email.empty());
   DCHECK(!credentials.sync_token.empty());
+  DCHECK(cancelation_signal);
   DVLOG(1) << "SyncManager starting Init...";
 
   weak_handle_this_ = MakeWeakHandle(weak_ptr_factory_.GetWeakPtr());
@@ -420,7 +422,7 @@ void SyncManagerImpl::Init(
 
   connection_manager_.reset(new SyncAPIServerConnectionManager(
       sync_server_and_path, port, use_ssl, use_oauth2_token,
-      post_factory.release()));
+      post_factory.release(), cancelation_signal));
   connection_manager_->set_client_id(directory()->cache_guid());
   connection_manager_->AddListener(this);
 
@@ -448,7 +450,7 @@ void SyncManagerImpl::Init(
       invalidator_client_id).Pass();
   session_context_->set_account_name(credentials.email);
   scheduler_ = internal_components_factory->BuildScheduler(
-      name_, session_context_.get()).Pass();
+      name_, session_context_.get(), cancelation_signal).Pass();
 
   scheduler_->Start(SyncScheduler::CONFIGURATION_MODE);
 
@@ -617,13 +619,6 @@ void SyncManagerImpl::AddObserver(SyncManager::Observer* observer) {
 void SyncManagerImpl::RemoveObserver(SyncManager::Observer* observer) {
   DCHECK(thread_checker_.CalledOnValidThread());
   observers_.RemoveObserver(observer);
-}
-
-void SyncManagerImpl::StopSyncingForShutdown() {
-  DVLOG(2) << "StopSyncingForShutdown";
-  scheduler_->RequestStop();
-  if (connection_manager_)
-    connection_manager_->TerminateAllIO();
 }
 
 void SyncManagerImpl::ShutdownOnSyncThread() {
@@ -1152,12 +1147,15 @@ JsArgList SyncManagerImpl::GetChildNodeIds(const JsArgList& args) {
 }
 
 void SyncManagerImpl::UpdateNotificationInfo(
-    const ModelTypeInvalidationMap& invalidation_map) {
-  for (ModelTypeInvalidationMap::const_iterator it = invalidation_map.begin();
+    const ObjectIdInvalidationMap& invalidation_map) {
+  for (ObjectIdInvalidationMap::const_iterator it = invalidation_map.begin();
        it != invalidation_map.end(); ++it) {
-    NotificationInfo* info = &notification_info_map_[it->first];
-    info->total_count++;
-    info->payload = it->second.payload;
+    ModelType type = UNSPECIFIED;
+    if (ObjectIdToRealModelType(it->first, &type)) {
+      NotificationInfo* info = &notification_info_map_[type];
+      info->total_count++;
+      info->payload = it->second.payload;
+    }
   }
 }
 
@@ -1186,29 +1184,37 @@ void SyncManagerImpl::OnIncomingInvalidation(
     const ObjectIdInvalidationMap& invalidation_map) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  const ModelTypeInvalidationMap& type_invalidation_map =
-      ObjectIdInvalidationMapToModelTypeInvalidationMap(invalidation_map);
-  if (type_invalidation_map.empty()) {
+  // We should never receive IDs from non-sync objects.
+  ObjectIdSet ids = ObjectIdInvalidationMapToSet(invalidation_map);
+  for (ObjectIdSet::const_iterator it = ids.begin(); it != ids.end(); ++it) {
+    ModelType type;
+    if (!ObjectIdToRealModelType(*it, &type)) {
+      DLOG(WARNING) << "Notification has invalid id: " << ObjectIdToString(*it);
+    }
+  }
+
+  if (invalidation_map.empty()) {
     LOG(WARNING) << "Sync received invalidation without any type information.";
   } else {
     allstatus_.IncrementNudgeCounter(NUDGE_SOURCE_NOTIFICATION);
     scheduler_->ScheduleInvalidationNudge(
         TimeDelta::FromMilliseconds(kSyncSchedulerDelayMsec),
-        type_invalidation_map, FROM_HERE);
+        invalidation_map, FROM_HERE);
     allstatus_.IncrementNotificationsReceived();
-    UpdateNotificationInfo(type_invalidation_map);
-    debug_info_event_listener_.OnIncomingNotification(type_invalidation_map);
+    UpdateNotificationInfo(invalidation_map);
+    debug_info_event_listener_.OnIncomingNotification(invalidation_map);
   }
 
   if (js_event_handler_.IsInitialized()) {
     base::DictionaryValue details;
     base::ListValue* changed_types = new base::ListValue();
     details.Set("changedTypes", changed_types);
-    for (ModelTypeInvalidationMap::const_iterator it =
-             type_invalidation_map.begin(); it != type_invalidation_map.end();
-         ++it) {
-      const std::string& model_type_str =
-          ModelTypeToString(it->first);
+    ObjectIdSet id_set = ObjectIdInvalidationMapToSet(invalidation_map);
+    ModelTypeSet nudged_types = ObjectIdSetToModelTypeSet(id_set);
+    DCHECK(!nudged_types.Empty());
+    for (ModelTypeSet::Iterator it = nudged_types.First();
+         it.Good(); it.Inc()) {
+      const std::string model_type_str = ModelTypeToString(it.Get());
       changed_types->Append(new base::StringValue(model_type_str));
     }
     details.SetString("source", "REMOTE_INVALIDATION");

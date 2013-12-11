@@ -244,9 +244,6 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
     'third_party/lcov/contrib/galaxy/genflat.pl': [
         'GPL (v2 or later)',
     ],
-    'third_party/lcov-1.9/contrib/galaxy/genflat.pl': [
-        'GPL (v2 or later)',
-    ],
     'third_party/libevent': [  # http://crbug.com/98309
         'UNKNOWN',
     ],
@@ -365,6 +362,17 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
     'third_party/sqlite': [
         'UNKNOWN',
     ],
+
+    # https://code.google.com/p/colorama/issues/detail?id=44
+    'tools/swarm_client/third_party/colorama': [
+        'UNKNOWN',
+    ],
+
+    # https://github.com/kennethreitz/requests/issues/1610
+    'tools/swarm_client/third_party/requests': [
+        'UNKNOWN',
+    ],
+
     'third_party/swig/Lib/linkruntime.c': [  # http://crbug.com/98585
         'UNKNOWN',
     ],

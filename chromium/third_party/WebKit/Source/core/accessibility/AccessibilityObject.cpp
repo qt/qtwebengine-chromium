@@ -34,6 +34,7 @@
 #include "core/dom/UserGestureIndicator.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
+#include "core/page/Frame.h"
 #include "core/platform/LocalizedStrings.h"
 #include "core/rendering/RenderListItem.h"
 #include "core/rendering/RenderTheme.h"
@@ -57,16 +58,16 @@ struct RoleEntry {
 static ARIARoleMap* createARIARoleMap()
 {
     const RoleEntry roles[] = {
-        { "alert", ApplicationAlertRole },
-        { "alertdialog", ApplicationAlertDialogRole },
-        { "application", LandmarkApplicationRole },
-        { "article", DocumentArticleRole },
-        { "banner", LandmarkBannerRole },
+        { "alert", AlertRole },
+        { "alertdialog", AlertDialogRole },
+        { "application", ApplicationRole },
+        { "article", ArticleRole },
+        { "banner", BannerRole },
         { "button", ButtonRole },
         { "checkbox", CheckBoxRole },
-        { "complementary", LandmarkComplementaryRole },
-        { "contentinfo", LandmarkContentInfoRole },
-        { "dialog", ApplicationDialogRole },
+        { "complementary", ComplementaryRole },
+        { "contentinfo", ContentInfoRole },
+        { "dialog", DialogRole },
         { "directory", DirectoryRole },
         { "grid", TableRole },
         { "gridcell", CellRole },
@@ -78,41 +79,41 @@ static ARIARoleMap* createARIARoleMap()
         { "group", GroupRole },
         { "heading", HeadingRole },
         { "img", ImageRole },
-        { "link", WebCoreLinkRole },
+        { "link", LinkRole },
         { "list", ListRole },
         { "listitem", ListItemRole },
         { "listbox", ListBoxRole },
-        { "log", ApplicationLogRole },
+        { "log", LogRole },
         // "option" isn't here because it may map to different roles depending on the parent element's role
-        { "main", LandmarkMainRole },
-        { "marquee", ApplicationMarqueeRole },
-        { "math", DocumentMathRole },
+        { "main", MainRole },
+        { "marquee", MarqueeRole },
+        { "math", MathRole },
         { "menu", MenuRole },
         { "menubar", MenuBarRole },
         { "menuitem", MenuItemRole },
         { "menuitemcheckbox", MenuItemRole },
         { "menuitemradio", MenuItemRole },
-        { "note", DocumentNoteRole },
-        { "navigation", LandmarkNavigationRole },
+        { "note", NoteRole },
+        { "navigation", NavigationRole },
         { "option", ListBoxOptionRole },
         { "presentation", PresentationalRole },
         { "progressbar", ProgressIndicatorRole },
         { "radio", RadioButtonRole },
         { "radiogroup", RadioGroupRole },
-        { "region", DocumentRegionRole },
+        { "region", RegionRole },
         { "row", RowRole },
         { "scrollbar", ScrollBarRole },
-        { "search", LandmarkSearchRole },
+        { "search", SearchRole },
         { "separator", SplitterRole },
         { "slider", SliderRole },
         { "spinbutton", SpinButtonRole },
-        { "status", ApplicationStatusRole },
+        { "status", StatusRole },
         { "tab", TabRole },
         { "tablist", TabListRole },
         { "tabpanel", TabPanelRole },
         { "text", StaticTextRole },
         { "textbox", TextAreaRole },
-        { "timer", ApplicationTimerRole },
+        { "timer", TimerRole },
         { "toolbar", ToolbarRole },
         { "tooltip", UserInterfaceTooltipRole },
         { "tree", TreeRole },
@@ -202,6 +203,30 @@ bool AccessibilityObject::isTextControl() const
     case TextAreaRole:
     case TextFieldRole:
     case ComboBoxRole:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool AccessibilityObject::isClickable() const
+{
+    switch (roleValue()) {
+    case ButtonRole:
+    case CheckBoxRole:
+    case ColorWellRole:
+    case ComboBoxRole:
+    case EditableTextRole:
+    case ImageMapLinkRole:
+    case LinkRole:
+    case ListBoxOptionRole:
+    case MenuButtonRole:
+    case PopUpButtonRole:
+    case RadioButtonRole:
+    case TabRole:
+    case TextAreaRole:
+    case TextFieldRole:
+    case ToggleButtonRole:
         return true;
     default:
         return false;
@@ -306,7 +331,6 @@ String AccessibilityObject::actionVerb() const
     case CheckBoxRole:
         return isChecked() ? AXCheckedCheckBoxActionVerb() : AXUncheckedCheckBoxActionVerb();
     case LinkRole:
-    case WebCoreLinkRole:
         return AXLinkActionVerb();
     case PopUpButtonRole:
         return AXMenuListActionVerb();
@@ -432,7 +456,7 @@ IntRect AccessibilityObject::boundingBoxForQuads(RenderObject* obj, const Vector
         IntRect r = quads[i].enclosingBoundingBox();
         if (!r.isEmpty()) {
             if (obj->style()->hasAppearance())
-                obj->theme()->adjustRepaintRect(obj, r);
+                RenderTheme::theme().adjustRepaintRect(obj, r);
             result.unite(r);
         }
     }
@@ -482,12 +506,7 @@ AccessibilityObject* AccessibilityObject::firstAccessibleObjectFromNode(const No
     if (!node)
         return 0;
 
-    Document* document = node->document();
-    if (!document)
-        return 0;
-
-    AXObjectCache* cache = document->axObjectCache();
-
+    AXObjectCache* cache = node->document().axObjectCache();
     AccessibilityObject* accessibleObject = cache->getOrCreate(node->renderer());
     while (accessibleObject && accessibleObject->accessibilityIsIgnored()) {
         node = NodeTraversal::next(node);
@@ -540,7 +559,7 @@ Document* AccessibilityObject::document() const
     if (!frameView)
         return 0;
 
-    return frameView->frame()->document();
+    return frameView->frame().document();
 }
 
 FrameView* AccessibilityObject::documentFrameView() const
@@ -618,9 +637,6 @@ bool AccessibilityObject::press() const
     Element* actionElem = actionElement();
     if (!actionElem)
         return false;
-    if (Frame* f = actionElem->document()->frame())
-        f->loader()->resetMultipleFormSubmissionProtection();
-
     UserGestureIndicator gestureIndicator(DefinitelyProcessingNewUserGesture);
     actionElem->accessKeyAction(true);
     return true;
@@ -868,7 +884,7 @@ static bool replacedNodeNeedsCharacter(Node* replacedNode)
         return false;
 
     // create an AX object, but skip it if it is not supposed to be seen
-    AccessibilityObject* object = replacedNode->renderer()->document()->axObjectCache()->getOrCreate(replacedNode);
+    AccessibilityObject* object = replacedNode->renderer()->document().axObjectCache()->getOrCreate(replacedNode);
     if (object->accessibilityIsIgnored())
         return false;
 

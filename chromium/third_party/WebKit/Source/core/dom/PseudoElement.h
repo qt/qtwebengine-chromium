@@ -39,11 +39,10 @@ public:
     {
         return adoptRef(new PseudoElement(parent, pseudoId));
     }
-    ~PseudoElement();
 
     virtual PassRefPtr<RenderStyle> customStyleForRenderer() OVERRIDE;
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE;
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
 
     // As per http://dev.w3.org/csswg/css3-regions/#flow-into, pseudo-elements such as ::first-line, ::first-letter, ::before or ::after
     // cannot be directly collected into a named flow.
@@ -57,7 +56,7 @@ public:
 private:
     PseudoElement(Element*, PseudoId);
 
-    virtual void didRecalcStyle(StyleChange) OVERRIDE;
+    virtual void didRecalcStyle(StyleRecalcChange) OVERRIDE;
     virtual PseudoId customPseudoId() const OVERRIDE { return m_pseudoId; }
 
     PseudoId m_pseudoId;
@@ -69,6 +68,21 @@ inline bool pseudoElementRendererIsNeeded(const RenderStyle* style)
 {
     return style && style->display() != NONE && (style->styleType() == BACKDROP || style->contentData() || !style->regionThread().isEmpty());
 }
+
+inline PseudoElement* toPseudoElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isPseudoElement());
+    return static_cast<PseudoElement*>(node);
+}
+
+inline const PseudoElement* toPseudoElement(const Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isPseudoElement());
+    return static_cast<const PseudoElement*>(node);
+}
+
+// This will catch anyone doing an unnecessary cast.
+void toPseudoElement(const PseudoElement*);
 
 } // namespace
 

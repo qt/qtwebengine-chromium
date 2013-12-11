@@ -12,10 +12,11 @@
 #include "base/basictypes.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
+#include "base/memory/ref_counted_memory.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
-#include "base/message_loop/message_pump_aurax11.h"
 #include "base/message_loop/message_pump_observer.h"
+#include "base/message_loop/message_pump_x11.h"
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -25,7 +26,7 @@
 #include "ui/base/x/selection_utils.h"
 #include "ui/base/x/x11_atom_cache.h"
 #include "ui/base/x/x11_util.h"
-
+#include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/size.h"
 
 namespace ui {
@@ -33,7 +34,6 @@ namespace ui {
 namespace {
 
 const char kClipboard[] = "CLIPBOARD";
-const char kMimeTypeBitmap[] = "image/bmp";
 const char kMimeTypeFilename[] = "chromium/filename";
 const char kMimeTypePepperCustomData[] = "chromium/x-pepper-custom-data";
 const char kMimeTypeWebkitSmartPaste[] = "chromium/x-webkit-paste";
@@ -41,7 +41,7 @@ const char kTargets[] = "TARGETS";
 
 const char* kAtomsToCache[] = {
   kClipboard,
-  kMimeTypeBitmap,
+  Clipboard::kMimeTypePNG,
   kMimeTypeFilename,
   kMimeTypeMozillaURL,
   kMimeTypeWebkitSmartPaste,
@@ -90,9 +90,9 @@ SelectionChangeObserver::SelectionChangeObserver()
       clipboard_sequence_number_(0),
       primary_sequence_number_(0) {
   int ignored;
-  if (XFixesQueryExtension(GetXDisplay(), &event_base_, &ignored)) {
-    clipboard_atom_ = XInternAtom(GetXDisplay(), kClipboard, false);
-    XFixesSelectSelectionInput(GetXDisplay(), GetX11RootWindow(),
+  if (XFixesQueryExtension(gfx::GetXDisplay(), &event_base_, &ignored)) {
+    clipboard_atom_ = XInternAtom(gfx::GetXDisplay(), kClipboard, false);
+    XFixesSelectSelectionInput(gfx::GetXDisplay(), GetX11RootWindow(),
                                clipboard_atom_,
                                XFixesSetSelectionOwnerNotifyMask |
                                XFixesSelectionWindowDestroyNotifyMask |
@@ -100,13 +100,13 @@ SelectionChangeObserver::SelectionChangeObserver()
     // This seems to be semi-optional. For some reason, registering for any
     // selection notify events seems to subscribe us to events for both the
     // primary and the clipboard buffers. Register anyway just to be safe.
-    XFixesSelectSelectionInput(GetXDisplay(), GetX11RootWindow(),
+    XFixesSelectSelectionInput(gfx::GetXDisplay(), GetX11RootWindow(),
                                XA_PRIMARY,
                                XFixesSetSelectionOwnerNotifyMask |
                                XFixesSelectionWindowDestroyNotifyMask |
                                XFixesSelectionClientCloseNotifyMask);
 
-    base::MessagePumpAuraX11::Current()->AddObserver(this);
+    base::MessagePumpX11::Current()->AddObserver(this);
   }
 }
 
@@ -309,7 +309,7 @@ class Clipboard::AuraX11Details : public base::MessagePumpDispatcher {
 };
 
 Clipboard::AuraX11Details::AuraX11Details()
-    : x_display_(GetXDisplay()),
+    : x_display_(gfx::GetXDisplay()),
       x_root_window_(DefaultRootWindow(x_display_)),
       x_window_(XCreateWindow(
           x_display_, x_root_window_,
@@ -332,11 +332,11 @@ Clipboard::AuraX11Details::AuraX11Details()
   XStoreName(x_display_, x_window_, "Chromium clipboard");
   XSelectInput(x_display_, x_window_, PropertyChangeMask);
 
-  base::MessagePumpAuraX11::Current()->AddDispatcherForWindow(this, x_window_);
+  base::MessagePumpX11::Current()->AddDispatcherForWindow(this, x_window_);
 }
 
 Clipboard::AuraX11Details::~AuraX11Details() {
-  base::MessagePumpAuraX11::Current()->RemoveDispatcherForWindow(x_window_);
+  base::MessagePumpX11::Current()->RemoveDispatcherForWindow(x_window_);
 
   XDestroyWindow(x_display_, x_window_);
 }
@@ -653,7 +653,16 @@ void Clipboard::ReadRTF(Buffer buffer, std::string* result) const {
 
 SkBitmap Clipboard::ReadImage(Buffer buffer) const {
   DCHECK(CalledOnValidThread());
-  NOTIMPLEMENTED();
+
+  SelectionData data(aurax11_details_->RequestAndWaitForTypes(
+      buffer,
+      aurax11_details_->GetAtomsForFormat(GetBitmapFormatType())));
+  if (data.IsValid()) {
+    SkBitmap bitmap;
+    if (gfx::PNGCodec::Decode(data.GetData(), data.GetSize(), &bitmap))
+      return SkBitmap(bitmap);
+  }
+
   return SkBitmap();
 }
 
@@ -749,10 +758,21 @@ void Clipboard::WriteWebSmartPaste() {
 }
 
 void Clipboard::WriteBitmap(const char* pixel_data, const char* size_data) {
-  // TODO(erg): I'm not sure if we should be writting BMP data here or
-  // not. It's what the GTK port does, but I'm not sure it's the right thing to
-  // do.
-  NOTIMPLEMENTED();
+  const gfx::Size* size = reinterpret_cast<const gfx::Size*>(size_data);
+
+  // Adopt the pixels into a SkBitmap. Note that the pixel order in memory is
+  // actually BGRA.
+  SkBitmap bitmap;
+  bitmap.setConfig(SkBitmap::kARGB_8888_Config, size->width(), size->height());
+  bitmap.setPixels(const_cast<char*>(pixel_data));
+
+  // Encode the bitmap as a PNG for transport.
+  std::vector<unsigned char> output;
+  if (gfx::PNGCodec::FastEncodeBGRASkBitmap(bitmap, false, &output)) {
+    aurax11_details_->InsertMapping(kMimeTypePNG,
+                                    base::RefCountedBytes::TakeVector(
+                                        &output));
+  }
 }
 
 void Clipboard::WriteData(const FormatType& format,
@@ -822,7 +842,7 @@ const Clipboard::FormatType& Clipboard::GetRtfFormatType() {
 
 // static
 const Clipboard::FormatType& Clipboard::GetBitmapFormatType() {
-  CR_DEFINE_STATIC_LOCAL(FormatType, type, (kMimeTypeBitmap));
+  CR_DEFINE_STATIC_LOCAL(FormatType, type, (kMimeTypePNG));
   return type;
 }
 

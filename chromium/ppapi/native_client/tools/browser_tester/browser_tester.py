@@ -47,6 +47,12 @@ def BuildArgParser():
                     metavar='DIRNAME',
                     help='Add directory DIRNAME to be served from the HTTP '
                     'server to be made visible under the root.')
+  parser.add_option('--output_dir', dest='output_dir', action='store',
+                    type='string', default=None,
+                    metavar='DIRNAME',
+                    help='Set directory DIRNAME to be the output directory '
+                    'when POSTing data to the server. NOTE: if this flag is '
+                    'not set, POSTs will fail.')
   parser.add_option('--test_arg', dest='test_args', action='append',
                     type='string', nargs=2, default=[],
                     metavar='KEY VALUE',
@@ -73,6 +79,10 @@ def BuildArgParser():
   parser.add_option('--ppapi_plugin', dest='ppapi_plugin', action='store',
                     type='string', default=None,
                     help='Use the browser plugin located here.')
+  parser.add_option('--ppapi_plugin_mimetype', dest='ppapi_plugin_mimetype',
+                    action='store', type='string', default='application/x-nacl',
+                    help='Associate this mimetype with the browser plugin. '
+                    'Unused if --ppapi_plugin is not specified.')
   parser.add_option('--sel_ldr', dest='sel_ldr', action='store',
                     type='string', default=None,
                     help='Use the sel_ldr located here.')
@@ -138,6 +148,10 @@ def BuildArgParser():
   parser.add_option('--enable_crash_reporter', dest='enable_crash_reporter',
                     action='store_true', default=False,
                     help='Force crash reporting on.')
+  parser.add_option('--enable_sockets', dest='enable_sockets',
+                    action='store_true', default=False,
+                    help='Pass --allow-nacl-socket-api=<host> to Chrome, where '
+                    '<host> is the name of the browser tester\'s web server.')
 
   return parser
 
@@ -235,14 +249,15 @@ def RunTestsOnce(url, options):
                    options.allow_404,
                    options.bandwidth,
                    listener,
-                   options.serving_dirs)
+                   options.serving_dirs,
+                   options.output_dir)
 
   browser = browsertester.browserlauncher.ChromeLauncher(options)
 
   full_url = 'http://%s:%d/%s' % (host, port, url)
   if len(options.test_args) > 0:
     full_url += '?' + urllib.urlencode(options.test_args)
-  browser.Run(full_url, port)
+  browser.Run(full_url, host, port)
   server.TestingBegun(0.125)
 
   # In Python 2.5, server.handle_request may block indefinitely.  Serving pages
@@ -308,6 +323,13 @@ def RunTestsOnce(url, options):
           DumpNetLog(browser.NetLogName())
     except Exception:
       listener.ever_failed = 1
+    # Try to let the browser clean itself up normally before killing it.
+    sys.stdout.write('##################### Terminating the browser\n')
+    browser.WaitForProcessDeath()
+    if browser.IsRunning():
+      sys.stdout.write('##################### TERM failed, KILLING\n')
+    # Always call Cleanup; it kills the process, but also removes the
+    # user-data-dir.
     browser.Cleanup()
     # We avoid calling server.server_close() here because it causes
     # the HTTP server thread to exit uncleanly with an EBADF error,

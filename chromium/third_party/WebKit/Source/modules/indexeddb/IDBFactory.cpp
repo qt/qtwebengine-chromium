@@ -29,23 +29,17 @@
 #include "config.h"
 #include "modules/indexeddb/IDBFactory.h"
 
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/IDBBindingUtilities.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/page/Frame.h"
-#include "core/page/Page.h"
-#include "core/page/PageGroup.h"
 #include "core/platform/HistogramSupport.h"
-#include "core/workers/WorkerGlobalScope.h"
-#include "core/workers/WorkerLoaderProxy.h"
-#include "core/workers/WorkerThread.h"
 #include "modules/indexeddb/IDBDatabase.h"
 #include "modules/indexeddb/IDBDatabaseCallbacksImpl.h"
 #include "modules/indexeddb/IDBFactoryBackendInterface.h"
 #include "modules/indexeddb/IDBHistograms.h"
 #include "modules/indexeddb/IDBKey.h"
-#include "modules/indexeddb/IDBKeyRange.h"
 #include "modules/indexeddb/IDBOpenDBRequest.h"
 #include "modules/indexeddb/IDBTracing.h"
 #include "weborigin/DatabaseIdentifier.h"
@@ -81,7 +75,7 @@ PassRefPtr<IDBRequest> IDBFactory::getDatabaseNames(ScriptExecutionContext* cont
     if (!isContextValid(context))
         return 0;
     if (!context->securityOrigin()->canAccessDatabase()) {
-        es.throwDOMException(SecurityError);
+        es.throwSecurityError(ExceptionMessages::failedToExecute("getDatabaseNames", "IDBFactory", "access to the Indexed Database API is denied in this context."));
         return 0;
     }
 
@@ -111,7 +105,7 @@ PassRefPtr<IDBOpenDBRequest> IDBFactory::openInternal(ScriptExecutionContext* co
     if (!isContextValid(context))
         return 0;
     if (!context->securityOrigin()->canAccessDatabase()) {
-        es.throwDOMException(SecurityError);
+        es.throwSecurityError(ExceptionMessages::failedToExecute("open", "IDBFactory", "access to the Indexed Database API is denied in this context."));
         return 0;
     }
 
@@ -139,7 +133,7 @@ PassRefPtr<IDBOpenDBRequest> IDBFactory::deleteDatabase(ScriptExecutionContext* 
     if (!isContextValid(context))
         return 0;
     if (!context->securityOrigin()->canAccessDatabase()) {
-        es.throwDOMException(SecurityError);
+        es.throwSecurityError(ExceptionMessages::failedToExecute("deleteDatabase", "IDBFactory", "access to the Indexed Database API is denied in this context."));
         return 0;
     }
 

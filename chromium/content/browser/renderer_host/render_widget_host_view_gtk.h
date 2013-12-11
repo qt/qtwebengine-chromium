@@ -17,8 +17,6 @@
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_sender.h"
-#include "ui/base/animation/animation_delegate.h"
-#include "ui/base/animation/slide_animation.h"
 #include "ui/base/gtk/gtk_signal.h"
 #include "ui/base/gtk/gtk_signal_registrar.h"
 #include "ui/base/gtk/owned_widget_gtk.h"
@@ -83,8 +81,8 @@ class CONTENT_EXPORT RenderWidgetHostViewGtk
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
   virtual void TextInputTypeChanged(ui::TextInputType type,
-                                    bool can_compose_inline,
-                                    ui::TextInputMode input_mode) OVERRIDE;
+                                    ui::TextInputMode input_mode,
+                                    bool can_compose_inline) OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
   virtual void DidUpdateBackingStore(
       const gfx::Rect& scroll_rect,
@@ -98,7 +96,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGtk
   virtual void SetTooltipText(const string16& tooltip_text) OVERRIDE;
   virtual void SelectionChanged(const string16& text,
                                 size_t offset,
-                                const ui::Range& range) OVERRIDE;
+                                const gfx::Range& range) OVERRIDE;
   virtual void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) OVERRIDE;
   virtual void ScrollOffsetChanged() OVERRIDE;
@@ -131,8 +129,8 @@ class CONTENT_EXPORT RenderWidgetHostViewGtk
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
   virtual bool LockMouse() OVERRIDE;
   virtual void UnlockMouse() OVERRIDE;
-  virtual void OnAccessibilityNotifications(
-      const std::vector<AccessibilityHostMsg_NotificationParams>& params)
+  virtual void OnAccessibilityEvents(
+      const std::vector<AccessibilityHostMsg_EventParams>& params)
       OVERRIDE;
 
   // ActiveWindowWatcherXObserver implementation.

@@ -107,11 +107,11 @@ bool SkColorFilterImageFilter::onFilterImage(Proxy* proxy, const SkBitmap& sourc
 
     SkIRect bounds;
     src.getBounds(&bounds);
-    if (!this->applyCropRect(&bounds)) {
+    if (!this->applyCropRect(&bounds, matrix)) {
         return false;
     }
 
-    SkAutoTUnref<SkDevice> device(proxy->createDevice(bounds.width(), bounds.height()));
+    SkAutoTUnref<SkBaseDevice> device(proxy->createDevice(bounds.width(), bounds.height()));
     SkCanvas canvas(device.get());
     SkPaint paint;
 

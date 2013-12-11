@@ -18,79 +18,88 @@ const int kMaxInflightOperations = 5;
 RecursiveOperationDelegate::RecursiveOperationDelegate(
     FileSystemContext* file_system_context)
     : file_system_context_(file_system_context),
-      inflight_operations_(0) {
+      inflight_operations_(0),
+      canceled_(false) {
 }
 
 RecursiveOperationDelegate::~RecursiveOperationDelegate() {
 }
 
+void RecursiveOperationDelegate::Cancel() {
+  canceled_ = true;
+}
+
 void RecursiveOperationDelegate::StartRecursiveOperation(
     const FileSystemURL& root,
     const StatusCallback& callback) {
+  DCHECK(pending_directory_stack_.empty());
+  DCHECK(pending_files_.empty());
+  DCHECK_EQ(0, inflight_operations_);
+
   callback_ = callback;
-  pending_directories_.push(root);
-  ProcessNextDirectory();
+  ++inflight_operations_;
+  ProcessFile(
+      root,
+      base::Bind(&RecursiveOperationDelegate::DidTryProcessFile,
+                 AsWeakPtr(), root));
 }
 
 FileSystemOperationRunner* RecursiveOperationDelegate::operation_runner() {
   return file_system_context_->operation_runner();
 }
 
+void RecursiveOperationDelegate::DidTryProcessFile(
+    const FileSystemURL& root,
+    base::PlatformFileError error) {
+  DCHECK(pending_directory_stack_.empty());
+  DCHECK(pending_files_.empty());
+  DCHECK_EQ(1, inflight_operations_);
+
+  --inflight_operations_;
+  if (canceled_ || error != base::PLATFORM_FILE_ERROR_NOT_A_FILE) {
+    Done(error);
+    return;
+  }
+
+  pending_directory_stack_.push(std::queue<FileSystemURL>());
+  pending_directory_stack_.top().push(root);
+  ProcessNextDirectory();
+}
+
 void RecursiveOperationDelegate::ProcessNextDirectory() {
   DCHECK(pending_files_.empty());
-  if (inflight_operations_ > 0)
-    return;
-  if (pending_directories_.empty()) {
-    callback_.Run(base::PLATFORM_FILE_OK);
-    return;
-  }
-  FileSystemURL url = pending_directories_.front();
-  pending_directories_.pop();
-  inflight_operations_++;
+  DCHECK(!pending_directory_stack_.empty());
+  DCHECK(!pending_directory_stack_.top().empty());
+  DCHECK_EQ(0, inflight_operations_);
+
+  const FileSystemURL& url = pending_directory_stack_.top().front();
+
+  ++inflight_operations_;
   ProcessDirectory(
-      url, base::Bind(&RecursiveOperationDelegate::DidProcessDirectory,
-                      AsWeakPtr(), url));
-}
-
-void RecursiveOperationDelegate::ProcessPendingFiles() {
-  if (pending_files_.empty()) {
-    ProcessNextDirectory();
-    return;
-  }
-  while (!pending_files_.empty() &&
-         inflight_operations_ < kMaxInflightOperations) {
-    FileSystemURL url = pending_files_.front();
-    pending_files_.pop();
-    inflight_operations_++;
-    base::MessageLoopProxy::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&RecursiveOperationDelegate::ProcessFile,
-                   AsWeakPtr(), url,
-                   base::Bind(&RecursiveOperationDelegate::DidProcessFile,
-                              AsWeakPtr())));
-  }
-}
-
-void RecursiveOperationDelegate::DidProcessFile(base::PlatformFileError error) {
-  inflight_operations_--;
-  DCHECK_GE(inflight_operations_, 0);
-  if (error != base::PLATFORM_FILE_OK) {
-    callback_.Run(error);
-    return;
-  }
-  ProcessPendingFiles();
+      url,
+      base::Bind(
+          &RecursiveOperationDelegate::DidProcessDirectory, AsWeakPtr()));
 }
 
 void RecursiveOperationDelegate::DidProcessDirectory(
-    const FileSystemURL& url,
     base::PlatformFileError error) {
-  if (error != base::PLATFORM_FILE_OK) {
-    callback_.Run(error);
+  DCHECK(pending_files_.empty());
+  DCHECK(!pending_directory_stack_.empty());
+  DCHECK(!pending_directory_stack_.top().empty());
+  DCHECK_EQ(1, inflight_operations_);
+
+  --inflight_operations_;
+  if (canceled_ || error != base::PLATFORM_FILE_OK) {
+    Done(error);
     return;
   }
+
+  const FileSystemURL& parent = pending_directory_stack_.top().front();
+  pending_directory_stack_.push(std::queue<FileSystemURL>());
   operation_runner()->ReadDirectory(
-      url, base::Bind(&RecursiveOperationDelegate::DidReadDirectory,
-                      AsWeakPtr(), url));
+      parent,
+      base::Bind(&RecursiveOperationDelegate::DidReadDirectory,
+                 AsWeakPtr(), parent));
 }
 
 void RecursiveOperationDelegate::DidReadDirectory(
@@ -98,44 +107,130 @@ void RecursiveOperationDelegate::DidReadDirectory(
     base::PlatformFileError error,
     const FileEntryList& entries,
     bool has_more) {
-  if (error != base::PLATFORM_FILE_OK) {
-    if (error == base::PLATFORM_FILE_ERROR_NOT_A_DIRECTORY) {
-      // The given path may have been a file, so try RemoveFile now.
-      ProcessFile(parent,
-                  base::Bind(&RecursiveOperationDelegate::DidTryProcessFile,
-                             AsWeakPtr(), error));
-      return;
-    }
-    callback_.Run(error);
+  DCHECK(pending_files_.empty());
+  DCHECK(!pending_directory_stack_.empty());
+  DCHECK_EQ(0, inflight_operations_);
+
+  if (canceled_ || error != base::PLATFORM_FILE_OK) {
+    Done(error);
     return;
   }
+
   for (size_t i = 0; i < entries.size(); i++) {
     FileSystemURL url = file_system_context_->CreateCrackedFileSystemURL(
         parent.origin(),
         parent.mount_type(),
         parent.virtual_path().Append(entries[i].name));
     if (entries[i].is_directory)
-      pending_directories_.push(url);
+      pending_directory_stack_.top().push(url);
     else
       pending_files_.push(url);
   }
+
+  // Wait for next entries.
   if (has_more)
     return;
 
-  inflight_operations_--;
-  DCHECK_GE(inflight_operations_, 0);
   ProcessPendingFiles();
 }
 
-void RecursiveOperationDelegate::DidTryProcessFile(
-    base::PlatformFileError previous_error,
-    base::PlatformFileError error) {
-  if (error == base::PLATFORM_FILE_ERROR_NOT_A_FILE) {
-    // It wasn't a file either; returns with the previous error.
-    callback_.Run(previous_error);
+void RecursiveOperationDelegate::ProcessPendingFiles() {
+  DCHECK(!pending_directory_stack_.empty());
+
+  if ((pending_files_.empty() || canceled_) && inflight_operations_ == 0) {
+    ProcessSubDirectory();
     return;
   }
-  DidProcessFile(error);
+
+  // Do not post any new tasks.
+  if (canceled_)
+    return;
+
+  // Run ProcessFile in parallel (upto kMaxInflightOperations).
+  scoped_refptr<base::MessageLoopProxy> current_message_loop =
+      base::MessageLoopProxy::current();
+  while (!pending_files_.empty() &&
+         inflight_operations_ < kMaxInflightOperations) {
+    ++inflight_operations_;
+    current_message_loop->PostTask(
+        FROM_HERE,
+        base::Bind(&RecursiveOperationDelegate::ProcessFile,
+                   AsWeakPtr(), pending_files_.front(),
+                   base::Bind(&RecursiveOperationDelegate::DidProcessFile,
+                              AsWeakPtr())));
+    pending_files_.pop();
+  }
+}
+
+void RecursiveOperationDelegate::DidProcessFile(
+    base::PlatformFileError error) {
+  --inflight_operations_;
+  if (error != base::PLATFORM_FILE_OK) {
+    // If an error occurs, invoke Done immediately (even if there remain
+    // running operations). It is because in the callback, this instance is
+    // deleted.
+    Done(error);
+    return;
+  }
+
+  ProcessPendingFiles();
+}
+
+void RecursiveOperationDelegate::ProcessSubDirectory() {
+  DCHECK(pending_files_.empty());
+  DCHECK(!pending_directory_stack_.empty());
+  DCHECK_EQ(0, inflight_operations_);
+
+  if (canceled_) {
+    Done(base::PLATFORM_FILE_ERROR_ABORT);
+    return;
+  }
+
+  if (!pending_directory_stack_.top().empty()) {
+    // There remain some sub directories. Process them first.
+    ProcessNextDirectory();
+    return;
+  }
+
+  // All subdirectories are processed.
+  pending_directory_stack_.pop();
+  if (pending_directory_stack_.empty()) {
+    // All files/directories are processed.
+    Done(base::PLATFORM_FILE_OK);
+    return;
+  }
+
+  DCHECK(!pending_directory_stack_.top().empty());
+  ++inflight_operations_;
+  PostProcessDirectory(
+      pending_directory_stack_.top().front(),
+      base::Bind(&RecursiveOperationDelegate::DidPostProcessDirectory,
+                 AsWeakPtr()));
+}
+
+void RecursiveOperationDelegate::DidPostProcessDirectory(
+    base::PlatformFileError error) {
+  DCHECK(pending_files_.empty());
+  DCHECK(!pending_directory_stack_.empty());
+  DCHECK(!pending_directory_stack_.top().empty());
+  DCHECK_EQ(1, inflight_operations_);
+
+  --inflight_operations_;
+  pending_directory_stack_.top().pop();
+  if (canceled_ || error != base::PLATFORM_FILE_OK) {
+    Done(error);
+    return;
+  }
+
+  ProcessSubDirectory();
+}
+
+void RecursiveOperationDelegate::Done(base::PlatformFileError error) {
+  if (canceled_ && error == base::PLATFORM_FILE_OK) {
+    callback_.Run(base::PLATFORM_FILE_ERROR_ABORT);
+  } else {
+    callback_.Run(error);
+  }
 }
 
 }  // namespace fileapi

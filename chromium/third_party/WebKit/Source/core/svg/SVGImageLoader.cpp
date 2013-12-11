@@ -24,8 +24,8 @@
 
 #include "core/dom/Event.h"
 #include "core/dom/EventNames.h"
+#include "core/fetch/ImageResource.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/loader/cache/ImageResource.h"
 #include "core/svg/SVGImageElement.h"
 
 namespace WebCore {
@@ -38,7 +38,7 @@ SVGImageLoader::SVGImageLoader(SVGImageElement* node)
 void SVGImageLoader::dispatchLoadEvent()
 {
     if (image()->errorOccurred())
-        element()->dispatchEvent(Event::create(eventNames().errorEvent, false, false));
+        element()->dispatchEvent(Event::create(eventNames().errorEvent));
     else {
         SVGImageElement* imageElement = toSVGImageElement(element());
         if (imageElement->externalResourcesRequiredBaseValue())
@@ -51,7 +51,7 @@ String SVGImageLoader::sourceURI(const AtomicString& attribute) const
     KURL base = element()->baseURI();
     if (base.isValid())
         return KURL(base, stripLeadingAndTrailingHTMLSpaces(attribute)).string();
-    return element()->document()->completeURL(stripLeadingAndTrailingHTMLSpaces(attribute));
+    return element()->document().completeURL(stripLeadingAndTrailingHTMLSpaces(attribute));
 }
 
 }

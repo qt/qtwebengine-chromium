@@ -37,6 +37,7 @@ namespace WebCore {
 class AffineTransform;
 class CSSCursorImageValue;
 class Document;
+class SubtreeLayoutScope;
 class SVGAttributeToPropertyMap;
 class SVGCursorElement;
 class SVGDocumentExtensions;
@@ -48,7 +49,6 @@ void mapAttributeToCSSProperty(HashMap<StringImpl*, CSSPropertyID>* propertyName
 
 class SVGElement : public Element, public SVGLangSpace {
 public:
-    static PassRefPtr<SVGElement> create(const QualifiedName&, Document*);
     virtual ~SVGElement();
 
     bool isOutermostSVGSVGElement() const;
@@ -134,18 +134,20 @@ public:
 
     virtual bool shouldMoveToFlowThread(RenderStyle*) const OVERRIDE;
 
+    void invalidateRelativeLengthClients(SubtreeLayoutScope* = 0);
+
 protected:
-    SVGElement(const QualifiedName&, Document*, ConstructionType = CreateSVGElement);
+    SVGElement(const QualifiedName&, Document&, ConstructionType = CreateSVGElement);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
 
     virtual void finishParsingChildren();
     virtual void attributeChanged(const QualifiedName&, const AtomicString&, AttributeModificationReason = ModifiedDirectly) OVERRIDE;
-    virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const OVERRIDE;
+    virtual bool childShouldCreateRenderer(const Node& child) const OVERRIDE;
 
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
-    virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE;
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
@@ -172,7 +174,7 @@ private:
 
     RenderStyle* computedStyle(PseudoId = NOPSEUDO);
     virtual RenderStyle* virtualComputedStyle(PseudoId pseudoElementSpecifier = NOPSEUDO) { return computedStyle(pseudoElementSpecifier); }
-    virtual void willRecalcStyle(StyleChange) OVERRIDE;
+    virtual void willRecalcStyle(StyleRecalcChange) OVERRIDE;
     virtual bool isKeyboardFocusable() const OVERRIDE;
 
     void buildPendingResourcesIfNeeded();
@@ -187,6 +189,10 @@ private:
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGElement)
         DECLARE_ANIMATED_STRING(ClassName, className)
     END_DECLARE_ANIMATED_PROPERTIES
+
+#if !ASSERT_DISABLED
+    bool m_inRelativeLengthClientsInvalidation;
+#endif
 };
 
 struct SVGAttributeHashTranslator {

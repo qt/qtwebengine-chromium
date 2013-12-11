@@ -7,6 +7,7 @@
 #include "content/renderer/pepper/url_request_info_util.h"
 #include "ppapi/proxy/connection.h"
 #include "ppapi/proxy/url_request_info_resource.h"
+#include "ppapi/shared_impl/proxy_lock.h"
 #include "ppapi/shared_impl/test_globals.h"
 #include "ppapi/shared_impl/url_request_info_data.h"
 #include "ppapi/thunk/thunk.h"
@@ -60,6 +61,7 @@ class URLRequestInfoTest : public RenderViewTest {
 
   virtual void SetUp() OVERRIDE {
     RenderViewTest::SetUp();
+    ppapi::ProxyLock::DisableLockingOnThreadForTest();
 
     test_globals_.GetResourceTracker()->DidCreateInstance(pp_instance_);
 
@@ -77,7 +79,7 @@ class URLRequestInfoTest : public RenderViewTest {
   bool GetDownloadToFile() {
     WebURLRequest web_request;
     URLRequestInfoData data = info_->GetData();
-    if (!CreateWebURLRequest(&data, GetMainFrame(), &web_request))
+    if (!CreateWebURLRequest(pp_instance_, &data, GetMainFrame(), &web_request))
       return false;
     return web_request.downloadToFile();
   }
@@ -85,7 +87,7 @@ class URLRequestInfoTest : public RenderViewTest {
   WebCString GetURL() {
     WebURLRequest web_request;
     URLRequestInfoData data = info_->GetData();
-    if (!CreateWebURLRequest(&data, GetMainFrame(), &web_request))
+    if (!CreateWebURLRequest(pp_instance_, &data, GetMainFrame(), &web_request))
       return WebCString();
     return web_request.url().spec();
   }
@@ -93,7 +95,7 @@ class URLRequestInfoTest : public RenderViewTest {
   WebString GetMethod() {
     WebURLRequest web_request;
     URLRequestInfoData data = info_->GetData();
-    if (!CreateWebURLRequest(&data, GetMainFrame(), &web_request))
+    if (!CreateWebURLRequest(pp_instance_, &data, GetMainFrame(), &web_request))
       return WebString();
     return web_request.httpMethod();
   }
@@ -101,7 +103,7 @@ class URLRequestInfoTest : public RenderViewTest {
   WebString GetHeaderValue(const char* field) {
     WebURLRequest web_request;
     URLRequestInfoData data = info_->GetData();
-    if (!CreateWebURLRequest(&data, GetMainFrame(), &web_request))
+    if (!CreateWebURLRequest(pp_instance_, &data, GetMainFrame(), &web_request))
       return WebString();
     return web_request.httpHeaderField(WebString::fromUTF8(field));
   }

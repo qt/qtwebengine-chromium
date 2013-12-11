@@ -6,6 +6,7 @@
 #define CONTENT_PUBLIC_RENDERER_CONTENT_RENDERER_CLIENT_H_
 
 #include <string>
+#include <vector>
 
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
@@ -51,6 +52,7 @@ namespace content {
 
 class RenderView;
 class SynchronousCompositor;
+struct KeySystemInfo;
 struct WebPluginInfo;
 
 // Embedder API for participating in renderer logic.
@@ -243,6 +245,22 @@ class CONTENT_EXPORT ContentRendererClient {
 
   // Returns true if the page at |url| can use Pepper MediaStream APIs.
   virtual bool AllowPepperMediaStreamAPI(const GURL& url);
+
+  // Gives the embedder a chance to register the key system(s) it supports by
+  // populating |key_systems|.
+  virtual void AddKeySystems(std::vector<KeySystemInfo>* key_systems);
+
+  // Returns true if we should report a detailed message (including a stack
+  // trace) for console [logs|errors|exceptions]. |source| is the WebKit-
+  // reported source for the error; this can point to a page or a script,
+  // and can be external or internal.
+  virtual bool ShouldReportDetailedMessageForSource(
+      const base::string16& source) const;
+
+  // Returns true if we should apply the cross-site document blocking policy to
+  // this renderer process. Currently, we apply the policy only to a renderer
+  // process running on a normal page from the web.
+  virtual bool ShouldEnableSiteIsolationPolicy() const;
 };
 
 }  // namespace content

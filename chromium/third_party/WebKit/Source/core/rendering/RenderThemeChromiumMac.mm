@@ -394,7 +394,7 @@ Color RenderThemeChromiumMac::systemColor(CSSValueID cssValueId) const
             return it->value;
     }
 
-    Color color = Color::transparent;
+    Color color;
     switch (cssValueId) {
         case CSSValueActiveborder:
             color = convertNSColorToColor([NSColor keyboardFocusIndicatorColor]);
@@ -495,10 +495,10 @@ Color RenderThemeChromiumMac::systemColor(CSSValueID cssValueId) const
             break;
     }
 
-    if (!color.alpha())
+    if (!color.isValid())
         color = RenderTheme::systemColor(cssValueId);
 
-    if (color.alpha())
+    if (color.isValid())
         m_systemColorCache.set(cssValueId, color.rgb());
 
     return color;
@@ -1247,7 +1247,7 @@ bool RenderThemeChromiumMac::paintMenuListButton(RenderObject* o, const PaintInf
 
     GraphicsContextStateSaver stateSaver(*paintInfo.context);
 
-    paintInfo.context->setFillColor(o->resolveColor(CSSPropertyColor));
+    paintInfo.context->setFillColor(o->style()->visitedDependentColor(CSSPropertyColor));
     paintInfo.context->setStrokeStyle(NoStroke);
 
     FloatPoint arrow1[3];
@@ -1897,10 +1897,10 @@ NSView* FlippedView()
     return view;
 }
 
-PassRefPtr<RenderTheme> RenderTheme::themeForPage(Page*)
+RenderTheme& RenderTheme::theme()
 {
-    static RenderTheme* rt = RenderThemeChromiumMac::create().leakRef();
-    return rt;
+    static RenderTheme* renderTheme = RenderThemeChromiumMac::create().leakRef();
+    return *renderTheme;
 }
 
 PassRefPtr<RenderTheme> RenderThemeChromiumMac::create()

@@ -8,17 +8,14 @@
 #include "content/renderer/pepper/ppb_audio_impl.h"
 #include "content/renderer/pepper/ppb_broker_impl.h"
 #include "content/renderer/pepper/ppb_buffer_impl.h"
-#include "content/renderer/pepper/ppb_file_ref_impl.h"
 #include "content/renderer/pepper/ppb_flash_message_loop_impl.h"
 #include "content/renderer/pepper/ppb_graphics_3d_impl.h"
 #include "content/renderer/pepper/ppb_image_data_impl.h"
-#include "content/renderer/pepper/ppb_network_monitor_private_impl.h"
 #include "content/renderer/pepper/ppb_scrollbar_impl.h"
-#include "content/renderer/pepper/ppb_tcp_socket_private_impl.h"
 #include "content/renderer/pepper/ppb_video_decoder_impl.h"
-#include "content/renderer/pepper/ppb_x509_certificate_private_impl.h"
 #include "ppapi/c/pp_size.h"
 #include "ppapi/shared_impl/ppb_audio_config_shared.h"
+#include "ppapi/shared_impl/ppb_audio_shared.h"
 #include "ppapi/shared_impl/ppb_image_data_shared.h"
 #include "ppapi/shared_impl/ppb_input_event_shared.h"
 #include "ppapi/shared_impl/ppb_resource_array_shared.h"
@@ -37,13 +34,24 @@ ResourceCreationImpl::ResourceCreationImpl(PepperPluginInstanceImpl* instance) {
 ResourceCreationImpl::~ResourceCreationImpl() {
 }
 
+PP_Resource ResourceCreationImpl::CreateAudio1_0(
+    PP_Instance instance,
+    PP_Resource config_id,
+    PPB_Audio_Callback_1_0 audio_callback,
+    void* user_data) {
+  return PPB_Audio_Impl::Create(
+      instance, config_id, ppapi::AudioCallbackCombined(audio_callback),
+      user_data);
+}
+
 PP_Resource ResourceCreationImpl::CreateAudio(
     PP_Instance instance,
     PP_Resource config_id,
     PPB_Audio_Callback audio_callback,
     void* user_data) {
-  return PPB_Audio_Impl::Create(instance, config_id, audio_callback,
-                                user_data);
+  return PPB_Audio_Impl::Create(
+      instance, config_id, ppapi::AudioCallbackCombined(audio_callback),
+      user_data);
 }
 
 PP_Resource ResourceCreationImpl::CreateAudioConfig(
@@ -70,22 +78,6 @@ PP_Resource ResourceCreationImpl::CreateBroker(PP_Instance instance) {
 PP_Resource ResourceCreationImpl::CreateBuffer(PP_Instance instance,
                                                uint32_t size) {
   return PPB_Buffer_Impl::Create(instance, size);
-}
-
-PP_Resource ResourceCreationImpl::CreateFileRef(
-    PP_Instance instance,
-    PP_Resource file_system,
-    const char* path) {
-  PPB_FileRef_Impl* res = PPB_FileRef_Impl::CreateInternal(
-      instance, file_system, path);
-  return res ? res->GetReference() : 0;
-}
-
-PP_Resource ResourceCreationImpl::CreateFileRef(
-    const ppapi::PPB_FileRef_CreateInfo& serialized) {
-  // When we're in-process, the host resource in the create info *is* the
-  // resource, so we don't need to do anything.
-  return serialized.resource.host_resource();
 }
 
 PP_Resource ResourceCreationImpl::CreateFlashDRM(PP_Instance instance) {
@@ -167,12 +159,6 @@ PP_Resource ResourceCreationImpl::CreateIMEInputEvent(
       segment_offsets, target_segment, selection_start, selection_end);
 }
 
-PP_Resource ResourceCreationImpl::CreateIsolatedFileSystem(PP_Instance instance,
-                                                           const char* fsid) {
-  NOTIMPLEMENTED();  // no need to support in-process
-  return 0;
-}
-
 PP_Resource ResourceCreationImpl::CreateKeyboardInputEvent(
     PP_Instance instance,
     PP_InputEvent_Type type,
@@ -226,11 +212,13 @@ PP_Resource ResourceCreationImpl::CreateTouchInputEvent(
       ppapi::OBJECT_IS_IMPL, instance, type, time_stamp, modifiers);
 }
 
-PP_Resource ResourceCreationImpl::CreateNetworkMonitor(
-    PP_Instance instance,
-    PPB_NetworkMonitor_Callback callback,
-    void* user_data) {
-  return PPB_NetworkMonitor_Private_Impl::Create(instance, callback, user_data);
+PP_Resource ResourceCreationImpl::CreateNetworkMonitor(PP_Instance instance) {
+  return 0;  // Not supported in-process.
+}
+
+PP_Resource ResourceCreationImpl::CreatePlatformVerificationPrivate(
+    PP_Instance instance) {
+  return 0;  // Not supported in-process.
 }
 
 PP_Resource ResourceCreationImpl::CreateScrollbar(PP_Instance instance,
@@ -256,12 +244,16 @@ PP_Resource ResourceCreationImpl::CreateTCPServerSocketPrivate(
   return 0;  // Not supported in-process.
 }
 
+PP_Resource ResourceCreationImpl::CreateTCPSocket1_0(PP_Instance instance) {
+  return 0;  // Not supported in-process.
+}
+
 PP_Resource ResourceCreationImpl::CreateTCPSocket(PP_Instance instance) {
   return 0;  // Not supported in-process.
 }
 
 PP_Resource ResourceCreationImpl::CreateTCPSocketPrivate(PP_Instance instance) {
-  return PPB_TCPSocket_Private_Impl::CreateResource(instance);
+  return 0;  // Not supported in-process.
 }
 
 PP_Resource ResourceCreationImpl::CreateUDPSocket(PP_Instance instance) {
@@ -307,7 +299,7 @@ PP_Resource ResourceCreationImpl::CreateWheelInputEvent(
 
 PP_Resource ResourceCreationImpl::CreateX509CertificatePrivate(
     PP_Instance instance) {
-  return PPB_X509Certificate_Private_Impl::CreateResource(instance);
+  return 0;  // Not supported in-process.
 }
 
 }  // namespace content

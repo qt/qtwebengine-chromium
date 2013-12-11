@@ -37,27 +37,23 @@
 
 namespace WebCore {
 
-class DOMWindow;
-class Document;
 class Page;
-class ScriptExecutionContext;
 
 class PageConsole {
 public:
     static PassOwnPtr<PageConsole> create(Page* page) { return adoptPtr(new PageConsole(page)); }
     virtual ~PageConsole();
 
+    void addMessage(MessageSource, MessageLevel, const String& message);
     void addMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, unsigned columnNumber = 0, PassRefPtr<ScriptCallStack> = 0, ScriptState* = 0, unsigned long requestIdentifier = 0);
     void addMessage(MessageSource, MessageLevel, const String& message, PassRefPtr<ScriptCallStack>);
-    void addMessage(MessageSource, MessageLevel, const String& message, unsigned long requestIdentifier = 0, Document* = 0);
+    static String formatStackTraceString(const String& originalMessage, PassRefPtr<ScriptCallStack>);
 
     static void mute();
     static void unmute();
 
 private:
-    PageConsole(Page*);
-
-    Page* page() { return m_page; };
+    explicit PageConsole(Page*);
 
     Page* m_page;
 };
