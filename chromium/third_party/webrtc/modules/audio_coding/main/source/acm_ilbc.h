@@ -19,6 +19,8 @@ struct iLBC_decinst_t_;
 
 namespace webrtc {
 
+namespace acm1 {
+
 class ACMILBC : public ACMGenericCodec {
  public:
   explicit ACMILBC(int16_t codec_id);
@@ -28,7 +30,7 @@ class ACMILBC : public ACMGenericCodec {
   virtual ACMGenericCodec* CreateInstance(void) OVERRIDE;
 
   virtual int16_t InternalEncode(uint8_t* bitstream,
-                         int16_t* bitstream_len_byte) OVERRIDE;
+                                 int16_t* bitstream_len_byte) OVERRIDE;
 
   virtual int16_t InternalInitEncoder(
       WebRtcACMCodecParams* codec_params) OVERRIDE;
@@ -38,13 +40,13 @@ class ACMILBC : public ACMGenericCodec {
 
  protected:
   virtual int16_t DecodeSafe(uint8_t* bitstream,
-                     int16_t bitstream_len_byte,
-                     int16_t* audio,
-                     int16_t* audio_samples,
-                     int8_t* speech_type) OVERRIDE;
+                             int16_t bitstream_len_byte,
+                             int16_t* audio,
+                             int16_t* audio_samples,
+                             int8_t* speech_type) OVERRIDE;
 
   virtual int32_t CodecDef(WebRtcNetEQ_CodecDef& codec_def,
-                   const CodecInst& codec_inst) OVERRIDE;
+                           const CodecInst& codec_inst) OVERRIDE;
 
   virtual int16_t SetBitRateSafe(const int32_t rate) OVERRIDE;
 
@@ -61,6 +63,8 @@ class ACMILBC : public ACMGenericCodec {
   iLBC_encinst_t_* encoder_inst_ptr_;
   iLBC_decinst_t_* decoder_inst_ptr_;
 };
+
+}  // namespace acm1
 
 }  // namespace webrtc
 

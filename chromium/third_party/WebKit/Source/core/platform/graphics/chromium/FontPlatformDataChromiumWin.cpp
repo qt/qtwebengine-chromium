@@ -35,14 +35,16 @@
 #include <windows.h>
 #include <mlang.h>
 #include <objidl.h>
-#include "SkPaint.h"
-#include "SkTypeface_win.h"
+#include "core/platform/LayoutTestSupport.h"
 #include "core/platform/SharedBuffer.h"
 #include "core/platform/graphics/FontCache.h"
 #include "core/platform/graphics/skia/SkiaFontWin.h"
 #include "core/platform/win/HWndDC.h"
 #include "public/platform/Platform.h"
 #include "public/platform/win/WebSandboxSupport.h"
+#include "third_party/skia/include/core/SkPaint.h"
+#include "third_party/skia/include/core/SkTypeface.h"
+#include "third_party/skia/include/ports/SkTypeface_win.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/StdLibExtras.h"
 
@@ -53,7 +55,7 @@ void FontPlatformData::setupPaint(SkPaint* paint) const
 {
     const float ts = m_size >= 0 ? m_size : 12;
     paint->setTextSize(SkFloatToScalar(m_size));
-    paint->setTypeface(m_typeface);
+    paint->setTypeface(typeface());
 }
 #endif
 
@@ -81,6 +83,14 @@ static uint32_t getDefaultGDITextFlags()
     return gFlags;
 }
 
+static bool isWebFont(const LOGFONT& lf)
+{
+    // web-fonts have artifical names constructed to always be
+    // 1. 24 characters, followed by a '\0'
+    // 2. the last two characters are '=='
+    return '=' == lf.lfFaceName[22] && '=' == lf.lfFaceName[23] && '\0' == lf.lfFaceName[24];
+}
+
 static int computePaintTextFlags(const LOGFONT& lf)
 {
     int textFlags = 0;
@@ -100,7 +110,21 @@ static int computePaintTextFlags(const LOGFONT& lf)
     }
 
     // only allow features that SystemParametersInfo allows
-    return textFlags & getDefaultGDITextFlags();
+    textFlags &= getDefaultGDITextFlags();
+
+    /*
+     *  FontPlatformData(...) will read our logfont, and try to honor the the lfQuality
+     *  setting (computing the corresponding SkPaint flags for AA and LCD). However, it
+     *  will limit the quality based on its query of SPI_GETFONTSMOOTHING. This could mean
+     *  we end up drawing the text in BW, even though our lfQuality requested antialiasing.
+     *
+     *  Many web-fonts are so poorly hinted that they are terrible to read when drawn in BW.
+     *  In these cases, we have decided to FORCE these fonts to be drawn with at least grayscale AA,
+     *  even when the System (getDefaultGDITextFlags) tells us to draw only in BW.
+     */
+    if (isWebFont(lf) && !isRunningLayoutTest())
+        textFlags |= SkPaint::kAntiAlias_Flag;
+    return textFlags;
 }
 
 PassRefPtr<SkTypeface> CreateTypefaceFromHFont(HFONT hfont, int* size, int* paintTextFlags)
@@ -123,6 +147,7 @@ FontPlatformData::FontPlatformData(WTF::HashTableDeletedValueType)
     , m_size(-1)
     , m_orientation(Horizontal)
     , m_scriptCache(0)
+    , m_typeface(SkTypeface::RefDefault())
     , m_paintTextFlags(0)
     , m_isHashTableDeletedValue(true)
 {
@@ -133,6 +158,7 @@ FontPlatformData::FontPlatformData()
     , m_size(0)
     , m_orientation(Horizontal)
     , m_scriptCache(0)
+    , m_typeface(SkTypeface::RefDefault())
     , m_paintTextFlags(0)
     , m_isHashTableDeletedValue(false)
 {
@@ -154,6 +180,7 @@ FontPlatformData::FontPlatformData(float size, bool bold, bool oblique)
     , m_size(size)
     , m_orientation(Horizontal)
     , m_scriptCache(0)
+    , m_typeface(SkTypeface::RefDefault())
     , m_paintTextFlags(0)
     , m_isHashTableDeletedValue(false)
 {
@@ -181,6 +208,25 @@ FontPlatformData::FontPlatformData(const FontPlatformData& data, float textSize)
 {
 }
 
+FontPlatformData::FontPlatformData(SkTypeface* tf, const char* family, float textSize, bool fakeBold, bool fakeItalic, FontOrientation orientation)
+    : m_font(0)
+    , m_size(textSize)
+    , m_orientation(orientation)
+    , m_scriptCache(0)
+    , m_typeface(tf)
+    , m_isHashTableDeletedValue(false)
+{
+    // FIXME: This can be removed together with m_font once the last few
+    // uses of hfont() has been eliminated.
+    LOGFONT logFont;
+    SkLOGFONTFromTypeface(tf, &logFont);
+    logFont.lfHeight = -textSize;
+    HFONT hFont = CreateFontIndirect(&logFont);
+    if (hFont)
+        m_font = RefCountedHFONT::create(hFont);
+    m_paintTextFlags = computePaintTextFlags(logFont);
+}
+
 FontPlatformData& FontPlatformData::operator=(const FontPlatformData& data)
 {
     if (this != &data) {
@@ -202,6 +248,18 @@ FontPlatformData::~FontPlatformData()
 {
     ScriptFreeCache(&m_scriptCache);
     m_scriptCache = 0;
+}
+
+String FontPlatformData::fontFamilyName() const
+{
+    HWndDC dc(0);
+    HGDIOBJ oldFont = static_cast<HFONT>(SelectObject(dc, hfont()));
+    WCHAR name[LF_FACESIZE];
+    unsigned resultLength = GetTextFace(dc, LF_FACESIZE, name);
+    if (resultLength > 0)
+        resultLength--; // ignore the null terminator
+    SelectObject(dc, oldFont);
+    return String(name, resultLength);
 }
 
 bool FontPlatformData::isFixedPitch() const
@@ -230,7 +288,7 @@ bool FontPlatformData::isFixedPitch() const
 
     return treatAsFixedPitch;
 #else
-    return typeface()->isFixedPitch();
+    return typeface() && typeface()->isFixedPitch();
 #endif
 }
 

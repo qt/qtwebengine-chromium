@@ -15,7 +15,8 @@ namespace content {
 WebMediaPlayerProxyAndroid::WebMediaPlayerProxyAndroid(
     RenderView* render_view,
     RendererMediaPlayerManager* manager)
-    : RenderViewObserver(render_view), manager_(manager) {}
+    : RenderViewObserver(render_view),
+      manager_(manager) {}
 
 WebMediaPlayerProxyAndroid::~WebMediaPlayerProxyAndroid() {
   Send(new MediaPlayerHostMsg_DestroyAllMediaPlayers(routing_id()));
@@ -41,9 +42,6 @@ bool WebMediaPlayerProxyAndroid::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DidExitFullscreen, OnDidExitFullscreen)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DidMediaPlayerPlay, OnPlayerPlay)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DidMediaPlayerPause, OnPlayerPause)
-    IPC_MESSAGE_HANDLER(MediaPlayerMsg_ReadFromDemuxer, OnReadFromDemuxer)
-    IPC_MESSAGE_HANDLER(MediaPlayerMsg_MediaSeekRequest, OnMediaSeekRequest)
-    IPC_MESSAGE_HANDLER(MediaPlayerMsg_MediaConfigRequest, OnMediaConfigRequest)
     IPC_MESSAGE_HANDLER(MediaKeysMsg_KeyAdded, OnKeyAdded)
     IPC_MESSAGE_HANDLER(MediaKeysMsg_KeyError, OnKeyError)
     IPC_MESSAGE_HANDLER(MediaKeysMsg_KeyMessage, OnKeyMessage)
@@ -53,20 +51,25 @@ bool WebMediaPlayerProxyAndroid::OnMessageReceived(const IPC::Message& msg) {
 }
 
 void WebMediaPlayerProxyAndroid::Initialize(
+    MediaPlayerHostMsg_Initialize_Type type,
     int player_id,
     const GURL& url,
-    media::MediaPlayerAndroid::SourceType source_type,
-    const GURL& first_party_for_cookies) {
+    const GURL& first_party_for_cookies,
+    int demuxer_client_id) {
   Send(new MediaPlayerHostMsg_Initialize(
-      routing_id(), player_id, url, source_type, first_party_for_cookies));
+      routing_id(), type, player_id, url, first_party_for_cookies,
+      demuxer_client_id));
 }
 
 void WebMediaPlayerProxyAndroid::Start(int player_id) {
   Send(new MediaPlayerHostMsg_Start(routing_id(), player_id));
 }
 
-void WebMediaPlayerProxyAndroid::Pause(int player_id) {
-  Send(new MediaPlayerHostMsg_Pause(routing_id(), player_id));
+void WebMediaPlayerProxyAndroid::Pause(
+    int player_id,
+    bool is_media_related_action) {
+  Send(new MediaPlayerHostMsg_Pause(
+      routing_id(), player_id, is_media_related_action));
 }
 
 void WebMediaPlayerProxyAndroid::Seek(int player_id, base::TimeDelta time) {
@@ -176,19 +179,6 @@ void WebMediaPlayerProxyAndroid::ExitFullscreen(int player_id) {
   Send(new MediaPlayerHostMsg_ExitFullscreen(routing_id(), player_id));
 }
 
-void WebMediaPlayerProxyAndroid::ReadFromDemuxerAck(
-    int player_id,
-    const media::MediaPlayerHostMsg_ReadFromDemuxerAck_Params& params) {
-  Send(new MediaPlayerHostMsg_ReadFromDemuxerAck(
-      routing_id(), player_id, params));
-}
-
-void WebMediaPlayerProxyAndroid::SeekRequestAck(int player_id,
-                                                unsigned seek_request_id) {
-  Send(new MediaPlayerHostMsg_MediaSeekRequestAck(
-      routing_id(), player_id, seek_request_id));
-}
-
 #if defined(GOOGLE_TV)
 void WebMediaPlayerProxyAndroid::RequestExternalSurface(
     int player_id,
@@ -209,30 +199,11 @@ void WebMediaPlayerProxyAndroid::DidCommitCompositorFrame() {
 }
 #endif
 
-void WebMediaPlayerProxyAndroid::OnReadFromDemuxer(
-    int player_id,
-    media::DemuxerStream::Type type) {
-  WebMediaPlayerAndroid* player = GetWebMediaPlayer(player_id);
-  if (player)
-    player->OnReadFromDemuxer(type);
-}
-
-void WebMediaPlayerProxyAndroid::DemuxerReady(
-    int player_id,
-    const media::MediaPlayerHostMsg_DemuxerReady_Params& params) {
-  Send(new MediaPlayerHostMsg_DemuxerReady(routing_id(), player_id, params));
-}
-
-void WebMediaPlayerProxyAndroid::DurationChanged(
-    int player_id,
-    const base::TimeDelta& duration) {
-  Send(new MediaPlayerHostMsg_DurationChanged(
-      routing_id(), player_id, duration));
-}
-
 void WebMediaPlayerProxyAndroid::InitializeCDM(int media_keys_id,
-                                               const std::vector<uint8>& uuid) {
-  Send(new MediaKeysHostMsg_InitializeCDM(routing_id(), media_keys_id, uuid));
+                                               const std::vector<uint8>& uuid,
+                                               const GURL& frame_url) {
+  Send(new MediaKeysHostMsg_InitializeCDM(
+      routing_id(), media_keys_id, uuid, frame_url));
 }
 
 void WebMediaPlayerProxyAndroid::GenerateKeyRequest(
@@ -262,21 +233,6 @@ WebMediaPlayerAndroid* WebMediaPlayerProxyAndroid::GetWebMediaPlayer(
     int player_id) {
   return static_cast<WebMediaPlayerAndroid*>(
       manager_->GetMediaPlayer(player_id));
-}
-
-void WebMediaPlayerProxyAndroid::OnMediaSeekRequest(
-    int player_id,
-    base::TimeDelta time_to_seek,
-    unsigned seek_request_id) {
-  WebMediaPlayerAndroid* player = GetWebMediaPlayer(player_id);
-  if (player)
-    player->OnMediaSeekRequest(time_to_seek, seek_request_id);
-}
-
-void WebMediaPlayerProxyAndroid::OnMediaConfigRequest(int player_id) {
-  WebMediaPlayerAndroid* player = GetWebMediaPlayer(player_id);
-  if (player)
-    player->OnMediaConfigRequest();
 }
 
 void WebMediaPlayerProxyAndroid::OnKeyAdded(int media_keys_id,

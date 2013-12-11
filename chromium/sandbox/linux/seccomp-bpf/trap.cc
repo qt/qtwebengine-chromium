@@ -61,6 +61,14 @@ void SetIsInSigHandler() {
   }
 }
 
+bool IsDefaultSignalAction(const struct sigaction& sa) {
+  if (sa.sa_flags & SA_SIGINFO ||
+      sa.sa_handler != SIG_DFL) {
+    return false;
+  }
+  return true;
+}
+
 }  // namespace
 
 namespace playground2 {
@@ -74,8 +82,14 @@ Trap::Trap()
   struct sigaction sa = { };
   sa.sa_sigaction = SigSysAction;
   sa.sa_flags = SA_SIGINFO | SA_NODEFER;
-  if (sigaction(SIGSYS, &sa, NULL) < 0) {
+  struct sigaction old_sa;
+  if (sigaction(SIGSYS, &sa, &old_sa) < 0) {
     SANDBOX_DIE("Failed to configure SIGSYS handler");
+  }
+
+  if (!IsDefaultSignalAction(old_sa)) {
+    // TODO(jln): make this FATAL, at least in DEBUG mode.
+    LOG(ERROR) << "Existing signal handler when trying to install SIGSYS";
   }
 
   // Unmask SIGSYS
@@ -104,32 +118,30 @@ Trap *Trap::GetInstance() {
 
 void Trap::SigSysAction(int nr, siginfo_t *info, void *void_context) {
   if (!global_trap_) {
-    SANDBOX_DIE("This can't happen. Found no global singleton instance "
-                "for Trap() handling.");
+    RAW_SANDBOX_DIE("This can't happen. Found no global singleton instance "
+                    "for Trap() handling.");
   }
   global_trap_->SigSys(nr, info, void_context);
 }
 
 void Trap::SigSys(int nr, siginfo_t *info, void *void_context) {
+  // Signal handlers should always preserve "errno". Otherwise, we could
+  // trigger really subtle bugs.
+  const int old_errno = errno;
+
   // Various sanity checks to make sure we actually received a signal
   // triggered by a BPF filter. If something else triggered SIGSYS
   // (e.g. kill()), there is really nothing we can do with this signal.
   if (nr != SIGSYS || info->si_code != SYS_SECCOMP || !void_context ||
       info->si_errno <= 0 ||
       static_cast<size_t>(info->si_errno) > trap_array_size_) {
-    // SANDBOX_DIE() can call LOG(FATAL). This is not normally async-signal
-    // safe and can lead to bugs. We should eventually implement a different
-    // logging and reporting mechanism that is safe to be called from
-    // the sigSys() handler.
-    // TODO: If we feel confident that our code otherwise works correctly, we
-    //       could actually make an argument that spurious SIGSYS should
-    //       just get silently ignored. TBD
-    SANDBOX_DIE("Unexpected SIGSYS received.");
+    // ATI drivers seem to send SIGSYS, so this cannot be FATAL.
+    // See crbug.com/178166.
+    // TODO(jln): add a DCHECK or move back to FATAL.
+    RAW_LOG(ERROR, "Unexpected SIGSYS received.");
+    errno = old_errno;
+    return;
   }
-
-  // Signal handlers should always preserve "errno". Otherwise, we could
-  // trigger really subtle bugs.
-  const int old_errno   = errno;
 
   // Obtain the signal context. This, most notably, gives us access to
   // all CPU registers at the time of the signal.
@@ -145,14 +157,19 @@ void Trap::SigSys(int nr, siginfo_t *info, void *void_context) {
   if (sigsys.ip != reinterpret_cast<void *>(SECCOMP_IP(ctx)) ||
       sigsys.nr != static_cast<int>(SECCOMP_SYSCALL(ctx)) ||
       sigsys.arch != SECCOMP_ARCH) {
-    SANDBOX_DIE("Sanity checks are failing after receiving SIGSYS.");
+    // TODO(markus):
+    // SANDBOX_DIE() can call LOG(FATAL). This is not normally async-signal
+    // safe and can lead to bugs. We should eventually implement a different
+    // logging and reporting mechanism that is safe to be called from
+    // the sigSys() handler.
+    RAW_SANDBOX_DIE("Sanity checks are failing after receiving SIGSYS.");
   }
 
   intptr_t rc;
   if (has_unsafe_traps_ && GetIsInSigHandler(ctx)) {
     errno = old_errno;
     if (sigsys.nr == __NR_clone) {
-      SANDBOX_DIE("Cannot call clone() from an UnsafeTrap() handler.");
+      RAW_SANDBOX_DIE("Cannot call clone() from an UnsafeTrap() handler.");
     }
     rc = SandboxSyscall(sigsys.nr,
                         SECCOMP_PARM1(ctx), SECCOMP_PARM2(ctx),

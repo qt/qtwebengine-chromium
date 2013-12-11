@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "ui/views/controls/textfield/native_textfield_views.h"
+
 #include <set>
 #include <string>
 #include <vector>
@@ -20,13 +22,12 @@
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
-#include "ui/base/events/event.h"
 #include "ui/base/ime/text_input_client.h"
-#include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/events/event.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/render_text.h"
-#include "ui/views/controls/textfield/native_textfield_views.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
 #include "ui/views/controls/textfield/textfield_views_model.h"
@@ -37,6 +38,10 @@
 #include "ui/views/widget/native_widget_private.h"
 #include "ui/views/widget/widget.h"
 #include "url/gurl.h"
+
+#if defined(OS_WIN)
+#include "base/win/windows_version.h"
+#endif
 
 #define EXPECT_STR_EQ(ascii, utf16) EXPECT_EQ(ASCIIToUTF16(ascii), utf16)
 
@@ -179,6 +184,7 @@ class NativeTextfieldViewsTest : public ViewsTestBase,
 
     textfield_view_ = static_cast<NativeTextfieldViews*>(
         textfield_->GetNativeWrapperForTesting());
+    DCHECK(textfield_view_);
     textfield_view_->SetBoundsRect(params.bounds);
     textfield_->set_id(1);
 
@@ -188,7 +194,6 @@ class NativeTextfieldViewsTest : public ViewsTestBase,
       textfield->set_id(i + 1);
     }
 
-    DCHECK(textfield_view_);
     model_ = textfield_view_->model_.get();
     model_->ClearEditHistory();
 
@@ -314,14 +319,16 @@ class NativeTextfieldViewsTest : public ViewsTestBase,
   }
 
   void VerifyTextfieldContextMenuContents(bool textfield_has_selection,
-                                          ui::MenuModel* menu_model) {
-    EXPECT_TRUE(menu_model->IsEnabledAt(4 /* Separator */));
-    EXPECT_TRUE(menu_model->IsEnabledAt(5 /* SELECT ALL */));
-    EXPECT_EQ(textfield_has_selection, menu_model->IsEnabledAt(0 /* CUT */));
-    EXPECT_EQ(textfield_has_selection, menu_model->IsEnabledAt(1 /* COPY */));
-    EXPECT_EQ(textfield_has_selection, menu_model->IsEnabledAt(3 /* DELETE */));
-    string16 str(GetClipboardText());
-    EXPECT_NE(str.empty(), menu_model->IsEnabledAt(2 /* PASTE */));
+                                          bool can_undo,
+                                          ui::MenuModel* menu) {
+    EXPECT_EQ(can_undo, menu->IsEnabledAt(0 /* UNDO */));
+    EXPECT_TRUE(menu->IsEnabledAt(1 /* Separator */));
+    EXPECT_EQ(textfield_has_selection, menu->IsEnabledAt(2 /* CUT */));
+    EXPECT_EQ(textfield_has_selection, menu->IsEnabledAt(3 /* COPY */));
+    EXPECT_NE(GetClipboardText().empty(), menu->IsEnabledAt(4 /* PASTE */));
+    EXPECT_EQ(textfield_has_selection, menu->IsEnabledAt(5 /* DELETE */));
+    EXPECT_TRUE(menu->IsEnabledAt(6 /* Separator */));
+    EXPECT_TRUE(menu->IsEnabledAt(7 /* SELECT ALL */));
   }
 
   // We need widget to populate wrapper class.
@@ -505,7 +512,7 @@ TEST_F(NativeTextfieldViewsTest, InsertionDeletionTest) {
   EXPECT_STR_EQ("abcdefghij", textfield_->text());
 
   // Test the delete and backspace keys.
-  textfield_->SelectRange(ui::Range(5));
+  textfield_->SelectRange(gfx::Range(5));
   for (int i = 0; i < 3; i++)
     SendKeyEvent(ui::VKEY_BACK);
   EXPECT_STR_EQ("abfghij", textfield_->text());
@@ -786,11 +793,23 @@ TEST_F(NativeTextfieldViewsTest, ContextMenuDisplayTest) {
   InitTextfield(Textfield::STYLE_DEFAULT);
   EXPECT_TRUE(textfield_->context_menu_controller());
   textfield_->SetText(ASCIIToUTF16("hello world"));
+  ui::Clipboard::GetForCurrentThread()->Clear(ui::Clipboard::BUFFER_STANDARD);
+  textfield_view_->ClearEditHistory();
   EXPECT_TRUE(GetContextMenuModel());
-  VerifyTextfieldContextMenuContents(false, GetContextMenuModel());
+  VerifyTextfieldContextMenuContents(false, false, GetContextMenuModel());
 
   textfield_->SelectAll(false);
-  VerifyTextfieldContextMenuContents(true, GetContextMenuModel());
+  VerifyTextfieldContextMenuContents(true, false, GetContextMenuModel());
+
+  SendKeyEvent(ui::VKEY_T);
+  VerifyTextfieldContextMenuContents(false, true, GetContextMenuModel());
+
+  textfield_->SelectAll(false);
+  VerifyTextfieldContextMenuContents(true, true, GetContextMenuModel());
+
+  // Exercise the "paste enabled?" check in the verifier.
+  SetClipboardText("Test");
+  VerifyTextfieldContextMenuContents(true, true, GetContextMenuModel());
 }
 
 TEST_F(NativeTextfieldViewsTest, DoubleAndTripleClickTest) {
@@ -922,7 +941,7 @@ TEST_F(NativeTextfieldViewsTest, DragAndDrop_InitiateDrag) {
   // Ensure the textfield will provide selected text for drag data.
   string16 string;
   ui::OSExchangeData data;
-  const ui::Range kStringRange(6, 12);
+  const gfx::Range kStringRange(6, 12);
   textfield_->SelectRange(kStringRange);
   const gfx::Point kStringPoint(GetCursorPositionX(9), 0);
   textfield_view_->WriteDragDataForView(NULL, kStringPoint, &data);
@@ -972,7 +991,7 @@ TEST_F(NativeTextfieldViewsTest, DragAndDrop_ToTheRight) {
   std::set<OSExchangeData::CustomFormat> custom_formats;
 
   // Start dragging "ello".
-  textfield_->SelectRange(ui::Range(1, 5));
+  textfield_->SelectRange(gfx::Range(1, 5));
   gfx::Point point(GetCursorPositionX(3), 0);
   ui::MouseEvent click_a(ui::ET_MOUSE_PRESSED, point, point,
                          ui::EF_LEFT_MOUSE_BUTTON);
@@ -1027,7 +1046,7 @@ TEST_F(NativeTextfieldViewsTest, DragAndDrop_ToTheLeft) {
   std::set<OSExchangeData::CustomFormat> custom_formats;
 
   // Start dragging " worl".
-  textfield_->SelectRange(ui::Range(5, 10));
+  textfield_->SelectRange(gfx::Range(5, 10));
   gfx::Point point(GetCursorPositionX(7), 0);
   ui::MouseEvent click_a(ui::ET_MOUSE_PRESSED, point, point,
                          ui::EF_LEFT_MOUSE_BUTTON);
@@ -1076,7 +1095,7 @@ TEST_F(NativeTextfieldViewsTest, DragAndDrop_Canceled) {
   textfield_->SetText(ASCIIToUTF16("hello world"));
 
   // Start dragging "worl".
-  textfield_->SelectRange(ui::Range(6, 10));
+  textfield_->SelectRange(gfx::Range(6, 10));
   gfx::Point point(GetCursorPositionX(8), 0);
   ui::MouseEvent click(ui::ET_MOUSE_PRESSED, point, point,
                        ui::EF_LEFT_MOUSE_BUTTON);
@@ -1174,14 +1193,14 @@ TEST_F(NativeTextfieldViewsTest, TextInputClientTest) {
   EXPECT_EQ(ui::TEXT_INPUT_TYPE_TEXT, client->GetTextInputType());
 
   textfield_->SetText(ASCIIToUTF16("0123456789"));
-  ui::Range range;
+  gfx::Range range;
   EXPECT_TRUE(client->GetTextRange(&range));
   EXPECT_EQ(0U, range.start());
   EXPECT_EQ(10U, range.end());
 
-  EXPECT_TRUE(client->SetSelectionRange(ui::Range(1, 4)));
+  EXPECT_TRUE(client->SetSelectionRange(gfx::Range(1, 4)));
   EXPECT_TRUE(client->GetSelectionRange(&range));
-  EXPECT_EQ(ui::Range(1, 4), range);
+  EXPECT_EQ(gfx::Range(1, 4), range);
 
   // This code can't be compiled because of a bug in base::Callback.
 #if 0
@@ -1210,7 +1229,7 @@ TEST_F(NativeTextfieldViewsTest, TextInputClientTest) {
   EXPECT_TRUE(client->HasCompositionText());
   EXPECT_TRUE(client->GetCompositionTextRange(&range));
   EXPECT_STR_EQ("0321456789", textfield_->text());
-  EXPECT_EQ(ui::Range(1, 4), range);
+  EXPECT_EQ(gfx::Range(1, 4), range);
   EXPECT_EQ(2, on_before_user_action_);
   EXPECT_EQ(2, on_after_user_action_);
 
@@ -1247,7 +1266,7 @@ TEST_F(NativeTextfieldViewsTest, TextInputClientTest) {
 
   textfield_->clear();
   textfield_->SetText(ASCIIToUTF16("0123456789"));
-  EXPECT_TRUE(client->SetSelectionRange(ui::Range(5, 5)));
+  EXPECT_TRUE(client->SetSelectionRange(gfx::Range(5, 5)));
   client->ExtendSelectionAndDelete(4, 2);
   EXPECT_STR_EQ("0789", textfield_->text());
 
@@ -1755,7 +1774,7 @@ TEST_F(NativeTextfieldViewsTest, GetCompositionCharacterBoundsTest) {
   gfx::Rect char_rect_in_screen_coord[char_count];
   gfx::Rect prev_cursor = GetCursorBounds();
   for (uint32 i = 0; i < char_count; ++i) {
-    composition.selection = ui::Range(0, i+1);
+    composition.selection = gfx::Range(0, i+1);
     client->SetCompositionText(composition);
     EXPECT_TRUE(client->HasCompositionText()) << " i=" << i;
     gfx::Rect cursor_bounds = GetCursorBounds();
@@ -1789,9 +1808,9 @@ TEST_F(NativeTextfieldViewsTest, KeepInitiallySelectedWord) {
 
   textfield_->SetText(ASCIIToUTF16("abc def ghi"));
 
-  textfield_->SelectRange(ui::Range(5, 5));
+  textfield_->SelectRange(gfx::Range(5, 5));
   const gfx::Rect middle_cursor = GetCursorBounds();
-  textfield_->SelectRange(ui::Range(0, 0));
+  textfield_->SelectRange(gfx::Range(0, 0));
   const gfx::Point beginning = GetCursorBounds().origin();
 
   // Double click, but do not release the left button.
@@ -1801,13 +1820,13 @@ TEST_F(NativeTextfieldViewsTest, KeepInitiallySelectedWord) {
   ui::MouseEvent press_event(ui::ET_MOUSE_PRESSED, middle, middle,
                              ui::EF_LEFT_MOUSE_BUTTON);
   textfield_view_->OnMousePressed(press_event);
-  EXPECT_EQ(ui::Range(4, 7), textfield_->GetSelectedRange());
+  EXPECT_EQ(gfx::Range(4, 7), textfield_->GetSelectedRange());
 
   // Drag the mouse to the beginning of the textfield.
   ui::MouseEvent drag_event(ui::ET_MOUSE_DRAGGED, beginning, beginning,
                             ui::EF_LEFT_MOUSE_BUTTON);
   textfield_view_->OnMouseDragged(drag_event);
-  EXPECT_EQ(ui::Range(7, 0), textfield_->GetSelectedRange());
+  EXPECT_EQ(gfx::Range(7, 0), textfield_->GetSelectedRange());
 }
 
 // Touch selection and draggin currently only works for chromeos.
@@ -1868,7 +1887,7 @@ TEST_F(NativeTextfieldViewsTest, TestLongPressInitiatesDragDrop) {
   textfield_->SetText(ASCIIToUTF16("Hello string world"));
 
   // Ensure the textfield will provide selected text for drag data.
-  textfield_->SelectRange(ui::Range(6, 12));
+  textfield_->SelectRange(gfx::Range(6, 12));
   const gfx::Point kStringPoint(GetCursorPositionX(9), 0);
 
   // Enable touch-drag-drop to make long press effective.
@@ -1882,4 +1901,26 @@ TEST_F(NativeTextfieldViewsTest, TestLongPressInitiatesDragDrop) {
   EXPECT_TRUE(textfield_view_->CanStartDragForView(NULL,
       kStringPoint, kStringPoint));
 }
+
+TEST_F(NativeTextfieldViewsTest, GetTextfieldBaseline_FontFallbackTest) {
+#if defined(OS_WIN)
+  // This test fails on some versions of Windows because two different strings
+  // have the same baseline.
+  if (base::win::GetVersion() <= base::win::VERSION_XP ||
+      base::win::VERSION_WIN8 <= base::win::GetVersion())
+    return;
+#endif
+
+  InitTextfield(Textfield::STYLE_DEFAULT);
+  textfield_->SetText(UTF8ToUTF16("abc"));
+  const int old_baseline = textfield_->GetBaseline();
+
+  // Set text which may fall back to a font which has taller baseline than
+  // the default font.  |new_baseline| will be greater than |old_baseline|.
+  textfield_->SetText(UTF8ToUTF16("\xE0\xB9\x91"));
+  const int new_baseline = textfield_->GetBaseline();
+
+  EXPECT_GT(new_baseline, old_baseline);
+}
+
 }  // namespace views

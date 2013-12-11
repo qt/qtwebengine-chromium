@@ -452,7 +452,7 @@ static VisiblePosition previousBoundary(const VisiblePosition& c, BoundarySearch
     if (!boundary)
         return VisiblePosition();
 
-    Document* d = boundary->document();
+    Document& d = boundary->document();
     Position start = createLegacyEditingPosition(boundary, 0).parentAnchoredEquivalent();
     Position end = pos.parentAnchoredEquivalent();
     RefPtr<Range> searchRange = Range::create(d);
@@ -462,7 +462,7 @@ static VisiblePosition previousBoundary(const VisiblePosition& c, BoundarySearch
 
     TrackExceptionState es;
     if (requiresContextForWordBoundary(c.characterBefore())) {
-        RefPtr<Range> forwardsScanRange(d->createRange());
+        RefPtr<Range> forwardsScanRange(d.createRange());
         forwardsScanRange->setEndAfter(boundary, es);
         forwardsScanRange->setStart(end.deprecatedNode(), end.deprecatedEditingOffset(), es);
         TextIterator forwardsIterator(forwardsScanRange.get());
@@ -533,15 +533,15 @@ static VisiblePosition nextBoundary(const VisiblePosition& c, BoundarySearchFunc
     if (!boundary)
         return VisiblePosition();
 
-    Document* d = boundary->document();
-    RefPtr<Range> searchRange(d->createRange());
+    Document& d = boundary->document();
+    RefPtr<Range> searchRange(d.createRange());
     Position start(pos.parentAnchoredEquivalent());
 
     Vector<UChar, 1024> string;
     unsigned prefixLength = 0;
 
     if (requiresContextForWordBoundary(c.characterAfter())) {
-        RefPtr<Range> backwardsScanRange(d->createRange());
+        RefPtr<Range> backwardsScanRange(d.createRange());
         backwardsScanRange->setEnd(start.deprecatedNode(), start.deprecatedEditingOffset(), IGNORE_EXCEPTION);
         SimplifiedBackwardsTextIterator backwardsIterator(backwardsScanRange.get());
         while (!backwardsIterator.atEnd()) {
@@ -560,7 +560,8 @@ static VisiblePosition nextBoundary(const VisiblePosition& c, BoundarySearchFunc
     searchRange->selectNodeContents(boundary, IGNORE_EXCEPTION);
     searchRange->setStart(start.deprecatedNode(), start.deprecatedEditingOffset(), IGNORE_EXCEPTION);
     TextIterator it(searchRange.get(), TextIteratorEmitsCharactersBetweenAllVisiblePositions);
-    unsigned next = 0;
+    const unsigned invalidOffset = static_cast<unsigned>(-1);
+    unsigned next = invalidOffset;
     bool inTextSecurityMode = start.deprecatedNode() && start.deprecatedNode()->renderer() && start.deprecatedNode()->renderer()->style()->textSecurity() != TSNONE;
     bool needMoreContext = false;
     while (!it.atEnd()) {
@@ -588,7 +589,7 @@ static VisiblePosition nextBoundary(const VisiblePosition& c, BoundarySearchFunc
 
     if (it.atEnd() && next == string.size()) {
         pos = it.range()->startPosition();
-    } else if (next != prefixLength) {
+    } else if (next != invalidOffset && next != prefixLength) {
         // Use the character iterator to translate the next value into a DOM position.
         CharacterIterator charIt(searchRange.get(), TextIteratorEmitsCharactersBetweenAllVisiblePositions);
         charIt.advance(next - prefixLength - 1);
@@ -931,7 +932,7 @@ VisiblePosition previousLinePosition(const VisiblePosition &visiblePosition, int
     if (!node)
         return VisiblePosition();
 
-    node->document()->updateLayoutIgnorePendingStylesheets();
+    node->document().updateLayoutIgnorePendingStylesheets();
 
     RenderObject* renderer = node->renderer();
     if (!renderer)
@@ -972,7 +973,7 @@ VisiblePosition previousLinePosition(const VisiblePosition &visiblePosition, int
     // Could not find a previous line. This means we must already be on the first line.
     // Move to the start of the content in this block, which effectively moves us
     // to the start of the line we're on.
-    Element* rootElement = node->rendererIsEditable(editableType) ? node->rootEditableElement(editableType) : node->document()->documentElement();
+    Element* rootElement = node->rendererIsEditable(editableType) ? node->rootEditableElement(editableType) : node->document().documentElement();
     if (!rootElement)
         return VisiblePosition();
     return VisiblePosition(firstPositionInNode(rootElement), DOWNSTREAM);
@@ -986,7 +987,7 @@ VisiblePosition nextLinePosition(const VisiblePosition &visiblePosition, int lin
     if (!node)
         return VisiblePosition();
 
-    node->document()->updateLayoutIgnorePendingStylesheets();
+    node->document().updateLayoutIgnorePendingStylesheets();
 
     RenderObject* renderer = node->renderer();
     if (!renderer)
@@ -1030,7 +1031,7 @@ VisiblePosition nextLinePosition(const VisiblePosition &visiblePosition, int lin
     // Could not find a next line. This means we must already be on the last line.
     // Move to the end of the content in this block, which effectively moves us
     // to the end of the line we're on.
-    Element* rootElement = node->rendererIsEditable(editableType) ? node->rootEditableElement(editableType) : node->document()->documentElement();
+    Element* rootElement = node->rendererIsEditable(editableType) ? node->rootEditableElement(editableType) : node->document().documentElement();
     if (!rootElement)
         return VisiblePosition();
     return VisiblePosition(lastPositionInNode(rootElement), DOWNSTREAM);
@@ -1329,10 +1330,10 @@ bool isEndOfBlock(const VisiblePosition &pos)
 
 VisiblePosition startOfDocument(const Node* node)
 {
-    if (!node || !node->document() || !node->document()->documentElement())
+    if (!node || !node->document().documentElement())
         return VisiblePosition();
 
-    return VisiblePosition(firstPositionInNode(node->document()->documentElement()), DOWNSTREAM);
+    return VisiblePosition(firstPositionInNode(node->document().documentElement()), DOWNSTREAM);
 }
 
 VisiblePosition startOfDocument(const VisiblePosition &c)
@@ -1342,10 +1343,10 @@ VisiblePosition startOfDocument(const VisiblePosition &c)
 
 VisiblePosition endOfDocument(const Node* node)
 {
-    if (!node || !node->document() || !node->document()->documentElement())
+    if (!node || !node->document().documentElement())
         return VisiblePosition();
 
-    Element* doc = node->document()->documentElement();
+    Element* doc = node->document().documentElement();
     return VisiblePosition(lastPositionInNode(doc), DOWNSTREAM);
 }
 
@@ -1365,7 +1366,7 @@ bool inSameDocument(const VisiblePosition &a, const VisiblePosition &b)
     if (an == bn)
         return true;
 
-    return an->document() == bn->document();
+    return &an->document() == &bn->document();
 }
 
 bool isStartOfDocument(const VisiblePosition &p)

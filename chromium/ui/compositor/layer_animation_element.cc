@@ -7,13 +7,13 @@
 #include "base/compiler_specific.h"
 #include "cc/animation/animation.h"
 #include "cc/animation/animation_id_provider.h"
-#include "ui/base/animation/tween.h"
 #include "ui/compositor/float_animation_curve_adapter.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_delegate.h"
 #include "ui/compositor/layer_animator.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/compositor/transform_animation_curve_adapter.h"
+#include "ui/gfx/animation/tween.h"
 #include "ui/gfx/interpolated_transform.h"
 
 namespace ui {
@@ -63,7 +63,7 @@ class TransformTransition : public LayerAnimationElement {
 
   virtual bool OnProgress(double t, LayerAnimationDelegate* delegate) OVERRIDE {
     delegate->SetTransformFromAnimation(
-        Tween::ValueBetween(t, start_, target_));
+        gfx::Tween::ValueBetween(t, start_, target_));
     return true;
   }
 
@@ -141,7 +141,8 @@ class BoundsTransition : public LayerAnimationElement {
   }
 
   virtual bool OnProgress(double t, LayerAnimationDelegate* delegate) OVERRIDE {
-    delegate->SetBoundsFromAnimation(Tween::ValueBetween(t, start_, target_));
+    delegate->SetBoundsFromAnimation(
+        gfx::Tween::ValueBetween(t, start_, target_));
     return true;
   }
 
@@ -181,7 +182,8 @@ class OpacityTransition : public LayerAnimationElement {
   }
 
   virtual bool OnProgress(double t, LayerAnimationDelegate* delegate) OVERRIDE {
-    delegate->SetOpacityFromAnimation(Tween::ValueBetween(t, start_, target_));
+    delegate->SetOpacityFromAnimation(
+        gfx::Tween::ValueBetween(t, start_, target_));
     return true;
   }
 
@@ -262,7 +264,7 @@ class BrightnessTransition : public LayerAnimationElement {
 
   virtual bool OnProgress(double t, LayerAnimationDelegate* delegate) OVERRIDE {
     delegate->SetBrightnessFromAnimation(
-        Tween::ValueBetween(t, start_, target_));
+        gfx::Tween::ValueBetween(t, start_, target_));
     return true;
   }
 
@@ -303,7 +305,7 @@ class GrayscaleTransition : public LayerAnimationElement {
 
   virtual bool OnProgress(double t, LayerAnimationDelegate* delegate) OVERRIDE {
     delegate->SetGrayscaleFromAnimation(
-        Tween::ValueBetween(t, start_, target_));
+        gfx::Tween::ValueBetween(t, start_, target_));
     return true;
   }
 
@@ -345,18 +347,18 @@ class ColorTransition : public LayerAnimationElement {
   virtual bool OnProgress(double t, LayerAnimationDelegate* delegate) OVERRIDE {
     delegate->SetColorFromAnimation(
         SkColorSetARGB(
-            Tween::ValueBetween(t,
-                                static_cast<int>(SkColorGetA(start_)),
-                                static_cast<int>(SkColorGetA(target_))),
-            Tween::ValueBetween(t,
-                                static_cast<int>(SkColorGetR(start_)),
-                                static_cast<int>(SkColorGetR(target_))),
-            Tween::ValueBetween(t,
-                                static_cast<int>(SkColorGetG(start_)),
-                                static_cast<int>(SkColorGetG(target_))),
-            Tween::ValueBetween(t,
-                                static_cast<int>(SkColorGetB(start_)),
-                                static_cast<int>(SkColorGetB(target_)))));
+            gfx::Tween::ValueBetween(t,
+                                     static_cast<int>(SkColorGetA(start_)),
+                                     static_cast<int>(SkColorGetA(target_))),
+            gfx::Tween::ValueBetween(t,
+                                     static_cast<int>(SkColorGetR(start_)),
+                                     static_cast<int>(SkColorGetR(target_))),
+            gfx::Tween::ValueBetween(t,
+                                     static_cast<int>(SkColorGetG(start_)),
+                                     static_cast<int>(SkColorGetG(target_))),
+            gfx::Tween::ValueBetween(t,
+                                     static_cast<int>(SkColorGetB(start_)),
+                                     static_cast<int>(SkColorGetB(target_)))));
     return true;
   }
 
@@ -394,6 +396,10 @@ class ThreadedLayerAnimationElement : public LayerAnimationElement {
   }
 
  protected:
+  explicit ThreadedLayerAnimationElement(const LayerAnimationElement& element)
+    : LayerAnimationElement(element) {
+  }
+
   virtual bool OnProgress(double t,
                           LayerAnimationDelegate* delegate) OVERRIDE {
     if (t < 1.0)
@@ -453,10 +459,10 @@ class ThreadedOpacityTransition : public ThreadedLayerAnimationElement {
   virtual void OnAbort(LayerAnimationDelegate* delegate) OVERRIDE {
     if (delegate && Started()) {
       ThreadedLayerAnimationElement::OnAbort(delegate);
-      delegate->SetOpacityFromAnimation(Tween::ValueBetween(
-            Tween::CalculateValue(tween_type(), last_progressed_fraction()),
-            start_,
-            target_));
+      delegate->SetOpacityFromAnimation(gfx::Tween::ValueBetween(
+          gfx::Tween::CalculateValue(tween_type(), last_progressed_fraction()),
+              start_,
+              target_));
     }
   }
 
@@ -519,8 +525,8 @@ class ThreadedTransformTransition : public ThreadedLayerAnimationElement {
   virtual void OnAbort(LayerAnimationDelegate* delegate) OVERRIDE {
     if (delegate && Started()) {
       ThreadedLayerAnimationElement::OnAbort(delegate);
-      delegate->SetTransformFromAnimation(Tween::ValueBetween(
-          Tween::CalculateValue(tween_type(), last_progressed_fraction()),
+      delegate->SetTransformFromAnimation(gfx::Tween::ValueBetween(
+          gfx::Tween::CalculateValue(tween_type(), last_progressed_fraction()),
           start_,
           target_));
     }
@@ -563,6 +569,127 @@ class ThreadedTransformTransition : public ThreadedLayerAnimationElement {
   DISALLOW_COPY_AND_ASSIGN(ThreadedTransformTransition);
 };
 
+// InverseTransformTransision --------------------------------------------------
+
+class InverseTransformTransition : public ThreadedLayerAnimationElement {
+ public:
+  InverseTransformTransition(const gfx::Transform& base_transform,
+                             const LayerAnimationElement* uninverted_transition)
+      : ThreadedLayerAnimationElement(*uninverted_transition),
+        base_transform_(base_transform),
+        uninverted_transition_(
+            CheckAndCast<const ThreadedTransformTransition*>(
+              uninverted_transition)) {
+  }
+  virtual ~InverseTransformTransition() {}
+
+  static InverseTransformTransition* Clone(const LayerAnimationElement* other) {
+    const InverseTransformTransition* other_inverse =
+      CheckAndCast<const InverseTransformTransition*>(other);
+    return new InverseTransformTransition(
+        other_inverse->base_transform_, other_inverse->uninverted_transition_);
+  }
+
+ protected:
+  virtual void OnStart(LayerAnimationDelegate* delegate) OVERRIDE {
+    gfx::Transform start(delegate->GetTransformForAnimation());
+    effective_start_ = base_transform_ * start;
+
+    TargetValue target;
+    uninverted_transition_->GetTargetValue(&target);
+    base_target_ = target.transform;
+
+    set_tween_type(uninverted_transition_->tween_type());
+
+    float device_scale_factor = delegate->GetDeviceScaleFactor();
+    const gfx::Transform cc_base_start = Layer::ConvertTransformToCCTransform(
+        base_transform_,
+        device_scale_factor);
+    const gfx::Transform cc_base_target = Layer::ConvertTransformToCCTransform(
+        base_target_,
+        device_scale_factor);
+    TransformAnimationCurveAdapter base_curve(tween_type(),
+                                              cc_base_start,
+                                              cc_base_target,
+                                              duration());
+
+    const gfx::Transform cc_start = Layer::ConvertTransformToCCTransform(
+        start, device_scale_factor);
+    animation_curve_.reset(new InverseTransformCurveAdapter(
+        base_curve, cc_start, duration()));
+    computed_target_transform_ = ComputeWithBaseTransform(effective_start_,
+                                                          base_target_);
+  }
+
+  virtual void OnAbort(LayerAnimationDelegate* delegate) OVERRIDE {
+    if (delegate && Started()) {
+      ThreadedLayerAnimationElement::OnAbort(delegate);
+      delegate->SetTransformFromAnimation(ComputeCurrentTransform());
+    }
+  }
+
+  virtual void OnEnd(LayerAnimationDelegate* delegate) OVERRIDE {
+    delegate->SetTransformFromAnimation(computed_target_transform_);
+  }
+
+  virtual scoped_ptr<cc::Animation> CreateCCAnimation() OVERRIDE {
+    scoped_ptr<cc::Animation> animation(
+        cc::Animation::Create(animation_curve_->Clone(),
+                              animation_id(),
+                              animation_group_id(),
+                              cc::Animation::Transform));
+    return animation.Pass();
+  }
+
+  virtual void OnGetTarget(TargetValue* target) const OVERRIDE {
+    target->transform = computed_target_transform_;
+  }
+
+ private:
+  gfx::Transform ComputeCurrentTransform() const {
+    gfx::Transform base_current = gfx::Tween::ValueBetween(
+        gfx::Tween::CalculateValue(tween_type(), last_progressed_fraction()),
+        base_transform_,
+        base_target_);
+    return ComputeWithBaseTransform(effective_start_, base_current);
+  }
+
+  gfx::Transform ComputeWithBaseTransform(gfx::Transform start,
+                                          gfx::Transform target) const {
+    gfx::Transform to_return(gfx::Transform::kSkipInitialization);
+    bool success = target.GetInverse(&to_return);
+    DCHECK(success) << "Target transform must be invertible.";
+
+    to_return.PreconcatTransform(start);
+    return to_return;
+  }
+
+  static AnimatableProperties GetProperties() {
+    AnimatableProperties properties;
+    properties.insert(LayerAnimationElement::TRANSFORM);
+    return properties;
+  }
+
+  template <typename T>
+  static T CheckAndCast(const LayerAnimationElement* element) {
+    const AnimatableProperties& properties = element->properties();
+    DCHECK(properties.find(TRANSFORM) != properties.end());
+    return static_cast<T>(element);
+  }
+
+  gfx::Transform effective_start_;
+  gfx::Transform computed_target_transform_;
+
+  const gfx::Transform base_transform_;
+  gfx::Transform base_target_;
+
+  scoped_ptr<cc::AnimationCurve> animation_curve_;
+
+  const ThreadedTransformTransition* const uninverted_transition_;
+
+  DISALLOW_COPY_AND_ASSIGN(InverseTransformTransition);
+};
+
 }  // namespace
 
 // LayerAnimationElement::TargetValue ------------------------------------------
@@ -595,10 +722,21 @@ LayerAnimationElement::LayerAnimationElement(
     : first_frame_(true),
       properties_(properties),
       duration_(GetEffectiveDuration(duration)),
-      tween_type_(Tween::LINEAR),
+      tween_type_(gfx::Tween::LINEAR),
       animation_id_(cc::AnimationIdProvider::NextAnimationId()),
       animation_group_id_(0),
       last_progressed_fraction_(0.0) {
+}
+
+LayerAnimationElement::LayerAnimationElement(
+    const LayerAnimationElement &element)
+    : first_frame_(element.first_frame_),
+      properties_(element.properties_),
+      duration_(element.duration_),
+      tween_type_(element.tween_type_),
+      animation_id_(cc::AnimationIdProvider::NextAnimationId()),
+      animation_group_id_(element.animation_group_id_),
+      last_progressed_fraction_(element.last_progressed_fraction_) {
 }
 
 LayerAnimationElement::~LayerAnimationElement() {
@@ -634,7 +772,7 @@ bool LayerAnimationElement::Progress(base::TimeTicks now,
   base::TimeDelta elapsed = now - effective_start_time_;
   if ((duration_ > base::TimeDelta()) && (elapsed < duration_))
     t = elapsed.InMillisecondsF() / duration_.InMillisecondsF();
-  need_draw = OnProgress(Tween::CalculateValue(tween_type_, t), delegate);
+  need_draw = OnProgress(gfx::Tween::CalculateValue(tween_type_, t), delegate);
   first_frame_ = t == 1.0;
   last_progressed_fraction_ = t;
   return need_draw;
@@ -726,6 +864,19 @@ LayerAnimationElement* LayerAnimationElement::CreateTransformElement(
     const gfx::Transform& transform,
     base::TimeDelta duration) {
   return new ThreadedTransformTransition(transform, duration);
+}
+
+// static
+LayerAnimationElement* LayerAnimationElement::CreateInverseTransformElement(
+    const gfx::Transform& base_transform,
+    const LayerAnimationElement* uninverted_transition) {
+  return new InverseTransformTransition(base_transform, uninverted_transition);
+}
+
+// static
+LayerAnimationElement* LayerAnimationElement::CloneInverseTransformElement(
+    const LayerAnimationElement* other) {
+  return InverseTransformTransition::Clone(other);
 }
 
 // static

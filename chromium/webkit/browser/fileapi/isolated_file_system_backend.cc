@@ -13,16 +13,15 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/platform_file.h"
 #include "base/sequenced_task_runner.h"
-#include "webkit/browser/blob/local_file_stream_reader.h"
+#include "webkit/browser/blob/file_stream_reader.h"
 #include "webkit/browser/fileapi/async_file_util_adapter.h"
 #include "webkit/browser/fileapi/copy_or_move_file_validator.h"
+#include "webkit/browser/fileapi/dragged_file_util.h"
+#include "webkit/browser/fileapi/file_stream_writer.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_file_stream_reader.h"
+#include "webkit/browser/fileapi/file_system_operation.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
-#include "webkit/browser/fileapi/file_system_operation_impl.h"
 #include "webkit/browser/fileapi/isolated_context.h"
-#include "webkit/browser/fileapi/isolated_file_util.h"
-#include "webkit/browser/fileapi/local_file_stream_writer.h"
 #include "webkit/browser/fileapi/native_file_util.h"
 #include "webkit/browser/fileapi/transient_file_util.h"
 #include "webkit/common/fileapi/file_system_types.h"
@@ -31,7 +30,7 @@
 namespace fileapi {
 
 IsolatedFileSystemBackend::IsolatedFileSystemBackend()
-    : isolated_file_util_(new AsyncFileUtilAdapter(new IsolatedFileUtil())),
+    : isolated_file_util_(new AsyncFileUtilAdapter(new LocalFileUtil())),
       dragged_file_util_(new AsyncFileUtilAdapter(new DraggedFileUtil())),
       transient_file_util_(new AsyncFileUtilAdapter(new TransientFileUtil())) {
 }
@@ -72,21 +71,6 @@ void IsolatedFileSystemBackend::OpenFileSystem(
                  base::PLATFORM_FILE_ERROR_SECURITY));
 }
 
-FileSystemFileUtil* IsolatedFileSystemBackend::GetFileUtil(
-    FileSystemType type) {
-  switch (type) {
-    case kFileSystemTypeNativeLocal:
-      return isolated_file_util_->sync_file_util();
-    case kFileSystemTypeDragged:
-      return dragged_file_util_->sync_file_util();
-    case kFileSystemTypeForTransientFile:
-      return transient_file_util_->sync_file_util();
-    default:
-      NOTREACHED();
-  }
-  return NULL;
-}
-
 AsyncFileUtil* IsolatedFileSystemBackend::GetAsyncFileUtil(
     FileSystemType type) {
   switch (type) {
@@ -114,7 +98,7 @@ FileSystemOperation* IsolatedFileSystemBackend::CreateFileSystemOperation(
     const FileSystemURL& url,
     FileSystemContext* context,
     base::PlatformFileError* error_code) const {
-  return new FileSystemOperationImpl(
+  return FileSystemOperation::Create(
       url, context, make_scoped_ptr(new FileSystemOperationContext(context)));
 }
 
@@ -125,7 +109,7 @@ IsolatedFileSystemBackend::CreateFileStreamReader(
     const base::Time& expected_modification_time,
     FileSystemContext* context) const {
   return scoped_ptr<webkit_blob::FileStreamReader>(
-      new webkit_blob::LocalFileStreamReader(
+      webkit_blob::FileStreamReader::CreateForLocalFile(
           context->default_file_task_runner(),
           url.path(), offset, expected_modification_time));
 }
@@ -134,7 +118,7 @@ scoped_ptr<FileStreamWriter> IsolatedFileSystemBackend::CreateFileStreamWriter(
     const FileSystemURL& url,
     int64 offset,
     FileSystemContext* context) const {
-  return scoped_ptr<FileStreamWriter>(new LocalFileStreamWriter(
+  return scoped_ptr<FileStreamWriter>(FileStreamWriter::CreateForLocalFile(
       context->default_file_task_runner(), url.path(), offset));
 }
 

@@ -21,7 +21,7 @@
 
 namespace {
 
-// Extracted from: ui/base/keycodes/keyboard_codes.h
+// Extracted from: ui/events/keycodes/keyboard_codes.h
 enum {
   VKEY_BACK = 0x08,
   VKEY_SHIFT = 0x10,
@@ -128,7 +128,8 @@ class MyTextField {
         area_(x, y, width, height),
         font_size_(height - 2),
         caret_pos_(std::string::npos),
-        anchor_pos_(std::string::npos) {
+        anchor_pos_(std::string::npos),
+        target_segment_(0) {
     pp::FontDescription_Dev desc;
     desc.set_family(PP_FONTFAMILY_SANSSERIF);
     desc.set_size(font_size_);

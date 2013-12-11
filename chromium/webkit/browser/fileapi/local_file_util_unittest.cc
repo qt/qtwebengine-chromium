@@ -7,13 +7,14 @@
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/platform_file.h"
+#include "base/run_loop.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/fileapi/async_file_test_helper.h"
+#include "webkit/browser/fileapi/async_file_util_adapter.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
@@ -43,7 +44,7 @@ class LocalFileUtilTest : public testing::Test {
 
   virtual void TearDown() {
     file_system_context_ = NULL;
-    base::MessageLoop::current()->RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
   }
 
  protected:
@@ -52,13 +53,13 @@ class LocalFileUtilTest : public testing::Test {
         new FileSystemOperationContext(file_system_context_.get());
     context->set_update_observers(
         *file_system_context_->GetUpdateObservers(kFileSystemType));
-    context->set_root_path(data_dir_.path());
     return context;
   }
 
   LocalFileUtil* file_util() {
-    return static_cast<LocalFileUtil*>(
-        file_system_context_->GetFileUtil(kFileSystemType));
+    AsyncFileUtilAdapter* adapter = static_cast<AsyncFileUtilAdapter*>(
+        file_system_context_->GetAsyncFileUtil(kFileSystemType));
+    return static_cast<LocalFileUtil*>(adapter->sync_file_util());
   }
 
   FileSystemURL CreateURL(const std::string& file_name) {

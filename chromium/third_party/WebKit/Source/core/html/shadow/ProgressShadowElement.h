@@ -41,54 +41,52 @@ class HTMLProgressElement;
 
 class ProgressShadowElement : public HTMLDivElement {
 public:
-    ProgressShadowElement(Document*);
+    ProgressShadowElement(Document&);
     HTMLProgressElement* progressElement() const;
 
 protected:
-    virtual bool rendererIsNeeded(const NodeRenderingContext&);
+    virtual bool rendererIsNeeded(const RenderStyle&);
 };
 
 class ProgressInnerElement FINAL : public ProgressShadowElement {
 public:
-    ProgressInnerElement(Document*);
+    static PassRefPtr<ProgressInnerElement> create(Document&);
 
-    static PassRefPtr<ProgressInnerElement> create(Document*);
 private:
+    ProgressInnerElement(Document&);
+
     virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
-    virtual bool rendererIsNeeded(const NodeRenderingContext&);
+    virtual bool rendererIsNeeded(const RenderStyle&);
 };
+
+inline PassRefPtr<ProgressInnerElement> ProgressInnerElement::create(Document& document)
+{
+    return adoptRef(new ProgressInnerElement(document));
+}
 
 class ProgressBarElement FINAL : public ProgressShadowElement {
 public:
-    ProgressBarElement(Document* document)
-        : ProgressShadowElement(document)
-    {
-        DEFINE_STATIC_LOCAL(AtomicString, pseudoId, ("-webkit-progress-bar", AtomicString::ConstructFromLiteral));
-        setPart(pseudoId);
-    }
+    static PassRefPtr<ProgressBarElement> create(Document&);
 
-    static PassRefPtr<ProgressBarElement> create(Document*);
+private:
+    ProgressBarElement(Document&);
 };
 
-inline PassRefPtr<ProgressBarElement> ProgressBarElement::create(Document* document)
+inline PassRefPtr<ProgressBarElement> ProgressBarElement::create(Document& document)
 {
     return adoptRef(new ProgressBarElement(document));
 }
 
 class ProgressValueElement FINAL : public ProgressShadowElement {
 public:
-    ProgressValueElement(Document* document)
-        : ProgressShadowElement(document)
-    {
-        DEFINE_STATIC_LOCAL(AtomicString, pseudoId, ("-webkit-progress-value", AtomicString::ConstructFromLiteral));
-        setPart(pseudoId);
-    }
-
-    static PassRefPtr<ProgressValueElement> create(Document*);
+    static PassRefPtr<ProgressValueElement> create(Document&);
     void setWidthPercentage(double);
+
+private:
+    ProgressValueElement(Document&);
 };
 
-inline PassRefPtr<ProgressValueElement> ProgressValueElement::create(Document* document)
+inline PassRefPtr<ProgressValueElement> ProgressValueElement::create(Document& document)
 {
     return adoptRef(new ProgressValueElement(document));
 }

@@ -6,6 +6,7 @@
 #include "WebMediaPlayerClientImpl.h"
 
 #include "InbandTextTrackPrivateImpl.h"
+#include "MediaSourcePrivateImpl.h"
 #include "WebAudioSourceProvider.h"
 #include "WebDocument.h"
 #include "WebFrameClient.h"
@@ -13,9 +14,9 @@
 #include "WebHelperPluginImpl.h"
 #include "WebInbandTextTrack.h"
 #include "WebMediaPlayer.h"
-#include "WebMediaSourceImpl.h"
 #include "WebViewImpl.h"
 #include "core/html/HTMLMediaElement.h"
+#include "core/html/HTMLMediaSource.h"
 #include "core/html/TimeRanges.h"
 #include "core/page/Frame.h"
 #include "core/platform/NotImplemented.h"
@@ -156,8 +157,7 @@ WebPlugin* WebMediaPlayerClientImpl::createHelperPlugin(const WebString& pluginT
 {
     ASSERT(!m_helperPlugin);
 
-    WebViewImpl* webView = static_cast<WebViewImpl*>(frame->view());
-    m_helperPlugin = webView->createHelperPlugin(pluginType, frame->document());
+    m_helperPlugin = toWebViewImpl(frame->view())->createHelperPlugin(pluginType, frame->document());
     if (!m_helperPlugin)
         return 0;
 
@@ -172,11 +172,19 @@ WebPlugin* WebMediaPlayerClientImpl::createHelperPlugin(const WebString& pluginT
     return plugin;
 }
 
+
+// FIXME: Remove this override and cast when Chromium is updated to use closeHelperPluginSoon().
 void WebMediaPlayerClientImpl::closeHelperPlugin()
 {
+    Frame* frame = static_cast<HTMLMediaElement*>(m_client)->document().frame();
+    WebFrameImpl* webFrame = WebFrameImpl::fromFrame(frame);
+    closeHelperPluginSoon(webFrame);
+}
+
+void WebMediaPlayerClientImpl::closeHelperPluginSoon(WebFrame* frame)
+{
     ASSERT(m_helperPlugin);
-    m_helperPlugin->closeHelperPlugin();
-    m_helperPlugin = 0;
+    toWebViewImpl(frame->view())->closeHelperPluginSoon(m_helperPlugin.release());
 }
 
 void WebMediaPlayerClientImpl::setWebLayer(WebLayer* layer)
@@ -208,6 +216,17 @@ void WebMediaPlayerClientImpl::removeTextTrack(WebInbandTextTrack* textTrack)
     // that was passed to addTextTrack.  (The object from which we are downcasting includes
     // WebInbandTextTrack as one of the intefaces from which inherits.)
     m_client->mediaPlayerDidRemoveTrack(static_cast<InbandTextTrackPrivateImpl*>(textTrack->client()));
+}
+
+void WebMediaPlayerClientImpl::mediaSourceOpened(WebMediaSource* webMediaSource)
+{
+    ASSERT(webMediaSource);
+    m_mediaSource->setPrivateAndOpen(adoptPtr(new MediaSourcePrivateImpl(adoptPtr(webMediaSource))));
+}
+
+void WebMediaPlayerClientImpl::requestSeek(double time)
+{
+    m_client->mediaPlayerRequestSeek(time);
 }
 
 // MediaPlayer -------------------------------------------------
@@ -247,7 +266,7 @@ void WebMediaPlayerClientImpl::loadInternal()
 #endif
 
     // FIXME: Remove this cast
-    Frame* frame = static_cast<HTMLMediaElement*>(m_client)->document()->frame();
+    Frame* frame = static_cast<HTMLMediaElement*>(m_client)->document().frame();
 
     // This does not actually check whether the hardware can support accelerated
     // compositing, but only if the flag is set. However, this is checked lazily
@@ -262,12 +281,15 @@ void WebMediaPlayerClientImpl::loadInternal()
         m_audioSourceProvider.wrap(m_webMediaPlayer->audioSourceProvider());
 #endif
 
+        WebMediaPlayer::LoadType loadType = WebMediaPlayer::LoadTypeURL;
+
+        if (m_mediaSource)
+            loadType = WebMediaPlayer::LoadTypeMediaSource;
+        else if (m_isMediaStream)
+            loadType = WebMediaPlayer::LoadTypeMediaStream;
+
         WebMediaPlayer::CORSMode corsMode = static_cast<WebMediaPlayer::CORSMode>(m_client->mediaPlayerCORSMode());
-        if (m_mediaSource) {
-            m_webMediaPlayer->load(m_url, new WebMediaSourceImpl(m_mediaSource), corsMode);
-            return;
-        }
-        m_webMediaPlayer->load(m_url, corsMode);
+        m_webMediaPlayer->load(loadType, m_url, corsMode);
     }
 }
 
@@ -288,24 +310,22 @@ void WebMediaPlayerClientImpl::pause()
         m_webMediaPlayer->pause();
 }
 
-#if USE(NATIVE_FULLSCREEN_VIDEO)
-void WebMediaPlayerClientImpl::enterFullscreen()
+void WebMediaPlayerClientImpl::showFullscreenOverlay()
 {
     if (m_webMediaPlayer)
         m_webMediaPlayer->enterFullscreen();
 }
 
-void WebMediaPlayerClientImpl::exitFullscreen()
+void WebMediaPlayerClientImpl::hideFullscreenOverlay()
 {
     if (m_webMediaPlayer)
         m_webMediaPlayer->exitFullscreen();
 }
 
-bool WebMediaPlayerClientImpl::canEnterFullscreen() const
+bool WebMediaPlayerClientImpl::canShowFullscreenOverlay() const
 {
     return m_webMediaPlayer && m_webMediaPlayer->canEnterFullscreen();
 }
-#endif
 
 MediaPlayer::MediaKeyException WebMediaPlayerClientImpl::generateKeyRequest(const String& keySystem, const unsigned char* initData, unsigned initDataLength)
 {
@@ -508,7 +528,7 @@ bool WebMediaPlayerClientImpl::copyVideoTextureToPlatformTexture(WebCore::Graphi
 {
     if (!context || !m_webMediaPlayer)
         return false;
-    Extensions3D* extensions = context->getExtensions();
+    Extensions3D* extensions = context->extensions();
     if (!extensions || !extensions->supports("GL_CHROMIUM_copy_texture") || !extensions->supports("GL_CHROMIUM_flipy")
         || !extensions->canUseCopyTextureCHROMIUM(internalFormat, type, level) || !context->makeContextCurrent())
         return false;
@@ -609,7 +629,7 @@ void WebMediaPlayerClientImpl::paintOnAndroid(WebCore::GraphicsContext* context,
     if (!context || !context3D || !m_webMediaPlayer || context->paintingDisabled())
         return;
 
-    Extensions3D* extensions = context3D->getExtensions();
+    Extensions3D* extensions = context3D->extensions();
     if (!extensions || !extensions->supports("GL_CHROMIUM_copy_texture") || !extensions->supports("GL_CHROMIUM_flipy")
         || !context3D->makeContextCurrent())
         return;
@@ -671,6 +691,7 @@ WebMediaPlayerClientImpl::WebMediaPlayerClientImpl(MediaPlayerClient* client)
     , m_isMediaStream(false)
     , m_delayingLoad(false)
     , m_preload(MediaPlayer::Auto)
+    , m_helperPlugin(0)
     , m_videoLayer(0)
     , m_opaque(false)
     , m_needsWebLayerForVideo(false)

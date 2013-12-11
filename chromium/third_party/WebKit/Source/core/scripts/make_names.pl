@@ -339,7 +339,7 @@ sub printConstructorSignature
 {
     my ($F, $tagName, $constructorName, $constructorTagName) = @_;
 
-    print F "static PassRefPtr<$parameters{namespace}Element> ${constructorName}Constructor(const QualifiedName& $constructorTagName, Document* document";
+    print F "static PassRefPtr<$parameters{namespace}Element> ${constructorName}Constructor(const QualifiedName& $constructorTagName, Document& document";
     if ($parameters{namespace} eq "HTML") {
         print F ", HTMLFormElement*";
         print F " formElement" if $enabledTags{$tagName}{constructorNeedsFormElement};
@@ -359,7 +359,7 @@ sub printConstructorInterior
     # Handle media elements.
     if ($enabledTags{$tagName}{wrapperOnlyIfMediaIsAvailable}) {
         print F <<END
-    Settings* settings = document->settings();
+    Settings* settings = document.settings();
     if (!RuntimeEnabledFeatures::mediaEnabled() || (settings && !settings->mediaEnabled()))
         return 0;
 
@@ -370,7 +370,7 @@ END
     my $contextConditional = $enabledTags{$tagName}{contextConditional};
     if ($contextConditional) {
         print F <<END
-    if (!ContextFeatures::${contextConditional}Enabled(document))
+    if (!ContextFeatures::${contextConditional}Enabled(&document))
         return 0;
 END
 ;
@@ -795,7 +795,7 @@ END
 
 printElementIncludes($F);
 
-print F "\n#include <wtf/HashMap.h>\n";
+print F "\n#include \"wtf/HashMap.h\"\n";
 
 printConditionalElementIncludes($F);
 
@@ -803,6 +803,7 @@ print F <<END
 
 #include "ContextFeatures.h"
 #include "CustomElement.h"
+#include "CustomElementRegistrationContext.h"
 #include "Document.h"
 #include "RuntimeEnabledFeatures.h"
 #include "Settings.h"
@@ -814,7 +815,7 @@ using namespace $parameters{namespace}Names;
 END
 ;
 
-print F "typedef PassRefPtr<$parameters{namespace}Element> (*ConstructorFunction)(const QualifiedName&, Document*";
+print F "typedef PassRefPtr<$parameters{namespace}Element> (*ConstructorFunction)(const QualifiedName&, Document&";
 print F ", HTMLFormElement*" if $parameters{namespace} eq "HTML";
 print F ", bool createdByParser);\n";
 print F <<END
@@ -859,8 +860,8 @@ print F <<END
     if (!document)
         return 0;
 
-    if (CustomElement::isCustomTagName(qName.localName()) && document->registrationContext()) {
-        RefPtr<Element> element = document->registrationContext()->createCustomTagElement(document, qName);
+    if (CustomElement::isValidName(qName.localName()) && document->registrationContext()) {
+        RefPtr<Element> element = document->registrationContext()->createCustomTagElement(*document, qName, createdByParser ? CustomElementRegistrationContext::CreatedByParser : CustomElementRegistrationContext::NotCreatedByParser);
         ASSERT_WITH_SECURITY_IMPLICATION(element->is$parameters{namespace}Element());
         return static_pointer_cast<$parameters{namespace}Element>(element.release());
     }
@@ -872,16 +873,16 @@ END
 ;
 
 if ($parameters{namespace} eq "HTML") {
-    print F "        if (PassRefPtr<$parameters{namespace}Element> element = function(qName, document, formElement, createdByParser))\n";
+    print F "        if (PassRefPtr<$parameters{namespace}Element> element = function(qName, *document, formElement, createdByParser))\n";
     print F "            return element;\n";
 } else {
-    print F "        if (PassRefPtr<$parameters{namespace}Element> element = function(qName, document, createdByParser))\n";
+    print F "        if (PassRefPtr<$parameters{namespace}Element> element = function(qName, *document, createdByParser))\n";
     print F "            return element;\n";
 }
 print F <<END
     }
 
-    return $parameters{fallbackInterfaceName}::create(qName, document);
+    return $parameters{fallbackInterfaceName}::create(qName, *document);
 }
 
 } // namespace WebCore
@@ -906,8 +907,8 @@ sub printFactoryHeaderFile
 #ifndef $parameters{namespace}ElementFactory_h
 #define $parameters{namespace}ElementFactory_h
 
-#include <wtf/Forward.h>
-#include <wtf/PassRefPtr.h>
+#include "wtf/Forward.h"
+#include "wtf/PassRefPtr.h"
 
 namespace WebCore {
     class Element;
@@ -978,7 +979,7 @@ sub printWrapperFunctions
             print F <<END
 static v8::Handle<v8::Object> create${JSInterfaceName}Wrapper($parameters{namespace}Element* element, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
-    Settings* settings = element->document()->settings();
+    Settings* settings = element->document().settings();
     if (!RuntimeEnabledFeatures::mediaEnabled() || (settings && !settings->mediaEnabled()))
         return createV8$parameters{namespace}DirectWrapper(element, creationContext, isolate);
     return wrap(static_cast<${JSInterfaceName}*>(element), creationContext, isolate);
@@ -991,7 +992,7 @@ END
             print F <<END
 static v8::Handle<v8::Object> create${JSInterfaceName}Wrapper($parameters{namespace}Element* element, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
-    if (!ContextFeatures::${contextConditional}Enabled(element->document()))
+    if (!ContextFeatures::${contextConditional}Enabled(&element->document()))
         return createV8$parameters{namespace}FallbackWrapper(to$parameters{fallbackInterfaceName}(element), creationContext, isolate);
     return wrap(static_cast<${JSInterfaceName}*>(element), creationContext, isolate);
 }
@@ -1056,7 +1057,7 @@ sub printWrapperFactoryCppFile
 
     printElementIncludes($F);
 
-    print F "\n#include <wtf/StdLibExtras.h>\n";
+    print F "\n#include \"wtf/StdLibExtras.h\"\n";
 
     printConditionalElementIncludes($F, 1);
 
@@ -1143,13 +1144,19 @@ END
 END
 ;
     }
+
+    my $fallbackWrapper = $parameters{fallbackInterfaceName};
+    if ($parameters{namespace} eq "SVG") {
+        $fallbackWrapper = "SVGElement";
+    }
+
     print F <<END
 }
 
-const QualifiedName* find$parameters{namespace}TagNameOfV8Type(const WrapperTypeInfo* type)
+WrapperTypeInfo* findWrapperTypeFor$parameters{namespace}TagName(const AtomicString& name)
 {
-    typedef HashMap<const WrapperTypeInfo*, const QualifiedName*> TypeNameMap;
-    DEFINE_STATIC_LOCAL(TypeNameMap, map, ());
+    typedef HashMap<WTF::StringImpl*, WrapperTypeInfo*> NameTypeMap;
+    DEFINE_STATIC_LOCAL(NameTypeMap, map, ());
     if (map.isEmpty()) {
 END
 ;
@@ -1163,7 +1170,7 @@ END
             }
 
             my $JSInterfaceName = $enabledTags{$tagName}{JSInterfaceName};
-            print F "       map.set(WrapperTypeTraits<${JSInterfaceName}>::info(), &${tagName}Tag);\n";
+            print F "       map.set(${tagName}Tag.localName().impl(), WrapperTypeTraits<${JSInterfaceName}>::info());\n";
 
             if ($conditional) {
                 print F "#endif\n";
@@ -1174,7 +1181,10 @@ END
     print F <<END
     }
 
-    return map.get(type);
+    if (WrapperTypeInfo* result = map.get(name.impl()))
+        return result;
+
+    return WrapperTypeTraits<$fallbackWrapper>::info();
 }
 
 END
@@ -1209,7 +1219,8 @@ namespace WebCore {
 
     class $parameters{namespace}Element;
 
-    const QualifiedName* find$parameters{namespace}TagNameOfV8Type(const WrapperTypeInfo*);
+    WrapperTypeInfo* findWrapperTypeFor$parameters{namespace}TagName(const AtomicString& name);
+
     v8::Handle<v8::Object> createV8$parameters{namespace}Wrapper($parameters{namespace}Element*, v8::Handle<v8::Object> creationContext, v8::Isolate*);
     inline v8::Handle<v8::Object> createV8$parameters{namespace}DirectWrapper($parameters{namespace}Element* element, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
     {

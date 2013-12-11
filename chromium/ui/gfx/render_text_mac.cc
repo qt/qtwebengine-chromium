@@ -47,8 +47,7 @@ std::vector<RenderText::FontSpan> RenderTextMac::GetFontSpansForTesting() {
   for (size_t i = 0; i < runs_.size(); ++i) {
     gfx::Font font(runs_[i].font_name, runs_[i].text_size);
     const CFRange cf_range = CTRunGetStringRange(runs_[i].ct_run);
-    const ui::Range range(cf_range.location,
-                          cf_range.location + cf_range.length);
+    const Range range(cf_range.location, cf_range.location + cf_range.length);
     spans.push_back(RenderText::FontSpan(font, range));
   }
 
@@ -69,12 +68,12 @@ SelectionModel RenderTextMac::AdjacentWordSelectionModel(
   return SelectionModel();
 }
 
-ui::Range RenderTextMac::GetGlyphBounds(size_t index) {
+Range RenderTextMac::GetGlyphBounds(size_t index) {
   // TODO(asvitkine): Implement this. http://crbug.com/131618
-  return ui::Range();
+  return Range();
 }
 
-std::vector<Rect> RenderTextMac::GetSubstringBounds(const ui::Range& range) {
+std::vector<Rect> RenderTextMac::GetSubstringBounds(const Range& range) {
   // TODO(asvitkine): Implement this. http://crbug.com/131618
   return std::vector<Rect>();
 }
@@ -150,7 +149,7 @@ void RenderTextMac::EnsureLayout() {
   CGFloat font_list_baseline = font_list().GetBaseline();
   ascent = std::max(ascent, font_list_baseline);
   descent = std::max(descent, font_list_height - font_list_baseline);
-  string_size_ = Size(width, ascent + descent + leading);
+  string_size_ = Size(std::ceil(width), ascent + descent + leading);
   common_baseline_ = ascent;
 }
 
@@ -249,9 +248,9 @@ void RenderTextMac::ComputeRuns() {
   CFArrayRef ct_runs = CTLineGetGlyphRuns(line_);
   const CFIndex ct_runs_count = CFArrayGetCount(ct_runs);
 
-  // TODO(asvitkine): Don't use GetTextOffset() until draw time, since it may be
+  // TODO(asvitkine): Don't use GetLineOffset() until draw time, since it may be
   // updated based on alignment changes without resetting the layout.
-  gfx::Vector2d text_offset = GetTextOffset();
+  gfx::Vector2d text_offset = GetLineOffset(0);
   // Skia will draw glyphs with respect to the baseline.
   text_offset += gfx::Vector2d(0, common_baseline_);
 

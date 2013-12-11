@@ -9,7 +9,6 @@
 #include "ui/aura/focus_manager.h"
 #include "ui/aura/root_window.h"
 #include "ui/base/x/x11_util.h"
-#include "ui/views/widget/desktop_aura/desktop_activation_client.h"
 
 #if !defined(OS_CHROMEOS)
 #include "ui/views/ime/input_method.h"
@@ -39,11 +38,11 @@ X11DesktopHandler* X11DesktopHandler::get() {
 }
 
 X11DesktopHandler::X11DesktopHandler()
-    : xdisplay_(base::MessagePumpAuraX11::GetDefaultXDisplay()),
+    : xdisplay_(gfx::GetXDisplay()),
       x_root_window_(DefaultRootWindow(xdisplay_)),
       current_window_(None),
       atom_cache_(xdisplay_, kAtomsToCache) {
-  base::MessagePumpAuraX11::Current()->AddDispatcherForRootWindow(this);
+  base::MessagePumpX11::Current()->AddDispatcherForRootWindow(this);
   aura::Env::GetInstance()->AddObserver(this);
 
   XWindowAttributes attr;
@@ -55,11 +54,11 @@ X11DesktopHandler::X11DesktopHandler()
 
 X11DesktopHandler::~X11DesktopHandler() {
   aura::Env::GetInstance()->RemoveObserver(this);
-  base::MessagePumpAuraX11::Current()->RemoveDispatcherForRootWindow(this);
+  base::MessagePumpX11::Current()->RemoveDispatcherForRootWindow(this);
 }
 
 void X11DesktopHandler::ActivateWindow(::Window window) {
-  DCHECK_EQ(base::MessagePumpAuraX11::GetDefaultXDisplay(), xdisplay_);
+  DCHECK_EQ(gfx::GetXDisplay(), xdisplay_);
 
   XEvent xclient;
   memset(&xclient, 0, sizeof(xclient));

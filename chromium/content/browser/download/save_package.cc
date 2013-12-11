@@ -363,7 +363,7 @@ void SavePackage::InitWithDownloadItem(
   }
 }
 
-void SavePackage::OnMHTMLGenerated(const base::FilePath& path, int64 size) {
+void SavePackage::OnMHTMLGenerated(int64 size) {
   if (size <= 0) {
     Cancel(false);
     return;
@@ -971,11 +971,11 @@ void SavePackage::DoSavingProcess() {
     // sub-resource's link can be replaced with local file path, which
     // sub-resource's link need to be replaced with absolute URL which
     // point to its internet address because it got error when saving its data.
-    SaveItem* save_item = NULL;
+
     // Start a new SaveItem job if we still have job in waiting queue.
     if (waiting_item_queue_.size()) {
       DCHECK(wait_state_ == NET_FILES);
-      save_item = waiting_item_queue_.front();
+      SaveItem* save_item = waiting_item_queue_.front();
       if (save_item->save_source() != SaveFileCreateInfo::SAVE_FILE_FROM_DOM) {
         SaveNextFile(false);
       } else if (!in_process_count()) {
@@ -1209,8 +1209,7 @@ base::FilePath SavePackage::GetSuggestedNameForSaveAs(
     bool can_save_as_complete,
     const std::string& contents_mime_type,
     const std::string& accept_langs) {
-  base::FilePath name_with_proper_ext =
-      base::FilePath::FromWStringHack(UTF16ToWideHack(title_));
+  base::FilePath name_with_proper_ext = base::FilePath::FromUTF16Unsafe(title_);
 
   // If the page's title matches its URL, use the URL. Try to use the last path
   // component or if there is none, the domain as the file name.
@@ -1238,8 +1237,7 @@ base::FilePath SavePackage::GetSuggestedNameForSaveAs(
     } else {
       url_path = "dataurl";
     }
-    name_with_proper_ext =
-        base::FilePath::FromWStringHack(UTF8ToWide(url_path));
+    name_with_proper_ext = base::FilePath::FromUTF8Unsafe(url_path);
   }
 
   // Ask user for getting final saving name.

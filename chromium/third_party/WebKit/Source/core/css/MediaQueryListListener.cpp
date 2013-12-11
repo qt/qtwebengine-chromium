@@ -28,14 +28,14 @@ namespace WebCore {
 void MediaQueryListListener::queryChanged(ScriptState* state, MediaQueryList* query)
 {
     ScriptCallback callback(state, m_value);
-    v8::HandleScope handleScope;
+    v8::HandleScope handleScope(state->isolate());
 
     v8::Handle<v8::Context> context = state->context();
     if (context.IsEmpty())
         return; // JS may not be enabled.
 
     v8::Context::Scope scope(context);
-    callback.appendArgument(toV8(query, v8::Handle<v8::Object>(), context->GetIsolate()));
+    callback.appendArgument(ScriptValue(toV8(query, v8::Handle<v8::Object>(), context->GetIsolate()), context->GetIsolate()));
     callback.call();
 }
 

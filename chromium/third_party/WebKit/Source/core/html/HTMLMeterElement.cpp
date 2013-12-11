@@ -26,7 +26,6 @@
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/NodeRenderingContext.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/shadow/MeterShadowElement.h"
@@ -38,7 +37,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLMeterElement::HTMLMeterElement(const QualifiedName& tagName, Document* document)
+HTMLMeterElement::HTMLMeterElement(const QualifiedName& tagName, Document& document)
     : LabelableElement(tagName, document)
 {
     ASSERT(hasTagName(meterTag));
@@ -49,7 +48,7 @@ HTMLMeterElement::~HTMLMeterElement()
 {
 }
 
-PassRefPtr<HTMLMeterElement> HTMLMeterElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLMeterElement> HTMLMeterElement::create(const QualifiedName& tagName, Document& document)
 {
     RefPtr<HTMLMeterElement> meter = adoptRef(new HTMLMeterElement(tagName, document));
     meter->ensureUserAgentShadowRoot();
@@ -58,7 +57,7 @@ PassRefPtr<HTMLMeterElement> HTMLMeterElement::create(const QualifiedName& tagNa
 
 RenderObject* HTMLMeterElement::createRenderer(RenderStyle* style)
 {
-    if (hasAuthorShadowRoot() || !document()->page()->theme()->supportsMeter(style->appearance()))
+    if (hasAuthorShadowRoot() || !RenderTheme::theme().supportsMeter(style->appearance()))
         return RenderObject::createObject(this, style);
 
     return new RenderMeter(this);
@@ -215,11 +214,11 @@ void HTMLMeterElement::didElementStateChange()
 RenderMeter* HTMLMeterElement::renderMeter() const
 {
     if (renderer() && renderer()->isMeter())
-        return static_cast<RenderMeter*>(renderer());
+        return toRenderMeter(renderer());
 
     RenderObject* renderObject = userAgentShadowRoot()->firstChild()->renderer();
     ASSERT(!renderObject || renderObject->isMeter());
-    return static_cast<RenderMeter*>(renderObject);
+    return toRenderMeter(renderObject);
 }
 
 void HTMLMeterElement::didAddUserAgentShadowRoot(ShadowRoot* root)
@@ -233,9 +232,9 @@ void HTMLMeterElement::didAddUserAgentShadowRoot(ShadowRoot* root)
     m_value = MeterValueElement::create(document());
     m_value->setWidthPercentage(0);
     m_value->updatePseudo();
-    bar->appendChild(m_value, ASSERT_NO_EXCEPTION);
+    bar->appendChild(m_value);
 
-    inner->appendChild(bar, ASSERT_NO_EXCEPTION);
+    inner->appendChild(bar);
 }
 
 } // namespace

@@ -33,7 +33,7 @@ class ScriptExecutionContext;
 
 class DocumentFragment : public ContainerNode {
 public:
-    static PassRefPtr<DocumentFragment> create(Document*);
+    static PassRefPtr<DocumentFragment> create(Document&);
 
     void parseHTML(const String&, Element* contextElement, ParserContentPolicy = AllowScriptingContent);
     bool parseXML(const String&, Element* contextElement, ParserContentPolicy = AllowScriptingContent);
@@ -51,6 +51,18 @@ private:
     virtual bool childTypeAllowed(NodeType) const;
 };
 
-} //namespace
+inline DocumentFragment* toDocumentFragment(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->nodeType() == Node::DOCUMENT_FRAGMENT_NODE);
+    return static_cast<DocumentFragment*>(node);
+}
+
+inline const DocumentFragment* toDocumentFragment(const Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->nodeType() == Node::DOCUMENT_FRAGMENT_NODE);
+    return static_cast<const DocumentFragment*>(node);
+}
+
+} // namespace WebCore
 
 #endif

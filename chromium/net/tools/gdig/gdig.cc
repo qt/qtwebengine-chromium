@@ -116,7 +116,7 @@ typedef std::vector<ReplayLogEntry> ReplayLog;
 // The file should be sorted by timestamp in ascending time.
 bool LoadReplayLog(const base::FilePath& file_path, ReplayLog* replay_log) {
   std::string original_replay_log_contents;
-  if (!file_util::ReadFileToString(file_path, &original_replay_log_contents)) {
+  if (!base::ReadFileToString(file_path, &original_replay_log_contents)) {
     fprintf(stderr, "Unable to open replay file %s\n",
             file_path.MaybeAsASCII().c_str());
     return false;
@@ -460,7 +460,11 @@ void GDig::ReplayNextEntry() {
     ++active_resolves_;
     ++replay_log_index_;
     int ret = resolver_->Resolve(
-        info, addrlist, callback, NULL,
+        info,
+        DEFAULT_PRIORITY,
+        addrlist,
+        callback,
+        NULL,
         BoundNetLog::Make(log_.get(), net::NetLog::SOURCE_NONE));
     if (ret != ERR_IO_PENDING)
       callback.Run(ret);

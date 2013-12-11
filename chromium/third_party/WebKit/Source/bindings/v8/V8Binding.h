@@ -64,7 +64,7 @@ namespace WebCore {
     v8::Handle<v8::Value> throwError(V8ErrorType, const String&, v8::Isolate*);
 
     // Schedule a JavaScript error to be thrown.
-    v8::Handle<v8::Value> throwError(v8::Handle<v8::Value>);
+    v8::Handle<v8::Value> throwError(v8::Handle<v8::Value>, v8::Isolate*);
 
     // A helper for throwing JavaScript TypeError.
     v8::Handle<v8::Value> throwTypeError(v8::Isolate*);
@@ -163,6 +163,33 @@ namespace WebCore {
         V8PerIsolateData::from(isolate)->stringCache()->setReturnValueFromString(info.GetReturnValue(), string.impl());
     }
 
+    // Convert v8::String to a WTF::String. If the V8 string is not already
+    // an external string then it is transformed into an external string at this
+    // point to avoid repeated conversions.
+    inline String toWebCoreString(v8::Handle<v8::String> value)
+    {
+        return v8StringToWebCoreString<String>(value, Externalize);
+    }
+
+    inline String toWebCoreStringWithNullCheck(v8::Handle<v8::String> value)
+    {
+        if (value.IsEmpty() || value->IsNull())
+            return String();
+        return toWebCoreString(value);
+    }
+
+    inline String toWebCoreStringWithUndefinedOrNullCheck(v8::Handle<v8::String> value)
+    {
+        if (value.IsEmpty() || value->IsNull() || value->IsUndefined())
+            return String();
+        return toWebCoreString(value);
+    }
+
+    inline AtomicString toWebCoreAtomicString(v8::Handle<v8::String> value)
+    {
+        return v8StringToWebCoreString<AtomicString>(value, Externalize);
+    }
+
     // Convert v8 types to a WTF::String. If the V8 string is not already
     // an external string then it is transformed into an external string at this
     // point to avoid repeated conversions.
@@ -200,15 +227,6 @@ namespace WebCore {
     inline AtomicString toWebCoreAtomicString(v8::Handle<v8::Value> value)
     {
         V8StringResource<> stringResource(value);
-        if (!stringResource.prepare())
-            return AtomicString();
-        return stringResource;
-    }
-
-    // FIXME: See the above comment.
-    inline AtomicString toWebCoreAtomicStringWithNullCheck(v8::Handle<v8::Value> value)
-    {
-        V8StringResource<WithNullCheck> stringResource(value);
         if (!stringResource.prepare())
             return AtomicString();
         return stringResource;
@@ -264,17 +282,17 @@ namespace WebCore {
 
     template<>
     struct V8ValueTraits<float> {
-        static inline v8::Handle<v8::Value> arrayV8Value(const float& value, v8::Isolate*)
+        static inline v8::Handle<v8::Value> arrayV8Value(const float& value, v8::Isolate* isolate)
         {
-            return v8::Number::New(value);
+            return v8::Number::New(isolate, value);
         }
     };
 
     template<>
     struct V8ValueTraits<double> {
-        static inline v8::Handle<v8::Value> arrayV8Value(const double& value, v8::Isolate*)
+        static inline v8::Handle<v8::Value> arrayV8Value(const double& value, v8::Isolate* isolate)
         {
-            return v8::Number::New(value);
+            return v8::Number::New(isolate, value);
         }
     };
 
@@ -391,7 +409,8 @@ namespace WebCore {
     struct NativeValueTraits<String> {
         static inline String nativeValue(const v8::Handle<v8::Value>& value)
         {
-            return toWebCoreString(value);
+            V8TRYCATCH_FOR_V8STRINGRESOURCE_RETURN(V8StringResource<>, stringValue, value, String());
+            return stringValue;
         }
     };
 
@@ -435,13 +454,14 @@ namespace WebCore {
             return Vector<RefPtr<T> >();
 
         Vector<RefPtr<T> > result;
+        result.reserveInitialCapacity(length);
         v8::Local<v8::Object> object = v8::Local<v8::Object>::Cast(v8Value);
         for (uint32_t i = 0; i < length; ++i) {
             v8::Handle<v8::Value> element = object->Get(i);
 
             if (V8T::HasInstance(element, isolate, worldType(isolate))) {
                 v8::Handle<v8::Object> elementObject = v8::Handle<v8::Object>::Cast(element);
-                result.append(V8T::toNative(elementObject));
+                result.uncheckedAppend(V8T::toNative(elementObject));
             } else {
                 if (success)
                     *success = false;
@@ -465,10 +485,11 @@ namespace WebCore {
             return Vector<T>();
 
         Vector<T> result;
+        result.reserveInitialCapacity(length);
         typedef NativeValueTraits<T> TraitsType;
         v8::Local<v8::Object> object = v8::Local<v8::Object>::Cast(v8Value);
         for (uint32_t i = 0; i < length; ++i)
-            result.append(TraitsType::nativeValue(object->Get(i)));
+            result.uncheckedAppend(TraitsType::nativeValue(object->Get(i)));
         return result;
     }
 
@@ -479,8 +500,9 @@ namespace WebCore {
         Vector<T> result;
         typedef NativeValueTraits<T> TraitsType;
         int length = args.Length();
+        result.reserveInitialCapacity(length);
         for (int i = startIndex; i < length; ++i)
-            result.append(TraitsType::nativeValue(args[i]));
+            result.uncheckedAppend(TraitsType::nativeValue(args[i]));
         return result;
     }
 
@@ -577,6 +599,7 @@ namespace WebCore {
     ScriptExecutionContext* toScriptExecutionContext(v8::Handle<v8::Context>);
 
     DOMWindow* activeDOMWindow();
+    ScriptExecutionContext* activeScriptExecutionContext();
     DOMWindow* firstDOMWindow();
     Document* currentDocument();
 
@@ -612,8 +635,7 @@ namespace WebCore {
     // If the current context causes out of memory, JavaScript setting
     // is disabled and it returns true.
     bool handleOutOfMemory();
-    // FIXME: This should receive an Isolate.
-    v8::Local<v8::Value> handleMaxRecursionDepthExceeded();
+    v8::Local<v8::Value> handleMaxRecursionDepthExceeded(v8::Isolate*);
 
     void crashIfV8IsDead();
 
@@ -631,6 +653,9 @@ namespace WebCore {
     }
 
     v8::Local<v8::Value> getHiddenValueFromMainWorldWrapper(v8::Isolate*, ScriptWrappable*, v8::Handle<v8::String> key);
+
+    v8::Isolate* toIsolate(ScriptExecutionContext*);
+    v8::Isolate* toIsolate(Frame*);
 
 } // namespace WebCore
 

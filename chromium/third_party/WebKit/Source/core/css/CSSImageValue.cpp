@@ -24,9 +24,9 @@
 #include "FetchInitiatorTypeNames.h"
 #include "core/css/CSSParser.h"
 #include "core/dom/Document.h"
-#include "core/loader/cache/FetchRequest.h"
-#include "core/loader/cache/ImageResource.h"
-#include "core/loader/cache/ResourceFetcher.h"
+#include "core/fetch/FetchRequest.h"
+#include "core/fetch/ImageResource.h"
+#include "core/fetch/ResourceFetcher.h"
 #include "core/rendering/style/StyleFetchedImage.h"
 #include "core/rendering/style/StylePendingImage.h"
 
@@ -67,7 +67,7 @@ StyleFetchedImage* CSSImageValue::cachedImage(ResourceFetcher* loader, const Res
         m_accessedImage = true;
 
         FetchRequest request(ResourceRequest(loader->document()->completeURL(m_url)), m_initiatorName.isEmpty() ? FetchInitiatorTypeNames::css : m_initiatorName, options);
-        if (ResourcePtr<ImageResource> cachedImage = loader->requestImage(request))
+        if (ResourcePtr<ImageResource> cachedImage = loader->fetchImage(request))
             m_image = StyleFetchedImage::create(cachedImage.get());
     }
 

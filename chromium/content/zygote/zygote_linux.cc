@@ -20,6 +20,7 @@
 #include "base/posix/global_descriptors.h"
 #include "base/posix/unix_domain_socket_linux.h"
 #include "base/process/kill.h"
+#include "content/common/child_process_sandbox_support_impl_linux.h"
 #include "content/common/sandbox_linux.h"
 #include "content/common/set_process_title.h"
 #include "content/common/zygote_commands_linux.h"
@@ -41,8 +42,6 @@ void SIGCHLDHandler(int signal) {
 }
 
 }  // namespace
-
-const int Zygote::kMagicSandboxIPCDescriptor;
 
 Zygote::Zygote(int sandbox_flags,
                ZygoteForkDelegate* helper)
@@ -77,7 +76,7 @@ bool Zygote::ProcessRequests() {
     // Let the ZygoteHost know we are ready to go.
     // The receiving code is in content/browser/zygote_host_linux.cc.
     std::vector<int> empty;
-    bool r = UnixDomainSocket::SendMsg(kBrowserDescriptor,
+    bool r = UnixDomainSocket::SendMsg(kZygoteSocketPairFd,
                                        kZygoteHelloMessage,
                                        sizeof(kZygoteHelloMessage), empty);
 #if defined(OS_CHROMEOS)
@@ -94,9 +93,20 @@ bool Zygote::ProcessRequests() {
 
   for (;;) {
     // This function call can return multiple times, once per fork().
-    if (HandleRequestFromBrowser(kBrowserDescriptor))
+    if (HandleRequestFromBrowser(kZygoteSocketPairFd))
       return true;
   }
+}
+
+bool Zygote::GetProcessInfo(base::ProcessHandle pid,
+                            ZygoteProcessInfo* process_info) {
+  DCHECK(process_info);
+  const ZygoteProcessMap::const_iterator it = process_info_map_.find(pid);
+  if (it == process_info_map_.end()) {
+    return false;
+  }
+  *process_info = it->second;
+  return true;
 }
 
 bool Zygote::UsingSUIDSandbox() const {
@@ -155,37 +165,87 @@ bool Zygote::HandleRequestFromBrowser(int fd) {
   return false;
 }
 
+// TODO(jln): remove callers to this broken API. See crbug.com/274855.
 void Zygote::HandleReapRequest(int fd,
                                const Pickle& pickle,
                                PickleIterator iter) {
   base::ProcessId child;
-  base::ProcessId actual_child;
 
   if (!pickle.ReadInt(&iter, &child)) {
     LOG(WARNING) << "Error parsing reap request from browser";
     return;
   }
 
-  if (UsingSUIDSandbox()) {
-    actual_child = real_pids_to_sandbox_pids[child];
-    if (!actual_child)
-      return;
-    real_pids_to_sandbox_pids.erase(child);
-  } else {
-    actual_child = child;
+  ZygoteProcessInfo child_info;
+  if (!GetProcessInfo(child, &child_info)) {
+    LOG(ERROR) << "Child not found!";
+    NOTREACHED();
+    return;
   }
 
-  base::EnsureProcessTerminated(actual_child);
+  if (!child_info.started_from_helper) {
+    // TODO(jln): this old code is completely broken. See crbug.com/274855.
+    base::EnsureProcessTerminated(child_info.internal_pid);
+  } else {
+    // For processes from the helper, send a GetTerminationStatus request
+    // with known_dead set to true.
+    // This is not perfect, as the process may be killed instantly, but is
+    // better than ignoring the request.
+    base::TerminationStatus status;
+    int exit_code;
+    bool got_termination_status =
+        GetTerminationStatus(child, true /* known_dead */, &status, &exit_code);
+    DCHECK(got_termination_status);
+  }
+  process_info_map_.erase(child);
+}
+
+bool Zygote::GetTerminationStatus(base::ProcessHandle real_pid,
+                                  bool known_dead,
+                                  base::TerminationStatus* status,
+                                  int* exit_code) {
+
+  ZygoteProcessInfo child_info;
+  if (!GetProcessInfo(real_pid, &child_info)) {
+    LOG(ERROR) << "Zygote::GetTerminationStatus for unknown PID "
+               << real_pid;
+    NOTREACHED();
+    return false;
+  }
+  // We know about |real_pid|.
+  const base::ProcessHandle child = child_info.internal_pid;
+  if (child_info.started_from_helper) {
+    // Let the helper handle the request.
+    DCHECK(helper_);
+    if (!helper_->GetTerminationStatus(child, known_dead, status, exit_code)) {
+      return false;
+    }
+  } else {
+    // Handle the request directly.
+    if (known_dead) {
+      *status = base::GetKnownDeadTerminationStatus(child, exit_code);
+    } else {
+      // We don't know if the process is dying, so get its status but don't
+      // wait.
+      *status = base::GetTerminationStatus(child, exit_code);
+    }
+  }
+  // Successfully got a status for |real_pid|.
+  if (*status != base::TERMINATION_STATUS_STILL_RUNNING) {
+    // Time to forget about this process.
+    process_info_map_.erase(real_pid);
+  }
+  return true;
 }
 
 void Zygote::HandleGetTerminationStatus(int fd,
                                         const Pickle& pickle,
                                         PickleIterator iter) {
   bool known_dead;
-  base::ProcessHandle child;
+  base::ProcessHandle child_requested;
 
   if (!pickle.ReadBool(&iter, &known_dead) ||
-      !pickle.ReadInt(&iter, &child)) {
+      !pickle.ReadInt(&iter, &child_requested)) {
     LOG(WARNING) << "Error parsing GetTerminationStatus request "
                  << "from browser";
     return;
@@ -193,26 +253,13 @@ void Zygote::HandleGetTerminationStatus(int fd,
 
   base::TerminationStatus status;
   int exit_code;
-  if (UsingSUIDSandbox())
-    child = real_pids_to_sandbox_pids[child];
-  if (child) {
-    if (known_dead) {
-      // If we know that the process is already dead and the kernel is cleaning
-      // it up, we do want to wait until it becomes a zombie and not risk
-      // returning eroneously that it is still running. However, we do not
-      // want to risk a bug where we're told a process is dead when it's not.
-      // By sending SIGKILL, we make sure that WaitForTerminationStatus will
-      // return quickly even in this case.
-      if (kill(child, SIGKILL)) {
-        PLOG(ERROR) << "kill (" << child << ")";
-      }
-      status = base::WaitForTerminationStatus(child, &exit_code);
-    } else {
-      status = base::GetTerminationStatus(child, &exit_code);
-    }
-  } else {
+
+  bool got_termination_status =
+      GetTerminationStatus(child_requested, known_dead, &status, &exit_code);
+  if (!got_termination_status) {
     // Assume that if we can't find the child in the sandbox, then
     // it terminated normally.
+    NOTREACHED();
     status = base::TERMINATION_STATUS_NORMAL_TERMINATION;
     exit_code = RESULT_CODE_NORMAL_EXIT;
   }
@@ -236,10 +283,6 @@ int Zygote::ForkWithRealPid(const std::string& process_type,
                                                        uma_name,
                                                        uma_sample,
                                                        uma_boundary_value));
-  if (!(use_helper || UsingSUIDSandbox())) {
-    return fork();
-  }
-
   int dummy_fd;
   ino_t dummy_inode;
   int pipe_fds[2] = { -1, -1 };
@@ -310,7 +353,7 @@ int Zygote::ForkWithRealPid(const std::string& process_type,
       request.WriteUInt64(dummy_inode);
 
       const ssize_t r = UnixDomainSocket::SendRecvMsg(
-          kMagicSandboxIPCDescriptor, reply_buf, sizeof(reply_buf), NULL,
+          GetSandboxFD(), reply_buf, sizeof(reply_buf), NULL,
           request);
       if (r == -1) {
         LOG(ERROR) << "Failed to get child process's real PID";
@@ -326,10 +369,21 @@ int Zygote::ForkWithRealPid(const std::string& process_type,
         LOG(ERROR) << "METHOD_GET_CHILD_WITH_INODE failed";
         goto error;
       }
-      real_pids_to_sandbox_pids[real_pid] = pid;
-    }
-    if (use_helper) {
+    } else {
+      // If no SUID sandbox is involved then no pid translation is
+      // necessary.
       real_pid = pid;
+    }
+
+    // Now set-up this process to be tracked by the Zygote.
+    if (process_info_map_.find(real_pid) != process_info_map_.end()) {
+      LOG(ERROR) << "Already tracking PID " << real_pid;
+      NOTREACHED();
+    }
+    process_info_map_[real_pid].internal_pid = pid;
+    process_info_map_[real_pid].started_from_helper = use_helper;
+
+    if (use_helper) {
       if (!helper_->AckChild(pipe_fds[1], channel_switch)) {
         LOG(ERROR) << "Failed to synchronise with zygote fork helper";
         goto error;
@@ -402,7 +456,7 @@ base::ProcessId Zygote::ReadArgsAndFork(const Pickle& pickle,
   }
 
   mapping.push_back(std::make_pair(
-      static_cast<uint32_t>(kSandboxIPCChannel), kMagicSandboxIPCDescriptor));
+      static_cast<uint32_t>(kSandboxIPCChannel), GetSandboxFD()));
 
   // Returns twice, once per process.
   base::ProcessId child_pid = ForkWithRealPid(process_type, fds, channel_id,
@@ -411,7 +465,7 @@ base::ProcessId Zygote::ReadArgsAndFork(const Pickle& pickle,
   if (!child_pid) {
     // This is the child process.
 
-    close(kBrowserDescriptor);  // Our socket from the browser.
+    close(kZygoteSocketPairFd);  // Our socket from the browser.
     if (UsingSUIDSandbox())
       close(kZygoteIdFd);  // Another socket from the browser.
     base::GlobalDescriptors::GetInstance()->Reset(mapping);

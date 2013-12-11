@@ -10,6 +10,7 @@
 base.requireStylesheet('ui.list_view');
 
 base.require('base.events');
+base.require('base.utils');
 base.require('ui');
 base.require('ui.container_that_decorates_its_children');
 
@@ -98,6 +99,10 @@ base.exportTo('ui', function() {
       el.selected = true;
     },
 
+    getElementByIndex: function(index) {
+      return this.querySelector('.list-item:nth-child(' + index + ')');
+    },
+
     clear: function() {
       var changed = this.selectedElement !== undefined;
       ui.ContainerThatDecoratesItsChildren.prototype.clear.call(this);
@@ -124,7 +129,7 @@ base.exportTo('ui', function() {
         var prev = this.selectedElement.previousSibling;
         if (prev) {
           prev.selected = true;
-          prev.scrollIntoView(false);
+          base.scrollIntoViewIfNeeded(prev);
           e.preventDefault();
           return true;
         }
@@ -132,7 +137,7 @@ base.exportTo('ui', function() {
         var next = this.selectedElement.nextSibling;
         if (next) {
           next.selected = true;
-          next.scrollIntoView(false);
+          base.scrollIntoViewIfNeeded(next);
           e.preventDefault();
           return true;
         }

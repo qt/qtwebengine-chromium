@@ -15,6 +15,7 @@
     'linux_link_libgps%': 0,
     'linux_link_libpci%': 0,
     'linux_link_libspeechd%': 0,
+    'linux_link_libbrlapi%': 0,
   },
   'conditions': [
     [ 'os_posix==1 and OS!="mac"', {
@@ -122,9 +123,6 @@
         {
           'target_name': 'libgps',
           'type': 'static_library',
-          'dependencies': [
-            '../../base/base.gyp:base',
-          ],
           'all_dependent_settings': {
             'defines': [
               'USE_LIBGPS',
@@ -148,6 +146,9 @@
               }],
             ],
           },
+          'include_dirs': [
+            '../..',
+          ],
           'hard_dependency': 1,
           'actions': [
             {
@@ -202,7 +203,6 @@
             ['use_openssl==0 and use_system_ssl==0', {
               'dependencies': [
                 '../../net/third_party/nss/ssl.gyp:libssl',
-                '../../third_party/zlib/zlib.gyp:zlib',
               ],
               'direct_dependent_settings': {
                 'include_dirs+': [
@@ -325,9 +325,6 @@
       'type': 'static_library',
       'conditions': [
         ['use_gio==1 and _toolset=="target"', {
-          'dependencies': [
-            '../../base/base.gyp:base',
-          ],
           'cflags': [
             '<!@(<(pkg-config) --cflags gio-2.0)',
           ],
@@ -342,6 +339,9 @@
               '<(SHARED_INTERMEDIATE_DIR)',
             ],
           },
+          'include_dirs': [
+            '../..',
+          ],
           'link_settings': {
             'ldflags': [
               '<!@(<(pkg-config) --libs-only-L --libs-only-other gio-2.0)',
@@ -401,9 +401,6 @@
       'cflags': [
         '<!@(<(pkg-config) --cflags libpci)',
       ],
-      'dependencies': [
-        '../../base/base.gyp:base',
-      ],
       'direct_dependent_settings': {
         'include_dirs': [
           '<(SHARED_INTERMEDIATE_DIR)',
@@ -421,6 +418,9 @@
           }],
         ],
       },
+      'include_dirs': [
+        '../..',
+      ],
       'hard_dependency': 1,
       'actions': [
         {
@@ -462,9 +462,6 @@
     {
       'target_name': 'libspeechd',
       'type': 'static_library',
-      'dependencies': [
-        '../../base/base.gyp:base',
-      ],
       'direct_dependent_settings': {
         'include_dirs': [
           '<(SHARED_INTERMEDIATE_DIR)',
@@ -479,6 +476,9 @@
           }],
         ],
       },
+      'include_dirs': [
+        '../..',
+      ],
       'hard_dependency': 1,
       'actions': [
         {
@@ -534,6 +534,70 @@
                      'spd_set_output_module',
           ],
           'message': 'Generating libspeechd library loader.',
+          'process_outputs_as_sources': 1,
+        },
+      ],
+    },
+    {
+      'target_name': 'libbrlapi',
+      'type': 'static_library',
+      'dependencies': [
+        '../../base/base.gyp:base',
+      ],
+      'all_dependent_settings': {
+        'include_dirs': [
+          '<(SHARED_INTERMEDIATE_DIR)',
+        ],
+        'defines': [
+          'USE_BRLAPI',
+        ],
+        'conditions': [
+          ['linux_link_libbrlapi==1', {
+            'link_settings': {
+              'libraries': [
+                '-lbrlapi',
+              ],
+            }
+          }],
+        ],
+      },
+      'hard_dependency': 1,
+      'actions': [
+        {
+          'variables': {
+            'output_h': '<(SHARED_INTERMEDIATE_DIR)/library_loaders/libbrlapi.h',
+            'output_cc': '<(INTERMEDIATE_DIR)/libbrlapi_loader.cc',
+            'generator': '../../tools/generate_library_loader/generate_library_loader.py',
+          },
+          'action_name': 'generate_brlapi_loader',
+          'inputs': [
+            '<(generator)',
+          ],
+          'outputs': [
+            '<(output_h)',
+            '<(output_cc)',
+          ],
+          'action': ['python',
+                     '<(generator)',
+                     '--name', 'LibBrlapiLoader',
+                     '--output-h', '<(output_h)',
+                     '--output-cc', '<(output_cc)',
+                     '--header', '<brlapi.h>',
+                     '--link-directly=<(linux_link_libbrlapi)',
+                     'brlapi_getHandleSize',
+                     'brlapi_error_location',
+                     'brlapi_expandKeyCode',
+                     'brlapi_strerror',
+                     'brlapi__acceptKeys',
+                     'brlapi__openConnection',
+                     'brlapi__closeConnection',
+                     'brlapi__getDisplaySize',
+                     'brlapi__enterTtyModeWithPath',
+                     'brlapi__leaveTtyMode',
+                     'brlapi__writeDots',
+                     'brlapi__readKey',
+          ],
+          'message': 'Generating libbrlapi library loader.',
           'process_outputs_as_sources': 1,
         },
       ],

@@ -30,17 +30,21 @@
 
 #include "config.h"
 #include "modules/webmidi/MIDIInput.h"
+
+#include "modules/webmidi/MIDIAccess.h"
 #include "modules/webmidi/MIDIMessageEvent.h"
 
 namespace WebCore {
 
-PassRefPtr<MIDIInput> MIDIInput::create(ScriptExecutionContext* context, const String& id, const String& manufacturer, const String& name, const String& version)
+PassRefPtr<MIDIInput> MIDIInput::create(MIDIAccess* access, ScriptExecutionContext* context, const String& id, const String& manufacturer, const String& name, const String& version)
 {
-    return adoptRef(new MIDIInput(context, id, manufacturer, name, version));
+    ASSERT(access);
+    return adoptRef(new MIDIInput(access, context, id, manufacturer, name, version));
 }
 
-MIDIInput::MIDIInput(ScriptExecutionContext* context, const String& id, const String& manufacturer, const String& name, const String& version)
+MIDIInput::MIDIInput(MIDIAccess* access, ScriptExecutionContext* context, const String& id, const String& manufacturer, const String& name, const String& version)
     : MIDIPort(context, id, manufacturer, name, MIDIPortTypeInput, version)
+    , m_access(access)
 {
     ScriptWrappable::init(this);
 }
@@ -57,8 +61,8 @@ void MIDIInput::didReceiveMIDIData(unsigned portIndex, const unsigned char* data
         unsigned char status = data[i];
         unsigned char strippedStatus = status & 0xf0;
 
-        // FIXME: support System Exclusive.
-        if (strippedStatus >= 0xf0)
+        // FIXME: integrate sending side filtering and implement more extensive filtering.
+        if (strippedStatus >= 0xf0 && !m_access->sysExEnabled())
             break;
 
         // All non System Exclusive messages have a total size of 3 except for Program Change and Channel Pressure.

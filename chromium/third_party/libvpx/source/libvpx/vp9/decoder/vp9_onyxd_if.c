@@ -8,12 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-
-#include <stdio.h>
 #include <assert.h>
+#include <limits.h>
+#include <stdio.h>
 
 #include "vp9/common/vp9_onyxc_int.h"
-#if CONFIG_POSTPROC
+#if CONFIG_VP9_POSTPROC
 #include "vp9/common/vp9_postproc.h"
 #endif
 #include "vp9/decoder/vp9_onyxd.h"
@@ -110,36 +110,47 @@ void vp9_initialize_dec() {
 
 VP9D_PTR vp9_create_decompressor(VP9D_CONFIG *oxcf) {
   VP9D_COMP *const pbi = vpx_memalign(32, sizeof(VP9D_COMP));
+  VP9_COMMON *const cm = pbi ? &pbi->common : NULL;
 
-  if (!pbi)
+  if (!cm)
     return NULL;
 
-  vpx_memset(pbi, 0, sizeof(VP9D_COMP));
+  vp9_zero(*pbi);
 
-  if (setjmp(pbi->common.error.jmp)) {
-    pbi->common.error.setjmp = 0;
+  if (setjmp(cm->error.jmp)) {
+    cm->error.setjmp = 0;
     vp9_remove_decompressor(pbi);
     return NULL;
   }
 
-  pbi->common.error.setjmp = 1;
+  cm->error.setjmp = 1;
   vp9_initialize_dec();
 
-  vp9_create_common(&pbi->common);
+  vp9_create_common(cm);
 
   pbi->oxcf = *oxcf;
-  pbi->common.current_video_frame = 0;
   pbi->ready_for_new_data = 1;
+  cm->current_video_frame = 0;
 
   // vp9_init_dequantizer() is first called here. Add check in
   // frame_init_dequantizer() to avoid unnecessary calling of
   // vp9_init_dequantizer() for every frame.
-  vp9_init_dequantizer(&pbi->common);
+  vp9_init_dequantizer(cm);
 
-  vp9_loop_filter_init(&pbi->common);
+  vp9_loop_filter_init(cm);
 
-  pbi->common.error.setjmp = 0;
+  cm->error.setjmp = 0;
   pbi->decoded_key_frame = 0;
+
+  if (pbi->oxcf.max_threads > 1) {
+    vp9_worker_init(&pbi->lf_worker);
+    pbi->lf_worker.data1 = vpx_malloc(sizeof(LFWorkerData));
+    pbi->lf_worker.hook = (VP9WorkerHook)vp9_loop_filter_worker;
+    if (pbi->lf_worker.data1 == NULL || !vp9_worker_reset(&pbi->lf_worker)) {
+      vp9_remove_decompressor(pbi);
+      return NULL;
+    }
+  }
 
   return pbi;
 }
@@ -150,11 +161,9 @@ void vp9_remove_decompressor(VP9D_PTR ptr) {
   if (!pbi)
     return;
 
-  if (pbi->common.last_frame_seg_map)
-    vpx_free(pbi->common.last_frame_seg_map);
-
   vp9_remove_common(&pbi->common);
-  vpx_free(pbi->mbc);
+  vp9_worker_end(&pbi->lf_worker);
+  vpx_free(pbi->lf_worker.data1);
   vpx_free(pbi);
 }
 
@@ -176,21 +185,21 @@ vpx_codec_err_t vp9_copy_reference_dec(VP9D_PTR ptr,
    * later commit that adds VP9-specific controls for this functionality.
    */
   if (ref_frame_flag == VP9_LAST_FLAG) {
-    ref_fb_idx = pbi->common.ref_frame_map[0];
+    ref_fb_idx = cm->ref_frame_map[0];
   } else {
-    vpx_internal_error(&pbi->common.error, VPX_CODEC_ERROR,
+    vpx_internal_error(&cm->error, VPX_CODEC_ERROR,
                        "Invalid reference frame");
-    return pbi->common.error.error_code;
+    return cm->error.error_code;
   }
 
   if (!equal_dimensions(&cm->yv12_fb[ref_fb_idx], sd)) {
-    vpx_internal_error(&pbi->common.error, VPX_CODEC_ERROR,
+    vpx_internal_error(&cm->error, VPX_CODEC_ERROR,
                        "Incorrect buffer dimensions");
   } else {
     vp8_yv12_copy_frame(&cm->yv12_fb[ref_fb_idx], sd);
   }
 
-  return pbi->common.error.error_code;
+  return cm->error.error_code;
 }
 
 
@@ -250,22 +259,21 @@ int vp9_get_reference_dec(VP9D_PTR ptr, int index, YV12_BUFFER_CONFIG **fb) {
 /* If any buffer updating is signaled it should be done here. */
 static void swap_frame_buffers(VP9D_COMP *pbi) {
   int ref_index = 0, mask;
+  VP9_COMMON *const cm = &pbi->common;
 
   for (mask = pbi->refresh_frame_flags; mask; mask >>= 1) {
-    if (mask & 1) {
-      ref_cnt_fb(pbi->common.fb_idx_ref_cnt,
-                 &pbi->common.ref_frame_map[ref_index],
-                 pbi->common.new_fb_idx);
-    }
+    if (mask & 1)
+      ref_cnt_fb(cm->fb_idx_ref_cnt, &cm->ref_frame_map[ref_index],
+                 cm->new_fb_idx);
     ++ref_index;
   }
 
-  pbi->common.frame_to_show = &pbi->common.yv12_fb[pbi->common.new_fb_idx];
-  pbi->common.fb_idx_ref_cnt[pbi->common.new_fb_idx]--;
+  cm->frame_to_show = &cm->yv12_fb[cm->new_fb_idx];
+  cm->fb_idx_ref_cnt[cm->new_fb_idx]--;
 
-  /* Invalidate these references until the next frame starts. */
+  // Invalidate these references until the next frame starts.
   for (ref_index = 0; ref_index < 3; ref_index++)
-    pbi->common.active_ref_idx[ref_index] = INT_MAX;
+    cm->active_ref_idx[ref_index] = INT_MAX;
 }
 
 int vp9_receive_compressed_data(VP9D_PTR ptr,
@@ -282,7 +290,7 @@ int vp9_receive_compressed_data(VP9D_PTR ptr,
   if (ptr == 0)
     return -1;
 
-  pbi->common.error.error_code = VPX_CODEC_OK;
+  cm->error.error_code = VPX_CODEC_OK;
 
   pbi->source = source;
   pbi->source_sz = size;
@@ -303,8 +311,8 @@ int vp9_receive_compressed_data(VP9D_PTR ptr,
 
   cm->new_fb_idx = get_free_fb(cm);
 
-  if (setjmp(pbi->common.error.jmp)) {
-    pbi->common.error.setjmp = 0;
+  if (setjmp(cm->error.jmp)) {
+    cm->error.setjmp = 0;
 
     /* We do not know if the missing frame(s) was supposed to update
      * any of the reference buffers, but we act conservative and
@@ -323,13 +331,13 @@ int vp9_receive_compressed_data(VP9D_PTR ptr,
     return -1;
   }
 
-  pbi->common.error.setjmp = 1;
+  cm->error.setjmp = 1;
 
   retcode = vp9_decode_frame(pbi, psource);
 
   if (retcode < 0) {
-    pbi->common.error.error_code = VPX_CODEC_ERROR;
-    pbi->common.error.setjmp = 0;
+    cm->error.error_code = VPX_CODEC_ERROR;
+    cm->error.setjmp = 0;
     if (cm->fb_idx_ref_cnt[cm->new_fb_idx] > 0)
       cm->fb_idx_ref_cnt[cm->new_fb_idx]--;
     return retcode;
@@ -347,9 +355,9 @@ int vp9_receive_compressed_data(VP9D_PTR ptr,
                              cm->current_video_frame + 1000);
 #endif
 
-    if (cm->filter_level) {
+    if (!pbi->do_loopfilter_inline) {
       /* Apply the loop filter if appropriate. */
-      vp9_loop_filter_frame(cm, &pbi->mb, cm->filter_level, 0);
+      vp9_loop_filter_frame(cm, &pbi->mb, pbi->common.lf.filter_level, 0, 0);
     }
 
 #if WRITE_RECON_BUFFER == 2
@@ -378,12 +386,17 @@ int vp9_receive_compressed_data(VP9D_PTR ptr,
   if (cm->show_frame) {
     // current mip will be the prev_mip for the next frame
     MODE_INFO *temp = cm->prev_mip;
+    MODE_INFO **temp2 = cm->prev_mi_grid_base;
     cm->prev_mip = cm->mip;
     cm->mip = temp;
+    cm->prev_mi_grid_base = cm->mi_grid_base;
+    cm->mi_grid_base = temp2;
 
     // update the upper left visible macroblock ptrs
     cm->mi = cm->mip + cm->mode_info_stride + 1;
     cm->prev_mi = cm->prev_mip + cm->mode_info_stride + 1;
+    cm->mi_grid_visible = cm->mi_grid_base + cm->mode_info_stride + 1;
+    cm->prev_mi_grid_visible = cm->prev_mi_grid_base + cm->mode_info_stride + 1;
 
     cm->current_video_frame++;
   }
@@ -392,7 +405,7 @@ int vp9_receive_compressed_data(VP9D_PTR ptr,
   pbi->last_time_stamp = time_stamp;
   pbi->source_sz = 0;
 
-  pbi->common.error.setjmp = 0;
+  cm->error.setjmp = 0;
   return retcode;
 }
 
@@ -413,8 +426,7 @@ int vp9_get_raw_frame(VP9D_PTR ptr, YV12_BUFFER_CONFIG *sd,
   *time_stamp = pbi->last_time_stamp;
   *time_end_stamp = 0;
 
-  sd->clrtype = pbi->common.clr_type;
-#if CONFIG_POSTPROC
+#if CONFIG_VP9_POSTPROC
   ret = vp9_post_proc_frame(&pbi->common, sd, flags);
 #else
 
@@ -422,7 +434,9 @@ int vp9_get_raw_frame(VP9D_PTR ptr, YV12_BUFFER_CONFIG *sd,
     *sd = *pbi->common.frame_to_show;
     sd->y_width = pbi->common.width;
     sd->y_height = pbi->common.height;
-    sd->uv_height = pbi->common.height / 2;
+    sd->uv_width = sd->y_width >> pbi->common.subsampling_x;
+    sd->uv_height = sd->y_height >> pbi->common.subsampling_y;
+
     ret = 0;
   } else {
     ret = -1;

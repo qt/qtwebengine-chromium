@@ -35,9 +35,9 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/StringCallback.h"
 #include "core/editing/markup.h"
+#include "core/fetch/ImageResource.h"
 #include "core/fileapi/File.h"
 #include "core/fileapi/FileList.h"
-#include "core/loader/cache/ImageResource.h"
 #include "core/page/Frame.h"
 #include "core/platform/DragData.h"
 #include "core/platform/MIMETypeRegistry.h"
@@ -64,8 +64,8 @@ public:
     virtual PassRefPtr<DataTransferItem> item(unsigned long index) OVERRIDE;
     virtual void deleteItem(unsigned long index, ExceptionState&) OVERRIDE;
     virtual void clear() OVERRIDE;
-    virtual void add(const String& data, const String& type, ExceptionState&) OVERRIDE;
-    virtual void add(PassRefPtr<File>) OVERRIDE;
+    virtual PassRefPtr<DataTransferItem> add(const String& data, const String& type, ExceptionState&) OVERRIDE;
+    virtual PassRefPtr<DataTransferItem> add(PassRefPtr<File>) OVERRIDE;
 
 private:
     DataTransferItemListPolicyWrapper(PassRefPtr<ClipboardChromium>, PassRefPtr<ChromiumDataObject>);
@@ -119,18 +119,24 @@ void DataTransferItemListPolicyWrapper::clear()
     m_dataObject->clearAll();
 }
 
-void DataTransferItemListPolicyWrapper::add(const String& data, const String& type, ExceptionState& es)
+PassRefPtr<DataTransferItem> DataTransferItemListPolicyWrapper::add(const String& data, const String& type, ExceptionState& es)
 {
     if (!m_clipboard->canWriteData())
-        return;
-    m_dataObject->add(data, type, es);
+        return 0;
+    RefPtr<ChromiumDataObjectItem> item = m_dataObject->add(data, type, es);
+    if (!item)
+        return 0;
+    return DataTransferItemPolicyWrapper::create(m_clipboard, item);
 }
 
-void DataTransferItemListPolicyWrapper::add(PassRefPtr<File> file)
+PassRefPtr<DataTransferItem> DataTransferItemListPolicyWrapper::add(PassRefPtr<File> file)
 {
     if (!m_clipboard->canWriteData())
-        return;
-    m_dataObject->add(file, m_clipboard->frame()->document()->scriptExecutionContext());
+        return 0;
+    RefPtr<ChromiumDataObjectItem> item = m_dataObject->add(file, m_clipboard->frame()->document()->scriptExecutionContext());
+    if (!item)
+        return 0;
+    return DataTransferItemPolicyWrapper::create(m_clipboard, item);
 }
 
 DataTransferItemListPolicyWrapper::DataTransferItemListPolicyWrapper(
@@ -240,8 +246,6 @@ void ClipboardChromium::clearData(const String& type)
         return;
 
     m_dataObject->clearData(normalizeType(type));
-
-    ASSERT_NOT_REACHED();
 }
 
 void ClipboardChromium::clearAllData()
@@ -436,7 +440,7 @@ void ClipboardChromium::writeRange(Range* selectedRange, Frame* frame)
     m_dataObject->setHTMLAndBaseURL(createMarkup(selectedRange, 0, AnnotateForInterchange, false, ResolveNonLocalURLs), frame->document()->url());
 
     String str = frame->selectedTextForClipboard();
-#if OS(WINDOWS)
+#if OS(WIN)
     replaceNewlinesWithWindowsStyleNewlines(str);
 #endif
     replaceNBSPWithSpace(str);
@@ -449,7 +453,7 @@ void ClipboardChromium::writePlainText(const String& text)
         return;
 
     String str = text;
-#if OS(WINDOWS)
+#if OS(WIN)
     replaceNewlinesWithWindowsStyleNewlines(str);
 #endif
     replaceNBSPWithSpace(str);

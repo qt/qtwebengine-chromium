@@ -9,8 +9,8 @@
 #include "base/logging.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/singleton.h"
-#include "ui/base/win/dpi.h"
-#include "ui/base/win/hwnd_util.h"
+#include "ui/gfx/win/dpi.h"
+#include "ui/gfx/win/hwnd_util.h"
 
 namespace {
 const char kHWNDSubclassKey[] = "__UI_BASE_WIN_HWND_SUBCLASS_PROC__";
@@ -123,7 +123,7 @@ HWNDSubclass::HWNDSubclass(HWND target)
     : target_(target),
       original_wnd_proc_(GetCurrentWndProc(target)),
       prop_(target, kHWNDSubclassKey, this) {
-  ui::SetWindowProc(target_, &WndProc);
+  gfx::SetWindowProc(target_, &WndProc);
 }
 
 HWNDSubclass::~HWNDSubclass() {
@@ -143,8 +143,10 @@ LRESULT HWNDSubclass::OnWndProc(HWND hwnd,
     if (GetTouchInputInfoWrapper(reinterpret_cast<HTOUCHINPUT>(l_param), 1,
                                  &point, sizeof(TOUCHINPUT))) {
       POINT touch_location = {
-        TOUCH_COORD_TO_PIXEL(point.x) / ui::win::GetUndocumentedDPIScale(),
-        TOUCH_COORD_TO_PIXEL(point.y) / ui::win::GetUndocumentedDPIScale()};
+          TOUCH_COORD_TO_PIXEL(point.x) /
+          gfx::win::GetUndocumentedDPITouchScale(),
+          TOUCH_COORD_TO_PIXEL(point.y) /
+          gfx::win::GetUndocumentedDPITouchScale()};
       HWND actual_target = WindowFromPoint(touch_location);
       if (actual_target != hwnd) {
         return SendMessage(actual_target, message, w_param, l_param);

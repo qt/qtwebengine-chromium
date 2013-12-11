@@ -15,8 +15,44 @@
 #include "SkUtils.h"
 
 #include "SkCachePreload_arm.h"
-
+#include "SkColor_opts_neon.h"
 #include <arm_neon.h>
+
+void S32_D565_Opaque_neon(uint16_t* SK_RESTRICT dst,
+                           const SkPMColor* SK_RESTRICT src, int count,
+                           U8CPU alpha, int /*x*/, int /*y*/) {
+    SkASSERT(255 == alpha);
+
+    while (count >= 8) {
+        uint8x8x4_t vsrc;
+        uint16x8_t vdst;
+
+        // Load
+        vsrc = vld4_u8((uint8_t*)src);
+
+        // Convert src to 565
+        vdst = vshll_n_u8(vsrc.val[NEON_R], 8);
+        vdst = vsriq_n_u16(vdst, vshll_n_u8(vsrc.val[NEON_G], 8), 5);
+        vdst = vsriq_n_u16(vdst, vshll_n_u8(vsrc.val[NEON_B], 8), 5+6);
+
+        // Store
+        vst1q_u16(dst, vdst);
+
+        // Prepare next iteration
+        dst += 8;
+        src += 8;
+        count -= 8;
+    };
+
+    // Leftovers
+    while (count > 0) {
+        SkPMColor c = *src++;
+        SkPMColorAssert(c);
+        *dst = SkPixel32ToPixel16_ToU16(c);
+        dst++;
+        count--;
+    };
+}
 
 void S32A_D565_Opaque_neon(uint16_t* SK_RESTRICT dst,
                            const SkPMColor* SK_RESTRICT src, int count,
@@ -1125,13 +1161,6 @@ void S32A_D565_Opaque_Dither_neon (uint16_t * SK_RESTRICT dst,
 
 ///////////////////////////////////////////////////////////////////////////////
 
-/* 2009/10/27: RBE says "a work in progress"; debugging says ok;
- * speedup untested, but ARM version is 26 insns/iteration and
- * this NEON version is 21 insns/iteration-of-8 (2.62insns/element)
- * which is 10x the native version; that's pure instruction counts,
- * not accounting for any instruction or memory latencies.
- */
-
 #undef    DEBUG_S32_OPAQUE_DITHER
 
 void S32_D565_Opaque_Dither_neon(uint16_t* SK_RESTRICT dst,
@@ -1150,18 +1179,23 @@ void S32_D565_Opaque_Dither_neon(uint16_t* SK_RESTRICT dst,
         uint16x8_t dr, dg, db;
         uint16x8_t dst8;
 
-        /* source is in ABGR ordering (R == lsb) */
         {
         register uint8x8_t d0 asm("d0");
         register uint8x8_t d1 asm("d1");
         register uint8x8_t d2 asm("d2");
         register uint8x8_t d3 asm("d3");
 
-        asm ("vld4.8    {d0-d3},[%4]  /* r=%P0 g=%P1 b=%P2 a=%P3 */"
-            : "=w" (d0), "=w" (d1), "=w" (d2), "=w" (d3)
-            : "r" (src)
-                    );
-            sr = d0; sg = d1; sb = d2;
+        asm (
+            "vld4.8    {d0-d3},[%[src]]!  /* r=%P0 g=%P1 b=%P2 a=%P3 */"
+            : "=w" (d0), "=w" (d1), "=w" (d2), "=w" (d3), [src] "+&r" (src)
+            :
+        );
+        sg = d1;
+#if SK_PMCOLOR_BYTE_ORDER(B,G,R,A)
+        sr = d2; sb = d0;
+#elif SK_PMCOLOR_BYTE_ORDER(R,G,B,A)
+        sr = d0; sb = d2;
+#endif
         }
         /* XXX: if we want to prefetch, hide it in the above asm()
          * using the gcc __builtin_prefetch(), the prefetch will
@@ -1169,34 +1203,34 @@ void S32_D565_Opaque_Dither_neon(uint16_t* SK_RESTRICT dst,
          * at the top of the loop, just after the vld4.
          */
 
-        /* sr = sr - (sr>>5) + d */
+        // sr = sr - (sr>>5) + d
         sr = vsub_u8(sr, vshr_n_u8(sr, 5));
         dr = vaddl_u8(sr, d);
 
-        /* sb = sb - (sb>>5) + d */
+        // sb = sb - (sb>>5) + d
         sb = vsub_u8(sb, vshr_n_u8(sb, 5));
         db = vaddl_u8(sb, d);
 
-        /* sg = sg - (sg>>6) + d>>1; similar logic for overflows */
+        // sg = sg - (sg>>6) + d>>1; similar logic for overflows
         sg = vsub_u8(sg, vshr_n_u8(sg, 6));
-        dg = vaddl_u8(sg, vshr_n_u8(d,1));
-        /* XXX: check that the "d>>1" here is hoisted */
+        dg = vaddl_u8(sg, vshr_n_u8(d, 1));
 
-        /* pack high bits of each into 565 format  (rgb, b is lsb) */
+        // pack high bits of each into 565 format  (rgb, b is lsb)
         dst8 = vshrq_n_u16(db, 3);
         dst8 = vsliq_n_u16(dst8, vshrq_n_u16(dg, 2), 5);
-        dst8 = vsliq_n_u16(dst8, vshrq_n_u16(dr,3), 11);
+        dst8 = vsliq_n_u16(dst8, vshrq_n_u16(dr, 3), 11);
 
-        /* store it */
+        // store it
         vst1q_u16(dst, dst8);
 
 #if    defined(DEBUG_S32_OPAQUE_DITHER)
-        /* always good to know if we generated good results */
+        // always good to know if we generated good results
         {
         int i, myx = x, myy = y;
         DITHER_565_SCAN(myy);
         for (i=0;i<UNROLL;i++) {
-            SkPMColor c = src[i];
+            // the '!' in the asm block above post-incremented src by the 8 pixels it reads.
+            SkPMColor c = src[i-8];
             unsigned dither = DITHER_VALUE(myx);
             uint16_t val = SkDitherRGB32To565(c, dither);
             if (val != dst[i]) {
@@ -1209,14 +1243,14 @@ void S32_D565_Opaque_Dither_neon(uint16_t* SK_RESTRICT dst,
 #endif
 
         dst += UNROLL;
-        src += UNROLL;
+        // we don't need to increment src as the asm above has already done it
         count -= UNROLL;
-        x += UNROLL;        /* probably superfluous */
+        x += UNROLL;        // probably superfluous
     }
     }
 #undef    UNROLL
 
-    /* residuals */
+    // residuals
     if (count > 0) {
         DITHER_565_SCAN(y);
         do {
@@ -1332,10 +1366,10 @@ void Color32_arm_neon(SkPMColor* dst, const SkPMColor* src, int count,
 
 const SkBlitRow::Proc sk_blitrow_platform_565_procs_arm_neon[] = {
     // no dither
-    // NOTE: For the two functions below, we don't have a special version
-    //       that assumes that each source pixel is opaque. But our S32A is
-    //       still faster than the default, so use it.
-    S32A_D565_Opaque_neon,  // really S32_D565_Opaque
+    // NOTE: For the S32_D565_Blend function below, we don't have a special
+    //       version that assumes that each source pixel is opaque. But our
+    //       S32A is still faster than the default, so use it.
+    S32_D565_Opaque_neon,
     S32A_D565_Blend_neon,   // really S32_D565_Blend
     S32A_D565_Opaque_neon,
     S32A_D565_Blend_neon,

@@ -58,12 +58,13 @@ class NSSSSLInitSingleton {
           enabled = false;
 
         // Trim the list of cipher suites in order to keep the size of the
-        // ClientHello down. DSS, ECDH, CAMELLIA, SEED and ECC+3DES cipher
-        // suites are disabled.
+        // ClientHello down. DSS, ECDH, CAMELLIA, SEED, ECC+3DES, and
+        // HMAC-SHA256 cipher suites are disabled.
         if (info.symCipher == ssl_calg_camellia ||
             info.symCipher == ssl_calg_seed ||
             (info.symCipher == ssl_calg_3des && info.keaType != ssl_kea_rsa) ||
             info.authAlgorithm == ssl_auth_dsa ||
+            info.macAlgorithm == ssl_hmac_sha256 ||
             info.nonStandard ||
             strcmp(info.keaTypeName, "ECDH") == 0) {
           enabled = false;
@@ -232,6 +233,10 @@ int MapNSSError(PRErrorCode err) {
     case SEC_ERROR_BAD_DER:
     case SEC_ERROR_EXTRA_INPUT:
       return ERR_SSL_BAD_PEER_PUBLIC_KEY;
+    // During renegotiation, the server presented a different certificate than
+    // was used earlier.
+    case SSL_ERROR_WRONG_CERTIFICATE:
+      return ERR_SSL_SERVER_CERT_CHANGED;
 
     default: {
       if (IS_SSL_ERROR(err)) {

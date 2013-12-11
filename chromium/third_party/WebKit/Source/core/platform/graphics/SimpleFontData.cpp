@@ -30,6 +30,7 @@
 #include "config.h"
 #include "core/platform/graphics/SimpleFontData.h"
 
+#include "core/css/CSSFontFaceSource.h"
 #include "core/platform/graphics/opentype/OpenTypeVerticalData.h"
 
 #include "wtf/MathExtras.h"
@@ -42,19 +43,18 @@ namespace WebCore {
 const float smallCapsFontSizeMultiplier = 0.7f;
 const float emphasisMarkFontSizeMultiplier = 0.5f;
 
-SimpleFontData::SimpleFontData(const FontPlatformData& platformData, bool isCustomFont, bool isLoading, bool isTextOrientationFallback)
+SimpleFontData::SimpleFontData(const FontPlatformData& platformData, bool isCustomFont, bool isLoadingFallback, bool isTextOrientationFallback)
     : m_maxCharWidth(-1)
     , m_avgCharWidth(-1)
     , m_platformData(platformData)
     , m_treatAsFixedPitch(false)
-    , m_isCustomFont(isCustomFont)
-    , m_isLoading(isLoading)
     , m_isTextOrientationFallback(isTextOrientationFallback)
     , m_isBrokenIdeographFallback(false)
 #if ENABLE(OPENTYPE_VERTICAL)
     , m_verticalData(0)
 #endif
     , m_hasVerticalGlyphs(false)
+    , m_customFontData(isCustomFont, isLoadingFallback)
 {
     platformInit();
     platformGlyphInit();
@@ -71,14 +71,13 @@ SimpleFontData::SimpleFontData(PassOwnPtr<AdditionalFontData> fontData, float fo
     : m_platformData(FontPlatformData(fontSize, syntheticBold, syntheticItalic))
     , m_fontData(fontData)
     , m_treatAsFixedPitch(false)
-    , m_isCustomFont(true)
-    , m_isLoading(false)
     , m_isTextOrientationFallback(false)
     , m_isBrokenIdeographFallback(false)
 #if ENABLE(OPENTYPE_VERTICAL)
     , m_verticalData(0)
 #endif
     , m_hasVerticalGlyphs(false)
+    , m_customFontData(true, false)
 {
     m_fontData->initializeFontData(this, fontSize);
 }
@@ -91,7 +90,7 @@ void SimpleFontData::initCharWidths()
     // Treat the width of a '0' as the avgCharWidth.
     if (m_avgCharWidth <= 0.f && glyphPageZero) {
         static const UChar32 digitZeroChar = '0';
-        Glyph digitZeroGlyph = glyphPageZero->glyphDataForCharacter(digitZeroChar).glyph;
+        Glyph digitZeroGlyph = glyphPageZero->glyphForCharacter(digitZeroChar);
         if (digitZeroGlyph)
             m_avgCharWidth = widthForGlyph(digitZeroGlyph);
     }
@@ -120,15 +119,15 @@ void SimpleFontData::platformGlyphInit()
         return;
     }
 
-    m_zeroWidthSpaceGlyph = glyphPageZero->glyphDataForCharacter(0).glyph;
+    m_zeroWidthSpaceGlyph = glyphPageZero->glyphForCharacter(0);
 
     // Nasty hack to determine if we should round or ceil space widths.
     // If the font is monospace or fake monospace we ceil to ensure that
     // every character and the space are the same width.  Otherwise we round.
-    m_spaceGlyph = glyphPageZero->glyphDataForCharacter(' ').glyph;
+    m_spaceGlyph = glyphPageZero->glyphForCharacter(' ');
     float width = widthForGlyph(m_spaceGlyph);
     m_spaceWidth = width;
-    m_zeroGlyph = glyphPageZero->glyphDataForCharacter('0').glyph;
+    m_zeroGlyph = glyphPageZero->glyphForCharacter('0');
     m_fontMetrics.setZeroWidth(widthForGlyph(m_zeroGlyph));
     determinePitch();
     m_adjustedSpaceWidth = m_treatAsFixedPitch ? ceilf(width) : roundf(width);
@@ -224,6 +223,14 @@ PassRefPtr<SimpleFontData> SimpleFontData::brokenIdeographFontData() const
         m_derivedFontData->brokenIdeograph->m_isBrokenIdeographFallback = true;
     }
     return m_derivedFontData->brokenIdeograph;
+}
+
+void SimpleFontData::beginLoadIfNeeded() const
+{
+    if (!m_customFontData.isUsed && m_customFontData.isLoadingFallback && m_customFontData.fontFaceSource) {
+        m_customFontData.isUsed = true;
+        m_customFontData.fontFaceSource->beginLoadingFontSoon();
+    }
 }
 
 #ifndef NDEBUG

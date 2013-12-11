@@ -44,7 +44,7 @@ namespace {
 
 // A lazily created thread local storage for quick access to a thread's message
 // loop, if one exists.  This should be safe and free of static constructors.
-LazyInstance<base::ThreadLocalPointer<MessageLoop> > lazy_tls_ptr =
+LazyInstance<base::ThreadLocalPointer<MessageLoop> >::Leaky lazy_tls_ptr =
     LAZY_INSTANCE_INITIALIZER;
 
 // Logical events for Histogram profiling. Run with -message-loop-histogrammer
@@ -184,6 +184,10 @@ MessageLoop::MessageLoop(Type type)
       pump_.reset(MESSAGE_PUMP_UI);
   } else if (type_ == TYPE_IO) {
     pump_.reset(MESSAGE_PUMP_IO);
+#if defined(TOOLKIT_GTK)
+  } else if (type_ == TYPE_GPU) {
+    pump_.reset(new MessagePumpX11());
+#endif
 #if defined(OS_ANDROID)
   } else if (type_ == TYPE_JAVA) {
     pump_.reset(MESSAGE_PUMP_UI);
@@ -425,7 +429,8 @@ void MessageLoop::RunInternal() {
 
   StartHistogrammer();
 
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
+#if !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
+    !defined(USE_GTK_MESSAGE_PUMP)
   if (run_loop_->dispatcher_ && type() == TYPE_UI) {
     static_cast<MessagePumpForUI*>(pump_.get())->
         RunWithDispatcher(this, run_loop_->dispatcher_);
@@ -458,9 +463,13 @@ void MessageLoop::RunTask(const PendingTask& pending_task) {
       TRACE_ID_MANGLE(GetTaskTraceID(pending_task)),
       "queue_duration",
       (start_time - pending_task.EffectiveTimePosted()).InMilliseconds());
-  TRACE_EVENT2("task", "MessageLoop::RunTask",
-               "src_file", pending_task.posted_from.file_name(),
-               "src_func", pending_task.posted_from.function_name());
+  // When tracing memory for posted tasks it's more valuable to attribute the
+  // memory allocations to the source function than generically to "RunTask".
+  TRACE_EVENT_WITH_MEMORY_TAG2(
+      "task", "MessageLoop::RunTask",
+      pending_task.posted_from.function_name(),  // Name for memory tracking.
+      "src_file", pending_task.posted_from.file_name(),
+      "src_func", pending_task.posted_from.function_name());
 
   DCHECK(nestable_tasks_allowed_);
   // Execute the task and assume the worst: It is probably not reentrant.
@@ -539,7 +548,7 @@ bool MessageLoop::DeletePendingTasks() {
 
 uint64 MessageLoop::GetTaskTraceID(const PendingTask& task) {
   return (static_cast<uint64>(task.sequence_num) << 32) |
-         static_cast<uint64>(reinterpret_cast<intptr_t>(this));
+         ((static_cast<uint64>(reinterpret_cast<intptr_t>(this)) << 32) >> 32);
 }
 
 void MessageLoop::ReloadWorkQueue() {
@@ -654,6 +663,20 @@ bool MessageLoop::DoIdleWork() {
     pump_->Quit();
 
   return false;
+}
+
+void MessageLoop::GetQueueingInformation(size_t* queue_size,
+                                         TimeDelta* queueing_delay) {
+  *queue_size = work_queue_.size();
+  if (*queue_size == 0) {
+    *queueing_delay = TimeDelta();
+    return;
+  }
+
+  const PendingTask& next_to_run = work_queue_.front();
+  tracked_objects::Duration duration =
+      tracked_objects::TrackedTime::Now() - next_to_run.EffectiveTimePosted();
+  *queueing_delay = TimeDelta::FromMilliseconds(duration.InMilliseconds());
 }
 
 void MessageLoop::DeleteSoonInternal(const tracked_objects::Location& from_here,

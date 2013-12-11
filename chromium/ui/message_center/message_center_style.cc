@@ -4,6 +4,8 @@
 
 #include "ui/message_center/message_center_style.h"
 
+#include <algorithm>
+
 namespace message_center {
 
 // Exported values /////////////////////////////////////////////////////////////
@@ -42,8 +44,8 @@ const int kMessageLineHeight = 18;
 // Colors.
 const SkColor kNotificationBackgroundColor = SkColorSetRGB(255, 255, 255);
 const SkColor kLegacyIconBackgroundColor = SkColorSetRGB(0xf5, 0xf5, 0xf5);
-const SkColor kRegularTextColor = SkColorSetRGB(34, 34, 34);
-const SkColor kDimTextColor = SkColorSetRGB(102, 102, 102);
+const SkColor kRegularTextColor = SkColorSetRGB(0x33, 0x33, 0x33);
+const SkColor kDimTextColor = SkColorSetRGB(0x7f, 0x7f, 0x7f);
 const SkColor kFocusBorderColor = SkColorSetRGB(64, 128, 250);
 
 // Limits.

@@ -6,21 +6,19 @@
 #define UI_VIEWS_BUBBLE_BUBBLE_DELEGATE_H_
 
 #include "base/gtest_prod_util.h"
-#include "ui/base/animation/animation_delegate.h"
+#include "ui/gfx/animation/animation_delegate.h"
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/widget_observer.h"
 
 namespace gfx {
 class Rect;
-}
-
-namespace ui {
 class SlideAnimation;
 }
 
 namespace views {
 
+class BubbleBorderDelegate;
 class BubbleFrameView;
 
 // BubbleDelegateView creates frame and client views for bubble Widgets.
@@ -28,7 +26,7 @@ class BubbleFrameView;
 //
 ///////////////////////////////////////////////////////////////////////////////
 class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
-                                        public ui::AnimationDelegate,
+                                        public gfx::AnimationDelegate,
                                         public WidgetObserver {
  public:
   BubbleDelegateView();
@@ -47,7 +45,10 @@ class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
 
   // WidgetObserver overrides:
   virtual void OnWidgetDestroying(Widget* widget) OVERRIDE;
-  virtual void OnWidgetVisibilityChanged(Widget* widget, bool visible) OVERRIDE;
+  virtual void OnWidgetVisibilityChanging(Widget* widget, bool visible)
+      OVERRIDE;
+  virtual void OnWidgetVisibilityChanged(Widget* widget, bool visible)
+      OVERRIDE;
   virtual void OnWidgetActivationChanged(Widget* widget, bool active) OVERRIDE;
   virtual void OnWidgetBoundsChanged(Widget* widget,
                                      const gfx::Rect& new_bounds) OVERRIDE;
@@ -133,9 +134,9 @@ class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
   virtual void OnNativeThemeChanged(const ui::NativeTheme* theme) OVERRIDE;
 
-  // ui::AnimationDelegate overrides:
-  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
-  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
+  // gfx::AnimationDelegate overrides:
+  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE;
+  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
 
   // Perform view initialization on the contents for bubble sizing.
   virtual void Init();
@@ -150,6 +151,8 @@ class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
   BubbleFrameView* GetBubbleFrameView() const;
 
  private:
+  friend class BubbleBorderDelegate;
+
   FRIEND_TEST_ALL_PREFIXES(BubbleDelegateTest, CreateDelegate);
   FRIEND_TEST_ALL_PREFIXES(BubbleDelegateTest, NonClientHitTest);
 
@@ -161,8 +164,11 @@ class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
   gfx::Rect GetBubbleClientBounds() const;
 #endif
 
+  // Handles widget visibility changes.
+  void HandleVisibilityChanged(Widget* widget, bool visible);
+
   // Fade animation for bubble.
-  scoped_ptr<ui::SlideAnimation> fade_animation_;
+  scoped_ptr<gfx::SlideAnimation> fade_animation_;
 
   // Flags controlling bubble closure on the escape key and deactivation.
   bool close_on_esc_;

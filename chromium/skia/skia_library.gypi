@@ -40,18 +40,19 @@
       'SK_ENABLE_INST_COUNT=0',
       'SK_SUPPORT_GPU=<(skia_support_gpu)',
       'GR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"',
+      'SK_ENABLE_LEGACY_API_ALIASING=1',
     ],
-    
+
     'default_font_cache_limit': '(20*1024*1024)',
 
     'conditions': [
       ['OS== "android"', {
         # Android devices are typically more memory constrained, so
-        # use a smaller glyph cache.
-        'default_font_cache_limit': '(8*1024*1024)',
+        # default to a smaller glyph cache (it may be overriden at runtime
+        # when the renderer starts up, depending on the actual device memory).
+        'default_font_cache_limit': '(1*1024*1024)',
         'skia_export_defines': [
           'SK_BUILD_FOR_ANDROID',
-          'USE_CHROMIUM_SKIA',
         ],
       }],
     ],
@@ -60,6 +61,7 @@
   'includes': [
     '../third_party/skia/gyp/core.gypi',
     '../third_party/skia/gyp/effects.gypi',
+    '../third_party/skia/gyp/pdf.gypi',
   ],
 
   'sources': [
@@ -76,33 +78,6 @@
 
     '../third_party/skia/src/opts/opts_check_SSE2.cpp',
 
-    '../third_party/skia/src/pdf/SkPDFCatalog.cpp',
-    '../third_party/skia/src/pdf/SkPDFCatalog.h',
-    '../third_party/skia/src/pdf/SkPDFDevice.cpp',
-    '../third_party/skia/src/pdf/SkPDFDocument.cpp',
-    '../third_party/skia/src/pdf/SkPDFFont.cpp',
-    '../third_party/skia/src/pdf/SkPDFFont.h',
-    '../third_party/skia/src/pdf/SkPDFFormXObject.cpp',
-    '../third_party/skia/src/pdf/SkPDFFormXObject.h',
-    '../third_party/skia/src/pdf/SkPDFGraphicState.cpp',
-    '../third_party/skia/src/pdf/SkPDFGraphicState.h',
-    '../third_party/skia/src/pdf/SkPDFImage.cpp',
-    '../third_party/skia/src/pdf/SkPDFImage.h',
-    '../third_party/skia/src/pdf/SkPDFImageStream.cpp',
-    '../third_party/skia/src/pdf/SkPDFImageStream.h',
-    '../third_party/skia/src/pdf/SkPDFPage.cpp',
-    '../third_party/skia/src/pdf/SkPDFPage.h',
-    '../third_party/skia/src/pdf/SkPDFResourceDict.cpp',
-    '../third_party/skia/src/pdf/SkPDFResourceDict.h',
-    '../third_party/skia/src/pdf/SkPDFShader.cpp',
-    '../third_party/skia/src/pdf/SkPDFShader.h',
-    '../third_party/skia/src/pdf/SkPDFStream.cpp',
-    '../third_party/skia/src/pdf/SkPDFStream.h',
-    '../third_party/skia/src/pdf/SkPDFTypes.cpp',
-    '../third_party/skia/src/pdf/SkPDFTypes.h',
-    '../third_party/skia/src/pdf/SkPDFUtils.cpp',
-    '../third_party/skia/src/pdf/SkPDFUtils.h',
-
     '../third_party/skia/src/ports/SkPurgeableMemoryBlock_none.cpp',
 
     '../third_party/skia/src/ports/SkFontConfigInterface_android.cpp',
@@ -117,6 +92,8 @@
     '../third_party/skia/src/ports/SkFontConfigParser_android.cpp',
     '../third_party/skia/src/ports/SkFontHost_mac.cpp',
     '../third_party/skia/src/ports/SkFontHost_win.cpp',
+    '../third_party/skia/src/ports/SkFontHost_win_dw.cpp',
+    '../third_party/skia/src/ports/SkFontMgr_default_gdi.cpp',
     '../third_party/skia/src/ports/SkGlobalInitialization_chromium.cpp',
     '../third_party/skia/src/ports/SkOSFile_posix.cpp',
     '../third_party/skia/src/ports/SkOSFile_stdio.cpp',
@@ -146,6 +123,8 @@
     '../third_party/skia/src/utils/SkBase64.h',
     '../third_party/skia/src/utils/SkBitSet.cpp',
     '../third_party/skia/src/utils/SkBitSet.h',
+    '../third_party/skia/src/utils/SkCanvasStack.cpp',
+    '../third_party/skia/src/utils/SkCanvasStateUtils.cpp',
     '../third_party/skia/src/utils/SkDeferredCanvas.cpp',
     '../third_party/skia/src/utils/SkMatrix44.cpp',
     '../third_party/skia/src/utils/SkNullCanvas.cpp',
@@ -155,8 +134,11 @@
     '../third_party/skia/src/utils/SkProxyCanvas.cpp',
     '../third_party/skia/src/utils/SkRTConf.cpp',
     '../third_party/skia/include/utils/SkRTConf.h',
-    '../third_party/skia/include/pdf/SkPDFDevice.h',
-    '../third_party/skia/include/pdf/SkPDFDocument.h',
+    '../third_party/skia/src/utils/win/SkDWriteFontFileStream.cpp',
+    '../third_party/skia/src/utils/win/SkDWriteFontFileStream.h',
+    '../third_party/skia/src/utils/win/SkDWriteGeometrySink.cpp',
+    '../third_party/skia/src/utils/win/SkDWriteGeometrySink.h',
+    '../third_party/skia/src/utils/win/SkHRESULT.cpp',
 
     '../third_party/skia/include/ports/SkTypeface_win.h',
 
@@ -335,7 +317,6 @@
     [ 'OS == "ios"', {
       'defines': [
         'SK_BUILD_FOR_IOS',
-        'SK_USE_MAC_CORE_TEXT',
       ],
       'include_dirs': [
         '../third_party/skia/include/utils/ios',
@@ -355,7 +336,7 @@
       'sources/': [
         ['exclude', 'opts_check_SSE2\\.cpp$'],
       ],
-      
+
       # The main skia_opts target does not currently work on iOS because the
       # target architecture on iOS is determined at compile time rather than
       # gyp time (simulator builds are x86, device builds are arm).  As a
@@ -371,7 +352,6 @@
     [ 'OS == "mac"', {
       'defines': [
         'SK_BUILD_FOR_MAC',
-        'SK_USE_MAC_CORE_TEXT',
       ],
       'direct_dependent_settings': {
         'include_dirs': [
@@ -396,6 +376,24 @@
         '../third_party/skia/src/ports/SkThread_pthread.cpp',
         '../third_party/skia/src/ports/SkTime_Unix.cpp',
         '../third_party/skia/src/ports/SkTLS_pthread.cpp',
+      ],
+      'include_dirs': [
+        '../third_party/skia/include/utils/win',
+        '../third_party/skia/src/utils/win',
+      ],
+      'defines': [
+        'SK_FONTHOST_USES_FONTMGR',
+      ],
+    },{ # not 'OS == "win"'
+      'sources!': [
+        '../third_party/skia/src/ports/SkFontHost_win_dw.cpp',
+        '../third_party/skia/src/ports/SkFontMgr_default_gdi.cpp',
+
+        '../third_party/skia/src/utils/win/SkDWriteFontFileStream.cpp',
+        '../third_party/skia/src/utils/win/SkDWriteFontFileStream.h',
+        '../third_party/skia/src/utils/win/SkDWriteGeometrySink.cpp',
+        '../third_party/skia/src/utils/win/SkDWriteGeometrySink.h',
+        '../third_party/skia/src/utils/win/SkHRESULT.cpp',
       ],
     }],
     # TODO(scottmg): http://crbug.com/177306
@@ -426,9 +424,6 @@
   'defines': [
     '<@(skia_export_defines)',
 
-    # this flag can be removed entirely once this has baked for a while
-    'SK_ALLOW_OVER_32K_BITMAPS',
-
     # skia uses static initializers to initialize the serialization logic
     # of its "pictures" library. This is currently not used in chrome; if
     # it ever gets used the processes that use it need to call
@@ -443,6 +438,7 @@
 
     'SKIA_IGNORE_GPU_MIPMAPS',
 
+    # this flag forces Skia not to use typographic metrics with GDI.
     'SK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS',
 
     'SK_DEFAULT_FONT_CACHE_LIMIT=<(default_font_cache_limit)',

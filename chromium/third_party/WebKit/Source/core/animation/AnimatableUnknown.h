@@ -52,11 +52,6 @@ protected:
         return defaultInterpolateTo(this, value, fraction);
     }
 
-    virtual PassRefPtr<AnimatableValue> addWith(const AnimatableValue* value) const OVERRIDE
-    {
-        return defaultAddWith(this, value);
-    }
-
 private:
     explicit AnimatableUnknown(PassRefPtr<CSSValue> value)
         : AnimatableValue(TypeUnknown)

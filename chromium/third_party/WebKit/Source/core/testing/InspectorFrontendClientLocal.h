@@ -32,9 +32,9 @@
 #define InspectorFrontendClientLocal_h
 
 #include "core/inspector/InspectorFrontendClient.h"
-#include <wtf/Forward.h>
-#include <wtf/Noncopyable.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/Forward.h"
+#include "wtf/Noncopyable.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -47,40 +47,20 @@ class Page;
 class InspectorFrontendClientLocal : public InspectorFrontendClient {
     WTF_MAKE_NONCOPYABLE(InspectorFrontendClientLocal); WTF_MAKE_FAST_ALLOCATED;
 public:
-    InspectorFrontendClientLocal(InspectorController*, Page*);
+    InspectorFrontendClientLocal(InspectorController&, Page*);
     virtual ~InspectorFrontendClientLocal();
 
     virtual void windowObjectCleared();
-
-    virtual void moveWindowBy(float x, float y) { }
-
-    virtual void requestSetDockSide(DockSide) { }
-    virtual void changeAttachedWindowHeight(unsigned) { }
-    virtual void openInNewTab(const String&) { }
-    virtual void save(const String&, const String&, bool) { }
-    virtual void append(const String&, const String&) { }
-
-    virtual void bringToFront() OVERRIDE { }
-    virtual void closeWindow() OVERRIDE { }
-
-    virtual void attachWindow(DockSide) { }
-    virtual void detachWindow() { }
 
     virtual void inspectedURLChanged(const String&) OVERRIDE { }
 
     virtual void sendMessageToBackend(const String& message);
 
-    virtual void requestFileSystems() { }
-    virtual void addFileSystem() { }
-    virtual void removeFileSystem(const String&) { }
-    virtual void indexPath(int requestId, const String& fileSystemPath) { }
-    virtual void stopIndexing(int requestId) { }
-    virtual void searchInPath(int requestId, const String& fileSystemPath, const String& query) { }
+    virtual void sendMessageToEmbedder(const String&) OVERRIDE { }
 
     virtual bool isUnderTest() { return true; }
 
 private:
-    InspectorController* m_inspectorController;
     Page* m_frontendPage;
     // TODO(yurys): this ref shouldn't be needed.
     RefPtr<InspectorFrontendHost> m_frontendHost;

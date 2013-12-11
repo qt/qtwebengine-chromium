@@ -16,10 +16,7 @@
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
-#include "base/containers/hash_tables.h"
-#include "base/files/file_path.h"
 #include "base/linux_util.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/native_library.h"
 #include "base/pickle.h"
 #include "base/posix/eintr_wrapper.h"
@@ -27,6 +24,7 @@
 #include "base/rand_util.h"
 #include "base/sys_info.h"
 #include "build/build_config.h"
+#include "content/common/child_process_sandbox_support_impl_linux.h"
 #include "content/common/font_config_ipc_linux.h"
 #include "content/common/pepper_plugin_list.h"
 #include "content/common/sandbox_linux.h"
@@ -69,7 +67,7 @@ static void ProxyLocaltimeCallToBrowser(time_t input, struct tm* output,
 
   uint8_t reply_buf[512];
   const ssize_t r = UnixDomainSocket::SendRecvMsg(
-      Zygote::kMagicSandboxIPCDescriptor, reply_buf, sizeof(reply_buf), NULL,
+      GetSandboxFD(), reply_buf, sizeof(reply_buf), NULL,
       request);
   if (r == -1) {
     memset(output, 0, sizeof(struct tm));
@@ -304,6 +302,8 @@ static void PreSandboxInit() {
 #if defined(ENABLE_WEBRTC)
   InitializeWebRtcModule();
 #endif
+  SkFontConfigInterface::SetGlobal(
+      new FontConfigIPC(GetSandboxFD()))->unref();
 }
 
 // Do nothing here
@@ -384,16 +384,22 @@ static bool CreateInitProcessReaper() {
 
 // This will set the *using_suid_sandbox variable to true if the SUID sandbox
 // is enabled. This does not necessarily exclude other types of sandboxing.
-static bool EnterSandbox(sandbox::SetuidSandboxClient* setuid_sandbox,
-                         bool* using_suid_sandbox, bool* has_started_new_init) {
+static bool EnterSuidSandbox(LinuxSandbox* linux_sandbox,
+                             bool* using_suid_sandbox,
+                             bool* has_started_new_init) {
   *using_suid_sandbox = false;
   *has_started_new_init = false;
+
+  sandbox::SetuidSandboxClient* setuid_sandbox =
+      linux_sandbox->setuid_sandbox_client();
+
   if (!setuid_sandbox)
     return false;
 
   PreSandboxInit();
-  SkFontConfigInterface::SetGlobal(
-      new FontConfigIPC(Zygote::kMagicSandboxIPCDescriptor))->unref();
+
+  // Check that the pre-sandbox initialization didn't spawn threads.
+  DCHECK(linux_sandbox->IsSingleThreaded());
 
   if (setuid_sandbox->IsSuidSandboxChild()) {
     // Use the SUID sandbox.  This still allows the seccomp sandbox to
@@ -461,12 +467,9 @@ bool ZygoteMain(const MainFunctionParams& params,
   // This will pre-initialize the various sandboxes that need it.
   linux_sandbox->PreinitializeSandbox();
 
-  sandbox::SetuidSandboxClient* setuid_sandbox =
-      linux_sandbox->setuid_sandbox_client();
-
   if (forkdelegate != NULL) {
     VLOG(1) << "ZygoteMain: initializing fork delegate";
-    forkdelegate->Init(Zygote::kMagicSandboxIPCDescriptor);
+    forkdelegate->Init(GetSandboxFD());
   } else {
     VLOG(1) << "ZygoteMain: fork delegate is NULL";
   }
@@ -475,13 +478,16 @@ bool ZygoteMain(const MainFunctionParams& params,
   bool using_suid_sandbox = false;
   bool has_started_new_init = false;
 
-  if (!EnterSandbox(setuid_sandbox,
-                    &using_suid_sandbox,
-                    &has_started_new_init)) {
+  if (!EnterSuidSandbox(linux_sandbox,
+                        &using_suid_sandbox,
+                        &has_started_new_init)) {
     LOG(FATAL) << "Failed to enter sandbox. Fail safe abort. (errno: "
                << errno << ")";
     return false;
   }
+
+  sandbox::SetuidSandboxClient* setuid_sandbox =
+      linux_sandbox->setuid_sandbox_client();
 
   if (setuid_sandbox->IsInNewPIDNamespace() && !has_started_new_init) {
     LOG(ERROR) << "The SUID sandbox created a new PID namespace but Zygote "

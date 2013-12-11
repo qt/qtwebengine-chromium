@@ -27,18 +27,11 @@ class BoundNetLog;
 // The SOCKS client socket implementation
 class NET_EXPORT_PRIVATE SOCKSClientSocket : public StreamSocket {
  public:
-  // Takes ownership of the |transport_socket|, which should already be
-  // connected by the time Connect() is called.
-  //
   // |req_info| contains the hostname and port to which the socket above will
   // communicate to via the socks layer. For testing the referrer is optional.
-  SOCKSClientSocket(ClientSocketHandle* transport_socket,
+  SOCKSClientSocket(scoped_ptr<ClientSocketHandle> transport_socket,
                     const HostResolver::RequestInfo& req_info,
-                    HostResolver* host_resolver);
-
-  // Deprecated constructor (http://crbug.com/37810) that takes a StreamSocket.
-  SOCKSClientSocket(StreamSocket* transport_socket,
-                    const HostResolver::RequestInfo& req_info,
+                    RequestPriority priority,
                     HostResolver* host_resolver);
 
   // On destruction Disconnect() is called.
@@ -131,6 +124,7 @@ class NET_EXPORT_PRIVATE SOCKSClientSocket : public StreamSocket {
   SingleRequestHostResolver host_resolver_;
   AddressList addresses_;
   HostResolver::RequestInfo host_request_info_;
+  RequestPriority priority_;
 
   BoundNetLog net_log_;
 

@@ -29,7 +29,9 @@
  */
 
 #include "config.h"
-#include "PageScaleConstraintsSet.h"
+#include "core/page/PageScaleConstraintsSet.h"
+
+#include "wtf/Assertions.h"
 
 namespace WebCore {
 
@@ -49,9 +51,9 @@ PageScaleConstraints PageScaleConstraintsSet::defaultConstraints() const
     return PageScaleConstraints(-1, defaultMinimumScale, defaultMaximumScale);
 }
 
-void PageScaleConstraintsSet::updatePageDefinedConstraints(const ViewportArguments& arguments, IntSize viewSize, int layoutFallbackWidth)
+void PageScaleConstraintsSet::updatePageDefinedConstraints(const ViewportArguments& arguments, IntSize viewSize)
 {
-    m_pageDefinedConstraints = arguments.resolve(viewSize, viewSize, layoutFallbackWidth);
+    m_pageDefinedConstraints = arguments.resolve(viewSize);
 
     m_constraintsDirty = true;
 }
@@ -119,34 +121,49 @@ static float getLayoutWidthForNonWideViewport(const FloatSize& deviceSize, float
     return initialScale == -1 ? deviceSize.width() : deviceSize.width() / initialScale;
 }
 
-void PageScaleConstraintsSet::adjustPageDefinedConstraintsForAndroidWebView(const ViewportArguments& arguments, IntSize viewSize, int layoutFallbackWidth, float deviceScaleFactor, bool useWideViewport, bool loadWithOverviewMode)
+void PageScaleConstraintsSet::adjustForAndroidWebViewQuirks(const ViewportArguments& arguments, IntSize viewSize, int layoutFallbackWidth, float deviceScaleFactor, bool supportTargetDensityDPI, bool wideViewportQuirkEnabled, bool useWideViewport, bool loadWithOverviewMode)
 {
+    if (!supportTargetDensityDPI && !wideViewportQuirkEnabled && loadWithOverviewMode)
+        return;
+
     float initialScale = m_pageDefinedConstraints.initialScale;
-    if (arguments.zoom == -1 && !loadWithOverviewMode) {
-        if (arguments.width == -1 || (useWideViewport && arguments.width != ViewportArguments::ValueDeviceWidth))
+    if (!loadWithOverviewMode) {
+        bool resetInitialScale = false;
+        if (arguments.zoom == -1) {
+            if (arguments.maxWidth.isAuto())
+                resetInitialScale = true;
+            if (useWideViewport && arguments.maxWidth.isFixed())
+                resetInitialScale = true;
+        }
+        if (resetInitialScale)
             m_pageDefinedConstraints.initialScale = 1.0f;
     }
 
-    float targetDensityDPIFactor = computeDeprecatedTargetDensityDPIFactor(arguments, deviceScaleFactor);
-    if (m_pageDefinedConstraints.initialScale != -1)
-        m_pageDefinedConstraints.initialScale *= targetDensityDPIFactor;
-    m_pageDefinedConstraints.minimumScale *= targetDensityDPIFactor;
-    m_pageDefinedConstraints.maximumScale *= targetDensityDPIFactor;
-
     float adjustedLayoutSizeWidth = m_pageDefinedConstraints.layoutSize.width();
-    if (useWideViewport && arguments.width == -1 && arguments.zoom != 1.0f)
-        adjustedLayoutSizeWidth = layoutFallbackWidth;
-    else {
-        if (!useWideViewport)
-            adjustedLayoutSizeWidth = getLayoutWidthForNonWideViewport(viewSize, initialScale);
-        if (!useWideViewport || arguments.width == -1 || arguments.width == ViewportArguments::ValueDeviceWidth)
-            adjustedLayoutSizeWidth /= targetDensityDPIFactor;
+    float targetDensityDPIFactor = 1.0f;
+
+    if (supportTargetDensityDPI) {
+        targetDensityDPIFactor = computeDeprecatedTargetDensityDPIFactor(arguments, deviceScaleFactor);
+        if (m_pageDefinedConstraints.initialScale != -1)
+            m_pageDefinedConstraints.initialScale *= targetDensityDPIFactor;
+        m_pageDefinedConstraints.minimumScale *= targetDensityDPIFactor;
+        m_pageDefinedConstraints.maximumScale *= targetDensityDPIFactor;
+        adjustedLayoutSizeWidth /= targetDensityDPIFactor;
     }
 
-    ASSERT(m_pageDefinedConstraints.layoutSize.width() > 0);
-    float adjustedLayoutSizeHeight = (adjustedLayoutSizeWidth * m_pageDefinedConstraints.layoutSize.height()) / m_pageDefinedConstraints.layoutSize.width();
-    m_pageDefinedConstraints.layoutSize.setWidth(adjustedLayoutSizeWidth);
-    m_pageDefinedConstraints.layoutSize.setHeight(adjustedLayoutSizeHeight);
+    if (wideViewportQuirkEnabled) {
+        if (useWideViewport && (arguments.maxWidth.isAuto() || arguments.maxWidth.type() == ExtendToZoom) && arguments.zoom != 1.0f)
+            adjustedLayoutSizeWidth = layoutFallbackWidth;
+        else if (!useWideViewport)
+            adjustedLayoutSizeWidth = getLayoutWidthForNonWideViewport(viewSize, initialScale) / targetDensityDPIFactor;
+    }
+
+    if (adjustedLayoutSizeWidth != m_pageDefinedConstraints.layoutSize.width()) {
+        ASSERT(m_pageDefinedConstraints.layoutSize.width() > 0);
+        float adjustedLayoutSizeHeight = (adjustedLayoutSizeWidth * m_pageDefinedConstraints.layoutSize.height()) / m_pageDefinedConstraints.layoutSize.width();
+        m_pageDefinedConstraints.layoutSize.setWidth(adjustedLayoutSizeWidth);
+        m_pageDefinedConstraints.layoutSize.setHeight(adjustedLayoutSizeHeight);
+    }
 }
 
 } // namespace WebCore

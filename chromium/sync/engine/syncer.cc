@@ -19,6 +19,7 @@
 #include "sync/engine/net/server_connection_manager.h"
 #include "sync/engine/process_commit_response_command.h"
 #include "sync/engine/syncer_types.h"
+#include "sync/internal_api/public/base/cancelation_signal.h"
 #include "sync/internal_api/public/base/unique_position.h"
 #include "sync/internal_api/public/util/syncer_error.h"
 #include "sync/sessions/nudge_tracker.h"
@@ -43,20 +44,14 @@ using sessions::StatusController;
 using sessions::SyncSession;
 using sessions::NudgeTracker;
 
-Syncer::Syncer()
-    : early_exit_requested_(false) {
+Syncer::Syncer(syncer::CancelationSignal* cancelation_signal)
+    : cancelation_signal_(cancelation_signal) {
 }
 
 Syncer::~Syncer() {}
 
 bool Syncer::ExitRequested() {
-  base::AutoLock lock(early_exit_requested_lock_);
-  return early_exit_requested_;
-}
-
-void Syncer::RequestEarlyExit() {
-  base::AutoLock lock(early_exit_requested_lock_);
-  early_exit_requested_ = true;
+  return cancelation_signal_->IsSignalled();
 }
 
 bool Syncer::NormalSyncShare(ModelTypeSet request_types,
@@ -68,12 +63,12 @@ bool Syncer::NormalSyncShare(ModelTypeSet request_types,
       session->context()->ShouldFetchUpdatesBeforeCommit()) {
     if (!DownloadAndApplyUpdates(
             session,
-            base::Bind(&NormalDownloadUpdates,
+            base::Bind(&BuildNormalDownloadUpdates,
                        session,
                        kCreateMobileBookmarksFolder,
                        request_types,
                        base::ConstRef(nudge_tracker)))) {
-    return HandleCycleEnd(session, nudge_tracker.updates_source());
+      return HandleCycleEnd(session, nudge_tracker.updates_source());
     }
   }
 
@@ -92,7 +87,7 @@ bool Syncer::ConfigureSyncShare(
   VLOG(1) << "Configuring types " << ModelTypeSetToString(request_types);
   DownloadAndApplyUpdates(
       session,
-      base::Bind(&DownloadUpdatesForConfigure,
+      base::Bind(&BuildDownloadUpdatesForConfigure,
                  session,
                  kCreateMobileBookmarksFolder,
                  source,
@@ -106,7 +101,7 @@ bool Syncer::PollSyncShare(ModelTypeSet request_types,
   VLOG(1) << "Polling types " << ModelTypeSetToString(request_types);
   DownloadAndApplyUpdates(
       session,
-      base::Bind(&DownloadUpdatesForPoll,
+      base::Bind(&BuildDownloadUpdatesForPoll,
                  session,
                  kCreateMobileBookmarksFolder,
                  request_types));
@@ -129,9 +124,12 @@ void Syncer::ApplyUpdates(SyncSession* session) {
 
 bool Syncer::DownloadAndApplyUpdates(
     SyncSession* session,
-    base::Callback<SyncerError(void)> download_fn) {
+    base::Callback<void(sync_pb::ClientToServerMessage*)> build_fn) {
   while (!session->status_controller().ServerSaysNothingMoreToDownload()) {
-    SyncerError download_result = download_fn.Run();
+    TRACE_EVENT0("sync", "DownloadUpdates");
+    sync_pb::ClientToServerMessage msg;
+    build_fn.Run(&msg);
+    SyncerError download_result = ExecuteDownloadUpdates(session, &msg);
     session->mutable_status_controller()->set_last_download_updates_result(
         download_result);
     if (download_result != SYNCER_OK) {

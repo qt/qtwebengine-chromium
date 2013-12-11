@@ -153,16 +153,6 @@ class CONTENT_EXPORT RenderFrameImpl
   virtual void reportFindInPageSelection(int request_id,
                                          int active_match_ordinal,
                                          const WebKit::WebRect& sel);
-  virtual void openFileSystem(
-      WebKit::WebFrame* frame,
-      WebKit::WebFileSystemType type,
-      long long size,
-      bool create,
-      WebKit::WebFileSystemCallbacks* callbacks);
-  virtual void deleteFileSystem(
-      WebKit::WebFrame* frame,
-      WebKit::WebFileSystemType type,
-      WebKit::WebFileSystemCallbacks* callbacks);
   virtual void requestStorageQuota(
       WebKit::WebFrame* frame,
       WebKit::WebStorageQuotaType type,
@@ -186,15 +176,16 @@ class CONTENT_EXPORT RenderFrameImpl
   virtual void didLoseWebGLContext(WebKit::WebFrame* frame,
                                    int arb_robustness_status_code);
 
-  // RenderFrameImpl methods
-  int GetRoutingID() const;
-
  protected:
   RenderFrameImpl(RenderViewImpl* render_view, int32 routing_id);
 
  private:
+  int GetRoutingID() const;
+
   RenderViewImpl* render_view_;
   int routing_id_;
+  bool is_swapped_out_;
+  bool is_detaching_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderFrameImpl);
 };

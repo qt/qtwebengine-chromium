@@ -55,8 +55,11 @@
     'additional_src_dirs': [],
     'javac_includes': [],
     'jar_name': '<(_target_name).jar',
-    'jar_path': '<(PRODUCT_DIR)/lib.java/<(jar_name)',
+    'jar_dir': '<(PRODUCT_DIR)/lib.java',
+    'jar_path': '<(intermediate_dir)/<(jar_name)',
+    'jar_final_path': '<(jar_dir)/<(jar_name)',
     'jar_excluded_classes': [ '*/R.class', '*/R##*.class' ],
+    'instr_stamp': '<(intermediate_dir)/instr.stamp',
     'additional_input_paths': [],
     'dex_path': '<(PRODUCT_DIR)/lib.java/<(_target_name).dex.jar',
     'generated_src_dirs': ['>@(generated_R_dirs)'],
@@ -70,12 +73,34 @@
     'intermediate_dir': '<(SHARED_INTERMEDIATE_DIR)/<(_target_name)',
     'classes_dir': '<(intermediate_dir)/classes',
     'compile_stamp': '<(intermediate_dir)/compile.stamp',
+    'proguard_config%': '',
+    'proguard_preprocess%': '0',
+    'variables': {
+      'variables': {
+        'proguard_preprocess%': 0,
+        'emma_never_instrument%': 0,
+      },
+      'conditions': [
+        ['proguard_preprocess == 1', {
+          'javac_jar_path': '<(intermediate_dir)/<(_target_name).pre.jar'
+        }, {
+          'javac_jar_path': '<(jar_path)'
+        }],
+        ['chromium_code != 0 and emma_coverage != 0 and emma_never_instrument == 0', {
+          'emma_instrument': 1,
+        }, {
+          'emma_instrument': 0,
+        }],
+      ],
+    },
+    'emma_instrument': '<(emma_instrument)',
+    'javac_jar_path': '<(javac_jar_path)',
   },
   # This all_dependent_settings is used for java targets only. This will add the
   # jar path to the classpath of dependent java targets.
   'all_dependent_settings': {
     'variables': {
-      'input_jars_paths': ['<(jar_path)'],
+      'input_jars_paths': ['<(jar_final_path)'],
       'library_dexed_jars_paths': ['<(dex_path)'],
     },
   },
@@ -218,6 +243,35 @@
         },
       ],
     }],
+    ['proguard_preprocess == 1', {
+      'actions': [
+        {
+          'action_name': 'proguard_<(_target_name)',
+          'message': 'Proguard preprocessing <(_target_name) jar',
+          'inputs': [
+            '<(android_sdk_root)/tools/proguard/bin/proguard.sh',
+            '<(DEPTH)/build/android/gyp/util/build_utils.py',
+            '<(DEPTH)/build/android/gyp/proguard.py',
+            '<(javac_jar_path)',
+            '<(proguard_config)',
+          ],
+          'outputs': [
+            '<(jar_path)',
+          ],
+          'action': [
+            'python', '<(DEPTH)/build/android/gyp/proguard.py',
+            '--proguard-path=<(android_sdk_root)/tools/proguard/bin/proguard.sh',
+            '--input-path=<(javac_jar_path)',
+            '--output-path=<(jar_path)',
+            '--proguard-config=<(proguard_config)',
+            '--classpath=<(android_sdk_jar) >(input_jars_paths)',
+
+            # TODO(newt): remove this once http://crbug.com/177552 is fixed in ninja.
+            '--ignore=>!(echo \'>(_inputs)\' | md5sum)',
+          ]
+        },
+      ],
+    }],
   ],
   'actions': [
     {
@@ -263,17 +317,34 @@
         '<(compile_stamp)',
       ],
       'outputs': [
-        '<(jar_path)',
+        '<(javac_jar_path)',
       ],
       'action': [
         'python', '<(DEPTH)/build/android/gyp/jar.py',
         '--classes-dir=<(classes_dir)',
-        '--jar-path=<(jar_path)',
+        '--jar-path=<(javac_jar_path)',
         '--excluded-classes=<(jar_excluded_classes)',
 
         # TODO(newt): remove this once http://crbug.com/177552 is fixed in ninja.
         '--ignore=>!(echo \'>(_inputs)\' | md5sum)',
       ]
+    },
+    {
+      'action_name': 'instr_jar_<(_target_name)',
+      'message': 'Instrumenting <(_target_name) jar',
+      'variables': {
+        'input_path': '<(jar_path)',
+        'output_path': '<(jar_final_path)',
+        'stamp_path': '<(instr_stamp)',
+        'instr_type': 'jar',
+      },
+      'outputs': [
+        '<(jar_final_path)',
+      ],
+      'inputs': [
+        '<(jar_path)',
+      ],
+      'includes': [ 'android/instr_action.gypi' ],
     },
     {
       'action_name': 'jar_toc_<(_target_name)',
@@ -282,15 +353,15 @@
         '<(DEPTH)/build/android/gyp/util/build_utils.py',
         '<(DEPTH)/build/android/gyp/util/md5_check.py',
         '<(DEPTH)/build/android/gyp/jar_toc.py',
-        '<(jar_path)',
+        '<(jar_final_path)',
       ],
       'outputs': [
-        '<(jar_path).TOC',
+        '<(jar_final_path).TOC',
       ],
       'action': [
         'python', '<(DEPTH)/build/android/gyp/jar_toc.py',
-        '--jar-path=<(jar_path)',
-        '--toc-path=<(jar_path).TOC',
+        '--jar-path=<(jar_final_path)',
+        '--toc-path=<(jar_final_path).TOC',
 
         # TODO(newt): remove this once http://crbug.com/177552 is fixed in ninja.
         '--ignore=>!(echo \'>(_inputs)\' | md5sum)',
@@ -299,7 +370,12 @@
     {
       'action_name': 'dex_<(_target_name)',
       'variables': {
-        'dex_input_paths': [ '<(jar_path)' ],
+        'conditions': [
+          ['emma_instrument != 0', {
+            'dex_no_locals': 1,
+          }],
+        ],
+        'dex_input_paths': [ '<(jar_final_path)' ],
         'output_path': '<(dex_path)',
       },
       'includes': [ 'android/dex_action.gypi' ],

@@ -8,11 +8,11 @@
 #include "base/compiler_specific.h"
 #include "ui/aura/root_window_host.h"
 #include "ui/base/ui_export.h"
-#include "ui/base/win/window_impl.h"
+#include "ui/gfx/win/window_impl.h"
 
 namespace aura {
 
-class RootWindowHostWin : public RootWindowHost, public ui::WindowImpl {
+class RootWindowHostWin : public RootWindowHost, public gfx::WindowImpl {
  public:
   RootWindowHostWin(const gfx::Rect& bounds);
   virtual ~RootWindowHostWin();
@@ -37,9 +37,6 @@ class RootWindowHostWin : public RootWindowHost, public ui::WindowImpl {
   virtual void OnCursorVisibilityChanged(bool show) OVERRIDE;
   virtual void MoveCursorTo(const gfx::Point& location) OVERRIDE;
   virtual void SetFocusWhenShown(bool focus_when_shown) OVERRIDE;
-  virtual bool CopyAreaToSkCanvas(const gfx::Rect& source_bounds,
-                                  const gfx::Point& dest_offset,
-                                  SkCanvas* canvas) OVERRIDE;
   virtual void PostNativeEvent(const base::NativeEvent& native_event) OVERRIDE;
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
   virtual void PrepareForShutdown() OVERRIDE;

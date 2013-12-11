@@ -47,7 +47,7 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGAnimationElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGTests)
 END_REGISTER_ANIMATED_PROPERTIES
 
-SVGAnimationElement::SVGAnimationElement(const QualifiedName& tagName, Document* document)
+SVGAnimationElement::SVGAnimationElement(const QualifiedName& tagName, Document& document)
     : SVGSMILElement(tagName, document)
     , m_fromPropertyValueType(RegularPropertyValue)
     , m_toPropertyValueType(RegularPropertyValue)
@@ -60,7 +60,7 @@ SVGAnimationElement::SVGAnimationElement(const QualifiedName& tagName, Document*
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGAnimationElement();
 
-    UseCounter::count(document, UseCounter::SVGAnimationElement);
+    UseCounter::count(&document, UseCounter::SVGAnimationElement);
 }
 
 static void parseKeyTimes(const String& string, Vector<float>& result, bool verifyOrder)
@@ -507,8 +507,7 @@ void SVGAnimationElement::currentValuesForValuesAnimation(float percent, float& 
 
     CalcMode calcMode = this->calcMode();
     if (hasTagName(SVGNames::animateTag) || hasTagName(SVGNames::animateColorTag)) {
-        SVGAnimateElement* animateElement = static_cast<SVGAnimateElement*>(this);
-        AnimatedPropertyType attributeType = animateElement->determineAnimatedPropertyType(targetElement());
+        AnimatedPropertyType attributeType = toSVGAnimateElement(this)->determineAnimatedPropertyType(targetElement());
         // Fall back to discrete animations for Strings.
         if (attributeType == AnimatedBoolean
             || attributeType == AnimatedEnumeration
@@ -571,10 +570,11 @@ void SVGAnimationElement::startedActiveInterval()
     AnimationMode animationMode = this->animationMode();
     CalcMode calcMode = this->calcMode();
     if (calcMode == CalcModeSpline) {
-        unsigned splinesCount = m_keySplines.size() + 1;
-        if ((fastHasAttribute(SVGNames::keyPointsAttr) && m_keyPoints.size() != splinesCount)
-            || (animationMode == ValuesAnimation && m_values.size() != splinesCount)
-            || (fastHasAttribute(SVGNames::keyTimesAttr) && m_keyTimes.size() != splinesCount))
+        unsigned splinesCount = m_keySplines.size();
+        if (!splinesCount
+            || (fastHasAttribute(SVGNames::keyPointsAttr) && m_keyPoints.size() - 1 != splinesCount)
+            || (animationMode == ValuesAnimation && m_values.size() - 1 != splinesCount)
+            || (fastHasAttribute(SVGNames::keyTimesAttr) && m_keyTimes.size() - 1 != splinesCount))
             return;
     }
 

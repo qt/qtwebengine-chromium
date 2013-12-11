@@ -83,19 +83,13 @@
         'remote_root_window_host_win.h',
         'root_window_host.h',
         'root_window_host_delegate.h',
-        'root_window_host_mac.h',
-        'root_window_host_mac.mm',
         'root_window_host_ozone.cc',
         'root_window_host_ozone.h',
         'root_window_host_win.cc',
         'root_window_host_win.h',
         'root_window_host_x11.cc',
         'root_window_host_x11.h',
-        'root_window_mac.h',
-        'root_window_mac.mm',
         'root_window_transformer.h',
-        'root_window_view_mac.h',
-        'root_window_view_mac.mm',
         'root_window.cc',
         'root_window.h',
         'window.cc',
@@ -106,12 +100,6 @@
         'window_tracker.h',
       ],
       'conditions': [
-        ['OS=="mac"', {
-          'sources/': [
-            ['exclude', 'client/dispatcher_client.cc'],
-            ['exclude', 'client/dispatcher_client.h'],
-          ],
-        }],
         ['use_x11==1', {
           'link_settings': {
             'libraries': [
@@ -181,6 +169,7 @@
       'target_name': 'aura_test_support_pak',
       'type': 'none',
       'dependencies': [
+        '<(DEPTH)/ui/base/strings/ui_strings.gyp:ui_strings',
         '<(DEPTH)/ui/ui.gyp:ui_resources',
       ],
       'variables': {
@@ -191,6 +180,7 @@
           'action_name': 'repack_aura_test_support_pack',
           'variables': {
             'pak_inputs': [
+              '<(SHARED_INTERMEDIATE_DIR)/ui/app_locale_settings/app_locale_settings_en-US.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_100_percent.pak',
             ],
           },

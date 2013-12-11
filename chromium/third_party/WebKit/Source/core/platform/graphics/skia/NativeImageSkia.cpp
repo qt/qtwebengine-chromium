@@ -45,6 +45,7 @@
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkScalar.h"
 #include "third_party/skia/include/core/SkShader.h"
+#include "third_party/skia/include/effects/SkLumaXfermode.h"
 
 #include <limits>
 #include <math.h>
@@ -320,11 +321,15 @@ static bool hasNon90rotation(GraphicsContext* context)
     return !context->getTotalMatrix().rectStaysRect();
 }
 
-void NativeImageSkia::draw(GraphicsContext* context, const SkRect& srcRect, const SkRect& destRect, SkXfermode::Mode compOp) const
+void NativeImageSkia::draw(GraphicsContext* context, const SkRect& srcRect, const SkRect& destRect, PassRefPtr<SkXfermode> compOp) const
 {
     TRACE_EVENT0("skia", "NativeImageSkia::draw");
     SkPaint paint;
-    paint.setXfermodeMode(compOp);
+    if (context->drawLuminanceMask()) {
+        paint.setXfermode(SkLumaMaskXfermode::Create(SkXfermode::kSrcOver_Mode));
+    } else {
+        paint.setXfermode(compOp.get());
+    }
     paint.setAlpha(context->getNormalizedAlpha());
     paint.setLooper(context->drawLooper());
     // only antialias if we're rotated or skewed
@@ -461,7 +466,11 @@ void NativeImageSkia::drawPattern(
 
     SkPaint paint;
     paint.setShader(shader.get());
-    paint.setXfermodeMode(WebCoreCompositeToSkiaComposite(compositeOp, blendMode));
+    if (context->drawLuminanceMask()) {
+        paint.setXfermode(SkLumaMaskXfermode::Create(SkXfermode::kSrcOver_Mode));
+    } else {
+        paint.setXfermode(WebCoreCompositeToSkiaComposite(compositeOp, blendMode).get());
+    }
 
     paint.setFilterBitmap(resampling == LinearResampling);
     if (useBicubicFilter)

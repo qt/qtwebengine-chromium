@@ -59,14 +59,32 @@ static PassRefPtr<CSSValue> strokeDashArrayToCSSValueList(const Vector<SVGLength
     return list.release();
 }
 
+static PassRefPtr<CSSValue> paintOrderToCSSValueList(EPaintOrder paintorder)
+{
+    RefPtr<CSSValueList> list = CSSValueList::createSpaceSeparated();
+    do {
+        EPaintOrderType paintOrderType = (EPaintOrderType)(paintorder & ((1 << kPaintOrderBitwidth) - 1));
+        switch (paintOrderType) {
+        case PT_FILL:
+        case PT_STROKE:
+        case PT_MARKERS:
+            list->append(CSSPrimitiveValue::create(paintOrderType));
+            break;
+        case PT_NONE:
+        default:
+            ASSERT_NOT_REACHED();
+            break;
+        }
+    } while (paintorder >>= kPaintOrderBitwidth);
+
+    return list.release();
+}
+
 PassRefPtr<SVGPaint> CSSComputedStyleDeclaration::adjustSVGPaintForCurrentColor(PassRefPtr<SVGPaint> newPaint, RenderStyle* style) const
 {
     RefPtr<SVGPaint> paint = newPaint;
-    if (paint->paintType() == SVGPaint::SVG_PAINTTYPE_CURRENTCOLOR || paint->paintType() == SVGPaint::SVG_PAINTTYPE_URI_CURRENTCOLOR) {
-        // SVG handles currentColor itself, style->color() is guaranteed not to be currentColor.
-        ASSERT(!style->color().isCurrentColor());
-        paint->setColor(style->color().color());
-    }
+    if (paint->paintType() == SVGPaint::SVG_PAINTTYPE_CURRENTCOLOR || paint->paintType() == SVGPaint::SVG_PAINTTYPE_URI_CURRENTCOLOR)
+        paint->setColor(style->color());
     return paint.release();
 }
 
@@ -78,7 +96,7 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getSVGPropertyCSSValue(CSSProp
 
     // Make sure our layout is up to date before we allow a query on these attributes.
     if (updateLayout)
-        node->document()->updateLayout();
+        node->document().updateLayout();
 
     RenderStyle* style = node->computedStyle();
     if (!style)
@@ -192,6 +210,8 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getSVGPropertyCSSValue(CSSProp
 
             return 0;
         }
+        case CSSPropertyPaintOrder:
+            return paintOrderToCSSValueList(svgStyle->paintOrder());
         case CSSPropertyVectorEffect:
             return CSSPrimitiveValue::create(svgStyle->vectorEffect());
         case CSSPropertyMaskType:

@@ -10,12 +10,15 @@
 
 #include "webrtc/video_engine/internal/video_send_stream.h"
 
+#include <string.h>
+
 #include <vector>
 
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/video_engine/include/vie_base.h"
 #include "webrtc/video_engine/include/vie_capture.h"
 #include "webrtc/video_engine/include/vie_codec.h"
+#include "webrtc/video_engine/include/vie_external_codec.h"
 #include "webrtc/video_engine/include/vie_network.h"
 #include "webrtc/video_engine/include/vie_rtp_rtcp.h"
 #include "webrtc/video_engine/new_include/video_send_stream.h"
@@ -76,8 +79,8 @@ class ResolutionAdaptor : public webrtc::CpuOveruseObserver {
 VideoSendStream::VideoSendStream(newapi::Transport* transport,
                                  bool overuse_detection,
                                  webrtc::VideoEngine* video_engine,
-                                 const newapi::VideoSendStream::Config& config)
-    : transport_(transport), config_(config) {
+                                 const VideoSendStream::Config& config)
+    : transport_adapter_(transport), config_(config), external_codec_(NULL) {
 
   if (config_.codec.numberOfSimulcastStreams > 0) {
     assert(config_.rtp.ssrcs.size() == config_.codec.numberOfSimulcastStreams);
@@ -92,9 +95,68 @@ VideoSendStream::VideoSendStream(newapi::Transport* transport,
   rtp_rtcp_ = ViERTP_RTCP::GetInterface(video_engine);
   assert(rtp_rtcp_ != NULL);
 
-  assert(config_.rtp.ssrcs.size() == 1);
-  rtp_rtcp_->SetLocalSSRC(channel_, config_.rtp.ssrcs[0]);
-  rtp_rtcp_->SetNACKStatus(channel_, config_.rtp.nack.rtp_history_ms > 0);
+  if (config_.rtp.ssrcs.size() == 1) {
+    rtp_rtcp_->SetLocalSSRC(channel_, config_.rtp.ssrcs[0]);
+  } else {
+    for (size_t i = 0; i < config_.rtp.ssrcs.size(); ++i) {
+      rtp_rtcp_->SetLocalSSRC(channel_, config_.rtp.ssrcs[i],
+                              kViEStreamTypeNormal, i);
+    }
+  }
+  rtp_rtcp_->SetTransmissionSmoothingStatus(channel_, config_.pacing);
+  if (!config_.rtp.rtx.ssrcs.empty()) {
+    assert(config_.rtp.rtx.ssrcs.size() == config_.rtp.ssrcs.size());
+    for (size_t i = 0; i < config_.rtp.rtx.ssrcs.size(); ++i) {
+      rtp_rtcp_->SetLocalSSRC(
+          channel_, config_.rtp.rtx.ssrcs[i], kViEStreamTypeRtx, i);
+    }
+
+    if (config_.rtp.rtx.rtx_payload_type != 0) {
+      rtp_rtcp_->SetRtxSendPayloadType(channel_,
+                                       config_.rtp.rtx.rtx_payload_type);
+    }
+  }
+
+  for (size_t i = 0; i < config_.rtp.extensions.size(); ++i) {
+    const std::string& extension = config_.rtp.extensions[i].name;
+    int id = config_.rtp.extensions[i].id;
+    if (extension == "toffset") {
+      if (rtp_rtcp_->SetSendTimestampOffsetStatus(channel_, true, id) != 0)
+        abort();
+    } else if (extension == "abs-send-time") {
+      if (rtp_rtcp_->SetSendAbsoluteSendTimeStatus(channel_, true, id) != 0)
+        abort();
+    } else {
+      abort();  // Unsupported extension.
+    }
+  }
+
+  // Enable NACK, FEC or both.
+  if (config_.rtp.fec.red_payload_type != -1) {
+    assert(config_.rtp.fec.ulpfec_payload_type != -1);
+    if (config_.rtp.nack.rtp_history_ms > 0) {
+      rtp_rtcp_->SetHybridNACKFECStatus(
+          channel_,
+          true,
+          static_cast<unsigned char>(config_.rtp.fec.red_payload_type),
+          static_cast<unsigned char>(config_.rtp.fec.ulpfec_payload_type));
+    } else {
+      rtp_rtcp_->SetFECStatus(
+          channel_,
+          true,
+          static_cast<unsigned char>(config_.rtp.fec.red_payload_type),
+          static_cast<unsigned char>(config_.rtp.fec.ulpfec_payload_type));
+    }
+  } else {
+    rtp_rtcp_->SetNACKStatus(channel_, config_.rtp.nack.rtp_history_ms > 0);
+  }
+
+  char rtcp_cname[ViERTP_RTCP::KMaxRTCPCNameLength];
+  assert(config_.rtp.c_name.length() < ViERTP_RTCP::KMaxRTCPCNameLength);
+  strncpy(rtcp_cname, config_.rtp.c_name.c_str(), sizeof(rtcp_cname) - 1);
+  rtcp_cname[sizeof(rtcp_cname) - 1] = '\0';
+
+  rtp_rtcp_->SetRTCPCName(channel_, rtcp_cname);
 
   capture_ = ViECapture::GetInterface(video_engine);
   capture_->AllocateExternalCaptureDevice(capture_id_, external_capture_);
@@ -103,7 +165,16 @@ VideoSendStream::VideoSendStream(newapi::Transport* transport,
   network_ = ViENetwork::GetInterface(video_engine);
   assert(network_ != NULL);
 
-  network_->RegisterSendTransport(channel_, *this);
+  network_->RegisterSendTransport(channel_, transport_adapter_);
+
+  if (config.encoder) {
+    external_codec_ = ViEExternalCodec::GetInterface(video_engine);
+    if (external_codec_->RegisterExternalSendCodec(
+        channel_, config.codec.plType, config.encoder,
+        config.internal_source) != 0) {
+      abort();
+    }
+  }
 
   codec_ = ViECodec::GetInterface(video_engine);
   if (codec_->SetSendCodec(channel_, config_.codec) != 0) {
@@ -115,7 +186,7 @@ VideoSendStream::VideoSendStream(newapi::Transport* transport,
         new ResolutionAdaptor(codec_, channel_, config_.codec.width,
                               config_.codec.height));
     video_engine_base_->RegisterCpuOveruseObserver(channel_,
-                                                overuse_observer_.get());
+                                                   overuse_observer_.get());
   }
 }
 
@@ -126,9 +197,16 @@ VideoSendStream::~VideoSendStream() {
   capture_->DisconnectCaptureDevice(channel_);
   capture_->ReleaseCaptureDevice(capture_id_);
 
+  if (external_codec_) {
+    external_codec_->DeRegisterExternalSendCodec(channel_,
+                                                 config_.codec.plType);
+  }
+
   video_engine_base_->Release();
   capture_->Release();
   codec_->Release();
+  if (external_codec_)
+    external_codec_->Release();
   network_->Release();
   rtp_rtcp_->Release();
 }
@@ -164,7 +242,7 @@ void VideoSendStream::PutFrame(const I420VideoFrame& frame,
   }
 }
 
-newapi::VideoSendStreamInput* VideoSendStream::Input() { return this; }
+VideoSendStreamInput* VideoSendStream::Input() { return this; }
 
 void VideoSendStream::StartSend() {
   if (video_engine_base_->StartSend(channel_) != 0)
@@ -189,26 +267,6 @@ bool VideoSendStream::SetTargetBitrate(
 
 void VideoSendStream::GetSendCodec(VideoCodec* send_codec) {
   *send_codec = config_.codec;
-}
-
-int VideoSendStream::SendPacket(int /*channel*/,
-                                const void* packet,
-                                int length) {
-  // TODO(pbos): Lock these methods and the destructor so it can't be processing
-  //             a packet when the destructor has been called.
-  assert(length >= 0);
-  bool success = transport_->SendRTP(static_cast<const uint8_t*>(packet),
-                                     static_cast<size_t>(length));
-  return success ? 0 : -1;
-}
-
-int VideoSendStream::SendRTCPPacket(int /*channel*/,
-                                    const void* packet,
-                                    int length) {
-  assert(length >= 0);
-  bool success = transport_->SendRTCP(static_cast<const uint8_t*>(packet),
-                                      static_cast<size_t>(length));
-  return success ? 0 : -1;
 }
 
 bool VideoSendStream::DeliverRtcp(const uint8_t* packet, size_t length) {

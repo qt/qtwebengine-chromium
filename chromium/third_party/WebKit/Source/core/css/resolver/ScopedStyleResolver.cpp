@@ -35,16 +35,14 @@
 #include "core/css/StyleRule.h"
 #include "core/css/resolver/StyleResolver.h" // For MatchRequest.
 #include "core/dom/Document.h"
-#include "core/dom/shadow/ContentDistributor.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLStyleElement.h"
 
 namespace WebCore {
 
-ScopedStyleResolver* ScopedStyleTree::ensureScopedStyleResolver(const ContainerNode* scopingNode)
+ScopedStyleResolver* ScopedStyleTree::ensureScopedStyleResolver(const ContainerNode& scopingNode)
 {
-    ASSERT(scopingNode);
     bool isNewEntry;
     ScopedStyleResolver* scopedStyleResolver = addScopedStyleResolver(scopingNode, isNewEntry);
     if (isNewEntry)
@@ -52,24 +50,24 @@ ScopedStyleResolver* ScopedStyleTree::ensureScopedStyleResolver(const ContainerN
     return scopedStyleResolver;
 }
 
-ScopedStyleResolver* ScopedStyleTree::scopedStyleResolverFor(const ContainerNode* scopingNode)
+ScopedStyleResolver* ScopedStyleTree::scopedStyleResolverFor(const ContainerNode& scopingNode)
 {
-    if (!scopingNode->hasScopedHTMLStyleChild()
-        && !(scopingNode->isElementNode() && toElement(scopingNode)->shadow())
-        && !scopingNode->isDocumentNode()
-        && !scopingNode->isShadowRoot())
+    if (!scopingNode.hasScopedHTMLStyleChild()
+        && !(scopingNode.isElementNode() && toElement(scopingNode).shadow())
+        && !scopingNode.isDocumentNode()
+        && !scopingNode.isShadowRoot())
         return 0;
-    HashMap<const ContainerNode*, OwnPtr<ScopedStyleResolver> >::iterator it = m_authorStyles.find(scopingNode);
+    HashMap<const ContainerNode*, OwnPtr<ScopedStyleResolver> >::iterator it = m_authorStyles.find(&scopingNode);
     return it != m_authorStyles.end() ? it->value.get() : 0;
 }
 
-ScopedStyleResolver* ScopedStyleTree::addScopedStyleResolver(const ContainerNode* scopingNode, bool& isNewEntry)
+ScopedStyleResolver* ScopedStyleTree::addScopedStyleResolver(const ContainerNode& scopingNode, bool& isNewEntry)
 {
-    HashMap<const ContainerNode*, OwnPtr<ScopedStyleResolver> >::AddResult addResult = m_authorStyles.add(scopingNode, nullptr);
+    HashMap<const ContainerNode*, OwnPtr<ScopedStyleResolver> >::AddResult addResult = m_authorStyles.add(&scopingNode, nullptr);
 
     if (addResult.isNewEntry) {
         addResult.iterator->value = ScopedStyleResolver::create(scopingNode);
-        if (!scopingNode || scopingNode->isDocumentNode())
+        if (scopingNode.isDocumentNode())
             m_scopedResolverForDocument = addResult.iterator->value.get();
     }
     isNewEntry = addResult.isNewEntry;
@@ -79,21 +77,20 @@ ScopedStyleResolver* ScopedStyleTree::addScopedStyleResolver(const ContainerNode
 void ScopedStyleTree::setupScopedStylesTree(ScopedStyleResolver* target)
 {
     ASSERT(target);
-    ASSERT(target->scopingNode());
 
-    const ContainerNode* scopingNode = target->scopingNode();
+    const ContainerNode& scopingNode = target->scopingNode();
 
     // Since StyleResolver creates RuleSets according to styles' document
     // order, a parent of the given ScopedRuleData has been already
     // prepared.
-    for (const ContainerNode* node = scopingNode->parentOrShadowHostNode(); node; node = node->parentOrShadowHostNode()) {
-        if (ScopedStyleResolver* scopedResolver = scopedStyleResolverFor(node)) {
+    for (const ContainerNode* node = scopingNode.parentOrShadowHostNode(); node; node = node->parentOrShadowHostNode()) {
+        if (ScopedStyleResolver* scopedResolver = scopedStyleResolverFor(*node)) {
             target->setParent(scopedResolver);
             break;
         }
         if (node->isDocumentNode()) {
             bool dummy;
-            ScopedStyleResolver* scopedResolver = addScopedStyleResolver(node, dummy);
+            ScopedStyleResolver* scopedResolver = addScopedStyleResolver(*node, dummy);
             target->setParent(scopedResolver);
             setupScopedStylesTree(scopedResolver);
             break;
@@ -107,7 +104,7 @@ void ScopedStyleTree::setupScopedStylesTree(ScopedStyleResolver* target)
     for (HashMap<const ContainerNode*, OwnPtr<ScopedStyleResolver> >::iterator it = m_authorStyles.begin(); it != m_authorStyles.end(); ++it) {
         if (it->value == target)
             continue;
-        if (it->value->parent() == target->parent() && scopingNode->containsIncludingShadowDOM(it->key))
+        if (it->value->parent() == target->parent() && scopingNode.containsIncludingShadowDOM(it->key))
             it->value->setParent(target);
     }
 }
@@ -134,7 +131,7 @@ void ScopedStyleTree::collectScopedResolversForHostedShadowTrees(const Element* 
     // Adding scoped resolver for active shadow roots for shadow host styling.
     for (ShadowRoot* shadowRoot = shadow->youngestShadowRoot(); shadowRoot; shadowRoot = shadowRoot->olderShadowRoot()) {
         if (shadowRoot->hasScopedHTMLStyleChild()) {
-            if (ScopedStyleResolver* resolver = scopedStyleResolverFor(shadowRoot))
+            if (ScopedStyleResolver* resolver = scopedStyleResolverFor(*shadowRoot))
                 resolvers.append(resolver);
         }
         if (!shadowRoot->containsShadowElements())
@@ -144,12 +141,12 @@ void ScopedStyleTree::collectScopedResolversForHostedShadowTrees(const Element* 
 
 void ScopedStyleTree::resolveScopedKeyframesRules(const Element* element, Vector<ScopedStyleResolver*, 8>& resolvers)
 {
-    Document* document = element->document();
-    TreeScope* treeScope = element->treeScope();
-    bool applyAuthorStyles = treeScope->applyAuthorStyles();
+    Document& document = element->document();
+    TreeScope& treeScope = element->treeScope();
+    bool applyAuthorStyles = treeScope.applyAuthorStyles();
 
     for (ScopedStyleResolver* scopedResolver = scopedResolverFor(element); scopedResolver; scopedResolver = scopedResolver->parent()) {
-        if (scopedResolver->treeScope() == treeScope || (applyAuthorStyles && scopedResolver->treeScope() == document))
+        if (&scopedResolver->treeScope() == &treeScope || (applyAuthorStyles && &scopedResolver->treeScope() == &document))
             resolvers.append(scopedResolver);
     }
 }
@@ -157,7 +154,7 @@ void ScopedStyleTree::resolveScopedKeyframesRules(const Element* element, Vector
 inline ScopedStyleResolver* ScopedStyleTree::enclosingScopedStyleResolverFor(const ContainerNode* scopingNode)
 {
     for (; scopingNode; scopingNode = scopingNode->parentOrShadowHostNode()) {
-        if (ScopedStyleResolver* scopedStyleResolver = scopedStyleResolverFor(scopingNode))
+        if (ScopedStyleResolver* scopedStyleResolver = scopedStyleResolverFor(*scopingNode))
             return scopedStyleResolver;
     }
     return 0;
@@ -169,30 +166,30 @@ void ScopedStyleTree::resolveStyleCache(const ContainerNode* scopingNode)
     m_cache.nodeForScopedStyles = scopingNode;
 }
 
-void ScopedStyleTree::pushStyleCache(const ContainerNode* scopingNode, const ContainerNode* parent)
+void ScopedStyleTree::pushStyleCache(const ContainerNode& scopingNode, const ContainerNode* parent)
 {
     if (m_authorStyles.isEmpty())
         return;
 
     if (!cacheIsValid(parent)) {
-        resolveStyleCache(scopingNode);
+        resolveStyleCache(&scopingNode);
         return;
     }
 
     ScopedStyleResolver* scopedResolver = scopedStyleResolverFor(scopingNode);
     if (scopedResolver)
         m_cache.scopedResolver = scopedResolver;
-    m_cache.nodeForScopedStyles = scopingNode;
+    m_cache.nodeForScopedStyles = &scopingNode;
 }
 
-void ScopedStyleTree::popStyleCache(const ContainerNode* scopingNode)
+void ScopedStyleTree::popStyleCache(const ContainerNode& scopingNode)
 {
-    if (!cacheIsValid(scopingNode))
+    if (!cacheIsValid(&scopingNode))
         return;
 
-    if (m_cache.scopedResolver && m_cache.scopedResolver->scopingNode() == scopingNode)
+    if (m_cache.scopedResolver && &m_cache.scopedResolver->scopingNode() == &scopingNode)
         m_cache.scopedResolver = m_cache.scopedResolver->parent();
-    m_cache.nodeForScopedStyles = scopingNode->parentOrShadowHostNode();
+    m_cache.nodeForScopedStyles = scopingNode.parentOrShadowHostNode();
 }
 
 void ScopedStyleTree::collectFeaturesTo(RuleFeatureSet& features)
@@ -215,7 +212,7 @@ void ScopedStyleTree::remove(const ContainerNode* scopingNode)
     if (!scopingNode || scopingNode->isDocumentNode())
         return;
 
-    ScopedStyleResolver* resolverRemoved = scopedStyleResolverFor(scopingNode);
+    ScopedStyleResolver* resolverRemoved = scopedStyleResolverFor(*scopingNode);
     if (!resolverRemoved)
         return;
 
@@ -252,7 +249,7 @@ void ScopedStyleResolver::addRulesFromSheet(StyleSheetContents* sheet, const Med
 {
     if (!m_authorStyle)
         m_authorStyle = RuleSet::create();
-    m_authorStyle->addRulesFromSheet(sheet, medium, resolver, m_scopingNode);
+    m_authorStyle->addRulesFromSheet(sheet, medium, resolver, &m_scopingNode);
 }
 
 inline RuleSet* ScopedStyleResolver::ensureAtHostRuleSetFor(const ShadowRoot* shadowRoot)
@@ -336,7 +333,15 @@ const StyleRuleKeyframes* ScopedStyleResolver::keyframeStylesForAnimation(const 
 void ScopedStyleResolver::addKeyframeStyle(PassRefPtr<StyleRuleKeyframes> rule)
 {
     AtomicString s(rule->name());
-    m_keyframesRuleMap.set(s.impl(), rule);
+    if (rule->isVendorPrefixed()) {
+        KeyframesRuleMap::iterator it = m_keyframesRuleMap.find(rule->name().impl());
+        if (it == m_keyframesRuleMap.end())
+            m_keyframesRuleMap.set(s.impl(), rule);
+        else if (it->value->isVendorPrefixed())
+            m_keyframesRuleMap.set(s.impl(), rule);
+    } else {
+        m_keyframesRuleMap.set(s.impl(), rule);
+    }
 }
 
 inline RuleSet* ScopedStyleResolver::atHostRuleSetFor(const ShadowRoot* shadowRoot) const
@@ -350,10 +355,10 @@ void ScopedStyleResolver::matchHostRules(ElementRuleCollector& collector, bool i
     // FIXME: Determine tree position.
     CascadeScope cascadeScope = ignoreCascadeScope;
 
-    if (m_atHostRules.isEmpty() || !m_scopingNode->isElementNode())
+    if (m_atHostRules.isEmpty() || !m_scopingNode.isElementNode())
         return;
 
-    ElementShadow* shadow = toElement(m_scopingNode)->shadow();
+    ElementShadow* shadow = toElement(m_scopingNode).shadow();
     if (!shadow)
         return;
 
@@ -376,7 +381,7 @@ void ScopedStyleResolver::matchHostRules(ElementRuleCollector& collector, bool i
     collector.setBehaviorAtBoundary(static_cast<SelectorChecker::BehaviorAtBoundary>(SelectorChecker::DoesNotCrossBoundary | SelectorChecker::ScopeContainsLastMatchedElement));
     for (; shadowRoot; shadowRoot = shadowRoot->youngerShadowRoot()) {
         if (RuleSet* ruleSet = atHostRuleSetFor(shadowRoot))
-            collector.collectMatchingRules(MatchRequest(ruleSet, includeEmptyRules, m_scopingNode), ruleRange, cascadeScope);
+            collector.collectMatchingRules(MatchRequest(ruleSet, includeEmptyRules, &m_scopingNode), ruleRange, cascadeScope);
     }
 
     collector.sortAndTransferMatchedRules();
@@ -395,14 +400,14 @@ void ScopedStyleResolver::collectMatchingAuthorRules(ElementRuleCollector& colle
     if (!m_authorStyle)
         return;
 
-    const ContainerNode* scopingNode = m_scopingNode;
+    const ContainerNode* scopingNode = &m_scopingNode;
     unsigned behaviorAtBoundary = SelectorChecker::DoesNotCrossBoundary;
 
     if (!applyAuthorStyles)
         behaviorAtBoundary |= SelectorChecker::ScopeContainsLastMatchedElement;
 
-    if (m_scopingNode->isShadowRoot()) {
-        scopingNode = toShadowRoot(m_scopingNode)->host();
+    if (m_scopingNode.isShadowRoot()) {
+        scopingNode = toShadowRoot(m_scopingNode).host();
         behaviorAtBoundary |= SelectorChecker::ScopeIsShadowHost;
     }
 
@@ -416,14 +421,14 @@ void ScopedStyleResolver::collectMatchingAuthorRules(ElementRuleCollector& colle
 void ScopedStyleResolver::matchPageRules(PageRuleCollector& collector)
 {
     // Only consider the global author RuleSet for @page rules, as per the HTML5 spec.
-    ASSERT(m_scopingNode->isDocumentNode());
+    ASSERT(m_scopingNode.isDocumentNode());
     collector.matchPageRules(m_authorStyle.get());
 }
 
 void ScopedStyleResolver::collectViewportRulesTo(StyleResolver* resolver) const
 {
     if (m_authorStyle)
-        resolver->collectViewportRules(m_authorStyle.get());
+        resolver->collectViewportRules(m_authorStyle.get(), StyleResolver::AuthorOrigin);
 }
 
 } // namespace WebCore

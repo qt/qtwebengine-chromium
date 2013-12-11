@@ -3,6 +3,3 @@ joth@chromium.org
 tedchoc@chromium.org
 yfriedman@chromium.org
 sievers@chromium.org
-
-# per-file rules:
-per-file *media*=qinmin@chromium.org

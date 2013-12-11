@@ -40,6 +40,7 @@
 #include "core/rendering/RenderTableCol.h"
 #include "core/rendering/RenderTableSection.h"
 #include "core/rendering/RenderView.h"
+#include "core/rendering/SubtreeLayoutScope.h"
 #include "core/rendering/style/CollapsedBorderValue.h"
 #include "core/rendering/style/StyleInheritedData.h"
 
@@ -199,15 +200,15 @@ void RenderTable::addChild(RenderObject* child, RenderObject* beforeChild)
 
 void RenderTable::addCaption(const RenderTableCaption* caption)
 {
-    ASSERT(m_captions.find(caption) == notFound);
+    ASSERT(m_captions.find(caption) == kNotFound);
     m_captions.append(const_cast<RenderTableCaption*>(caption));
 }
 
 void RenderTable::removeCaption(const RenderTableCaption* oldCaption)
 {
     size_t index = m_captions.find(oldCaption);
-    ASSERT(index != notFound);
-    if (index == notFound)
+    ASSERT(index != kNotFound);
+    if (index == kNotFound)
         return;
 
     m_captions.remove(index);
@@ -266,7 +267,7 @@ void RenderTable::updateLogicalWidth()
         LayoutUnit availableContentLogicalWidth = max<LayoutUnit>(0, containerWidthInInlineDirection - marginTotal);
         if (shrinkToAvoidFloats() && cb->containsFloats() && !hasPerpendicularContainingBlock) {
             // FIXME: Work with regions someday.
-            availableContentLogicalWidth = shrinkLogicalWidthToAvoidFloats(marginStart, marginEnd, cb, 0, 0);
+            availableContentLogicalWidth = shrinkLogicalWidthToAvoidFloats(marginStart, marginEnd, cb, 0);
         }
 
         // Ensure we aren't bigger than our available width.
@@ -297,7 +298,7 @@ void RenderTable::updateLogicalWidth()
     if (!hasPerpendicularContainingBlock) {
         LayoutUnit containerLogicalWidthForAutoMargins = availableLogicalWidth;
         if (avoidsFloats() && cb->containsFloats())
-            containerLogicalWidthForAutoMargins = containingBlockAvailableLineWidthInRegion(0, 0); // FIXME: Work with regions someday.
+            containerLogicalWidthForAutoMargins = containingBlockAvailableLineWidthInRegion(0); // FIXME: Work with regions someday.
         ComputedMarginValues marginValues;
         bool hasInvertedDirection =  cb->style()->isLeftToRightDirection() == style()->isLeftToRightDirection();
         computeInlineDirectionMargins(cb, containerLogicalWidthForAutoMargins, logicalWidth(),
@@ -401,7 +402,6 @@ void RenderTable::simplifiedNormalFlowLayout()
 
 void RenderTable::layout()
 {
-    StackStats::LayoutCheckPoint layoutCheckPoint;
     ASSERT(needsLayout());
 
     if (simplifiedLayout())
@@ -417,14 +417,14 @@ void RenderTable::layout()
 
     setLogicalHeight(0);
 
-    initMaxMarginValues();
-
     LayoutUnit oldLogicalWidth = logicalWidth();
     updateLogicalWidth();
 
+    SubtreeLayoutScope layouter(this);
+
     if (logicalWidth() != oldLogicalWidth) {
         for (unsigned i = 0; i < m_captions.size(); i++)
-            m_captions[i]->setNeedsLayout(MarkOnlyThis);
+            layouter.setNeedsLayout(m_captions[i]);
     }
     // FIXME: The optimisation below doesn't work since the internal table
     // layout could have changed.  we need to add a flag to the table
@@ -444,7 +444,7 @@ void RenderTable::layout()
         if (child->isTableSection()) {
             RenderTableSection* section = toRenderTableSection(child);
             if (m_columnLogicalWidthChanged)
-                section->setChildNeedsLayout(MarkOnlyThis);
+                layouter.setChildNeedsLayout(section);
             section->layoutIfNeeded();
             totalSectionLogicalHeight += section->calcRowLogicalHeight();
             if (collapsing)
@@ -506,7 +506,7 @@ void RenderTable::layout()
     for (RenderTableSection* section = topSection(); section; section = sectionBelow(section))
         section->layoutRows();
 
-    if (!topSection() && computedLogicalHeight > totalSectionLogicalHeight && !document()->inQuirksMode()) {
+    if (!topSection() && computedLogicalHeight > totalSectionLogicalHeight && !document().inQuirksMode()) {
         // Completely empty tables (with no sections or anything) should at least honor specified height
         // in strict mode.
         setLogicalHeight(logicalHeight() + computedLogicalHeight);
@@ -784,7 +784,7 @@ void RenderTable::computePreferredLogicalWidths()
 
     // FIXME: We should be adding borderAndPaddingLogicalWidth here, but m_tableLayout->computePreferredLogicalWidths already does,
     // so a bunch of tests break doing this naively.
-    setPreferredLogicalWidthsDirty(false);
+    clearPreferredLogicalWidthsDirty();
 }
 
 RenderTableSection* RenderTable::topNonEmptySection() const
@@ -1422,7 +1422,7 @@ RenderTable* RenderTable::createAnonymousWithParentRenderer(const RenderObject* 
 {
     RefPtr<RenderStyle> newStyle = RenderStyle::createAnonymousStyleWithDisplay(parent->style(), TABLE);
     RenderTable* newTable = new RenderTable(0);
-    newTable->setDocumentForAnonymous(parent->document());
+    newTable->setDocumentForAnonymous(&parent->document());
     newTable->setStyle(newStyle.release());
     return newTable;
 }

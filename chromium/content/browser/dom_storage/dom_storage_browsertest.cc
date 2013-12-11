@@ -7,7 +7,7 @@
 #include "content/common/dom_storage/dom_storage_types.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/test/browser_test_utils.h"
-#include "content/shell/shell.h"
+#include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
 #include "net/base/net_util.h"
@@ -25,7 +25,8 @@ class DOMStorageBrowserTest : public ContentBrowserTest {
     // a #pass or #fail ref.
     Shell* the_browser = incognito ? CreateOffTheRecordBrowser() : shell();
     NavigateToURLBlockUntilNavigationsComplete(the_browser, test_url, 2);
-    std::string result = the_browser->web_contents()->GetURL().ref();
+    std::string result =
+        the_browser->web_contents()->GetLastCommittedURL().ref();
     if (result != "pass") {
       std::string js_result;
       ASSERT_TRUE(ExecuteScriptAndExtractString(

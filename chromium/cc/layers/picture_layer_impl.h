@@ -62,11 +62,7 @@ class CC_EXPORT PictureLayerImpl
       const PictureLayerTiling* tiling) OVERRIDE;
 
   // PushPropertiesTo active tree => pending tree.
-  void SyncFromActiveLayer();
   void SyncTiling(const PictureLayerTiling* tiling);
-  void UpdateTwinLayer();
-
-  void CreateTilingSetIfNeeded();
 
   // Mask-related functions
   void SetIsMask(bool is_mask);
@@ -92,9 +88,15 @@ class CC_EXPORT PictureLayerImpl
   void UpdateLCDTextStatus(bool new_status);
   void ResetRasterScale();
   void MarkVisibleResourcesAsRequired() const;
+  void DoPostCommitInitializationIfNeeded() {
+    if (needs_post_commit_initialization_)
+      DoPostCommitInitialization();
+  }
+  void DoPostCommitInitialization();
 
   bool CanHaveTilings() const;
   bool CanHaveTilingWithScale(float contents_scale) const;
+  void SanityCheckTilingState() const;
 
   virtual void GetDebugBorderProperties(
       SkColor* color, float* width) const OVERRIDE;
@@ -124,6 +126,10 @@ class CC_EXPORT PictureLayerImpl
 
   bool raster_source_scale_was_animating_;
   bool is_using_lcd_text_;
+  bool needs_post_commit_initialization_;
+  // A sanity state check to make sure UpdateTilePriorities only gets called
+  // after a CalculateContentsScale/ManageTilings.
+  bool should_update_tile_priorities_;
 
   friend class PictureLayer;
   DISALLOW_COPY_AND_ASSIGN(PictureLayerImpl);

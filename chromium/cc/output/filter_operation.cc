@@ -68,7 +68,7 @@ FilterOperation::FilterOperation(FilterType type, float amount, int inset)
   memset(matrix_, 0, sizeof(matrix_));
 }
 
-// TODO(ajuma): Define a version of ui::Tween::ValueBetween for floats, and use
+// TODO(ajuma): Define a version of gfx::Tween::ValueBetween for floats, and use
 // that instead.
 static float BlendFloats(float from, float to, double progress) {
   return from * (1.0 - progress) + to * progress;
@@ -147,10 +147,9 @@ static FilterOperation CreateNoOpFilter(FilterOperation::FilterType type) {
       return FilterOperation::CreateZoomFilter(1.f, 0);
     case FilterOperation::SATURATING_BRIGHTNESS:
       return FilterOperation::CreateSaturatingBrightnessFilter(0.f);
-    default:
-      NOTREACHED();
-      return FilterOperation::CreateEmptyFilter();
   }
+  NOTREACHED();
+  return FilterOperation::CreateEmptyFilter();
 }
 
 static float ClampAmountForFilterType(float amount,
@@ -173,10 +172,11 @@ static float ClampAmountForFilterType(float amount,
     case FilterOperation::SATURATING_BRIGHTNESS:
       return amount;
     case FilterOperation::COLOR_MATRIX:
-    default:
       NOTREACHED();
       return amount;
   }
+  NOTREACHED();
+  return amount;
 }
 
 // static

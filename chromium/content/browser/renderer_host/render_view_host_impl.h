@@ -18,22 +18,22 @@
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/common/accessibility_node_data.h"
-#include "content/common/accessibility_notification.h"
 #include "content/common/drag_event_source_info.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/common/javascript_message_type.h"
 #include "content/public/common/window_container_type.h"
 #include "net/base/load_states.h"
-#include "third_party/skia/include/core/SkColor.h"
+#include "third_party/WebKit/public/web/WebAXEnums.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebPopupType.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
+#include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/window_open_disposition.h"
 
 class SkBitmap;
 class ViewMsg_Navigate;
-struct AccessibilityHostMsg_NotificationParams;
+struct AccessibilityHostMsg_EventParams;
 struct MediaPlayerAction;
 struct ViewHostMsg_CreateWindow_Params;
 struct ViewHostMsg_DidFailProvisionalLoadWithError_Params;
@@ -48,19 +48,17 @@ namespace base {
 class ListValue;
 }
 
-namespace ui {
+namespace gfx {
 class Range;
+}
+
+namespace ui {
 struct SelectedFileInfo;
 }
 
-#if defined(OS_ANDROID)
-namespace media {
-class MediaPlayerManager;
-}
-#endif
-
 namespace content {
 
+class BrowserMediaPlayerManager;
 class ChildProcessSecurityPolicyImpl;
 class PageState;
 class RenderFrameHostImpl;
@@ -110,7 +108,8 @@ class CONTENT_EXPORT RenderViewHostImpl
   // |routing_id| could be a valid route id, or it could be MSG_ROUTING_NONE, in
   // which case RenderWidgetHost will create a new one.  |swapped_out| indicates
   // whether the view should initially be swapped out (e.g., for an opener
-  // frame being rendered by another process).
+  // frame being rendered by another process). |hidden| indicates whether the
+  // view is initially hidden or visible.
   //
   // The |session_storage_namespace| parameter allows multiple render views and
   // WebContentses to share the same session storage (part of the WebStorage
@@ -123,7 +122,8 @@ class CONTENT_EXPORT RenderViewHostImpl
       RenderWidgetHostDelegate* widget_delegate,
       int routing_id,
       int main_frame_routing_id,
-      bool swapped_out);
+      bool swapped_out,
+      bool hidden);
   virtual ~RenderViewHostImpl();
 
   // RenderViewHost implementation.
@@ -131,7 +131,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   virtual void ClearFocusedNode() OVERRIDE;
   virtual void ClosePage() OVERRIDE;
   virtual void CopyImageAt(int x, int y) OVERRIDE;
-  virtual void DisassociateFromPopupCount() OVERRIDE;
   virtual void DesktopNotificationPermissionRequestDone(
       int callback_context) OVERRIDE;
   virtual void DesktopNotificationPostDisplay(int callback_context) OVERRIDE;
@@ -354,6 +353,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   }
 
   // RenderWidgetHost public overrides.
+  virtual void Init() OVERRIDE;
   virtual void Shutdown() OVERRIDE;
   virtual bool IsRenderView() const OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
@@ -388,7 +388,7 @@ class CONTENT_EXPORT RenderViewHostImpl
 #endif
 
 #if defined(OS_ANDROID)
-  media::MediaPlayerManager* media_player_manager() {
+  BrowserMediaPlayerManager* media_player_manager() {
     return media_player_manager_;
   }
 
@@ -417,7 +417,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   // renderer process, and the accessibility tree it sent can be
   // retrieved using accessibility_tree_for_testing().
   void SetAccessibilityCallbackForTesting(
-      const base::Callback<void(AccessibilityNotification)>& callback);
+      const base::Callback<void(WebKit::WebAXEvent)>& callback);
 
   // Only valid if SetAccessibilityCallbackForTesting was called and
   // the callback was run at least once. Returns a snapshot of the
@@ -526,7 +526,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnDidChangeNumWheelEvents(int count);
   void OnSelectionChanged(const string16& text,
                           size_t offset,
-                          const ui::Range& range);
+                          const gfx::Range& range);
   void OnSelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params);
   void OnPasteFromSelectionClipboard();
@@ -562,8 +562,8 @@ class CONTENT_EXPORT RenderViewHostImpl
       const base::TimeTicks& renderer_before_unload_end_time);
   void OnClosePageACK();
   void OnSwapOutACK();
-  void OnAccessibilityNotifications(
-      const std::vector<AccessibilityHostMsg_NotificationParams>& params);
+  void OnAccessibilityEvents(
+      const std::vector<AccessibilityHostMsg_EventParams>& params);
   void OnScriptEvalResponse(int id, const base::ListValue& result);
   void OnDidZoomURL(double zoom_level, bool remember, const GURL& url);
   void OnRequestDesktopNotificationPermission(const GURL& origin,
@@ -584,6 +584,11 @@ class CONTENT_EXPORT RenderViewHostImpl
  private:
   friend class TestRenderViewHost;
   FRIEND_TEST_ALL_PREFIXES(RenderViewHostTest, BasicRenderFrameHost);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewHostTest, RoutingIdSane);
+
+  // TODO(nasko): Remove this accessor once RenderFrameHost moves into the frame
+  // tree.
+  RenderFrameHostImpl* main_render_frame_host() const;
 
   // Sets whether this RenderViewHost is swapped out in favor of another,
   // and clears any waiting state that is no longer relevant.
@@ -678,8 +683,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   std::map<int, JavascriptResultCallback> javascript_callbacks_;
 
   // Accessibility callback for testing.
-  base::Callback<void(AccessibilityNotification)>
-      accessibility_testing_callback_;
+  base::Callback<void(WebKit::WebAXEvent)> accessibility_testing_callback_;
 
   // The most recently received accessibility tree - for testing only.
   AccessibilityNodeDataTreeNode accessibility_tree_;
@@ -699,7 +703,7 @@ class CONTENT_EXPORT RenderViewHostImpl
 #if defined(OS_ANDROID)
   // Manages all the android mediaplayer objects and handling IPCs for video.
   // This class inherits from RenderViewHostObserver.
-  media::MediaPlayerManager* media_player_manager_;
+  BrowserMediaPlayerManager* media_player_manager_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(RenderViewHostImpl);

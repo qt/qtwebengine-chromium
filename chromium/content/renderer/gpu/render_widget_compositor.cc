@@ -7,6 +7,10 @@
 #include <limits>
 #include <string>
 
+#if defined(OS_ANDROID)
+#include "base/android/sys_utils.h"
+#endif
+
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
@@ -96,6 +100,9 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       !cmd->HasSwitch(switches::kDisableGpuVsync);
   settings.begin_frame_scheduling_enabled =
       cmd->HasSwitch(switches::kEnableBeginFrameScheduling);
+  settings.deadline_scheduling_enabled =
+      cmd->HasSwitch(switches::kEnableDeadlineScheduling) &&
+      !cmd->HasSwitch(switches::kDisableDeadlineScheduling);
   settings.using_synchronous_renderer_compositor =
       widget->UsingSynchronousRendererCompositor();
   settings.per_tile_painting_enabled =
@@ -178,6 +185,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       cmd->HasSwitch(cc::switches::kBackgroundColorInsteadOfCheckerboard);
   settings.show_overdraw_in_tracing =
       cmd->HasSwitch(cc::switches::kTraceOverdraw);
+  settings.can_use_lcd_text = cc::switches::IsLCDTextEnabled();
   settings.use_pinch_virtual_viewport =
       cmd->HasSwitch(cc::switches::kEnablePinchVirtualViewport);
   settings.allow_antialiasing &=
@@ -260,29 +268,35 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   settings.strict_layer_property_change_checking =
       cmd->HasSwitch(cc::switches::kStrictLayerPropertyChangeChecking);
 
-  settings.use_map_image = cmd->HasSwitch(cc::switches::kUseMapImage);
+  settings.use_map_image = cc::switches::IsMapImageEnabled();
 
 #if defined(OS_ANDROID)
   // TODO(danakj): Move these to the android code.
-  settings.can_use_lcd_text = false;
   settings.max_partial_texture_updates = 0;
-  settings.use_linear_fade_scrollbar_animator = true;
+  settings.scrollbar_animator = cc::LayerTreeSettings::LinearFade;
   settings.solid_color_scrollbars = true;
   settings.solid_color_scrollbar_color =
       cmd->HasSwitch(switches::kHideScrollbars)
           ? SK_ColorTRANSPARENT
           : SkColorSetARGB(128, 128, 128, 128);
-  settings.solid_color_scrollbar_thickness_dip = 3;
   settings.highp_threshold_min = 2048;
   // Android WebView handles root layer flings itself.
   settings.ignore_root_layer_flings =
       widget->UsingSynchronousRendererCompositor();
+  // RGBA_4444 textures are only enabled for low end devices
+  // and are disabled for Android WebView as it doesn't support the format.
+  settings.use_rgba_4444_textures =
+      base::android::SysUtils::IsLowEndDevice() &&
+      !widget->UsingSynchronousRendererCompositor() &&
+      !cmd->HasSwitch(cc::switches::kDisable4444Textures);
 #elif !defined(OS_MACOSX)
   if (cmd->HasSwitch(switches::kEnableOverlayScrollbars)) {
-    settings.use_linear_fade_scrollbar_animator = true;
+    settings.scrollbar_animator = cc::LayerTreeSettings::Thinning;
     settings.solid_color_scrollbars = true;
+  }
+  if (cmd->HasSwitch(cc::switches::kEnablePinchVirtualViewport) ||
+      cmd->HasSwitch(switches::kEnableOverlayScrollbars)) {
     settings.solid_color_scrollbar_color = SkColorSetARGB(128, 128, 128, 128);
-    settings.solid_color_scrollbar_thickness_dip = 3;
   }
 #endif
 
@@ -372,6 +386,10 @@ void RenderWidgetCompositor::NotifyInputThrottledUntilCommit() {
   layer_tree_host_->NotifyInputThrottledUntilCommit();
 }
 
+const cc::Layer* RenderWidgetCompositor::GetRootLayer() const {
+  return layer_tree_host_->root_layer();
+}
+
 bool RenderWidgetCompositor::initialize(cc::LayerTreeSettings settings) {
   scoped_refptr<base::MessageLoopProxy> compositor_message_loop_proxy =
       RenderThreadImpl::current()->compositor_message_loop_proxy();
@@ -429,6 +447,10 @@ void RenderWidgetCompositor::setHasTransparentBackground(bool transparent) {
   layer_tree_host_->set_has_transparent_background(transparent);
 }
 
+void RenderWidgetCompositor::setOverhangBitmap(const SkBitmap& bitmap) {
+  layer_tree_host_->SetOverhangBitmap(bitmap);
+}
+
 void RenderWidgetCompositor::setVisible(bool visible) {
   layer_tree_host_->SetVisible(visible);
 }
@@ -476,6 +498,27 @@ void RenderWidgetCompositor::registerForAnimations(WebKit::WebLayer* layer) {
   cc::Layer* cc_layer = static_cast<webkit::WebLayerImpl*>(layer)->layer();
   cc_layer->layer_animation_controller()->SetAnimationRegistrar(
       layer_tree_host_->animation_registrar());
+}
+
+void RenderWidgetCompositor::registerViewportLayers(
+    const WebKit::WebLayer* pageScaleLayer,
+    const WebKit::WebLayer* innerViewportScrollLayer,
+    const WebKit::WebLayer* outerViewportScrollLayer) {
+  layer_tree_host_->RegisterViewportLayers(
+      static_cast<const webkit::WebLayerImpl*>(pageScaleLayer)->layer(),
+      static_cast<const webkit::WebLayerImpl*>(innerViewportScrollLayer)
+          ->layer(),
+      // The outer viewport layer will only exist when using pinch virtual
+      // viewports.
+      outerViewportScrollLayer ? static_cast<const webkit::WebLayerImpl*>(
+                                     outerViewportScrollLayer)->layer()
+                               : NULL);
+}
+
+void RenderWidgetCompositor::clearViewportLayers() {
+  layer_tree_host_->RegisterViewportLayers(scoped_refptr<cc::Layer>(),
+                                           scoped_refptr<cc::Layer>(),
+                                           scoped_refptr<cc::Layer>());
 }
 
 bool RenderWidgetCompositor::compositeAndReadback(

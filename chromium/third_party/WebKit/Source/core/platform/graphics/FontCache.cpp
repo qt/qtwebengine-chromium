@@ -31,6 +31,7 @@
 #include "core/platform/graphics/FontCache.h"
 
 #include "FontFamilyNames.h"
+#include "RuntimeEnabledFeatures.h"
 #include "core/platform/graphics/Font.h"
 #include "core/platform/graphics/FontFallbackList.h"
 #include "core/platform/graphics/FontPlatformData.h"
@@ -53,17 +54,19 @@ FontCache* fontCache()
     return &globalFontCache;
 }
 
+#if !OS(WIN) || ENABLE(GDI_FONTS_ON_WINDOWS)
 FontCache::FontCache()
     : m_purgePreventCount(0)
 {
 }
+#endif // !OS(WIN) || ENABLE(GDI_FONTS_ON_WINDOWS)
 
 struct FontPlatformDataCacheKey {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    FontPlatformDataCacheKey(const AtomicString& family = AtomicString(), unsigned size = 0, unsigned weight = 0, bool italic = false,
+    FontPlatformDataCacheKey(const AtomicString& family = AtomicString(), float size = 0, unsigned weight = 0, bool italic = false,
         bool isPrinterFont = false, FontOrientation orientation = Horizontal, FontWidthVariant widthVariant = RegularWidth)
-        : m_size(size)
+        : m_size(size * s_fontSizePrecisionMultiplier)
         , m_weight(weight)
         , m_family(family)
         , m_italic(italic)
@@ -92,6 +95,10 @@ public:
     FontWidthVariant m_widthVariant;
 
 private:
+    // Multiplying the floating point size by 100 gives two decimal
+    // point precision which should be sufficient.
+    static const unsigned s_fontSizePrecisionMultiplier = 100;
+
     static unsigned hashTableDeletedSize() { return 0xFFFFFFFFU; }
 };
 
@@ -134,7 +141,7 @@ static const AtomicString& alternateFamilyName(const AtomicString& familyName)
     DEFINE_STATIC_LOCAL(AtomicString, courierNew, ("Courier New", AtomicString::ConstructFromLiteral));
     if (equalIgnoringCase(familyName, courier))
         return courierNew;
-#if !OS(WINDOWS)
+#if !OS(WIN)
     // On Windows, Courier New (truetype font) is always present and
     // Courier is a bitmap font. So, we don't want to map Courier New to
     // Courier.
@@ -158,7 +165,7 @@ static const AtomicString& alternateFamilyName(const AtomicString& familyName)
     if (equalIgnoringCase(familyName, helvetica))
         return arial;
 
-#if OS(WINDOWS)
+#if OS(WIN)
     // On Windows, bitmap fonts are blocked altogether so that we have to
     // alias MS Sans Serif (bitmap font) -> Microsoft Sans Serif (truetype font)
     DEFINE_STATIC_LOCAL(AtomicString, msSans, ("MS Sans Serif", AtomicString::ConstructFromLiteral));
@@ -180,7 +187,7 @@ FontPlatformData* FontCache::getFontResourcePlatformData(const FontDescription& 
                                                        const AtomicString& passedFamilyName,
                                                        bool checkingAlternateName)
 {
-#if OS(WINDOWS) && ENABLE(OPENTYPE_VERTICAL)
+#if OS(WIN) && ENABLE(OPENTYPE_VERTICAL)
     // Leading "@" in the font name enables Windows vertical flow flag for the font.
     // Because we do vertical flow by ourselves, we don't want to use the Windows feature.
     // IE disregards "@" regardless of the orientatoin, so we follow the behavior.
@@ -195,7 +202,13 @@ FontPlatformData* FontCache::getFontResourcePlatformData(const FontDescription& 
         platformInit();
     }
 
-    FontPlatformDataCacheKey key(familyName, fontDescription.computedPixelSize(), fontDescription.weight(), fontDescription.italic(),
+    float fontSize;
+    if (RuntimeEnabledFeatures::subpixelFontScalingEnabled())
+        fontSize = fontDescription.computedSize();
+    else
+        fontSize = fontDescription.computedPixelSize();
+    FontPlatformDataCacheKey key(familyName, fontSize, fontDescription.weight(), fontDescription.italic(),
+
         fontDescription.usePrinterFont(), fontDescription.orientation(), fontDescription.widthVariant());
     FontPlatformData* result = 0;
     bool foundResult;
@@ -338,6 +351,11 @@ PassRefPtr<SimpleFontData> FontCache::getFontResourceData(const FontPlatformData
     }
 
     return result.get()->value.first;
+}
+
+bool FontCache::isPlatformFontAvailable(const FontDescription& fontDescription, const AtomicString& family, bool checkingAlternateName)
+{
+    return getFontResourcePlatformData(fontDescription, family, checkingAlternateName);
 }
 
 SimpleFontData* FontCache::getNonRetainedLastResortFallbackFont(const FontDescription& fontDescription)

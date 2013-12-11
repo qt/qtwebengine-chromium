@@ -34,6 +34,8 @@
 #include "InspectorFrontend.h"
 #include "bindings/v8/ScriptDebugServer.h"
 #include "bindings/v8/ScriptObject.h"
+#include "bindings/v8/ScriptSourceCode.h"
+#include "core/fetch/Resource.h"
 #include "core/inspector/ContentSearchUtils.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
@@ -42,7 +44,6 @@
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/inspector/ScriptArguments.h"
 #include "core/inspector/ScriptCallStack.h"
-#include "core/loader/cache/Resource.h"
 #include "core/platform/JSONValues.h"
 #include "core/platform/text/RegularExpression.h"
 #include "wtf/text/WTFString.h"
@@ -67,6 +68,9 @@ static const char columnNumber[] = "columnNumber";
 static const char condition[] = "condition";
 static const char isAnti[] = "isAnti";
 static const char skipStackPattern[] = "skipStackPattern";
+static const char skipAllPauses[] = "skipAllPauses";
+static const char skipAllPausesExpiresOnReload[] = "skipAllPausesExpiresOnReload";
+
 };
 
 static const int numberOfStepsBeforeStepOut = 10;
@@ -99,6 +103,7 @@ InspectorDebuggerAgent::InspectorDebuggerAgent(InstrumentingAgents* instrumentin
     , m_javaScriptPauseScheduled(false)
     , m_listener(0)
     , m_skipStepInCount(numberOfStepsBeforeStepOut)
+    , m_skipAllPauses(false)
 {
     // FIXME: make breakReason optional so that there was no need to init it with "other".
     clearBreakDetails();
@@ -136,6 +141,8 @@ void InspectorDebuggerAgent::disable()
 
     if (m_listener)
         m_listener->debuggerWasDisabled();
+
+    m_skipAllPauses = false;
 }
 
 bool InspectorDebuggerAgent::enabled()
@@ -182,6 +189,11 @@ void InspectorDebuggerAgent::restore()
         String error;
         setPauseOnExceptionsImpl(&error, pauseState);
         m_cachedSkipStackRegExp = compileSkipCallFramePattern(m_state->getString(DebuggerAgentState::skipStackPattern));
+        m_skipAllPauses = m_state->getBoolean(DebuggerAgentState::skipAllPauses);
+        if (m_skipAllPauses && m_state->getBoolean(DebuggerAgentState::skipAllPausesExpiresOnReload)) {
+            m_skipAllPauses = false;
+            m_state->setBoolean(DebuggerAgentState::skipAllPauses, false);
+        }
     }
 }
 
@@ -210,6 +222,22 @@ void InspectorDebuggerAgent::setBreakpointsActive(ErrorString*, bool active)
     scriptDebugServer().setBreakpointsActivated(active);
 }
 
+void InspectorDebuggerAgent::setSkipAllPauses(ErrorString*, bool skipped, const bool* untilReload)
+{
+    m_skipAllPauses = skipped;
+    bool untilReloadValue = untilReload && *untilReload;
+    m_state->setBoolean(DebuggerAgentState::skipAllPauses, m_skipAllPauses);
+    m_state->setBoolean(DebuggerAgentState::skipAllPausesExpiresOnReload, untilReloadValue);
+}
+
+void InspectorDebuggerAgent::pageDidCommitLoad()
+{
+    if (m_state->getBoolean(DebuggerAgentState::skipAllPausesExpiresOnReload)) {
+        m_skipAllPauses = false;
+        m_state->setBoolean(DebuggerAgentState::skipAllPauses, m_skipAllPauses);
+    }
+}
+
 bool InspectorDebuggerAgent::isPaused()
 {
     return scriptDebugServer().isPaused();
@@ -236,6 +264,15 @@ void InspectorDebuggerAgent::addMessageToConsole(MessageSource source, MessageTy
     addMessageToConsole(source, type);
 }
 
+String InspectorDebuggerAgent::preprocessEventListener(Frame* frame, const String& source, const String& url, const String& functionName)
+{
+    return scriptDebugServer().preprocessEventListener(frame, source, url, functionName);
+}
+
+PassOwnPtr<ScriptSourceCode> InspectorDebuggerAgent::preprocess(Frame* frame, const ScriptSourceCode& sourceCode)
+{
+    return scriptDebugServer().preprocess(frame, sourceCode);
+}
 
 static PassRefPtr<JSONObject> buildObjectForBreakpointCookie(const String& url, int lineNumber, int columnNumber, const String& condition, bool isRegex, bool isAnti)
 {
@@ -424,6 +461,9 @@ String InspectorDebuggerAgent::scriptURL(JavaScriptCallFrame* frame)
 
 ScriptDebugListener::SkipPauseRequest InspectorDebuggerAgent::shouldSkipExceptionPause(RefPtr<JavaScriptCallFrame>& topFrame)
 {
+    if (m_skipAllPauses)
+        return ScriptDebugListener::Continue;
+
     String topFrameScriptUrl = scriptURL(topFrame.get());
     if (m_cachedSkipStackRegExp && !topFrameScriptUrl.isEmpty() && m_cachedSkipStackRegExp->match(topFrameScriptUrl) != -1)
         return ScriptDebugListener::Continue;
@@ -470,11 +510,16 @@ ScriptDebugListener::SkipPauseRequest InspectorDebuggerAgent::shouldSkipExceptio
 
 ScriptDebugListener::SkipPauseRequest InspectorDebuggerAgent::shouldSkipBreakpointPause(RefPtr<JavaScriptCallFrame>& topFrame)
 {
+    if (m_skipAllPauses)
+        return ScriptDebugListener::Continue;
     return ScriptDebugListener::NoSkip;
 }
 
 ScriptDebugListener::SkipPauseRequest InspectorDebuggerAgent::shouldSkipStepPause(RefPtr<JavaScriptCallFrame>& topFrame)
 {
+    if (m_skipAllPauses)
+        return ScriptDebugListener::Continue;
+
     if (m_cachedSkipStackRegExp) {
         String scriptUrl = scriptURL(topFrame.get());
         if (!scriptUrl.isEmpty() && m_cachedSkipStackRegExp->match(scriptUrl) != -1) {

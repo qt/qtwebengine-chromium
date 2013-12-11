@@ -26,9 +26,9 @@
 #include "core/html/HTMLLabelElement.h"
 
 #include "HTMLNames.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/dom/Event.h"
 #include "core/dom/EventNames.h"
-#include "core/dom/NodeTraversal.h"
 #include "core/html/FormAssociatedElement.h"
 
 namespace WebCore {
@@ -44,14 +44,14 @@ static bool supportsLabels(Element* element)
     return toLabelableElement(element)->supportLabels();
 }
 
-inline HTMLLabelElement::HTMLLabelElement(const QualifiedName& tagName, Document* document)
+inline HTMLLabelElement::HTMLLabelElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
 {
     ASSERT(hasTagName(labelTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLLabelElement> HTMLLabelElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLLabelElement> HTMLLabelElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLLabelElement(tagName, document));
 }
@@ -78,7 +78,7 @@ LabelableElement* HTMLLabelElement::control()
         return 0;
     }
 
-    if (Element* element = treeScope()->getElementById(controlId)) {
+    if (Element* element = treeScope().getElementById(controlId)) {
         if (supportsLabels(element))
             return toLabelableElement(element);
     }
@@ -117,6 +117,23 @@ void HTMLLabelElement::setHovered(bool over)
         element->setHovered(over);
 }
 
+bool HTMLLabelElement::isInteractiveContent() const
+{
+    return true;
+}
+
+bool HTMLLabelElement::isInInteractiveContent(Node* node) const
+{
+    if (!containsIncludingShadowDOM(node))
+        return false;
+    while (node && this != node) {
+        if (node->isHTMLElement() && toHTMLElement(node)->isInteractiveContent())
+            return true;
+        node = node->parentOrShadowHostNode();
+    }
+    return false;
+}
+
 void HTMLLabelElement::defaultEventHandler(Event* evt)
 {
     static bool processingClick = false;
@@ -129,9 +146,12 @@ void HTMLLabelElement::defaultEventHandler(Event* evt)
         if (!element || (evt->target() && element->containsIncludingShadowDOM(evt->target()->toNode())))
             return;
 
+        if (evt->target() && isInInteractiveContent(evt->target()->toNode()))
+            return;
+
         processingClick = true;
 
-        document()->updateLayoutIgnorePendingStylesheets();
+        document().updateLayoutIgnorePendingStylesheets();
         if (element->isMouseFocusable())
             element->focus(true, FocusDirectionMouse);
 

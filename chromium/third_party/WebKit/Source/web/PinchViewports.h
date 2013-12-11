@@ -70,6 +70,8 @@ public:
     virtual void notifyAnimationStarted(const WebCore::GraphicsLayer*, double time) OVERRIDE;
     virtual void paintContents(const WebCore::GraphicsLayer*, WebCore::GraphicsContext&, WebCore::GraphicsLayerPaintingPhase, const WebCore::IntRect& inClip) OVERRIDE;
 
+    virtual String debugName(const WebCore::GraphicsLayer*) OVERRIDE;
+
 private:
     explicit PinchViewports(WebViewImpl* owner);
 
@@ -81,6 +83,8 @@ private:
     OwnPtr<WebCore::GraphicsLayer> m_innerViewportScrollLayer;
     OwnPtr<WebCore::GraphicsLayer> m_overlayScrollbarHorizontal;
     OwnPtr<WebCore::GraphicsLayer> m_overlayScrollbarVertical;
+    OwnPtr<WebScrollbarLayer> m_webOverlayScrollbarHorizontal;
+    OwnPtr<WebScrollbarLayer> m_webOverlayScrollbarVertical;
 };
 
 } // namespace WebKit

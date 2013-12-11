@@ -102,13 +102,11 @@
                 # On Windows, link the dependencies (libraries) that make
                 # up actual Chromium functionality into this .dll.
                 'chrome_dll_pdb_workaround',
-                'chrome_resources.gyp:chrome_resources',
                 'chrome_version_resources',
                 '../chrome/chrome_resources.gyp:chrome_unscaled_resources',
                 '../crypto/crypto.gyp:crypto',
                 '../printing/printing.gyp:printing',
                 '../net/net.gyp:net_resources',
-                '../third_party/cld/cld.gyp:cld',
                 '../ui/views/views.gyp:views',
                 '../webkit/webkit_resources.gyp:webkit_resources',
               ],
@@ -125,30 +123,8 @@
                 '<(SHARED_INTERMEDIATE_DIR)/chrome_version/chrome_dll_version.rc',
                 '../base/win/dllmain.cc',
 
-                '../ui/resources/cursors/aliasb.cur',
-                '../ui/resources/cursors/cell.cur',
-                '../ui/resources/cursors/col_resize.cur',
-                '../ui/resources/cursors/copy.cur',
-                '../ui/resources/cursors/none.cur',
-                '../ui/resources/cursors/row_resize.cur',
-                '../ui/resources/cursors/vertical_text.cur',
-                '../ui/resources/cursors/zoom_in.cur',
-                '../ui/resources/cursors/zoom_out.cur',
-
-                # TODO:  It would be nice to have these pulled in
-                # automatically from direct_dependent_settings in
-                # their various targets (net.gyp:net_resources, etc.),
-                # but that causes errors in other targets when
-                # resulting .res files get referenced multiple times.
-                '<(SHARED_INTERMEDIATE_DIR)/chrome/browser_resources.rc',
-                '<(SHARED_INTERMEDIATE_DIR)/chrome/chrome_unscaled_resources.rc',
-                '<(SHARED_INTERMEDIATE_DIR)/chrome/common_resources.rc',
-                '<(SHARED_INTERMEDIATE_DIR)/chrome/extensions_api_resources.rc',
-                '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.rc',
-                '<(SHARED_INTERMEDIATE_DIR)/content/browser/tracing/tracing_resources.rc',
-                '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
+                # Cursors.
                 '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_unscaled_resources.rc',
-                '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.rc',
               ],
               'include_dirs': [
                 '<(DEPTH)/third_party/wtl/include',
@@ -247,6 +223,16 @@
               ],
               'dependencies!': [
                 '../content/content.gyp:content_app_browser',
+              ],
+            }],
+            ['cld_version==0 or cld_version==1', {
+              'dependencies': [
+                '../third_party/cld/cld.gyp:cld',
+              ],
+            }],
+            ['cld_version==0 or cld_version==2', {
+              'dependencies': [
+                '../third_party/cld_2/cld_2.gyp:cld_2',
               ],
             }],
             ['OS=="mac" and component!="shared_library"', {

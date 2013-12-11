@@ -142,10 +142,6 @@ class PPB_Instance_API {
                                 PP_URLComponents_Dev* components) = 0;
 #if !defined(OS_NACL)
   // Content Decryptor.
-  virtual void NeedKey(PP_Instance instance,
-                       PP_Var key_system,
-                       PP_Var session_id,
-                       PP_Var init_data) = 0;
   virtual void KeyAdded(PP_Instance instance,
                         PP_Var key_system,
                         PP_Var session_id) = 0;
@@ -188,6 +184,8 @@ class PPB_Instance_API {
   virtual PP_Bool DocumentCanAccessDocument(PP_Instance instance,
                                             PP_Instance target) = 0;
   virtual PP_Var GetPluginInstanceURL(PP_Instance instance,
+                                      PP_URLComponents_Dev* components) = 0;
+  virtual PP_Var GetPluginReferrerURL(PP_Instance instance,
                                       PP_URLComponents_Dev* components) = 0;
 #endif  // !defined(OS_NACL)
 

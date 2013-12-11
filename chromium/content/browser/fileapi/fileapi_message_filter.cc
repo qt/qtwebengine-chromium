@@ -28,7 +28,8 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "url/gurl.h"
-#include "webkit/browser/blob/blob_storage_controller.h"
+#include "webkit/browser/blob/blob_storage_context.h"
+#include "webkit/browser/blob/blob_storage_host.h"
 #include "webkit/browser/fileapi/file_observers.h"
 #include "webkit/browser/fileapi/file_permission_policy.h"
 #include "webkit/browser/fileapi/file_system_context.h"
@@ -37,8 +38,14 @@
 #include "webkit/common/blob/blob_data.h"
 #include "webkit/common/blob/shareable_file_reference.h"
 #include "webkit/common/fileapi/directory_entry.h"
+#include "webkit/common/fileapi/file_system_info.h"
 #include "webkit/common/fileapi/file_system_types.h"
 #include "webkit/common/fileapi/file_system_util.h"
+
+#if defined(ENABLE_PLUGINS)
+#include "content/browser/renderer_host/pepper/pepper_security_helper.h"
+#include "ppapi/shared_impl/file_type_conversion.h"
+#endif  // defined(ENABLE_PLUGINS)
 
 using fileapi::FileSystemFileUtil;
 using fileapi::FileSystemBackend;
@@ -47,7 +54,8 @@ using fileapi::FileSystemURL;
 using fileapi::FileUpdateObserver;
 using fileapi::UpdateObserverList;
 using webkit_blob::BlobData;
-using webkit_blob::BlobStorageController;
+using webkit_blob::BlobStorageContext;
+using webkit_blob::BlobStorageHost;
 
 namespace content {
 
@@ -68,6 +76,7 @@ FileAPIMessageFilter::FileAPIMessageFilter(
     StreamContext* stream_context)
     : process_id_(process_id),
       context_(file_system_context),
+      security_policy_(ChildProcessSecurityPolicyImpl::GetInstance()),
       request_context_getter_(request_context_getter),
       request_context_(NULL),
       blob_storage_context_(blob_storage_context),
@@ -86,6 +95,7 @@ FileAPIMessageFilter::FileAPIMessageFilter(
     StreamContext* stream_context)
     : process_id_(process_id),
       context_(file_system_context),
+      security_policy_(ChildProcessSecurityPolicyImpl::GetInstance()),
       request_context_(request_context),
       blob_storage_context_(blob_storage_context),
       stream_context_(stream_context) {
@@ -106,6 +116,9 @@ void FileAPIMessageFilter::OnChannelConnected(int32 peer_pid) {
     DCHECK(request_context_);
   }
 
+  blob_storage_host_.reset(
+      new BlobStorageHost(blob_storage_context_->context()));
+
   operation_runner_ = context_->CreateFileSystemOperationRunner();
 }
 
@@ -115,10 +128,7 @@ void FileAPIMessageFilter::OnChannelClosing() {
 
   // Unregister all the blob and stream URLs that are previously registered in
   // this process.
-  for (base::hash_set<std::string>::const_iterator iter = blob_urls_.begin();
-       iter != blob_urls_.end(); ++iter) {
-    blob_storage_context_->controller()->RemoveBlob(GURL(*iter));
-  }
+  blob_storage_host_.reset();
   for (base::hash_set<std::string>::const_iterator iter = stream_urls_.begin();
        iter != stream_urls_.end(); ++iter) {
     stream_context_->registry()->UnregisterStream(GURL(*iter));
@@ -159,6 +169,7 @@ bool FileAPIMessageFilter::OnMessageReceived(
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP_EX(FileAPIMessageFilter, message, *message_was_ok)
     IPC_MESSAGE_HANDLER(FileSystemHostMsg_Open, OnOpen)
+    IPC_MESSAGE_HANDLER(FileSystemHostMsg_ResolveURL, OnResolveURL)
     IPC_MESSAGE_HANDLER(FileSystemHostMsg_DeleteFileSystem, OnDeleteFileSystem)
     IPC_MESSAGE_HANDLER(FileSystemHostMsg_Move, OnMove)
     IPC_MESSAGE_HANDLER(FileSystemHostMsg_Copy, OnCopy)
@@ -168,10 +179,13 @@ bool FileAPIMessageFilter::OnMessageReceived(
     IPC_MESSAGE_HANDLER(FileSystemHostMsg_Exists, OnExists)
     IPC_MESSAGE_HANDLER(FileSystemHostMsg_ReadDirectory, OnReadDirectory)
     IPC_MESSAGE_HANDLER(FileSystemHostMsg_Write, OnWrite)
+    IPC_MESSAGE_HANDLER(FileSystemHostMsg_WriteDeprecated, OnWriteDeprecated)
     IPC_MESSAGE_HANDLER(FileSystemHostMsg_Truncate, OnTruncate)
     IPC_MESSAGE_HANDLER(FileSystemHostMsg_TouchFile, OnTouchFile)
     IPC_MESSAGE_HANDLER(FileSystemHostMsg_CancelWrite, OnCancel)
-    IPC_MESSAGE_HANDLER(FileSystemHostMsg_OpenFile, OnOpenFile)
+#if defined(ENABLE_PLUGINS)
+    IPC_MESSAGE_HANDLER(FileSystemHostMsg_OpenPepperFile, OnOpenPepperFile)
+#endif  // defined(ENABLE_PLUGINS)
     IPC_MESSAGE_HANDLER(FileSystemHostMsg_NotifyCloseFile, OnNotifyCloseFile)
     IPC_MESSAGE_HANDLER(FileSystemHostMsg_CreateSnapshotFile,
                         OnCreateSnapshotFile)
@@ -187,14 +201,26 @@ bool FileAPIMessageFilter::OnMessageReceived(
     IPC_MESSAGE_HANDLER(BlobHostMsg_SyncAppendSharedMemory,
                         OnAppendSharedMemoryToBlob)
     IPC_MESSAGE_HANDLER(BlobHostMsg_FinishBuilding, OnFinishBuildingBlob)
-    IPC_MESSAGE_HANDLER(BlobHostMsg_Clone, OnCloneBlob)
-    IPC_MESSAGE_HANDLER(BlobHostMsg_Remove, OnRemoveBlob)
+    IPC_MESSAGE_HANDLER(BlobHostMsg_IncrementRefCount,
+                        OnIncrementBlobRefCount)
+    IPC_MESSAGE_HANDLER(BlobHostMsg_DecrementRefCount,
+                        OnDecrementBlobRefCount)
+    IPC_MESSAGE_HANDLER(BlobHostMsg_RegisterPublicURL,
+                        OnRegisterPublicBlobURL)
+    IPC_MESSAGE_HANDLER(BlobHostMsg_RevokePublicURL, OnRevokePublicBlobURL)
+    IPC_MESSAGE_HANDLER(BlobHostMsg_DeprecatedRegisterBlobURL,
+                        OnDeprecatedRegisterBlobURL)
+    IPC_MESSAGE_HANDLER(BlobHostMsg_DeprecatedRevokeBlobURL,
+                        OnDeprecatedRevokeBlobURL)
+    IPC_MESSAGE_HANDLER(BlobHostMsg_DeprecatedCloneBlobURL,
+                        OnDeprecatedCloneBlobURL)
     IPC_MESSAGE_HANDLER(StreamHostMsg_StartBuilding, OnStartBuildingStream)
     IPC_MESSAGE_HANDLER(StreamHostMsg_AppendBlobDataItem,
                         OnAppendBlobDataItemToStream)
     IPC_MESSAGE_HANDLER(StreamHostMsg_SyncAppendSharedMemory,
                         OnAppendSharedMemoryToStream)
     IPC_MESSAGE_HANDLER(StreamHostMsg_FinishBuilding, OnFinishBuildingStream)
+    IPC_MESSAGE_HANDLER(StreamHostMsg_AbortBuilding, OnAbortBuildingStream)
     IPC_MESSAGE_HANDLER(StreamHostMsg_Clone, OnCloneStream)
     IPC_MESSAGE_HANDLER(StreamHostMsg_Remove, OnRemoveStream)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -226,6 +252,23 @@ void FileAPIMessageFilter::OnOpen(
       &FileAPIMessageFilter::DidOpenFileSystem, this, request_id));
 }
 
+void FileAPIMessageFilter::OnResolveURL(
+    int request_id,
+    const GURL& filesystem_url) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  FileSystemURL url(context_->CrackURL(filesystem_url));
+  if (!ValidateFileSystemURL(request_id, url))
+    return;
+  if (!security_policy_->CanReadFileSystemFile(process_id_, url)) {
+    Send(new FileSystemMsg_DidFail(request_id,
+                                   base::PLATFORM_FILE_ERROR_SECURITY));
+    return;
+  }
+
+  context_->ResolveURL(url, base::Bind(
+      &FileAPIMessageFilter::DidResolveURL, this, request_id));
+}
+
 void FileAPIMessageFilter::OnDeleteFileSystem(
     int request_id,
     const GURL& origin_url,
@@ -238,15 +281,17 @@ void FileAPIMessageFilter::OnDeleteFileSystem(
 void FileAPIMessageFilter::OnMove(
     int request_id, const GURL& src_path, const GURL& dest_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  base::PlatformFileError error;
   FileSystemURL src_url(context_->CrackURL(src_path));
   FileSystemURL dest_url(context_->CrackURL(dest_path));
-  const int src_permissions =
-      fileapi::kReadFilePermissions | fileapi::kWriteFilePermissions;
-  if (!HasPermissionsForFile(src_url, src_permissions, &error) ||
-      !HasPermissionsForFile(
-          dest_url, fileapi::kCreateFilePermissions, &error)) {
-    Send(new FileSystemMsg_DidFail(request_id, error));
+  if (!ValidateFileSystemURL(request_id, src_url) ||
+      !ValidateFileSystemURL(request_id, dest_url)) {
+    return;
+  }
+  if (!security_policy_->CanReadFileSystemFile(process_id_, src_url) ||
+      !security_policy_->CanWriteFileSystemFile(process_id_, src_url) ||
+      !security_policy_->CanCreateFileSystemFile(process_id_, dest_url)) {
+    Send(new FileSystemMsg_DidFail(request_id,
+                                   base::PLATFORM_FILE_ERROR_SECURITY));
     return;
   }
 
@@ -258,28 +303,34 @@ void FileAPIMessageFilter::OnMove(
 void FileAPIMessageFilter::OnCopy(
     int request_id, const GURL& src_path, const GURL& dest_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  base::PlatformFileError error;
   FileSystemURL src_url(context_->CrackURL(src_path));
   FileSystemURL dest_url(context_->CrackURL(dest_path));
-  if (!HasPermissionsForFile(src_url, fileapi::kReadFilePermissions, &error) ||
-      !HasPermissionsForFile(
-          dest_url, fileapi::kCreateFilePermissions, &error)) {
-    Send(new FileSystemMsg_DidFail(request_id, error));
+  if (!ValidateFileSystemURL(request_id, src_url) ||
+      !ValidateFileSystemURL(request_id, dest_url)) {
+    return;
+  }
+  if (!security_policy_->CanReadFileSystemFile(process_id_, src_url) ||
+      !security_policy_->CanCreateFileSystemFile(process_id_, dest_url)) {
+    Send(new FileSystemMsg_DidFail(request_id,
+                                   base::PLATFORM_FILE_ERROR_SECURITY));
     return;
   }
 
   operations_[request_id] = operation_runner()->Copy(
       src_url, dest_url,
+      fileapi::FileSystemOperationRunner::CopyProgressCallback(),
       base::Bind(&FileAPIMessageFilter::DidFinish, this, request_id));
 }
 
 void FileAPIMessageFilter::OnRemove(
     int request_id, const GURL& path, bool recursive) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  base::PlatformFileError error;
   FileSystemURL url(context_->CrackURL(path));
-  if (!HasPermissionsForFile(url, fileapi::kWriteFilePermissions, &error)) {
-    Send(new FileSystemMsg_DidFail(request_id, error));
+  if (!ValidateFileSystemURL(request_id, url))
+    return;
+  if (!security_policy_->CanWriteFileSystemFile(process_id_, url)) {
+    Send(new FileSystemMsg_DidFail(request_id,
+                                   base::PLATFORM_FILE_ERROR_SECURITY));
     return;
   }
 
@@ -291,10 +342,12 @@ void FileAPIMessageFilter::OnRemove(
 void FileAPIMessageFilter::OnReadMetadata(
     int request_id, const GURL& path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  base::PlatformFileError error;
   FileSystemURL url(context_->CrackURL(path));
-  if (!HasPermissionsForFile(url, fileapi::kReadFilePermissions, &error)) {
-    Send(new FileSystemMsg_DidFail(request_id, error));
+  if (!ValidateFileSystemURL(request_id, url))
+    return;
+  if (!security_policy_->CanReadFileSystemFile(process_id_, url)) {
+    Send(new FileSystemMsg_DidFail(request_id,
+                                   base::PLATFORM_FILE_ERROR_SECURITY));
     return;
   }
 
@@ -306,10 +359,12 @@ void FileAPIMessageFilter::OnCreate(
     int request_id, const GURL& path, bool exclusive,
     bool is_directory, bool recursive) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  base::PlatformFileError error;
   FileSystemURL url(context_->CrackURL(path));
-  if (!HasPermissionsForFile(url, fileapi::kCreateFilePermissions, &error)) {
-    Send(new FileSystemMsg_DidFail(request_id, error));
+  if (!ValidateFileSystemURL(request_id, url))
+    return;
+  if (!security_policy_->CanCreateFileSystemFile(process_id_, url)) {
+    Send(new FileSystemMsg_DidFail(request_id,
+                                   base::PLATFORM_FILE_ERROR_SECURITY));
     return;
   }
 
@@ -327,10 +382,12 @@ void FileAPIMessageFilter::OnCreate(
 void FileAPIMessageFilter::OnExists(
     int request_id, const GURL& path, bool is_directory) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  base::PlatformFileError error;
   FileSystemURL url(context_->CrackURL(path));
-  if (!HasPermissionsForFile(url, fileapi::kReadFilePermissions, &error)) {
-    Send(new FileSystemMsg_DidFail(request_id, error));
+  if (!ValidateFileSystemURL(request_id, url))
+    return;
+  if (!security_policy_->CanReadFileSystemFile(process_id_, url)) {
+    Send(new FileSystemMsg_DidFail(request_id,
+                                   base::PLATFORM_FILE_ERROR_SECURITY));
     return;
   }
 
@@ -348,10 +405,12 @@ void FileAPIMessageFilter::OnExists(
 void FileAPIMessageFilter::OnReadDirectory(
     int request_id, const GURL& path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  base::PlatformFileError error;
   FileSystemURL url(context_->CrackURL(path));
-  if (!HasPermissionsForFile(url, fileapi::kReadFilePermissions, &error)) {
-    Send(new FileSystemMsg_DidFail(request_id, error));
+  if (!ValidateFileSystemURL(request_id, url))
+    return;
+  if (!security_policy_->CanReadFileSystemFile(process_id_, url)) {
+    Send(new FileSystemMsg_DidFail(request_id,
+                                   base::PLATFORM_FILE_ERROR_SECURITY));
     return;
   }
 
@@ -360,10 +419,20 @@ void FileAPIMessageFilter::OnReadDirectory(
                       this, request_id));
 }
 
-void FileAPIMessageFilter::OnWrite(
+void FileAPIMessageFilter::OnWriteDeprecated(
     int request_id,
     const GURL& path,
     const GURL& blob_url,
+    int64 offset) {
+  std::string uuid =
+      blob_storage_context_->context()->LookupUuidFromDeprecatedURL(blob_url);
+  OnWrite(request_id, path, uuid, offset);
+}
+
+void FileAPIMessageFilter::OnWrite(
+    int request_id,
+    const GURL& path,
+    const std::string& blob_uuid,
     int64 offset) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (!request_context_) {
@@ -373,14 +442,19 @@ void FileAPIMessageFilter::OnWrite(
   }
 
   FileSystemURL url(context_->CrackURL(path));
-  base::PlatformFileError error;
-  if (!HasPermissionsForFile(url, fileapi::kWriteFilePermissions, &error)) {
-    Send(new FileSystemMsg_DidFail(request_id, error));
+  if (!ValidateFileSystemURL(request_id, url))
+    return;
+  if (!security_policy_->CanWriteFileSystemFile(process_id_, url)) {
+    Send(new FileSystemMsg_DidFail(request_id,
+                                   base::PLATFORM_FILE_ERROR_SECURITY));
     return;
   }
 
+  scoped_ptr<webkit_blob::BlobDataHandle> blob =
+      blob_storage_context_->context()->GetBlobDataFromUUID(blob_uuid);
+
   operations_[request_id] = operation_runner()->Write(
-      request_context_, url, blob_url, offset,
+      request_context_, url, blob.Pass(), offset,
       base::Bind(&FileAPIMessageFilter::DidWrite, this, request_id));
 }
 
@@ -388,10 +462,12 @@ void FileAPIMessageFilter::OnTruncate(
     int request_id,
     const GURL& path,
     int64 length) {
-  base::PlatformFileError error;
   FileSystemURL url(context_->CrackURL(path));
-  if (!HasPermissionsForFile(url, fileapi::kWriteFilePermissions, &error)) {
-    Send(new FileSystemMsg_DidFail(request_id, error));
+  if (!ValidateFileSystemURL(request_id, url))
+    return;
+  if (!security_policy_->CanWriteFileSystemFile(process_id_, url)) {
+    Send(new FileSystemMsg_DidFail(request_id,
+                                   base::PLATFORM_FILE_ERROR_SECURITY));
     return;
   }
 
@@ -407,9 +483,11 @@ void FileAPIMessageFilter::OnTouchFile(
     const base::Time& last_modified_time) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   FileSystemURL url(context_->CrackURL(path));
-  base::PlatformFileError error;
-  if (!HasPermissionsForFile(url, fileapi::kCreateFilePermissions, &error)) {
-    Send(new FileSystemMsg_DidFail(request_id, error));
+  if (!ValidateFileSystemURL(request_id, url))
+    return;
+  if (!security_policy_->CanCreateFileSystemFile(process_id_, url)) {
+    Send(new FileSystemMsg_DidFail(request_id,
+                                   base::PLATFORM_FILE_ERROR_SECURITY));
     return;
   }
 
@@ -437,14 +515,16 @@ void FileAPIMessageFilter::OnCancel(
   }
 }
 
-void FileAPIMessageFilter::OnOpenFile(
-    int request_id, const GURL& path, int file_flags) {
+#if defined(ENABLE_PLUGINS)
+void FileAPIMessageFilter::OnOpenPepperFile(
+    int request_id, const GURL& path, int pp_open_flags) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  base::PlatformFileError error;
-  const int open_permissions = file_flags & fileapi::kOpenPepperFilePermissions;
-  FileSystemURL url(context_->CrackURL(path));
-  if (!HasPermissionsForFile(url, open_permissions, &error)) {
-    Send(new FileSystemMsg_DidFail(request_id, error));
+FileSystemURL url(context_->CrackURL(path));
+  if (!ValidateFileSystemURL(request_id, url))
+    return;
+  if (!CanOpenFileSystemURLWithPepperFlags(pp_open_flags, process_id_, url)) {
+    Send(new FileSystemMsg_DidFail(
+        request_id, base::PLATFORM_FILE_ERROR_SECURITY));
     return;
   }
 
@@ -461,11 +541,19 @@ void FileAPIMessageFilter::OnOpenFile(
     quota_policy = quota::kQuotaLimitTypeLimited;
   }
 
+  int platform_file_flags = 0;
+  if (!ppapi::PepperFileOpenFlagsToPlatformFileFlags(pp_open_flags,
+                                                     &platform_file_flags)) {
+    // |pp_open_flags| should have already been checked in PepperFileIOHost.
+    NOTREACHED() << "Open file request with invalid pp_open_flags ignored.";
+  }
+
   operations_[request_id] = operation_runner()->OpenFile(
-      url, open_permissions, PeerHandle(),
+      url, platform_file_flags, PeerHandle(),
       base::Bind(&FileAPIMessageFilter::DidOpenFile, this, request_id,
                  quota_policy));
 }
+#endif  // defined(ENABLE_PLUGINS)
 
 void FileAPIMessageFilter::OnNotifyCloseFile(int file_open_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -518,9 +606,11 @@ void FileAPIMessageFilter::OnCreateSnapshotFile(
   // Make sure if this file can be read by the renderer as this is
   // called when the renderer is about to create a new File object
   // (for reading the file).
-  base::PlatformFileError error;
-  if (!HasPermissionsForFile(url, fileapi::kReadFilePermissions, &error)) {
-    Send(new FileSystemMsg_DidFail(request_id, error));
+  if (!ValidateFileSystemURL(request_id, url))
+    return;
+  if (!security_policy_->CanReadFileSystemFile(process_id_, url)) {
+    Send(new FileSystemMsg_DidFail(request_id,
+                                   base::PLATFORM_FILE_ERROR_SECURITY));
     return;
   }
 
@@ -535,39 +625,38 @@ void FileAPIMessageFilter::OnDidReceiveSnapshotFile(int request_id) {
   in_transit_snapshot_files_.erase(request_id);
 }
 
-void FileAPIMessageFilter::OnStartBuildingBlob(const GURL& url) {
+void FileAPIMessageFilter::OnStartBuildingBlob(const std::string& uuid) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  blob_storage_context_->controller()->StartBuildingBlob(url);
-  blob_urls_.insert(url.spec());
+  ignore_result(blob_storage_host_->StartBuildingBlob(uuid));
 }
 
 void FileAPIMessageFilter::OnAppendBlobDataItemToBlob(
-    const GURL& url, const BlobData::Item& item) {
+    const std::string& uuid, const BlobData::Item& item) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (item.type() == BlobData::Item::TYPE_FILE_FILESYSTEM) {
-    base::PlatformFileError error;
-    FileSystemURL filesystem_url(context_->CrackURL(item.url()));
-    if (!HasPermissionsForFile(filesystem_url,
-                               fileapi::kReadFilePermissions, &error)) {
-      OnRemoveBlob(url);
+    FileSystemURL filesystem_url(context_->CrackURL(item.filesystem_url()));
+    if (!FileSystemURLIsValid(context_, filesystem_url) ||
+        !security_policy_->CanReadFileSystemFile(process_id_, filesystem_url)) {
+      ignore_result(blob_storage_host_->CancelBuildingBlob(uuid));
       return;
     }
   }
   if (item.type() == BlobData::Item::TYPE_FILE &&
-      !ChildProcessSecurityPolicyImpl::GetInstance()->CanReadFile(
-          process_id_, item.path())) {
-    OnRemoveBlob(url);
+      !security_policy_->CanReadFile(process_id_, item.path())) {
+    ignore_result(blob_storage_host_->CancelBuildingBlob(uuid));
     return;
   }
   if (item.length() == 0) {
     BadMessageReceived();
     return;
   }
-  blob_storage_context_->controller()->AppendBlobDataItem(url, item);
+  ignore_result(blob_storage_host_->AppendBlobDataItem(uuid, item));
 }
 
 void FileAPIMessageFilter::OnAppendSharedMemoryToBlob(
-    const GURL& url, base::SharedMemoryHandle handle, size_t buffer_size) {
+    const std::string& uuid,
+    base::SharedMemoryHandle handle,
+    size_t buffer_size) {
   DCHECK(base::SharedMemory::IsHandleValid(handle));
   if (!buffer_size) {
     BadMessageReceived();
@@ -579,33 +668,59 @@ void FileAPIMessageFilter::OnAppendSharedMemoryToBlob(
   base::SharedMemory shared_memory(handle, true);
 #endif
   if (!shared_memory.Map(buffer_size)) {
-    OnRemoveBlob(url);
+    ignore_result(blob_storage_host_->CancelBuildingBlob(uuid));
     return;
   }
 
   BlobData::Item item;
   item.SetToSharedBytes(static_cast<char*>(shared_memory.memory()),
                         buffer_size);
-  blob_storage_context_->controller()->AppendBlobDataItem(url, item);
+  ignore_result(blob_storage_host_->AppendBlobDataItem(uuid, item));
 }
 
 void FileAPIMessageFilter::OnFinishBuildingBlob(
-    const GURL& url, const std::string& content_type) {
+    const std::string& uuid, const std::string& content_type) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  blob_storage_context_->controller()->FinishBuildingBlob(url, content_type);
+  ignore_result(blob_storage_host_->FinishBuildingBlob(uuid, content_type));
+  // TODO(michaeln): check return values once blink has migrated, crbug/174200
 }
 
-void FileAPIMessageFilter::OnCloneBlob(
+void FileAPIMessageFilter::OnIncrementBlobRefCount(const std::string& uuid) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  ignore_result(blob_storage_host_->IncrementBlobRefCount(uuid));
+}
+
+void FileAPIMessageFilter::OnDecrementBlobRefCount(const std::string& uuid) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  ignore_result(blob_storage_host_->DecrementBlobRefCount(uuid));
+}
+
+void FileAPIMessageFilter::OnRegisterPublicBlobURL(
+    const GURL& public_url, const std::string& uuid) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  ignore_result(blob_storage_host_->RegisterPublicBlobURL(public_url, uuid));
+}
+
+void FileAPIMessageFilter::OnRevokePublicBlobURL(const GURL& public_url) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  ignore_result(blob_storage_host_->RevokePublicBlobURL(public_url));
+}
+
+void FileAPIMessageFilter::OnDeprecatedRegisterBlobURL(
+    const GURL& url, const std::string& uuid) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  blob_storage_host_->DeprecatedRegisterBlobURL(url, uuid);
+}
+
+void FileAPIMessageFilter::OnDeprecatedCloneBlobURL(
     const GURL& url, const GURL& src_url) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  blob_storage_context_->controller()->CloneBlob(url, src_url);
-  blob_urls_.insert(url.spec());
+  blob_storage_host_->DeprecatedCloneBlobURL(url, src_url);
 }
 
-void FileAPIMessageFilter::OnRemoveBlob(const GURL& url) {
+void FileAPIMessageFilter::OnDeprecatedRevokeBlobURL(const GURL& url) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  blob_storage_context_->controller()->RemoveBlob(url);
-  blob_urls_.erase(url.spec());
+  blob_storage_host_->DeprecatedRevokeBlobURL(url);
 }
 
 void FileAPIMessageFilter::OnStartBuildingStream(
@@ -631,10 +746,10 @@ void FileAPIMessageFilter::OnAppendBlobDataItemToStream(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
   scoped_refptr<Stream> stream(GetStreamForURL(url));
-  if (!stream.get()) {
-    NOTREACHED();
+  // Stream instances may be deleted on error. Just abort if there's no Stream
+  // instance for |url| in the registry.
+  if (!stream.get())
     return;
-  }
 
   // Data for stream is delivered as TYPE_BYTES item.
   if (item.type() != BlobData::Item::TYPE_BYTES) {
@@ -662,10 +777,8 @@ void FileAPIMessageFilter::OnAppendSharedMemoryToStream(
   }
 
   scoped_refptr<Stream> stream(GetStreamForURL(url));
-  if (!stream.get()) {
-    NOTREACHED();
+  if (!stream.get())
     return;
-  }
 
   stream->AddData(static_cast<char*>(shared_memory.memory()), buffer_size);
 }
@@ -675,17 +788,22 @@ void FileAPIMessageFilter::OnFinishBuildingStream(const GURL& url) {
   scoped_refptr<Stream> stream(GetStreamForURL(url));
   if (stream.get())
     stream->Finalize();
-  else
-    NOTREACHED();
+}
+
+void FileAPIMessageFilter::OnAbortBuildingStream(const GURL& url) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  scoped_refptr<Stream> stream(GetStreamForURL(url));
+  if (stream.get())
+    stream->Abort();
 }
 
 void FileAPIMessageFilter::OnCloneStream(
     const GURL& url, const GURL& src_url) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  if (!GetStreamForURL(src_url)) {
-    NOTREACHED();
+  // Abort if there's no Stream instance for |src_url| (source Stream which
+  // we're going to make |url| point to) in the registry.
+  if (!GetStreamForURL(src_url))
     return;
-  }
 
   stream_context_->registry()->CloneStream(url, src_url);
   stream_urls_.insert(url.spec());
@@ -694,10 +812,8 @@ void FileAPIMessageFilter::OnCloneStream(
 void FileAPIMessageFilter::OnRemoveStream(const GURL& url) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
-  if (!GetStreamForURL(url).get()) {
-    NOTREACHED();
+  if (!GetStreamForURL(url).get())
     return;
-  }
 
   stream_context_->registry()->UnregisterStream(url);
   stream_urls_.erase(url.spec());
@@ -776,16 +892,33 @@ void FileAPIMessageFilter::DidWrite(int request_id,
 
 void FileAPIMessageFilter::DidOpenFileSystem(int request_id,
                                              base::PlatformFileError result,
-                                             const std::string& name,
+                                             const std::string& filesystem_name,
                                              const GURL& root) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (result == base::PLATFORM_FILE_OK) {
     DCHECK(root.is_valid());
-    Send(new FileSystemMsg_DidOpenFileSystem(request_id, name, root));
+    Send(new FileSystemMsg_DidOpenFileSystem(
+        request_id, filesystem_name, root));
   } else {
     Send(new FileSystemMsg_DidFail(request_id, result));
   }
   // For OpenFileSystem we do not create a new operation, so no unregister here.
+}
+
+void FileAPIMessageFilter::DidResolveURL(int request_id,
+                                         base::PlatformFileError result,
+                                         const fileapi::FileSystemInfo& info,
+                                         const base::FilePath& file_path,
+                                         bool is_directory) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  if (result == base::PLATFORM_FILE_OK) {
+    DCHECK(info.root_url.is_valid());
+    Send(new FileSystemMsg_DidResolveURL(
+        request_id, info, file_path, is_directory));
+  } else {
+    Send(new FileSystemMsg_DidFail(request_id, result));
+  }
+  // For ResolveURL we do not create a new operation, so no unregister here.
 }
 
 void FileAPIMessageFilter::DidDeleteFileSystem(
@@ -805,7 +938,7 @@ void FileAPIMessageFilter::DidCreateSnapshot(
     base::PlatformFileError result,
     const base::PlatformFileInfo& info,
     const base::FilePath& platform_path,
-    const scoped_refptr<webkit_blob::ShareableFileReference>& snapshot_file) {
+    const scoped_refptr<webkit_blob::ShareableFileReference>& /* unused */) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   operations_.erase(request_id);
 
@@ -814,17 +947,16 @@ void FileAPIMessageFilter::DidCreateSnapshot(
     return;
   }
 
-  scoped_refptr<webkit_blob::ShareableFileReference> file_ref = snapshot_file;
-  if (!ChildProcessSecurityPolicyImpl::GetInstance()->CanReadFile(
-          process_id_, platform_path)) {
+  scoped_refptr<webkit_blob::ShareableFileReference> file_ref =
+      webkit_blob::ShareableFileReference::Get(platform_path);
+  if (!security_policy_->CanReadFile(process_id_, platform_path)) {
     // Give per-file read permission to the snapshot file if it hasn't it yet.
     // In order for the renderer to be able to read the file via File object,
     // it must be granted per-file read permission for the file's platform
     // path. By now, it has already been verified that the renderer has
     // sufficient permissions to read the file, so giving per-file permission
     // here must be safe.
-    ChildProcessSecurityPolicyImpl::GetInstance()->GrantReadFile(
-        process_id_, platform_path);
+    security_policy_->GrantReadFile(process_id_, platform_path);
 
     // Revoke all permissions for the file when the last ref of the file
     // is dropped.
@@ -849,10 +981,13 @@ void FileAPIMessageFilter::DidCreateSnapshot(
                request_id, info, platform_path));
 }
 
-bool FileAPIMessageFilter::HasPermissionsForFile(
-    const FileSystemURL& url, int permissions, base::PlatformFileError* error) {
-  return CheckFileSystemPermissionsForProcess(context_, process_id_, url,
-                                              permissions, error);
+bool FileAPIMessageFilter::ValidateFileSystemURL(
+    int request_id, const fileapi::FileSystemURL& url) {
+  if (FileSystemURLIsValid(context_, url))
+    return true;
+  Send(new FileSystemMsg_DidFail(request_id,
+                                 base::PLATFORM_FILE_ERROR_INVALID_URL));
+  return false;
 }
 
 scoped_refptr<Stream> FileAPIMessageFilter::GetStreamForURL(const GURL& url) {

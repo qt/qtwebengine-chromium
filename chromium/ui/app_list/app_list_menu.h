@@ -5,6 +5,7 @@
 #ifndef UI_APP_LIST_APP_LIST_MENU_H_
 #define UI_APP_LIST_APP_LIST_MENU_H_
 
+#include "ui/app_list/app_list_model.h"
 #include "ui/base/models/simple_menu_model.h"
 
 namespace app_list {
@@ -17,13 +18,17 @@ class AppListViewDelegate;
 class AppListMenu : public ui::SimpleMenuModel::Delegate {
  public:
   enum AppListMenuCommands {
-    CURRENT_USER,
     SHOW_SETTINGS,
     SHOW_HELP,
     SHOW_FEEDBACK,
+    // |SELECT_PROFILE| must remain the last enum because values greater than
+    // |SELECT_PROFILE| are used to indicate a profile index.
+    SELECT_PROFILE,
   };
 
-  explicit AppListMenu(AppListViewDelegate* delegate);
+  AppListMenu(
+      AppListViewDelegate* delegate,
+      const AppListModel::Users& users);
   virtual ~AppListMenu();
 
   ui::SimpleMenuModel* menu_model() { return &menu_model_; }
@@ -40,6 +45,7 @@ class AppListMenu : public ui::SimpleMenuModel::Delegate {
 
   ui::SimpleMenuModel menu_model_;
   AppListViewDelegate* delegate_;
+  AppListModel::Users users_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListMenu);
 };

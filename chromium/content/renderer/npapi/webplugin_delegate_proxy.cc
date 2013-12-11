@@ -28,12 +28,13 @@
 #include "content/child/npapi/npobject_proxy.h"
 #include "content/child/npapi/npobject_stub.h"
 #include "content/child/npapi/npobject_util.h"
-#include "content/child/npapi/webplugin.h"
+#include "content/child/npapi/webplugin_resource_client.h"
 #include "content/child/plugin_messages.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/view_messages.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/npapi/plugin_channel_host.h"
+#include "content/renderer/npapi/webplugin_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/sad_plugin.h"
@@ -200,10 +201,11 @@ class ResourceClientProxy : public WebPluginResourceClient {
 }  // namespace
 
 WebPluginDelegateProxy::WebPluginDelegateProxy(
+    WebPluginImpl* plugin,
     const std::string& mime_type,
     const base::WeakPtr<RenderViewImpl>& render_view)
     : render_view_(render_view),
-      plugin_(NULL),
+      plugin_(plugin),
       uses_shared_bitmaps_(false),
 #if defined(OS_MACOSX)
       uses_compositor_(false),
@@ -283,7 +285,6 @@ bool WebPluginDelegateProxy::Initialize(
     const GURL& url,
     const std::vector<std::string>& arg_names,
     const std::vector<std::string>& arg_values,
-    WebPlugin* plugin,
     bool load_manually) {
   // TODO(shess): Attempt to work around http://crbug.com/97285 and
   // http://crbug.com/141055 by retrying the connection.  Reports seem
@@ -372,13 +373,11 @@ bool WebPluginDelegateProxy::Initialize(
   params.host_render_view_routing_id = render_view_->routing_id();
   params.load_manually = load_manually;
 
-  plugin_ = plugin;
-
   result = false;
   Send(new PluginMsg_Init(instance_id_, params, &transparent_, &result));
 
   if (!result)
-    LOG(ERROR) << "PluginMsg_Init returned false";
+    LOG(WARNING) << "PluginMsg_Init returned false";
 
   render_view_->RegisterPluginDelegate(this);
 
@@ -439,10 +438,6 @@ bool WebPluginDelegateProxy::OnMessageReceived(const IPC::Message& msg) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(WebPluginDelegateProxy, msg)
     IPC_MESSAGE_HANDLER(PluginHostMsg_SetWindow, OnSetWindow)
-#if defined(OS_WIN)
-    IPC_MESSAGE_HANDLER(PluginHostMsg_SetWindowlessData, OnSetWindowlessData)
-    IPC_MESSAGE_HANDLER(PluginHostMsg_NotifyIMEStatus, OnNotifyIMEStatus)
-#endif
     IPC_MESSAGE_HANDLER(PluginHostMsg_CancelResource, OnCancelResource)
     IPC_MESSAGE_HANDLER(PluginHostMsg_InvalidateRect, OnInvalidateRect)
     IPC_MESSAGE_HANDLER(PluginHostMsg_GetWindowScriptNPObject,
@@ -455,9 +450,18 @@ bool WebPluginDelegateProxy::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(PluginHostMsg_CancelDocumentLoad, OnCancelDocumentLoad)
     IPC_MESSAGE_HANDLER(PluginHostMsg_InitiateHTTPRangeRequest,
                         OnInitiateHTTPRangeRequest)
+    IPC_MESSAGE_HANDLER(PluginHostMsg_DidStartLoading, OnDidStartLoading)
+    IPC_MESSAGE_HANDLER(PluginHostMsg_DidStopLoading, OnDidStopLoading)
     IPC_MESSAGE_HANDLER(PluginHostMsg_DeferResourceLoading,
                         OnDeferResourceLoading)
-
+    IPC_MESSAGE_HANDLER(PluginHostMsg_URLRedirectResponse,
+                        OnURLRedirectResponse)
+    IPC_MESSAGE_HANDLER(PluginHostMsg_CheckIfRunInsecureContent,
+                        OnCheckIfRunInsecureContent)
+#if defined(OS_WIN)
+    IPC_MESSAGE_HANDLER(PluginHostMsg_SetWindowlessData, OnSetWindowlessData)
+    IPC_MESSAGE_HANDLER(PluginHostMsg_NotifyIMEStatus, OnNotifyIMEStatus)
+#endif
 #if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(PluginHostMsg_FocusChanged,
                         OnFocusChanged);
@@ -470,8 +474,6 @@ bool WebPluginDelegateProxy::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(PluginHostMsg_AcceleratedPluginSwappedIOSurface,
                         OnAcceleratedPluginSwappedIOSurface)
 #endif
-    IPC_MESSAGE_HANDLER(PluginHostMsg_URLRedirectResponse,
-                        OnURLRedirectResponse)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   DCHECK(handled);
@@ -672,7 +674,7 @@ static void FlipRectVerticallyWithHeight(gfx::Rect* rect, int height) {
 }
 #endif
 
-void WebPluginDelegateProxy::Paint(WebKit::WebCanvas* canvas,
+void WebPluginDelegateProxy::Paint(SkCanvas* canvas,
                                    const gfx::Rect& damaged_rect) {
   // Limit the damaged rectangle to whatever is contained inside the plugin
   // rectangle, as that's the rectangle that we'll actually draw.
@@ -927,8 +929,8 @@ void WebPluginDelegateProxy::OnNotifyIMEStatus(int input_type,
   render_view_->Send(new ViewHostMsg_TextInputTypeChanged(
       render_view_->routing_id(),
       static_cast<ui::TextInputType>(input_type),
-      true,
-      ui::TEXT_INPUT_MODE_DEFAULT));
+      ui::TEXT_INPUT_MODE_DEFAULT,
+      true));
 
   ViewHostMsg_SelectionBounds_Params bounds_params;
   bounds_params.anchor_rect = bounds_params.focus_rect = caret_rect;
@@ -1118,6 +1120,35 @@ WebPluginResourceClient* WebPluginDelegateProxy::CreateSeekableResourceClient(
   return proxy;
 }
 
+void WebPluginDelegateProxy::FetchURL(unsigned long resource_id,
+                                      int notify_id,
+                                      const GURL& url,
+                                      const GURL& first_party_for_cookies,
+                                      const std::string& method,
+                                      const char* buf,
+                                      unsigned int len,
+                                      const GURL& referrer,
+                                      bool notify_redirects,
+                                      bool is_plugin_src_load,
+                                      int origin_pid,
+                                      int render_view_id) {
+  PluginMsg_FetchURL_Params params;
+  params.resource_id = resource_id;
+  params.notify_id = notify_id;
+  params.url = url;
+  params.first_party_for_cookies = first_party_for_cookies;
+  params.method = method;
+  if (len) {
+    params.post_data.resize(len);
+    memcpy(&params.post_data.front(), buf, len);
+  }
+  params.referrer = referrer;
+  params.notify_redirect = notify_redirects;
+  params.is_plugin_src_load = is_plugin_src_load;
+  params.render_view_id = render_view_id;
+  Send(new PluginMsg_FetchURL(instance_id_, params));
+}
+
 #if defined(OS_MACOSX)
 void WebPluginDelegateProxy::OnFocusChanged(bool focused) {
   if (render_view_)
@@ -1144,6 +1175,14 @@ void WebPluginDelegateProxy::OnInitiateHTTPRangeRequest(
     int range_request_id) {
   plugin_->InitiateHTTPRangeRequest(
       url.c_str(), range_info.c_str(), range_request_id);
+}
+
+void WebPluginDelegateProxy::OnDidStartLoading() {
+  plugin_->DidStartLoading();
+}
+
+void WebPluginDelegateProxy::OnDidStopLoading() {
+  plugin_->DidStopLoading();
 }
 
 void WebPluginDelegateProxy::OnDeferResourceLoading(unsigned long resource_id,
@@ -1201,6 +1240,11 @@ void WebPluginDelegateProxy::OnURLRedirectResponse(bool allow,
     return;
 
   plugin_->URLRedirectResponse(allow, resource_id);
+}
+
+void WebPluginDelegateProxy::OnCheckIfRunInsecureContent(const GURL& url,
+                                                         bool* result) {
+  *result = plugin_->CheckIfRunInsecureContent(url);
 }
 
 }  // namespace content

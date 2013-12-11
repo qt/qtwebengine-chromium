@@ -20,12 +20,14 @@ class PowerMonitor;
 class SystemMonitor;
 namespace debug {
 class TraceMemoryController;
+class TraceEventSystemStatsMonitor;
 }  // namespace debug
 }  // namespace base
 
 namespace media {
 class AudioManager;
 class MIDIManager;
+class UserInputMonitor;
 }  // namespace media
 
 namespace net {
@@ -41,6 +43,7 @@ class BrowserThreadImpl;
 class MediaStreamManager;
 class ResourceDispatcherHostImpl;
 class SpeechRecognitionManagerImpl;
+class StartupTaskRunner;
 class SystemMessageWindowWin;
 struct MainFunctionParams;
 
@@ -67,7 +70,10 @@ class CONTENT_EXPORT BrowserMainLoop {
   void InitializeToolkit();
   void MainMessageLoopStart();
 
-  // Create the tasks we need to complete startup.
+  // Create and start running the tasks we need to complete startup. Note that
+  // this can be called more than once (currently only on Android) if we get a
+  // request for synchronous startup while the tasks created by asynchronous
+  // startup are still running.
   void CreateStartupTasks();
 
   // Perform the default message loop run logic.
@@ -85,6 +91,9 @@ class CONTENT_EXPORT BrowserMainLoop {
   }
   MediaStreamManager* media_stream_manager() const {
     return media_stream_manager_.get();
+  }
+  media::UserInputMonitor* user_input_monitor() const {
+    return user_input_monitor_.get();
   }
   media::MIDIManager* midi_manager() const { return midi_manager_.get(); }
   base::Thread* indexed_db_thread() const { return indexed_db_thread_.get(); }
@@ -122,6 +131,8 @@ class CONTENT_EXPORT BrowserMainLoop {
   scoped_ptr<base::PowerMonitor> power_monitor_;
   scoped_ptr<base::HighResolutionTimerManager> hi_res_timer_manager_;
   scoped_ptr<net::NetworkChangeNotifier> network_change_notifier_;
+  // user_input_monitor_ has to outlive audio_manager_, so declared first.
+  scoped_ptr<media::UserInputMonitor> user_input_monitor_;
   scoped_ptr<media::AudioManager> audio_manager_;
   scoped_ptr<media::MIDIManager> midi_manager_;
   scoped_ptr<AudioMirroringManager> audio_mirroring_manager_;
@@ -135,6 +146,8 @@ class CONTENT_EXPORT BrowserMainLoop {
 #elif defined(OS_MACOSX) && !defined(OS_IOS)
   scoped_ptr<DeviceMonitorMac> device_monitor_mac_;
 #endif
+  // The startup task runner is created by CreateStartupTasks()
+  scoped_ptr<StartupTaskRunner> startup_task_runner_;
 
   // Destroy parts_ before main_message_loop_ (required) and before other
   // classes constructed in content (but after main_thread_).
@@ -158,6 +171,7 @@ class CONTENT_EXPORT BrowserMainLoop {
   scoped_ptr<base::Thread> indexed_db_thread_;
   scoped_ptr<MemoryObserver> memory_observer_;
   scoped_ptr<base::debug::TraceMemoryController> trace_memory_controller_;
+  scoped_ptr<base::debug::TraceEventSystemStatsMonitor> system_stats_monitor_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserMainLoop);
 };

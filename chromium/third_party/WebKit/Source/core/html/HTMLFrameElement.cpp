@@ -32,7 +32,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLFrameElement::HTMLFrameElement(const QualifiedName& tagName, Document* document)
+inline HTMLFrameElement::HTMLFrameElement(const QualifiedName& tagName, Document& document)
     : HTMLFrameElementBase(tagName, document)
     , m_frameBorder(true)
     , m_frameBorderSet(false)
@@ -41,12 +41,12 @@ inline HTMLFrameElement::HTMLFrameElement(const QualifiedName& tagName, Document
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLFrameElement> HTMLFrameElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLFrameElement> HTMLFrameElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLFrameElement(tagName, document));
 }
 
-bool HTMLFrameElement::rendererIsNeeded(const NodeRenderingContext&)
+bool HTMLFrameElement::rendererIsNeeded(const RenderStyle&)
 {
     // For compatibility, frames render even when display: none is set.
     return isURLAllowed();
@@ -61,7 +61,7 @@ static inline HTMLFrameSetElement* containingFrameSetElement(Node* node)
 {
     while ((node = node->parentNode())) {
         if (node->hasTagName(framesetTag))
-            return static_cast<HTMLFrameSetElement*>(node);
+            return toHTMLFrameSetElement(node);
     }
     return 0;
 }

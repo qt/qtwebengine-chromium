@@ -42,7 +42,6 @@
        }],
      ],
     }],
-
     ['OS=="linux" or OS=="android"', {
       'targets': [
         {
@@ -107,6 +106,7 @@
                 # and include it here.
                 'android_java_files': [
                   '<(webrtc_modules_dir)/audio_device/android/java/src/org/webrtc/voiceengine/WebRTCAudioDevice.java',
+                  '<(webrtc_modules_dir)/audio_device/android/java/src/org/webrtc/voiceengine/AudioManagerAndroid.java',
                   '<(webrtc_modules_dir)/video_capture/android/java/src/org/webrtc/videoengine/CaptureCapabilityAndroid.java',
                   '<(webrtc_modules_dir)/video_capture/android/java/src/org/webrtc/videoengine/VideoCaptureAndroid.java',
                   '<(webrtc_modules_dir)/video_capture/android/java/src/org/webrtc/videoengine/VideoCaptureDeviceInfoAndroid.java',
@@ -150,7 +150,7 @@
         },
       ],
     }],
-    ['libjingle_objc == 1', {
+    ['OS=="ios" or (OS=="mac" and target_arch!="ia32")', {
       'targets': [
         {
           'target_name': 'libjingle_peerconnection_objc',
@@ -229,13 +229,14 @@
           'link_settings': {
             'libraries': [
               '$(SDKROOT)/System/Library/Frameworks/Foundation.framework',
+              '-lstdc++',
             ],
           },
           'xcode_settings': {
             'CLANG_ENABLE_OBJC_ARC': 'YES',
           },
-        }
-      ]
+        },  # target libjingle_peerconnection_objc
+      ],
     }],
   ],
 
@@ -591,17 +592,6 @@
           ],
         }],
         ['OS=="mac"', {
-          'conditions': [
-            ['libjingle_objc != 1', {
-              'link_settings' :{
-                'xcode_settings': {
-                  'OTHER_LDFLAGS': [
-                    '-framework Carbon',
-                  ],
-                },
-              },
-            }],
-          ],
           'sources': [
             'base/macasyncsocket.cc',
             'base/macasyncsocket.h',
@@ -619,18 +609,36 @@
           ],
           'link_settings': {
             'libraries': [
-             '$(SDKROOT)/usr/lib/libcrypto.dylib',
-             '$(SDKROOT)/usr/lib/libssl.dylib',
+              '$(SDKROOT)/usr/lib/libcrypto.dylib',
+              '$(SDKROOT)/usr/lib/libssl.dylib',
             ],
-            'xcode_settings': {
-              'OTHER_LDFLAGS': [
-                '-framework Cocoa',
-                '-framework IOKit',
-                '-framework Security',
-                '-framework SystemConfiguration',
-              ],
+          },
+          'all_dependent_settings': {
+            'link_settings': {
+              'xcode_settings': {
+                'OTHER_LDFLAGS': [
+                  '-framework Cocoa',
+                  '-framework Foundation',
+                  '-framework IOKit',
+                  '-framework Security',
+                  '-framework SystemConfiguration',
+                ],
+              },
             },
           },
+          'conditions': [
+            ['target_arch=="ia32"', {
+              'all_dependent_settings': {
+                'link_settings': {
+                  'xcode_settings': {
+                    'OTHER_LDFLAGS': [
+                      '-framework Carbon',
+                    ],
+                  },
+                },
+              },
+            }],
+          ],
         }],
         ['OS=="ios"', {
           'sources': [
@@ -639,13 +647,16 @@
           'dependencies': [
             '../net/third_party/nss/ssl.gyp:libssl',
           ],
-          'xcode_settings': {
-            'OTHER_LDFLAGS': [
-              '-framework IOKit',
-              '-framework Security',
-              '-framework SystemConfiguration',
-              '-framework UIKit',
-            ],
+          'all_dependent_settings': {
+            'xcode_settings': {
+              'OTHER_LDFLAGS': [
+                '-framework Foundation',
+                '-framework IOKit',
+                '-framework Security',
+                '-framework SystemConfiguration',
+                '-framework UIKit',
+              ],
+            },
           },
         }],
         ['OS=="win"', {
@@ -903,12 +914,18 @@
             'media/devices/macdevicemanagermm.mm',
           ],
           'conditions': [
-            # TODO(hughv):  Investigate if this is needed.
-            [ 'libjingle_objc != 1', {
+            ['target_arch=="ia32"', {
               'sources': [
                 'media/devices/carbonvideorenderer.cc',
                 'media/devices/carbonvideorenderer.h',
               ],
+              'link_settings': {
+                'xcode_settings': {
+                  'OTHER_LDFLAGS': [
+                    '-framework Carbon',
+                  ],
+                },
+              },
             }],
           ],
           'xcode_settings': {
@@ -1032,6 +1049,7 @@
         'p2p/base/transportchannelimpl.h',
         'p2p/base/transportchannelproxy.cc',
         'p2p/base/transportchannelproxy.h',
+        'p2p/base/transportdescription.cc',
         'p2p/base/transportdescription.h',
         'p2p/base/transportdescriptionfactory.cc',
         'p2p/base/transportdescriptionfactory.h',
@@ -1119,8 +1137,6 @@
         'app/webrtc/jsepsessiondescription.h',
         'app/webrtc/localaudiosource.cc',
         'app/webrtc/localaudiosource.h',
-        'app/webrtc/localvideosource.cc',
-        'app/webrtc/localvideosource.h',
         'app/webrtc/mediaconstraintsinterface.cc',
         'app/webrtc/mediaconstraintsinterface.h',
         'app/webrtc/mediastream.cc',
@@ -1144,10 +1160,14 @@
         'app/webrtc/portallocatorfactory.cc',
         'app/webrtc/portallocatorfactory.h',
         'app/webrtc/proxy.h',
+        'app/webrtc/remotevideocapturer.cc',
+        'app/webrtc/remotevideocapturer.h',
         'app/webrtc/statscollector.cc',
         'app/webrtc/statscollector.h',
         'app/webrtc/statstypes.h',
         'app/webrtc/streamcollection.h',
+        'app/webrtc/videosource.cc',
+        'app/webrtc/videosource.h',
         'app/webrtc/videosourceinterface.h',
         'app/webrtc/videosourceproxy.h',
         'app/webrtc/videotrack.cc',

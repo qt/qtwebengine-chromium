@@ -21,7 +21,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
-#include "content/shell/shell.h"
+#include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
 #include "webkit/browser/database/database_util.h"
@@ -46,7 +46,8 @@ class IndexedDBBrowserTest : public ContentBrowserTest {
     LOG(INFO) << "Navigating to URL and blocking.";
     NavigateToURLBlockUntilNavigationsComplete(the_browser, test_url, 2);
     LOG(INFO) << "Navigation done.";
-    std::string result = the_browser->web_contents()->GetURL().ref();
+    std::string result =
+        the_browser->web_contents()->GetLastCommittedURL().ref();
     if (result != "pass") {
       std::string js_result;
       ASSERT_TRUE(ExecuteScriptAndExtractString(
@@ -428,6 +429,18 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, ForceCloseEventTest) {
   string16 expected_title16(ASCIIToUTF16("connection closed"));
   TitleWatcher title_watcher(shell()->web_contents(), expected_title16);
   EXPECT_EQ(expected_title16, title_watcher.WaitAndGetTitle());
+}
+
+class IndexedDBBrowserTestSingleProcess : public IndexedDBBrowserTest {
+ public:
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    command_line->AppendSwitch(switches::kSingleProcess);
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestSingleProcess,
+                       RenderThreadShutdownTest) {
+  SimpleTest(GetTestUrl("indexeddb", "shutdown_with_requests.html"));
 }
 
 }  // namespace content

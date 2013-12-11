@@ -26,24 +26,30 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "content/browser/browser_main.h"
+#include "content/browser/gpu/gpu_process_host.h"
 #include "content/common/set_process_title.h"
 #include "content/common/url_schemes.h"
+#include "content/gpu/in_process_gpu_thread.h"
 #include "content/public/app/content_main_delegate.h"
 #include "content/public/app/startup_helper_win.h"
 #include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/browser/utility_process_host.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/sandbox_init.h"
+#include "content/renderer/in_process_renderer_thread.h"
+#include "content/utility/in_process_utility_thread.h"
 #include "crypto/nss_util.h"
 #include "ipc/ipc_switches.h"
 #include "media/base/media.h"
 #include "sandbox/win/src/sandbox_types.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/base/ui_base_switches.h"
-#include "ui/base/win/dpi.h"
+#include "ui/gfx/win/dpi.h"
 #include "webkit/common/user_agent/user_agent.h"
 
 #if defined(USE_TCMALLOC)
@@ -424,6 +430,15 @@ int RunNamedProcessTypeMain(
 #endif  // !CHROME_MULTIPLE_DLL_BROWSER
   };
 
+#if !defined(CHROME_MULTIPLE_DLL_BROWSER)
+  UtilityProcessHost::RegisterUtilityMainThreadFactory(
+      CreateInProcessUtilityThread);
+  RenderProcessHost::RegisterRendererMainThreadFactory(
+      CreateInProcessRendererThread);
+  GpuProcessHost::RegisterGpuMainThreadFactory(
+      CreateInProcessGpuThread);
+#endif
+
   for (size_t i = 0; i < arraysize(kMainFunctions); ++i) {
     if (process_type == kMainFunctions[i].name) {
       if (delegate) {
@@ -657,10 +672,6 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     // It's important not to allocate the ports for processes which don't
     // register with the power monitor - see crbug.com/88867.
     if (process_type.empty() ||
-        process_type == switches::kPluginProcess ||
-        process_type == switches::kRendererProcess ||
-        process_type == switches::kUtilityProcess ||
-        process_type == switches::kWorkerProcess ||
         (delegate &&
          delegate->ProcessRegistersWithSystemProcess(process_type))) {
       base::PowerMonitorDeviceSource::AllocateSystemIOPorts();
@@ -671,6 +682,9 @@ class ContentMainRunnerImpl : public ContentMainRunner {
       MachBroker::ChildSendTaskPortToParent();
     }
 #elif defined(OS_WIN)
+    if (command_line.HasSwitch(switches::kEnableHighResolutionTime))
+      base::TimeTicks::SetNowIsHighResNowIfSupported();
+
     // This must be done early enough since some helper functions like
     // IsTouchEnabled, needed to load resources, may call into the theme dll.
     EnableThemeSupportOnAllWindowStations();
@@ -703,7 +717,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     RegisterPathProvider();
     RegisterContentSchemes(true);
 
-    CHECK(icu_util::Initialize());
+    CHECK(base::i18n::InitializeICU());
 
     InitializeStatsTable(command_line);
 

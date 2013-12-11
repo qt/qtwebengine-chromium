@@ -5,6 +5,8 @@
 #ifndef CONTENT_BROWSER_RENDERER_HOST_MEDIA_MIDI_HOST_H_
 #define CONTENT_BROWSER_RENDERER_HOST_MEDIA_MIDI_HOST_H_
 
+#include <vector>
+
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/common/content_export.h"
@@ -23,7 +25,7 @@ class CONTENT_EXPORT MIDIHost
       public media::MIDIManagerClient {
  public:
   // Called from UI thread from the owner of this object.
-  MIDIHost(media::MIDIManager* midi_manager);
+  MIDIHost(int renderer_process_id, media::MIDIManager* midi_manager);
 
   // BrowserMessageFilter implementation.
   virtual void OnChannelClosing() OVERRIDE;
@@ -33,7 +35,7 @@ class CONTENT_EXPORT MIDIHost
 
   // MIDIManagerClient implementation.
   virtual void ReceiveMIDIData(
-      int port_index,
+      uint32 port,
       const uint8* data,
       size_t length,
       double timestamp) OVERRIDE;
@@ -43,7 +45,7 @@ class CONTENT_EXPORT MIDIHost
   void OnStartSession(int client_id);
 
   // Data to be sent to a MIDI output port.
-  void OnSendData(int port,
+  void OnSendData(uint32 port,
                   const std::vector<uint8>& data,
                   double timestamp);
 
@@ -52,6 +54,8 @@ class CONTENT_EXPORT MIDIHost
   friend class BrowserThread;
 
   virtual ~MIDIHost();
+
+  int renderer_process_id_;
 
   // |midi_manager_| talks to the platform-specific MIDI APIs.
   // It can be NULL if the platform (or our current implementation)

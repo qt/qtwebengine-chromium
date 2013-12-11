@@ -55,7 +55,6 @@ RenderScrollbarPart* RenderScrollbarPart::createAnonymous(Document* document, Re
 
 void RenderScrollbarPart::layout()
 {
-    StackStats::LayoutCheckPoint layoutCheckPoint;
     setLocation(LayoutPoint()); // We don't worry about positioning ourselves. We're just determining our minimum width/height.
     if (m_scrollbar->orientation() == HorizontalScrollbar)
         layoutHorizontalPart();
@@ -137,7 +136,7 @@ void RenderScrollbarPart::computePreferredLogicalWidths()
 
     m_minPreferredLogicalWidth = m_maxPreferredLogicalWidth = 0;
 
-    setPreferredLogicalWidthsDirty(false);
+    clearPreferredLogicalWidthsDirty();
 }
 
 void RenderScrollbarPart::styleWillChange(StyleDifference diff, const RenderStyle* newStyle)

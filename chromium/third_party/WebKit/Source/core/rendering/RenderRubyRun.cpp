@@ -41,7 +41,7 @@ using namespace std;
 namespace WebCore {
 
 RenderRubyRun::RenderRubyRun()
-    : RenderBlock(0)
+    : RenderBlockFlow(0)
 {
     setReplaced(true);
     setInline(true);
@@ -197,7 +197,7 @@ void RenderRubyRun::removeChild(RenderObject* child)
 
 RenderRubyBase* RenderRubyRun::createRubyBase() const
 {
-    RenderRubyBase* renderer = RenderRubyBase::createAnonymous(document());
+    RenderRubyBase* renderer = RenderRubyBase::createAnonymous(&document());
     RefPtr<RenderStyle> newStyle = RenderStyle::createAnonymousStyleWithDisplay(style(), BLOCK);
     newStyle->setTextAlign(CENTER); // FIXME: use WEBKIT_CENTER?
     renderer->setStyle(newStyle.release());
@@ -208,21 +208,20 @@ RenderRubyRun* RenderRubyRun::staticCreateRubyRun(const RenderObject* parentRuby
 {
     ASSERT(parentRuby && parentRuby->isRuby());
     RenderRubyRun* rr = new RenderRubyRun();
-    rr->setDocumentForAnonymous(parentRuby->document());
+    rr->setDocumentForAnonymous(&parentRuby->document());
     RefPtr<RenderStyle> newStyle = RenderStyle::createAnonymousStyleWithDisplay(parentRuby->style(), INLINE_BLOCK);
     rr->setStyle(newStyle.release());
     return rr;
 }
 
-RenderObject* RenderRubyRun::layoutSpecialExcludedChild(bool relayoutChildren)
+RenderObject* RenderRubyRun::layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope& layoutScope)
 {
-    StackStats::LayoutCheckPoint layoutCheckPoint;
     // Don't bother positioning the RenderRubyRun yet.
     RenderRubyText* rt = rubyText();
     if (!rt)
         return 0;
     if (relayoutChildren)
-        rt->setChildNeedsLayout(MarkOnlyThis);
+        layoutScope.setChildNeedsLayout(rt);
     rt->layoutIfNeeded();
     return rt;
 }

@@ -7,15 +7,15 @@
 #include <algorithm>
 
 #include "ui/app_list/app_list_item_model.h"
-#include "ui/app_list/apps_grid_view_delegate.h"
 #include "ui/app_list/pagination_model.h"
 #include "ui/app_list/views/app_list_drag_and_drop_host.h"
 #include "ui/app_list/views/app_list_item_view.h"
+#include "ui/app_list/views/apps_grid_view_delegate.h"
 #include "ui/app_list/views/page_switcher.h"
 #include "ui/app_list/views/pulsing_block_view.h"
-#include "ui/base/animation/animation.h"
-#include "ui/base/events/event.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/events/event.h"
+#include "ui/gfx/animation/animation.h"
 #include "ui/views/border.h"
 #include "ui/views/view_model_utils.h"
 #include "ui/views/widget/widget.h"
@@ -33,6 +33,8 @@
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_win.h"
 #endif
+
+namespace app_list {
 
 namespace {
 
@@ -66,7 +68,7 @@ const int kPrerenderPages = 1;
 const float kDragAndDropProxyScale = 1.5f;
 
 // For testing we remember the last created grid view.
-app_list::AppsGridView* last_created_grid_view_for_test = NULL;
+AppsGridView* last_created_grid_view_for_test = NULL;
 
 // RowMoveAnimationDelegate is used when moving an item into a different row.
 // Before running the animation, the item's layer is re-created and kept in
@@ -86,8 +88,8 @@ class RowMoveAnimationDelegate
   }
   virtual ~RowMoveAnimationDelegate() {}
 
-  // ui::AnimationDelegate overrides:
-  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE {
+  // gfx::AnimationDelegate overrides:
+  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE {
     view_->layer()->SetOpacity(animation->GetCurrentValue());
     view_->layer()->ScheduleDraw();
 
@@ -98,11 +100,11 @@ class RowMoveAnimationDelegate
       layer_->ScheduleDraw();
     }
   }
-  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE {
+  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE {
     view_->layer()->SetOpacity(1.0f);
     view_->layer()->ScheduleDraw();
   }
-  virtual void AnimationCanceled(const ui::Animation* animation) OVERRIDE {
+  virtual void AnimationCanceled(const gfx::Animation* animation) OVERRIDE {
     view_->layer()->SetOpacity(1.0f);
     view_->layer()->ScheduleDraw();
   }
@@ -120,8 +122,6 @@ class RowMoveAnimationDelegate
 
 }  // namespace
 
-namespace app_list {
-
 #if defined(OS_WIN) && !defined(USE_AURA)
 // Interprets drag events sent from Windows via the drag/drop API and forwards
 // them to AppsGridView.
@@ -134,16 +134,15 @@ namespace app_list {
 // Windows drag that never enters the synchronous drag phase.
 class SynchronousDrag : public ui::DragSourceWin {
  public:
-  SynchronousDrag(app_list::AppsGridView* grid_view,
-              app_list::AppListItemView* drag_view,
-              const gfx::Point& drag_view_offset)
+  SynchronousDrag(AppsGridView* grid_view,
+                  AppListItemView* drag_view,
+                  const gfx::Point& drag_view_offset)
       : grid_view_(grid_view),
         drag_view_(drag_view),
         drag_view_offset_(drag_view_offset),
         has_shortcut_path_(false),
         running_(false),
-        canceled_(false) {
-  }
+        canceled_(false) {}
 
   void set_shortcut_path(const base::FilePath& shortcut_path) {
     has_shortcut_path_ = true;
@@ -187,8 +186,7 @@ class SynchronousDrag : public ui::DragSourceWin {
   }
 
   virtual void OnDragSourceMove() OVERRIDE {
-    grid_view_->UpdateDrag(app_list::AppsGridView::MOUSE,
-                           GetCursorInGridViewCoords());
+    grid_view_->UpdateDrag(AppsGridView::MOUSE, GetCursorInGridViewCoords());
   }
 
   void SetupExchangeData(ui::OSExchangeData* data) {
@@ -221,8 +219,8 @@ class SynchronousDrag : public ui::DragSourceWin {
     return grid_view_pt;
   }
 
-  app_list::AppsGridView* grid_view_;
-  app_list::AppListItemView* drag_view_;
+  AppsGridView* grid_view_;
+  AppListItemView* drag_view_;
   gfx::Point drag_view_offset_;
   bool has_shortcut_path_;
   base::FilePath shortcut_path_;
@@ -256,6 +254,13 @@ AppsGridView::AppsGridView(AppsGridViewDelegate* delegate,
 }
 
 AppsGridView::~AppsGridView() {
+  // Coming here |drag_view_| should already be canceled since otherwise the
+  // drag would disappear after the app list got animated away and closed,
+  // which would look odd.
+  DCHECK(!drag_view_);
+  if (drag_view_)
+    EndDrag(true);
+
   if (model_) {
     model_->RemoveObserver(this);
     model_->apps()->RemoveObserver(this);
@@ -347,9 +352,12 @@ void AppsGridView::OnGotShortcutPath(const base::FilePath& path) {
 
 void AppsGridView::StartSettingUpSynchronousDrag() {
 #if defined(OS_WIN) && !defined(USE_AURA)
+  if (!delegate_)
+    return;
+
   delegate_->GetShortcutPathForApp(
-    drag_view_->model()->app_id(),
-    base::Bind(&AppsGridView::OnGotShortcutPath, base::Unretained(this)));
+      drag_view_->model()->app_id(),
+      base::Bind(&AppsGridView::OnGotShortcutPath, base::Unretained(this)));
   synchronous_drag_ = new SynchronousDrag(this, drag_view_, drag_view_offset_);
 #endif
 }
@@ -431,7 +439,8 @@ void AppsGridView::EndDrag(bool cancel) {
   // EndDrag was called before if |drag_view_| is NULL.
   if (!drag_view_)
     return;
-
+  // Coming here a drag and drop was in progress.
+  bool landed_in_drag_and_drop_host = forward_events_to_drag_and_drop_host_;
   if (forward_events_to_drag_and_drop_host_) {
     forward_events_to_drag_and_drop_host_ = false;
     drag_and_drop_host_->EndDrag(cancel);
@@ -445,7 +454,17 @@ void AppsGridView::EndDrag(bool cancel) {
     // If we had a drag and drop proxy icon, we delete it and make the real
     // item visible again.
     drag_and_drop_host_->DestroyDragIconProxy();
-    HideView(drag_view_, false);
+    if (landed_in_drag_and_drop_host) {
+      // Move the item directly to the target location, avoiding the "zip back"
+      // animation if the user was pinning it to the shelf.
+      int i = drop_target_.slot;
+      gfx::Rect bounds = view_model_.ideal_bounds(i);
+      drag_view_->SetBoundsRect(bounds);
+    }
+    // Fade in slowly if it landed in the shelf.
+    SetViewHidden(drag_view_,
+             false /* hide */,
+             !landed_in_drag_and_drop_host /* animate */);
   }
 
   // The drag can be ended after the synchronous drag is created but before it
@@ -969,7 +988,9 @@ void AppsGridView::StartDragAndDropHostDrag(const gfx::Point& grid_location) {
                                            drag_view_,
                                            delta,
                                            kDragAndDropProxyScale);
-  HideView(drag_view_, true);
+  SetViewHidden(drag_view_,
+           true /* hide */,
+           true /* no animation */);
 }
 
 void AppsGridView::DispatchDragEventToDragAndDropHost(
@@ -1170,10 +1191,12 @@ void AppsGridView::OnAppListModelStatusChanged() {
   SchedulePaint();
 }
 
-void AppsGridView::HideView(views::View* view, bool hide) {
+void AppsGridView::SetViewHidden(views::View* view, bool hide, bool immediate) {
 #if defined(USE_AURA)
   ui::ScopedLayerAnimationSettings animator(view->layer()->GetAnimator());
-  animator.SetPreemptionStrategy(ui::LayerAnimator::IMMEDIATELY_SET_NEW_TARGET);
+  animator.SetPreemptionStrategy(
+      immediate ? ui::LayerAnimator::IMMEDIATELY_SET_NEW_TARGET :
+                  ui::LayerAnimator::BLEND_WITH_CURRENT_ANIMATION);
   view->layer()->SetOpacity(hide ? 0 : 1);
 #endif
 }

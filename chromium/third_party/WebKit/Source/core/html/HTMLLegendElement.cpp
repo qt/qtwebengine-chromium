@@ -26,7 +26,7 @@
 #include "core/html/HTMLLegendElement.h"
 
 #include "HTMLNames.h"
-#include "core/dom/NodeTraversal.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/html/HTMLFieldSetElement.h"
 #include "core/html/HTMLFormControlElement.h"
 
@@ -35,14 +35,14 @@ namespace WebCore {
 using namespace HTMLNames;
 
 
-inline HTMLLegendElement::HTMLLegendElement(const QualifiedName& tagName, Document* document)
+inline HTMLLegendElement::HTMLLegendElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
 {
     ASSERT(hasTagName(legendTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLLegendElement> HTMLLegendElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLLegendElement> HTMLLegendElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLLegendElement(tagName, document));
 }
@@ -92,7 +92,7 @@ HTMLFormElement* HTMLLegendElement::virtualForm() const
     if (!fieldset || !fieldset->hasTagName(fieldsetTag))
         return 0;
 
-    return static_cast<HTMLFieldSetElement*>(fieldset)->form();
+    return toHTMLFieldSetElement(fieldset)->form();
 }
 
 } // namespace

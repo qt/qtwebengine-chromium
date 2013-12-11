@@ -25,26 +25,33 @@ class MEDIA_EXPORT AudioManagerWin : public AudioManagerBase {
   virtual bool HasAudioInputDevices() OVERRIDE;
   virtual string16 GetAudioInputDeviceModel() OVERRIDE;
   virtual void ShowAudioInputSettings() OVERRIDE;
-  virtual void GetAudioInputDeviceNames(media::AudioDeviceNames* device_names)
-      OVERRIDE;
+  virtual void GetAudioInputDeviceNames(
+      AudioDeviceNames* device_names) OVERRIDE;
+  virtual void GetAudioOutputDeviceNames(
+      AudioDeviceNames* device_names) OVERRIDE;
   virtual AudioParameters GetInputStreamParameters(
       const std::string& device_id) OVERRIDE;
+  virtual std::string GetAssociatedOutputDeviceID(
+      const std::string& input_device_id) OVERRIDE;
 
   // Implementation of AudioManagerBase.
   virtual AudioOutputStream* MakeLinearOutputStream(
       const AudioParameters& params) OVERRIDE;
   virtual AudioOutputStream* MakeLowLatencyOutputStream(
       const AudioParameters& params,
+      const std::string& device_id,
       const std::string& input_device_id) OVERRIDE;
   virtual AudioInputStream* MakeLinearInputStream(
       const AudioParameters& params, const std::string& device_id) OVERRIDE;
   virtual AudioInputStream* MakeLowLatencyInputStream(
       const AudioParameters& params, const std::string& device_id) OVERRIDE;
+  virtual std::string GetDefaultOutputDeviceID() OVERRIDE;
 
  protected:
   virtual ~AudioManagerWin();
 
   virtual AudioParameters GetPreferredOutputStreamParameters(
+      const std::string& output_device_id,
       const AudioParameters& input_params) OVERRIDE;
 
  private:
@@ -55,7 +62,7 @@ class MEDIA_EXPORT AudioManagerWin : public AudioManagerBase {
   };
 
   // Allow unit test to modify the utilized enumeration API.
-  friend class AudioInputDeviceTest;
+  friend class AudioManagerTest;
 
   EnumerationType enumeration_type_;
   EnumerationType enumeration_type() { return enumeration_type_; }
@@ -75,6 +82,8 @@ class MEDIA_EXPORT AudioManagerWin : public AudioManagerBase {
   // Helper methods for constructing AudioDeviceListenerWin on the audio thread.
   void CreateDeviceListener();
   void DestroyDeviceListener();
+
+  void GetAudioDeviceNamesImpl(bool input, AudioDeviceNames* device_names);
 
   // Listen for output device changes.
   scoped_ptr<AudioDeviceListenerWin> output_device_listener_;

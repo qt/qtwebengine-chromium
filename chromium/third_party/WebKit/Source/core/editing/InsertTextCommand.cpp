@@ -36,7 +36,7 @@
 
 namespace WebCore {
 
-InsertTextCommand::InsertTextCommand(Document* document, const String& text, bool selectInsertedText, RebalanceType rebalanceType)
+InsertTextCommand::InsertTextCommand(Document& document, const String& text, bool selectInsertedText, RebalanceType rebalanceType)
     : CompositeEditCommand(document)
     , m_text(text)
     , m_selectInsertedText(selectInsertedText)
@@ -44,7 +44,7 @@ InsertTextCommand::InsertTextCommand(Document* document, const String& text, boo
 {
 }
 
-InsertTextCommand::InsertTextCommand(Document* document, const String& text, PassRefPtr<TextInsertionMarkerSupplier> markerSupplier)
+InsertTextCommand::InsertTextCommand(Document& document, const String& text, PassRefPtr<TextInsertionMarkerSupplier> markerSupplier)
     : CompositeEditCommand(document)
     , m_text(text)
     , m_selectInsertedText(false)
@@ -57,7 +57,7 @@ Position InsertTextCommand::positionInsideTextNode(const Position& p)
 {
     Position pos = p;
     if (isTabSpanTextNode(pos.anchorNode())) {
-        RefPtr<Node> textNode = document()->createEditingTextNode("");
+        RefPtr<Node> textNode = document().createEditingTextNode("");
         insertNodeAtTabSpanPosition(textNode.get(), pos);
         return firstPositionInNode(textNode.get());
     }
@@ -65,7 +65,7 @@ Position InsertTextCommand::positionInsideTextNode(const Position& p)
     // Prepare for text input by looking at the specified position.
     // It may be necessary to insert a text node to receive characters.
     if (!pos.containerNode()->isTextNode()) {
-        RefPtr<Node> textNode = document()->createEditingTextNode("");
+        RefPtr<Node> textNode = document().createEditingTextNode("");
         insertNodeAt(textNode.get(), pos);
         return firstPositionInNode(textNode.get());
     }
@@ -129,7 +129,7 @@ bool InsertTextCommand::performOverwrite(const String& text, bool selectInserted
 
 void InsertTextCommand::doApply()
 {
-    ASSERT(m_text.find('\n') == notFound);
+    ASSERT(m_text.find('\n') == kNotFound);
 
     if (!endingSelection().isNonOrphanedCaretOrRange())
         return;
@@ -145,7 +145,7 @@ void InsertTextCommand::doApply()
         // anything other than NoSelection. The rest of this function requires a real endingSelection, so bail out.
         if (endingSelection().isNone())
             return;
-    } else if (document()->frame()->editor()->isOverwriteModeEnabled()) {
+    } else if (document().frame()->editor().isOverwriteModeEnabled()) {
         if (performOverwrite(m_text, m_selectInsertedText))
             return;
     }
@@ -175,7 +175,7 @@ void InsertTextCommand::doApply()
     // and so deleteInsignificantText could remove it.  Save the position before the node in case that happens.
     Position positionBeforeStartNode(positionInParentBeforeNode(startPosition.containerNode()));
     deleteInsignificantText(startPosition.upstream(), startPosition.downstream());
-    if (!startPosition.anchorNode()->inDocument())
+    if (!startPosition.inDocument())
         startPosition = positionBeforeStartNode;
     if (!startPosition.isCandidate())
         startPosition = startPosition.downstream();
@@ -221,7 +221,7 @@ void InsertTextCommand::doApply()
     setEndingSelectionWithoutValidation(startPosition, endPosition);
 
     // Handle the case where there is a typing style.
-    if (RefPtr<EditingStyle> typingStyle = document()->frame()->selection()->typingStyle()) {
+    if (RefPtr<EditingStyle> typingStyle = document().frame()->selection().typingStyle()) {
         typingStyle->prepareToApplyAt(endPosition, EditingStyle::PreserveWritingDirection);
         if (!typingStyle->isEmpty())
             applyStyle(typingStyle.get());

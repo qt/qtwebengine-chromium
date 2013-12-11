@@ -46,6 +46,26 @@
 
 namespace webrtc {
 
+RtpData* NullObjectRtpData() {
+  static NullRtpData null_rtp_data;
+  return &null_rtp_data;
+}
+
+RtpFeedback* NullObjectRtpFeedback() {
+  static NullRtpFeedback null_rtp_feedback;
+  return &null_rtp_feedback;
+}
+
+RtpAudioFeedback* NullObjectRtpAudioFeedback() {
+  static NullRtpAudioFeedback null_rtp_audio_feedback;
+  return &null_rtp_audio_feedback;
+}
+
+ReceiveStatistics* NullObjectReceiveStatistics() {
+  static NullReceiveStatistics null_receive_statistics;
+  return &null_receive_statistics;
+}
+
 namespace ModuleRTPUtility {
 
 enum {
@@ -92,18 +112,6 @@ uint32_t ConvertNTPTimeToMS(uint32_t NTPsec, uint32_t NTPfrac) {
 /*
  * Misc utility routines
  */
-
-const uint8_t* GetPayloadData(const RTPHeader& rtp_header,
-                              const uint8_t* packet) {
-  return packet + rtp_header.headerLength;
-}
-
-uint16_t GetPayloadDataLength(const RTPHeader& rtp_header,
-                              const uint16_t packet_length) {
-  uint16_t length = packet_length - rtp_header.paddingLength -
-      rtp_header.headerLength;
-  return static_cast<uint16_t>(length);
-}
 
 #if defined(_WIN32)
 bool StringCompare(const char* str1, const char* str2,
@@ -188,9 +196,9 @@ void RTPPayload::SetType(RtpVideoCodecTypes videoType) {
   type = videoType;
 
   switch (type) {
-    case kRtpGenericVideo:
+    case kRtpVideoGeneric:
       break;
-    case kRtpVp8Video: {
+    case kRtpVideoVp8: {
       info.VP8.nonReferenceFrame = false;
       info.VP8.beginningOfPartition = false;
       info.VP8.partitionID = 0;
@@ -567,9 +575,9 @@ bool RTPPayloadParser::Parse(RTPPayload& parsedPacket) const {
   parsedPacket.SetType(_videoType);
 
   switch (_videoType) {
-    case kRtpGenericVideo:
+    case kRtpVideoGeneric:
       return ParseGeneric(parsedPacket);
-    case kRtpVp8Video:
+    case kRtpVideoVp8:
       return ParseVP8(parsedPacket);
     default:
       return false;

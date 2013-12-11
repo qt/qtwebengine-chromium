@@ -10,6 +10,7 @@
 #include "base/containers/hash_tables.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
+#include "base/stl_util.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -222,10 +223,9 @@ bool MimeUtil::GetMimeTypeFromExtensionHelper(
 
   base::FilePath path_ext(ext);
   const string ext_narrow_str = path_ext.AsUTF8Unsafe();
-  const char* mime_type;
-
-  mime_type = FindMimeType(primary_mappings, arraysize(primary_mappings),
-                           ext_narrow_str.c_str());
+  const char* mime_type = FindMimeType(primary_mappings,
+                                       arraysize(primary_mappings),
+                                       ext_narrow_str.c_str());
   if (mime_type) {
     *result = mime_type;
     return true;
@@ -454,7 +454,7 @@ void MimeUtil::InitializeMimeTypeMaps() {
     non_image_map_.insert(supported_javascript_types[i]);
   for (size_t i = 0; i < arraysize(common_media_types); ++i)
     non_image_map_.insert(common_media_types[i]);
-#if defined(GOOGLE_CHROME_BUILD) || defined(USE_PROPRIETARY_CODECS)
+#if defined(USE_PROPRIETARY_CODECS)
   for (size_t i = 0; i < arraysize(proprietary_media_types); ++i)
     non_image_map_.insert(proprietary_media_types[i]);
 #endif
@@ -462,7 +462,7 @@ void MimeUtil::InitializeMimeTypeMaps() {
   // Initialize the supported media types.
   for (size_t i = 0; i < arraysize(common_media_types); ++i)
     media_map_.insert(common_media_types[i]);
-#if defined(GOOGLE_CHROME_BUILD) || defined(USE_PROPRIETARY_CODECS)
+#if defined(USE_PROPRIETARY_CODECS)
   for (size_t i = 0; i < arraysize(proprietary_media_types); ++i)
     media_map_.insert(proprietary_media_types[i]);
 #endif
@@ -472,7 +472,7 @@ void MimeUtil::InitializeMimeTypeMaps() {
 
   for (size_t i = 0; i < arraysize(common_media_codecs); ++i)
     codecs_map_.insert(common_media_codecs[i]);
-#if defined(GOOGLE_CHROME_BUILD) || defined(USE_PROPRIETARY_CODECS)
+#if defined(USE_PROPRIETARY_CODECS)
   for (size_t i = 0; i < arraysize(proprietary_media_codecs); ++i)
     codecs_map_.insert(proprietary_media_codecs[i]);
 #endif
@@ -542,11 +542,9 @@ bool MatchesMimeTypeParameters(const std::string& mime_type_pattern,
 
     sort(pattern_parameters.begin(), pattern_parameters.end());
     sort(test_parameters.begin(), test_parameters.end());
-    std::vector<std::string> difference;
-    std::set_difference(pattern_parameters.begin(), pattern_parameters.end(),
-                        test_parameters.begin(), test_parameters.end(),
-                        std::inserter(difference, difference.begin()));
-
+    std::vector<std::string> difference =
+      base::STLSetDifference<std::vector<std::string> >(pattern_parameters,
+                                                        test_parameters);
     return difference.size() == 0;
   }
   return true;

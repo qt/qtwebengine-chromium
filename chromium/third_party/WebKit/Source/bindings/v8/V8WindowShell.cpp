@@ -244,7 +244,7 @@ bool V8WindowShell::initializeIfNeeded()
 
         SecurityOrigin* origin = m_world->isolatedWorldSecurityOrigin();
         if (origin && InspectorInstrumentation::hasFrontends()) {
-            ScriptState* scriptState = ScriptState::forContext(v8::Local<v8::Context>::New(context));
+            ScriptState* scriptState = ScriptState::forContext(v8::Local<v8::Context>::New(m_isolate, context));
             InspectorInstrumentation::didCreateIsolatedContext(m_frame, scriptState, origin);
         }
     }
@@ -362,7 +362,7 @@ void V8WindowShell::updateDocumentProperty()
     // We also stash a reference to the document on the inner global object so that
     // DOMWindow objects we obtain from JavaScript references are guaranteed to have
     // live Document objects.
-    toInnerGlobalObject(context)->SetHiddenValue(V8HiddenPropertyName::document(), documentWrapper);
+    toInnerGlobalObject(context)->SetHiddenValue(V8HiddenPropertyName::document(m_isolate), documentWrapper);
 }
 
 void V8WindowShell::clearDocumentProperty()
@@ -425,7 +425,7 @@ void V8WindowShell::updateDocument()
 
 static v8::Handle<v8::Value> getNamedProperty(HTMLDocument* htmlDocument, const AtomicString& key, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
-    if (!htmlDocument->hasNamedItem(key.impl()) && !htmlDocument->hasExtraNamedItem(key.impl()))
+    if (!htmlDocument->hasNamedItem(key) && !htmlDocument->hasExtraNamedItem(key))
         return v8Undefined();
 
     RefPtr<HTMLCollection> items = htmlDocument->documentNamedItems(key);
@@ -483,7 +483,7 @@ void V8WindowShell::namedItemRemoved(HTMLDocument* document, const AtomicString&
     if (m_context.isEmpty())
         return;
 
-    if (document->hasNamedItem(name.impl()) || document->hasExtraNamedItem(name.impl()))
+    if (document->hasNamedItem(name) || document->hasExtraNamedItem(name))
         return;
 
     v8::HandleScope handleScope(m_isolate);

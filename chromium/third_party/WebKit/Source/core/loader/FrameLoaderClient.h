@@ -47,6 +47,7 @@ template<class T> class Handle;
 
 namespace WebKit {
 class WebCookieJar;
+class WebServiceWorkerRegistry;
 }
 
 namespace WebCore {
@@ -79,7 +80,6 @@ class FetchRequest;
     class SecurityOrigin;
     class SharedBuffer;
     class SocketStreamHandle;
-    class StringWithDirection;
     class SubstituteData;
     class Widget;
 
@@ -97,14 +97,14 @@ class FetchRequest;
         virtual void dispatchWillSendRequest(DocumentLoader*, unsigned long identifier, ResourceRequest&, const ResourceResponse& redirectResponse) = 0;
         virtual void dispatchDidReceiveResponse(DocumentLoader*, unsigned long identifier, const ResourceResponse&) = 0;
         virtual void dispatchDidFinishLoading(DocumentLoader*, unsigned long identifier) = 0;
-        virtual void dispatchDidLoadResourceFromMemoryCache(DocumentLoader*, const ResourceRequest&, const ResourceResponse&, int length) = 0;
+        virtual void dispatchDidLoadResourceFromMemoryCache(const ResourceRequest&, const ResourceResponse&) = 0;
 
         virtual void dispatchDidHandleOnloadEvents() = 0;
         virtual void dispatchDidReceiveServerRedirectForProvisionalLoad() = 0;
         virtual void dispatchDidNavigateWithinPage() { }
         virtual void dispatchWillClose() = 0;
         virtual void dispatchDidStartProvisionalLoad() = 0;
-        virtual void dispatchDidReceiveTitle(const StringWithDirection&) = 0;
+        virtual void dispatchDidReceiveTitle(const String&) = 0;
         virtual void dispatchDidChangeIcons(IconType) = 0;
         virtual void dispatchDidCommitLoad() = 0;
         virtual void dispatchDidFailProvisionalLoad(const ResourceError&) = 0;
@@ -114,7 +114,7 @@ class FetchRequest;
 
         virtual void dispatchDidLayout(LayoutMilestones) { }
 
-        virtual NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, NavigationType, NavigationPolicy, bool isRedirect) = 0;
+        virtual NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy) = 0;
 
         virtual void dispatchWillRequestResource(FetchRequest*) { }
 
@@ -128,8 +128,7 @@ class FetchRequest;
 
         virtual void loadURLExternally(const ResourceRequest&, NavigationPolicy, const String& suggestedName = String()) = 0;
 
-        virtual bool shouldGoToHistoryItem(HistoryItem*) const = 0;
-        virtual bool shouldStopLoadingForHistoryItem(HistoryItem*) const = 0;
+        virtual void navigateBackForward(int offset) const = 0;
 
         // Another page has accessed the initial empty document of this frame.
         // It is no longer safe to display a provisional URL, since a URL spoof
@@ -152,8 +151,6 @@ class FetchRequest;
         virtual void didDetectXSS(const KURL&, bool didBlockEntirePage) = 0;
         virtual void didDispatchPingLoader(const KURL&) = 0;
 
-        virtual ResourceError interruptedForPolicyChangeError(const ResourceRequest&) = 0;
-
         virtual PassRefPtr<DocumentLoader> createDocumentLoader(const ResourceRequest&, const SubstituteData&) = 0;
 
         virtual String userAgent(const KURL&) = 0;
@@ -162,7 +159,7 @@ class FetchRequest;
 
         virtual void transitionToCommittedForNewPage() = 0;
 
-        virtual PassRefPtr<Frame> createFrame(const KURL& url, const String& name, HTMLFrameOwnerElement* ownerElement, const String& referrer, bool allowsScrolling, int marginWidth, int marginHeight) = 0;
+        virtual PassRefPtr<Frame> createFrame(const KURL&, const String& name, const String& referrer, HTMLFrameOwnerElement*) = 0;
         virtual PassRefPtr<Widget> createPlugin(const IntSize&, HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool loadManually) = 0;
 
         virtual PassRefPtr<Widget> createJavaAppletWidget(const IntSize&, HTMLAppletElement*, const KURL& baseURL, const Vector<String>& paramNames, const Vector<String>& paramValues) = 0;
@@ -214,10 +211,15 @@ class FetchRequest;
         // notification with the given GL_ARB_robustness guilt/innocence code (see Extensions3D.h).
         virtual void didLoseWebGLContext(int) { }
 
+        // Returns true if WebGL extension WEBGL_debug_renderer_info is allowed.
+        virtual bool allowWebGLDebugRendererInfo() { return false; }
+
         // If an HTML document is being loaded, informs the embedder that the document will have its <body> attached soon.
         virtual void dispatchWillInsertBody() { }
 
         virtual void dispatchDidChangeResourcePriority(unsigned long /*identifier*/, ResourceLoadPriority) { }
+
+        virtual WebKit::WebServiceWorkerRegistry* serviceWorkerRegistry() = 0;
     };
 
 } // namespace WebCore

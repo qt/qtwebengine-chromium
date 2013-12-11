@@ -60,7 +60,7 @@ int vp8_yv12_realloc_frame_buffer(YV12_BUFFER_CONFIG *ybf,
 
     /* Only support allocating buffers that have a border that's a multiple
      * of 32. The border restriction is required to get 16-byte alignment of
-     * the start of the chroma rows without intoducing an arbitrary gap
+     * the start of the chroma rows without introducing an arbitrary gap
      * between planes, which would break the semantics of things like
      * vpx_img_set_rect(). */
     if (border & 0x1f)
@@ -158,7 +158,7 @@ int vp9_realloc_frame_buffer(YV12_BUFFER_CONFIG *ybf,
 
     /* Only support allocating buffers that have a border that's a multiple
      * of 32. The border restriction is required to get 16-byte alignment of
-     * the start of the chroma rows without intoducing an arbitrary gap
+     * the start of the chroma rows without introducing an arbitrary gap
      * between planes, which would break the semantics of things like
      * vpx_img_set_rect(). */
     if (border & 0x1f)
@@ -170,6 +170,8 @@ int vp9_realloc_frame_buffer(YV12_BUFFER_CONFIG *ybf,
     ybf->y_height = aligned_height;
     ybf->y_stride = y_stride;
 
+    ybf->uv_crop_width = (width + ss_x) >> ss_x;
+    ybf->uv_crop_height = (height + ss_y) >> ss_y;
     ybf->uv_width = uv_width;
     ybf->uv_height = uv_height;
     ybf->uv_stride = uv_stride;
@@ -190,7 +192,7 @@ int vp9_realloc_frame_buffer(YV12_BUFFER_CONFIG *ybf,
     ybf->alpha_buffer = ybf->buffer_alloc + yplane_size + 2 * uvplane_size +
                         (alpha_border_h * alpha_stride) + alpha_border_w;
 #endif
-    ybf->corrupted = 0; /* assume not currupted by errors */
+    ybf->corrupted = 0; /* assume not corrupted by errors */
     return 0;
   }
   return -2;

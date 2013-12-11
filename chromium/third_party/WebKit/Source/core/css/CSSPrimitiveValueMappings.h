@@ -1273,9 +1273,6 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(EDisplay e)
     case INLINE_GRID:
         m_value.valueID = CSSValueInlineGrid;
         break;
-    case LAZY_BLOCK:
-        m_value.valueID = CSSValueLazyBlock;
-        break;
     case NONE:
         m_value.valueID = CSSValueNone;
         break;
@@ -3359,6 +3356,48 @@ template<> inline CSSPrimitiveValue::operator FontDescription::Kerning() const
     return FontDescription::AutoKerning;
 }
 
+template<> inline CSSPrimitiveValue::CSSPrimitiveValue(ObjectFit fit)
+    : CSSValue(PrimitiveClass)
+{
+    m_primitiveUnitType = CSS_VALUE_ID;
+    switch (fit) {
+    case ObjectFitFill:
+        m_value.valueID = CSSValueFill;
+        break;
+    case ObjectFitContain:
+        m_value.valueID = CSSValueContain;
+        break;
+    case ObjectFitCover:
+        m_value.valueID = CSSValueCover;
+        break;
+    case ObjectFitNone:
+        m_value.valueID = CSSValueNone;
+        break;
+    case ObjectFitScaleDown:
+        m_value.valueID = CSSValueScaleDown;
+        break;
+    }
+}
+
+template<> inline CSSPrimitiveValue::operator ObjectFit() const
+{
+    switch (m_value.valueID) {
+    case CSSValueFill:
+        return ObjectFitFill;
+    case CSSValueContain:
+        return ObjectFitContain;
+    case CSSValueCover:
+        return ObjectFitCover;
+    case CSSValueNone:
+        return ObjectFitNone;
+    case CSSValueScaleDown:
+        return ObjectFitScaleDown;
+    default:
+        ASSERT_NOT_REACHED();
+        return ObjectFitFill;
+    }
+}
+
 template<> inline CSSPrimitiveValue::CSSPrimitiveValue(FontSmoothingMode smoothing)
     : CSSValue(PrimitiveClass)
 {
@@ -4688,6 +4727,45 @@ template<> inline CSSPrimitiveValue::operator EVectorEffect() const
     return VE_NONE;
 }
 
+template<> inline CSSPrimitiveValue::CSSPrimitiveValue(EPaintOrderType e)
+    : CSSValue(PrimitiveClass)
+{
+    m_primitiveUnitType = CSS_VALUE_ID;
+    switch (e) {
+    case PT_FILL:
+        m_value.valueID = CSSValueFill;
+        break;
+    case PT_STROKE:
+        m_value.valueID = CSSValueStroke;
+        break;
+    case PT_MARKERS:
+        m_value.valueID = CSSValueMarkers;
+        break;
+    default:
+        ASSERT_NOT_REACHED();
+        m_value.valueID = CSSValueFill;
+        break;
+    }
+}
+
+template<> inline CSSPrimitiveValue::operator EPaintOrderType() const
+{
+    ASSERT(isValueID());
+    switch (m_value.valueID) {
+    case CSSValueFill:
+        return PT_FILL;
+    case CSSValueStroke:
+        return PT_STROKE;
+    case CSSValueMarkers:
+        return PT_MARKERS;
+    default:
+        break;
+    }
+
+    ASSERT_NOT_REACHED();
+    return PT_NONE;
+}
+
 template<> inline CSSPrimitiveValue::CSSPrimitiveValue(EMaskType e)
     : CSSValue(PrimitiveClass)
 {
@@ -4746,6 +4824,36 @@ template<> inline CSSPrimitiveValue::operator TouchAction() const
 
     ASSERT_NOT_REACHED();
     return TouchActionNone;
+}
+
+template<> inline CSSPrimitiveValue::CSSPrimitiveValue(EIsolation i)
+    : CSSValue(PrimitiveClass)
+{
+    m_primitiveUnitType = CSS_VALUE_ID;
+    switch (i) {
+    case IsolationAuto:
+        m_value.valueID = CSSValueAuto;
+        break;
+    case IsolationIsolate:
+        m_value.valueID = CSSValueIsolate;
+        break;
+    }
+}
+
+template<> inline CSSPrimitiveValue::operator EIsolation() const
+{
+    ASSERT(isValueID());
+    switch (m_value.valueID) {
+    case CSSValueAuto:
+        return IsolationAuto;
+    case CSSValueIsolate:
+        return IsolationIsolate;
+    default:
+        break;
+    }
+
+    ASSERT_NOT_REACHED();
+    return IsolationAuto;
 }
 
 }

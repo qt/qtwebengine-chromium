@@ -275,15 +275,47 @@ CSSPrimitiveValue::CSSPrimitiveValue(RGBA32 color)
     m_value.rgbcolor = color;
 }
 
-CSSPrimitiveValue::CSSPrimitiveValue(const Length& length)
+CSSPrimitiveValue::CSSPrimitiveValue(const Length& length, const RenderStyle* style)
     : CSSValue(PrimitiveClass)
+{
+    switch (length.type()) {
+    case Auto:
+    case Intrinsic:
+    case MinIntrinsic:
+    case MinContent:
+    case MaxContent:
+    case FillAvailable:
+    case FitContent:
+    case ExtendToZoom:
+    case Percent:
+    case ViewportPercentageWidth:
+    case ViewportPercentageHeight:
+    case ViewportPercentageMin:
+    case ViewportPercentageMax:
+        init(length);
+        return;
+    case Fixed:
+        m_primitiveUnitType = CSS_PX;
+        m_value.num = adjustFloatForAbsoluteZoom(length.value(), style);
+        return;
+    case Calculated:
+        init(CSSCalcValue::create(length.calculationValue().get(), style));
+        return;
+    case Relative:
+    case Undefined:
+        ASSERT_NOT_REACHED();
+        break;
+    }
+}
+
+void CSSPrimitiveValue::init(const Length& length)
 {
     switch (length.type()) {
         case Auto:
             m_primitiveUnitType = CSS_VALUE_ID;
             m_value.valueID = CSSValueAuto;
             break;
-        case WebCore::Fixed:
+        case Fixed:
             m_primitiveUnitType = CSS_PX;
             m_value.num = length.value();
             break;
@@ -956,7 +988,8 @@ String CSSPrimitiveValue::customCssText(CssTextFormattingFlags formattingFlag) c
             text = formatNumber(m_value.num, "turn");
             break;
         case CSS_DIMENSION:
-            text = m_value.string;
+            // FIXME: We currently don't handle CSS_DIMENSION properly as we don't store
+            // the actual dimension, just the numeric value as a string.
             break;
         case CSS_STRING:
             text = formattingFlag == AlwaysQuoteCSSString ? quoteCSSString(m_value.string) : quoteCSSStringIfNeeded(m_value.string);
@@ -1046,6 +1079,9 @@ String CSSPrimitiveValue::customCssText(CssTextFormattingFlags formattingFlag) c
             text = result.toString();
             break;
         }
+        case CSS_FR:
+            text = formatNumber(m_value.num, "fr");
+            break;
         case CSS_PAIR:
             text = getPairValue()->cssText();
             break;
@@ -1207,6 +1243,7 @@ PassRefPtr<CSSPrimitiveValue> CSSPrimitiveValue::cloneForCSSOM() const
     case CSS_DPPX:
     case CSS_DPI:
     case CSS_DPCM:
+    case CSS_FR:
         result = CSSPrimitiveValue::create(m_value.num, static_cast<UnitTypes>(m_primitiveUnitType));
         break;
     case CSS_PROPERTY_ID:
@@ -1268,6 +1305,7 @@ bool CSSPrimitiveValue::equals(const CSSPrimitiveValue& other) const
     case CSS_VMIN:
     case CSS_VMAX:
     case CSS_DIMENSION:
+    case CSS_FR:
         return m_value.num == other.m_value.num;
     case CSS_PROPERTY_ID:
         return propertyName(m_value.propertyID) == propertyName(other.m_value.propertyID);

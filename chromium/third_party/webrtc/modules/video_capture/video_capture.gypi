@@ -115,6 +115,28 @@
                 'android/video_capture_android.h',
               ],
             }],  # android
+            ['OS=="ios"', {
+              'sources': [
+                'ios/device_info_ios.h',
+                'ios/device_info_ios.mm',
+                'ios/device_info_ios_objc.h',
+                'ios/device_info_ios_objc.mm',
+                'ios/video_capture_ios.h',
+                'ios/video_capture_ios.mm',
+                'ios/video_capture_ios_objc.h',
+                'ios/video_capture_ios_objc.mm',
+              ],
+              'all_dependent_settings': {
+                'xcode_settings': {
+                  'OTHER_LDFLAGS': [
+                    '-framework AVFoundation',
+                    '-framework CoreMedia',
+                    '-framework CoreVideo',
+                    '-framework UIKit',
+                  ],
+                },
+              },
+            }],  # ios
           ], # conditions
         }],  # include_internal_video_capture
       ], # conditions
@@ -124,7 +146,7 @@
     ['include_tests==1', {
       'targets': [
         {
-          'target_name': 'video_capture_integrationtests',
+          'target_name': 'video_capture_tests',
           'type': 'executable',
           'dependencies': [
             'video_capture_module',
@@ -175,6 +197,26 @@
             }], # OS!="mac"
           ] # conditions
         },
+      ], # targets
+      'conditions': [
+        ['test_isolation_mode != "noop"', {
+          'targets': [
+            {
+              'target_name': 'video_capture_tests_run',
+              'type': 'none',
+              'dependencies': [
+                '<(import_isolate_path):import_isolate_gypi',
+                'video_capture_tests',
+              ],
+              'includes': [
+                'video_capture_tests.isolate',
+              ],
+              'sources': [
+                'video_capture_tests.isolate',
+              ],
+            },
+          ],
+        }],
       ],
     }],
   ],

@@ -63,7 +63,7 @@ namespace WebCore {
 
 Node* InjectedScriptHost::scriptValueAsNode(ScriptValue value)
 {
-    v8::HandleScope scope(v8::Isolate::GetCurrent());
+    v8::HandleScope scope(value.isolate());
     if (!value.isObject() || value.isNull())
         return 0;
     return V8Node::toNative(v8::Handle<v8::Object>::Cast(value.v8Value()));
@@ -71,13 +71,14 @@ Node* InjectedScriptHost::scriptValueAsNode(ScriptValue value)
 
 ScriptValue InjectedScriptHost::nodeAsScriptValue(ScriptState* state, Node* node)
 {
-    v8::HandleScope scope;
+    v8::Isolate* isolate = state->isolate();
+    v8::HandleScope scope(isolate);
     v8::Local<v8::Context> context = state->context();
     v8::Context::Scope contextScope(context);
 
     if (!BindingSecurity::shouldAllowAccessToNode(node))
-        return ScriptValue(v8::Null());
-    return ScriptValue(toV8(node, v8::Handle<v8::Object>(), context->GetIsolate()));
+        return ScriptValue(v8::Null(isolate), isolate);
+    return ScriptValue(toV8(node, v8::Handle<v8::Object>(), isolate), isolate);
 }
 
 void V8InjectedScriptHost::inspectedObjectMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
@@ -256,7 +257,7 @@ static v8::Handle<v8::Array> getJSListenerFunctions(Document* document, const Ev
         v8::Local<v8::Object> listenerEntry = v8::Object::New();
         listenerEntry->Set(v8::String::NewSymbol("listener"), function);
         listenerEntry->Set(v8::String::NewSymbol("useCapture"), v8::Boolean::New(listenerInfo.eventListenerVector[i].useCapture));
-        result->Set(v8::Number::New(outputIndex++), listenerEntry);
+        result->Set(v8::Number::New(v8Listener->isolate(), outputIndex++), listenerEntry);
     }
     return result;
 }
@@ -272,10 +273,6 @@ void V8InjectedScriptHost::getEventListenersMethodCustom(const v8::FunctionCallb
     Node* node = V8Node::toNative(value->ToObject());
     if (!node)
         return;
-    // This can only happen for orphan DocumentType nodes.
-    Document* document = node->document();
-    if (!node->document())
-        return;
 
     InjectedScriptHost* host = V8InjectedScriptHost::toNative(args.Holder());
     Vector<EventListenerInfo> listenersArray;
@@ -283,7 +280,7 @@ void V8InjectedScriptHost::getEventListenersMethodCustom(const v8::FunctionCallb
 
     v8::Local<v8::Object> result = v8::Object::New();
     for (size_t i = 0; i < listenersArray.size(); ++i) {
-        v8::Handle<v8::Array> listeners = getJSListenerFunctions(document, listenersArray[i]);
+        v8::Handle<v8::Array> listeners = getJSListenerFunctions(&node->document(), listenersArray[i]);
         if (!listeners->Length())
             continue;
         AtomicString eventType = listenersArray[i].eventType;
@@ -299,8 +296,8 @@ void V8InjectedScriptHost::inspectMethodCustom(const v8::FunctionCallbackInfo<v8
         return;
 
     InjectedScriptHost* host = V8InjectedScriptHost::toNative(args.Holder());
-    ScriptValue object(args[0]);
-    ScriptValue hints(args[1]);
+    ScriptValue object(args[0], args.GetIsolate());
+    ScriptValue hints(args[1], args.GetIsolate());
     host->inspectImpl(object.toJSONValue(ScriptState::current()), hints.toJSONValue(ScriptState::current()));
 }
 

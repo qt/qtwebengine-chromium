@@ -579,17 +579,41 @@ below:
       <message name="IDS_FORM_VALIDATION_TYPE_MISMATCH" desc="Heading or short sentence shown when a form control in a webpage requires specific type such as email address or URL, but the specified value does not comform to the type.">
         Invalid value.
       </message>
+      <message name="IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL_EMPTY" desc="Heading or short sentence shown when there is an email field in a form and a user specified an empty value.">
+        Please enter a non-empty email address.
+      </message>
+      <message name="IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL_EMPTY_DOMAIN" desc="Heading or short sentence shown when there is an email field in a form and a user specified an invalid value like 'user@'.">
+        Please enter a part following '<ph name="ATSIGN">$1<ex>@</ex></ph>'. '<ph name="INVALIDADDRESS">$2<ex>user@</ex></ph>' is incomplete.
+      </message>
+      <message name="IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL_EMPTY_LOCAL" desc="Heading or short sentence shown when there is an email field in a form and a user specified an invalid value like '@example.com'.">
+        Please enter a part followed by '<ph name="ATSIGN">$1<ex>@</ex></ph>'. '<ph name="INVALIDADDRESS">$2<ex>@example.com</ex></ph>' is incomplete.
+      </message>
+      <message name="IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL_INVALID_DOMAIN" desc="Heading or short sentence shown when there is an email field in a form and a user specified an invalid value like 'user@example,com'.">
+        A part following '<ph name="ATSIGN">$1<ex>@</ex></ph>' should not contain the symbol '<ph name="INVALIDCHARACTER">$2<ex>,</ex></ph>'.
+      </message>
+      <message name="IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL_INVALID_DOTS" desc="Heading or short sentence shown when there is an email field in a form and a user specified an invalid value with wrong dots like 'user@example..com'.">
+        '<ph name="DOT">$1<ex>.</ex></ph>' is used at a wrong position in '<ph name="INVALIDDOMAIN">$2<ex>example..com</ex></ph>'.
+      </message>
+      <message name="IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL_INVALID_LOCAL" desc="Heading or short sentence shown when there is an email field in a form and a user specified an invalid value like 'us,er@example.com'.">
+        A part followed by '<ph name="ATSIGN">$1<ex>@</ex></ph>' should not contain the symbol '<ph name="INVALIDCHARACTER">$2<ex>,</ex></ph>'.
+      </message>
+      <message name="IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL_NO_AT_SIGN" desc="Heading or short sentence shown when there is an email field in a form and a user specified an invalid value liek 'user'.">
+        Please include an '<ph name="ATSIGN">$1<ex>@</ex></ph>' in the email address. '<ph name="INVALIDADDRESS">$2<ex>user</ex></ph>' is missing an '<ph name="ATSIGN">$1<ex>@</ex></ph>'.
+      </message>
       <message name="IDS_FORM_VALIDATION_TYPE_MISMATCH_MULTIPLE_EMAIL" desc="Heading or short sentence shown there is a field which accepts multiple e-mail addresses and a user specified a value which is not a comma-separated e-mail addresses.">
         Please enter a comma separated list of email addresses.
       </message>
       <message name="IDS_FORM_VALIDATION_RANGE_UNDERFLOW" desc="Heading or short sentence shown when a form control value in a webpage needs to be larger than or equal to a minimum value specified by the page author, but a user specified a too small value.">
         Value must be greater than or equal to <ph name="MINIMUM">$1<ex>0</ex></ph>.
       </message>
+      <message name="IDS_FORM_VALIDATION_RANGE_UNDERFLOW_DATETIME" desc="Heading or short sentence shown when a form control value in a webpage needs to be later or equal to a minimum date/time value specified by the page author, but a user specified an earlier date/time.">
+        Value must be <ph name="MINIMUM_DATE_OR_TIME">$1<ex>01/04/2013</ex></ph> or later.
+      </message>
       <message name="IDS_FORM_VALIDATION_RANGE_OVERFLOW" desc="Heading or short sentence shown when a form control value in a webpage needs to be smaller than or equal to a maximum value specified by the page author, but a user specified a too large value.">
         Value must be less than or equal to <ph name="MAXIMUM">$1<ex>100</ex></ph>.
       </message>
-      <message name="IDS_FORM_VALIDATION_STEP_MISMATCH" desc="Heading or short sentence shown when a form control value in a webpage should be aligned to a step value specified by the page author, but a user speficified non-aligned value. e.g. A number type field, minimum value is 0, and step value is 4. If A user-specified value is not a multiple of 4, this warning message is shown.">
-        Invalid value.
+      <message name="IDS_FORM_VALIDATION_RANGE_OVERFLOW_DATETIME" desc="Heading or short sentence shown when a form control value in a webpage needs to be earlier than or equal to a maximum date/time value specified by the page author, but a user specified a later date/time.">
+        Value must be <ph name="MAXIMUM_DATE_OR_TIME">$1<ex>12/31/2013</ex></ph> or earlier.
       </message>
       <message name="IDS_FORM_VALIDATION_BAD_INPUT_DATETIME" desc="Heading or short sentence shown when a user specified an incomplete value or an invalid date (such as 02/31/2012) to a date/time form control in a webpage.">
 	Please enter a valid value. The field is incomplete or has an invalid date.
@@ -661,6 +685,12 @@ below:
       </message>
       <message name="IDS_FORM_VALIDATION_PATTERN_MISMATCH" desc="Heading or short sentence shown when a form control value needs to satisfy a pattern specified by the page author, but a user specified unmatched value.">
         Please match the requested format.
+      </message>
+      <message name="IDS_FORM_VALIDATION_STEP_MISMATCH" desc="Heading or short sentence shown when a form control value in a webpage should be aligned to a step value specified by the page author, but a user speficified non-aligned value. e.g. A number type field, minimum value is 0, and step value is 4. If A user-specified value is not a multiple of 4, this warning message is shown.">
+        Please enter a valid value. The two nearest valid values are <ph name="VALID_VALUE_LOW">$1<ex>4</ex></ph> and <ph name="VALID_VALUE_HIGHER">$2<ex>8</ex></ph>.
+      </message>
+      <message name="IDS_FORM_VALIDATION_STEP_MISMATCH_CLOSE_TO_LIMIT" desc="Heading or short sentence shown when a form control value in a webpage should be aligned to a step value specified by the page author, but a user speficified non-aligned value. e.g. A number type field, minimum value is 0, and step value is 4. If A user-specified value is not a multiple of 4, this warning message is shown.">
+        Please enter a valid value. The nearest valid value is <ph name="VALID_VALUE">$1<ex>0</ex></ph>.
       </message>
       <message name="IDS_FORM_VALIDATION_TOO_LONG" desc="Heading or short sentence shown when a form control in a webpage needs to be shorter than a length specified by the page author, but a user specified long value.">
         Please shorten this text to <ph name="MAX_CHARACTERS">$2<ex>100</ex></ph> characters or less (you are currently using <ph name="CURRENT_LENGTH">$1<ex>101</ex></ph> characters).

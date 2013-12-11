@@ -31,9 +31,7 @@
 #include "config.h"
 #include "WebDocument.h"
 
-#include "public/platform/WebURL.h"
-#include "wtf/PassRefPtr.h"
-#include "WebAccessibilityObject.h"
+#include "WebAXObject.h"
 #include "WebDOMEvent.h"
 #include "WebDocumentType.h"
 #include "WebElement.h"
@@ -41,16 +39,19 @@
 #include "WebFrameImpl.h"
 #include "WebNodeCollection.h"
 #include "WebNodeList.h"
+#include "bindings/v8/Dictionary.h"
 #include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ScriptState.h"
+#include "bindings/v8/ScriptValue.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/css/CSSParserMode.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Document.h"
-#include "core/dom/DocumentStyleSheetCollection.h"
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
 #include "core/dom/FullscreenElementStack.h"
 #include "core/dom/NodeList.h"
+#include "core/dom/StyleEngine.h"
 #include "core/html/HTMLAllCollection.h"
 #include "core/html/HTMLBodyElement.h"
 #include "core/html/HTMLCollection.h"
@@ -59,7 +60,10 @@
 #include "core/html/HTMLHeadElement.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/rendering/RenderObject.h"
+#include "public/platform/WebURL.h"
 #include "weborigin/SecurityOrigin.h"
+#include "wtf/PassRefPtr.h"
+#include <v8.h>
 
 using namespace WebCore;
 
@@ -79,7 +83,7 @@ WebSecurityOrigin WebDocument::securityOrigin() const
 
 WebString WebDocument::encoding() const
 {
-    return constUnwrap<Document>()->encoding();
+    return constUnwrap<Document>()->encodingName();
 }
 
 WebString WebDocument::contentLanguage() const
@@ -199,14 +203,14 @@ WebDocumentType WebDocument::doctype() const
 void WebDocument::insertUserStyleSheet(const WebString& sourceCode, UserStyleLevel styleLevel)
 {
     RefPtr<Document> document = unwrap<Document>();
-
-    RefPtr<StyleSheetContents> parsedSheet = StyleSheetContents::create(document.get());
+    ASSERT(document);
+    RefPtr<StyleSheetContents> parsedSheet = StyleSheetContents::create(*document.get());
     parsedSheet->setIsUserStyleSheet(styleLevel == UserStyleUserLevel);
     parsedSheet->parseString(sourceCode);
     if (parsedSheet->isUserStyleSheet())
-        document->styleSheetCollection()->addUserSheet(parsedSheet);
+        document->styleEngine()->addUserSheet(parsedSheet);
     else
-        document->styleSheetCollection()->addAuthorSheet(parsedSheet);
+        document->styleEngine()->addAuthorSheet(parsedSheet);
 }
 
 void WebDocument::cancelFullScreen()
@@ -246,18 +250,16 @@ WebElement WebDocument::createElement(const WebString& tagName)
     return element;
 }
 
-WebAccessibilityObject WebDocument::accessibilityObject() const
+WebAXObject WebDocument::accessibilityObject() const
 {
     const Document* document = constUnwrap<Document>();
-    return WebAccessibilityObject(
-        document->axObjectCache()->getOrCreate(document->renderer()));
+    return WebAXObject(document->axObjectCache()->getOrCreate(document->renderer()));
 }
 
-WebAccessibilityObject WebDocument::accessibilityObjectFromID(int axID) const
+WebAXObject WebDocument::accessibilityObjectFromID(int axID) const
 {
     const Document* document = constUnwrap<Document>();
-    return WebAccessibilityObject(
-        document->axObjectCache()->objectFromAXID(axID));
+    return WebAXObject(document->axObjectCache()->objectFromAXID(axID));
 }
 
 WebVector<WebDraggableRegion> WebDocument::draggableRegions() const
@@ -274,6 +276,18 @@ WebVector<WebDraggableRegion> WebDocument::draggableRegions() const
         }
     }
     return draggableRegions;
+}
+
+v8::Handle<v8::Value> WebDocument::registerEmbedderCustomElement(const WebString& name, v8::Handle<v8::Value> options, WebExceptionCode& ec)
+{
+    Document* document = unwrap<Document>();
+    Dictionary dictionary(options, v8::Isolate::GetCurrent());
+    TrackExceptionState es;
+    ScriptValue constructor = document->registerElement(ScriptState::current(), name, dictionary, es, CustomElement::EmbedderNames);
+    ec = es.code();
+    if (es.hadException())
+        return v8::Handle<v8::Value>();
+    return constructor.v8Value();
 }
 
 WebDocument::WebDocument(const PassRefPtr<Document>& elem)

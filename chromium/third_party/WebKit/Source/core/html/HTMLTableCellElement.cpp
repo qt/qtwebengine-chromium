@@ -42,13 +42,13 @@ static const int maxRowspan = 8190;
 
 using namespace HTMLNames;
 
-inline HTMLTableCellElement::HTMLTableCellElement(const QualifiedName& tagName, Document* document)
+inline HTMLTableCellElement::HTMLTableCellElement(const QualifiedName& tagName, Document& document)
     : HTMLTablePartElement(tagName, document)
 {
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLTableCellElement> HTMLTableCellElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLTableCellElement> HTMLTableCellElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLTableCellElement(tagName, document));
 }
@@ -164,7 +164,7 @@ void HTMLTableCellElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) 
 {
     HTMLTablePartElement::addSubresourceAttributeURLs(urls);
 
-    addSubresourceURL(urls, document()->completeURL(getAttribute(backgroundAttr)));
+    addSubresourceURL(urls, document().completeURL(getAttribute(backgroundAttr)));
 }
 
 HTMLTableCellElement* HTMLTableCellElement::cellAbove() const
@@ -180,23 +180,7 @@ HTMLTableCellElement* HTMLTableCellElement::cellAbove() const
     if (!cellAboveRenderer)
         return 0;
 
-    return static_cast<HTMLTableCellElement*>(cellAboveRenderer->node());
+    return toHTMLTableCellElement(cellAboveRenderer->node());
 }
-
-#ifndef NDEBUG
-
-HTMLTableCellElement* toHTMLTableCellElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::tdTag) || node->hasTagName(HTMLNames::thTag));
-    return static_cast<HTMLTableCellElement*>(node);
-}
-
-const HTMLTableCellElement* toHTMLTableCellElement(const Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::tdTag) || node->hasTagName(HTMLNames::thTag));
-    return static_cast<const HTMLTableCellElement*>(node);
-}
-
-#endif
 
 } // namespace WebCore

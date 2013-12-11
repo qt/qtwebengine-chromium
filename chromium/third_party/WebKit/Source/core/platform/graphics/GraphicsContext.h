@@ -38,13 +38,14 @@
 #include "core/platform/graphics/ImageBuffer.h"
 #include "core/platform/graphics/ImageOrientation.h"
 #include "core/platform/graphics/skia/OpaqueRegionSkia.h"
+// TODO(robertphillips): replace this include with "class SkBaseDevice;"
+#include "third_party/skia/include/core/SkDevice.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassOwnPtr.h"
 
 class SkBitmap;
-class SkDevice;
 class SkPaint;
 class SkPath;
 class SkRRect;
@@ -86,7 +87,7 @@ public:
     const SkBitmap* bitmap() const;
     const SkBitmap& layerBitmap(AccessMode = ReadOnly) const;
 
-    SkDevice* createCompatibleDevice(const IntSize&, bool hasAlpha) const;
+    SkBaseDevice* createCompatibleDevice(const IntSize&, bool hasAlpha) const;
 
     // ---------- State management methods -----------------
     void save();
@@ -134,11 +135,15 @@ public:
     int getNormalizedAlpha() const;
 
     bool getClipBounds(SkRect* bounds) const;
+    bool getTransformedClipBounds(FloatRect* bounds) const;
     const SkMatrix& getTotalMatrix() const;
     bool isPrintingDevice() const;
 
     void setShouldAntialias(bool antialias) { m_state->m_shouldAntialias = antialias; }
     bool shouldAntialias() const { return m_state->m_shouldAntialias; }
+
+    void setShouldClampToSourceRect(bool clampToSourceRect) { m_state->m_shouldClampToSourceRect = clampToSourceRect; }
+    bool shouldClampToSourceRect() const { return m_state->m_shouldClampToSourceRect; }
 
     void setShouldSmoothFonts(bool smoothFonts) { m_state->m_shouldSmoothFonts = smoothFonts; }
     bool shouldSmoothFonts() const { return m_state->m_shouldSmoothFonts; }
@@ -158,6 +163,9 @@ public:
     void setCompositeOperation(CompositeOperator, BlendMode = BlendModeNormal);
     CompositeOperator compositeOperation() const { return m_state->m_compositeOperator; }
     BlendMode blendModeOperation() const { return m_state->m_blendMode; }
+
+    void setDrawLuminanceMask(bool drawLuminanceMask) { m_state->m_drawLuminanceMask = drawLuminanceMask; }
+    bool drawLuminanceMask() const { return m_state->m_drawLuminanceMask; }
 
     // Change the way document markers are rendered.
     // Any deviceScaleFactor higher than 1.5 is enough to justify setting this flag.
@@ -194,6 +202,8 @@ public:
 
     AnnotationModeFlags annotationMode() const { return m_annotationMode; }
     void setAnnotationMode(const AnnotationModeFlags mode) { m_annotationMode = mode; }
+
+    void setColorSpaceConversion(ColorSpace srcColorSpace, ColorSpace dstColorSpace);
     // ---------- End state management methods -----------------
 
     // Get the contents of the image buffer
@@ -277,7 +287,6 @@ public:
     void clipOutRoundedRect(const RoundedRect&);
     void clipPath(const Path&, WindRule = RULE_EVENODD);
     void clipConvexPolygon(size_t numPoints, const FloatPoint*, bool antialias = true);
-    void clipToImageBuffer(const ImageBuffer*, const FloatRect&);
     bool clipRect(const SkRect&, AntiAliasingMode = NotAntiAliased, SkRegion::Op = SkRegion::kIntersect_Op);
 
     void drawText(const Font&, const TextRunPaintInfo&, const FloatPoint&);
@@ -292,8 +301,10 @@ public:
     };
     void drawLineForDocumentMarker(const FloatPoint&, float width, DocumentMarkerLineStyle);
 
-    void beginTransparencyLayer(float opacity);
-    void endTransparencyLayer();
+    void beginTransparencyLayer(float opacity, const FloatRect* = 0);
+    void beginTransparencyLayer(float opacity, CompositeOperator, const FloatRect* = 0);
+    void beginMaskedLayer(const FloatRect&, MaskType = AlphaMaskType);
+    void endLayer();
 
     bool hasShadow() const;
     void setShadow(const FloatSize& offset, float blur, const Color&,
@@ -363,7 +374,7 @@ private:
     static void setPathFromConvexPoints(SkPath*, size_t, const FloatPoint*);
     static void setRadii(SkVector*, IntSize, IntSize, IntSize, IntSize);
 
-#if OS(DARWIN)
+#if OS(MACOSX)
     static inline int getFocusRingOutset(int offset) { return offset + 2; }
 #else
     static inline int getFocusRingOutset(int offset) { return 0; }
@@ -407,11 +418,6 @@ private:
 
     bool concat(const SkMatrix&);
 
-    // Used when restoring and the state has an image clip. Only shows the pixels in
-    // m_canvas that are also in imageBuffer.
-    // The clipping rectangle is given in absolute coordinates.
-    void applyClipFromImage(const SkRect&, const SkBitmap&);
-
     // common code between setupPaintFor[Filling,Stroking]
     void setupShader(SkPaint*, Gradient*, Pattern*, SkColor) const;
 
@@ -449,7 +455,7 @@ private:
 
 #if !ASSERT_DISABLED
     unsigned m_annotationCount;
-    unsigned m_transparencyCount;
+    unsigned m_layerCount;
 #endif
     // Tracks the region painted opaque via the GraphicsContext.
     OpaqueRegionSkia m_opaqueRegion;

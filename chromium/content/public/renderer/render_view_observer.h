@@ -67,6 +67,8 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
                             WebKit::WebFrame* frame) {}
   virtual void FrameDetached(WebKit::WebFrame* frame) {}
   virtual void FrameWillClose(WebKit::WebFrame* frame) {}
+  virtual void WillSendSubmitEvent(WebKit::WebFrame* frame,
+                                   const WebKit::WebFormElement& form) {}
   virtual void WillSubmitForm(WebKit::WebFrame* frame,
                               const WebKit::WebFormElement& form) {}
   virtual void DidCreateDataSource(WebKit::WebFrame* frame,
@@ -82,6 +84,7 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
       WebKit::WebFrame* frame,
       const WebKit::WebContextMenuData& data) {}
   virtual void DidCommitCompositorFrame() {}
+  virtual void DidUpdateLayout() {}
 
   // These match the RenderView methods.
   virtual void DidHandleMouseEvent(const WebKit::WebMouseEvent& event) {}
@@ -89,9 +92,22 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
   virtual void DidHandleGestureEvent(const WebKit::WebGestureEvent& event) {}
   virtual void DidCreatePepperPlugin(RendererPpapiHost* host) {}
 
+  // Called when we receive a console message from WebKit for which we requested
+  // extra details (like the stack trace). |message| is the error message,
+  // |source| is the WebKit-reported source of the error (either external or
+  // internal), and |stack_trace| is the stack trace of the error in a
+  // human-readable format (each frame is formatted as
+  // "\n    at function_name (source:line_number:column_number)").
+  virtual void DetailedConsoleMessageAdded(const base::string16& message,
+                                           const base::string16& source,
+                                           const base::string16& stack_trace,
+                                           int32 line_number,
+                                           int32 severity_level) {}
+
   // These match incoming IPCs.
   virtual void Navigate(const GURL& url) {}
   virtual void ClosePage() {}
+  virtual void OrientationChangeEvent(int orientation) {}
 
   // IPC::Listener implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;

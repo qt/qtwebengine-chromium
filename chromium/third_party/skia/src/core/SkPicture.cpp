@@ -11,9 +11,9 @@
 #include "SkPicturePlayback.h"
 #include "SkPictureRecord.h"
 
+#include "SkBitmapDevice.h"
 #include "SkCanvas.h"
 #include "SkChunkAlloc.h"
-#include "SkDevice.h"
 #include "SkPicture.h"
 #include "SkRegion.h"
 #include "SkStream.h"
@@ -205,7 +205,7 @@ SkCanvas* SkPicture::beginRecording(int width, int height,
 
     SkBitmap bm;
     bm.setConfig(SkBitmap::kNo_Config, width, height);
-    SkAutoTUnref<SkDevice> dev(SkNEW_ARGS(SkDevice, (bm)));
+    SkAutoTUnref<SkBaseDevice> dev(SkNEW_ARGS(SkBitmapDevice, (bm)));
 
     // Must be set before calling createBBoxHierarchy
     fWidth = width;
@@ -232,8 +232,10 @@ SkBBoxHierarchy* SkPicture::createBBoxHierarchy() const {
 
     SkScalar aspectRatio = SkScalarDiv(SkIntToScalar(fWidth),
                                        SkIntToScalar(fHeight));
+    bool sortDraws = false;  // Do not sort draw calls when bulk loading.
+
     return SkRTree::Create(kRTreeMinChildren, kRTreeMaxChildren,
-                           aspectRatio);
+                           aspectRatio, sortDraws);
 }
 
 SkCanvas* SkPicture::getRecordingCanvas() const {
@@ -273,7 +275,12 @@ bool SkPicture::StreamIsSKP(SkStream* stream, SkPictInfo* pInfo) {
     if (!stream->read(&info, sizeof(SkPictInfo))) {
         return false;
     }
-    if (PICTURE_VERSION != info.fVersion) {
+    if (PICTURE_VERSION != info.fVersion
+#ifndef DELETE_THIS_CODE_WHEN_SKPS_ARE_REBUILT_AT_V13_AND_ALL_OTHER_INSTANCES_TOO
+        // V13 is backwards compatible with V12
+        && PRIOR_PICTURE_VERSION != info.fVersion  // TODO: remove when .skps regenerated
+#endif
+        ) {
         return false;
     }
 

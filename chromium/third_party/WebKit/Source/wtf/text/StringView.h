@@ -55,7 +55,7 @@ public:
         , m_offset(offset)
         , m_length(length)
     {
-        ASSERT_WITH_SECURITY_IMPLICATION(offset + length <= impl->length());
+        ASSERT_WITH_SECURITY_IMPLICATION(offset + length <= m_impl->length());
     }
 
     void narrow(unsigned offset, unsigned length)
@@ -84,6 +84,15 @@ public:
             return 0;
         ASSERT(!is8Bit());
         return m_impl->characters16() + m_offset;
+    }
+
+    PassRefPtr<StringImpl> toString() const
+    {
+        if (!m_impl)
+            return m_impl;
+        if (m_impl->is8Bit())
+            return StringImpl::create(characters8(), m_length);
+        return StringImpl::create(characters16(), m_length);
     }
 
 private:

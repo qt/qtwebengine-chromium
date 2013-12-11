@@ -9,11 +9,9 @@
 #include "base/strings/string_util.h"
 #include "content/renderer/media/audio_device_factory.h"
 #include "content/renderer/media/webrtc_audio_device_impl.h"
-#include "content/renderer/render_thread_impl.h"
 #include "media/audio/audio_output_device.h"
 #include "media/audio/audio_parameters.h"
 #include "media/audio/sample_rates.h"
-#include "media/base/audio_hardware_config.h"
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -88,15 +86,97 @@ void AddHistogramFramesPerBuffer(int param) {
   }
 }
 
+// This is a simple wrapper class that's handed out to users of a shared
+// WebRtcAudioRenderer instance.  This class maintains the per-user 'playing'
+// and 'started' states to avoid problems related to incorrect usage which
+// might violate the implementation assumptions inside WebRtcAudioRenderer
+// (see the play reference count).
+class SharedAudioRenderer : public MediaStreamAudioRenderer {
+ public:
+  SharedAudioRenderer(const scoped_refptr<MediaStreamAudioRenderer>& delegate)
+      : delegate_(delegate), started_(false), playing_(false) {
+  }
+
+ protected:
+  virtual ~SharedAudioRenderer() {
+    DCHECK(thread_checker_.CalledOnValidThread());
+    DVLOG(1) << __FUNCTION__;
+    Stop();
+  }
+
+  virtual void Start() OVERRIDE {
+    DCHECK(thread_checker_.CalledOnValidThread());
+    if (started_)
+      return;
+    started_ = true;
+    delegate_->Start();
+  }
+
+  virtual void Play() OVERRIDE {
+    DCHECK(thread_checker_.CalledOnValidThread());
+    DCHECK(started_);
+    if (playing_)
+      return;
+    playing_ = true;
+    delegate_->Play();
+  }
+
+  virtual void Pause() OVERRIDE {
+    DCHECK(thread_checker_.CalledOnValidThread());
+    DCHECK(started_);
+    if (!playing_)
+      return;
+    playing_ = false;
+    delegate_->Pause();
+  }
+
+  virtual void Stop() OVERRIDE {
+    DCHECK(thread_checker_.CalledOnValidThread());
+    if (!started_)
+      return;
+    Pause();
+    started_ = false;
+    delegate_->Stop();
+  }
+
+  virtual void SetVolume(float volume) OVERRIDE {
+    DCHECK(thread_checker_.CalledOnValidThread());
+    return delegate_->SetVolume(volume);
+  }
+
+  virtual base::TimeDelta GetCurrentRenderTime() const OVERRIDE {
+    DCHECK(thread_checker_.CalledOnValidThread());
+    return delegate_->GetCurrentRenderTime();
+  }
+
+  virtual bool IsLocalRenderer() const OVERRIDE {
+    DCHECK(thread_checker_.CalledOnValidThread());
+    return delegate_->IsLocalRenderer();
+  }
+
+ private:
+  base::ThreadChecker thread_checker_;
+  scoped_refptr<MediaStreamAudioRenderer> delegate_;
+  bool started_;
+  bool playing_;
+};
+
 }  // namespace
 
-WebRtcAudioRenderer::WebRtcAudioRenderer(int source_render_view_id)
+WebRtcAudioRenderer::WebRtcAudioRenderer(int source_render_view_id,
+                                         int session_id,
+                                         int sample_rate,
+                                         int frames_per_buffer)
     : state_(UNINITIALIZED),
       source_render_view_id_(source_render_view_id),
+      session_id_(session_id),
       source_(NULL),
       play_ref_count_(0),
+      start_ref_count_(0),
       audio_delay_milliseconds_(0),
-      fifo_delay_milliseconds_(0) {
+      fifo_delay_milliseconds_(0),
+      sample_rate_(sample_rate),
+      frames_per_buffer_(frames_per_buffer) {
 }
 
 WebRtcAudioRenderer::~WebRtcAudioRenderer() {
@@ -120,10 +200,10 @@ bool WebRtcAudioRenderer::Initialize(WebRtcAudioRendererSource* source) {
   DVLOG(1) << "Using mono audio output for Android";
   channel_layout = media::CHANNEL_LAYOUT_MONO;
 #endif
-  // Ask the renderer for the default audio output hardware sample-rate.
-  media::AudioHardwareConfig* hardware_config =
-      RenderThreadImpl::current()->GetAudioHardwareConfig();
-  int sample_rate = hardware_config->GetOutputSampleRate();
+
+  // TODO(tommi,henrika): Maybe we should just change |sample_rate_| to be
+  // immutable and change its value instead of using a temporary?
+  int sample_rate = sample_rate_;
   DVLOG(1) << "Audio output hardware sample rate: " << sample_rate;
 
   // WebRTC does not yet support higher rates than 96000 on the client side
@@ -178,7 +258,7 @@ bool WebRtcAudioRenderer::Initialize(WebRtcAudioRendererSource* source) {
 #if defined(OS_ANDROID)
   buffer_size = kDefaultOutputBufferSize;
 #else
-  buffer_size = hardware_config->GetOutputBufferSize();
+  buffer_size = frames_per_buffer_;
 #endif
 
   sink_params.Reset(media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
@@ -206,7 +286,6 @@ bool WebRtcAudioRenderer::Initialize(WebRtcAudioRendererSource* source) {
     }
   }
 
-
   // Allocate local audio buffers based on the parameters above.
   // It is assumed that each audio sample contains 16 bits and each
   // audio frame contains one or two audio samples depending on the
@@ -219,7 +298,12 @@ bool WebRtcAudioRenderer::Initialize(WebRtcAudioRendererSource* source) {
 
   // Configure the audio rendering client and start rendering.
   sink_ = AudioDeviceFactory::NewOutputDevice(source_render_view_id_);
-  sink_->Initialize(sink_params, this);
+
+  // TODO(tommi): Rename InitializeUnifiedStream to rather reflect association
+  // with a session.
+  DCHECK_GE(session_id_, 0);
+  sink_->InitializeUnifiedStream(sink_params, this, session_id_);
+
   sink_->Start();
 
   // User must call Play() before any audio can be heard.
@@ -236,31 +320,47 @@ bool WebRtcAudioRenderer::Initialize(WebRtcAudioRendererSource* source) {
   return true;
 }
 
+scoped_refptr<MediaStreamAudioRenderer>
+WebRtcAudioRenderer::CreateSharedAudioRendererProxy() {
+  return new SharedAudioRenderer(this);
+}
+
+bool WebRtcAudioRenderer::IsStarted() const {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  return start_ref_count_ != 0;
+}
+
 void WebRtcAudioRenderer::Start() {
-  // TODO(xians): refactor to make usage of Start/Stop more symmetric.
-  NOTIMPLEMENTED();
+  DVLOG(1) << "WebRtcAudioRenderer::Start()";
+  DCHECK(thread_checker_.CalledOnValidThread());
+  ++start_ref_count_;
 }
 
 void WebRtcAudioRenderer::Play() {
   DVLOG(1) << "WebRtcAudioRenderer::Play()";
   DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK_GT(start_ref_count_, 0) << "Did you forget to call Start()?";
   base::AutoLock auto_lock(lock_);
   if (state_ == UNINITIALIZED)
     return;
 
   DCHECK(play_ref_count_ == 0 || state_ == PLAYING);
   ++play_ref_count_;
-  state_ = PLAYING;
 
-  if (audio_fifo_) {
-    audio_delay_milliseconds_ = 0;
-    audio_fifo_->Clear();
+  if (state_ != PLAYING) {
+    state_ = PLAYING;
+
+    if (audio_fifo_) {
+      audio_delay_milliseconds_ = 0;
+      audio_fifo_->Clear();
+    }
   }
 }
 
 void WebRtcAudioRenderer::Pause() {
   DVLOG(1) << "WebRtcAudioRenderer::Pause()";
   DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK_GT(start_ref_count_, 0) << "Did you forget to call Start()?";
   base::AutoLock auto_lock(lock_);
   if (state_ == UNINITIALIZED)
     return;
@@ -274,14 +374,25 @@ void WebRtcAudioRenderer::Pause() {
 void WebRtcAudioRenderer::Stop() {
   DVLOG(1) << "WebRtcAudioRenderer::Stop()";
   DCHECK(thread_checker_.CalledOnValidThread());
-  base::AutoLock auto_lock(lock_);
-  if (state_ == UNINITIALIZED)
-    return;
+  {
+    base::AutoLock auto_lock(lock_);
+    if (state_ == UNINITIALIZED)
+      return;
 
-  source_->RemoveAudioRenderer(this);
-  source_ = NULL;
+    if (--start_ref_count_)
+      return;
+
+    DVLOG(1) << "Calling RemoveAudioRenderer and Stop().";
+
+    source_->RemoveAudioRenderer(this);
+    source_ = NULL;
+    state_ = UNINITIALIZED;
+  }
+
+  // Make sure to stop the sink while _not_ holding the lock since the Render()
+  // callback may currently be executing and try to grab the lock while we're
+  // stopping the thread on which it runs.
   sink_->Stop();
-  state_ = UNINITIALIZED;
 }
 
 void WebRtcAudioRenderer::SetVolume(float volume) {

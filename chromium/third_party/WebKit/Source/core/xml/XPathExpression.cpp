@@ -34,7 +34,7 @@
 #include "core/xml/XPathParser.h"
 #include "core/xml/XPathResult.h"
 #include "core/xml/XPathUtil.h"
-#include <wtf/text/WTFString.h>
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -69,7 +69,7 @@ PassRefPtr<XPathResult> XPathExpression::evaluate(Node* contextNode, unsigned sh
     evaluationContext.size = 1;
     evaluationContext.position = 1;
     evaluationContext.hadTypeConversionError = false;
-    RefPtr<XPathResult> result = XPathResult::create(contextNode->document(), m_topExpression->evaluate());
+    RefPtr<XPathResult> result = XPathResult::create(&contextNode->document(), m_topExpression->evaluate());
     evaluationContext.node = 0; // Do not hold a reference to the context node, as this may prevent the whole document from being destroyed in time.
 
     if (evaluationContext.hadTypeConversionError) {

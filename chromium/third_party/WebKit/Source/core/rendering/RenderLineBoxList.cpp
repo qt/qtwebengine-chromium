@@ -33,6 +33,7 @@
 #include "core/rendering/InlineTextBox.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderInline.h"
+#include "core/rendering/RenderView.h"
 #include "core/rendering/RootInlineBox.h"
 
 using namespace std;
@@ -214,7 +215,7 @@ void RenderLineBoxList::paint(RenderBoxModelObject* renderer, PaintInfo& paintIn
 
     PaintInfo info(paintInfo);
     ListHashSet<RenderInline*> outlineObjects;
-    info.outlineObjects = &outlineObjects;
+    info.setOutlineObjects(&outlineObjects);
 
     // See if our root lines intersect with the dirty rect.  If so, then we paint
     // them.  Note that boxes can easily overlap, so we can't make any assumptions
@@ -227,12 +228,12 @@ void RenderLineBoxList::paint(RenderBoxModelObject* renderer, PaintInfo& paintIn
     }
 
     if (info.phase == PaintPhaseOutline || info.phase == PaintPhaseSelfOutline || info.phase == PaintPhaseChildOutlines) {
-        ListHashSet<RenderInline*>::iterator end = info.outlineObjects->end();
-        for (ListHashSet<RenderInline*>::iterator it = info.outlineObjects->begin(); it != end; ++it) {
+        ListHashSet<RenderInline*>::iterator end = info.outlineObjects()->end();
+        for (ListHashSet<RenderInline*>::iterator it = info.outlineObjects()->begin(); it != end; ++it) {
             RenderInline* flow = *it;
             flow->paintOutline(info, paintOffset);
         }
-        info.outlineObjects->clear();
+        info.outlineObjects()->clear();
     }
 }
 
@@ -274,7 +275,7 @@ bool RenderLineBoxList::hitTest(RenderBoxModelObject* renderer, const HitTestReq
 
 void RenderLineBoxList::dirtyLinesFromChangedChild(RenderObject* container, RenderObject* child)
 {
-    if (!container->parent() || (container->isRenderBlock() && (container->selfNeedsLayout() || !container->isBlockFlow())))
+    if (!container->parent() || (container->isRenderBlock() && (container->selfNeedsLayout() || !container->isRenderBlockFlow())))
         return;
 
     RenderInline* inlineContainer = container->isRenderInline() ? toRenderInline(container) : 0;

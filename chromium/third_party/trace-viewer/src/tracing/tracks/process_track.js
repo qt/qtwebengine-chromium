@@ -38,17 +38,19 @@ base.exportTo('tracing.tracks', function() {
           ctx.save();
           ctx.translate(0, pixelRatio * (bounds.top - canvasBounds.top));
 
-          var viewLWorld = this.viewport.xViewToWorld(0);
-          var viewRWorld = this.viewport.xViewToWorld(
+          var dt = this.viewport.currentDisplayTransform;
+          var viewLWorld = dt.xViewToWorld(0);
+          var viewRWorld = dt.xViewToWorld(
               bounds.width * pixelRatio);
 
           tracing.drawInstantSlicesAsLines(
               ctx,
-              this.viewport,
+              this.viewport.currentDisplayTransform,
               viewLWorld,
               viewRWorld,
               bounds.height,
-              this.processBase.instantEvents);
+              this.processBase.instantEvents,
+              1);
 
           ctx.restore();
 
@@ -98,8 +100,7 @@ base.exportTo('tracing.tracks', function() {
     addIntersectingItemsInRangeToSelectionInWorldSpace: function(
         loWX, hiWX, viewPixWidthWorld, selection) {
       function onPickHit(instantEvent) {
-        var hit = selection.addSlice(this, instantEvent);
-        this.decorateHit(hit);
+        selection.push(instantEvent);
       }
       base.iterateOverIntersectingIntervals(this.processBase.instantEvents,
           function(x) { return x.start; },
@@ -109,6 +110,14 @@ base.exportTo('tracing.tracks', function() {
 
       tracing.tracks.ContainerTrack.prototype.
           addIntersectingItemsInRangeToSelectionInWorldSpace.
+          apply(this, arguments);
+    },
+
+    addClosestEventToSelection: function(worldX, worldMaxDist, loY, hiY,
+                                         selection) {
+      this.addClosestInstantEventToSelection(this.processBase.instantEvents,
+                                             worldX, worldMaxDist, selection);
+      tracing.tracks.ContainerTrack.prototype.addClosestEventToSelection.
           apply(this, arguments);
     }
   };

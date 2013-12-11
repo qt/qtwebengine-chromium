@@ -186,7 +186,7 @@ WebCore::LayoutUnit AutofillPopupMenuClient::clientPaddingLeft() const
     if (!style)
        return 0;
 
-    return RenderTheme::defaultTheme()->popupInternalPaddingLeft(style);
+    return RenderTheme::theme().popupInternalPaddingLeft(style);
 }
 
 WebCore::LayoutUnit AutofillPopupMenuClient::clientPaddingRight() const
@@ -196,7 +196,7 @@ WebCore::LayoutUnit AutofillPopupMenuClient::clientPaddingRight() const
     if (!style)
         return 0;
 
-    return RenderTheme::defaultTheme()->popupInternalPaddingRight(style);
+    return RenderTheme::theme().popupInternalPaddingRight(style);
 }
 
 void AutofillPopupMenuClient::popupDidHide()
@@ -226,12 +226,12 @@ void AutofillPopupMenuClient::setTextFromItem(unsigned listIndex)
 
 FontSelector* AutofillPopupMenuClient::fontSelector() const
 {
-    return m_textField->document()->styleResolver()->fontSelector();
+    return m_textField->document().styleResolver()->fontSelector();
 }
 
 HostWindow* AutofillPopupMenuClient::hostWindow() const
 {
-    return m_textField->document()->view()->hostWindow();
+    return m_textField->document().view()->hostWindow();
 }
 
 PassRefPtr<Scrollbar> AutofillPopupMenuClient::createScrollbar(
@@ -239,7 +239,7 @@ PassRefPtr<Scrollbar> AutofillPopupMenuClient::createScrollbar(
     ScrollbarOrientation orientation,
     ScrollbarControlSize size)
 {
-    return Scrollbar::createNativeScrollbar(scrollableArea, orientation, size);
+    return Scrollbar::create(scrollableArea, orientation, size);
 }
 
 void AutofillPopupMenuClient::initialize(
@@ -279,13 +279,13 @@ void AutofillPopupMenuClient::initialize(
     }
 
     FontDescription regularFontDescription;
-    RenderTheme::defaultTheme()->systemFont(CSSValueWebkitControl,
+    RenderTheme::theme().systemFont(CSSValueWebkitControl,
                                             regularFontDescription);
     RenderStyle* style = m_textField->computedStyle();
     regularFontDescription.setComputedSize(style->fontDescription().computedSize());
 
     Font regularFont(regularFontDescription, 0, 0);
-    regularFont.update(textField->document()->styleResolver()->fontSelector());
+    regularFont.update(textField->document().styleResolver()->fontSelector());
     // The direction of text in popup menu is set the same as the direction of
     // the input element: textField.
     m_regularStyle = adoptPtr(new PopupMenuStyle(Color::black, Color::white, regularFont, true, false,
@@ -331,15 +331,7 @@ void AutofillPopupMenuClient::setSuggestions(const WebVector<WebString>& names,
 
 WebViewImpl* AutofillPopupMenuClient::getWebView() const
 {
-    Frame* frame = m_textField->document()->frame();
-    if (!frame)
-        return 0;
-
-    Page* page = frame->page();
-    if (!page)
-        return 0;
-
-    return static_cast<WebViewImpl*>(page->chrome().client()->webView());
+    return WebViewImpl::fromPage(m_textField->document().page());
 }
 
 RenderStyle* AutofillPopupMenuClient::textFieldStyle() const

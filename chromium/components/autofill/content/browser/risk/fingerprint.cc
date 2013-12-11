@@ -16,11 +16,13 @@
 #include "base/callback.h"
 #include "base/cpu.h"
 #include "base/logging.h"
+#include "base/memory/weak_ptr.h"
 #include "base/scoped_observer.h"
 #include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
 #include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "base/values.h"
 #include "components/autofill/content/browser/risk/proto/fingerprint.pb.h"
 #include "content/public/browser/browser_thread.h"
@@ -51,6 +53,10 @@ namespace {
 
 const int32 kFingerprinterVersion = 1;
 
+// Maximum amount of time, in seconds, to wait for loading asynchronous
+// fingerprint data.
+const int kTimeoutSeconds = 4;
+
 // Returns the delta between the local timezone and UTC.
 base::TimeDelta GetTimezoneOffset() {
   const base::Time utc = base::Time::Now();
@@ -66,20 +72,6 @@ base::TimeDelta GetTimezoneOffset() {
 std::string GetOperatingSystemVersion() {
   return base::SysInfo::OperatingSystemName() + " " +
       base::SysInfo::OperatingSystemVersion();
-}
-
-Fingerprint::MachineCharacteristics::BrowserFeature
-    DialogTypeToBrowserFeature(DialogType dialog_type) {
-  switch (dialog_type) {
-    case DIALOG_TYPE_AUTOCHECKOUT:
-      return Fingerprint::MachineCharacteristics::FEATURE_AUTOCHECKOUT;
-
-    case DIALOG_TYPE_REQUEST_AUTOCOMPLETE:
-      return Fingerprint::MachineCharacteristics::FEATURE_REQUEST_AUTOCOMPLETE;
-  }
-
-  NOTREACHED();
-  return Fingerprint::MachineCharacteristics::FEATURE_UNKNOWN;
 }
 
 // Adds the list of |fonts| to the |machine|.
@@ -172,7 +164,8 @@ void AddCpuInfoToFingerprint(Fingerprint::MachineCharacteristics* machine) {
 void AddGpuInfoToFingerprint(Fingerprint::MachineCharacteristics* machine) {
   const gpu::GPUInfo& gpu_info =
       content::GpuDataManager::GetInstance()->GetGPUInfo();
-  DCHECK(gpu_info.finalized);
+  if (!gpu_info.finalized)
+    return;
 
   Fingerprint::MachineCharacteristics::Graphics* graphics =
       machine->mutable_graphics_card();
@@ -188,6 +181,74 @@ void AddGpuInfoToFingerprint(Fingerprint::MachineCharacteristics* machine) {
   gpu_performance->set_overall_score(gpu_info.performance_stats.overall);
 }
 
+// Waits for geoposition data to be loaded.  Lives on the IO thread.
+class GeopositionLoader {
+ public:
+  // |callback_| will be called on the UI thread with the loaded geoposition,
+  // once it is available.
+  GeopositionLoader(
+      const base::TimeDelta& timeout,
+      const base::Callback<void(const content::Geoposition&)>& callback);
+  ~GeopositionLoader() {}
+
+ private:
+  // Methods to communicate with the GeolocationProvider.
+  void OnGotGeoposition(const content::Geoposition& geoposition);
+
+  // The callback that will be called once the geoposition is available.
+  // Will be called on the UI thread.
+  const base::Callback<void(const content::Geoposition&)> callback_;
+
+  // The callback used as an "observer" of the GeolocationProvider.
+  content::GeolocationProvider::LocationUpdateCallback geolocation_callback_;
+
+  // Timer to enforce a maximum timeout before the |callback_| is called, even
+  // if the geoposition has not been loaded.
+  base::OneShotTimer<GeopositionLoader> timeout_timer_;
+};
+
+GeopositionLoader::GeopositionLoader(
+    const base::TimeDelta& timeout,
+    const base::Callback<void(const content::Geoposition&)>& callback)
+  : callback_(callback) {
+  timeout_timer_.Start(FROM_HERE, timeout,
+                       base::Bind(&GeopositionLoader::OnGotGeoposition,
+                                  base::Unretained(this),
+                                  content::Geoposition()));
+
+  geolocation_callback_ =
+      base::Bind(&GeopositionLoader::OnGotGeoposition, base::Unretained(this));
+  content::GeolocationProvider::GetInstance()->AddLocationUpdateCallback(
+      geolocation_callback_, false);
+}
+
+void GeopositionLoader::OnGotGeoposition(
+    const content::Geoposition& geoposition) {
+  content::BrowserThread::PostTask(content::BrowserThread::UI, FROM_HERE,
+                                   base::Bind(callback_, geoposition));
+
+  // Unregister as an observer, since this class instance might be destroyed
+  // after this callback.  Note: It's important to unregister *after* posting
+  // the task above.  Unregistering as an observer can have the side-effect of
+  // modifying the value of |geoposition|.
+  bool removed =
+      content::GeolocationProvider::GetInstance()->RemoveLocationUpdateCallback(
+          geolocation_callback_);
+  DCHECK(removed);
+
+  delete this;
+}
+
+// Asynchronously loads the user's current geoposition and calls |callback_| on
+// the UI thread with the loaded geoposition, once it is available. Expected to
+// be called on the IO thread.
+void LoadGeoposition(
+    const base::TimeDelta& timeout,
+    const base::Callback<void(const content::Geoposition&)>& callback) {
+  // The loader is responsible for freeing its own memory.
+  new GeopositionLoader(timeout, callback);
+}
+
 // Waits for all asynchronous data required for the fingerprint to be loaded,
 // then fills out the fingerprint.
 class FingerprintDataLoader : public content::GpuDataManagerObserver {
@@ -201,8 +262,8 @@ class FingerprintDataLoader : public content::GpuDataManagerObserver {
       const std::string& charset,
       const std::string& accept_languages,
       const base::Time& install_time,
-      DialogType dialog_type,
       const std::string& app_locale,
+      const base::TimeDelta& timeout,
       const base::Callback<void(scoped_ptr<Fingerprint>)>& callback);
 
  private:
@@ -216,11 +277,6 @@ class FingerprintDataLoader : public content::GpuDataManagerObserver {
   void OnGotPlugins(const std::vector<content::WebPluginInfo>& plugins);
   void OnGotGeoposition(const content::Geoposition& geoposition);
 
-  // Methods that run on the IO thread to communicate with the
-  // GeolocationProvider.
-  void LoadGeoposition();
-  void OnGotGeopositionOnIOThread(const content::Geoposition& geoposition);
-
   // If all of the asynchronous data has been loaded, calls |callback_| with
   // the fingerprint data.
   void MaybeFillFingerprint();
@@ -232,13 +288,9 @@ class FingerprintDataLoader : public content::GpuDataManagerObserver {
   // Weak reference because the GpuDataManager class is a singleton.
   content::GpuDataManager* const gpu_data_manager_;
 
-  // Ensures that any observer registratiosn for the GPU data are cleaned up by
+  // Ensures that any observer registrations for the GPU data are cleaned up by
   // the time this object is destroyed.
   ScopedObserver<content::GpuDataManager, FingerprintDataLoader> gpu_observer_;
-
-  // The callback used as an "observer" of the GeolocationProvider.  Accessed
-  // only on the IO thread.
-  content::GeolocationProvider::LocationUpdateCallback geolocation_callback_;
 
   // Data that will be passed on to the next loading phase.  See the comment for
   // GetFingerprint() for a description of these variables.
@@ -250,13 +302,20 @@ class FingerprintDataLoader : public content::GpuDataManagerObserver {
   const std::string charset_;
   const std::string accept_languages_;
   const base::Time install_time_;
-  DialogType dialog_type_;
 
   // Data that will be loaded asynchronously.
   scoped_ptr<base::ListValue> fonts_;
   std::vector<content::WebPluginInfo> plugins_;
   bool waiting_on_plugins_;
   content::Geoposition geoposition_;
+
+  // Timer to enforce a maximum timeout before the |callback_| is called, even
+  // if not all asynchronous data has been loaded.
+  base::OneShotTimer<FingerprintDataLoader> timeout_timer_;
+
+  // For invalidating asynchronous callbacks that might arrive after |this|
+  // instance is destroyed.
+  base::WeakPtrFactory<FingerprintDataLoader> weak_ptr_factory_;
 
   // The current application locale.
   std::string app_locale_;
@@ -276,8 +335,8 @@ FingerprintDataLoader::FingerprintDataLoader(
     const std::string& charset,
     const std::string& accept_languages,
     const base::Time& install_time,
-    DialogType dialog_type,
     const std::string& app_locale,
+    const base::TimeDelta& timeout,
     const base::Callback<void(scoped_ptr<Fingerprint>)>& callback)
     : gpu_data_manager_(content::GpuDataManager::GetInstance()),
       gpu_observer_(this),
@@ -289,10 +348,14 @@ FingerprintDataLoader::FingerprintDataLoader(
       charset_(charset),
       accept_languages_(accept_languages),
       install_time_(install_time),
-      dialog_type_(dialog_type),
       waiting_on_plugins_(true),
+      weak_ptr_factory_(this),
       callback_(callback) {
   DCHECK(!install_time_.is_null());
+
+  timeout_timer_.Start(FROM_HERE, timeout,
+                       base::Bind(&FingerprintDataLoader::MaybeFillFingerprint,
+                                  weak_ptr_factory_.GetWeakPtr()));
 
   // Load GPU data if needed.
   if (!gpu_data_manager_->IsCompleteGpuInfoAvailable()) {
@@ -303,20 +366,24 @@ FingerprintDataLoader::FingerprintDataLoader(
 #if defined(ENABLE_PLUGINS)
   // Load plugin data.
   content::PluginService::GetInstance()->GetPlugins(
-      base::Bind(&FingerprintDataLoader::OnGotPlugins, base::Unretained(this)));
+      base::Bind(&FingerprintDataLoader::OnGotPlugins,
+                 weak_ptr_factory_.GetWeakPtr()));
 #else
   waiting_on_plugins_ = false;
 #endif
 
   // Load font data.
   content::GetFontListAsync(
-      base::Bind(&FingerprintDataLoader::OnGotFonts, base::Unretained(this)));
+      base::Bind(&FingerprintDataLoader::OnGotFonts,
+                 weak_ptr_factory_.GetWeakPtr()));
 
   // Load geolocation data.
   content::BrowserThread::PostTask(
       content::BrowserThread::IO, FROM_HERE,
-      base::Bind(&FingerprintDataLoader::LoadGeoposition,
-                 base::Unretained(this)));
+      base::Bind(&LoadGeoposition,
+                 timeout,
+                 base::Bind(&FingerprintDataLoader::OnGotGeoposition,
+                            weak_ptr_factory_.GetWeakPtr())));
 }
 
 void FingerprintDataLoader::OnGpuInfoUpdate() {
@@ -352,38 +419,15 @@ void FingerprintDataLoader::OnGotGeoposition(
   MaybeFillFingerprint();
 }
 
-void FingerprintDataLoader::LoadGeoposition() {
-  geolocation_callback_ =
-      base::Bind(&FingerprintDataLoader::OnGotGeopositionOnIOThread,
-                 base::Unretained(this));
-  content::GeolocationProvider::GetInstance()->AddLocationUpdateCallback(
-      geolocation_callback_, false);
-}
-
-void FingerprintDataLoader::OnGotGeopositionOnIOThread(
-    const content::Geoposition& geoposition) {
-  content::BrowserThread::PostTask(
-      content::BrowserThread::UI, FROM_HERE,
-      base::Bind(&FingerprintDataLoader::OnGotGeoposition,
-                 base::Unretained(this), geoposition));
-
-  // Unregister as an observer, since this class instance might be destroyed
-  // after this callback.  Note: It's important to unregister *after* posting
-  // the task above.  Unregistering as an observer can have the side-effect of
-  // modifying the value of |geoposition|.
-  bool removed =
-      content::GeolocationProvider::GetInstance()->RemoveLocationUpdateCallback(
-          geolocation_callback_);
-  DCHECK(removed);
-}
-
 void FingerprintDataLoader::MaybeFillFingerprint() {
-  // If all of the data has been loaded, fill the fingerprint and clean up.
-  if (gpu_data_manager_->IsCompleteGpuInfoAvailable() &&
-      fonts_ &&
-      !waiting_on_plugins_ &&
-      (geoposition_.Validate() ||
-       geoposition_.error_code != content::Geoposition::ERROR_CODE_NONE)) {
+  // If all of the data has been loaded, or if the |timeout_timer_| has expired,
+  // fill the fingerprint and clean up.
+  if (!timeout_timer_.IsRunning() ||
+      (gpu_data_manager_->IsCompleteGpuInfoAvailable() &&
+       fonts_ &&
+       !waiting_on_plugins_ &&
+       (geoposition_.Validate() ||
+        geoposition_.error_code != content::Geoposition::ERROR_CODE_NONE))) {
     FillFingerprint();
     delete this;
   }
@@ -404,8 +448,10 @@ void FingerprintDataLoader::FillFingerprint() {
   machine->set_user_agent(content::GetUserAgent(GURL()));
   machine->set_ram(base::SysInfo::AmountOfPhysicalMemory());
   machine->set_browser_build(version_);
-  machine->set_browser_feature(DialogTypeToBrowserFeature(dialog_type_));
-  AddFontsToFingerprint(*fonts_, machine);
+  machine->set_browser_feature(
+      Fingerprint::MachineCharacteristics::FEATURE_REQUEST_AUTOCOMPLETE);
+  if (fonts_)
+    AddFontsToFingerprint(*fonts_, machine);
   AddPluginsToFingerprint(plugins_, machine);
   AddAcceptLanguagesToFingerprint(accept_languages_, machine);
   AddScreenInfoToFingerprint(screen_info_, machine);
@@ -430,7 +476,8 @@ void FingerprintDataLoader::FillFingerprint() {
   // available to JS.
 
   // TODO(isherman): Record more user behavior data.
-  if (geoposition_.error_code == content::Geoposition::ERROR_CODE_NONE) {
+  if (geoposition_.Validate() &&
+      geoposition_.error_code == content::Geoposition::ERROR_CODE_NONE) {
     Fingerprint::UserCharacteristics::Location* location =
         fingerprint->mutable_user_characteristics()->mutable_location();
     location->set_altitude(geoposition_.altitude);
@@ -463,14 +510,14 @@ void GetFingerprintInternal(
     const std::string& charset,
     const std::string& accept_languages,
     const base::Time& install_time,
-    DialogType dialog_type,
     const std::string& app_locale,
+    const base::TimeDelta& timeout,
     const base::Callback<void(scoped_ptr<Fingerprint>)>& callback) {
   // Begin loading all of the data that we need to load asynchronously.
   // This class is responsible for freeing its own memory.
   new FingerprintDataLoader(obfuscated_gaia_id, window_bounds, content_bounds,
                             screen_info, version, charset, accept_languages,
-                            install_time, dialog_type, app_locale, callback);
+                            install_time, app_locale, timeout, callback);
 }
 
 }  // namespace internal
@@ -483,7 +530,6 @@ void GetFingerprint(
     const std::string& charset,
     const std::string& accept_languages,
     const base::Time& install_time,
-    DialogType dialog_type,
     const std::string& app_locale,
     const base::Callback<void(scoped_ptr<Fingerprint>)>& callback) {
   gfx::Rect content_bounds;
@@ -497,8 +543,8 @@ void GetFingerprint(
 
   internal::GetFingerprintInternal(
       obfuscated_gaia_id, window_bounds, content_bounds, screen_info, version,
-      charset, accept_languages, install_time, dialog_type, app_locale,
-      callback);
+      charset, accept_languages, install_time, app_locale,
+      base::TimeDelta::FromSeconds(kTimeoutSeconds), callback);
 }
 
 }  // namespace risk

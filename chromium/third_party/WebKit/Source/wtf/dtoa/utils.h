@@ -29,8 +29,6 @@
 #define DOUBLE_CONVERSION_UTILS_H_
 
 #include "wtf/Assertions.h"
-#include "wtf/CPU.h"
-#include <stdlib.h>
 #include <string.h>
 
 #define UNIMPLEMENTED ASSERT_NOT_REACHED
@@ -48,9 +46,7 @@
 // On Linux,x86 89255e-22 != Div_double(89255.0/1e22)
 #if defined(_M_X64) || defined(__x86_64__) || \
 defined(__ARMEL__) || \
-defined(_MIPS_ARCH_MIPS32R2)
-#define DOUBLE_CONVERSION_CORRECT_DOUBLE_OPERATIONS 1
-#elif CPU(MIPS) || CPU(PPC) || CPU(PPC64) || CPU(SH4) || CPU(S390) || CPU(S390X) || CPU(IA64) || CPU(SPARC) || CPU(ALPHA)
+defined(__MIPSEL__)
 #define DOUBLE_CONVERSION_CORRECT_DOUBLE_OPERATIONS 1
 #elif defined(_M_IX86) || defined(__i386__)
 #if defined(_WIN32)

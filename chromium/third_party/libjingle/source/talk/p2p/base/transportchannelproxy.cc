@@ -93,13 +93,15 @@ void TransportChannelProxy::SetImplementation(TransportChannelImpl* impl) {
   worker_thread_->Post(this, MSG_UPDATESTATE);
 }
 
-int TransportChannelProxy::SendPacket(const char* data, size_t len, int flags) {
+int TransportChannelProxy::SendPacket(const char* data, size_t len,
+                                      talk_base::DiffServCodePoint dscp,
+                                      int flags) {
   ASSERT(talk_base::Thread::Current() == worker_thread_);
   // Fail if we don't have an impl yet.
   if (!impl_) {
     return -1;
   }
-  return impl_->SendPacket(data, len, flags);
+  return impl_->SendPacket(data, len, dscp, flags);
 }
 
 int TransportChannelProxy::SetOption(talk_base::Socket::Option opt, int value) {
@@ -133,6 +135,22 @@ bool TransportChannelProxy::IsDtlsActive() const {
     return false;
   }
   return impl_->IsDtlsActive();
+}
+
+bool TransportChannelProxy::GetSslRole(talk_base::SSLRole* role) const {
+  ASSERT(talk_base::Thread::Current() == worker_thread_);
+  if (!impl_) {
+    return false;
+  }
+  return impl_->GetSslRole(role);
+}
+
+bool TransportChannelProxy::SetSslRole(talk_base::SSLRole role) {
+  ASSERT(talk_base::Thread::Current() == worker_thread_);
+  if (!impl_) {
+    return false;
+  }
+  return impl_->SetSslRole(role);
 }
 
 bool TransportChannelProxy::SetSrtpCiphers(const std::vector<std::string>&

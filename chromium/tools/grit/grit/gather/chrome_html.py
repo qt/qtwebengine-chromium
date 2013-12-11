@@ -31,18 +31,22 @@ DIST_SUBSTR = '%DISTRIBUTION%'
 # Matches a chrome theme source URL.
 _THEME_SOURCE = lazy_re.compile(
     '(?P<baseurl>chrome://theme/IDR_[A-Z0-9_]*)(?P<query>\?.*)?')
-# Matches CSS image urls with the capture group 'filename'.
+# Pattern for matching CSS url() function.
+_CSS_URL_PATTERN = 'url\((?P<quote>"|\'|)(?P<filename>[^"\'()]*)(?P=quote)\)'
+# Matches CSS url() functions with the capture group 'filename'.
+_CSS_URL = lazy_re.compile(_CSS_URL_PATTERN)
+# Matches one or more CSS image urls used in given properties.
 _CSS_IMAGE_URLS = lazy_re.compile(
-    '(?P<attribute>content|background|[\w-]*-image):[ ]*' +
-    'url\((?P<quote>"|\'|)(?P<filename>[^"\'()]*)(?P=quote)')
+    '(?P<attribute>content|background|[\w-]*-image):\s*' +
+        '(?P<urls>(' + _CSS_URL_PATTERN + '\s*,?\s*)+)')
 # Matches CSS image sets.
 _CSS_IMAGE_SETS = lazy_re.compile(
     '(?P<attribute>content|background|[\w-]*-image):[ ]*' +
         '-webkit-image-set\((?P<images>' +
-        '([,\r\n ]*url\((?P<quote>"|\'|)[^"\'()]*(?P=quote)\)[ ]*[0-9.]*x)*)\)',
+        '(\s*,?\s*url\((?P<quote>"|\'|)[^"\'()]*(?P=quote)\)[ ]*[0-9.]*x)*)\)',
     re.MULTILINE)
 # Matches a single image in a CSS image set with the capture group scale.
-_CSS_IMAGE_SET_IMAGE = lazy_re.compile('[,\r\n ]*' +
+_CSS_IMAGE_SET_IMAGE = lazy_re.compile('\s*,?\s*' +
     'url\((?P<quote>"|\'|)[^"\'()]*(?P=quote)\)[ ]*(?P<scale>[0-9.]*x)',
     re.MULTILINE)
 _HTML_IMAGE_SRC = lazy_re.compile(
@@ -121,10 +125,10 @@ def GenerateImageSet(images, quote):
   return "-webkit-image-set(%s)" % (', '.join(imageset))
 
 
-def InsertImageSet(
+def UrlToImageSet(
     src_match, base_path, scale_factors, distribution,
     filename_expansion_function=None):
-  """Regex replace function which inserts -webkit-image-set.
+  """Regex replace function which replaces url() with -webkit-image-set.
 
   Takes a regex match for url('path'). If the file is local, checks for
   files of the same name in folders corresponding to the supported scale
@@ -132,6 +136,36 @@ def InsertImageSet(
   supported @Nx scale factor request. In either case inserts a
   -webkit-image-set rule to fetch the appropriate image for the current
   scale factor.
+
+  Args:
+    src_match: regex match object from _CSS_URLS
+    base_path: path to look for relative file paths in
+    scale_factors: a list of the supported scale factors (i.e. ['2x'])
+    distribution: string that should replace %DISTRIBUTION%.
+
+  Returns:
+    string
+  """
+  quote = src_match.group('quote')
+  filename = src_match.group('filename')
+  image_list = GetImageList(
+      base_path, filename, scale_factors, distribution,
+      filename_expansion_function=filename_expansion_function)
+
+  # Don't modify the source if there is only one image.
+  if len(image_list) == 1:
+    return src_match.group(0)
+
+  return GenerateImageSet(image_list, quote)
+
+
+def InsertImageSet(
+    src_match, base_path, scale_factors, distribution,
+    filename_expansion_function=None):
+  """Regex replace function which inserts -webkit-image-set rules.
+
+  Takes a regex match for `property: url('path')[, url('path')]+`.
+  Replaces one or more occurances of the match with image set rules.
 
   Args:
     src_match: regex match object from _CSS_IMAGE_URLS
@@ -142,18 +176,13 @@ def InsertImageSet(
   Returns:
     string
   """
-  quote = src_match.group('quote')
-  filename = src_match.group('filename')
   attr = src_match.group('attribute')
-  image_list = GetImageList(
-      base_path, filename, scale_factors, distribution,
-      filename_expansion_function=filename_expansion_function)
+  urls = _CSS_URL.sub(
+      lambda m: UrlToImageSet(m, base_path, scale_factors, distribution,
+                              filename_expansion_function),
+      src_match.group('urls'))
 
-  # Don't modify the source if there is only one image.
-  if len(image_list) == 1:
-    return src_match.group(0)
-
-  return "%s: %s" % (attr, GenerateImageSet(image_list, quote)[:-1])
+  return "%s: %s" % (attr, urls)
 
 
 def InsertImageStyle(

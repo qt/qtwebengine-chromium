@@ -44,7 +44,7 @@ static inline bool isElementForFormatBlock(Node* node)
     return node->isElementNode() && isElementForFormatBlock(toElement(node)->tagQName());
 }
 
-FormatBlockCommand::FormatBlockCommand(Document* document, const QualifiedName& tagName)
+FormatBlockCommand::FormatBlockCommand(Document& document, const QualifiedName& tagName)
     : ApplyBlockElementCommand(document, tagName)
     , m_didApply(false)
 {

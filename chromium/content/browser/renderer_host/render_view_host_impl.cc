@@ -51,6 +51,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_view_host_observer.h"
+#include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/content_constants.h"
@@ -72,7 +73,7 @@
 #if defined(OS_MACOSX)
 #include "content/browser/renderer_host/popup_menu_helper_mac.h"
 #elif defined(OS_ANDROID)
-#include "media/base/android/media_player_manager.h"
+#include "content/browser/media/android/browser_media_player_manager.h"
 #endif
 
 using base::TimeDelta;
@@ -116,11 +117,7 @@ g_created_callbacks = LAZY_INSTANCE_INITIALIZER;
 // static
 RenderViewHost* RenderViewHost::FromID(int render_process_id,
                                        int render_view_id) {
-  RenderWidgetHost* widget =
-      RenderWidgetHost::FromID(render_process_id, render_view_id);
-  if (!widget || !widget->IsRenderView())
-    return NULL;
-  return static_cast<RenderViewHostImpl*>(RenderWidgetHostImpl::From(widget));
+  return RenderViewHostImpl::FromID(render_process_id, render_view_id);
 }
 
 // static
@@ -143,8 +140,11 @@ void RenderViewHost::FilterURL(const RenderProcessHost* process,
 // static
 RenderViewHostImpl* RenderViewHostImpl::FromID(int render_process_id,
                                                int render_view_id) {
-  return static_cast<RenderViewHostImpl*>(
-      RenderViewHost::FromID(render_process_id, render_view_id));
+  RenderWidgetHost* widget =
+      RenderWidgetHost::FromID(render_process_id, render_view_id);
+  if (!widget || !widget->IsRenderView())
+    return NULL;
+  return static_cast<RenderViewHostImpl*>(RenderWidgetHostImpl::From(widget));
 }
 
 RenderViewHostImpl::RenderViewHostImpl(
@@ -153,8 +153,12 @@ RenderViewHostImpl::RenderViewHostImpl(
     RenderWidgetHostDelegate* widget_delegate,
     int routing_id,
     int main_frame_routing_id,
-    bool swapped_out)
-    : RenderWidgetHostImpl(widget_delegate, instance->GetProcess(), routing_id),
+    bool swapped_out,
+    bool hidden)
+    : RenderWidgetHostImpl(widget_delegate,
+                           instance->GetProcess(),
+                           routing_id,
+                           hidden),
       delegate_(delegate),
       instance_(static_cast<SiteInstanceImpl*>(instance)),
       waiting_for_drag_context_response_(false),
@@ -191,7 +195,7 @@ RenderViewHostImpl::RenderViewHostImpl(
     instance_->increment_active_view_count();
 
 #if defined(OS_ANDROID)
-  media_player_manager_ = media::MediaPlayerManager::Create(this);
+  media_player_manager_ = BrowserMediaPlayerManager::Create(this);
 #endif
 }
 
@@ -259,6 +263,7 @@ bool RenderViewHostImpl::CreateRenderView(
   // Ensure the RenderView sets its opener correctly.
   params.opener_route_id = opener_route_id;
   params.swapped_out = is_swapped_out_;
+  params.hidden = is_hidden();
   params.next_page_id = next_page_id;
   GetWebScreenInfo(&params.screen_info);
   params.accessibility_mode = accessibility_mode();
@@ -338,7 +343,7 @@ void RenderViewHostImpl::Navigate(const ViewMsg_Navigate_Params& params) {
   //
   // WebKit doesn't send throb notifications for JavaScript URLs, so we
   // don't want to either.
-  if (!params.url.SchemeIs(chrome::kJavaScriptScheme))
+  if (!params.url.SchemeIs(kJavaScriptScheme))
     delegate_->DidStartLoading(this);
 
   FOR_EACH_OBSERVER(RenderViewHostObserver, observers_, Navigate(params.url));
@@ -479,9 +484,10 @@ void RenderViewHostImpl::WasSwappedOut() {
 
     // Count the number of active widget hosts for the process, which
     // is equivalent to views using the process as of this writing.
-    RenderWidgetHost::List widgets = RenderWidgetHost::GetRenderWidgetHosts();
-    for (size_t i = 0; i < widgets.size(); ++i) {
-      if (widgets[i]->GetProcess()->GetID() == GetProcess()->GetID())
+    scoped_ptr<RenderWidgetHostIterator> widgets(
+      RenderWidgetHost::GetRenderWidgetHosts());
+    while (RenderWidgetHost* widget = widgets->GetNextHost()) {
+      if (widget->GetProcess()->GetID() == GetProcess()->GetID())
         ++views;
     }
 
@@ -736,7 +742,8 @@ void RenderViewHostImpl::JavaScriptDialogClosed(IPC::Message* reply_msg,
   // This must be done after sending the reply since RenderView can't close
   // correctly while waiting for a response.
   if (is_waiting && are_javascript_messages_suppressed_)
-    delegate_->RendererUnresponsive(this, is_waiting);
+    delegate_->RendererUnresponsive(
+        this, is_waiting_for_beforeunload_ack_, is_waiting_for_unload_ack_);
 }
 
 void RenderViewHostImpl::DragSourceEndedAt(
@@ -763,6 +770,12 @@ void RenderViewHostImpl::DragSourceSystemDragEnded() {
 }
 
 void RenderViewHostImpl::AllowBindings(int bindings_flags) {
+  // Never grant any bindings to browser plugin guests.
+  if (GetProcess()->IsGuest()) {
+    NOTREACHED() << "Never grant bindings to a guest process.";
+    return;
+  }
+
   // Ensure we aren't granting WebUI bindings to a process that has already
   // been used for non-privileged views.
   if (bindings_flags & BINDINGS_POLICY_WEB_UI &&
@@ -775,12 +788,6 @@ void RenderViewHostImpl::AllowBindings(int bindings_flags) {
         static_cast<RenderProcessHostImpl*>(GetProcess());
     if (process->GetActiveViewCount() > 1)
       return;
-  }
-
-  // Never grant any bindings to browser plugin guests.
-  if (GetProcess()->IsGuest()) {
-    NOTREACHED() << "Never grant bindings to a guest process.";
-    return;
   }
 
   if (bindings_flags & BINDINGS_POLICY_WEB_UI) {
@@ -999,8 +1006,7 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
                         OnDidAccessInitialDocument)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DomOperationResponse,
                         OnDomOperationResponse)
-    IPC_MESSAGE_HANDLER(AccessibilityHostMsg_Notifications,
-                        OnAccessibilityNotifications)
+    IPC_MESSAGE_HANDLER(AccessibilityHostMsg_Events, OnAccessibilityEvents)
     // Have the super handle all other messages.
     IPC_MESSAGE_UNHANDLED(
         handled = RenderWidgetHostImpl::OnMessageReceived(msg))
@@ -1014,6 +1020,11 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
   }
 
   return handled;
+}
+
+void RenderViewHostImpl::Init() {
+  RenderWidgetHostImpl::Init();
+  main_render_frame_host()->Init();
 }
 
 void RenderViewHostImpl::Shutdown() {
@@ -1239,8 +1250,6 @@ void RenderViewHostImpl::OnNavigate(const IPC::Message& msg) {
     FilterURL(policy, process, false, &(*it));
   }
   FilterURL(policy, process, true, &validated_params.searchable_form_url);
-  FilterURL(policy, process, true, &validated_params.password_form.origin);
-  FilterURL(policy, process, true, &validated_params.password_form.action);
 
   // Without this check, the renderer can trick the browser into using
   // filenames it can't access in a future session restore.
@@ -1354,6 +1363,8 @@ void RenderViewHostImpl::OnContextMenu(const ContextMenuParams& params) {
 void RenderViewHostImpl::OnToggleFullscreen(bool enter_fullscreen) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   delegate_->ToggleFullscreenMode(enter_fullscreen);
+  // We need to notify the contents that its fullscreen state has changed. This
+  // is done as part of the resize message.
   WasResized();
 }
 
@@ -1399,7 +1410,7 @@ void RenderViewHostImpl::OnDidChangeNumWheelEvents(int count) {
 
 void RenderViewHostImpl::OnSelectionChanged(const string16& text,
                                             size_t offset,
-                                            const ui::Range& range) {
+                                            const gfx::Range& range) {
   if (view_)
     view_->SelectionChanged(text, offset, range);
 }
@@ -1464,7 +1475,7 @@ void RenderViewHostImpl::OnStartDragging(
       ChildProcessSecurityPolicyImpl::GetInstance();
 
   // Allow drag of Javascript URLs to enable bookmarklet drag to bookmark bar.
-  if (!filtered_data.url.SchemeIs(chrome::kJavaScriptScheme))
+  if (!filtered_data.url.SchemeIs(kJavaScriptScheme))
     FilterURL(policy, process, true, &filtered_data.url);
   FilterURL(policy, process, false, &filtered_data.html_base_url);
   // Filter out any paths that the renderer didn't have access to. This prevents
@@ -1522,6 +1533,7 @@ void RenderViewHostImpl::OnAddMessageToConsole(
     const string16& source_id) {
   if (delegate_->AddMessageToConsole(level, message, line_no, source_id))
     return;
+
   // Pass through log level only on WebUI pages to limit console spew.
   int32 resolved_level = HasWebUIScheme(delegate_->GetURL()) ? level : 0;
 
@@ -1595,7 +1607,7 @@ void RenderViewHostImpl::OnClosePageACK() {
 
 void RenderViewHostImpl::NotifyRendererUnresponsive() {
   delegate_->RendererUnresponsive(
-      this, is_waiting_for_beforeunload_ack_ || is_waiting_for_unload_ack_);
+      this, is_waiting_for_beforeunload_ack_, is_waiting_for_unload_ack_);
 }
 
 void RenderViewHostImpl::NotifyRendererResponsive() {
@@ -1772,9 +1784,8 @@ void RenderViewHostImpl::SetAltErrorPageURL(const GURL& url) {
 
 void RenderViewHostImpl::ExitFullscreen() {
   RejectMouseLockOrUnlockIfNecessary();
-  // We need to notify the contents that its fullscreen state has changed. This
-  // is done as part of the resize message.
-  WasResized();
+  // Notify delegate_ and renderer of fullscreen state change.
+  OnToggleFullscreen(false);
 }
 
 WebPreferences RenderViewHostImpl::GetWebkitPreferences() {
@@ -1789,7 +1800,7 @@ void RenderViewHostImpl::DisownOpener() {
 }
 
 void RenderViewHostImpl::SetAccessibilityCallbackForTesting(
-    const base::Callback<void(AccessibilityNotification)>& callback) {
+    const base::Callback<void(WebKit::WebAXEvent)>& callback) {
   accessibility_testing_callback_ = callback;
 }
 
@@ -1871,10 +1882,6 @@ void RenderViewHostImpl::ExecutePluginActionAtLocation(
   Send(new ViewMsg_PluginActionAt(GetRoutingID(), location, action));
 }
 
-void RenderViewHostImpl::DisassociateFromPopupCount() {
-  Send(new ViewMsg_DisassociateFromPopupCount(GetRoutingID()));
-}
-
 void RenderViewHostImpl::NotifyMoveOrResizeStarted() {
   Send(new ViewMsg_MoveOrResizeStarted(GetRoutingID()));
 }
@@ -1883,13 +1890,13 @@ void RenderViewHostImpl::StopFinding(StopFindAction action) {
   Send(new ViewMsg_StopFinding(GetRoutingID(), action));
 }
 
-void RenderViewHostImpl::OnAccessibilityNotifications(
-    const std::vector<AccessibilityHostMsg_NotificationParams>& params) {
+void RenderViewHostImpl::OnAccessibilityEvents(
+    const std::vector<AccessibilityHostMsg_EventParams>& params) {
   if (view_ && !is_swapped_out_)
-    view_->OnAccessibilityNotifications(params);
+    view_->OnAccessibilityEvents(params);
 
   // Always send an ACK or the renderer can be in a bad state.
-  Send(new AccessibilityMsg_Notifications_ACK(GetRoutingID()));
+  Send(new AccessibilityMsg_Events_ACK(GetRoutingID()));
 
   // The rest of this code is just for testing; bail out if we're not
   // in that mode.
@@ -1897,10 +1904,10 @@ void RenderViewHostImpl::OnAccessibilityNotifications(
     return;
 
   for (unsigned i = 0; i < params.size(); i++) {
-    const AccessibilityHostMsg_NotificationParams& param = params[i];
-    AccessibilityNotification src_type = param.notification_type;
-    if (src_type == AccessibilityNotificationLayoutComplete ||
-        src_type == AccessibilityNotificationLoadComplete) {
+    const AccessibilityHostMsg_EventParams& param = params[i];
+    WebKit::WebAXEvent src_type = param.event_type;
+    if (src_type == WebKit::WebAXEventLayoutComplete ||
+        src_type == WebKit::WebAXEventLoadComplete) {
       MakeAccessibilityNodeDataTree(param.nodes, &accessibility_tree_);
     }
     accessibility_testing_callback_.Run(src_type);
@@ -1953,7 +1960,7 @@ void RenderViewHostImpl::OnShowDesktopNotification(
   // allows unwanted cross-domain access.
   GURL url = params.contents_url;
   if (params.is_html &&
-      (url.SchemeIs(chrome::kJavaScriptScheme) ||
+      (url.SchemeIs(kJavaScriptScheme) ||
        url.SchemeIs(chrome::kFileScheme))) {
     return;
   }
@@ -2023,6 +2030,11 @@ void RenderViewHostImpl::OnShowPopup(
   }
 }
 #endif
+
+RenderFrameHostImpl* RenderViewHostImpl::main_render_frame_host() const {
+  DCHECK_EQ(GetProcess(), main_render_frame_host_->GetProcess());
+  return main_render_frame_host_.get();
+}
 
 void RenderViewHostImpl::SetSwappedOut(bool is_swapped_out) {
   // We update the number of RenderViews in a SiteInstance when the

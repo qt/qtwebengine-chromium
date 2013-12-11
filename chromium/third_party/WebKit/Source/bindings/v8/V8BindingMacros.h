@@ -53,20 +53,6 @@ namespace WebCore {
         }                                 \
     }
 
-#define V8TRYCATCH_WITH_TYPECHECK(type, var, value, isolate) \
-    type var;                                                \
-    {                                                        \
-        bool ok = true;                                      \
-        {                                                    \
-            v8::TryCatch block;                              \
-            var = (value);                                   \
-            if (block.HasCaught())                           \
-                return block.ReThrow();                      \
-        }                                                    \
-        if (UNLIKELY(!ok))                                   \
-            return throwTypeError(isolate);                  \
-    }
-
 #define V8TRYCATCH_WITH_TYPECHECK_VOID(type, var, value, isolate) \
     type var;                                                     \
     {                                                             \
@@ -85,10 +71,10 @@ namespace WebCore {
         }                                                         \
     }
 
-#define V8TRYCATCH_FOR_V8STRINGRESOURCE(type, var, value) \
-    type var(value);                                            \
-    if (!var.prepare())                                         \
-        return v8::Undefined();
+#define V8TRYCATCH_FOR_V8STRINGRESOURCE_RETURN(type, var, value, retVal) \
+    type var(value);                                                     \
+    if (!var.prepare())                                                  \
+        return retVal;
 
 #define V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(type, var, value) \
     type var(value);                                                 \

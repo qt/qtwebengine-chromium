@@ -104,6 +104,10 @@ class CONTENT_EXPORT BrowserPluginGuest
       BrowserPluginGuest* opener,
       bool has_render_view);
 
+  // Called when the embedder RenderViewHost is destroyed to give the
+  // BrowserPluginGuest an opportunity to clean up after itself.
+  void EmbedderDestroyed();
+
   // Destroys the guest WebContents and all its associated state, including
   // this BrowserPluginGuest, and its new unattached windows.
   void Destroy();
@@ -182,6 +186,8 @@ class CONTENT_EXPORT BrowserPluginGuest
                            int request_id,
                            const std::string& request_method,
                            const base::Callback<void(bool)>& callback) OVERRIDE;
+  virtual void LoadProgressChanged(WebContents* source,
+                                   double progress) OVERRIDE;
   virtual void CloseContents(WebContents* source) OVERRIDE;
   virtual JavaScriptDialogManager* GetJavaScriptDialogManager() OVERRIDE;
   virtual bool HandleContextMenu(const ContextMenuParams& params) OVERRIDE;
@@ -248,9 +254,12 @@ class CONTENT_EXPORT BrowserPluginGuest
   // Attaches this BrowserPluginGuest to the provided |embedder_web_contents|
   // and initializes the guest with the provided |params|. Attaching a guest
   // to an embedder implies that this guest's lifetime is no longer managed
-  // by its opener, and it can begin loading resources.
+  // by its opener, and it can begin loading resources. |extra_params| are
+  // parameters passed into BrowserPlugin from JavaScript to be forwarded to
+  // the content embedder.
   void Attach(WebContentsImpl* embedder_web_contents,
-              BrowserPluginHostMsg_Attach_Params params);
+              BrowserPluginHostMsg_Attach_Params params,
+              const base::DictionaryValue& extra_params);
 
   // Requests geolocation permission through Embedder JavaScript API.
   void AskEmbedderForGeolocationPermission(int bridge_id,
@@ -319,6 +328,10 @@ class CONTENT_EXPORT BrowserPluginGuest
       BrowserPluginPermissionType permission_type,
       scoped_refptr<BrowserPluginGuest::PermissionRequest> request,
       const base::DictionaryValue& request_info);
+
+  // Creates a new guest window, and BrowserPluginGuest that is owned by this
+  // BrowserPluginGuest.
+  BrowserPluginGuest* CreateNewGuestWindow(const OpenURLParams& params);
 
   base::SharedMemory* damage_buffer() const { return damage_buffer_.get(); }
   const gfx::Size& damage_view_size() const { return damage_view_size_; }
@@ -516,6 +529,11 @@ class CONTENT_EXPORT BrowserPluginGuest
   // this guest is attached.
   bool has_render_view_;
 
+  // Last seen size of guest contents (by OnUpdateRect).
+  gfx::Size last_seen_view_size_;
+  // Last seen autosize attribute state (by OnUpdateRect).
+  bool last_seen_auto_size_enabled_;
+
   bool is_in_destruction_;
 
   // This is a queue of messages that are destined to be sent to the embedder
@@ -523,6 +541,10 @@ class CONTENT_EXPORT BrowserPluginGuest
   std::queue<IPC::Message*> pending_messages_;
 
   scoped_ptr<BrowserPluginGuestDelegate> delegate_;
+
+  // These are parameters passed from JavaScript on attachment to the content
+  // embedder.
+  scoped_ptr<base::DictionaryValue> extra_attach_params_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserPluginGuest);
 };

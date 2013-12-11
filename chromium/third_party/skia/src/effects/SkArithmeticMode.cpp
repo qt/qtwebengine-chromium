@@ -351,21 +351,18 @@ void GrGLArithmeticEffect::emitCode(GrGLShaderBuilder* builder,
     GrTexture* backgroundTex = drawEffect.castEffect<GrArithmeticEffect>().backgroundTexture();
     const char* dstColor;
     if (backgroundTex) {
-        const char* bgCoords;
+        SkString bgCoords;
         GrSLType bgCoordsType = fBackgroundEffectMatrix.emitCode(builder, key, &bgCoords, NULL, "BG");
         builder->fsCodeAppend("\t\tvec4 bgColor = ");
-        builder->appendTextureLookup(GrGLShaderBuilder::kFragment_ShaderType,
-                                     samplers[0],
-                                     bgCoords,
-                                     bgCoordsType);
+        builder->fsAppendTextureLookup(samplers[0], bgCoords.c_str(), bgCoordsType);
         builder->fsCodeAppendf(";\n");
         dstColor = "bgColor";
     } else {
         dstColor = builder->dstColor();
     }
 
-    GrAssert(NULL != dstColor);
-    fKUni = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType,
+    SkASSERT(NULL != dstColor);
+    fKUni = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility,
                                 kVec4f_GrSLType, "k");
     const char* kUni = builder->getUniformCStr(fKUni);
 
@@ -418,7 +415,7 @@ GrGLEffect::EffectKey GrGLArithmeticEffect::GenKey(const GrDrawEffect& drawEffec
     return bgKey;
 }
 
-GrEffectRef* GrArithmeticEffect::TestCreate(SkMWCRandom* rand,
+GrEffectRef* GrArithmeticEffect::TestCreate(SkRandom* rand,
                                             GrContext*,
                                             const GrDrawTargetCaps&,
                                             GrTexture*[]) {

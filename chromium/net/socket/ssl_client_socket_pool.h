@@ -13,7 +13,6 @@
 #include "net/base/privacy_mode.h"
 #include "net/dns/host_resolver.h"
 #include "net/http/http_response_info.h"
-#include "net/proxy/proxy_server.h"
 #include "net/socket/client_socket_pool.h"
 #include "net/socket/client_socket_pool_base.h"
 #include "net/socket/client_socket_pool_histograms.h"
@@ -35,32 +34,39 @@ class TransportClientSocketPool;
 class TransportSecurityState;
 class TransportSocketParams;
 
-// SSLSocketParams only needs the socket params for the transport socket
-// that will be used (denoted by |proxy|).
 class NET_EXPORT_PRIVATE SSLSocketParams
     : public base::RefCounted<SSLSocketParams> {
  public:
-  SSLSocketParams(const scoped_refptr<TransportSocketParams>& transport_params,
-                  const scoped_refptr<SOCKSSocketParams>& socks_params,
-                  const scoped_refptr<HttpProxySocketParams>& http_proxy_params,
-                  ProxyServer::Scheme proxy,
-                  const HostPortPair& host_and_port,
-                  const SSLConfig& ssl_config,
-                  PrivacyMode privacy_mode,
-                  int load_flags,
-                  bool force_spdy_over_ssl,
-                  bool want_spdy_over_npn);
+  enum ConnectionType { DIRECT, SOCKS_PROXY, HTTP_PROXY };
 
-  const scoped_refptr<TransportSocketParams>& transport_params() {
-      return transport_params_;
-  }
-  const scoped_refptr<HttpProxySocketParams>& http_proxy_params() {
-    return http_proxy_params_;
-  }
-  const scoped_refptr<SOCKSSocketParams>& socks_params() {
-    return socks_params_;
-  }
-  ProxyServer::Scheme proxy() const { return proxy_; }
+  // Exactly one of |direct_params|, |socks_proxy_params|, and
+  // |http_proxy_params| must be non-NULL.
+  SSLSocketParams(
+      const scoped_refptr<TransportSocketParams>& direct_params,
+      const scoped_refptr<SOCKSSocketParams>& socks_proxy_params,
+      const scoped_refptr<HttpProxySocketParams>& http_proxy_params,
+      const HostPortPair& host_and_port,
+      const SSLConfig& ssl_config,
+      PrivacyMode privacy_mode,
+      int load_flags,
+      bool force_spdy_over_ssl,
+      bool want_spdy_over_npn);
+
+  // Returns the type of the underlying connection.
+  ConnectionType GetConnectionType() const;
+
+  // Must be called only when GetConnectionType() returns DIRECT.
+  const scoped_refptr<TransportSocketParams>&
+      GetDirectConnectionParams() const;
+
+  // Must be called only when GetConnectionType() returns SOCKS_PROXY.
+  const scoped_refptr<SOCKSSocketParams>&
+      GetSocksProxyConnectionParams() const;
+
+  // Must be called only when GetConnectionType() returns HTTP_PROXY.
+  const scoped_refptr<HttpProxySocketParams>&
+      GetHttpProxyConnectionParams() const;
+
   const HostPortPair& host_and_port() const { return host_and_port_; }
   const SSLConfig& ssl_config() const { return ssl_config_; }
   PrivacyMode privacy_mode() const { return privacy_mode_; }
@@ -73,10 +79,9 @@ class NET_EXPORT_PRIVATE SSLSocketParams
   friend class base::RefCounted<SSLSocketParams>;
   ~SSLSocketParams();
 
-  const scoped_refptr<TransportSocketParams> transport_params_;
+  const scoped_refptr<TransportSocketParams> direct_params_;
+  const scoped_refptr<SOCKSSocketParams> socks_proxy_params_;
   const scoped_refptr<HttpProxySocketParams> http_proxy_params_;
-  const scoped_refptr<SOCKSSocketParams> socks_params_;
-  const ProxyServer::Scheme proxy_;
   const HostPortPair host_and_port_;
   const SSLConfig ssl_config_;
   const PrivacyMode privacy_mode_;
@@ -94,6 +99,7 @@ class SSLConnectJob : public ConnectJob {
  public:
   SSLConnectJob(
       const std::string& group_name,
+      RequestPriority priority,
       const scoped_refptr<SSLSocketParams>& params,
       const base::TimeDelta& timeout_duration,
       TransportClientSocketPool* transport_pool,
@@ -138,6 +144,10 @@ class SSLConnectJob : public ConnectJob {
   int DoSSLConnect();
   int DoSSLConnectComplete(int result);
 
+  // Returns the initial state for the state machine based on the
+  // |connection_type|.
+  static State GetInitialState(SSLSocketParams::ConnectionType connection_type);
+
   // Starts the SSL connection process.  Returns OK on success and
   // ERR_IO_PENDING if it cannot immediately service the request.
   // Otherwise, it returns a net error code.
@@ -164,9 +174,11 @@ class SSLConnectJob : public ConnectJob {
 
 class NET_EXPORT_PRIVATE SSLClientSocketPool
     : public ClientSocketPool,
-      public LayeredPool,
+      public HigherLayeredPool,
       public SSLConfigService::Observer {
  public:
+  typedef SSLSocketParams SocketParams;
+
   // Only the pools that will be used are required. i.e. if you never
   // try to create an SSL over SOCKS socket, |socks_pool| may be NULL.
   SSLClientSocketPool(
@@ -204,12 +216,10 @@ class NET_EXPORT_PRIVATE SSLClientSocketPool
                              ClientSocketHandle* handle) OVERRIDE;
 
   virtual void ReleaseSocket(const std::string& group_name,
-                             StreamSocket* socket,
+                             scoped_ptr<StreamSocket> socket,
                              int id) OVERRIDE;
 
   virtual void FlushWithError(int error) OVERRIDE;
-
-  virtual bool IsStalled() const OVERRIDE;
 
   virtual void CloseIdleSockets() OVERRIDE;
 
@@ -222,10 +232,6 @@ class NET_EXPORT_PRIVATE SSLClientSocketPool
       const std::string& group_name,
       const ClientSocketHandle* handle) const OVERRIDE;
 
-  virtual void AddLayeredPool(LayeredPool* layered_pool) OVERRIDE;
-
-  virtual void RemoveLayeredPool(LayeredPool* layered_pool) OVERRIDE;
-
   virtual base::DictionaryValue* GetInfoAsValue(
       const std::string& name,
       const std::string& type,
@@ -235,7 +241,14 @@ class NET_EXPORT_PRIVATE SSLClientSocketPool
 
   virtual ClientSocketPoolHistograms* histograms() const OVERRIDE;
 
-  // LayeredPool implementation.
+  // LowerLayeredPool implementation.
+  virtual bool IsStalled() const OVERRIDE;
+
+  virtual void AddHigherLayeredPool(HigherLayeredPool* higher_pool) OVERRIDE;
+
+  virtual void RemoveHigherLayeredPool(HigherLayeredPool* higher_pool) OVERRIDE;
+
+  // HigherLayeredPool implementation.
   virtual bool CloseOneIdleConnection() OVERRIDE;
 
  private:
@@ -261,7 +274,7 @@ class NET_EXPORT_PRIVATE SSLClientSocketPool
     virtual ~SSLConnectJobFactory() {}
 
     // ClientSocketPoolBase::ConnectJobFactory methods.
-    virtual ConnectJob* NewConnectJob(
+    virtual scoped_ptr<ConnectJob> NewConnectJob(
         const std::string& group_name,
         const PoolBase::Request& request,
         ConnectJob::Delegate* delegate) const OVERRIDE;
@@ -289,8 +302,6 @@ class NET_EXPORT_PRIVATE SSLClientSocketPool
 
   DISALLOW_COPY_AND_ASSIGN(SSLClientSocketPool);
 };
-
-REGISTER_SOCKET_PARAMS_FOR_POOL(SSLClientSocketPool, SSLSocketParams);
 
 }  // namespace net
 

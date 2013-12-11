@@ -9,11 +9,11 @@
 #define GrDrawState_DEFINED
 
 #include "GrBackendEffectFactory.h"
+#include "GrBlend.h"
 #include "GrColor.h"
 #include "GrEffectStage.h"
 #include "GrPaint.h"
 #include "GrPoint.h"
-#include "GrRefCnt.h"
 #include "GrRenderTarget.h"
 #include "GrStencil.h"
 #include "GrTemplates.h"
@@ -22,19 +22,20 @@
 #include "effects/GrSimpleTextureEffect.h"
 
 #include "SkMatrix.h"
+#include "SkTypes.h"
 #include "SkXfermode.h"
 
-class GrDrawState : public GrRefCnt {
+class GrDrawState : public SkRefCnt {
 public:
     SK_DECLARE_INST_COUNT(GrDrawState)
 
     GrDrawState() {
-        GR_DEBUGCODE(fBlockEffectRemovalCnt = 0;)
+        SkDEBUGCODE(fBlockEffectRemovalCnt = 0;)
         this->reset();
     }
 
     GrDrawState(const SkMatrix& initialViewMatrix) {
-        GR_DEBUGCODE(fBlockEffectRemovalCnt = 0;)
+        SkDEBUGCODE(fBlockEffectRemovalCnt = 0;)
         this->reset(initialViewMatrix);
     }
 
@@ -42,7 +43,7 @@ public:
      * Copies another draw state.
      **/
     GrDrawState(const GrDrawState& state) : INHERITED() {
-        GR_DEBUGCODE(fBlockEffectRemovalCnt = 0;)
+        SkDEBUGCODE(fBlockEffectRemovalCnt = 0;)
         *this = state;
     }
 
@@ -50,7 +51,7 @@ public:
      * Copies another draw state with a preconcat to the view matrix.
      **/
     GrDrawState(const GrDrawState& state, const SkMatrix& preConcatMatrix) {
-        GR_DEBUGCODE(fBlockEffectRemovalCnt = 0;)
+        SkDEBUGCODE(fBlockEffectRemovalCnt = 0;)
         *this = state;
         if (!preConcatMatrix.isIdentity()) {
             for (int i = 0; i < fColorStages.count(); ++i) {
@@ -62,7 +63,7 @@ public:
         }
     }
 
-    virtual ~GrDrawState() { GrAssert(0 == fBlockEffectRemovalCnt); }
+    virtual ~GrDrawState() { SkASSERT(0 == fBlockEffectRemovalCnt); }
 
     /**
      * Resets to the default state. GrEffects will be removed from all stages.
@@ -151,7 +152,7 @@ public:
      class AutoVertexAttribRestore {
      public:
          AutoVertexAttribRestore(GrDrawState* drawState) {
-             GrAssert(NULL != drawState);
+             SkASSERT(NULL != drawState);
              fDrawState = drawState;
              fVAPtr = drawState->fCommon.fVAPtr;
              fVACount = drawState->fCommon.fVACount;
@@ -279,7 +280,7 @@ public:
     /**
      * Constructor sets the color to be 'color' which is undone by the destructor.
      */
-    class AutoColorRestore : public ::GrNoncopyable {
+    class AutoColorRestore : public ::SkNoncopyable {
     public:
         AutoColorRestore() : fDrawState(NULL), fOldColor(0) {}
 
@@ -358,13 +359,13 @@ public:
     ////
 
     const GrEffectRef* addColorEffect(const GrEffectRef* effect, int attr0 = -1, int attr1 = -1) {
-        GrAssert(NULL != effect);
+        SkASSERT(NULL != effect);
         SkNEW_APPEND_TO_TARRAY(&fColorStages, GrEffectStage, (effect, attr0, attr1));
         return effect;
     }
 
     const GrEffectRef* addCoverageEffect(const GrEffectRef* effect, int attr0 = -1, int attr1 = -1) {
-        GrAssert(NULL != effect);
+        SkASSERT(NULL != effect);
         SkNEW_APPEND_TO_TARRAY(&fCoverageStages, GrEffectStage, (effect, attr0, attr1));
         return effect;
     }
@@ -400,7 +401,7 @@ public:
      * When this object is destroyed it will remove any effects from the draw state that were added
      * after its constructor.
      */
-    class AutoRestoreEffects : public ::GrNoncopyable {
+    class AutoRestoreEffects : public ::SkNoncopyable {
     public:
         AutoRestoreEffects() : fDrawState(NULL), fColorEffectCnt(0), fCoverageEffectCnt(0) {}
 
@@ -413,18 +414,18 @@ public:
         void set(GrDrawState* ds) {
             if (NULL != fDrawState) {
                 int n = fDrawState->fColorStages.count() - fColorEffectCnt;
-                GrAssert(n >= 0);
+                SkASSERT(n >= 0);
                 fDrawState->fColorStages.pop_back_n(n);
                 n = fDrawState->fCoverageStages.count() - fCoverageEffectCnt;
-                GrAssert(n >= 0);
+                SkASSERT(n >= 0);
                 fDrawState->fCoverageStages.pop_back_n(n);
-                GR_DEBUGCODE(--fDrawState->fBlockEffectRemovalCnt;)
+                SkDEBUGCODE(--fDrawState->fBlockEffectRemovalCnt;)
             }
             fDrawState = ds;
             if (NULL != ds) {
                 fColorEffectCnt = ds->fColorStages.count();
                 fCoverageEffectCnt = ds->fCoverageStages.count();
-                GR_DEBUGCODE(++ds->fBlockEffectRemovalCnt;)
+                SkDEBUGCODE(++ds->fBlockEffectRemovalCnt;)
             }
         }
 
@@ -468,28 +469,12 @@ public:
     void setBlendFunc(GrBlendCoeff srcCoeff, GrBlendCoeff dstCoeff) {
         fCommon.fSrcBlend = srcCoeff;
         fCommon.fDstBlend = dstCoeff;
-    #if GR_DEBUG
-        switch (dstCoeff) {
-        case kDC_GrBlendCoeff:
-        case kIDC_GrBlendCoeff:
-        case kDA_GrBlendCoeff:
-        case kIDA_GrBlendCoeff:
-            GrPrintf("Unexpected dst blend coeff. Won't work correctly with"
-                     "coverage stages.\n");
-            break;
-        default:
-            break;
+    #ifdef SK_DEBUG
+        if (GrBlendCoeffRefsDst(dstCoeff)) {
+            GrPrintf("Unexpected dst blend coeff. Won't work correctly with coverage stages.\n");
         }
-        switch (srcCoeff) {
-        case kSC_GrBlendCoeff:
-        case kISC_GrBlendCoeff:
-        case kSA_GrBlendCoeff:
-        case kISA_GrBlendCoeff:
-            GrPrintf("Unexpected src blend coeff. Won't work correctly with"
-                     "coverage stages.\n");
-            break;
-        default:
-            break;
+        if (GrBlendCoeffRefsSrc(srcCoeff)) {
+            GrPrintf("Unexpected src blend coeff. Won't work correctly with coverage stages.\n");
         }
     #endif
     }
@@ -621,7 +606,7 @@ public:
      * Preconcats the current view matrix and restores the previous view matrix in the destructor.
      * Effect matrices are automatically adjusted to compensate and adjusted back in the destructor.
      */
-    class AutoViewMatrixRestore : public ::GrNoncopyable {
+    class AutoViewMatrixRestore : public ::SkNoncopyable {
     public:
         AutoViewMatrixRestore() : fDrawState(NULL) {}
 
@@ -675,7 +660,7 @@ public:
     const GrRenderTarget* getRenderTarget() const { return fRenderTarget.get(); }
     GrRenderTarget* getRenderTarget() { return fRenderTarget.get(); }
 
-    class AutoRenderTargetRestore : public ::GrNoncopyable {
+    class AutoRenderTargetRestore : public ::SkNoncopyable {
     public:
         AutoRenderTargetRestore() : fDrawState(NULL), fSavedTarget(NULL) {}
         AutoRenderTargetRestore(GrDrawState* ds, GrRenderTarget* newTarget) {
@@ -690,14 +675,14 @@ public:
                 fDrawState->setRenderTarget(fSavedTarget);
                 fDrawState = NULL;
             }
-            GrSafeSetNull(fSavedTarget);
+            SkSafeSetNull(fSavedTarget);
         }
 
         void set(GrDrawState* ds, GrRenderTarget* newTarget) {
             this->restore();
 
             if (NULL != ds) {
-                GrAssert(NULL == fSavedTarget);
+                SkASSERT(NULL == fSavedTarget);
                 fSavedTarget = ds->getRenderTarget();
                 SkSafeRef(fSavedTarget);
                 ds->setRenderTarget(newTarget);
@@ -862,7 +847,7 @@ public:
      * @param face  the face(s) to draw.
      */
     void setDrawFace(DrawFace face) {
-        GrAssert(kInvalid_DrawFace != face);
+        SkASSERT(kInvalid_DrawFace != face);
         fCommon.fDrawFace = face;
     }
 
@@ -899,7 +884,7 @@ public:
     bool operator !=(const GrDrawState& s) const { return !(*this == s); }
 
     GrDrawState& operator= (const GrDrawState& s) {
-        GrAssert(0 == fBlockEffectRemovalCnt || 0 == this->numTotalStages());
+        SkASSERT(0 == fBlockEffectRemovalCnt || 0 == this->numTotalStages());
         this->setRenderTarget(s.fRenderTarget.get());
         fCommon = s.fCommon;
         fColorStages = s.fColorStages;
@@ -910,7 +895,7 @@ public:
 private:
 
     void onReset(const SkMatrix* initialViewMatrix) {
-        GrAssert(0 == fBlockEffectRemovalCnt || 0 == this->numTotalStages());
+        SkASSERT(0 == fBlockEffectRemovalCnt || 0 == this->numTotalStages());
         fColorStages.reset();
         fCoverageStages.reset();
 
@@ -970,7 +955,7 @@ private:
                           fColorFilterMode == other.fColorFilterMode &&
                           fColorFilterColor == other.fColorFilterColor &&
                           fDrawFace == other.fDrawFace;
-            GrAssert(!result || 0 == memcmp(fFixedFunctionVertexAttribIndices,
+            SkASSERT(!result || 0 == memcmp(fFixedFunctionVertexAttribIndices,
                                             other.fFixedFunctionVertexAttribIndices,
                                             sizeof(fFixedFunctionVertexAttribIndices)));
             return result;
@@ -996,7 +981,7 @@ public:
     class DeferredState {
     public:
         DeferredState() : fRenderTarget(NULL) {
-            GR_DEBUGCODE(fInitialized = false;)
+            SkDEBUGCODE(fInitialized = false;)
         }
         // TODO: Remove this when DeferredState no longer holds a ref to the RT
         ~DeferredState() { SkSafeUnref(fRenderTarget); }
@@ -1017,11 +1002,11 @@ public:
             for (int i = 0; i < drawState.fCoverageStages.count(); ++i) {
                 fStages[i + fColorStageCnt].saveFrom(drawState.fCoverageStages[i]);
             }
-            GR_DEBUGCODE(fInitialized = true;)
+            SkDEBUGCODE(fInitialized = true;)
         }
 
         void restoreTo(GrDrawState* drawState) {
-            GrAssert(fInitialized);
+            SkASSERT(fInitialized);
             drawState->fCommon = fCommon;
             drawState->setRenderTarget(fRenderTarget);
             // reinflate color/cov stage arrays.
@@ -1068,7 +1053,7 @@ public:
         int                                   fColorStageCnt;
         DeferredStageArray                    fStages;
 
-        GR_DEBUGCODE(bool fInitialized;)
+        SkDEBUGCODE(bool fInitialized;)
     };
 
 private:
@@ -1082,7 +1067,7 @@ private:
 
     // Some of the auto restore objects assume that no effects are removed during their lifetime.
     // This is used to assert that this condition holds.
-    GR_DEBUGCODE(int fBlockEffectRemovalCnt;)
+    SkDEBUGCODE(int fBlockEffectRemovalCnt;)
 
     /**
      *  Sets vertex attributes for next draw.
@@ -1092,7 +1077,7 @@ private:
      */
     void setVertexAttribs(const GrVertexAttrib attribs[], int count);
 
-    typedef GrRefCnt INHERITED;
+    typedef SkRefCnt INHERITED;
 };
 
 GR_MAKE_BITFIELD_OPS(GrDrawState::BlendOptFlags);

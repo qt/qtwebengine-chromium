@@ -10,6 +10,7 @@
 #include "base/command_line.h"
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
+#include "base/win/metro.h"
 #include "base/win/scoped_variant.h"
 #include "media/base/media_switches.h"
 #include "media/video/capture/win/video_capture_device_mf_win.h"
@@ -150,22 +151,15 @@ void DeleteMediaType(AM_MEDIA_TYPE* mt) {
 
 // static
 void VideoCaptureDevice::GetDeviceNames(Names* device_names) {
-  Names::iterator it;
-
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-  if (VideoCaptureDeviceMFWin::PlatformSupported() &&
+  // Use Media Foundation for Metro processes (after and including Win8)
+  // and DirectShow for any other platforms.
+  if (base::win::IsMetroProcess() &&
       !cmd_line->HasSwitch(switches::kForceDirectShowVideoCapture)) {
     VideoCaptureDeviceMFWin::GetDeviceNames(device_names);
+  } else {
+    VideoCaptureDeviceWin::GetDeviceNames(device_names);
   }
-  // Retrieve the devices with DirectShow (DS) interface. They might (partially)
-  // overlap with the MediaFoundation (MF), so the list has to be consolidated.
-  Names temp_names;
-  VideoCaptureDeviceWin::GetDeviceNames(&temp_names);
-
-  // Merge the DS devices into the MF device list, and next remove
-  // the duplicates, giving priority to the MF "versions".
-  device_names->merge(temp_names);
-  device_names->unique();
 }
 
 // static
@@ -388,7 +382,7 @@ void VideoCaptureDeviceWin::Allocate(
   if (FAILED(hr))
     SetErrorState("Failed to set capture device output format");
 
-  if (capability.color == VideoCaptureCapability::kMJPEG &&
+  if (capability.color == PIXEL_FORMAT_MJPEG &&
       !mjpg_filter_.get()) {
     // Create MJPG filter if we need it.
     hr = mjpg_filter_.CreateInstance(CLSID_MjpegDec, NULL, CLSCTX_INPROC);
@@ -407,7 +401,7 @@ void VideoCaptureDeviceWin::Allocate(
     }
   }
 
-  if (capability.color == VideoCaptureCapability::kMJPEG &&
+  if (capability.color == PIXEL_FORMAT_MJPEG &&
       mjpg_filter_.get()) {
     // Connect the camera to the MJPEG decoder.
     hr = graph_builder_->ConnectDirect(output_capture_pin_, input_mjpg_pin_,
@@ -587,20 +581,20 @@ bool VideoCaptureDeviceWin::CreateCapabilityMap() {
 
       // We can't switch MEDIATYPE :~(.
       if (media_type->subtype == kMediaSubTypeI420) {
-        capability.color = VideoCaptureCapability::kI420;
+        capability.color = PIXEL_FORMAT_I420;
       } else if (media_type->subtype == MEDIASUBTYPE_IYUV) {
-        // This is identical to kI420.
-        capability.color = VideoCaptureCapability::kI420;
+        // This is identical to PIXEL_FORMAT_I420.
+        capability.color = PIXEL_FORMAT_I420;
       } else if (media_type->subtype == MEDIASUBTYPE_RGB24) {
-        capability.color = VideoCaptureCapability::kRGB24;
+        capability.color = PIXEL_FORMAT_RGB24;
       } else if (media_type->subtype == MEDIASUBTYPE_YUY2) {
-        capability.color = VideoCaptureCapability::kYUY2;
+        capability.color = PIXEL_FORMAT_YUY2;
       } else if (media_type->subtype == MEDIASUBTYPE_MJPG) {
-        capability.color = VideoCaptureCapability::kMJPEG;
+        capability.color = PIXEL_FORMAT_MJPEG;
       } else if (media_type->subtype == MEDIASUBTYPE_UYVY) {
-        capability.color = VideoCaptureCapability::kUYVY;
+        capability.color = PIXEL_FORMAT_UYVY;
       } else if (media_type->subtype == MEDIASUBTYPE_ARGB32) {
-        capability.color = VideoCaptureCapability::kARGB;
+        capability.color = PIXEL_FORMAT_ARGB;
       } else {
         WCHAR guid_str[128];
         StringFromGUID2(media_type->subtype, guid_str, arraysize(guid_str));

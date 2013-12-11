@@ -127,16 +127,17 @@ bool WebContentsDelegate::ShouldCreateWebContents(
     WindowContainerType window_container_type,
     const string16& frame_name,
     const GURL& target_url,
-    const Referrer& referrer,
-    WindowOpenDisposition disposition,
-    const WebKit::WebWindowFeatures& features,
-    bool user_gesture,
-    bool opener_suppressed) {
+    const std::string& partition_id,
+    SessionStorageNamespace* session_storage_namespace) {
   return true;
 }
 
 JavaScriptDialogManager* WebContentsDelegate::GetJavaScriptDialogManager() {
   return NULL;
+}
+
+bool WebContentsDelegate::EmbedsFullscreenWidget() const {
+  return false;
 }
 
 bool WebContentsDelegate::IsFullscreenForTabOrPending(
@@ -180,6 +181,11 @@ void WebContentsDelegate::Attach(WebContents* web_contents) {
 void WebContentsDelegate::Detach(WebContents* web_contents) {
   DCHECK(attached_contents_.find(web_contents) != attached_contents_.end());
   attached_contents_.erase(web_contents);
+}
+
+gfx::Size WebContentsDelegate::GetSizeForNewRenderView(
+    const WebContents* web_contents) const {
+  return gfx::Size();
 }
 
 }  // namespace content

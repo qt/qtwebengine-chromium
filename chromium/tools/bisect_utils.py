@@ -9,42 +9,44 @@ used by the bisection scripts."""
 import errno
 import os
 import shutil
+import stat
 import subprocess
 import sys
+
+DEFAULT_GCLIENT_CUSTOM_DEPS = {
+    "src/data/page_cycler": "https://chrome-internal.googlesource.com/"
+                            "chrome/data/page_cycler/.git",
+    "src/data/dom_perf": "https://chrome-internal.googlesource.com/"
+                         "chrome/data/dom_perf/.git",
+    "src/data/mach_ports": "https://chrome-internal.googlesource.com/"
+                           "chrome/data/mach_ports/.git",
+    "src/tools/perf/data": "https://chrome-internal.googlesource.com/"
+                           "chrome/tools/perf/data/.git",
+    "src/third_party/adobe/flash/binaries/ppapi/linux":
+        "https://chrome-internal.googlesource.com/"
+        "chrome/deps/adobe/flash/binaries/ppapi/linux/.git",
+    "src/third_party/adobe/flash/binaries/ppapi/linux_x64":
+        "https://chrome-internal.googlesource.com/"
+        "chrome/deps/adobe/flash/binaries/ppapi/linux_x64/.git",
+    "src/third_party/adobe/flash/binaries/ppapi/mac":
+        "https://chrome-internal.googlesource.com/"
+        "chrome/deps/adobe/flash/binaries/ppapi/mac/.git",
+    "src/third_party/adobe/flash/binaries/ppapi/mac_64":
+        "https://chrome-internal.googlesource.com/"
+        "chrome/deps/adobe/flash/binaries/ppapi/mac_64/.git",
+    "src/third_party/adobe/flash/binaries/ppapi/win":
+        "https://chrome-internal.googlesource.com/"
+        "chrome/deps/adobe/flash/binaries/ppapi/win/.git",
+    "src/third_party/adobe/flash/binaries/ppapi/win_x64":
+        "https://chrome-internal.googlesource.com/"
+        "chrome/deps/adobe/flash/binaries/ppapi/win_x64/.git",}
 
 GCLIENT_SPEC_DATA = [
   { "name"        : "src",
     "url"         : "https://chromium.googlesource.com/chromium/src.git",
     "deps_file"   : ".DEPS.git",
     "managed"     : True,
-    "custom_deps" : {
-      "src/data/page_cycler": "https://chrome-internal.googlesource.com/"
-                              "chrome/data/page_cycler/.git",
-      "src/data/dom_perf": "https://chrome-internal.googlesource.com/"
-                           "chrome/data/dom_perf/.git",
-      "src/data/mach_ports": "https://chrome-internal.googlesource.com/"
-                           "chrome/data/mach_ports/.git",
-      "src/tools/perf/data": "https://chrome-internal.googlesource.com/"
-                             "chrome/tools/perf/data/.git",
-      "src/third_party/adobe/flash/binaries/ppapi/linux":
-          "https://chrome-internal.googlesource.com/"
-          "chrome/deps/adobe/flash/binaries/ppapi/linux/.git",
-      "src/third_party/adobe/flash/binaries/ppapi/linux_x64":
-          "https://chrome-internal.googlesource.com/"
-          "chrome/deps/adobe/flash/binaries/ppapi/linux_x64/.git",
-      "src/third_party/adobe/flash/binaries/ppapi/mac":
-          "https://chrome-internal.googlesource.com/"
-          "chrome/deps/adobe/flash/binaries/ppapi/mac/.git",
-      "src/third_party/adobe/flash/binaries/ppapi/mac_64":
-          "https://chrome-internal.googlesource.com/"
-          "chrome/deps/adobe/flash/binaries/ppapi/mac_64/.git",
-      "src/third_party/adobe/flash/binaries/ppapi/win":
-          "https://chrome-internal.googlesource.com/"
-          "chrome/deps/adobe/flash/binaries/ppapi/win/.git",
-      "src/third_party/adobe/flash/binaries/ppapi/win_x64":
-          "https://chrome-internal.googlesource.com/"
-          "chrome/deps/adobe/flash/binaries/ppapi/win_x64/.git",
-    },
+    "custom_deps" : {},
     "safesync_url": "",
   },
 ]
@@ -225,6 +227,49 @@ def RemoveThirdPartyWebkitDirectory():
   return True
 
 
+def OnAccessError(func, path, exc_info):
+  """
+  Source: http://stackoverflow.com/questions/2656322/python-shutil-rmtree-fails-on-windows-with-access-is-denied
+
+  Error handler for ``shutil.rmtree``.
+
+  If the error is due to an access error (read only file)
+  it attempts to add write permission and then retries.
+
+  If the error is for another reason it re-raises the error.
+
+  Args:
+    func: The function that raised the error.
+    path: The path name passed to func.
+    exc_info: Exception information returned by sys.exc_info().
+  """
+  if not os.access(path, os.W_OK):
+    # Is the error an access error ?
+    os.chmod(path, stat.S_IWUSR)
+    func(path)
+  else:
+    raise
+
+
+def RemoveThirdPartyLibjingleDirectory():
+  """Removes third_party/libjingle. At some point, libjingle was causing issues
+  syncing when using the git workflow (crbug.com/266324).
+
+  Returns:
+    True on success.
+  """
+  path_to_dir = os.path.join(os.getcwd(), 'third_party', 'libjingle')
+  try:
+    if os.path.exists(path_to_dir):
+      shutil.rmtree(path_to_dir, onerror=OnAccessError)
+  except OSError, e:
+    print 'Error #%d while running shutil.rmtree(%s): %s' % (
+        e.errno, path_to_dir, str(e))
+    if e.errno != errno.ENOENT:
+      return False
+  return True
+
+
 def RunGClientAndSync(cwd=None):
   """Runs gclient and does a normal sync.
 
@@ -238,12 +283,13 @@ def RunGClientAndSync(cwd=None):
   return RunGClient(params, cwd=cwd)
 
 
-def SetupGitDepot(opts):
+def SetupGitDepot(opts, custom_deps):
   """Sets up the depot for the bisection. The depot will be located in a
   subdirectory called 'bisect'.
 
   Args:
     opts: The options parsed from the command line through parse_args().
+    custom_deps: A dictionary of additional dependencies to add to .gclient.
 
   Returns:
     True if gclient successfully created the config file and did a sync, False
@@ -256,7 +302,7 @@ def SetupGitDepot(opts):
 
   passed = False
 
-  if not RunGClientAndCreateConfig(opts):
+  if not RunGClientAndCreateConfig(opts, custom_deps):
     passed_deps_check = True
     if os.path.isfile(os.path.join('src', FILE_DEPS_GIT)):
       cwd = os.getcwd()
@@ -265,6 +311,8 @@ def SetupGitDepot(opts):
         passed_deps_check = RemoveThirdPartyWebkitDirectory()
       else:
         passed_deps_check = True
+      if passed_deps_check:
+        passed_deps_check = RemoveThirdPartyLibjingleDirectory()
       os.chdir(cwd)
 
     if passed_deps_check:
@@ -378,13 +426,26 @@ def SetupPlatformBuildEnvironment(opts):
   return True
 
 
-def CreateBisectDirectoryAndSetupDepot(opts):
+def CheckIfBisectDepotExists(opts):
+  """Checks if the bisect directory already exists.
+
+  Args:
+    opts: The options parsed from the command line through parse_args().
+
+  Returns:
+    Returns True if it exists.
+  """
+  path_to_dir = os.path.join(opts.working_directory, 'bisect', 'src')
+  return os.path.exists(path_to_dir)
+
+
+def CreateBisectDirectoryAndSetupDepot(opts, custom_deps):
   """Sets up a subdirectory 'bisect' and then retrieves a copy of the depot
   there using gclient.
 
   Args:
     opts: The options parsed from the command line through parse_args().
-    reset: Whether to reset any changes to the depot.
+    custom_deps: A dictionary of additional dependencies to add to .gclient.
 
   Returns:
     Returns 0 on success, otherwise 1.
@@ -394,7 +455,7 @@ def CreateBisectDirectoryAndSetupDepot(opts):
     print
     return 1
 
-  if not SetupGitDepot(opts):
+  if not SetupGitDepot(opts, custom_deps):
     print 'Error: Failed to grab source.'
     print
     return 1

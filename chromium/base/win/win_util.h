@@ -50,6 +50,11 @@ BASE_EXPORT bool IsCtrlPressed();
 // Returns true if the alt key is currently pressed.
 BASE_EXPORT bool IsAltPressed();
 
+// Returns true if the altgr key is currently pressed.
+// Windows does not have specific key code and modifier bit and Alt+Ctrl key is
+// used as AltGr key in Windows.
+BASE_EXPORT bool IsAltGrPressed();
+
 // Returns false if user account control (UAC) has been disabled with the
 // EnableLUA registry flag. Returns true if user account control is enabled.
 // NOTE: The EnableLUA registry flag, which is ignored on Windows XP
@@ -120,6 +125,10 @@ BASE_EXPORT bool DisplayVirtualKeyboard();
 // Dismisses the on screen keyboard if it is being displayed on Windows 8 and.
 // above. Returns true on success.
 BASE_EXPORT bool DismissVirtualKeyboard();
+
+// Returns monitor info after correcting rcWorkArea based on metro version.
+// see bug #247430 for more details.
+BASE_EXPORT BOOL GetMonitorInfoWrapper(HMONITOR monitor, MONITORINFO* mi);
 
 }  // namespace win
 }  // namespace base

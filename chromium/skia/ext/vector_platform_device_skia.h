@@ -10,7 +10,6 @@
 #include "base/logging.h"
 #include "skia/ext/platform_device.h"
 #include "skia/ext/refptr.h"
-#include "third_party/skia/include/core/SkTScopedPtr.h"
 #include "third_party/skia/include/pdf/SkPDFDevice.h"
 
 class SkMatrix;
@@ -42,7 +41,7 @@ class VectorPlatformDeviceSkia : public SkPDFDevice, public PlatformDevice {
                                    int y,
                                    const CGRect* src_rect) OVERRIDE;
   virtual CGContextRef GetBitmapContext() OVERRIDE;
-#elif defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_OPENBSD)
+#elif defined(OS_POSIX)
   virtual void DrawToNativeContext(PlatformSurface surface,
                                    int x,
                                    int y,

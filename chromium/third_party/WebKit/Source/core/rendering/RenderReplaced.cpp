@@ -24,6 +24,7 @@
 #include "config.h"
 #include "core/rendering/RenderReplaced.h"
 
+#include "RuntimeEnabledFeatures.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/RenderBlock.h"
@@ -75,7 +76,6 @@ void RenderReplaced::styleDidChange(StyleDifference diff, const RenderStyle* old
 
 void RenderReplaced::layout()
 {
-    StackStats::LayoutCheckPoint layoutCheckPoint;
     ASSERT(needsLayout());
 
     LayoutRepainter repainter(*this, checkForRepaintDuringLayout());
@@ -129,7 +129,7 @@ void RenderReplaced::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
     if (!paintInfo.shouldPaintWithinRoot(this))
         return;
 
-    bool drawSelectionTint = selectionState() != SelectionNone && !document()->printing();
+    bool drawSelectionTint = selectionState() != SelectionNone && !document().printing();
     if (paintInfo.phase == PaintPhaseSelection) {
         if (selectionState() == SelectionNone)
             return;
@@ -311,6 +311,46 @@ void RenderReplaced::computeAspectRatioInformationForRenderBox(RenderBox* conten
     }
 }
 
+LayoutRect RenderReplaced::replacedContentRect(const LayoutSize* overriddenIntrinsicSize) const
+{
+    LayoutRect contentRect = contentBoxRect();
+    ObjectFit objectFit = style()->objectFit();
+
+    if (objectFit == ObjectFitFill && style()->objectPosition() == RenderStyle::initialObjectPosition()) {
+        if (!isVideo() || RuntimeEnabledFeatures::objectFitPositionEnabled())
+            return contentRect;
+        objectFit = ObjectFitContain;
+    }
+
+    LayoutSize intrinsicSize = overriddenIntrinsicSize ? *overriddenIntrinsicSize : this->intrinsicSize();
+    if (!intrinsicSize.width() || !intrinsicSize.height())
+        return contentRect;
+
+    LayoutRect finalRect = contentRect;
+    switch (objectFit) {
+    case ObjectFitContain:
+    case ObjectFitScaleDown:
+    case ObjectFitCover:
+        finalRect.setSize(finalRect.size().fitToAspectRatio(intrinsicSize, objectFit == ObjectFitCover ? AspectRatioFitGrow : AspectRatioFitShrink));
+        if (objectFit != ObjectFitScaleDown || finalRect.width() <= intrinsicSize.width())
+            break;
+        // fall through
+    case ObjectFitNone:
+        finalRect.setSize(intrinsicSize);
+        break;
+    case ObjectFitFill:
+        break;
+    default:
+        ASSERT_NOT_REACHED();
+    }
+
+    LayoutUnit xOffset = minimumValueForLength(style()->objectPosition().x(), contentRect.width() - finalRect.width(), view());
+    LayoutUnit yOffset = minimumValueForLength(style()->objectPosition().y(), contentRect.height() - finalRect.height(), view());
+    finalRect.move(xOffset, yOffset);
+
+    return finalRect;
+}
+
 void RenderReplaced::computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio, bool& isPercentageIntrinsicSize) const
 {
     // If there's an embeddedContentBox() of a remote, referenced document available, this code-path should never be used.
@@ -461,7 +501,7 @@ void RenderReplaced::computePreferredLogicalWidths()
     m_minPreferredLogicalWidth += borderAndPadding;
     m_maxPreferredLogicalWidth += borderAndPadding;
 
-    setPreferredLogicalWidthsDirty(false);
+    clearPreferredLogicalWidthsDirty();
 }
 
 PositionWithAffinity RenderReplaced::positionForPoint(const LayoutPoint& point)

@@ -38,11 +38,11 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RandomNumberSeed.h"
-#include "wtf/StackStats.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/ThreadFunctionInvocation.h"
 #include "wtf/ThreadIdentifierDataPthreads.h"
 #include "wtf/ThreadSpecific.h"
+#include "wtf/ThreadingPrimitives.h"
 #include "wtf/UnusedParam.h"
 #include "wtf/WTFThreadData.h"
 #include "wtf/dtoa.h"
@@ -55,7 +55,7 @@
 #include <sys/time.h>
 #endif
 
-#if OS(DARWIN)
+#if OS(MACOSX)
 #include <objc/objc-auto.h>
 #endif
 
@@ -123,7 +123,6 @@ void initializeThreading()
     threadMapMutex();
     initializeRandomNumberGenerator();
     ThreadIdentifierData::initializeOnce();
-    StackStats::initialize();
     wtfThreadData();
     s_dtoaP5Mutex = new Mutex;
     initializeDates();
@@ -205,7 +204,7 @@ void initializeCurrentThreadInternal(const char* threadName)
     UNUSED_PARAM(threadName);
 #endif
 
-#if OS(DARWIN)
+#if OS(MACOSX)
     // All threads that potentially use APIs above the BSD layer must be registered with the Objective-C
     // garbage collector in case API implementations use garbage-collected memory.
     objc_registerThreadWithCollector();

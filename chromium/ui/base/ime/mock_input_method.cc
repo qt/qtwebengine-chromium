@@ -7,7 +7,8 @@
 namespace ui {
 
 MockInputMethod::MockInputMethod(internal::InputMethodDelegate* delegate)
-    : text_input_client_(NULL) {
+    : text_input_client_(NULL),
+      is_sticky_text_input_client_(false) {
 }
 
 MockInputMethod::~MockInputMethod() {
@@ -17,11 +18,29 @@ void MockInputMethod::SetDelegate(internal::InputMethodDelegate* delegate) {
 }
 
 void MockInputMethod::SetFocusedTextInputClient(TextInputClient* client) {
+  if (is_sticky_text_input_client_)
+    return;
   if (text_input_client_ == client)
     return;
   text_input_client_ = client;
   if (client)
     OnTextInputTypeChanged(client);
+}
+
+void MockInputMethod::SetStickyFocusedTextInputClient(TextInputClient* client) {
+  is_sticky_text_input_client_ = (client != NULL);
+  if (text_input_client_ == client)
+    return;
+  text_input_client_ = client;
+  if (client)
+    OnTextInputTypeChanged(client);
+}
+
+void MockInputMethod::DetachTextInputClient(TextInputClient* client) {
+  if (text_input_client_ == client) {
+    text_input_client_ = NULL;
+    is_sticky_text_input_client_ = false;
+  }
 }
 
 TextInputClient* MockInputMethod::GetTextInputClient() const {
@@ -83,8 +102,12 @@ bool MockInputMethod::IsActive() {
   return true;
 }
 
-ui::TextInputType MockInputMethod::GetTextInputType() const {
-  return ui::TEXT_INPUT_TYPE_NONE;
+TextInputType MockInputMethod::GetTextInputType() const {
+  return TEXT_INPUT_TYPE_NONE;
+}
+
+TextInputMode MockInputMethod::GetTextInputMode() const {
+  return TEXT_INPUT_MODE_DEFAULT;
 }
 
 bool MockInputMethod::CanComposeInline() const {

@@ -48,8 +48,6 @@
 using namespace WebCore;
 using namespace WebKit;
 
-#if !OS(ANDROID)
-
 namespace {
 
 PassRefPtr<SharedBuffer> readFile(const char* fileName)
@@ -62,7 +60,7 @@ PassRefPtr<SharedBuffer> readFile(const char* fileName)
 
 PassOwnPtr<WEBPImageDecoder> createDecoder()
 {
-    return adoptPtr(new WEBPImageDecoder(ImageSource::AlphaNotPremultiplied, ImageSource::GammaAndColorProfileApplied));
+    return adoptPtr(new WEBPImageDecoder(ImageSource::AlphaNotPremultiplied, ImageSource::GammaAndColorProfileApplied, ImageDecoder::noDecodedImageByteLimit));
 }
 
 unsigned hashSkBitmap(const SkBitmap& bitmap)
@@ -138,6 +136,28 @@ void testRandomDecodeAfterClearFrameBufferCache(const char* webpFile)
     }
 }
 
+void testDecodeAfterReallocatingData(const char* webpFile)
+{
+    OwnPtr<WEBPImageDecoder> decoder = createDecoder();
+    RefPtr<SharedBuffer> data = readFile(webpFile);
+    ASSERT_TRUE(data.get());
+
+    // Parse from 'data'.
+    decoder->setData(data.get(), true);
+    size_t frameCount = decoder->frameCount();
+
+    // ... and then decode frames from 'reallocatedData'.
+    RefPtr<SharedBuffer> reallocatedData = data.get()->copy();
+    ASSERT_TRUE(reallocatedData.get());
+    data.clear();
+    decoder->setData(reallocatedData.get(), true);
+
+    for (size_t i = 0; i < frameCount; ++i) {
+        const ImageFrame* const frame = decoder->frameBufferAtIndex(i);
+        EXPECT_EQ(ImageFrame::FrameComplete, frame->status());
+    }
+}
+
 } // namespace
 
 class AnimatedWebPTests : public ::testing::Test {
@@ -162,13 +182,14 @@ TEST_F(AnimatedWebPTests, verifyAnimationParametersTransparentImage)
     const int canvasHeight = 29;
     const struct AnimParam {
         int xOffset, yOffset, width, height;
-        ImageFrame::FrameDisposalMethod dispose;
+        ImageFrame::DisposalMethod disposalMethod;
+        ImageFrame::AlphaBlendSource alphaBlendSource;
         unsigned duration;
         bool hasAlpha;
     } frameParameters[] = {
-        { 0, 0, 11, 29, ImageFrame::DisposeKeep, 1000u, true },
-        { 2, 10, 7, 17, ImageFrame::DisposeKeep, 500u, true },
-        { 2, 2, 7, 16, ImageFrame::DisposeKeep, 1000u, true },
+        { 0, 0, 11, 29, ImageFrame::DisposeKeep, ImageFrame::BlendAtopPreviousFrame, 1000u, true },
+        { 2, 10, 7, 17, ImageFrame::DisposeKeep, ImageFrame::BlendAtopPreviousFrame, 500u, true },
+        { 2, 2, 7, 16, ImageFrame::DisposeKeep, ImageFrame::BlendAtopPreviousFrame, 1000u, true },
     };
 
     for (size_t i = 0; i < ARRAY_SIZE(frameParameters); ++i) {
@@ -180,7 +201,8 @@ TEST_F(AnimatedWebPTests, verifyAnimationParametersTransparentImage)
         EXPECT_EQ(frameParameters[i].yOffset, frame->originalFrameRect().y());
         EXPECT_EQ(frameParameters[i].width, frame->originalFrameRect().width());
         EXPECT_EQ(frameParameters[i].height, frame->originalFrameRect().height());
-        EXPECT_EQ(frameParameters[i].dispose, frame->disposalMethod());
+        EXPECT_EQ(frameParameters[i].disposalMethod, frame->disposalMethod());
+        EXPECT_EQ(frameParameters[i].alphaBlendSource, frame->alphaBlendSource());
         EXPECT_EQ(frameParameters[i].duration, frame->duration());
         EXPECT_EQ(frameParameters[i].hasAlpha, frame->hasAlpha());
     }
@@ -202,14 +224,15 @@ TEST_F(AnimatedWebPTests, verifyAnimationParametersOpaqueFramesTransparentBackgr
     const int canvasHeight = 87;
     const struct AnimParam {
         int xOffset, yOffset, width, height;
-        ImageFrame::FrameDisposalMethod dispose;
+        ImageFrame::DisposalMethod disposalMethod;
+        ImageFrame::AlphaBlendSource alphaBlendSource;
         unsigned duration;
         bool hasAlpha;
     } frameParameters[] = {
-        { 4, 10, 33, 32, ImageFrame::DisposeOverwriteBgcolor, 1000u, true },
-        { 34, 30, 33, 32, ImageFrame::DisposeOverwriteBgcolor, 1000u, true },
-        { 62, 50, 32, 32, ImageFrame::DisposeOverwriteBgcolor, 1000u, true },
-        { 10, 54, 32, 33, ImageFrame::DisposeOverwriteBgcolor, 1000u, true },
+        { 4, 10, 33, 32, ImageFrame::DisposeOverwriteBgcolor, ImageFrame::BlendAtopPreviousFrame, 1000u, true },
+        { 34, 30, 33, 32, ImageFrame::DisposeOverwriteBgcolor, ImageFrame::BlendAtopPreviousFrame, 1000u, true },
+        { 62, 50, 32, 32, ImageFrame::DisposeOverwriteBgcolor, ImageFrame::BlendAtopPreviousFrame, 1000u, true },
+        { 10, 54, 32, 33, ImageFrame::DisposeOverwriteBgcolor, ImageFrame::BlendAtopPreviousFrame, 1000u, true },
     };
 
     for (size_t i = 0; i < ARRAY_SIZE(frameParameters); ++i) {
@@ -221,7 +244,51 @@ TEST_F(AnimatedWebPTests, verifyAnimationParametersOpaqueFramesTransparentBackgr
         EXPECT_EQ(frameParameters[i].yOffset, frame->originalFrameRect().y());
         EXPECT_EQ(frameParameters[i].width, frame->originalFrameRect().width());
         EXPECT_EQ(frameParameters[i].height, frame->originalFrameRect().height());
-        EXPECT_EQ(frameParameters[i].dispose, frame->disposalMethod());
+        EXPECT_EQ(frameParameters[i].disposalMethod, frame->disposalMethod());
+        EXPECT_EQ(frameParameters[i].alphaBlendSource, frame->alphaBlendSource());
+        EXPECT_EQ(frameParameters[i].duration, frame->duration());
+        EXPECT_EQ(frameParameters[i].hasAlpha, frame->hasAlpha());
+    }
+
+    EXPECT_EQ(ARRAY_SIZE(frameParameters), decoder->frameCount());
+    EXPECT_EQ(cAnimationLoopInfinite, decoder->repetitionCount());
+}
+
+TEST_F(AnimatedWebPTests, verifyAnimationParametersBlendOverwrite)
+{
+    OwnPtr<WEBPImageDecoder> decoder = createDecoder();
+    EXPECT_EQ(cAnimationLoopOnce, decoder->repetitionCount());
+
+    RefPtr<SharedBuffer> data = readFile("/LayoutTests/fast/images/resources/webp-animated-no-blend.webp");
+    ASSERT_TRUE(data.get());
+    decoder->setData(data.get(), true);
+
+    const int canvasWidth = 94;
+    const int canvasHeight = 87;
+    const struct AnimParam {
+        int xOffset, yOffset, width, height;
+        ImageFrame::DisposalMethod disposalMethod;
+        ImageFrame::AlphaBlendSource alphaBlendSource;
+        unsigned duration;
+        bool hasAlpha;
+    } frameParameters[] = {
+        { 4, 10, 33, 32, ImageFrame::DisposeOverwriteBgcolor, ImageFrame::BlendAtopBgcolor, 1000u, true },
+        { 34, 30, 33, 32, ImageFrame::DisposeOverwriteBgcolor, ImageFrame::BlendAtopBgcolor, 1000u, true },
+        { 62, 50, 32, 32, ImageFrame::DisposeOverwriteBgcolor, ImageFrame::BlendAtopBgcolor, 1000u, true },
+        { 10, 54, 32, 33, ImageFrame::DisposeOverwriteBgcolor, ImageFrame::BlendAtopBgcolor, 1000u, true },
+    };
+
+    for (size_t i = 0; i < ARRAY_SIZE(frameParameters); ++i) {
+        const ImageFrame* const frame = decoder->frameBufferAtIndex(i);
+        EXPECT_EQ(ImageFrame::FrameComplete, frame->status());
+        EXPECT_EQ(canvasWidth, frame->getSkBitmap().width());
+        EXPECT_EQ(canvasHeight, frame->getSkBitmap().height());
+        EXPECT_EQ(frameParameters[i].xOffset, frame->originalFrameRect().x());
+        EXPECT_EQ(frameParameters[i].yOffset, frame->originalFrameRect().y());
+        EXPECT_EQ(frameParameters[i].width, frame->originalFrameRect().width());
+        EXPECT_EQ(frameParameters[i].height, frame->originalFrameRect().height());
+        EXPECT_EQ(frameParameters[i].disposalMethod, frame->disposalMethod());
+        EXPECT_EQ(frameParameters[i].alphaBlendSource, frame->alphaBlendSource());
         EXPECT_EQ(frameParameters[i].duration, frame->duration());
         EXPECT_EQ(frameParameters[i].hasAlpha, frame->hasAlpha());
     }
@@ -375,14 +442,14 @@ TEST_F(AnimatedWebPTests, updateRequiredPreviousFrameAfterFirstDecode)
         ++partialSize;
     } while (!decoder->frameCount() || decoder->frameBufferAtIndex(0)->status() == ImageFrame::FrameEmpty);
 
-    EXPECT_EQ(notFound, decoder->frameBufferAtIndex(0)->requiredPreviousFrameIndex());
+    EXPECT_EQ(kNotFound, decoder->frameBufferAtIndex(0)->requiredPreviousFrameIndex());
     unsigned frameCount = decoder->frameCount();
     for (size_t i = 1; i < frameCount; ++i)
         EXPECT_EQ(i - 1, decoder->frameBufferAtIndex(i)->requiredPreviousFrameIndex());
 
     decoder->setData(fullData.get(), true);
     for (size_t i = 0; i < frameCount; ++i)
-        EXPECT_EQ(notFound, decoder->frameBufferAtIndex(i)->requiredPreviousFrameIndex());
+        EXPECT_EQ(kNotFound, decoder->frameBufferAtIndex(i)->requiredPreviousFrameIndex());
 }
 
 TEST_F(AnimatedWebPTests, randomFrameDecode)
@@ -424,7 +491,7 @@ TEST_F(AnimatedWebPTests, resumePartialDecodeAfterClearFrameBufferCache)
     EXPECT_EQ(frameCount, decoder->frameCount());
     ImageFrame* lastFrame = decoder->frameBufferAtIndex(frameCount - 1);
     EXPECT_EQ(baselineHashes[frameCount - 1], hashSkBitmap(lastFrame->getSkBitmap()));
-    decoder->clearCacheExceptFrame(notFound);
+    decoder->clearCacheExceptFrame(kNotFound);
 
     // Resume decoding of the first frame.
     ImageFrame* firstFrame = decoder->frameBufferAtIndex(0);
@@ -432,4 +499,8 @@ TEST_F(AnimatedWebPTests, resumePartialDecodeAfterClearFrameBufferCache)
     EXPECT_EQ(baselineHashes[0], hashSkBitmap(firstFrame->getSkBitmap()));
 }
 
-#endif
+TEST_F(AnimatedWebPTests, decodeAfterReallocatingData)
+{
+    testDecodeAfterReallocatingData("/LayoutTests/fast/images/resources/webp-animated.webp");
+    testDecodeAfterReallocatingData("/LayoutTests/fast/images/resources/webp-animated-icc-xmp.webp");
+}

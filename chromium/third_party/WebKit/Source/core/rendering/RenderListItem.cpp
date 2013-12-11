@@ -25,7 +25,7 @@
 #include "core/rendering/RenderListItem.h"
 
 #include "HTMLNames.h"
-#include "core/dom/NodeTraversal.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/html/HTMLOListElement.h"
 #include "core/rendering/RenderListMarker.h"
 #include "core/rendering/RenderView.h"
@@ -39,7 +39,7 @@ namespace WebCore {
 using namespace HTMLNames;
 
 RenderListItem::RenderListItem(Element* element)
-    : RenderBlock(element)
+    : RenderBlockFlow(element)
     , m_marker(0)
     , m_hasExplicitValue(false)
     , m_isValueUpToDate(false)
@@ -73,7 +73,7 @@ void RenderListItem::willBeDestroyed()
         m_marker->destroy();
         m_marker = 0;
     }
-    RenderBlock::willBeDestroyed();
+    RenderBlockFlow::willBeDestroyed();
 }
 
 void RenderListItem::insertedIntoTree()
@@ -85,7 +85,7 @@ void RenderListItem::insertedIntoTree()
 
 void RenderListItem::willBeRemovedFromTree()
 {
-    RenderBlock::willBeRemovedFromTree();
+    RenderBlockFlow::willBeRemovedFromTree();
 
     updateListMarkerNumbers();
 }
@@ -188,7 +188,7 @@ inline int RenderListItem::calcValue() const
         return m_explicitValue;
 
     Node* list = enclosingList(this);
-    HTMLOListElement* oListElement = (list && list->hasTagName(olTag)) ? static_cast<HTMLOListElement*>(list) : 0;
+    HTMLOListElement* oListElement = (list && list->hasTagName(olTag)) ? toHTMLOListElement(list) : 0;
     int valueStep = 1;
     if (oListElement && oListElement->isReversed())
         valueStep = -1;
@@ -221,7 +221,7 @@ static RenderObject* getParentOfFirstLineBox(RenderBlock* curr, RenderObject* ma
     if (!firstChild)
         return 0;
 
-    bool inQuirksMode = curr->document()->inQuirksMode();
+    bool inQuirksMode = curr->document().inQuirksMode();
     for (RenderObject* currChild = firstChild; currChild; currChild = currChild->nextSibling()) {
         if (currChild == marker)
             continue;
@@ -296,22 +296,26 @@ void RenderListItem::updateMarkerLocation()
             // If markerParent is an anonymous block that has lost all its children, destroy it.
             if (markerParent && markerParent->isAnonymousBlock() && !markerParent->firstChild() && !toRenderBlock(markerParent)->continuation())
                 markerParent->destroy();
+
+            // If the marker is inside we need to redo the preferred width calculations
+            // as the size of the item now includes the size of the list marker.
+            if (m_marker->isInside())
+                containingBlock()->updateLogicalWidth();
         }
     }
 }
 
 void RenderListItem::layout()
 {
-    StackStats::LayoutCheckPoint layoutCheckPoint;
     ASSERT(needsLayout());
 
     updateMarkerLocation();
-    RenderBlock::layout();
+    RenderBlockFlow::layout();
 }
 
 void RenderListItem::addOverflowFromChildren()
 {
-    RenderBlock::addOverflowFromChildren();
+    RenderBlockFlow::addOverflowFromChildren();
     positionListMarker();
 }
 
@@ -415,7 +419,7 @@ void RenderListItem::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
     if (!logicalHeight() && hasOverflowClip())
         return;
 
-    RenderBlock::paint(paintInfo, paintOffset);
+    RenderBlockFlow::paint(paintInfo, paintOffset);
 }
 
 const String& RenderListItem::markerText() const
@@ -494,7 +498,7 @@ void RenderListItem::updateListMarkerNumbers()
         return;
 
     bool isListReversed = false;
-    HTMLOListElement* oListElement = (listNode && listNode->hasTagName(olTag)) ? static_cast<HTMLOListElement*>(listNode) : 0;
+    HTMLOListElement* oListElement = (listNode && listNode->hasTagName(olTag)) ? toHTMLOListElement(listNode) : 0;
     if (oListElement) {
         oListElement->itemCountChanged();
         isListReversed = oListElement->isReversed();

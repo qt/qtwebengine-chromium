@@ -5,48 +5,59 @@
 #ifndef CONTENT_BROWSER_DEVICE_ORIENTATION_DATA_FETCHER_SHARED_MEMORY_H_
 #define CONTENT_BROWSER_DEVICE_ORIENTATION_DATA_FETCHER_SHARED_MEMORY_H_
 
-#include "content/browser/device_orientation/device_data.h"
-#include "content/common/device_motion_hardware_buffer.h"
+#include "content/browser/device_orientation/data_fetcher_shared_memory_base.h"
 
-namespace WebKit {
-class WebDeviceMotionData;
-}
+#if !defined(OS_ANDROID)
+#include "content/common/device_motion_hardware_buffer.h"
+#include "content/common/device_orientation/device_orientation_hardware_buffer.h"
+#endif
+
+#if defined(OS_MACOSX)
+class SuddenMotionSensor;
+#elif defined(OS_WIN)
+#include <SensorsApi.h>
+#include "base/win/scoped_comptr.h"
+#endif
 
 namespace content {
 
-class CONTENT_EXPORT DataFetcherSharedMemory {
+class CONTENT_EXPORT DataFetcherSharedMemory
+    : public DataFetcherSharedMemoryBase {
+
  public:
-  DataFetcherSharedMemory()
-      : device_motion_buffer_(NULL),
-        started_(false) { }
+  DataFetcherSharedMemory();
   virtual ~DataFetcherSharedMemory();
 
-  // Returns true if this fetcher needs explicit calls to fetch the data.
-  // Called from any thread.
-  virtual bool NeedsPolling();
-
-  // If this fetcher NeedsPolling() is true, this method will update the
-  // buffer with the latest device motion data.
-  // Returns true if there was any motion data to update the buffer with.
-  // Called from the DeviceMotionProvider::PollingThread.
-  virtual bool FetchDeviceMotionDataIntoBuffer();
-
-  // Returns true if the relevant sensors could be successfully activated.
-  // This method should be called before any calls to
-  // FetchDeviceMotionDataIntoBuffer().
-  // If NeedsPolling() is true this method should be called from the
-  // PollingThread.
-  virtual bool StartFetchingDeviceMotionData(
-      DeviceMotionHardwareBuffer* buffer);
-
-  // Indicates to the fetcher to stop fetching device data.
-  // If NeedsPolling() is true this method should be called from the
-  // PollingThread.
-  virtual void StopFetchingDeviceMotionData();
-
  private:
-  DeviceMotionHardwareBuffer* device_motion_buffer_;
-  bool started_;
+  virtual bool Start(ConsumerType consumer_type, void* buffer) OVERRIDE;
+  virtual bool Stop(ConsumerType consumer_type) OVERRIDE;
+
+#if !defined(OS_ANDROID)
+  DeviceMotionHardwareBuffer* motion_buffer_;
+  DeviceOrientationHardwareBuffer* orientation_buffer_;
+#endif
+#if defined(OS_MACOSX)
+  virtual void Fetch(unsigned consumer_bitmask) OVERRIDE;
+  virtual bool IsPolling() const OVERRIDE;
+
+  scoped_ptr<SuddenMotionSensor> sudden_motion_sensor_;
+#elif defined(OS_WIN)
+  class SensorEventSink;
+  class SensorEventSinkMotion;
+  class SensorEventSinkOrientation;
+
+  virtual bool IsPolling() const OVERRIDE;
+  virtual base::TimeDelta GetPollDelay() const OVERRIDE;
+
+  bool RegisterForSensor(REFSENSOR_TYPE_ID sensor_type, ISensor** sensor,
+      scoped_refptr<SensorEventSink> event_sink);
+  void DisableSensors(ConsumerType consumer_type);
+  void SetBufferAvailableState(ConsumerType consumer_type, bool enabled);
+
+  base::win::ScopedComPtr<ISensor> sensor_inclinometer_;
+  base::win::ScopedComPtr<ISensor> sensor_accelerometer_;
+  base::win::ScopedComPtr<ISensor> sensor_gyrometer_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(DataFetcherSharedMemory);
 };

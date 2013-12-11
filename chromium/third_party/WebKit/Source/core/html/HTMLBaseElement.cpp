@@ -26,21 +26,21 @@
 #include "HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
+#include "core/fetch/TextResourceDecoder.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/loader/TextResourceDecoder.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLBaseElement::HTMLBaseElement(const QualifiedName& tagName, Document* document)
+inline HTMLBaseElement::HTMLBaseElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
 {
     ASSERT(hasTagName(baseTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLBaseElement> HTMLBaseElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLBaseElement> HTMLBaseElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLBaseElement(tagName, document));
 }
@@ -48,7 +48,7 @@ PassRefPtr<HTMLBaseElement> HTMLBaseElement::create(const QualifiedName& tagName
 void HTMLBaseElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     if (name == hrefAttr || name == targetAttr)
-        document()->processBaseElement();
+        document().processBaseElement();
     else
         HTMLElement::parseAttribute(name, value);
 }
@@ -57,7 +57,7 @@ Node::InsertionNotificationRequest HTMLBaseElement::insertedInto(ContainerNode* 
 {
     HTMLElement::insertedInto(insertionPoint);
     if (insertionPoint->inDocument())
-        document()->processBaseElement();
+        document().processBaseElement();
     return InsertionDone;
 }
 
@@ -65,7 +65,7 @@ void HTMLBaseElement::removedFrom(ContainerNode* insertionPoint)
 {
     HTMLElement::removedFrom(insertionPoint);
     if (insertionPoint->inDocument())
-        document()->processBaseElement();
+        document().processBaseElement();
 }
 
 bool HTMLBaseElement::isURLAttribute(const Attribute& attribute) const
@@ -86,11 +86,11 @@ KURL HTMLBaseElement::href() const
 
     const AtomicString& attributeValue = fastGetAttribute(hrefAttr);
     if (attributeValue.isNull())
-        return document()->url();
+        return document().url();
 
-    KURL url = !document()->decoder() ?
-        KURL(document()->url(), stripLeadingAndTrailingHTMLSpaces(attributeValue)) :
-        KURL(document()->url(), stripLeadingAndTrailingHTMLSpaces(attributeValue), document()->decoder()->encoding());
+    KURL url = document().encoding().isValid() ?
+        KURL(document().url(), stripLeadingAndTrailingHTMLSpaces(attributeValue)) :
+        KURL(document().url(), stripLeadingAndTrailingHTMLSpaces(attributeValue), document().encoding());
 
     if (!url.isValid())
         return KURL();

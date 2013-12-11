@@ -40,8 +40,8 @@
     {
       # The current list of tests for android.  This is temporary
       # until the full set supported.  If adding a new test here,
-      # please also add it to build/android/run_tests.py, else the
-      # test is not run.
+      # please also add it to build/android/pylib/gtest/gtest_config.py,
+      # else the test is not run.
       #
       # WARNING:
       # Do not add targets here without communicating the implications
@@ -65,6 +65,7 @@
         '../chrome/chrome.gyp:unit_tests',
         '../components/components.gyp:components_unittests',
         '../content/content.gyp:content_browsertests',
+        '../content/content.gyp:content_gl_tests',
         '../content/content.gyp:content_shell_test_apk',
         '../content/content.gyp:content_unittests',
         '../gpu/gpu.gyp:gl_tests',
@@ -96,6 +97,7 @@
             '../chrome/chrome.gyp:unit_tests_apk',
             '../components/components.gyp:components_unittests_apk',
             '../content/content.gyp:content_browsertests_apk',
+            '../content/content.gyp:content_gl_tests_apk',
             '../content/content.gyp:content_unittests_apk',
             '../content/content.gyp:video_decode_accelerator_unittest_apk',
             '../gpu/gpu.gyp:gl_tests_apk',
@@ -115,6 +117,22 @@
         }],
       ],
     },
+    {
+      # WebRTC Android APK tests.
+      'target_name': 'android_builder_webrtc',
+      'type': 'none',
+      'variables': {
+        # WebRTC tests are normally not built by Chromium bots.
+        'include_tests%': 0,
+      },
+      'conditions': [
+        ['"<(gtest_target_type)"=="shared_library" and include_tests==1', {
+          'dependencies': [
+            '../third_party/webrtc/build/apk_tests.gyp:*',
+          ],
+        }],
+      ],
+    },  # target_name: android_builder_webrtc
     {
       # Experimental / in-progress targets that are expected to fail
       # but we still try to compile them on bots (turning the stage

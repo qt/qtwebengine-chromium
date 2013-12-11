@@ -14,8 +14,8 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "ui/base/accessibility/accessibility_types.h"
-#include "ui/base/animation/animation_delegate.h"
-#include "ui/base/animation/slide_animation.h"
+#include "ui/gfx/animation/animation_delegate.h"
+#include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/screen.h"
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/message_center_style.h"
@@ -150,9 +150,14 @@ void MessagePopupCollection::UpdateWidgets() {
     toasts_.push_back(toast);
 
     gfx::Size preferred_size = toast->GetPreferredSize();
-    gfx::Point origin(
-        GetToastOriginX(gfx::Rect(preferred_size)) + preferred_size.width(),
-        top_down ? base + view_height : base);
+    gfx::Point origin(GetToastOriginX(gfx::Rect(preferred_size)), base);
+    // The toast slides in from the edge of the screen horizontally.
+    if (alignment_ & POPUP_ALIGNMENT_LEFT)
+      origin.set_x(origin.x() - preferred_size.width());
+    else
+      origin.set_x(origin.x() + preferred_size.width());
+    if (top_down)
+      origin.set_y(origin.y() + view_height);
     toast->RevealWithAnimation(origin);
 
     // Shift the base line to be a few pixels above the last added toast or (few
@@ -358,9 +363,7 @@ void MessagePopupCollection::OnNotificationRemoved(
     return;
 
   target_top_edge_ = (*iter)->bounds().y();
-  (*iter)->CloseWithAnimation(true);
-  if (by_user) {
-    RepositionWidgetsWithTarget();
+  if (by_user && !user_is_closing_toasts_by_clicking_) {
     // [Re] start a timeout after which the toasts re-position to their
     // normal locations after tracking the mouse pointer for easy deletion.
     // This provides a period of time when toasts are easy to remove because
@@ -368,11 +371,18 @@ void MessagePopupCollection::OnNotificationRemoved(
     // pointer. If the user continue to remove the toasts, the delay is reset.
     // Once user stopped removing the toasts, the toasts re-populate/rearrange
     // after the specified delay.
-    if (!user_is_closing_toasts_by_clicking_) {
-      user_is_closing_toasts_by_clicking_ = true;
-      IncrementDeferCounter();
-    }
+    user_is_closing_toasts_by_clicking_ = true;
+    IncrementDeferCounter();
   }
+
+  // CloseWithAnimation ultimately causes a call to RemoveToast, which calls
+  // OnMouseExited.  This means that |user_is_closing_toasts_by_clicking_| must
+  // have been set before this call, otherwise it will remain true even after
+  // the toast is closed, since the defer timer won't be started.
+  (*iter)->CloseWithAnimation(true);
+
+  if (by_user)
+    RepositionWidgetsWithTarget();
 }
 
 void MessagePopupCollection::OnDeferTimerExpired() {

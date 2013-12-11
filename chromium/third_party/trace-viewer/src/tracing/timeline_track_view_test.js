@@ -9,44 +9,39 @@ base.require('tracing.timeline_track_view');
 base.require('tracing.importer.trace_event_importer');
 
 base.unittest.testSuite('tracing.timeline_track_view', function() {
-  var NoCountersFilter = function() {
-  };
 
-  NoCountersFilter.prototype = {
-    __proto__: tracing.Filter.prototype,
-    matchCounter: function(c) {
-      return false;
+  var Selection = tracing.Selection;
+  var SelectionState = tracing.trace_model.SelectionState;
+
+  function contains(array, element) {
+    for (var i = 0; i < array.length; i++) {
+      if (array[i] === element) {
+        return true;
+      }
     }
+    return false;
   };
 
-  var NoCpusFilter = function() {
-  };
+  function checkSelectionStates(timeline, selection, highlight) {
+    selection = selection || [];
+    highlight = highlight || [];
 
-  NoCpusFilter.prototype = {
-    __proto__: tracing.Filter.prototype,
-    matchCpu: function(c) {
-      return false;
-    }
-  };
+    assertEquals(selection.length, timeline.selection.length);
+    assertEquals(highlight.length, timeline.highlight.length);
 
-  var NoProcessesFilter = function() {
-  };
+    assertArrayEquals(selection, timeline.selection);
+    assertArrayEquals(highlight, timeline.highlight);
 
-  NoProcessesFilter.prototype = {
-    __proto__: tracing.Filter.prototype,
-    matchProcess: function(c) {
-      return false;
-    }
-  };
-
-  var NoThreadsFilter = function() {
-  };
-
-  NoThreadsFilter.prototype = {
-    __proto__: tracing.Filter.prototype,
-    matchThread: function(c) {
-      return false;
-    }
+    timeline.model.iterateAllEvents(function(event) {
+      if (contains(selection, event))
+        assertEquals(SelectionState.SELECTED, event.selectionState);
+      else if (contains(highlight, event))
+        assertEquals(SelectionState.HIGHLIGHTED, event.selectionState);
+      else if (highlight.length)
+        assertEquals(SelectionState.DIMMED, event.selectionState);
+      else
+        assertEquals(SelectionState.NONE, event.selectionState);
+    });
   };
 
   test('instantiate', function() {
@@ -83,23 +78,23 @@ base.unittest.testSuite('tracing.timeline_track_view', function() {
     var timeline = new tracing.TimelineTrackView();
     timeline.model = model;
 
-    var expected = [{slice: t1asg.slices[0].subSlices[0]},
-                    {slice: t1.sliceGroup.slices[0]}];
+    var expected = [t1asg.slices[0].subSlices[0],
+                    t1.sliceGroup.slices[0]];
     var result = new tracing.Selection();
     timeline.addAllObjectsMatchingFilterToSelection(
         new tracing.TitleFilter('a'), result);
     assertEquals(2, result.length);
-    assertEquals(expected[0].slice, result[0].slice);
-    assertEquals(expected[1].slice, result[1].slice);
+    assertEquals(expected[0], result[0]);
+    assertEquals(expected[1], result[1]);
 
-    var expected = [{slice: t1asg.slices[1].subSlices[0]},
-                    {slice: t1.sliceGroup.slices[1]}];
+    var expected = [t1asg.slices[1].subSlices[0],
+                    t1.sliceGroup.slices[1]];
     var result = new tracing.Selection();
     timeline.addAllObjectsMatchingFilterToSelection(
         new tracing.TitleFilter('b'), result);
     assertEquals(2, result.length);
-    assertEquals(expected[0].slice, result[0].slice);
-    assertEquals(expected[1].slice, result[1].slice);
+    assertEquals(expected[0], result[0]);
+    assertEquals(expected[1], result[1]);
   });
 
   test('emptyThreadsDeleted', function() {
@@ -128,9 +123,6 @@ base.unittest.testSuite('tracing.timeline_track_view', function() {
     timeline.model = model;
 
     assertTrue(timeline.hasVisibleContent);
-
-    timeline.categoryFilter = new NoCountersFilter();
-    assertFalse(timeline.hasVisibleContent);
   });
 
   test('filteredCpus', function() {
@@ -142,9 +134,6 @@ base.unittest.testSuite('tracing.timeline_track_view', function() {
     timeline.model = model;
 
     assertTrue(timeline.hasVisibleContent);
-
-    timeline.categoryFilter = new NoCpusFilter();
-    assertFalse(timeline.hasVisibleContent);
   });
 
   test('filteredProcesses', function() {
@@ -156,9 +145,6 @@ base.unittest.testSuite('tracing.timeline_track_view', function() {
     timeline.model = model;
 
     assertTrue(timeline.hasVisibleContent);
-
-    timeline.categoryFilter = new NoProcessesFilter();
-    assertFalse(timeline.hasVisibleContent);
   });
 
   test('filteredThreads', function() {
@@ -171,8 +157,89 @@ base.unittest.testSuite('tracing.timeline_track_view', function() {
     timeline.model = model;
 
     assertTrue(timeline.hasVisibleContent);
+  });
 
-    timeline.categoryFilter = new NoThreadsFilter();
-    assertFalse(timeline.hasVisibleContent);
+  test('selectionAndHighlight', function() {
+    var events = [
+      {name: 'a', args: {}, pid: 52, ts: 520, cat: 'foo', tid: 53, ph: 'B'},
+      {name: 'a', args: {}, pid: 52, ts: 560, cat: 'foo', tid: 53, ph: 'B'},
+      {name: 'ab', args: {}, pid: 52, ts: 560, cat: 'foo', tid: 53, ph: 'B'},
+      {name: 'b', args: {}, pid: 52, ts: 629, cat: 'foo', tid: 53, ph: 'B'},
+      {name: 'b', args: {}, pid: 52, ts: 631, cat: 'foo', tid: 53, ph: 'B'}
+    ];
+    var model = new tracing.TraceModel(events);
+    var timeline = new tracing.TimelineTrackView();
+    timeline.model = model;
+
+    var selection = new Selection();
+    timeline.addAllObjectsMatchingFilterToSelection(
+        new tracing.TitleFilter('a'), selection);
+
+    var highlight = new Selection();
+    timeline.addAllObjectsMatchingFilterToSelection(
+        new tracing.TitleFilter('b'), highlight);
+
+    // Test for faulty input.
+    assertThrows(function() {
+      timeline.selection = 'selection';
+    });
+
+    assertThrows(function() {
+      timeline.highlight = 1;
+    });
+
+    assertThrows(function() {
+      timeline.setSelectionAndHighlight(0, false);
+    });
+
+    // Check state after reset.
+    timeline.setSelectionAndHighlight(null, null);
+    checkSelectionStates(timeline, null, null);
+
+    // Add selection only.
+    timeline.selection = selection;
+    assertEquals(selection, timeline.selection);
+    checkSelectionStates(timeline, selection, null);
+
+    // Reset selection.
+    timeline.selection = null;
+    assertEquals(0, timeline.selection.length);
+    checkSelectionStates(timeline, null, null);
+
+    // Add highlight only.
+    timeline.highlight = highlight;
+    assertEquals(highlight, timeline.highlight);
+    checkSelectionStates(timeline, null, highlight);
+
+    // Reset highlight
+    timeline.highlight = null;
+    assertEquals(0, timeline.highlight.length);
+    checkSelectionStates(timeline, null, null);
+
+    // Add selection and highlight.
+    timeline.setSelectionAndHighlight(selection, highlight);
+    checkSelectionStates(timeline, selection, highlight);
+
+    // Selection replaces old selection.
+    var subSelection = selection.subSelection(0, 1);
+    timeline.selection = subSelection;
+    checkSelectionStates(timeline, subSelection, highlight);
+
+    // Highlight replaces old highlight.
+    var subHighlight = highlight.subSelection(1, 2);
+    timeline.highlight = subHighlight;
+    checkSelectionStates(timeline, subSelection, subHighlight);
+
+    // Set selection and clear highlight.
+    timeline.setSelectionAndClearHighlight(selection);
+    checkSelectionStates(timeline, selection, null);
+
+    // Set highlight and clear selection.
+    timeline.setHighlightAndClearSelection(highlight);
+    checkSelectionStates(timeline, null, highlight);
+
+    // Reset both.
+    timeline.setSelectionAndHighlight(null, null);
+    checkSelectionStates(timeline, null, null);
   });
 });

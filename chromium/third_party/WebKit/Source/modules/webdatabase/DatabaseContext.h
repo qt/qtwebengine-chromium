@@ -41,7 +41,7 @@ class DatabaseTaskSynchronizer;
 class DatabaseThread;
 class ScriptExecutionContext;
 
-class DatabaseContext : public ThreadSafeRefCounted<DatabaseContext>, ActiveDOMObject {
+class DatabaseContext : public ThreadSafeRefCounted<DatabaseContext>, public ActiveDOMObject {
 public:
     virtual ~DatabaseContext();
 
@@ -60,18 +60,16 @@ public:
 
     bool allowDatabaseAccess() const;
 
-private:
+protected:
     explicit DatabaseContext(ScriptExecutionContext*);
 
+private:
     void stopDatabases() { stopDatabases(0); }
 
     RefPtr<DatabaseThread> m_databaseThread;
     bool m_hasOpenDatabases; // This never changes back to false, even after the database thread is closed.
     bool m_isRegistered;
     bool m_hasRequestedTermination;
-
-    friend class DatabaseBackendContext;
-    friend class DatabaseManager;
 };
 
 } // namespace WebCore

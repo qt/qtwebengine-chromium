@@ -143,6 +143,7 @@
         'ppapi_proxy',
         'ppapi_shared',
         'ppapi_unittest_shared',
+        '../base/base.gyp:run_all_unittests',
         '../base/base.gyp:test_support_base',
         '../gpu/gpu.gyp:gpu_ipc',
         '../ipc/ipc.gyp:ipc',
@@ -157,8 +158,6 @@
         '../ppapi',
       ],
       'sources': [
-        'proxy/run_all_unittests.cc',
-
         'host/resource_message_filter_unittest.cc',
         # Piggy back on ppapi_unittests for a simple NaCl unittest,
         # which must not have dependencies on anything other than stdlibs.
@@ -219,9 +218,6 @@
           ['os_posix==1 and OS!="mac"', {
             'cflags': ['-fvisibility=hidden'],
             'type': 'shared_library',
-            # -gstabs, used in the official builds, causes an ICE. Simply remove
-            # it.
-            'cflags!': ['-gstabs'],
           }],
           ['OS=="win"', {
             'type': 'shared_library',

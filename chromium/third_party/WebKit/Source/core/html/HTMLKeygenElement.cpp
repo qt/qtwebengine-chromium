@@ -42,7 +42,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLKeygenElement::HTMLKeygenElement(const QualifiedName& tagName, Document* document, HTMLFormElement* form)
+HTMLKeygenElement::HTMLKeygenElement(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
     : HTMLFormControlElementWithState(tagName, document, form)
 {
     ASSERT(hasTagName(keygenTag));
@@ -62,11 +62,11 @@ void HTMLKeygenElement::didAddUserAgentShadowRoot(ShadowRoot* root)
     select->setPart(keygenSelectPseudoId);
     for (size_t i = 0; i < keys.size(); ++i) {
         RefPtr<HTMLOptionElement> option = HTMLOptionElement::create(document());
-        option->appendChild(Text::create(document(), keys[i]), ASSERT_NO_EXCEPTION);
-        select->appendChild(option, ASSERT_NO_EXCEPTION);
+        option->appendChild(Text::create(document(), keys[i]));
+        select->appendChild(option);
     }
 
-    root->appendChild(select, ASSERT_NO_EXCEPTION);
+    root->appendChild(select);
 }
 
 void HTMLKeygenElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -84,7 +84,7 @@ bool HTMLKeygenElement::appendFormData(FormDataList& encoding, bool)
     const AtomicString& keyType = fastGetAttribute(keytypeAttr);
     if (!keyType.isNull() && !equalIgnoringCase(keyType, "rsa"))
         return false;
-    String value = signedPublicKeyAndChallengeString(shadowSelect()->selectedIndex(), fastGetAttribute(challengeAttr), document()->baseURL());
+    String value = signedPublicKeyAndChallengeString(shadowSelect()->selectedIndex(), fastGetAttribute(challengeAttr), document().baseURL());
     if (value.isNull())
         return false;
     encoding.appendData(name(), value.utf8());
@@ -106,6 +106,11 @@ HTMLSelectElement* HTMLKeygenElement::shadowSelect() const
 {
     ShadowRoot* root = userAgentShadowRoot();
     return root ? toHTMLSelectElement(root->firstChild()) : 0;
+}
+
+bool HTMLKeygenElement::isInteractiveContent() const
+{
+    return true;
 }
 
 } // namespace

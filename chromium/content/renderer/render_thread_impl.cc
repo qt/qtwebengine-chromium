@@ -77,7 +77,6 @@
 #include "content/renderer/memory_benchmarking_extension.h"
 #include "content/renderer/p2p/socket_dispatcher.h"
 #include "content/renderer/render_process_impl.h"
-#include "content/renderer/render_process_visibility_manager.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
 #include "content/renderer/skia_benchmarking_extension.h"
@@ -87,9 +86,10 @@
 #include "ipc/ipc_platform_file.h"
 #include "media/base/audio_hardware_config.h"
 #include "media/base/media.h"
-#include "media/filters/gpu_video_decoder_factories.h"
+#include "media/filters/gpu_video_accelerator_factories.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
+#include "third_party/skia/include/core/SkGraphics.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/web/WebColorName.h"
 #include "third_party/WebKit/public/web/WebDatabase.h"
@@ -128,6 +128,7 @@
 #if defined(OS_ANDROID)
 #include <cpu-features.h>
 #include "content/renderer/android/synchronous_compositor_factory.h"
+#include "content/renderer/media/android/renderer_demuxer_android.h"
 #endif
 
 #if defined(ENABLE_PLUGINS)
@@ -179,7 +180,7 @@ class RenderViewZoomer : public RenderViewVisitor {
     // Empty scheme works as wildcard that matches any scheme,
     if ((net::GetHostOrSpecFromURL(url) == host_) &&
         (scheme_.empty() || scheme_ == url.scheme())) {
-      webview->setZoomLevel(false, zoom_level_);
+      webview->setZoomLevel(zoom_level_);
     }
     return true;
   }
@@ -238,21 +239,6 @@ void EnableWebCoreLogChannels(const std::string& channels) {
 }
 
 }  // namespace
-
-class RenderThreadImpl::GpuVDAContextLostCallback
-    : public WebKit::WebGraphicsContext3D::WebGraphicsContextLostCallback {
- public:
-  GpuVDAContextLostCallback()
-      : main_message_loop_(base::MessageLoopProxy::current()) {}
-  virtual ~GpuVDAContextLostCallback() {}
-  virtual void onContextLost() {
-    main_message_loop_->PostTask(FROM_HERE, base::Bind(
-        &RenderThreadImpl::OnGpuVDAContextLoss));
-  }
-
- private:
-  scoped_refptr<base::MessageLoopProxy> main_message_loop_;
-};
 
 RenderThreadImpl::HistogramCustomizer::HistogramCustomizer() {
   custom_histograms_.insert("V8.MemoryExternalFragmentationTotal");
@@ -402,8 +388,6 @@ void RenderThreadImpl::Init() {
     RegisterExtension(SkiaBenchmarkingExtension::Get());
   }
 
-  context_lost_cb_.reset(new GpuVDAContextLostCallback());
-
   // Note that under Linux, the media library will normally already have
   // been initialized by the Zygote before this instance became a Renderer.
   base::FilePath media_path;
@@ -462,6 +446,10 @@ void RenderThreadImpl::Shutdown() {
     RemoveFilter(input_event_filter_.get());
     input_event_filter_ = NULL;
   }
+
+  // Ramp down IDB before we ramp down WebKit (and V8), since IDB classes might
+  // hold pointers to V8 objects (e.g., via pending requests).
+  main_thread_indexed_db_dispatcher_.reset();
 
   if (webkit_platform_support_)
     WebKit::shutdown();
@@ -622,28 +610,24 @@ void RenderThreadImpl::SetResourceDispatcherDelegate(
 }
 
 void RenderThreadImpl::WidgetHidden() {
-  DCHECK(hidden_widget_count_ < widget_count_);
+  DCHECK_LT(hidden_widget_count_, widget_count_);
   hidden_widget_count_++;
 
-  RenderProcessVisibilityManager* manager =
-      RenderProcessVisibilityManager::GetInstance();
-  manager->WidgetVisibilityChanged(false);
-
-  if (!GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden()) {
-    return;
+  if (widget_count_ && hidden_widget_count_ == widget_count_) {
+#if !defined(SYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE)
+    // TODO(vollick): Remove this this heavy-handed approach once we're polling
+    // the real system memory pressure.
+    base::MemoryPressureListener::NotifyMemoryPressure(
+        base::MemoryPressureListener::MEMORY_PRESSURE_MODERATE);
+#endif
+    if (GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden())
+      ScheduleIdleHandler(kInitialIdleHandlerDelayMs);
   }
-
-  if (widget_count_ && hidden_widget_count_ == widget_count_)
-    ScheduleIdleHandler(kInitialIdleHandlerDelayMs);
 }
 
 void RenderThreadImpl::WidgetRestored() {
   DCHECK_GT(hidden_widget_count_, 0);
   hidden_widget_count_--;
-
-  RenderProcessVisibilityManager* manager =
-      RenderProcessVisibilityManager::GetInstance();
-  manager->WidgetVisibilityChanged(true);
 
   if (!GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden()) {
     return;
@@ -673,7 +657,18 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
 #endif
     if (!compositor_message_loop_proxy_.get()) {
       compositor_thread_.reset(new base::Thread("Compositor"));
+#if defined(OS_POSIX)
+      // Workaround for crbug.com/293736
+      // On Posix, MessagePumpDefault uses system time, so delayed tasks (for
+      // compositor scheduling) work incorrectly across system time changes
+      // (e.g.  tlsdate). So instead, use an IO loop, which uses libevent, that
+      // uses monotonic time (immune to these problems).
+      base::Thread::Options options;
+      options.message_loop_type = base::MessageLoop::TYPE_IO;
+      compositor_thread_->StartWithOptions(options);
+#else
       compositor_thread_->Start();
+#endif
 #if defined(OS_ANDROID)
       compositor_thread_->SetPriority(base::kThreadPriority_Display);
 #endif
@@ -887,51 +882,31 @@ void RenderThreadImpl::PostponeIdleNotification() {
   idle_notifications_to_skip_ = 2;
 }
 
-scoped_refptr<RendererGpuVideoDecoderFactories>
+scoped_refptr<RendererGpuVideoAcceleratorFactories>
 RenderThreadImpl::GetGpuFactories(
     const scoped_refptr<base::MessageLoopProxy>& factories_loop) {
   DCHECK(IsMainThread());
 
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-  scoped_refptr<RendererGpuVideoDecoderFactories> gpu_factories;
-  WebGraphicsContext3DCommandBufferImpl* context3d = NULL;
-  if (!cmd_line->HasSwitch(switches::kDisableAcceleratedVideoDecode))
-    context3d = GetGpuVDAContext3D();
-  if (context3d) {
-    GpuChannelHost* gpu_channel_host = GetGpuChannel();
-    if (gpu_channel_host) {
-      gpu_factories = new RendererGpuVideoDecoderFactories(
-          gpu_channel_host, factories_loop, context3d);
+  scoped_refptr<RendererGpuVideoAcceleratorFactories> gpu_factories;
+  if (!cmd_line->HasSwitch(switches::kDisableAcceleratedVideoDecode)) {
+    if (!gpu_va_context_provider_ ||
+        gpu_va_context_provider_->DestroyedOnMainThread()) {
+      gpu_va_context_provider_ = ContextProviderCommandBuffer::Create(
+          make_scoped_ptr(
+              WebGraphicsContext3DCommandBufferImpl::CreateOffscreenContext(
+                  this,
+                  WebKit::WebGraphicsContext3D::Attributes(),
+                  GURL("chrome://gpu/RenderThreadImpl::GetGpuVDAContext3D"))),
+          "GPU-VideoAccelerator-Offscreen");
     }
   }
+  GpuChannelHost* gpu_channel_host = GetGpuChannel();
+  if (gpu_channel_host) {
+    gpu_factories = new RendererGpuVideoAcceleratorFactories(
+        gpu_channel_host, factories_loop, gpu_va_context_provider_);
+  }
   return gpu_factories;
-}
-
-/* static */
-void RenderThreadImpl::OnGpuVDAContextLoss() {
-  RenderThreadImpl* self = RenderThreadImpl::current();
-  DCHECK(self);
-  if (!self->gpu_vda_context3d_)
-    return;
-  if (self->compositor_message_loop_proxy().get()) {
-    self->compositor_message_loop_proxy()
-        ->DeleteSoon(FROM_HERE, self->gpu_vda_context3d_.release());
-  } else {
-    self->gpu_vda_context3d_.reset();
-  }
-}
-
-WebGraphicsContext3DCommandBufferImpl*
-RenderThreadImpl::GetGpuVDAContext3D() {
-  if (!gpu_vda_context3d_) {
-    gpu_vda_context3d_.reset(
-        WebGraphicsContext3DCommandBufferImpl::CreateOffscreenContext(
-            this, WebKit::WebGraphicsContext3D::Attributes(),
-            GURL("chrome://gpu/RenderThreadImpl::GetGpuVDAContext3D")));
-    if (gpu_vda_context3d_)
-      gpu_vda_context3d_->setContextLostCallback(context_lost_cb_.get());
-  }
-  return gpu_vda_context3d_.get();
 }
 
 scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
@@ -963,10 +938,9 @@ RenderThreadImpl::OffscreenContextProviderForMainThread() {
 
   if (!shared_contexts_main_thread_.get() ||
       shared_contexts_main_thread_->DestroyedOnMainThread()) {
-    shared_contexts_main_thread_ =
-        ContextProviderCommandBuffer::Create(
-            base::Bind(&RenderThreadImpl::CreateOffscreenContext3d,
-                       base::Unretained(this)));
+    shared_contexts_main_thread_ = ContextProviderCommandBuffer::Create(
+        CreateOffscreenContext3d(),
+        "Compositor-Offscreen-MainThread");
     if (shared_contexts_main_thread_.get() &&
         !shared_contexts_main_thread_->BindToCurrentThread())
       shared_contexts_main_thread_ = NULL;
@@ -987,10 +961,8 @@ RenderThreadImpl::OffscreenContextProviderForCompositorThread() {
 
   if (!shared_contexts_compositor_thread_.get() ||
       shared_contexts_compositor_thread_->DestroyedOnMainThread()) {
-    shared_contexts_compositor_thread_ =
-        ContextProviderCommandBuffer::Create(
-            base::Bind(&RenderThreadImpl::CreateOffscreenContext3d,
-                       base::Unretained(this)));
+    shared_contexts_compositor_thread_ = ContextProviderCommandBuffer::Create(
+        CreateOffscreenContext3d(), "Compositor-Offscreen");
   }
   return shared_contexts_compositor_thread_;
 }
@@ -1140,7 +1112,6 @@ void RenderThreadImpl::OnCreateNewView(const ViewMsg_New_Params& params) {
       params.opener_route_id,
       params.renderer_preferences,
       params.web_preferences,
-      new SharedRenderViewCounter(0),
       params.view_id,
       params.main_frame_routing_id,
       params.surface_id,
@@ -1148,6 +1119,7 @@ void RenderThreadImpl::OnCreateNewView(const ViewMsg_New_Params& params) {
       params.frame_name,
       false,
       params.swapped_out,
+      params.hidden,
       params.next_page_id,
       params.screen_info,
       params.accessibility_mode,
@@ -1277,6 +1249,10 @@ void RenderThreadImpl::OnMemoryPressure(
     v8::V8::LowMemoryNotification();
     // Clear the image cache.
     WebKit::WebImageCache::clear();
+    // Purge Skia font cache, by setting it to 0 and then again to the previous
+    // limit.
+    size_t font_cache_limit = SkGraphics::SetFontCacheLimit(0);
+    SkGraphics::SetFontCacheLimit(font_cache_limit);
   } else {
     // Otherwise trigger a couple of v8 GCs using IdleNotification.
     if (!v8::V8::IdleNotification())
@@ -1299,7 +1275,23 @@ RenderThreadImpl::GetMediaThreadMessageLoopProxy() {
   DCHECK(message_loop() == base::MessageLoop::current());
   if (!media_thread_) {
     media_thread_.reset(new base::Thread("Media"));
+#if defined(OS_POSIX)
+    // Workaround for crbug.com/293736
+    // On Posix, MessagePumpDefault uses system time, so delayed tasks (for
+    // compositor scheduling) work incorrectly across system time changes
+    // (e.g.  tlsdate). So instead, use an IO loop, which uses libevent, that
+    // uses monotonic time (immune to these problems).
+    base::Thread::Options options;
+    options.message_loop_type = base::MessageLoop::TYPE_IO;
+    media_thread_->StartWithOptions(options);
+#else
     media_thread_->Start();
+#endif
+
+#if defined(OS_ANDROID)
+    renderer_demuxer_ = new RendererDemuxerAndroid();
+    AddFilter(renderer_demuxer_.get());
+#endif
   }
   return media_thread_->message_loop_proxy();
 }

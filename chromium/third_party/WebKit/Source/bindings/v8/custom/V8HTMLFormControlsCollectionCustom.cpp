@@ -49,15 +49,16 @@ static v8::Handle<v8::Value> getNamedItems(HTMLFormControlsCollection* collectio
         return v8Undefined();
 
     if (namedItems.size() == 1)
-        return toV8Fast(namedItems.at(0).release(), callbackInfo, collection);
+        return toV8(namedItems.at(0).release(), callbackInfo.Holder(), callbackInfo.GetIsolate());
 
-    return toV8Fast(collection->ownerNode()->radioNodeList(name).get(), callbackInfo, collection);
+    return toV8(collection->ownerNode()->radioNodeList(name).get(), callbackInfo.Holder(), callbackInfo.GetIsolate());
 }
 
 void V8HTMLFormControlsCollection::namedItemMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, name, args[0]);
     HTMLFormControlsCollection* imp = V8HTMLFormControlsCollection::toNative(args.Holder());
-    v8::Handle<v8::Value> result = getNamedItems(imp, toWebCoreString(args[0]), args);
+    v8::Handle<v8::Value> result = getNamedItems(imp, name, args);
 
     if (result.IsEmpty()) {
         v8SetReturnValueNull(args);

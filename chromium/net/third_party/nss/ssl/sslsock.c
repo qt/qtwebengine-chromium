@@ -67,8 +67,10 @@ static cipherPolicy ssl_ciphers[] = {	   /*   Export           France   */
  {  TLS_DHE_DSS_WITH_AES_128_CBC_SHA, 	    SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
  {  TLS_DHE_RSA_WITH_AES_128_CBC_SHA,       SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
  {  TLS_DHE_RSA_WITH_AES_128_CBC_SHA256,    SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
+ {  TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,    SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
  {  TLS_RSA_WITH_AES_128_CBC_SHA,     	    SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
  {  TLS_RSA_WITH_AES_128_CBC_SHA256,        SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
+ {  TLS_RSA_WITH_AES_128_GCM_SHA256,        SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
  {  TLS_DHE_DSS_WITH_AES_256_CBC_SHA, 	    SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
  {  TLS_DHE_RSA_WITH_AES_256_CBC_SHA,       SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
  {  TLS_DHE_RSA_WITH_AES_256_CBC_SHA256,    SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
@@ -94,7 +96,9 @@ static cipherPolicy ssl_ciphers[] = {	   /*   Export           France   */
  {  TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA,  SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
  {  TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,   SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
  {  TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
+ {  TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
  {  TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,   SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
+ {  TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305, SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
  {  TLS_ECDH_RSA_WITH_NULL_SHA,             SSL_ALLOWED,     SSL_ALLOWED },
  {  TLS_ECDH_RSA_WITH_RC4_128_SHA,          SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
  {  TLS_ECDH_RSA_WITH_3DES_EDE_CBC_SHA,     SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
@@ -105,7 +109,9 @@ static cipherPolicy ssl_ciphers[] = {	   /*   Export           France   */
  {  TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,    SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
  {  TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,     SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
  {  TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,  SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
+ {  TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,  SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
  {  TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,     SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
+ {  TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,   SSL_NOT_ALLOWED, SSL_NOT_ALLOWED },
 #endif /* NSS_ENABLE_ECC */
  {  0,					    SSL_NOT_ALLOWED, SSL_NOT_ALLOWED }
 };
@@ -2451,10 +2457,14 @@ ssl_Poll(PRFileDesc *fd, PRInt16 how_flags, PRInt16 *p_out_flags)
 	    } else if (new_flags & PR_POLL_WRITE) {
 		    /* The caller is trying to write, but the handshake is 
 		    ** blocked waiting for data to read, and the first 
-		    ** handshake has been sent.  so do NOT to poll on write.
+		    ** handshake has been sent.  So do NOT to poll on write
+		    ** unless we did false start.
 		    */
-		    new_flags ^=  PR_POLL_WRITE;   /* don't select on write. */
-		    new_flags |=  PR_POLL_READ;	   /* do    select on read. */
+		    if (!(ss->version >= SSL_LIBRARY_VERSION_3_0 &&
+			ss->ssl3.hs.canFalseStart)) {
+			new_flags ^= PR_POLL_WRITE; /* don't select on write. */
+		    }
+		    new_flags |= PR_POLL_READ;      /* do    select on read. */
 	    }
 	}
     } else if ((new_flags & PR_POLL_READ) && (SSL_DataPending(fd) > 0)) {

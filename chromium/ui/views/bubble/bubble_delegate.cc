@@ -4,7 +4,7 @@
 
 #include "ui/views/bubble/bubble_delegate.h"
 
-#include "ui/base/animation/slide_animation.h"
+#include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/rect.h"
 #include "ui/native_theme/native_theme.h"
@@ -46,6 +46,8 @@ Widget* CreateBubbleWidget(BubbleDelegateView* bubble) {
   return bubble_widget;
 }
 
+}  // namespace
+
 #if defined(OS_WIN) && !defined(USE_AURA)
 // Windows uses two widgets and some extra complexity to host partially
 // transparent native controls and use per-pixel HWND alpha on the border.
@@ -60,8 +62,7 @@ class BubbleBorderDelegate : public WidgetDelegate,
   }
 
   virtual ~BubbleBorderDelegate() {
-    if (bubble_ && bubble_->GetWidget())
-      bubble_->GetWidget()->RemoveObserver(this);
+    DetachFromBubble();
   }
 
   // WidgetDelegate overrides:
@@ -82,16 +83,29 @@ class BubbleBorderDelegate : public WidgetDelegate,
 
   // WidgetObserver overrides:
   virtual void OnWidgetDestroying(Widget* widget) OVERRIDE {
-    bubble_ = NULL;
+    DetachFromBubble();
     widget_->Close();
   }
 
  private:
+  // Removes state installed on |bubble_|, including references |bubble_| has to
+  // us.
+  void DetachFromBubble() {
+    if (!bubble_)
+      return;
+    if (bubble_->GetWidget())
+      bubble_->GetWidget()->RemoveObserver(this);
+    bubble_->border_widget_ = NULL;
+    bubble_ = NULL;
+  }
+
   BubbleDelegateView* bubble_;
   Widget* widget_;
 
   DISALLOW_COPY_AND_ASSIGN(BubbleBorderDelegate);
 };
+
+namespace {
 
 // Create a widget to host the bubble's border.
 Widget* CreateBorderWidget(BubbleDelegateView* bubble) {
@@ -106,9 +120,10 @@ Widget* CreateBorderWidget(BubbleDelegateView* bubble) {
   border_widget->set_focus_on_creation(false);
   return border_widget;
 }
-#endif
 
 }  // namespace
+
+#endif
 
 BubbleDelegateView::BubbleDelegateView()
     : close_on_esc_(true),
@@ -223,20 +238,21 @@ void BubbleDelegateView::OnWidgetDestroying(Widget* widget) {
   }
 }
 
+void BubbleDelegateView::OnWidgetVisibilityChanging(Widget* widget,
+                                                    bool visible) {
+#if defined(OS_WIN)
+  // On Windows we need to handle this before the bubble is visible or hidden.
+  // Please see the comment on the OnWidgetVisibilityChanging function. On
+  // other platforms it is fine to handle it after the bubble is shown/hidden.
+  HandleVisibilityChanged(widget, visible);
+#endif
+}
+
 void BubbleDelegateView::OnWidgetVisibilityChanged(Widget* widget,
                                                    bool visible) {
-  if (widget != GetWidget())
-    return;
-
-  if (visible) {
-    if (border_widget_)
-      border_widget_->ShowInactive();
-    if (anchor_widget() && anchor_widget()->GetTopLevelWidget())
-      anchor_widget()->GetTopLevelWidget()->DisableInactiveRendering();
-  } else {
-    if (border_widget_)
-      border_widget_->Hide();
-  }
+#if !defined(OS_WIN)
+  HandleVisibilityChanged(widget, visible);
+#endif
 }
 
 void BubbleDelegateView::OnWidgetActivationChanged(Widget* widget,
@@ -269,7 +285,7 @@ void BubbleDelegateView::StartFade(bool fade_in) {
   else
     GetWidget()->Close();
 #else
-  fade_animation_.reset(new ui::SlideAnimation(this));
+  fade_animation_.reset(new gfx::SlideAnimation(this));
   fade_animation_->SetSlideDuration(GetFadeDuration());
   fade_animation_->Reset(fade_in ? 0.0 : 1.0);
   if (fade_in) {
@@ -322,7 +338,7 @@ void BubbleDelegateView::OnNativeThemeChanged(const ui::NativeTheme* theme) {
   UpdateColorsFromTheme(theme);
 }
 
-void BubbleDelegateView::AnimationEnded(const ui::Animation* animation) {
+void BubbleDelegateView::AnimationEnded(const gfx::Animation* animation) {
   if (animation != fade_animation_.get())
     return;
   bool closed = fade_animation_->GetCurrentValue() == 0;
@@ -331,7 +347,7 @@ void BubbleDelegateView::AnimationEnded(const ui::Animation* animation) {
     GetWidget()->Close();
 }
 
-void BubbleDelegateView::AnimationProgressed(const ui::Animation* animation) {
+void BubbleDelegateView::AnimationProgressed(const gfx::Animation* animation) {
   if (animation != fade_animation_.get())
     return;
   DCHECK(fade_animation_->is_animating());
@@ -404,5 +420,21 @@ gfx::Rect BubbleDelegateView::GetBubbleClientBounds() const {
   return client_bounds;
 }
 #endif
+
+void BubbleDelegateView::HandleVisibilityChanged(Widget* widget,
+                                                 bool visible) {
+  if (widget != GetWidget())
+    return;
+
+  if (visible) {
+    if (border_widget_)
+      border_widget_->ShowInactive();
+    if (anchor_widget() && anchor_widget()->GetTopLevelWidget())
+      anchor_widget()->GetTopLevelWidget()->DisableInactiveRendering();
+  } else {
+    if (border_widget_)
+      border_widget_->Hide();
+  }
+}
 
 }  // namespace views

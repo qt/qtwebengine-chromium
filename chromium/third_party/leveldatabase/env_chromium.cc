@@ -48,19 +48,18 @@ namespace leveldb_env {
 
 namespace {
 
-#if defined(OS_MACOSX) || defined(OS_WIN) || defined(OS_ANDROID) || \
-    defined(OS_OPENBSD)
+#if (defined(OS_POSIX) && !defined(OS_LINUX)) || defined(OS_WIN)
 // The following are glibc-specific
 
-size_t fread_wrapper(void *ptr, size_t size, size_t n, FILE *file) {
+size_t fread_unlocked(void *ptr, size_t size, size_t n, FILE *file) {
   return fread(ptr, size, n, file);
 }
 
-size_t fwrite_wrapper(const void *ptr, size_t size, size_t n, FILE *file) {
+size_t fwrite_unlocked(const void *ptr, size_t size, size_t n, FILE *file) {
   return fwrite(ptr, size, n, file);
 }
 
-int fflush_wrapper(FILE *file) {
+int fflush_unlocked(FILE *file) {
   return fflush(file);
 }
 
@@ -73,42 +72,6 @@ int fdatasync(int fildes) {
 #endif
 }
 #endif
-
-#else
-
-class TryToLockFILE {
-  // This class should be deleted if it doesn't turn up anything useful after
-  // going to stable (chrome 29).
- public:
-  TryToLockFILE(FILE* file) : file_to_unlock_(NULL) {
-    if (ftrylockfile(file) == 0)
-      file_to_unlock_ = file;
-    else
-      UMA_HISTOGRAM_BOOLEAN("LevelDBEnv.All.SafeThreadAccess", false);
-  }
-  ~TryToLockFILE() {
-    if (file_to_unlock_)
-      funlockfile(file_to_unlock_);
-  }
-
- private:
-  FILE* file_to_unlock_;
-};
-
-size_t fread_wrapper(void *ptr, size_t size, size_t n, FILE *file) {
-  TryToLockFILE lock(file);
-  return fread_unlocked(ptr, size, n, file);
-}
-
-size_t fwrite_wrapper(const void *ptr, size_t size, size_t n, FILE *file) {
-  TryToLockFILE lock(file);
-  return fwrite_unlocked(ptr, size, n, file);
-}
-
-int fflush_wrapper(FILE *file) {
-  TryToLockFILE lock(file);
-  return fflush_unlocked(file);
-}
 
 #endif
 
@@ -189,7 +152,7 @@ class ChromiumSequentialFile: public SequentialFile {
 
   virtual Status Read(size_t n, Slice* result, char* scratch) {
     Status s;
-    size_t r = fread_wrapper(scratch, 1, n, file_);
+    size_t r = fread_unlocked(scratch, 1, n, file_);
     *result = Slice(scratch, r);
     if (r < n) {
       if (feof(file_)) {
@@ -416,6 +379,19 @@ ErrorParsingResult ParseMethodAndError(const char* string,
   return NONE;
 }
 
+bool IndicatesDiskFull(leveldb::Status status) {
+  if (status.ok())
+    return false;
+  leveldb_env::MethodID method;
+  int error = -1;
+  leveldb_env::ErrorParsingResult result = leveldb_env::ParseMethodAndError(
+      status.ToString().c_str(), &method, &error);
+  return (result == leveldb_env::METHOD_AND_PFE &&
+          static_cast<base::PlatformFileError>(error) ==
+              base::PLATFORM_FILE_ERROR_NO_SPACE) ||
+         (result == leveldb_env::METHOD_AND_ERRNO && error == ENOSPC);
+}
+
 std::string FilePathToString(const base::FilePath& file_path) {
 #if defined(OS_WIN)
   return UTF16ToUTF8(file_path.value());
@@ -452,10 +428,15 @@ Status ChromiumWritableFile::SyncParent() {
 
   int parent_fd =
       HANDLE_EINTR(open(parent_dir_.c_str(), O_RDONLY));
-  if (parent_fd < 0)
-    return MakeIOError(parent_dir_, strerror(errno), kSyncParent);
+  if (parent_fd < 0) {
+    int saved_errno = errno;
+    return MakeIOError(
+        parent_dir_, strerror(saved_errno), kSyncParent, saved_errno);
+  }
   if (HANDLE_EINTR(fsync(parent_fd)) != 0) {
-    s = MakeIOError(parent_dir_, strerror(errno), kSyncParent);
+    int saved_errno = errno;
+    s = MakeIOError(
+        parent_dir_, strerror(saved_errno), kSyncParent, saved_errno);
   };
   HANDLE_EINTR(close(parent_fd));
 #endif
@@ -470,7 +451,7 @@ Status ChromiumWritableFile::Append(const Slice& data) {
     tracker_->DidSyncDir(filename_);
   }
 
-  size_t r = fwrite_wrapper(data.data(), 1, data.size(), file_);
+  size_t r = fwrite_unlocked(data.data(), 1, data.size(), file_);
   if (r != data.size()) {
     int saved_errno = errno;
     uma_logger_->RecordOSError(kWritableFileAppend, saved_errno);
@@ -492,7 +473,7 @@ Status ChromiumWritableFile::Close() {
 
 Status ChromiumWritableFile::Flush() {
   Status result;
-  if (HANDLE_EINTR(fflush_wrapper(file_))) {
+  if (HANDLE_EINTR(fflush_unlocked(file_))) {
     int saved_errno = errno;
     result = MakeIOError(
         filename_, strerror(saved_errno), kWritableFileFlush, saved_errno);
@@ -506,7 +487,7 @@ Status ChromiumWritableFile::Sync() {
   Status result;
   int error = 0;
 
-  if (HANDLE_EINTR(fflush_wrapper(file_)))
+  if (HANDLE_EINTR(fflush_unlocked(file_)))
     error = errno;
   // Sync even if fflush gave an error; perhaps the data actually got out,
   // even though something went wrong.

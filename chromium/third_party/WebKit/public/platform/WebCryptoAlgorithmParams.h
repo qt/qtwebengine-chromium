@@ -61,7 +61,7 @@ private:
 
 class WebCryptoAesCbcParams : public WebCryptoAlgorithmParams {
 public:
-    WebCryptoAesCbcParams(unsigned char* iv, size_t ivSize)
+    WebCryptoAesCbcParams(const unsigned char* iv, unsigned ivSize)
         : WebCryptoAlgorithmParams(WebCryptoAlgorithmParamsTypeAesCbcParams)
         , m_iv(iv, ivSize)
     {
@@ -101,6 +101,34 @@ private:
     WebCryptoAlgorithm m_hash;
 };
 
+class WebCryptoHmacKeyParams : public WebCryptoAlgorithmParams {
+public:
+    WebCryptoHmacKeyParams(const WebCryptoAlgorithm& hash, bool hasLength, unsigned length)
+        : WebCryptoAlgorithmParams(WebCryptoAlgorithmParamsTypeHmacKeyParams)
+        , m_hash(hash)
+        , m_hasLength(hasLength)
+        , m_length(length)
+    {
+    }
+
+    const WebCryptoAlgorithm& hash() const { return m_hash; }
+
+    bool hasLength() const { return m_hasLength; }
+
+    bool getLength(unsigned& length) const
+    {
+        if (!m_hasLength)
+            return false;
+        length = m_length;
+        return true;
+    }
+
+private:
+    WebCryptoAlgorithm m_hash;
+    bool m_hasLength;
+    unsigned m_length;
+};
+
 class WebCryptoRsaSsaParams : public WebCryptoAlgorithmParams {
 public:
     explicit WebCryptoRsaSsaParams(const WebCryptoAlgorithm& hash)
@@ -117,7 +145,7 @@ private:
 
 class WebCryptoRsaKeyGenParams : public WebCryptoAlgorithmParams {
 public:
-    WebCryptoRsaKeyGenParams(unsigned modulusLength, const unsigned char* publicExponent, size_t publicExponentSize)
+    WebCryptoRsaKeyGenParams(unsigned modulusLength, const unsigned char* publicExponent, unsigned publicExponentSize)
         : WebCryptoAlgorithmParams(WebCryptoAlgorithmParamsTypeRsaKeyGenParams)
         , m_modulusLength(modulusLength)
         , m_publicExponent(publicExponent, publicExponentSize)

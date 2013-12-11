@@ -41,6 +41,7 @@
 #include "core/page/Frame.h"
 #include "core/page/UseCounter.h"
 #include "core/platform/JSONValues.h"
+#include "core/platform/ParsingUtilities.h"
 #include "core/platform/network/FormData.h"
 #include "core/platform/network/ResourceResponse.h"
 #include "weborigin/KURL.h"
@@ -165,48 +166,16 @@ UseCounter::Feature getUseCounterType(ContentSecurityPolicy::HeaderType type)
 
 } // namespace
 
-static bool skipExactly(const UChar*& position, const UChar* end, UChar delimiter)
-{
-    if (position < end && *position == delimiter) {
-        ++position;
-        return true;
-    }
-    return false;
-}
-
-template<bool characterPredicate(UChar)>
-static bool skipExactly(const UChar*& position, const UChar* end)
-{
-    if (position < end && characterPredicate(*position)) {
-        ++position;
-        return true;
-    }
-    return false;
-}
-
-static void skipUntil(const UChar*& position, const UChar* end, UChar delimiter)
-{
-    while (position < end && *position != delimiter)
-        ++position;
-}
-
-template<bool characterPredicate(UChar)>
-static void skipWhile(const UChar*& position, const UChar* end)
-{
-    while (position < end && characterPredicate(*position))
-        ++position;
-}
-
 static bool isSourceListNone(const UChar* begin, const UChar* end)
 {
-    skipWhile<isASCIISpace>(begin, end);
+    skipWhile<UChar, isASCIISpace>(begin, end);
 
     const UChar* position = begin;
-    skipWhile<isSourceCharacter>(position, end);
+    skipWhile<UChar, isSourceCharacter>(position, end);
     if (!equalIgnoringCase("'none'", begin, position - begin))
         return false;
 
-    skipWhile<isASCIISpace>(position, end);
+    skipWhile<UChar, isASCIISpace>(position, end);
     if (position != end)
         return false;
 
@@ -369,12 +338,12 @@ void CSPSourceList::parse(const UChar* begin, const UChar* end)
 
     const UChar* position = begin;
     while (position < end) {
-        skipWhile<isASCIISpace>(position, end);
+        skipWhile<UChar, isASCIISpace>(position, end);
         if (position == end)
             return;
 
         const UChar* beginSource = position;
-        skipWhile<isSourceCharacter>(position, end);
+        skipWhile<UChar, isSourceCharacter>(position, end);
 
         String scheme, host, path;
         int port = 0;
@@ -447,7 +416,7 @@ bool CSPSourceList::parseSource(const UChar* begin, const UChar* end,
     const UChar* beginPath = end;
     const UChar* beginPort = 0;
 
-    skipWhile<isNotColonOrSlash>(position, end);
+    skipWhile<UChar, isNotColonOrSlash>(position, end);
 
     if (position == end) {
         // host
@@ -472,21 +441,21 @@ bool CSPSourceList::parseSource(const UChar* begin, const UChar* end,
             // scheme://host || scheme://
             //       ^                ^
             if (!parseScheme(begin, position, scheme)
-                || !skipExactly(position, end, ':')
-                || !skipExactly(position, end, '/')
-                || !skipExactly(position, end, '/'))
+                || !skipExactly<UChar>(position, end, ':')
+                || !skipExactly<UChar>(position, end, '/')
+                || !skipExactly<UChar>(position, end, '/'))
                 return false;
             if (position == end)
                 return true;
             beginHost = position;
-            skipWhile<isNotColonOrSlash>(position, end);
+            skipWhile<UChar, isNotColonOrSlash>(position, end);
         }
 
         if (position < end && *position == ':') {
             // host:port || scheme://host:port
             //     ^                     ^
             beginPort = position;
-            skipUntil(position, end, '/');
+            skipUntil<UChar>(position, end, '/');
         }
     }
 
@@ -529,7 +498,7 @@ bool CSPSourceList::parseNonce(const UChar* begin, const UChar* end, String& non
     const UChar* position = begin + noncePrefix.length();
     const UChar* nonceBegin = position;
 
-    skipWhile<isNonceCharacter>(position, end);
+    skipWhile<UChar, isNonceCharacter>(position, end);
     ASSERT(nonceBegin <= position);
 
     if (((position + 1) != end  && *position != '\'') || !(position - nonceBegin))
@@ -552,10 +521,10 @@ bool CSPSourceList::parseScheme(const UChar* begin, const UChar* end, String& sc
 
     const UChar* position = begin;
 
-    if (!skipExactly<isASCIIAlpha>(position, end))
+    if (!skipExactly<UChar, isASCIIAlpha>(position, end))
         return false;
 
-    skipWhile<isSchemeContinuationCharacter>(position, end);
+    skipWhile<UChar, isSchemeContinuationCharacter>(position, end);
 
     if (position != end)
         return false;
@@ -579,25 +548,25 @@ bool CSPSourceList::parseHost(const UChar* begin, const UChar* end, String& host
 
     const UChar* position = begin;
 
-    if (skipExactly(position, end, '*')) {
+    if (skipExactly<UChar>(position, end, '*')) {
         hostHasWildcard = true;
 
         if (position == end)
             return true;
 
-        if (!skipExactly(position, end, '.'))
+        if (!skipExactly<UChar>(position, end, '.'))
             return false;
     }
 
     const UChar* hostBegin = position;
 
     while (position < end) {
-        if (!skipExactly<isHostCharacter>(position, end))
+        if (!skipExactly<UChar, isHostCharacter>(position, end))
             return false;
 
-        skipWhile<isHostCharacter>(position, end);
+        skipWhile<UChar, isHostCharacter>(position, end);
 
-        if (position < end && !skipExactly(position, end, '.'))
+        if (position < end && !skipExactly<UChar>(position, end, '.'))
             return false;
     }
 
@@ -612,7 +581,7 @@ bool CSPSourceList::parsePath(const UChar* begin, const UChar* end, String& path
     ASSERT(path.isEmpty());
 
     const UChar* position = begin;
-    skipWhile<isPathComponentCharacter>(position, end);
+    skipWhile<UChar, isPathComponentCharacter>(position, end);
     // path/to/file.js?query=string || path/to/file.js#anchor
     //                ^                               ^
     if (position < end)
@@ -633,7 +602,7 @@ bool CSPSourceList::parsePort(const UChar* begin, const UChar* end, int& port, b
     ASSERT(!port);
     ASSERT(!portHasWildcard);
 
-    if (!skipExactly(begin, end, ':'))
+    if (!skipExactly<UChar>(begin, end, ':'))
         ASSERT_NOT_REACHED();
 
     if (begin == end)
@@ -646,7 +615,7 @@ bool CSPSourceList::parsePort(const UChar* begin, const UChar* end, int& port, b
     }
 
     const UChar* position = begin;
-    skipWhile<isASCIIDigit>(position, end);
+    skipWhile<UChar, isASCIIDigit>(position, end);
 
     if (position != end)
         return false;
@@ -730,41 +699,41 @@ private:
         while (position < end) {
             // _____ OR _____mime1/mime1
             // ^        ^
-            skipWhile<isASCIISpace>(position, end);
+            skipWhile<UChar, isASCIISpace>(position, end);
             if (position == end)
                 return;
 
             // mime1/mime1 mime2/mime2
             // ^
             begin = position;
-            if (!skipExactly<isMediaTypeCharacter>(position, end)) {
-                skipWhile<isNotASCIISpace>(position, end);
+            if (!skipExactly<UChar, isMediaTypeCharacter>(position, end)) {
+                skipWhile<UChar, isNotASCIISpace>(position, end);
                 policy()->reportInvalidPluginTypes(String(begin, position - begin));
                 continue;
             }
-            skipWhile<isMediaTypeCharacter>(position, end);
+            skipWhile<UChar, isMediaTypeCharacter>(position, end);
 
             // mime1/mime1 mime2/mime2
             //      ^
-            if (!skipExactly(position, end, '/')) {
-                skipWhile<isNotASCIISpace>(position, end);
+            if (!skipExactly<UChar>(position, end, '/')) {
+                skipWhile<UChar, isNotASCIISpace>(position, end);
                 policy()->reportInvalidPluginTypes(String(begin, position - begin));
                 continue;
             }
 
             // mime1/mime1 mime2/mime2
             //       ^
-            if (!skipExactly<isMediaTypeCharacter>(position, end)) {
-                skipWhile<isNotASCIISpace>(position, end);
+            if (!skipExactly<UChar, isMediaTypeCharacter>(position, end)) {
+                skipWhile<UChar, isNotASCIISpace>(position, end);
                 policy()->reportInvalidPluginTypes(String(begin, position - begin));
                 continue;
             }
-            skipWhile<isMediaTypeCharacter>(position, end);
+            skipWhile<UChar, isMediaTypeCharacter>(position, end);
 
             // mime1/mime1 mime2/mime2 OR mime1/mime1  OR mime1/mime1/error
             //            ^                          ^               ^
             if (position < end && isNotASCIISpace(*position)) {
-                skipWhile<isNotASCIISpace>(position, end);
+                skipWhile<UChar, isNotASCIISpace>(position, end);
                 policy()->reportInvalidPluginTypes(String(begin, position - begin));
                 continue;
             }
@@ -851,7 +820,9 @@ private:
     void setCSPDirective(const String& name, const String& value, OwnPtr<CSPDirectiveType>&);
 
     SourceListDirective* operativeDirective(SourceListDirective*) const;
-    void reportViolation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL = KURL(), const String& contextURL = String(), const WTF::OrdinalNumber& contextLine = WTF::OrdinalNumber::beforeFirst(), ScriptState* = 0) const;
+    void reportViolation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL) const;
+    void reportViolationWithLocation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, const String& contextURL, const WTF::OrdinalNumber& contextLine) const;
+    void reportViolationWithState(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, ScriptState*) const;
 
     bool checkEval(SourceListDirective*) const;
     bool checkInline(SourceListDirective*) const;
@@ -861,7 +832,7 @@ private:
 
     void setEvalDisabledErrorMessage(const String& errorMessage) { m_evalDisabledErrorMessage = errorMessage; }
 
-    bool checkEvalAndReportViolation(SourceListDirective*, const String& consoleMessage, const String& contextURL = String(), const WTF::OrdinalNumber& contextLine = WTF::OrdinalNumber::beforeFirst(), ScriptState* = 0) const;
+    bool checkEvalAndReportViolation(SourceListDirective*, const String& consoleMessage, ScriptState*) const;
     bool checkInlineAndReportViolation(SourceListDirective*, const String& consoleMessage, const String& contextURL, const WTF::OrdinalNumber& contextLine, bool isScript) const;
 
     bool checkSourceAndReportViolation(SourceListDirective*, const KURL&, const String& effectiveDirective) const;
@@ -922,10 +893,25 @@ PassOwnPtr<CSPDirectiveList> CSPDirectiveList::create(ContentSecurityPolicy* pol
     return directives.release();
 }
 
-void CSPDirectiveList::reportViolation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, const String& contextURL, const WTF::OrdinalNumber& contextLine, ScriptState* state) const
+void CSPDirectiveList::reportViolation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL) const
 {
     String message = m_reportOnly ? "[Report Only] " + consoleMessage : consoleMessage;
-    m_policy->reportViolation(directiveText, effectiveDirective, message, blockedURL, m_reportURIs, m_header, contextURL, contextLine, state);
+    m_policy->scriptExecutionContext()->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, message);
+    m_policy->reportViolation(directiveText, effectiveDirective, message, blockedURL, m_reportURIs, m_header);
+}
+
+void CSPDirectiveList::reportViolationWithLocation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, const String& contextURL, const WTF::OrdinalNumber& contextLine) const
+{
+    String message = m_reportOnly ? "[Report Only] " + consoleMessage : consoleMessage;
+    m_policy->scriptExecutionContext()->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, message, contextURL, contextLine.oneBasedInt());
+    m_policy->reportViolation(directiveText, effectiveDirective, message, blockedURL, m_reportURIs, m_header);
+}
+
+void CSPDirectiveList::reportViolationWithState(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, ScriptState* state) const
+{
+    String message = m_reportOnly ? "[Report Only] " + consoleMessage : consoleMessage;
+    m_policy->scriptExecutionContext()->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, message, state);
+    m_policy->reportViolation(directiveText, effectiveDirective, message, blockedURL, m_reportURIs, m_header);
 }
 
 bool CSPDirectiveList::checkEval(SourceListDirective* directive) const
@@ -962,7 +948,7 @@ SourceListDirective* CSPDirectiveList::operativeDirective(SourceListDirective* d
     return directive ? directive : m_defaultSrc.get();
 }
 
-bool CSPDirectiveList::checkEvalAndReportViolation(SourceListDirective* directive, const String& consoleMessage, const String& contextURL, const WTF::OrdinalNumber& contextLine, ScriptState* state) const
+bool CSPDirectiveList::checkEvalAndReportViolation(SourceListDirective* directive, const String& consoleMessage, ScriptState* state) const
 {
     if (checkEval(directive))
         return true;
@@ -971,7 +957,7 @@ bool CSPDirectiveList::checkEvalAndReportViolation(SourceListDirective* directiv
     if (directive == m_defaultSrc)
         suffix = " Note that 'script-src' was not explicitly set, so 'default-src' is used as a fallback.";
 
-    reportViolation(directive->text(), scriptSrc, consoleMessage + "\"" + directive->text() + "\"." + suffix + "\n", KURL(), contextURL, contextLine, state);
+    reportViolationWithState(directive->text(), scriptSrc, consoleMessage + "\"" + directive->text() + "\"." + suffix + "\n", KURL(), state);
     if (!m_reportOnly) {
         m_policy->reportBlockedScriptExecutionToInspector(directive->text());
         return false;
@@ -1001,7 +987,7 @@ bool CSPDirectiveList::checkInlineAndReportViolation(SourceListDirective* direct
     if (directive == m_defaultSrc)
         suffix = " Note that '" + String(isScript ? "script" : "style") + "-src' was not explicitly set, so 'default-src' is used as a fallback.";
 
-    reportViolation(directive->text(), isScript ? scriptSrc : styleSrc, consoleMessage + "\"" + directive->text() + "\"." + suffix + "\n", KURL(), contextURL, contextLine);
+    reportViolationWithLocation(directive->text(), isScript ? scriptSrc : styleSrc, consoleMessage + "\"" + directive->text() + "\"." + suffix + "\n", KURL(), contextURL, contextLine);
 
     if (!m_reportOnly) {
         if (isScript)
@@ -1087,7 +1073,7 @@ bool CSPDirectiveList::allowEval(ScriptState* state, ContentSecurityPolicy::Repo
     DEFINE_STATIC_LOCAL(String, consoleMessage, ("Refused to evaluate a string as JavaScript because 'unsafe-eval' is not an allowed source of script in the following Content Security Policy directive: "));
 
     return reportingStatus == ContentSecurityPolicy::SendReport ?
-        checkEvalAndReportViolation(operativeDirective(m_scriptSrc.get()), consoleMessage, String(), WTF::OrdinalNumber::beforeFirst(), state) :
+        checkEvalAndReportViolation(operativeDirective(m_scriptSrc.get()), consoleMessage, state) :
         checkEval(operativeDirective(m_scriptSrc.get()));
 }
 
@@ -1196,7 +1182,7 @@ void CSPDirectiveList::parse(const UChar* begin, const UChar* end)
     const UChar* position = begin;
     while (position < end) {
         const UChar* directiveBegin = position;
-        skipUntil(position, end, ';');
+        skipUntil<UChar>(position, end, ';');
 
         String name, value;
         if (parseDirective(directiveBegin, position, name, value)) {
@@ -1205,7 +1191,7 @@ void CSPDirectiveList::parse(const UChar* begin, const UChar* end)
         }
 
         ASSERT(position == end || *position == ';');
-        skipExactly(position, end, ';');
+        skipExactly<UChar>(position, end, ';');
     }
 }
 
@@ -1219,18 +1205,18 @@ bool CSPDirectiveList::parseDirective(const UChar* begin, const UChar* end, Stri
     ASSERT(value.isEmpty());
 
     const UChar* position = begin;
-    skipWhile<isASCIISpace>(position, end);
+    skipWhile<UChar, isASCIISpace>(position, end);
 
     // Empty directive (e.g. ";;;"). Exit early.
     if (position == end)
         return false;
 
     const UChar* nameBegin = position;
-    skipWhile<isDirectiveNameCharacter>(position, end);
+    skipWhile<UChar, isDirectiveNameCharacter>(position, end);
 
     // The directive-name must be non-empty.
     if (nameBegin == position) {
-        skipWhile<isNotASCIISpace>(position, end);
+        skipWhile<UChar, isNotASCIISpace>(position, end);
         m_policy->reportUnsupportedDirective(String(nameBegin, position - nameBegin));
         return false;
     }
@@ -1240,16 +1226,16 @@ bool CSPDirectiveList::parseDirective(const UChar* begin, const UChar* end, Stri
     if (position == end)
         return true;
 
-    if (!skipExactly<isASCIISpace>(position, end)) {
-        skipWhile<isNotASCIISpace>(position, end);
+    if (!skipExactly<UChar, isASCIISpace>(position, end)) {
+        skipWhile<UChar, isNotASCIISpace>(position, end);
         m_policy->reportUnsupportedDirective(String(nameBegin, position - nameBegin));
         return false;
     }
 
-    skipWhile<isASCIISpace>(position, end);
+    skipWhile<UChar, isASCIISpace>(position, end);
 
     const UChar* valueBegin = position;
-    skipWhile<isDirectiveValueCharacter>(position, end);
+    skipWhile<UChar, isDirectiveValueCharacter>(position, end);
 
     if (position != end) {
         m_policy->reportInvalidDirectiveValueCharacter(name, String(valueBegin, end - valueBegin));
@@ -1278,10 +1264,10 @@ void CSPDirectiveList::parseReportURI(const String& name, const String& value)
     const UChar* end = position + characters.size();
 
     while (position < end) {
-        skipWhile<isASCIISpace>(position, end);
+        skipWhile<UChar, isASCIISpace>(position, end);
 
         const UChar* urlBegin = position;
-        skipWhile<isNotASCIISpace>(position, end);
+        skipWhile<UChar, isNotASCIISpace>(position, end);
 
         if (urlBegin < position) {
             String url = String(urlBegin, position - urlBegin);
@@ -1334,9 +1320,9 @@ void CSPDirectiveList::parseReflectedXSS(const String& name, const String& value
     const UChar* position = characters.data();
     const UChar* end = position + characters.size();
 
-    skipWhile<isASCIISpace>(position, end);
+    skipWhile<UChar, isASCIISpace>(position, end);
     const UChar* begin = position;
-    skipWhile<isNotASCIISpace>(position, end);
+    skipWhile<UChar, isNotASCIISpace>(position, end);
 
     // value1
     //       ^
@@ -1352,7 +1338,7 @@ void CSPDirectiveList::parseReflectedXSS(const String& name, const String& value
         return;
     }
 
-    skipWhile<isASCIISpace>(position, end);
+    skipWhile<UChar, isASCIISpace>(position, end);
     if (position == end && m_reflectedXSSDisposition != ContentSecurityPolicy::ReflectedXSSUnset)
         return;
 
@@ -1459,7 +1445,7 @@ void ContentSecurityPolicy::addPolicyFromHeaderValue(const String& header, Heade
     // separated chunk as a separate header.
     const UChar* position = begin;
     while (position < end) {
-        skipUntil(position, end, ',');
+        skipUntil<UChar>(position, end, ',');
 
         // header1,header2 OR header1
         //        ^                  ^
@@ -1473,7 +1459,7 @@ void ContentSecurityPolicy::addPolicyFromHeaderValue(const String& header, Heade
 
         // Skip the comma, and begin the next header from the current position.
         ASSERT(position == end || *position == ',');
-        skipExactly(position, end, ',');
+        skipExactly<UChar>(position, end, ',');
         begin = position;
     }
 }
@@ -1725,10 +1711,8 @@ static void gatherSecurityPolicyViolationEventData(SecurityPolicyViolationEventI
     }
 }
 
-void ContentSecurityPolicy::reportViolation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, const Vector<KURL>& reportURIs, const String& header, const String& contextURL, const WTF::OrdinalNumber& contextLine, ScriptState* state)
+void ContentSecurityPolicy::reportViolation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, const Vector<KURL>& reportURIs, const String& header)
 {
-    logToConsole(consoleMessage, contextURL, contextLine, state);
-
     // FIXME: Support sending reports from worker.
     if (!m_scriptExecutionContext->isDocument())
         return;
@@ -1875,9 +1859,9 @@ void ContentSecurityPolicy::reportMissingReportURI(const String& policy) const
     logToConsole("The Content Security Policy '" + policy + "' was delivered in report-only mode, but does not specify a 'report-uri'; the policy will have no effect. Please either add a 'report-uri' directive, or deliver the policy via the 'Content-Security-Policy' header.");
 }
 
-void ContentSecurityPolicy::logToConsole(const String& message, const String& contextURL, const WTF::OrdinalNumber& contextLine, ScriptState* state) const
+void ContentSecurityPolicy::logToConsole(const String& message) const
 {
-    m_scriptExecutionContext->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, message, contextURL, contextLine.oneBasedInt(), state);
+    m_scriptExecutionContext->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, message);
 }
 
 void ContentSecurityPolicy::reportBlockedScriptExecutionToInspector(const String& directiveText) const

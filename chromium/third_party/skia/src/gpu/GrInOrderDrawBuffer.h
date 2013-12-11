@@ -1,12 +1,9 @@
-
 /*
  * Copyright 2011 Google Inc.
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
-
 
 #ifndef GrInOrderDrawBuffer_DEFINED
 #define GrInOrderDrawBuffer_DEFINED
@@ -19,6 +16,7 @@
 #include "SkClipStack.h"
 #include "SkStrokeRec.h"
 #include "SkTemplates.h"
+#include "SkTypes.h"
 
 class GrGpu;
 class GrIndexBufferAllocPool;
@@ -66,6 +64,9 @@ public:
      */
     void flush();
 
+    // tracking for draws
+    virtual DrawToken getCurrentDrawToken() { return DrawToken(this, fDrawID); }
+
     // overrides from GrDrawTarget
     virtual bool geometryHints(int* vertexCount,
                                int* indexCount) const SK_OVERRIDE;
@@ -74,7 +75,6 @@ public:
                        GrRenderTarget* renderTarget = NULL) SK_OVERRIDE;
 
     virtual void initCopySurfaceDstDesc(const GrSurface* src, GrTextureDesc* desc) SK_OVERRIDE;
-
 
 protected:
     virtual void clipWillBeSet(const GrClipData* newClip) SK_OVERRIDE;
@@ -96,7 +96,7 @@ private:
         const GrIndexBuffer*    fIndexBuffer;
     };
 
-    struct StencilPath : GrNoncopyable {
+    struct StencilPath : public ::SkNoncopyable {
         StencilPath();
 
         SkAutoTUnref<const GrPath>  fPath;
@@ -104,16 +104,16 @@ private:
         SkPath::FillType            fFill;
     };
 
-    struct Clear  : GrNoncopyable {
+    struct Clear : public ::SkNoncopyable {
         Clear() : fRenderTarget(NULL) {}
-        ~Clear() { GrSafeUnref(fRenderTarget); }
+        ~Clear() { SkSafeUnref(fRenderTarget); }
 
         SkIRect         fRect;
         GrColor         fColor;
         GrRenderTarget* fRenderTarget;
     };
 
-    struct CopySurface  : GrNoncopyable {
+    struct CopySurface : public ::SkNoncopyable {
         SkAutoTUnref<GrSurface> fDst;
         SkAutoTUnref<GrSurface> fSrc;
         SkIRect                 fSrcRect;
@@ -222,7 +222,10 @@ private:
     };
     SkSTArray<kGeoPoolStatePreAllocCnt, GeometryPoolState> fGeoPoolStateStack;
 
+    virtual bool       isIssued(uint32_t drawID) { return drawID != fDrawID; }
+
     bool                            fFlushing;
+    uint32_t                        fDrawID;
 
     typedef GrDrawTarget INHERITED;
 };

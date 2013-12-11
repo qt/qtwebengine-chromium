@@ -26,7 +26,9 @@ base.require('base.settings');
 base.require('tracing.filter');
 base.require('tracing.selection');
 base.require('tracing.timeline_viewport');
+base.require('tracing.timeline_display_transform_animations');
 base.require('tracing.timing_tool');
+base.require('tracing.trace_model.event');
 base.require('tracing.tracks.drawing_container');
 base.require('tracing.tracks.trace_model_track');
 base.require('tracing.tracks.ruler_track');
@@ -36,7 +38,10 @@ base.require('ui.mouse_mode_selector');
 base.exportTo('tracing', function() {
 
   var Selection = tracing.Selection;
+  var SelectionState = tracing.trace_model.SelectionState;
   var Viewport = tracing.TimelineViewport;
+
+  var tempDisplayTransform = new tracing.TimelineDisplayTransform();
 
   function intersectRect_(r1, r2) {
     var results = new Object;
@@ -73,10 +78,8 @@ base.exportTo('tracing', function() {
 
       this.classList.add('timeline-track-view');
 
-      this.categoryFilter_ = new tracing.CategoryFilter();
-
       this.viewport_ = new Viewport(this);
-      this.viewportStateAtMouseDown_ = null;
+      this.viewportDisplayTransformAtMouseDown_ = null;
 
       this.rulerTrackContainer_ =
           new tracing.tracks.DrawingContainer(this.viewport_);
@@ -97,6 +100,9 @@ base.exportTo('tracing', function() {
       this.modelTrack_ = new tracing.tracks.TraceModelTrack(this.viewport_);
       this.modelTrackContainer_.appendChild(this.modelTrack_);
 
+      this.timingTool_ = new tracing.TimingTool(this.viewport_,
+                                                this);
+
       this.initMouseModeSelector();
 
       this.dragBox_ = this.ownerDocument.createElement('div');
@@ -105,9 +111,43 @@ base.exportTo('tracing', function() {
       this.hideDragBox_();
 
       this.bindEventListener_(document, 'keypress', this.onKeypress_, this);
+      this.bindEventListener_(document, 'keydown', this.onKeydown_, this);
+      this.bindEventListener_(document, 'keyup', this.onKeyup_, this);
 
-      this.mouseModeSelector_.addEventListener('beginpan',
-          this.onBeginPanScan_.bind(this));
+      this.bindEventListener_(this, 'dblclick', this.onDblClick_, this);
+      this.bindEventListener_(this, 'mousewheel', this.onMouseWheel_, this);
+
+      this.addEventListener('mousemove', this.onMouseMove_);
+
+      this.mouseViewPosAtMouseDown_ = {x: 0, y: 0};
+      this.lastMouseViewPos_ = {x: 0, y: 0};
+
+      this.selection_ = new Selection();
+      this.highlight_ = new Selection();
+
+      this.isPanningAndScanning_ = false;
+      this.isZooming_ = false;
+    },
+
+    /**
+     * Wraps the standard addEventListener but automatically binds the provided
+     * func to the provided target, tracking the resulting closure. When detach
+     * is called, these listeners will be automatically removed.
+     */
+    bindEventListener_: function(object, event, func, target) {
+      if (!this.boundListeners_)
+        this.boundListeners_ = [];
+      var boundFunc = func.bind(target);
+      this.boundListeners_.push({object: object,
+        event: event,
+        boundFunc: boundFunc});
+      object.addEventListener(event, boundFunc);
+    },
+
+    initMouseModeSelector: function() {
+      this.mouseModeSelector_ = new ui.MouseModeSelector(this);
+      this.appendChild(this.mouseModeSelector_);
+
       this.mouseModeSelector_.addEventListener('beginpan',
           this.onBeginPanScan_.bind(this));
       this.mouseModeSelector_.addEventListener('updatepan',
@@ -129,21 +169,6 @@ base.exportTo('tracing', function() {
       this.mouseModeSelector_.addEventListener('endzoom',
           this.onEndZoom_.bind(this));
 
-      this.bindEventListener_(document, 'keydown', this.onKeydown_, this);
-      this.bindEventListener_(document, 'keyup', this.onKeyup_, this);
-
-      this.addEventListener('mousemove', this.onMouseMove_);
-
-      this.mouseViewPosAtMouseDown_ = {x: 0, y: 0};
-      this.lastMouseViewPos_ = {x: 0, y: 0};
-      this.selection_ = new Selection();
-
-      this.isPanningAndScanning_ = false;
-      this.isZooming_ = false;
-
-      this.timingTool_ = new tracing.TimingTool(this.viewport_,
-                                                this.rulerTrack_);
-
       this.mouseModeSelector_.addEventListener('entertiming',
           this.timingTool_.onEnterTiming.bind(this.timingTool_));
       this.mouseModeSelector_.addEventListener('begintiming',
@@ -154,33 +179,23 @@ base.exportTo('tracing', function() {
           this.timingTool_.onEndTiming.bind(this.timingTool_));
       this.mouseModeSelector_.addEventListener('exittiming',
           this.timingTool_.onExitTiming.bind(this.timingTool_));
-    },
 
-    /**
-     * Wraps the standard addEventListener but automatically binds the provided
-     * func to the provided target, tracking the resulting closure. When detach
-     * is called, these listeners will be automatically removed.
-     */
-    bindEventListener_: function(object, event, func, target) {
-      if (!this.boundListeners_)
-        this.boundListeners_ = [];
-      var boundFunc = func.bind(target);
-      this.boundListeners_.push({object: object,
-        event: event,
-        boundFunc: boundFunc});
-      object.addEventListener(event, boundFunc);
-    },
-
-    initMouseModeSelector: function() {
-      this.mouseModeSelector_ = new ui.MouseModeSelector(this);
-      this.appendChild(this.mouseModeSelector_);
+      var m = ui.MOUSE_SELECTOR_MODE;
+      this.mouseModeSelector_.supportedModeMask =
+          m.SELECTION | m.PANSCAN | m.ZOOM | m.TIMING;
       this.mouseModeSelector_.settingsKey =
           'timelineTrackView.mouseModeSelector';
-      var m = ui.MOUSE_SELECTOR_MODE;
       this.mouseModeSelector_.setKeyCodeForMode(m.PANSCAN, '2'.charCodeAt(0));
       this.mouseModeSelector_.setKeyCodeForMode(m.SELECTION, '1'.charCodeAt(0));
       this.mouseModeSelector_.setKeyCodeForMode(m.ZOOM, '3'.charCodeAt(0));
       this.mouseModeSelector_.setKeyCodeForMode(m.TIMING, '4'.charCodeAt(0));
+
+      this.mouseModeSelector_.setModifierForAlternateMode(
+          m.SELECTION, ui.MODIFIER.SHIFT);
+      this.mouseModeSelector_.setModifierForAlternateMode(
+          m.PANSCAN, ui.MODIFIER.SPACE);
+      this.mouseModeSelector_.setModifierForAlternateMode(
+          m.ZOOM, ui.MODIFIER.CMD_OR_CTRL);
     },
 
     detach: function() {
@@ -198,17 +213,6 @@ base.exportTo('tracing', function() {
       return this.viewport_;
     },
 
-    get categoryFilter() {
-      return this.categoryFilter_;
-    },
-
-    set categoryFilter(filter) {
-      this.modelTrackContainer_.invalidate();
-
-      this.categoryFilter_ = filter;
-      this.modelTrack_.categoryFilter = filter;
-    },
-
     get model() {
       return this.model_;
     },
@@ -220,7 +224,6 @@ base.exportTo('tracing', function() {
       var modelInstanceChanged = this.model_ != model;
       this.model_ = model;
       this.modelTrack_.model = model;
-      this.modelTrack_.categoryFilter = this.categoryFilter;
 
       // Set up a reasonable viewport.
       if (modelInstanceChanged)
@@ -250,9 +253,11 @@ base.exportTo('tracing', function() {
         range = this.model_.bounds.range;
       }
       var boost = range * 0.15;
-      this.viewport_.xSetWorldBounds(min - boost,
-                                     min + range + boost,
-                                     w);
+      tempDisplayTransform.set(this.viewport.currentDisplayTransform);
+      tempDisplayTransform.xSetWorldBounds(min - boost,
+                                           min + range + boost,
+                                           w);
+      this.viewport.setDisplayTransformImmediately(tempDisplayTransform);
     },
 
     /**
@@ -262,8 +267,8 @@ base.exportTo('tracing', function() {
      * TitleFilter.
      */
     addAllObjectsMatchingFilterToSelection: function(filter, selection) {
-      this.modelTrack_.addAllObjectsMatchingFilterToSelection(filter,
-                                                              selection);
+      this.modelTrack_.addAllObjectsMatchingFilterToSelection(
+          filter, selection);
     },
 
     /**
@@ -322,11 +327,11 @@ base.exportTo('tracing', function() {
 
         case 119:  // w
         case 44:   // ,
-          this.zoomBy_(1.5);
+          this.zoomBy_(1.5, true);
           break;
         case 115:  // s
         case 111:  // o
-          this.zoomBy_(1 / 1.5);
+          this.zoomBy_(1 / 1.5, true);
           break;
         case 103:  // g
           this.onGridToggle_(true);
@@ -336,27 +341,26 @@ base.exportTo('tracing', function() {
           break;
         case 87:  // W
         case 60:  // <
-          this.zoomBy_(10);
+          this.zoomBy_(10, true);
           break;
         case 83:  // S
         case 79:  // O
-          this.zoomBy_(1 / 10);
+          this.zoomBy_(1 / 10, true);
           break;
         case 97:  // a
-          vp.panX += vp.xViewVectorToWorld(viewWidth * 0.1);
+          this.queueSmoothPan_(viewWidth * 0.3, 0);
           break;
         case 100:  // d
         case 101:  // e
-          vp.panX -= vp.xViewVectorToWorld(viewWidth * 0.1);
+          this.queueSmoothPan_(viewWidth * -0.3, 0);
           break;
         case 65:  // A
-          vp.panX += vp.xViewVectorToWorld(viewWidth * 0.5);
+          this.queueSmoothPan_(viewWidth * 0.5, 0);
           break;
         case 68:  // D
-          vp.panX -= vp.xViewVectorToWorld(viewWidth * 0.5);
+          this.queueSmoothPan_(viewWidth * -0.5, 0);
           break;
         case 48:  // 0
-        case 122: // z
           this.setInitialViewport_();
           break;
         case 102:  // f
@@ -370,28 +374,30 @@ base.exportTo('tracing', function() {
       if (!this.listenToKeys_)
         return;
       var sel;
-      var vp = this.viewport_;
+      var vp = this.viewport;
       var viewWidth = this.modelTrackContainer_.canvas.clientWidth;
 
       switch (e.keyCode) {
         case 37:   // left arrow
-          sel = this.selection.getShiftedSelection(-1);
+          sel = this.selection.getShiftedSelection(
+              this.viewport, -1);
           if (sel) {
-            this.selection = sel;
+            this.setSelectionAndClearHighlight(sel);
             this.panToSelection();
             e.preventDefault();
           } else {
-            vp.panX += vp.xViewVectorToWorld(viewWidth * 0.1);
+            this.queueSmoothPan_(viewWidth * 0.3, 0);
           }
           break;
         case 39:   // right arrow
-          sel = this.selection.getShiftedSelection(1);
+          sel = this.selection.getShiftedSelection(
+              this.viewport, 1);
           if (sel) {
-            this.selection = sel;
+            this.setSelectionAndClearHighlight(sel);
             this.panToSelection();
             e.preventDefault();
           } else {
-            vp.panX -= vp.xViewVectorToWorld(viewWidth * 0.1);
+            this.queueSmoothPan_(-viewWidth * 0.3, 0);
           }
           break;
         case 9:    // TAB
@@ -418,129 +424,265 @@ base.exportTo('tracing', function() {
 
     },
 
+    onDblClick_: function(e) {
+      if (this.mouseModeSelector_.mode !== ui.MOUSE_SELECTOR_MODE.SELECTION)
+        return;
+
+      if (!this.selection.length || !this.selection[0].title)
+        return;
+
+      var selection = new Selection();
+      var filter = new tracing.ExactTitleFilter(this.selection[0].title);
+      this.addAllObjectsMatchingFilterToSelection(filter, selection);
+
+      this.setSelectionAndClearHighlight(selection);
+    },
+
+    onMouseWheel_: function(e) {
+      if (!e.altKey)
+        return;
+
+      var delta = e.wheelDelta / 120;
+      var zoomScale = Math.pow(1.5, delta);
+      this.zoomBy_(zoomScale);
+      e.preventDefault();
+    },
+
+    queueSmoothPan_: function(viewDeltaX, deltaY) {
+      var deltaX = this.viewport_.currentDisplayTransform.xViewVectorToWorld(
+          viewDeltaX);
+      var animation = new tracing.TimelineDisplayTransformPanAnimation(
+          deltaX, deltaY);
+      this.viewport_.queueDisplayTransformAnimation(animation);
+    },
+
     /**
      * Zoom in or out on the timeline by the given scale factor.
-     * @param {integer} scale The scale factor to apply.  If <1, zooms out.
+     * @param {Number} scale The scale factor to apply.  If <1, zooms out.
+     * @param {boolean} Whether to change the zoom level smoothly.
      */
-    zoomBy_: function(scale) {
-      var vp = this.viewport_;
+    zoomBy_: function(scale, smooth) {
+      smooth = !!smooth;
+      var vp = this.viewport;
       var viewWidth = this.modelTrackContainer_.canvas.clientWidth;
       var pixelRatio = window.devicePixelRatio || 1;
-      var curMouseV = this.lastMouseViewPos_.x * pixelRatio;
-      var curCenterW = vp.xViewToWorld(curMouseV);
-      vp.scaleX = vp.scaleX * scale;
-      vp.xPanWorldPosToViewPos(curCenterW, curMouseV, viewWidth);
+
+      var goalFocalPointXView = this.lastMouseViewPos_.x * pixelRatio;
+      var goalFocalPointXWorld = vp.currentDisplayTransform.xViewToWorld(
+          goalFocalPointXView);
+      if (smooth) {
+        var animation = new tracing.TimelineDisplayTransformZoomToAnimation(
+            goalFocalPointXWorld, goalFocalPointXView,
+            vp.currentDisplayTransform.panY,
+            scale);
+        vp.queueDisplayTransformAnimation(animation);
+      } else {
+        tempDisplayTransform.set(vp.currentDisplayTransform);
+        tempDisplayTransform.scaleX = tempDisplayTransform.scaleX * scale;
+        tempDisplayTransform.xPanWorldPosToViewPos(
+            goalFocalPointXWorld, goalFocalPointXView, viewWidth);
+        vp.setDisplayTransformImmediately(tempDisplayTransform);
+      }
     },
 
     /**
      * Zoom into the current selection.
      */
     zoomToSelection: function() {
-      if (!this.selection || !this.selection.length)
+      if (!this.selectionOfInterest.length)
         return;
 
-      var bounds = this.selection.bounds;
+      var bounds = this.selectionOfInterest.bounds;
       if (!bounds.range)
         return;
 
       var worldCenter = bounds.center;
-      var worldRangeHalf = bounds.range * 0.5;
-      var boost = worldRangeHalf * 0.5;
-      this.viewport_.xSetWorldBounds(worldCenter - worldRangeHalf - boost,
-                                     worldCenter + worldRangeHalf + boost,
-                                     this.modelTrackContainer_.canvas.width);
+      var adjustedWorldRange = bounds.range * 1.25;
+      var newScale = this.modelTrackContainer_.canvas.width /
+          adjustedWorldRange;
+      var zoomInRatio = newScale / this.viewport.currentDisplayTransform.scaleX;
+      var animation = new tracing.TimelineDisplayTransformZoomToAnimation(
+          worldCenter, 'center',
+          this.viewport.currentDisplayTransform.panY,
+          zoomInRatio);
+      this.viewport.queueDisplayTransformAnimation(animation);
     },
 
     /**
      * Pan the view so the current selection becomes visible.
      */
     panToSelection: function() {
-      if (!this.selection || !this.selection.length)
+      if (!this.selectionOfInterest.length)
         return;
 
-      var bounds = this.selection.bounds;
+      var bounds = this.selectionOfInterest.bounds;
       var worldCenter = bounds.center;
       var viewWidth = this.modelTrackContainer_.canvas.width;
 
-      if (!bounds.range) {
-        if (this.viewport_.xWorldToView(bounds.center) < 0 ||
-            this.viewport_.xWorldToView(bounds.center) > viewWidth) {
-          this.viewport_.xPanWorldPosToViewPos(
+      var dt = this.viewport.currentDisplayTransform;
+      if (false && !bounds.range) {
+        if (dt.xWorldToView(bounds.center) < 0 ||
+            dt.xWorldToView(bounds.center) > viewWidth) {
+          tempDisplayTransform.set(dt);
+          tempDisplayTransform.xPanWorldPosToViewPos(
               worldCenter, 'center', viewWidth);
+          var deltaX = tempDisplayTransform.panX - dt.panX;
+          var animation = new tracing.TimelineDisplayTransformPanAnimation(
+              deltaX, 0);
+          this.viewport.queueDisplayTransformAnimation(animation);
         }
         return;
       }
 
-      var worldRangeHalf = bounds.range * 0.5;
-      var boost = worldRangeHalf * 0.5;
-      this.viewport_.xPanWorldBoundsIntoView(
-          worldCenter - worldRangeHalf - boost,
-          worldCenter + worldRangeHalf + boost,
+      tempDisplayTransform.set(dt);
+      tempDisplayTransform.xPanWorldBoundsIntoView(
+          bounds.min,
+          bounds.max,
           viewWidth);
-
-      this.viewport_.xPanWorldBoundsIntoView(bounds.min, bounds.max, viewWidth);
+      var deltaX = tempDisplayTransform.panX - dt.panX;
+      var animation = new tracing.TimelineDisplayTransformPanAnimation(
+          deltaX, 0);
+      this.viewport.queueDisplayTransformAnimation(animation);
     },
 
-    get keyHelp() {
-      var mod = navigator.platform.indexOf('Mac') == 0 ? 'cmd' : 'ctrl';
-      var help = 'Qwerty Controls\n' +
-          ' w/s                   : Zoom in/out     (with shift: go faster)\n' +
-          ' a/d                   : Pan left/right\n\n' +
-          'Dvorak Controls\n' +
-          ' ,/o                   : Zoom in/out     (with shift: go faster)\n' +
-          ' a/e                   : Pan left/right\n\n' +
-          'Mouse Controls\n' +
-          ' drag (Selection mode) : Select slices   (with ' + mod +
-                                                        ': zoom to slices)\n' +
-          ' drag (Pan mode)       : Pan left/right/up/down)\n\n';
-
-      if (this.focusElement.tabIndex) {
-        help +=
-            ' <-                 : Select previous event on current ' +
-            'timeline\n' +
-            ' ->                 : Select next event on current timeline\n';
-      } else {
-        help += 'General Navigation\n' +
-            ' g/General          : Shows grid at the start/end of the ' +
-            ' selected task\n' +
-            ' <-,^TAB            : Select previous event on current ' +
-            'timeline\n' +
-            ' ->, TAB            : Select next event on current timeline\n';
-      }
-      help +=
-          '\n' +
-          'Space to switch between select / pan modes\n' +
-          'Shift to temporarily switch between select / pan modes\n' +
-          'Scroll to zoom in/out (in pan mode)\n' +
-          'f to zoom into selection\n' +
-          'z to reset zoom and pan to initial view\n' +
-          '/ to search\n';
-      return help;
+    /**
+     * Sets the selected events and changes the SelectionState of the events to
+     *   SELECTED.
+     * @param {Selection} selection A Selection of the new selected events.
+     */
+    set selection(selection) {
+      this.setSelectionAndHighlight(selection, this.highlight_);
     },
 
     get selection() {
       return this.selection_;
     },
 
-    set selection(selection) {
-      if (!(selection instanceof Selection))
+    /**
+     * Sets the highlighted events and changes the SelectionState of the events
+     *   to HIGHLIGHTED. All other events are set to DIMMED, except SELECTED
+     *   ones.
+     * @param {Selection} selection A Selection of the new selected events.
+     */
+    set highlight(highlight) {
+      this.setSelectionAndHighlight(this.selection_, highlight);
+    },
+
+    get highlight() {
+      return this.highlight_;
+    },
+
+    /**
+     * Getter for events of interest, primarily SELECTED and secondarily
+     *   HIGHLIGHTED events.
+     */
+    get selectionOfInterest() {
+      if (!this.selection_.length && this.highlight_.length)
+        return this.highlight_;
+      return this.selection_;
+    },
+
+    /**
+     * Sets the selected events, changes the SelectionState of the events to
+     *   SELECTED and clears the highlighted events.
+     * @param {Selection} selection A Selection of the new selected events.
+     */
+    setSelectionAndClearHighlight: function(selection) {
+      this.setSelectionAndHighlight(selection, null);
+    },
+
+    /**
+     * Sets the highlighted events, changes the SelectionState of the events to
+     *   HIGHLIGHTED and clears the selected events. All other events are set to
+     *   DIMMED.
+     * @param {Selection} highlight A Selection of the new highlighted events.
+     */
+    setHighlightAndClearSelection: function(highlight) {
+      this.setSelectionAndHighlight(null, highlight);
+    },
+
+    /**
+     * Sets both selected and highlighted events. If an event is both it will be
+     *   set to SELECTED. All other events are set to DIMMED.
+     * @param {Selection} selection A Selection of the new selected events.
+     * @param {Selection} highlight A Selection of the new highlighted events.
+     */
+    setSelectionAndHighlight: function(selection, highlight) {
+      if (selection === this.selection_ && highlight === this.highlight_)
+        return;
+
+      if ((selection !== null && !(selection instanceof Selection)) ||
+          (highlight !== null && !(highlight instanceof Selection))) {
         throw new Error('Expected Selection');
+      }
 
-      // Clear old selection.
-      var i;
-      for (i = 0; i < this.selection_.length; i++)
-        this.selection_[i].selected = false;
+      if (highlight && highlight.length) {
+        // Set all events to DIMMED. This needs to be done before clearing the
+        // old highlight, so that the old events are still available. This is
+        // also necessary when the highlight doesn't change, because it might
+        // have overlapping events with selection.
+        this.resetEventsTo_(SelectionState.DIMMED);
 
-      this.selection_.clear();
-      this.selection_.addSelection(selection);
+        // Switch the highlight.
+        if (highlight !== this.highlight_)
+          this.highlight_ = highlight;
+
+        // Set HIGHLIGHTED on the events of the new highlight.
+        this.setSelectionState_(highlight, SelectionState.HIGHLIGHTED);
+      } else {
+        // If no highlight is active the SelectionState needs to be cleared.
+        // Note that this also clears old SELECTED events, so it doesn't need
+        // to be called again when setting the selection.
+        this.resetEventsTo_(SelectionState.NONE);
+        this.highlight_ = new Selection();
+      }
+
+      if (selection && selection.length) {
+        // Switch the selection
+        if (selection !== this.selection_)
+          this.selection_ = selection;
+
+        // Set SELECTED on the events of the new highlight.
+        this.setSelectionState_(selection, SelectionState.SELECTED);
+      } else
+        this.selection_ = new Selection();
 
       base.dispatchSimpleEvent(this, 'selectionChange');
-      for (i = 0; i < this.selection_.length; i++)
-        this.selection_[i].selected = true;
-      if (this.selection_.length &&
-          this.selection_[0].track)
-        this.selection_[0].track.scrollIntoViewIfNeeded();
-      this.viewport_.dispatchChangeEvent(); // Triggers a redraw.
+
+      if (this.selectionOfInterest.length) {
+        var track = this.viewport.trackForEvent(this.selectionOfInterest[0]);
+        track.scrollIntoViewIfNeeded();
+      }
+
+      this.viewport.dispatchChangeEvent(); // Triggers a redraw.
+    },
+
+    /**
+     * Sets a new SelectionState on all events in the selection.
+     * @param {Selection} selection The affected selection.
+     * @param {SelectionState} selectionState The new selection state.
+     */
+    setSelectionState_: function(selection, selectionState) {
+      for (var i = 0; i < selection.length; i++)
+        selection[i].selectionState = selectionState;
+    },
+
+    /**
+     * Resets all events to the provided SelectionState. When the SelectionState
+     *   changes from or to DIMMED all events in the model need to get updated.
+     * @param {SelectionState} selectionState The SelectionState to reset to.
+     */
+    resetEventsTo_: function(selectionState) {
+      var dimmed = this.highlight_.length;
+      var resetAll = (dimmed && selectionState !== SelectionState.DIMMED) ||
+                     (!dimmed && selectionState === SelectionState.DIMMED);
+      if (resetAll) {
+        this.model.iterateAllEvents(
+            function(event) { event.selectionState = selectionState; });
+      } else {
+        this.setSelectionState_(this.selection_, selectionState);
+        this.setSelectionState_(this.highlight_, selectionState);
+      }
     },
 
     hideDragBox_: function() {
@@ -584,9 +726,10 @@ base.exportTo('tracing', function() {
 
       var pixelRatio = window.devicePixelRatio || 1;
       var canv = this.modelTrackContainer_.canvas;
-      var loWX = this.viewport_.xViewToWorld(
+      var dt = this.viewport.currentDisplayTransform;
+      var loWX = dt.xViewToWorld(
           (loX - canv.offsetLeft) * pixelRatio);
-      var hiWX = this.viewport_.xViewToWorld(
+      var hiWX = dt.xViewToWorld(
           (hiX - canv.offsetLeft) * pixelRatio);
 
       var roundedDuration = Math.round((hiWX - loWX) * 100) / 100;
@@ -599,28 +742,28 @@ base.exportTo('tracing', function() {
     },
 
     onGridToggle_: function(left) {
-      var tb = left ? this.selection_.bounds.min : this.selection_.bounds.max;
+      var tb = left ? this.selection.bounds.min : this.selection.bounds.max;
 
       // Toggle the grid off if the grid is on, the marker position is the same
       // and the same element is selected (same timebase).
-      if (this.viewport_.gridEnabled &&
-          this.viewport_.gridSide === left &&
-          this.viewport_.gridInitialTimebase === tb) {
-        this.viewport_.gridside = undefined;
-        this.viewport_.gridEnabled = false;
-        this.viewport_.gridInitialTimebase = undefined;
+      if (this.viewport.gridEnabled &&
+          this.viewport.gridSide === left &&
+          this.viewport.gridInitialTimebase === tb) {
+        this.viewport.gridside = undefined;
+        this.viewport.gridEnabled = false;
+        this.viewport.gridInitialTimebase = undefined;
         return;
       }
 
       // Shift the timebase left until its just left of model_.bounds.min.
       var numIntervalsSinceStart = Math.ceil((tb - this.model_.bounds.min) /
-          this.viewport_.gridStep_);
+          this.viewport.gridStep_);
 
-      this.viewport_.gridEnabled = true;
-      this.viewport_.gridSide = left;
-      this.viewport_.gridInitialTimebase = tb;
-      this.viewport_.gridTimebase = tb -
-          (numIntervalsSinceStart + 1) * this.viewport_.gridStep_;
+      this.viewport.gridEnabled = true;
+      this.viewport.gridSide = left;
+      this.viewport.gridInitialTimebase = tb;
+      this.viewport.gridTimebase = tb -
+          (numIntervalsSinceStart + 1) * this.viewport.gridStep_;
     },
 
     storeLastMousePos_: function(e) {
@@ -659,10 +802,11 @@ base.exportTo('tracing', function() {
     },
 
     onBeginPanScan_: function(e) {
-      var vp = this.viewport_;
+      var vp = this.viewport;
       var mouseEvent = e.data;
 
-      this.viewportStateAtMouseDown_ = vp.getStateInViewCoordinates();
+      this.viewportDisplayTransformAtMouseDown_ =
+          vp.currentDisplayTransform.clone();
       this.isPanningAndScanning_ = true;
 
       this.storeInitialInteractionPositionsAndFocus_(mouseEvent);
@@ -673,19 +817,20 @@ base.exportTo('tracing', function() {
       if (!this.isPanningAndScanning_)
         return;
 
-      var vp = this.viewport_;
       var viewWidth = this.modelTrackContainer_.canvas.clientWidth;
       var mouseEvent = e.data;
 
-      var x = this.viewportStateAtMouseDown_.panX + (this.lastMouseViewPos_.x -
+      var pixelRatio = window.devicePixelRatio || 1;
+      var xDeltaView = pixelRatio * (this.lastMouseViewPos_.x -
           this.mouseViewPosAtMouseDown_.x);
-      var y = this.viewportStateAtMouseDown_.panY - (this.lastMouseViewPos_.y -
-          this.mouseViewPosAtMouseDown_.y);
 
-      vp.setStateInViewCoordinates({
-        panX: x,
-        panY: y
-      });
+      var yDelta = this.lastMouseViewPos_.y -
+          this.mouseViewPosAtMouseDown_.y;
+
+      tempDisplayTransform.set(this.viewportDisplayTransformAtMouseDown_);
+      tempDisplayTransform.incrementPanXInViewUnits(xDeltaView);
+      tempDisplayTransform.panY -= yDelta;
+      this.viewport.setDisplayTransformImmediately(tempDisplayTransform);
 
       mouseEvent.preventDefault();
       mouseEvent.stopPropagation();
@@ -771,15 +916,13 @@ base.exportTo('tracing', function() {
       var loVX = loX - canv.offsetLeft;
       var hiVX = hiX - canv.offsetLeft;
 
-      // Figure out what has been hit.
+      // Figure out what has been selected.
       var selection = new Selection();
       this.modelTrack_.addIntersectingItemsInRangeToSelection(
           loVX, hiVX, loY, hiY, selection);
 
-      // Activate the new selection, and zoom if ctrl key held down.
-      this.selection = selection;
-      if ((base.isMac && e.metaKey) || (!base.isMac && e.ctrlKey))
-        this.zoomToSelection_();
+      // Activate the new selection.
+      this.setSelectionAndClearHighlight(selection);
     },
 
     onBeginZoom_: function(e) {
@@ -800,7 +943,7 @@ base.exportTo('tracing', function() {
       var zoomScaleValue = 1 + (this.lastMouseViewPos_.y -
           newPosition.y) * 0.01;
 
-      this.zoomBy_(zoomScaleValue);
+      this.zoomBy_(zoomScaleValue, false);
       this.storeLastMousePos_(mouseEvent);
     },
 

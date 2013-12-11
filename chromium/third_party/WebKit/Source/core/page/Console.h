@@ -31,6 +31,7 @@
 
 #include "bindings/v8/ScriptState.h"
 #include "bindings/v8/ScriptWrappable.h"
+#include "core/page/ConsoleBase.h"
 #include "core/page/DOMWindowProperty.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
@@ -43,39 +44,27 @@ class MemoryInfo;
 class Page;
 class ScriptArguments;
 
-class Console : public ScriptWrappable, public RefCounted<Console>, public DOMWindowProperty {
+class Console : public RefCounted<Console>, public ConsoleBase, public ScriptWrappable, public DOMWindowProperty {
 public:
+    using RefCounted<Console>::ref;
+    using RefCounted<Console>::deref;
+
     static PassRefPtr<Console> create(Frame* frame) { return adoptRef(new Console(frame)); }
     virtual ~Console();
 
-    void debug(ScriptState*, PassRefPtr<ScriptArguments>);
-    void error(ScriptState*, PassRefPtr<ScriptArguments>);
-    void info(ScriptState*, PassRefPtr<ScriptArguments>);
-    void log(ScriptState*, PassRefPtr<ScriptArguments>);
-    void clear(ScriptState*, PassRefPtr<ScriptArguments>);
-    void warn(ScriptState*, PassRefPtr<ScriptArguments>);
-    void dir(ScriptState*, PassRefPtr<ScriptArguments>);
-    void dirxml(ScriptState*, PassRefPtr<ScriptArguments>);
-    void table(ScriptState*, PassRefPtr<ScriptArguments>);
-    void trace(ScriptState*, PassRefPtr<ScriptArguments>);
-    void assertCondition(ScriptState*, PassRefPtr<ScriptArguments>, bool condition);
-    void count(ScriptState*, PassRefPtr<ScriptArguments>);
-    void markTimeline(PassRefPtr<ScriptArguments>);
-    void profile(ScriptState*, const String&);
-    void profileEnd(ScriptState*, const String&);
-    void time(const String&);
-    void timeEnd(ScriptState*, const String&);
-    void timeStamp(PassRefPtr<ScriptArguments>);
-    void group(ScriptState*, PassRefPtr<ScriptArguments>);
-    void groupCollapsed(ScriptState*, PassRefPtr<ScriptArguments>);
-    void groupEnd();
-
     PassRefPtr<MemoryInfo> memory() const;
 
+protected:
+    virtual ScriptExecutionContext* context();
+    virtual void reportMessageToClient(MessageLevel, const String& message, PassRefPtr<ScriptCallStack>) OVERRIDE;
+    virtual bool profilerEnabled();
+
 private:
+    explicit Console(Frame*);
     inline Page* page() const;
 
-    explicit Console(Frame*);
+    virtual void refConsole() { ref(); }
+    virtual void derefConsole() { deref(); }
 };
 
 } // namespace WebCore

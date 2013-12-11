@@ -27,9 +27,6 @@
 #include "core/dom/EventDispatcher.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/EventRetargeter.h"
-#include "core/html/HTMLIFrameElement.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
 #include "core/platform/PlatformMouseEvent.h"
 
 namespace WebCore {
@@ -58,7 +55,7 @@ PassRefPtr<MouseEvent> MouseEvent::create(const AtomicString& eventType, PassRef
     ASSERT(event.type() == PlatformEvent::MouseMoved || event.button() != NoButton);
 
     bool isMouseEnterOrLeave = eventType == eventNames().mouseenterEvent || eventType == eventNames().mouseleaveEvent;
-    bool isCancelable = eventType != eventNames().mousemoveEvent && !isMouseEnterOrLeave;
+    bool isCancelable = !isMouseEnterOrLeave;
     bool isBubbling = !isMouseEnterOrLeave;
 
     return MouseEvent::create(eventType, isBubbling, isCancelable, view,

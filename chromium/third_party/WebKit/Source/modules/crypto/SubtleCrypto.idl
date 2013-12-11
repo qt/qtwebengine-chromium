@@ -31,13 +31,14 @@
 [
     NoInterfaceObject,
 ] interface SubtleCrypto {
-    [RaisesException] CryptoOperation encrypt(Dictionary algorithm, Key key);
-    [RaisesException] CryptoOperation decrypt(Dictionary algorithm, Key key);
-    [RaisesException] CryptoOperation sign(Dictionary algorithm, Key key);
-    [RaisesException, ImplementedAs=verifySignature] CryptoOperation verify(Dictionary algorithm, Key key, ArrayBufferView signature);
-    [RaisesException] CryptoOperation digest(Dictionary algorithm);
+    [RaisesException] Promise encrypt(Dictionary algorithm, Key key, ArrayBufferView data);
+    [RaisesException] Promise decrypt(Dictionary algorithm, Key key, ArrayBufferView data);
+    [RaisesException] Promise sign(Dictionary algorithm, Key key, ArrayBufferView data);
+    [RaisesException, ImplementedAs=verifySignature] Promise verify(Dictionary algorithm, Key key, ArrayBufferView signature, ArrayBufferView data);
+    [RaisesException] Promise digest(Dictionary algorithm, ArrayBufferView data);
 
-    [RaisesException] any generateKey(Dictionary algorithm, boolean extractable, DOMString[] keyUsages);
-    [RaisesException] any importKey(DOMString format, ArrayBufferView keyData, Dictionary algorithm, boolean extractable, DOMString[] keyUsages);
+    [RaisesException] Promise generateKey(Dictionary algorithm, boolean extractable, DOMString[] keyUsages);
+    [RaisesException] Promise importKey(DOMString format, ArrayBufferView keyData, Dictionary algorithm, boolean extractable, DOMString[] keyUsages);
+    [RaisesException] Promise exportKey(DOMString format, Key key);
 };
 

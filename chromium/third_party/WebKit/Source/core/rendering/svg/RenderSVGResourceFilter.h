@@ -57,7 +57,7 @@ class GraphicsContext;
 
 class RenderSVGResourceFilter FINAL : public RenderSVGResourceContainer {
 public:
-    RenderSVGResourceFilter(SVGFilterElement*);
+    explicit RenderSVGResourceFilter(SVGFilterElement*);
     virtual ~RenderSVGResourceFilter();
 
     virtual const char* renderName() const { return "RenderSVGResourceFilter"; }
@@ -73,8 +73,8 @@ public:
 
     PassRefPtr<SVGFilterBuilder> buildPrimitives(SVGFilter*);
 
-    SVGUnitTypes::SVGUnitType filterUnits() const { return toSVGFilterElement(node())->filterUnitsCurrentValue(); }
-    SVGUnitTypes::SVGUnitType primitiveUnits() const { return toSVGFilterElement(node())->primitiveUnitsCurrentValue(); }
+    SVGUnitTypes::SVGUnitType filterUnits() const { return toSVGFilterElement(element())->filterUnitsCurrentValue(); }
+    SVGUnitTypes::SVGUnitType primitiveUnits() const { return toSVGFilterElement(element())->primitiveUnitsCurrentValue(); }
 
     void primitiveAttributeChanged(RenderObject*, const QualifiedName&);
 
@@ -88,10 +88,16 @@ private:
     HashMap<RenderObject*, FilterData*> m_filter;
 };
 
-inline RenderSVGResourceFilter* toRenderSVGFilter(RenderObject* object)
+inline RenderSVGResourceFilter* toRenderSVGResourceFilter(RenderObject* object)
 {
     ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isSVGResourceFilter());
     return static_cast<RenderSVGResourceFilter*>(object);
+}
+
+inline RenderSVGResourceFilter* toRenderSVGResourceFilter(RenderSVGResourceContainer* resource)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!resource || resource->resourceType() == FilterResourceType);
+    return static_cast<RenderSVGResourceFilter*>(resource);
 }
 
 }

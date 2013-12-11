@@ -30,6 +30,7 @@
 #include "talk/base/buffer.h"
 #include "talk/base/byteorder.h"
 #include "talk/base/common.h"
+#include "talk/base/dscp.h"
 #include "talk/base/logging.h"
 #include "talk/media/base/rtputils.h"
 #include "talk/p2p/base/transportchannel.h"
@@ -55,6 +56,8 @@ enum {
   MSG_SETRENDERER,
   MSG_ADDRECVSTREAM,
   MSG_REMOVERECVSTREAM,
+  MSG_ADDSENDSTREAM,
+  MSG_REMOVESENDSTREAM,
   MSG_SETRINGBACKTONE,
   MSG_PLAYRINGBACKTONE,
   MSG_SETMAXSENDBANDWIDTH,
@@ -74,7 +77,7 @@ enum {
   MSG_DATARECEIVED,
   MSG_SETCAPTURER,
   MSG_ISSCREENCASTING,
-  MSG_SCREENCASTFPS,
+  MSG_GETSCREENCASTDETAILS,
   MSG_SETSCREENCASTFACTORY,
   MSG_FIRSTPACKETRECEIVED,
   MSG_SESSION_ERROR,
@@ -187,6 +190,7 @@ struct VideoStatsMessageData : public talk_base::MessageData {
 
 struct PacketMessageData : public talk_base::MessageData {
   talk_base::Buffer packet;
+  talk_base::DiffServCodePoint dscp;
 };
 
 struct AudioRenderMessageData: public talk_base::MessageData {
@@ -334,12 +338,14 @@ struct IsScreencastingMessageData : public talk_base::MessageData {
   bool result;
 };
 
-struct ScreencastFpsMessageData : public talk_base::MessageData {
-  explicit ScreencastFpsMessageData(uint32 s)
-      : ssrc(s), result(0) {
+struct VideoChannel::ScreencastDetailsMessageData :
+    public talk_base::MessageData {
+  explicit ScreencastDetailsMessageData(uint32 s)
+      : ssrc(s), fps(0), screencast_max_pixels(0) {
   }
   uint32 ssrc;
-  int result;
+  int fps;
+  int screencast_max_pixels;
 };
 
 struct SetScreenCaptureFactoryMessageData : public talk_base::MessageData {
@@ -480,6 +486,18 @@ bool BaseChannel::RemoveRecvStream(uint32 ssrc) {
   return data.result;
 }
 
+bool BaseChannel::AddSendStream(const StreamParams& sp) {
+  StreamMessageData data(sp);
+  Send(MSG_ADDSENDSTREAM, &data);
+  return data.result;
+}
+
+bool BaseChannel::RemoveSendStream(uint32 ssrc) {
+  SsrcMessageData data(ssrc);
+  Send(MSG_REMOVESENDSTREAM, &data);
+  return data.result;
+}
+
 bool BaseChannel::SetLocalContent(const MediaContentDescription* content,
                                   ContentAction action) {
   SetContentData data(content, action);
@@ -550,12 +568,14 @@ bool BaseChannel::IsReadyToSend() const {
          was_ever_writable();
 }
 
-bool BaseChannel::SendPacket(talk_base::Buffer* packet) {
-  return SendPacket(false, packet);
+bool BaseChannel::SendPacket(talk_base::Buffer* packet,
+                             talk_base::DiffServCodePoint dscp) {
+  return SendPacket(false, packet, dscp);
 }
 
-bool BaseChannel::SendRtcp(talk_base::Buffer* packet) {
-  return SendPacket(true, packet);
+bool BaseChannel::SendRtcp(talk_base::Buffer* packet,
+                           talk_base::DiffServCodePoint dscp) {
+  return SendPacket(true, packet, dscp);
 }
 
 int BaseChannel::SetOption(SocketType type, talk_base::Socket::Option opt,
@@ -619,7 +639,8 @@ bool BaseChannel::PacketIsRtcp(const TransportChannel* channel,
           rtcp_mux_filter_.DemuxRtcp(data, static_cast<int>(len)));
 }
 
-bool BaseChannel::SendPacket(bool rtcp, talk_base::Buffer* packet) {
+bool BaseChannel::SendPacket(bool rtcp, talk_base::Buffer* packet,
+                             talk_base::DiffServCodePoint dscp) {
   // Unless we're sending optimistically, we only allow packets through when we
   // are completely writable.
   if (!optimistic_data_send_ && !writable_) {
@@ -638,6 +659,7 @@ bool BaseChannel::SendPacket(bool rtcp, talk_base::Buffer* packet) {
     int message_id = (!rtcp) ? MSG_RTPPACKET : MSG_RTCPPACKET;
     PacketMessageData* data = new PacketMessageData;
     packet->TransferTo(&data->packet);
+    data->dscp = dscp;
     worker_thread_->Post(this, message_id, data);
     return true;
   }
@@ -715,7 +737,7 @@ bool BaseChannel::SendPacket(bool rtcp, talk_base::Buffer* packet) {
   }
 
   // Bon voyage.
-  int ret = channel->SendPacket(packet->data(), packet->length(),
+  int ret = channel->SendPacket(packet->data(), packet->length(), dscp,
       (secure() && secure_dtls()) ? PF_SRTP_BYPASS : 0);
   if (ret != static_cast<int>(packet->length())) {
     if (channel->GetError() == EWOULDBLOCK) {
@@ -1003,8 +1025,13 @@ bool BaseChannel::SetupDtlsSrtp(bool rtcp_channel) {
     &dtls_buffer[offset], SRTP_MASTER_KEY_SALT_LEN);
 
   std::vector<unsigned char> *send_key, *recv_key;
+  talk_base::SSLRole role;
+  if (!channel->GetSslRole(&role)) {
+    LOG(LS_WARNING) << "GetSslRole failed";
+    return false;
+  }
 
-  if (channel->GetIceRole() == ICEROLE_CONTROLLING) {
+  if (role == talk_base::SSL_SERVER) {
     send_key = &server_write_key;
     recv_key = &client_write_key;
   } else {
@@ -1142,6 +1169,16 @@ bool BaseChannel::RemoveRecvStream_w(uint32 ssrc) {
   ASSERT(worker_thread() == talk_base::Thread::Current());
   ssrc_filter_.RemoveStream(ssrc);
   return media_channel()->RemoveRecvStream(ssrc);
+}
+
+bool BaseChannel::AddSendStream_w(const StreamParams& sp) {
+  ASSERT(worker_thread() == talk_base::Thread::Current());
+  return media_channel()->AddSendStream(sp);
+}
+
+bool BaseChannel::RemoveSendStream_w(uint32 ssrc) {
+  ASSERT(worker_thread() == talk_base::Thread::Current());
+  return media_channel()->RemoveSendStream(ssrc);
 }
 
 bool BaseChannel::UpdateLocalStreams_w(const std::vector<StreamParams>& streams,
@@ -1354,6 +1391,16 @@ void BaseChannel::OnMessage(talk_base::Message *pmsg) {
       data->result = RemoveRecvStream_w(data->ssrc);
       break;
     }
+    case MSG_ADDSENDSTREAM: {
+      StreamMessageData* data = static_cast<StreamMessageData*>(pmsg->pdata);
+      data->result = AddSendStream_w(data->sp);
+      break;
+    }
+    case MSG_REMOVESENDSTREAM: {
+      SsrcMessageData* data = static_cast<SsrcMessageData*>(pmsg->pdata);
+      data->result = RemoveSendStream_w(data->ssrc);
+      break;
+    }
     case MSG_SETMAXSENDBANDWIDTH: {
       SetBandwidthData* data = static_cast<SetBandwidthData*>(pmsg->pdata);
       data->result = SetMaxSendBandwidth_w(data->value);
@@ -1363,7 +1410,7 @@ void BaseChannel::OnMessage(talk_base::Message *pmsg) {
     case MSG_RTPPACKET:
     case MSG_RTCPPACKET: {
       PacketMessageData* data = static_cast<PacketMessageData*>(pmsg->pdata);
-      SendPacket(pmsg->message_id == MSG_RTCPPACKET, &data->packet);
+      SendPacket(pmsg->message_id == MSG_RTCPPACKET, &data->packet, data->dscp);
       delete data;  // because it is Posted
       break;
     }
@@ -1959,10 +2006,16 @@ bool VideoChannel::IsScreencasting() {
   return data.result;
 }
 
-int VideoChannel::ScreencastFps(uint32 ssrc) {
-  ScreencastFpsMessageData data(ssrc);
-  Send(MSG_SCREENCASTFPS, &data);
-  return data.result;
+int VideoChannel::GetScreencastFps(uint32 ssrc) {
+  ScreencastDetailsMessageData data(ssrc);
+  Send(MSG_GETSCREENCASTDETAILS, &data);
+  return data.fps;
+}
+
+int VideoChannel::GetScreencastMaxPixels(uint32 ssrc) {
+  ScreencastDetailsMessageData data(ssrc);
+  Send(MSG_GETSCREENCASTDETAILS, &data);
+  return data.screencast_max_pixels;
 }
 
 bool VideoChannel::SendIntraFrame() {
@@ -2179,14 +2232,16 @@ bool VideoChannel::IsScreencasting_w() const {
   return !screencast_capturers_.empty();
 }
 
-int VideoChannel::ScreencastFps_w(uint32 ssrc) const {
-  ScreencastMap::const_iterator iter = screencast_capturers_.find(ssrc);
+void VideoChannel::ScreencastDetails_w(
+    ScreencastDetailsMessageData* data) const {
+  ScreencastMap::const_iterator iter = screencast_capturers_.find(data->ssrc);
   if (iter == screencast_capturers_.end()) {
-    return 0;
+    return;
   }
   VideoCapturer* capturer = iter->second;
   const VideoFormat* video_format = capturer->GetCaptureFormat();
-  return VideoFormat::IntervalToFps(video_format->interval);
+  data->fps = VideoFormat::IntervalToFps(video_format->interval);
+  data->screencast_max_pixels = capturer->screencast_max_pixels();
 }
 
 void VideoChannel::SetScreenCaptureFactory_w(
@@ -2257,10 +2312,10 @@ void VideoChannel::OnMessage(talk_base::Message *pmsg) {
       data->result = IsScreencasting_w();
       break;
     }
-    case MSG_SCREENCASTFPS: {
-      ScreencastFpsMessageData* data =
-          static_cast<ScreencastFpsMessageData*>(pmsg->pdata);
-      data->result = ScreencastFps_w(data->ssrc);
+    case MSG_GETSCREENCASTDETAILS: {
+      ScreencastDetailsMessageData* data =
+          static_cast<ScreencastDetailsMessageData*>(pmsg->pdata);
+      ScreencastDetails_w(data);
       break;
     }
     case MSG_SENDINTRAFRAME: {

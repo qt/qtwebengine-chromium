@@ -20,6 +20,7 @@
 #include "content/public/test/mock_resource_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "media/audio/audio_manager.h"
+#include "media/base/video_frame.h"
 #include "media/video/capture/video_capture_types.h"
 #include "net/url_request/url_request_context.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -36,10 +37,10 @@ using ::testing::Return;
 namespace content {
 
 // Id used to identify the capture session between renderer and
-// video_capture_host.
-static const int kDeviceId = 1;
+// video_capture_host. This is an arbitrary value.
+static const int kDeviceId = 555;
 // Id of a video capture device
-static const media::VideoCaptureSessionId kTestFakeDeviceId =
+static const media::VideoCaptureSessionId kTestFakeSessionId =
     VideoCaptureManager::kStartOpenSessionId;
 
 // Define to enable test where video is dumped to file.
@@ -57,7 +58,8 @@ class DumpVideo {
     base::FilePath file_name = base::FilePath(base::StringPrintf(
         FILE_PATH_LITERAL("dump_w%d_h%d.yuv"), width, height));
     file_.reset(file_util::OpenFile(file_name, "wb"));
-    expected_size_ = width * height * 3 / 2;
+    expected_size_ = media::VideoFrame::AllocationSize(
+        media::VideoFrame::I420, gfx::Size(width, height));
   }
   void NewVideoFrame(const void* buffer) {
     if (file_.get() != NULL) {
@@ -146,7 +148,8 @@ class MockVideoCaptureHost : public VideoCaptureHost {
   // These handler methods do minimal things and delegate to the mock methods.
   void OnNewBufferCreatedDispatch(int device_id,
                                   base::SharedMemoryHandle handle,
-                                  int length, int buffer_id) {
+                                  uint32 length,
+                                  int buffer_id) {
     OnNewBufferCreated(device_id, handle, length, buffer_id);
     base::SharedMemory* dib = new base::SharedMemory(handle, false);
     dib->Map(length);
@@ -249,14 +252,31 @@ class VideoCaptureHostTest : public testing::Test {
     media::VideoCaptureParams params;
     params.width = 352;
     params.height = 288;
-    params.frame_per_second = 30;
-    params.session_id = kTestFakeDeviceId;
+    params.frame_rate = 30;
+    params.session_id = kTestFakeSessionId;
     host_->OnStartCapture(kDeviceId, params);
     run_loop.Run();
   }
 
+  void StartStopCapture() {
+    // Quickly start and then stop capture, without giving much chance for
+    // asynchronous start operations to complete.
+    InSequence s;
+    base::RunLoop run_loop;
+    EXPECT_CALL(*host_.get(),
+                OnStateChanged(kDeviceId, VIDEO_CAPTURE_STATE_STOPPED));
+    media::VideoCaptureParams params;
+    params.width = 352;
+    params.height = 288;
+    params.frame_rate = 30;
+    params.session_id = kTestFakeSessionId;
+    host_->OnStartCapture(kDeviceId, params);
+    host_->OnStopCapture(kDeviceId);
+    run_loop.RunUntilIdle();
+  }
+
 #ifdef DUMP_VIDEO
-  void CaptureAndDumpVideo(int width, int heigt, int frame_rate) {
+  void CaptureAndDumpVideo(int width, int height, int frame_rate) {
     InSequence s;
     // 1. First - get info about the new resolution
     EXPECT_CALL(*host_, OnDeviceInfo(kDeviceId));
@@ -272,9 +292,9 @@ class VideoCaptureHostTest : public testing::Test {
 
     media::VideoCaptureParams params;
     params.width = width;
-    params.height = heigt;
-    params.frame_per_second = frame_rate;
-    params.session_id = kTestFakeDeviceId;
+    params.height = height;
+    params.frame_rate = frame_rate;
+    params.session_id = kTestFakeSessionId;
     host_->SetDumpVideo(true);
     host_->OnStartCapture(kDeviceId, params);
     run_loop.Run();
@@ -334,6 +354,12 @@ class VideoCaptureHostTest : public testing::Test {
 
 TEST_F(VideoCaptureHostTest, StartCapture) {
   StartCapture();
+}
+
+// Disabled because of a sometimes race between completion of implicit device
+// enumeration and the capture stop.  http://crbug.com/289684
+TEST_F(VideoCaptureHostTest, DISABLED_StopWhileStartOpening) {
+  StartStopCapture();
 }
 
 TEST_F(VideoCaptureHostTest, StartCapturePlayStop) {

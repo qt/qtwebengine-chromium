@@ -6,11 +6,12 @@
 
 #include "base/basictypes.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/base/events/event.h"
+#include "ui/events/event.h"
 
 #if defined(USE_X11)
 #include <X11/keysym.h>
 #include <X11/Xlib.h>
+#include "ui/gfx/x/x11_types.h"
 #include "ui/base/x/x11_util.h"
 #endif
 
@@ -56,7 +57,7 @@ TEST(WebInputEventAuraTest, TestMakeWebKeyboardEventWindowsKeyCode) {
                                 ui::VKEY_CONTROL,
                                 0,  // X does not set ControlMask for KeyPress.
                                 &xev);
-    xev.xkey.keycode = XKeysymToKeycode(ui::GetXDisplay(), XK_Control_L);
+    xev.xkey.keycode = XKeysymToKeycode(gfx::GetXDisplay(), XK_Control_L);
     ui::KeyEvent event(&xev, false /* is_char */);
     WebKit::WebKeyboardEvent webkit_event = MakeWebKeyboardEvent(&event);
     // ui::VKEY_LCONTROL, instead of ui::VKEY_CONTROL, should be filled.
@@ -68,7 +69,7 @@ TEST(WebInputEventAuraTest, TestMakeWebKeyboardEventWindowsKeyCode) {
                                 ui::VKEY_CONTROL,
                                 0,  // X does not set ControlMask for KeyPress.
                                 &xev);
-    xev.xkey.keycode = XKeysymToKeycode(ui::GetXDisplay(), XK_Control_R);
+    xev.xkey.keycode = XKeysymToKeycode(gfx::GetXDisplay(), XK_Control_R);
     ui::KeyEvent event(&xev, false /* is_char */);
     WebKit::WebKeyboardEvent webkit_event = MakeWebKeyboardEvent(&event);
     // ui::VKEY_RCONTROL, instead of ui::VKEY_CONTROL, should be filled.

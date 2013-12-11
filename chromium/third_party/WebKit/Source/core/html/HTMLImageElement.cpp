@@ -25,12 +25,15 @@
 
 #include "CSSPropertyNames.h"
 #include "HTMLNames.h"
+#include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ScriptEventListener.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/EventNames.h"
+#include "core/fetch/ImageResource.h"
+#include "core/html/HTMLAnchorElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/loader/cache/ImageResource.h"
+#include "core/html/parser/HTMLSrcsetParser.h"
 #include "core/rendering/RenderImage.h"
 
 using namespace std;
@@ -39,7 +42,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLImageElement::HTMLImageElement(const QualifiedName& tagName, Document* document, HTMLFormElement* form)
+HTMLImageElement::HTMLImageElement(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
     : HTMLElement(tagName, document)
     , m_imageLoader(this)
     , m_form(form)
@@ -51,12 +54,12 @@ HTMLImageElement::HTMLImageElement(const QualifiedName& tagName, Document* docum
         form->registerImgElement(this);
 }
 
-PassRefPtr<HTMLImageElement> HTMLImageElement::create(Document* document)
+PassRefPtr<HTMLImageElement> HTMLImageElement::create(Document& document)
 {
     return adoptRef(new HTMLImageElement(imgTag, document));
 }
 
-PassRefPtr<HTMLImageElement> HTMLImageElement::create(const QualifiedName& tagName, Document* document, HTMLFormElement* form)
+PassRefPtr<HTMLImageElement> HTMLImageElement::create(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
 {
     return adoptRef(new HTMLImageElement(tagName, document, form));
 }
@@ -67,7 +70,7 @@ HTMLImageElement::~HTMLImageElement()
         m_form->removeImgElement(this);
 }
 
-PassRefPtr<HTMLImageElement> HTMLImageElement::createForJSConstructor(Document* document, const int* optionalWidth, const int* optionalHeight)
+PassRefPtr<HTMLImageElement> HTMLImageElement::createForJSConstructor(Document& document, const int* optionalWidth, const int* optionalHeight)
 {
     RefPtr<HTMLImageElement> image = adoptRef(new HTMLImageElement(imgTag, document));
     if (optionalWidth)
@@ -106,13 +109,21 @@ void HTMLImageElement::collectStyleForPresentationAttribute(const QualifiedName&
         HTMLElement::collectStyleForPresentationAttribute(name, value, style);
 }
 
+const AtomicString HTMLImageElement::imageSourceURL() const
+{
+    return m_bestFitImageURL.isNull() ? fastGetAttribute(srcAttr) : m_bestFitImageURL;
+}
+
 void HTMLImageElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     if (name == altAttr) {
         if (renderer() && renderer()->isImage())
             toRenderImage(renderer())->updateAltText();
-    } else if (name == srcAttr)
+    } else if (name == srcAttr || name == srcsetAttr) {
+        if (RuntimeEnabledFeatures::srcsetEnabled())
+            m_bestFitImageURL = bestFitSourceForImageAttributes(document().devicePixelRatio(), fastGetAttribute(srcAttr), fastGetAttribute(srcsetAttr));
         m_imageLoader.updateFromElementIgnoringPreviousError();
+    }
     else if (name == usemapAttr)
         setIsLink(!value.isNull());
     else if (name == onbeforeloadAttr)
@@ -179,6 +190,11 @@ void HTMLImageElement::attach(const AttachContext& context)
 Node::InsertionNotificationRequest HTMLImageElement::insertedInto(ContainerNode* insertionPoint)
 {
     // m_form can be non-null if it was set in constructor.
+    if (m_form && insertionPoint->highestAncestor() != m_form->highestAncestor()) {
+        m_form->removeImgElement(this);
+        m_form = 0;
+    }
+
     if (!m_form) {
         m_form = findFormAncestor();
         if (m_form)
@@ -216,9 +232,9 @@ int HTMLImageElement::width(bool ignorePendingStylesheets)
     }
 
     if (ignorePendingStylesheets)
-        document()->updateLayoutIgnorePendingStylesheets();
+        document().updateLayoutIgnorePendingStylesheets();
     else
-        document()->updateLayout();
+        document().updateLayout();
 
     RenderBox* box = renderBox();
     return box ? adjustForAbsoluteZoom(box->contentBoxRect().pixelSnappedWidth(), box) : 0;
@@ -239,9 +255,9 @@ int HTMLImageElement::height(bool ignorePendingStylesheets)
     }
 
     if (ignorePendingStylesheets)
-        document()->updateLayoutIgnorePendingStylesheets();
+        document().updateLayoutIgnorePendingStylesheets();
     else
-        document()->updateLayout();
+        document().updateLayout();
 
     RenderBox* box = renderBox();
     return box ? adjustForAbsoluteZoom(box->contentBoxRect().pixelSnappedHeight(), box) : 0;
@@ -290,7 +306,7 @@ void HTMLImageElement::setHeight(int value)
 
 KURL HTMLImageElement::src() const
 {
-    return document()->completeURL(getAttribute(srcAttr));
+    return document().completeURL(getAttribute(srcAttr));
 }
 
 void HTMLImageElement::setSrc(const String& value)
@@ -336,7 +352,7 @@ void HTMLImageElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) cons
 
     addSubresourceURL(urls, src());
     // FIXME: What about when the usemap attribute begins with "#"?
-    addSubresourceURL(urls, document()->completeURL(getAttribute(usemapAttr)));
+    addSubresourceURL(urls, document().completeURL(getAttribute(usemapAttr)));
 }
 
 void HTMLImageElement::didMoveToNewDocument(Document* oldDocument)
@@ -356,7 +372,7 @@ bool HTMLImageElement::isServerMap() const
     if (usemap.string()[0] == '#')
         return false;
 
-    return document()->completeURL(stripLeadingAndTrailingHTMLSpaces(usemap)).isEmpty();
+    return document().completeURL(stripLeadingAndTrailingHTMLSpaces(usemap)).isEmpty();
 }
 
 Image* HTMLImageElement::imageContents()
@@ -365,6 +381,11 @@ Image* HTMLImageElement::imageContents()
         return 0;
 
     return m_imageLoader.image()->image();
+}
+
+bool HTMLImageElement::isInteractiveContent() const
+{
+    return fastHasAttribute(usemapAttr);
 }
 
 }

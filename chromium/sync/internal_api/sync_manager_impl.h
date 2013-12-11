@@ -81,7 +81,8 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
       scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
       ReportUnrecoverableErrorFunction
           report_unrecoverable_error_function,
-      bool use_oauth2_token) OVERRIDE;
+      bool use_oauth2_token,
+      CancelationSignal* cancelation_signal) OVERRIDE;
   virtual void ThrowUnrecoverableError() OVERRIDE;
   virtual ModelTypeSet InitialSyncEndedTypes() OVERRIDE;
   virtual ModelTypeSet GetTypesWithEmptyProgressMarkerToken(
@@ -106,7 +107,6 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   virtual void RemoveObserver(SyncManager::Observer* observer) OVERRIDE;
   virtual SyncStatus GetDetailedStatus() const OVERRIDE;
   virtual void SaveChanges() OVERRIDE;
-  virtual void StopSyncingForShutdown() OVERRIDE;
   virtual void ShutdownOnSyncThread() OVERRIDE;
   virtual UserShare* GetUserShare() OVERRIDE;
   virtual const std::string cache_guid() OVERRIDE;
@@ -251,8 +251,7 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
 
   // Called for every notification. This updates the notification statistics
   // to be displayed in about:sync.
-  void UpdateNotificationInfo(
-      const ModelTypeInvalidationMap& invalidation_map);
+  void UpdateNotificationInfo(const ObjectIdInvalidationMap& invalidation_map);
 
   // Checks for server reachabilty and requests a nudge.
   void OnNetworkConnectivityChangedImpl();

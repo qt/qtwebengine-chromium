@@ -11,6 +11,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "content/child/npapi/plugin_instance.h"
 #include "content/child/npapi/webplugin_delegate_impl.h"
+#include "content/child/npapi/webplugin_resource_client.h"
 #include "content/child/plugin_messages.h"
 #include "content/plugin/plugin_channel.h"
 #include "content/plugin/plugin_thread.h"
@@ -145,6 +146,7 @@ bool WebPluginDelegateStub::OnMessageReceived(const IPC::Message& msg) {
                         OnHandleURLRequestReply)
     IPC_MESSAGE_HANDLER(PluginMsg_HTTPRangeRequestReply,
                         OnHTTPRangeRequestReply)
+    IPC_MESSAGE_HANDLER(PluginMsg_FetchURL, OnFetchURL)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -180,7 +182,7 @@ void WebPluginDelegateStub::OnInit(const PluginMsg_Init_Params& params,
                                   instance_id_,
                                   page_url_,
                                   params.host_render_view_routing_id);
-  delegate_ = WebPluginDelegateImpl::Create(path, mime_type_);
+  delegate_ = WebPluginDelegateImpl::Create(webplugin_, path, mime_type_);
   if (delegate_) {
     if (delegate_->GetQuirks() &
         WebPluginDelegateImpl::PLUGIN_QUIRK_DIE_AFTER_UNLOAD) {
@@ -202,7 +204,6 @@ void WebPluginDelegateStub::OnInit(const PluginMsg_Init_Params& params,
     *result = delegate_->Initialize(params.url,
                                     arg_names,
                                     arg_values,
-                                    webplugin_,
                                     params.load_manually);
     *transparent = delegate_->instance()->transparent();
   }
@@ -420,6 +421,26 @@ void WebPluginDelegateStub::OnHTTPRangeRequestReply(
   WebPluginResourceClient* resource_client =
       delegate_->CreateSeekableResourceClient(resource_id, range_request_id);
   webplugin_->OnResourceCreated(resource_id, resource_client);
+}
+
+void WebPluginDelegateStub::OnFetchURL(
+    const PluginMsg_FetchURL_Params& params) {
+  const char* data = NULL;
+  if (params.post_data.size())
+    data = &params.post_data[0];
+
+  delegate_->FetchURL(params.resource_id,
+                      params.notify_id,
+                      params.url,
+                      params.first_party_for_cookies,
+                      params.method,
+                      data,
+                      static_cast<unsigned int>(params.post_data.size()),
+                      params.referrer,
+                      params.notify_redirect,
+                      params.is_plugin_src_load,
+                      channel_->renderer_id(),
+                      params.render_view_id);
 }
 
 }  // namespace content

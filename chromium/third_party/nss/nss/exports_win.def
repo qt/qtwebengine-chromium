@@ -54,6 +54,7 @@ CERT_StartCertExtensions
 CERT_VerifyCert
 CERT_VerifyCertName
 CERT_VerifyCertNow
+CERT_VerifySignedDataWithPublicKey
 DER_Lengths_Util
 DES_Decrypt
 DES_DestroyContext
@@ -152,6 +153,7 @@ PK11_GetWrapKey
 PK11_HashBuf
 PK11_ImportDERPrivateKeyInfoAndReturnKey
 PK11_ImportSymKey
+PK11_ImportSymKeyWithFlags
 PK11_IsLoggedIn
 PK11_IsPresent
 PK11_IVFromParam
@@ -165,6 +167,7 @@ PK11_PubDecryptRaw
 PK11_PubDerive
 PK11_PubDeriveWithKDF
 PK11_PubEncryptRaw
+PK11_PubEncryptPKCS1
 PK11_PubUnwrapSymKey
 PK11_PubWrapSymKey
 PK11_ReadRawAttribute
@@ -232,6 +235,7 @@ SECKEY_DestroySubjectPublicKeyInfo
 SECKEY_EncodeDERSubjectPublicKeyInfo
 SECKEY_ExtractPublicKey
 SECKEY_GetPrivateKeyType
+SECKEY_ImportDERPublicKey
 SECKEY_PublicKeyStrength
 SECKEY_PublicKeyStrengthInBits
 SECKEY_SignatureLen
@@ -275,4 +279,5 @@ VFY_CreateContextWithAlgorithmID
 VFY_DestroyContext
 VFY_End
 VFY_Update
+VFY_VerifyDataDirect
 VFY_VerifyDigestDirect

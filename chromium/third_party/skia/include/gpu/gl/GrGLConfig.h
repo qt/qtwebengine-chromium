@@ -39,7 +39,7 @@
  * GR_GL_LOG_CALLS is 1. Defaults to 0.
  *
  * GR_GL_CHECK_ERROR: if enabled Gr can do a glGetError() after every GL call.
- * Defaults to 1 if GR_DEBUG is set, otherwise 0. When GR_GL_CHECK_ERROR is 1
+ * Defaults to 1 if SK_DEBUG is set, otherwise 0. When GR_GL_CHECK_ERROR is 1
  * this can be toggled in a debugger using the gCheckErrorGL global. The initial
  * value of gCheckErrorGL is controlled by by GR_GL_CHECK_ERROR_START.
  *
@@ -107,7 +107,11 @@
  */
 
 #if !defined(GR_GL_LOG_CALLS)
-    #define GR_GL_LOG_CALLS                             GR_DEBUG
+    #ifdef SK_DEBUG
+        #define GR_GL_LOG_CALLS 1
+    #else
+        #define GR_GL_LOG_CALLS 0
+    #endif
 #endif
 
 #if !defined(GR_GL_LOG_CALLS_START)
@@ -115,7 +119,11 @@
 #endif
 
 #if !defined(GR_GL_CHECK_ERROR)
-    #define GR_GL_CHECK_ERROR                           GR_DEBUG
+    #ifdef SK_DEBUG
+        #define GR_GL_CHECK_ERROR 1
+    #else
+        #define GR_GL_CHECK_ERROR 0
+    #endif
 #endif
 
 #if !defined(GR_GL_CHECK_ERROR_START)
@@ -160,6 +168,15 @@
 
 #if !defined(GR_GL_USE_NEW_SHADER_SOURCE_SIGNATURE)
     #define GR_GL_USE_NEW_SHADER_SOURCE_SIGNATURE       0
+#endif
+
+// We now have a separate GrGLInterface function pointer entry for the IMG/EXT version of
+// glRenderbufferStorageMultisampled. However, Chrome is setting the one we now use for
+// ES3 MSAA to point to the IMG/EXT function. This macro exists to make Skia ignore the
+// ES3 MSAA and instead use the IMG/EXT version with the old function pointer entry. It will
+// be removed as soon as Chrome is updated to set the new function pointer.
+#if !defined(GR_GL_IGNORE_ES3_MSAA)
+    #define GR_GL_IGNORE_ES3_MSAA 0
 #endif
 
 /**

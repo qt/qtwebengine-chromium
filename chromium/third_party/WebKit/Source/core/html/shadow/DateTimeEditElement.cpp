@@ -31,7 +31,7 @@
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/MouseEvent.h"
 #include "core/dom/Text.h"
-#include "core/html/DateTimeFieldsState.h"
+#include "core/html/forms/DateTimeFieldsState.h"
 #include "core/html/shadow/DateTimeFieldElements.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/platform/DateComponents.h"
@@ -144,7 +144,7 @@ void DateTimeEditBuilder::visitField(DateTimeFormat::FieldType fieldType, int co
     const int countForAbbreviatedMonth = 3;
     const int countForFullMonth = 4;
     const int countForNarrowMonth = 5;
-    Document* const document = m_editElement.document();
+    Document& document = m_editElement.document();
 
     switch (fieldType) {
     case DateTimeFormat::FieldTypeDayOfMonth: {
@@ -410,7 +410,7 @@ void DateTimeEditBuilder::visitLiteral(const String& text)
             element->appendChild(Text::create(m_editElement.document(), String(&rightToLeftMark, 1)));
     }
     element->appendChild(Text::create(m_editElement.document(), text));
-    m_editElement.fieldsWrapperElement()->appendChild(element, ASSERT_NO_EXCEPTION, AttachLazily);
+    m_editElement.fieldsWrapperElement()->appendChild(element);
 }
 
 DateTimeNumericFieldElement::Step DateTimeEditBuilder::createStep(double msPerFieldUnit, double msPerFieldSize) const
@@ -440,7 +440,7 @@ DateTimeEditElement::EditControlOwner::~EditControlOwner()
 {
 }
 
-DateTimeEditElement::DateTimeEditElement(Document* document, EditControlOwner& editControlOwner)
+DateTimeEditElement::DateTimeEditElement(Document& document, EditControlOwner& editControlOwner)
     : HTMLDivElement(divTag, document)
     , m_editControlOwner(&editControlOwner)
 {
@@ -464,7 +464,7 @@ void DateTimeEditElement::addField(PassRefPtr<DateTimeFieldElement> field)
     if (m_fields.size() == m_fields.capacity())
         return;
     m_fields.append(field.get());
-    fieldsWrapperElement()->appendChild(field, ASSERT_NO_EXCEPTION, AttachLazily);
+    fieldsWrapperElement()->appendChild(field);
 }
 
 bool DateTimeEditElement::anyEditableFieldsHaveValues() const
@@ -482,7 +482,7 @@ void DateTimeEditElement::blurByOwner()
         field->blur();
 }
 
-PassRefPtr<DateTimeEditElement> DateTimeEditElement::create(Document* document, EditControlOwner& editControlOwner)
+PassRefPtr<DateTimeEditElement> DateTimeEditElement::create(Document& document, EditControlOwner& editControlOwner)
 {
     RefPtr<DateTimeEditElement> container = adoptRef(new DateTimeEditElement(document, editControlOwner));
     container->setPart(AtomicString("-webkit-datetime-edit", AtomicString::ConstructFromLiteral));
@@ -573,7 +573,7 @@ DateTimeFieldElement* DateTimeEditElement::focusedField() const
 
 size_t DateTimeEditElement::focusedFieldIndex() const
 {
-    Element* const focusedFieldElement = document()->focusedElement();
+    Element* const focusedFieldElement = document().focusedElement();
     for (size_t fieldIndex = 0; fieldIndex < m_fields.size(); ++fieldIndex) {
         if (m_fields[fieldIndex] == focusedFieldElement)
             return fieldIndex;
@@ -653,7 +653,7 @@ void DateTimeEditElement::layout(const LayoutParameters& layoutParameters, const
     if (!firstChild()) {
         RefPtr<HTMLDivElement> element = HTMLDivElement::create(document());
         element->setPart(fieldsWrapperPseudoId);
-        appendChild(element.get(), ASSERT_NO_EXCEPTION, AttachLazily);
+        appendChild(element.get());
     }
     Element* fieldsWrapper = fieldsWrapperElement();
 

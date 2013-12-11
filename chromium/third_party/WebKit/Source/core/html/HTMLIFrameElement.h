@@ -30,12 +30,12 @@ namespace WebCore {
 
 class HTMLIFrameElement FINAL : public HTMLFrameElementBase {
 public:
-    static PassRefPtr<HTMLIFrameElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<HTMLIFrameElement> create(const QualifiedName&, Document&);
 
     bool shouldDisplaySeamlessly() const;
 
 private:
-    HTMLIFrameElement(const QualifiedName&, Document*);
+    HTMLIFrameElement(const QualifiedName&, Document&);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
@@ -44,13 +44,14 @@ private:
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
 
-    virtual bool rendererIsNeeded(const NodeRenderingContext&);
+    virtual bool rendererIsNeeded(const RenderStyle&);
     virtual RenderObject* createRenderer(RenderStyle*);
 
-    virtual void didRecalcStyle(StyleChange) OVERRIDE;
+    virtual void didRecalcStyle(StyleRecalcChange) OVERRIDE;
 
     virtual bool loadedNonEmptyDocument() const OVERRIDE { return m_didLoadNonEmptyDocument; }
     virtual void didLoadNonEmptyDocument() OVERRIDE { m_didLoadNonEmptyDocument = true; }
+    virtual bool isInteractiveContent() const OVERRIDE;
 
     AtomicString m_name;
     bool m_didLoadNonEmptyDocument;

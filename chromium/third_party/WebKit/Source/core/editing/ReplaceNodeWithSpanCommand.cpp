@@ -52,12 +52,12 @@ static void swapInNodePreservingAttributesAndChildren(HTMLElement* newNode, HTML
 {
     ASSERT(nodeToReplace->inDocument());
     RefPtr<ContainerNode> parentNode = nodeToReplace->parentNode();
-    parentNode->insertBefore(newNode, nodeToReplace, ASSERT_NO_EXCEPTION);
+    parentNode->insertBefore(newNode, nodeToReplace);
 
     NodeVector children;
     getChildNodes(nodeToReplace, children);
     for (size_t i = 0; i < children.size(); ++i)
-        newNode->appendChild(children[i], ASSERT_NO_EXCEPTION);
+        newNode->appendChild(children[i]);
 
     // FIXME: Fix this to send the proper MutationRecords when MutationObservers are present.
     newNode->cloneDataFromElement(*nodeToReplace);
@@ -80,13 +80,5 @@ void ReplaceNodeWithSpanCommand::doUnapply()
         return;
     swapInNodePreservingAttributesAndChildren(m_elementToReplace.get(), m_spanElement.get());
 }
-
-#ifndef NDEBUG
-void ReplaceNodeWithSpanCommand::getNodesInCommand(HashSet<Node*>& nodes)
-{
-    addNodeAndDescendants(m_elementToReplace.get(), nodes);
-    addNodeAndDescendants(m_spanElement.get(), nodes);
-}
-#endif
 
 } // namespace WebCore

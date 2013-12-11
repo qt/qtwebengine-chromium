@@ -70,7 +70,7 @@ void DragCaretController::setCaretPosition(const VisiblePosition& position)
     Document* document = 0;
     if (Node* node = m_position.deepEquivalent().deprecatedNode()) {
         invalidateCaretRect(node);
-        document = node->document();
+        document = &node->document();
     }
     if (m_position.isNull() || m_position.isOrphan())
         clearCaretRect();
@@ -95,7 +95,7 @@ static bool removingNodeRemovesPosition(Node* node, const Position& position)
 
 static void clearRenderViewSelection(const Position& position)
 {
-    RefPtr<Document> document = position.anchorNode()->document();
+    RefPtr<Document> document = position.document();
     document->updateStyleIfNeeded();
     if (RenderView* view = document->renderView())
         view->clearSelection();
@@ -133,7 +133,7 @@ RenderObject* CaretBase::caretRenderer(Node* node)
         return 0;
 
     // if caretNode is a block and caret is inside it then caret should be painted by that block
-    bool paintedByBlock = renderer->isBlockFlow() && caretRendersInsideNode(node);
+    bool paintedByBlock = renderer->isRenderBlock() && caretRendersInsideNode(node);
     return paintedByBlock ? renderer : renderer->containingBlock();
 }
 
@@ -209,8 +209,11 @@ void CaretBase::repaintCaretForLocalRect(Node* node, const LayoutRect& rect)
 bool CaretBase::shouldRepaintCaret(const RenderView* view, bool isContentEditable) const
 {
     ASSERT(view);
-    Frame* frame = view->frameView() ? view->frameView()->frame() : 0; // The frame where the selection started.
-    bool caretBrowsing = frame && frame->settings() && frame->settings()->caretBrowsingEnabled();
+    bool caretBrowsing = false;
+    if (FrameView* frameView = view->frameView()) {
+        Frame& frame = frameView->frame(); // The frame where the selection started
+        caretBrowsing = frame.settings() && frame.settings()->caretBrowsingEnabled();
+    }
     return (caretBrowsing || isContentEditable);
 }
 
@@ -232,7 +235,7 @@ void CaretBase::invalidateCaretRect(Node* node, bool caretRectChanged)
     if (caretRectChanged)
         return;
 
-    if (RenderView* view = node->document()->renderView()) {
+    if (RenderView* view = node->document().renderView()) {
         if (shouldRepaintCaret(view, node->isContentEditable(Node::UserSelectAllIsAlwaysNonEditable)))
             repaintCaretForLocalRect(node, localCaretRectWithoutUpdate());
     }
@@ -268,7 +271,7 @@ void CaretBase::paintCaret(Node* node, GraphicsContext* context, const LayoutPoi
 
 void DragCaretController::paintDragCaret(Frame* frame, GraphicsContext* p, const LayoutPoint& paintOffset, const LayoutRect& clipRect) const
 {
-    if (m_position.deepEquivalent().deprecatedNode()->document()->frame() == frame)
+    if (m_position.deepEquivalent().deprecatedNode()->document().frame() == frame)
         paintCaret(m_position.deepEquivalent().deprecatedNode(), p, paintOffset, clipRect);
 }
 

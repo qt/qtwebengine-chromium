@@ -47,7 +47,6 @@ class KeyboardEvent;
 class Node;
 class Range;
 class SharedBuffer;
-class SpellChecker;
 class StylePropertySet;
 class TextCheckerClient;
 class VisibleSelection;
@@ -98,7 +97,7 @@ public:
     virtual void textDidChangeInTextField(Element*) = 0;
     virtual bool doTextFieldCommandFromEvent(Element*, KeyboardEvent*) = 0;
 
-    virtual TextCheckerClient* textChecker() = 0;
+    virtual TextCheckerClient& textChecker() = 0;
 
     virtual void updateSpellingUIWithMisspelledWord(const String&) = 0;
     virtual void showSpellingUI(bool show) = 0;

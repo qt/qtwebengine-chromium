@@ -5,9 +5,11 @@
 #ifndef UI_GFX_SCREEN_H_
 #define UI_GFX_SCREEN_H_
 
+#include <vector>
+
 #include "base/basictypes.h"
-#include "ui/base/ui_export.h"
 #include "ui/gfx/display.h"
+#include "ui/gfx/gfx_export.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/screen_type_delegate.h"
@@ -18,6 +20,11 @@ class Rect;
 
 // A utility class for getting various info about screen size, displays,
 // cursor position, etc.
+//
+// Note that this class does not represent an individual display connected to a
+// computer -- see the Display class for that. A single Screen object exists on
+// most operating systems regardless of the number of connected displays. On
+// Windows 8, two Screens exist: one for Metro UI and another for the desktop.
 class UI_EXPORT Screen {
  public:
   // Retrieves the Screen that the specified NativeView belongs to. A value of
@@ -50,17 +57,23 @@ class UI_EXPORT Screen {
   virtual gfx::Point GetCursorScreenPoint() = 0;
 
   // Returns the window under the cursor.
-  virtual gfx::NativeWindow GetWindowAtCursorScreenPoint() = 0;
+  virtual gfx::NativeWindow GetWindowUnderCursor() = 0;
+
+  // Returns the window at the given screen coordinate |point|.
+  virtual gfx::NativeWindow GetWindowAtScreenPoint(const gfx::Point& point) = 0;
 
   // Returns the number of displays.
   // Mirrored displays are excluded; this method is intended to return the
   // number of distinct, usable displays.
-  virtual int GetNumDisplays() = 0;
+  virtual int GetNumDisplays() const = 0;
+
+  // Returns the list of displays that are currently available.
+  virtual std::vector<gfx::Display> GetAllDisplays() const = 0;
 
   // Returns the display nearest the specified window.
   virtual gfx::Display GetDisplayNearestWindow(NativeView view) const = 0;
 
-  // Returns the the display nearest the specified point.
+  // Returns the display nearest the specified point.
   virtual gfx::Display GetDisplayNearestPoint(
       const gfx::Point& point) const = 0;
 

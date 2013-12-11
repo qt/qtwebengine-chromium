@@ -566,10 +566,10 @@ void GraphicStackState::updateDrawingState(const GraphicStateEntry& state) {
     }
 }
 
-SkDevice* SkPDFDevice::onCreateCompatibleDevice(SkBitmap::Config config,
-                                                int width, int height,
-                                                bool isOpaque,
-                                                Usage usage) {
+SkBaseDevice* SkPDFDevice::onCreateCompatibleDevice(SkBitmap::Config config,
+                                                    int width, int height,
+                                                    bool isOpaque,
+                                                    Usage usage) {
     SkMatrix initialTransform;
     initialTransform.reset();
     SkISize size = SkISize::Make(width, height);
@@ -580,14 +580,14 @@ SkDevice* SkPDFDevice::onCreateCompatibleDevice(SkBitmap::Config config,
 struct ContentEntry {
     GraphicStateEntry fState;
     SkDynamicMemoryWStream fContent;
-    SkTScopedPtr<ContentEntry> fNext;
+    SkAutoTDelete<ContentEntry> fNext;
 
     // If the stack is too deep we could get Stack Overflow.
     // So we manually destruct the object.
     ~ContentEntry() {
-        ContentEntry* val = fNext.release();
+        ContentEntry* val = fNext.detach();
         while (val != NULL) {
-            ContentEntry* valNext = val->fNext.release();
+            ContentEntry* valNext = val->fNext.detach();
             // When the destructor is called, fNext is NULL and exits.
             delete val;
             val = valNext;
@@ -632,6 +632,16 @@ private:
     void init(const SkClipStack* clipStack, const SkRegion& clipRegion,
               const SkMatrix& matrix, const SkPaint& paint, bool hasText) {
         fDstFormXObject = NULL;
+        if (matrix.hasPerspective() ||
+                (paint.getShader() &&
+                 paint.getShader()->getLocalMatrix().hasPerspective())) {
+            // Just report that PDF does not supports perspective
+            // TODO(edisonn): update the shape when possible
+            // or dump in an image otherwise
+            NOT_IMPLEMENTED(true, false);
+            return;
+        }
+
         if (paint.getXfermode()) {
             paint.getXfermode()->asMode(&fXfermode);
         }
@@ -672,13 +682,18 @@ static inline SkBitmap makeContentBitmap(const SkISize& contentSize,
 // TODO(vandebo) change pageSize to SkSize.
 SkPDFDevice::SkPDFDevice(const SkISize& pageSize, const SkISize& contentSize,
                          const SkMatrix& initialTransform)
-    : SkDevice(makeContentBitmap(contentSize, &initialTransform)),
+    : SkBitmapDevice(makeContentBitmap(contentSize, &initialTransform)),
       fPageSize(pageSize),
       fContentSize(contentSize),
       fLastContentEntry(NULL),
       fLastMarginContentEntry(NULL),
       fClipStack(NULL),
       fEncoder(NULL) {
+    // just report that PDF does not supports perspective
+    // TODO(edisonn): update the shape when possible
+    // or dump in an image otherwise
+    NOT_IMPLEMENTED(initialTransform.hasPerspective(), true);
+
     // Skia generally uses the top left as the origin but PDF natively has the
     // origin at the bottom left. This matrix corrects for that.  But that only
     // needs to be done once, we don't do it when layering.
@@ -696,7 +711,7 @@ SkPDFDevice::SkPDFDevice(const SkISize& pageSize, const SkISize& contentSize,
 SkPDFDevice::SkPDFDevice(const SkISize& layerSize,
                          const SkClipStack& existingClipStack,
                          const SkRegion& existingClipRegion)
-    : SkDevice(makeContentBitmap(layerSize, NULL)),
+    : SkBitmapDevice(makeContentBitmap(layerSize, NULL)),
       fPageSize(layerSize),
       fContentSize(layerSize),
       fExistingClipStack(existingClipStack),
@@ -715,12 +730,12 @@ SkPDFDevice::~SkPDFDevice() {
 void SkPDFDevice::init() {
     fAnnotations = NULL;
     fResourceDict = NULL;
-    fContentEntries.reset();
+    fContentEntries.free();
     fLastContentEntry = NULL;
-    fMarginContentEntries.reset();
+    fMarginContentEntries.free();
     fLastMarginContentEntry = NULL;
     fDrawingArea = kContent_DrawingArea;
-    if (fFontGlyphUsage == NULL) {
+    if (fFontGlyphUsage.get() == NULL) {
         fFontGlyphUsage.reset(new SkPDFGlyphSetMap());
     }
 }
@@ -771,10 +786,8 @@ void SkPDFDevice::internalDrawPaint(const SkPaint& paint,
     }
     SkRect bbox = SkRect::MakeWH(SkIntToScalar(this->width()),
                                  SkIntToScalar(this->height()));
-    SkMatrix totalTransform = fInitialTransform;
-    totalTransform.preConcat(contentEntry->fState.fMatrix);
     SkMatrix inverse;
-    if (!totalTransform.invert(&inverse)) {
+    if (!contentEntry->fState.fMatrix.invert(&inverse)) {
         return;
     }
     inverse.mapRect(&bbox);
@@ -915,6 +928,7 @@ void SkPDFDevice::drawPath(const SkDraw& d, const SkPath& origPath,
             origPath.transform(*prePathMatrix, pathPtr);
         } else {
             if (!matrix.preConcat(*prePathMatrix)) {
+                // TODO(edisonn): report somehow why we failed?
                 return;
             }
         }
@@ -964,7 +978,9 @@ void SkPDFDevice::drawPath(const SkDraw& d, const SkPath& origPath,
 
 void SkPDFDevice::drawBitmapRect(const SkDraw& draw, const SkBitmap& bitmap,
                                  const SkRect* src, const SkRect& dst,
-                                 const SkPaint& paint) {
+                                 const SkPaint& paint,
+                                 SkCanvas::DrawBitmapRectFlags flags) {
+    // TODO: this code path must be updated to respect the flags parameter
     SkMatrix    matrix;
     SkRect      bitmapBounds, tmpSrc, tmpDst;
     SkBitmap    tmpBitmap;
@@ -1151,11 +1167,11 @@ void SkPDFDevice::drawVertices(const SkDraw& d, SkCanvas::VertexMode,
     NOT_IMPLEMENTED("drawVerticies", true);
 }
 
-void SkPDFDevice::drawDevice(const SkDraw& d, SkDevice* device, int x, int y,
+void SkPDFDevice::drawDevice(const SkDraw& d, SkBaseDevice* device, int x, int y,
                              const SkPaint& paint) {
     if ((device->getDeviceCapabilities() & kVector_Capability) == 0) {
         // If we somehow get a raster device, do what our parent would do.
-        SkDevice::drawDevice(d, device, x, y, paint);
+        INHERITED::drawDevice(d, device, x, y, paint);
         return;
     }
 
@@ -1202,7 +1218,7 @@ ContentEntry* SkPDFDevice::getLastContentEntry() {
     }
 }
 
-SkTScopedPtr<ContentEntry>* SkPDFDevice::getContentEntries() {
+SkAutoTDelete<ContentEntry>* SkPDFDevice::getContentEntries() {
     if (fDrawingArea == kContent_DrawingArea) {
         return &fContentEntries;
     } else {
@@ -1648,7 +1664,7 @@ ContentEntry* SkPDFDevice::setUpContentEntry(const SkClipStack* clipStack,
     }
 
     ContentEntry* entry;
-    SkTScopedPtr<ContentEntry> newEntry;
+    SkAutoTDelete<ContentEntry> newEntry;
 
     ContentEntry* lastContentEntry = getLastContentEntry();
     if (lastContentEntry && lastContentEntry->fContent.getOffset() == 0) {
@@ -1665,18 +1681,18 @@ ContentEntry* SkPDFDevice::setUpContentEntry(const SkClipStack* clipStack,
         return lastContentEntry;
     }
 
-    SkTScopedPtr<ContentEntry>* contentEntries = getContentEntries();
+    SkAutoTDelete<ContentEntry>* contentEntries = getContentEntries();
     if (!lastContentEntry) {
         contentEntries->reset(entry);
         setLastContentEntry(entry);
     } else if (xfermode == SkXfermode::kDstOver_Mode) {
-        entry->fNext.reset(contentEntries->release());
+        entry->fNext.reset(contentEntries->detach());
         contentEntries->reset(entry);
     } else {
         lastContentEntry->fNext.reset(entry);
         setLastContentEntry(entry);
     }
-    newEntry.release();
+    newEntry.detach();
     return entry;
 }
 

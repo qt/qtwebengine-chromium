@@ -22,6 +22,7 @@ kb-keyboard {
 }
 
 kb-shift-key,
+kb-hide-keyboard-key,
 kb-layout-selector,
 kb-key {
   background-color: #3b3b3e;
@@ -32,9 +33,9 @@ kb-key {
   border-radius: 2px;
   color: #ffffff;
   display: -webkit-box;
-  font-family: 'Open Sans', sans-serif;
+  font-family: 'Open Sans', 'Noto Sans UI', sans-serif;
   font-weight: 300;
-  margin-left: 7px;
+  margin-left: 0.25em;
   position: relative;
 }
 
@@ -45,14 +46,14 @@ kb-key::x-key {
   height: 1.2em;
   left: 0;
   margin: auto;
-  padding-left: 10px;
-  padding-right: 10px;
+  padding-left: 0.7em;
+  padding-right: 0.7em;
   position: absolute;
   right: 0;
   top: 0;
 }
 
-kb-key::x-superscript {
+kb-key::x-hinttext {
   color: #7c7c7c;
   font-size: 70%;
   position: absolute;
@@ -64,13 +65,19 @@ kb-key::x-key[inverted] {
   color: #7c7c7c;
 }
 
-kb-key::x-superscript[inverted] {
+kb-key::x-hinttext[inverted] {
   color: #ffffff;
 }
 
-kb-shift-key.dark,
-kb-layout-selector.dark,
-kb-key.dark {
+/**
+* Controls whether the shift key should be highlighted or not.
+* Only highlights if we are in the upper keyset, but not capslocked.
+*/
+kb-keyboard:not(.caps-locked)[keyset=upper] kb-shift-key {
+  color: lightblue;
+}
+
+*.dark {
   background-color: #2a2a2c;
   border-top: 2px solid #3a3a3c;
 }
@@ -87,6 +94,7 @@ kb-altkey::x-key {
   text-align: center;
 }
 
+.caps-locked kb-shift-key,
 .active {
   background-color: #848490 !important;
   border-top: 2px solid #A9A9AF !important;
@@ -137,25 +145,29 @@ kb-altkey::x-key {
   -webkit-box-flex: 0.6 !important;
 }
 
-.backspace,
-.dotcom,
-.left-more,
-.shift,
-.return,
-.right-more,
-.symbol,
-.tab {
+kb-shift-key.shift,
+kb-key:-webkit-any(.backspace,
+                   .dotcom,
+                   .left-more,
+                   .return,
+                   .symbol,
+                   .tab) {
   font-size: 70%;
+  /* Adjust margin for consistent spacing with the smaller font size. */
+  margin-left: 0.35em;
 }
 
 .microphone {
   background-image: url('images/microphone.svg');
+  background-position: 4%;
+  background-size: 25%;
 }
 
 .audio .microphone {
   background-image: url('images/microphone-green.svg');
 }
 
+.hide-keyboard,
 .layout-selector {
   background-image: url('images/keyboard.svg');
 }

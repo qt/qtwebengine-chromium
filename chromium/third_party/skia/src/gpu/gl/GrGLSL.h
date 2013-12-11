@@ -12,6 +12,7 @@
 #include "GrColor.h"
 #include "GrTypesPriv.h"
 
+class GrGLContextInfo;
 class GrGLShaderVar;
 class SkString;
 
@@ -61,14 +62,14 @@ static inline int GrSLTypeToVecLength(GrSLType type) {
 static inline const char* GrGLSLOnesVecf(int count) {
     static const char* kONESVEC[] = {"ERROR", "1.0", "vec2(1,1)",
                                      "vec3(1,1,1)", "vec4(1,1,1,1)"};
-    GrAssert(count >= 1 && count < (int)GR_ARRAY_COUNT(kONESVEC));
+    SkASSERT(count >= 1 && count < (int)GR_ARRAY_COUNT(kONESVEC));
     return kONESVEC[count];
 }
 
 static inline const char* GrGLSLZerosVecf(int count) {
     static const char* kZEROSVEC[] = {"ERROR", "0.0", "vec2(0,0)",
                                       "vec3(0,0,0)", "vec4(0,0,0,0)"};
-    GrAssert(count >= 1 && count < (int)GR_ARRAY_COUNT(kZEROSVEC));
+    SkASSERT(count >= 1 && count < (int)GR_ARRAY_COUNT(kZEROSVEC));
     return kZEROSVEC[count];
 }
 }
@@ -83,8 +84,7 @@ GrGLSLGeneration GrGetGLSLGeneration(GrGLBinding binding,
  * Returns a string to include at the beginning of a shader to declare the GLSL
  * version.
  */
-const char* GrGetGLSLVersionDecl(GrGLBinding binding,
-                                 GrGLSLGeneration v);
+const char* GrGetGLSLVersionDecl(const GrGLContextInfo&);
 
 /**
  * Depending on the GLSL version being emitted there may be an assumed output

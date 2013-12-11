@@ -152,12 +152,8 @@ bool TypeFeedbackOracle::StoreIsMonomorphicNormal(TypeFeedbackId ast_id) {
   if (map_or_code->IsMap()) return true;
   if (map_or_code->IsCode()) {
     Handle<Code> code = Handle<Code>::cast(map_or_code);
-    bool standard_store = FLAG_compiled_keyed_stores ||
-        (Code::GetKeyedAccessStoreMode(code->extra_ic_state()) ==
-         STANDARD_STORE);
     bool preliminary_checks =
         code->is_keyed_store_stub() &&
-        standard_store &&
         code->ic_state() == MONOMORPHIC &&
         Code::ExtractTypeFromFlags(code->flags()) == Code::NORMAL;
     if (!preliminary_checks) return false;
@@ -174,10 +170,7 @@ bool TypeFeedbackOracle::StoreIsKeyedPolymorphic(TypeFeedbackId ast_id) {
   Handle<Object> map_or_code = GetInfo(ast_id);
   if (map_or_code->IsCode()) {
     Handle<Code> code = Handle<Code>::cast(map_or_code);
-    bool standard_store = FLAG_compiled_keyed_stores ||
-        (Code::GetKeyedAccessStoreMode(code->extra_ic_state()) ==
-         STANDARD_STORE);
-    return code->is_keyed_store_stub() && standard_store &&
+    return code->is_keyed_store_stub() &&
         code->ic_state() == POLYMORPHIC;
   }
   return false;
@@ -381,17 +374,6 @@ void TypeFeedbackOracle::CompareType(TypeFeedbackId id,
     *combined_type = stub.GetType(isolate_, map);
     *left_type = *right_type = stub.GetInputType(isolate_, map);
   }
-}
-
-
-Handle<Type> TypeFeedbackOracle::UnaryType(TypeFeedbackId id) {
-  Handle<Object> object = GetInfo(id);
-  if (!object->IsCode()) {
-    return handle(Type::None(), isolate());
-  }
-  Handle<Code> code = Handle<Code>::cast(object);
-  ASSERT(code->is_unary_op_stub());
-  return UnaryOpStub(code->extended_extra_ic_state()).GetType(isolate());
 }
 
 
@@ -658,7 +640,6 @@ void TypeFeedbackOracle::ProcessRelocInfos(ZoneList<RelocInfo>* infos) {
         }
         break;
 
-      case Code::UNARY_OP_IC:
       case Code::BINARY_OP_IC:
       case Code::COMPARE_IC:
       case Code::TO_BOOLEAN_IC:

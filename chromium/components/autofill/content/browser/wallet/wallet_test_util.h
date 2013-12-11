@@ -27,15 +27,27 @@ scoped_ptr<WalletItems::LegalDocument> GetTestLegalDocument();
 scoped_ptr<WalletItems::MaskedInstrument> GetTestMaskedInstrument();
 scoped_ptr<WalletItems::MaskedInstrument> GetTestMaskedInstrumentExpired();
 scoped_ptr<WalletItems::MaskedInstrument> GetTestMaskedInstrumentInvalid();
-scoped_ptr<WalletItems::MaskedInstrument> GetTestMaskedInstrumentAmex();
+scoped_ptr<WalletItems::MaskedInstrument> GetTestMaskedInstrumentAmex(
+    AmexPermission amex_permission);
 scoped_ptr<WalletItems::MaskedInstrument> GetTestNonDefaultMaskedInstrument();
+scoped_ptr<WalletItems::MaskedInstrument> GetTestMaskedInstrumentWithId(
+    const std::string& id);
 scoped_ptr<WalletItems::MaskedInstrument>
     GetTestMaskedInstrumentWithIdAndAddress(
         const std::string& id, scoped_ptr<Address> address);
+scoped_ptr<WalletItems::MaskedInstrument> GetTestMaskedInstrumentWithDetails(
+    const std::string& id,
+    scoped_ptr<Address> address,
+    WalletItems::MaskedInstrument::Type type,
+    WalletItems::MaskedInstrument::Status status);
 scoped_ptr<Address> GetTestSaveableAddress();
 scoped_ptr<Address> GetTestShippingAddress();
 scoped_ptr<Address> GetTestNonDefaultShippingAddress();
-scoped_ptr<WalletItems> GetTestWalletItems();
+scoped_ptr<WalletItems> GetTestWalletItems(AmexPermission amex_permission);
+scoped_ptr<WalletItems> GetTestWalletItemsWithDefaultIds(
+    const std::string& default_instrument_id,
+    const std::string& default_address_id,
+    AmexPermission amex_permission);
 
 }  // namespace wallet
 }  // namespace autofill

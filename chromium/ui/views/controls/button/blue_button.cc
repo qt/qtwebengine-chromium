@@ -63,7 +63,12 @@ BlueButton::BlueButton(ButtonListener* listener, const string16& text)
   button_border->SetPainter(true, STATE_DISABLED,
       Painter::CreateImagePainter(
           *rb.GetImageSkiaNamed(IDR_BLUE_BUTTON_DISABLED), insets));
+}
 
+BlueButton::~BlueButton() {}
+
+void BlueButton::ResetColorsFromNativeTheme() {
+  LabelButton::ResetColorsFromNativeTheme();
   if (!gfx::IsInvertedColorScheme()) {
     for (size_t state = STATE_NORMAL; state < STATE_COUNT; ++state)
       SetTextColor(static_cast<ButtonState>(state), kBlueButtonTextColor);
@@ -72,15 +77,8 @@ BlueButton::BlueButton(ButtonListener* listener, const string16& text)
   }
 }
 
-BlueButton::~BlueButton() {}
-
 const char* BlueButton::GetClassName() const {
   return BlueButton::kViewClassName;
-}
-
-// TODO(msw): Re-enable animations for blue buttons. See crbug.com/239121.
-const ui::Animation* BlueButton::GetThemeAnimation() const {
-  return NULL;
 }
 
 }  // namespace views

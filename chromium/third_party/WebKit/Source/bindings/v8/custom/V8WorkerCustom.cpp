@@ -29,13 +29,12 @@
  */
 
 #include "config.h"
-
 #include "V8Worker.h"
+
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/SerializedScriptValue.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8Utilities.h"
-#include "core/page/Frame.h"
 #include "core/workers/Worker.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "wtf/ArrayBuffer.h"

@@ -14,14 +14,15 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/test/layouttest_support.h"
 #include "content/shell/app/webkit_test_platform_support.h"
+#include "content/shell/browser/shell_browser_main.h"
+#include "content/shell/browser/shell_content_browser_client.h"
 #include "content/shell/common/shell_switches.h"
 #include "content/shell/renderer/shell_content_renderer_client.h"
-#include "content/shell/shell_browser_main.h"
-#include "content/shell/shell_content_browser_client.h"
 #include "net/cookies/cookie_monster.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/gfx/switches.h"
 #include "ui/gl/gl_switches.h"
 
 #include "ipc/ipc_message.h"  // For IPC_MESSAGE_LOG_ENABLED.
@@ -124,9 +125,6 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
         switches::kUseGL, gfx::kGLImplementationOSMesaName);
 #endif
     command_line.AppendSwitch(switches::kSkipGpuDataLoading);
-    command_line.AppendSwitch(switches::kDisableGpuVsync);
-    command_line.AppendSwitch(switches::kEnableExperimentalWebPlatformFeatures);
-    command_line.AppendSwitch(switches::kEnableCssShaders);
     command_line.AppendSwitchASCII(switches::kTouchEvents,
                                    switches::kTouchEventsEnabled);
     command_line.AppendSwitch(switches::kEnableGestureTapHighlight);
@@ -138,6 +136,12 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
     // painting is enabled. See http://crbug.com/250777
     command_line.AppendSwitch(cc::switches::kDisableImplSidePainting);
 #endif
+
+    if (!command_line.HasSwitch(switches::kStableReleaseMode)) {
+      command_line.AppendSwitch(
+        switches::kEnableExperimentalWebPlatformFeatures);
+      command_line.AppendSwitch(switches::kEnableCssShaders);
+    }
 
     if (!command_line.HasSwitch(switches::kEnableThreadedCompositing))
       command_line.AppendSwitch(cc::switches::kDisableThreadedAnimation);

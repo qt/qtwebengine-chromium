@@ -25,9 +25,9 @@
 
 #include <time.h>
 
-#include "base/atomicops.h"
 #include "base/base_export.h"
 #include "base/basictypes.h"
+#include "build/build_config.h"
 
 #if defined(OS_MACOSX)
 #include <CoreFoundation/CoreFoundation.h>
@@ -299,6 +299,10 @@ class BASE_EXPORT Time {
   // https://developer.mozilla.org/en/JavaScript/Reference/Global_Objects/Date/getTime.
   static Time FromJsTime(double ms_since_epoch);
   double ToJsTime() const;
+
+  // Converts to Java convention for times, a number of
+  // milliseconds since the epoch.
+  int64 ToJavaTime() const;
 
 #if defined(OS_POSIX)
   static Time FromTimeVal(struct timeval t);
@@ -572,6 +576,17 @@ class BASE_EXPORT TimeTicks {
   // Returns true if the high resolution clock is working on this system.
   // This is only for testing.
   static bool IsHighResClockWorking();
+
+  // Enable high resolution time for TimeTicks::Now(). This function will
+  // test for the availability of a working implementation of
+  // QueryPerformanceCounter(). If one is not available, this function does
+  // nothing and the resolution of Now() remains 1ms. Otherwise, all future
+  // calls to TimeTicks::Now() will have the higher resolution provided by QPC.
+  // Returns true if high resolution time was successfully enabled.
+  static bool SetNowIsHighResNowIfSupported();
+
+  // Returns a time value that is NOT rollover protected.
+  static TimeTicks UnprotectedNow();
 #endif
 
   // Returns true if this object has not been initialized.

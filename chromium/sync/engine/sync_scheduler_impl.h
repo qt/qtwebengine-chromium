@@ -23,7 +23,6 @@
 #include "sync/engine/nudge_source.h"
 #include "sync/engine/sync_scheduler.h"
 #include "sync/engine/syncer.h"
-#include "sync/internal_api/public/base/model_type_invalidation_map.h"
 #include "sync/internal_api/public/engine/polling_constants.h"
 #include "sync/internal_api/public/util/weak_handle.h"
 #include "sync/sessions/nudge_tracker.h"
@@ -55,7 +54,7 @@ class SYNC_EXPORT_PRIVATE SyncSchedulerImpl
   virtual void Start(Mode mode) OVERRIDE;
   virtual bool ScheduleConfiguration(
       const ConfigurationParams& params) OVERRIDE;
-  virtual void RequestStop() OVERRIDE;
+  virtual void Stop() OVERRIDE;
   virtual void ScheduleLocalNudge(
       const base::TimeDelta& desired_delay,
       ModelTypeSet types,
@@ -66,7 +65,7 @@ class SYNC_EXPORT_PRIVATE SyncSchedulerImpl
       const tracked_objects::Location& nudge_location) OVERRIDE;
   virtual void ScheduleInvalidationNudge(
       const base::TimeDelta& desired_delay,
-      const ModelTypeInvalidationMap& invalidation_map,
+      const ObjectIdInvalidationMap& invalidation_map,
       const tracked_objects::Location& nudge_location) OVERRIDE;
   virtual void SetNotificationsEnabled(bool notifications_enabled) OVERRIDE;
 
@@ -181,9 +180,6 @@ class SYNC_EXPORT_PRIVATE SyncSchedulerImpl
 
   // Determines if we're allowed to contact the server right now.
   bool CanRunNudgeJobNow(JobPriority priority);
-
-  // 'Impl' here refers to real implementation of public functions.
-  void StopImpl();
 
   // If the scheduler's current state supports it, this will create a job based
   // on the passed in parameters and coalesce it with any other pending jobs,

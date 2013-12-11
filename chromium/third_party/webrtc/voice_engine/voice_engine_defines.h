@@ -27,9 +27,6 @@
 
 namespace webrtc {
 
-// TODO(ajm): There's not really a reason for this limitation. Remove it.
-enum { kVoiceEngineMaxNumChannels = 100 };
-
 // VolumeControl
 enum { kMinVolumeLevel = 0 };
 enum { kMaxVolumeLevel = 255 };
@@ -139,12 +136,6 @@ enum { kVoiceEngineMaxRtpExtensionId = 14 };
 #define WEBRTC_VOICE_ENGINE_RX_NS_DEFAULT_MODE NoiseSuppression::kModerate
     // AudioProcessing RX NS mode
 
-// Macros
-// Comparison of two strings without regard to case
-#define STR_CASE_CMP(x,y) ::_stricmp(x,y)
-// Compares characters of two strings without regard to case
-#define STR_NCASE_CMP(x,y,n) ::_strnicmp(x,y,n)
-
 // ----------------------------------------------------------------------------
 //  Build information macros
 // ----------------------------------------------------------------------------
@@ -228,6 +219,8 @@ inline int VoEChannelId(int moduleId)
 
 #if defined(_WIN32)
 
+  #include <windows.h>
+
   #pragma comment( lib, "winmm.lib" )
 
   #ifndef WEBRTC_EXTERNAL_TRANSPORT
@@ -237,13 +230,6 @@ inline int VoEChannelId(int moduleId)
 // ----------------------------------------------------------------------------
 //  Defines
 // ----------------------------------------------------------------------------
-
-  #include <windows.h>
-
-  // Comparison of two strings without regard to case
-  #define STR_CASE_CMP(x,y) ::_stricmp(x,y)
-  // Compares characters of two strings without regard to case
-  #define STR_NCASE_CMP(x,y,n) ::_strnicmp(x,y,n)
 
 // Default device for Windows PC
   #define WEBRTC_VOICE_ENGINE_DEFAULT_DEVICE \

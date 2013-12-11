@@ -34,12 +34,17 @@ class MockAudioManager : public media::AudioManager {
   virtual void GetAudioInputDeviceNames(
       media::AudioDeviceNames* device_names) OVERRIDE;
 
+  virtual void GetAudioOutputDeviceNames(
+      media::AudioDeviceNames* device_names) OVERRIDE;
+
   virtual media::AudioOutputStream* MakeAudioOutputStream(
       const media::AudioParameters& params,
+      const std::string& device_id,
       const std::string& input_device_id) OVERRIDE;
 
   virtual media::AudioOutputStream* MakeAudioOutputStreamProxy(
       const media::AudioParameters& params,
+      const std::string& device_id,
       const std::string& input_device_id) OVERRIDE;
 
   virtual media::AudioInputStream* MakeAudioInputStream(
@@ -55,8 +60,12 @@ class MockAudioManager : public media::AudioManager {
       AudioDeviceListener* listener) OVERRIDE;
 
   virtual AudioParameters GetDefaultOutputStreamParameters() OVERRIDE;
+  virtual AudioParameters GetOutputStreamParameters(
+      const std::string& device_id) OVERRIDE;
   virtual AudioParameters GetInputStreamParameters(
       const std::string& device_id) OVERRIDE;
+  virtual std::string GetAssociatedOutputDeviceID(
+      const std::string& input_device_id) OVERRIDE;
 
  private:
   virtual ~MockAudioManager();

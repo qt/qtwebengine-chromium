@@ -37,27 +37,40 @@
   ],
 
   'variables': {
-    'deprecated_perl_idl_files': [
-      '<@(deprecated_perl_core_idl_files)',
-      '<@(deprecated_perl_modules_idl_files)',
-      '<@(deprecated_perl_svg_idl_files)',
+    'idl_files': [
+      '<@(core_idl_files)',
+      '<@(modules_idl_files)',
+      '<@(svg_idl_files)',
     ],
-    'python_idl_files': [
-      '<@(python_core_idl_files)',
-      '<@(python_modules_idl_files)',
-      '<@(python_svg_idl_files)',
-    ],
-    'perl_and_python_idl_files': [
-        '<@(deprecated_perl_idl_files)',
-        '<@(python_idl_files)',
-    ],
-    'webcore_test_support_idl_files': [
-        '<@(deprecated_perl_webcore_test_support_idl_files)',
-        '<@(python_webcore_test_support_idl_files)',
+    'compiler_module_files': [
+        'scripts/idl_compiler.py',
+        '<(DEPTH)/third_party/ply/lex.py',
+        '<(DEPTH)/third_party/ply/yacc.py',
+        # jinja2/__init__.py contains version string, so sufficient for package
+        '<(DEPTH)/third_party/jinja2/__init__.py',
+        '<(DEPTH)/third_party/markupsafe/__init__.py',  # jinja2 dep
+        '<(DEPTH)/tools/idl_parser/idl_lexer.py',
+        '<(DEPTH)/tools/idl_parser/idl_node.py',
+        '<(DEPTH)/tools/idl_parser/idl_parser.py',
+        'scripts/blink_idl_lexer.py',
+        'scripts/blink_idl_parser.py',
+        'scripts/code_generator_v8.py',
+        'scripts/idl_definitions.py',
+        'scripts/idl_definitions_builder.py',
+        'scripts/idl_reader.py',
+        'scripts/idl_validator.py',
+        'scripts/interface_dependency_resolver.py',
+        'scripts/v8_attributes.py',
+        'scripts/v8_callback_interface.py',
+        'scripts/v8_interface.py',
+        'scripts/v8_types.py',
+        'scripts/v8_utilities.py',
     ],
     'code_generator_template_files': [
+        'templates/attributes.cpp',
         'templates/callback_interface.cpp',
         'templates/callback_interface.h',
+        'templates/interface_base.cpp',
         'templates/interface.cpp',
         'templates/interface.h',
     ],
@@ -127,7 +140,7 @@
       'variables': {
         # Write sources into a file, so that the action command line won't
         # exceed OS limits.
-        'idl_files_list': '<|(idl_files_list.tmp <@(perl_and_python_idl_files))',
+        'idl_files_list': '<|(idl_files_list.tmp <@(idl_files))',
       },
       'inputs': [
         'scripts/compute_dependencies.py',
@@ -163,7 +176,7 @@
       }]
     },
     {
-      'target_name': 'deprecated_perl_bindings_sources',
+      'target_name': 'bindings_sources',
       'type': 'none',
       # The 'binding' rule generates .h files, so mark as hard_dependency, per:
       # https://code.google.com/p/gyp/wiki/InputFormatReference#Linking_Dependencies
@@ -173,18 +186,18 @@
         '../core/core_derived_sources.gyp:generate_test_support_idls',
       ],
       'sources': [
-        '<@(deprecated_perl_idl_files)',
-        '<@(deprecated_perl_webcore_test_support_idl_files)',
+        '<@(idl_files)',
+        '<@(webcore_test_support_idl_files)',
       ],
       'rules': [{
-        'rule_name': 'deprecated_perl_binding',
+        'rule_name': 'binding',
         'extension': 'idl',
         'msvs_external_rule': 1,
         'inputs': [
-          'scripts/deprecated_generate_bindings.pl',
-          'scripts/deprecated_code_generator_v8.pm',
-          'scripts/deprecated_idl_parser.pm',
-          'scripts/deprecated_idl_serializer.pm',
+          'scripts/generate_bindings.pl',
+          'scripts/code_generator_v8.pm',
+          'scripts/idl_parser.pm',
+          'scripts/idl_serializer.pm',
           '../core/scripts/preprocessor.pm',
           'scripts/IDLAttributes.txt',
           # FIXME: If the dependency structure changes, we rebuild all files,
@@ -196,7 +209,7 @@
           #
           # If a new partial interface is added, need to regyp to update these
           # dependencies, as these are computed statically at gyp runtime.
-          '<!@pymod_do_main(list_idl_files_with_partial_interface <@(perl_and_python_idl_files))',
+          '<!@pymod_do_main(list_idl_files_with_partial_interface <@(idl_files))',
           # Generated IDLs are all partial interfaces, hence everything
           # potentially depends on them.
           '<@(generated_global_constructors_idl_files)',
@@ -226,7 +239,7 @@
           '-Iscripts',
           '-I../core/scripts',
           '-I<(DEPTH)/third_party/JSON/out/lib/perl5',
-          'scripts/deprecated_generate_bindings.pl',
+          'scripts/generate_bindings.pl',
           '--outputDir',
           '<(bindings_output_dir)',
           '--idlAttributesFile',
@@ -236,92 +249,8 @@
           '--interfaceDependenciesFile',
           '<(SHARED_INTERMEDIATE_DIR)/blink/InterfaceDependencies.txt',
           '--additionalIdlFiles',
-          '<(deprecated_perl_webcore_test_support_idl_files)',
-          '<@(preprocessor)',
-          '<@(write_file_only_if_changed)',
-          '<(RULE_INPUT_PATH)',
-        ],
-        'message': 'Generating binding from <(RULE_INPUT_PATH)',
-      }],
-    },
-    {
-      'target_name': 'python_bindings_sources',
-      'type': 'none',
-      # The 'binding' rule generates .h files, so mark as hard_dependency, per:
-      # https://code.google.com/p/gyp/wiki/InputFormatReference#Linking_Dependencies
-      'hard_dependency': 1,
-      'dependencies': [
-        'interface_dependencies',
-        '../core/core_derived_sources.gyp:generate_test_support_idls',
-      ],
-      'sources': [
-        '<@(python_idl_files)',
-        '<@(python_webcore_test_support_idl_files)',
-      ],
-      'rules': [{
-        'rule_name': 'python_binding',
-        'extension': 'idl',
-        'msvs_external_rule': 1,
-        'inputs': [
-          'scripts/idl_compiler.py',
-          '<(DEPTH)/third_party/ply/lex.py',
-          '<(DEPTH)/third_party/ply/yacc.py',
-          '<(DEPTH)/tools/idl_parser/idl_lexer.py',
-          '<(DEPTH)/tools/idl_parser/idl_node.py',
-          '<(DEPTH)/tools/idl_parser/idl_parser.py',
-          'scripts/blink_idl_lexer.py',
-          'scripts/blink_idl_parser.py',
-          'scripts/code_generator_v8.py',
-          'scripts/idl_definitions.py',
-          'scripts/idl_definitions_builder.py',
-          'scripts/idl_reader.py',
-          'scripts/idl_validator.py',
-          'scripts/interface_dependency_resolver.py',
-          'scripts/IDLAttributes.txt',
-          '<@(code_generator_template_files)',
-          # FIXME: If the dependency structure changes, we rebuild all files,
-          # since we're not computing dependencies file-by-file in the build.
-          '<(SHARED_INTERMEDIATE_DIR)/blink/InterfaceDependencies.txt',
-          # FIXME: Similarly, if any partial interface changes, rebuild
-          # everything, since every IDL potentially depends on them, because
-          # we're not computing dependencies file-by-file.
-          '<!@pymod_do_main(list_idl_files_with_partial_interface <@(perl_and_python_idl_files))',
-          # Generated IDLs are all partial interfaces, hence everything
-          # potentially depends on them.
-          '<@(generated_global_constructors_idl_files)',
-        ],
-        'outputs': [
-          '<(bindings_output_dir)/V8<(RULE_INPUT_ROOT).cpp',
-          '<(bindings_output_dir)/V8<(RULE_INPUT_ROOT).h',
-        ],
-        'variables': {
-          # IDL include paths. The generator will search recursively for IDL
-          # files under these locations.
-          'generator_include_dirs': [
-            '--include', '../core',
-            '--include', '../modules',
-            '--include', '<(SHARED_INTERMEDIATE_DIR)/blink',
-          ],
-          # Hook for embedders to specify extra directories to find IDL files.
-          'extra_blink_generator_include_dirs%': [],
-        },
-        'msvs_cygwin_shell': 0,
-        # sanitize-win-build-log.sed uses a regex which matches this command
-        # line (Python script + .idl file being processed).
-        # Update that regex if command line changes (other than changing flags)
-        'action': [
-          'python',
-          'scripts/idl_compiler.py',
-          '--output-dir',
-          '<(bindings_output_dir)',
-          '--idl-attributes-file',
-          'scripts/IDLAttributes.txt',
-          '<@(generator_include_dirs)',
-          '<@(extra_blink_generator_include_dirs)',
-          '--interface-dependencies-file',
-          '<(SHARED_INTERMEDIATE_DIR)/blink/InterfaceDependencies.txt',
-          '--additional-idl-files',
           '<(webcore_test_support_idl_files)',
+          '<@(preprocessor)',
           '<@(write_file_only_if_changed)',
           '<(RULE_INPUT_PATH)',
         ],
@@ -333,8 +262,7 @@
       'type': 'none',
       'dependencies': [
         'interface_dependencies',
-        'deprecated_perl_bindings_sources',
-        'python_bindings_sources',
+        'bindings_sources',
       ],
       'actions': [{
         'action_name': 'derived_sources_all_in_one',

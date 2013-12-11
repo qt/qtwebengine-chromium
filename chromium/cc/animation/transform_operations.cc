@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "ui/gfx/box_f.h"
 #include "ui/gfx/transform_util.h"
 #include "ui/gfx/vector3d_f.h"
 
@@ -34,11 +35,47 @@ gfx::Transform TransformOperations::Apply() const {
   return to_return;
 }
 
-gfx::Transform TransformOperations::Blend(
-    const TransformOperations& from, double progress) const {
+gfx::Transform TransformOperations::Blend(const TransformOperations& from,
+                                          SkMScalar progress) const {
   gfx::Transform to_return;
   BlendInternal(from, progress, &to_return);
   return to_return;
+}
+
+bool TransformOperations::BlendedBoundsForBox(const gfx::BoxF& box,
+                                              const TransformOperations& from,
+                                              SkMScalar min_progress,
+                                              SkMScalar max_progress,
+                                              gfx::BoxF* bounds) const {
+  *bounds = box;
+
+  bool from_identity = from.IsIdentity();
+  bool to_identity = IsIdentity();
+  if (from_identity && to_identity)
+    return true;
+
+  if (!MatchesTypes(from))
+    return false;
+
+  size_t num_operations =
+      std::max(from_identity ? 0 : from.operations_.size(),
+               to_identity ? 0 : operations_.size());
+  for (size_t i = 0; i < num_operations; ++i) {
+    gfx::BoxF bounds_for_operation;
+    const TransformOperation* from_op =
+        from_identity ? NULL : &from.operations_[i];
+    const TransformOperation* to_op = to_identity ? NULL : &operations_[i];
+    if (!TransformOperation::BlendedBoundsForBox(*bounds,
+                                                 from_op,
+                                                 to_op,
+                                                 min_progress,
+                                                 max_progress,
+                                                 &bounds_for_operation))
+      return false;
+    *bounds = bounds_for_operation;
+  }
+
+  return true;
 }
 
 bool TransformOperations::MatchesTypes(const TransformOperations& other) const {
@@ -64,7 +101,9 @@ bool TransformOperations::CanBlendWith(
   return BlendInternal(other, 0.5, &dummy);
 }
 
-void TransformOperations::AppendTranslate(double x, double y, double z) {
+void TransformOperations::AppendTranslate(SkMScalar x,
+                                          SkMScalar y,
+                                          SkMScalar z) {
   TransformOperation to_add;
   to_add.matrix.Translate3d(x, y, z);
   to_add.type = TransformOperation::TransformOperationTranslate;
@@ -75,8 +114,10 @@ void TransformOperations::AppendTranslate(double x, double y, double z) {
   decomposed_transform_dirty_ = true;
 }
 
-void TransformOperations::AppendRotate(double x, double y, double z,
-                                       double degrees) {
+void TransformOperations::AppendRotate(SkMScalar x,
+                                       SkMScalar y,
+                                       SkMScalar z,
+                                       SkMScalar degrees) {
   TransformOperation to_add;
   to_add.matrix.RotateAbout(gfx::Vector3dF(x, y, z), degrees);
   to_add.type = TransformOperation::TransformOperationRotate;
@@ -88,7 +129,7 @@ void TransformOperations::AppendRotate(double x, double y, double z,
   decomposed_transform_dirty_ = true;
 }
 
-void TransformOperations::AppendScale(double x, double y, double z) {
+void TransformOperations::AppendScale(SkMScalar x, SkMScalar y, SkMScalar z) {
   TransformOperation to_add;
   to_add.matrix.Scale3d(x, y, z);
   to_add.type = TransformOperation::TransformOperationScale;
@@ -99,7 +140,7 @@ void TransformOperations::AppendScale(double x, double y, double z) {
   decomposed_transform_dirty_ = true;
 }
 
-void TransformOperations::AppendSkew(double x, double y) {
+void TransformOperations::AppendSkew(SkMScalar x, SkMScalar y) {
   TransformOperation to_add;
   to_add.matrix.SkewX(x);
   to_add.matrix.SkewY(y);
@@ -110,7 +151,7 @@ void TransformOperations::AppendSkew(double x, double y) {
   decomposed_transform_dirty_ = true;
 }
 
-void TransformOperations::AppendPerspective(double depth) {
+void TransformOperations::AppendPerspective(SkMScalar depth) {
   TransformOperation to_add;
   to_add.matrix.ApplyPerspectiveDepth(depth);
   to_add.type = TransformOperation::TransformOperationPerspective;
@@ -140,7 +181,7 @@ bool TransformOperations::IsIdentity() const {
 }
 
 bool TransformOperations::BlendInternal(const TransformOperations& from,
-                                        double progress,
+                                        SkMScalar progress,
                                         gfx::Transform* result) const {
   bool from_identity = from.IsIdentity();
   bool to_identity = IsIdentity();

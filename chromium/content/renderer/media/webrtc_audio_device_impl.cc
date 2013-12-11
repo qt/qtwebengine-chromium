@@ -59,7 +59,8 @@ int WebRtcAudioDeviceImpl::CaptureData(const std::vector<int>& channels,
                                        int number_of_frames,
                                        int audio_delay_milliseconds,
                                        int current_volume,
-                                       bool need_audio_processing) {
+                                       bool need_audio_processing,
+                                       bool key_pressed) {
   int total_delay_ms = 0;
   {
     base::AutoLock auto_lock(lock_);
@@ -77,11 +78,9 @@ int WebRtcAudioDeviceImpl::CaptureData(const std::vector<int>& channels,
   // Write audio samples in blocks of 10 milliseconds to the registered
   // webrtc::AudioTransport sink. Keep writing until our internal byte
   // buffer is empty.
-  // TODO(niklase): Wire up the key press detection.
   const int16* audio_buffer = audio_data;
   const int samples_per_10_msec = (sample_rate / 100);
   int accumulated_audio_samples = 0;
-  bool key_pressed = false;
   uint32_t new_volume = 0;
   while (accumulated_audio_samples < number_of_frames) {
     // Deliver 10ms of recorded 16-bit linear PCM audio.
@@ -121,6 +120,7 @@ void WebRtcAudioDeviceImpl::RenderData(uint8* audio_data,
   DCHECK_LE(number_of_frames, output_buffer_size());
   {
     base::AutoLock auto_lock(lock_);
+    DCHECK(audio_transport_callback_);
     // Store the reported audio delay locally.
     output_delay_ms_ = audio_delay_milliseconds;
   }
@@ -198,14 +198,8 @@ int32_t WebRtcAudioDeviceImpl::Terminate() {
   StopRecording();
   StopPlayout();
 
-  // It is necessary to stop the |renderer_| before going away.
-  if (renderer_.get()) {
-    // Grab a local reference while we call Stop(), which will trigger a call to
-    // RemoveAudioRenderer that clears our reference to the audio renderer.
-    scoped_refptr<WebRtcAudioRenderer> local_renderer(renderer_);
-    local_renderer->Stop();
-    DCHECK(!renderer_.get());
-  }
+  DCHECK(!renderer_.get() || !renderer_->IsStarted())
+      << "The shared audio renderer shouldn't be running";
 
   capturers_.clear();
 

@@ -10,16 +10,9 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/message_center_tray_delegate.h"
+#include "ui/message_center/message_center_types.h"
 
 namespace message_center {
-namespace {
-
-// Menu commands
-const int kToggleQuietMode = 0;
-const int kEnableQuietModeHour = 1;
-const int kEnableQuietModeDay = 2;
-
-}
 
 MessageCenterTray::MessageCenterTray(
     MessageCenterTrayDelegate* delegate,
@@ -39,10 +32,11 @@ bool MessageCenterTray::ShowMessageCenterBubble() {
   if (message_center_visible_)
     return true;
 
-  HidePopupBubble();
+  HidePopupBubbleInternal();
 
   message_center_visible_ = delegate_->ShowMessageCenter();
-  message_center_->SetMessageCenterVisible(message_center_visible_);
+  message_center_->SetVisibility(message_center::VISIBILITY_MESSAGE_CENTER);
+  NotifyMessageCenterTrayChanged();
   return message_center_visible_;
 }
 
@@ -58,11 +52,16 @@ void MessageCenterTray::MarkMessageCenterHidden() {
   if (!message_center_visible_)
     return;
   message_center_visible_ = false;
-  message_center_->SetMessageCenterVisible(false);
+
   // Some notifications (like system ones) should appear as popups again
   // after the message center is closed.
-  if (message_center_->HasPopupNotifications())
+  if (message_center_->HasPopupNotifications()) {
     ShowPopupBubble();
+    return;
+  }
+
+  message_center_->SetVisibility(message_center::VISIBILITY_TRANSIENT);
+
   NotifyMessageCenterTrayChanged();
 }
 
@@ -86,37 +85,35 @@ void MessageCenterTray::ShowPopupBubble() {
     return;
 
   popups_visible_ = delegate_->ShowPopups();
+
   NotifyMessageCenterTrayChanged();
 }
 
 bool MessageCenterTray::HidePopupBubble() {
   if (!popups_visible_)
     return false;
-
-  delegate_->HidePopups();
-  popups_visible_ = false;
+  HidePopupBubbleInternal();
   NotifyMessageCenterTrayChanged();
 
   return true;
 }
 
-void MessageCenterTray::ShowNotifierSettingsBubble() {
-  if (popups_visible_)
-    HidePopupBubble();
+void MessageCenterTray::HidePopupBubbleInternal() {
+  if (!popups_visible_)
+    return;
 
-  message_center_visible_ = delegate_->ShowNotifierSettings();
+  delegate_->HidePopups();
+  popups_visible_ = false;
 }
 
-ui::MenuModel* MessageCenterTray::CreateQuietModeMenu() {
-  ui::SimpleMenuModel* menu = new ui::SimpleMenuModel(this);
+void MessageCenterTray::ShowNotifierSettingsBubble() {
+  if (popups_visible_)
+    HidePopupBubbleInternal();
 
-  menu->AddCheckItem(kToggleQuietMode,
-                     l10n_util::GetStringUTF16(IDS_MESSAGE_CENTER_QUIET_MODE));
-  menu->AddItem(kEnableQuietModeHour,
-                l10n_util::GetStringUTF16(IDS_MESSAGE_CENTER_QUIET_MODE_1HOUR));
-  menu->AddItem(kEnableQuietModeDay,
-                l10n_util::GetStringUTF16(IDS_MESSAGE_CENTER_QUIET_MODE_1DAY));
-  return menu;
+  message_center_visible_ = delegate_->ShowNotifierSettings();
+  message_center_->SetVisibility(message_center::VISIBILITY_SETTINGS);
+
+  NotifyMessageCenterTrayChanged();
 }
 
 void MessageCenterTray::OnNotificationAdded(
@@ -153,47 +150,19 @@ void MessageCenterTray::OnNotificationDisplayed(
   NotifyMessageCenterTrayChanged();
 }
 
-void MessageCenterTray::OnMessageCenterChanged() {
-  if (message_center_visible_) {
-    if (message_center_->NotificationCount() == 0)
-      HideMessageCenterBubble();
-  }
-
-  if (popups_visible_ && !message_center_->HasPopupNotifications())
-    HidePopupBubble();
-  else if (message_center_->HasPopupNotifications())
-    ShowPopupBubble();
-
+void MessageCenterTray::OnQuietModeChanged(bool in_quiet_mode) {
   NotifyMessageCenterTrayChanged();
 }
 
-bool MessageCenterTray::IsCommandIdChecked(int command_id) const {
-  if (command_id != kToggleQuietMode)
-    return false;
-  return message_center()->IsQuietMode();
-}
+void MessageCenterTray::OnMessageCenterChanged() {
+  if (message_center_visible_ && message_center_->NotificationCount() == 0)
+    HideMessageCenterBubble();
 
-bool MessageCenterTray::IsCommandIdEnabled(int command_id) const {
-  return true;
-}
+  if (popups_visible_ && !message_center_->HasPopupNotifications())
+    HidePopupBubbleInternal();
+  else if (!popups_visible_ && message_center_->HasPopupNotifications())
+    ShowPopupBubble();
 
-bool MessageCenterTray::GetAcceleratorForCommandId(
-    int command_id,
-    ui::Accelerator* accelerator) {
-  return false;
-}
-
-void MessageCenterTray::ExecuteCommand(int command_id, int event_flags) {
-  if (command_id == kToggleQuietMode) {
-    bool in_quiet_mode = message_center()->IsQuietMode();
-    message_center()->SetQuietMode(!in_quiet_mode);
-    NotifyMessageCenterTrayChanged();
-    return;
-  }
-  base::TimeDelta expires_in = command_id == kEnableQuietModeDay ?
-      base::TimeDelta::FromDays(1):
-      base::TimeDelta::FromHours(1);
-  message_center()->EnterQuietModeWithExpire(expires_in);
   NotifyMessageCenterTrayChanged();
 }
 

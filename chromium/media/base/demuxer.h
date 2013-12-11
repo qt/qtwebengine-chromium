@@ -5,6 +5,8 @@
 #ifndef MEDIA_BASE_DEMUXER_H_
 #define MEDIA_BASE_DEMUXER_H_
 
+#include <vector>
+
 #include "base/time/time.h"
 #include "media/base/data_source.h"
 #include "media/base/demuxer_stream.h"
@@ -29,6 +31,12 @@ class MEDIA_EXPORT DemuxerHost : public DataSourceHost {
 
 class MEDIA_EXPORT Demuxer {
  public:
+  // A new potentially encrypted stream has been parsed.
+  // First parameter - The type of initialization data.
+  // Second parameter - The initialization data associated with the stream.
+  typedef base::Callback<void(const std::string& type,
+                              const std::vector<uint8>& init_data)> NeedKeyCB;
+
   Demuxer();
   virtual ~Demuxer();
 
@@ -47,8 +55,10 @@ class MEDIA_EXPORT Demuxer {
   // callback upon completion.
   virtual void Seek(base::TimeDelta time, const PipelineStatusCB& status_cb);
 
-  // The pipeline is being stopped either as a result of an error or because
-  // the client called Stop().
+  // Starts stopping this demuxer, executing the callback upon completion.
+  //
+  // After the callback completes the demuxer may be destroyed. It is illegal to
+  // call any method (including Stop()) after a demuxer has stopped.
   virtual void Stop(const base::Closure& callback);
 
   // This method is called from the pipeline when the audio renderer

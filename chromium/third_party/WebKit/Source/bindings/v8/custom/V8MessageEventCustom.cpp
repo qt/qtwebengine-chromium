@@ -31,31 +31,30 @@
 #include "config.h"
 #include "V8MessageEvent.h"
 
+#include "V8Blob.h"
+#include "V8MessagePort.h"
+#include "V8Window.h"
 #include "bindings/v8/SerializedScriptValue.h"
+#include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8HiddenPropertyName.h"
 #include "bindings/v8/custom/V8ArrayBufferCustom.h"
 #include "core/dom/MessageEvent.h"
 
-#include "V8Blob.h"
-#include "V8MessagePort.h"
-#include "V8Window.h"
-#include "bindings/v8/V8Binding.h"
-
 namespace WebCore {
 
-void V8MessageEvent::dataAttrGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
+void V8MessageEvent::dataAttributeGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     MessageEvent* event = V8MessageEvent::toNative(info.Holder());
 
     v8::Handle<v8::Value> result;
     switch (event->dataType()) {
     case MessageEvent::DataTypeScriptValue: {
-        result = info.Holder()->GetHiddenValue(V8HiddenPropertyName::data());
+        result = info.Holder()->GetHiddenValue(V8HiddenPropertyName::data(info.GetIsolate()));
         if (result.IsEmpty()) {
             if (!event->dataAsSerializedScriptValue()) {
                 // If we're in an isolated world and the event was created in the main world,
                 // we need to find the 'data' property on the main world wrapper and clone it.
-                v8::Local<v8::Value> mainWorldData = getHiddenValueFromMainWorldWrapper(info.GetIsolate(), event, V8HiddenPropertyName::data());
+                v8::Local<v8::Value> mainWorldData = getHiddenValueFromMainWorldWrapper(info.GetIsolate(), event, V8HiddenPropertyName::data(info.GetIsolate()));
                 if (!mainWorldData.IsEmpty())
                     event->setSerializedData(SerializedScriptValue::createAndSwallowExceptions(mainWorldData, info.GetIsolate()));
             }
@@ -83,11 +82,11 @@ void V8MessageEvent::dataAttrGetterCustom(v8::Local<v8::String> name, const v8::
     }
 
     case MessageEvent::DataTypeBlob:
-        result = toV8Fast(event->dataAsBlob(), info, event);
+        result = toV8(event->dataAsBlob(), info.Holder(), info.GetIsolate());
         break;
 
     case MessageEvent::DataTypeArrayBuffer:
-        result = toV8Fast(event->dataAsArrayBuffer(), info, event);
+        result = toV8(event->dataAsArrayBuffer(), info.Holder(), info.GetIsolate());
         break;
     }
 
@@ -125,7 +124,7 @@ void V8MessageEvent::initMessageEventMethodCustom(const v8::FunctionCallbackInfo
     event->initMessageEvent(typeArg, canBubbleArg, cancelableArg, originArg, lastEventIdArg, sourceArg, portArray.release());
 
     if (!dataArg.IsEmpty()) {
-        args.Holder()->SetHiddenValue(V8HiddenPropertyName::data(), dataArg);
+        args.Holder()->SetHiddenValue(V8HiddenPropertyName::data(args.GetIsolate()), dataArg);
         if (isolatedWorldForIsolate(args.GetIsolate()))
             event->setSerializedData(SerializedScriptValue::createAndSwallowExceptions(dataArg, args.GetIsolate()));
     }

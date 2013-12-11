@@ -30,8 +30,9 @@
 #include "core/platform/graphics/FloatSize.h"
 #include "core/platform/graphics/IntPoint.h"
 #include "wtf/MathExtras.h"
+#include <algorithm>
 
-#if OS(DARWIN)
+#if OS(MACOSX)
 typedef struct CGPoint CGPoint;
 
 #ifdef NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES
@@ -131,7 +132,7 @@ public:
         return FloatPoint(m_y, m_x);
     }
 
-#if OS(DARWIN)
+#if OS(MACOSX)
     FloatPoint(const CGPoint&);
     operator CGPoint() const;
 #if !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES)

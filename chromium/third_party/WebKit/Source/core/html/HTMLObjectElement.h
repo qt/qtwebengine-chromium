@@ -32,7 +32,7 @@ class HTMLFormElement;
 
 class HTMLObjectElement FINAL : public HTMLPlugInImageElement, public FormAssociatedElement {
 public:
-    static PassRefPtr<HTMLObjectElement> create(const QualifiedName&, Document*, HTMLFormElement*, bool createdByParser);
+    static PassRefPtr<HTMLObjectElement> create(const QualifiedName&, Document&, HTMLFormElement*, bool createdByParser);
     virtual ~HTMLObjectElement();
 
     bool isDocNamedItem() const { return m_docNamedItem; }
@@ -42,7 +42,7 @@ public:
     bool containsJavaApplet() const;
 
     virtual bool useFallbackContent() const { return m_useFallbackContent; }
-    void renderFallbackContent();
+    virtual void renderFallbackContent() OVERRIDE;
 
     // Implementations of FormAssociatedElement
     HTMLFormElement* form() const { return FormAssociatedElement::form(); }
@@ -50,7 +50,10 @@ public:
     virtual bool isFormControlElement() const { return false; }
 
     virtual bool isEnumeratable() const { return true; }
+    virtual bool isInteractiveContent() const OVERRIDE;
     virtual bool appendFormData(FormDataList&, bool);
+
+    virtual bool isObjectElement() const OVERRIDE { return true; }
 
     // Implementations of constraint validation API.
     // Note that the object elements are always barred from constraint validation.
@@ -64,7 +67,7 @@ public:
     virtual bool canContainRangeEndPoint() const { return useFallbackContent(); }
 
 private:
-    HTMLObjectElement(const QualifiedName&, Document*, HTMLFormElement*, bool createdByParser);
+    HTMLObjectElement(const QualifiedName&, Document&, HTMLFormElement*, bool createdByParser);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
@@ -73,20 +76,22 @@ private:
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
 
-    virtual bool rendererIsNeeded(const NodeRenderingContext&);
+    virtual bool rendererIsNeeded(const RenderStyle&);
     virtual void didMoveToNewDocument(Document* oldDocument) OVERRIDE;
 
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
 
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
-    virtual const AtomicString& imageSourceURL() const OVERRIDE;
+    virtual const AtomicString imageSourceURL() const OVERRIDE;
 
-    virtual RenderWidget* renderWidgetForJSBindings() const;
+    virtual RenderWidget* existingRenderWidget() const OVERRIDE;
 
     virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
 
     virtual void updateWidget(PluginCreationOption);
     void updateDocNamedItem();
+
+    void reattachFallbackContent();
 
     bool hasFallbackContent() const;
 
@@ -108,6 +113,22 @@ private:
     bool m_docNamedItem : 1;
     bool m_useFallbackContent : 1;
 };
+
+inline HTMLObjectElement* toHTMLObjectElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::objectTag));
+    return static_cast<HTMLObjectElement*>(node);
+}
+
+inline const HTMLObjectElement* toHTMLObjectElement(const FormAssociatedElement* element)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!element || !element->isFormControlElement());
+    const HTMLObjectElement* objectElement = static_cast<const HTMLObjectElement*>(element);
+    // We need to assert after the cast because FormAssociatedElement doesn't
+    // have hasTagName.
+    ASSERT_WITH_SECURITY_IMPLICATION(!objectElement || objectElement->hasTagName(HTMLNames::objectTag));
+    return objectElement;
+}
 
 }
 

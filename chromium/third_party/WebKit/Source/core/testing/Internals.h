@@ -33,10 +33,10 @@
 #include "core/dom/ContextLifecycleObserver.h"
 #include "core/dom/NodeList.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
-#include <wtf/ArrayBuffer.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/ArrayBuffer.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -67,8 +67,7 @@ class ShadowRoot;
 class TypeConversions;
 
 class Internals : public RefCounted<Internals>
-    , public ContextLifecycleObserver
-    , public ScrollingCoordinator::TouchEventTargetRectsObserver {
+    , public ContextLifecycleObserver {
 public:
     static PassRefPtr<Internals> create(Document*);
     virtual ~Internals();
@@ -144,14 +143,16 @@ public:
     PassRefPtr<ClientRectList> inspectorHighlightRects(Document*, ExceptionState&);
 
     unsigned markerCountForNode(Node*, const String&, ExceptionState&);
+    unsigned activeMarkerCountForNode(Node*, ExceptionState&);
     PassRefPtr<Range> markerRangeForNode(Node*, const String& markerType, unsigned index, ExceptionState&);
     String markerDescriptionForNode(Node*, const String& markerType, unsigned index, ExceptionState&);
     void addTextMatchMarker(const Range*, bool isActive);
+    void setMarkersActive(Node*, unsigned startOffset, unsigned endOffset, bool, ExceptionState&);
 
     void setScrollViewPosition(Document*, long x, long y, ExceptionState&);
     void setPagination(Document* document, const String& mode, int gap, ExceptionState& ec) { setPagination(document, mode, gap, 0, ec); }
     void setPagination(Document*, const String& mode, int gap, int pageLength, ExceptionState&);
-    String configurationForViewport(Document*, float devicePixelRatio, int deviceWidth, int deviceHeight, int availableWidth, int availableHeight, ExceptionState&);
+    String viewportAsText(Document*, float devicePixelRatio, int availableWidth, int availableHeight, ExceptionState&);
 
     bool wasLastChangeUserEdit(Element* textField, ExceptionState&);
     bool elementShouldAutoComplete(Element* inputElement, ExceptionState&);
@@ -182,9 +183,7 @@ public:
 
     unsigned wheelEventHandlerCount(Document*, ExceptionState&);
     unsigned touchEventHandlerCount(Document*, ExceptionState&);
-    LayerRectList* touchEventTargetLayerRects(Document*, ExceptionState&);
-    unsigned touchEventTargetLayerRectsUpdateCount(Document*, ExceptionState&);
-    virtual void touchEventTargetRectsChanged(const LayerHitTestRects&);
+    PassRefPtr<LayerRectList> touchEventTargetLayerRects(Document*, ExceptionState&);
 
     // This is used to test rect based hit testing like what's done on touch screens.
     PassRefPtr<NodeList> nodesFromRect(Document*, int x, int y, unsigned topPadding, unsigned rightPadding,
@@ -220,6 +219,9 @@ public:
 
     PassRefPtr<NodeList> paintOrderListBeforePromote(Element*, ExceptionState&);
     PassRefPtr<NodeList> paintOrderListAfterPromote(Element*, ExceptionState&);
+
+    bool scrollsWithRespectTo(Element*, Element*, ExceptionState&);
+    bool isUnclippedDescendant(Element*, ExceptionState&);
 
     void setNeedsCompositedScrolling(Element*, unsigned value, ExceptionState&);
 
@@ -277,8 +279,6 @@ public:
     PassRefPtr<ArrayBuffer> serializeObject(PassRefPtr<SerializedScriptValue>) const;
     PassRefPtr<SerializedScriptValue> deserializeBuffer(PassRefPtr<ArrayBuffer>) const;
 
-    void setUsesOverlayScrollbars(bool enabled);
-
     String getCurrentCursorInfo(Document*, ExceptionState&);
 
     String markerTextForListItem(Element*, ExceptionState&);
@@ -307,8 +307,6 @@ private:
     OwnPtr<InspectorFrontendChannelDummy> m_frontendChannel;
     RefPtr<InternalRuntimeFlags> m_runtimeFlags;
     RefPtr<ScrollingCoordinator> m_scrollingCoordinator;
-    int m_touchEventTargetRectUpdateCount;
-    RefPtr<LayerRectList> m_currentTouchEventRects;
     RefPtr<InternalProfilers> m_profilers;
 };
 

@@ -15,6 +15,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
+#include "cc/layers/content_layer_client.h"
 #include "cc/layers/texture_layer_client.h"
 #include "content/common/content_export.h"
 #include "content/public/renderer/pepper_plugin_instance.h"
@@ -79,14 +80,14 @@ namespace cc {
 class TextureLayer;
 }
 
+namespace gfx {
+class Range;
+}
+
 namespace ppapi {
 class Resource;
 struct InputEventData;
 struct PPP_Instance_Combined;
-}
-
-namespace ui {
-class Range;
 }
 
 namespace v8 {
@@ -114,7 +115,8 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
     : public base::RefCounted<PepperPluginInstanceImpl>,
       public base::SupportsWeakPtr<PepperPluginInstanceImpl>,
       public NON_EXPORTED_BASE(PepperPluginInstance),
-      public ppapi::PPB_Instance_Shared {
+      public ppapi::PPB_Instance_Shared,
+      public NON_EXPORTED_BASE(cc::TextureLayerClient) {
  public:
   // Create and return a PepperPluginInstanceImpl object which supports the most
   // recent version of PPP_Instance possible by querying the given
@@ -197,7 +199,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   ui::TextInputType text_input_type() const { return text_input_type_; }
   gfx::Rect GetCaretBounds() const;
   bool IsPluginAcceptingCompositionEvents() const;
-  void GetSurroundingText(base::string16* text, ui::Range* range) const;
+  void GetSurroundingText(base::string16* text, gfx::Range* range) const;
 
   // Notifications about focus changes, see has_webkit_focus_ below.
   void SetWebKitFocus(bool has_focus);
@@ -347,8 +349,6 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   virtual ppapi::VarTracker* GetVarTracker() OVERRIDE;
   virtual const GURL& GetPluginURL() OVERRIDE;
   virtual base::FilePath GetModulePath() OVERRIDE;
-  virtual PP_Resource CreateExternalFileReference(
-      const base::FilePath& external_file_path) OVERRIDE;
   virtual PP_Resource CreateImage(gfx::ImageSkia* source_image,
                                   float scale) OVERRIDE;
   virtual PP_ExternalPluginResult SwitchToOutOfProcessProxy(
@@ -359,11 +359,13 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
       int plugin_child_id) OVERRIDE;
   virtual void SetAlwaysOnTop(bool on_top) OVERRIDE;
   virtual bool IsFullPagePlugin() OVERRIDE;
-  virtual void FlashSetFullscreen(bool fullscreen, bool delay_report) OVERRIDE;
+  virtual bool FlashSetFullscreen(bool fullscreen, bool delay_report) OVERRIDE;
   virtual bool IsRectTopmost(const gfx::Rect& rect) OVERRIDE;
   virtual int32_t Navigate(const ppapi::URLRequestInfoData& request,
                            const char* target,
                            bool from_user_action) OVERRIDE;
+  virtual int MakePendingFileRefRendererHost(
+      const base::FilePath& path) OVERRIDE;
 
   // PPB_Instance_API implementation.
   virtual PP_Bool BindGraphics(PP_Instance instance,
@@ -435,12 +437,11 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   virtual PP_Var GetPluginInstanceURL(
       PP_Instance instance,
       PP_URLComponents_Dev* components) OVERRIDE;
+  virtual PP_Var GetPluginReferrerURL(
+      PP_Instance instance,
+      PP_URLComponents_Dev* components) OVERRIDE;
 
   // PPB_ContentDecryptor_Private implementation.
-  virtual void NeedKey(PP_Instance instance,
-                       PP_Var key_system,
-                       PP_Var session_id,
-                       PP_Var init_data) OVERRIDE;
   virtual void KeyAdded(PP_Instance instance,
                         PP_Var key_system,
                         PP_Var session_id) OVERRIDE;
@@ -495,6 +496,14 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // Returns the v8::Isolate that was current when this Instance was created.
   // This is not inlined so as to avoid an unnecessary header include of v8.h.
   v8::Isolate* GetIsolate() const;
+
+  // cc::TextureLayerClient implementation.
+  virtual unsigned PrepareTexture() OVERRIDE;
+  virtual WebKit::WebGraphicsContext3D* Context3d() OVERRIDE;
+  virtual bool PrepareTextureMailbox(
+      cc::TextureMailbox* mailbox,
+      scoped_ptr<cc::SingleReleaseCallback>* release_callback,
+      bool use_shared_memory) OVERRIDE;
 
  private:
   friend class base::RefCounted<PepperPluginInstanceImpl>;
@@ -658,6 +667,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   scoped_refptr<cc::TextureLayer> texture_layer_;
   scoped_ptr<WebKit::WebLayer> web_layer_;
   bool layer_bound_to_fullscreen_;
+  bool layer_is_hardware_;
 
   // Plugin URL.
   GURL plugin_url_;

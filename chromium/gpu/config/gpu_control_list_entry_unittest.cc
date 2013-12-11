@@ -78,14 +78,14 @@ TEST_F(GpuControlListEntryTest, DetailedEntry) {
           "type": "macosx",
           "version": {
             "op": "=",
-            "number": "10.6.4"
+            "value": "10.6.4"
           }
         },
         "vendor_id": "0x10de",
         "device_id": ["0x0640"],
         "driver_version": {
           "op": "=",
-          "number": "1.6.18"
+          "value": "1.6.18"
         },
         "features": [
           "test_feature_0"
@@ -106,8 +106,6 @@ TEST_F(GpuControlListEntryTest, DetailedEntry) {
   EXPECT_EQ(1950, entry->webkit_bugs()[0]);
   EXPECT_EQ(1u, entry->features().size());
   EXPECT_EQ(1u, entry->features().count(TEST_FEATURE_0));
-  EXPECT_FALSE(entry->contains_unknown_fields());
-  EXPECT_FALSE(entry->contains_unknown_features());
   EXPECT_FALSE(entry->NeedsMoreInfo(gpu_info()));
   EXPECT_TRUE(entry->Contains(
       GpuControlList::kOsMacosx, "10.6.4", gpu_info()));
@@ -241,7 +239,7 @@ TEST_F(GpuControlListEntryTest, DateOnWindowsEntry) {
         },
         "driver_date": {
           "op": "<",
-          "number": "2010.5.8"
+          "value": "2010.5.8"
         },
         "features": [
           "test_feature_0"
@@ -343,9 +341,7 @@ TEST_F(GpuControlListEntryTest, UnknownFieldEntry) {
       }
   );
   ScopedEntry entry(GetEntryFromString(json));
-  EXPECT_TRUE(entry.get() != NULL);
-  EXPECT_TRUE(entry->contains_unknown_fields());
-  EXPECT_FALSE(entry->contains_unknown_features());
+  EXPECT_TRUE(entry.get() == NULL);
 }
 
 TEST_F(GpuControlListEntryTest, UnknownExceptionFieldEntry) {
@@ -363,9 +359,7 @@ TEST_F(GpuControlListEntryTest, UnknownExceptionFieldEntry) {
       }
   );
   ScopedEntry entry(GetEntryFromString(json));
-  EXPECT_TRUE(entry.get() != NULL);
-  EXPECT_TRUE(entry->contains_unknown_fields());
-  EXPECT_FALSE(entry->contains_unknown_features());
+  EXPECT_TRUE(entry.get() == NULL);
 }
 
 TEST_F(GpuControlListEntryTest, UnknownFeatureEntry) {
@@ -379,21 +373,7 @@ TEST_F(GpuControlListEntryTest, UnknownFeatureEntry) {
       }
   );
   ScopedEntry entry(GetEntryFromString(json));
-  EXPECT_TRUE(entry.get() != NULL);
-  EXPECT_FALSE(entry->contains_unknown_fields());
-  EXPECT_TRUE(entry->contains_unknown_features());
-  EXPECT_EQ(1u, entry->features().size());
-  EXPECT_EQ(1u, entry->features().count(TEST_FEATURE_0));
-
-  const GpuControlList::OsType os_type[] = {
-    GpuControlList::kOsMacosx,
-    GpuControlList::kOsWin,
-    GpuControlList::kOsLinux,
-    GpuControlList::kOsChromeOS,
-    GpuControlList::kOsAndroid
-  };
-  for (size_t i = 0; i < arraysize(os_type); ++i)
-    EXPECT_TRUE(entry->Contains(os_type[i], "10.6", gpu_info()));
+  EXPECT_TRUE(entry.get() == NULL);
 }
 
 TEST_F(GpuControlListEntryTest, GlVendorEntry) {
@@ -577,7 +557,7 @@ TEST_F(GpuControlListEntryTest, LexicalDriverVersionEntry) {
         "driver_version": {
           "op": "=",
           "style": "lexical",
-          "number": "8.76"
+          "value": "8.76"
         },
         "features": [
           "test_feature_0"
@@ -677,7 +657,7 @@ TEST_F(GpuControlListEntryTest, NeedsMoreInfoEntry) {
         "vendor_id": "0x8086",
         "driver_version": {
           "op": "<",
-          "number": "10.7"
+          "value": "10.7"
         },
         "features": [
           "test_feature_1"

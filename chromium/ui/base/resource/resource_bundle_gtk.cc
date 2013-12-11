@@ -10,11 +10,11 @@
 #include "base/path_service.h"
 #include "base/synchronization/lock.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/base/gtk/scoped_gobject.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_handle.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/gfx/image/image.h"
+#include "ui/gfx/scoped_gobject.h"
 
 #include <gtk/gtk.h>
 
@@ -65,8 +65,6 @@ base::FilePath GetResourcesPakFilePath(const std::string& pak_name) {
 }  // namespace
 
 void ResourceBundle::LoadCommonResources() {
-  AddDataPackFromPath(GetResourcesPakFilePath("chrome.pak"),
-                      SCALE_FACTOR_NONE);
   AddDataPackFromPath(GetResourcesPakFilePath(
                       "chrome_100_percent.pak"),
                       SCALE_FACTOR_100P);

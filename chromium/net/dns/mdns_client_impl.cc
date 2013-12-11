@@ -24,8 +24,6 @@
 namespace net {
 
 namespace {
-const char kMDnsMulticastGroupIPv4[] = "224.0.0.251";
-const char kMDnsMulticastGroupIPv6[] = "FF02::FB";
 const unsigned MDnsTransactionTimeoutSeconds = 3;
 }
 
@@ -41,11 +39,6 @@ MDnsConnection::SocketHandler::~SocketHandler() {
 }
 
 int MDnsConnection::SocketHandler::Start() {
-  int rv = BindSocket();
-  if (rv != OK) {
-    return rv;
-  }
-
   return DoLoop(0);
 }
 
@@ -87,7 +80,7 @@ void MDnsConnection::SocketHandler::SendDone(int rv) {
   // TODO(noamsml): Retry logic.
 }
 
-int MDnsConnection::SocketHandler::BindSocket() {
+int MDnsConnection::SocketHandler::Bind() {
   IPAddressNumber address_any(multicast_addr_.address().size());
 
   IPEndPoint bind_endpoint(address_any, multicast_addr_.port());
@@ -102,41 +95,51 @@ int MDnsConnection::SocketHandler::BindSocket() {
   return socket_->JoinGroup(multicast_addr_.address());
 }
 
-MDnsConnection::MDnsConnection(MDnsConnection::SocketFactory* socket_factory,
-                               MDnsConnection::Delegate* delegate)
-    : socket_handler_ipv4_(this,
-                           GetMDnsIPEndPoint(kMDnsMulticastGroupIPv4),
-                           socket_factory),
-      socket_handler_ipv6_(this,
-                           GetMDnsIPEndPoint(kMDnsMulticastGroupIPv6),
-                           socket_factory),
+MDnsConnection::MDnsConnection(MDnsConnection::Delegate* delegate) :
       delegate_(delegate) {
 }
 
 MDnsConnection::~MDnsConnection() {
 }
 
-int MDnsConnection::Init() {
-  int rv;
+bool MDnsConnection::Init(MDnsConnection::SocketFactory* socket_factory) {
+  // TODO(vitalybuka): crbug.com/297690 Make socket_factory return list
+  // of initialized sockets.
+  socket_handlers_.push_back(
+      new SocketHandler(this, GetMDnsIPEndPoint(ADDRESS_FAMILY_IPV4),
+                        socket_factory));
+  socket_handlers_.push_back(
+      new SocketHandler(this, GetMDnsIPEndPoint(ADDRESS_FAMILY_IPV6),
+                        socket_factory));
 
-  rv = socket_handler_ipv4_.Start();
-  if (rv != OK) return rv;
-  rv = socket_handler_ipv6_.Start();
-  if (rv != OK) return rv;
+  for (size_t i = 0; i < socket_handlers_.size();) {
+    if (socket_handlers_[i]->Bind() != OK) {
+      socket_handlers_.erase(socket_handlers_.begin() + i);
+    } else {
+      ++i;
+    }
+  }
 
-  return OK;
+  // All unbound sockets need to be bound before processing untrusted input.
+  // This is done for security reasons, so that an attacker can't get an unbound
+  // socket.
+  for (size_t i = 0; i < socket_handlers_.size();) {
+    if (socket_handlers_[i]->Start() != OK) {
+      socket_handlers_.erase(socket_handlers_.begin() + i);
+    } else {
+      ++i;
+    }
+  }
+  return !socket_handlers_.empty();
 }
 
-int MDnsConnection::Send(IOBuffer* buffer, unsigned size) {
-  int rv;
-
-  rv = socket_handler_ipv4_.Send(buffer, size);
-  if (rv < OK && rv != ERR_IO_PENDING) return rv;
-
-  rv = socket_handler_ipv6_.Send(buffer, size);
-  if (rv < OK && rv != ERR_IO_PENDING) return rv;
-
-  return OK;
+bool MDnsConnection::Send(IOBuffer* buffer, unsigned size) {
+  bool success = false;
+  for (size_t i = 0; i < socket_handlers_.size(); ++i) {
+    int rv = socket_handlers_[i]->Send(buffer, size);
+    success = success || (rv >= OK || rv == ERR_IO_PENDING);
+  }
+  return success;
 }
 
 void MDnsConnection::OnError(SocketHandler* loop,
@@ -144,15 +147,6 @@ void MDnsConnection::OnError(SocketHandler* loop,
   // TODO(noamsml): Specific handling of intermittent errors that can be handled
   // in the connection.
   delegate_->OnConnectionError(error);
-}
-
-IPEndPoint MDnsConnection::GetMDnsIPEndPoint(const char* address) {
-  IPAddressNumber multicast_group_number;
-  bool success = ParseIPLiteralToNumber(address,
-                                        &multicast_group_number);
-  DCHECK(success);
-  return IPEndPoint(multicast_group_number,
-                    dns_protocol::kDefaultPortMulticast);
 }
 
 void MDnsConnection::OnDatagramReceived(
@@ -192,17 +186,16 @@ MDnsConnection::SocketFactory::CreateDefault() {
       new MDnsConnectionSocketFactoryImpl);
 }
 
-MDnsClientImpl::Core::Core(MDnsClientImpl* client,
-                           MDnsConnection::SocketFactory* socket_factory)
-    : client_(client), connection_(new MDnsConnection(socket_factory, this)) {
+MDnsClientImpl::Core::Core(MDnsClientImpl* client)
+    : client_(client), connection_(new MDnsConnection(this)) {
 }
 
 MDnsClientImpl::Core::~Core() {
   STLDeleteValues(&listeners_);
 }
 
-bool MDnsClientImpl::Core::Init() {
-  return connection_->Init() == OK;
+bool MDnsClientImpl::Core::Init(MDnsConnection::SocketFactory* socket_factory) {
+  return connection_->Init(socket_factory);
 }
 
 bool MDnsClientImpl::Core::SendQuery(uint16 rrtype, std::string name) {
@@ -213,7 +206,7 @@ bool MDnsClientImpl::Core::SendQuery(uint16 rrtype, std::string name) {
   DnsQuery query(0, name_dns, rrtype);
   query.set_flags(0);  // Remove the RD flag from the query. It is unneeded.
 
-  return connection_->Send(query.io_buffer(), query.io_buffer()->size()) == OK;
+  return connection_->Send(query.io_buffer(), query.io_buffer()->size());
 }
 
 void MDnsClientImpl::Core::HandlePacket(DnsResponse* response,
@@ -378,7 +371,7 @@ void MDnsClientImpl::Core::RemoveListener(MDnsListenerImpl* listener) {
   observer_list_iterator->second->RemoveObserver(listener);
 
   // Remove the observer list from the map if it is empty
-  if (observer_list_iterator->second->size() == 0) {
+  if (!observer_list_iterator->second->might_have_observers()) {
     // Schedule the actual removal for later in case the listener removal
     // happens while iterating over the observer list.
     base::MessageLoop::current()->PostTask(
@@ -389,7 +382,7 @@ void MDnsClientImpl::Core::RemoveListener(MDnsListenerImpl* listener) {
 
 void MDnsClientImpl::Core::CleanupObserverList(const ListenerKey& key) {
   ListenerMap::iterator found = listeners_.find(key);
-  if (found != listeners_.end() && found->second->size() == 0) {
+  if (found != listeners_.end() && !found->second->might_have_observers()) {
     delete found->second;
     listeners_.erase(found);
   }
@@ -442,8 +435,8 @@ MDnsClientImpl::~MDnsClientImpl() {
 
 bool MDnsClientImpl::StartListening() {
   DCHECK(!core_.get());
-  core_.reset(new Core(this, socket_factory_.get()));
-  if (!core_->Init()) {
+  core_.reset(new Core(this));
+  if (!core_->Init(socket_factory_.get())) {
     core_.reset();
     return false;
   }

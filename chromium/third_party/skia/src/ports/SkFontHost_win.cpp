@@ -118,7 +118,7 @@ static void dcfontname_to_skstring(HDC deviceContext, const LOGFONT& lf, SkStrin
 }
 
 static void make_canonical(LOGFONT* lf) {
-    lf->lfHeight = -2048;
+    lf->lfHeight = -64;
     lf->lfQuality = CLEARTYPE_QUALITY;//PROOF_QUALITY;
     lf->lfCharSet = DEFAULT_CHARSET;
 //    lf->lfClipPrecision = 64;
@@ -354,15 +354,6 @@ void SkLOGFONTFromTypeface(const SkTypeface* face, LOGFONT* lf) {
         *lf = get_default_font();
     } else {
         *lf = static_cast<const LogFontTypeface*>(face)->fLogFont;
-    }
-}
-
-static void GetLogFontByID(SkFontID fontID, LOGFONT* lf) {
-    LogFontTypeface* face = static_cast<LogFontTypeface*>(SkTypefaceCache::FindByID(fontID));
-    if (face) {
-        *lf = face->fLogFont;
-    } else {
-        sk_bzero(lf, sizeof(LOGFONT));
     }
 }
 
@@ -821,13 +812,33 @@ unsigned SkScalerContext_GDI::generateGlyphCount() {
     return fGlyphCount;
 }
 
-uint16_t SkScalerContext_GDI::generateCharToGlyph(SkUnichar uni) {
+uint16_t SkScalerContext_GDI::generateCharToGlyph(SkUnichar utf32) {
     uint16_t index = 0;
-    WCHAR c[2];
+    WCHAR utf16[2];
     // TODO(ctguil): Support characters that generate more than one glyph.
-    if (SkUTF16_FromUnichar(uni, (uint16_t*)c) == 1) {
+    if (SkUTF16_FromUnichar(utf32, (uint16_t*)utf16) == 1) {
         // Type1 fonts fail with uniscribe API. Use GetGlyphIndices for plane 0.
-        SkAssertResult(GetGlyphIndicesW(fDDC, c, 1, &index, 0));
+
+        /** Real documentation for GetGlyphIndiciesW:
+         *
+         *  When GGI_MARK_NONEXISTING_GLYPHS is not specified and a character does not map to a
+         *  glyph, then the 'default character's glyph is returned instead. The 'default character'
+         *  is available in fTM.tmDefaultChar. FON fonts have adefault character, and there exists a
+         *  usDefaultChar in the 'OS/2' table, version 2 and later. If there is no
+         *  'default character' specified by the font, then often the first character found is used.
+         *
+         *  When GGI_MARK_NONEXISTING_GLYPHS is specified and a character does not map to a glyph,
+         *  then the glyph 0xFFFF is used. In Windows XP and earlier, Bitmap/Vector FON usually use
+         *  glyph 0x1F instead ('Terminal' appears to be special, returning 0xFFFF).
+         *  Type1 PFM/PFB, TT, OT TT, OT CFF all appear to use 0xFFFF, even on XP.
+         */
+        DWORD result = GetGlyphIndicesW(fDDC, utf16, 1, &index, GGI_MARK_NONEXISTING_GLYPHS);
+        if (result == GDI_ERROR
+            || 0xFFFF == index
+            || (0x1F == index && fType == SkScalerContext_GDI::kBitmap_Type /*&& winVer < Vista */))
+        {
+            index = 0;
+        }
     } else {
         // Use uniscribe to detemine glyph index for non-BMP characters.
         // Need to add extra item to SCRIPT_ITEM to work around a bug in older
@@ -835,13 +846,13 @@ uint16_t SkScalerContext_GDI::generateCharToGlyph(SkUnichar uni) {
         SCRIPT_ITEM si[2 + 1];
         int items;
         SkAssertResult(
-            SUCCEEDED(ScriptItemize(c, 2, 2, NULL, NULL, si, &items)));
+            SUCCEEDED(ScriptItemize(utf16, 2, 2, NULL, NULL, si, &items)));
 
         WORD log[2];
         SCRIPT_VISATTR vsa;
         int glyphs;
         SkAssertResult(SUCCEEDED(ScriptShape(
-            fDDC, &fSC, c, 2, 1, &si[0].a, &index, log, &vsa, &glyphs)));
+            fDDC, &fSC, utf16, 2, 1, &si[0].a, &index, log, &vsa, &glyphs)));
     }
     return index;
 }
@@ -1380,16 +1391,20 @@ public:
         : fHeaderIter(glyphbuf, total_size), fCurveIter(), fPointIter()
     { }
 
-    POINTFX next() {
+    POINTFX const * next() {
 nextHeader:
         if (!fCurveIter.isSet()) {
             const TTPOLYGONHEADER* header = fHeaderIter.next();
-            SkASSERT(header);
+            if (NULL == header) {
+                return NULL;
+            }
             fCurveIter.set(header);
             const TTPOLYCURVE* curve = fCurveIter.next();
-            SkASSERT(curve);
+            if (NULL == curve) {
+                return NULL;
+            }
             fPointIter.set(curve);
-            return header->pfxStart;
+            return &header->pfxStart;
         }
 
         const POINTFX* nextPoint = fPointIter.next();
@@ -1402,9 +1417,8 @@ nextHeader:
                 fPointIter.set(curve);
             }
             nextPoint = fPointIter.next();
-            SkASSERT(nextPoint);
         }
-        return *nextPoint;
+        return nextPoint;
     }
 
     WORD currentCurveType() {
@@ -1562,10 +1576,20 @@ static void sk_path_from_gdi_path(SkPath* path, const uint8_t* glyphbuf, DWORD t
     }
 }
 
-static void sk_path_from_gdi_paths(SkPath* path, const uint8_t* glyphbuf, DWORD total_size,
+#define move_next_expected_hinted_point(iter, pElem) do {\
+    pElem = iter.next(); \
+    if (NULL == pElem) return false; \
+} while(0)
+
+// It is possible for the hinted and unhinted versions of the same path to have
+// a different number of points due to GDI's handling of flipped points.
+// If this is detected, this will return false.
+static bool sk_path_from_gdi_paths(SkPath* path, const uint8_t* glyphbuf, DWORD total_size,
                                    GDIGlyphbufferPointIter hintedYs) {
     const uint8_t* cur_glyph = glyphbuf;
     const uint8_t* end_glyph = glyphbuf + total_size;
+
+    POINTFX const * hintedPoint;
 
     while (cur_glyph < end_glyph) {
         const TTPOLYGONHEADER* th = (TTPOLYGONHEADER*)cur_glyph;
@@ -1573,33 +1597,35 @@ static void sk_path_from_gdi_paths(SkPath* path, const uint8_t* glyphbuf, DWORD 
         const uint8_t* end_poly = cur_glyph + th->cb;
         const uint8_t* cur_poly = cur_glyph + sizeof(TTPOLYGONHEADER);
 
+        move_next_expected_hinted_point(hintedYs, hintedPoint);
         path->moveTo(SkFixedToScalar( SkFIXEDToFixed(th->pfxStart.x)),
-                     SkFixedToScalar(-SkFIXEDToFixed(hintedYs.next().y)));
+                     SkFixedToScalar(-SkFIXEDToFixed(hintedPoint->y)));
 
         while (cur_poly < end_poly) {
             const TTPOLYCURVE* pc = (const TTPOLYCURVE*)cur_poly;
 
             if (pc->wType == TT_PRIM_LINE) {
                 for (uint16_t i = 0; i < pc->cpfx; i++) {
+                    move_next_expected_hinted_point(hintedYs, hintedPoint);
                     path->lineTo(SkFixedToScalar( SkFIXEDToFixed(pc->apfx[i].x)),
-                                 SkFixedToScalar(-SkFIXEDToFixed(hintedYs.next().y)));
+                                 SkFixedToScalar(-SkFIXEDToFixed(hintedPoint->y)));
                 }
             }
 
             if (pc->wType == TT_PRIM_QSPLINE) {
                 POINTFX currentPoint = pc->apfx[0];
-                POINTFX hintedY = hintedYs.next();
+                move_next_expected_hinted_point(hintedYs, hintedPoint);
                 // only take the hinted y if it wasn't flipped
                 if (hintedYs.currentCurveType() == TT_PRIM_QSPLINE) {
-                    currentPoint.y = hintedY.y;
+                    currentPoint.y = hintedPoint->y;
                 }
                 for (uint16_t u = 0; u < pc->cpfx - 1; u++) { // Walk through points in spline
                     POINTFX pnt_b = currentPoint;//pc->apfx[u]; // B is always the current point
                     POINTFX pnt_c = pc->apfx[u+1];
-                    POINTFX hintedY = hintedYs.next();
+                    move_next_expected_hinted_point(hintedYs, hintedPoint);
                     // only take the hinted y if it wasn't flipped
                     if (hintedYs.currentCurveType() == TT_PRIM_QSPLINE) {
-                        pnt_c.y = hintedY.y;
+                        pnt_c.y = hintedPoint->y;
                     }
                     currentPoint.x = pnt_c.x;
                     currentPoint.y = pnt_c.y;
@@ -1623,6 +1649,7 @@ static void sk_path_from_gdi_paths(SkPath* path, const uint8_t* glyphbuf, DWORD 
         cur_glyph += th->cb;
         path->close();
     }
+    return true;
 }
 
 DWORD SkScalerContext_GDI::getGDIGlyphPath(const SkGlyph& glyph, UINT flags,
@@ -1699,8 +1726,12 @@ void SkScalerContext_GDI::generatePath(const SkGlyph& glyph, SkPath* path) {
             return;
         }
 
-        sk_path_from_gdi_paths(path, glyphbuf, total_size,
-                               GDIGlyphbufferPointIter(hintedGlyphbuf, hinted_total_size));
+        if (!sk_path_from_gdi_paths(path, glyphbuf, total_size,
+                                    GDIGlyphbufferPointIter(hintedGlyphbuf, hinted_total_size)))
+        {
+            path->reset();
+            sk_path_from_gdi_path(path, glyphbuf, total_size);
+        }
     }
 }
 
@@ -2380,6 +2411,6 @@ SkTypeface* SkFontHost::CreateTypefaceFromStream(SkStream* stream) {
 
 #endif
 
-SkFontMgr* SkFontMgr::Factory() {
+SkFontMgr* SkFontMgr_New_GDI() {
     return SkNEW(SkFontMgrGDI);
 }

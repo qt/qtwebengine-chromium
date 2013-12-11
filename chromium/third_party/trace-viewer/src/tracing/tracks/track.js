@@ -14,11 +14,8 @@ base.requireStylesheet('tracing.tracks.track');
 
 base.require('ui');
 base.require('ui.container_that_decorates_its_children');
-base.require('tracing.color_scheme');
 
 base.exportTo('tracing.tracks', function() {
-  var highlightIdBoost = tracing.getColorPaletteHighlightIdBoost();
-
   /**
    * The base class for all tracks.
    * @constructor
@@ -34,7 +31,6 @@ base.exportTo('tracing.tracks', function() {
 
       this.viewport_ = viewport;
       this.classList.add('track');
-      this.categoryFilter_ = undefined;
     },
 
     get viewport() {
@@ -51,20 +47,7 @@ base.exportTo('tracing.tracks', function() {
       return this.parentNode.context();
     },
 
-    get categoryFilter() {
-      return this.categoryFilter_;
-    },
-
-    set categoryFilter(categoryFilter) {
-      if (this.categoryFilter_ == categoryFilter)
-        return;
-      this.categoryFilter_ = categoryFilter;
-      this.updateContents_();
-    },
-
     decorateChild_: function(childTrack) {
-      if (childTrack instanceof Track)
-        childTrack.categoryFilter = this.categoryFilter;
     },
 
     undecorateChild_: function(childTrack) {
@@ -85,8 +68,9 @@ base.exportTo('tracing.tracks', function() {
       ctx.save();
       ctx.translate(0, pixelRatio * (bounds.top - canvasBounds.top));
 
-      var viewLWorld = this.viewport.xViewToWorld(0);
-      var viewRWorld = this.viewport.xViewToWorld(bounds.width * pixelRatio);
+      var dt = this.viewport.currentDisplayTransform;
+      var viewLWorld = dt.xViewToWorld(0);
+      var viewRWorld = dt.xViewToWorld(bounds.width * pixelRatio);
 
       this.draw(type, viewLWorld, viewRWorld);
       ctx.restore();
@@ -95,24 +79,17 @@ base.exportTo('tracing.tracks', function() {
     draw: function(type, viewLWorld, viewRWorld) {
     },
 
-    /**
-     * Called by all the addToSelection functions on the created selection
-     * hit objects. Override this function on parent classes to add
-     * context-specific information to the hit.
-     */
-    decorateHit: function(hit) {
-    },
-
-    memoizeSlices_: function() {
+    addEventsToTrackMap: function(eventToTrackMap) {
     },
 
     addIntersectingItemsInRangeToSelection: function(
         loVX, hiVX, loVY, hiVY, selection) {
 
       var pixelRatio = window.devicePixelRatio || 1;
-      var viewPixWidthWorld = this.viewport.xViewVectorToWorld(1);
-      var loWX = this.viewport.xViewToWorld(loVX * pixelRatio);
-      var hiWX = this.viewport.xViewToWorld(hiVX * pixelRatio);
+      var dt = this.viewport.currentDisplayTransform;
+      var viewPixWidthWorld = dt.xViewVectorToWorld(1);
+      var loWX = dt.xViewToWorld(loVX * pixelRatio);
+      var hiWX = dt.xViewToWorld(hiVX * pixelRatio);
 
       var clientRect = this.getBoundingClientRect();
       var a = Math.max(loVY, clientRect.top);
@@ -126,6 +103,35 @@ base.exportTo('tracing.tracks', function() {
 
     addIntersectingItemsInRangeToSelectionInWorldSpace: function(
         loWX, hiWX, viewPixWidthWorld, selection) {
+    },
+
+    /**
+     * Gets implemented by supporting track types. The method adds the event
+     * closest to worldX to the selection.
+     *
+     * @param {number} worldX The position that is looked for.
+     * @param {number} worldMaxDist The maximum distance allowed from worldX to
+     *     the event.
+     * @param {number} loY Lower Y bound of the search interval in view space.
+     * @param {number} hiY Upper Y bound of the search interval in view space.
+     * @param {Selection} selection Selection to which to add hits.
+     */
+    addClosestEventToSelection: function(
+        worldX, worldMaxDist, loY, hiY, selection) {
+    },
+
+    addClosestInstantEventToSelection: function(instantEvents, worldX,
+                                                worldMaxDist, selection) {
+      var instantEvent = base.findClosestElementInSortedArray(
+          instantEvents,
+          function(x) { return x.start; },
+          worldX,
+          worldMaxDist);
+
+      if (!instantEvent)
+        return;
+
+      selection.push(instantEvent);
     }
   };
 

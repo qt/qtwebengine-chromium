@@ -16,6 +16,7 @@
 #include "content/renderer/media/rtc_peer_connection_handler.h"
 #include "content/renderer/media/rtc_video_capturer.h"
 #include "content/renderer/media/rtc_video_decoder_factory.h"
+#include "content/renderer/media/rtc_video_encoder_factory.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
 #include "content/renderer/media/webaudio_capturer_source.h"
 #include "content/renderer/media/webrtc_audio_device_impl.h"
@@ -27,7 +28,7 @@
 #include "content/renderer/p2p/port_allocator.h"
 #include "content/renderer/render_thread_impl.h"
 #include "jingle/glue/thread_wrapper.h"
-#include "media/filters/gpu_video_decoder_factories.h"
+#include "media/filters/gpu_video_accelerator_factories.h"
 #include "third_party/WebKit/public/platform/WebMediaConstraints.h"
 #include "third_party/WebKit/public/platform/WebMediaStream.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
@@ -53,39 +54,41 @@ namespace content {
 // WebRTC logging. It's a Google specific key, hence the "goog" prefix.
 const char kWebRtcLoggingConstraint[] = "googLog";
 
-// Constant constraint keys which disables all audio constraints.
-// Only used in combination with WebAudio sources.
+// Constant constraint keys which enables default audio constraints on
+// mediastreams with audio.
 struct {
   const char* key;
   const char* value;
-} const kWebAudioConstraints[] = {
-    {webrtc::MediaConstraintsInterface::kEchoCancellation,
-     webrtc::MediaConstraintsInterface::kValueTrue},
-    {webrtc::MediaConstraintsInterface::kAutoGainControl,
-     webrtc::MediaConstraintsInterface::kValueTrue},
-    {webrtc::MediaConstraintsInterface::kNoiseSuppression,
-     webrtc::MediaConstraintsInterface::kValueTrue},
-    {webrtc::MediaConstraintsInterface::kHighpassFilter,
-     webrtc::MediaConstraintsInterface::kValueTrue},
+} const kDefaultAudioConstraints[] = {
+  { webrtc::MediaConstraintsInterface::kEchoCancellation,
+    webrtc::MediaConstraintsInterface::kValueTrue },
+  { webrtc::MediaConstraintsInterface::kAutoGainControl,
+    webrtc::MediaConstraintsInterface::kValueTrue },
+  { webrtc::MediaConstraintsInterface::kExperimentalAutoGainControl,
+    webrtc::MediaConstraintsInterface::kValueTrue },
+  { webrtc::MediaConstraintsInterface::kNoiseSuppression,
+    webrtc::MediaConstraintsInterface::kValueTrue },
+  { webrtc::MediaConstraintsInterface::kHighpassFilter,
+    webrtc::MediaConstraintsInterface::kValueTrue },
 };
 
-class WebAudioConstraints : public RTCMediaConstraints {
- public:
-  WebAudioConstraints()
-      : RTCMediaConstraints(WebKit::WebMediaConstraints()) {
-    for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kWebAudioConstraints); ++i) {
-      webrtc::MediaConstraintsInterface::Constraint constraint;
-      constraint.key = kWebAudioConstraints[i].key;
-      constraint.value = kWebAudioConstraints[i].value;
-
-      DVLOG(1) << "WebAudioConstraints: " << constraint.key
-               << " : " <<  constraint.value;
-      mandatory_.push_back(constraint);
+// Merge |constraints| with |kDefaultAudioConstraints|. For any key which exists
+// in both, the value from |constraints| is maintained, including its
+// mandatory/optional status. New values from |kDefaultAudioConstraints| will
+// be added with mandatory status.
+void ApplyFixedAudioConstraints(RTCMediaConstraints* constraints) {
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kDefaultAudioConstraints); ++i) {
+    bool already_set_value;
+    if (!webrtc::FindConstraint(constraints, kDefaultAudioConstraints[i].key,
+                                &already_set_value, NULL)) {
+      constraints->AddMandatory(kDefaultAudioConstraints[i].key,
+          kDefaultAudioConstraints[i].value, false);
+    } else {
+      DVLOG(1) << "Constraint " << kDefaultAudioConstraints[i].key
+               << " already set to " << already_set_value;
     }
   }
-
-  virtual ~WebAudioConstraints() {}
-};
+}
 
 class P2PPortAllocatorFactory : public webrtc::PortAllocatorFactoryInterface {
  public:
@@ -284,10 +287,8 @@ void MediaStreamDependencyFactory::CreateNativeMediaSources(
       continue;
     }
     const bool is_screencast =
-        source_data->device_info().device.type ==
-            content::MEDIA_TAB_VIDEO_CAPTURE ||
-        source_data->device_info().device.type ==
-            content::MEDIA_DESKTOP_VIDEO_CAPTURE;
+        source_data->device_info().device.type == MEDIA_TAB_VIDEO_CAPTURE ||
+        source_data->device_info().device.type == MEDIA_DESKTOP_VIDEO_CAPTURE;
     source_data->SetVideoSource(
         CreateLocalVideoSource(source_data->device_info().session_id,
                                is_screencast,
@@ -298,6 +299,7 @@ void MediaStreamDependencyFactory::CreateNativeMediaSources(
   // Do additional source initialization if the audio source is a valid
   // microphone or tab audio.
   RTCMediaConstraints native_audio_constraints(audio_constraints);
+  ApplyFixedAudioConstraints(&native_audio_constraints);
   WebKit::WebVector<WebKit::WebMediaStreamTrack> audio_tracks;
   web_stream->audioTracks(audio_tracks);
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
@@ -324,6 +326,10 @@ void MediaStreamDependencyFactory::CreateNativeMediaSources(
       DLOG(WARNING) << "Failed to create the capturer for device "
                     << device_info.device.id;
       sources_created.Run(web_stream, false);
+      // TODO(xians): Don't we need to check if source_observer is observing
+      // something? If not, then it looks like we have a leak here.
+      // OTOH, if it _is_ observing something, then the callback might
+      // be called multiple times which is likely also a bug.
       return;
     }
 
@@ -378,8 +384,8 @@ void MediaStreamDependencyFactory::CreateNativeLocalMediaStream(
 }
 
 bool MediaStreamDependencyFactory::AddNativeMediaStreamTrack(
-      const WebKit::WebMediaStream& stream,
-      const WebKit::WebMediaStreamTrack& track) {
+    const WebKit::WebMediaStream& stream,
+    const WebKit::WebMediaStreamTrack& track) {
   MediaStreamExtraData* extra_data =
      static_cast<MediaStreamExtraData*>(stream.extraData());
   webrtc::MediaStreamInterface* native_stream = extra_data->stream().get();
@@ -389,12 +395,26 @@ bool MediaStreamDependencyFactory::AddNativeMediaStreamTrack(
   MediaStreamSourceExtraData* source_data =
       static_cast<MediaStreamSourceExtraData*>(source.extraData());
 
-  scoped_refptr<WebRtcAudioCapturer> capturer;
+  // In the future the constraints will belong to the track itself, but
+  // right now they're on the source, so we fetch them from there.
+  RTCMediaConstraints track_constraints(source.constraints());
+
+  WebKit::WebMediaStreamSource::Type type = track.source().type();
+  DCHECK(type == WebKit::WebMediaStreamSource::TypeAudio ||
+         type == WebKit::WebMediaStreamSource::TypeVideo);
+
+  if (type == WebKit::WebMediaStreamSource::TypeAudio) {
+    // Apply default audio constraints that enable echo cancellation,
+    // automatic gain control, noise suppression and high-pass filter.
+    ApplyFixedAudioConstraints(&track_constraints);
+  }
+
+  scoped_refptr<WebAudioCapturerSource> webaudio_source;
   if (!source_data) {
     if (source.requiresAudioConsumer()) {
       // We're adding a WebAudio MediaStream.
       // Create a specific capturer for each WebAudio consumer.
-      capturer = CreateWebAudioSource(&source);
+      webaudio_source = CreateWebAudioSource(&source, &track_constraints);
       source_data =
           static_cast<MediaStreamSourceExtraData*>(source.extraData());
     } else {
@@ -405,20 +425,23 @@ bool MediaStreamDependencyFactory::AddNativeMediaStreamTrack(
     }
   }
 
-  WebKit::WebMediaStreamSource::Type type = track.source().type();
-  DCHECK(type == WebKit::WebMediaStreamSource::TypeAudio ||
-         type == WebKit::WebMediaStreamSource::TypeVideo);
-
   std::string track_id = UTF16ToUTF8(track.id());
   if (source.type() == WebKit::WebMediaStreamSource::TypeAudio) {
-    if (!capturer.get() && GetWebRtcAudioDevice())
+    scoped_refptr<WebRtcAudioCapturer> capturer;
+    if (GetWebRtcAudioDevice())
       capturer = GetWebRtcAudioDevice()->GetDefaultCapturer();
 
     scoped_refptr<webrtc::AudioTrackInterface> audio_track(
         CreateLocalAudioTrack(track_id,
                               capturer,
-                              source_data->local_audio_source()));
+                              webaudio_source.get(),
+                              source_data->local_audio_source(),
+                              &track_constraints));
     audio_track->set_enabled(track.isEnabled());
+    if (capturer.get()) {
+      WebKit::WebMediaStreamTrack writable_track = track;
+      writable_track.setSourceProvider(capturer->audio_source_provider());
+    }
     return native_stream->AddTrack(audio_track.get());
   } else {
     DCHECK(source.type() == WebKit::WebMediaStreamSource::TypeVideo);
@@ -476,9 +499,15 @@ bool MediaStreamDependencyFactory::RemoveNativeMediaStreamTrack(
          type == WebKit::WebMediaStreamSource::TypeVideo);
 
   std::string track_id = UTF16ToUTF8(track.id());
-  return type == WebKit::WebMediaStreamSource::TypeAudio ?
-      native_stream->RemoveTrack(native_stream->FindAudioTrack(track_id)) :
-      native_stream->RemoveTrack(native_stream->FindVideoTrack(track_id));
+  if (type == WebKit::WebMediaStreamSource::TypeAudio) {
+    // Remove the source provider as the track is going away.
+    WebKit::WebMediaStreamTrack writable_track = track;
+    writable_track.setSourceProvider(NULL);
+    return native_stream->RemoveTrack(native_stream->FindAudioTrack(track_id));
+  }
+
+  CHECK_EQ(type, WebKit::WebMediaStreamSource::TypeVideo);
+  return native_stream->RemoveTrack(native_stream->FindVideoTrack(track_id));
 }
 
 bool MediaStreamDependencyFactory::CreatePeerConnectionFactory() {
@@ -488,27 +517,34 @@ bool MediaStreamDependencyFactory::CreatePeerConnectionFactory() {
     audio_device_ = new WebRtcAudioDeviceImpl();
 
     scoped_ptr<cricket::WebRtcVideoDecoderFactory> decoder_factory;
+    scoped_ptr<cricket::WebRtcVideoEncoderFactory> encoder_factory;
 
     const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-    if (cmd_line->HasSwitch(switches::kEnableWebRtcHWDecoding)) {
-      scoped_refptr<base::MessageLoopProxy> media_loop_proxy =
-          RenderThreadImpl::current()->GetMediaThreadMessageLoopProxy();
-      scoped_refptr<RendererGpuVideoDecoderFactories> gpu_factories =
-          RenderThreadImpl::current()->GetGpuFactories(media_loop_proxy);
-      if (gpu_factories.get() != NULL)
+    scoped_refptr<base::MessageLoopProxy> media_loop_proxy =
+        RenderThreadImpl::current()->GetMediaThreadMessageLoopProxy();
+    scoped_refptr<RendererGpuVideoAcceleratorFactories> gpu_factories =
+        RenderThreadImpl::current()->GetGpuFactories(media_loop_proxy);
+#if !defined(GOOGLE_TV)
+    if (!cmd_line->HasSwitch(switches::kDisableWebRtcHWDecoding)) {
+      if (gpu_factories)
         decoder_factory.reset(new RTCVideoDecoderFactory(gpu_factories));
     }
-#if defined(GOOGLE_TV)
+#else
     // PeerConnectionFactory will hold the ownership of this
     // VideoDecoderFactory.
-    decoder_factory.reset(decoder_factory_tv_ = new RTCVideoDecoderFactoryTv);
+    decoder_factory.reset(decoder_factory_tv_ = new RTCVideoDecoderFactoryTv());
 #endif
+
+    if (!cmd_line->HasSwitch(switches::kDisableWebRtcHWEncoding)) {
+      if (gpu_factories)
+        encoder_factory.reset(new RTCVideoEncoderFactory(gpu_factories));
+    }
 
     scoped_refptr<webrtc::PeerConnectionFactoryInterface> factory(
         webrtc::CreatePeerConnectionFactory(worker_thread_,
                                             signaling_thread_,
                                             audio_device_.get(),
-                                            NULL,
+                                            encoder_factory.release(),
                                             decoder_factory.release()));
     if (factory.get())
       pc_factory_ = factory;
@@ -590,40 +626,26 @@ MediaStreamDependencyFactory::CreateLocalVideoSource(
   return source;
 }
 
-scoped_refptr<WebRtcAudioCapturer>
+scoped_refptr<WebAudioCapturerSource>
 MediaStreamDependencyFactory::CreateWebAudioSource(
-    WebKit::WebMediaStreamSource* source) {
+    WebKit::WebMediaStreamSource* source,
+    RTCMediaConstraints* constraints) {
   DVLOG(1) << "MediaStreamDependencyFactory::CreateWebAudioSource()";
   DCHECK(GetWebRtcAudioDevice());
 
-  // Set up the source and ensure that WebAudio is driving things instead of
-  // a microphone. For WebAudio, we always create a new capturer without
-  // calling initialize(), WebAudio will re-configure the capturer later on.
-  // Pass -1 as the |render_view_id| and an empty device struct to tell the
-  // capturer not to start the default source.
-  scoped_refptr<WebRtcAudioCapturer> capturer(
-      MaybeCreateAudioCapturer(-1, StreamDeviceInfo()));
-  DCHECK(capturer.get());
-
   scoped_refptr<WebAudioCapturerSource>
-      webaudio_capturer_source(new WebAudioCapturerSource(capturer.get()));
-  MediaStreamSourceExtraData* source_data =
-      new content::MediaStreamSourceExtraData(webaudio_capturer_source.get());
+      webaudio_capturer_source(new WebAudioCapturerSource());
+  MediaStreamSourceExtraData* source_data = new MediaStreamSourceExtraData();
 
   // Create a LocalAudioSource object which holds audio options.
-  // Use audio constraints where all values are false, i.e., disable
-  // echo cancellation, automatic gain control, noise suppression and
-  // high-pass filter. SetLocalAudioSource() affects core audio parts in
-  // third_party/Libjingle.
-  WebAudioConstraints webaudio_audio_constraints_all_false;
-  source_data->SetLocalAudioSource(
-      CreateLocalAudioSource(&webaudio_audio_constraints_all_false).get());
+  // SetLocalAudioSource() affects core audio parts in third_party/Libjingle.
+  source_data->SetLocalAudioSource(CreateLocalAudioSource(constraints).get());
   source->setExtraData(source_data);
 
   // Replace the default source with WebAudio as source instead.
   source->addAudioConsumer(webaudio_capturer_source.get());
 
-  return capturer;
+  return webaudio_capturer_source;
 }
 
 scoped_refptr<webrtc::VideoTrackInterface>
@@ -653,12 +675,16 @@ scoped_refptr<webrtc::AudioTrackInterface>
 MediaStreamDependencyFactory::CreateLocalAudioTrack(
     const std::string& id,
     const scoped_refptr<WebRtcAudioCapturer>& capturer,
-    webrtc::AudioSourceInterface* source) {
+    WebAudioCapturerSource* webaudio_source,
+    webrtc::AudioSourceInterface* source,
+    const webrtc::MediaConstraintsInterface* constraints) {
   // TODO(xians): Merge |source| to the capturer(). We can't do this today
   // because only one capturer() is supported while one |source| is created
   // for each audio track.
   scoped_refptr<WebRtcLocalAudioTrack> audio_track(
-      WebRtcLocalAudioTrack::Create(id, capturer, source));
+      WebRtcLocalAudioTrack::Create(id, capturer, webaudio_source,
+                                    source, constraints));
+
   // Add the WebRtcAudioDevice as the sink to the local audio track.
   audio_track->AddSink(GetWebRtcAudioDevice());
   // Start the audio track. This will hook the |audio_track| to the capturer
@@ -795,11 +821,13 @@ scoped_refptr<WebRtcAudioCapturer>
 MediaStreamDependencyFactory::MaybeCreateAudioCapturer(
     int render_view_id,
     const StreamDeviceInfo& device_info) {
-  scoped_refptr<WebRtcAudioCapturer> capturer;
-  if (render_view_id != -1) {
-    // From a normal getUserMedia, re-use the existing default capturer.
-    capturer = GetWebRtcAudioDevice()->GetDefaultCapturer();
-  }
+  // TODO(xians): Handle the cases when gUM is called without a proper render
+  // view, for example, by an extension.
+  DCHECK_GE(render_view_id, 0);
+
+  scoped_refptr<WebRtcAudioCapturer> capturer =
+      GetWebRtcAudioDevice()->GetDefaultCapturer();
+
   // If the default capturer does not exist or |render_view_id| == -1, create
   // a new capturer.
   bool is_new_capturer = false;
@@ -810,8 +838,11 @@ MediaStreamDependencyFactory::MaybeCreateAudioCapturer(
 
   if (!capturer->Initialize(
           render_view_id,
-          static_cast<media::ChannelLayout>(device_info.device.channel_layout),
-          device_info.device.sample_rate, device_info.session_id,
+          static_cast<media::ChannelLayout>(
+              device_info.device.input.channel_layout),
+          device_info.device.input.sample_rate,
+          device_info.device.input.frames_per_buffer,
+          device_info.session_id,
           device_info.device.id)) {
     return NULL;
   }

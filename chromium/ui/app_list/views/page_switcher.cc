@@ -9,11 +9,13 @@
 #include "third_party/skia/include/core/SkPath.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/pagination_model.h"
-#include "ui/base/animation/throb_animation.h"
+#include "ui/gfx/animation/throb_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/views/controls/button/custom_button.h"
 #include "ui/views/layout/box_layout.h"
+
+namespace app_list {
 
 namespace {
 
@@ -52,11 +54,10 @@ class PageSwitcherButton : public views::CustomButton {
   }
 
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
-    if (state() == STATE_HOVERED) {
-      PaintButton(canvas, app_list::kPagerHoverColor);
-    } else {
-      PaintButton(canvas, app_list::kPagerNormalColor);
-    }
+    if (state() == STATE_HOVERED)
+      PaintButton(canvas, kPagerHoverColor);
+    else
+      PaintButton(canvas, kPagerNormalColor);
   }
 
  private:
@@ -94,7 +95,7 @@ class PageSwitcherButton : public views::CustomButton {
       selected_path.addRoundRect(gfx::RectToSkRect(selected_rect),
                                  SkIntToScalar(kButtonCornerRadius),
                                  SkIntToScalar(kButtonCornerRadius));
-      paint.setColor(app_list::kPagerSelectedColor);
+      paint.setColor(kPagerSelectedColor);
       canvas->DrawPath(selected_path, paint);
     }
   }
@@ -115,8 +116,6 @@ PageSwitcherButton* GetButtonByIndex(views::View* buttons, int index) {
 }
 
 }  // namespace
-
-namespace app_list {
 
 PageSwitcher::PageSwitcher(PaginationModel* model)
     : model_(model),

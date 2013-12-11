@@ -34,10 +34,27 @@ class MockTransportChannel : public cricket::TransportChannel {
     set_readable(true);
   }
 
-  MOCK_METHOD3(SendPacket, int(const char* data, size_t len, int flags));
+  MOCK_METHOD4(SendPacket, int(const char* data,
+                               size_t len,
+                               talk_base::DiffServCodePoint dscp,
+                               int flags));
   MOCK_METHOD2(SetOption, int(talk_base::Socket::Option opt, int value));
   MOCK_METHOD0(GetError, int());
   MOCK_CONST_METHOD0(GetIceRole, cricket::IceRole());
+  MOCK_METHOD1(GetStats, bool(cricket::ConnectionInfos* infos));
+  MOCK_CONST_METHOD0(IsDtlsActive, bool());
+  MOCK_CONST_METHOD1(GetSslRole, bool(talk_base::SSLRole* role));
+  MOCK_METHOD1(SetSrtpCiphers, bool(const std::vector<std::string>& ciphers));
+  MOCK_METHOD1(GetSrtpCipher, bool(std::string* cipher));
+  MOCK_CONST_METHOD1(GetLocalIdentity, bool(talk_base::SSLIdentity** identity));
+  MOCK_CONST_METHOD1(GetRemoteCertificate,
+                     bool(talk_base::SSLCertificate** cert));
+  MOCK_METHOD6(ExportKeyingMaterial, bool(const std::string& label,
+                                          const uint8* context,
+                                          size_t context_len,
+                                          bool use_context,
+                                          uint8* result,
+                                          size_t result_len));
 };
 
 class TransportChannelSocketAdapterTest : public testing::Test {
@@ -93,7 +110,8 @@ TEST_F(TransportChannelSocketAdapterTest, ReadClose) {
 TEST_F(TransportChannelSocketAdapterTest, Write) {
   scoped_refptr<IOBuffer> buffer(new IOBuffer(kTestDataSize));
 
-  EXPECT_CALL(channel_, SendPacket(buffer->data(), kTestDataSize, 0))
+  EXPECT_CALL(channel_, SendPacket(buffer->data(), kTestDataSize,
+                                   talk_base::DSCP_NO_CHANGE, 0))
       .WillOnce(Return(kTestDataSize));
 
   int result = target_->Write(buffer.get(), kTestDataSize, callback_);
@@ -105,7 +123,8 @@ TEST_F(TransportChannelSocketAdapterTest, Write) {
 TEST_F(TransportChannelSocketAdapterTest, WritePending) {
   scoped_refptr<IOBuffer> buffer(new IOBuffer(kTestDataSize));
 
-  EXPECT_CALL(channel_, SendPacket(buffer->data(), kTestDataSize, 0))
+  EXPECT_CALL(channel_, SendPacket(buffer->data(), kTestDataSize,
+                                   talk_base::DSCP_NO_CHANGE, 0))
       .Times(1)
       .WillOnce(Return(SOCKET_ERROR));
 

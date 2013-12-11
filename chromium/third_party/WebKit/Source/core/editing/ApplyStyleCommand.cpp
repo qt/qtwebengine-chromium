@@ -104,19 +104,19 @@ bool isEmptyFontTag(const Element* element, ShouldStyleAttributeBeEmpty shouldSt
     return hasNoAttributeOrOnlyStyleAttribute(toHTMLElement(element), shouldStyleAttributeBeEmpty);
 }
 
-static PassRefPtr<Element> createFontElement(Document* document)
+static PassRefPtr<Element> createFontElement(Document& document)
 {
     RefPtr<Element> fontNode = createHTMLElement(document, fontTag);
     return fontNode.release();
 }
 
-PassRefPtr<HTMLElement> createStyleSpanElement(Document* document)
+PassRefPtr<HTMLElement> createStyleSpanElement(Document& document)
 {
     RefPtr<HTMLElement> styleElement = createHTMLElement(document, spanTag);
     return styleElement.release();
 }
 
-ApplyStyleCommand::ApplyStyleCommand(Document* document, const EditingStyle* style, EditAction editingAction, EPropertyLevel propertyLevel)
+ApplyStyleCommand::ApplyStyleCommand(Document& document, const EditingStyle* style, EditAction editingAction, EPropertyLevel propertyLevel)
     : CompositeEditCommand(document)
     , m_style(style->copy())
     , m_editingAction(editingAction)
@@ -130,7 +130,7 @@ ApplyStyleCommand::ApplyStyleCommand(Document* document, const EditingStyle* sty
 {
 }
 
-ApplyStyleCommand::ApplyStyleCommand(Document* document, const EditingStyle* style, const Position& start, const Position& end, EditAction editingAction, EPropertyLevel propertyLevel)
+ApplyStyleCommand::ApplyStyleCommand(Document& document, const EditingStyle* style, const Position& start, const Position& end, EditAction editingAction, EPropertyLevel propertyLevel)
     : CompositeEditCommand(document)
     , m_style(style->copy())
     , m_editingAction(editingAction)
@@ -158,7 +158,7 @@ ApplyStyleCommand::ApplyStyleCommand(PassRefPtr<Element> element, bool removeOnl
 {
 }
 
-ApplyStyleCommand::ApplyStyleCommand(Document* document, const EditingStyle* style, IsInlineElementToRemoveFunction isInlineElementToRemoveFunction, EditAction editingAction)
+ApplyStyleCommand::ApplyStyleCommand(Document& document, const EditingStyle* style, IsInlineElementToRemoveFunction isInlineElementToRemoveFunction, EditAction editingAction)
     : CompositeEditCommand(document)
     , m_style(style->copy())
     , m_editingAction(editingAction)
@@ -232,7 +232,7 @@ void ApplyStyleCommand::applyBlockStyle(EditingStyle *style)
     // update document layout once before removing styles
     // so that we avoid the expense of updating before each and every call
     // to check a computed style
-    document()->updateLayoutIgnorePendingStylesheets();
+    document().updateLayoutIgnorePendingStylesheets();
 
     // get positions we want to use for applying style
     Position start = startPosition();
@@ -252,7 +252,7 @@ void ApplyStyleCommand::applyBlockStyle(EditingStyle *style)
     // Save and restore the selection endpoints using their indices in the document, since
     // addBlockStyleIfNeeded may moveParagraphs, which can remove these endpoints.
     // Calculate start and end indices from the start of the tree that they're in.
-    Node* scope = highestAncestor(visibleStart.deepEquivalent().deprecatedNode());
+    Node* scope = visibleStart.deepEquivalent().deprecatedNode()->highestAncestor();
     RefPtr<Range> startRange = Range::create(document(), firstPositionInNode(scope), visibleStart.deepEquivalent().parentAnchoredEquivalent());
     RefPtr<Range> endRange = Range::create(document(), firstPositionInNode(scope), visibleEnd.deepEquivalent().parentAnchoredEquivalent());
     int startIndex = TextIterator::rangeLength(startRange.get(), true);
@@ -543,7 +543,7 @@ void ApplyStyleCommand::applyInlineStyle(EditingStyle* style)
     // update document layout once before removing styles
     // so that we avoid the expense of updating before each and every call
     // to check a computed style
-    document()->updateLayoutIgnorePendingStylesheets();
+    document().updateLayoutIgnorePendingStylesheets();
 
     // adjust to the positions we want to use for applying style
     Position start = startPosition();
@@ -637,7 +637,7 @@ void ApplyStyleCommand::applyInlineStyle(EditingStyle* style)
     // update document layout once before running the rest of the function
     // so that we avoid the expense of updating before each and every call
     // to check a computed style
-    document()->updateLayoutIgnorePendingStylesheets();
+    document().updateLayoutIgnorePendingStylesheets();
 
     RefPtr<EditingStyle> styleToApply = style;
     if (hasTextDirection) {
@@ -741,7 +741,7 @@ void ApplyStyleCommand::applyInlineStyleToNodeRange(EditingStyle* style, PassRef
     if (m_removeOnly)
         return;
 
-    document()->updateLayoutIgnorePendingStylesheets();
+    document().updateLayoutIgnorePendingStylesheets();
 
     Vector<InlineRunToApplyStyle> runs;
     RefPtr<Node> node = startNode;
@@ -801,7 +801,7 @@ void ApplyStyleCommand::applyInlineStyleToNodeRange(EditingStyle* style, PassRef
         runs[i].positionForStyleComputation = positionToComputeInlineStyleChange(runs[i].start, runs[i].dummyElement);
     }
 
-    document()->updateLayoutIgnorePendingStylesheets();
+    document().updateLayoutIgnorePendingStylesheets();
 
     for (size_t i = 0; i < runs.size(); i++)
         runs[i].change = StyleChange(style, runs[i].positionForStyleComputation);
@@ -985,7 +985,7 @@ void ApplyStyleCommand::applyInlineStyleToPushDown(Node* node, EditingStyle* sty
 {
     ASSERT(node);
 
-    node->document()->updateStyleIfNeeded();
+    node->document().updateStyleIfNeeded();
 
     if (!style || style->isEmpty() || !node->renderer())
         return;
@@ -998,7 +998,7 @@ void ApplyStyleCommand::applyInlineStyleToPushDown(Node* node, EditingStyle* sty
 
     // Since addInlineStyleIfNeeded can't add styles to block-flow render objects, add style attribute instead.
     // FIXME: applyInlineStyleToRange should be used here instead.
-    if ((node->renderer()->isBlockFlow() || node->childNodeCount()) && node->isHTMLElement()) {
+    if ((node->renderer()->isRenderBlockFlow() || node->childNodeCount()) && node->isHTMLElement()) {
         setNodeAttribute(toHTMLElement(node), styleAttr, newInlineStyle->style()->asText());
         return;
     }
@@ -1067,8 +1067,8 @@ void ApplyStyleCommand::removeInlineStyle(EditingStyle* style, const Position &s
 {
     ASSERT(start.isNotNull());
     ASSERT(end.isNotNull());
-    ASSERT(start.anchorNode()->inDocument());
-    ASSERT(end.anchorNode()->inDocument());
+    ASSERT(start.inDocument());
+    ASSERT(end.inDocument());
     ASSERT(comparePositions(start, end) <= 0);
     // FIXME: We should assert that start/end are not in the middle of a text node.
 
@@ -1154,7 +1154,7 @@ bool ApplyStyleCommand::nodeFullySelected(Node *node, const Position &start, con
     ASSERT(node->isElementNode());
 
     // The tree may have changed and Position::upstream() relies on an up-to-date layout.
-    node->document()->updateLayoutIgnorePendingStylesheets();
+    node->document().updateLayoutIgnorePendingStylesheets();
 
     return comparePositions(firstPositionInOrBeforeNode(node), start) >= 0
         && comparePositions(lastPositionInOrAfterNode(node).upstream(), end) <= 0;

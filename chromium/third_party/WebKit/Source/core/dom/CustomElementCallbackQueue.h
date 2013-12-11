@@ -32,6 +32,7 @@
 #define CustomElementCallbackQueue_h
 
 #include "core/dom/CustomElementCallbackInvocation.h"
+#include "core/dom/Element.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -56,6 +57,7 @@ public:
 
     void append(PassOwnPtr<CustomElementCallbackInvocation> invocation) { m_queue.append(invocation); }
     void processInElementQueue(ElementQueue);
+    bool inCreatedCallback() const { return m_inCreatedCallback; }
 
 private:
     CustomElementCallbackQueue(PassRefPtr<Element>);
@@ -64,6 +66,7 @@ private:
     Vector<OwnPtr<CustomElementCallbackInvocation> > m_queue;
     ElementQueue m_owner;
     size_t m_index;
+    bool m_inCreatedCallback;
 };
 
 }

@@ -27,11 +27,14 @@
 #ifndef LocalizedStrings_h
 #define LocalizedStrings_h
 
+#include "public/platform/WebLocalizedString.h"
 #include "wtf/Forward.h"
 
 namespace WebCore {
 
     class IntSize;
+
+    // FIXME: Use Locale::queryString instead of the following functions.
 
     String inputElementAltText();
     String resetButtonDefaultLabel();
@@ -111,14 +114,8 @@ namespace WebCore {
     String validationMessageValueMissingForRadioText();
     String validationMessageValueMissingForSelectText();
     String validationMessageTypeMismatchText();
-    String validationMessageTypeMismatchForEmailText();
-    String validationMessageTypeMismatchForMultipleEmailText();
     String validationMessageTypeMismatchForURLText();
     String validationMessagePatternMismatchText();
-    String validationMessageTooLongText(int valueLength, int maxLength);
-    String validationMessageRangeUnderflowText(const String& minimum);
-    String validationMessageRangeOverflowText(const String& maximum);
-    String validationMessageStepMismatchText(const String& base, const String& step);
     String validationMessageBadInputForNumberText();
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
     String validationMessageBadInputForDateTimeText();

@@ -3,11 +3,9 @@
 # found in the LICENSE file.
 
 from code import Code
-from model import PropertyType, Type
+from model import PropertyType
 import cpp_util
-import model
 import schema_util
-import sys
 import util_cc_helper
 
 class CCGenerator(object):
@@ -19,6 +17,7 @@ class CCGenerator(object):
     return _Generator(namespace,
                       self._type_generator,
                       self._cpp_namespace).Generate()
+
 
 class _Generator(object):
   """A .cc generator for a namespace.
@@ -45,6 +44,7 @@ class _Generator(object):
       .Append(self._util_cc_helper.GetIncludePath())
       .Append('#include "base/logging.h"')
       .Append('#include "base/strings/string_number_conversions.h"')
+      .Append('#include "base/strings/utf_string_conversions.h"')
       .Append('#include "%s/%s.h"' %
           (self._namespace.source_file_dir, self._namespace.unix_name))
       .Cblock(self._type_helper.GenerateIncludes(include_soft=True))
@@ -348,7 +348,7 @@ class _Generator(object):
                                     is_ptr=is_ptr)))
 
       if prop.optional:
-        c.Eblock('}');
+        c.Eblock('}')
 
     if type_.additional_properties is not None:
       if type_.additional_properties.property_type == PropertyType.ANY:
@@ -381,7 +381,7 @@ class _Generator(object):
     """
     c = Code()
     c.Sblock('scoped_ptr<base::Value> %s::ToValue() const {' % cpp_namespace)
-    c.Append('scoped_ptr<base::Value> result;');
+    c.Append('scoped_ptr<base::Value> result;')
     for choice in type_.choices:
       choice_var = 'as_%s' % choice.unix_name
       (c.Sblock('if (%s) {' % choice_var)
@@ -405,9 +405,8 @@ class _Generator(object):
 
     # TODO(kalman): use function.unix_name not Classname.
     function_namespace = cpp_util.Classname(function.name)
-    """Windows has a #define for SendMessage, so to avoid any issues, we need
-    to not use the name.
-    """
+    # Windows has a #define for SendMessage, so to avoid any issues, we need
+    # to not use the name.
     if function_namespace == 'SendMessage':
       function_namespace = 'PassMessage'
     (c.Append('namespace %s {' % function_namespace)
@@ -449,7 +448,7 @@ class _Generator(object):
 
     var: variable or variable*
 
-    E.g for std::string, generate base::Value::CreateStringValue(var)
+    E.g for std::string, generate new base::StringValue(var)
     """
     underlying_type = self._type_helper.FollowRef(type_)
     if (underlying_type.property_type == PropertyType.CHOICES or
@@ -466,7 +465,7 @@ class _Generator(object):
         vardot = '(%s).' % var
       return '%sDeepCopy()' % vardot
     elif underlying_type.property_type == PropertyType.ENUM:
-      return 'base::Value::CreateStringValue(ToString(%s))' % var
+      return 'new base::StringValue(ToString(%s))' % var
     elif underlying_type.property_type == PropertyType.BINARY:
       if is_ptr:
         vardot = var + '->'
@@ -737,28 +736,28 @@ class _Generator(object):
                                               dst_var,
                                               failure_value,
                                               is_ptr=False):
-      """Returns Code that converts a ListValue of string constants from
-      |src_var| into an array of enums of |type_| in |dst_var|. On failure,
-      returns |failure_value|.
-      """
-      c = Code()
-      accessor = '.'
-      if is_ptr:
-        accessor = '->'
-        cpp_type = self._type_helper.GetCppType(item_type, is_in_container=True)
-        c.Append('%s.reset(new std::vector<%s>);' %
-                     (dst_var, cpp_util.PadForGenerics(cpp_type)))
-      (c.Sblock('for (base::ListValue::const_iterator it = %s->begin(); '
-                     'it != %s->end(); ++it) {' % (src_var, src_var))
-        .Append('%s tmp;' % self._type_helper.GetCppType(item_type))
-        .Concat(self._GenerateStringToEnumConversion(item_type,
-                                                     '(*it)',
-                                                     'tmp',
-                                                     failure_value))
-        .Append('%s%spush_back(tmp);' % (dst_var, accessor))
-        .Eblock('}')
-      )
-      return c
+    """Returns Code that converts a ListValue of string constants from
+    |src_var| into an array of enums of |type_| in |dst_var|. On failure,
+    returns |failure_value|.
+    """
+    c = Code()
+    accessor = '.'
+    if is_ptr:
+      accessor = '->'
+      cpp_type = self._type_helper.GetCppType(item_type, is_in_container=True)
+      c.Append('%s.reset(new std::vector<%s>);' %
+                   (dst_var, cpp_util.PadForGenerics(cpp_type)))
+    (c.Sblock('for (base::ListValue::const_iterator it = %s->begin(); '
+                   'it != %s->end(); ++it) {' % (src_var, src_var))
+      .Append('%s tmp;' % self._type_helper.GetCppType(item_type))
+      .Concat(self._GenerateStringToEnumConversion(item_type,
+                                                   '(*it)',
+                                                   'tmp',
+                                                   failure_value))
+      .Append('%s%spush_back(tmp);' % (dst_var, accessor))
+      .Eblock('}')
+    )
+    return c
 
   def _GenerateStringToEnumConversion(self,
                                       type_,
@@ -925,14 +924,14 @@ class _Generator(object):
     if not self._generate_error_messages:
       return c
     (c.Append('if (error)')
-      .Append('  *error = ' + body + ';'))
+      .Append('  *error = UTF8ToUTF16(' + body + ');'))
     return c
 
   def _GenerateParams(self, params):
     """Builds the parameter list for a function, given an array of parameters.
     """
     if self._generate_error_messages:
-      params = list(params) + ['std::string* error']
+      params = list(params) + ['base::string16* error']
     return ', '.join(str(p) for p in params)
 
   def _GenerateArgs(self, args):

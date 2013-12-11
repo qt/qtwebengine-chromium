@@ -68,7 +68,7 @@ struct DOMPatchSupport::Digest {
     Vector<OwnPtr<Digest> > m_children;
 };
 
-void DOMPatchSupport::patchDocument(Document* document, const String& markup)
+void DOMPatchSupport::patchDocument(Document& document, const String& markup)
 {
     InspectorHistory history;
     DOMEditor domEditor(&history);
@@ -76,7 +76,7 @@ void DOMPatchSupport::patchDocument(Document* document, const String& markup)
     patchSupport.patchDocument(markup);
 }
 
-DOMPatchSupport::DOMPatchSupport(DOMEditor* domEditor, Document* document)
+DOMPatchSupport::DOMPatchSupport(DOMEditor* domEditor, Document& document)
     : m_domEditor(domEditor)
     , m_document(document)
 {
@@ -87,31 +87,31 @@ DOMPatchSupport::~DOMPatchSupport() { }
 void DOMPatchSupport::patchDocument(const String& markup)
 {
     RefPtr<Document> newDocument;
-    if (m_document->isHTMLDocument())
+    if (m_document.isHTMLDocument())
         newDocument = HTMLDocument::create();
-    else if (m_document->isXHTMLDocument())
+    else if (m_document.isXHTMLDocument())
         newDocument = HTMLDocument::createXHTML();
-    else if (m_document->isSVGDocument())
+    else if (m_document.isSVGDocument())
         newDocument = Document::create();
 
     ASSERT(newDocument);
-    newDocument->setContextFeatures(m_document->contextFeatures());
+    newDocument->setContextFeatures(m_document.contextFeatures());
     RefPtr<DocumentParser> parser;
-    if (m_document->isHTMLDocument())
-        parser = HTMLDocumentParser::create(static_cast<HTMLDocument*>(newDocument.get()), false);
+    if (m_document.isHTMLDocument())
+        parser = HTMLDocumentParser::create(toHTMLDocument(newDocument.get()), false);
     else
         parser = XMLDocumentParser::create(newDocument.get(), 0);
     parser->insert(markup); // Use insert() so that the parser will not yield.
     parser->finish();
     parser->detach();
 
-    OwnPtr<Digest> oldInfo = createDigest(m_document->documentElement(), 0);
+    OwnPtr<Digest> oldInfo = createDigest(m_document.documentElement(), 0);
     OwnPtr<Digest> newInfo = createDigest(newDocument->documentElement(), &m_unusedNodesMap);
 
     if (!innerPatchNode(oldInfo.get(), newInfo.get(), IGNORE_EXCEPTION)) {
         // Fall back to rewrite.
-        m_document->write(markup);
-        m_document->close();
+        m_document.write(markup);
+        m_document.close();
     }
 }
 
@@ -126,10 +126,10 @@ Node* DOMPatchSupport::patchNode(Node* node, const String& markup, ExceptionStat
     Node* previousSibling = node->previousSibling();
     // FIXME: This code should use one of createFragment* in markup.h
     RefPtr<DocumentFragment> fragment = DocumentFragment::create(m_document);
-    if (m_document->isHTMLDocument())
-        fragment->parseHTML(markup, node->parentElement() ? node->parentElement() : m_document->documentElement());
+    if (m_document.isHTMLDocument())
+        fragment->parseHTML(markup, node->parentElement() ? node->parentElement() : m_document.documentElement());
     else
-        fragment->parseXML(markup, node->parentElement() ? node->parentElement() : m_document->documentElement());
+        fragment->parseXML(markup, node->parentElement() ? node->parentElement() : m_document.documentElement());
 
     // Compose the old list.
     ContainerNode* parentNode = node->parentNode();
@@ -144,9 +144,9 @@ Node* DOMPatchSupport::patchNode(Node* node, const String& markup, ExceptionStat
     for (Node* child = parentNode->firstChild(); child != node; child = child->nextSibling())
         newList.append(createDigest(child, 0));
     for (Node* child = fragment->firstChild(); child; child = child->nextSibling()) {
-        if (child->hasTagName(headTag) && !child->firstChild() && markupCopy.find("</head>") == notFound)
+        if (child->hasTagName(headTag) && !child->firstChild() && markupCopy.find("</head>") == kNotFound)
             continue; // HTML5 parser inserts empty <head> tag whenever it parses <body>
-        if (child->hasTagName(bodyTag) && !child->firstChild() && markupCopy.find("</body>") == notFound)
+        if (child->hasTagName(bodyTag) && !child->firstChild() && markupCopy.find("</body>") == kNotFound)
             continue; // HTML5 parser inserts empty <body> tag whenever it parses </head>
         newList.append(createDigest(child, &m_unusedNodesMap));
     }
@@ -502,7 +502,7 @@ void DOMPatchSupport::markNodeAsUsed(Digest* digest)
 #ifdef DEBUG_DOM_PATCH_SUPPORT
 static String nodeName(Node* node)
 {
-    if (node->document()->isXHTMLDocument())
+    if (node->document().isXHTMLDocument())
          return node->nodeName();
     return node->nodeName().lower();
 }

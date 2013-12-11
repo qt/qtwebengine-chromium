@@ -48,23 +48,24 @@
 #
 # START OVERRIDES HERE
 
-# Image scaling difference due to ongoing Skia image resizing changes
-crbug.com/263331 virtual/deferred/fast/images/webp-color-profile-lossy.html [ ImageOnlyFailure ]
+# The Skia roll to r11121 altered this layout test
+crbug.com/286312 virtual/gpu/fast/canvas/canvas-composite-transformclip.html [ ImageOnlyFailure ]
 
-# With Skia r10399 Skia's Windows text metrics have been improved
-crbug.com/265448 [ Win ] svg/batik/text/textEffect3.svg [ ImageOnlyFailure ]
-crbug.com/265448 [ Win ] svg/custom/use-referencing-nonexisting-symbol.svg [ ImageOnlyFailure ]
-crbug.com/265448 [ Win ] svg/transforms/animated-path-inside-transformed-html.xhtml [ ImageOnlyFailure ]
-crbug.com/265448 [ Win ] svg/transforms/text-with-pattern-inside-transformed-html.xhtml [ ImageOnlyFailure ]
-crbug.com/265448 [ Win ] svg/transforms/text-with-pattern-with-svg-transform.svg [ ImageOnlyFailure ]
+# Skia CL r11158 improved GPU-base gradient rendering (and changed three baseline images)
+crbug.com/288674 css3/filters/effect-reference-zoom-hw.html [ ImageOnlyFailure ]
+crbug.com/288674 virtual/gpu/fast/canvas/canvas-text-alignment.html [ ImageOnlyFailure ]
+crbug.com/288674 virtual/gpu/fast/canvas/fillrect_gradient.html [ ImageOnlyFailure ]
+# This image difference is related to the recent oval rendering changes
+crbug.com/288674 virtual/gpu/fast/canvas/canvas-composite.html [ ImageOnlyFailure ]
 
-# With skia r10444 some imperceptible differences on the edges of blurs were caused
-crbug.com/266315 fast/box-shadow/box-shadow-clipped-slices.html [ ImageOnlyFailure ]
-crbug.com/266315 fast/repaint/box-shadow-h.html [ ImageOnlyFailure ]
-crbug.com/266315 fast/repaint/box-shadow-v.html [ ImageOnlyFailure ]
-crbug.com/266315 fast/repaint/shadow-multiple-horizontal.html [ ImageOnlyFailure ]
-crbug.com/266315 fast/repaint/shadow-multiple-strict-horizontal.html [ ImageOnlyFailure ]
-crbug.com/266315 fast/repaint/shadow-multiple-strict-vertical.html [ ImageOnlyFailure ]
-crbug.com/266315 fast/repaint/shadow-multiple-vertical.html [ ImageOnlyFailure ]
+# Skia CL r11249 altered some of the parameters to the spot light filter
+crbug.com/292656 css3/filters/effect-reference-colorspace-hw.html [ ImageOnlyFailure ]
+crbug.com/292656 css3/filters/effect-reference-hw.html [ ImageOnlyFailure ]
+crbug.com/292656 css3/filters/effect-reference-subregion-hw.html [ ImageOnlyFailure ]
+
+# Skia r11365 slightly changed how the GPU draws lines
+crbug.com/295579 virtual/gpu/fast/canvas/canvas-text-baseline.html [ ImageOnlyFailure ]
+crbug.com/295579 virtual/gpu/fast/canvas/canvas-transforms-during-path.html [ ImageOnlyFailure ]
+crbug.com/295579 virtual/gpu/fast/canvas/quadraticCurveTo.xml [ ImageOnlyFailure ]
 
 # END OVERRIDES HERE (this line ensures that the file is newline-terminated)

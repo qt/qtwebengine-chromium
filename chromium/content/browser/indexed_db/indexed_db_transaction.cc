@@ -23,15 +23,14 @@ IndexedDBTransaction::TaskQueue::~TaskQueue() { clear(); }
 
 void IndexedDBTransaction::TaskQueue::clear() {
   while (!queue_.empty())
-    scoped_ptr<Operation> task(pop());
+    queue_.pop();
 }
 
-scoped_ptr<IndexedDBTransaction::Operation>
-IndexedDBTransaction::TaskQueue::pop() {
+IndexedDBTransaction::Operation IndexedDBTransaction::TaskQueue::pop() {
   DCHECK(!queue_.empty());
-  scoped_ptr<Operation> task(queue_.front());
+  Operation task(queue_.front());
   queue_.pop();
-  return task.Pass();
+  return task;
 }
 
 IndexedDBTransaction::TaskStack::TaskStack() {}
@@ -39,15 +38,14 @@ IndexedDBTransaction::TaskStack::~TaskStack() { clear(); }
 
 void IndexedDBTransaction::TaskStack::clear() {
   while (!stack_.empty())
-    scoped_ptr<Operation> task(pop());
+    stack_.pop();
 }
 
-scoped_ptr<IndexedDBTransaction::Operation>
-IndexedDBTransaction::TaskStack::pop() {
+IndexedDBTransaction::Operation IndexedDBTransaction::TaskStack::pop() {
   DCHECK(!stack_.empty());
-  scoped_ptr<Operation> task(stack_.top());
+  Operation task(stack_.top());
   stack_.pop();
-  return task.Pass();
+  return task;
 }
 
 IndexedDBTransaction::IndexedDBTransaction(
@@ -65,7 +63,11 @@ IndexedDBTransaction::IndexedDBTransaction(
       database_(database),
       transaction_(database->BackingStore().get()),
       should_process_queue_(false),
-      pending_preemptive_events_(0) {
+      pending_preemptive_events_(0),
+      queue_status_(CREATED),
+      creation_time_(base::Time::Now()),
+      tasks_scheduled_(0),
+      tasks_completed_(0) {
   database_->transaction_coordinator().DidCreateTransaction(this);
 }
 
@@ -78,20 +80,30 @@ IndexedDBTransaction::~IndexedDBTransaction() {
   DCHECK(abort_task_stack_.empty());
 }
 
+void IndexedDBTransaction::ScheduleTask(Operation task, Operation abort_task) {
+  if (state_ == FINISHED)
+    return;
+  task_queue_.push(task);
+  ++tasks_scheduled_;
+  abort_task_stack_.push(abort_task);
+  EnsureTasksRunning();
+}
+
 void IndexedDBTransaction::ScheduleTask(IndexedDBDatabase::TaskType type,
-                                        Operation* task,
-                                        Operation* abort_task) {
+                                        Operation task) {
   if (state_ == FINISHED)
     return;
 
-  if (type == IndexedDBDatabase::NORMAL_TASK)
+  if (type == IndexedDBDatabase::NORMAL_TASK) {
     task_queue_.push(task);
-  else
+    ++tasks_scheduled_;
+  } else {
     preemptive_task_queue_.push(task);
+  }
+  EnsureTasksRunning();
+}
 
-  if (abort_task)
-    abort_task_stack_.push(abort_task);
-
+void IndexedDBTransaction::EnsureTasksRunning() {
   if (state_ == UNUSED) {
     Start();
   } else if (state_ == RUNNING && !should_process_queue_) {
@@ -126,8 +138,8 @@ void IndexedDBTransaction::Abort(const IndexedDBDatabaseError& error) {
 
   // Run the abort tasks, if any.
   while (!abort_task_stack_.empty()) {
-    scoped_ptr<Operation> task(abort_task_stack_.pop());
-    task->Perform(0);
+    Operation task(abort_task_stack_.pop());
+    task.Run(0);
   }
   preemptive_task_queue_.clear();
   task_queue_.clear();
@@ -177,6 +189,7 @@ void IndexedDBTransaction::Run() {
   DCHECK(state_ == START_PENDING || state_ == RUNNING);
   DCHECK(!should_process_queue_);
 
+  start_time_ = base::Time::Now();
   should_process_queue_ = true;
   base::MessageLoop::current()->PostTask(
       FROM_HERE, base::Bind(&IndexedDBTransaction::ProcessTaskQueue, this));
@@ -272,8 +285,12 @@ void IndexedDBTransaction::ProcessTaskQueue() {
       pending_preemptive_events_ ? &preemptive_task_queue_ : &task_queue_;
   while (!task_queue->empty() && state_ != FINISHED) {
     DCHECK_EQ(state_, RUNNING);
-    scoped_ptr<Operation> task(task_queue->pop());
-    task->Perform(this);
+    Operation task(task_queue->pop());
+    task.Run(this);
+    if (!pending_preemptive_events_) {
+      DCHECK(tasks_completed_ < tasks_scheduled_);
+      ++tasks_completed_;
+    }
 
     // Event itself may change which queue should be processed next.
     task_queue =

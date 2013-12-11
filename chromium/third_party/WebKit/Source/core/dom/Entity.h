@@ -26,20 +26,15 @@
 
 namespace WebCore {
 
-// FIXME: This abstract class is only here so that the JavaScript and bindings can continue to be compiled.
 class Entity : public ContainerNode {
-public:
-    String publicId() const { ASSERT_NOT_REACHED(); return String(); }
-    String systemId() const { ASSERT_NOT_REACHED(); return String(); }
-    String notationName() const { ASSERT_NOT_REACHED(); return String(); }
-
 private:
     Entity() : ContainerNode(0)
     {
+        ASSERT_NOT_REACHED();
         ScriptWrappable::init(this);
     }
 };
 
-} //namespace
+} // namespace WebCore
 
 #endif

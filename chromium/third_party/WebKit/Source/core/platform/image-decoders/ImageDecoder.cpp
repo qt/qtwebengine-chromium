@@ -28,6 +28,7 @@
 #include "core/platform/image-decoders/jpeg/JPEGImageDecoder.h"
 #include "core/platform/image-decoders/png/PNGImageDecoder.h"
 #include "core/platform/image-decoders/webp/WEBPImageDecoder.h"
+#include "public/platform/Platform.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
@@ -87,27 +88,29 @@ PassOwnPtr<ImageDecoder> ImageDecoder::create(const SharedBuffer& data, ImageSou
     static const unsigned longestSignatureLength = sizeof("RIFF????WEBPVP") - 1;
     ASSERT(longestSignatureLength == 14);
 
+    size_t maxDecodedBytes = WebKit::Platform::current()->maxDecodedImageBytes();
+
     char contents[longestSignatureLength];
     if (copyFromSharedBuffer(contents, longestSignatureLength, data, 0) < longestSignatureLength)
         return nullptr;
 
     if (matchesJPEGSignature(contents))
-        return adoptPtr(new JPEGImageDecoder(alphaOption, gammaAndColorProfileOption));
+        return adoptPtr(new JPEGImageDecoder(alphaOption, gammaAndColorProfileOption, maxDecodedBytes));
 
     if (matchesPNGSignature(contents))
-        return adoptPtr(new PNGImageDecoder(alphaOption, gammaAndColorProfileOption));
+        return adoptPtr(new PNGImageDecoder(alphaOption, gammaAndColorProfileOption, maxDecodedBytes));
 
     if (matchesGIFSignature(contents))
-        return adoptPtr(new GIFImageDecoder(alphaOption, gammaAndColorProfileOption));
+        return adoptPtr(new GIFImageDecoder(alphaOption, gammaAndColorProfileOption, maxDecodedBytes));
 
     if (matchesICOSignature(contents) || matchesCURSignature(contents))
-        return adoptPtr(new ICOImageDecoder(alphaOption, gammaAndColorProfileOption));
+        return adoptPtr(new ICOImageDecoder(alphaOption, gammaAndColorProfileOption, maxDecodedBytes));
 
     if (matchesWebPSignature(contents))
-        return adoptPtr(new WEBPImageDecoder(alphaOption, gammaAndColorProfileOption));
+        return adoptPtr(new WEBPImageDecoder(alphaOption, gammaAndColorProfileOption, maxDecodedBytes));
 
     if (matchesBMPSignature(contents))
-        return adoptPtr(new BMPImageDecoder(alphaOption, gammaAndColorProfileOption));
+        return adoptPtr(new BMPImageDecoder(alphaOption, gammaAndColorProfileOption, maxDecodedBytes));
 
     return nullptr;
 }
@@ -152,13 +155,18 @@ void ImageDecoder::clearFrameBuffer(size_t frameIndex)
     m_frameBufferCache[frameIndex].clearPixelData();
 }
 
-size_t ImageDecoder::findRequiredPreviousFrame(size_t frameIndex)
+size_t ImageDecoder::findRequiredPreviousFrame(size_t frameIndex, bool frameRectIsOpaque)
 {
     ASSERT(frameIndex <= m_frameBufferCache.size());
     if (!frameIndex) {
         // The first frame doesn't rely on any previous data.
-        return notFound;
+        return kNotFound;
     }
+
+    const ImageFrame* currBuffer = &m_frameBufferCache[frameIndex];
+    if ((frameRectIsOpaque || currBuffer->alphaBlendSource() == ImageFrame::BlendAtopBgcolor)
+        && currBuffer->originalFrameRect().contains(IntRect(IntPoint(), size())))
+        return kNotFound;
 
     // The starting state for this frame depends on the previous frame's
     // disposal method.
@@ -185,10 +193,10 @@ size_t ImageDecoder::findRequiredPreviousFrame(size_t frameIndex)
         // this frame is a blank frame, so it can again be decoded alone.
         // Otherwise, the previous frame contributes to this frame.
         return (prevBuffer->originalFrameRect().contains(IntRect(IntPoint(), size()))
-            || (prevBuffer->requiredPreviousFrameIndex() == notFound)) ? notFound : prevFrame;
+            || (prevBuffer->requiredPreviousFrameIndex() == kNotFound)) ? kNotFound : prevFrame;
     default:
         ASSERT_NOT_REACHED();
-        return notFound;
+        return kNotFound;
     }
 }
 

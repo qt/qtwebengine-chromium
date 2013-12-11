@@ -42,10 +42,10 @@ base.exportTo('cc', function() {
             'layerQuad']);
       cc.moveOptionalFieldsFromArgsToToplevel(
           this, ['maskLayer', 'replicaLayer',
-            'idealContentsScale']);
+            'idealContentsScale', 'geometryContentsScale']);
 
       // Leave bounds in both places.
-      this.bounds = base.Rect.FromXYWH(
+      this.bounds = base.Rect.fromXYWH(
           0, 0,
           this.args.bounds.width, this.args.bounds.height);
 
@@ -55,6 +55,15 @@ base.exportTo('cc', function() {
         this.maskLayer.parentLayer = this;
       if (this.replicaLayer)
         this.maskLayer.replicaLayer = this;
+      if (!this.geometryContentsScale)
+        this.geometryContentsScale = 1.0;
+
+      this.touchEventHandlerRegion = cc.Region.fromArrayOrUndefined(
+          this.args.touchEventHandlerRegion);
+      this.wheelEventHandlerRegion = cc.Region.fromArrayOrUndefined(
+          this.args.wheelEventHandlerRegion);
+      this.nonFastScrollableRegion = cc.Region.fromArrayOrUndefined(
+          this.args.nonFastScrollableRegion);
     },
 
     get layerTreeImpl() {
@@ -97,7 +106,7 @@ base.exportTo('cc', function() {
       LayerImplSnapshot.prototype.initialize.call(this);
 
       if (this.args.invalidation) {
-        this.invalidation = cc.RegionFromArray(this.args.invalidation);
+        this.invalidation = cc.Region.fromArray(this.args.invalidation);
         delete this.args.invalidation;
       }
       if (this.args.pictures) {
@@ -111,6 +120,7 @@ base.exportTo('cc', function() {
           var tile = this.args.coverageTiles[i].tile;
           this.tileCoverageRects.push(new cc.TileCoverageRect(rect, tile));
         }
+        delete this.args.coverageTiles;
       }
     }
   };
@@ -128,6 +138,11 @@ base.exportTo('cc', function() {
   ObjectSnapshot.register('cc::TextureLayerImpl', LayerImplSnapshot);
   ObjectSnapshot.register('cc::TiledLayerImpl', LayerImplSnapshot);
   ObjectSnapshot.register('cc::VideoLayerImpl', LayerImplSnapshot);
+  ObjectSnapshot.register('cc::PaintedScrollbarLayerImpl', LayerImplSnapshot);
+
+  ObjectSnapshot.register('ClankPatchLayer', LayerImplSnapshot);
+  ObjectSnapshot.register('TabBorderLayer', LayerImplSnapshot);
+  ObjectSnapshot.register('CounterLayer', LayerImplSnapshot);
 
   return {
     LayerImplSnapshot: LayerImplSnapshot,

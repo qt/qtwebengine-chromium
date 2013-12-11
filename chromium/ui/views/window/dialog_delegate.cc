@@ -7,7 +7,6 @@
 #include "base/logging.h"
 #include "grit/ui_strings.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/ui_base_switches_util.h"
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/bubble/bubble_frame_view.h"
 #include "ui/views/controls/button/label_button.h"
@@ -30,8 +29,8 @@ DialogDelegate::~DialogDelegate() {
 
 // static
 bool DialogDelegate::UseNewStyle() {
-  return switches::IsNewDialogStyleEnabled() &&
-         Textfield::IsViewsTextfieldEnabled();
+  // The new dialog style cannot host native Windows textfield controls.
+  return Textfield::IsViewsTextfieldEnabled();
 }
 
 // static
@@ -52,12 +51,6 @@ Widget* DialogDelegate::CreateDialogWidget(DialogDelegate* dialog,
   params.parent = parent;
   params.top_level = true;
   widget->Init(params);
-  if (use_new_style) {
-#if defined(USE_AURA)
-    // TODO(msw): Add a matching shadow type and remove the bubble frame border?
-    corewm::SetShadowType(widget->GetNativeWindow(), corewm::SHADOW_TYPE_NONE);
-#endif
-  }
   return widget;
 }
 
@@ -199,6 +192,10 @@ NonClientFrameView* DialogDelegate::CreateNewStyleFrameView(
   }
   if (force_opaque_border)
     widget->set_frame_type(views::Widget::FRAME_TYPE_FORCE_CUSTOM);
+#if defined(USE_AURA)
+  // TODO(msw): Add a matching shadow type and remove the bubble frame border?
+  corewm::SetShadowType(widget->GetNativeWindow(), corewm::SHADOW_TYPE_NONE);
+#endif
   return frame;
 }
 

@@ -62,7 +62,7 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGTextContentElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
-SVGTextContentElement::SVGTextContentElement(const QualifiedName& tagName, Document* document)
+SVGTextContentElement::SVGTextContentElement(const QualifiedName& tagName, Document& document)
     : SVGGraphicsElement(tagName, document)
     , m_textLength(LengthModeOther)
     , m_specifiedTextLength(LengthModeOther)
@@ -103,19 +103,19 @@ PassRefPtr<SVGAnimatedLength> SVGTextContentElement::textLength()
 
 unsigned SVGTextContentElement::getNumberOfChars()
 {
-    document()->updateLayoutIgnorePendingStylesheets();
+    document().updateLayoutIgnorePendingStylesheets();
     return SVGTextQuery(renderer()).numberOfCharacters();
 }
 
 float SVGTextContentElement::getComputedTextLength()
 {
-    document()->updateLayoutIgnorePendingStylesheets();
+    document().updateLayoutIgnorePendingStylesheets();
     return SVGTextQuery(renderer()).textLength();
 }
 
 float SVGTextContentElement::getSubStringLength(unsigned charnum, unsigned nchars, ExceptionState& es)
 {
-    document()->updateLayoutIgnorePendingStylesheets();
+    document().updateLayoutIgnorePendingStylesheets();
 
     unsigned numberOfChars = getNumberOfChars();
     if (charnum >= numberOfChars) {
@@ -123,12 +123,15 @@ float SVGTextContentElement::getSubStringLength(unsigned charnum, unsigned nchar
         return 0.0f;
     }
 
+    if (nchars > numberOfChars - charnum)
+        nchars = numberOfChars - charnum;
+
     return SVGTextQuery(renderer()).subStringLength(charnum, nchars);
 }
 
 SVGPoint SVGTextContentElement::getStartPositionOfChar(unsigned charnum, ExceptionState& es)
 {
-    document()->updateLayoutIgnorePendingStylesheets();
+    document().updateLayoutIgnorePendingStylesheets();
 
     if (charnum > getNumberOfChars()) {
         es.throwDOMException(IndexSizeError);
@@ -140,7 +143,7 @@ SVGPoint SVGTextContentElement::getStartPositionOfChar(unsigned charnum, Excepti
 
 SVGPoint SVGTextContentElement::getEndPositionOfChar(unsigned charnum, ExceptionState& es)
 {
-    document()->updateLayoutIgnorePendingStylesheets();
+    document().updateLayoutIgnorePendingStylesheets();
 
     if (charnum > getNumberOfChars()) {
         es.throwDOMException(IndexSizeError);
@@ -152,7 +155,7 @@ SVGPoint SVGTextContentElement::getEndPositionOfChar(unsigned charnum, Exception
 
 SVGRect SVGTextContentElement::getExtentOfChar(unsigned charnum, ExceptionState& es)
 {
-    document()->updateLayoutIgnorePendingStylesheets();
+    document().updateLayoutIgnorePendingStylesheets();
 
     if (charnum > getNumberOfChars()) {
         es.throwDOMException(IndexSizeError);
@@ -164,7 +167,7 @@ SVGRect SVGTextContentElement::getExtentOfChar(unsigned charnum, ExceptionState&
 
 float SVGTextContentElement::getRotationOfChar(unsigned charnum, ExceptionState& es)
 {
-    document()->updateLayoutIgnorePendingStylesheets();
+    document().updateLayoutIgnorePendingStylesheets();
 
     if (charnum > getNumberOfChars()) {
         es.throwDOMException(IndexSizeError);
@@ -176,7 +179,7 @@ float SVGTextContentElement::getRotationOfChar(unsigned charnum, ExceptionState&
 
 int SVGTextContentElement::getCharNumAtPosition(const SVGPoint& point)
 {
-    document()->updateLayoutIgnorePendingStylesheets();
+    document().updateLayoutIgnorePendingStylesheets();
     return SVGTextQuery(renderer()).characterNumberAtPosition(point);
 }
 
@@ -191,12 +194,7 @@ void SVGTextContentElement::selectSubString(unsigned charnum, unsigned nchars, E
     if (nchars > numberOfChars - charnum)
         nchars = numberOfChars - charnum;
 
-    ASSERT(document());
-    ASSERT(document()->frame());
-
-    FrameSelection* selection = document()->frame()->selection();
-    if (!selection)
-        return;
+    ASSERT(document().frame());
 
     // Find selection start
     VisiblePosition start(firstPositionInNode(const_cast<SVGTextContentElement*>(this)));
@@ -208,7 +206,7 @@ void SVGTextContentElement::selectSubString(unsigned charnum, unsigned nchars, E
     for (unsigned i = 0; i < nchars; ++i)
         end = end.next();
 
-    selection->setSelection(VisibleSelection(start, end));
+    document().frame()->selection().setSelection(VisibleSelection(start, end));
 }
 
 bool SVGTextContentElement::isSupportedAttribute(const QualifiedName& attrName)

@@ -11,6 +11,7 @@
 #include <windows.h>
 
 #include <set>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -20,9 +21,11 @@
 #include "base/strings/string16.h"
 #include "base/win/win_util.h"
 #include "ui/base/accessibility/accessibility_types.h"
+#include "ui/events/event.h"
+#include "ui/base/sequential_id_generator.h"
 #include "ui/base/ui_base_types.h"
-#include "ui/base/win/window_impl.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/win/window_impl.h"
 #include "ui/views/ime/input_method_delegate.h"
 #include "ui/views/views_export.h"
 
@@ -56,7 +59,7 @@ const int WM_NCUAHDRAWFRAME = 0xAF;
 // implementation.
 // TODO(beng): This object should eventually *become* the WindowImpl.
 class VIEWS_EXPORT HWNDMessageHandler :
-    public ui::WindowImpl,
+    public gfx::WindowImpl,
     public internal::InputMethodDelegate,
     public base::MessageLoopForUI::Observer {
  public:
@@ -177,7 +180,7 @@ class VIEWS_EXPORT HWNDMessageHandler :
 
   // Called after the WM_ACTIVATE message has been processed by the default
   // windows procedure.
-  void PostProcessActivateMessage(int activation_state);
+  void PostProcessActivateMessage(int activation_state, bool minimized);
 
   // Enables disabled owner windows that may have been disabled due to this
   // window's modality.
@@ -288,8 +291,8 @@ class VIEWS_EXPORT HWNDMessageHandler :
     MSG_WM_CREATE(OnCreate)
     MSG_WM_DESTROY(OnDestroy)
     MSG_WM_DISPLAYCHANGE(OnDisplayChange)
-    MSG_WM_ERASEBKGND(OnEraseBkgnd)
     MSG_WM_ENTERSIZEMOVE(OnEnterSizeMove)
+    MSG_WM_ERASEBKGND(OnEraseBkgnd)
     MSG_WM_EXITSIZEMOVE(OnExitSizeMove)
     MSG_WM_GETMINMAXINFO(OnGetMinMaxInfo)
     MSG_WM_INITMENU(OnInitMenu)
@@ -309,8 +312,8 @@ class VIEWS_EXPORT HWNDMessageHandler :
     MSG_WM_SIZE(OnSize)
     MSG_WM_SYSCOMMAND(OnSysCommand)
     MSG_WM_THEMECHANGED(OnThemeChanged)
-    MSG_WM_WINDOWPOSCHANGING(OnWindowPosChanging)
     MSG_WM_WINDOWPOSCHANGED(OnWindowPosChanged)
+    MSG_WM_WINDOWPOSCHANGING(OnWindowPosChanging)
   END_MSG_MAP()
 
   // Message Handlers.
@@ -364,11 +367,20 @@ class VIEWS_EXPORT HWNDMessageHandler :
   void OnWindowPosChanging(WINDOWPOS* window_pos);
   void OnWindowPosChanged(WINDOWPOS* window_pos);
 
+  typedef std::vector<ui::TouchEvent> TouchEvents;
+  // Helper to handle the list of touch events passed in. We need this because
+  // touch events on windows don't fire if we enter a modal loop in the context
+  // of a touch event.
+  void HandleTouchEvents(const TouchEvents& touch_events);
+
   HWNDMessageHandlerDelegate* delegate_;
 
   scoped_ptr<FullscreenHandler> fullscreen_handler_;
 
-  base::WeakPtrFactory<HWNDMessageHandler> close_widget_factory_;
+  base::WeakPtrFactory<HWNDMessageHandler> weak_factory_;
+
+  // Set to true in Close() and false is CloseNow().
+  bool waiting_for_close_now_;
 
   bool remove_standard_frame_;
 
@@ -406,21 +418,12 @@ class VIEWS_EXPORT HWNDMessageHandler :
   // If this is greater than zero, the widget should be locked against updates.
   int lock_updates_count_;
 
-  // This flag can be initialized and checked after certain operations (such as
-  // DefWindowProc) to avoid stack-controlled functions (such as unlocking the
-  // Window with a ScopedRedrawLock) after destruction.
-  bool* destroyed_;
-
   // Window resizing -----------------------------------------------------------
 
   // When true, this flag makes us discard incoming SetWindowPos() requests that
   // only change our position/size.  (We still allow changes to Z-order,
   // activation, etc.)
   bool ignore_window_pos_changes_;
-
-  // The following factory is used to ignore SetWindowPos() calls for short time
-  // periods.
-  base::WeakPtrFactory<HWNDMessageHandler> ignore_pos_changes_factory_;
 
   // The last-seen monitor containing us, and its rect and work area.  These are
   // used to catch updates to the rect and work area and react accordingly.
@@ -457,8 +460,8 @@ class VIEWS_EXPORT HWNDMessageHandler :
   // to be insufficient.
   gfx::Rect invalid_rect_;
 
-  // A factory that allows us to schedule a redraw for layered windows.
-  base::WeakPtrFactory<HWNDMessageHandler> paint_layered_window_factory_;
+  // Set to true when waiting for RedrawLayeredWindowContents().
+  bool waiting_for_redraw_layered_window_contents_;
 
   // True if we are allowed to update the layered window from the DIB backing
   // store if necessary.
@@ -469,6 +472,9 @@ class VIEWS_EXPORT HWNDMessageHandler :
 
   // A factory used to lookup appbar autohide edges.
   base::WeakPtrFactory<HWNDMessageHandler> autohide_factory_;
+
+  // Generates touch-ids for touch-events.
+  ui::SequentialIDGenerator id_generator_;
 
   DISALLOW_COPY_AND_ASSIGN(HWNDMessageHandler);
 };

@@ -202,6 +202,7 @@ base::DictionaryValue* TabNavigationToValue(
   SET_STR(favicon_url);
   SET_ENUM(blocked_state, GetBlockedStateString);
   SET_STR_REP(content_pack_categories);
+  SET_INT32(http_status_code);
   return value;
 }
 
@@ -240,11 +241,36 @@ base::DictionaryValue* TimeRangeDirectiveToValue(
   return value;
 }
 
+base::DictionaryValue* SyncedNotificationImageToValue(
+    const sync_pb::SyncedNotificationImage& proto) {
+  base::DictionaryValue* value = new base::DictionaryValue();
+  SET_STR(url);
+  return value;
+}
+
+base::DictionaryValue* SyncedNotificationProfileImageToValue(
+    const sync_pb::SyncedNotificationProfileImage& proto) {
+  base::DictionaryValue* value = new base::DictionaryValue();
+  SET_STR(image_url);
+  return value;
+}
+
+base::DictionaryValue* MediaToValue(
+    const sync_pb::Media& proto) {
+  base::DictionaryValue* value = new base::DictionaryValue();
+  SET(image, SyncedNotificationImageToValue);
+  return value;
+}
+
 base::DictionaryValue* SimpleCollapsedLayoutToValue(
     const sync_pb::SimpleCollapsedLayout& proto) {
   base::DictionaryValue* value = new base::DictionaryValue();
   SET_STR(heading);
   SET_STR(description);
+  SET_STR(annotation);
+  SET_REP(media, MediaToValue);
+  SET_REP(profile_image, SyncedNotificationProfileImageToValue);
+  SET(app_icon, SyncedNotificationImageToValue);
   return value;
 }
 
@@ -258,6 +284,7 @@ base::DictionaryValue* CollapsedInfoToValue(
 base::DictionaryValue* RenderInfoToValue(
     const sync_pb::SyncedNotificationRenderInfo& proto) {
   base::DictionaryValue* value = new base::DictionaryValue();
+  // TODO(petewil): Add the expanded info values too.
   SET(collapsed_info, CollapsedInfoToValue);
   return value;
 }
@@ -267,6 +294,8 @@ base::DictionaryValue* CoalescedNotificationToValue(
   base::DictionaryValue* value = new base::DictionaryValue();
   SET_STR(key);
   SET_INT32(read_state);
+  SET_INT64(creation_time_msec);
+  SET_INT32(priority);
   SET(render_info, RenderInfoToValue);
   return value;
 }
@@ -462,6 +491,9 @@ base::DictionaryValue* ManagedUserSpecificsToValue(
   SET_STR(id);
   SET_STR(name);
   SET_BOOL(acknowledged);
+  SET_STR(master_key);
+  SET_STR(chrome_avatar);
+  SET_STR(chromeos_avatar);
   return value;
 }
 
@@ -549,6 +581,7 @@ base::DictionaryValue* SearchEngineSpecificsToValue(
   SET_STR(suggestions_url_post_params);
   SET_STR(instant_url_post_params);
   SET_STR(image_url_post_params);
+  SET_STR(new_tab_url);
   return value;
 }
 

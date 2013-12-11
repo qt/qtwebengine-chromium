@@ -9,15 +9,17 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/containers/hash_tables.h"
+#include "base/containers/scoped_ptr_hash_map.h"
 #include "cc/base/math_util.h"
+#include "cc/debug/test_web_graphics_context_3d.h"
 #include "cc/input/top_controls_manager.h"
 #include "cc/layers/delegated_renderer_layer_impl.h"
 #include "cc/layers/heads_up_display_layer_impl.h"
 #include "cc/layers/io_surface_layer_impl.h"
 #include "cc/layers/layer_impl.h"
+#include "cc/layers/painted_scrollbar_layer_impl.h"
 #include "cc/layers/quad_sink.h"
 #include "cc/layers/render_surface_impl.h"
-#include "cc/layers/scrollbar_layer_impl.h"
 #include "cc/layers/solid_color_layer_impl.h"
 #include "cc/layers/texture_layer_impl.h"
 #include "cc/layers/tiled_layer_impl.h"
@@ -25,6 +27,8 @@
 #include "cc/output/begin_frame_args.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "cc/output/compositor_frame_metadata.h"
+#include "cc/output/copy_output_request.h"
+#include "cc/output/copy_output_result.h"
 #include "cc/output/gl_renderer.h"
 #include "cc/quads/render_pass_draw_quad.h"
 #include "cc/quads/solid_color_draw_quad.h"
@@ -32,19 +36,23 @@
 #include "cc/quads/tile_draw_quad.h"
 #include "cc/resources/layer_tiling_data.h"
 #include "cc/test/animation_test_common.h"
+#include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/fake_output_surface.h"
+#include "cc/test/fake_output_surface_client.h"
+#include "cc/test/fake_picture_layer_impl.h"
+#include "cc/test/fake_picture_pile_impl.h"
 #include "cc/test/fake_proxy.h"
 #include "cc/test/fake_rendering_stats_instrumentation.h"
 #include "cc/test/fake_video_frame_provider.h"
 #include "cc/test/geometry_test_utils.h"
 #include "cc/test/layer_test_common.h"
 #include "cc/test/render_pass_test_common.h"
-#include "cc/test/test_web_graphics_context_3d.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "media/base/media.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/vector2d_conversions.h"
 
@@ -65,12 +73,13 @@ class LayerTreeHostImplTest : public testing::Test,
       : proxy_(),
         always_impl_thread_(&proxy_),
         always_main_thread_blocked_(&proxy_),
-        did_try_initialize_renderer_(false),
         on_can_draw_state_changed_called_(false),
-        has_pending_tree_(false),
+        did_notify_ready_to_activate_(false),
         did_request_commit_(false),
         did_request_redraw_(false),
+        did_request_manage_tiles_(false),
         did_upload_visible_tile_(false),
+        did_lose_output_surface_(false),
         reduce_memory_result_(true),
         current_limit_bytes_(0),
         current_priority_cutoff_value_(0) {
@@ -93,26 +102,27 @@ class LayerTreeHostImplTest : public testing::Test,
 
   virtual void TearDown() OVERRIDE {}
 
-  virtual void DidTryInitializeRendererOnImplThread(
-      bool success,
-      scoped_refptr<ContextProvider> offscreen_context_provider) OVERRIDE {
-    did_try_initialize_renderer_ = true;
+  virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE {
+    did_lose_output_surface_ = true;
   }
-  virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE {}
   virtual void OnSwapBuffersCompleteOnImplThread() OVERRIDE {}
   virtual void BeginFrameOnImplThread(const BeginFrameArgs& args)
       OVERRIDE {}
   virtual void OnCanDrawStateChanged(bool can_draw) OVERRIDE {
     on_can_draw_state_changed_called_ = true;
   }
-  virtual void OnHasPendingTreeStateChanged(bool has_pending_tree) OVERRIDE {
-    has_pending_tree_ = has_pending_tree;
+  virtual void NotifyReadyToActivate() OVERRIDE {
+    did_notify_ready_to_activate_ = true;
+    host_impl_->ActivatePendingTree();
   }
   virtual void SetNeedsRedrawOnImplThread() OVERRIDE {
     did_request_redraw_ = true;
   }
   virtual void SetNeedsRedrawRectOnImplThread(gfx::Rect damage_rect) OVERRIDE {
     did_request_redraw_ = true;
+  }
+  virtual void SetNeedsManageTilesOnImplThread() OVERRIDE {
+    did_request_manage_tiles_ = true;
   }
   virtual void DidInitializeVisibleTileOnImplThread() OVERRIDE {
     did_upload_visible_tile_ = true;
@@ -350,12 +360,13 @@ class LayerTreeHostImplTest : public testing::Test,
 
   scoped_ptr<LayerTreeHostImpl> host_impl_;
   FakeRenderingStatsInstrumentation stats_instrumentation_;
-  bool did_try_initialize_renderer_;
   bool on_can_draw_state_changed_called_;
-  bool has_pending_tree_;
+  bool did_notify_ready_to_activate_;
   bool did_request_commit_;
   bool did_request_redraw_;
+  bool did_request_manage_tiles_;
   bool did_upload_visible_tile_;
+  bool did_lose_output_surface_;
   bool reduce_memory_result_;
   base::TimeDelta requested_scrollbar_animation_delay_;
   size_t current_limit_bytes_;
@@ -372,19 +383,17 @@ TEST_F(LayerTreeHostImplTest, CanDrawIncompleteFrames) {
   settings.impl_side_painting = true;
   host_impl_ = LayerTreeHostImpl::Create(
       settings, this, &proxy_, &stats_instrumentation_);
+
+  scoped_ptr<FakeOutputSurface> output_surface(
+      FakeOutputSurface::CreateAlwaysDrawAndSwap3d());
+
   host_impl_->InitializeRenderer(
-      FakeOutputSurface::CreateAlwaysDrawAndSwap3d().PassAs<OutputSurface>());
+      output_surface.PassAs<OutputSurface>());
   host_impl_->SetViewportSize(gfx::Size(10, 10));
 
   bool always_draw = true;
   CheckNotifyCalledIfCanDrawChanged(always_draw);
 }
-
-class TestWebGraphicsContext3DMakeCurrentFails
-    : public TestWebGraphicsContext3D {
- public:
-  virtual bool makeContextCurrent() OVERRIDE { return false; }
-};
 
 TEST_F(LayerTreeHostImplTest, ScrollDeltaNoLayers) {
   ASSERT_FALSE(host_impl_->active_tree()->root_layer());
@@ -480,12 +489,15 @@ TEST_F(LayerTreeHostImplTest, ScrollWithoutRenderer) {
                                          this,
                                          &proxy_,
                                          &stats_instrumentation_);
+  scoped_ptr<TestWebGraphicsContext3D> context_owned =
+      TestWebGraphicsContext3D::Create();
+  context_owned->set_times_make_current_succeeds(0);
+
+  scoped_ptr<FakeOutputSurface> output_surface(FakeOutputSurface::Create3d(
+      context_owned.Pass()));
 
   // Initialization will fail here.
-  host_impl_->InitializeRenderer(FakeOutputSurface::Create3d(
-      scoped_ptr<WebKit::WebGraphicsContext3D>(
-          new TestWebGraphicsContext3DMakeCurrentFails))
-      .PassAs<OutputSurface>());
+  host_impl_->InitializeRenderer(output_surface.PassAs<OutputSurface>());
   host_impl_->SetViewportSize(gfx::Size(10, 10));
 
   SetupScrollAndContentsLayers(gfx::Size(100, 100));
@@ -721,8 +733,8 @@ TEST_F(LayerTreeHostImplTest, ScrollVerticallyByPageReturnsCorrectValue) {
   EXPECT_FALSE(host_impl_->ScrollVerticallyByPage(
       gfx::Point(), SCROLL_BACKWARD));
 
-  scoped_ptr<cc::ScrollbarLayerImpl> vertical_scrollbar(
-      cc::ScrollbarLayerImpl::Create(
+  scoped_ptr<cc::PaintedScrollbarLayerImpl> vertical_scrollbar(
+      cc::PaintedScrollbarLayerImpl::Create(
           host_impl_->active_tree(),
           20,
           VERTICAL));
@@ -982,13 +994,17 @@ TEST_F(LayerTreeHostImplTest, PageScaleAnimation) {
                                                            max_page_scale);
     scroll_layer->SetScrollOffset(gfx::Vector2d(50, 50));
 
-    host_impl_->StartPageScaleAnimation(gfx::Vector2d(),
-                                        false,
-                                        2.f,
-                                        start_time,
-                                        duration);
+    host_impl_->StartPageScaleAnimation(gfx::Vector2d(), false, 2.f, duration);
+    did_request_redraw_ = false;
+    host_impl_->Animate(start_time, base::Time());
+    EXPECT_TRUE(did_request_redraw_);
+
+    did_request_redraw_ = false;
     host_impl_->Animate(halfway_through_animation, base::Time());
     EXPECT_TRUE(did_request_redraw_);
+
+    did_request_redraw_ = false;
+    did_request_commit_ = false;
     host_impl_->Animate(end_time, base::Time());
     EXPECT_TRUE(did_request_commit_);
 
@@ -1005,10 +1021,14 @@ TEST_F(LayerTreeHostImplTest, PageScaleAnimation) {
                                                            max_page_scale);
     scroll_layer->SetScrollOffset(gfx::Vector2d(50, 50));
 
-    host_impl_->StartPageScaleAnimation(gfx::Vector2d(25, 25),
-                                        true,
-                                        min_page_scale,
-                                        start_time, duration);
+    host_impl_->StartPageScaleAnimation(
+        gfx::Vector2d(25, 25), true, min_page_scale, duration);
+    did_request_redraw_ = false;
+    host_impl_->Animate(start_time, base::Time());
+    EXPECT_TRUE(did_request_redraw_);
+
+    did_request_redraw_ = false;
+    did_request_commit_ = false;
     host_impl_->Animate(end_time, base::Time());
     EXPECT_TRUE(did_request_redraw_);
     EXPECT_TRUE(did_request_commit_);
@@ -1044,11 +1064,8 @@ TEST_F(LayerTreeHostImplTest, PageScaleAnimationNoOp) {
                                                            max_page_scale);
     scroll_layer->SetScrollOffset(gfx::Vector2d(50, 50));
 
-    host_impl_->StartPageScaleAnimation(gfx::Vector2d(),
-                                        true,
-                                        1.f,
-                                        start_time,
-                                        duration);
+    host_impl_->StartPageScaleAnimation(gfx::Vector2d(), true, 1.f, duration);
+    host_impl_->Animate(start_time, base::Time());
     host_impl_->Animate(halfway_through_animation, base::Time());
     EXPECT_TRUE(did_request_redraw_);
     host_impl_->Animate(end_time, base::Time());
@@ -1086,9 +1103,9 @@ class LayerTreeHostImplOverridePhysicalTime : public LayerTreeHostImpl {
   base::TimeTicks fake_current_physical_time_;
 };
 
-TEST_F(LayerTreeHostImplTest, ScrollbarLinearFadeScheduling) {
+TEST_F(LayerTreeHostImplTest, DISABLED_ScrollbarLinearFadeScheduling) {
   LayerTreeSettings settings;
-  settings.use_linear_fade_scrollbar_animator = true;
+  settings.scrollbar_animator = LayerTreeSettings::LinearFade;
   settings.scrollbar_linear_fade_delay_ms = 20;
   settings.scrollbar_linear_fade_length_ms = 20;
 
@@ -1121,10 +1138,8 @@ TEST_F(LayerTreeHostImplTest, ScrollbarLinearFadeScheduling) {
   contents->SetBounds(content_size);
   contents->SetContentBounds(content_size);
 
-  scoped_ptr<ScrollbarLayerImpl> scrollbar = ScrollbarLayerImpl::Create(
-      host_impl_->active_tree(),
-      4,
-      VERTICAL);
+  scoped_ptr<PaintedScrollbarLayerImpl> scrollbar =
+      PaintedScrollbarLayerImpl::Create(host_impl_->active_tree(), 4, VERTICAL);
   scroll->SetVerticalScrollbarLayer(scrollbar.get());
 
   scroll->AddChild(contents.Pass());
@@ -1144,9 +1159,19 @@ TEST_F(LayerTreeHostImplTest, ScrollbarLinearFadeScheduling) {
   EXPECT_EQ(base::TimeDelta(), requested_scrollbar_animation_delay_);
   EXPECT_FALSE(did_request_redraw_);
 
-  // After a scroll, a fade animation should be scheduled about 20ms from now.
+  // If no scroll happened during a scroll gesture, StartScrollbarAnimation
+  // should have no effect.
   host_impl_->ScrollBegin(gfx::Point(), InputHandler::Wheel);
   host_impl_->ScrollEnd();
+  host_impl_->StartScrollbarAnimation();
+  EXPECT_EQ(base::TimeDelta(), requested_scrollbar_animation_delay_);
+  EXPECT_FALSE(did_request_redraw_);
+
+  // After a scroll, a fade animation should be scheduled about 20ms from now.
+  host_impl_->ScrollBegin(gfx::Point(), InputHandler::Wheel);
+  host_impl_->ScrollBy(gfx::Point(), gfx::Vector2dF(5, 0));
+  host_impl_->ScrollEnd();
+  did_request_redraw_ = false;
   host_impl_->StartScrollbarAnimation();
   EXPECT_LT(base::TimeDelta::FromMilliseconds(19),
             requested_scrollbar_animation_delay_);
@@ -1509,8 +1534,9 @@ class MissingTextureAnimatingLayer : public DidDrawCheckLayer {
     if (!tile_missing) {
       ResourceProvider::ResourceId resource =
           resource_provider->CreateResource(gfx::Size(1, 1),
-                                            GL_RGBA,
-                                            ResourceProvider::TextureUsageAny);
+                                            GL_CLAMP_TO_EDGE,
+                                            ResourceProvider::TextureUsageAny,
+                                            RGBA_8888);
       resource_provider->AllocateForTesting(resource);
       PushTileProperties(0, 0, resource, gfx::Rect(), false);
     }
@@ -2207,7 +2233,7 @@ TEST_F(LayerTreeHostImplTest, ScrollNonAxisAlignedRotatedLayer) {
     // Scroll down in screen coordinates with a gesture.
     gfx::Vector2d gesture_scroll_delta(0, 10);
     EXPECT_EQ(InputHandler::ScrollStarted,
-              host_impl_->ScrollBegin(gfx::Point(),
+              host_impl_->ScrollBegin(gfx::Point(1, 1),
                                       InputHandler::Gesture));
     host_impl_->ScrollBy(gfx::Point(), gesture_scroll_delta);
     host_impl_->ScrollEnd();
@@ -2232,7 +2258,7 @@ TEST_F(LayerTreeHostImplTest, ScrollNonAxisAlignedRotatedLayer) {
         gfx::Vector2dF());
     gfx::Vector2d gesture_scroll_delta(10, 0);
     EXPECT_EQ(InputHandler::ScrollStarted,
-              host_impl_->ScrollBegin(gfx::Point(),
+              host_impl_->ScrollBegin(gfx::Point(1, 1),
                                       InputHandler::Gesture));
     host_impl_->ScrollBy(gfx::Point(), gesture_scroll_delta);
     host_impl_->ScrollEnd();
@@ -2600,8 +2626,9 @@ class BlendStateCheckLayer : public LayerImpl {
         quad_visible_rect_(5, 5, 5, 5),
         resource_id_(resource_provider->CreateResource(
             gfx::Size(1, 1),
-            GL_RGBA,
-            ResourceProvider::TextureUsageAny)) {
+            GL_CLAMP_TO_EDGE,
+            ResourceProvider::TextureUsageAny,
+            RGBA_8888)) {
     resource_provider->AllocateForTesting(resource_id_);
     SetAnchorPoint(gfx::PointF());
     SetBounds(gfx::Size(10, 10));
@@ -2844,20 +2871,25 @@ TEST_F(LayerTreeHostImplTest, BlendingOffWhenDrawingOpaqueLayers) {
 
 class LayerTreeHostImplViewportCoveredTest : public LayerTreeHostImplTest {
  public:
+  LayerTreeHostImplViewportCoveredTest() :
+      gutter_quad_material_(DrawQuad::SOLID_COLOR),
+      child_(NULL),
+      did_activate_pending_tree_(false) {}
+
   void CreateLayerTreeHostImpl(bool always_draw) {
     LayerTreeSettings settings;
     settings.minimum_occlusion_tracking_size = gfx::Size();
     settings.impl_side_painting = true;
     host_impl_ = LayerTreeHostImpl::Create(
         settings, this, &proxy_, &stats_instrumentation_);
-    scoped_ptr<OutputSurface> output_surface;
-    if (always_draw) {
-      output_surface = FakeOutputSurface::CreateAlwaysDrawAndSwap3d()
-          .PassAs<OutputSurface>();
-    } else {
-      output_surface = CreateFakeOutputSurface();
-    }
-    host_impl_->InitializeRenderer(output_surface.Pass());
+
+    scoped_ptr<FakeOutputSurface> output_surface;
+    if (always_draw)
+      output_surface = FakeOutputSurface::CreateAlwaysDrawAndSwap3d().Pass();
+    else
+      output_surface = FakeOutputSurface::Create3d().Pass();
+
+    host_impl_->InitializeRenderer(output_surface.PassAs<OutputSurface>());
     viewport_size_ = gfx::Size(1000, 1000);
   }
 
@@ -2888,15 +2920,11 @@ class LayerTreeHostImplViewportCoveredTest : public LayerTreeHostImplTest {
     EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
     ASSERT_EQ(1u, frame.render_passes.size());
 
-    size_t num_gutter_quads = 0;
-    for (size_t i = 0; i < frame.render_passes[0]->quad_list.size(); ++i)
-      num_gutter_quads += (frame.render_passes[0]->quad_list[i]->material ==
-                           DrawQuad::SOLID_COLOR) ? 1 : 0;
-    EXPECT_EQ(0u, num_gutter_quads);
+    EXPECT_EQ(0u, CountGutterQuads(frame.render_passes[0]->quad_list));
     EXPECT_EQ(1u, frame.render_passes[0]->quad_list.size());
+    ValidateTextureDrawQuads(frame.render_passes[0]->quad_list);
 
-    LayerTestCommon::VerifyQuadsExactlyCoverRect(
-        frame.render_passes[0]->quad_list, gfx::Rect(viewport_size_));
+    VerifyQuadsExactlyCoverViewport(frame.render_passes[0]->quad_list);
     host_impl_->DidDrawAllLayers(frame);
   }
 
@@ -2913,15 +2941,11 @@ class LayerTreeHostImplViewportCoveredTest : public LayerTreeHostImplTest {
     EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
     ASSERT_EQ(1u, frame.render_passes.size());
 
-    size_t num_gutter_quads = 0;
-    for (size_t i = 0; i < frame.render_passes[0]->quad_list.size(); ++i)
-      num_gutter_quads += (frame.render_passes[0]->quad_list[i]->material ==
-                           DrawQuad::SOLID_COLOR) ? 1 : 0;
-    EXPECT_EQ(1u, num_gutter_quads);
+    EXPECT_EQ(1u, CountGutterQuads(frame.render_passes[0]->quad_list));
     EXPECT_EQ(1u, frame.render_passes[0]->quad_list.size());
+    ValidateTextureDrawQuads(frame.render_passes[0]->quad_list);
 
-    LayerTestCommon::VerifyQuadsExactlyCoverRect(
-        frame.render_passes[0]->quad_list, gfx::Rect(viewport_size_));
+    VerifyQuadsExactlyCoverViewport(frame.render_passes[0]->quad_list);
     host_impl_->DidDrawAllLayers(frame);
   }
 
@@ -2938,15 +2962,11 @@ class LayerTreeHostImplViewportCoveredTest : public LayerTreeHostImplTest {
     EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
     ASSERT_EQ(1u, frame.render_passes.size());
 
-    size_t num_gutter_quads = 0;
-    for (size_t i = 0; i < frame.render_passes[0]->quad_list.size(); ++i)
-      num_gutter_quads += (frame.render_passes[0]->quad_list[i]->material ==
-                           DrawQuad::SOLID_COLOR) ? 1 : 0;
-    EXPECT_EQ(4u, num_gutter_quads);
+    EXPECT_EQ(4u, CountGutterQuads(frame.render_passes[0]->quad_list));
     EXPECT_EQ(5u, frame.render_passes[0]->quad_list.size());
+    ValidateTextureDrawQuads(frame.render_passes[0]->quad_list);
 
-    LayerTestCommon::VerifyQuadsExactlyCoverRect(
-        frame.render_passes[0]->quad_list, gfx::Rect(viewport_size_));
+    VerifyQuadsExactlyCoverViewport(frame.render_passes[0]->quad_list);
     host_impl_->DidDrawAllLayers(frame);
   }
 
@@ -2964,12 +2984,9 @@ class LayerTreeHostImplViewportCoveredTest : public LayerTreeHostImplTest {
     EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
     ASSERT_EQ(1u, frame.render_passes.size());
 
-    size_t num_gutter_quads = 0;
-    for (size_t i = 0; i < frame.render_passes[0]->quad_list.size(); ++i)
-      num_gutter_quads += (frame.render_passes[0]->quad_list[i]->material ==
-                           DrawQuad::SOLID_COLOR) ? 1 : 0;
-    EXPECT_EQ(0u, num_gutter_quads);
+    EXPECT_EQ(0u, CountGutterQuads(frame.render_passes[0]->quad_list));
     EXPECT_EQ(1u, frame.render_passes[0]->quad_list.size());
+    ValidateTextureDrawQuads(frame.render_passes[0]->quad_list);
 
     host_impl_->DidDrawAllLayers(frame);
   }
@@ -2978,7 +2995,54 @@ class LayerTreeHostImplViewportCoveredTest : public LayerTreeHostImplTest {
     did_activate_pending_tree_ = true;
   }
 
+  void set_gutter_quad_material(DrawQuad::Material material) {
+    gutter_quad_material_ = material;
+  }
+  void set_gutter_texture_size(gfx::Size gutter_texture_size) {
+    gutter_texture_size_ = gutter_texture_size;
+  }
+
  protected:
+  size_t CountGutterQuads(const QuadList& quad_list) {
+    size_t num_gutter_quads = 0;
+    for (size_t i = 0; i < quad_list.size(); ++i) {
+      num_gutter_quads += (quad_list[i]->material ==
+                           gutter_quad_material_) ? 1 : 0;
+    }
+    return num_gutter_quads;
+  }
+
+  void VerifyQuadsExactlyCoverViewport(const QuadList& quad_list) {
+    LayerTestCommon::VerifyQuadsExactlyCoverRect(
+        quad_list, gfx::Rect(DipSizeToPixelSize(viewport_size_)));
+  }
+
+  // Make sure that the texture coordinates match their expectations.
+  void ValidateTextureDrawQuads(const QuadList& quad_list) {
+    for (size_t i = 0; i < quad_list.size(); ++i) {
+      if (quad_list[i]->material != DrawQuad::TEXTURE_CONTENT)
+        continue;
+      const TextureDrawQuad* quad = TextureDrawQuad::MaterialCast(quad_list[i]);
+      gfx::SizeF gutter_texture_size_pixels = gfx::ScaleSize(
+          gutter_texture_size_, host_impl_->device_scale_factor());
+      EXPECT_EQ(quad->uv_top_left.x(),
+                quad->rect.x() / gutter_texture_size_pixels.width());
+      EXPECT_EQ(quad->uv_top_left.y(),
+                quad->rect.y() / gutter_texture_size_pixels.height());
+      EXPECT_EQ(quad->uv_bottom_right.x(),
+                quad->rect.right() / gutter_texture_size_pixels.width());
+      EXPECT_EQ(quad->uv_bottom_right.y(),
+                quad->rect.bottom() / gutter_texture_size_pixels.height());
+    }
+  }
+
+  gfx::Size DipSizeToPixelSize(gfx::Size size) {
+    return gfx::ToRoundedSize(
+        gfx::ScaleSize(size, host_impl_->device_scale_factor()));
+  }
+
+  DrawQuad::Material gutter_quad_material_;
+  gfx::Size gutter_texture_size_;
   gfx::Size viewport_size_;
   BlendStateCheckLayer* child_;
   bool did_activate_pending_tree_;
@@ -2988,8 +3052,65 @@ TEST_F(LayerTreeHostImplViewportCoveredTest, ViewportCovered) {
   bool always_draw = false;
   CreateLayerTreeHostImpl(always_draw);
 
-  host_impl_->SetViewportSize(viewport_size_);
+  host_impl_->SetViewportSize(DipSizeToPixelSize(viewport_size_));
   SetupActiveTreeLayers();
+  TestLayerCoversFullViewport();
+  TestEmptyLayer();
+  TestLayerInMiddleOfViewport();
+  TestLayerIsLargerThanViewport();
+}
+
+TEST_F(LayerTreeHostImplViewportCoveredTest, ViewportCoveredScaled) {
+  bool always_draw = false;
+  CreateLayerTreeHostImpl(always_draw);
+
+  host_impl_->SetDeviceScaleFactor(2.f);
+  host_impl_->SetViewportSize(DipSizeToPixelSize(viewport_size_));
+  SetupActiveTreeLayers();
+  TestLayerCoversFullViewport();
+  TestEmptyLayer();
+  TestLayerInMiddleOfViewport();
+  TestLayerIsLargerThanViewport();
+}
+
+TEST_F(LayerTreeHostImplViewportCoveredTest, ViewportCoveredOverhangBitmap) {
+  bool always_draw = false;
+  CreateLayerTreeHostImpl(always_draw);
+
+  host_impl_->SetViewportSize(DipSizeToPixelSize(viewport_size_));
+  SetupActiveTreeLayers();
+
+  SkBitmap skbitmap;
+  skbitmap.setConfig(SkBitmap::kARGB_8888_Config, 2, 2);
+  skbitmap.allocPixels();
+  skbitmap.setImmutable();
+
+  // Specify an overhang bitmap to use.
+  UIResourceBitmap ui_resource_bitmap(skbitmap, UIResourceBitmap::REPEAT);
+  UIResourceId ui_resource_id = 12345;
+  host_impl_->CreateUIResource(ui_resource_id, ui_resource_bitmap);
+  host_impl_->SetOverhangUIResource(ui_resource_id, gfx::Size(32, 32));
+  set_gutter_quad_material(DrawQuad::TEXTURE_CONTENT);
+  set_gutter_texture_size(gfx::Size(32, 32));
+
+  TestLayerCoversFullViewport();
+  TestEmptyLayer();
+  TestLayerInMiddleOfViewport();
+  TestLayerIsLargerThanViewport();
+
+  // Change the resource size.
+  host_impl_->SetOverhangUIResource(ui_resource_id, gfx::Size(128, 16));
+  set_gutter_texture_size(gfx::Size(128, 16));
+
+  TestLayerCoversFullViewport();
+  TestEmptyLayer();
+  TestLayerInMiddleOfViewport();
+  TestLayerIsLargerThanViewport();
+
+  // Change the device scale factor
+  host_impl_->SetDeviceScaleFactor(2.f);
+  host_impl_->SetViewportSize(DipSizeToPixelSize(viewport_size_));
+
   TestLayerCoversFullViewport();
   TestEmptyLayer();
   TestLayerInMiddleOfViewport();
@@ -3002,7 +3123,7 @@ TEST_F(LayerTreeHostImplViewportCoveredTest, ActiveTreeGrowViewportInvalid) {
 
   // Pending tree to force active_tree size invalid. Not used otherwise.
   host_impl_->CreatePendingTree();
-  host_impl_->SetViewportSize(viewport_size_);
+  host_impl_->SetViewportSize(DipSizeToPixelSize(viewport_size_));
   EXPECT_TRUE(host_impl_->active_tree()->ViewportSizeInvalid());
 
   SetupActiveTreeLayers();
@@ -3019,16 +3140,15 @@ TEST_F(LayerTreeHostImplViewportCoveredTest, ActiveTreeShrinkViewportInvalid) {
   host_impl_->CreatePendingTree();
   gfx::Size larger_viewport(viewport_size_.width() + 100,
                             viewport_size_.height() + 100);
-  host_impl_->SetViewportSize(larger_viewport);
+  host_impl_->SetViewportSize(DipSizeToPixelSize(larger_viewport));
   EXPECT_TRUE(host_impl_->active_tree()->ViewportSizeInvalid());
-  did_activate_pending_tree_ = false;
-  host_impl_->ActivatePendingTreeIfNeeded();
+  host_impl_->ActivatePendingTree();
   EXPECT_TRUE(did_activate_pending_tree_);
   EXPECT_FALSE(host_impl_->active_tree()->ViewportSizeInvalid());
 
   // Shrink pending tree viewport without activating.
   host_impl_->CreatePendingTree();
-  host_impl_->SetViewportSize(viewport_size_);
+  host_impl_->SetViewportSize(DipSizeToPixelSize(viewport_size_));
   EXPECT_TRUE(host_impl_->active_tree()->ViewportSizeInvalid());
 
   SetupActiveTreeLayers();
@@ -3081,11 +3201,11 @@ class FakeDrawableLayerImpl: public LayerImpl {
 // can leave the window at the wrong size if we never draw and the proper
 // viewport size is never set.
 TEST_F(LayerTreeHostImplTest, ReshapeNotCalledUntilDraw) {
-  scoped_ptr<OutputSurface> output_surface = FakeOutputSurface::Create3d(
-      scoped_ptr<WebKit::WebGraphicsContext3D>(new ReshapeTrackerContext))
-      .PassAs<OutputSurface>();
-  ReshapeTrackerContext* reshape_tracker =
-      static_cast<ReshapeTrackerContext*>(output_surface->context3d());
+  scoped_ptr<ReshapeTrackerContext> owned_reshape_tracker(
+      new ReshapeTrackerContext);
+  ReshapeTrackerContext* reshape_tracker = owned_reshape_tracker.get();
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+      owned_reshape_tracker.PassAs<TestWebGraphicsContext3D>()));
   host_impl_->InitializeRenderer(output_surface.Pass());
 
   scoped_ptr<LayerImpl> root =
@@ -3133,7 +3253,11 @@ TEST_F(LayerTreeHostImplTest, ReshapeNotCalledUntilDraw) {
 
 class SwapTrackerContext : public TestWebGraphicsContext3D {
  public:
-  SwapTrackerContext() : last_update_type_(NoUpdate) {}
+  SwapTrackerContext()
+      : last_update_type_(NoUpdate) {
+    test_capabilities_.post_sub_buffer = true;
+    test_capabilities_.set_visibility = true;
+  }
 
   virtual void prepareTexture() OVERRIDE {
     update_rect_ = gfx::Rect(width_, height_);
@@ -3144,15 +3268,6 @@ class SwapTrackerContext : public TestWebGraphicsContext3D {
       OVERRIDE {
     update_rect_ = gfx::Rect(x, y, width, height);
     last_update_type_ = PostSubBuffer;
-  }
-
-  virtual WebKit::WebString getString(WebKit::WGC3Denum name) OVERRIDE {
-    if (name == GL_EXTENSIONS) {
-      return WebKit::WebString(
-          "GL_CHROMIUM_post_sub_buffer GL_CHROMIUM_set_visibility");
-    }
-
-    return WebKit::WebString();
   }
 
   gfx::Rect update_rect() const { return update_rect_; }
@@ -3175,11 +3290,11 @@ class SwapTrackerContext : public TestWebGraphicsContext3D {
 // Make sure damage tracking propagates all the way to the graphics context,
 // where it should request to swap only the sub-buffer that is damaged.
 TEST_F(LayerTreeHostImplTest, PartialSwapReceivesDamageRect) {
-  scoped_ptr<OutputSurface> output_surface =
-      FakeOutputSurface::Create3d(scoped_ptr<WebKit::WebGraphicsContext3D>(
-          new SwapTrackerContext)).PassAs<OutputSurface>();
-  SwapTrackerContext* swap_tracker =
-      static_cast<SwapTrackerContext*>(output_surface->context3d());
+  scoped_ptr<SwapTrackerContext> context(new SwapTrackerContext);
+  SwapTrackerContext* swap_tracker = context.get();
+
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+      context.PassAs<TestWebGraphicsContext3D>()));
 
   // This test creates its own LayerTreeHostImpl, so
   // that we can force partial swap enabled.
@@ -3329,7 +3444,6 @@ class MockContext : public TestWebGraphicsContext3D {
                                   WebKit::WGC3Dsizei count,
                                   WebKit::WGC3Denum type,
                                   WebKit::WGC3Dintptr offset));
-  MOCK_METHOD1(getString, WebKit::WebString(WebKit::WGC3Denum name));
   MOCK_METHOD0(getRequestableExtensionsCHROMIUM, WebKit::WebString());
   MOCK_METHOD1(enable, void(WebKit::WGC3Denum cap));
   MOCK_METHOD1(disable, void(WebKit::WGC3Denum cap));
@@ -3346,6 +3460,8 @@ class MockContextHarness {
  public:
   explicit MockContextHarness(MockContext* context)
       : context_(context) {
+    context_->set_have_post_sub_buffer(true);
+
     // Catch "uninteresting" calls
     EXPECT_CALL(*context_, useProgram(_))
         .Times(0);
@@ -3359,19 +3475,6 @@ class MockContextHarness {
 
     EXPECT_CALL(*context_, uniform4f(_, _, _, _, _))
         .WillRepeatedly(Return());
-
-    // Any other strings are empty
-    EXPECT_CALL(*context_, getString(_))
-        .WillRepeatedly(Return(WebKit::WebString()));
-
-    // Support for partial swap, if needed
-    EXPECT_CALL(*context_, getString(GL_EXTENSIONS))
-        .WillRepeatedly(Return(
-            WebKit::WebString("GL_CHROMIUM_post_sub_buffer")));
-
-    EXPECT_CALL(*context_, getRequestableExtensionsCHROMIUM())
-        .WillRepeatedly(Return(
-            WebKit::WebString("GL_CHROMIUM_post_sub_buffer")));
 
     // Any un-sanctioned calls to enable() are OK
     EXPECT_CALL(*context_, enable(_))
@@ -3414,11 +3517,11 @@ class MockContextHarness {
 };
 
 TEST_F(LayerTreeHostImplTest, NoPartialSwap) {
-  scoped_ptr<OutputSurface> output_surface =
-      FakeOutputSurface::Create3d(scoped_ptr<WebKit::WebGraphicsContext3D>(
-          new MockContext)).PassAs<OutputSurface>();
-  MockContext* mock_context =
-      static_cast<MockContext*>(output_surface->context3d());
+  scoped_ptr<MockContext> mock_context_owned(new MockContext);
+  MockContext* mock_context = mock_context_owned.get();
+
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+      mock_context_owned.PassAs<TestWebGraphicsContext3D>()));
   MockContextHarness harness(mock_context);
 
   // Run test case
@@ -3451,11 +3554,10 @@ TEST_F(LayerTreeHostImplTest, NoPartialSwap) {
 }
 
 TEST_F(LayerTreeHostImplTest, PartialSwap) {
-  scoped_ptr<OutputSurface> output_surface =
-      FakeOutputSurface::Create3d(scoped_ptr<WebKit::WebGraphicsContext3D>(
-          new MockContext)).PassAs<OutputSurface>();
-  MockContext* mock_context =
-      static_cast<MockContext*>(output_surface->context3d());
+  scoped_ptr<MockContext> context_owned(new MockContext);
+  MockContext* mock_context = context_owned.get();
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+      context_owned.PassAs<TestWebGraphicsContext3D>()));
   MockContextHarness harness(mock_context);
 
   CreateLayerTreeHost(true, output_surface.Pass());
@@ -3490,14 +3592,8 @@ TEST_F(LayerTreeHostImplTest, PartialSwap) {
 
 class PartialSwapContext : public TestWebGraphicsContext3D {
  public:
-  virtual WebKit::WebString getString(WebKit::WGC3Denum name) OVERRIDE {
-    if (name == GL_EXTENSIONS)
-      return WebKit::WebString("GL_CHROMIUM_post_sub_buffer");
-    return WebKit::WebString();
-  }
-
-  virtual WebKit::WebString getRequestableExtensionsCHROMIUM() OVERRIDE {
-    return WebKit::WebString("GL_CHROMIUM_post_sub_buffer");
+  PartialSwapContext() {
+    test_capabilities_.post_sub_buffer = true;
   }
 
   // Unlimited texture size.
@@ -3515,9 +3611,8 @@ static scoped_ptr<LayerTreeHostImpl> SetupLayersForOpacity(
     LayerTreeHostImplClient* client,
     Proxy* proxy,
     RenderingStatsInstrumentation* stats_instrumentation) {
-  scoped_ptr<OutputSurface> output_surface =
-      FakeOutputSurface::Create3d(scoped_ptr<WebKit::WebGraphicsContext3D>(
-          new PartialSwapContext)).PassAs<OutputSurface>();
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+      scoped_ptr<TestWebGraphicsContext3D>(new PartialSwapContext)));
 
   LayerTreeSettings settings;
   settings.partial_swap_enabled = partial_swap;
@@ -3634,7 +3729,10 @@ class TrackingWebGraphicsContext3D : public TestWebGraphicsContext3D {
  public:
   TrackingWebGraphicsContext3D()
       : TestWebGraphicsContext3D(),
-        num_textures_(0) {}
+        num_textures_(0) {
+    test_capabilities_.iosurface = true;
+    test_capabilities_.texture_rectangle = true;
+  }
 
   virtual WebKit::WebGLId createTexture() OVERRIDE {
     WebKit::WebGLId id = TestWebGraphicsContext3D::createTexture();
@@ -3652,15 +3750,6 @@ class TrackingWebGraphicsContext3D : public TestWebGraphicsContext3D {
     --num_textures_;
   }
 
-  virtual WebKit::WebString getString(WebKit::WGC3Denum name) OVERRIDE {
-    if (name == GL_EXTENSIONS) {
-      return WebKit::WebString(
-          "GL_CHROMIUM_iosurface GL_ARB_texture_rectangle");
-    }
-
-    return WebKit::WebString();
-  }
-
   unsigned num_textures() const { return num_textures_; }
 
  private:
@@ -3672,8 +3761,8 @@ TEST_F(LayerTreeHostImplTest, LayersFreeTextures) {
   scoped_ptr<TestWebGraphicsContext3D> context =
       TestWebGraphicsContext3D::Create();
   TestWebGraphicsContext3D* context3d = context.get();
-  scoped_ptr<OutputSurface> output_surface = FakeOutputSurface::Create3d(
-      context.PassAs<WebKit::WebGraphicsContext3D>()).PassAs<OutputSurface>();
+  scoped_ptr<OutputSurface> output_surface(
+      FakeOutputSurface::Create3d(context.Pass()));
   host_impl_->InitializeRenderer(output_surface.Pass());
 
   scoped_ptr<LayerImpl> root_layer =
@@ -3732,12 +3821,12 @@ class MockDrawQuadsToFillScreenContext : public TestWebGraphicsContext3D {
 };
 
 TEST_F(LayerTreeHostImplTest, HasTransparentBackground) {
-  scoped_ptr<OutputSurface> output_surface =
-      FakeOutputSurface::Create3d(scoped_ptr<WebKit::WebGraphicsContext3D>(
-          new MockDrawQuadsToFillScreenContext)).PassAs<OutputSurface>();
-  MockDrawQuadsToFillScreenContext* mock_context =
-      static_cast<MockDrawQuadsToFillScreenContext*>(
-          output_surface->context3d());
+  scoped_ptr<MockDrawQuadsToFillScreenContext> mock_context_owned(
+      new MockDrawQuadsToFillScreenContext);
+  MockDrawQuadsToFillScreenContext* mock_context = mock_context_owned.get();
+
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+      mock_context_owned.PassAs<TestWebGraphicsContext3D>()));
 
   // Run test case
   CreateLayerTreeHost(false, output_surface.Pass());
@@ -3790,9 +3879,8 @@ static void SetupLayersForTextureCaching(
     LayerImpl*& surface_layer_ptr,
     LayerImpl*& child_ptr,
     gfx::Size root_size) {
-  scoped_ptr<OutputSurface> output_surface =
-      FakeOutputSurface::Create3d(scoped_ptr<WebKit::WebGraphicsContext3D>(
-          new PartialSwapContext)).PassAs<OutputSurface>();
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+      scoped_ptr<TestWebGraphicsContext3D>(new PartialSwapContext)));
 
   layer_tree_host_impl->InitializeRenderer(output_surface.Pass());
   layer_tree_host_impl->SetViewportSize(root_size);
@@ -3869,9 +3957,8 @@ TEST_F(LayerTreeHostImplTest, TextureCachingWithOcclusion) {
   LayerImpl* layer_s1_ptr;
   LayerImpl* layer_s2_ptr;
 
-  scoped_ptr<OutputSurface> output_surface =
-      FakeOutputSurface::Create3d(scoped_ptr<WebKit::WebGraphicsContext3D>(
-          new PartialSwapContext)).PassAs<OutputSurface>();
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+      scoped_ptr<TestWebGraphicsContext3D>(new PartialSwapContext)));
 
   gfx::Size root_size(1000, 1000);
 
@@ -3988,9 +4075,8 @@ TEST_F(LayerTreeHostImplTest, TextureCachingWithOcclusionEarlyOut) {
   LayerImpl* layer_s1_ptr;
   LayerImpl* layer_s2_ptr;
 
-  scoped_ptr<OutputSurface> output_surface =
-      FakeOutputSurface::Create3d(scoped_ptr<WebKit::WebGraphicsContext3D>(
-          new PartialSwapContext)).PassAs<OutputSurface>();
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+      scoped_ptr<TestWebGraphicsContext3D>(new PartialSwapContext)));
 
   gfx::Size root_size(1000, 1000);
 
@@ -4109,9 +4195,8 @@ TEST_F(LayerTreeHostImplTest, TextureCachingWithOcclusionExternalOverInternal) {
   LayerImpl* layer_s1_ptr;
   LayerImpl* layer_s2_ptr;
 
-  scoped_ptr<OutputSurface> output_surface =
-      FakeOutputSurface::Create3d(scoped_ptr<WebKit::WebGraphicsContext3D>(
-          new PartialSwapContext)).PassAs<OutputSurface>();
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+      scoped_ptr<TestWebGraphicsContext3D>(new PartialSwapContext)));
 
   gfx::Size root_size(1000, 1000);
 
@@ -4199,9 +4284,8 @@ TEST_F(LayerTreeHostImplTest, TextureCachingWithOcclusionExternalNotAligned) {
   LayerImpl* root_ptr;
   LayerImpl* layer_s1_ptr;
 
-  scoped_ptr<OutputSurface> output_surface =
-      FakeOutputSurface::Create3d(scoped_ptr<WebKit::WebGraphicsContext3D>(
-          new PartialSwapContext)).PassAs<OutputSurface>();
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+      scoped_ptr<TestWebGraphicsContext3D>(new PartialSwapContext)));
 
   gfx::Size root_size(1000, 1000);
 
@@ -4290,9 +4374,8 @@ TEST_F(LayerTreeHostImplTest, TextureCachingWithOcclusionPartialSwap) {
   LayerImpl* layer_s1_ptr;
   LayerImpl* layer_s2_ptr;
 
-  scoped_ptr<OutputSurface> output_surface =
-      FakeOutputSurface::Create3d(scoped_ptr<WebKit::WebGraphicsContext3D>(
-          new PartialSwapContext)).PassAs<OutputSurface>();
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+      scoped_ptr<TestWebGraphicsContext3D>(new PartialSwapContext)));
 
   gfx::Size root_size(1000, 1000);
 
@@ -4420,9 +4503,8 @@ TEST_F(LayerTreeHostImplTest, TextureCachingWithScissor) {
   gfx::Rect child_rect(10, 10, 50, 50);
   gfx::Rect grand_child_rect(5, 5, 150, 150);
 
-  scoped_ptr<OutputSurface> output_surface =
-      FakeOutputSurface::Create3d(scoped_ptr<WebKit::WebGraphicsContext3D>(
-          new PartialSwapContext)).PassAs<OutputSurface>();
+  scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+      scoped_ptr<TestWebGraphicsContext3D>(new PartialSwapContext)));
   my_host_impl->InitializeRenderer(output_surface.Pass());
 
   root->SetAnchorPoint(gfx::PointF());
@@ -4924,18 +5006,18 @@ TEST_F(LayerTreeHostImplTest, ReleaseContentsTextureShouldTriggerCommit) {
 }
 
 struct RenderPassRemovalTestData : public LayerTreeHostImpl::FrameData {
-  ScopedPtrHashMap<RenderPass::Id, TestRenderPass> render_pass_cache;
+  base::ScopedPtrHashMap<RenderPass::Id, TestRenderPass> render_pass_cache;
   scoped_ptr<SharedQuadState> shared_quad_state;
 };
 
 class TestRenderer : public GLRenderer, public RendererClient {
  public:
-  static scoped_ptr<TestRenderer> Create(ResourceProvider* resource_provider,
+  static scoped_ptr<TestRenderer> Create(const LayerTreeSettings* settings,
+                                         ResourceProvider* resource_provider,
                                          OutputSurface* output_surface,
                                          Proxy* proxy) {
-    scoped_ptr<TestRenderer> renderer(new TestRenderer(resource_provider,
-                                                       output_surface,
-                                                       proxy));
+    scoped_ptr<TestRenderer> renderer(
+        new TestRenderer(settings, resource_provider, output_surface, proxy));
     if (!renderer->Initialize())
       return scoped_ptr<TestRenderer>();
 
@@ -4956,27 +5038,19 @@ class TestRenderer : public GLRenderer, public RendererClient {
   virtual gfx::Rect DeviceViewport() const OVERRIDE {
     return gfx::Rect(viewport_size_);
   }
-  virtual float DeviceScaleFactor() const OVERRIDE {
-    return 1.f;
-  }
-  virtual const LayerTreeSettings& Settings() const OVERRIDE {
-    return settings_;
-  }
+  virtual gfx::Rect DeviceClip() const OVERRIDE { return DeviceViewport(); }
   virtual void SetFullRootLayerDamage() OVERRIDE {}
-  virtual bool HasImplThread() const OVERRIDE { return false; }
-  virtual bool ShouldClearRootRenderPass() const OVERRIDE { return true; }
-  virtual CompositorFrameMetadata MakeCompositorFrameMetadata() const
-      OVERRIDE { return CompositorFrameMetadata(); }
-  virtual bool AllowPartialSwap() const OVERRIDE {
-    return true;
+  virtual CompositorFrameMetadata MakeCompositorFrameMetadata() const OVERRIDE {
+    return CompositorFrameMetadata();
   }
-  virtual bool ExternalStencilTestEnabled() const OVERRIDE { return false; }
 
  protected:
-  TestRenderer(ResourceProvider* resource_provider,
+  TestRenderer(const LayerTreeSettings* settings,
+               ResourceProvider* resource_provider,
                OutputSurface* output_surface,
                Proxy* proxy)
-      : GLRenderer(this, output_surface, resource_provider, 0) {}
+      : GLRenderer(this, settings, output_surface, resource_provider, NULL, 0) {
+  }
 
  private:
   LayerTreeSettings settings_;
@@ -5296,15 +5370,17 @@ static void VerifyRenderPassTestData(
 }
 
 TEST_F(LayerTreeHostImplTest, TestRemoveRenderPasses) {
+  LayerTreeSettings settings;
+  FakeOutputSurfaceClient output_surface_client;
   scoped_ptr<OutputSurface> output_surface(CreateOutputSurface());
-  ASSERT_TRUE(output_surface->context3d());
-  scoped_ptr<ResourceProvider> resource_provider =
-      ResourceProvider::Create(output_surface.get(), 0);
+  ASSERT_TRUE(output_surface->BindToClient(&output_surface_client));
+  ASSERT_TRUE(output_surface->context_provider());
 
-  scoped_ptr<TestRenderer> renderer =
-      TestRenderer::Create(resource_provider.get(),
-                           output_surface.get(),
-                           &proxy_);
+  scoped_ptr<ResourceProvider> resource_provider =
+      ResourceProvider::Create(output_surface.get(), 0, false);
+
+  scoped_ptr<TestRenderer> renderer = TestRenderer::Create(
+      &settings, resource_provider.get(), output_surface.get(), &proxy_);
 
   int test_case_index = 0;
   while (remove_render_passes_cases[test_case_index].name) {
@@ -5388,7 +5464,7 @@ TEST_F(LayerTreeHostImplTestWithDelegatingRenderer, FrameIncludesDamageRect) {
   host_impl_->active_tree()->SetRootLayer(root.PassAs<LayerImpl>());
 
   // Draw a frame. In the first frame, the entire viewport should be damaged.
-  gfx::Rect full_frame_damage = gfx::Rect(host_impl_->device_viewport_size());
+  gfx::Rect full_frame_damage(host_impl_->DrawViewportSize());
   DrawFrameAndTestDamage(full_frame_damage);
 
   // The second frame has damage that doesn't touch the child layer. Its quads
@@ -6085,6 +6161,79 @@ TEST_F(LayerTreeHostImplTest, MaskLayerForSurfaceWithClippedLayer) {
   }
 }
 
+class GLRendererWithSetupQuadForAntialiasing : public GLRenderer {
+ public:
+  using GLRenderer::SetupQuadForAntialiasing;
+};
+
+TEST_F(LayerTreeHostImplTest, FarAwayQuadsDontNeedAA) {
+  // Due to precision issues (especially on Android), sometimes far
+  // away quads can end up thinking they need AA.
+  float device_scale_factor = 4.f / 3.f;
+  host_impl_->SetDeviceScaleFactor(device_scale_factor);
+  gfx::Size root_size(2000, 1000);
+  gfx::Size device_viewport_size =
+      gfx::ToCeiledSize(gfx::ScaleSize(root_size, device_scale_factor));
+  host_impl_->SetViewportSize(device_viewport_size);
+
+  host_impl_->CreatePendingTree();
+  host_impl_->pending_tree()
+      ->SetPageScaleFactorAndLimits(1.f, 1.f / 16.f, 16.f);
+
+  scoped_ptr<LayerImpl> scoped_root =
+      LayerImpl::Create(host_impl_->pending_tree(), 1);
+  LayerImpl* root = scoped_root.get();
+
+  host_impl_->pending_tree()->SetRootLayer(scoped_root.Pass());
+
+  scoped_ptr<LayerImpl> scoped_scrolling_layer =
+      LayerImpl::Create(host_impl_->pending_tree(), 2);
+  LayerImpl* scrolling_layer = scoped_scrolling_layer.get();
+  root->AddChild(scoped_scrolling_layer.Pass());
+
+  gfx::Size content_layer_bounds(100000, 100);
+  gfx::Size pile_tile_size(3000, 3000);
+  scoped_refptr<FakePicturePileImpl> pile(FakePicturePileImpl::CreateFilledPile(
+      pile_tile_size, content_layer_bounds));
+
+  scoped_ptr<FakePictureLayerImpl> scoped_content_layer =
+      FakePictureLayerImpl::CreateWithPile(host_impl_->pending_tree(), 3, pile);
+  LayerImpl* content_layer = scoped_content_layer.get();
+  scrolling_layer->AddChild(scoped_content_layer.PassAs<LayerImpl>());
+  content_layer->SetBounds(content_layer_bounds);
+  content_layer->SetDrawsContent(true);
+
+  root->SetBounds(root_size);
+
+  gfx::Vector2d scroll_offset(100000, 0);
+  scrolling_layer->SetScrollable(true);
+  scrolling_layer->SetMaxScrollOffset(scroll_offset);
+  scrolling_layer->SetScrollOffset(scroll_offset);
+
+  host_impl_->ActivatePendingTree();
+
+  host_impl_->active_tree()->UpdateDrawProperties();
+  ASSERT_EQ(1u, host_impl_->active_tree()->RenderSurfaceLayerList().size());
+
+  LayerTreeHostImpl::FrameData frame;
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
+
+  ASSERT_EQ(1u, frame.render_passes.size());
+  ASSERT_LE(1u, frame.render_passes[0]->quad_list.size());
+  const DrawQuad* quad = frame.render_passes[0]->quad_list[0];
+
+  float edge[24];
+  gfx::QuadF device_layer_quad;
+  bool antialiased =
+      GLRendererWithSetupQuadForAntialiasing::SetupQuadForAntialiasing(
+          quad->quadTransform(), quad, &device_layer_quad, edge);
+  EXPECT_FALSE(antialiased);
+
+  host_impl_->DrawLayers(&frame, base::TimeTicks::Now());
+  host_impl_->DidDrawAllLayers(frame);
+}
+
+
 class CompositorFrameMetadataTest : public LayerTreeHostImplTest {
  public:
   CompositorFrameMetadataTest()
@@ -6106,7 +6255,8 @@ TEST_F(CompositorFrameMetadataTest, CompositorFrameAckCountsAsSwapComplete) {
     host_impl_->DidDrawAllLayers(frame);
   }
   CompositorFrameAck ack;
-  host_impl_->OnSwapBuffersComplete(&ack);
+  host_impl_->ReclaimResources(&ack);
+  host_impl_->OnSwapBuffersComplete();
   EXPECT_EQ(swap_buffers_complete_, 1);
 }
 
@@ -6187,55 +6337,152 @@ TEST_F(LayerTreeHostImplTest,
   EXPECT_EQ(host_impl_->active_tree()->root_layer(), frame.will_draw_layers[0]);
 }
 
-TEST_F(LayerTreeHostImplTest, DeferredInitializeSmoke) {
-  set_reduce_memory_result(false);
-  scoped_ptr<FakeOutputSurface> output_surface(
-      FakeOutputSurface::CreateDeferredGL(
-          scoped_ptr<SoftwareOutputDevice>(new CountingSoftwareDevice())));
-  FakeOutputSurface* output_surface_ptr = output_surface.get();
-  EXPECT_TRUE(
-      host_impl_->InitializeRenderer(output_surface.PassAs<OutputSurface>()));
+class LayerTreeHostImplTestDeferredInitialize : public LayerTreeHostImplTest {
+ protected:
+  virtual void SetUp() OVERRIDE {
+    LayerTreeHostImplTest::SetUp();
 
-  // Add two layers.
-  scoped_ptr<SolidColorLayerImpl> root_layer =
-      SolidColorLayerImpl::Create(host_impl_->active_tree(), 1);
-  FakeVideoFrameProvider provider;
-  scoped_ptr<VideoLayerImpl> video_layer =
-      VideoLayerImpl::Create(host_impl_->active_tree(), 2, &provider);
-  video_layer->SetBounds(gfx::Size(10, 10));
-  video_layer->SetContentBounds(gfx::Size(10, 10));
-  video_layer->SetDrawsContent(true);
-  root_layer->AddChild(video_layer.PassAs<LayerImpl>());
-  SetupRootLayerImpl(root_layer.PassAs<LayerImpl>());
+    set_reduce_memory_result(false);
 
+    scoped_ptr<FakeOutputSurface> output_surface(
+        FakeOutputSurface::CreateDeferredGL(
+            scoped_ptr<SoftwareOutputDevice>(new CountingSoftwareDevice())));
+    output_surface_ = output_surface.get();
+
+    EXPECT_TRUE(host_impl_->InitializeRenderer(
+        output_surface.PassAs<OutputSurface>()));
+
+    scoped_ptr<SolidColorLayerImpl> root_layer =
+        SolidColorLayerImpl::Create(host_impl_->active_tree(), 1);
+    SetupRootLayerImpl(root_layer.PassAs<LayerImpl>());
+
+    onscreen_context_provider_ = TestContextProvider::Create();
+    offscreen_context_provider_ = TestContextProvider::Create();
+  }
+
+  FakeOutputSurface* output_surface_;
+  scoped_refptr<TestContextProvider> onscreen_context_provider_;
+  scoped_refptr<TestContextProvider> offscreen_context_provider_;
+};
+
+
+TEST_F(LayerTreeHostImplTestDeferredInitialize, Success) {
   // Software draw.
   DrawFrame();
 
+  EXPECT_FALSE(host_impl_->output_surface()->context_provider());
+  EXPECT_FALSE(host_impl_->offscreen_context_provider());
+
   // DeferredInitialize and hardware draw.
-  EXPECT_FALSE(did_try_initialize_renderer_);
-  EXPECT_TRUE(output_surface_ptr->SetAndInitializeContext3D(
-      scoped_ptr<WebKit::WebGraphicsContext3D>(
-          TestWebGraphicsContext3D::Create())));
-  EXPECT_TRUE(did_try_initialize_renderer_);
+  EXPECT_TRUE(output_surface_->InitializeAndSetContext3d(
+      onscreen_context_provider_, offscreen_context_provider_));
+  EXPECT_EQ(onscreen_context_provider_,
+            host_impl_->output_surface()->context_provider());
+  EXPECT_EQ(offscreen_context_provider_,
+            host_impl_->offscreen_context_provider());
 
   // Defer intialized GL draw.
   DrawFrame();
 
   // Revert back to software.
-  did_try_initialize_renderer_ = false;
-  output_surface_ptr->ReleaseGL();
-  EXPECT_TRUE(did_try_initialize_renderer_);
+  output_surface_->ReleaseGL();
+  EXPECT_FALSE(host_impl_->output_surface()->context_provider());
+  EXPECT_FALSE(host_impl_->offscreen_context_provider());
+
+  // Software draw again.
   DrawFrame();
 }
 
-class ContextThatDoesNotSupportMemoryManagmentExtensions
-    : public TestWebGraphicsContext3D {
- public:
-  // WebGraphicsContext3D methods.
-  virtual WebKit::WebString getString(WebKit::WGC3Denum name) {
-    return WebKit::WebString();
-  }
-};
+TEST_F(LayerTreeHostImplTestDeferredInitialize, Fails_OnscreenContext_0) {
+  // Software draw.
+  DrawFrame();
+
+  // Fail initialization of the onscreen context before the OutputSurface binds
+  // it to the thread.
+  onscreen_context_provider_->UnboundTestContext3d()
+      ->set_times_make_current_succeeds(0);
+
+  EXPECT_FALSE(host_impl_->output_surface()->context_provider());
+  EXPECT_FALSE(host_impl_->offscreen_context_provider());
+  EXPECT_FALSE(did_lose_output_surface_);
+
+  // DeferredInitialize fails.
+  EXPECT_FALSE(output_surface_->InitializeAndSetContext3d(
+      onscreen_context_provider_, offscreen_context_provider_));
+  EXPECT_FALSE(host_impl_->output_surface()->context_provider());
+  EXPECT_FALSE(host_impl_->offscreen_context_provider());
+
+  // Software draw again.
+  DrawFrame();
+}
+
+TEST_F(LayerTreeHostImplTestDeferredInitialize, Fails_OnscreenContext_1) {
+  // Software draw.
+  DrawFrame();
+
+  // Fail initialization of the onscreen context after the OutputSurface binds
+  // it to the thread.
+  onscreen_context_provider_->UnboundTestContext3d()
+      ->set_times_make_current_succeeds(2);
+
+  EXPECT_FALSE(host_impl_->output_surface()->context_provider());
+  EXPECT_FALSE(host_impl_->offscreen_context_provider());
+  EXPECT_FALSE(did_lose_output_surface_);
+
+  // DeferredInitialize fails.
+  EXPECT_FALSE(output_surface_->InitializeAndSetContext3d(
+      onscreen_context_provider_, offscreen_context_provider_));
+  EXPECT_FALSE(host_impl_->output_surface()->context_provider());
+  EXPECT_FALSE(host_impl_->offscreen_context_provider());
+
+  // We lose the output surface.
+  EXPECT_TRUE(did_lose_output_surface_);
+}
+
+TEST_F(LayerTreeHostImplTestDeferredInitialize, Fails_OnscreenContext_2) {
+  // Software draw.
+  DrawFrame();
+
+  // Fail initialization of the onscreen context after the OutputSurface binds
+  // it to the thread and during renderer initialization.
+  onscreen_context_provider_->UnboundTestContext3d()
+      ->set_times_make_current_succeeds(1);
+
+  EXPECT_FALSE(host_impl_->output_surface()->context_provider());
+  EXPECT_FALSE(host_impl_->offscreen_context_provider());
+  EXPECT_FALSE(did_lose_output_surface_);
+
+  // DeferredInitialize fails.
+  EXPECT_FALSE(output_surface_->InitializeAndSetContext3d(
+      onscreen_context_provider_, offscreen_context_provider_));
+  EXPECT_FALSE(host_impl_->output_surface()->context_provider());
+  EXPECT_FALSE(host_impl_->offscreen_context_provider());
+
+  // We lose the output surface.
+  EXPECT_TRUE(did_lose_output_surface_);
+}
+
+TEST_F(LayerTreeHostImplTestDeferredInitialize, Fails_OffscreenContext) {
+  // Software draw.
+  DrawFrame();
+
+  // Fail initialization of the offscreen context.
+  offscreen_context_provider_->UnboundTestContext3d()
+      ->set_times_make_current_succeeds(0);
+
+  EXPECT_FALSE(host_impl_->output_surface()->context_provider());
+  EXPECT_FALSE(host_impl_->offscreen_context_provider());
+  EXPECT_FALSE(did_lose_output_surface_);
+
+  // DeferredInitialize fails.
+  EXPECT_FALSE(output_surface_->InitializeAndSetContext3d(
+      onscreen_context_provider_, offscreen_context_provider_));
+  EXPECT_FALSE(host_impl_->output_surface()->context_provider());
+  EXPECT_FALSE(host_impl_->offscreen_context_provider());
+
+  // We lose the output surface.
+  EXPECT_TRUE(did_lose_output_surface_);
+}
 
 // Checks that we have a non-0 default allocation if we pass a context that
 // doesn't support memory management extensions.
@@ -6246,10 +6493,9 @@ TEST_F(LayerTreeHostImplTest, DefaultMemoryAllocation) {
                                          &proxy_,
                                          &stats_instrumentation_);
 
-  host_impl_->InitializeRenderer(FakeOutputSurface::Create3d(
-      scoped_ptr<WebKit::WebGraphicsContext3D>(
-          new ContextThatDoesNotSupportMemoryManagmentExtensions))
-      .PassAs<OutputSurface>());
+  scoped_ptr<OutputSurface> output_surface(
+      FakeOutputSurface::Create3d(TestWebGraphicsContext3D::Create()));
+  host_impl_->InitializeRenderer(output_surface.Pass());
   EXPECT_LT(0ul, host_impl_->memory_allocation_limit_bytes());
 }
 
@@ -6276,19 +6522,44 @@ TEST_F(LayerTreeHostImplTest, MemoryPolicy) {
   EXPECT_EQ(visible_cutoff_value, current_priority_cutoff_value_);
 }
 
+class LayerTreeHostImplTestManageTiles : public LayerTreeHostImplTest {
+ public:
+  virtual void SetUp() OVERRIDE {
+    LayerTreeSettings settings;
+    settings.impl_side_painting = true;
+
+    fake_host_impl_ = new FakeLayerTreeHostImpl(settings, &proxy_);
+    host_impl_.reset(fake_host_impl_);
+    host_impl_->InitializeRenderer(CreateOutputSurface());
+    host_impl_->SetViewportSize(gfx::Size(10, 10));
+  }
+
+  FakeLayerTreeHostImpl* fake_host_impl_;
+};
+
+TEST_F(LayerTreeHostImplTestManageTiles, ManageTilesWhenInvisible) {
+  fake_host_impl_->DidModifyTilePriorities();
+  EXPECT_TRUE(fake_host_impl_->manage_tiles_needed());
+  fake_host_impl_->SetVisible(false);
+  EXPECT_FALSE(fake_host_impl_->manage_tiles_needed());
+}
+
 TEST_F(LayerTreeHostImplTest, UIResourceManagement) {
   scoped_ptr<TestWebGraphicsContext3D> context =
       TestWebGraphicsContext3D::Create();
   TestWebGraphicsContext3D* context3d = context.get();
-  scoped_ptr<OutputSurface> output_surface = FakeOutputSurface::Create3d(
-      context.PassAs<WebKit::WebGraphicsContext3D>()).PassAs<OutputSurface>();
+  scoped_ptr<OutputSurface> output_surface = CreateFakeOutputSurface();
   host_impl_->InitializeRenderer(output_surface.Pass());
 
   EXPECT_EQ(0u, context3d->NumTextures());
 
+  SkBitmap skbitmap;
+  skbitmap.setConfig(SkBitmap::kARGB_8888_Config, 1, 1);
+  skbitmap.allocPixels();
+  skbitmap.setImmutable();
+
   UIResourceId ui_resource_id = 1;
-  scoped_refptr<UIResourceBitmap> bitmap = UIResourceBitmap::Create(
-      new uint8_t[1], UIResourceBitmap::RGBA8, gfx::Size(1, 1));
+  UIResourceBitmap bitmap(skbitmap);
   host_impl_->CreateUIResource(ui_resource_id, bitmap);
   EXPECT_EQ(1u, context3d->NumTextures());
   ResourceProvider::ResourceId id1 =
@@ -6320,6 +6591,47 @@ TEST_F(LayerTreeHostImplTest, UIResourceManagement) {
   // Should not change state for multiple deletion on one UIResourceId
   host_impl_->DeleteUIResource(ui_resource_id);
   EXPECT_EQ(0u, context3d->NumTextures());
+}
+
+void ShutdownReleasesContext_Callback(scoped_ptr<CopyOutputResult> result) {
+}
+
+TEST_F(LayerTreeHostImplTest, ShutdownReleasesContext) {
+  scoped_refptr<TestContextProvider> context_provider =
+      TestContextProvider::Create();
+
+  host_impl_ = LayerTreeHostImpl::Create(LayerTreeSettings(),
+                                         this,
+                                         &proxy_,
+                                         &stats_instrumentation_);
+  host_impl_->InitializeRenderer(
+      FakeOutputSurface::Create3d(context_provider).PassAs<OutputSurface>());
+  host_impl_->SetViewportSize(gfx::Size(10, 10));
+
+  SetupRootLayerImpl(LayerImpl::Create(host_impl_->active_tree(), 1));
+
+  ScopedPtrVector<CopyOutputRequest> requests;
+  requests.push_back(CopyOutputRequest::CreateRequest(
+      base::Bind(&ShutdownReleasesContext_Callback)));
+
+  host_impl_->active_tree()->root_layer()->PassCopyRequests(&requests);
+
+  LayerTreeHostImpl::FrameData frame;
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
+  host_impl_->DrawLayers(&frame, base::TimeTicks::Now());
+  host_impl_->DidDrawAllLayers(frame);
+
+  // The CopyOutputResult's callback has a ref on the ContextProvider and a
+  // texture in a texture mailbox.
+  EXPECT_FALSE(context_provider->HasOneRef());
+  EXPECT_EQ(1u, context_provider->TestContext3d()->NumTextures());
+
+  host_impl_.reset();
+
+  // The CopyOutputResult's callback was cancelled, the CopyOutputResult
+  // released, and the texture deleted.
+  EXPECT_TRUE(context_provider->HasOneRef());
+  EXPECT_EQ(0u, context_provider->TestContext3d()->NumTextures());
 }
 
 }  // namespace

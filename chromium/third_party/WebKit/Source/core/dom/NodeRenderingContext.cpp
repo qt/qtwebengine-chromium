@@ -27,6 +27,7 @@
 #include "core/dom/NodeRenderingContext.h"
 
 #include "RuntimeEnabledFeatures.h"
+#include "core/animation/css/CSSAnimations.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/ContainerNode.h"
 #include "core/dom/FullscreenElementStack.h"
@@ -41,15 +42,6 @@
 #include "core/rendering/RenderView.h"
 
 namespace WebCore {
-
-NodeRenderingContext::NodeRenderingContext(Node* node, RenderStyle* style)
-    : m_node(node)
-    , m_renderingParent(0)
-    , m_style(style)
-    , m_parentFlowRenderer(0)
-{
-    m_renderingParent = NodeRenderingTraversal::parent(node, &m_parentDetails);
-}
 
 static bool isRendererReparented(const RenderObject* renderer)
 {
@@ -78,9 +70,9 @@ RenderObject* NodeRenderingContext::nextRenderer() const
         if (!element->isInTopLayer())
             return 0;
 
-        const Vector<RefPtr<Element> >& topLayerElements = element->document()->topLayerElements();
+        const Vector<RefPtr<Element> >& topLayerElements = element->document().topLayerElements();
         size_t position = topLayerElements.find(element);
-        ASSERT(position != notFound);
+        ASSERT(position != kNotFound);
         for (size_t i = position + 1; i < topLayerElements.size(); ++i) {
             if (RenderObject* renderer = topLayerElements[i]->renderer())
                 return renderer;
@@ -143,7 +135,7 @@ RenderObject* NodeRenderingContext::parentRenderer() const
         // will prevent it.
         if (!m_renderingParent || !m_renderingParent->renderer())
             return 0;
-        return m_node->document()->renderView();
+        return m_node->document().renderView();
     }
 
     if (m_parentFlowRenderer)
@@ -161,7 +153,7 @@ bool NodeRenderingContext::shouldCreateRenderer() const
         return false;
     if (!parentRenderer->canHaveChildren())
         return false;
-    if (!m_renderingParent->childShouldCreateRenderer(*this))
+    if (!m_renderingParent->childShouldCreateRenderer(*m_node))
         return false;
     return true;
 }
@@ -181,7 +173,7 @@ bool NodeRenderingContext::elementInsideRegionNeedsRenderer()
         elementInsideRegionNeedsRenderer = element->shouldMoveToFlowThread(m_style.get());
 
         // Children of this element will only be allowed to be flowed into other flow-threads if display is NOT none.
-        if (element->rendererIsNeeded(*this))
+        if (element->rendererIsNeeded(*m_style))
             element->setIsInsideRegion(true);
     }
 
@@ -198,8 +190,8 @@ void NodeRenderingContext::moveToFlowThreadIfNeeded()
     if (!element->shouldMoveToFlowThread(m_style.get()))
         return;
 
-    ASSERT(m_node->document()->renderView());
-    FlowThreadController* flowThreadController = m_node->document()->renderView()->flowThreadController();
+    ASSERT(m_node->document().renderView());
+    FlowThreadController* flowThreadController = m_node->document().renderView()->flowThreadController();
     m_parentFlowRenderer = flowThreadController->ensureRenderFlowThreadWithName(m_style->flowThread());
     flowThreadController->registerNamedFlowContentNode(m_node, m_parentFlowRenderer);
 }
@@ -215,13 +207,15 @@ void NodeRenderingContext::createRendererForElementIfNeeded()
     if (!shouldCreateRenderer() && !elementInsideRegionNeedsRenderer())
         return;
 
+    // If m_style is already available, this scope shouldn't attempt to trigger animation updates.
+    CSSAnimationUpdateScope cssAnimationUpdateScope(m_style ? 0 : element);
     if (!m_style)
         m_style = element->styleForRenderer();
     ASSERT(m_style);
 
     moveToFlowThreadIfNeeded();
 
-    if (!element->rendererIsNeeded(*this))
+    if (!element->rendererIsNeeded(*m_style))
         return;
 
     RenderObject* newRenderer = element->createRenderer(m_style.get());
@@ -244,7 +238,7 @@ void NodeRenderingContext::createRendererForElementIfNeeded()
     newRenderer->setAnimatableStyle(m_style.release()); // setAnimatableStyle() can depend on renderer() already being set.
 
     if (FullscreenElementStack::isActiveFullScreenElement(element)) {
-        newRenderer = RenderFullScreen::wrapRenderer(newRenderer, parentRenderer, element->document());
+        newRenderer = RenderFullScreen::wrapRenderer(newRenderer, parentRenderer, &element->document());
         if (!newRenderer)
             return;
     }
@@ -265,7 +259,7 @@ void NodeRenderingContext::createRendererForTextIfNeeded()
     RenderObject* parentRenderer = this->parentRenderer();
 
     if (m_parentDetails.resetStyleInheritance())
-        m_style = textNode->document()->styleResolver()->defaultStyleForElement();
+        m_style = textNode->document().styleResolver()->defaultStyleForElement();
     else
         m_style = parentRenderer->style();
 

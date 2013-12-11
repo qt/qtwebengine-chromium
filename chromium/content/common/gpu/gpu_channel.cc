@@ -20,6 +20,7 @@
 #include "base/timer/timer.h"
 #include "content/common/gpu/gpu_channel_manager.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/common/gpu/media/gpu_video_encode_accelerator.h"
 #include "content/common/gpu/sync_point_manager.h"
 #include "content/public/common/content_switches.h"
 #include "crypto/hmac.h"
@@ -637,7 +638,6 @@ void GpuChannel::CreateViewCommandBuffer(
                                image_manager_.get(),
                                gfx::Size(),
                                disallowed_features_,
-                               init_params.allowed_extensions,
                                init_params.attribs,
                                init_params.gpu_preference,
                                use_virtualized_gl_context,
@@ -754,9 +754,12 @@ bool GpuChannel::OnControlMessageReceived(const IPC::Message& msg) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(GpuChannel, msg)
     IPC_MESSAGE_HANDLER(GpuChannelMsg_CreateOffscreenCommandBuffer,
-                                    OnCreateOffscreenCommandBuffer)
+                        OnCreateOffscreenCommandBuffer)
     IPC_MESSAGE_HANDLER(GpuChannelMsg_DestroyCommandBuffer,
-                                    OnDestroyCommandBuffer)
+                        OnDestroyCommandBuffer)
+    IPC_MESSAGE_HANDLER(GpuChannelMsg_CreateVideoEncoder, OnCreateVideoEncoder)
+    IPC_MESSAGE_HANDLER(GpuChannelMsg_DestroyVideoEncoder,
+                        OnDestroyVideoEncoder)
 #if defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(GpuChannelMsg_RegisterStreamTextureProxy,
                         OnRegisterStreamTextureProxy)
@@ -864,7 +867,6 @@ void GpuChannel::OnCreateOffscreenCommandBuffer(
       image_manager_.get(),
       size,
       disallowed_features_,
-      init_params.allowed_extensions,
       init_params.attribs,
       init_params.gpu_preference,
       false,
@@ -897,6 +899,26 @@ void GpuChannel::OnDestroyCommandBuffer(int32 route_id) {
     // This stub won't get a chance to reschedule, so update the count now.
     StubSchedulingChanged(true);
   }
+}
+
+void GpuChannel::OnCreateVideoEncoder(int32* route_id) {
+  TRACE_EVENT0("gpu", "GpuChannel::OnCreateVideoEncoder");
+
+  *route_id = GenerateRouteID();
+  GpuVideoEncodeAccelerator* encoder =
+      new GpuVideoEncodeAccelerator(this, *route_id);
+  router_.AddRoute(*route_id, encoder);
+  video_encoders_.AddWithID(encoder, *route_id);
+}
+
+void GpuChannel::OnDestroyVideoEncoder(int32 route_id) {
+  TRACE_EVENT1(
+      "gpu", "GpuChannel::OnDestroyVideoEncoder", "route_id", route_id);
+  GpuVideoEncodeAccelerator* encoder = video_encoders_.Lookup(route_id);
+  if (!encoder)
+    return;
+  router_.RemoveRoute(route_id);
+  video_encoders_.Remove(route_id);
 }
 
 #if defined(OS_ANDROID)
@@ -959,6 +981,14 @@ void GpuChannel::CacheShader(const std::string& key,
                              const std::string& shader) {
   gpu_channel_manager_->Send(
       new GpuHostMsg_CacheShader(client_id_, key, shader));
+}
+
+void GpuChannel::AddFilter(IPC::ChannelProxy::MessageFilter* filter) {
+  channel_->AddFilter(filter);
+}
+
+void GpuChannel::RemoveFilter(IPC::ChannelProxy::MessageFilter* filter) {
+  channel_->RemoveFilter(filter);
 }
 
 }  // namespace content

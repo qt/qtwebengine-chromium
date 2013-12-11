@@ -78,12 +78,11 @@ bool MockRendererPpapiHost::IsRunningInProcess() const {
   return false;
 }
 
-void MockRendererPpapiHost::CreateBrowserResourceHost(
+void MockRendererPpapiHost::CreateBrowserResourceHosts(
     PP_Instance instance,
-    const IPC::Message& nested_msg,
-    const base::Callback<void(int)>& callback) const {
-  NOTIMPLEMENTED();
-  callback.Run(0);
+    const std::vector<IPC::Message>& nested_msgs,
+    const base::Callback<void(const std::vector<int>&)>& callback) const {
+  callback.Run(std::vector<int>(nested_msgs.size(), 0));
   return;
 }
 

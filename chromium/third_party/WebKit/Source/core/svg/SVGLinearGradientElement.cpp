@@ -48,7 +48,7 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGLinearGradientElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGradientElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGLinearGradientElement::SVGLinearGradientElement(const QualifiedName& tagName, Document* document)
+inline SVGLinearGradientElement::SVGLinearGradientElement(const QualifiedName& tagName, Document& document)
     : SVGGradientElement(tagName, document)
     , m_x1(LengthModeWidth)
     , m_y1(LengthModeHeight)
@@ -61,7 +61,7 @@ inline SVGLinearGradientElement::SVGLinearGradientElement(const QualifiedName& t
     registerAnimatedPropertiesForSVGLinearGradientElement();
 }
 
-PassRefPtr<SVGLinearGradientElement> SVGLinearGradientElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<SVGLinearGradientElement> SVGLinearGradientElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new SVGLinearGradientElement(tagName, document));
 }
@@ -148,7 +148,7 @@ bool SVGLinearGradientElement::collectGradientAttributes(LinearGradientAttribute
         }
 
         if (isLinear) {
-            SVGLinearGradientElement* linear = static_cast<SVGLinearGradientElement*>(current);
+            SVGLinearGradientElement* linear = toSVGLinearGradientElement(current);
 
             if (!attributes.hasX1() && current->hasAttribute(SVGNames::x1Attr))
                 attributes.setX1(linear->x1CurrentValue());

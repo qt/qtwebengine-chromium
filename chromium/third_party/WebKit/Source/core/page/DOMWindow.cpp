@@ -63,13 +63,14 @@
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/loader/appcache/DOMApplicationCache.h"
+#include "core/loader/appcache/ApplicationCache.h"
 #include "core/page/BarProp.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Console.h"
 #include "core/page/CreateWindow.h"
 #include "core/page/DOMPoint.h"
+#include "core/page/DOMWindowLifecycleNotifier.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameTree.h"
@@ -93,7 +94,6 @@
 #include "core/storage/Storage.h"
 #include "core/storage/StorageArea.h"
 #include "core/storage/StorageNamespace.h"
-#include "modules/device_orientation/DeviceMotionController.h"
 #include "weborigin/KURL.h"
 #include "weborigin/SecurityOrigin.h"
 #include "weborigin/SecurityPolicy.h"
@@ -119,7 +119,7 @@ public:
     PassRefPtr<MessageEvent> event(ScriptExecutionContext* context)
     {
         OwnPtr<MessagePortArray> messagePorts = MessagePort::entanglePorts(*context, m_channels.release());
-        return MessageEvent::create(messagePorts.release(), m_message, m_origin, "", m_source);
+        return MessageEvent::create(messagePorts.release(), m_message, m_origin, String(), m_source);
     }
     SecurityOrigin* targetOrigin() const { return m_targetOrigin.get(); }
     ScriptCallStack* stackTrace() const { return m_stackTrace.get(); }
@@ -264,7 +264,7 @@ FloatRect DOMWindow::adjustWindowRect(Page* page, const FloatRect& pendingChange
     if (!std::isnan(pendingChanges.height()))
         window.setHeight(pendingChanges.height());
 
-    FloatSize minimumSize = page->chrome().client()->minimumWindowSize();
+    FloatSize minimumSize = page->chrome().client().minimumWindowSize();
     // Let size 0 pass through, since that indicates default size, not minimum size.
     if (window.width())
         window.setWidth(min(max(minimumSize.width(), window.width()), screen.width()));
@@ -328,6 +328,11 @@ void DOMWindow::setDocument(PassRefPtr<Document> document)
     if (m_document) {
         if (m_document->attached()) {
             // FIXME: We don't call willRemove here. Why is that OK?
+            // This detach() call is also mostly redundant. Most of the calls to
+            // this function come via DocumentLoader::createWriterFor, which
+            // always detaches the previous Document first. Only XSLTProcessor
+            // depends on this detach() call, so it seems like there's some room
+            // for cleanup.
             m_document->detach();
         }
         m_document->setDOMWindow(0);
@@ -356,12 +361,12 @@ void DOMWindow::setDocument(PassRefPtr<Document> document)
         }
     }
 
-    m_frame->selection()->updateSecureKeyboardEntryIfActive();
+    m_frame->selection().updateSecureKeyboardEntryIfActive();
 
     if (m_frame->page() && m_frame->page()->mainFrame() == m_frame) {
         m_frame->page()->mainFrame()->notifyChromeClientWheelEventHandlerCountChanged();
         if (m_document->hasTouchEventHandlers())
-            m_frame->page()->chrome().client()->needTouchEvents(true);
+            m_frame->page()->chrome().client().needTouchEvents(true);
     }
 }
 
@@ -388,7 +393,7 @@ DOMWindow::~DOMWindow()
 
     removeAllEventListeners();
 
-    // Unparent any attached Document so Document won't try to use a destroyed DOMWindow.
+    ASSERT(!m_document->attached());
     setDocument(0);
 }
 
@@ -590,15 +595,15 @@ PageConsole* DOMWindow::pageConsole() const
 {
     if (!isCurrentlyDisplayedInFrame())
         return 0;
-    return m_frame->page() ? m_frame->page()->console() : 0;
+    return m_frame->page() ? &m_frame->page()->console() : 0;
 }
 
-DOMApplicationCache* DOMWindow::applicationCache() const
+ApplicationCache* DOMWindow::applicationCache() const
 {
     if (!isCurrentlyDisplayedInFrame())
         return 0;
     if (!m_applicationCache)
-        m_applicationCache = DOMApplicationCache::create(m_frame);
+        m_applicationCache = ApplicationCache::create(m_frame);
     return m_applicationCache.get();
 }
 
@@ -638,14 +643,20 @@ Storage* DOMWindow::sessionStorage(ExceptionState& es) const
     if (!document)
         return 0;
 
+    String accessDeniedMessage = "Access to 'sessionStorage' is denied for this document.";
     if (!document->securityOrigin()->canAccessLocalStorage()) {
-        es.throwDOMException(SecurityError);
+        if (document->isSandboxed(SandboxOrigin))
+            es.throwSecurityError(accessDeniedMessage + " The document is sandboxed and lacks the 'allow-same-origin' flag.");
+        else if (document->url().protocolIs("data"))
+            es.throwSecurityError(accessDeniedMessage + " Storage is disabled inside 'data:' URLs.");
+        else
+            es.throwSecurityError(accessDeniedMessage);
         return 0;
     }
 
     if (m_sessionStorage) {
         if (!m_sessionStorage->area()->canAccessStorage(m_frame)) {
-            es.throwDOMException(SecurityError);
+            es.throwSecurityError(accessDeniedMessage);
             return 0;
         }
         return m_sessionStorage.get();
@@ -657,7 +668,7 @@ Storage* DOMWindow::sessionStorage(ExceptionState& es) const
 
     OwnPtr<StorageArea> storageArea = page->sessionStorage()->storageArea(document->securityOrigin());
     if (!storageArea->canAccessStorage(m_frame)) {
-        es.throwDOMException(SecurityError);
+        es.throwSecurityError(accessDeniedMessage);
         return 0;
     }
 
@@ -674,14 +685,20 @@ Storage* DOMWindow::localStorage(ExceptionState& es) const
     if (!document)
         return 0;
 
+    String accessDeniedMessage = "Access to 'localStorage' is denied for this document.";
     if (!document->securityOrigin()->canAccessLocalStorage()) {
-        es.throwDOMException(SecurityError);
+        if (document->isSandboxed(SandboxOrigin))
+            es.throwSecurityError(accessDeniedMessage + " The document is sandboxed and lacks the 'allow-same-origin' flag.");
+        else if (document->url().protocolIs("data"))
+            es.throwSecurityError(accessDeniedMessage + " Storage is disabled inside 'data:' URLs.");
+        else
+            es.throwSecurityError(accessDeniedMessage);
         return 0;
     }
 
     if (m_localStorage) {
         if (!m_localStorage->area()->canAccessStorage(m_frame)) {
-            es.throwDOMException(SecurityError);
+            es.throwSecurityError(accessDeniedMessage);
             return 0;
         }
         return m_localStorage.get();
@@ -691,12 +708,12 @@ Storage* DOMWindow::localStorage(ExceptionState& es) const
     if (!page)
         return 0;
 
-    if (!page->settings()->localStorageEnabled())
+    if (!page->settings().localStorageEnabled())
         return 0;
 
     OwnPtr<StorageArea> storageArea = StorageNamespace::localStorageArea(document->securityOrigin());
     if (!storageArea->canAccessStorage(m_frame)) {
-        es.throwDOMException(SecurityError);
+        es.throwSecurityError(accessDeniedMessage);
         return 0;
     }
 
@@ -723,7 +740,7 @@ void DOMWindow::postMessage(PassRefPtr<SerializedScriptValue> message, const Mes
         // It doesn't make sense target a postMessage at a unique origin
         // because there's no way to represent a unique origin in a string.
         if (target->isUnique()) {
-            es.throwDOMException(SyntaxError);
+            es.throwDOMException(SyntaxError, "Invalid target origin '" + targetOrigin + "' in a call to 'postMessage'.");
             return;
         }
     }
@@ -853,7 +870,7 @@ void DOMWindow::close(ScriptExecutionContext* context)
     Settings* settings = m_frame->settings();
     bool allowScriptsToCloseWindows = settings && settings->allowScriptsToCloseWindows();
 
-    if (!(page->openedByDOM() || page->backForward()->count() <= 1 || allowScriptsToCloseWindows))
+    if (!(page->openedByDOM() || page->backForward().count() <= 1 || allowScriptsToCloseWindows))
         return;
 
     if (!m_frame->loader()->shouldClose())
@@ -883,10 +900,7 @@ void DOMWindow::stop()
 {
     if (!m_frame)
         return;
-
-    // We must check whether the load is complete asynchronously, because we might still be parsing
-    // the document until the callstack unwinds.
-    m_frame->loader()->stopForUserCancel(true);
+    m_frame->loader()->stopAllLoaders();
 }
 
 void DOMWindow::alert(const String& message)
@@ -941,7 +955,7 @@ bool DOMWindow::find(const String& string, bool caseSensitive, bool backwards, b
         return false;
 
     // FIXME (13016): Support wholeWord, searchInFrames and showDialog
-    return m_frame->editor()->findString(string, !backwards, caseSensitive, wrap, false);
+    return m_frame->editor().findString(string, !backwards, caseSensitive, wrap, false);
 }
 
 bool DOMWindow::offscreenBuffering() const
@@ -1241,11 +1255,7 @@ double DOMWindow::devicePixelRatio() const
     if (!m_frame)
         return 0.0;
 
-    Page* page = m_frame->page();
-    if (!page)
-        return 0.0;
-
-    return page->deviceScaleFactor();
+    return m_frame->devicePixelRatio();
 }
 
 void DOMWindow::scrollBy(int x, int y) const
@@ -1400,13 +1410,13 @@ bool DOMWindow::addEventListener(const AtomicString& eventType, PassRefPtr<Event
 
     if (Document* document = this->document()) {
         document->addListenerTypeIfNeeded(eventType);
-        if (eventType == eventNames().mousewheelEvent)
-            document->didAddWheelEventHandler();
-        else if (eventNames().isTouchEventType(eventType))
+        if (eventNames().isTouchEventType(eventType))
             document->didAddTouchEventHandler(document);
         else if (eventType == eventNames().storageEvent)
             didAddStorageEventListener(this);
     }
+
+    lifecycleNotifier()->notifyAddEventListener(this, eventType);
 
     if (eventType == eventNames().unloadEvent) {
         addUnloadEventListener(this);
@@ -1420,9 +1430,6 @@ bool DOMWindow::addEventListener(const AtomicString& eventType, PassRefPtr<Event
             // Subframes return false from allowsBeforeUnloadListeners.
             UseCounter::count(this, UseCounter::SubFrameBeforeUnloadRegistered);
         }
-    } else if (eventType == eventNames().devicemotionEvent && RuntimeEnabledFeatures::deviceMotionEnabled()) {
-        if (DeviceMotionController* controller = DeviceMotionController::from(document()))
-            controller->startUpdating();
     } else if (eventType == eventNames().deviceorientationEvent && RuntimeEnabledFeatures::deviceOrientationEnabled()) {
         if (DeviceOrientationController* controller = DeviceOrientationController::from(page()))
             controller->addDeviceEventListener(this);
@@ -1437,19 +1444,16 @@ bool DOMWindow::removeEventListener(const AtomicString& eventType, EventListener
         return false;
 
     if (Document* document = this->document()) {
-        if (eventType == eventNames().mousewheelEvent)
-            document->didRemoveWheelEventHandler();
-        else if (eventNames().isTouchEventType(eventType))
+        if (eventNames().isTouchEventType(eventType))
             document->didRemoveTouchEventHandler(document);
     }
 
-    if (eventType == eventNames().unloadEvent)
+    lifecycleNotifier()->notifyRemoveEventListener(this, eventType);
+
+    if (eventType == eventNames().unloadEvent) {
         removeUnloadEventListener(this);
-    else if (eventType == eventNames().beforeunloadEvent && allowsBeforeUnloadListeners(this))
+    } else if (eventType == eventNames().beforeunloadEvent && allowsBeforeUnloadListeners(this)) {
         removeBeforeUnloadEventListener(this);
-    else if (eventType == eventNames().devicemotionEvent) {
-        if (DeviceMotionController* controller = DeviceMotionController::from(document()))
-            controller->stopUpdating();
     } else if (eventType == eventNames().deviceorientationEvent) {
         if (DeviceOrientationController* controller = DeviceOrientationController::from(page()))
             controller->removeDeviceEventListener(this);
@@ -1460,7 +1464,7 @@ bool DOMWindow::removeEventListener(const AtomicString& eventType, EventListener
 
 void DOMWindow::dispatchLoadEvent()
 {
-    RefPtr<Event> loadEvent(Event::create(eventNames().loadEvent, false, false));
+    RefPtr<Event> loadEvent(Event::create(eventNames().loadEvent));
     if (m_frame && m_frame->loader()->documentLoader() && !m_frame->loader()->documentLoader()->timing()->loadEventStart()) {
         // The DocumentLoader (and thus its DocumentLoadTiming) might get destroyed while dispatching
         // the event, so protect it to prevent writing the end time into freed memory.
@@ -1477,7 +1481,7 @@ void DOMWindow::dispatchLoadEvent()
     // the DOM.
     Element* ownerElement = m_frame ? m_frame->ownerElement() : 0;
     if (ownerElement)
-        ownerElement->dispatchEvent(Event::create(eventNames().loadEvent, false, false));
+        ownerElement->dispatchEvent(Event::create(eventNames().loadEvent));
 
     InspectorInstrumentation::loadEventFired(frame());
 }
@@ -1504,8 +1508,8 @@ void DOMWindow::removeAllEventListeners()
 {
     EventTarget::removeAllEventListeners();
 
-    if (DeviceMotionController* controller = DeviceMotionController::from(document()))
-        controller->stopUpdating();
+    lifecycleNotifier()->notifyRemoveAllEventListeners(this);
+
     if (DeviceOrientationController* controller = DeviceOrientationController::from(page()))
         controller->removeAllDeviceEventListeners(this);
     if (Document* document = this->document())
@@ -1569,6 +1573,27 @@ void DOMWindow::printErrorMessage(const String& message)
         return;
 
     pageConsole()->addMessage(JSMessageSource, ErrorMessageLevel, message);
+}
+
+// FIXME: Once we're throwing exceptions for cross-origin access violations, we will always sanitize the target
+// frame details, so we can safely combine 'crossDomainAccessErrorMessage' with this method after considering
+// exactly which details may be exposed to JavaScript.
+//
+// http://crbug.com/17325
+String DOMWindow::sanitizedCrossDomainAccessErrorMessage(DOMWindow* activeWindow)
+{
+    const KURL& activeWindowURL = activeWindow->document()->url();
+    if (activeWindowURL.isNull())
+        return String();
+
+    ASSERT(!activeWindow->document()->securityOrigin()->canAccess(document()->securityOrigin()));
+
+    SecurityOrigin* activeOrigin = activeWindow->document()->securityOrigin();
+    String message = "Blocked a frame with origin \"" + activeOrigin->toString() + "\" from accessing a cross-origin frame.";
+
+    // FIXME: Evaluate which details from 'crossDomainAccessErrorMessage' may safely be reported to JavaScript.
+
+    return message;
 }
 
 String DOMWindow::crossDomainAccessErrorMessage(DOMWindow* activeWindow)
@@ -1728,6 +1753,16 @@ DOMWindow* DOMWindow::anonymousIndexedGetter(uint32_t index)
         return child->domWindow();
 
     return 0;
+}
+
+DOMWindowLifecycleNotifier* DOMWindow::lifecycleNotifier()
+{
+    return static_cast<DOMWindowLifecycleNotifier*>(LifecycleContext::lifecycleNotifier());
+}
+
+PassOwnPtr<LifecycleNotifier> DOMWindow::createLifecycleNotifier()
+{
+    return DOMWindowLifecycleNotifier::create(this);
 }
 
 

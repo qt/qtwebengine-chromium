@@ -14,7 +14,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/time/time.h"
 #include "base/win/scoped_comptr.h"
-#include "ui/base/latency_info.h"
+#include "ui/events/latency_info.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 #include "ui/surface/surface_export.h"
@@ -88,12 +88,6 @@ class SURFACE_EXPORT AcceleratedPresenter
   // Destroy any D3D resources owned by the given present thread. Called on
   // the given present thread.
   void ResetPresentThread(PresentThread* present_thread);
-
-#if defined(USE_AURA)
-  // TODO(scottmg): This is a temporary hack until we have a two-worlds ash/aura
-  // separation.
-  void SetNewTargetWindow(gfx::PluginWindowHandle window);
-#endif
 
  private:
   friend class base::RefCountedThreadSafe<AcceleratedPresenter>;

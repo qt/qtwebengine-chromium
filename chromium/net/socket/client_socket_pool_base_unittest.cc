@@ -30,7 +30,9 @@
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/client_socket_pool_histograms.h"
 #include "net/socket/socket_test_util.h"
+#include "net/socket/ssl_client_socket.h"
 #include "net/socket/stream_socket.h"
+#include "net/udp/datagram_client_socket.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -189,30 +191,30 @@ class MockClientSocketFactory : public ClientSocketFactory {
  public:
   MockClientSocketFactory() : allocation_count_(0) {}
 
-  virtual DatagramClientSocket* CreateDatagramClientSocket(
+  virtual scoped_ptr<DatagramClientSocket> CreateDatagramClientSocket(
       DatagramSocket::BindType bind_type,
       const RandIntCallback& rand_int_cb,
       NetLog* net_log,
       const NetLog::Source& source) OVERRIDE {
     NOTREACHED();
-    return NULL;
+    return scoped_ptr<DatagramClientSocket>();
   }
 
-  virtual StreamSocket* CreateTransportClientSocket(
+  virtual scoped_ptr<StreamSocket> CreateTransportClientSocket(
       const AddressList& addresses,
       NetLog* /* net_log */,
       const NetLog::Source& /*source*/) OVERRIDE {
     allocation_count_++;
-    return NULL;
+    return scoped_ptr<StreamSocket>();
   }
 
-  virtual SSLClientSocket* CreateSSLClientSocket(
-      ClientSocketHandle* transport_socket,
+  virtual scoped_ptr<SSLClientSocket> CreateSSLClientSocket(
+      scoped_ptr<ClientSocketHandle> transport_socket,
       const HostPortPair& host_and_port,
       const SSLConfig& ssl_config,
       const SSLClientSocketContext& context) OVERRIDE {
     NOTIMPLEMENTED();
-    return NULL;
+    return scoped_ptr<SSLClientSocket>();
   }
 
   virtual void ClearSSLSessionCache() OVERRIDE {
@@ -259,7 +261,7 @@ class TestConnectJob : public ConnectJob {
                  ConnectJob::Delegate* delegate,
                  MockClientSocketFactory* client_socket_factory,
                  NetLog* net_log)
-      : ConnectJob(group_name, timeout_duration, delegate,
+      : ConnectJob(group_name, timeout_duration, request.priority(), delegate,
                    BoundNetLog::Make(net_log, NetLog::SOURCE_CONNECT_JOB)),
         job_type_(job_type),
         client_socket_factory_(client_socket_factory),
@@ -294,7 +296,8 @@ class TestConnectJob : public ConnectJob {
     AddressList ignored;
     client_socket_factory_->CreateTransportClientSocket(
         ignored, NULL, net::NetLog::Source());
-    set_socket(new MockClientSocket(net_log().net_log()));
+    SetSocket(
+        scoped_ptr<StreamSocket>(new MockClientSocket(net_log().net_log())));
     switch (job_type_) {
       case kMockJob:
         return DoConnect(true /* successful */, false /* sync */,
@@ -373,7 +376,7 @@ class TestConnectJob : public ConnectJob {
         return ERR_IO_PENDING;
       default:
         NOTREACHED();
-        set_socket(NULL);
+        SetSocket(scoped_ptr<StreamSocket>());
         return ERR_FAILED;
     }
   }
@@ -386,7 +389,7 @@ class TestConnectJob : public ConnectJob {
       result = ERR_PROXY_AUTH_REQUESTED;
     } else {
       result = ERR_CONNECTION_FAILED;
-      set_socket(NULL);
+      SetSocket(scoped_ptr<StreamSocket>());
     }
 
     if (was_async)
@@ -430,7 +433,7 @@ class TestConnectJobFactory
 
   // ConnectJobFactory implementation.
 
-  virtual ConnectJob* NewConnectJob(
+  virtual scoped_ptr<ConnectJob> NewConnectJob(
       const std::string& group_name,
       const TestClientSocketPoolBase::Request& request,
       ConnectJob::Delegate* delegate) const OVERRIDE {
@@ -440,13 +443,13 @@ class TestConnectJobFactory
       job_type = job_types_->front();
       job_types_->pop_front();
     }
-    return new TestConnectJob(job_type,
-                              group_name,
-                              request,
-                              timeout_duration_,
-                              delegate,
-                              client_socket_factory_,
-                              net_log_);
+    return scoped_ptr<ConnectJob>(new TestConnectJob(job_type,
+                                                     group_name,
+                                                     request,
+                                                     timeout_duration_,
+                                                     delegate,
+                                                     client_socket_factory_,
+                                                     net_log_));
   }
 
   virtual base::TimeDelta ConnectionTimeout() const OVERRIDE {
@@ -465,6 +468,8 @@ class TestConnectJobFactory
 
 class TestClientSocketPool : public ClientSocketPool {
  public:
+  typedef TestSocketParams SocketParams;
+
   TestClientSocketPool(
       int max_sockets,
       int max_sockets_per_group,
@@ -472,7 +477,7 @@ class TestClientSocketPool : public ClientSocketPool {
       base::TimeDelta unused_idle_socket_timeout,
       base::TimeDelta used_idle_socket_timeout,
       TestClientSocketPoolBase::ConnectJobFactory* connect_job_factory)
-      : base_(max_sockets, max_sockets_per_group, histograms,
+      : base_(NULL, max_sockets, max_sockets_per_group, histograms,
               unused_idle_socket_timeout, used_idle_socket_timeout,
               connect_job_factory) {}
 
@@ -509,9 +514,9 @@ class TestClientSocketPool : public ClientSocketPool {
 
   virtual void ReleaseSocket(
       const std::string& group_name,
-      StreamSocket* socket,
+      scoped_ptr<StreamSocket> socket,
       int id) OVERRIDE {
-    base_.ReleaseSocket(group_name, socket, id);
+    base_.ReleaseSocket(group_name, socket.Pass(), id);
   }
 
   virtual void FlushWithError(int error) OVERRIDE {
@@ -541,12 +546,13 @@ class TestClientSocketPool : public ClientSocketPool {
     return base_.GetLoadState(group_name, handle);
   }
 
-  virtual void AddLayeredPool(LayeredPool* pool) OVERRIDE {
-    base_.AddLayeredPool(pool);
+  virtual void AddHigherLayeredPool(HigherLayeredPool* higher_pool) OVERRIDE {
+    base_.AddHigherLayeredPool(higher_pool);
   }
 
-  virtual void RemoveLayeredPool(LayeredPool* pool) OVERRIDE {
-    base_.RemoveLayeredPool(pool);
+  virtual void RemoveHigherLayeredPool(
+      HigherLayeredPool* higher_pool) OVERRIDE {
+    base_.RemoveHigherLayeredPool(higher_pool);
   }
 
   virtual base::DictionaryValue* GetInfoAsValue(
@@ -586,8 +592,8 @@ class TestClientSocketPool : public ClientSocketPool {
 
   void EnableConnectBackupJobs() { base_.EnableConnectBackupJobs(); }
 
-  bool CloseOneIdleConnectionInLayeredPool() {
-    return base_.CloseOneIdleConnectionInLayeredPool();
+  bool CloseOneIdleConnectionInHigherLayeredPool() {
+    return base_.CloseOneIdleConnectionInHigherLayeredPool();
   }
 
  private:
@@ -597,8 +603,6 @@ class TestClientSocketPool : public ClientSocketPool {
 };
 
 }  // namespace
-
-REGISTER_SOCKET_PARAMS_FOR_POOL(TestClientSocketPool, TestSocketParams);
 
 namespace {
 
@@ -630,10 +634,10 @@ class TestConnectJobDelegate : public ConnectJob::Delegate {
 
   virtual void OnConnectJobComplete(int result, ConnectJob* job) OVERRIDE {
     result_ = result;
-    scoped_ptr<StreamSocket> socket(job->ReleaseSocket());
+    scoped_ptr<ConnectJob> owned_job(job);
+    scoped_ptr<StreamSocket> socket = owned_job->PassSocket();
     // socket.get() should be NULL iff result != OK
-    EXPECT_EQ(socket.get() == NULL, result != OK);
-    delete job;
+    EXPECT_EQ(socket == NULL, result != OK);
     have_result_ = true;
     if (waiting_for_result_)
       base::MessageLoop::current()->Quit();
@@ -702,9 +706,8 @@ class ClientSocketPoolBaseTest : public testing::Test {
       const std::string& group_name,
       RequestPriority priority,
       const scoped_refptr<TestSocketParams>& params) {
-    return test_base_.StartRequestUsingPool<
-        TestClientSocketPool, TestSocketParams>(
-            pool_.get(), group_name, priority, params);
+    return test_base_.StartRequestUsingPool(
+        pool_.get(), group_name, priority, params);
   }
 
   int StartRequest(const std::string& group_name, RequestPriority priority) {
@@ -3716,7 +3719,7 @@ TEST_F(ClientSocketPoolBaseTest, PreconnectWithBackupJob) {
   EXPECT_EQ(1, pool_->NumActiveSocketsInGroup("a"));
 }
 
-class MockLayeredPool : public LayeredPool {
+class MockLayeredPool : public HigherLayeredPool {
  public:
   MockLayeredPool(TestClientSocketPool* pool,
                   const std::string& group_name)
@@ -3724,11 +3727,11 @@ class MockLayeredPool : public LayeredPool {
         params_(new TestSocketParams),
         group_name_(group_name),
         can_release_connection_(true) {
-    pool_->AddLayeredPool(this);
+    pool_->AddHigherLayeredPool(this);
   }
 
   ~MockLayeredPool() {
-    pool_->RemoveLayeredPool(this);
+    pool_->RemoveHigherLayeredPool(this);
   }
 
   int RequestSocket(TestClientSocketPool* pool) {
@@ -3774,7 +3777,7 @@ TEST_F(ClientSocketPoolBaseTest, FailToCloseIdleSocketsNotHeldByLayeredPool) {
   EXPECT_EQ(OK, mock_layered_pool.RequestSocket(pool_.get()));
   EXPECT_CALL(mock_layered_pool, CloseOneIdleConnection())
       .WillOnce(Return(false));
-  EXPECT_FALSE(pool_->CloseOneIdleConnectionInLayeredPool());
+  EXPECT_FALSE(pool_->CloseOneIdleConnectionInHigherLayeredPool());
 }
 
 TEST_F(ClientSocketPoolBaseTest, ForciblyCloseIdleSocketsHeldByLayeredPool) {
@@ -3786,7 +3789,7 @@ TEST_F(ClientSocketPoolBaseTest, ForciblyCloseIdleSocketsHeldByLayeredPool) {
   EXPECT_CALL(mock_layered_pool, CloseOneIdleConnection())
       .WillOnce(Invoke(&mock_layered_pool,
                        &MockLayeredPool::ReleaseOneConnection));
-  EXPECT_TRUE(pool_->CloseOneIdleConnectionInLayeredPool());
+  EXPECT_TRUE(pool_->CloseOneIdleConnectionInHigherLayeredPool());
 }
 
 // Tests the basic case of closing an idle socket in a higher layered pool when

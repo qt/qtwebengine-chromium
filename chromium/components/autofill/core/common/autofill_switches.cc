@@ -7,14 +7,8 @@
 namespace autofill {
 namespace switches {
 
-// Flag used to tell Chrome the Autochecout whitelist url.
-const char kAutocheckoutWhitelistUrl[]      = "autocheckout-whitelist-url";
-
 // Flag used to tell Chrome the base url of the Autofill service.
 const char kAutofillServiceUrl[]            = "autofill-service-url";
-
-// Bypass autocheckout whitelist check, so all sites are enabled.
-const char kBypassAutocheckoutWhitelist[]   = "bypass-autocheckout-whitelist";
 
 // Disables an interactive autocomplete UI. See kEnableInteractiveAutocomplete
 // for a description.
@@ -41,9 +35,8 @@ const char kWalletSecureServiceUrl[]        = "wallet-secure-service-url";
 // API calls.
 const char kWalletServiceUrl[]              = "wallet-service-url";
 
-// Enable production Online Wallet service. If this flag is not set, the sandbox
-// service will be used.
-const char kWalletServiceUseProd[]          = "wallet-service-use-prod";
+// Use the sandbox Online Wallet service URL (for developer testing).
+const char kWalletServiceUseSandbox[]       = "wallet-service-use-sandbox";
 
 }  // namespace switches
 }  // namespace autofill

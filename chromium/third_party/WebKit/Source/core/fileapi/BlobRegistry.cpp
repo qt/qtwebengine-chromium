@@ -45,6 +45,7 @@
 #include "wtf/MainThread.h"
 #include "wtf/RefPtr.h"
 #include "wtf/ThreadSpecific.h"
+#include "wtf/Threading.h"
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
 
@@ -269,6 +270,24 @@ void BlobRegistry::finalizeStream(const KURL& url)
     } else {
         OwnPtr<BlobRegistryContext> context = adoptPtr(new BlobRegistryContext(url));
         callOnMainThread(&finalizeStreamTask, context.leakPtr());
+    }
+}
+
+static void abortStreamTask(void* context)
+{
+    OwnPtr<BlobRegistryContext> blobRegistryContext = adoptPtr(static_cast<BlobRegistryContext*>(context));
+    if (WebBlobRegistry* registry = blobRegistry())
+        registry->abortStream(blobRegistryContext->url);
+}
+
+void BlobRegistry::abortStream(const KURL& url)
+{
+    if (isMainThread()) {
+        if (WebBlobRegistry* registry = blobRegistry())
+            registry->abortStream(url);
+    } else {
+        OwnPtr<BlobRegistryContext> context = adoptPtr(new BlobRegistryContext(url));
+        callOnMainThread(&abortStreamTask, context.leakPtr());
     }
 }
 

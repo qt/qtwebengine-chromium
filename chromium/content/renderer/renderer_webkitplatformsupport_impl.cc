@@ -128,6 +128,8 @@ base::LazyInstance<WebGamepads>::Leaky g_test_gamepads =
     LAZY_INSTANCE_INITIALIZER;
 base::LazyInstance<WebKit::WebDeviceMotionData>::Leaky
     g_test_device_motion_data = LAZY_INSTANCE_INITIALIZER;
+base::LazyInstance<WebKit::WebDeviceOrientationData>::Leaky
+    g_test_device_orientation_data = LAZY_INSTANCE_INITIALIZER;
 
 //------------------------------------------------------------------------------
 
@@ -148,8 +150,6 @@ class RendererWebKitPlatformSupportImpl::MimeRegistry
       const WebKit::WebString& file_extension);
   virtual WebKit::WebString mimeTypeFromFile(
       const WebKit::WebString& file_path);
-  virtual WebKit::WebString preferredExtensionForMIMEType(
-      const WebKit::WebString& mime_type);
 };
 
 class RendererWebKitPlatformSupportImpl::FileUtilities
@@ -225,6 +225,7 @@ RendererWebKitPlatformSupportImpl::RendererWebKitPlatformSupportImpl()
 }
 
 RendererWebKitPlatformSupportImpl::~RendererWebKitPlatformSupportImpl() {
+  WebFileSystemImpl::DeleteThreadSpecificInstance();
 }
 
 //------------------------------------------------------------------------------
@@ -374,9 +375,7 @@ WebIDBFactory* RendererWebKitPlatformSupportImpl::idbFactory() {
 //------------------------------------------------------------------------------
 
 WebFileSystem* RendererWebKitPlatformSupportImpl::fileSystem() {
-  if (!web_file_system_)
-    web_file_system_.reset(new WebFileSystemImpl(child_thread_loop_.get()));
-  return web_file_system_.get();
+  return WebFileSystemImpl::ThreadSpecificInstance(child_thread_loop_.get());
 }
 
 //------------------------------------------------------------------------------
@@ -400,10 +399,6 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::supportsMediaMIMEType(
 
   if (!key_system.isEmpty()) {
     // Check whether the key system is supported with the mime_type and codecs.
-
-    // Not supporting the key system is a flat-out no.
-    if (!IsSupportedKeySystem(key_system))
-      return IsNotSupported;
 
     std::vector<std::string> strict_codecs;
     bool strip_suffix = !net::IsStrictMediaMimeType(mime_type_ascii);
@@ -449,7 +444,7 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::supportsMediaSourceMIMEType(
   const std::string mime_type_ascii = ToASCIIOrEmpty(mime_type);
   std::vector<std::string> parsed_codec_ids;
   net::ParseCodecString(ToASCIIOrEmpty(codecs), &parsed_codec_ids, false);
-  if (mime_type_ascii.empty() || parsed_codec_ids.size() == 0)
+  if (mime_type_ascii.empty())
     return false;
   return media::StreamParserFactory::IsTypeSupported(
       mime_type_ascii, parsed_codec_ids);
@@ -482,21 +477,6 @@ WebString RendererWebKitPlatformSupportImpl::MimeRegistry::mimeTypeFromFile(
       base::FilePath::FromUTF16Unsafe(file_path),
       &mime_type));
   return ASCIIToUTF16(mime_type);
-}
-
-WebString
-RendererWebKitPlatformSupportImpl::MimeRegistry::preferredExtensionForMIMEType(
-    const WebString& mime_type) {
-  if (IsPluginProcess())
-    return SimpleWebMimeRegistryImpl::preferredExtensionForMIMEType(mime_type);
-
-  // The sandbox restricts our access to the registry, so we need to proxy
-  // these calls over to the browser process.
-  base::FilePath::StringType file_extension;
-  RenderThread::Get()->Send(
-      new MimeRegistryMsg_GetPreferredExtensionForMimeType(
-          UTF16ToASCII(mime_type), &file_extension));
-  return base::FilePath(file_extension).AsUTF16Unsafe();
 }
 
 //------------------------------------------------------------------------------
@@ -637,12 +617,18 @@ long long RendererWebKitPlatformSupportImpl::databaseGetSpaceAvailableForOrigin(
 
 WebKit::WebSharedWorkerRepository*
 RendererWebKitPlatformSupportImpl::sharedWorkerRepository() {
+#if !defined(OS_ANDROID)
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableSharedWorkers)) {
     return shared_worker_repository_.get();
   } else {
     return NULL;
   }
+#else
+  // Shared workers are unsupported on Android. Returning NULL will prevent the
+  // window.SharedWorker constructor from being exposed. http://crbug.com/154571
+  return NULL;
+#endif
 }
 
 bool RendererWebKitPlatformSupportImpl::canAccelerate2dCanvas() {
@@ -1027,11 +1013,27 @@ void RendererWebKitPlatformSupportImpl::SetMockDeviceMotionDataForTesting(
 
 void RendererWebKitPlatformSupportImpl::setDeviceOrientationListener(
     WebKit::WebDeviceOrientationListener* listener) {
-  if (!device_orientation_event_pump_) {
-    device_orientation_event_pump_.reset(new DeviceOrientationEventPump);
-    device_orientation_event_pump_->Attach(RenderThreadImpl::current());
+  if (g_test_device_orientation_data == 0) {
+    if (!device_orientation_event_pump_) {
+      device_orientation_event_pump_.reset(new DeviceOrientationEventPump);
+      device_orientation_event_pump_->Attach(RenderThreadImpl::current());
+    }
+    device_orientation_event_pump_->SetListener(listener);
+  } else if (listener) {
+    // Testing mode: just echo the test data to the listener.
+    base::MessageLoopProxy::current()->PostTask(
+        FROM_HERE,
+        base::Bind(
+            &WebKit::WebDeviceOrientationListener::didChangeDeviceOrientation,
+            base::Unretained(listener),
+            g_test_device_orientation_data.Get()));
   }
-  device_orientation_event_pump_->SetListener(listener);
+}
+
+// static
+void RendererWebKitPlatformSupportImpl::SetMockDeviceOrientationDataForTesting(
+    const WebKit::WebDeviceOrientationData& data) {
+  g_test_device_orientation_data.Get() = data;
 }
 
 //------------------------------------------------------------------------------

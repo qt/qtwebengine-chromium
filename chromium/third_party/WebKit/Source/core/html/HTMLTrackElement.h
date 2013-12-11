@@ -36,7 +36,7 @@ class HTMLMediaElement;
 
 class HTMLTrackElement FINAL : public HTMLElement, public TextTrackClient {
 public:
-    static PassRefPtr<HTMLTrackElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<HTMLTrackElement> create(const QualifiedName&, Document&);
 
     KURL src() const;
     void setSrc(const String&);
@@ -67,7 +67,7 @@ public:
     const AtomicString& mediaElementCrossOriginAttribute() const;
 
 private:
-    HTMLTrackElement(const QualifiedName&, Document*);
+    HTMLTrackElement(const QualifiedName&, Document&);
     virtual ~HTMLTrackElement();
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
@@ -95,6 +95,12 @@ private:
     RefPtr<LoadableTextTrack> m_track;
     Timer<HTMLTrackElement> m_loadTimer;
 };
+
+inline HTMLTrackElement* toHTMLTrackElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::trackTag));
+    return static_cast<HTMLTrackElement*>(node);
+}
 
 }
 

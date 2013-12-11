@@ -205,11 +205,15 @@ ExynosVideoDecodeAccelerator::ExynosVideoDecodeAccelerator(
     EGLDisplay egl_display,
     EGLContext egl_context,
     Client* client,
-    const base::Callback<bool(void)>& make_context_current)
+    const base::WeakPtr<Client>& io_client,
+    const base::Callback<bool(void)>& make_context_current,
+    const scoped_refptr<base::MessageLoopProxy>& io_message_loop_proxy)
     : child_message_loop_proxy_(base::MessageLoopProxy::current()),
+      io_message_loop_proxy_(io_message_loop_proxy),
       weak_this_(base::AsWeakPtr(this)),
       client_ptr_factory_(client),
       client_(client_ptr_factory_.GetWeakPtr()),
+      io_client_(io_client),
       decoder_thread_("ExynosDecoderThread"),
       decoder_state_(kUninitialized),
       decoder_delay_bitstream_buffer_id_(-1),
@@ -380,10 +384,12 @@ bool ExynosVideoDecodeAccelerator::Initialize(
     return false;
 
   // MFC output format has to be setup before streaming starts.
+  // TODO(hshi): set format back to tiled (V4L2_PIX_FMT_NV12MT_16X16) when we
+  // fix the underlying driver/firmware issue. http://crbug.com/303300.
   struct v4l2_format format;
   memset(&format, 0, sizeof(format));
   format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-  format.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_NV12MT_16X16;
+  format.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_NV12M;
   IOCTL_OR_ERROR_RETURN_FALSE(mfc_fd_, VIDIOC_S_FMT, &format);
 
   // Subscribe to the resolution change event.
@@ -415,23 +421,12 @@ void ExynosVideoDecodeAccelerator::Decode(
     const media::BitstreamBuffer& bitstream_buffer) {
   DVLOG(1) << "Decode(): input_id=" << bitstream_buffer.id()
            << ", size=" << bitstream_buffer.size();
-  DCHECK(child_message_loop_proxy_->BelongsToCurrentThread());
-
-  scoped_ptr<BitstreamBufferRef> bitstream_record(new BitstreamBufferRef(
-      client_, child_message_loop_proxy_,
-      new base::SharedMemory(bitstream_buffer.handle(), true),
-      bitstream_buffer.size(), bitstream_buffer.id()));
-  if (!bitstream_record->shm->Map(bitstream_buffer.size())) {
-    DLOG(ERROR) << "Decode(): could not map bitstream_buffer";
-    NOTIFY_ERROR(UNREADABLE_INPUT);
-    return;
-  }
-  DVLOG(3) << "Decode(): mapped to addr=" << bitstream_record->shm->memory();
+  DCHECK(io_message_loop_proxy_->BelongsToCurrentThread());
 
   // DecodeTask() will take care of running a DecodeBufferTask().
   decoder_thread_.message_loop()->PostTask(FROM_HERE, base::Bind(
       &ExynosVideoDecodeAccelerator::DecodeTask, base::Unretained(this),
-      base::Passed(&bitstream_record)));
+      bitstream_buffer));
 }
 
 void ExynosVideoDecodeAccelerator::AssignPictureBuffers(
@@ -576,6 +571,8 @@ void ExynosVideoDecodeAccelerator::Destroy() {
   delete this;
 }
 
+bool ExynosVideoDecodeAccelerator::CanDecodeOnIOThread() { return true; }
+
 // static
 void ExynosVideoDecodeAccelerator::PreSandboxInitialization() {
   DVLOG(3) << "PreSandboxInitialization()";
@@ -610,12 +607,23 @@ bool ExynosVideoDecodeAccelerator::PostSandboxInitialization() {
 }
 
 void ExynosVideoDecodeAccelerator::DecodeTask(
-    scoped_ptr<BitstreamBufferRef> bitstream_record) {
-  DVLOG(3) << "DecodeTask(): input_id=" << bitstream_record->input_id;
+    const media::BitstreamBuffer& bitstream_buffer) {
+  DVLOG(3) << "DecodeTask(): input_id=" << bitstream_buffer.id();
   DCHECK_EQ(decoder_thread_.message_loop(), base::MessageLoop::current());
   DCHECK_NE(decoder_state_, kUninitialized);
   TRACE_EVENT1("Video Decoder", "EVDA::DecodeTask", "input_id",
-               bitstream_record->input_id);
+               bitstream_buffer.id());
+
+  scoped_ptr<BitstreamBufferRef> bitstream_record(new BitstreamBufferRef(
+      io_client_, io_message_loop_proxy_,
+      new base::SharedMemory(bitstream_buffer.handle(), true),
+      bitstream_buffer.size(), bitstream_buffer.id()));
+  if (!bitstream_record->shm->Map(bitstream_buffer.size())) {
+    DLOG(ERROR) << "Decode(): could not map bitstream_buffer";
+    NOTIFY_ERROR(UNREADABLE_INPUT);
+    return;
+  }
+  DVLOG(3) << "Decode(): mapped to addr=" << bitstream_record->shm->memory();
 
   if (decoder_state_ == kResetting || decoder_flushing_) {
     // In the case that we're resetting or flushing, we need to delay decoding
@@ -1414,8 +1422,8 @@ void ExynosVideoDecodeAccelerator::DequeueGsc() {
     gsc_output_buffer_queued_count_--;
     DVLOG(3) << "DequeueGsc(): returning input_id=" << dqbuf.timestamp.tv_sec
              << " as picture_id=" << output_record.picture_id;
-    child_message_loop_proxy_->PostTask(FROM_HERE, base::Bind(
-        &Client::PictureReady, client_, media::Picture(
+    io_message_loop_proxy_->PostTask(FROM_HERE, base::Bind(
+        &Client::PictureReady, io_client_, media::Picture(
             output_record.picture_id, dqbuf.timestamp.tv_sec)));
     decoder_frames_at_client_++;
   }
@@ -1625,7 +1633,7 @@ void ExynosVideoDecodeAccelerator::FlushTask() {
 
   // Queue up an empty buffer -- this triggers the flush.
   decoder_input_queue_.push_back(linked_ptr<BitstreamBufferRef>(
-      new BitstreamBufferRef(client_, child_message_loop_proxy_, NULL, 0,
+      new BitstreamBufferRef(io_client_, io_message_loop_proxy_, NULL, 0,
                              kFlushBufferId)));
   decoder_flushing_ = true;
 
@@ -2090,7 +2098,7 @@ bool ExynosVideoDecodeAccelerator::CreateBuffersForFormat(
   mfc_output_buffer_size_[0] = format.fmt.pix_mp.plane_fmt[0].sizeimage;
   mfc_output_buffer_size_[1] = format.fmt.pix_mp.plane_fmt[1].sizeimage;
   mfc_output_buffer_pixelformat_ = format.fmt.pix_mp.pixelformat;
-  DCHECK_EQ(mfc_output_buffer_pixelformat_, V4L2_PIX_FMT_NV12MT_16X16);
+  DCHECK_EQ(mfc_output_buffer_pixelformat_, V4L2_PIX_FMT_NV12M);
   DVLOG(3) << "CreateBuffersForFormat(): new resolution: "
            << frame_buffer_size_.ToString();
 

@@ -35,6 +35,7 @@
 #include "core/rendering/RenderTableCol.h"
 #include "core/rendering/RenderTableRow.h"
 #include "core/rendering/RenderView.h"
+#include "core/rendering/SubtreeLayoutScope.h"
 #include "wtf/HashSet.h"
 #include "wtf/Vector.h"
 
@@ -252,6 +253,27 @@ void RenderTableSection::addCell(RenderTableCell* cell, RenderTableRow* row)
     cell->setCol(table()->effColToCol(col));
 }
 
+bool RenderTableSection::rowHasOnlySpanningCells(unsigned row)
+{
+    unsigned totalCols = m_grid[row].row.size();
+
+    if (!totalCols)
+        return false;
+
+    for (unsigned col = 0; col < totalCols; col++) {
+        const CellStruct& rowSpanCell = cellAt(row, col);
+
+        // Empty cell is not a valid cell so it is not a rowspan cell.
+        if (rowSpanCell.cells.isEmpty())
+            return false;
+
+        if (rowSpanCell.cells[0]->rowSpan() == 1)
+            return false;
+    }
+
+    return true;
+}
+
 void RenderTableSection::populateSpanningRowsHeightFromCell(RenderTableCell* cell, struct SpanningRowsHeight& spanningRowsHeight)
 {
     const unsigned rowSpan = cell->rowSpan();
@@ -263,7 +285,11 @@ void RenderTableSection::populateSpanningRowsHeightFromCell(RenderTableCell* cel
     spanningRowsHeight.totalRowsHeight = 0;
     for (unsigned row = 0; row < rowSpan; row++) {
         unsigned actualRow = row + rowIndex;
+
         spanningRowsHeight.rowHeight[row] = m_rowPos[actualRow + 1] - m_rowPos[actualRow] - borderSpacingForRow(actualRow);
+        if (!spanningRowsHeight.rowHeight[row])
+            spanningRowsHeight.rowWithOnlySpanningCells |= rowHasOnlySpanningCells(actualRow);
+
         spanningRowsHeight.totalRowsHeight += spanningRowsHeight.rowHeight[row];
         spanningRowsHeight.spanningCellHeightIgnoringBorderSpacing -= borderSpacingForRow(actualRow);
     }
@@ -369,20 +395,101 @@ void RenderTableSection::distributeExtraRowSpanHeightToRemainingRows(RenderTable
     extraRowSpanningHeight -= accumulatedPositionIncrease;
 }
 
-// To avoid unneeded extra height distributions, we apply the following sorting algorithm:
-// 1. We sort by increasing start row but decreasing last row (ie the top-most, shortest cells first).
-// 2. For cells spanning the same rows, we sort by intrinsic size.
-static bool compareRowSpanCellsInHeightDistributionOrder(const RenderTableCell* cell2, const RenderTableCell* cell1)
+static bool cellIsFullyIncludedInOtherCell(const RenderTableCell* cell1, const RenderTableCell* cell2)
 {
-    unsigned cellRowIndex1 = cell1->rowIndex();
-    unsigned cellRowSpan1 = cell1->rowSpan();
-    unsigned cellRowIndex2 = cell2->rowIndex();
-    unsigned cellRowSpan2 = cell2->rowSpan();
+    return (cell1->rowIndex() >= cell2->rowIndex() && (cell1->rowIndex() + cell1->rowSpan()) <= (cell2->rowIndex() + cell2->rowSpan()));
+}
 
-    if (cellRowIndex1 == cellRowIndex2 && cellRowSpan1 == cellRowSpan2)
-        return (cell2->logicalHeightForRowSizing() > cell1->logicalHeightForRowSizing());
+// To avoid unneeded extra height distributions, we apply the following sorting algorithm:
+static bool compareRowSpanCellsInHeightDistributionOrder(const RenderTableCell* cell1, const RenderTableCell* cell2)
+{
+    // Sorting bigger height cell first if cells are at same index with same span because we will skip smaller
+    // height cell to distribute it's extra height.
+    if (cell1->rowIndex() == cell2->rowIndex() && cell1->rowSpan() == cell2->rowSpan())
+        return (cell1->logicalHeightForRowSizing() > cell2->logicalHeightForRowSizing());
+    // Sorting inner most cell first because if inner spanning cell'e extra height is distributed then outer
+    // spanning cell's extra height will adjust accordingly. In reverse order, there is more chances that outer
+    // spanning cell's height will exceed than defined by user.
+    if (cellIsFullyIncludedInOtherCell(cell1, cell2))
+        return true;
+    // Sorting lower row index first because first we need to apply the extra height of spanning cell which
+    // comes first in the table so lower rows's position would increment in sequence.
+    if (!cellIsFullyIncludedInOtherCell(cell2, cell1))
+        return (cell1->rowIndex() < cell2->rowIndex());
 
-    return (cellRowIndex2 >= cellRowIndex1 && (cellRowIndex2 + cellRowSpan2) <= (cellRowIndex1 + cellRowSpan1));
+    return false;
+}
+
+bool RenderTableSection::isHeightNeededForRowHavingOnlySpanningCells(unsigned row)
+{
+    unsigned totalCols = m_grid[row].row.size();
+
+    if (!totalCols)
+        return false;
+
+    for (unsigned col = 0; col < totalCols; col++) {
+        const CellStruct& rowSpanCell = cellAt(row, col);
+
+        if (rowSpanCell.cells.size()) {
+            RenderTableCell* cell = rowSpanCell.cells[0];
+            const unsigned rowIndex = cell->rowIndex();
+            const unsigned rowSpan = cell->rowSpan();
+            int totalRowSpanCellHeight = 0;
+
+            for (unsigned row = 0; row < rowSpan; row++) {
+                unsigned actualRow = row + rowIndex;
+                totalRowSpanCellHeight += m_rowPos[actualRow + 1] - m_rowPos[actualRow];
+            }
+            totalRowSpanCellHeight -= borderSpacingForRow(rowIndex + rowSpan - 1);
+
+            if (totalRowSpanCellHeight < cell->logicalHeightForRowSizing())
+                return true;
+        }
+    }
+
+    return false;
+}
+
+unsigned RenderTableSection::calcRowHeightHavingOnlySpanningCells(unsigned row)
+{
+    ASSERT(rowHasOnlySpanningCells(row));
+
+    unsigned totalCols = m_grid[row].row.size();
+
+    if (!totalCols)
+        return 0;
+
+    unsigned rowHeight = 0;
+
+    for (unsigned col = 0; col < totalCols; col++) {
+        const CellStruct& rowSpanCell = cellAt(row, col);
+        if (rowSpanCell.cells.size() && rowSpanCell.cells[0]->rowSpan() > 1)
+            rowHeight = max(rowHeight, rowSpanCell.cells[0]->logicalHeightForRowSizing() / rowSpanCell.cells[0]->rowSpan());
+    }
+
+    return rowHeight;
+}
+
+void RenderTableSection::updateRowsHeightHavingOnlySpanningCells(RenderTableCell* cell, struct SpanningRowsHeight& spanningRowsHeight)
+{
+    ASSERT(spanningRowsHeight.rowHeight.size());
+
+    int accumulatedPositionIncrease = 0;
+    const unsigned rowSpan = cell->rowSpan();
+    const unsigned rowIndex = cell->rowIndex();
+
+    ASSERT(rowSpan == spanningRowsHeight.rowHeight.size());
+
+    for (unsigned row = 0; row < spanningRowsHeight.rowHeight.size(); row++) {
+        unsigned actualRow = row + rowIndex;
+        if (!spanningRowsHeight.rowHeight[row] && rowHasOnlySpanningCells(actualRow) && isHeightNeededForRowHavingOnlySpanningCells(actualRow)) {
+            spanningRowsHeight.rowHeight[row] = calcRowHeightHavingOnlySpanningCells(actualRow);
+            accumulatedPositionIncrease += spanningRowsHeight.rowHeight[row];
+        }
+        m_rowPos[actualRow + 1] += accumulatedPositionIncrease;
+    }
+
+    spanningRowsHeight.totalRowsHeight += accumulatedPositionIncrease;
 }
 
 // Distribute rowSpan cell height in rows those comes in rowSpan cell based on the ratio of row's height if
@@ -434,8 +541,13 @@ void RenderTableSection::distributeRowSpanHeightToRows(SpanningRenderTableCells&
 
         populateSpanningRowsHeightFromCell(cell, spanningRowsHeight);
 
-        if (!spanningRowsHeight.totalRowsHeight || spanningRowsHeight.spanningCellHeightIgnoringBorderSpacing <= spanningRowsHeight.totalRowsHeight)
+        if (spanningRowsHeight.rowWithOnlySpanningCells)
+            updateRowsHeightHavingOnlySpanningCells(cell, spanningRowsHeight);
+
+        if (!spanningRowsHeight.totalRowsHeight || spanningRowsHeight.spanningCellHeightIgnoringBorderSpacing <= spanningRowsHeight.totalRowsHeight) {
+            extraHeightToPropagate = m_rowPos[rowIndex + rowSpan] - originalBeforePosition;
             continue;
+        }
 
         int totalPercent = 0;
         int totalAutoRowsHeight = 0;
@@ -510,9 +622,17 @@ int RenderTableSection::calcRowLogicalHeight()
     LayoutStateMaintainer statePusher(viewRenderer);
 
     m_rowPos.resize(m_grid.size() + 1);
-    m_rowPos[0] = table()->vBorderSpacing();
+
+    // We ignore the border-spacing on any non-top section as it is already included in the previous section's last row position.
+    if (this == table()->topSection())
+        m_rowPos[0] = table()->vBorderSpacing();
+    else
+        m_rowPos[0] = 0;
 
     SpanningRenderTableCells rowSpanCells;
+#ifndef NDEBUG
+    HashSet<const RenderTableCell*> uniqueCells;
+#endif
 
     for (unsigned r = 0; r < m_grid.size(); r++) {
         m_grid[r].baseline = 0;
@@ -523,6 +643,7 @@ int RenderTableSection::calcRowLogicalHeight()
 
         Row& row = m_grid[r].row;
         unsigned totalCols = row.size();
+        RenderTableCell* lastRowSpanCell = 0;
 
         for (unsigned c = 0; c < totalCols; c++) {
             CellStruct& current = cellAt(r, c);
@@ -534,8 +655,14 @@ int RenderTableSection::calcRowLogicalHeight()
                 if (RuntimeEnabledFeatures::rowSpanLogicalHeightSpreadingEnabled()) {
                     if (cell->rowSpan() > 1) {
                         // For row spanning cells, we only handle them for the first row they span. This ensures we take their baseline into account.
-                        if (cell->rowIndex() == r) {
+                        if (lastRowSpanCell != cell && cell->rowIndex() == r) {
+#ifndef NDEBUG
+                            ASSERT(!uniqueCells.contains(cell));
+                            uniqueCells.add(cell);
+#endif
+
                             rowSpanCells.append(cell);
+                            lastRowSpanCell = cell;
 
                             // Find out the baseline. The baseline is set on the first row in a rowSpan.
                             updateBaselineForCell(cell, r, baselineDescent);
@@ -599,7 +726,6 @@ int RenderTableSection::calcRowLogicalHeight()
 
 void RenderTableSection::layout()
 {
-    StackStats::LayoutCheckPoint layoutCheckPoint;
     ASSERT(needsLayout());
     ASSERT(!needsCellRecalc());
     ASSERT(!table()->needsSectionRecalc());
@@ -612,6 +738,7 @@ void RenderTableSection::layout()
 
     const Vector<int>& columnPos = table()->columnPositions();
 
+    SubtreeLayoutScope layouter(this);
     for (unsigned r = 0; r < m_grid.size(); ++r) {
         Row& row = m_grid[r].row;
         unsigned cols = row.size();
@@ -631,7 +758,7 @@ void RenderTableSection::layout()
                 endCol++;
             }
             int tableLayoutLogicalWidth = columnPos[endCol] - columnPos[startColumn] - table()->hBorderSpacing();
-            cell->setCellLogicalWidth(tableLayoutLogicalWidth);
+            cell->setCellLogicalWidth(tableLayoutLogicalWidth, layouter);
         }
 
         if (RenderTableRow* rowRenderer = m_grid[r].rowRenderer)
@@ -736,6 +863,11 @@ int RenderTableSection::distributeExtraLogicalHeightToRows(int extraLogicalHeigh
     return extraLogicalHeight - remainingExtraLogicalHeight;
 }
 
+static bool shouldFlexCellChild(RenderObject* cellDescendant)
+{
+    return cellDescendant->isReplaced() || (cellDescendant->isBox() && toRenderBox(cellDescendant)->scrollsOverflow());
+}
+
 void RenderTableSection::layoutRows()
 {
 #ifndef NDEBUG
@@ -795,33 +927,24 @@ void RenderTableSection::layoutRows()
             bool flexAllChildren = cell->style()->logicalHeight().isFixed()
                 || (!table()->style()->logicalHeight().isAuto() && rHeight != cell->logicalHeight());
 
-            for (RenderObject* o = cell->firstChild(); o; o = o->nextSibling()) {
-                if (!o->isText() && o->style()->logicalHeight().isPercent() && (flexAllChildren || o->isReplaced() || (o->isBox() && toRenderBox(o)->scrollsOverflow()))) {
-                    // Tables with no sections do not flex.
-                    if (!o->isTable() || toRenderTable(o)->hasSections()) {
-                        o->setNeedsLayout(MarkOnlyThis);
-                        cellChildrenFlex = true;
-                    }
+            for (RenderObject* child = cell->firstChild(); child; child = child->nextSibling()) {
+                if (!child->isText() && child->style()->logicalHeight().isPercent()
+                    && (flexAllChildren || shouldFlexCellChild(child))
+                    && (!child->isTable() || toRenderTable(child)->hasSections())) {
+                    cellChildrenFlex = true;
+                    break;
                 }
             }
 
-            if (TrackedRendererListHashSet* percentHeightDescendants = cell->percentHeightDescendants()) {
-                TrackedRendererListHashSet::iterator end = percentHeightDescendants->end();
-                for (TrackedRendererListHashSet::iterator it = percentHeightDescendants->begin(); it != end; ++it) {
-                    RenderBox* box = *it;
-                    if (!box->isReplaced() && !box->scrollsOverflow() && !flexAllChildren)
-                        continue;
-
-                    while (box != cell) {
-                        if (box->normalChildNeedsLayout())
+            if (!cellChildrenFlex) {
+                if (TrackedRendererListHashSet* percentHeightDescendants = cell->percentHeightDescendants()) {
+                    TrackedRendererListHashSet::iterator end = percentHeightDescendants->end();
+                    for (TrackedRendererListHashSet::iterator it = percentHeightDescendants->begin(); it != end; ++it) {
+                        if (flexAllChildren || shouldFlexCellChild(*it)) {
+                            cellChildrenFlex = true;
                             break;
-                        box->setChildNeedsLayout(MarkOnlyThis);
-                        box = box->containingBlock();
-                        ASSERT(box);
-                        if (!box)
-                            break;
+                        }
                     }
-                    cellChildrenFlex = true;
                 }
             }
 
@@ -840,14 +963,15 @@ void RenderTableSection::layoutRows()
                 }
             }
 
-            cell->computeIntrinsicPadding(rHeight);
+            SubtreeLayoutScope layouter(cell);
+            cell->computeIntrinsicPadding(rHeight, layouter);
 
             LayoutRect oldCellRect = cell->frameRect();
 
             setLogicalPositionForCell(cell, c);
 
             if (!cell->needsLayout() && view()->layoutState()->pageLogicalHeight() && view()->layoutState()->pageLogicalOffset(cell, cell->logicalTop()) != cell->pageLogicalOffset())
-                cell->setChildNeedsLayout(MarkOnlyThis);
+                layouter.setChildNeedsLayout(cell);
 
             cell->layoutIfNeeded();
 
@@ -1669,7 +1793,7 @@ RenderTableSection* RenderTableSection::createAnonymousWithParentRenderer(const 
 {
     RefPtr<RenderStyle> newStyle = RenderStyle::createAnonymousStyleWithDisplay(parent->style(), TABLE_ROW_GROUP);
     RenderTableSection* newSection = new RenderTableSection(0);
-    newSection->setDocumentForAnonymous(parent->document());
+    newSection->setDocumentForAnonymous(&parent->document());
     newSection->setStyle(newStyle.release());
     return newSection;
 }

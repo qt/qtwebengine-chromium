@@ -56,7 +56,7 @@ class MessageLoopProxy;
 namespace media {
 class ChunkDemuxer;
 class FFmpegDemuxer;
-class GpuVideoDecoderFactories;
+class GpuVideoAcceleratorFactories;
 class MediaLog;
 }
 
@@ -87,10 +87,9 @@ class WebMediaPlayerImpl
       const WebMediaPlayerParams& params);
   virtual ~WebMediaPlayerImpl();
 
-  virtual void load(const WebKit::WebURL& url, CORSMode cors_mode);
-  virtual void load(const WebKit::WebURL& url,
-                    WebKit::WebMediaSource* media_source,
-                    CORSMode cors_mode);
+  virtual void load(LoadType load_type,
+                    const WebKit::WebURL& url,
+                    CORSMode cors_mode) OVERRIDE;
 
   // Playback controls.
   virtual void play();
@@ -187,7 +186,7 @@ class WebMediaPlayerImpl
   void OnPipelineError(media::PipelineStatus error);
   void OnPipelineBufferingState(
       media::Pipeline::BufferingState buffering_state);
-  void OnDemuxerOpened(scoped_ptr<WebKit::WebMediaSource> media_source);
+  void OnDemuxerOpened();
   void OnKeyAdded(const std::string& session_id);
   void OnKeyError(const std::string& session_id,
                   media::MediaKeys::KeyError error_code,
@@ -197,8 +196,7 @@ class WebMediaPlayerImpl
                     const std::string& default_url);
   void OnNeedKey(const std::string& type,
                  const std::string& session_id,
-                 scoped_ptr<uint8[]> init_data,
-                 int init_data_size);
+                 const std::vector<uint8>& init_data);
   scoped_ptr<media::TextTrack> OnTextTrack(media::TextKind kind,
                                            const std::string& label,
                                            const std::string& language);
@@ -207,8 +205,8 @@ class WebMediaPlayerImpl
  private:
   // Called after |defer_load_cb_| has decided to allow the load. If
   // |defer_load_cb_| is null this is called immediately.
-  void DoLoad(const WebKit::WebURL& url,
-              WebKit::WebMediaSource* media_source,
+  void DoLoad(LoadType load_type,
+              const WebKit::WebURL& url,
               CORSMode cors_mode);
 
   // Called after asynchronous initialization of a data source completed.
@@ -218,9 +216,7 @@ class WebMediaPlayerImpl
   void NotifyDownloading(bool is_downloading);
 
   // Finishes starting the pipeline due to a call to load().
-  //
-  // A non-null |media_source| will construct a Media Source pipeline.
-  void StartPipeline(WebKit::WebMediaSource* media_source);
+  void StartPipeline();
 
   // Helpers that set the network/ready state and notifies the client if
   // they've changed.
@@ -282,6 +278,9 @@ class WebMediaPlayerImpl
   // has been selected.
   WebKit::WebString current_key_system_;
 
+  // The LoadType passed in the |load_type| parameter of the load() call.
+  LoadType load_type_;
+
   // Playback state.
   //
   // TODO(scherkus): we have these because Pipeline favours the simplicity of a
@@ -318,8 +317,8 @@ class WebMediaPlayerImpl
 
   bool incremented_externally_allocated_memory_;
 
-  // Factories for supporting GpuVideoDecoder. May be null.
-  scoped_refptr<media::GpuVideoDecoderFactories> gpu_factories_;
+  // Factories for supporting video accelerators. May be null.
+  scoped_refptr<media::GpuVideoAcceleratorFactories> gpu_factories_;
 
   // Routes audio playback to either AudioRendererSink or WebAudio.
   scoped_refptr<WebAudioSourceProviderImpl> audio_source_provider_;

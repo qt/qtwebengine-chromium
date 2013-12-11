@@ -20,8 +20,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "components/autofill/content/browser/autocheckout/whitelist_manager.h"
-#include "components/autofill/content/browser/autocheckout_manager.h"
 #include "components/autofill/core/browser/autocomplete_history_manager.h"
 #include "components/autofill/core/browser/autofill_data_model.h"
 #include "components/autofill/core/browser/autofill_driver.h"
@@ -129,7 +127,7 @@ bool SectionIsAutofilled(const FormStructure& form_structure,
 }
 
 bool FormIsHTTPS(const FormStructure& form) {
-  return form.source_url().SchemeIs(chrome::kHttpsScheme);
+  return form.source_url().SchemeIs(content::kHttpsScheme);
 }
 
 // Uses the existing personal data in |profiles| and |credit_cards| to determine
@@ -148,16 +146,21 @@ void DeterminePossibleFieldTypesForUpload(
   // profile or credit card, identify any stored types that match the value.
   for (size_t i = 0; i < submitted_form->field_count(); ++i) {
     AutofillField* field = submitted_form->field(i);
-    base::string16 value = CollapseWhitespace(field->value, false);
-
     ServerFieldTypeSet matching_types;
-    for (std::vector<AutofillProfile>::const_iterator it = profiles.begin();
-         it != profiles.end(); ++it) {
-      it->GetMatchingTypes(value, app_locale, &matching_types);
-    }
-    for (std::vector<CreditCard>::const_iterator it = credit_cards.begin();
-          it != credit_cards.end(); ++it) {
-      it->GetMatchingTypes(value, app_locale, &matching_types);
+
+    // If it's a password field, set the type directly.
+    if (field->form_control_type == "password") {
+      matching_types.insert(autofill::PASSWORD);
+    } else {
+      base::string16 value = CollapseWhitespace(field->value, false);
+      for (std::vector<AutofillProfile>::const_iterator it = profiles.begin();
+           it != profiles.end(); ++it) {
+        it->GetMatchingTypes(value, app_locale, &matching_types);
+      }
+      for (std::vector<CreditCard>::const_iterator it = credit_cards.begin();
+            it != credit_cards.end(); ++it) {
+        it->GetMatchingTypes(value, app_locale, &matching_types);
+      }
     }
 
     if (matching_types.empty())
@@ -190,7 +193,6 @@ AutofillManager::AutofillManager(
       personal_data_(delegate->GetPersonalDataManager()),
       autocomplete_history_manager_(
           new AutocompleteHistoryManager(driver, delegate)),
-      autocheckout_manager_(this),
       metric_logger_(new AutofillMetrics),
       has_logged_autofill_enabled_(false),
       has_logged_address_suggestions_count_(false),
@@ -251,22 +253,14 @@ bool AutofillManager::OnFormSubmitted(const FormData& form,
   // Let Autocomplete know as well.
   autocomplete_history_manager_->OnFormSubmitted(form);
 
-  if (!IsAutofillEnabled())
-    return false;
+  // Grab a copy of the form data.
+  scoped_ptr<FormStructure> submitted_form(new FormStructure(form));
 
-  if (driver_->GetWebContents()->GetBrowserContext()->IsOffTheRecord())
+  if (!ShouldUploadForm(*submitted_form))
     return false;
 
   // Don't save data that was submitted through JavaScript.
   if (!form.user_submitted)
-    return false;
-
-  // Grab a copy of the form data.
-  scoped_ptr<FormStructure> submitted_form(
-      new FormStructure(form, GetAutocheckoutURLPrefix()));
-
-  // Disregard forms that we wouldn't ever autofill in the first place.
-  if (!submitted_form->ShouldBeParsed(true))
     return false;
 
   // Ignore forms not present in our cache.  These are typically forms with
@@ -276,9 +270,7 @@ bool AutofillManager::OnFormSubmitted(const FormData& form,
     return false;
 
   submitted_form->UpdateFromCache(*cached_submitted_form);
-  // Don't prompt the user to save data entered by Autocheckout.
-  if (submitted_form->IsAutofillable(true) &&
-      !submitted_form->filled_by_autocheckout())
+  if (submitted_form->IsAutofillable(true))
     ImportFormData(*submitted_form);
 
   // Only upload server statistics and UMA metrics if at least some local data
@@ -328,34 +320,14 @@ void AutofillManager::OnFormsSeen(const std::vector<FormData>& forms,
                                   const TimeTicks& timestamp,
                                   autofill::FormsSeenState state) {
   bool is_post_document_load = state == autofill::DYNAMIC_FORMS_SEEN;
-  bool has_more_forms = state == autofill::PARTIAL_FORMS_SEEN;
-  // If new forms were added dynamically, and the autocheckout manager
-  // doesn't tell us to ignore ajax on this page, treat as a new page.
-  if (is_post_document_load) {
-    if (autocheckout_manager_.ShouldIgnoreAjax())
-      return;
-
+  // If new forms were added dynamically, treat as a new page.
+  if (is_post_document_load)
     Reset();
-  }
 
   RenderViewHost* host = driver_->GetWebContents()->GetRenderViewHost();
   if (!host)
     return;
 
-  if (!GetAutocheckoutURLPrefix().empty()) {
-    // If whitelisted URL, fetch all the forms.
-    if (has_more_forms)
-      host->Send(new AutofillMsg_GetAllForms(host->GetRoutingID()));
-    if (!is_post_document_load) {
-      host->Send(
-          new AutofillMsg_AutocheckoutSupported(host->GetRoutingID()));
-    }
-    // Now return early, as OnFormsSeen will get called again with all forms.
-    if (has_more_forms)
-      return;
-  }
-
-  autocheckout_manager_.OnFormsSeen();
   bool enabled = IsAutofillEnabled();
   if (!has_logged_autofill_enabled_) {
     metric_logger_->LogIsAutofillEnabledAtPageLoad(enabled);
@@ -378,7 +350,6 @@ void AutofillManager::OnTextFieldDidChange(const FormData& form,
     return;
 
   if (!user_did_type_) {
-    autocheckout_manager_.set_should_show_bubble(false);
     user_did_type_ = true;
     metric_logger_->LogUserHappinessMetric(AutofillMetrics::USER_DID_TYPE);
   }
@@ -403,9 +374,6 @@ void AutofillManager::OnQueryFormFieldAutofill(int query_id,
                                                const FormFieldData& field,
                                                const gfx::RectF& bounding_box,
                                                bool display_warning) {
-  if (autocheckout_manager_.is_autocheckout_bubble_showing())
-    return;
-
   std::vector<base::string16> values;
   std::vector<base::string16> labels;
   std::vector<base::string16> icons;
@@ -616,7 +584,6 @@ void AutofillManager::OnHideAutofillUI() {
     return;
 
   manager_delegate_->HideAutofillPopup();
-  manager_delegate_->HideAutocheckoutBubble();
 }
 
 void AutofillManager::RemoveAutofillProfileOrCreditCard(int unique_id) {
@@ -647,16 +614,6 @@ content::WebContents* AutofillManager::GetWebContents() const {
 
 const std::vector<FormStructure*>& AutofillManager::GetFormStructures() {
   return form_structures_.get();
-}
-
-void AutofillManager::ShowRequestAutocompleteDialog(
-    const FormData& form,
-    const GURL& source_url,
-    autofill::DialogType dialog_type,
-    const base::Callback<void(const FormStructure*,
-                              const std::string&)>& callback) {
-  manager_delegate_->ShowRequestAutocompleteDialog(
-      form, source_url, dialog_type, callback);
 }
 
 void AutofillManager::SetTestDelegate(
@@ -698,11 +655,10 @@ void AutofillManager::OnRequestAutocomplete(
     return;
   }
 
-  base::Callback<void(const FormStructure*, const std::string&)> callback =
+  base::Callback<void(const FormStructure*)> callback =
       base::Bind(&AutofillManager::ReturnAutocompleteData,
                  weak_ptr_factory_.GetWeakPtr());
-  ShowRequestAutocompleteDialog(
-      form, frame_url, autofill::DIALOG_TYPE_REQUEST_AUTOCOMPLETE, callback);
+  ShowRequestAutocompleteDialog(form, frame_url, callback);
 }
 
 void AutofillManager::ReturnAutocompleteResult(
@@ -721,9 +677,7 @@ void AutofillManager::ReturnAutocompleteResult(
                                                        form_data));
 }
 
-void AutofillManager::ReturnAutocompleteData(
-    const FormStructure* result,
-    const std::string& unused_transaction_id) {
+void AutofillManager::ReturnAutocompleteData(const FormStructure* result) {
   if (!result) {
     ReturnAutocompleteResult(WebFormElement::AutocompleteResultErrorCancel,
                              FormData());
@@ -735,27 +689,14 @@ void AutofillManager::ReturnAutocompleteData(
 
 void AutofillManager::OnLoadedServerPredictions(
     const std::string& response_xml) {
-  scoped_ptr<autofill::AutocheckoutPageMetaData> page_meta_data(
-      new autofill::AutocheckoutPageMetaData());
-
   // Parse and store the server predictions.
   FormStructure::ParseQueryResponse(response_xml,
                                     form_structures_.get(),
-                                    page_meta_data.get(),
                                     *metric_logger_);
 
-  if (page_meta_data->IsInAutofillableFlow()) {
-    RenderViewHost* host = driver_->GetWebContents()->GetRenderViewHost();
-    if (host)
-      host->Send(new AutofillMsg_AutocheckoutSupported(host->GetRoutingID()));
-  }
-
-  // TODO(ahutter): Remove this once Autocheckout is implemented on other
-  // platforms. See http://crbug.com/173416.
-#if defined(TOOLKIT_VIEWS)
-  if (!GetAutocheckoutURLPrefix().empty())
-    autocheckout_manager_.OnLoadedPageMetaData(page_meta_data.Pass());
-#endif  // #if defined(TOOLKIT_VIEWS)
+  // Forward form structures to the password generation manager to detect
+  // account creation forms.
+  manager_delegate_->DetectAccountCreationForms(form_structures_.get());
 
   // If the corresponding flag is set, annotate forms with the predicted types.
   driver_->SendAutofillTypePredictionsToRenderer(form_structures_.get());
@@ -763,22 +704,6 @@ void AutofillManager::OnLoadedServerPredictions(
 
 void AutofillManager::OnDidEndTextFieldEditing() {
   external_delegate_->DidEndTextFieldEditing();
-}
-
-void AutofillManager::OnAutocheckoutPageCompleted(
-    autofill::AutocheckoutStatus status) {
-  autocheckout_manager_.OnAutocheckoutPageCompleted(status);
-}
-
-std::string AutofillManager::GetAutocheckoutURLPrefix() const {
-  if (!driver_->GetWebContents())
-    return std::string();
-
-  autofill::autocheckout::WhitelistManager* whitelist_manager =
-      manager_delegate_->GetAutocheckoutWhitelistManager();
-
-  return whitelist_manager ? whitelist_manager->GetMatchedURLPrefix(
-      driver_->GetWebContents()->GetURL()) : std::string();
 }
 
 bool AutofillManager::IsAutofillEnabled() const {
@@ -796,8 +721,9 @@ void AutofillManager::ImportFormData(const FormStructure& submitted_form) {
     manager_delegate_->ConfirmSaveCreditCard(
         *metric_logger_,
         *imported_credit_card,
-        base::Bind(&PersonalDataManager::SaveImportedCreditCard,
-                   base::Unretained(personal_data_), *imported_credit_card));
+        base::Bind(
+            base::IgnoreResult(&PersonalDataManager::SaveImportedCreditCard),
+            base::Unretained(personal_data_), *imported_credit_card));
   }
 }
 
@@ -819,26 +745,6 @@ void AutofillManager::UploadFormDataAsyncCallback(
     UploadFormData(*submitted_form);
 }
 
-void AutofillManager::OnMaybeShowAutocheckoutBubble(
-    const FormData& form,
-    const gfx::RectF& bounding_box) {
-  if (!IsAutofillEnabled())
-    return;
-
-  // Don't show bubble if corresponding FormStructure doesn't have anything to
-  // autofill.
-  FormStructure* cached_form;
-  if (!FindCachedForm(form, &cached_form))
-    return;
-
-  // Don't offer Autocheckout bubble if Autofill server is not aware of this
-  // form in the context of Autocheckout experiment.
-  if (!HasServerSpecifiedFieldTypes(*cached_form))
-    return;
-
-  autocheckout_manager_.MaybeShowAutocheckoutBubble(form.origin, bounding_box);
-}
-
 void AutofillManager::UploadFormData(const FormStructure& submitted_form) {
   if (!download_manager_)
     return;
@@ -856,9 +762,59 @@ void AutofillManager::UploadFormData(const FormStructure& submitted_form) {
 
   ServerFieldTypeSet non_empty_types;
   personal_data_->GetNonEmptyTypes(&non_empty_types);
+  // Always add PASSWORD to |non_empty_types| so that if |submitted_form|
+  // contains a password field it will be uploaded to the server. If
+  // |submitted_form| doesn't contain a password field, there is no side
+  // effect from adding PASSWORD to |non_empty_types|.
+  non_empty_types.insert(autofill::PASSWORD);
 
   download_manager_->StartUploadRequest(submitted_form, was_autofilled,
-                                       non_empty_types);
+                                        non_empty_types);
+}
+
+bool AutofillManager::UploadPasswordGenerationForm(const FormData& form) {
+  FormStructure form_structure(form);
+
+  if (!ShouldUploadForm(form_structure))
+    return false;
+
+  if (!form_structure.ShouldBeCrowdsourced())
+    return false;
+
+  // TODO(gcasto): Check that PasswordGeneration is enabled?
+
+  // Find the first password field to label. We don't try to label anything
+  // else.
+  bool found_password_field = false;
+  for (size_t i = 0; i < form_structure.field_count(); ++i) {
+    AutofillField* field = form_structure.field(i);
+
+    ServerFieldTypeSet types;
+    if (!found_password_field && field->form_control_type == "password") {
+      types.insert(ACCOUNT_CREATION_PASSWORD);
+      found_password_field = true;
+    } else {
+      types.insert(UNKNOWN_TYPE);
+    }
+    field->set_possible_types(types);
+  }
+  DCHECK(found_password_field);
+
+  // Only one field type should be present.
+  ServerFieldTypeSet available_field_types;
+  available_field_types.insert(ACCOUNT_CREATION_PASSWORD);
+
+  // Force uploading as these events are relatively rare and we want to make
+  // sure to receive them. It also makes testing easier if these requests
+  // always pass.
+  form_structure.set_upload_required(UPLOAD_REQUIRED);
+
+  if (!download_manager_)
+    return false;
+
+  return download_manager_->StartUploadRequest(form_structure,
+                                               false /* was_autofilled */,
+                                               available_field_types);
 }
 
 void AutofillManager::Reset() {
@@ -883,7 +839,6 @@ AutofillManager::AutofillManager(AutofillDriver* driver,
       personal_data_(personal_data),
       autocomplete_history_manager_(
           new AutocompleteHistoryManager(driver, delegate)),
-      autocheckout_manager_(this),
       metric_logger_(new AutofillMetrics),
       has_logged_autofill_enabled_(false),
       has_logged_address_suggestions_count_(false),
@@ -983,7 +938,7 @@ bool AutofillManager::GetCachedFormAndField(const FormData& form,
   // If we do not have this form in our cache but it is parseable, we'll add it
   // in the call to |UpdateCachedForm()|.
   if (!FindCachedForm(form, form_structure) &&
-      !FormStructure(form, GetAutocheckoutURLPrefix()).ShouldBeParsed(false)) {
+      !FormStructure(form).ShouldBeParsed(false)) {
     return false;
   }
 
@@ -1030,8 +985,7 @@ bool AutofillManager::UpdateCachedForm(const FormData& live_form,
     return false;
 
   // Add the new or updated form to our cache.
-  form_structures_.push_back(
-      new FormStructure(live_form, GetAutocheckoutURLPrefix()));
+  form_structures_.push_back(new FormStructure(live_form));
   *updated_form = *form_structures_.rbegin();
   (*updated_form)->DetermineHeuristicTypes(*metric_logger_);
 
@@ -1107,11 +1061,9 @@ void AutofillManager::GetCreditCardSuggestions(
 
 void AutofillManager::ParseForms(const std::vector<FormData>& forms) {
   std::vector<FormStructure*> non_queryable_forms;
-  std::string autocheckout_url_prefix = GetAutocheckoutURLPrefix();
   for (std::vector<FormData>::const_iterator iter = forms.begin();
        iter != forms.end(); ++iter) {
-    scoped_ptr<FormStructure> form_structure(
-        new FormStructure(*iter, autocheckout_url_prefix));
+    scoped_ptr<FormStructure> form_structure(new FormStructure(*iter));
     if (!form_structure->ShouldBeParsed(false))
       continue;
 
@@ -1125,13 +1077,7 @@ void AutofillManager::ParseForms(const std::vector<FormData>& forms) {
       non_queryable_forms.push_back(form_structure.release());
   }
 
-  if (form_structures_.empty()) {
-    // Call OnLoadedPageMetaData with no page metadata immediately if there is
-    // no form in the page. This give |autocheckout_manager| a chance to
-    // terminate Autocheckout and send Autocheckout status.
-    autocheckout_manager_.OnLoadedPageMetaData(
-        scoped_ptr<autofill::AutocheckoutPageMetaData>());
-  } else if (download_manager_) {
+  if (!form_structures_.empty() && download_manager_) {
     // Query the server if we have at least one of the forms were parsed.
     download_manager_->StartQueryRequest(form_structures_.get(),
                                         *metric_logger_);
@@ -1208,12 +1154,34 @@ void AutofillManager::UnpackGUIDs(int id,
   *profile_guid = IDToGUID(profile_id);
 }
 
+void AutofillManager::ShowRequestAutocompleteDialog(
+    const FormData& form,
+    const GURL& source_url,
+    const base::Callback<void(const FormStructure*)>& callback) {
+  manager_delegate_->ShowRequestAutocompleteDialog(
+      form, source_url, callback);
+}
+
 void AutofillManager::UpdateInitialInteractionTimestamp(
     const TimeTicks& interaction_timestamp) {
   if (initial_interaction_timestamp_.is_null() ||
       interaction_timestamp < initial_interaction_timestamp_) {
     initial_interaction_timestamp_ = interaction_timestamp;
   }
+}
+
+bool AutofillManager::ShouldUploadForm(const FormStructure& form) {
+  if (!IsAutofillEnabled())
+    return false;
+
+  if (driver_->GetWebContents()->GetBrowserContext()->IsOffTheRecord())
+    return false;
+
+  // Disregard forms that we wouldn't ever autofill in the first place.
+  if (!form.ShouldBeParsed(true))
+    return false;
+
+  return true;
 }
 
 }  // namespace autofill

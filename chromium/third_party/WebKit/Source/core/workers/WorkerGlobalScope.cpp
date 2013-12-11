@@ -57,12 +57,6 @@
 #include "wtf/RefPtr.h"
 #include "wtf/UnusedParam.h"
 
-#if ENABLE(NOTIFICATIONS) || ENABLE(LEGACY_NOTIFICATIONS)
-#include "modules/notifications/NotificationCenter.h"
-#endif
-
-
-
 namespace WebCore {
 
 class CloseWorkerGlobalScopeTask : public ScriptExecutionContext::Task {
@@ -169,6 +163,13 @@ void WorkerGlobalScope::close()
     postTask(CloseWorkerGlobalScopeTask::create());
 }
 
+WorkerConsole* WorkerGlobalScope::console()
+{
+    if (!m_console)
+        m_console = WorkerConsole::create(this);
+    return m_console.get();
+}
+
 WorkerNavigator* WorkerGlobalScope::navigator() const
 {
     if (!m_navigator)
@@ -194,7 +195,7 @@ void WorkerGlobalScope::importScripts(const Vector<String>& urls, ExceptionState
     for (Vector<String>::const_iterator it = urls.begin(); it != urlsEnd; ++it) {
         const KURL& url = scriptExecutionContext()->completeURL(*it);
         if (!url.isValid()) {
-            es.throwDOMException(SyntaxError);
+            es.throwDOMException(SyntaxError, "Failed to execute 'importScripts': the URL '" + *it + "' is invalid.");
             return;
         }
         completedURLs.append(url);
@@ -208,7 +209,7 @@ void WorkerGlobalScope::importScripts(const Vector<String>& urls, ExceptionState
 
         // If the fetching attempt failed, throw a NetworkError exception and abort all these steps.
         if (scriptLoader->failed()) {
-            es.throwDOMException(NetworkError);
+            es.throwDOMException(NetworkError, "Failed to execute 'importScripts': the script at '" + it->elidedString() + "' failed to load.");
             return;
         }
 
@@ -233,34 +234,23 @@ void WorkerGlobalScope::logExceptionToConsole(const String& errorMessage, const 
     thread()->workerReportingProxy().postExceptionToWorkerObject(errorMessage, lineNumber, columnNumber, sourceURL);
 }
 
-void WorkerGlobalScope::addConsoleMessage(MessageSource source, MessageLevel level, const String& message, unsigned long requestIdentifier)
-{
-    if (!isContextThread()) {
-        postTask(AddConsoleMessageTask::create(source, level, message));
-        return;
-    }
-    thread()->workerReportingProxy().postConsoleMessageToWorkerObject(source, level, message, 0, String());
-
-    addMessageToWorkerConsole(source, level, message, String(), 0, 0, 0, requestIdentifier);
-}
-
-void WorkerGlobalScope::addMessage(MessageSource source, MessageLevel level, const String& message, const String& sourceURL, unsigned lineNumber, PassRefPtr<ScriptCallStack> callStack, ScriptState* state, unsigned long requestIdentifier)
+void WorkerGlobalScope::addMessage(MessageSource source, MessageLevel level, const String& message, const String& sourceURL, unsigned lineNumber, ScriptState* state)
 {
     if (!isContextThread()) {
         postTask(AddConsoleMessageTask::create(source, level, message));
         return;
     }
     thread()->workerReportingProxy().postConsoleMessageToWorkerObject(source, level, message, lineNumber, sourceURL);
-    addMessageToWorkerConsole(source, level, message, sourceURL, lineNumber, callStack, state, requestIdentifier);
+    addMessageToWorkerConsole(source, level, message, sourceURL, lineNumber, 0, state);
 }
 
-void WorkerGlobalScope::addMessageToWorkerConsole(MessageSource source, MessageLevel level, const String& message, const String& sourceURL, unsigned lineNumber, PassRefPtr<ScriptCallStack> callStack, ScriptState* state, unsigned long requestIdentifier)
+void WorkerGlobalScope::addMessageToWorkerConsole(MessageSource source, MessageLevel level, const String& message, const String& sourceURL, unsigned lineNumber, PassRefPtr<ScriptCallStack> callStack, ScriptState* state)
 {
     ASSERT(isContextThread());
     if (callStack)
-        InspectorInstrumentation::addMessageToConsole(this, source, LogMessageType, level, message, callStack, requestIdentifier);
+        InspectorInstrumentation::addMessageToConsole(this, source, LogMessageType, level, message, callStack);
     else
-        InspectorInstrumentation::addMessageToConsole(this, source, LogMessageType, level, message, sourceURL, lineNumber, 0, state, requestIdentifier);
+        InspectorInstrumentation::addMessageToConsole(this, source, LogMessageType, level, message, sourceURL, lineNumber, 0, state);
 }
 
 bool WorkerGlobalScope::isContextThread() const

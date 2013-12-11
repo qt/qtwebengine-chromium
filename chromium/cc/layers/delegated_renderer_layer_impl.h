@@ -40,10 +40,13 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
 
   void AppendContributingRenderPasses(RenderPassSink* render_pass_sink);
 
+  // Creates an ID with the resource provider for the child renderer
+  // that will be sending quads to the layer. Registers the callback to
+  // inform when resources are no longer in use.
+  void CreateChildIdIfNeeded(const ReturnCallback& return_callback);
+
   void SetFrameData(scoped_ptr<DelegatedFrameData> frame_data,
                     gfx::RectF damage_in_frame);
-
-  void CollectUnusedResources(TransferableResourceArray* resources_for_ack);
 
   void SetDisplaySize(gfx::Size size);
 
@@ -54,14 +57,11 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
   const ScopedPtrVector<RenderPass>& RenderPassesInDrawOrderForTesting() const {
     return render_passes_in_draw_order_;
   }
-  const ResourceProvider::ResourceIdSet& ResourcesForTesting() const {
+  const ResourceProvider::ResourceIdArray& ResourcesForTesting() const {
     return resources_;
   }
 
  private:
-  // Creates an ID with the resource provider for the child renderer
-  // that will be sending quads to the layer.
-  void CreateChildIdIfNeeded();
   void ClearChildId();
 
   void AppendRainbowDebugBorder(QuadSink* quad_sink,
@@ -71,8 +71,11 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
       ScopedPtrVector<RenderPass>* render_passes_in_draw_order);
   void ClearRenderPasses();
 
-  RenderPass::Id ConvertDelegatedRenderPassId(
-      RenderPass::Id delegated_render_pass_id) const;
+  // Returns |true| if the delegated_render_pass_id is part of the current
+  // frame and can be converted.
+  bool ConvertDelegatedRenderPassId(
+      RenderPass::Id delegated_render_pass_id,
+      RenderPass::Id* output_render_pass_id) const;
 
   gfx::Transform DelegatedFrameToLayerSpaceTransform(gfx::Size frame_size)
       const;
@@ -89,7 +92,7 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
   bool have_render_passes_to_push_;
   ScopedPtrVector<RenderPass> render_passes_in_draw_order_;
   base::hash_map<RenderPass::Id, int> render_passes_index_by_id_;
-  ResourceProvider::ResourceIdSet resources_;
+  ResourceProvider::ResourceIdArray resources_;
 
   gfx::Size display_size_;
   int child_id_;

@@ -29,14 +29,14 @@
 
 namespace WebCore {
 
-inline SVGFEMergeElement::SVGFEMergeElement(const QualifiedName& tagName, Document* document)
+inline SVGFEMergeElement::SVGFEMergeElement(const QualifiedName& tagName, Document& document)
     : SVGFilterPrimitiveStandardAttributes(tagName, document)
 {
     ASSERT(hasTagName(SVGNames::feMergeTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGFEMergeElement> SVGFEMergeElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<SVGFEMergeElement> SVGFEMergeElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new SVGFEMergeElement(tagName, document));
 }
@@ -47,7 +47,7 @@ PassRefPtr<FilterEffect> SVGFEMergeElement::build(SVGFilterBuilder* filterBuilde
     FilterEffectVector& mergeInputs = effect->inputEffects();
     for (Node* node = firstChild(); node; node = node->nextSibling()) {
         if (node->hasTagName(SVGNames::feMergeNodeTag)) {
-            FilterEffect* mergeEffect = filterBuilder->getEffectById(static_cast<SVGFEMergeNodeElement*>(node)->in1CurrentValue());
+            FilterEffect* mergeEffect = filterBuilder->getEffectById(toSVGFEMergeNodeElement(node)->in1CurrentValue());
             if (!mergeEffect)
                 return 0;
             mergeInputs.append(mergeEffect);

@@ -50,6 +50,7 @@
 #include "core/inspector/ContentSearchUtils.h"
 #include "core/inspector/InspectorCSSAgent.h"
 #include "core/inspector/InspectorPageAgent.h"
+#include "core/inspector/InspectorResourceAgent.h"
 #include "core/page/Page.h"
 #include "core/page/PageConsole.h"
 #include "core/platform/JSONValues.h"
@@ -143,7 +144,7 @@ namespace WebCore {
 static PassOwnPtr<CSSParser> createCSSParser(Document* document)
 {
     UseCounter* counter = 0;
-    return adoptPtr(new CSSParser(document ? CSSParserContext(document) : strictCSSParserContext(), counter));
+    return adoptPtr(new CSSParser(document ? CSSParserContext(*document) : strictCSSParserContext(), counter));
 }
 
 namespace {
@@ -208,7 +209,7 @@ template <typename CharacterType>
 inline void StyleSheetHandler::setRuleHeaderEnd(const CharacterType* dataStart, unsigned listEndOffset)
 {
     while (listEndOffset > 1) {
-        if (isHTMLSpace(*(dataStart + listEndOffset - 1)))
+        if (isHTMLSpace<CharacterType>(*(dataStart + listEndOffset - 1)))
             --listEndOffset;
         else
             break;
@@ -303,7 +304,7 @@ static inline void fixUnparsedProperties(const CharacterType* characters, CSSRul
         else
             propertyEndInStyleSheet = styleStart + nextData->range.start - 1;
 
-        while (isHTMLSpace(characters[propertyEndInStyleSheet]))
+        while (isHTMLSpace<CharacterType>(characters[propertyEndInStyleSheet]))
             --propertyEndInStyleSheet;
 
         // propertyEndInStyleSheet points at the last property text character.
@@ -315,7 +316,7 @@ static inline void fixUnparsedProperties(const CharacterType* characters, CSSRul
                 ++valueStartInStyleSheet;
             if (valueStartInStyleSheet < propertyEndInStyleSheet)
                 ++valueStartInStyleSheet; // Shift past the ':'.
-            while (valueStartInStyleSheet < propertyEndInStyleSheet && isHTMLSpace(characters[valueStartInStyleSheet]))
+            while (valueStartInStyleSheet < propertyEndInStyleSheet && isHTMLSpace<CharacterType>(characters[valueStartInStyleSheet]))
                 ++valueStartInStyleSheet;
             // Need to exclude the trailing ';' from the property value.
             currentData->value = String(characters + valueStartInStyleSheet, propertyEndInStyleSheet - valueStartInStyleSheet + (characters[propertyEndInStyleSheet] == ';' ? 0 : 1));
@@ -362,7 +363,7 @@ void StyleSheetHandler::endProperty(bool isImportant, bool isParsed, unsigned of
     if (propertyString.endsWith(';'))
         propertyString = propertyString.left(propertyString.length() - 1);
     size_t colonIndex = propertyString.find(':');
-    ASSERT(colonIndex != notFound);
+    ASSERT(colonIndex != kNotFound);
 
     String name = propertyString.left(colonIndex).stripWhiteSpace();
     String value = propertyString.substring(colonIndex + 1, propertyString.length()).stripWhiteSpace();
@@ -479,7 +480,7 @@ static PassRefPtr<CSSRuleList> asCSSRuleList(CSSRule* rule)
     if (rule->type() == CSSRule::MEDIA_RULE)
         return static_cast<CSSMediaRule*>(rule)->cssRules();
 
-    if (rule->type() == CSSRule::WEBKIT_KEYFRAMES_RULE)
+    if (rule->type() == CSSRule::KEYFRAMES_RULE)
         return static_cast<CSSKeyframesRule*>(rule)->cssRules();
 
     if (rule->type() == CSSRule::HOST_RULE)
@@ -822,6 +823,8 @@ String InspectorStyle::shorthandValue(const String& shorthandProperty) const
 {
     String value = m_style->getPropertyValue(shorthandProperty);
     if (value.isEmpty()) {
+        StringBuilder builder;
+
         for (unsigned i = 0; i < m_style->length(); ++i) {
             String individualProperty = m_style->item(i);
             if (m_style->getPropertyShorthand(individualProperty) != shorthandProperty)
@@ -831,10 +834,12 @@ String InspectorStyle::shorthandValue(const String& shorthandProperty) const
             String individualValue = m_style->getPropertyValue(individualProperty);
             if (individualValue == "initial")
                 continue;
-            if (value.length())
-                value.append(" ");
-            value.append(individualValue);
+            if (!builder.isEmpty())
+                builder.append(" ");
+            builder.append(individualValue);
         }
+
+        return builder.toString();
     }
     return value;
 }
@@ -910,7 +915,7 @@ NewLineAndWhitespace& InspectorStyle::newLineAndWhitespaceDelimiters() const
                 if (!lineFeedTerminated)
                     formatLineFeed.append(ch);
                 prefix.clear();
-            } else if (isHTMLSpace(ch))
+            } else if (isHTMLSpace<UChar>(ch))
                 prefix.append(ch);
             else {
                 candidatePrefix = prefix.toString();
@@ -939,9 +944,9 @@ Document* InspectorStyle::ownerDocument() const
     return m_parentStyleSheet->pageStyleSheet() ? m_parentStyleSheet->pageStyleSheet()->ownerDocument() : 0;
 }
 
-PassRefPtr<InspectorStyleSheet> InspectorStyleSheet::create(InspectorPageAgent* pageAgent, const String& id, PassRefPtr<CSSStyleSheet> pageStyleSheet, TypeBuilder::CSS::StyleSheetOrigin::Enum origin, const String& documentURL, Listener* listener)
+PassRefPtr<InspectorStyleSheet> InspectorStyleSheet::create(InspectorPageAgent* pageAgent, InspectorResourceAgent* resourceAgent, const String& id, PassRefPtr<CSSStyleSheet> pageStyleSheet, TypeBuilder::CSS::StyleSheetOrigin::Enum origin, const String& documentURL, Listener* listener)
 {
-    return adoptRef(new InspectorStyleSheet(pageAgent, id, pageStyleSheet, origin, documentURL, listener));
+    return adoptRef(new InspectorStyleSheet(pageAgent, resourceAgent, id, pageStyleSheet, origin, documentURL, listener));
 }
 
 // static
@@ -979,8 +984,9 @@ void InspectorStyleSheet::collectFlatRules(PassRefPtr<CSSRuleList> ruleList, CSS
     }
 }
 
-InspectorStyleSheet::InspectorStyleSheet(InspectorPageAgent* pageAgent, const String& id, PassRefPtr<CSSStyleSheet> pageStyleSheet, TypeBuilder::CSS::StyleSheetOrigin::Enum origin, const String& documentURL, Listener* listener)
+InspectorStyleSheet::InspectorStyleSheet(InspectorPageAgent* pageAgent, InspectorResourceAgent* resourceAgent, const String& id, PassRefPtr<CSSStyleSheet> pageStyleSheet, TypeBuilder::CSS::StyleSheetOrigin::Enum origin, const String& documentURL, Listener* listener)
     : m_pageAgent(pageAgent)
+    , m_resourceAgent(resourceAgent)
     , m_id(id)
     , m_pageStyleSheet(pageStyleSheet)
     , m_origin(origin)
@@ -1535,7 +1541,7 @@ unsigned InspectorStyleSheet::ruleIndexByRule(const CSSRule* rule) const
 {
     ensureFlatRules();
     size_t index = m_flatRules.find(rule);
-    return index == notFound ? UINT_MAX : static_cast<unsigned>(index);
+    return index == kNotFound ? UINT_MAX : static_cast<unsigned>(index);
 }
 
 bool InspectorStyleSheet::checkPageStyleSheet(ExceptionState& es) const
@@ -1675,10 +1681,9 @@ bool InspectorStyleSheet::resourceStyleSheetText(String* result) const
     if (!m_pageStyleSheet || !ownerDocument() || !ownerDocument()->frame())
         return false;
 
-    String error;
     bool base64Encoded;
-    InspectorPageAgent::resourceContent(&error, ownerDocument()->frame(), KURL(ParsedURLString, m_pageStyleSheet->href()), result, &base64Encoded);
-    return error.isEmpty() && !base64Encoded;
+    bool success = m_resourceAgent->fetchResourceContent(ownerDocument()->frame(), KURL(ParsedURLString, m_pageStyleSheet->href()), result, &base64Encoded) && !base64Encoded;
+    return success;
 }
 
 bool InspectorStyleSheet::inlineStyleSheetText(String* result) const
@@ -1697,13 +1702,13 @@ bool InspectorStyleSheet::inlineStyleSheetText(String* result) const
     return true;
 }
 
-PassRefPtr<InspectorStyleSheetForInlineStyle> InspectorStyleSheetForInlineStyle::create(InspectorPageAgent* pageAgent, const String& id, PassRefPtr<Element> element, TypeBuilder::CSS::StyleSheetOrigin::Enum origin, Listener* listener)
+PassRefPtr<InspectorStyleSheetForInlineStyle> InspectorStyleSheetForInlineStyle::create(InspectorPageAgent* pageAgent, InspectorResourceAgent* resourceAgent, const String& id, PassRefPtr<Element> element, TypeBuilder::CSS::StyleSheetOrigin::Enum origin, Listener* listener)
 {
-    return adoptRef(new InspectorStyleSheetForInlineStyle(pageAgent, id, element, origin, listener));
+    return adoptRef(new InspectorStyleSheetForInlineStyle(pageAgent, resourceAgent, id, element, origin, listener));
 }
 
-InspectorStyleSheetForInlineStyle::InspectorStyleSheetForInlineStyle(InspectorPageAgent* pageAgent, const String& id, PassRefPtr<Element> element, TypeBuilder::CSS::StyleSheetOrigin::Enum origin, Listener* listener)
-    : InspectorStyleSheet(pageAgent, id, 0, origin, "", listener)
+InspectorStyleSheetForInlineStyle::InspectorStyleSheetForInlineStyle(InspectorPageAgent* pageAgent, InspectorResourceAgent* resourceAgent, const String& id, PassRefPtr<Element> element, TypeBuilder::CSS::StyleSheetOrigin::Enum origin, Listener* listener)
+    : InspectorStyleSheet(pageAgent, resourceAgent, id, 0, origin, "", listener)
     , m_element(element)
     , m_ruleSourceData(0)
     , m_isStyleTextValid(false)
@@ -1754,7 +1759,7 @@ PassOwnPtr<Vector<unsigned> > InspectorStyleSheetForInlineStyle::lineEndings() c
 
 Document* InspectorStyleSheetForInlineStyle::ownerDocument() const
 {
-    return m_element->document();
+    return &m_element->document();
 }
 
 bool InspectorStyleSheetForInlineStyle::ensureParsedDataReady()
@@ -1811,8 +1816,8 @@ PassRefPtr<CSSRuleSourceData> InspectorStyleSheetForInlineStyle::getStyleAttribu
 
     RefPtr<MutableStylePropertySet> tempDeclaration = MutableStylePropertySet::create();
     RuleSourceDataList ruleSourceDataResult;
-    StyleSheetHandler handler(m_styleText, m_element->document(), m_element->document()->elementSheet()->contents(), &ruleSourceDataResult);
-    createCSSParser(m_element->document())->parseDeclaration(tempDeclaration.get(), m_styleText, &handler, m_element->document()->elementSheet()->contents());
+    StyleSheetHandler handler(m_styleText, &m_element->document(), m_element->document().elementSheet()->contents(), &ruleSourceDataResult);
+    createCSSParser(&m_element->document())->parseDeclaration(tempDeclaration.get(), m_styleText, &handler, m_element->document().elementSheet()->contents());
     return ruleSourceDataResult.first().release();
 }
 
