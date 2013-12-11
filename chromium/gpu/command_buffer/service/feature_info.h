@@ -32,6 +32,7 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     bool use_img_for_multisampled_render_to_texture;
     bool oes_standard_derivatives;
     bool oes_egl_image_external;
+    bool oes_depth24;
     bool npot_ok;
     bool enable_texture_float_linear;
     bool enable_texture_half_float_linear;
@@ -49,6 +50,7 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     bool ext_draw_buffers;
     bool ext_frag_depth;
     bool use_async_readpixels;
+    bool map_buffer_range;
   };
 
   struct Workarounds {
@@ -63,16 +65,15 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     GLint max_cube_map_texture_size;
   };
 
+  // Constructor with workarounds taken from the current process's CommandLine
   FeatureInfo();
 
-  // If allowed features = NULL or "*", all features are allowed. Otherwise
-  // only features that match the strings in allowed_features are allowed.
-  bool Initialize(const char* allowed_features);
-  bool Initialize(const DisallowedFeatures& disallowed_features,
-                  const char* allowed_features);
+  // Constructor with workarounds taken from |command_line|
+  FeatureInfo(const CommandLine& command_line);
 
-  // Turns on certain features if they can be turned on.
-  void AddFeatures(const CommandLine& command_line);
+  // Initializes the feature information. Needs a current GL context.
+  bool Initialize();
+  bool Initialize(const DisallowedFeatures& disallowed_features);
 
   const Validators* validators() const {
     return &validators_;
@@ -105,6 +106,8 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
   ~FeatureInfo();
 
   void AddExtensionString(const std::string& str);
+  void InitializeBasicState(const CommandLine& command_line);
+  void InitializeFeatures();
 
   Validators validators_;
 

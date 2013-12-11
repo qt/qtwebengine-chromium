@@ -62,7 +62,7 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGFEConvolveMatrixElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGFilterPrimitiveStandardAttributes)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGFEConvolveMatrixElement::SVGFEConvolveMatrixElement(const QualifiedName& tagName, Document* document)
+inline SVGFEConvolveMatrixElement::SVGFEConvolveMatrixElement(const QualifiedName& tagName, Document& document)
     : SVGFilterPrimitiveStandardAttributes(tagName, document)
     , m_edgeMode(EDGEMODE_DUPLICATE)
 {
@@ -71,7 +71,7 @@ inline SVGFEConvolveMatrixElement::SVGFEConvolveMatrixElement(const QualifiedNam
     registerAnimatedPropertiesForSVGFEConvolveMatrixElement();
 }
 
-PassRefPtr<SVGFEConvolveMatrixElement> SVGFEConvolveMatrixElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<SVGFEConvolveMatrixElement> SVGFEConvolveMatrixElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new SVGFEConvolveMatrixElement(tagName, document));
 }
@@ -135,10 +135,11 @@ void SVGFEConvolveMatrixElement::parseAttribute(const QualifiedName& name, const
         if (parseNumberOptionalNumber(value, x, y) && x >= 1 && y >= 1) {
             setOrderXBaseValue(x);
             setOrderYBaseValue(y);
-        } else
-            document()->accessSVGExtensions()->reportWarning(
+        } else {
+            document().accessSVGExtensions()->reportWarning(
                 "feConvolveMatrix: problem parsing order=\"" + value
                 + "\". Filtered element will not be displayed.");
+        }
         return;
     }
 
@@ -147,7 +148,7 @@ void SVGFEConvolveMatrixElement::parseAttribute(const QualifiedName& name, const
         if (propertyValue > 0)
             setEdgeModeBaseValue(propertyValue);
         else
-            document()->accessSVGExtensions()->reportWarning(
+            document().accessSVGExtensions()->reportWarning(
                 "feConvolveMatrix: problem parsing edgeMode=\"" + value
                 + "\". Filtered element will not be displayed.");
         return;
@@ -166,7 +167,7 @@ void SVGFEConvolveMatrixElement::parseAttribute(const QualifiedName& name, const
         if (divisor)
             setDivisorBaseValue(divisor);
         else
-            document()->accessSVGExtensions()->reportWarning(
+            document().accessSVGExtensions()->reportWarning(
                 "feConvolveMatrix: problem parsing divisor=\"" + value
                 + "\". Filtered element will not be displayed.");
         return;
@@ -192,10 +193,11 @@ void SVGFEConvolveMatrixElement::parseAttribute(const QualifiedName& name, const
         if (parseNumberOptionalNumber(value, x, y) && x > 0 && y > 0) {
             setKernelUnitLengthXBaseValue(x);
             setKernelUnitLengthYBaseValue(y);
-        } else
-            document()->accessSVGExtensions()->reportWarning(
+        } else {
+            document().accessSVGExtensions()->reportWarning(
                 "feConvolveMatrix: problem parsing kernelUnitLength=\"" + value
                 + "\". Filtered element will not be displayed.");
+        }
         return;
     }
 
@@ -205,7 +207,7 @@ void SVGFEConvolveMatrixElement::parseAttribute(const QualifiedName& name, const
         else if (value == "false")
             setPreserveAlphaBaseValue(false);
         else
-            document()->accessSVGExtensions()->reportWarning(
+            document().accessSVGExtensions()->reportWarning(
                 "feConvolveMatrix: problem parsing preserveAlphaAttr=\"" + value
                 + "\". Filtered element will not be displayed.");
         return;

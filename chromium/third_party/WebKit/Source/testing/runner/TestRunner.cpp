@@ -55,6 +55,7 @@
 #include "public/web/WebFrame.h"
 #include "public/web/WebGeolocationClientMock.h"
 #include "public/web/WebInputElement.h"
+#include "public/web/WebMIDIClientMock.h"
 #include "public/web/WebScriptSource.h"
 #include "public/web/WebSecurityPolicy.h"
 #include "public/web/WebSerializedScriptValue.h"
@@ -156,9 +157,7 @@ TestRunner::TestRunner(TestInterfaces* interfaces)
     , m_webView(0)
     , m_pageOverlay(0)
     , m_webPermissions(new WebPermissions)
-#if ENABLE_NOTIFICATIONS
     , m_notificationPresenter(new NotificationPresenter)
-#endif
 {
     // Initialize the map that associates methods of this class with the names
     // they will use when called by JavaScript. The actual binding of those
@@ -278,10 +277,11 @@ TestRunner::TestRunner(TestInterfaces* interfaces)
     bindMethod("setGeolocationPermission", &TestRunner::setGeolocationPermission);
     bindMethod("setMockGeolocationPositionUnavailableError", &TestRunner::setMockGeolocationPositionUnavailableError);
     bindMethod("setMockGeolocationPosition", &TestRunner::setMockGeolocationPosition);
-#if ENABLE_NOTIFICATIONS
+    bindMethod("setMIDIAccessorResult", &TestRunner::setMIDIAccessorResult);
+    bindMethod("setMIDISysExPermission", &TestRunner::setMIDISysExPermission);
     bindMethod("grantWebNotificationPermission", &TestRunner::grantWebNotificationPermission);
     bindMethod("simulateLegacyWebNotificationClick", &TestRunner::simulateLegacyWebNotificationClick);
-#endif
+    bindMethod("cancelAllActiveNotifications", &TestRunner::cancelAllActiveNotifications);
     bindMethod("addMockSpeechInputResult", &TestRunner::addMockSpeechInputResult);
     bindMethod("setMockSpeechInputDumpRect", &TestRunner::setMockSpeechInputDumpRect);
     bindMethod("addMockSpeechRecognitionResult", &TestRunner::addMockSpeechRecognitionResult);
@@ -297,7 +297,6 @@ TestRunner::TestRunner(TestInterfaces* interfaces)
 
     // Properties.
     bindProperty("globalFlag", &m_globalFlag);
-    bindProperty("titleTextDirection", &m_titleTextDirection);
     bindProperty("platformName", &m_platformName);
     bindProperty("tooltipText", &m_tooltipText);
     bindProperty("disableNotifyDone", &m_disableNotifyDone);
@@ -343,9 +342,7 @@ void TestRunner::setDelegate(WebTestDelegate* delegate)
 {
     m_delegate = delegate;
     m_webPermissions->setDelegate(delegate);
-#if ENABLE_NOTIFICATIONS
     m_notificationPresenter->setDelegate(delegate);
-#endif
 }
 
 void TestRunner::setWebView(WebView* webView, WebTestProxyBase* proxy)
@@ -357,7 +354,8 @@ void TestRunner::setWebView(WebView* webView, WebTestProxyBase* proxy)
 void TestRunner::reset()
 {
     if (m_webView) {
-        m_webView->setZoomLevel(false, 0);
+        m_webView->setZoomLevel(0);
+        m_webView->setTextZoomFactor(1);
         m_webView->setTabKeyCyclesThroughElements(true);
 #if !defined(__APPLE__) && !defined(WIN32) // Actually, TOOLKIT_GTK
         // (Constants copied because we can't depend on the header that defined
@@ -419,13 +417,13 @@ void TestRunner::reset()
     m_testRepaint = false;
     m_sweepHorizontally = false;
     m_isPrinting = false;
+    m_midiAccessorResult = true;
     m_shouldStayOnPageAfterHandlingBeforeUnload = false;
     m_shouldDumpResourcePriorities = false;
 
     m_httpHeadersToClear.clear();
 
     m_globalFlag.set(false);
-    m_titleTextDirection.set("ltr");
     m_webHistoryItemCount.set(0);
     m_interceptPostMessage.set(false);
     m_platformName.set("chromium");
@@ -436,9 +434,8 @@ void TestRunner::reset()
 
     m_webPermissions->reset();
 
-#if ENABLE_NOTIFICATIONS
     m_notificationPresenter->reset();
-#endif
+
     m_pointerLocked = false;
     m_pointerLockPlannedResult = PointerLockWillSucceed;
 
@@ -627,11 +624,6 @@ bool TestRunner::shouldStayOnPageAfterHandlingBeforeUnload() const
     return m_shouldStayOnPageAfterHandlingBeforeUnload;
 }
 
-void TestRunner::setTitleTextDirection(WebKit::WebTextDirection dir)
-{
-    m_titleTextDirection.set(dir == WebKit::WebTextDirectionLeftToRight ? "ltr" : "rtl");
-}
-
 const std::set<std::string>* TestRunner::httpHeadersToClear() const
 {
     return &m_httpHeadersToClear;
@@ -687,12 +679,10 @@ bool TestRunner::shouldDumpResourcePriorities() const
     return m_shouldDumpResourcePriorities;
 }
 
-#if ENABLE_NOTIFICATIONS
 WebNotificationPresenter* TestRunner::notificationPresenter() const
 {
     return m_notificationPresenter.get();
 }
-#endif
 
 bool TestRunner::requestPointerLock()
 {
@@ -725,6 +715,11 @@ bool TestRunner::isPointerLocked()
 void TestRunner::setToolTipText(const WebKit::WebString& text)
 {
     m_tooltipText.set(text.utf8());
+}
+
+bool TestRunner::midiAccessorResult()
+{
+    return m_midiAccessorResult;
 }
 
 TestRunner::TestPageOverlay::TestPageOverlay(WebKit::WebView* webView) : m_webView(webView)
@@ -1167,7 +1162,7 @@ void TestRunner::setDomainRelaxationForbiddenForURLScheme(const CppArgumentList&
 
 void TestRunner::evaluateScriptInIsolatedWorldAndReturnValue(const CppArgumentList& arguments, CppVariant* result)
 {
-    v8::HandleScope scope;
+    v8::HandleScope scope(v8::Isolate::GetCurrent());
     WebVector<v8::Local<v8::Value> > values;
     if (arguments.size() >= 2 && arguments[0].isNumber() && arguments[1].isString()) {
         WebScriptSource source(cppVariantToWebString(arguments[1]));
@@ -1827,7 +1822,24 @@ void TestRunner::setMockGeolocationPositionUnavailableError(const CppArgumentLis
         windowList.at(i)->geolocationClientMock()->setPositionUnavailableError(WebString::fromUTF8(arguments[0].toString()));
 }
 
-#if ENABLE_NOTIFICATIONS
+void TestRunner::setMIDIAccessorResult(const CppArgumentList& arguments, CppVariant* result)
+{
+    result->setNull();
+    if (arguments.size() < 1 || !arguments[0].isBool())
+        return;
+    m_midiAccessorResult = arguments[0].toBoolean();
+}
+
+void TestRunner::setMIDISysExPermission(const CppArgumentList& arguments, CppVariant* result)
+{
+    result->setNull();
+    if (arguments.size() < 1 || !arguments[0].isBool())
+        return;
+    const vector<WebTestProxyBase*>& windowList = m_testInterfaces->windowList();
+    for (unsigned i = 0; i < windowList.size(); ++i)
+        windowList.at(i)->midiClientMock()->setSysExPermission(arguments[0].toBoolean());
+}
+
 void TestRunner::grantWebNotificationPermission(const CppArgumentList& arguments, CppVariant* result)
 {
     if (arguments.size() != 1 || !arguments[0].isString()) {
@@ -1846,7 +1858,12 @@ void TestRunner::simulateLegacyWebNotificationClick(const CppArgumentList& argum
     }
     result->set(m_notificationPresenter->simulateClick(WebString::fromUTF8(arguments[0].toString())));
 }
-#endif
+
+void TestRunner::cancelAllActiveNotifications(const CppArgumentList& arguments, CppVariant* result)
+{
+    m_notificationPresenter->cancelAllActiveNotifications();
+    result->set(true);
+}
 
 void TestRunner::addMockSpeechInputResult(const CppArgumentList& arguments, CppVariant* result)
 {

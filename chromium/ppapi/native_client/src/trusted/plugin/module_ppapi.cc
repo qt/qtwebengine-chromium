@@ -5,9 +5,9 @@
  */
 
 #include "native_client/src/shared/imc/nacl_imc_c.h"
+#include "native_client/src/shared/platform/nacl_secure_random.h"
 #include "native_client/src/shared/platform/nacl_time.h"
 #include "native_client/src/trusted/desc/nrd_all_modules.h"
-
 
 #include "ppapi/native_client/src/trusted/plugin/module_ppapi.h"
 #include "ppapi/native_client/src/trusted/plugin/nacl_entry_points.h"
@@ -74,28 +74,6 @@ pp::Instance* ModulePpapi::CreateInstance(PP_Instance pp_instance) {
   MODULE_PRINTF(("ModulePpapi::CreateInstance (return %p)\n",
                  static_cast<void* >(plugin)));
   return plugin;
-}
-
-const uint64_t kMaxCrashesPerInterval = 3;
-const uint64_t kCrashesIntervalInSeconds = 120;
-
-void ModulePpapi::RegisterPluginCrash() {
-  PLUGIN_PRINTF(("ModulePpapi::RegisterPluginCrash ()\n"));
-  if (crash_times_.size() == kMaxCrashesPerInterval) {
-    crash_times_.pop_front();
-  }
-  int64_t time = NaClGetTimeOfDayMicroseconds();
-  crash_times_.push_back(time);
-}
-
-bool ModulePpapi::IsPluginUnstable() {
-  PLUGIN_PRINTF(("ModulePpapi::IsPluginUnstable ()\n"));
-  if (crash_times_.size() != kMaxCrashesPerInterval) {
-    return false;
-  }
-  int64_t now = NaClGetTimeOfDayMicroseconds();
-  int64_t delta = now - crash_times_.front();
-  return delta / (1000.0 * 1000.0) <= kCrashesIntervalInSeconds;
 }
 
 }  // namespace plugin

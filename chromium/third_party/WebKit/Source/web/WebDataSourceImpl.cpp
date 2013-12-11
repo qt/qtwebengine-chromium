@@ -32,6 +32,7 @@
 #include "WebDataSourceImpl.h"
 
 #include "ApplicationCacheHostInternal.h"
+#include "core/dom/Document.h"
 #include "core/loader/FrameLoader.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLError.h"
@@ -93,16 +94,6 @@ bool WebDataSourceImpl::isClientRedirect() const
 bool WebDataSourceImpl::replacesCurrentHistoryItem() const
 {
     return DocumentLoader::replacesCurrentHistoryItem();
-}
-
-WebString WebDataSourceImpl::pageTitle() const
-{
-    return title().string();
-}
-
-WebTextDirection WebDataSourceImpl::pageTitleDirection() const
-{
-    return title().direction() == LTR ? WebTextDirectionLeftToRight : WebTextDirectionRightToLeft;
 }
 
 WebNavigationType WebDataSourceImpl::navigationType() const

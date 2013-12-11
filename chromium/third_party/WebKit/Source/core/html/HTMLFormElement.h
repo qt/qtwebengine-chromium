@@ -24,9 +24,9 @@
 #ifndef HTMLFormElement_h
 #define HTMLFormElement_h
 
-#include "core/dom/CheckedRadioButtons.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLFormControlElement.h"
+#include "core/html/forms/CheckedRadioButtons.h"
 #include "core/loader/FormState.h"
 #include "core/loader/FormSubmission.h"
 #include "wtf/OwnPtr.h"
@@ -46,8 +46,8 @@ class HTMLInputElement;
 
 class HTMLFormElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLFormElement> create(Document*);
-    static PassRefPtr<HTMLFormElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<HTMLFormElement> create(Document&);
+    static PassRefPtr<HTMLFormElement> create(const QualifiedName&, Document&);
     virtual ~HTMLFormElement();
 
     PassRefPtr<HTMLCollection> elements();
@@ -116,9 +116,6 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(autocomplete);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(autocompleteerror);
 
-    Node* elementForAlias(const AtomicString&);
-    void addElementAlias(Node*, const AtomicString& alias);
-
     CheckedRadioButtons& checkedRadioButtons() { return m_checkedRadioButtons; }
 
     const Vector<FormAssociatedElement*>& associatedElements() const { return m_associatedElements; }
@@ -128,9 +125,9 @@ public:
     void anonymousNamedGetter(const AtomicString& name, bool&, RefPtr<NodeList>&, bool&, RefPtr<Node>&);
 
 private:
-    HTMLFormElement(const QualifiedName&, Document*);
+    HTMLFormElement(const QualifiedName&, Document&);
 
-    virtual bool rendererIsNeeded(const NodeRenderingContext&);
+    virtual bool rendererIsNeeded(const RenderStyle&);
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
     virtual void finishParsingChildren() OVERRIDE;
@@ -146,6 +143,8 @@ private:
 
     void submit(Event*, bool activateSubmitButton, bool processingUserGesture, FormSubmissionTrigger);
 
+    void scheduleFormSubmission(PassRefPtr<FormSubmission>);
+
     unsigned formElementIndexWithFormAttribute(Element*, unsigned rangeStart, unsigned rangeEnd);
     unsigned formElementIndex(FormAssociatedElement*);
 
@@ -157,10 +156,14 @@ private:
     // are any invalid controls in this form.
     bool checkInvalidControlsAndCollectUnhandled(Vector<RefPtr<FormAssociatedElement> >*, HTMLFormControlElement::CheckValidityDispatchEvents = HTMLFormControlElement::CheckValidityDispatchEventsAllowed);
 
-    typedef HashMap<AtomicString, RefPtr<Node> > AliasMap;
+    Node* elementFromPastNamesMap(const AtomicString&) const;
+    void addToPastNamesMap(Node*, const AtomicString& pastName);
+    void removeFromPastNamesMap(HTMLElement&);
+
+    typedef HashMap<AtomicString, RefPtr<Node> > PastNamesMap;
 
     FormSubmission::Attributes m_attributes;
-    OwnPtr<AliasMap> m_elementAliases;
+    OwnPtr<PastNamesMap> m_pastNamesMap;
 
     CheckedRadioButtons m_checkedRadioButtons;
 

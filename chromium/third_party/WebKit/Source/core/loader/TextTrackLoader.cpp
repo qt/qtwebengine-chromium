@@ -29,11 +29,11 @@
 
 #include "FetchInitiatorTypeNames.h"
 #include "core/dom/Document.h"
+#include "core/fetch/CrossOriginAccessControl.h"
+#include "core/fetch/FetchRequest.h"
+#include "core/fetch/ResourceFetcher.h"
+#include "core/fetch/TextTrackResource.h"
 #include "core/html/track/WebVTTParser.h"
-#include "core/loader/CrossOriginAccessControl.h"
-#include "core/loader/cache/FetchRequest.h"
-#include "core/loader/cache/ResourceFetcher.h"
-#include "core/loader/cache/TextTrackResource.h"
 #include "core/platform/Logging.h"
 #include "core/platform/SharedBuffer.h"
 #include "weborigin/SecurityOrigin.h"
@@ -167,7 +167,7 @@ bool TextTrackLoader::load(const KURL& url, const String& crossOriginMode)
     }
 
     ResourceFetcher* fetcher = document->fetcher();
-    m_cachedCueData = fetcher->requestTextTrack(cueRequest);
+    m_cachedCueData = fetcher->fetchTextTrack(cueRequest);
     if (m_cachedCueData)
         m_cachedCueData->addClient(this);
 

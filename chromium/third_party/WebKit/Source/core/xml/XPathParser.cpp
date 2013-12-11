@@ -34,8 +34,8 @@
 #include "core/xml/XPathNSResolver.h"
 #include "core/xml/XPathPath.h"
 #include "core/xml/XPathStep.h"
-#include <wtf/StdLibExtras.h>
-#include <wtf/text/StringHash.h>
+#include "wtf/StdLibExtras.h"
+#include "wtf/text/StringHash.h"
 
 using namespace WebCore;
 using namespace WTF;
@@ -451,7 +451,7 @@ int Parser::lex(void* data)
 bool Parser::expandQName(const String& qName, String& localName, String& namespaceURI)
 {
     size_t colon = qName.find(':');
-    if (colon != notFound) {
+    if (colon != kNotFound) {
         if (!m_resolver)
             return false;
         namespaceURI = m_resolver->lookupNamespaceURI(qName.left(colon));

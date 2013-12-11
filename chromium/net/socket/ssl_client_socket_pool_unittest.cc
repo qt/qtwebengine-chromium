@@ -85,7 +85,6 @@ class SSLClientSocketPoolTest
         session_(CreateNetworkSession()),
         direct_transport_socket_params_(
             new TransportSocketParams(HostPortPair("host", 443),
-                                      MEDIUM,
                                       false,
                                       false,
                                       OnHostResolutionCallback())),
@@ -96,15 +95,13 @@ class SSLClientSocketPoolTest
                                &socket_factory_),
         proxy_transport_socket_params_(
             new TransportSocketParams(HostPortPair("proxy", 443),
-                                      MEDIUM,
                                       false,
                                       false,
                                       OnHostResolutionCallback())),
         socks_socket_params_(
             new SOCKSSocketParams(proxy_transport_socket_params_,
                                   true,
-                                  HostPortPair("sockshost", 443),
-                                  MEDIUM)),
+                                  HostPortPair("sockshost", 443))),
         socks_histograms_("MockSOCKS"),
         socks_socket_pool_(kMaxSockets,
                            kMaxSocketsPerGroup,
@@ -159,7 +156,6 @@ class SSLClientSocketPoolTest
                                             : NULL,
         proxy == ProxyServer::SCHEME_SOCKS5 ? socks_socket_params_ : NULL,
         proxy == ProxyServer::SCHEME_HTTP ? http_proxy_socket_params_ : NULL,
-        proxy,
         HostPortPair("host", 443),
         ssl_config_,
         kPrivacyModeDisabled,
@@ -292,6 +288,30 @@ TEST_P(SSLClientSocketPoolTest, BasicDirect) {
   EXPECT_TRUE(handle.is_initialized());
   EXPECT_TRUE(handle.socket());
   TestLoadTimingInfo(handle);
+}
+
+// Make sure that SSLConnectJob passes on its priority to its
+// socket request on Init (for the DIRECT case).
+TEST_P(SSLClientSocketPoolTest, SetSocketRequestPriorityOnInitDirect) {
+  CreatePool(true /* tcp pool */, false, false);
+  scoped_refptr<SSLSocketParams> params =
+      SSLParams(ProxyServer::SCHEME_DIRECT, false);
+
+  for (int i = MINIMUM_PRIORITY; i < NUM_PRIORITIES; ++i) {
+    RequestPriority priority = static_cast<RequestPriority>(i);
+    StaticSocketDataProvider data;
+    data.set_connect_data(MockConnect(SYNCHRONOUS, OK));
+    socket_factory_.AddSocketDataProvider(&data);
+    SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
+    socket_factory_.AddSSLSocketDataProvider(&ssl);
+
+    ClientSocketHandle handle;
+    TestCompletionCallback callback;
+    EXPECT_EQ(OK, handle.Init("a", params, priority, callback.callback(),
+                              pool_.get(), BoundNetLog()));
+    EXPECT_EQ(priority, transport_socket_pool_.last_request_priority());
+    handle.socket()->Disconnect();
+  }
 }
 
 TEST_P(SSLClientSocketPoolTest, BasicDirectAsync) {
@@ -547,6 +567,26 @@ TEST_P(SSLClientSocketPoolTest, SOCKSBasic) {
   TestLoadTimingInfo(handle);
 }
 
+// Make sure that SSLConnectJob passes on its priority to its
+// transport socket on Init (for the SOCKS_PROXY case).
+TEST_P(SSLClientSocketPoolTest, SetTransportPriorityOnInitSOCKS) {
+  StaticSocketDataProvider data;
+  data.set_connect_data(MockConnect(SYNCHRONOUS, OK));
+  socket_factory_.AddSocketDataProvider(&data);
+  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
+  socket_factory_.AddSSLSocketDataProvider(&ssl);
+
+  CreatePool(false, true /* http proxy pool */, true /* socks pool */);
+  scoped_refptr<SSLSocketParams> params =
+      SSLParams(ProxyServer::SCHEME_SOCKS5, false);
+
+  ClientSocketHandle handle;
+  TestCompletionCallback callback;
+  EXPECT_EQ(OK, handle.Init("a", params, HIGHEST, callback.callback(),
+                            pool_.get(), BoundNetLog()));
+  EXPECT_EQ(HIGHEST, transport_socket_pool_.last_request_priority());
+}
+
 TEST_P(SSLClientSocketPoolTest, SOCKSBasicAsync) {
   StaticSocketDataProvider data;
   socket_factory_.AddSocketDataProvider(&data);
@@ -648,6 +688,38 @@ TEST_P(SSLClientSocketPoolTest, HttpProxyBasic) {
   TestLoadTimingInfoNoDns(handle);
 }
 
+// Make sure that SSLConnectJob passes on its priority to its
+// transport socket on Init (for the HTTP_PROXY case).
+TEST_P(SSLClientSocketPoolTest, SetTransportPriorityOnInitHTTP) {
+  MockWrite writes[] = {
+      MockWrite(SYNCHRONOUS,
+                "CONNECT host:80 HTTP/1.1\r\n"
+                "Host: host\r\n"
+                "Proxy-Connection: keep-alive\r\n"
+                "Proxy-Authorization: Basic Zm9vOmJhcg==\r\n\r\n"),
+  };
+  MockRead reads[] = {
+      MockRead(SYNCHRONOUS, "HTTP/1.1 200 Connection Established\r\n\r\n"),
+  };
+  StaticSocketDataProvider data(reads, arraysize(reads), writes,
+                                arraysize(writes));
+  data.set_connect_data(MockConnect(SYNCHRONOUS, OK));
+  socket_factory_.AddSocketDataProvider(&data);
+  AddAuthToCache();
+  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
+  socket_factory_.AddSSLSocketDataProvider(&ssl);
+
+  CreatePool(false, true /* http proxy pool */, true /* socks pool */);
+  scoped_refptr<SSLSocketParams> params =
+      SSLParams(ProxyServer::SCHEME_HTTP, false);
+
+  ClientSocketHandle handle;
+  TestCompletionCallback callback;
+  EXPECT_EQ(OK, handle.Init("a", params, HIGHEST, callback.callback(),
+                            pool_.get(), BoundNetLog()));
+  EXPECT_EQ(HIGHEST, transport_socket_pool_.last_request_priority());
+}
+
 TEST_P(SSLClientSocketPoolTest, HttpProxyBasicAsync) {
   MockWrite writes[] = {
       MockWrite("CONNECT host:80 HTTP/1.1\r\n"
@@ -746,8 +818,12 @@ TEST_P(SSLClientSocketPoolTest, IPPooling) {
     // This test requires that the HostResolver cache be populated.  Normal
     // code would have done this already, but we do it manually.
     HostResolver::RequestInfo info(HostPortPair(test_hosts[i].name, kTestPort));
-    host_resolver_.Resolve(info, &test_hosts[i].addresses, CompletionCallback(),
-                           NULL, BoundNetLog());
+    host_resolver_.Resolve(info,
+                           DEFAULT_PRIORITY,
+                           &test_hosts[i].addresses,
+                           CompletionCallback(),
+                           NULL,
+                           BoundNetLog());
 
     // Setup a SpdySessionKey
     test_hosts[i].key = SpdySessionKey(
@@ -802,8 +878,12 @@ void SSLClientSocketPoolTest::TestIPPoolingDisabled(
     // This test requires that the HostResolver cache be populated.  Normal
     // code would have done this already, but we do it manually.
     HostResolver::RequestInfo info(HostPortPair(test_hosts[i].name, kTestPort));
-    rv = host_resolver_.Resolve(info, &test_hosts[i].addresses,
-                                callback.callback(), NULL, BoundNetLog());
+    rv = host_resolver_.Resolve(info,
+                                DEFAULT_PRIORITY,
+                                &test_hosts[i].addresses,
+                                callback.callback(),
+                                NULL,
+                                BoundNetLog());
     EXPECT_EQ(OK, callback.GetResult(rv));
 
     // Setup a SpdySessionKey

@@ -67,6 +67,7 @@ class RenderLayer;
 class RenderObject;
 class RenderWidget;
 class SVGElementInstance;
+class ScrollableArea;
 class Scrollbar;
 class TextEvent;
 class TouchEvent;
@@ -98,7 +99,7 @@ public:
     Node* mousePressNode() const;
     void setMousePressNode(PassRefPtr<Node>);
 
-#if OS(WINDOWS)
+#if OS(WIN)
     void startPanScrolling(RenderObject*);
 #endif
 
@@ -138,7 +139,8 @@ public:
     bool scrollRecursively(ScrollDirection, ScrollGranularity, Node* startingNode = 0);
     bool logicalScrollRecursively(ScrollLogicalDirection, ScrollGranularity, Node* startingNode = 0);
 
-    bool mouseMoved(const PlatformMouseEvent&);
+    bool handleMouseMoveEvent(const PlatformMouseEvent&);
+    void handleMouseLeaveEvent(const PlatformMouseEvent&);
 
     void lostMouseCapture();
 
@@ -207,7 +209,7 @@ private:
     void selectClosestMisspellingFromMouseEvent(const MouseEventWithHitTestResults&);
     void selectClosestWordOrLinkFromMouseEvent(const MouseEventWithHitTestResults&);
 
-    bool handleMouseMoveEvent(const PlatformMouseEvent&, HitTestResult* hoveredNode = 0, bool onlyUpdateScrollbars = false);
+    bool handleMouseMoveOrLeaveEvent(const PlatformMouseEvent&, HitTestResult* hoveredNode = 0, bool onlyUpdateScrollbars = false);
     bool handleMousePressEvent(const MouseEventWithHitTestResults&);
     bool handleMousePressEventSingleClick(const MouseEventWithHitTestResults&);
     bool handleMousePressEventDoubleClick(const MouseEventWithHitTestResults&);
@@ -231,6 +233,8 @@ private:
 
     bool isInsideScrollbar(const IntPoint&) const;
 
+    ScrollableArea* associatedScrollableArea(const RenderLayer*) const;
+
     bool dispatchSyntheticTouchEventIfEnabled(const PlatformMouseEvent&);
     HitTestResult hitTestResultInFrame(Frame*, const LayoutPoint&, HitTestRequest::HitTestRequestType hitType = HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::DisallowShadowContent);
 
@@ -250,7 +254,6 @@ private:
 
     bool handleDrag(const MouseEventWithHitTestResults&, CheckDragHysteresis);
     bool tryStartDrag(const MouseEventWithHitTestResults&);
-    bool handleMouseUp(const MouseEventWithHitTestResults&);
     void clearDragState();
 
     bool dispatchDragSrcEvent(const AtomicString& eventType, const PlatformMouseEvent&);
@@ -273,6 +276,7 @@ private:
     void defaultSpaceEventHandler(KeyboardEvent*);
     void defaultBackspaceEventHandler(KeyboardEvent*);
     void defaultTabEventHandler(KeyboardEvent*);
+    void defaultEscapeEventHandler(KeyboardEvent*);
     void defaultArrowEventHandler(FocusDirection, KeyboardEvent*);
 
     DragSourceAction updateDragSourceActionsAllowed() const;

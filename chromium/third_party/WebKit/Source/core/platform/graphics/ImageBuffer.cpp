@@ -49,8 +49,11 @@
 #include "core/platform/image-encoders/skia/WEBPImageEncoder.h"
 #include "public/platform/Platform.h"
 #include "skia/ext/platform_canvas.h"
+#include "third_party/skia/include/core/SkBitmapDevice.h"
+#include "third_party/skia/include/core/SkColorFilter.h"
 #include "third_party/skia/include/core/SkColorPriv.h"
 #include "third_party/skia/include/core/SkSurface.h"
+#include "third_party/skia/include/effects/SkTableColorFilter.h"
 #include "third_party/skia/include/gpu/GrContext.h"
 #include "third_party/skia/include/gpu/SkGpuDevice.h"
 #include "wtf/MathExtras.h"
@@ -61,7 +64,7 @@ using namespace std;
 
 namespace WebCore {
 
-static SkCanvas* createAcceleratedCanvas(const IntSize& size, OwnPtr<Canvas2DLayerBridge>* outLayerBridge, OpacityMode opacityMode)
+static PassRefPtr<SkCanvas> createAcceleratedCanvas(const IntSize& size, Canvas2DLayerBridgePtr* outLayerBridge, OpacityMode opacityMode)
 {
     RefPtr<GraphicsContext3D> context3D = SharedGraphicsContext3D::get();
     if (!context3D)
@@ -73,11 +76,11 @@ static SkCanvas* createAcceleratedCanvas(const IntSize& size, OwnPtr<Canvas2DLay
     return (*outLayerBridge) ? (*outLayerBridge)->getCanvas() : 0;
 }
 
-static SkCanvas* createNonPlatformCanvas(const IntSize& size)
+static PassRefPtr<SkCanvas> createNonPlatformCanvas(const IntSize& size)
 {
-    SkAutoTUnref<SkDevice> device(new SkDevice(SkBitmap::kARGB_8888_Config, size.width(), size.height()));
+    SkAutoTUnref<SkBaseDevice> device(new SkBitmapDevice(SkBitmap::kARGB_8888_Config, size.width(), size.height()));
     SkPixelRef* pixelRef = device->accessBitmap(false).pixelRef();
-    return pixelRef ? new SkCanvas(device) : 0;
+    return adoptRef(pixelRef ? new SkCanvas(device) : 0);
 }
 
 PassOwnPtr<ImageBuffer> ImageBuffer::createCompatibleBuffer(const IntSize& size, float resolutionScale, const GraphicsContext* context, bool hasAlpha)
@@ -99,7 +102,7 @@ ImageBuffer::ImageBuffer(const IntSize& size, float resolutionScale, const Graph
         return;
     }
 
-    SkAutoTUnref<SkDevice> device(compatibleContext->createCompatibleDevice(size, hasAlpha));
+    SkAutoTUnref<SkBaseDevice> device(compatibleContext->createCompatibleDevice(size, hasAlpha));
     if (!device.get()) {
         success = false;
         return;
@@ -111,7 +114,7 @@ ImageBuffer::ImageBuffer(const IntSize& size, float resolutionScale, const Graph
         return;
     }
 
-    m_canvas = adoptPtr(new SkCanvas(device));
+    m_canvas = adoptRef(new SkCanvas(device));
     m_context = adoptPtr(new GraphicsContext(m_canvas.get()));
     m_context->setCertainlyOpaque(!hasAlpha);
     m_context->scale(FloatSize(m_resolutionScale, m_resolutionScale));
@@ -125,16 +128,16 @@ ImageBuffer::ImageBuffer(const IntSize& size, float resolutionScale, RenderingMo
     , m_resolutionScale(resolutionScale)
 {
     if (renderingMode == Accelerated) {
-        m_canvas = adoptPtr(createAcceleratedCanvas(size, &m_layerBridge, opacityMode));
+        m_canvas = createAcceleratedCanvas(size, &m_layerBridge, opacityMode);
         if (!m_canvas)
             renderingMode = UnacceleratedNonPlatformBuffer;
     }
 
     if (renderingMode == UnacceleratedNonPlatformBuffer)
-        m_canvas = adoptPtr(createNonPlatformCanvas(size));
+        m_canvas = createNonPlatformCanvas(size);
 
     if (!m_canvas)
-        m_canvas = adoptPtr(skia::TryCreateBitmapCanvas(size.width(), size.height(), false));
+        m_canvas = adoptRef(skia::TryCreateBitmapCanvas(size.width(), size.height(), false));
 
     if (!m_canvas) {
         success = false;
@@ -174,7 +177,7 @@ GraphicsContext* ImageBuffer::context() const
 
 bool ImageBuffer::isValid() const
 {
-    if (m_layerBridge.get())
+    if (m_layerBridge)
         return const_cast<Canvas2DLayerBridge*>(m_layerBridge.get())->isValid();
     return true;
 }
@@ -218,7 +221,7 @@ bool ImageBuffer::copyToPlatformTexture(GraphicsContext3D& context, Platform3DOb
     if (!context.makeContextCurrent())
         return false;
 
-    Extensions3D* extensions = context.getExtensions();
+    Extensions3D* extensions = context.extensions();
     if (!extensions->supports("GL_CHROMIUM_copy_texture") || !extensions->supports("GL_CHROMIUM_flipy")
         || !extensions->canUseCopyTextureCHROMIUM(internalFormat, destType, level))
         return false;
@@ -264,6 +267,38 @@ void ImageBuffer::drawPattern(GraphicsContext* context, const FloatRect& srcRect
     image->drawPattern(context, srcRect, scale, phase, op, destRect, blendMode);
 }
 
+static const Vector<uint8_t>& getLinearRgbLUT()
+{
+    DEFINE_STATIC_LOCAL(Vector<uint8_t>, linearRgbLUT, ());
+    if (linearRgbLUT.isEmpty()) {
+        linearRgbLUT.reserveCapacity(256);
+        for (unsigned i = 0; i < 256; i++) {
+            float color = i  / 255.0f;
+            color = (color <= 0.04045f ? color / 12.92f : pow((color + 0.055f) / 1.055f, 2.4f));
+            color = std::max(0.0f, color);
+            color = std::min(1.0f, color);
+            linearRgbLUT.append(static_cast<uint8_t>(round(color * 255)));
+        }
+    }
+    return linearRgbLUT;
+}
+
+static const Vector<uint8_t>& getDeviceRgbLUT()
+{
+    DEFINE_STATIC_LOCAL(Vector<uint8_t>, deviceRgbLUT, ());
+    if (deviceRgbLUT.isEmpty()) {
+        deviceRgbLUT.reserveCapacity(256);
+        for (unsigned i = 0; i < 256; i++) {
+            float color = i / 255.0f;
+            color = (powf(color, 1.0f / 2.4f) * 1.055f) - 0.055f;
+            color = std::max(0.0f, color);
+            color = std::min(1.0f, color);
+            deviceRgbLUT.append(static_cast<uint8_t>(round(color * 255)));
+        }
+    }
+    return deviceRgbLUT;
+}
+
 void ImageBuffer::transformColorSpace(ColorSpace srcColorSpace, ColorSpace dstColorSpace)
 {
     if (srcColorSpace == dstColorSpace)
@@ -300,36 +335,24 @@ void ImageBuffer::transformColorSpace(ColorSpace srcColorSpace, ColorSpace dstCo
     }
 }
 
-const Vector<uint8_t>& ImageBuffer::getLinearRgbLUT()
+PassRefPtr<SkColorFilter> ImageBuffer::createColorSpaceFilter(ColorSpace srcColorSpace,
+    ColorSpace dstColorSpace)
 {
-    DEFINE_STATIC_LOCAL(Vector<uint8_t>, linearRgbLUT, ());
-    if (linearRgbLUT.isEmpty()) {
-        for (unsigned i = 0; i < 256; i++) {
-            float color = i  / 255.0f;
-            color = (color <= 0.04045f ? color / 12.92f : pow((color + 0.055f) / 1.055f, 2.4f));
-            color = std::max(0.0f, color);
-            color = std::min(1.0f, color);
-            linearRgbLUT.append(static_cast<uint8_t>(round(color * 255)));
-        }
-    }
-    return linearRgbLUT;
-}
+    if ((srcColorSpace == dstColorSpace)
+        || (srcColorSpace != ColorSpaceLinearRGB && srcColorSpace != ColorSpaceDeviceRGB)
+        || (dstColorSpace != ColorSpaceLinearRGB && dstColorSpace != ColorSpaceDeviceRGB))
+        return 0;
 
-const Vector<uint8_t>& ImageBuffer::getDeviceRgbLUT()
-{
-    DEFINE_STATIC_LOCAL(Vector<uint8_t>, deviceRgbLUT, ());
-    if (deviceRgbLUT.isEmpty()) {
-        for (unsigned i = 0; i < 256; i++) {
-            float color = i / 255.0f;
-            color = (powf(color, 1.0f / 2.4f) * 1.055f) - 0.055f;
-            color = std::max(0.0f, color);
-            color = std::min(1.0f, color);
-            deviceRgbLUT.append(static_cast<uint8_t>(round(color * 255)));
-        }
-    }
-    return deviceRgbLUT;
-}
+    const uint8_t* lut = 0;
+    if (dstColorSpace == ColorSpaceLinearRGB)
+        lut = &getLinearRgbLUT()[0];
+    else if (dstColorSpace == ColorSpaceDeviceRGB)
+        lut = &getDeviceRgbLUT()[0];
+    else
+        return 0;
 
+    return adoptRef(SkTableColorFilter::CreateARGB(0, lut, lut, lut));
+}
 
 template <Multiply multiplied>
 PassRefPtr<Uint8ClampedArray> getImageData(const IntRect& rect, GraphicsContext* context, const IntSize& size)
@@ -420,26 +443,6 @@ void ImageBuffer::putByteArray(Multiply multiplied, Uint8ClampedArray* source, c
         config8888 = SkCanvas::kRGBA_Unpremul_Config8888;
 
     context()->writePixels(srcBitmap, destX, destY, config8888);
-}
-
-void ImageBuffer::convertToLuminanceMask()
-{
-    IntRect luminanceRect(IntPoint(), internalSize());
-    RefPtr<Uint8ClampedArray> srcPixelArray = getUnmultipliedImageData(luminanceRect);
-
-    unsigned pixelArrayLength = srcPixelArray->length();
-    for (unsigned pixelOffset = 0; pixelOffset < pixelArrayLength; pixelOffset += 4) {
-        unsigned char a = srcPixelArray->item(pixelOffset + 3);
-        if (!a)
-            continue;
-        unsigned char r = srcPixelArray->item(pixelOffset);
-        unsigned char g = srcPixelArray->item(pixelOffset + 1);
-        unsigned char b = srcPixelArray->item(pixelOffset + 2);
-
-        double luma = (r * 0.2125 + g * 0.7154 + b * 0.0721) * ((double)a / 255.0);
-        srcPixelArray->set(pixelOffset + 3, luma);
-    }
-    putByteArray(Unmultiplied, srcPixelArray.get(), luminanceRect.size(), luminanceRect, IntPoint());
 }
 
 template <typename T>

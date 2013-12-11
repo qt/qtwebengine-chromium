@@ -27,7 +27,7 @@
 #include <libxslt/transform.h>
 #include "core/css/StyleSheet.h"
 #include "core/dom/ProcessingInstruction.h"
-#include <wtf/PassRefPtr.h>
+#include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
@@ -111,6 +111,7 @@ private:
 
     xmlDocPtr m_stylesheetDoc;
     bool m_stylesheetDocTaken;
+    bool m_compilationFailed;
 
     XSLStyleSheet* m_parentStyleSheet;
 };

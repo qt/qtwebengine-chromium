@@ -16,11 +16,15 @@ base.exportTo('tracing.analysis', function() {
       this.objectInstance_ = undefined;
     },
 
-    set modelObject(obj) {
+    get requiresTallView() {
+      return true;
+    },
+
+    set modelEvent(obj) {
       this.objectInstance = obj;
     },
 
-    get modelObject() {
+    get modelEvent() {
       return this.objectInstance;
     },
 

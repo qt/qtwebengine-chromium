@@ -10,14 +10,13 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/base/accessibility/accessible_view_state.h"
-#include "ui/base/events/event.h"
 #include "ui/base/ime/text_input_type.h"
-#include "ui/base/keycodes/keyboard_codes.h"
-#include "ui/base/range/range.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_switches.h"
-#include "ui/base/ui_base_switches_util.h"
+#include "ui/events/event.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/insets.h"
+#include "ui/gfx/range/range.h"
 #include "ui/gfx/selection_model.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/controls/native/native_view_host.h"
@@ -61,9 +60,6 @@ bool Textfield::IsViewsTextfieldEnabled() {
   if (command_line->HasSwitch(switches::kDisableViewsTextfield))
     return false;
   if (command_line->HasSwitch(switches::kEnableViewsTextfield))
-    return true;
-  // The new dialog style cannot host native Windows textfield controls.
-  if (switches::IsNewDialogStyleEnabled())
     return true;
   // Avoid native Windows Textfields if the RichEdit library is not available.
   static const HMODULE loaded_msftedit_dll = LoadLibrary(L"msftedit.dll");
@@ -367,11 +363,11 @@ bool Textfield::IsIMEComposing() const {
   return native_wrapper_ && native_wrapper_->IsIMEComposing();
 }
 
-ui::Range Textfield::GetSelectedRange() const {
+gfx::Range Textfield::GetSelectedRange() const {
   return native_wrapper_->GetSelectedRange();
 }
 
-void Textfield::SelectRange(const ui::Range& range) {
+void Textfield::SelectRange(const gfx::Range& range) {
   native_wrapper_->SelectRange(range);
 }
 
@@ -391,7 +387,7 @@ void Textfield::SetColor(SkColor value) {
   return native_wrapper_->SetColor(value);
 }
 
-void Textfield::ApplyColor(SkColor value, const ui::Range& range) {
+void Textfield::ApplyColor(SkColor value, const gfx::Range& range) {
   return native_wrapper_->ApplyColor(value, range);
 }
 
@@ -401,7 +397,7 @@ void Textfield::SetStyle(gfx::TextStyle style, bool value) {
 
 void Textfield::ApplyStyle(gfx::TextStyle style,
                            bool value,
-                           const ui::Range& range) {
+                           const gfx::Range& range) {
   return native_wrapper_->ApplyStyle(style, value, range);
 }
 
@@ -505,7 +501,7 @@ void Textfield::GetAccessibleState(ui::AccessibleViewState* state) {
     state->state |= ui::AccessibilityTypes::STATE_PROTECTED;
   state->value = text_;
 
-  const ui::Range range = native_wrapper_->GetSelectedRange();
+  const gfx::Range range = native_wrapper_->GetSelectedRange();
   state->selection_start = range.start();
   state->selection_end = range.end();
 
@@ -518,6 +514,11 @@ void Textfield::GetAccessibleState(ui::AccessibleViewState* state) {
 
 ui::TextInputClient* Textfield::GetTextInputClient() {
   return native_wrapper_ ? native_wrapper_->GetTextInputClient() : NULL;
+}
+
+gfx::Point Textfield::GetKeyboardContextMenuLocation() {
+  return native_wrapper_ ? native_wrapper_->GetContextMenuLocation() :
+                           View::GetKeyboardContextMenuLocation();
 }
 
 void Textfield::OnEnabledChanged() {

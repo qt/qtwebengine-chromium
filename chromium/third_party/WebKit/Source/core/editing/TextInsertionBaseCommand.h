@@ -39,7 +39,7 @@ public:
     virtual ~TextInsertionBaseCommand() { };
 
 protected:
-    explicit TextInsertionBaseCommand(Document*);
+    explicit TextInsertionBaseCommand(Document&);
     static void applyTextInsertionCommand(Frame*, PassRefPtr<TextInsertionBaseCommand>, const VisibleSelection& selectionForInsertion, const VisibleSelection& endingSelection);
 };
 
@@ -53,7 +53,7 @@ void forEachLineInString(const String& string, const LineOperation& operation)
 {
     unsigned offset = 0;
     size_t newline;
-    while ((newline = string.find('\n', offset)) != notFound) {
+    while ((newline = string.find('\n', offset)) != kNotFound) {
         operation(offset, newline - offset, false);
         offset = newline + 1;
     }

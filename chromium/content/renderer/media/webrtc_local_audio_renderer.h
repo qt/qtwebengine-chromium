@@ -48,7 +48,10 @@ class CONTENT_EXPORT WebRtcLocalAudioRenderer
   // The |source| is owned by the WebRtcAudioDeviceImpl.
   // Called on the main thread.
   WebRtcLocalAudioRenderer(WebRtcLocalAudioTrack* audio_track,
-                           int source_render_view_id);
+                           int source_render_view_id,
+                           int session_id,
+                           int sample_rate,
+                           int frames_per_buffer);
 
   // MediaStreamAudioRenderer implementation.
   // Called on the main thread.
@@ -78,7 +81,8 @@ class CONTENT_EXPORT WebRtcLocalAudioRenderer
                           int number_of_frames,
                           int audio_delay_milliseconds,
                           int current_volume,
-                          bool need_audio_processing) OVERRIDE;
+                          bool need_audio_processing,
+                          bool key_pressed) OVERRIDE;
 
   // Can be called on different user thread.
   virtual void SetCaptureFormat(const media::AudioParameters& params) OVERRIDE;
@@ -100,6 +104,7 @@ class CONTENT_EXPORT WebRtcLocalAudioRenderer
 
   // The render view in which the audio is rendered into |sink_|.
   const int source_render_view_id_;
+  const int session_id_;
 
   // The sink (destination) for rendered audio.
   scoped_refptr<media::AudioOutputDevice> sink_;
@@ -126,6 +131,14 @@ class CONTENT_EXPORT WebRtcLocalAudioRenderer
 
   // Protects |loopback_fifo_|, |playing_| and |sink_|.
   mutable base::Lock thread_lock_;
+
+  // The preferred sample rate and buffer sizes provided via the ctor.
+  const int sample_rate_;
+  const int frames_per_buffer_;
+
+  // The preferred device id of the output device or empty for the default
+  // output device.
+  const std::string output_device_id_;
 
   DISALLOW_COPY_AND_ASSIGN(WebRtcLocalAudioRenderer);
 };

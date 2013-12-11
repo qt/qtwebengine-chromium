@@ -53,9 +53,8 @@ public:
     virtual bool supportsPlaceholder() const = 0;
     String strippedPlaceholder() const;
     bool placeholderShouldBeVisible() const;
-    virtual HTMLElement* placeholderElement() const = 0;
+    HTMLElement* placeholderElement() const;
     void updatePlaceholderVisibility(bool);
-    static void fixPlaceholderRenderer(HTMLElement* placeholder, HTMLElement* siblingElement);
 
     VisiblePosition visiblePositionForIndex(int) const;
     int indexForVisiblePosition(const VisiblePosition&) const;
@@ -90,7 +89,7 @@ public:
     void setTextAsOfLastFormControlChangeEvent(const String& text) { m_textAsOfLastFormControlChangeEvent = text; }
 
 protected:
-    HTMLTextFormControlElement(const QualifiedName&, Document*, HTMLFormElement*);
+    HTMLTextFormControlElement(const QualifiedName&, Document&, HTMLFormElement*);
     bool isPlaceholderEmpty() const;
     virtual void updatePlaceholderText() = 0;
 
@@ -117,10 +116,6 @@ private:
     int computeSelectionStart() const;
     int computeSelectionEnd() const;
     TextFieldSelectionDirection computeSelectionDirection() const;
-
-    // FIXME: Author shadows should be allowed
-    // https://bugs.webkit.org/show_bug.cgi?id=92608
-    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 
     virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusDirection) OVERRIDE;
     virtual void dispatchBlurEvent(Element* newFocusedElement) OVERRIDE;

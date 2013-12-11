@@ -466,8 +466,7 @@ static NPError PostURLNotify(NPP id,
       DCHECK(file_url.SchemeIsFile());
       net::FileURLToFilePath(file_url, &file_path);
     } else {
-      file_path = base::FilePath::FromWStringHack(
-          base::SysNativeMBToWide(file_path_ascii));
+      file_path = base::FilePath::FromUTF8Unsafe(file_path_ascii);
     }
 
     base::PlatformFileInfo post_file_info;
@@ -475,7 +474,7 @@ static NPError PostURLNotify(NPP id,
         post_file_info.is_directory)
       return NPERR_FILE_NOT_FOUND;
 
-    if (!file_util::ReadFileToString(file_path, &post_file_contents))
+    if (!base::ReadFileToString(file_path, &post_file_contents))
       return NPERR_FILE_NOT_FOUND;
 
     buf = post_file_contents.c_str();

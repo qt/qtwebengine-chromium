@@ -235,14 +235,17 @@ void InterArrivalSender::OnIncomingLoss(QuicTime ack_receive_time) {
   }
 }
 
-void InterArrivalSender::SentPacket(QuicTime sent_time,
-                                    QuicPacketSequenceNumber sequence_number,
-                                    QuicByteCount bytes,
-                                    Retransmission /*retransmit*/) {
+bool InterArrivalSender::SentPacket(
+    QuicTime sent_time,
+    QuicPacketSequenceNumber sequence_number,
+    QuicByteCount bytes,
+    Retransmission /*is_retransmit*/,
+    HasRetransmittableData /*has_retransmittable_data*/) {
   if (probing_) {
     probe_->OnSentPacket(bytes);
   }
   paced_sender_->SentPacket(sent_time, bytes);
+  return true;
 }
 
 void InterArrivalSender::AbandoningPacket(
@@ -258,7 +261,7 @@ QuicTime::Delta InterArrivalSender::TimeUntilSend(
     QuicTime now,
     Retransmission /*retransmit*/,
     HasRetransmittableData has_retransmittable_data,
-    IsHandshake /* handshake */) {
+    IsHandshake /*handshake*/) {
   // TODO(pwestin): implement outer_congestion_window_ logic.
   QuicTime::Delta outer_window = QuicTime::Delta::Zero();
 

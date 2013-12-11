@@ -116,8 +116,6 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
   // an error code is returned.
   //
   // client_hello: the incoming client hello message.
-  // version: the QUIC version for the connection. TODO(wtc): Remove once
-  //     QUIC_VERSION_7 and before are removed.
   // guid: the GUID for the connection, which is used in key derivation.
   // client_ip: the IP address of the client, which is used to generate and
   //     validate source-address tokens.
@@ -129,7 +127,6 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
   // out: the resulting handshake message (either REJ or SHLO)
   // error_details: used to store a string describing any error.
   QuicErrorCode ProcessClientHello(const CryptoHandshakeMessage& client_hello,
-                                   QuicVersion version,
                                    QuicGuid guid,
                                    const IPEndPoint& client_ip,
                                    const QuicClock* clock,
@@ -154,6 +151,10 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
   // However, an attacker can duplicate a handshake and cause a client's
   // request to be processed twice.
   void set_replay_protection(bool on);
+
+  // set_strike_register_no_startup_period configures the strike register to
+  // not have a startup period.
+  void set_strike_register_no_startup_period();
 
   // set_strike_register_max_entries sets the maximum number of entries that
   // the internal strike register will hold. If the strike register fills up
@@ -262,7 +263,6 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
 
   // BuildRejection sets |out| to be a REJ message in reply to |client_hello|.
   void BuildRejection(
-      QuicVersion version,
       const scoped_refptr<Config>& config,
       const CryptoHandshakeMessage& client_hello,
       const ClientHelloInfo& info,
@@ -351,6 +351,7 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
 
   // These fields store configuration values. See the comments for their
   // respective setter functions.
+  bool strike_register_no_startup_period_;
   uint32 strike_register_max_entries_;
   uint32 strike_register_window_secs_;
   uint32 source_address_token_future_secs_;

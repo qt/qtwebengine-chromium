@@ -26,10 +26,10 @@
 #include "core/dom/Element.h"
 #include "core/dom/Event.h"
 #include "core/dom/EventNames.h"
+#include "core/fetch/ImageResource.h"
 #include "core/html/HTMLObjectElement.h"
 #include "core/html/HTMLVideoElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/loader/cache/ImageResource.h"
 
 namespace WebCore {
 
@@ -51,7 +51,7 @@ void HTMLImageLoader::dispatchLoadEvent()
     bool errorOccurred = image()->errorOccurred();
     if (!errorOccurred && image()->response().httpStatusCode() >= 400)
         errorOccurred = element()->hasTagName(HTMLNames::objectTag); // An <object> considers a 404 to be an error and should fire onerror.
-    element()->dispatchEvent(Event::create(errorOccurred ? eventNames().errorEvent : eventNames().loadEvent, false, false));
+    element()->dispatchEvent(Event::create(errorOccurred ? eventNames().errorEvent : eventNames().loadEvent));
 }
 
 String HTMLImageLoader::sourceURI(const AtomicString& attr) const
@@ -69,7 +69,7 @@ void HTMLImageLoader::notifyFinished(Resource*)
     bool loadError = cachedImage->errorOccurred() || cachedImage->response().httpStatusCode() >= 400;
 
     if (loadError && element->hasTagName(HTMLNames::objectTag))
-        static_cast<HTMLObjectElement*>(element.get())->renderFallbackContent();
+        toHTMLObjectElement(element.get())->renderFallbackContent();
 }
 
 }

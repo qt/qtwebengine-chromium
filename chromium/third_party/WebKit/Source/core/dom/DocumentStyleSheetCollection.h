@@ -6,7 +6,7 @@
  * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2012 Apple Inc. All rights reserved.
  * Copyright (C) 2008, 2009 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/)
  * Copyright (C) 2010 Nokia Corporation and/or its subsidiary(-ies)
- * Copyright (C) 2011 Google Inc. All rights reserved.
+ * Copyright (C) 2013 Google Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -28,118 +28,25 @@
 #ifndef DocumentStyleSheetCollection_h
 #define DocumentStyleSheetCollection_h
 
-#include "core/dom/Document.h"
-#include "core/dom/DocumentOrderedList.h"
 #include "core/dom/StyleSheetCollection.h"
-#include "wtf/FastAllocBase.h"
-#include "wtf/ListHashSet.h"
-#include "wtf/RefPtr.h"
-#include "wtf/Vector.h"
-#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
 class CSSStyleSheet;
-class Node;
-class RuleFeatureSet;
 class StyleSheet;
-class StyleSheetContents;
-class StyleSheetList;
+class StyleSheetCollection;
+class StyleEngine;
+class TreeScope;
 
-class DocumentStyleSheetCollection {
-    WTF_MAKE_FAST_ALLOCATED;
+class DocumentStyleSheetCollection FINAL : public StyleSheetCollection {
+    WTF_MAKE_NONCOPYABLE(DocumentStyleSheetCollection); WTF_MAKE_FAST_ALLOCATED;
 public:
-    static PassOwnPtr<DocumentStyleSheetCollection> create(Document* document) { return adoptPtr(new DocumentStyleSheetCollection(document)); }
+    explicit DocumentStyleSheetCollection(TreeScope&);
 
-    ~DocumentStyleSheetCollection();
-
-    const Vector<RefPtr<StyleSheet> >& styleSheetsForStyleSheetList();
-    const Vector<RefPtr<CSSStyleSheet> >& activeAuthorStyleSheets() const;
-
-    CSSStyleSheet* pageUserSheet();
-    const Vector<RefPtr<CSSStyleSheet> >& documentUserStyleSheets() const { return m_userStyleSheets; }
-    const Vector<RefPtr<CSSStyleSheet> >& documentAuthorStyleSheets() const { return m_authorStyleSheets; }
-    const Vector<RefPtr<CSSStyleSheet> >& injectedUserStyleSheets() const;
-    const Vector<RefPtr<CSSStyleSheet> >& injectedAuthorStyleSheets() const;
-
-    void addStyleSheetCandidateNode(Node*, bool createdByParser);
-    void removeStyleSheetCandidateNode(Node*, ContainerNode* scopingNode = 0);
-
-    void clearPageUserSheet();
-    void updatePageUserSheet();
-    void invalidateInjectedStyleSheetCache();
-    void updateInjectedStyleSheetCache() const;
-
-    void addAuthorSheet(PassRefPtr<StyleSheetContents> authorSheet);
-    void addUserSheet(PassRefPtr<StyleSheetContents> userSheet);
-
-    bool needsUpdateActiveStylesheetsOnStyleRecalc() const { return m_needsUpdateActiveStylesheetsOnStyleRecalc; }
-
-    bool updateActiveStyleSheets(StyleResolverUpdateMode);
-
-    String preferredStylesheetSetName() const { return m_preferredStylesheetSetName; }
-    String selectedStylesheetSetName() const { return m_selectedStylesheetSetName; }
-    void setPreferredStylesheetSetName(const String& name) { m_preferredStylesheetSetName = name; }
-    void setSelectedStylesheetSetName(const String& name) { m_selectedStylesheetSetName = name; }
-
-    void addPendingSheet() { m_pendingStylesheets++; }
-    enum RemovePendingSheetNotificationType {
-        RemovePendingSheetNotifyImmediately,
-        RemovePendingSheetNotifyLater
-    };
-    void removePendingSheet(RemovePendingSheetNotificationType = RemovePendingSheetNotifyImmediately);
-
-    bool hasPendingSheets() const { return m_pendingStylesheets > 0; }
-
-    bool usesSiblingRules() const { return m_usesSiblingRules || m_usesSiblingRulesOverride; }
-    void setUsesSiblingRulesOverride(bool b) { m_usesSiblingRulesOverride = b; }
-    bool usesFirstLineRules() const { return m_usesFirstLineRules; }
-    bool usesFirstLetterRules() const { return m_usesFirstLetterRules; }
-    void setUsesFirstLetterRules(bool b) { m_usesFirstLetterRules = b; }
-    bool usesBeforeAfterRules() const { return m_usesBeforeAfterRules || m_usesBeforeAfterRulesOverride; }
-    void setUsesBeforeAfterRulesOverride(bool b) { m_usesBeforeAfterRulesOverride = b; }
-    bool usesRemUnits() const { return m_usesRemUnits; }
-    void setUsesRemUnit(bool b) { m_usesRemUnits = b; }
-    bool hasScopedStyleSheet() { return m_collectionForDocument.scopingNodesForStyleScoped(); }
-
-    void combineCSSFeatureFlags(const RuleFeatureSet&);
-    void resetCSSFeatureFlags(const RuleFeatureSet&);
+    bool updateActiveStyleSheets(StyleEngine*, StyleResolverUpdateMode);
 
 private:
-    DocumentStyleSheetCollection(Document*);
-
-    Document* m_document;
-
-    // Track the number of currently loading top-level stylesheets needed for rendering.
-    // Sheets loaded using the @import directive are not included in this count.
-    // We use this count of pending sheets to detect when we can begin attaching
-    // elements and when it is safe to execute scripts.
-    int m_pendingStylesheets;
-
-    RefPtr<CSSStyleSheet> m_pageUserSheet;
-
-    mutable Vector<RefPtr<CSSStyleSheet> > m_injectedUserStyleSheets;
-    mutable Vector<RefPtr<CSSStyleSheet> > m_injectedAuthorStyleSheets;
-    mutable bool m_injectedStyleSheetCacheValid;
-
-    Vector<RefPtr<CSSStyleSheet> > m_userStyleSheets;
-    Vector<RefPtr<CSSStyleSheet> > m_authorStyleSheets;
-
-    bool m_hadActiveLoadingStylesheet;
-    bool m_needsUpdateActiveStylesheetsOnStyleRecalc;
-
-    StyleSheetCollection m_collectionForDocument;
-
-    String m_preferredStylesheetSetName;
-    String m_selectedStylesheetSetName;
-
-    bool m_usesSiblingRules;
-    bool m_usesSiblingRulesOverride;
-    bool m_usesFirstLineRules;
-    bool m_usesFirstLetterRules;
-    bool m_usesBeforeAfterRules;
-    bool m_usesBeforeAfterRulesOverride;
-    bool m_usesRemUnits;
+    void collectStyleSheets(StyleEngine*, Vector<RefPtr<StyleSheet> >& styleSheets, Vector<RefPtr<CSSStyleSheet> >& activeSheets);
 };
 
 }

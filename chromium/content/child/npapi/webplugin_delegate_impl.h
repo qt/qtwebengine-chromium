@@ -41,8 +41,9 @@ class CARenderer;
 #endif
 
 namespace content {
-
 class PluginInstance;
+class PluginURLFetcher;
+class WebPlugin;
 
 #if defined(OS_MACOSX)
 class WebPluginAcceleratedSurface;
@@ -77,19 +78,19 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
     PLUGIN_QUIRK_EMULATE_IME = 131072,  // Windows.
   };
 
-  static WebPluginDelegateImpl* Create(const base::FilePath& filename,
+  static WebPluginDelegateImpl* Create(WebPlugin* plugin,
+                                       const base::FilePath& filename,
                                        const std::string& mime_type);
 
   // WebPluginDelegate implementation
   virtual bool Initialize(const GURL& url,
                           const std::vector<std::string>& arg_names,
                           const std::vector<std::string>& arg_values,
-                          WebPlugin* plugin,
                           bool load_manually) OVERRIDE;
   virtual void PluginDestroyed() OVERRIDE;
   virtual void UpdateGeometry(const gfx::Rect& window_rect,
                               const gfx::Rect& clip_rect) OVERRIDE;
-  virtual void Paint(WebKit::WebCanvas* canvas, const gfx::Rect& rect) OVERRIDE;
+  virtual void Paint(SkCanvas* canvas, const gfx::Rect& rect) OVERRIDE;
   virtual void SetFocus(bool focused) OVERRIDE;
   virtual bool HandleInputEvent(const WebKit::WebInputEvent& event,
                                 WebCursor::CursorInfo* cursor_info) OVERRIDE;
@@ -116,6 +117,18 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
       unsigned long resource_id, const GURL& url, int notify_id) OVERRIDE;
   virtual WebPluginResourceClient* CreateSeekableResourceClient(
       unsigned long resource_id, int range_request_id) OVERRIDE;
+  virtual void FetchURL(unsigned long resource_id,
+                        int notify_id,
+                        const GURL& url,
+                        const GURL& first_party_for_cookies,
+                        const std::string& method,
+                        const char* buf,
+                        unsigned int len,
+                        const GURL& referrer,
+                        bool notify_redirects,
+                        bool is_plugin_src_load,
+                        int origin_pid,
+                        int render_view_id) OVERRIDE;
   // End of WebPluginDelegate implementation.
 
   gfx::PluginWindowHandle windowed_handle() const { return windowed_handle_; }
@@ -193,7 +206,7 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
   friend class base::DeleteHelper<WebPluginDelegateImpl>;
   friend class WebPluginDelegate;
 
-  explicit WebPluginDelegateImpl(PluginInstance* instance);
+  WebPluginDelegateImpl(WebPlugin* plugin, PluginInstance* instance);
   virtual ~WebPluginDelegateImpl();
 
   // Called by Initialize() for platform-specific initialization.

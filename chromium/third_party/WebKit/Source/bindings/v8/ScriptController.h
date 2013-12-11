@@ -34,7 +34,7 @@
 #include "bindings/v8/ScriptInstance.h"
 #include "bindings/v8/ScriptValue.h"
 
-#include "core/loader/CrossOriginAccessControl.h"
+#include "core/fetch/CrossOriginAccessControl.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/RefCounted.h"
@@ -63,10 +63,6 @@ typedef WTF::Vector<v8::Extension*> V8Extensions;
 enum ReasonForCallingCanExecuteScripts {
     AboutToExecuteScript,
     NotAboutToExecuteScript
-};
-
-enum IsolatedWorldConstants {
-    EmbedderWorldIdLimit = (1 << 29)
 };
 
 class ScriptController {
@@ -101,7 +97,7 @@ public:
 
     v8::Local<v8::Value> callFunction(v8::Handle<v8::Function>, v8::Handle<v8::Object>, int argc, v8::Handle<v8::Value> argv[]);
     ScriptValue callFunctionEvenIfScriptDisabled(v8::Handle<v8::Function>, v8::Handle<v8::Object>, int argc, v8::Handle<v8::Value> argv[]);
-    static v8::Local<v8::Value> callFunctionWithInstrumentation(ScriptExecutionContext*, v8::Handle<v8::Function>, v8::Handle<v8::Object> receiver, int argc, v8::Handle<v8::Value> args[]);
+    static v8::Local<v8::Value> callFunctionWithInstrumentation(ScriptExecutionContext*, v8::Handle<v8::Function>, v8::Handle<v8::Object> receiver, int argc, v8::Handle<v8::Value> args[], v8::Isolate*);
 
     // Returns true if the current world is isolated, and has its own Content
     // Security Policy. In this case, the policy of the main world should be
@@ -162,6 +158,8 @@ public:
 
     bool setContextDebugId(int);
     static int contextDebugId(v8::Handle<v8::Context>);
+
+    v8::Isolate* isolate() const { return m_isolate; }
 
 private:
     typedef HashMap<int, OwnPtr<V8WindowShell> > IsolatedWorldMap;

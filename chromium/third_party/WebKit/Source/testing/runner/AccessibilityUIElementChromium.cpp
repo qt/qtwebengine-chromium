@@ -35,7 +35,7 @@
 #include "public/platform/WebPoint.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebString.h"
-#include "public/web/WebAccessibilityObject.h"
+#include "public/web/WebAXObject.h"
 
 using namespace WebKit;
 using namespace std;
@@ -46,247 +46,251 @@ namespace {
 
 // Map role value to string, matching Safari/Mac platform implementation to
 // avoid rebaselining layout tests.
-string roleToString(WebAccessibilityRole role)
+string roleToString(WebAXRole role)
 {
     string result = "AXRole: AX";
     switch (role) {
-    case WebAccessibilityRoleButton:
-        return result.append("Button");
-    case WebAccessibilityRoleRadioButton:
-        return result.append("RadioButton");
-    case WebAccessibilityRoleCheckBox:
-        return result.append("CheckBox");
-    case WebAccessibilityRoleSlider:
-        return result.append("Slider");
-    case WebAccessibilityRoleTabGroup:
-        return result.append("TabGroup");
-    case WebAccessibilityRoleTextField:
-        return result.append("TextField");
-    case WebAccessibilityRoleStaticText:
-        return result.append("StaticText");
-    case WebAccessibilityRoleTextArea:
-        return result.append("TextArea");
-    case WebAccessibilityRoleScrollArea:
-        return result.append("ScrollArea");
-    case WebAccessibilityRolePopUpButton:
-        return result.append("PopUpButton");
-    case WebAccessibilityRoleMenuButton:
-        return result.append("MenuButton");
-    case WebAccessibilityRoleTable:
-        return result.append("Table");
-    case WebAccessibilityRoleApplication:
-        return result.append("Application");
-    case WebAccessibilityRoleGroup:
-        return result.append("Group");
-    case WebAccessibilityRoleRadioGroup:
-        return result.append("RadioGroup");
-    case WebAccessibilityRoleList:
-        return result.append("List");
-    case WebAccessibilityRoleScrollBar:
-        return result.append("ScrollBar");
-    case WebAccessibilityRoleValueIndicator:
-        return result.append("ValueIndicator");
-    case WebAccessibilityRoleImage:
-        return result.append("Image");
-    case WebAccessibilityRoleMenuBar:
-        return result.append("MenuBar");
-    case WebAccessibilityRoleMenu:
-        return result.append("Menu");
-    case WebAccessibilityRoleMenuItem:
-        return result.append("MenuItem");
-    case WebAccessibilityRoleColumn:
-        return result.append("Column");
-    case WebAccessibilityRoleRow:
-        return result.append("Row");
-    case WebAccessibilityRoleToolbar:
-        return result.append("Toolbar");
-    case WebAccessibilityRoleBusyIndicator:
-        return result.append("BusyIndicator");
-    case WebAccessibilityRoleProgressIndicator:
-        return result.append("ProgressIndicator");
-    case WebAccessibilityRoleWindow:
-        return result.append("Window");
-    case WebAccessibilityRoleDrawer:
-        return result.append("Drawer");
-    case WebAccessibilityRoleSystemWide:
-        return result.append("SystemWide");
-    case WebAccessibilityRoleOutline:
-        return result.append("Outline");
-    case WebAccessibilityRoleIncrementor:
-        return result.append("Incrementor");
-    case WebAccessibilityRoleBrowser:
-        return result.append("Browser");
-    case WebAccessibilityRoleComboBox:
-        return result.append("ComboBox");
-    case WebAccessibilityRoleSplitGroup:
-        return result.append("SplitGroup");
-    case WebAccessibilityRoleSplitter:
-        return result.append("Splitter");
-    case WebAccessibilityRoleColorWell:
-        return result.append("ColorWell");
-    case WebAccessibilityRoleGrowArea:
-        return result.append("GrowArea");
-    case WebAccessibilityRoleSheet:
-        return result.append("Sheet");
-    case WebAccessibilityRoleHelpTag:
-        return result.append("HelpTag");
-    case WebAccessibilityRoleMatte:
-        return result.append("Matte");
-    case WebAccessibilityRoleRuler:
-        return result.append("Ruler");
-    case WebAccessibilityRoleRulerMarker:
-        return result.append("RulerMarker");
-    case WebAccessibilityRoleLink:
-        return result.append("Link");
-    case WebAccessibilityRoleDisclosureTriangle:
-        return result.append("DisclosureTriangle");
-    case WebAccessibilityRoleGrid:
-        return result.append("Grid");
-    case WebAccessibilityRoleCell:
-        return result.append("Cell");
-    case WebAccessibilityRoleColumnHeader:
-        return result.append("ColumnHeader");
-    case WebAccessibilityRoleRowHeader:
-        return result.append("RowHeader");
-    case WebAccessibilityRoleWebCoreLink:
-        // Maps to Link role.
-        return result.append("Link");
-    case WebAccessibilityRoleImageMapLink:
-        return result.append("ImageMapLink");
-    case WebAccessibilityRoleImageMap:
-        return result.append("ImageMap");
-    case WebAccessibilityRoleListMarker:
-        return result.append("ListMarker");
-    case WebAccessibilityRoleWebArea:
-        return result.append("WebArea");
-    case WebAccessibilityRoleHeading:
-        return result.append("Heading");
-    case WebAccessibilityRoleListBox:
-        return result.append("ListBox");
-    case WebAccessibilityRoleListBoxOption:
-        return result.append("ListBoxOption");
-    case WebAccessibilityRoleTableHeaderContainer:
-        return result.append("TableHeaderContainer");
-    case WebAccessibilityRoleDefinition:
-        return result.append("Definition");
-    case WebAccessibilityRoleDescriptionListTerm:
-        return result.append("DescriptionListTerm");
-    case WebAccessibilityRoleDescriptionListDetail:
-        return result.append("DescriptionListDetail");
-    case WebAccessibilityRoleAnnotation:
-        return result.append("Annotation");
-    case WebAccessibilityRoleSliderThumb:
-        return result.append("SliderThumb");
-    case WebAccessibilityRoleLandmarkApplication:
-        return result.append("LandmarkApplication");
-    case WebAccessibilityRoleLandmarkBanner:
-        return result.append("LandmarkBanner");
-    case WebAccessibilityRoleLandmarkComplementary:
-        return result.append("LandmarkComplementary");
-    case WebAccessibilityRoleLandmarkContentInfo:
-        return result.append("LandmarkContentInfo");
-    case WebAccessibilityRoleLandmarkMain:
-        return result.append("LandmarkMain");
-    case WebAccessibilityRoleLandmarkNavigation:
-        return result.append("LandmarkNavigation");
-    case WebAccessibilityRoleLandmarkSearch:
-        return result.append("LandmarkSearch");
-    case WebAccessibilityRoleApplicationLog:
-        return result.append("ApplicationLog");
-    case WebAccessibilityRoleApplicationMarquee:
-        return result.append("ApplicationMarquee");
-    case WebAccessibilityRoleApplicationStatus:
-        return result.append("ApplicationStatus");
-    case WebAccessibilityRoleApplicationTimer:
-        return result.append("ApplicationTimer");
-    case WebAccessibilityRoleDocument:
-        return result.append("Document");
-    case WebAccessibilityRoleDocumentArticle:
-        return result.append("DocumentArticle");
-    case WebAccessibilityRoleDocumentNote:
-        return result.append("DocumentNote");
-    case WebAccessibilityRoleDocumentRegion:
-        return result.append("DocumentRegion");
-    case WebAccessibilityRoleUserInterfaceTooltip:
-        return result.append("UserInterfaceTooltip");
-    case WebAccessibilityRoleToggleButton:
-        return result.append("ToggleButton");
-    case WebAccessibilityRoleCanvas:
-        return result.append("Canvas");
-    case WebAccessibilityRoleParagraph:
-        return result.append("Paragraph");
-    case WebAccessibilityRoleDiv:
-        return result.append("Div");
-    case WebAccessibilityRoleLabel:
-        return result.append("Label");
-    case WebAccessibilityRoleForm:
-        return result.append("Form");
-    case WebAccessibilityRoleHorizontalRule:
-        return result.append("HorizontalRule");
-    case WebAccessibilityRoleLegend:
-        return result.append("Legend");
-    case WebAccessibilityRoleApplicationAlert:
-        return result.append("Alert");
-    case WebAccessibilityRoleApplicationAlertDialog:
+    case WebAXRoleAlertDialog:
         return result.append("AlertDialog");
-    case WebAccessibilityRoleApplicationDialog:
-        return result.append("ApplicationDialog");
-    case WebAccessibilityRoleDirectory:
+    case WebAXRoleAlert:
+        return result.append("Alert");
+    case WebAXRoleAnnotation:
+        return result.append("Annotation");
+    case WebAXRoleApplication:
+        return result.append("Application");
+    case WebAXRoleArticle:
+        return result.append("Article");
+    case WebAXRoleBanner:
+        return result.append("Banner");
+    case WebAXRoleBrowser:
+        return result.append("Browser");
+    case WebAXRoleBusyIndicator:
+        return result.append("BusyIndicator");
+    case WebAXRoleButton:
+        return result.append("Button");
+    case WebAXRoleCanvas:
+        return result.append("Canvas");
+    case WebAXRoleCell:
+        return result.append("Cell");
+    case WebAXRoleCheckBox:
+        return result.append("CheckBox");
+    case WebAXRoleColorWell:
+        return result.append("ColorWell");
+    case WebAXRoleColumnHeader:
+        return result.append("ColumnHeader");
+    case WebAXRoleColumn:
+        return result.append("Column");
+    case WebAXRoleComboBox:
+        return result.append("ComboBox");
+    case WebAXRoleComplementary:
+        return result.append("Complementary");
+    case WebAXRoleContentInfo:
+        return result.append("ContentInfo");
+    case WebAXRoleDefinition:
+        return result.append("Definition");
+    case WebAXRoleDescriptionListDetail:
+        return result.append("DescriptionListDetail");
+    case WebAXRoleDescriptionListTerm:
+        return result.append("DescriptionListTerm");
+    case WebAXRoleDialog:
+        return result.append("Dialog");
+    case WebAXRoleDirectory:
         return result.append("Directory");
-    case WebAccessibilityRoleDocumentMath:
-        return result.append("Math");
-    case WebAccessibilityRoleEditableText:
+    case WebAXRoleDisclosureTriangle:
+        return result.append("DisclosureTriangle");
+    case WebAXRoleDiv:
+        return result.append("Div");
+    case WebAXRoleDocument:
+        return result.append("Document");
+    case WebAXRoleDrawer:
+        return result.append("Drawer");
+    case WebAXRoleEditableText:
         return result.append("EditableText");
-    case WebAccessibilityRoleFooter:
+    case WebAXRoleFooter:
         return result.append("Footer");
-    case WebAccessibilityRoleIgnored:
+    case WebAXRoleForm:
+        return result.append("Form");
+    case WebAXRoleGrid:
+        return result.append("Grid");
+    case WebAXRoleGroup:
+        return result.append("Group");
+    case WebAXRoleGrowArea:
+        return result.append("GrowArea");
+    case WebAXRoleHeading:
+        return result.append("Heading");
+    case WebAXRoleHelpTag:
+        return result.append("HelpTag");
+    case WebAXRoleHorizontalRule:
+        return result.append("HorizontalRule");
+    case WebAXRoleIgnored:
         return result.append("Ignored");
-    case WebAccessibilityRoleListItem:
+    case WebAXRoleImageMapLink:
+        return result.append("ImageMapLink");
+    case WebAXRoleImageMap:
+        return result.append("ImageMap");
+    case WebAXRoleImage:
+        return result.append("Image");
+    case WebAXRoleIncrementor:
+        return result.append("Incrementor");
+    case WebAXRoleLabel:
+        return result.append("Label");
+    case WebAXRoleLegend:
+        return result.append("Legend");
+    case WebAXRoleLink:
+        return result.append("Link");
+    case WebAXRoleListBoxOption:
+        return result.append("ListBoxOption");
+    case WebAXRoleListBox:
+        return result.append("ListBox");
+    case WebAXRoleListItem:
         return result.append("ListItem");
-    case WebAccessibilityRoleMenuListPopup:
-        return result.append("MenuListPopup");
-    case WebAccessibilityRoleMenuListOption:
+    case WebAXRoleListMarker:
+        return result.append("ListMarker");
+    case WebAXRoleList:
+        return result.append("List");
+    case WebAXRoleLog:
+        return result.append("Log");
+    case WebAXRoleMain:
+        return result.append("Main");
+    case WebAXRoleMarquee:
+        return result.append("Marquee");
+    case WebAXRoleMathElement:
+        return result.append("MathElement");
+    case WebAXRoleMath:
+        return result.append("Math");
+    case WebAXRoleMatte:
+        return result.append("Matte");
+    case WebAXRoleMenuBar:
+        return result.append("MenuBar");
+    case WebAXRoleMenuButton:
+        return result.append("MenuButton");
+    case WebAXRoleMenuItem:
+        return result.append("MenuItem");
+    case WebAXRoleMenuListOption:
         return result.append("MenuListOption");
-    case WebAccessibilityRolePresentational:
+    case WebAXRoleMenuListPopup:
+        return result.append("MenuListPopup");
+    case WebAXRoleMenu:
+        return result.append("Menu");
+    case WebAXRoleNavigation:
+        return result.append("Navigation");
+    case WebAXRoleNote:
+        return result.append("Note");
+    case WebAXRoleOutline:
+        return result.append("Outline");
+    case WebAXRoleParagraph:
+        return result.append("Paragraph");
+    case WebAXRolePopUpButton:
+        return result.append("PopUpButton");
+    case WebAXRolePresentational:
         return result.append("Presentational");
-    case WebAccessibilityRoleSpinButton:
-        return result.append("SpinButton");
-    case WebAccessibilityRoleSpinButtonPart:
+    case WebAXRoleProgressIndicator:
+        return result.append("ProgressIndicator");
+    case WebAXRoleRadioButton:
+        return result.append("RadioButton");
+    case WebAXRoleRadioGroup:
+        return result.append("RadioGroup");
+    case WebAXRoleRegion:
+        return result.append("Region");
+    case WebAXRoleRootWebArea:
+        return result.append("RootWebArea");
+    case WebAXRoleRowHeader:
+        return result.append("RowHeader");
+    case WebAXRoleRow:
+        return result.append("Row");
+    case WebAXRoleRulerMarker:
+        return result.append("RulerMarker");
+    case WebAXRoleRuler:
+        return result.append("Ruler");
+    case WebAXRoleSVGRoot:
+        return result.append("SVGRoot");
+    case WebAXRoleScrollArea:
+        return result.append("ScrollArea");
+    case WebAXRoleScrollBar:
+        return result.append("ScrollBar");
+    case WebAXRoleSeamlessWebArea:
+        return result.append("SeamlessWebArea");
+    case WebAXRoleSearch:
+        return result.append("Search");
+    case WebAXRoleSheet:
+        return result.append("Sheet");
+    case WebAXRoleSlider:
+        return result.append("Slider");
+    case WebAXRoleSliderThumb:
+        return result.append("SliderThumb");
+    case WebAXRoleSpinButtonPart:
         return result.append("SpinButtonPart");
-    case WebAccessibilityRoleTabList:
+    case WebAXRoleSpinButton:
+        return result.append("SpinButton");
+    case WebAXRoleSplitGroup:
+        return result.append("SplitGroup");
+    case WebAXRoleSplitter:
+        return result.append("Splitter");
+    case WebAXRoleStaticText:
+        return result.append("StaticText");
+    case WebAXRoleStatus:
+        return result.append("Status");
+    case WebAXRoleSystemWide:
+        return result.append("SystemWide");
+    case WebAXRoleTabGroup:
+        return result.append("TabGroup");
+    case WebAXRoleTabList:
         return result.append("TabList");
-    case WebAccessibilityRoleTabPanel:
+    case WebAXRoleTabPanel:
         return result.append("TabPanel");
-    case WebAccessibilityRoleTab:
+    case WebAXRoleTab:
         return result.append("Tab");
-    case WebAccessibilityRoleTreeRole:
-        return result.append("Tree");
-    case WebAccessibilityRoleTreeGrid:
+    case WebAXRoleTableHeaderContainer:
+        return result.append("TableHeaderContainer");
+    case WebAXRoleTable:
+        return result.append("Table");
+    case WebAXRoleTextArea:
+        return result.append("TextArea");
+    case WebAXRoleTextField:
+        return result.append("TextField");
+    case WebAXRoleTimer:
+        return result.append("Timer");
+    case WebAXRoleToggleButton:
+        return result.append("ToggleButton");
+    case WebAXRoleToolbar:
+        return result.append("Toolbar");
+    case WebAXRoleTreeGrid:
         return result.append("TreeGrid");
-    case WebAccessibilityRoleTreeItemRole:
+    case WebAXRoleTreeItem:
         return result.append("TreeItem");
-    case WebAccessibilityRoleUnknown:
+    case WebAXRoleTree:
+        return result.append("Tree");
+    case WebAXRoleUnknown:
+        return result.append("Unknown");
+    case WebAXRoleUserInterfaceTooltip:
+        return result.append("UserInterfaceTooltip");
+    case WebAXRoleValueIndicator:
+        return result.append("ValueIndicator");
+    case WebAXRoleWebArea:
+        return result.append("WebArea");
+    case WebAXRoleWindow:
+        return result.append("Window");
     default:
         return result.append("Unknown");
     }
 }
 
-string getDescription(const WebAccessibilityObject& object)
+string getDescription(const WebAXObject& object)
 {
     string description = object.accessibilityDescription().utf8();
     return description.insert(0, "AXDescription: ");
 }
 
-string getHelpText(const WebAccessibilityObject& object)
+string getHelpText(const WebAXObject& object)
 {
     string helpText = object.helpText().utf8();
     return helpText.insert(0, "AXHelp: ");
 }
 
-string getStringValue(const WebAccessibilityObject& object)
+string getStringValue(const WebAXObject& object)
 {
     string value;
-    if (object.roleValue() == WebAccessibilityRoleColorWell) {
+    if (object.role() == WebAXRoleColorWell) {
         int r, g, b;
         char buffer[100];
         object.colorValue(r, g, b);
@@ -297,26 +301,26 @@ string getStringValue(const WebAccessibilityObject& object)
     return value.insert(0, "AXValue: ");
 }
 
-string getRole(const WebAccessibilityObject& object)
+string getRole(const WebAXObject& object)
 {
-    string roleString = roleToString(object.roleValue());
+    string roleString = roleToString(object.role());
 
     // Special-case canvas with fallback content because Chromium wants to
     // treat this as essentially a separate role that it can map differently depending
     // on the platform.
-    if (object.roleValue() == WebAccessibilityRoleCanvas && object.canvasHasFallbackContent())
+    if (object.role() == WebAXRoleCanvas && object.canvasHasFallbackContent())
         roleString += "WithFallbackContent";
 
     return roleString;
 }
 
-string getTitle(const WebAccessibilityObject& object)
+string getTitle(const WebAXObject& object)
 {
     string title = object.title().utf8();
     return title.insert(0, "AXTitle: ");
 }
 
-string getOrientation(const WebAccessibilityObject& object)
+string getOrientation(const WebAXObject& object)
 {
     if (object.isVertical())
         return "AXOrientation: AXVerticalOrientation";
@@ -324,13 +328,13 @@ string getOrientation(const WebAccessibilityObject& object)
     return "AXOrientation: AXHorizontalOrientation";
 }
 
-string getValueDescription(const WebAccessibilityObject& object)
+string getValueDescription(const WebAXObject& object)
 {
     string valueDescription = object.valueDescription().utf8();
     return valueDescription.insert(0, "AXValueDescription: ");
 }
 
-string getAttributes(const WebAccessibilityObject& object)
+string getAttributes(const WebAXObject& object)
 {
     // FIXME: Concatenate all attributes of the AccessibilityObject.
     string attributes(getTitle(object));
@@ -347,7 +351,7 @@ string getAttributes(const WebAccessibilityObject& object)
 // AttributesOfChildrenCallback, etc.
 class AttributesCollector {
 public:
-    void collectAttributes(const WebAccessibilityObject& object)
+    void collectAttributes(const WebAXObject& object)
     {
         m_attributes.append("\n------------\n");
         m_attributes.append(getAttributes(object));
@@ -361,7 +365,7 @@ private:
 
 }
 
-AccessibilityUIElement::AccessibilityUIElement(const WebAccessibilityObject& object, Factory* factory)
+AccessibilityUIElement::AccessibilityUIElement(const WebAXObject& object, Factory* factory)
     : m_accessibilityObject(object)
     , m_factory(factory)
 {
@@ -409,6 +413,7 @@ AccessibilityUIElement::AccessibilityUIElement(const WebAccessibilityObject& obj
     bindProperty("clickPointY", &AccessibilityUIElement::clickPointYGetterCallback);
     bindProperty("rowCount", &AccessibilityUIElement::rowCountGetterCallback);
     bindProperty("columnCount", &AccessibilityUIElement::columnCountGetterCallback);
+    bindProperty("isClickable", &AccessibilityUIElement::isClickableGetterCallback);
 
     //
     // Methods
@@ -462,7 +467,7 @@ AccessibilityUIElement* AccessibilityUIElement::getChildAtIndex(unsigned index)
     return m_factory->getOrCreate(accessibilityObject().childAt(index));
 }
 
-bool AccessibilityUIElement::isEqual(const WebKit::WebAccessibilityObject& other)
+bool AccessibilityUIElement::isEqual(const WebKit::WebAXObject& other)
 {
     return accessibilityObject().equals(other);
 }
@@ -531,7 +536,7 @@ void AccessibilityUIElement::intValueGetterCallback(CppVariant* result)
 {
     if (accessibilityObject().supportsRangeValue())
         result->set(accessibilityObject().valueForRange());
-    else if (accessibilityObject().roleValue() == WebAccessibilityRoleHeading)
+    else if (accessibilityObject().role() == WebAXRoleHeading)
         result->set(accessibilityObject().headingLevel());
     else
         result->set(atoi(accessibilityObject().stringValue().utf8().data()));
@@ -686,6 +691,11 @@ void AccessibilityUIElement::columnCountGetterCallback(CppVariant* result)
     result->set(static_cast<int32_t>(accessibilityObject().columnCount()));
 }
 
+void AccessibilityUIElement::isClickableGetterCallback(CppVariant* result)
+{
+    result->set(accessibilityObject().isClickable());
+}
+
 //
 // Methods
 //
@@ -773,7 +783,7 @@ void AccessibilityUIElement::elementAtPointCallback(const CppArgumentList& argum
     int x = arguments[0].toInt32();
     int y = arguments[1].toInt32();
     WebPoint point(x, y);
-    WebAccessibilityObject obj = accessibilityObject().hitTest(point);
+    WebAXObject obj = accessibilityObject().hitTest(point);
     if (obj.isNull())
         return;
 
@@ -812,7 +822,7 @@ void AccessibilityUIElement::attributesOfHeaderCallback(const CppArgumentList&, 
 
 void AccessibilityUIElement::tableHeaderCallback(const CppArgumentList&, CppVariant* result)
 {
-    WebAccessibilityObject obj = accessibilityObject().headerContainerObject();
+    WebAXObject obj = accessibilityObject().headerContainerObject();
     if (obj.isNull()) {
         result->setNull();
         return;
@@ -852,7 +862,7 @@ void AccessibilityUIElement::cellForColumnAndRowCallback(const CppArgumentList& 
 
     int column = arguments[0].toInt32();
     int row = arguments[1].toInt32();
-    WebAccessibilityObject obj = accessibilityObject().cellForColumnAndRow(column, row);
+    WebAXObject obj = accessibilityObject().cellForColumnAndRow(column, row);
     if (obj.isNull()) {
         result->setNull();
         return;
@@ -863,7 +873,7 @@ void AccessibilityUIElement::cellForColumnAndRowCallback(const CppArgumentList& 
 
 void AccessibilityUIElement::titleUIElementCallback(const CppArgumentList&, CppVariant* result)
 {
-    WebAccessibilityObject obj = accessibilityObject().titleUIElement();
+    WebAXObject obj = accessibilityObject().titleUIElement();
     if (obj.isNull()) {
         result->setNull();
         return;
@@ -1031,7 +1041,7 @@ void AccessibilityUIElement::fallbackCallback(const CppArgumentList &, CppVarian
     result->setNull();
 }
 
-RootAccessibilityUIElement::RootAccessibilityUIElement(const WebAccessibilityObject &object, Factory *factory)
+RootAccessibilityUIElement::RootAccessibilityUIElement(const WebAXObject &object, Factory *factory)
     : AccessibilityUIElement(object, factory) { }
 
 AccessibilityUIElement* RootAccessibilityUIElement::getChildAtIndex(unsigned index)
@@ -1055,7 +1065,7 @@ void AccessibilityUIElementList::clear()
     m_elements.clear();
 }
 
-AccessibilityUIElement* AccessibilityUIElementList::getOrCreate(const WebAccessibilityObject& object)
+AccessibilityUIElement* AccessibilityUIElementList::getOrCreate(const WebAXObject& object)
 {
     if (object.isNull())
         return 0;
@@ -1071,7 +1081,7 @@ AccessibilityUIElement* AccessibilityUIElementList::getOrCreate(const WebAccessi
     return element;
 }
 
-AccessibilityUIElement* AccessibilityUIElementList::createRoot(const WebAccessibilityObject& object)
+AccessibilityUIElement* AccessibilityUIElementList::createRoot(const WebAXObject& object)
 {
     AccessibilityUIElement* element = new RootAccessibilityUIElement(object, this);
     m_elements.push_back(element);

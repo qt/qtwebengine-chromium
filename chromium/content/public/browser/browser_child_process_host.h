@@ -5,8 +5,8 @@
 #ifndef CONTENT_PUBLIC_BROWSER_BROWSER_CHILD_PROCESS_HOST_H_
 #define CONTENT_PUBLIC_BROWSER_BROWSER_CHILD_PROCESS_HOST_H_
 
+#include "base/environment.h"
 #include "base/process/kill.h"
-#include "base/process/launch.h"
 #include "base/process/process_handle.h"
 #include "base/process/process_metrics.h"
 #include "base/strings/string16.h"
@@ -48,7 +48,7 @@ class CONTENT_EXPORT BrowserChildProcessHost : public IPC::Sender {
       SandboxedProcessLauncherDelegate* delegate,
 #elif defined(OS_POSIX)
       bool use_zygote,
-      const base::EnvironmentVector& environ,
+      const base::EnvironmentMap& environ,
 #endif
       CommandLine* cmd_line) = 0;
 
@@ -61,7 +61,11 @@ class CONTENT_EXPORT BrowserChildProcessHost : public IPC::Sender {
   // status returned when the process exited (for posix, as returned
   // from waitpid(), for Windows, as returned from
   // GetExitCodeProcess()).  |exit_code| may be NULL.
-  virtual base::TerminationStatus GetTerminationStatus(int* exit_code) = 0;
+  // |known_dead| indicates that the child is already dead. On Linux, this
+  // information is necessary to retrieve accurate information. See
+  // ChildProcessLauncher::GetChildTerminationStatus() for more details.
+  virtual base::TerminationStatus GetTerminationStatus(
+      bool known_dead, int* exit_code) = 0;
 
   // Sets the user-visible name of the process.
   virtual void SetName(const string16& name) = 0;

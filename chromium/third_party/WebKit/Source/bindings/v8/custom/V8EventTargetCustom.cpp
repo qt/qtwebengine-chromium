@@ -29,11 +29,10 @@
  */
 
 #include "config.h"
-#include "core/dom/EventTarget.h"
+#include "V8EventTarget.h"
 
 #include "EventTargetHeaders.h"
 #include "EventTargetInterfaces.h"
-#include "V8EventTarget.h"
 
 namespace WebCore {
 
@@ -51,11 +50,6 @@ v8::Handle<v8::Value> toV8(EventTarget* impl, v8::Handle<v8::Object> creationCon
 
     ASSERT_NOT_REACHED();
     return v8Undefined();
-}
-
-v8::Handle<v8::Value> toV8ForMainWorld(EventTarget* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
-{
-    return toV8(impl, creationContext, isolate);
 }
 
 #undef TRY_TO_WRAP_WITH_INTERFACE

@@ -31,7 +31,7 @@
 
 namespace WebCore {
 
-CreateLinkCommand::CreateLinkCommand(Document* document, const String& url)
+CreateLinkCommand::CreateLinkCommand(Document& document, const String& url)
     : CompositeEditCommand(document)
 {
     m_url = url;

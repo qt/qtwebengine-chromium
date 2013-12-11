@@ -12,17 +12,17 @@
 #include "base/logging.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/root_window_host.h"
-#include "ui/base/x/x11_util.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/screen.h"
+#include "ui/gfx/x/x11_types.h"
 
 namespace {
 
 // TODO(erg): This method is a temporary hack, until we can reliably extract
 // location data out of XRandR.
 gfx::Size GetPrimaryDisplaySize() {
-  ::Display* display = ui::GetXDisplay();
+  ::XDisplay* display = gfx::GetXDisplay();
   ::Screen* screen = DefaultScreenOfDisplay(display);
   int width = WidthOfScreen(screen);
   int height = HeightOfScreen(screen);
@@ -38,8 +38,11 @@ class DesktopScreenX11 : public gfx::Screen {
   // Overridden from gfx::Screen:
   virtual bool IsDIPEnabled() OVERRIDE;
   virtual gfx::Point GetCursorScreenPoint() OVERRIDE;
-  virtual gfx::NativeWindow GetWindowAtCursorScreenPoint() OVERRIDE;
-  virtual int GetNumDisplays() OVERRIDE;
+  virtual gfx::NativeWindow GetWindowUnderCursor() OVERRIDE;
+  virtual gfx::NativeWindow GetWindowAtScreenPoint(const gfx::Point& point)
+      OVERRIDE;
+  virtual int GetNumDisplays() const OVERRIDE;
+  virtual std::vector<gfx::Display> GetAllDisplays() const OVERRIDE;
   virtual gfx::Display GetDisplayNearestWindow(
       gfx::NativeView window) const OVERRIDE;
   virtual gfx::Display GetDisplayNearestPoint(
@@ -71,7 +74,7 @@ bool DesktopScreenX11::IsDIPEnabled() {
 }
 
 gfx::Point DesktopScreenX11::GetCursorScreenPoint() {
-  Display* display = ui::GetXDisplay();
+  XDisplay* display = gfx::GetXDisplay();
 
   ::Window root, child;
   int root_x, root_y, win_x, win_y;
@@ -89,16 +92,27 @@ gfx::Point DesktopScreenX11::GetCursorScreenPoint() {
   return gfx::Point(root_x, root_y);
 }
 
-gfx::NativeWindow DesktopScreenX11::GetWindowAtCursorScreenPoint() {
+gfx::NativeWindow DesktopScreenX11::GetWindowUnderCursor() {
   // TODO(erg): Implement using the discussion at
   // http://codereview.chromium.org/10279005/
   return NULL;
 }
 
-int DesktopScreenX11::GetNumDisplays() {
+gfx::NativeWindow DesktopScreenX11::GetWindowAtScreenPoint(
+    const gfx::Point& point) {
+  NOTIMPLEMENTED();
+  return NULL;
+}
+
+int DesktopScreenX11::GetNumDisplays() const {
   // TODO(erg): Figure this out with oshima or piman because I have no clue
   // about the XRandR implications here.
   return 1;
+}
+
+std::vector<gfx::Display> DesktopScreenX11::GetAllDisplays() const {
+  // TODO(erg): Do the right thing once we know what that is.
+  return std::vector<gfx::Display>(1, GetPrimaryDisplay());
 }
 
 gfx::Display DesktopScreenX11::GetDisplayNearestWindow(

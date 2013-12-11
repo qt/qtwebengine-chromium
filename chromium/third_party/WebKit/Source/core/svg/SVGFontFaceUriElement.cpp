@@ -27,23 +27,23 @@
 #include "XLinkNames.h"
 #include "core/css/CSSFontFaceSrcValue.h"
 #include "core/dom/Document.h"
-#include "core/loader/cache/FetchRequest.h"
-#include "core/loader/cache/FontResource.h"
-#include "core/loader/cache/ResourceFetcher.h"
+#include "core/fetch/FetchRequest.h"
+#include "core/fetch/FontResource.h"
+#include "core/fetch/ResourceFetcher.h"
 #include "core/svg/SVGFontFaceElement.h"
 
 namespace WebCore {
 
 using namespace SVGNames;
 
-inline SVGFontFaceUriElement::SVGFontFaceUriElement(const QualifiedName& tagName, Document* document)
+inline SVGFontFaceUriElement::SVGFontFaceUriElement(const QualifiedName& tagName, Document& document)
     : SVGElement(tagName, document)
 {
     ASSERT(hasTagName(font_face_uriTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGFontFaceUriElement> SVGFontFaceUriElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<SVGFontFaceUriElement> SVGFontFaceUriElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new SVGFontFaceUriElement(tagName, document));
 }
@@ -95,9 +95,9 @@ void SVGFontFaceUriElement::loadFont()
 
     const AtomicString& href = getAttribute(XLinkNames::hrefAttr);
     if (!href.isNull()) {
-        ResourceFetcher* fetcher = document()->fetcher();
-        FetchRequest request(ResourceRequest(document()->completeURL(href)), localName());
-        m_resource = fetcher->requestFont(request);
+        ResourceFetcher* fetcher = document().fetcher();
+        FetchRequest request(ResourceRequest(document().completeURL(href)), localName());
+        m_resource = fetcher->fetchFont(request);
         if (m_resource) {
             m_resource->addClient(this);
             m_resource->beginLoadIfNeeded(fetcher);

@@ -529,13 +529,6 @@ TEST_F(FieldTrialTest, DuplicateFieldTrial) {
   EXPECT_TRUE(trial2 == NULL);
 }
 
-TEST_F(FieldTrialTest, MakeName) {
-  FieldTrial* trial = CreateFieldTrial("Field Trial", 10, "Winner", NULL);
-  trial->group();
-  EXPECT_EQ("Histogram_Winner",
-            FieldTrial::MakeName("Histogram", "Field Trial"));
-}
-
 TEST_F(FieldTrialTest, DisableImmediately) {
   int default_group_number = -1;
   FieldTrial* trial =
@@ -854,6 +847,34 @@ TEST_F(FieldTrialTest, ExpirationYearNotExpired) {
       CreateFieldTrial(kTrialName, kProbability, kDefaultGroupName, NULL);
   trial->AppendGroup(kGroupName, kProbability);
   EXPECT_EQ(kGroupName, trial->group_name());
+}
+
+TEST_F(FieldTrialTest, FloatBoundariesGiveEqualGroupSizes) {
+  const int kBucketCount = 100;
+
+  // Try each boundary value |i / 100.0| as the entropy value.
+  for (int i = 0; i < kBucketCount; ++i) {
+    const double entropy = i / static_cast<double>(kBucketCount);
+
+    scoped_refptr<base::FieldTrial> trial(
+        new base::FieldTrial("test", kBucketCount, "default", entropy));
+    for (int j = 0; j < kBucketCount; ++j)
+      trial->AppendGroup(base::StringPrintf("%d", j), 1);
+
+    EXPECT_EQ(base::StringPrintf("%d", i), trial->group_name());
+  }
+}
+
+TEST_F(FieldTrialTest, DoesNotSurpassTotalProbability) {
+  const double kEntropyValue = 1.0 - 1e-9;
+  ASSERT_LT(kEntropyValue, 1.0);
+
+  scoped_refptr<base::FieldTrial> trial(
+      new base::FieldTrial("test", 2, "default", kEntropyValue));
+  trial->AppendGroup("1", 1);
+  trial->AppendGroup("2", 1);
+
+  EXPECT_EQ("2", trial->group_name());
 }
 
 }  // namespace base

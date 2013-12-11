@@ -9,7 +9,6 @@
 #include "content/common/net/url_request_user_data.h"
 #include "content/public/browser/global_request_id.h"
 #include "net/url_request/url_request.h"
-#include "webkit/common/blob/blob_data.h"
 
 namespace content {
 
@@ -196,6 +195,9 @@ bool ResourceRequestInfoImpl::GetAssociatedRenderView(
       *render_view_id = -1;
       return false;
     }
+  } else if (process_type_ == PROCESS_TYPE_PLUGIN) {
+    *render_process_id = origin_pid_;
+    *render_view_id = route_id_;
   } else {
     *render_process_id = child_id_;
     *render_view_id = route_id_;
@@ -224,11 +226,6 @@ GlobalRequestID ResourceRequestInfoImpl::GetGlobalRequestID() const {
 
 GlobalRoutingID ResourceRequestInfoImpl::GetGlobalRoutingID() const {
   return GlobalRoutingID(child_id_, route_id_);
-}
-
-void ResourceRequestInfoImpl::set_requested_blob_data(
-    webkit_blob::BlobData* data) {
-  requested_blob_data_ = data;
 }
 
 }  // namespace content

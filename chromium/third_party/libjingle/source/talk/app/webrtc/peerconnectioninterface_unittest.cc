@@ -29,18 +29,19 @@
 
 #include "talk/app/webrtc/fakeportallocatorfactory.h"
 #include "talk/app/webrtc/jsepsessiondescription.h"
-#include "talk/app/webrtc/localvideosource.h"
 #include "talk/app/webrtc/mediastreaminterface.h"
 #include "talk/app/webrtc/peerconnectioninterface.h"
 #include "talk/app/webrtc/test/fakeconstraints.h"
 #include "talk/app/webrtc/test/mockpeerconnectionobservers.h"
 #include "talk/app/webrtc/test/testsdpstrings.h"
+#include "talk/app/webrtc/videosource.h"
 #include "talk/base/gunit.h"
 #include "talk/base/scoped_ptr.h"
 #include "talk/base/sslstreamadapter.h"
 #include "talk/base/stringutils.h"
 #include "talk/base/thread.h"
 #include "talk/media/base/fakevideocapturer.h"
+#include "talk/media/sctp/sctpdataengine.h"
 #include "talk/session/media/mediasession.h"
 
 static const char kStreamLabel1[] = "local_stream_1";
@@ -1193,7 +1194,7 @@ TEST_F(PeerConnectionInterfaceTest, CloseAndTestMethods) {
   ASSERT_FALSE(local_stream->GetAudioTracks().empty());
   talk_base::scoped_refptr<webrtc::DtmfSenderInterface> dtmf_sender(
       pc_->CreateDtmfSender(local_stream->GetAudioTracks()[0]));
-  EXPECT_FALSE(dtmf_sender->CanInsertDtmf());
+  EXPECT_TRUE(NULL == dtmf_sender);  // local stream has been removed.
 
   EXPECT_TRUE(pc_->CreateDataChannel("test", NULL) == NULL);
 

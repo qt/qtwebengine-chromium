@@ -10,11 +10,12 @@ namespace cc {
 
 ResourcePool::Resource::Resource(cc::ResourceProvider* resource_provider,
                                  gfx::Size size,
-                                 GLenum format)
+                                 ResourceFormat format)
     : cc::Resource(resource_provider->CreateManagedResource(
                        size,
-                       format,
-                       ResourceProvider::TextureUsageAny),
+                       GL_CLAMP_TO_EDGE,
+                       ResourceProvider::TextureUsageAny,
+                       format),
                    size,
                    format),
       resource_provider_(resource_provider) {
@@ -42,17 +43,13 @@ ResourcePool::~ResourcePool() {
 }
 
 scoped_ptr<ResourcePool::Resource> ResourcePool::AcquireResource(
-    gfx::Size size, GLenum format) {
+    gfx::Size size, ResourceFormat format) {
   for (ResourceList::iterator it = unused_resources_.begin();
        it != unused_resources_.end(); ++it) {
     Resource* resource = *it;
 
-    // TODO(epenner): It would be nice to DCHECK that this
-    // doesn't happen two frames in a row for any resource
-    // in this pool.
     if (!resource_provider_->CanLockForWrite(resource->id()))
       continue;
-
     if (resource->size() != size)
       continue;
     if (resource->format() != format)
@@ -104,10 +101,15 @@ void ResourcePool::ReduceResourceUsage() {
     if (!ResourceUsageTooHigh())
       break;
 
-    // MRU eviction pattern as least recently used is less likely to
-    // be blocked by read lock fence.
-    Resource* resource = unused_resources_.back();
-    unused_resources_.pop_back();
+    // LRU eviction pattern. Most recently used might be blocked by
+    // a read lock fence but it's still better to evict the least
+    // recently used as it prevents a resource that is hard to reuse
+    // because of unique size from being kept around. Resources that
+    // can't be locked for write might also not be truly free-able.
+    // We can free the resource here but it doesn't mean that the
+    // memory is necessarily returned to the OS.
+    Resource* resource = unused_resources_.front();
+    unused_resources_.pop_front();
     memory_usage_bytes_ -= resource->bytes();
     unused_memory_usage_bytes_ -= resource->bytes();
     --resource_count_;

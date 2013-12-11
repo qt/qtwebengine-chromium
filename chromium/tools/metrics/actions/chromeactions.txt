@@ -148,6 +148,7 @@
 0x6ebaa5e3651107fa	BadMessageTerminate_EFD
 0xff06108fb2aa73fa	BadMessageTerminate_FAMF
 0xbecb3852be04c506	BadMessageTerminate_IDBMF
+0x9e69131e5123433a	BadMessageTerminate_MIDI
 0xd7e4d61883121c76	BadMessageTerminate_NC
 0x448f44d226b839b7	BadMessageTerminate_NC17
 0xd267646495d87640	BadMessageTerminate_RDH
@@ -243,6 +244,7 @@
 0x371d5e60b00738d9	BrowserPlugin.Guest.Crashed
 0x854cc1f139ba9418	BrowserPlugin.Guest.Create
 0xa1822ac47db91018	BrowserPlugin.Guest.DidNavigate
+0x6a80626069f68d37	BrowserPlugin.Guest.EnableAutoResize
 0xde8be5ce26955605	BrowserPlugin.Guest.Hung
 0xa369e99aa2e21969	BrowserPlugin.Guest.Killed
 0x428cf267aeb35e28	BrowserPlugin.Guest.Navigate
@@ -317,6 +319,11 @@
 0x417f35273c2e009b	CriticalNotification_Restart
 0xfdf6ee64a0588855	Cryptohome.PKCS11InitFail
 0xeb334dca00e390e0	Cut
+0x24c15c9cd91f5be0	DataReductionProxy_PromoDisplayed
+0xdfc419c441193fae	DataReductionProxy_PromoLearnMore
+0x3e571d8a556acc27	DataReductionProxy_TurnedOff
+0xb69483d9936c050e	DataReductionProxy_TurnedOn
+0x92ebcc84f3abf206	DataReductionProxy_TurnedOnFromPromo
 0xb94d8a074eddd267	Debugger
 0xf2a6c498fb90ee34	Delete
 0xee9ce204f091eb10	DeleteBackward
@@ -339,6 +346,15 @@
 0xd3e90631d6d04d51	DevTools_InspectElement
 0xbadaf91b6bdbbe68	DevTools_ToggleConsole
 0xddaad2f5e9238157	DevTools_ToggleWindow
+0x155de7afd2eae387	DevicesPage_AddPrintersClicked
+0x81bab07ab7408439	DevicesPage_LogInStartedFromDeviceListPromo
+0x97316d4fc731c000	DevicesPage_LogInStartedFromRegisterPromo
+0x876ad499b66d66f3	DevicesPage_ManageClicked
+0x62644a4c7aa75135	DevicesPage_Opened
+0xc95009afab055732	DevicesPage_RegisterCancel
+0xd5e873a27b2a9d34	DevicesPage_RegisterClicked
+0x48589e4ef5d72bba	DevicesPage_RegisterFailure
+0x4e7f3f684b09d823	DevicesPage_RegisterSuccess
 0xe581401517f920ca	DisabledExtensionNotificationDismissed
 0x240b0da0a404d35c	DisabledExtensionNotificationShown
 0xdad0f491267f672e	DockingWindow_Bottom
@@ -356,6 +372,7 @@
 0x9a2fdef24427ff67	EmailPageLocation
 0xb63daeca06ecea16	EnterFullScreenWithWrenchMenu
 0xfef46e5063ce3dc7	Exit
+0xcf0c759bda6783fd	ExtensionNotFound_ED
 0xdf56dffe242f621a	Extensions.ExtensionInstalled
 0x4f07c158c8047ab9	Extensions.ExtensionUninstalled
 0x08566bf746b7f665	Extensions.IDChangedError
@@ -1197,6 +1214,7 @@
 0xab4d417c5ca44904	NewTab_Button
 0xbdc9ec125e7a3ade	NewWindow
 0xa86d43452b05bf72	Notifications.ShowMessageCenter
+0x9a102e132f96503f	Notifications.ShowSettings
 0xa72c673a1f44d11f	OmniboxDestinationURLIsSearchOnDSP
 0x6048dbd4f2f2ca50	OmniboxDestinationURLMatchesDefaultSearchProvider
 0x268376698078c71b	OmniboxInputInProgress
@@ -1419,6 +1437,7 @@
 0x5d0e6942f354a06c	PasteAndMatchStyle
 0xca471265efb33961	PluginContextMenu_RotateClockwise
 0xa260d9dde6e550c4	PluginContextMenu_RotateCounterclockwise
+0xd0aab07db234653a	Plugin_200ForByteRange
 0x6f2cd84fa374c281	Plugin_Blocked
 0xcecb82fcd8e64529	Plugin_ClickToPlay
 0xc52b281d793adc6b	Plugin_Hide_Click
@@ -1426,6 +1445,7 @@
 0x007757ef58e358af	Plugin_Load_Click
 0xd84554ce585d6c63	Plugin_Load_Menu
 0x116bd7e07524f140	Plugin_Load_UI
+0xa9b341634f9ea6ad	Plugin_NPAPINotSupported
 0x352f2d6315d52044	PrintNow
 0xcb83fba9c48fd911	PrintPreview
 0x89ad6a22de4ca850	PrintView_PrintDialog
@@ -1617,8 +1637,13 @@
 0xfb4a178539bac6bd	ViewSource
 0x6932875212d36f57	WP_EditImage
 0x34a770eb3bbf5632	WP_Gallery
+0x462194a5096cab5e	WebView.ClearData
 0x1058b3af68275a1d	WebView.ExecuteScript
+0xbe313bfe6325dad0	WebView.Go
 0x749d2199e73fa34c	WebView.Guest.Terminate
+0xdeb501c069a2ff19	WebView.Reload
+0xdc14030aa71d5472	WebView.Stop
+0x16400bbfff3e7619	WebView.Terminate
 0x50de3f60387a3613	WebView.WebRequest.AddListener
 0x949730a9468e27a1	WebsiteSettings_CookiesDialogOpened
 0xddc2a5698e145d16	WebsiteSettings_Opened

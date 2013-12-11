@@ -31,9 +31,13 @@
 #ifndef UnsafePersistent_h
 #define UnsafePersistent_h
 
+#include "bindings/v8/WrapperTypeInfo.h"
+
 #include <v8.h>
 
 namespace WebCore {
+
+template<class KeyType> class DOMWrapperMap;
 
 // An unsafe way to pass Persistent handles around. Do not use unless you know
 // what you're doing. UnsafePersistent is only safe to use when we know that the
@@ -60,20 +64,28 @@ public:
         return m_value;
     }
 
+    template<typename V8T, typename U>
+    inline bool setReturnValueWithSecurityCheck(v8::ReturnValue<v8::Value> returnValue, U* object)
+    {
+        v8::Handle<v8::Object> result = deprecatedHandle();
+        // Security: always guard against malicious tampering.
+        RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(result.IsEmpty() || result->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex) == V8T::toInternalPointer(object));
+        returnValue.Set(result);
+        return !result.IsEmpty();
+    }
+
+    inline bool setReturnValue(v8::ReturnValue<v8::Value> returnValue)
+    {
+        returnValue.Set(deprecatedHandle());
+        return !isEmpty();
+    }
+
     // This is incredibly unsafe: the handle is valid only when this
     // UnsafePersistent is alive and valid (see class level comment).
     v8::Persistent<T>* persistent()
     {
         v8::Persistent<T>* handle = reinterpret_cast<v8::Persistent<T>*>(&m_value);
         return handle;
-    }
-
-    // FIXME: Remove this function, replace the usages with newLocal(). Do not
-    // add code which calls this function.
-    v8::Handle<T> deprecatedHandle()
-    {
-        v8::Handle<T>* handle = reinterpret_cast<v8::Handle<T>*>(&m_value);
-        return *handle;
     }
 
     void dispose()
@@ -98,6 +110,12 @@ public:
     }
 
 private:
+    v8::Handle<T> deprecatedHandle()
+    {
+        v8::Handle<T>* handle = reinterpret_cast<v8::Handle<T>*>(&m_value);
+        return *handle;
+    }
+
     T* m_value;
 };
 

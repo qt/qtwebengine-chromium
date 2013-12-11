@@ -31,6 +31,7 @@
 #include "core/dom/EventNames.h"
 #include "core/dom/MouseEvent.h"
 #include "core/dom/RawDataDocumentParser.h"
+#include "core/fetch/ImageResource.h"
 #include "core/html/HTMLBodyElement.h"
 #include "core/html/HTMLHeadElement.h"
 #include "core/html/HTMLHtmlElement.h"
@@ -39,7 +40,6 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/loader/cache/ImageResource.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "core/page/Page.h"
@@ -166,27 +166,27 @@ PassRefPtr<DocumentParser> ImageDocument::createParser()
 
 void ImageDocument::createDocumentStructure()
 {
-    RefPtr<HTMLHtmlElement> rootElement = HTMLHtmlElement::create(this);
-    appendChild(rootElement, ASSERT_NO_EXCEPTION, AttachLazily);
+    RefPtr<HTMLHtmlElement> rootElement = HTMLHtmlElement::create(*this);
+    appendChild(rootElement);
     rootElement->insertedByParser();
 
     if (frame() && frame()->loader())
         frame()->loader()->dispatchDocumentElementAvailable();
 
-    RefPtr<HTMLHeadElement> head = HTMLHeadElement::create(this);
-    RefPtr<HTMLMetaElement> meta = HTMLMetaElement::create(this);
+    RefPtr<HTMLHeadElement> head = HTMLHeadElement::create(*this);
+    RefPtr<HTMLMetaElement> meta = HTMLMetaElement::create(*this);
     meta->setAttribute(nameAttr, "viewport");
     meta->setAttribute(contentAttr, "width=device-width");
-    head->appendChild(meta, ASSERT_NO_EXCEPTION, AttachLazily);
+    head->appendChild(meta);
 
-    RefPtr<HTMLBodyElement> body = HTMLBodyElement::create(this);
+    RefPtr<HTMLBodyElement> body = HTMLBodyElement::create(*this);
     body->setAttribute(styleAttr, "margin: 0px;");
 
-    m_imageElement = HTMLImageElement::create(this);
+    m_imageElement = HTMLImageElement::create(*this);
     m_imageElement->setAttribute(styleAttr, "-webkit-user-select: none");
     m_imageElement->setLoadManually(true);
     m_imageElement->setSrc(url().string());
-    body->appendChild(m_imageElement.get(), ASSERT_NO_EXCEPTION, AttachLazily);
+    body->appendChild(m_imageElement.get());
 
     if (shouldShrinkToFit()) {
         // Add event listeners
@@ -196,13 +196,13 @@ void ImageDocument::createDocumentStructure()
         m_imageElement->addEventListener("click", listener.release(), false);
     }
 
-    rootElement->appendChild(head, ASSERT_NO_EXCEPTION, AttachLazily);
-    rootElement->appendChild(body, ASSERT_NO_EXCEPTION, AttachLazily);
+    rootElement->appendChild(head);
+    rootElement->appendChild(body);
 }
 
 float ImageDocument::scale() const
 {
-    if (!m_imageElement || m_imageElement->document() != this)
+    if (!m_imageElement || &m_imageElement->document() != this)
         return 1.0f;
 
     FrameView* view = frame()->view();
@@ -220,7 +220,7 @@ float ImageDocument::scale() const
 
 void ImageDocument::resizeImageToFit()
 {
-    if (!m_imageElement || m_imageElement->document() != this)
+    if (!m_imageElement || &m_imageElement->document() != this || pageZoomFactor(this) > 1)
         return;
 
     LayoutSize imageSize = m_imageElement->cachedImage()->imageSizeForRenderer(m_imageElement->renderer(), pageZoomFactor(this));
@@ -275,7 +275,7 @@ void ImageDocument::imageUpdated()
 
 void ImageDocument::restoreImageSize()
 {
-    if (!m_imageElement || !m_imageSizeIsKnown || m_imageElement->document() != this)
+    if (!m_imageElement || !m_imageSizeIsKnown || &m_imageElement->document() != this || pageZoomFactor(this) < 1)
         return;
 
     LayoutSize imageSize = m_imageElement->cachedImage()->imageSizeForRenderer(m_imageElement->renderer(), 1.0f);
@@ -292,7 +292,7 @@ void ImageDocument::restoreImageSize()
 
 bool ImageDocument::imageFitsInWindow() const
 {
-    if (!m_imageElement || m_imageElement->document() != this)
+    if (!m_imageElement || &m_imageElement->document() != this)
         return true;
 
     FrameView* view = frame()->view();
@@ -307,7 +307,7 @@ bool ImageDocument::imageFitsInWindow() const
 
 void ImageDocument::windowSizeChanged()
 {
-    if (!m_imageElement || !m_imageSizeIsKnown || m_imageElement->document() != this)
+    if (!m_imageElement || !m_imageSizeIsKnown || &m_imageElement->document() != this)
         return;
 
     bool fitsInWindow = imageFitsInWindow();
@@ -348,8 +348,7 @@ ImageResource* ImageDocument::cachedImage()
 
 bool ImageDocument::shouldShrinkToFit() const
 {
-    return frame()->page()->settings()->shrinksStandaloneImagesToFit() &&
-        frame()->page()->mainFrame() == frame();
+    return frame()->page()->settings().shrinksStandaloneImagesToFit() && frame()->page()->mainFrame() == frame();
 }
 
 void ImageDocument::dispose()

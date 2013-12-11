@@ -36,7 +36,7 @@ class PlatformMouseEvent;
 class ScrollbarThemeClient;
 class ScrollView;
 
-#if ENABLE(RUBBER_BANDING)
+#if USE(RUBBER_BANDING)
 class GraphicsLayer;
 #endif
 
@@ -58,8 +58,6 @@ public:
     virtual bool supportsControlTints() const { return false; }
     virtual bool usesOverlayScrollbars() const { return false; }
     virtual void updateScrollbarOverlayStyle(ScrollbarThemeClient*) { }
-
-    virtual void themeChanged() { }
 
     virtual bool invalidateOnMouseEnterExit() { return false; }
 
@@ -86,7 +84,13 @@ public:
     virtual void paintScrollCorner(ScrollView*, GraphicsContext*, const IntRect& cornerRect);
 
     virtual void paintTickmarks(GraphicsContext*, ScrollbarThemeClient*, const IntRect&) { }
-    virtual void paintOverhangAreas(ScrollView*, GraphicsContext*, const IntRect&, const IntRect&, const IntRect&);
+    virtual void paintOverhangBackground(ScrollView*, GraphicsContext*, const IntRect&, const IntRect&, const IntRect&);
+    virtual void paintOverhangShadows(ScrollView*, GraphicsContext*, const IntRect&, const IntRect&, const IntRect&) { }
+
+#if USE(RUBBER_BANDING)
+    virtual void setUpOverhangShadowLayer(GraphicsLayer*) { }
+    virtual void updateOverhangShadowLayer(GraphicsLayer* shadowLayer, GraphicsLayer* rootContentLayer) { }
+#endif
 
     virtual bool shouldCenterOnThumb(ScrollbarThemeClient*, const PlatformMouseEvent&) { return false; }
     virtual bool shouldSnapBackToDragOrigin(ScrollbarThemeClient*, const PlatformMouseEvent&) { return false; }
@@ -108,6 +112,7 @@ public:
     virtual IntRect forwardButtonRect(ScrollbarThemeClient*, ScrollbarPart, bool painting = false) = 0;
     virtual IntRect trackRect(ScrollbarThemeClient*, bool painting = false) = 0;
     virtual IntRect thumbRect(ScrollbarThemeClient*);
+    virtual int thumbThickness(ScrollbarThemeClient*);
 
     virtual int minimumThumbLength(ScrollbarThemeClient*);
 

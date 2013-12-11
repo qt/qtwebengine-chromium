@@ -26,12 +26,12 @@
 #ifndef WTF_StringExtras_h
 #define WTF_StringExtras_h
 
-#if OS(UNIX)
+#if OS(POSIX)
 #define HAVE_STRINGS_H 1
 #endif
 
 #if !defined(HAVE_STRNSTR)
-#if OS(DARWIN) || (OS(FREEBSD) && !defined(__GLIBC__))
+#if OS(MACOSX) || (OS(FREEBSD) && !defined(__GLIBC__))
 #define HAVE_STRNSTR 1
 #endif
 #endif

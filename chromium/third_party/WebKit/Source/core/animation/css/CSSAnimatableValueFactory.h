@@ -42,6 +42,8 @@ class RenderStyle;
 class CSSAnimatableValueFactory {
 public:
     static PassRefPtr<AnimatableValue> create(CSSPropertyID, const RenderStyle*);
+private:
+    static PassRefPtr<AnimatableValue> createFromColor(CSSPropertyID, const RenderStyle*);
 };
 
 } // namespace WebCore

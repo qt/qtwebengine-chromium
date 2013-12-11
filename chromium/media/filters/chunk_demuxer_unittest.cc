@@ -157,7 +157,7 @@ class ChunkDemuxerTest : public testing::Test {
   void CreateNewDemuxer() {
     base::Closure open_cb =
         base::Bind(&ChunkDemuxerTest::DemuxerOpened, base::Unretained(this));
-    ChunkDemuxer::NeedKeyCB need_key_cb =
+    Demuxer::NeedKeyCB need_key_cb =
         base::Bind(&ChunkDemuxerTest::DemuxerNeedKey, base::Unretained(this));
     AddTextTrackCB add_text_track_cb =
         base::Bind(&ChunkDemuxerTest::OnTextTrack, base::Unretained(this));
@@ -856,8 +856,9 @@ class ChunkDemuxerTest : public testing::Test {
   MOCK_METHOD3(NeedKeyMock, void(const std::string& type,
                                  const uint8* init_data, int init_data_size));
   void DemuxerNeedKey(const std::string& type,
-                      scoped_ptr<uint8[]> init_data, int init_data_size) {
-    NeedKeyMock(type, init_data.get(), init_data_size);
+                      const std::vector<uint8>& init_data) {
+    const uint8* init_data_ptr = init_data.empty() ? NULL : &init_data[0];
+    NeedKeyMock(type, init_data_ptr, init_data.size());
   }
 
   scoped_ptr<TextTrack> OnTextTrack(TextKind kind,
@@ -2014,7 +2015,7 @@ TEST_F(ChunkDemuxerTest, ClusterWithNoBuffers) {
 TEST_F(ChunkDemuxerTest, CodecPrefixMatching) {
   ChunkDemuxer::Status expected = ChunkDemuxer::kNotSupported;
 
-#if defined(GOOGLE_CHROME_BUILD) || defined(USE_PROPRIETARY_CODECS)
+#if defined(USE_PROPRIETARY_CODECS)
   expected = ChunkDemuxer::kOk;
 #endif
 
@@ -2029,7 +2030,7 @@ TEST_F(ChunkDemuxerTest, CodecPrefixMatching) {
 TEST_F(ChunkDemuxerTest, CodecIDsThatAreNotRFC6381Compliant) {
   ChunkDemuxer::Status expected = ChunkDemuxer::kNotSupported;
 
-#if defined(GOOGLE_CHROME_BUILD) || defined(USE_PROPRIETARY_CODECS)
+#if defined(USE_PROPRIETARY_CODECS)
   expected = ChunkDemuxer::kOk;
 #endif
   const char* codec_ids[] = {

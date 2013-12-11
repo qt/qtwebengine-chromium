@@ -24,10 +24,14 @@ class InputRouter : public IPC::Listener {
  public:
   virtual ~InputRouter() {}
 
+  // Should be called only in response to |SetNeedsFlush| requests made via
+  // the |InputRouterClient|.
+  virtual void Flush() = 0;
+
   // Send and take ownership of the the given InputMsg_*. This should be used
   // only for event types not associated with a WebInputEvent.  Returns true on
   // success and false otherwise.
-  virtual bool SendInput(IPC::Message* message) = 0;
+  virtual bool SendInput(scoped_ptr<IPC::Message> message) = 0;
 
   // WebInputEvents
   virtual void SendMouseEvent(
@@ -60,9 +64,6 @@ class InputRouter : public IPC::Listener {
   // |gesture_event| to the router.
   virtual bool ShouldForwardGestureEvent(
       const GestureEventWithLatencyInfo& gesture_event) const = 0;
-
-  // Returns |true| if the router has any queued or in-flight gesture events.
-  virtual bool HasQueuedGestureEvents() const = 0;
 };
 
 }  // namespace content

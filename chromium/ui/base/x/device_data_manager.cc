@@ -10,12 +10,11 @@
 
 #include "base/logging.h"
 #include "base/memory/singleton.h"
-#include "base/message_loop/message_pump_aurax11.h"
-#include "ui/base/events/event_constants.h"
-#include "ui/base/events/event_utils.h"
 #include "ui/base/touch/touch_factory_x11.h"
 #include "ui/base/x/device_list_cache_x.h"
 #include "ui/base/x/x11_util.h"
+#include "ui/events/event_constants.h"
+#include "ui/events/event_utils.h"
 
 // XIScrollClass was introduced in XI 2.1 so we need to define it here
 // for backward-compatibility with older versions of XInput.
@@ -117,12 +116,12 @@ DeviceDataManager* DeviceDataManager::GetInstance() {
 
 DeviceDataManager::DeviceDataManager()
     : natural_scroll_enabled_(false),
-      atom_cache_(ui::GetXDisplay(), kCachedAtoms) {
+      atom_cache_(gfx::GetXDisplay(), kCachedAtoms) {
   InitializeXInputInternal();
 
   // Make sure the sizes of enum and kCachedAtoms are aligned.
   CHECK(arraysize(kCachedAtoms) == static_cast<size_t>(DT_LAST_ENTRY) + 1);
-  UpdateDeviceList(ui::GetXDisplay());
+  UpdateDeviceList(gfx::GetXDisplay());
 }
 
 DeviceDataManager::~DeviceDataManager() {
@@ -133,7 +132,7 @@ bool DeviceDataManager::InitializeXInputInternal() {
   xi_opcode_ = -1;
   int opcode, event, error;
   if (!XQueryExtension(
-      ui::GetXDisplay(), "XInputExtension", &opcode, &event, &error)) {
+      gfx::GetXDisplay(), "XInputExtension", &opcode, &event, &error)) {
     VLOG(1) << "X Input extension not available: error=" << error;
     return false;
   }
@@ -145,7 +144,7 @@ bool DeviceDataManager::InitializeXInputInternal() {
 #else
   int major = 2, minor = 0;
 #endif
-  if (XIQueryVersion(ui::GetXDisplay(), &major, &minor) == BadRequest) {
+  if (XIQueryVersion(gfx::GetXDisplay(), &major, &minor) == BadRequest) {
     VLOG(1) << "XInput2 not supported in the server.";
     return false;
   }

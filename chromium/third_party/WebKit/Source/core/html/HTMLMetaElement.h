@@ -29,15 +29,15 @@ namespace WebCore {
 
 class HTMLMetaElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLMetaElement> create(Document*);
-    static PassRefPtr<HTMLMetaElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<HTMLMetaElement> create(Document&);
+    static PassRefPtr<HTMLMetaElement> create(const QualifiedName&, Document&);
 
     String content() const;
     String httpEquiv() const;
     String name() const;
 
 private:
-    HTMLMetaElement(const QualifiedName&, Document*);
+    HTMLMetaElement(const QualifiedName&, Document&);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
@@ -45,6 +45,18 @@ private:
     void process();
 };
 
-} //namespace
+inline HTMLMetaElement* toHTMLMetaElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::metaTag));
+    return static_cast<HTMLMetaElement*>(node);
+}
+
+inline const HTMLMetaElement* toHTMLMetaElement(const Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::metaTag));
+    return static_cast<const HTMLMetaElement*>(node);
+}
+
+} // namespace WebCore
 
 #endif

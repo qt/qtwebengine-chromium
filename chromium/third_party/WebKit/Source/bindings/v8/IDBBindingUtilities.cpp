@@ -26,12 +26,14 @@
 #include "config.h"
 #include "bindings/v8/IDBBindingUtilities.h"
 
+#include "V8IDBKeyRange.h"
 #include "bindings/v8/DOMRequestState.h"
 #include "bindings/v8/SerializedScriptValue.h"
 #include "bindings/v8/V8Binding.h"
 #include "core/platform/SharedBuffer.h"
 #include "modules/indexeddb/IDBKey.h"
 #include "modules/indexeddb/IDBKeyPath.h"
+#include "modules/indexeddb/IDBKeyRange.h"
 #include "modules/indexeddb/IDBTracing.h"
 #include "wtf/MathExtras.h"
 #include "wtf/Vector.h"
@@ -52,7 +54,7 @@ static v8::Handle<v8::Value> idbKeyToV8Value(IDBKey* key, v8::Isolate* isolate)
         ASSERT_NOT_REACHED();
         return v8Undefined();
     case IDBKey::NumberType:
-        return v8::Number::New(key->number());
+        return v8::Number::New(isolate, key->number());
     case IDBKey::StringType:
         return v8String(key->string(), isolate);
     case IDBKey::DateType:
@@ -72,12 +74,12 @@ static v8::Handle<v8::Value> idbKeyToV8Value(IDBKey* key, v8::Isolate* isolate)
 
 static const size_t maximumDepth = 2000;
 
-static PassRefPtr<IDBKey> createIDBKeyFromValue(v8::Handle<v8::Value> value, Vector<v8::Handle<v8::Array> >& stack)
+static PassRefPtr<IDBKey> createIDBKeyFromValue(v8::Handle<v8::Value> value, Vector<v8::Handle<v8::Array> >& stack, v8::Isolate* isolate)
 {
     if (value->IsNumber() && !std::isnan(value->NumberValue()))
         return IDBKey::createNumber(value->NumberValue());
     if (value->IsString())
-        return IDBKey::createString(toWebCoreString(value));
+        return IDBKey::createString(toWebCoreString(value.As<v8::String>()));
     if (value->IsDate() && !std::isnan(value->NumberValue()))
         return IDBKey::createDate(value->NumberValue());
     if (value->IsArray()) {
@@ -92,8 +94,8 @@ static PassRefPtr<IDBKey> createIDBKeyFromValue(v8::Handle<v8::Value> value, Vec
         IDBKey::KeyArray subkeys;
         uint32_t length = array->Length();
         for (uint32_t i = 0; i < length; ++i) {
-            v8::Local<v8::Value> item = array->Get(v8::Int32::New(i));
-            RefPtr<IDBKey> subkey = createIDBKeyFromValue(item, stack);
+            v8::Local<v8::Value> item = array->Get(v8::Int32::New(i, isolate));
+            RefPtr<IDBKey> subkey = createIDBKeyFromValue(item, stack, isolate);
             if (!subkey)
                 subkeys.append(IDBKey::createInvalid());
             else
@@ -106,10 +108,10 @@ static PassRefPtr<IDBKey> createIDBKeyFromValue(v8::Handle<v8::Value> value, Vec
     return 0;
 }
 
-PassRefPtr<IDBKey> createIDBKeyFromValue(v8::Handle<v8::Value> value)
+static PassRefPtr<IDBKey> createIDBKeyFromValue(v8::Handle<v8::Value> value, v8::Isolate* isolate)
 {
     Vector<v8::Handle<v8::Array> > stack;
-    RefPtr<IDBKey> key = createIDBKeyFromValue(value, stack);
+    RefPtr<IDBKey> key = createIDBKeyFromValue(value, stack, isolate);
     if (key)
         return key;
     return IDBKey::createInvalid();
@@ -136,7 +138,7 @@ static bool get(v8::Handle<v8::Value>& object, const String& keyPathElement, v8:
 {
     if (object->IsString() && keyPathElement == "length") {
         int32_t length = v8::Handle<v8::String>::Cast(object)->Length();
-        result = v8::Number::New(length);
+        result = v8::Number::New(isolate, length);
         return true;
     }
     return object->IsObject() && getValueFrom(v8String(keyPathElement, isolate), result);
@@ -215,7 +217,7 @@ static PassRefPtr<IDBKey> createIDBKeyFromScriptValueAndKeyPath(const ScriptValu
     v8::Handle<v8::Value> v8Key(getNthValueOnKeyPath(v8Value, keyPathElements, keyPathElements.size(), isolate));
     if (v8Key.IsEmpty())
         return 0;
-    return createIDBKeyFromValue(v8Key);
+    return createIDBKeyFromValue(v8Key, isolate);
 }
 
 PassRefPtr<IDBKey> createIDBKeyFromScriptValueAndKeyPath(DOMRequestState* state, const ScriptValue& value, const IDBKeyPath& keyPath)
@@ -250,8 +252,8 @@ ScriptValue deserializeIDBValue(DOMRequestState* state, PassRefPtr<SerializedScr
     v8::HandleScope handleScope(isolate);
     RefPtr<SerializedScriptValue> serializedValue = prpValue;
     if (serializedValue)
-        return ScriptValue(serializedValue->deserialize());
-    return ScriptValue(v8::Null());
+        return ScriptValue(serializedValue->deserialize(), isolate);
+    return ScriptValue(v8::Null(isolate), isolate);
 }
 
 ScriptValue deserializeIDBValueBuffer(DOMRequestState* state, PassRefPtr<SharedBuffer> prpBuffer)
@@ -265,9 +267,9 @@ ScriptValue deserializeIDBValueBuffer(DOMRequestState* state, PassRefPtr<SharedB
         Vector<uint8_t> value;
         value.append(buffer->data(), buffer->size());
         RefPtr<SerializedScriptValue> serializedValue = SerializedScriptValue::createFromWireBytes(value);
-        return ScriptValue(serializedValue->deserialize());
+        return ScriptValue(serializedValue->deserialize(), isolate);
     }
-    return ScriptValue(v8::Null());
+    return ScriptValue(v8::Null(isolate), isolate);
 }
 
 bool injectIDBKeyIntoScriptValue(DOMRequestState* state, PassRefPtr<IDBKey> key, ScriptValue& value, const IDBKeyPath& keyPath)
@@ -319,7 +321,7 @@ ScriptValue idbKeyToScriptValue(DOMRequestState* state, PassRefPtr<IDBKey> key)
     v8::Isolate* isolate = state ? state->context()->GetIsolate() : v8::Isolate::GetCurrent();
     v8::HandleScope handleScope(isolate);
     v8::Handle<v8::Value> v8Value(idbKeyToV8Value(key.get(), state->context()->GetIsolate()));
-    return ScriptValue(v8Value);
+    return ScriptValue(v8Value, isolate);
 }
 
 PassRefPtr<IDBKey> scriptValueToIDBKey(DOMRequestState* state, const ScriptValue& scriptValue)
@@ -328,7 +330,17 @@ PassRefPtr<IDBKey> scriptValueToIDBKey(DOMRequestState* state, const ScriptValue
     v8::Isolate* isolate = state ? state->context()->GetIsolate() : v8::Isolate::GetCurrent();
     v8::HandleScope handleScope(isolate);
     v8::Handle<v8::Value> v8Value(scriptValue.v8Value());
-    return createIDBKeyFromValue(v8Value);
+    return createIDBKeyFromValue(v8Value, isolate);
+}
+
+PassRefPtr<IDBKeyRange> scriptValueToIDBKeyRange(DOMRequestState* state, const ScriptValue& scriptValue)
+{
+    v8::Isolate* isolate = state ? state->context()->GetIsolate() : v8::Isolate::GetCurrent();
+    v8::HandleScope handleScope(isolate);
+    v8::Handle<v8::Value> value(scriptValue.v8Value());
+    if (V8IDBKeyRange::HasInstance(value, isolate, worldType(isolate)))
+        return V8IDBKeyRange::toNative(value.As<v8::Object>());
+    return 0;
 }
 
 } // namespace WebCore

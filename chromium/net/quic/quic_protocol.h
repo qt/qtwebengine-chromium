@@ -27,6 +27,7 @@ namespace net {
 
 using ::operator<<;
 
+class QuicAckNotifier;
 class QuicPacket;
 struct QuicPacketHeader;
 
@@ -41,6 +42,7 @@ typedef uint32 QuicHeaderId;
 // QuicTag is the type of a tag in the wire protocol.
 typedef uint32 QuicTag;
 typedef std::vector<QuicTag> QuicTagVector;
+typedef uint32 QuicPriority;
 
 // TODO(rch): Consider Quic specific names for these constants.
 // Maximum size in bytes of a QUIC packet.
@@ -98,12 +100,12 @@ enum IsHandshake {
 
 enum QuicFrameType {
   PADDING_FRAME = 0,
-  STREAM_FRAME,
-  ACK_FRAME,
-  CONGESTION_FEEDBACK_FRAME,
   RST_STREAM_FRAME,
   CONNECTION_CLOSE_FRAME,
   GOAWAY_FRAME,
+  STREAM_FRAME,
+  ACK_FRAME,
+  CONGESTION_FEEDBACK_FRAME,
   NUM_FRAME_TYPES
 };
 
@@ -187,8 +189,9 @@ enum QuicVersion {
   // Special case to indicate unknown/unsupported QUIC version.
   QUIC_VERSION_UNSUPPORTED = 0,
 
-  QUIC_VERSION_7 = 7,
-  QUIC_VERSION_8 = 8,  // Current version.
+  QUIC_VERSION_8 = 8,
+  QUIC_VERSION_9 = 9,
+  QUIC_VERSION_10 = 10,  // Current version.
 };
 
 // This vector contains QUIC versions which we currently support.
@@ -196,7 +199,7 @@ enum QuicVersion {
 // element, with subsequent elements in descending order (versions can be
 // skipped as necessary).
 static const QuicVersion kSupportedQuicVersions[] =
-    {QUIC_VERSION_8, QUIC_VERSION_7};
+    {QUIC_VERSION_10, QUIC_VERSION_9};
 
 typedef std::vector<QuicVersion> QuicVersionVector;
 
@@ -215,6 +218,10 @@ NET_EXPORT_PRIVATE QuicTag QuicVersionToQuicTag(const QuicVersion version);
 // Returns appropriate QuicVersion from a QuicTag.
 // Returns QUIC_VERSION_UNSUPPORTED if version_tag cannot be understood.
 NET_EXPORT_PRIVATE QuicVersion QuicTagToQuicVersion(const QuicTag version_tag);
+
+// Returns the appropriate QuicTag for a properly formed version string
+// (e.g. Q008).
+NET_EXPORT_PRIVATE QuicTag StringToQuicTag(std::string version);
 
 // Helper function which translates from a QuicVersion to a string.
 // Returns strings corresponding to enum names (e.g. QUIC_VERSION_6).
@@ -262,8 +269,8 @@ NET_EXPORT_PRIVATE size_t GetStartOfEncryptedData(
 enum QuicRstStreamErrorCode {
   QUIC_STREAM_NO_ERROR = 0,
 
-  // There was some server error which halted stream processing.
-  QUIC_SERVER_ERROR_PROCESSING_STREAM,
+  // There was some error which halted stream processing.
+  QUIC_ERROR_PROCESSING_STREAM,
   // We got two fin or reset offsets which did not match.
   QUIC_MULTIPLE_TERMINATION_OFFSETS,
   // We got bad payload and can not respond to it at the protocol level.
@@ -273,123 +280,138 @@ enum QuicRstStreamErrorCode {
   QUIC_STREAM_CONNECTION_ERROR,
   // GoAway frame sent. No more stream can be created.
   QUIC_STREAM_PEER_GOING_AWAY,
+  // The stream has been cancelled.
+  QUIC_STREAM_CANCELLED,
 
   // No error. Used as bound while iterating.
   QUIC_STREAM_LAST_ERROR,
 };
 
+// These values must remain stable as they are uploaded to UMA histograms.
+// To add a new error code, use the current value of QUIC_LAST_ERROR and
+// increment QUIC_LAST_ERROR.
 enum QuicErrorCode {
   QUIC_NO_ERROR = 0,
 
   // Connection has reached an invalid state.
-  QUIC_INTERNAL_ERROR,
+  QUIC_INTERNAL_ERROR = 1,
   // There were data frames after the a fin or reset.
-  QUIC_STREAM_DATA_AFTER_TERMINATION,
+  QUIC_STREAM_DATA_AFTER_TERMINATION = 2,
   // Control frame is malformed.
-  QUIC_INVALID_PACKET_HEADER,
+  QUIC_INVALID_PACKET_HEADER = 3,
   // Frame data is malformed.
-  QUIC_INVALID_FRAME_DATA,
+  QUIC_INVALID_FRAME_DATA = 4,
+  // The packet contained no payload.
+  QUIC_MISSING_PAYLOAD = 48,
   // FEC data is malformed.
-  QUIC_INVALID_FEC_DATA,
-  // Stream rst data is malformed
-  QUIC_INVALID_RST_STREAM_DATA,
-  // Connection close data is malformed.
-  QUIC_INVALID_CONNECTION_CLOSE_DATA,
-  // GoAway data is malformed.
-  QUIC_INVALID_GOAWAY_DATA,
-  // Ack data is malformed.
-  QUIC_INVALID_ACK_DATA,
+  QUIC_INVALID_FEC_DATA = 5,
+  // STREAM frame data is malformed.
+  QUIC_INVALID_STREAM_DATA = 46,
+  // RST_STREAM frame data is malformed.
+  QUIC_INVALID_RST_STREAM_DATA = 6,
+  // CONNECTION_CLOSE frame data is malformed.
+  QUIC_INVALID_CONNECTION_CLOSE_DATA = 7,
+  // GOAWAY frame data is malformed.
+  QUIC_INVALID_GOAWAY_DATA = 8,
+  // ACK frame data is malformed.
+  QUIC_INVALID_ACK_DATA = 9,
+  // CONGESTION_FEEDBACK frame data is malformed.
+  QUIC_INVALID_CONGESTION_FEEDBACK_DATA = 47,
   // Version negotiation packet is malformed.
-  QUIC_INVALID_VERSION_NEGOTIATION_PACKET,
+  QUIC_INVALID_VERSION_NEGOTIATION_PACKET = 10,
   // Public RST packet is malformed.
-  QUIC_INVALID_PUBLIC_RST_PACKET,
+  QUIC_INVALID_PUBLIC_RST_PACKET = 11,
   // There was an error decrypting.
-  QUIC_DECRYPTION_FAILURE,
+  QUIC_DECRYPTION_FAILURE = 12,
   // There was an error encrypting.
-  QUIC_ENCRYPTION_FAILURE,
+  QUIC_ENCRYPTION_FAILURE = 13,
   // The packet exceeded kMaxPacketSize.
-  QUIC_PACKET_TOO_LARGE,
+  QUIC_PACKET_TOO_LARGE = 14,
   // Data was sent for a stream which did not exist.
-  QUIC_PACKET_FOR_NONEXISTENT_STREAM,
+  QUIC_PACKET_FOR_NONEXISTENT_STREAM = 15,
   // The peer is going away.  May be a client or server.
-  QUIC_PEER_GOING_AWAY,
+  QUIC_PEER_GOING_AWAY = 16,
   // A stream ID was invalid.
-  QUIC_INVALID_STREAM_ID,
+  QUIC_INVALID_STREAM_ID = 17,
+  // A priority was invalid.
+  QUIC_INVALID_PRIORITY = 49,
   // Too many streams already open.
-  QUIC_TOO_MANY_OPEN_STREAMS,
+  QUIC_TOO_MANY_OPEN_STREAMS = 18,
   // Received public reset for this connection.
-  QUIC_PUBLIC_RESET,
+  QUIC_PUBLIC_RESET = 19,
   // Invalid protocol version.
-  QUIC_INVALID_VERSION,
+  QUIC_INVALID_VERSION = 20,
   // Stream reset before headers decompressed.
-  QUIC_STREAM_RST_BEFORE_HEADERS_DECOMPRESSED,
+  QUIC_STREAM_RST_BEFORE_HEADERS_DECOMPRESSED = 21,
   // The Header ID for a stream was too far from the previous.
-  QUIC_INVALID_HEADER_ID,
+  QUIC_INVALID_HEADER_ID = 22,
   // Negotiable parameter received during handshake had invalid value.
-  QUIC_INVALID_NEGOTIATED_VALUE,
+  QUIC_INVALID_NEGOTIATED_VALUE = 23,
   // There was an error decompressing data.
-  QUIC_DECOMPRESSION_FAILURE,
+  QUIC_DECOMPRESSION_FAILURE = 24,
   // We hit our prenegotiated (or default) timeout
-  QUIC_CONNECTION_TIMED_OUT,
+  QUIC_CONNECTION_TIMED_OUT = 25,
   // There was an error encountered migrating addresses
-  QUIC_ERROR_MIGRATING_ADDRESS,
-  // There was an error while writing the packet.
-  QUIC_PACKET_WRITE_ERROR,
+  QUIC_ERROR_MIGRATING_ADDRESS = 26,
+  // There was an error while writing to the socket.
+  QUIC_PACKET_WRITE_ERROR = 27,
+  // There was an error while reading from the socket.
+  QUIC_PACKET_READ_ERROR = 51,
+  // We received a STREAM_FRAME with no data and no fin flag set.
+  QUIC_INVALID_STREAM_FRAME = 50,
 
 
   // Crypto errors.
 
   // Hanshake failed.
-  QUIC_HANDSHAKE_FAILED,
+  QUIC_HANDSHAKE_FAILED = 28,
   // Handshake message contained out of order tags.
-  QUIC_CRYPTO_TAGS_OUT_OF_ORDER,
+  QUIC_CRYPTO_TAGS_OUT_OF_ORDER = 29,
   // Handshake message contained too many entries.
-  QUIC_CRYPTO_TOO_MANY_ENTRIES,
+  QUIC_CRYPTO_TOO_MANY_ENTRIES = 30,
   // Handshake message contained an invalid value length.
-  QUIC_CRYPTO_INVALID_VALUE_LENGTH,
+  QUIC_CRYPTO_INVALID_VALUE_LENGTH = 31,
   // A crypto message was received after the handshake was complete.
-  QUIC_CRYPTO_MESSAGE_AFTER_HANDSHAKE_COMPLETE,
+  QUIC_CRYPTO_MESSAGE_AFTER_HANDSHAKE_COMPLETE = 32,
   // A crypto message was received with an illegal message tag.
-  QUIC_INVALID_CRYPTO_MESSAGE_TYPE,
+  QUIC_INVALID_CRYPTO_MESSAGE_TYPE = 33,
   // A crypto message was received with an illegal parameter.
-  QUIC_INVALID_CRYPTO_MESSAGE_PARAMETER,
+  QUIC_INVALID_CRYPTO_MESSAGE_PARAMETER = 34,
   // A crypto message was received with a mandatory parameter missing.
-  QUIC_CRYPTO_MESSAGE_PARAMETER_NOT_FOUND,
+  QUIC_CRYPTO_MESSAGE_PARAMETER_NOT_FOUND = 35,
   // A crypto message was received with a parameter that has no overlap
   // with the local parameter.
-  QUIC_CRYPTO_MESSAGE_PARAMETER_NO_OVERLAP,
+  QUIC_CRYPTO_MESSAGE_PARAMETER_NO_OVERLAP = 36,
   // A crypto message was received that contained a parameter with too few
   // values.
-  QUIC_CRYPTO_MESSAGE_INDEX_NOT_FOUND,
+  QUIC_CRYPTO_MESSAGE_INDEX_NOT_FOUND = 37,
   // An internal error occured in crypto processing.
-  QUIC_CRYPTO_INTERNAL_ERROR,
+  QUIC_CRYPTO_INTERNAL_ERROR = 38,
   // A crypto handshake message specified an unsupported version.
-  QUIC_CRYPTO_VERSION_NOT_SUPPORTED,
+  QUIC_CRYPTO_VERSION_NOT_SUPPORTED = 39,
   // There was no intersection between the crypto primitives supported by the
   // peer and ourselves.
-  QUIC_CRYPTO_NO_SUPPORT,
+  QUIC_CRYPTO_NO_SUPPORT = 40,
   // The server rejected our client hello messages too many times.
-  QUIC_CRYPTO_TOO_MANY_REJECTS,
+  QUIC_CRYPTO_TOO_MANY_REJECTS = 41,
   // The client rejected the server's certificate chain or signature.
-  QUIC_PROOF_INVALID,
+  QUIC_PROOF_INVALID = 42,
   // A crypto message was received with a duplicate tag.
-  QUIC_CRYPTO_DUPLICATE_TAG,
+  QUIC_CRYPTO_DUPLICATE_TAG = 43,
   // A crypto message was received with the wrong encryption level (i.e. it
   // should have been encrypted but was not.)
-  QUIC_CRYPTO_ENCRYPTION_LEVEL_INCORRECT,
+  QUIC_CRYPTO_ENCRYPTION_LEVEL_INCORRECT = 44,
   // The server config for a server has expired.
-  QUIC_CRYPTO_SERVER_CONFIG_EXPIRED,
+  QUIC_CRYPTO_SERVER_CONFIG_EXPIRED = 45,
 
   // No error. Used as bound while iterating.
-  QUIC_LAST_ERROR,
+  QUIC_LAST_ERROR = 52,
 };
 
 struct NET_EXPORT_PRIVATE QuicPacketPublicHeader {
   QuicPacketPublicHeader();
   explicit QuicPacketPublicHeader(const QuicPacketPublicHeader& other);
   ~QuicPacketPublicHeader();
-
-  QuicPacketPublicHeader& operator=(const QuicPacketPublicHeader& other);
 
   // Universal header. All QuicPacket headers will have a guid and public flags.
   QuicGuid guid;
@@ -457,6 +479,10 @@ struct NET_EXPORT_PRIVATE QuicStreamFrame {
   bool fin;
   QuicStreamOffset offset;  // Location of this data in the stream.
   base::StringPiece data;
+
+  // If this is set, then when this packet is ACKed the AckNotifier will be
+  // informed.
+  QuicAckNotifier* notifier;
 };
 
 // TODO(ianswett): Re-evaluate the trade-offs of hash_set vs set when framing
@@ -675,10 +701,6 @@ struct NET_EXPORT_PRIVATE QuicFecData {
   base::StringPiece redundancy;
 };
 
-struct NET_EXPORT_PRIVATE QuicPacketData {
-  std::string data;
-};
-
 class NET_EXPORT_PRIVATE QuicData {
  public:
   QuicData(const char* buffer, size_t length)
@@ -738,8 +760,6 @@ class NET_EXPORT_PRIVATE QuicPacket : public QuicData {
   base::StringPiece Plaintext() const;
 
   bool is_fec_packet() const { return is_fec_packet_; }
-
-  bool includes_version() const { return includes_version_; }
 
   char* mutable_data() { return buffer_; }
 
@@ -815,28 +835,27 @@ class NET_EXPORT_PRIVATE RetransmittableFrames {
 
 struct NET_EXPORT_PRIVATE SerializedPacket {
   SerializedPacket(QuicPacketSequenceNumber sequence_number,
+                   QuicSequenceNumberLength sequence_number_length,
                    QuicPacket* packet,
                    QuicPacketEntropyHash entropy_hash,
-                   RetransmittableFrames* retransmittable_frames)
-      : sequence_number(sequence_number),
-        packet(packet),
-        entropy_hash(entropy_hash),
-        retransmittable_frames(retransmittable_frames) {}
+                   RetransmittableFrames* retransmittable_frames);
+  ~SerializedPacket();
 
   QuicPacketSequenceNumber sequence_number;
+  QuicSequenceNumberLength sequence_number_length;
   QuicPacket* packet;
   QuicPacketEntropyHash entropy_hash;
   RetransmittableFrames* retransmittable_frames;
+
+  // If set, these will be called when this packet is ACKed by the peer.
+  std::set<QuicAckNotifier*> notifiers;
 };
 
 // A struct for functions which consume data payloads and fins.
-// The first member of the pair indicates bytes consumed.
-// The second member of the pair indicates if an incoming fin was consumed.
 struct QuicConsumedData {
   QuicConsumedData(size_t bytes_consumed, bool fin_consumed)
       : bytes_consumed(bytes_consumed),
         fin_consumed(fin_consumed) {}
-
   // By default, gtest prints the raw bytes of an object. The bool data
   // member causes this object to have padding bytes, which causes the
   // default gtest object printer to read uninitialize memory. So we need
@@ -844,7 +863,10 @@ struct QuicConsumedData {
   NET_EXPORT_PRIVATE friend std::ostream& operator<<(
       std::ostream& os, const QuicConsumedData& s);
 
+  // How many bytes were consumed.
   size_t bytes_consumed;
+
+  // True if an incoming fin was consumed.
   bool fin_consumed;
 };
 

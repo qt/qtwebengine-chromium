@@ -27,7 +27,6 @@
 #include "core/editing/InsertIntoTextNodeCommand.h"
 
 #include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "core/accessibility/AXObjectCache.h"
 #include "core/dom/Document.h"
 #include "core/dom/Text.h"
 #include "core/page/Settings.h"
@@ -48,9 +47,9 @@ InsertIntoTextNodeCommand::InsertIntoTextNodeCommand(PassRefPtr<Text> node, unsi
 
 void InsertIntoTextNodeCommand::doApply()
 {
-    bool passwordEchoEnabled = document()->settings() && document()->settings()->passwordEchoEnabled();
+    bool passwordEchoEnabled = document().settings() && document().settings()->passwordEchoEnabled();
     if (passwordEchoEnabled)
-        document()->updateLayoutIgnorePendingStylesheets();
+        document().updateLayoutIgnorePendingStylesheets();
 
     if (!m_node->rendererIsEditable())
         return;
@@ -61,10 +60,7 @@ void InsertIntoTextNodeCommand::doApply()
             renderText->momentarilyRevealLastTypedCharacter(m_offset + m_text.length() - 1);
     }
 
-    m_node->insertData(m_offset, m_text, IGNORE_EXCEPTION);
-
-    if (AXObjectCache* cache = document()->existingAXObjectCache())
-        cache->nodeTextChangeNotification(m_node.get(), AXObjectCache::AXTextInserted, m_offset, m_text);
+    m_node->insertData(m_offset, m_text, IGNORE_EXCEPTION, CharacterData::DeprecatedRecalcStyleImmediatlelyForEditing);
 }
 
 void InsertIntoTextNodeCommand::doUnapply()
@@ -72,18 +68,7 @@ void InsertIntoTextNodeCommand::doUnapply()
     if (!m_node->rendererIsEditable())
         return;
 
-    // Need to notify this before actually deleting the text
-    if (AXObjectCache* cache = document()->existingAXObjectCache())
-        cache->nodeTextChangeNotification(m_node.get(), AXObjectCache::AXTextDeleted, m_offset, m_text);
-
-    m_node->deleteData(m_offset, m_text.length(), IGNORE_EXCEPTION);
+    m_node->deleteData(m_offset, m_text.length(), IGNORE_EXCEPTION, CharacterData::DeprecatedRecalcStyleImmediatlelyForEditing);
 }
-
-#ifndef NDEBUG
-void InsertIntoTextNodeCommand::getNodesInCommand(HashSet<Node*>& nodes)
-{
-    addNodeAndDescendants(m_node.get(), nodes);
-}
-#endif
 
 } // namespace WebCore

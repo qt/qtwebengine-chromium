@@ -29,8 +29,6 @@ class ScreenPositionClient;
 }
 
 namespace views {
-class DesktopActivationClient;
-class DesktopCaptureClient;
 class DesktopDragDropClientAuraX11;
 class DesktopDispatcherClient;
 class DesktopRootWindowHostObserverX11;
@@ -121,9 +119,9 @@ class VIEWS_EXPORT DesktopRootWindowHostX11 :
                               const gfx::ImageSkia& app_icon) OVERRIDE;
   virtual void InitModalType(ui::ModalType modal_type) OVERRIDE;
   virtual void FlashFrame(bool flash_frame) OVERRIDE;
+  virtual void OnRootViewLayout() const OVERRIDE;
   virtual void OnNativeWidgetFocus() OVERRIDE;
   virtual void OnNativeWidgetBlur() OVERRIDE;
-  virtual void SetInactiveRenderingDisabled(bool disable_inactive) OVERRIDE;
 
   // Overridden from aura::RootWindowHost:
   virtual void SetDelegate(aura::RootWindowHostDelegate* delegate) OVERRIDE;
@@ -146,9 +144,6 @@ class VIEWS_EXPORT DesktopRootWindowHostX11 :
   virtual void OnCursorVisibilityChanged(bool show) OVERRIDE;
   virtual void MoveCursorTo(const gfx::Point& location) OVERRIDE;
   virtual void SetFocusWhenShown(bool focus_when_shown) OVERRIDE;
-  virtual bool CopyAreaToSkCanvas(const gfx::Rect& source_bounds,
-                                  const gfx::Point& dest_offset,
-                                  SkCanvas* canvas) OVERRIDE;
   virtual void PostNativeEvent(const base::NativeEvent& native_event) OVERRIDE;
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
   virtual void PrepareForShutdown() OVERRIDE;
@@ -193,7 +188,7 @@ private:
 
   // X11 things
   // The display and the native X window hosting the root window.
-  Display* xdisplay_;
+  XDisplay* xdisplay_;
   ::Window xwindow_;
 
   // The native root window.
@@ -224,13 +219,15 @@ private:
   // The window manager state bits.
   std::set< ::Atom> window_properties_;
 
+  // Local flag for fullscreen state to avoid a state mismatch between
+  // server and local window_properties_ during app-initiated fullscreen.
+  bool is_fullscreen_;
+
   // We are owned by the RootWindow, but we have to have a back pointer to it.
   aura::RootWindow* root_window_;
 
   // aura:: objects that we own.
-  scoped_ptr<DesktopCaptureClient> capture_client_;
   scoped_ptr<aura::client::FocusClient> focus_client_;
-  scoped_ptr<DesktopActivationClient> activation_client_;
   scoped_ptr<views::corewm::CursorManager> cursor_client_;
   scoped_ptr<DesktopDispatcherClient> dispatcher_client_;
   scoped_ptr<aura::client::ScreenPositionClient> position_client_;

@@ -32,6 +32,7 @@
 
 #include "talk/base/base64.h"
 #include "talk/base/common.h"
+#include "talk/base/dscp.h"
 #include "talk/base/gunit.h"
 #include "talk/base/helpers.h"
 #include "talk/base/logging.h"
@@ -713,7 +714,7 @@ cricket::SessionDescription* NewTestSessionDescription(
                     new TestContentDescription(gingle_content_type,
                                                content_type_a));
   cricket::TransportDescription desc(cricket::NS_GINGLE_P2P,
-                                     cricket::Candidates());
+                                     std::string(), std::string());
   offer->AddTransportInfo(cricket::TransportInfo(content_name_a, desc));
 
   if (content_name_a != content_name_b) {
@@ -735,7 +736,7 @@ cricket::SessionDescription* NewTestSessionDescription(
   offer->AddTransportInfo(cricket::TransportInfo
                           (content_name, cricket::TransportDescription(
                           cricket::NS_GINGLE_P2P,
-                          cricket::Candidates())));
+                          std::string(), std::string())));
   return offer;
 }
 
@@ -830,7 +831,7 @@ struct ChannelHandler : sigslot::has_slots<> {
     std::string data_with_id(name);
     data_with_id += data;
     int result = channel->SendPacket(data_with_id.c_str(), data_with_id.size(),
-                                     0);
+                                     talk_base::DSCP_NO_CHANGE, 0);
     EXPECT_EQ(static_cast<int>(data_with_id.size()), result);
   }
 

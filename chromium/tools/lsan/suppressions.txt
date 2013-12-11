@@ -4,38 +4,36 @@ leak:base::ToolsSanityTest_MemoryLeak_Test::TestBody
 # False positives in libfontconfig. http://crbug.com/39050
 leak:libfontconfig
 
-# Intentionally leaked "static" strings in Blink. http://crbug.com/268258
-leak:WTF::StringImpl::createStatic
-
 # V8 leak, expect 1024 bytes leaked per process. http://crbug.com/99304
 leak:v8::internal::V8::Initialize
-
-# V8 GC issue which comes up in lots of tests. http://crbug.com/169678
-leak:v8::internal::SlotsBufferAllocator::AllocateBuffer
 
 # V8 GC issues in ProxyResolver tests, probably harmless. http://crbug.com/67378
 leak:net::ProxyResolverV8::SetPacScript
 leak:net::(anonymous namespace)::ProxyResolverV8WithMockBindings::SetPacScriptFromDisk
 leak:net::(anonymous namespace)::InitResolver
+leak:net::ProxyResolverScriptData::FromUTF8
+
+# http://crbug.com/270180
+leak:net::ProxyResolverV8::Context::ResolveProxy
 
 # NSS leaks in CertDatabaseNSSTest tests. http://crbug.com/51988
 leak:net::NSSCertDatabase::ImportFromPKCS12
 leak:net::NSSCertDatabase::ListCerts
 leak:net::NSSCertDatabase::DeleteCertAndKey
 leak:crypto::ScopedTestNSSDB::ScopedTestNSSDB
-# The suppressions above will not fire when the fast stack unwinder is used,
+# Another leak due to not shutting down NSS properly. http://crbug.com/124445
+leak:error_get_my_stack
+
+# The NSS suppressions above will not fire when the fast stack unwinder is used,
 # because it can't unwind through NSS libraries. Apply blanket supressions for now.
 leak:libnssutil3
 leak:libnspr4
 leak:libnss3
 leak:libplds4
+leak:libnssckbi
 
 # Skia leaks. http://crbug.com/189170
 leak:FontConfigTypeface::LegacyCreateTypeface
-
-# Angle leaks. http://crbug.com/181691
-leak:InitializeGlobalParseContext
-leak:InitializeGlobalPools
 
 # Skia leaks GrGpuGL::ProgramCache::Entry. http://crbug.com/262934
 leak:GrGpuGL::flushGraphicsState
@@ -45,3 +43,18 @@ leak:ppapi::proxy::PPP_Instance_Private_ProxyTest_PPPInstancePrivate_Test
 
 # Leak in base_unittests. http://crbug.com/268267
 leak:base::WeakPtrTest_MoveOwnershipAfterInvalidate_Test::TestBody
+
+# Leak in cc_unittests. http://crbug.com/285174
+leak:gpu::gles2::GLES2DecoderImpl::DoBindRenderbuffer
+leak:gpu::gles2::GLES2DecoderImpl::DoRenderbufferStorage
+
+# Leak in unit_tests. http://crbug.com/282646
+leak:DeclarativeContentActionTest_ShowPageAction_Test::TestBody
+leak:DeclarativeContentRulesRegistryTest_ActiveRulesDoesntGrow_Test::TestBody
+
+# GTK leaks. GTK is deprecated, so we won't be fixing these.
+# Most of them should apply to the full browser process only.
+leak:StatusIconGtk::UpdatePlatformContextMenu
+leak:GlobalMenuBar::GlobalMenuBar
+leak:BookmarkBubbleGtk::InitFolderComboModel
+leak:TranslateInfoBarBase::CreateLanguageCombobox

@@ -42,7 +42,13 @@ need to be translated for each locale.-->
       <output filename="ui_strings_eo.pak" type="data_package" lang="eo" />
     </if>
     <output filename="ui_strings_es.pak" type="data_package" lang="es" />
-    <output filename="ui_strings_es-419.pak" type="data_package" lang="es-419" />
+    <if expr="is_ios">
+      <!-- iOS uses es-MX for es-419 -->
+      <output filename="ui_strings_es-MX.pak" type="data_package" lang="es-419" />
+    </if>
+    <if expr="not is_ios">
+      <output filename="ui_strings_es-419.pak" type="data_package" lang="es-419" />
+    </if>
     <output filename="ui_strings_et.pak" type="data_package" lang="et" />
     <if expr="pp_ifdef('use_third_party_translations')">
       <output filename="ui_strings_eu.pak" type="data_package" lang="eu" />
@@ -86,11 +92,11 @@ need to be translated for each locale.-->
          be 'nb'. -->
     <output filename="ui_strings_nb.pak" type="data_package" lang="no" />
     <output filename="ui_strings_pl.pak" type="data_package" lang="pl" />
-    <if expr="pp_ifdef('ios')">
+    <if expr="is_ios">
       <!-- iOS uses pt for pt-BR -->
       <output filename="ui_strings_pt.pak" type="data_package" lang="pt-BR" />
     </if>
-    <if expr="not pp_ifdef('ios')">
+    <if expr="not is_ios">
       <output filename="ui_strings_pt-BR.pak" type="data_package" lang="pt-BR" />
     </if>
     <output filename="ui_strings_pt-PT.pak" type="data_package" lang="pt-PT" />
@@ -1458,6 +1464,18 @@ need to be translated for each locale.-->
       <message name="IDS_APP_PERIOD_KEY" desc="Period key">
         Period
       </message>
+      <message name="IDS_APP_MEDIA_NEXT_TRACK_KEY" desc="Media next track key">
+        Media Next Track
+      </message>
+      <message name="IDS_APP_MEDIA_PLAY_PAUSE_KEY" desc="Media play pause key">
+        Media Play/Pause
+      </message>
+      <message name="IDS_APP_MEDIA_PREV_TRACK_KEY" desc="Media previous track key">
+        Media Previous Track
+      </message>
+      <message name="IDS_APP_MEDIA_STOP_KEY" desc="Media stop key">
+        Media Stop
+      </message>
 
       <!-- Shortcut Modifiers -->
       <message name="IDS_APP_CONTROL_MODIFIER" desc="Control key shortcut modifier">
@@ -1515,11 +1533,8 @@ need to be translated for each locale.-->
       <message name="IDS_MESSAGE_CENTER_ACCESSIBLE_NAME" desc="The accessible name for the Notification Center window.">
         Notification Center
       </message>
-      <message name="IDS_MESSAGE_CENTER_EXTENSIONS_DISABLE" desc="The menu entry for disabling extensions from a notification.">
-        Disable notifications from <ph name="extension_name">$1<ex>Notification Galore!</ex></ph>
-      </message>
-      <message name="IDS_MESSAGE_CENTER_SITE_DISABLE" desc="The menu entry for disabling notification from a site.">
-        Disable notifications from <ph name="site">$1<ex>mail.google.com</ex></ph>
+      <message name="IDS_MESSAGE_CENTER_NOTIFIER_DISABLE" desc="The menu entry for disabling a notifier from a notification.">
+        Disable notifications from <ph name="notifier_name">$1<ex>Notification Galore!</ex></ph>
       </message>
       <message name="IDS_MESSAGE_CENTER_FOOTER_TITLE" desc="The label in the footer of the message center">
 	Notifications

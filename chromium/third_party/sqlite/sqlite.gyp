@@ -127,6 +127,13 @@
                 ],
               },
             }],
+            ['OS == "mac" or OS == "ios"', {
+              'link_settings': {
+                'libraries': [
+                  '$(SDKROOT)/System/Library/Frameworks/CoreFoundation.framework',
+                ],
+              },
+            }],
             ['OS == "android"', {
               'defines': [
                 'HAVE_USLEEP=1',
@@ -178,10 +185,9 @@
           'sources': [
             'src/src/shell.c',
             'src/src/shell_icu_linux.c',
+            # Include a dummy c++ file to force linking of libstdc++.
+            'build_as_cpp.cc',
           ],
-          'link_settings': {
-            'link_languages': ['c++'],
-          },
         },
       ],
     },],

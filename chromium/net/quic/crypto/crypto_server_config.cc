@@ -11,6 +11,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "crypto/hkdf.h"
 #include "crypto/secure_hash.h"
+#include "net/base/net_util.h"
 #include "net/quic/crypto/aes_128_gcm_12_decrypter.h"
 #include "net/quic/crypto/aes_128_gcm_12_encrypter.h"
 #include "net/quic/crypto/cert_compressor.h"
@@ -56,6 +57,7 @@ QuicCryptoServerConfig::QuicCryptoServerConfig(
       next_config_promotion_time_(QuicWallTime::Zero()),
       strike_register_lock_(),
       server_nonce_strike_register_lock_(),
+      strike_register_no_startup_period_(false),
       strike_register_max_entries_(1 << 10),
       strike_register_window_secs_(600),
       source_address_token_future_secs_(3600),
@@ -304,7 +306,6 @@ struct ClientHelloInfo {
 
 QuicErrorCode QuicCryptoServerConfig::ProcessClientHello(
     const CryptoHandshakeMessage& client_hello,
-    QuicVersion version,
     QuicGuid guid,
     const IPEndPoint& client_ip,
     const QuicClock* clock,
@@ -359,8 +360,7 @@ QuicErrorCode QuicCryptoServerConfig::ProcessClientHello(
       !info.client_nonce_well_formed ||
       !info.unique ||
       !requested_config.get()) {
-    BuildRejection(version, primary_config.get(), client_hello, info, rand,
-                   out);
+    BuildRejection(primary_config.get(), client_hello, info, rand, out);
     return QUIC_NO_ERROR;
   }
 
@@ -636,6 +636,8 @@ QuicErrorCode QuicCryptoServerConfig::EvaluateClientHello(
             static_cast<uint32>(info->now.ToUNIXSeconds()),
             strike_register_window_secs_,
             orbit,
+            strike_register_no_startup_period_ ?
+            StrikeRegister::NO_STARTUP_PERIOD_NEEDED :
             StrikeRegister::DENY_REQUESTS_AT_STARTUP));
       }
 
@@ -664,7 +666,6 @@ QuicErrorCode QuicCryptoServerConfig::EvaluateClientHello(
 }
 
 void QuicCryptoServerConfig::BuildRejection(
-    QuicVersion version,
     const scoped_refptr<Config>& config,
     const CryptoHandshakeMessage& client_hello,
     const ClientHelloInfo& info,
@@ -708,9 +709,8 @@ void QuicCryptoServerConfig::BuildRejection(
 
   const vector<string>* certs;
   string signature;
-  if (!proof_source_->GetProof(version, info.sni.as_string(),
-                               config->serialized, x509_ecdsa_supported,
-                               &certs, &signature)) {
+  if (!proof_source_->GetProof(info.sni.as_string(), config->serialized,
+                               x509_ecdsa_supported, &certs, &signature)) {
     return;
   }
 
@@ -908,6 +908,12 @@ void QuicCryptoServerConfig::set_replay_protection(bool on) {
   replay_protection_ = on;
 }
 
+void QuicCryptoServerConfig::set_strike_register_no_startup_period() {
+  base::AutoLock auto_lock(strike_register_lock_);
+  DCHECK(!strike_register_.get());
+  strike_register_no_startup_period_ = true;
+}
+
 void QuicCryptoServerConfig::set_strike_register_max_entries(
     uint32 max_entries) {
   base::AutoLock locker(strike_register_lock_);
@@ -949,7 +955,7 @@ string QuicCryptoServerConfig::NewSourceAddressToken(
     QuicRandom* rand,
     QuicWallTime now) const {
   SourceAddressToken source_address_token;
-  source_address_token.set_ip(ip.ToString());
+  source_address_token.set_ip(IPAddressToPackedString(ip.address()));
   source_address_token.set_timestamp(now.ToUNIXSeconds());
 
   return source_address_token_boxer_.Box(
@@ -972,7 +978,7 @@ bool QuicCryptoServerConfig::ValidateSourceAddressToken(
     return false;
   }
 
-  if (source_address_token.ip() != ip.ToString()) {
+  if (source_address_token.ip() != IPAddressToPackedString(ip.address())) {
     // It's for a different IP address.
     return false;
   }

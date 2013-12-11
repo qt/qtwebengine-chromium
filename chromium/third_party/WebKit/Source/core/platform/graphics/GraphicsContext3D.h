@@ -43,7 +43,7 @@
 #include "wtf/text/WTFString.h"
 
 // FIXME: Find a better way to avoid the name confliction for NO_ERROR.
-#if OS(WINDOWS)
+#if OS(WIN)
 #undef NO_ERROR
 #endif
 
@@ -445,6 +445,8 @@ public:
 
     bool makeContextCurrent();
 
+    uint32_t lastFlushID();
+
     // Helper to texImage2D with pixel==0 case: pixels are initialized to 0.
     // Return true if no GL error is synthesized.
     // By default, alignment is 4, the OpenGL default setting.
@@ -701,7 +703,7 @@ public:
     // all methods it contains may necessarily be supported on the
     // current hardware. Must call Extensions3D::supports() to
     // determine this.
-    Extensions3D* getExtensions();
+    Extensions3D* extensions();
 
     static unsigned getClearBitsByFormat(GC3Denum);
 

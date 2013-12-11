@@ -20,11 +20,11 @@
 #include "ui/base/accessibility/accessibility_types.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_target.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/compositor/layer_delegate.h"
 #include "ui/compositor/layer_owner.h"
+#include "ui/events/event.h"
+#include "ui/events/event_target.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/vector2d.h"
@@ -1032,17 +1032,13 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // invoked for that view as well as all the children recursively.
   virtual void VisibilityChanged(View* starting_from, bool is_visible);
 
-  // Called when the native view hierarchy changed.
-  // |attached| is true if that view has been attached to a new NativeView
-  // hierarchy, false if it has been detached.
-  // |native_view| is the NativeView this view was attached/detached from, and
-  // |root_view| is the root view associated with the NativeView.
-  // Views created without a native view parent don't have a focus manager.
-  // When this function is called they could do the processing that requires
-  // it - like registering accelerators, for example.
-  virtual void NativeViewHierarchyChanged(bool attached,
-                                          gfx::NativeView native_view,
-                                          internal::RootView* root_view);
+  // This method is invoked when the parent NativeView of the widget that the
+  // view is attached to has changed and the view hierarchy has not changed.
+  // ViewHierarchyChanged() is called when the parent NativeView of the widget
+  // that the view is attached to is changed as a result of changing the view
+  // hierarchy. Overriding this method is useful for tracking which
+  // FocusManager manages this view.
+  virtual void NativeViewHierarchyChanged();
 
   // Painting ------------------------------------------------------------------
 
@@ -1260,9 +1256,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 
   // Propagates NativeViewHierarchyChanged() notification through all the
   // children.
-  void PropagateNativeViewHierarchyChanged(bool attached,
-                                           gfx::NativeView native_view,
-                                           internal::RootView* root_view);
+  void PropagateNativeViewHierarchyChanged();
 
   // Takes care of registering/unregistering accelerators if
   // |register_accelerators| true and calls ViewHierarchyChanged().
@@ -1502,10 +1496,6 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   bool paint_to_layer_;
 
   // Accelerators --------------------------------------------------------------
-
-  // true if when we were added to hierarchy we were without focus manager
-  // attempt addition when ancestor chain changed.
-  bool accelerator_registration_delayed_;
 
   // Focus manager accelerators registered on.
   FocusManager* accelerator_focus_manager_;

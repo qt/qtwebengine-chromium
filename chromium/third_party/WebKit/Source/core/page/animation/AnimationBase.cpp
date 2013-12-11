@@ -75,11 +75,6 @@ bool AnimationBase::playStatePlaying() const
     return m_animation->playState() == AnimPlayStatePlaying;
 }
 
-bool AnimationBase::animationsMatch(const CSSAnimationData* anim) const
-{
-    return m_animation->animationsMatch(anim);
-}
-
 void AnimationBase::updateStateMachine(AnimStateInput input, double param)
 {
     if (!m_compAnim)
@@ -463,14 +458,27 @@ double AnimationBase::fractionalTime(double scale, double elapsedTime, double of
 
     fractionalTime -= integralTime;
 
+    // Thie method can be called with an elapsedTime which very slightly
+    // exceeds the end of the animation. In this case, clamp the
+    // fractionalTime.
+    if (fractionalTime > 1)
+        fractionalTime = 1;
+    ASSERT(fractionalTime >= 0 && fractionalTime <= 1);
+
     if (((m_animation->direction() == CSSAnimationData::AnimationDirectionAlternate) && (integralTime & 1))
         || ((m_animation->direction() == CSSAnimationData::AnimationDirectionAlternateReverse) && !(integralTime & 1))
         || m_animation->direction() == CSSAnimationData::AnimationDirectionReverse)
         fractionalTime = 1 - fractionalTime;
 
-    if (scale != 1 || offset)
-        fractionalTime = (fractionalTime - offset) * scale;
+    fractionalTime -= offset;
+    // Note that if fractionalTime == 0 here, scale may be infinity, but in
+    // this case we don't need to apply scale anyway.
+    if (scale != 1.0 && fractionalTime) {
+        ASSERT(scale >= 0 && !std::isinf(scale));
+        fractionalTime *= scale;
+    }
 
+    ASSERT(fractionalTime >= 0 && fractionalTime <= 1);
     return fractionalTime;
 }
 
@@ -496,7 +504,7 @@ double AnimationBase::progress(double scale, double offset, const TimingFunction
     const double fractionalTime = this->fractionalTime(scale, elapsedTime, offset);
 
     if (!timingFunction)
-        timingFunction = m_animation->timingFunction().get();
+        timingFunction = m_animation->timingFunction();
 
     return timingFunction->evaluate(fractionalTime, accuracyForDuration(m_animation->duration()));
 }

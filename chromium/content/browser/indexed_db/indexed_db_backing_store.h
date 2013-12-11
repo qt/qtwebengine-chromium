@@ -22,6 +22,7 @@
 #include "content/common/indexed_db/indexed_db_key_path.h"
 #include "content/common/indexed_db/indexed_db_key_range.h"
 #include "third_party/WebKit/public/platform/WebIDBCallbacks.h"
+#include "third_party/leveldatabase/src/include/leveldb/status.h"
 
 namespace content {
 
@@ -48,13 +49,15 @@ class CONTENT_EXPORT IndexedDBBackingStore
       const std::string& origin_identifier,
       const base::FilePath& path_base,
       const std::string& file_identifier,
-      WebKit::WebIDBCallbacks::DataLoss* data_loss);
+      WebKit::WebIDBCallbacks::DataLoss* data_loss,
+      bool* disk_full);
 
   static scoped_refptr<IndexedDBBackingStore> Open(
       const std::string& origin_identifier,
       const base::FilePath& path_base,
       const std::string& file_identifier,
       WebKit::WebIDBCallbacks::DataLoss* data_loss,
+      bool* disk_full,
       LevelDBFactory* factory);
   static scoped_refptr<IndexedDBBackingStore> OpenInMemory(
       const std::string& file_identifier);

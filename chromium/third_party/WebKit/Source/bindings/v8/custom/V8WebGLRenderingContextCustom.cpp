@@ -74,8 +74,8 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/html/canvas/WebGLRenderingContext.h"
 #include "core/platform/NotImplemented.h"
-#include <limits>
 #include "wtf/FastMalloc.h"
+#include <limits>
 
 namespace WebCore {
 
@@ -134,7 +134,7 @@ static v8::Handle<v8::Value> toV8Object(const WebGLGetInfo& info, v8::Handle<v8:
         return array;
     }
     case WebGLGetInfo::kTypeFloat:
-        return v8::Number::New(info.getFloat());
+        return v8::Number::New(isolate, info.getFloat());
     case WebGLGetInfo::kTypeInt:
         return v8::Integer::New(info.getInt(), isolate);
     case WebGLGetInfo::kTypeNull:
@@ -167,7 +167,7 @@ static v8::Handle<v8::Value> toV8Object(const WebGLGetInfo& info, v8::Handle<v8:
         return toV8(info.getWebGLVertexArrayObjectOES(), creationContext, isolate);
     default:
         notImplemented();
-        return v8::Undefined();
+        return v8::Undefined(isolate);
     }
 }
 
@@ -177,7 +177,7 @@ static v8::Handle<v8::Value> toV8Object(WebGLExtension* extension, v8::Handle<v8
         return v8::Null(isolate);
     v8::Handle<v8::Value> extensionObject;
     const char* referenceName = 0;
-    switch (extension->getName()) {
+    switch (extension->name()) {
     case WebGLExtension::ANGLEInstancedArraysName:
         extensionObject = toV8(static_cast<ANGLEInstancedArrays*>(extension), contextObject, isolate);
         referenceName = "angleInstancedArraysName";

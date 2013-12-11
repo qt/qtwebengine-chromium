@@ -48,6 +48,7 @@
 #include "core/page/DOMWindow.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
+#include "core/page/PageConsole.h"
 #include "core/platform/MemoryUsageSupport.h"
 #include "core/platform/chromium/TraceEvent.h"
 #include "core/platform/network/ResourceRequest.h"
@@ -60,10 +61,13 @@
 namespace WebCore {
 
 namespace TimelineAgentState {
-static const char timelineAgentEnabled[] = "timelineAgentEnabled";
+static const char enabled[] = "enabled";
+static const char started[] = "started";
+static const char startedFromProtocol[] = "startedFromProtocol";
 static const char timelineMaxCallStackDepth[] = "timelineMaxCallStackDepth";
 static const char includeDomCounters[] = "includeDomCounters";
 static const char includeNativeMemoryStatistics[] = "includeNativeMemoryStatistics";
+static const char bufferEvents[] = "bufferEvents";
 }
 
 // Must be kept in sync with WebInspector.TimelineModel.RecordType in TimelineModel.js
@@ -153,8 +157,7 @@ static bool eventHasListeners(const AtomicString& eventType, DOMWindow* window, 
 
 void TimelineTimeConverter::reset()
 {
-    m_startTimeMs = currentTime() * 1000;
-    m_timestampsBaseMs = monotonicallyIncreasingTime() * 1000;
+    m_startOffset = monotonicallyIncreasingTime() - currentTime();
 }
 
 void InspectorTimelineAgent::pushGCEventRecords()
@@ -165,9 +168,9 @@ void InspectorTimelineAgent::pushGCEventRecords()
     GCEvents events = m_gcEvents;
     m_gcEvents.clear();
     for (GCEvents::iterator i = events.begin(); i != events.end(); ++i) {
-        RefPtr<JSONObject> record = TimelineRecordFactory::createGenericRecord(m_timeConverter.toProtocolTimestamp(i->startTime), m_maxCallStackDepth, TimelineRecordType::GCEvent);
+        RefPtr<JSONObject> record = TimelineRecordFactory::createGenericRecord(m_timeConverter.fromMonotonicallyIncreasingTime(i->startTime), m_maxCallStackDepth, TimelineRecordType::GCEvent);
         record->setObject("data", TimelineRecordFactory::createGCEventData(i->collectedBytes));
-        record->setNumber("endTime", m_timeConverter.toProtocolTimestamp(i->endTime));
+        record->setNumber("endTime", m_timeConverter.fromMonotonicallyIncreasingTime(i->endTime));
         addRecordToTimeline(record.release());
     }
 }
@@ -189,49 +192,100 @@ void InspectorTimelineAgent::setFrontend(InspectorFrontend* frontend)
 void InspectorTimelineAgent::clearFrontend()
 {
     ErrorString error;
-    stop(&error);
+    RefPtr<TypeBuilder::Array<TypeBuilder::Timeline::TimelineEvent> > events;
+    stop(&error, events);
+    disable(&error);
     releaseNodeIds();
     m_frontend = 0;
 }
 
 void InspectorTimelineAgent::restore()
 {
-    if (m_state->getBoolean(TimelineAgentState::timelineAgentEnabled)) {
-        m_maxCallStackDepth = m_state->getLong(TimelineAgentState::timelineMaxCallStackDepth);
-        ErrorString error;
-        bool includeDomCounters = m_state->getBoolean(TimelineAgentState::includeDomCounters);
-        bool includeNativeMemoryStatistics = m_state->getBoolean(TimelineAgentState::includeNativeMemoryStatistics);
-        start(&error, &m_maxCallStackDepth, &includeDomCounters, &includeNativeMemoryStatistics);
+    if (m_state->getBoolean(TimelineAgentState::startedFromProtocol)) {
+        if (m_state->getBoolean(TimelineAgentState::bufferEvents))
+            m_bufferedEvents = TypeBuilder::Array<TypeBuilder::Timeline::TimelineEvent>::create();
+        innerStart();
+    } else if (isStarted()) {
+        // Timeline was started from console.timeline, it is not restored.
+        // Tell front-end timline is no longer collecting.
+        m_state->setBoolean(TimelineAgentState::started, false);
+        bool fromConsole = true;
+        m_frontend->stopped(&fromConsole);
     }
 }
 
-void InspectorTimelineAgent::start(ErrorString*, const int* maxCallStackDepth, const bool* includeDomCounters, const bool* includeNativeMemoryStatistics)
+void InspectorTimelineAgent::enable(ErrorString*)
+{
+    m_state->setBoolean(TimelineAgentState::enabled, true);
+}
+
+void InspectorTimelineAgent::disable(ErrorString*)
+{
+    m_state->setBoolean(TimelineAgentState::enabled, false);
+}
+
+void InspectorTimelineAgent::start(ErrorString* errorString, const int* maxCallStackDepth, const bool* bufferEvents, const bool* includeDomCounters, const bool* includeNativeMemoryStatistics)
 {
     if (!m_frontend)
         return;
+    m_state->setBoolean(TimelineAgentState::startedFromProtocol, true);
+
+    if (isStarted()) {
+        *errorString = "Timeline is already started";
+        return;
+    }
 
     releaseNodeIds();
     if (maxCallStackDepth && *maxCallStackDepth >= 0)
         m_maxCallStackDepth = *maxCallStackDepth;
     else
         m_maxCallStackDepth = 5;
+
+    if (bufferEvents && *bufferEvents)
+        m_bufferedEvents = TypeBuilder::Array<TypeBuilder::Timeline::TimelineEvent>::create();
+
     m_state->setLong(TimelineAgentState::timelineMaxCallStackDepth, m_maxCallStackDepth);
     m_state->setBoolean(TimelineAgentState::includeDomCounters, includeDomCounters && *includeDomCounters);
     m_state->setBoolean(TimelineAgentState::includeNativeMemoryStatistics, includeNativeMemoryStatistics && *includeNativeMemoryStatistics);
-    m_timeConverter.reset();
-    m_frontend->timelineStarted(m_timeConverter.timestampsBaseMs(), m_timeConverter.startTimeMs());
+    m_state->setBoolean(TimelineAgentState::bufferEvents, bufferEvents && *bufferEvents);
 
+    innerStart();
+    bool fromConsole = false;
+    m_frontend->started(&fromConsole);
+}
+
+bool InspectorTimelineAgent::isStarted()
+{
+    return m_state->getBoolean(TimelineAgentState::started);
+}
+
+void InspectorTimelineAgent::innerStart()
+{
+    m_state->setBoolean(TimelineAgentState::started, true);
+    m_timeConverter.reset();
     m_instrumentingAgents->setInspectorTimelineAgent(this);
     ScriptGCEvent::addEventListener(this);
-    m_state->setBoolean(TimelineAgentState::timelineAgentEnabled, true);
     if (m_client && m_pageAgent)
         m_traceEventProcessor = adoptRef(new TimelineTraceEventProcessor(m_weakFactory.createWeakPtr(), m_client));
 }
 
-void InspectorTimelineAgent::stop(ErrorString*)
+void InspectorTimelineAgent::stop(ErrorString* errorString, RefPtr<TypeBuilder::Array<TypeBuilder::Timeline::TimelineEvent> >& events)
 {
-    if (!m_state->getBoolean(TimelineAgentState::timelineAgentEnabled))
+    m_state->setBoolean(TimelineAgentState::startedFromProtocol, false);
+    m_state->setBoolean(TimelineAgentState::bufferEvents, false);
+
+    if (!isStarted()) {
+        *errorString = "Timeline was not started";
         return;
+    }
+    innerStop(false);
+    if (m_bufferedEvents)
+        events = m_bufferedEvents.release();
+}
+
+void InspectorTimelineAgent::innerStop(bool fromConsole)
+{
+    m_state->setBoolean(TimelineAgentState::started, false);
 
     if (m_traceEventProcessor) {
         m_traceEventProcessor->shutdown();
@@ -244,7 +298,13 @@ void InspectorTimelineAgent::stop(ErrorString*)
     clearRecordStack();
     m_gcEvents.clear();
 
-    m_state->setBoolean(TimelineAgentState::timelineAgentEnabled, false);
+    for (size_t i = 0; i < m_consoleTimelines.size(); ++i) {
+        String message = String::format("Timeline '%s' terminated.", m_consoleTimelines[i].utf8().data());
+        page()->console().addMessage(ConsoleAPIMessageSource, DebugMessageLevel, message);
+    }
+    m_consoleTimelines.clear();
+
+    m_frontend->stopped(&fromConsole);
 }
 
 void InspectorTimelineAgent::didBeginFrame()
@@ -383,6 +443,17 @@ void InspectorTimelineAgent::didPaint(RenderObject* renderer, GraphicsContext*, 
     didCompleteCurrentRecord(TimelineRecordType::Paint);
 }
 
+void InspectorTimelineAgent::willPaintImage(RenderImage* renderImage)
+{
+    ASSERT(!m_imageBeingPainted);
+    m_imageBeingPainted = renderImage;
+}
+
+void InspectorTimelineAgent::didPaintImage()
+{
+    m_imageBeingPainted = 0;
+}
+
 void InspectorTimelineAgent::willScrollLayer(RenderObject* renderer)
 {
     pushCurrentRecord(TimelineRecordFactory::createLayerData(idForNode(renderer->generatingNode())), TimelineRecordType::ScrollLayer, false, renderer->frame());
@@ -395,7 +466,10 @@ void InspectorTimelineAgent::didScrollLayer()
 
 void InspectorTimelineAgent::willDecodeImage(const String& imageType)
 {
-    pushCurrentRecord(TimelineRecordFactory::createDecodeImageData(imageType), TimelineRecordType::DecodeImage, true, 0);
+    RefPtr<JSONObject> data = TimelineRecordFactory::createDecodeImageData(imageType);
+    if (m_imageBeingPainted)
+        populateImageDetails(data.get(), *m_imageBeingPainted);
+    pushCurrentRecord(data, TimelineRecordType::DecodeImage, true, 0);
 }
 
 void InspectorTimelineAgent::didDecodeImage()
@@ -405,7 +479,10 @@ void InspectorTimelineAgent::didDecodeImage()
 
 void InspectorTimelineAgent::willResizeImage(bool shouldCache)
 {
-    pushCurrentRecord(TimelineRecordFactory::createResizeImageData(shouldCache), TimelineRecordType::ResizeImage, true, 0);
+    RefPtr<JSONObject> data = TimelineRecordFactory::createResizeImageData(shouldCache);
+    if (m_imageBeingPainted)
+        populateImageDetails(data.get(), *m_imageBeingPainted);
+    pushCurrentRecord(data, TimelineRecordType::ResizeImage, true, 0);
 }
 
 void InspectorTimelineAgent::didResizeImage()
@@ -551,21 +628,55 @@ void InspectorTimelineAgent::didFailLoading(unsigned long identifier, DocumentLo
     didFinishLoadingResource(identifier, true, 0, loader->frame());
 }
 
-void InspectorTimelineAgent::consoleTimeStamp(Frame* frame, PassRefPtr<ScriptArguments> arguments)
+void InspectorTimelineAgent::consoleTimeStamp(ScriptExecutionContext* context, const String& title)
 {
-    String message;
-    arguments->getFirstArgumentAsString(message);
-    appendRecord(TimelineRecordFactory::createTimeStampData(message), TimelineRecordType::TimeStamp, true, frame);
+    appendRecord(TimelineRecordFactory::createTimeStampData(title), TimelineRecordType::TimeStamp, true, frameForScriptExecutionContext(context));
 }
 
-void InspectorTimelineAgent::startConsoleTiming(Frame* frame, const String& message)
+void InspectorTimelineAgent::consoleTime(ScriptExecutionContext* context, const String& message)
 {
-    appendRecord(TimelineRecordFactory::createTimeStampData(message), TimelineRecordType::Time, true, frame);
+    appendRecord(TimelineRecordFactory::createTimeStampData(message), TimelineRecordType::Time, true, frameForScriptExecutionContext(context));
 }
 
-void InspectorTimelineAgent::stopConsoleTiming(Frame* frame, const String& message, PassRefPtr<ScriptCallStack>)
+void InspectorTimelineAgent::consoleTimeEnd(ScriptExecutionContext* context, const String& message, ScriptState*)
 {
-    appendRecord(TimelineRecordFactory::createTimeStampData(message), TimelineRecordType::TimeEnd, true, frame);
+    appendRecord(TimelineRecordFactory::createTimeStampData(message), TimelineRecordType::TimeEnd, true, frameForScriptExecutionContext(context));
+}
+
+void InspectorTimelineAgent::consoleTimeline(ScriptExecutionContext* context, const String& title, ScriptState* state)
+{
+    if (!m_state->getBoolean(TimelineAgentState::enabled))
+        return;
+
+    String message = String::format("Timeline '%s' started.", title.utf8().data());
+    page()->console().addMessage(ConsoleAPIMessageSource, DebugMessageLevel, message, String(), 0, 0, 0, state);
+    m_consoleTimelines.append(title);
+    if (!isStarted()) {
+        innerStart();
+        bool fromConsole = true;
+        m_frontend->started(&fromConsole);
+    }
+    appendRecord(TimelineRecordFactory::createTimeStampData(message), TimelineRecordType::TimeStamp, true, frameForScriptExecutionContext(context));
+}
+
+void InspectorTimelineAgent::consoleTimelineEnd(ScriptExecutionContext* context, const String& title, ScriptState* state)
+{
+    if (!m_state->getBoolean(TimelineAgentState::enabled))
+        return;
+
+    size_t index = m_consoleTimelines.find(title);
+    if (index == kNotFound) {
+        String message = String::format("Timeline '%s' was not started.", title.utf8().data());
+        page()->console().addMessage(ConsoleAPIMessageSource, DebugMessageLevel, message, String(), 0, 0, 0, state);
+        return;
+    }
+
+    String message = String::format("Timeline '%s' finished.", title.utf8().data());
+    appendRecord(TimelineRecordFactory::createTimeStampData(message), TimelineRecordType::TimeStamp, true, frameForScriptExecutionContext(context));
+    m_consoleTimelines.remove(index);
+    if (!m_consoleTimelines.size() && isStarted() && !m_state->getBoolean(TimelineAgentState::startedFromProtocol))
+        innerStop(true);
+    page()->console().addMessage(ConsoleAPIMessageSource, DebugMessageLevel, message, String(), 0, 0, 0, state);
 }
 
 void InspectorTimelineAgent::domContentLoadedEventFired(Frame* frame)
@@ -692,6 +803,12 @@ void InspectorTimelineAgent::setFrameIdentifier(JSONObject* record, Frame* frame
     record->setString("frameId", frameId);
 }
 
+void InspectorTimelineAgent::populateImageDetails(JSONObject* data, const RenderImage& renderImage)
+{
+    const ImageResource* resource = renderImage.cachedImage();
+    TimelineRecordFactory::appendImageDetails(data, idForNode(renderImage.generatingNode()), resource ? resource->url().string() : "");
+}
+
 void InspectorTimelineAgent::didCompleteCurrentRecord(const String& type)
 {
     // An empty stack could merely mean that the timeline agent was turned on in the middle of
@@ -730,6 +847,7 @@ InspectorTimelineAgent::InspectorTimelineAgent(InstrumentingAgents* instrumentin
     , m_weakFactory(this)
     , m_styleRecalcElementCounter(0)
     , m_layerTreeId(0)
+    , m_imageBeingPainted(0)
 {
 }
 
@@ -746,6 +864,10 @@ void InspectorTimelineAgent::sendEvent(PassRefPtr<JSONObject> event)
 {
     // FIXME: runtimeCast is a hack. We do it because we can't build TimelineEvent directly now.
     RefPtr<TypeBuilder::Timeline::TimelineEvent> recordChecked = TypeBuilder::Timeline::TimelineEvent::runtimeCast(event);
+    if (m_bufferedEvents) {
+        m_bufferedEvents->addItem(recordChecked.release());
+        return;
+    }
     m_frontend->eventRecorded(recordChecked.release());
 }
 
@@ -805,9 +927,9 @@ void InspectorTimelineAgent::releaseNodeIds()
         m_domAgent->releaseBackendNodeIds(&unused, BackendNodeIdGroup);
 }
 
-double InspectorTimelineAgent::timestamp() const
+double InspectorTimelineAgent::timestamp()
 {
-    return m_timeConverter.toProtocolTimestamp(WTF::monotonicallyIncreasingTime());
+    return m_timeConverter.fromMonotonicallyIncreasingTime(WTF::monotonicallyIncreasingTime());
 }
 
 Page* InspectorTimelineAgent::page()

@@ -27,16 +27,12 @@
 #define WTF_MathExtras_h
 
 #include "wtf/CPU.h"
-#include "wtf/StdLibExtras.h"
-#include <algorithm>
 #include <cmath>
-#include <float.h>
 #include <limits>
-#include <stdint.h>
-#include <stdlib.h>
 
-#if OS(SOLARIS)
-#include <ieeefp.h>
+#if COMPILER(MSVC)
+#include "wtf/Assertions.h"
+#include <stdint.h>
 #endif
 
 #if OS(OPENBSD)
@@ -44,54 +40,21 @@
 #include <machine/ieee.h>
 #endif
 
-#ifndef M_PI
-const double piDouble = 3.14159265358979323846;
-const float piFloat = 3.14159265358979323846f;
-#else
 const double piDouble = M_PI;
 const float piFloat = static_cast<float>(M_PI);
-#endif
 
-#ifndef M_PI_2
-const double piOverTwoDouble = 1.57079632679489661923;
-const float piOverTwoFloat = 1.57079632679489661923f;
-#else
 const double piOverTwoDouble = M_PI_2;
 const float piOverTwoFloat = static_cast<float>(M_PI_2);
-#endif
 
-#ifndef M_PI_4
-const double piOverFourDouble = 0.785398163397448309616;
-const float piOverFourFloat = 0.785398163397448309616f;
-#else
 const double piOverFourDouble = M_PI_4;
 const float piOverFourFloat = static_cast<float>(M_PI_4);
-#endif
 
-#if OS(DARWIN)
+#if OS(MACOSX)
 
 // Work around a bug in the Mac OS X libc where ceil(-0.1) return +0.
 inline double wtf_ceil(double x) { return copysign(ceil(x), x); }
 
 #define ceil(x) wtf_ceil(x)
-
-#endif
-
-#if OS(SOLARIS)
-
-namespace std {
-
-#ifndef isfinite
-inline bool isfinite(double x) { return finite(x) && !isnand(x); }
-#endif
-#ifndef signbit
-inline bool signbit(double x) { return copysign(1.0, x) < 0; }
-#endif
-#ifndef isinf
-inline bool isinf(double x) { return !finite(x) && !isnand(x); }
-#endif
-
-} // namespace std
 
 #endif
 
@@ -110,7 +73,7 @@ inline bool signbit(double x) { struct ieee_double *p = (struct ieee_double *)&x
 
 #endif
 
-#if COMPILER(MSVC)
+#if COMPILER(MSVC) && (_MSC_VER < 1800)
 
 // We must not do 'num + 0.5' or 'num - 0.5' because they can cause precision loss.
 static double round(double num)

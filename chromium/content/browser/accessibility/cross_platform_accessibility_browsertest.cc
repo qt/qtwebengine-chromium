@@ -10,7 +10,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_widget_host_view.h"
-#include "content/shell/shell.h"
+#include "content/shell/browser/shell.h"
 #include "content/test/accessibility_browser_test_utils.h"
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
@@ -40,7 +40,7 @@ class CrossPlatformAccessibilityBrowserTest : public ContentBrowserTest {
   const AccessibilityNodeDataTreeNode& GetAccessibilityNodeDataTree(
       AccessibilityMode accessibility_mode = AccessibilityModeComplete) {
     AccessibilityNotificationWaiter waiter(
-        shell(), accessibility_mode, AccessibilityNotificationLayoutComplete);
+        shell(), accessibility_mode, WebKit::WebAXEventLayoutComplete);
     waiter.WaitForNotification();
     return waiter.GetAccessibilityNodeDataTree();
   }
@@ -89,16 +89,15 @@ CrossPlatformAccessibilityBrowserTest::TearDownInProcessBrowserTestFixture() {
 }
 
 // Convenience method to get the value of a particular AccessibilityNodeData
-// node attribute as a UTF-8 const char*.
+// node attribute as a UTF-8 string.
 std::string CrossPlatformAccessibilityBrowserTest::GetAttr(
     const AccessibilityNodeData& node,
     const AccessibilityNodeData::StringAttribute attr) {
-  std::map<AccessibilityNodeData::StringAttribute, string16>::const_iterator
-      iter = node.string_attributes.find(attr);
-  if (iter != node.string_attributes.end())
-    return UTF16ToUTF8(iter->second);
-  else
-    return std::string();
+  for (size_t i = 0; i < node.string_attributes.size(); ++i) {
+    if (node.string_attributes[i].first == attr)
+      return node.string_attributes[i].second;
+  }
+  return std::string();
 }
 
 // Convenience method to get the value of a particular AccessibilityNodeData
@@ -106,12 +105,11 @@ std::string CrossPlatformAccessibilityBrowserTest::GetAttr(
 int CrossPlatformAccessibilityBrowserTest::GetIntAttr(
     const AccessibilityNodeData& node,
     const AccessibilityNodeData::IntAttribute attr) {
-  std::map<AccessibilityNodeData::IntAttribute, int32>::const_iterator iter =
-      node.int_attributes.find(attr);
-  if (iter != node.int_attributes.end())
-    return iter->second;
-  else
-    return -1;
+  for (size_t i = 0; i < node.int_attributes.size(); ++i) {
+    if (node.int_attributes[i].first == attr)
+      return node.int_attributes[i].second;
+  }
+  return -1;
 }
 
 // Convenience method to get the value of a particular AccessibilityNodeData
@@ -119,12 +117,11 @@ int CrossPlatformAccessibilityBrowserTest::GetIntAttr(
 bool CrossPlatformAccessibilityBrowserTest::GetBoolAttr(
     const AccessibilityNodeData& node,
     const AccessibilityNodeData::BoolAttribute attr) {
-  std::map<AccessibilityNodeData::BoolAttribute, bool>::const_iterator iter =
-      node.bool_attributes.find(attr);
-  if (iter != node.bool_attributes.end())
-    return iter->second;
-  else
-    return false;
+  for (size_t i = 0; i < node.bool_attributes.size(); ++i) {
+    if (node.bool_attributes[i].first == attr)
+      return node.bool_attributes[i].second;
+  }
+  return false;
 }
 
 // Marked flaky per http://crbug.com/101984
@@ -152,13 +149,15 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
   EXPECT_STREQ(
       "text/html",
       GetAttr(tree, AccessibilityNodeData::ATTR_DOC_MIMETYPE).c_str());
-  EXPECT_STREQ("Accessibility Test", UTF16ToUTF8(tree.name).c_str());
-  EXPECT_EQ(AccessibilityNodeData::ROLE_ROOT_WEB_AREA, tree.role);
+  EXPECT_STREQ(
+      "Accessibility Test",
+      GetAttr(tree, AccessibilityNodeData::ATTR_NAME).c_str());
+  EXPECT_EQ(WebKit::WebAXRoleRootWebArea, tree.role);
 
   // Check properites of the BODY element.
   ASSERT_EQ(1U, tree.children.size());
   const AccessibilityNodeDataTreeNode& body = tree.children[0];
-  EXPECT_EQ(AccessibilityNodeData::ROLE_GROUP, body.role);
+  EXPECT_EQ(WebKit::WebAXRoleGroup, body.role);
   EXPECT_STREQ("body",
                GetAttr(body, AccessibilityNodeData::ATTR_HTML_TAG).c_str());
   EXPECT_STREQ("block",
@@ -168,31 +167,31 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
   ASSERT_EQ(2U, body.children.size());
 
   const AccessibilityNodeDataTreeNode& button = body.children[0];
-  EXPECT_EQ(AccessibilityNodeData::ROLE_BUTTON, button.role);
+  EXPECT_EQ(WebKit::WebAXRoleButton, button.role);
   EXPECT_STREQ(
       "input", GetAttr(button, AccessibilityNodeData::ATTR_HTML_TAG).c_str());
-  EXPECT_STREQ("push", UTF16ToUTF8(button.name).c_str());
+  EXPECT_STREQ(
+      "push",
+      GetAttr(button, AccessibilityNodeData::ATTR_NAME).c_str());
   EXPECT_STREQ(
       "inline-block",
       GetAttr(button, AccessibilityNodeData::ATTR_DISPLAY).c_str());
   ASSERT_EQ(2U, button.html_attributes.size());
-  EXPECT_STREQ("type", UTF16ToUTF8(button.html_attributes[0].first).c_str());
-  EXPECT_STREQ("button", UTF16ToUTF8(button.html_attributes[0].second).c_str());
-  EXPECT_STREQ("value", UTF16ToUTF8(button.html_attributes[1].first).c_str());
-  EXPECT_STREQ("push", UTF16ToUTF8(button.html_attributes[1].second).c_str());
+  EXPECT_STREQ("type", button.html_attributes[0].first.c_str());
+  EXPECT_STREQ("button", button.html_attributes[0].second.c_str());
+  EXPECT_STREQ("value", button.html_attributes[1].first.c_str());
+  EXPECT_STREQ("push", button.html_attributes[1].second.c_str());
 
   const AccessibilityNodeDataTreeNode& checkbox = body.children[1];
-  EXPECT_EQ(AccessibilityNodeData::ROLE_CHECKBOX, checkbox.role);
+  EXPECT_EQ(WebKit::WebAXRoleCheckBox, checkbox.role);
   EXPECT_STREQ(
       "input", GetAttr(checkbox, AccessibilityNodeData::ATTR_HTML_TAG).c_str());
   EXPECT_STREQ(
       "inline-block",
       GetAttr(checkbox, AccessibilityNodeData::ATTR_DISPLAY).c_str());
   ASSERT_EQ(1U, checkbox.html_attributes.size());
-  EXPECT_STREQ(
-      "type", UTF16ToUTF8(checkbox.html_attributes[0].first).c_str());
-  EXPECT_STREQ(
-    "checkbox", UTF16ToUTF8(checkbox.html_attributes[0].second).c_str());
+  EXPECT_STREQ("type", checkbox.html_attributes[0].first.c_str());
+  EXPECT_STREQ("checkbox", checkbox.html_attributes[0].second.c_str());
 }
 
 IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
@@ -212,12 +211,14 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
   const AccessibilityNodeDataTreeNode& body = tree.children[0];
   ASSERT_EQ(1U, body.children.size());
   const AccessibilityNodeDataTreeNode& text = body.children[0];
-  EXPECT_EQ(AccessibilityNodeData::ROLE_TEXT_FIELD, text.role);
+  EXPECT_EQ(WebKit::WebAXRoleTextField, text.role);
   EXPECT_STREQ(
       "input", GetAttr(text, AccessibilityNodeData::ATTR_HTML_TAG).c_str());
   EXPECT_EQ(0, GetIntAttr(text, AccessibilityNodeData::ATTR_TEXT_SEL_START));
   EXPECT_EQ(0, GetIntAttr(text, AccessibilityNodeData::ATTR_TEXT_SEL_END));
-  EXPECT_STREQ("Hello, world.", UTF16ToUTF8(text.value).c_str());
+  EXPECT_STREQ(
+      "Hello, world.",
+      GetAttr(text, AccessibilityNodeData::ATTR_VALUE).c_str());
 
   // TODO(dmazzoni): as soon as more accessibility code is cross-platform,
   // this code should test that the accessible info is dynamically updated
@@ -241,12 +242,14 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
   const AccessibilityNodeDataTreeNode& body = tree.children[0];
   ASSERT_EQ(1U, body.children.size());
   const AccessibilityNodeDataTreeNode& text = body.children[0];
-  EXPECT_EQ(AccessibilityNodeData::ROLE_TEXT_FIELD, text.role);
+  EXPECT_EQ(WebKit::WebAXRoleTextField, text.role);
   EXPECT_STREQ(
       "input", GetAttr(text, AccessibilityNodeData::ATTR_HTML_TAG).c_str());
   EXPECT_EQ(0, GetIntAttr(text, AccessibilityNodeData::ATTR_TEXT_SEL_START));
   EXPECT_EQ(13, GetIntAttr(text, AccessibilityNodeData::ATTR_TEXT_SEL_END));
-  EXPECT_STREQ("Hello, world.", UTF16ToUTF8(text.value).c_str());
+  EXPECT_STREQ(
+      "Hello, world.",
+      GetAttr(text, AccessibilityNodeData::ATTR_VALUE).c_str());
 }
 
 IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
@@ -266,23 +269,32 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
   const AccessibilityNodeDataTreeNode& tree = GetAccessibilityNodeDataTree();
   ASSERT_EQ(1U, tree.children.size());
   const AccessibilityNodeDataTreeNode& table = tree.children[0];
-  EXPECT_EQ(AccessibilityNodeData::ROLE_TABLE, table.role);
+  EXPECT_EQ(WebKit::WebAXRoleTable, table.role);
   const AccessibilityNodeDataTreeNode& row = table.children[0];
-  EXPECT_EQ(AccessibilityNodeData::ROLE_ROW, row.role);
+  EXPECT_EQ(WebKit::WebAXRoleRow, row.role);
   const AccessibilityNodeDataTreeNode& cell1 = row.children[0];
-  EXPECT_EQ(AccessibilityNodeData::ROLE_CELL, cell1.role);
+  EXPECT_EQ(WebKit::WebAXRoleCell, cell1.role);
   const AccessibilityNodeDataTreeNode& cell2 = row.children[1];
-  EXPECT_EQ(AccessibilityNodeData::ROLE_CELL, cell2.role);
+  EXPECT_EQ(WebKit::WebAXRoleCell, cell2.role);
   const AccessibilityNodeDataTreeNode& column1 = table.children[1];
-  EXPECT_EQ(AccessibilityNodeData::ROLE_COLUMN, column1.role);
+  EXPECT_EQ(WebKit::WebAXRoleColumn, column1.role);
   EXPECT_EQ(0U, column1.children.size());
-  EXPECT_EQ(1U, column1.indirect_child_ids.size());
-  EXPECT_EQ(cell1.id, column1.indirect_child_ids[0]);
+  EXPECT_EQ(1U, column1.intlist_attributes.size());
+  EXPECT_EQ(AccessibilityNodeData::ATTR_INDIRECT_CHILD_IDS,
+            column1.intlist_attributes[0].first);
+  const std::vector<int32> column1_indirect_child_ids =
+      column1.intlist_attributes[0].second;
+  EXPECT_EQ(1U, column1_indirect_child_ids.size());
+  EXPECT_EQ(cell1.id, column1_indirect_child_ids[0]);
   const AccessibilityNodeDataTreeNode& column2 = table.children[2];
-  EXPECT_EQ(AccessibilityNodeData::ROLE_COLUMN, column2.role);
+  EXPECT_EQ(WebKit::WebAXRoleColumn, column2.role);
   EXPECT_EQ(0U, column2.children.size());
-  EXPECT_EQ(1U, column2.indirect_child_ids.size());
-  EXPECT_EQ(cell2.id, column2.indirect_child_ids[0]);
+  EXPECT_EQ(AccessibilityNodeData::ATTR_INDIRECT_CHILD_IDS,
+            column2.intlist_attributes[0].first);
+  const std::vector<int32> column2_indirect_child_ids =
+      column2.intlist_attributes[0].second;
+  EXPECT_EQ(1U, column2_indirect_child_ids.size());
+  EXPECT_EQ(cell2.id, column2_indirect_child_ids[0]);
 }
 
 IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
@@ -328,8 +340,10 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
   ASSERT_EQ(3U, body.children.size());
 
   const AccessibilityNodeDataTreeNode& button1 = body.children[0];
-  EXPECT_EQ(AccessibilityNodeData::ROLE_BUTTON, button1.role);
-  EXPECT_STREQ("Button 1", UTF16ToUTF8(button1.name).c_str());
+  EXPECT_EQ(WebKit::WebAXRoleButton, button1.role);
+  EXPECT_STREQ(
+      "Button 1",
+      GetAttr(button1, AccessibilityNodeData::ATTR_NAME).c_str());
 
   const AccessibilityNodeDataTreeNode& iframe = body.children[1];
   EXPECT_STREQ("iframe",
@@ -337,23 +351,25 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
   ASSERT_EQ(1U, iframe.children.size());
 
   const AccessibilityNodeDataTreeNode& scroll_area = iframe.children[0];
-  EXPECT_EQ(AccessibilityNodeData::ROLE_SCROLLAREA, scroll_area.role);
+  EXPECT_EQ(WebKit::WebAXRoleScrollArea, scroll_area.role);
   ASSERT_EQ(1U, scroll_area.children.size());
 
   const AccessibilityNodeDataTreeNode& sub_document = scroll_area.children[0];
-  EXPECT_EQ(AccessibilityNodeData::ROLE_WEB_AREA, sub_document.role);
+  EXPECT_EQ(WebKit::WebAXRoleWebArea, sub_document.role);
   ASSERT_EQ(1U, sub_document.children.size());
 
   const AccessibilityNodeDataTreeNode& sub_body = sub_document.children[0];
   ASSERT_EQ(1U, sub_body.children.size());
 
   const AccessibilityNodeDataTreeNode& button2 = sub_body.children[0];
-  EXPECT_EQ(AccessibilityNodeData::ROLE_BUTTON, button2.role);
-  EXPECT_STREQ("Button 2", UTF16ToUTF8(button2.name).c_str());
+  EXPECT_EQ(WebKit::WebAXRoleButton, button2.role);
+  EXPECT_STREQ("Button 2",
+               GetAttr(button2, AccessibilityNodeData::ATTR_NAME).c_str());
 
   const AccessibilityNodeDataTreeNode& button3 = body.children[2];
-  EXPECT_EQ(AccessibilityNodeData::ROLE_BUTTON, button3.role);
-  EXPECT_STREQ("Button 3", UTF16ToUTF8(button3.name).c_str());
+  EXPECT_EQ(WebKit::WebAXRoleButton, button3.role);
+  EXPECT_STREQ("Button 3",
+               GetAttr(button3, AccessibilityNodeData::ATTR_NAME).c_str());
 }
 
 IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
@@ -397,13 +413,13 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
 
   const AccessibilityNodeDataTreeNode& tree = GetAccessibilityNodeDataTree();
   const AccessibilityNodeDataTreeNode& table = tree.children[0];
-  EXPECT_EQ(AccessibilityNodeData::ROLE_TABLE, table.role);
+  EXPECT_EQ(WebKit::WebAXRoleTable, table.role);
   ASSERT_GE(table.children.size(), 5U);
-  EXPECT_EQ(AccessibilityNodeData::ROLE_ROW, table.children[0].role);
-  EXPECT_EQ(AccessibilityNodeData::ROLE_ROW, table.children[1].role);
-  EXPECT_EQ(AccessibilityNodeData::ROLE_COLUMN, table.children[2].role);
-  EXPECT_EQ(AccessibilityNodeData::ROLE_COLUMN, table.children[3].role);
-  EXPECT_EQ(AccessibilityNodeData::ROLE_COLUMN, table.children[4].role);
+  EXPECT_EQ(WebKit::WebAXRoleRow, table.children[0].role);
+  EXPECT_EQ(WebKit::WebAXRoleRow, table.children[1].role);
+  EXPECT_EQ(WebKit::WebAXRoleColumn, table.children[2].role);
+  EXPECT_EQ(WebKit::WebAXRoleColumn, table.children[3].role);
+  EXPECT_EQ(WebKit::WebAXRoleColumn, table.children[4].role);
   EXPECT_EQ(3,
             GetIntAttr(table, AccessibilityNodeData::ATTR_TABLE_COLUMN_COUNT));
   EXPECT_EQ(2, GetIntAttr(table, AccessibilityNodeData::ATTR_TABLE_ROW_COUNT));
@@ -413,13 +429,17 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
   const AccessibilityNodeDataTreeNode& cell3 = table.children[1].children[0];
   const AccessibilityNodeDataTreeNode& cell4 = table.children[1].children[1];
 
-  ASSERT_EQ(6U, table.cell_ids.size());
-  EXPECT_EQ(cell1.id, table.cell_ids[0]);
-  EXPECT_EQ(cell1.id, table.cell_ids[1]);
-  EXPECT_EQ(cell2.id, table.cell_ids[2]);
-  EXPECT_EQ(cell3.id, table.cell_ids[3]);
-  EXPECT_EQ(cell4.id, table.cell_ids[4]);
-  EXPECT_EQ(cell4.id, table.cell_ids[5]);
+  ASSERT_EQ(AccessibilityNodeData::ATTR_CELL_IDS,
+            table.intlist_attributes[0].first);
+  const std::vector<int32>& table_cell_ids =
+      table.intlist_attributes[0].second;
+  ASSERT_EQ(6U, table_cell_ids.size());
+  EXPECT_EQ(cell1.id, table_cell_ids[0]);
+  EXPECT_EQ(cell1.id, table_cell_ids[1]);
+  EXPECT_EQ(cell2.id, table_cell_ids[2]);
+  EXPECT_EQ(cell3.id, table_cell_ids[3]);
+  EXPECT_EQ(cell4.id, table_cell_ids[4]);
+  EXPECT_EQ(cell4.id, table_cell_ids[5]);
 
   EXPECT_EQ(0, GetIntAttr(cell1,
                           AccessibilityNodeData::ATTR_TABLE_CELL_COLUMN_INDEX));

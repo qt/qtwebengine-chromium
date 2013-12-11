@@ -31,21 +31,21 @@
 
 namespace WebCore {
 
-MediaControlsChromiumAndroid::MediaControlsChromiumAndroid(Document* document)
+MediaControlsChromiumAndroid::MediaControlsChromiumAndroid(Document& document)
     : MediaControlsChromium(document)
     , m_overlayPlayButton(0)
     , m_overlayEnclosure(0)
 {
 }
 
-PassRefPtr<MediaControls> MediaControls::create(Document* document)
+PassRefPtr<MediaControls> MediaControls::create(Document& document)
 {
     return MediaControlsChromiumAndroid::createControls(document);
 }
 
-PassRefPtr<MediaControlsChromiumAndroid> MediaControlsChromiumAndroid::createControls(Document* document)
+PassRefPtr<MediaControlsChromiumAndroid> MediaControlsChromiumAndroid::createControls(Document& document)
 {
-    if (!document->page())
+    if (!document.page())
         return 0;
 
     RefPtr<MediaControlsChromiumAndroid> controls = adoptRef(new MediaControlsChromiumAndroid(document));
@@ -55,12 +55,12 @@ PassRefPtr<MediaControlsChromiumAndroid> MediaControlsChromiumAndroid::createCon
     RefPtr<MediaControlOverlayEnclosureElement> overlayEnclosure = MediaControlOverlayEnclosureElement::create(document);
     RefPtr<MediaControlOverlayPlayButtonElement> overlayPlayButton = MediaControlOverlayPlayButtonElement::create(document);
     controls->m_overlayPlayButton = overlayPlayButton.get();
-    overlayEnclosure->appendChild(overlayPlayButton.release(), es, AttachLazily);
+    overlayEnclosure->appendChild(overlayPlayButton.release(), es);
     if (es.hadException())
         return 0;
 
     controls->m_overlayEnclosure = overlayEnclosure.get();
-    controls->appendChild(overlayEnclosure.release(), es, AttachLazily);
+    controls->appendChild(overlayEnclosure.release(), es);
     if (es.hadException())
         return 0;
 
@@ -94,6 +94,6 @@ void MediaControlsChromiumAndroid::playbackStopped()
 void MediaControlsChromiumAndroid::insertTextTrackContainer(PassRefPtr<MediaControlTextTrackContainerElement> textTrackContainer)
 {
     // Insert it before the overlay play button so it always displays behind it.
-    m_overlayEnclosure->insertBefore(textTrackContainer, m_overlayPlayButton, ASSERT_NO_EXCEPTION, AttachLazily);
+    m_overlayEnclosure->insertBefore(textTrackContainer, m_overlayPlayButton);
 }
 }

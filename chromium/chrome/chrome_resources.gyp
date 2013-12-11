@@ -55,6 +55,7 @@
       'conditions': [
         ['OS != "ios"', {
           'dependencies': [
+            '../components/components.gyp:dom_distiller_resources',
             '../content/browser/devtools/devtools_resources.gyp:devtools_resources',
             '../content/browser/tracing/tracing_resources.gyp:tracing_resources',
           ],
@@ -278,6 +279,7 @@
       },
       'dependencies': [
         'chrome_extra_resources',
+        'packed_resources',
       ],
       'actions': [
         {

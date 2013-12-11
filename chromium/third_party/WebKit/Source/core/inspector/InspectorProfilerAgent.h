@@ -57,11 +57,11 @@ public:
 
     void addProfile(PassRefPtr<ScriptProfile> prpProfile, PassRefPtr<ScriptCallStack>);
     void addProfileFinishedMessageToConsole(PassRefPtr<ScriptProfile>, unsigned lineNumber, const String& sourceURL);
-    void addStartProfilingMessageToConsole(const String& title, unsigned lineNumber, const String& sourceURL);
     virtual void clearProfiles(ErrorString*);
 
     virtual void enable(ErrorString*);
     virtual void disable(ErrorString*);
+    virtual void setSamplingInterval(ErrorString*, int);
     virtual void start(ErrorString* = 0);
     virtual void stop(ErrorString*, RefPtr<TypeBuilder::Profiler::ProfileHeader>& header);
 
@@ -79,6 +79,8 @@ public:
 
     void willProcessTask();
     void didProcessTask();
+    void willEnterNestedRunLoop();
+    void didLeaveNestedRunLoop();
 
 private:
     InspectorProfilerAgent(InstrumentingAgents*, InspectorConsoleAgent*, InspectorCompositeState*, InjectedScriptManager*);
@@ -101,7 +103,10 @@ private:
 
     typedef HashMap<String, double> ProfileNameIdleTimeMap;
     ProfileNameIdleTimeMap* m_profileNameIdleTimeMap;
-    double m_previousTaskEndTime;
+    double m_idleStartTime;
+
+    void idleStarted();
+    void idleFinished();
 };
 
 } // namespace WebCore

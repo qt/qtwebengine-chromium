@@ -62,6 +62,8 @@ public:
 #if WEBKIT_IMPLEMENTATION
     explicit WebMIDIPermissionRequest(const PassRefPtr<WebCore::MIDIAccess>&);
     explicit WebMIDIPermissionRequest(WebCore::MIDIAccess*);
+
+    WebCore::MIDIAccess* midiAccess() const { return m_private.get(); }
 #endif
 
 private:

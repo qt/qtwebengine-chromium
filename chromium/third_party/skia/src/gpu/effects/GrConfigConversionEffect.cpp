@@ -30,16 +30,13 @@ public:
                           const char* outputColor,
                           const char* inputColor,
                           const TextureSamplerArray& samplers) SK_OVERRIDE {
-        const char* coords;
+        SkString coords;
         GrSLType coordsType = fEffectMatrix.emitCode(builder, key, &coords);
         builder->fsCodeAppendf("\t\t%s = ", outputColor);
-        builder->appendTextureLookup(GrGLShaderBuilder::kFragment_ShaderType,
-                                     samplers[0],
-                                     coords,
-                                     coordsType);
+        builder->fsAppendTextureLookup(samplers[0], coords.c_str(), coordsType);
         builder->fsCodeAppend(";\n");
         if (GrConfigConversionEffect::kNone_PMConversion == fPMConversion) {
-            GrAssert(fSwapRedAndBlue);
+            SkASSERT(fSwapRedAndBlue);
             builder->fsCodeAppendf("\t%s = %s.bgra;\n", outputColor, outputColor);
         } else {
             const char* swiz = fSwapRedAndBlue ? "bgr" : "rgb";
@@ -89,7 +86,7 @@ public:
                                                         drawEffect,
                                                         conv.coordsType(),
                                                         conv.texture(0));
-        GrAssert(!(matrixKey & key));
+        SkASSERT(!(matrixKey & key));
         return matrixKey | key;
     }
 
@@ -111,10 +108,10 @@ GrConfigConversionEffect::GrConfigConversionEffect(GrTexture* texture,
     : GrSingleTextureEffect(texture, matrix)
     , fSwapRedAndBlue(swapRedAndBlue)
     , fPMConversion(pmConversion) {
-    GrAssert(kRGBA_8888_GrPixelConfig == texture->config() ||
+    SkASSERT(kRGBA_8888_GrPixelConfig == texture->config() ||
              kBGRA_8888_GrPixelConfig == texture->config());
     // Why did we pollute our texture cache instead of using a GrSingleTextureEffect?
-    GrAssert(swapRedAndBlue || kNone_PMConversion != pmConversion);
+    SkASSERT(swapRedAndBlue || kNone_PMConversion != pmConversion);
 }
 
 const GrBackendEffectFactory& GrConfigConversionEffect::getFactory() const {
@@ -137,7 +134,7 @@ void GrConfigConversionEffect::getConstantColorComponents(GrColor* color,
 
 GR_DEFINE_EFFECT_TEST(GrConfigConversionEffect);
 
-GrEffectRef* GrConfigConversionEffect::TestCreate(SkMWCRandom* random,
+GrEffectRef* GrConfigConversionEffect::TestCreate(SkRandom* random,
                                                   GrContext*,
                                                   const GrDrawTargetCaps&,
                                                   GrTexture* textures[]) {

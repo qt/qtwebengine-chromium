@@ -51,7 +51,7 @@ static const AVOption volume_options[] = {
         { "fixed",  "select 8-bit fixed-point",     0, AV_OPT_TYPE_CONST, { .i64 = PRECISION_FIXED  }, INT_MIN, INT_MAX, A|F, "precision" },
         { "float",  "select 32-bit floating-point", 0, AV_OPT_TYPE_CONST, { .i64 = PRECISION_FLOAT  }, INT_MIN, INT_MAX, A|F, "precision" },
         { "double", "select 64-bit floating-point", 0, AV_OPT_TYPE_CONST, { .i64 = PRECISION_DOUBLE }, INT_MIN, INT_MAX, A|F, "precision" },
-    { NULL },
+    { NULL }
 };
 
 AVFILTER_DEFINE_CLASS(volume);
@@ -165,7 +165,7 @@ static inline void scale_samples_s32(uint8_t *dst, const uint8_t *src,
         smp_dst[i] = av_clipl_int32((((int64_t)smp_src[i] * volume + 128) >> 8));
 }
 
-static void volume_init(VolumeContext *vol)
+static av_cold void volume_init(VolumeContext *vol)
 {
     vol->samples_align = 1;
 
@@ -296,5 +296,5 @@ AVFilter avfilter_af_volume = {
     .init           = init,
     .inputs         = avfilter_af_volume_inputs,
     .outputs        = avfilter_af_volume_outputs,
-    .flags          = AVFILTER_FLAG_SUPPORT_TIMELINE,
+    .flags          = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
 };

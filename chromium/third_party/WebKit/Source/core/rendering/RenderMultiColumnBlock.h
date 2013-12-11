@@ -27,13 +27,13 @@
 #ifndef RenderMultiColumnBlock_h
 #define RenderMultiColumnBlock_h
 
-#include "core/rendering/RenderBlock.h"
+#include "core/rendering/RenderBlockFlow.h"
 
 namespace WebCore {
 
 class RenderMultiColumnFlowThread;
 
-class RenderMultiColumnBlock FINAL : public RenderBlock {
+class RenderMultiColumnBlock FINAL : public RenderBlockFlow {
 public:
     RenderMultiColumnBlock(Element*);
 
@@ -51,13 +51,15 @@ private:
 
     virtual const char* renderName() const;
 
-    virtual RenderObject* layoutSpecialExcludedChild(bool relayoutChildren) OVERRIDE;
+    virtual RenderObject* layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope&) OVERRIDE;
 
     virtual void styleDidChange(StyleDifference, const RenderStyle*) OVERRIDE;
 
     virtual bool updateLogicalWidthAndColumnWidth() OVERRIDE;
     virtual void checkForPaginationLogicalHeightChange(LayoutUnit& pageLogicalHeight, bool& pageLogicalHeightChanged, bool& hasSpecifiedPageLogicalHeight) OVERRIDE;
     virtual bool relayoutForPagination(bool hasSpecifiedPageLogicalHeight, LayoutUnit pageLogicalHeight, LayoutStateMaintainer&) OVERRIDE;
+
+    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
 
     virtual void addChild(RenderObject* newChild, RenderObject* beforeChild = 0) OVERRIDE;
 

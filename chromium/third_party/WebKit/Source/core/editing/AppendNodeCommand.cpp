@@ -27,7 +27,6 @@
 #include "core/editing/AppendNodeCommand.h"
 
 #include "bindings/v8/ExceptionState.h"
-#include "core/accessibility/AXObjectCache.h"
 #include "core/dom/Document.h"
 
 namespace WebCore {
@@ -44,26 +43,12 @@ AppendNodeCommand::AppendNodeCommand(PassRefPtr<ContainerNode> parent, PassRefPt
     ASSERT(m_parent->rendererIsEditable() || !m_parent->attached());
 }
 
-static void sendAXTextChangedIgnoringLineBreaks(Node* node, AXObjectCache::AXTextChange textChange)
-{
-    String nodeValue = node->nodeValue();
-    // Don't consider linebreaks in this command
-    if (nodeValue == "\n")
-      return;
-
-    if (AXObjectCache* cache = node->document()->existingAXObjectCache())
-        cache->nodeTextChangeNotification(node, textChange, 0, nodeValue);
-}
-
 void AppendNodeCommand::doApply()
 {
     if (!m_parent->rendererIsEditable() && m_parent->attached())
         return;
 
-    m_parent->appendChild(m_node.get(), IGNORE_EXCEPTION, AttachLazily);
-
-    if (AXObjectCache::accessibilityEnabled())
-        sendAXTextChangedIgnoringLineBreaks(m_node.get(), AXObjectCache::AXTextInserted);
+    m_parent->appendChild(m_node.get(), IGNORE_EXCEPTION);
 }
 
 void AppendNodeCommand::doUnapply()
@@ -71,19 +56,7 @@ void AppendNodeCommand::doUnapply()
     if (!m_parent->rendererIsEditable())
         return;
 
-    // Need to notify this before actually deleting the text
-    if (AXObjectCache::accessibilityEnabled())
-        sendAXTextChangedIgnoringLineBreaks(m_node.get(), AXObjectCache::AXTextDeleted);
-
     m_node->remove(IGNORE_EXCEPTION);
 }
-
-#ifndef NDEBUG
-void AppendNodeCommand::getNodesInCommand(HashSet<Node*>& nodes)
-{
-    addNodeAndDescendants(m_parent.get(), nodes);
-    addNodeAndDescendants(m_node.get(), nodes);
-}
-#endif
 
 } // namespace WebCore

@@ -159,7 +159,7 @@ bool isEditablePosition(const Position& p, EditableType editableType, EUpdateSty
     if (!node)
         return false;
     if (updateStyle == UpdateStyle)
-        node->document()->updateLayoutIgnorePendingStylesheets();
+        node->document().updateLayoutIgnorePendingStylesheets();
     else
         ASSERT(updateStyle == DoNotUpdateStyle);
 
@@ -268,8 +268,8 @@ VisiblePosition firstEditablePositionAfterPositionInRoot(const Position& positio
 
     Position p = position;
 
-    if (position.deprecatedNode()->treeScope() != highestRoot->treeScope()) {
-        Node* shadowAncestor = highestRoot->treeScope()->ancestorInThisScope(p.deprecatedNode());
+    if (&position.deprecatedNode()->treeScope() != &highestRoot->treeScope()) {
+        Node* shadowAncestor = highestRoot->treeScope().ancestorInThisScope(p.deprecatedNode());
         if (!shadowAncestor)
             return VisiblePosition();
 
@@ -293,8 +293,8 @@ VisiblePosition lastEditablePositionBeforePositionInRoot(const Position& positio
 
     Position p = position;
 
-    if (position.deprecatedNode()->treeScope() != highestRoot->treeScope()) {
-        Node* shadowAncestor = highestRoot->treeScope()->ancestorInThisScope(p.deprecatedNode());
+    if (&position.deprecatedNode()->treeScope() != &highestRoot->treeScope()) {
+        Node* shadowAncestor = highestRoot->treeScope().ancestorInThisScope(p.deprecatedNode());
         if (!shadowAncestor)
             return VisiblePosition();
 
@@ -427,9 +427,6 @@ bool isSpecialElement(const Node *n)
     if (renderer->style()->isFloating())
         return true;
 
-    if (renderer->style()->position() != StaticPosition)
-        return true;
-
     return false;
 }
 
@@ -530,9 +527,9 @@ VisiblePosition visiblePositionAfterNode(Node* node)
 }
 
 // Create a range object with two visible positions, start and end.
-// create(PassRefPtr<Document>, const Position&, const Position&); will use deprecatedEditingOffset
+// create(Document*, const Position&, const Position&); will use deprecatedEditingOffset
 // Use this function instead of create a regular range object (avoiding editing offset).
-PassRefPtr<Range> createRange(PassRefPtr<Document> document, const VisiblePosition& start, const VisiblePosition& end, ExceptionState& es)
+PassRefPtr<Range> createRange(Document& document, const VisiblePosition& start, const VisiblePosition& end, ExceptionState& es)
 {
     RefPtr<Range> selectedRange = Range::create(document);
     selectedRange->setStart(start.deepEquivalent().containerNode(), start.deepEquivalent().computeOffsetInContainerNode(), es);
@@ -758,15 +755,6 @@ bool canMergeLists(Element* firstList, Element* secondList)
     // Make sure there is no visible content between this li and the previous list
 }
 
-Node* highestAncestor(Node* node)
-{
-    ASSERT(node);
-    Node* parent = node;
-    while ((node = node->parentNode()))
-        parent = node;
-    return parent;
-}
-
 // FIXME: do not require renderer, so that this can be used within fragments, or rename to isRenderedTable()
 bool isTableElement(Node* n)
 {
@@ -819,9 +807,9 @@ bool isEmptyTableCell(const Node* node)
     return !childRenderer->nextSibling();
 }
 
-PassRefPtr<HTMLElement> createDefaultParagraphElement(Document* document)
+PassRefPtr<HTMLElement> createDefaultParagraphElement(Document& document)
 {
-    switch (document->frame()->editor()->defaultParagraphSeparator()) {
+    switch (document.frame()->editor().defaultParagraphSeparator()) {
     case EditorParagraphSeparatorIsDiv:
         return HTMLDivElement::create(document);
     case EditorParagraphSeparatorIsP:
@@ -832,32 +820,32 @@ PassRefPtr<HTMLElement> createDefaultParagraphElement(Document* document)
     return 0;
 }
 
-PassRefPtr<HTMLElement> createBreakElement(Document* document)
+PassRefPtr<HTMLElement> createBreakElement(Document& document)
 {
     return HTMLBRElement::create(document);
 }
 
-PassRefPtr<HTMLElement> createOrderedListElement(Document* document)
+PassRefPtr<HTMLElement> createOrderedListElement(Document& document)
 {
     return HTMLOListElement::create(document);
 }
 
-PassRefPtr<HTMLElement> createUnorderedListElement(Document* document)
+PassRefPtr<HTMLElement> createUnorderedListElement(Document& document)
 {
     return HTMLUListElement::create(document);
 }
 
-PassRefPtr<HTMLElement> createListItemElement(Document* document)
+PassRefPtr<HTMLElement> createListItemElement(Document& document)
 {
     return HTMLLIElement::create(document);
 }
 
-PassRefPtr<HTMLElement> createHTMLElement(Document* document, const QualifiedName& name)
+PassRefPtr<HTMLElement> createHTMLElement(Document& document, const QualifiedName& name)
 {
-    return HTMLElementFactory::createHTMLElement(name, document, 0, false);
+    return HTMLElementFactory::createHTMLElement(name, &document, 0, false);
 }
 
-PassRefPtr<HTMLElement> createHTMLElement(Document* document, const AtomicString& tagName)
+PassRefPtr<HTMLElement> createHTMLElement(Document& document, const AtomicString& tagName)
 {
     return createHTMLElement(document, QualifiedName(nullAtom, tagName, xhtmlNamespaceURI));
 }
@@ -891,30 +879,30 @@ Position positionOutsideTabSpan(const Position& pos)
     return positionInParentBeforeNode(node);
 }
 
-PassRefPtr<Element> createTabSpanElement(Document* document, PassRefPtr<Node> prpTabTextNode)
+PassRefPtr<Element> createTabSpanElement(Document& document, PassRefPtr<Node> prpTabTextNode)
 {
     RefPtr<Node> tabTextNode = prpTabTextNode;
 
     // Make the span to hold the tab.
-    RefPtr<Element> spanElement = document->createElement(spanTag, false);
+    RefPtr<Element> spanElement = document.createElement(spanTag, false);
     spanElement->setAttribute(classAttr, AppleTabSpanClass);
     spanElement->setAttribute(styleAttr, "white-space:pre");
 
     // Add tab text to that span.
     if (!tabTextNode)
-        tabTextNode = document->createEditingTextNode("\t");
+        tabTextNode = document.createEditingTextNode("\t");
 
-    spanElement->appendChild(tabTextNode.release(), ASSERT_NO_EXCEPTION);
+    spanElement->appendChild(tabTextNode.release());
 
     return spanElement.release();
 }
 
-PassRefPtr<Element> createTabSpanElement(Document* document, const String& tabText)
+PassRefPtr<Element> createTabSpanElement(Document& document, const String& tabText)
 {
-    return createTabSpanElement(document, document->createTextNode(tabText));
+    return createTabSpanElement(document, document.createTextNode(tabText));
 }
 
-PassRefPtr<Element> createTabSpanElement(Document* document)
+PassRefPtr<Element> createTabSpanElement(Document& document)
 {
     return createTabSpanElement(document, PassRefPtr<Node>());
 }
@@ -1061,13 +1049,13 @@ int indexForVisiblePosition(const VisiblePosition& visiblePosition, RefPtr<Conta
         return 0;
 
     Position p(visiblePosition.deepEquivalent());
-    Document* document = p.anchorNode()->document();
+    Document& document = *p.document();
     ShadowRoot* shadowRoot = p.anchorNode()->containingShadowRoot();
 
     if (shadowRoot)
         scope = shadowRoot;
     else
-        scope = document->documentElement();
+        scope = document.documentElement();
 
     RefPtr<Range> range = Range::create(document, firstPositionInNode(scope.get()), p.parentAnchoredEquivalent());
 

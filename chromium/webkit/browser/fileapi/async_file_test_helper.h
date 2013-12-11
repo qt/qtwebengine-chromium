@@ -23,6 +23,7 @@ class FileSystemURL;
 class AsyncFileTestHelper {
  public:
   typedef FileSystemOperation::FileEntryList FileEntryList;
+  typedef FileSystemOperation::CopyProgressCallback CopyProgressCallback;
 
   static const int64 kDontCheckSize;
 
@@ -30,6 +31,13 @@ class AsyncFileTestHelper {
   static base::PlatformFileError Copy(FileSystemContext* context,
                                       const FileSystemURL& src,
                                       const FileSystemURL& dest);
+
+  // Same as Copy, but this supports |progress_callback|.
+  static base::PlatformFileError CopyWithProgress(
+      FileSystemContext* context,
+      const FileSystemURL& src,
+      const FileSystemURL& dest,
+      const CopyProgressCallback& progress_callback);
 
   // Performs Move from |src| to |dest| and returns the status code.
   static base::PlatformFileError Move(FileSystemContext* context,
@@ -53,6 +61,13 @@ class AsyncFileTestHelper {
   // Creates a file at |url|.
   static base::PlatformFileError CreateFile(FileSystemContext* context,
                                             const FileSystemURL& url);
+
+  // Creates a file at |url| and fills with |buf|.
+  static base::PlatformFileError CreateFileWithData(
+      FileSystemContext* context,
+      const FileSystemURL& url,
+      const char* buf,
+      int buf_size);
 
   // Truncates the file |url| to |size|.
   static base::PlatformFileError TruncateFile(FileSystemContext* context,

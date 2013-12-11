@@ -33,10 +33,11 @@
 #include <algorithm>
 #include "CSSPropertyNames.h"
 #include "StylePropertyShorthand.h"
+#include "core/animation/css/CSSAnimations.h"
 #include "core/css/CSSCrossfadeValue.h"
 #include "core/css/CSSImageValue.h"
 #include "core/css/CSSPrimitiveValue.h"
-#include "core/loader/cache/ImageResource.h"
+#include "core/fetch/ImageResource.h"
 #include "core/page/animation/AnimationBase.h"
 #include "core/platform/FloatConversion.h"
 #include "core/rendering/ClipPathOperation.h"
@@ -68,11 +69,9 @@ static inline float blendFunc(const AnimationBase*, float from, float to, double
     return narrowPrecisionToFloat(from + (to - from) * progress);
 }
 
-static inline Color blendFunc(const AnimationBase* animation, const StyleColor& from, const StyleColor& to, double progress)
+static inline Color blendFunc(const AnimationBase*, const Color& from, const Color& to, double progress)
 {
-    Color fromColor = animation->renderer()->resolveColor(from);
-    Color toColor = animation->renderer()->resolveColor(to);
-    return blend(fromColor, toColor, progress);
+    return blend(from, to, progress);
 }
 
 static inline Length blendFunc(const AnimationBase*, const Length& from, const Length& to, double progress)
@@ -84,6 +83,11 @@ static inline LengthSize blendFunc(const AnimationBase* anim, const LengthSize& 
 {
     return LengthSize(blendFunc(anim, from.width(), to.width(), progress),
                       blendFunc(anim, from.height(), to.height(), progress));
+}
+
+static inline LengthPoint blendFunc(const AnimationBase* anim, const LengthPoint& from, const LengthPoint& to, double progress)
+{
+    return LengthPoint(blendFunc(anim, from.x(), to.x(), progress), blendFunc(anim, from.y(), to.y(), progress));
 }
 
 static inline IntSize blendFunc(const AnimationBase* anim, const IntSize& from, const IntSize& to, double progress)
@@ -109,14 +113,11 @@ static inline PassOwnPtr<ShadowData> blendFunc(const AnimationBase* anim, const 
     if (from->style() != to->style())
         return to->clone();
 
-    Color fromColor = anim->renderer()->resolveColor(from->color());
-    Color toColor = anim->renderer()->resolveColor(to->color());
-
     return ShadowData::create(blend(from->location(), to->location(), progress),
         blend(from->blur(), to->blur(), progress),
         blend(from->spread(), to->spread(), progress),
         blendFunc(anim, from->style(), to->style(), progress),
-        blend(fromColor, toColor, progress));
+        blend(from->color(), to->color(), progress));
 }
 
 static inline TransformOperations blendFunc(const AnimationBase* anim, const TransformOperations& from, const TransformOperations& to, double progress)
@@ -451,21 +452,21 @@ public:
     }
 };
 
-class PropertyWrapperColor : public PropertyWrapperGetter<StyleColor> {
+class PropertyWrapperColor : public PropertyWrapperGetter<Color> {
 public:
-    PropertyWrapperColor(CSSPropertyID prop, StyleColor (RenderStyle::*getter)() const, void (RenderStyle::*setter)(const StyleColor&))
-        : PropertyWrapperGetter<StyleColor>(prop, getter)
+    PropertyWrapperColor(CSSPropertyID prop, Color (RenderStyle::*getter)() const, void (RenderStyle::*setter)(const Color&))
+        : PropertyWrapperGetter<Color>(prop, getter)
         , m_setter(setter)
     {
     }
 
     virtual void blend(const AnimationBase* anim, RenderStyle* dst, const RenderStyle* a, const RenderStyle* b, double progress) const
     {
-        (dst->*m_setter)(blendFunc(anim, (a->*PropertyWrapperGetter<StyleColor>::m_getter)(), (b->*PropertyWrapperGetter<StyleColor>::m_getter)(), progress));
+        (dst->*m_setter)(blendFunc(anim, (a->*PropertyWrapperGetter<Color>::m_getter)(), (b->*PropertyWrapperGetter<Color>::m_getter)(), progress));
     }
 
 protected:
-    void (RenderStyle::*m_setter)(const StyleColor&);
+    void (RenderStyle::*m_setter)(const Color&);
 };
 
 class PropertyWrapperAcceleratedOpacity : public PropertyWrapper<float> {
@@ -588,7 +589,7 @@ public:
     }
 
 private:
-    PassOwnPtr<ShadowData*> blendSimpleOrMatchedShadowLists(const AnimationBase* anim, double progress, const ShadowData* shadowA, const ShadowData* shadowB) const
+    PassOwnPtr<ShadowData> blendSimpleOrMatchedShadowLists(const AnimationBase* anim, double progress, const ShadowData* shadowA, const ShadowData* shadowB) const
     {
         OwnPtr<ShadowData> newShadowData;
         ShadowData* lastShadow = 0;
@@ -614,7 +615,7 @@ private:
         return newShadowData.release();
     }
 
-    PassOwnPtr<ShadowData*> blendMismatchedShadowLists(const AnimationBase* anim, double progress, const ShadowData* shadowA, const ShadowData* shadowB, int fromLength, int toLength) const
+    PassOwnPtr<ShadowData> blendMismatchedShadowLists(const AnimationBase* anim, double progress, const ShadowData* shadowA, const ShadowData* shadowB, int fromLength, int toLength) const
     {
         // The shadows in ShadowData are stored in reverse order, so when animating mismatched lists,
         // reverse them and match from the end.
@@ -655,7 +656,7 @@ private:
 
 class PropertyWrapperMaybeInvalidColor : public AnimationPropertyWrapperBase {
 public:
-    PropertyWrapperMaybeInvalidColor(CSSPropertyID prop, StyleColor (RenderStyle::*getter)() const, void (RenderStyle::*setter)(const StyleColor&))
+    PropertyWrapperMaybeInvalidColor(CSSPropertyID prop, Color (RenderStyle::*getter)() const, void (RenderStyle::*setter)(const Color&))
         : AnimationPropertyWrapperBase(prop)
         , m_getter(getter)
         , m_setter(setter)
@@ -664,8 +665,8 @@ public:
 
     virtual bool equals(const RenderStyle* a, const RenderStyle* b) const
     {
-        StyleColor fromColor = (a->*m_getter)();
-        StyleColor toColor = (b->*m_getter)();
+        Color fromColor = (a->*m_getter)();
+        Color toColor = (b->*m_getter)();
 
         if (!fromColor.isValid() && !toColor.isValid())
             return true;
@@ -680,8 +681,8 @@ public:
 
     virtual void blend(const AnimationBase* anim, RenderStyle* dst, const RenderStyle* a, const RenderStyle* b, double progress) const
     {
-        StyleColor fromColor = (a->*m_getter)();
-        StyleColor toColor = (b->*m_getter)();
+        Color fromColor = (a->*m_getter)();
+        Color toColor = (b->*m_getter)();
 
         if (!fromColor.isValid() && !toColor.isValid())
             return;
@@ -694,23 +695,23 @@ public:
     }
 
 private:
-    StyleColor (RenderStyle::*m_getter)() const;
-    void (RenderStyle::*m_setter)(const StyleColor&);
+    Color (RenderStyle::*m_getter)() const;
+    void (RenderStyle::*m_setter)(const Color&);
 };
 
 
 enum MaybeInvalidColorTag { MaybeInvalidColor };
 class PropertyWrapperVisitedAffectedColor : public AnimationPropertyWrapperBase {
 public:
-    PropertyWrapperVisitedAffectedColor(CSSPropertyID prop, StyleColor (RenderStyle::*getter)() const, void (RenderStyle::*setter)(const StyleColor&),
-        StyleColor (RenderStyle::*visitedGetter)() const, void (RenderStyle::*visitedSetter)(const StyleColor&))
+    PropertyWrapperVisitedAffectedColor(CSSPropertyID prop, Color (RenderStyle::*getter)() const, void (RenderStyle::*setter)(const Color&),
+        Color (RenderStyle::*visitedGetter)() const, void (RenderStyle::*visitedSetter)(const Color&))
         : AnimationPropertyWrapperBase(prop)
         , m_wrapper(adoptPtr(new PropertyWrapperColor(prop, getter, setter)))
         , m_visitedWrapper(adoptPtr(new PropertyWrapperColor(prop, visitedGetter, visitedSetter)))
     {
     }
-    PropertyWrapperVisitedAffectedColor(CSSPropertyID prop, MaybeInvalidColorTag, StyleColor (RenderStyle::*getter)() const, void (RenderStyle::*setter)(const StyleColor&),
-        StyleColor (RenderStyle::*visitedGetter)() const, void (RenderStyle::*visitedSetter)(const StyleColor&))
+    PropertyWrapperVisitedAffectedColor(CSSPropertyID prop, MaybeInvalidColorTag, Color (RenderStyle::*getter)() const, void (RenderStyle::*setter)(const Color&),
+        Color (RenderStyle::*visitedGetter)() const, void (RenderStyle::*visitedSetter)(const Color&))
         : AnimationPropertyWrapperBase(prop)
         , m_wrapper(adoptPtr(new PropertyWrapperMaybeInvalidColor(prop, getter, setter)))
         , m_visitedWrapper(adoptPtr(new PropertyWrapperMaybeInvalidColor(prop, visitedGetter, visitedSetter)))
@@ -962,7 +963,7 @@ public:
 
 class PropertyWrapperSVGPaint : public AnimationPropertyWrapperBase {
 public:
-    PropertyWrapperSVGPaint(CSSPropertyID prop, const SVGPaint::SVGPaintType& (RenderStyle::*paintTypeGetter)() const, StyleColor (RenderStyle::*getter)() const, void (RenderStyle::*setter)(const StyleColor&))
+    PropertyWrapperSVGPaint(CSSPropertyID prop, const SVGPaint::SVGPaintType& (RenderStyle::*paintTypeGetter)() const, Color (RenderStyle::*getter)() const, void (RenderStyle::*setter)(const Color&))
         : AnimationPropertyWrapperBase(prop)
         , m_paintTypeGetter(paintTypeGetter)
         , m_getter(getter)
@@ -975,20 +976,20 @@ public:
         if ((a->*m_paintTypeGetter)() != (b->*m_paintTypeGetter)())
             return false;
 
-        // We only support animations between SVGPaints that are pure StyleColor values.
+        // We only support animations between SVGPaints that are pure Color values.
         // For everything else we must return true for this method, otherwise
         // we will try to animate between values forever.
         if ((a->*m_paintTypeGetter)() == SVGPaint::SVG_PAINTTYPE_RGBCOLOR) {
-            StyleColor fromColor = (a->*m_getter)();
-            StyleColor toColor = (b->*m_getter)();
+            Color fromColor = (a->*m_getter)();
+            Color toColor = (b->*m_getter)();
 
             if (!fromColor.isValid() && !toColor.isValid())
                 return true;
 
             if (!fromColor.isValid())
-                fromColor = StyleColor();
+                fromColor = Color();
             if (!toColor.isValid())
-                toColor = StyleColor();
+                toColor = Color();
 
             return fromColor == toColor;
         }
@@ -1001,23 +1002,23 @@ public:
             || (b->*m_paintTypeGetter)() != SVGPaint::SVG_PAINTTYPE_RGBCOLOR)
             return;
 
-        StyleColor fromColor = (a->*m_getter)();
-        StyleColor toColor = (b->*m_getter)();
+        Color fromColor = (a->*m_getter)();
+        Color toColor = (b->*m_getter)();
 
         if (!fromColor.isValid() && !toColor.isValid())
             return;
 
         if (!fromColor.isValid())
-            fromColor = StyleColor();
+            fromColor = Color();
         if (!toColor.isValid())
-            toColor = StyleColor();
+            toColor = Color();
         (dst->*m_setter)(blendFunc(anim, fromColor, toColor, progress));
     }
 
 private:
     const SVGPaint::SVGPaintType& (RenderStyle::*m_paintTypeGetter)() const;
-    StyleColor (RenderStyle::*m_getter)() const;
-    void (RenderStyle::*m_setter)(const StyleColor&);
+    Color (RenderStyle::*m_getter)() const;
+    void (RenderStyle::*m_setter)(const Color&);
 };
 
 static void addShorthandProperties()
@@ -1113,6 +1114,8 @@ void CSSPropertyAnimation::ensurePropertyMap()
     gPropertyWrappers->append(new FillLayersPropertyWrapper(CSSPropertyWebkitMaskPositionX, &RenderStyle::maskLayers, &RenderStyle::accessMaskLayers));
     gPropertyWrappers->append(new FillLayersPropertyWrapper(CSSPropertyWebkitMaskPositionY, &RenderStyle::maskLayers, &RenderStyle::accessMaskLayers));
     gPropertyWrappers->append(new FillLayersPropertyWrapper(CSSPropertyWebkitMaskSize, &RenderStyle::maskLayers, &RenderStyle::accessMaskLayers));
+
+    gPropertyWrappers->append(new PropertyWrapper<LengthPoint>(CSSPropertyObjectPosition, &RenderStyle::objectPosition, &RenderStyle::setObjectPosition));
 
     gPropertyWrappers->append(new PropertyWrapper<float>(CSSPropertyFontSize,
         // Must pass a specified size to setFontSize if Text Autosizing is enabled, but a computed size
@@ -1211,8 +1214,10 @@ void CSSPropertyAnimation::ensurePropertyMap()
     // code can find them.
     size_t n = gPropertyWrappers->size();
     for (unsigned int i = 0; i < n; ++i) {
-        ASSERT((*gPropertyWrappers)[i]->property() - firstCSSProperty < numCSSProperties);
-        gPropertyWrapperMap[(*gPropertyWrappers)[i]->property() - firstCSSProperty] = i;
+        CSSPropertyID property = (*gPropertyWrappers)[i]->property();
+        ASSERT_WITH_MESSAGE(CSSAnimations::isAnimatableProperty(property), "%s is not whitelisted for animation", getPropertyNameString(property).utf8().data());
+        ASSERT(property - firstCSSProperty < numCSSProperties);
+        gPropertyWrapperMap[property - firstCSSProperty] = i;
     }
 
     // Now add the shorthand wrappers.

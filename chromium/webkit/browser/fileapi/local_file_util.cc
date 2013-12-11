@@ -8,6 +8,7 @@
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util_proxy.h"
 #include "url/gurl.h"
+#include "webkit/browser/fileapi/async_file_util_adapter.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/file_system_url.h"
@@ -16,6 +17,10 @@
 #include "webkit/common/fileapi/file_system_util.h"
 
 namespace fileapi {
+
+AsyncFileUtil* AsyncFileUtil::CreateForLocalFileSystem() {
+  return new AsyncFileUtilAdapter(new LocalFileUtil());
+}
 
 using base::PlatformFileError;
 
@@ -69,11 +74,9 @@ bool LocalFileEnumerator::IsDirectory() {
   return file_util_info_.IsDirectory();
 }
 
-LocalFileUtil::LocalFileUtil() {
-}
+LocalFileUtil::LocalFileUtil() {}
 
-LocalFileUtil::~LocalFileUtil() {
-}
+LocalFileUtil::~LocalFileUtil() {}
 
 PlatformFileError LocalFileUtil::CreateOrOpen(
     FileSystemOperationContext* context,
@@ -157,10 +160,13 @@ PlatformFileError LocalFileUtil::GetLocalFilePath(
     FileSystemOperationContext* context,
     const FileSystemURL& url,
     base::FilePath* local_file_path) {
-  base::FilePath root = context->root_path();
-  if (root.empty())
-    return base::PLATFORM_FILE_ERROR_NOT_FOUND;
-  *local_file_path = root.Append(url.path());
+  DCHECK(local_file_path);
+  DCHECK(url.is_valid());
+  if (url.path().empty()) {
+    // Root direcory case, which should not be accessed.
+    return base::PLATFORM_FILE_ERROR_ACCESS_DENIED;
+  }
+  *local_file_path = url.path();
   return base::PLATFORM_FILE_OK;
 }
 

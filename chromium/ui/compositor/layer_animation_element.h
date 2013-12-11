@@ -11,8 +11,8 @@
 #include "cc/animation/animation.h"
 #include "cc/animation/animation_events.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/base/animation/tween.h"
 #include "ui/compositor/compositor_export.h"
+#include "ui/gfx/animation/tween.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/transform.h"
 
@@ -57,6 +57,7 @@ class COMPOSITOR_EXPORT LayerAnimationElement {
 
   LayerAnimationElement(const AnimatableProperties& properties,
                         base::TimeDelta duration);
+
   virtual ~LayerAnimationElement();
 
   // Creates an element that transitions to the given transform. The caller owns
@@ -64,6 +65,19 @@ class COMPOSITOR_EXPORT LayerAnimationElement {
   static LayerAnimationElement* CreateTransformElement(
       const gfx::Transform& transform,
       base::TimeDelta duration);
+
+  // Creates an element that counters a transition to the given transform.
+  // This element maintains the invariant uninverted_transition->at(t) *
+  // this->at(t) == base_transform * this->at(t_start) for any t. The caller
+  // owns the return value.
+  static LayerAnimationElement* CreateInverseTransformElement(
+      const gfx::Transform& base_transform,
+      const LayerAnimationElement* uninverted_transition);
+
+
+  // Duplicates elements as created by CreateInverseTransformElement.
+  static LayerAnimationElement* CloneInverseTransformElement(
+      const LayerAnimationElement* other);
 
   // Creates an element that transitions to another in a way determined by an
   // interpolated transform. The element accepts ownership of the interpolated
@@ -168,8 +182,8 @@ class COMPOSITOR_EXPORT LayerAnimationElement {
   // Whether this element animates on the compositor thread.
   virtual bool IsThreaded() const;
 
-  Tween::Type tween_type() const { return tween_type_; }
-  void set_tween_type(Tween::Type tween_type) { tween_type_ = tween_type; }
+  gfx::Tween::Type tween_type() const { return tween_type_; }
+  void set_tween_type(gfx::Tween::Type tween_type) { tween_type_ = tween_type; }
 
   // Each LayerAnimationElement has a unique animation_id. Elements belonging
   // to sequences that are supposed to start together have the same
@@ -177,6 +191,8 @@ class COMPOSITOR_EXPORT LayerAnimationElement {
   int animation_id() const { return animation_id_; }
   int animation_group_id() const { return animation_group_id_; }
   void set_animation_group_id(int id) { animation_group_id_ = id; }
+
+  base::TimeDelta duration() const { return duration_; }
 
   // The fraction of the animation that has been completed after the last
   // call made to {Progress, ProgressToEnd}.
@@ -190,10 +206,10 @@ class COMPOSITOR_EXPORT LayerAnimationElement {
   virtual void OnGetTarget(TargetValue* target) const = 0;
   virtual void OnAbort(LayerAnimationDelegate* delegate) = 0;
 
-  base::TimeDelta duration() const { return duration_; }
-
   // Actually start the animation, dispatching to another thread if needed.
   virtual void RequestEffectiveStart(LayerAnimationDelegate* delegate);
+
+  LayerAnimationElement(const LayerAnimationElement& element);
 
  private:
   // For debugging purposes, we sometimes alter the duration we actually use.
@@ -208,14 +224,14 @@ class COMPOSITOR_EXPORT LayerAnimationElement {
   // When the animation actually started, taking into account queueing delays.
   base::TimeTicks effective_start_time_;
   const base::TimeDelta duration_;
-  Tween::Type tween_type_;
+  gfx::Tween::Type tween_type_;
 
   const int animation_id_;
   int animation_group_id_;
 
   double last_progressed_fraction_;
 
-  DISALLOW_COPY_AND_ASSIGN(LayerAnimationElement);
+  DISALLOW_ASSIGN(LayerAnimationElement);
 };
 
 }  // namespace ui

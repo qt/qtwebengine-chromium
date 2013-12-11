@@ -34,7 +34,7 @@
 
 namespace WebCore {
 
-RemoveCSSPropertyCommand::RemoveCSSPropertyCommand(Document* document, PassRefPtr<Element> element, CSSPropertyID property)
+RemoveCSSPropertyCommand::RemoveCSSPropertyCommand(Document& document, PassRefPtr<Element> element, CSSPropertyID property)
     : SimpleEditCommand(document)
     , m_element(element)
     , m_property(property)
@@ -62,12 +62,5 @@ void RemoveCSSPropertyCommand::doUnapply()
 {
     m_element->style()->setPropertyInternal(m_property, m_oldValue, m_important, IGNORE_EXCEPTION);
 }
-
-#ifndef NDEBUG
-void RemoveCSSPropertyCommand::getNodesInCommand(HashSet<Node*>& nodes)
-{
-    addNodeAndDescendants(m_element.get(), nodes);
-}
-#endif
 
 } // namespace WebCore

@@ -586,7 +586,7 @@ void TextIterator::handleTextBox()
                 m_offset = runStart + 1;
             } else {
                 size_t subrunEnd = str.find('\n', runStart);
-                if (subrunEnd == notFound || subrunEnd > runEnd)
+                if (subrunEnd == kNotFound || subrunEnd > runEnd)
                     subrunEnd = runEnd;
 
                 m_offset = subrunEnd;
@@ -905,7 +905,7 @@ bool TextIterator::shouldRepresentNodeOffsetZero()
     // Additionally, if the range we are iterating over contains huge sections of unrendered content,
     // we would create VisiblePositions on every call to this function without this check.
     if (!m_node->renderer() || m_node->renderer()->style()->visibility() != VISIBLE
-        || (m_node->renderer()->isBlockFlow() && !toRenderBlock(m_node->renderer())->height() && !m_node->hasTagName(bodyTag)))
+        || (m_node->renderer()->isRenderBlockFlow() && !toRenderBlock(m_node->renderer())->height() && !m_node->hasTagName(bodyTag)))
         return false;
 
     // The startPos.isNotNull() check is needed because the start could be before the body,
@@ -2233,7 +2233,7 @@ PassRefPtr<Range> TextIterator::subrange(Range* entireRange, int characterOffset
 
 PassRefPtr<Range> TextIterator::rangeFromLocationAndLength(ContainerNode* scope, int rangeLocation, int rangeLength, bool forSelectionPreservation)
 {
-    RefPtr<Range> resultRange = scope->document()->createRange();
+    RefPtr<Range> resultRange = scope->document().createRange();
 
     int docTextPosition = 0;
     int rangeEnd = rangeLocation + rangeLength;
@@ -2266,7 +2266,7 @@ PassRefPtr<Range> TextIterator::rangeFromLocationAndLength(ContainerNode* scope,
             // FIXME: This is a workaround for the fact that the end of a run is often at the wrong
             // position for emitted '\n's.
             if (len == 1 && it.characterAt(0) == '\n') {
-                scope->document()->updateLayoutIgnorePendingStylesheets();
+                scope->document().updateLayoutIgnorePendingStylesheets();
                 it.advance();
                 if (!it.atEnd()) {
                     RefPtr<Range> range = it.range();
@@ -2321,7 +2321,7 @@ PassRefPtr<Range> TextIterator::rangeFromLocationAndLength(ContainerNode* scope,
 
 bool TextIterator::getLocationAndLengthFromRange(Node* scope, const Range* range, size_t& location, size_t& length)
 {
-    location = notFound;
+    location = kNotFound;
     length = 0;
 
     if (!range->startContainer())
@@ -2371,8 +2371,8 @@ String plainText(const Range* r, TextIteratorBehavior defaultBehavior, bool isDi
 
     String result = builder.toString();
 
-    if (isDisplayString && r->ownerDocument())
-        r->ownerDocument()->displayStringModifiedByEncoding(result);
+    if (isDisplayString)
+        r->ownerDocument().displayStringModifiedByEncoding(result);
 
     return result;
 }
@@ -2393,7 +2393,7 @@ static size_t findPlainText(CharacterIterator& it, const String& target, FindOpt
 
     if (buffer.needsMoreContext()) {
         RefPtr<Range> startRange = it.range();
-        RefPtr<Range> beforeStartRange = startRange->ownerDocument()->createRange();
+        RefPtr<Range> beforeStartRange = startRange->ownerDocument().createRange();
         beforeStartRange->setEnd(startRange->startContainer(), startRange->startOffset(), IGNORE_EXCEPTION);
         for (SimplifiedBackwardsTextIterator backwardsIterator(beforeStartRange.get()); !backwardsIterator.atEnd(); backwardsIterator.advance()) {
             Vector<UChar, 1024> characters;
@@ -2433,7 +2433,7 @@ tryAgain:
 PassRefPtr<Range> findPlainText(const Range* range, const String& target, FindOptions options)
 {
     // CharacterIterator requires renderers to be up-to-date
-    range->ownerDocument()->updateLayout();
+    range->ownerDocument().updateLayout();
 
     // First, find the text.
     size_t matchStart;

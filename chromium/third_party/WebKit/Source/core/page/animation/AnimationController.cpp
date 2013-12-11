@@ -29,10 +29,10 @@
 #include "config.h"
 #include "core/page/animation/AnimationController.h"
 
-#include "core/dom/AnimationEvent.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/PseudoElement.h"
 #include "core/dom/TransitionEvent.h"
+#include "core/dom/WebKitAnimationEvent.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "core/page/Page.h"
@@ -149,8 +149,12 @@ void AnimationControllerPrivate::scheduleService(double timeToNextService, doubl
 
     bool visible = m_frame->page()->visibilityState() == WebCore::PageVisibilityStateVisible;
 
+    // This std::max to 1 second limits how often we service animations on background tabs.
+    // Without this, plus and gmail were recalculating style as every 200ms or even more
+    // often, burning CPU needlessly for background tabs.
+    // FIXME: Do we want to fire events at all on background tabs?
     if (!visible)
-        timeToNextService = timeToNextEvent;
+        timeToNextService = std::max(timeToNextEvent, 1.0);
 
     if (visible && !timeToNextService) {
         m_frame->document()->view()->scheduleAnimation();
@@ -192,7 +196,7 @@ void AnimationControllerPrivate::fireEventsAndUpdateStyle()
         if (it->eventType == eventNames().transitionendEvent)
             element->dispatchEvent(TransitionEvent::create(it->eventType, it->name, it->elapsedTime, PseudoElement::pseudoElementNameForEvents(element->pseudoId())));
         else
-            element->dispatchEvent(AnimationEvent::create(it->eventType, it->name, it->elapsedTime));
+            element->dispatchEvent(WebKitAnimationEvent::create(it->eventType, it->name, it->elapsedTime));
     }
 
     // call setChanged on all the elements
@@ -309,7 +313,7 @@ void AnimationControllerPrivate::suspendAnimationsForDocument(Document* document
     RenderObjectAnimationMap::const_iterator animationsEnd = m_compositeAnimations.end();
     for (RenderObjectAnimationMap::const_iterator it = m_compositeAnimations.begin(); it != animationsEnd; ++it) {
         RenderObject* renderer = it->key;
-        if (renderer->document() == document) {
+        if (&renderer->document() == document) {
             CompositeAnimation* compAnim = it->value.get();
             compAnim->suspendAnimations();
         }
@@ -325,7 +329,7 @@ void AnimationControllerPrivate::resumeAnimationsForDocument(Document* document)
     RenderObjectAnimationMap::const_iterator animationsEnd = m_compositeAnimations.end();
     for (RenderObjectAnimationMap::const_iterator it = m_compositeAnimations.begin(); it != animationsEnd; ++it) {
         RenderObject* renderer = it->key;
-        if (renderer->document() == document) {
+        if (&renderer->document() == document) {
             CompositeAnimation* compAnim = it->value.get();
             compAnim->resumeAnimations();
         }
@@ -387,7 +391,7 @@ unsigned AnimationControllerPrivate::numberOfActiveAnimations(Document* document
     for (RenderObjectAnimationMap::const_iterator it = m_compositeAnimations.begin(); it != animationsEnd; ++it) {
         RenderObject* renderer = it->key;
         CompositeAnimation* compAnim = it->value.get();
-        if (renderer->document() == document)
+        if (&renderer->document() == document)
             count += compAnim->numberOfActiveAnimations();
     }
 
@@ -494,16 +498,13 @@ void AnimationController::cancelAnimations(RenderObject* renderer)
 
 PassRefPtr<RenderStyle> AnimationController::updateAnimations(RenderObject* renderer, RenderStyle* newStyle)
 {
-    if (!renderer->document())
-        return newStyle;
-
     RenderStyle* oldStyle = renderer->style();
 
     if ((!oldStyle || (!oldStyle->animations() && !oldStyle->transitions())) && (!newStyle->animations() && !newStyle->transitions()))
         return newStyle;
 
     // Don't run transitions when printing.
-    if (renderer->view()->printing())
+    if (renderer->view()->document().printing())
         return newStyle;
 
     // Fetch our current set of implicit animations from a hashtable.  We then compare them

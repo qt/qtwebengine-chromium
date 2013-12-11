@@ -37,10 +37,11 @@ namespace WebCore {
 class RenderObject;
 class RenderStyle;
 class StylePropertySet;
+class TimingFunction;
 
 class KeyframeValue {
 public:
-    KeyframeValue(float key, PassRefPtr<RenderStyle> style)
+    KeyframeValue(double key, PassRefPtr<RenderStyle> style)
         : m_key(key)
         , m_style(style)
     {
@@ -51,14 +52,16 @@ public:
     bool containsProperty(CSSPropertyID prop) const { return m_properties.contains(prop); }
     const HashSet<CSSPropertyID>& properties() const { return m_properties; }
 
-    float key() const { return m_key; }
-    void setKey(float key) { m_key = key; }
+    double key() const { return m_key; }
+    void setKey(double key) { m_key = key; }
 
     const RenderStyle* style() const { return m_style.get(); }
     void setStyle(PassRefPtr<RenderStyle> style) { m_style = style; }
 
+    static TimingFunction* timingFunction(const RenderStyle*, const AtomicString& name);
+
 private:
-    float m_key;
+    double m_key;
     HashSet<CSSPropertyID> m_properties; // The properties specified in this keyframe.
     RefPtr<RenderStyle> m_style;
 };

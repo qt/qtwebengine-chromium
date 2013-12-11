@@ -103,10 +103,12 @@ inline unsigned CSSSelector::specificityForOneSelector() const
     case Contain:
     case Begin:
     case End:
-        // FIXME: PsuedoAny should base the specificity on the sub-selectors.
+        // FIXME: PseudoAny should base the specificity on the sub-selectors.
         // See http://lists.w3.org/Archives/Public/www-style/2010Sep/0530.html
-        if (pseudoType() == PseudoNot && selectorList())
+        if (pseudoType() == PseudoNot) {
+            ASSERT(selectorList());
             return selectorList()->first()->specificityForOneSelector();
+        }
         return 0x100;
     case Tag:
         return (tagQName().localName() != starAtom) ? 1 : 0;
@@ -127,7 +129,7 @@ unsigned CSSSelector::specificityForPage() const
         case Tag:
             s += tagQName().localName() == starAtom ? 0 : 4;
             break;
-        case PseudoClass:
+        case PagePseudoClass:
             switch (component->pseudoType()) {
             case PseudoFirstPage:
                 s += 2;
@@ -431,7 +433,7 @@ static HashMap<StringImpl*, CSSSelector::PseudoType>* nameToPseudoTypeMap()
             nameToPseudoType->set(hostWithParams.impl(), CSSSelector::PseudoHost);
             nameToPseudoType->set(content.impl(), CSSSelector::PseudoContent);
         }
-        if (RuntimeEnabledFeatures::customDOMElementsEnabled())
+        if (RuntimeEnabledFeatures::customElementsEnabled() || RuntimeEnabledFeatures::embedderCustomElementsEnabled())
             nameToPseudoType->set(unresolved.impl(), CSSSelector::PseudoUnresolved);
     }
     return nameToPseudoType;
@@ -627,8 +629,8 @@ String CSSSelector::selectorText(const String& rightSide) const
 
             switch (cs->pseudoType()) {
             case PseudoNot:
-                if (const CSSSelectorList* selectorList = cs->selectorList())
-                    str.append(selectorList->first()->selectorText());
+                ASSERT(cs->selectorList());
+                str.append(cs->selectorList()->first()->selectorText());
                 str.append(')');
                 break;
             case PseudoLang:
@@ -887,7 +889,7 @@ bool CSSSelector::RareData::parseNth()
         m_b = 0;
     } else {
         size_t n = argument.find('n');
-        if (n != notFound) {
+        if (n != kNotFound) {
             if (argument[0] == '-') {
                 if (n == 1)
                     m_a = -1; // -n == -1n
@@ -899,11 +901,11 @@ bool CSSSelector::RareData::parseNth()
                 m_a = argument.substring(0, n).toInt();
 
             size_t p = argument.find('+', n);
-            if (p != notFound)
+            if (p != kNotFound)
                 m_b = argument.substring(p + 1, argument.length() - p - 1).toInt();
             else {
                 p = argument.find('-', n);
-                if (p != notFound)
+                if (p != kNotFound)
                     m_b = -argument.substring(p + 1, argument.length() - p - 1).toInt();
             }
         } else

@@ -51,7 +51,9 @@ class P2PSocketDispatcherHost::DnsRequest {
 
     net::HostResolver::RequestInfo info(net::HostPortPair(host_name_, 0));
     int result = resolver_.Resolve(
-        info, &addresses_,
+        info,
+        net::DEFAULT_PRIORITY,
+        &addresses_,
         base::Bind(&P2PSocketDispatcherHost::DnsRequest::OnDone,
                    base::Unretained(this)),
         net::BoundNetLog());
@@ -190,8 +192,8 @@ void P2PSocketDispatcherHost::OnCreateSocket(
     return;
   }
 
-  scoped_ptr<P2PSocketHost> socket(
-      P2PSocketHost::Create(this, socket_id, type, url_context_.get()));
+  scoped_ptr<P2PSocketHost> socket(P2PSocketHost::Create(
+      this, socket_id, type, url_context_.get(), &throttler_));
 
   if (!socket) {
     Send(new P2PMsg_OnError(socket_id));

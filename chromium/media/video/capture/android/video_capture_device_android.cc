@@ -21,19 +21,6 @@ using base::android::MethodID;
 using base::android::JavaRef;
 using base::android::ScopedJavaLocalRef;
 
-namespace {
-
-int GetIntField(JNIEnv* env,
-                const JavaRef<jclass>& clazz,
-                const JavaRef<jobject>& instance,
-                const char* field_name) {
-  jfieldID field = GetFieldID(env, clazz, field_name, "I");
-  jint int_value = env->GetIntField(instance.obj(), field);
-  return int_value;
-}
-
-}  // namespace
-
 namespace media {
 
 // static
@@ -94,6 +81,7 @@ bool VideoCaptureDeviceAndroid::RegisterVideoCaptureDevice(JNIEnv* env) {
 
 VideoCaptureDeviceAndroid::VideoCaptureDeviceAndroid(const Name& device_name)
     : state_(kIdle),
+      got_first_frame_(false),
       observer_(NULL),
       device_name_(device_name),
       current_settings_() {
@@ -151,9 +139,16 @@ void VideoCaptureDeviceAndroid::Allocate(
       Java_VideoCapture_queryHeight(env, j_capture_.obj());
   current_settings_.frame_rate =
       Java_VideoCapture_queryFrameRate(env, j_capture_.obj());
-  current_settings_.color = VideoCaptureCapability::kYV12;
+  current_settings_.color = GetColorspace();
+  DCHECK_NE(current_settings_.color, media::PIXEL_FORMAT_UNKNOWN);
   CHECK(current_settings_.width > 0 && !(current_settings_.width % 2));
   CHECK(current_settings_.height > 0 && !(current_settings_.height % 2));
+
+  if (capture_format.frame_rate > 0) {
+    frame_interval_ = base::TimeDelta::FromMicroseconds(
+        (base::Time::kMicrosecondsPerSecond + capture_format.frame_rate - 1) /
+        capture_format.frame_rate);
+  }
 
   DVLOG(1) << "VideoCaptureDeviceAndroid::Allocate: queried width="
            << current_settings_.width
@@ -169,6 +164,7 @@ void VideoCaptureDeviceAndroid::Start() {
   DVLOG(1) << "VideoCaptureDeviceAndroid::Start";
   {
     base::AutoLock lock(lock_);
+    got_first_frame_ = false;
     DCHECK_EQ(state_, kAllocated);
   }
 
@@ -249,11 +245,44 @@ void VideoCaptureDeviceAndroid::OnFrameAvailable(
     return;
   }
 
-  observer_->OnIncomingCapturedFrame(
-      reinterpret_cast<uint8*>(buffer), length, base::Time::Now(),
-      rotation, flip_vert, flip_horiz);
+  base::TimeTicks current_time = base::TimeTicks::Now();
+  if (!got_first_frame_) {
+    // Set aside one frame allowance for fluctuation.
+    expected_next_frame_time_ = current_time - frame_interval_;
+    got_first_frame_ = true;
+  }
+
+  // Deliver the frame when it doesn't arrive too early.
+  if (expected_next_frame_time_ <= current_time) {
+    expected_next_frame_time_ += frame_interval_;
+
+    observer_->OnIncomingCapturedFrame(
+        reinterpret_cast<uint8*>(buffer), length, base::Time::Now(),
+        rotation, flip_vert, flip_horiz);
+  }
 
   env->ReleaseByteArrayElements(data, buffer, JNI_ABORT);
+}
+
+VideoPixelFormat VideoCaptureDeviceAndroid::GetColorspace() {
+  JNIEnv* env = AttachCurrentThread();
+  int current_capture_colorspace =
+      Java_VideoCapture_getColorspace(env, j_capture_.obj());
+  switch (current_capture_colorspace){
+  case ANDROID_IMAGEFORMAT_YV12:
+    return media::PIXEL_FORMAT_YV12;
+  case ANDROID_IMAGEFORMAT_NV21:
+    return media::PIXEL_FORMAT_NV21;
+  case ANDROID_IMAGEFORMAT_YUY2:
+    return media::PIXEL_FORMAT_YUY2;
+  case ANDROID_IMAGEFORMAT_NV16:
+  case ANDROID_IMAGEFORMAT_JPEG:
+  case ANDROID_IMAGEFORMAT_RGB_565:
+  case ANDROID_IMAGEFORMAT_UNKNOWN:
+    // NOTE(mcasas): NV16, JPEG, RGB565 not supported in VideoPixelFormat.
+  default:
+    return media::PIXEL_FORMAT_UNKNOWN;
+  }
 }
 
 void VideoCaptureDeviceAndroid::SetErrorState(const std::string& reason) {

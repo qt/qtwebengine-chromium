@@ -27,11 +27,8 @@
 #include "wtf/OwnPtrCommon.h"
 #include "wtf/TypeTraits.h"
 #include <algorithm>
-#include <memory>
 
 namespace WTF {
-
-    // Unlike most of our smart pointers, OwnPtr can take either the pointer type or the pointed-to type.
 
     template<typename T> class PassOwnPtr;
     template<typename T> PassOwnPtr<T> adoptPtr(T*);
@@ -44,14 +41,14 @@ namespace WTF {
 #endif
         WTF_DISALLOW_CONSTRUCTION_FROM_ZERO(OwnPtr);
     public:
-        typedef typename RemovePointer<T>::Type ValueType;
+        typedef T ValueType;
         typedef ValueType* PtrType;
 
         OwnPtr() : m_ptr(0) { }
         OwnPtr(std::nullptr_t) : m_ptr(0) { }
 
         // See comment in PassOwnPtr.h for why this takes a const reference.
-        template<typename U> OwnPtr(const PassOwnPtr<U>& o);
+        template<typename U> OwnPtr(const PassOwnPtr<U>&, EnsurePtrConvertibleArgDecl(U, T));
 
 #if !COMPILER_SUPPORTS(CXX_RVALUE_REFERENCES)
         // This copy constructor is used implicitly by gcc when it generates
@@ -61,7 +58,11 @@ namespace WTF {
         OwnPtr(const OwnPtr<ValueType>&);
 #endif
 
-        ~OwnPtr() { deleteOwnedPtr(m_ptr); }
+        ~OwnPtr()
+        {
+            deleteOwnedPtr(m_ptr);
+            m_ptr = 0;
+        }
 
         PtrType get() const { return m_ptr; }
 
@@ -108,7 +109,7 @@ namespace WTF {
         PtrType m_ptr;
     };
 
-    template<typename T> template<typename U> inline OwnPtr<T>::OwnPtr(const PassOwnPtr<U>& o)
+    template<typename T> template<typename U> inline OwnPtr<T>::OwnPtr(const PassOwnPtr<U>& o, EnsurePtrConvertibleArgDefn(U, T))
         : m_ptr(o.leakPtr())
     {
     }

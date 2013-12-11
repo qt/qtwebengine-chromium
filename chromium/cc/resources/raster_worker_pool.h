@@ -11,10 +11,11 @@
 #include "cc/debug/rendering_stats_instrumentation.h"
 #include "cc/resources/picture_pile_impl.h"
 #include "cc/resources/raster_mode.h"
+#include "cc/resources/resource.h"
+#include "cc/resources/resource_provider.h"
 #include "cc/resources/tile_priority.h"
 #include "cc/resources/worker_pool.h"
-
-class SkDevice;
+#include "third_party/khronos/GLES2/gl2.h"
 
 namespace skia {
 class LazyPixelRef;
@@ -23,7 +24,6 @@ class LazyPixelRef;
 namespace cc {
 class PicturePileImpl;
 class PixelBufferRasterWorkerPool;
-class Resource;
 class ResourceProvider;
 
 namespace internal {
@@ -33,10 +33,13 @@ class CC_EXPORT RasterWorkerPoolTask
  public:
   typedef std::vector<scoped_refptr<WorkerPoolTask> > TaskVector;
 
-  // Returns true if |device| was written to. False indicate that
-  // the content of |device| is undefined and the resource doesn't
+  // Returns true if |buffer| was written to. False indicate that
+  // the content of |buffer| is undefined and the resource doesn't
   // need to be initialized.
-  virtual bool RunOnWorkerThread(SkDevice* device, unsigned thread_index) = 0;
+  virtual bool RunOnWorkerThread(unsigned thread_index,
+                                 void* buffer,
+                                 gfx::Size size,
+                                 int stride) = 0;
   virtual void CompleteOnOriginThread() = 0;
 
   void DidRun(bool was_canceled);
@@ -182,6 +185,9 @@ class CC_EXPORT RasterWorkerPool : public WorkerPool {
   // Once scheduled, reply callbacks are guaranteed to run for all tasks
   // even if they later get canceled by another call to ScheduleTasks().
   virtual void ScheduleTasks(RasterTask::Queue* queue) = 0;
+
+  // Returns the format that needs to be used for raster task resources.
+  virtual ResourceFormat GetResourceFormat() const = 0;
 
   // TODO(vmpstr): Figure out an elegant way to not pass this many parameters.
   static RasterTask CreateRasterTask(

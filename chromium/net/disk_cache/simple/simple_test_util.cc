@@ -8,13 +8,12 @@
 #include "net/disk_cache/simple/simple_util.h"
 
 namespace disk_cache {
-
 namespace simple_util {
 
 bool CreateCorruptFileForTests(const std::string& key,
                                const base::FilePath& cache_path) {
   base::FilePath entry_file_path = cache_path.AppendASCII(
-      disk_cache::simple_util::GetFilenameFromKeyAndIndex(key, 0));
+      disk_cache::simple_util::GetFilenameFromKeyAndFileIndex(key, 0));
   int flags = base::PLATFORM_FILE_CREATE_ALWAYS | base::PLATFORM_FILE_WRITE;
   base::PlatformFile entry_file =
       base::CreatePlatformFile(entry_file_path, flags, NULL, NULL);
@@ -30,5 +29,4 @@ bool CreateCorruptFileForTests(const std::string& key,
 }
 
 }  // namespace simple_backend
-
 }  // namespace disk_cache

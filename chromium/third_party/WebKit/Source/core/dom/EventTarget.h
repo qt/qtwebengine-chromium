@@ -38,8 +38,8 @@
 
 namespace WebCore {
 
+    class ApplicationCache;
     class AudioContext;
-    class DOMApplicationCache;
     class DOMWindow;
     class DedicatedWorkerGlobalScope;
     class Event;
@@ -106,6 +106,7 @@ namespace WebCore {
 
         virtual Node* toNode();
         virtual DOMWindow* toDOMWindow();
+        virtual MessagePort* toMessagePort();
 
         virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture);
         virtual bool removeEventListener(const AtomicString& eventType, EventListener*, bool useCapture);
@@ -138,6 +139,7 @@ namespace WebCore {
 
         DOMWindow* executingWindow();
         void fireEventListeners(Event*, EventTargetData*, EventListenerVector&);
+        void countLegacyEvents(const AtomicString& legacyTypeName, EventListenerVector*, EventListenerVector*);
 
         bool clearAttributeEventListener(const AtomicString& eventType, DOMWrapperWorld* isolatedWorld);
 
@@ -159,8 +161,8 @@ namespace WebCore {
         void type::setOn##attribute(PassRefPtr<EventListener> listener, DOMWrapperWorld* isolatedWorld) { setAttributeEventListener(eventNames().attribute##Event, listener, isolatedWorld); } \
 
     #define DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(attribute) \
-        EventListener* on##attribute(DOMWrapperWorld* isolatedWorld) { return document()->getWindowAttributeEventListener(eventNames().attribute##Event, isolatedWorld); } \
-        void setOn##attribute(PassRefPtr<EventListener> listener, DOMWrapperWorld* isolatedWorld) { document()->setWindowAttributeEventListener(eventNames().attribute##Event, listener, isolatedWorld); } \
+        EventListener* on##attribute(DOMWrapperWorld* isolatedWorld) { return document().getWindowAttributeEventListener(eventNames().attribute##Event, isolatedWorld); } \
+        void setOn##attribute(PassRefPtr<EventListener> listener, DOMWrapperWorld* isolatedWorld) { document().setWindowAttributeEventListener(eventNames().attribute##Event, listener, isolatedWorld); } \
 
     #define DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(attribute, eventName) \
         EventListener* on##attribute(DOMWrapperWorld* isolatedWorld) { return getAttributeEventListener(eventNames().eventName##Event, isolatedWorld); } \

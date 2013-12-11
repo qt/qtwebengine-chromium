@@ -19,13 +19,13 @@
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/drag_utils.h"
-#include "ui/base/events/event.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/range/range.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/compositor/layer.h"
+#include "ui/events/event.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/insets.h"
+#include "ui/gfx/range/range.h"
 #include "ui/gfx/render_text.h"
 #include "ui/gfx/text_constants.h"
 #include "ui/native_theme/native_theme.h"
@@ -130,7 +130,7 @@ bool NativeTextfieldViews::OnMouseDragged(const ui::MouseEvent& event) {
     if (aggregated_clicks_ == 1) {
       model_->SelectWord();
       // Expand the selection so the initially selected word remains selected.
-      ui::Range selection = GetRenderText()->selection();
+      gfx::Range selection = GetRenderText()->selection();
       const size_t min = std::min(selection.GetMin(),
                                   double_click_word_.GetMin());
       const size_t max = std::max(selection.GetMax(),
@@ -273,10 +273,10 @@ bool NativeTextfieldViews::CanDrop(const OSExchangeData& data) {
 int NativeTextfieldViews::OnDragUpdated(const ui::DropTargetEvent& event) {
   DCHECK(CanDrop(event.data()));
 
-  const ui::Range& selection = GetRenderText()->selection();
+  const gfx::Range& selection = GetRenderText()->selection();
   drop_cursor_position_ = GetRenderText()->FindCursorPosition(event.location());
   bool in_selection = !selection.is_empty() &&
-      selection.Contains(ui::Range(drop_cursor_position_.caret_pos()));
+      selection.Contains(gfx::Range(drop_cursor_position_.caret_pos()));
   is_drop_cursor_visible_ = !in_selection;
   // TODO(msw): Pan over text when the user drags to the visible text edge.
   OnCaretBoundsChanged();
@@ -325,7 +325,7 @@ int NativeTextfieldViews::OnPerformDrop(const ui::DropTargetEvent& event) {
   if (move) {
     // Adjust the drop destination if it is on or after the current selection.
     size_t drop = drop_destination_model.caret_pos();
-    drop -= GetSelectedRange().Intersect(ui::Range(0, drop)).length();
+    drop -= GetSelectedRange().Intersect(gfx::Range(0, drop)).length();
     model_->DeleteSelectionAndInsertTextAt(text, drop);
   } else {
     model_->MoveCursorTo(drop_destination_model);
@@ -371,7 +371,7 @@ void NativeTextfieldViews::SelectRect(const gfx::Point& start,
   gfx::SelectionModel start_caret = GetRenderText()->FindCursorPosition(start);
   gfx::SelectionModel end_caret = GetRenderText()->FindCursorPosition(end);
   gfx::SelectionModel selection(
-      ui::Range(start_caret.caret_pos(), end_caret.caret_pos()),
+      gfx::Range(start_caret.caret_pos(), end_caret.caret_pos()),
       end_caret.caret_affinity());
 
   OnBeforeUserAction();
@@ -629,11 +629,11 @@ bool NativeTextfieldViews::IsIMEComposing() const {
   return model_->HasCompositionText();
 }
 
-ui::Range NativeTextfieldViews::GetSelectedRange() const {
+gfx::Range NativeTextfieldViews::GetSelectedRange() const {
   return GetRenderText()->selection();
 }
 
-void NativeTextfieldViews::SelectRange(const ui::Range& range) {
+void NativeTextfieldViews::SelectRange(const gfx::Range& range) {
   model_->SelectRange(range);
   OnCaretBoundsChanged();
   SchedulePaint();
@@ -719,7 +719,7 @@ int NativeTextfieldViews::GetFontHeight() {
 }
 
 int NativeTextfieldViews::GetTextfieldBaseline() const {
-  return GetRenderText()->font_list().GetBaseline();
+  return GetRenderText()->GetBaseline();
 }
 
 int NativeTextfieldViews::GetWidthNeededForText() const {
@@ -734,6 +734,10 @@ bool NativeTextfieldViews::HasTextBeingDragged() {
   return initiating_drag_;
 }
 
+gfx::Point NativeTextfieldViews::GetContextMenuLocation() {
+  return GetCaretBounds().bottom_right();
+}
+
 /////////////////////////////////////////////////////////////////
 // NativeTextfieldViews, ui::SimpleMenuModel::Delegate overrides:
 
@@ -745,6 +749,8 @@ bool NativeTextfieldViews::IsCommandIdEnabled(int command_id) const {
   bool editable = !textfield_->read_only();
   string16 result;
   switch (command_id) {
+    case IDS_APP_UNDO:
+      return editable && model_->CanUndo();
     case IDS_APP_CUT:
       return editable && model_->HasSelection() && !textfield_->IsObscured();
     case IDS_APP_COPY:
@@ -788,6 +794,12 @@ void NativeTextfieldViews::ExecuteCommand(int command_id, int event_flags) {
   } else {
     bool text_changed = false;
     switch (command_id) {
+      case IDS_APP_UNDO:
+        OnBeforeUserAction();
+        text_changed = model_->Undo();
+        UpdateAfterChange(text_changed, text_changed);
+        OnAfterUserAction();
+        break;
       case IDS_APP_CUT:
         OnBeforeUserAction();
         text_changed = Cut();
@@ -829,7 +841,7 @@ void NativeTextfieldViews::SetColor(SkColor value) {
   SchedulePaint();
 }
 
-void NativeTextfieldViews::ApplyColor(SkColor value, const ui::Range& range) {
+void NativeTextfieldViews::ApplyColor(SkColor value, const gfx::Range& range) {
   GetRenderText()->ApplyColor(value, range);
   SchedulePaint();
 }
@@ -841,7 +853,7 @@ void NativeTextfieldViews::SetStyle(gfx::TextStyle style, bool value) {
 
 void NativeTextfieldViews::ApplyStyle(gfx::TextStyle style,
                                       bool value,
-                                      const ui::Range& range) {
+                                      const gfx::Range& range) {
   GetRenderText()->ApplyStyle(style, value, range);
   SchedulePaint();
 }
@@ -983,7 +995,7 @@ bool NativeTextfieldViews::GetCompositionCharacterBounds(uint32 index,
   DCHECK(rect);
   if (!HasCompositionText())
     return false;
-  const ui::Range& composition_range = GetRenderText()->GetCompositionRange();
+  const gfx::Range& composition_range = GetRenderText()->GetCompositionRange();
   const uint32 left_cursor_pos = composition_range.start() + index;
   const uint32 right_cursor_pos = composition_range.start() + index + 1;
   DCHECK(!composition_range.is_empty());
@@ -1012,7 +1024,7 @@ bool NativeTextfieldViews::HasCompositionText() {
   return model_->HasCompositionText();
 }
 
-bool NativeTextfieldViews::GetTextRange(ui::Range* range) {
+bool NativeTextfieldViews::GetTextRange(gfx::Range* range) {
   if (!ImeEditingAllowed())
     return false;
 
@@ -1020,7 +1032,7 @@ bool NativeTextfieldViews::GetTextRange(ui::Range* range) {
   return true;
 }
 
-bool NativeTextfieldViews::GetCompositionTextRange(ui::Range* range) {
+bool NativeTextfieldViews::GetCompositionTextRange(gfx::Range* range) {
   if (!ImeEditingAllowed())
     return false;
 
@@ -1028,14 +1040,14 @@ bool NativeTextfieldViews::GetCompositionTextRange(ui::Range* range) {
   return true;
 }
 
-bool NativeTextfieldViews::GetSelectionRange(ui::Range* range) {
+bool NativeTextfieldViews::GetSelectionRange(gfx::Range* range) {
   if (!ImeEditingAllowed())
     return false;
   *range = GetSelectedRange();
   return true;
 }
 
-bool NativeTextfieldViews::SetSelectionRange(const ui::Range& range) {
+bool NativeTextfieldViews::SetSelectionRange(const gfx::Range& range) {
   if (!ImeEditingAllowed() || !range.IsValid())
     return false;
 
@@ -1045,7 +1057,7 @@ bool NativeTextfieldViews::SetSelectionRange(const ui::Range& range) {
   return true;
 }
 
-bool NativeTextfieldViews::DeleteRange(const ui::Range& range) {
+bool NativeTextfieldViews::DeleteRange(const gfx::Range& range) {
   if (!ImeEditingAllowed() || range.is_empty())
     return false;
 
@@ -1060,12 +1072,12 @@ bool NativeTextfieldViews::DeleteRange(const ui::Range& range) {
 }
 
 bool NativeTextfieldViews::GetTextFromRange(
-    const ui::Range& range,
+    const gfx::Range& range,
     string16* text) {
   if (!ImeEditingAllowed() || !range.IsValid())
     return false;
 
-  ui::Range text_range;
+  gfx::Range text_range;
   if (!GetTextRange(&text_range) || !text_range.Contains(range))
     return false;
 
@@ -1086,12 +1098,12 @@ bool NativeTextfieldViews::ChangeTextDirectionAndLayoutAlignment(
 void NativeTextfieldViews::ExtendSelectionAndDelete(
     size_t before,
     size_t after) {
-  ui::Range range = GetSelectedRange();
+  gfx::Range range = GetSelectedRange();
   DCHECK_GE(range.start(), before);
 
   range.set_start(range.start() - before);
   range.set_end(range.end() + after);
-  ui::Range text_range;
+  gfx::Range text_range;
   if (GetTextRange(&text_range) && text_range.Contains(range))
     DeleteRange(range);
 }
@@ -1178,7 +1190,7 @@ bool NativeTextfieldViews::HandleKeyEvent(const ui::KeyEvent& key_event) {
     const bool readable = !textfield_->IsObscured();
     const bool shift = key_event.IsShiftDown();
     const bool control = key_event.IsControlDown();
-    const bool alt = key_event.IsAltDown();
+    const bool alt = key_event.IsAltDown() || key_event.IsAltGrDown();
     bool text_changed = false;
     bool cursor_changed = false;
     switch (key_code) {
@@ -1217,7 +1229,7 @@ bool NativeTextfieldViews::HandleKeyEvent(const ui::KeyEvent& key_event) {
         // forward/back of the browser history.
         if (alt)
           break;
-        const ui::Range selection_range = GetSelectedRange();
+        const gfx::Range selection_range = GetSelectedRange();
         model_->MoveCursor(
             control ? gfx::WORD_BREAK : gfx::CHARACTER_BREAK,
             (key_code == ui::VKEY_RIGHT) ? gfx::CURSOR_RIGHT : gfx::CURSOR_LEFT,
@@ -1322,6 +1334,8 @@ void NativeTextfieldViews::UpdateAfterChange(bool text_changed,
 void NativeTextfieldViews::UpdateContextMenu() {
   if (!context_menu_contents_.get()) {
     context_menu_contents_.reset(new ui::SimpleMenuModel(this));
+    context_menu_contents_->AddItemWithStringId(IDS_APP_UNDO, IDS_APP_UNDO);
+    context_menu_contents_->AddSeparator(ui::NORMAL_SEPARATOR);
     context_menu_contents_->AddItemWithStringId(IDS_APP_CUT, IDS_APP_CUT);
     context_menu_contents_->AddItemWithStringId(IDS_APP_COPY, IDS_APP_COPY);
     context_menu_contents_->AddItemWithStringId(IDS_APP_PASTE, IDS_APP_PASTE);

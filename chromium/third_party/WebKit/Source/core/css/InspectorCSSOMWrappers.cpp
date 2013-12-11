@@ -39,7 +39,7 @@
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/CSSSupportsRule.h"
 #include "core/css/StyleSheetContents.h"
-#include "core/dom/DocumentStyleSheetCollection.h"
+#include "core/dom/StyleEngine.h"
 
 namespace WebCore {
 
@@ -103,7 +103,7 @@ void InspectorCSSOMWrappers::collectFromStyleSheets(const Vector<RefPtr<CSSStyle
         collect(sheets[i].get());
 }
 
-void InspectorCSSOMWrappers::collectFromDocumentStyleSheetCollection(DocumentStyleSheetCollection* styleSheetCollection)
+void InspectorCSSOMWrappers::collectFromStyleEngine(StyleEngine* styleSheetCollection)
 {
     collectFromStyleSheets(styleSheetCollection->activeAuthorStyleSheets());
     collect(styleSheetCollection->pageUserSheet());
@@ -111,18 +111,17 @@ void InspectorCSSOMWrappers::collectFromDocumentStyleSheetCollection(DocumentSty
     collectFromStyleSheets(styleSheetCollection->documentUserStyleSheets());
 }
 
-CSSStyleRule* InspectorCSSOMWrappers::getWrapperForRuleInSheets(StyleRule* rule, DocumentStyleSheetCollection* styleSheetCollection)
+CSSStyleRule* InspectorCSSOMWrappers::getWrapperForRuleInSheets(StyleRule* rule, StyleEngine* styleSheetCollection)
 {
     if (m_styleRuleToCSSOMWrapperMap.isEmpty()) {
         collectFromStyleSheetContents(m_styleSheetCSSOMWrapperSet, CSSDefaultStyleSheets::simpleDefaultStyleSheet);
         collectFromStyleSheetContents(m_styleSheetCSSOMWrapperSet, CSSDefaultStyleSheets::defaultStyleSheet);
         collectFromStyleSheetContents(m_styleSheetCSSOMWrapperSet, CSSDefaultStyleSheets::quirksStyleSheet);
         collectFromStyleSheetContents(m_styleSheetCSSOMWrapperSet, CSSDefaultStyleSheets::svgStyleSheet);
-        collectFromStyleSheetContents(m_styleSheetCSSOMWrapperSet, CSSDefaultStyleSheets::mathMLStyleSheet);
         collectFromStyleSheetContents(m_styleSheetCSSOMWrapperSet, CSSDefaultStyleSheets::mediaControlsStyleSheet);
         collectFromStyleSheetContents(m_styleSheetCSSOMWrapperSet, CSSDefaultStyleSheets::fullscreenStyleSheet);
 
-        collectFromDocumentStyleSheetCollection(styleSheetCollection);
+        collectFromStyleEngine(styleSheetCollection);
     }
     return m_styleRuleToCSSOMWrapperMap.get(rule);
 }

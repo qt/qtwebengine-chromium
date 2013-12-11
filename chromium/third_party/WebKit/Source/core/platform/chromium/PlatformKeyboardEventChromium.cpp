@@ -27,9 +27,9 @@
 #include "config.h"
 #include "core/platform/PlatformKeyboardEvent.h"
 
-#if OS(WINDOWS)
+#if OS(WIN)
 #include <windows.h>
-#elif OS(DARWIN)
+#elif OS(MACOSX)
 #import <Carbon/Carbon.h>
 #else
 #include "core/platform/NotImplemented.h"
@@ -37,13 +37,13 @@
 
 namespace WebCore {
 
-#if OS(WINDOWS)
+#if OS(WIN)
 static const unsigned short HIGH_BIT_MASK_SHORT = 0x8000;
 #endif
 
 void PlatformKeyboardEvent::disambiguateKeyDownEvent(Type type)
 {
-#if OS(WINDOWS)
+#if OS(WIN)
     // No KeyDown events on Windows to disambiguate.
     ASSERT_NOT_REACHED();
 #else
@@ -58,7 +58,7 @@ void PlatformKeyboardEvent::disambiguateKeyDownEvent(Type type)
     } else {
         m_keyIdentifier = String();
         m_windowsVirtualKeyCode = 0;
-#if OS(DARWIN)
+#if OS(MACOSX)
         if (m_text.length() == 1 && (m_text[0U] >= 0xF700 && m_text[0U] <= 0xF7FF)) {
             // According to NSEvents.h, OpenStep reserves the range 0xF700-0xF8FF for function keys. However, some actual private use characters
             // happen to be in this range, e.g. the Apple logo (Option+Shift+K).
@@ -73,10 +73,10 @@ void PlatformKeyboardEvent::disambiguateKeyDownEvent(Type type)
 
 bool PlatformKeyboardEvent::currentCapsLockState()
 {
-#if OS(WINDOWS)
+#if OS(WIN)
     // FIXME: Does this even work inside the sandbox?
     return GetKeyState(VK_CAPITAL) & 1;
-#elif OS(DARWIN)
+#elif OS(MACOSX)
     return GetCurrentKeyModifiers() & alphaLock;
 #else
     notImplemented();
@@ -86,12 +86,12 @@ bool PlatformKeyboardEvent::currentCapsLockState()
 
 void PlatformKeyboardEvent::getCurrentModifierState(bool& shiftKey, bool& ctrlKey, bool& altKey, bool& metaKey)
 {
-#if OS(WINDOWS)
+#if OS(WIN)
     shiftKey = GetKeyState(VK_SHIFT) & HIGH_BIT_MASK_SHORT;
     ctrlKey = GetKeyState(VK_CONTROL) & HIGH_BIT_MASK_SHORT;
     altKey = GetKeyState(VK_MENU) & HIGH_BIT_MASK_SHORT;
     metaKey = false;
-#elif OS(DARWIN)
+#elif OS(MACOSX)
     UInt32 currentModifiers = GetCurrentKeyModifiers();
     shiftKey = currentModifiers & ::shiftKey;
     ctrlKey = currentModifiers & ::controlKey;

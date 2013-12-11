@@ -327,7 +327,6 @@
         }],
         ['OS=="win"', {
           'defines': [
-            'WEBCORE_NAVIGATOR_PLATFORM="Win32"',
             '__PRETTY_FUNCTION__=__FUNCTION__',
           ],
           # In generated bindings code: 'switch contains default but no case'.
@@ -397,7 +396,6 @@
       ],
       'direct_dependent_settings': {
         'defines': [
-          'WEBCORE_NAVIGATOR_VENDOR="Google Inc."',
           'WEBKIT_IMPLEMENTATION=1',
           'INSIDE_WEBKIT',
         ],
@@ -456,9 +454,6 @@
         ['OS=="mac"', {
           'direct_dependent_settings': {
             'defines': [
-              # Match Safari and Mozilla on Mac x86.
-              'WEBCORE_NAVIGATOR_PLATFORM="MacIntel"',
-
               # Chromium's version of WebCore includes the following Objective-C
               # classes. The system-provided WebCore framework may also provide
               # these classes. Because of the nature of Objective-C binding
@@ -512,8 +507,6 @@
         ['OS=="win"', {
           'direct_dependent_settings': {
             'defines': [
-              # Match Safari and Mozilla on Windows.
-              'WEBCORE_NAVIGATOR_PLATFORM="Win32"',
               '__PRETTY_FUNCTION__=__FUNCTION__',
             ],
           },
@@ -613,7 +606,7 @@
       'sources/': [
         # FIXME: Figure out how to store these patterns in a variable.
         ['exclude', '(cf|cg|harfbuzz|mac|opentype|svg|win)/'],
-        ['exclude', '(?<!Chromium)(CF|CG|Mac|OpenType|Win)\\.(cpp|mm?)$'],
+        ['exclude', '(?<!Chromium)(CF|CG|Mac|Win)\\.(cpp|mm?)$'],
 
         # Used only by mac.
         ['exclude', 'platform/Theme\\.cpp$'],
@@ -623,27 +616,6 @@
         ['exclude', 'platform/graphics/cpu/arm/filters/.*NEON\\.(cpp|h)'],
       ],
       'conditions': [
-        ['use_default_render_theme==1', {
-          'sources/': [
-            ['exclude', 'platform/chromium/PlatformThemeChromiumWin.h'],
-            ['exclude', 'platform/chromium/PlatformThemeChromiumWin.cpp'],
-            ['exclude', 'platform/chromium/ScrollbarThemeChromiumWin.cpp'],
-            ['exclude', 'platform/chromium/ScrollbarThemeChromiumWin.h'],
-          ],
-        }, { # use_default_render_theme==0
-          'sources/': [
-            ['exclude', 'platform/chromium/PlatformThemeChromiumDefault.cpp'],
-            ['exclude', 'platform/chromium/PlatformThemeChromiumDefault.h'],
-            ['exclude', 'platform/chromium/ScrollbarThemeChromiumDefault.cpp'],
-            ['exclude', 'platform/chromium/ScrollbarThemeChromiumDefault.h'],
-          ],
-        }],
-        ['use_default_render_theme==0 and OS!="android"', {
-          'sources/': [
-            ['exclude', 'platform/chromium/ScrollbarThemeChromiumOverlay.cpp'],
-            ['exclude', 'platform/chromium/ScrollbarThemeChromiumOverlay.h'],
-          ]
-        }],
         ['OS=="linux" or OS=="android"', {
           'sources/': [
             # Cherry-pick files excluded by the broader regular expressions above.
@@ -670,14 +642,9 @@
             ['exclude', 'Linux\\.cpp$'],
           ],
         }],
-        ['toolkit_uses_gtk == 1', {
+        ['toolkit_uses_gtk == 0', {
           'sources/': [
-            # Cherry-pick files excluded by the broader regular expressions above.
-            ['include', 'platform/chromium/KeyCodeConversionGtk\\.cpp$'],
-          ],
-        }, { # toolkit_uses_gtk==0
-          'sources/': [
-            ['exclude', 'Gtk\\.cpp$'],
+            ['exclude', 'platform/chromium/KeyCodeConversionGtk\\.cpp$'],
           ],
         }],
         ['OS=="mac"', {
@@ -716,9 +683,6 @@
             ['include', 'platform/mac/KillRingMac\\.mm$'],
             ['include', 'platform/mac/LocalCurrentGraphicsContext\\.mm$'],
             ['include', 'platform/mac/NSScrollerImpDetails\\.mm$'],
-            ['include', 'platform/mac/ScrollbarThemeMac\\.mm$'],
-            ['include', 'platform/mac/ScrollbarThemeMacNonOverlayAPI\\.mm$'],
-            ['include', 'platform/mac/ScrollbarThemeMacOverlayAPI\\.mm$'],
             ['include', 'platform/mac/ScrollAnimatorMac\\.mm$'],
             ['include', 'platform/mac/ScrollElasticityController\\.mm$'],
             ['include', 'platform/mac/ThemeMac\\.h$'],
@@ -744,9 +708,7 @@
             # included by regex above, instead.
             ['exclude', 'platform/graphics/skia/FontCustomPlatformDataSkia\\.cpp$'],
 
-            # The Mac currently uses ScrollbarThemeChromiumMac.mm, which is not
-            # related to ScrollbarThemeChromium.cpp.
-            ['exclude', 'platform/chromium/ScrollbarThemeChromium\\.cpp$'],
+            ['exclude', 'platform/ScrollbarThemeNonMacCommon\\.(cpp|h)$'],
 
             # Mac uses only ScrollAnimatorMac.
             ['exclude', 'platform/ScrollAnimatorNone\\.cpp$'],
@@ -771,6 +733,7 @@
         },{ # OS!="mac"
           'sources/': [
             ['exclude', 'Mac\\.(cpp|mm?)$'],
+            ['exclude', 'ScrollbarThemeMac'],
 
             # FIXME: We will eventually compile this too, but for now it's
             # only used on mac.
@@ -786,11 +749,10 @@
           'sources/': [
             ['exclude', 'Posix\\.cpp$'],
 
-            ['include', '/opentype/'],
-            ['include', '/SkiaFontWin\\.cpp$'],
-            ['include', '/TransparencyWin\\.cpp$'],
-
-            ['exclude', 'platform/graphics/skia/FontCacheSkia\\.cpp$'],
+            ['include', 'platform/ScrollbarThemeWin\\.(cpp|h)$'],
+            ['include', 'platform/graphics/chromium/TransparencyWin\\.(cpp|h)$'],
+            ['include', 'platform/graphics/opentype/'],
+            ['include', 'platform/graphics/skia/SkiaFontWin\\.(cpp|h)$'],
 
             # Windows currently uses FontCustomPlatformDataWin.cpp instead.
             ['exclude', 'platform/graphics/skia/FontCustomPlatformDataSkia\\.cpp$'],
@@ -809,13 +771,19 @@
               'sources/': [
                 ['exclude', 'platform/graphics/skia/SimpleFontDataSkia\\.cpp$'],
                 ['exclude', 'platform/graphics/skia/GlyphPageTreeNodeSkia\\.cpp$'],
+                ['exclude', 'platform/graphics/skia/FontCacheSkia\\.cpp$'],
+                ['exclude', 'platform/graphics/skia/FontCacheSkiaWin\\.cpp$'],
               ],
             },{ # ENABLE_GDI_FONTS_ON_WINDOWS!=1
               'sources/': [
-                ['exclude', 'platform/graphics/chromium/SimpleFontDataChromiumWin\\.cpp$'],
                 ['include', 'platform/graphics/skia/SimpleFontDataSkia\\.cpp$'],
                 ['include', 'platform/graphics/skia/GlyphPageTreeNodeSkia\\.cpp$'],
+                ['include', 'platform/graphics/skia/FontCacheSkiaWin\\.cpp$'],
+                ['include', 'platform/graphics/skia/FontCustomPlatformDataSkia\\.cpp$'],
+                ['exclude', 'platform/graphics/chromium/SimpleFontDataChromiumWin\\.cpp$'],
                 ['exclude', 'platform/graphics/chromium/GlyphPageTreeNodeChromiumWin\\.cpp$'],
+                ['exclude', 'platform/graphics/chromium/FontCacheChromiumWin\\.cpp$'],
+                ['exclude', 'platform/graphics/win/FontCustomPlatformDataWin\\.cpp$'],
               ],
             }],
           ],
@@ -837,11 +805,21 @@
             ['include', 'platform/chromium/FileSystemChromiumLinux\\.cpp$'],
             ['include', 'platform/graphics/chromium/GlyphPageTreeNodeLinux\\.cpp$'],
             ['include', 'platform/graphics/chromium/VDMXParser\\.cpp$'],
-            ['exclude', 'platform/graphics/skia/FontCacheSkia\\.cpp$'],
           ],
         }, { # OS!="android"
           'sources/': [
             ['exclude', 'Android\\.cpp$'],
+          ],
+        }],
+        ['use_default_render_theme==1', {
+          'sources/': [
+            ['exclude', 'platform/ScrollbarThemeWin\\.(cpp|h)'],
+            ['exclude', 'platform/chromium/PlatformThemeChromiumWin\\.(cpp|h)'],
+          ],
+        }, { # use_default_render_theme==0
+          'sources/': [
+            ['exclude', 'platform/ScrollbarThemeAuraOrGtk\\.(cpp|h)'],
+            ['exclude', 'platform/chromium/PlatformThemeChromiumDefault\\.(cpp|h)'],
           ],
         }],
       ],
@@ -901,7 +879,7 @@
 
         # FIXME: Figure out how to store these patterns in a variable.
         ['exclude', '(cf|cg|mac|opentype|svg|win)/'],
-        ['exclude', '(?<!Chromium)(CF|CG|Mac|OpenType|Win)\\.(cpp|mm?)$'],
+        ['exclude', '(?<!Chromium)(CF|CG|Mac|Win)\\.(cpp|mm?)$'],
         # Previous rule excludes things like ChromiumFooWin, include those.
         ['include', 'rendering/.*Chromium.*\\.(cpp|mm?)$'],
       ],
@@ -987,7 +965,7 @@
 
         # FIXME: Figure out how to store these patterns in a variable.
         ['exclude', '(cf|cg|mac|opentype|svg|win)/'],
-        ['exclude', '(?<!Chromium)(CF|CG|Mac|OpenType|Win)\\.(cpp|mm?)$'],
+        ['exclude', '(?<!Chromium)(CF|CG|Mac|Win)\\.(cpp|mm?)$'],
       ],
       'conditions': [
         # Shard this taret into parts to work around linker limitations.

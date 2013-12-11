@@ -49,6 +49,7 @@ class InspectorOverlayHost;
 class JSONValue;
 class Node;
 class Page;
+class PlatformGestureEvent;
 class PlatformMouseEvent;
 class PlatformTouchEvent;
 
@@ -118,6 +119,7 @@ public:
     {
         return adoptPtr(new InspectorOverlay(page, client));
     }
+
     ~InspectorOverlay();
 
     void update();
@@ -126,6 +128,7 @@ public:
     void drawOutline(GraphicsContext*, const LayoutRect&, const Color&);
     void getHighlight(Highlight*) const;
     void resize(const IntSize&);
+    bool handleGestureEvent(const PlatformGestureEvent&);
     bool handleMouseEvent(const PlatformMouseEvent&);
     bool handleTouchEvent(const PlatformTouchEvent&);
 
@@ -140,6 +143,7 @@ public:
     void showAndHideViewSize(bool showGrid);
 
     Node* highlightedNode() const;
+    bool getBoxModel(Node*, Vector<FloatQuad>*);
 
     void freePage();
 

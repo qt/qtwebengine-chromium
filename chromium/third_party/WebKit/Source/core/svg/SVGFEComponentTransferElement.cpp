@@ -40,7 +40,7 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGFEComponentTransferElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGFilterPrimitiveStandardAttributes)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGFEComponentTransferElement::SVGFEComponentTransferElement(const QualifiedName& tagName, Document* document)
+inline SVGFEComponentTransferElement::SVGFEComponentTransferElement(const QualifiedName& tagName, Document& document)
     : SVGFilterPrimitiveStandardAttributes(tagName, document)
 {
     ASSERT(hasTagName(SVGNames::feComponentTransferTag));
@@ -48,7 +48,7 @@ inline SVGFEComponentTransferElement::SVGFEComponentTransferElement(const Qualif
     registerAnimatedPropertiesForSVGFEComponentTransferElement();
 }
 
-PassRefPtr<SVGFEComponentTransferElement> SVGFEComponentTransferElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<SVGFEComponentTransferElement> SVGFEComponentTransferElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new SVGFEComponentTransferElement(tagName, document));
 }
@@ -90,13 +90,13 @@ PassRefPtr<FilterEffect> SVGFEComponentTransferElement::build(SVGFilterBuilder* 
 
     for (Node* node = firstChild(); node; node = node->nextSibling()) {
         if (node->hasTagName(SVGNames::feFuncRTag))
-            red = static_cast<SVGFEFuncRElement*>(node)->transferFunction();
+            red = toSVGFEFuncRElement(node)->transferFunction();
         else if (node->hasTagName(SVGNames::feFuncGTag))
-            green = static_cast<SVGFEFuncGElement*>(node)->transferFunction();
+            green = toSVGFEFuncGElement(node)->transferFunction();
         else if (node->hasTagName(SVGNames::feFuncBTag))
-            blue = static_cast<SVGFEFuncBElement*>(node)->transferFunction();
+            blue = toSVGFEFuncBElement(node)->transferFunction();
         else if (node->hasTagName(SVGNames::feFuncATag))
-            alpha = static_cast<SVGFEFuncAElement*>(node)->transferFunction();
+            alpha = toSVGFEFuncAElement(node)->transferFunction();
     }
 
     RefPtr<FilterEffect> effect = FEComponentTransfer::create(filter, red, green, blue, alpha);

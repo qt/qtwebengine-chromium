@@ -16,6 +16,7 @@
 #include "ppapi/host/resource_host.h"
 #include "ppapi/proxy/ppapi_message_utils.h"
 #include "ppapi/proxy/ppapi_messages.h"
+#include "ppapi/proxy/ppapi_message_utils.h"
 #include "ppapi/proxy/resource_message_params.h"
 
 namespace content {
@@ -28,8 +29,7 @@ PepperRendererConnection::PepperRendererConnection(int render_process_id)
                                                   "",
                                                   base::FilePath(),
                                                   base::FilePath(),
-                                                  false,
-                                                  NULL));
+                                                  false));
 }
 
 PepperRendererConnection::~PepperRendererConnection() {
@@ -72,10 +72,8 @@ bool PepperRendererConnection::OnMessageReceived(const IPC::Message& msg,
 
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP_EX(PepperRendererConnection, msg, *message_was_ok)
-    IPC_MESSAGE_HANDLER(PpapiHostMsg_CreateResourceHostFromHost,
-                        OnMsgCreateResourceHostFromHost)
-    IPC_MESSAGE_HANDLER(PpapiHostMsg_FileRef_GetInfoForRenderer,
-                        OnMsgFileRefGetInfoForRenderer)
+    IPC_MESSAGE_HANDLER(PpapiHostMsg_CreateResourceHostsFromHost,
+                        OnMsgCreateResourceHostsFromHost)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidCreateInProcessInstance,
                         OnMsgDidCreateInProcessInstance)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidDeleteInProcessInstance,
@@ -86,79 +84,48 @@ bool PepperRendererConnection::OnMessageReceived(const IPC::Message& msg,
   return handled;
 }
 
-void PepperRendererConnection::OnMsgCreateResourceHostFromHost(
+void PepperRendererConnection::OnMsgCreateResourceHostsFromHost(
     int routing_id,
     int child_process_id,
     const ppapi::proxy::ResourceMessageCallParams& params,
     PP_Instance instance,
-    const IPC::Message& nested_msg) {
+    const std::vector<IPC::Message>& nested_msgs) {
   BrowserPpapiHostImpl* host = GetHostForChildProcess(child_process_id);
 
-  int pending_resource_host_id;
+  std::vector<int> pending_resource_host_ids(nested_msgs.size(), 0);
   if (!host) {
     DLOG(ERROR) << "Invalid plugin process ID.";
-    pending_resource_host_id = 0;
   } else {
-    // FileRef_CreateExternal is only permitted from the renderer. Because of
-    // this, we handle this message here and not in
-    // content_browser_pepper_host_factory.cc.
-    scoped_ptr<ppapi::host::ResourceHost> resource_host;
-    if (host->IsValidInstance(instance)) {
-      if (nested_msg.type() == PpapiHostMsg_FileRef_CreateExternal::ID) {
-        base::FilePath external_path;
-        if (ppapi::UnpackMessage<PpapiHostMsg_FileRef_CreateExternal>(
-            nested_msg, &external_path)) {
-          resource_host.reset(new PepperFileRefHost(
-              host, instance, params.pp_resource(), external_path));
+    for (size_t i = 0; i < nested_msgs.size(); ++i) {
+      // FileRef_CreateExternal is only permitted from the renderer. Because of
+      // this, we handle this message here and not in
+      // content_browser_pepper_host_factory.cc.
+      scoped_ptr<ppapi::host::ResourceHost> resource_host;
+      if (host->IsValidInstance(instance)) {
+        if (nested_msgs[i].type() == PpapiHostMsg_FileRef_CreateExternal::ID) {
+          base::FilePath external_path;
+          if (ppapi::UnpackMessage<PpapiHostMsg_FileRef_CreateExternal>(
+              nested_msgs[i], &external_path)) {
+            resource_host.reset(new PepperFileRefHost(
+                host, instance, params.pp_resource(), external_path));
+          }
         }
       }
-    }
 
-    if (!resource_host.get()) {
-      resource_host = host->GetPpapiHost()->CreateResourceHost(params,
-                                                               instance,
-                                                               nested_msg);
-    }
-    pending_resource_host_id =
-        host->GetPpapiHost()->AddPendingResourceHost(resource_host.Pass());
-  }
+      if (!resource_host.get()) {
+        resource_host = host->GetPpapiHost()->CreateResourceHost(
+            params, instance, nested_msgs[i]);
+      }
 
-  Send(new PpapiHostMsg_CreateResourceHostFromHostReply(
-       routing_id, params.sequence(), pending_resource_host_id));
-}
-
-void PepperRendererConnection::OnMsgFileRefGetInfoForRenderer(
-    int routing_id,
-    int child_process_id,
-    int32_t sequence,
-    const std::vector<PP_Resource>& resources) {
-  std::vector<PP_Resource> out_resources;
-  std::vector<PP_FileSystemType> fs_types;
-  std::vector<std::string> file_system_url_specs;
-  std::vector<base::FilePath> external_paths;
-
-  BrowserPpapiHostImpl* host = GetHostForChildProcess(child_process_id);
-  if (host) {
-    for (size_t i = 0; i < resources.size(); ++i) {
-      ppapi::host::ResourceHost* resource_host =
-          host->GetPpapiHost()->GetResourceHost(resources[i]);
-      if (resource_host && resource_host->IsFileRefHost()) {
-        PepperFileRefHost* file_ref_host =
-            static_cast<PepperFileRefHost*>(resource_host);
-        out_resources.push_back(resources[i]);
-        fs_types.push_back(file_ref_host->GetFileSystemType());
-        file_system_url_specs.push_back(file_ref_host->GetFileSystemURLSpec());
-        external_paths.push_back(file_ref_host->GetExternalPath());
+      if (resource_host.get()) {
+        pending_resource_host_ids[i] =
+            host->GetPpapiHost()->AddPendingResourceHost(resource_host.Pass());
       }
     }
   }
-  Send(new PpapiHostMsg_FileRef_GetInfoForRendererReply(
-       routing_id,
-       sequence,
-       out_resources,
-       fs_types,
-       file_system_url_specs,
-       external_paths));
+
+  Send(new PpapiHostMsg_CreateResourceHostsFromHostReply(
+       routing_id, params.sequence(), pending_resource_host_ids));
 }
 
 void PepperRendererConnection::OnMsgDidCreateInProcessInstance(

@@ -100,7 +100,7 @@ KURL getSubResourceURLFromElement(Element* element)
     if (value.isEmpty() || value.stripWhiteSpace().startsWith("javascript:", false))
         return KURL();
 
-    return element->document()->completeURL(value);
+    return element->document().completeURL(value);
 }
 
 void retrieveResourcesForElement(Element* element,
@@ -113,8 +113,7 @@ void retrieveResourcesForElement(Element* element,
     if ((element->hasTagName(HTMLNames::iframeTag) || element->hasTagName(HTMLNames::frameTag)
         || element->hasTagName(HTMLNames::objectTag) || element->hasTagName(HTMLNames::embedTag))
             && element->isFrameOwnerElement()) {
-        Frame* frame = static_cast<HTMLFrameOwnerElement*>(element)->contentFrame();
-        if (frame) {
+        if (Frame* frame = toHTMLFrameOwnerElement(element)->contentFrame()) {
             if (!visitedFrames->contains(frame))
                 framesToVisit->append(frame);
             return;
@@ -186,7 +185,7 @@ void WebPageSerializer::serialize(WebView* view, WebVector<WebPageSerializer::Re
 {
     Vector<SerializedResource> resources;
     PageSerializer serializer(&resources);
-    serializer.serialize(static_cast<WebViewImpl*>(view)->page());
+    serializer.serialize(toWebViewImpl(view)->page());
 
     Vector<Resource> result;
     for (Vector<SerializedResource>::const_iterator iter = resources.begin(); iter != resources.end(); ++iter) {
@@ -212,14 +211,14 @@ static PassRefPtr<SharedBuffer> serializePageToMHTML(Page* page, MHTMLArchive::E
 
 WebCString WebPageSerializer::serializeToMHTML(WebView* view)
 {
-    RefPtr<SharedBuffer> mhtml = serializePageToMHTML(static_cast<WebViewImpl*>(view)->page(), MHTMLArchive::UseDefaultEncoding);
+    RefPtr<SharedBuffer> mhtml = serializePageToMHTML(toWebViewImpl(view)->page(), MHTMLArchive::UseDefaultEncoding);
     // FIXME: we are copying all the data here. Idealy we would have a WebSharedData().
     return WebCString(mhtml->data(), mhtml->size());
 }
 
 WebCString WebPageSerializer::serializeToMHTMLUsingBinaryEncoding(WebView* view)
 {
-    RefPtr<SharedBuffer> mhtml = serializePageToMHTML(static_cast<WebViewImpl*>(view)->page(), MHTMLArchive::UseBinaryEncoding);
+    RefPtr<SharedBuffer> mhtml = serializePageToMHTML(toWebViewImpl(view)->page(), MHTMLArchive::UseBinaryEncoding);
     // FIXME: we are copying all the data here. Idealy we would have a WebSharedData().
     return WebCString(mhtml->data(), mhtml->size());
 }
@@ -240,7 +239,7 @@ bool WebPageSerializer::retrieveAllResources(WebView* view,
                                              const WebVector<WebCString>& supportedSchemes,
                                              WebVector<WebURL>* resourceURLs,
                                              WebVector<WebURL>* frameURLs) {
-    WebFrameImpl* mainFrame = static_cast<WebFrameImpl*>(view->mainFrame());
+    WebFrameImpl* mainFrame = toWebFrameImpl(view->mainFrame());
     if (!mainFrame)
         return false;
 
@@ -266,7 +265,7 @@ bool WebPageSerializer::retrieveAllResources(WebView* view,
         // A frame's src can point to the same URL as another resource, keep the
         // resource URL only in such cases.
         size_t index = frameKURLs.find(resourceKURLs[i]);
-        if (index != notFound)
+        if (index != kNotFound)
             frameKURLs.remove(index);
     }
     *resourceURLs = resultResourceURLs;

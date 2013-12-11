@@ -80,12 +80,14 @@ class MediaConstraintsInterface {
   static const char kExperimentalAutoGainControl[];  // googAutoGainControl2
   static const char kNoiseSuppression[];  // googNoiseSuppression
   static const char kHighpassFilter[];  // googHighpassFilter
+  static const char kTypingNoiseDetection[];  // googTypingNoiseDetection
 
   // Google-specific constraint keys for a local video source
   static const char kNoiseReduction[];  // googNoiseReduction
   static const char kLeakyBucket[];  // googLeakyBucket
   // googTemporalLayeredScreencast
   static const char kTemporalLayeredScreencast[];
+  static const char kCpuOveruseDetection[];
 
   // Constraint keys for CreateOffer / CreateAnswer
   // Specified by the W3C PeerConnection spec

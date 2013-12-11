@@ -28,6 +28,14 @@
 
 namespace WebCore {
 
+enum StyleRecalcChange {
+    NoChange,
+    NoInherit,
+    Inherit,
+    Force,
+    Reattach,
+};
+
 static const size_t PrintColorAdjustBits = 1;
 enum PrintColorAdjust {
     PrintColorAdjustEconomy,
@@ -162,6 +170,9 @@ enum EFillSizeType { Contain, Cover, SizeLength, SizeNone };
 // CSS3 Background Position
 enum BackgroundEdgeOrigin { TopEdge, RightEdge, BottomEdge, LeftEdge };
 
+// CSS Mask Source Types
+enum EMaskSourceType { MaskAlpha, MaskLuminance };
+
 // CSS3 Marquee Properties
 
 enum EMarqueeBehavior { MNONE, MSCROLL, MSLIDE, MALTERNATE };
@@ -204,6 +215,9 @@ enum EUserDrag {
 enum EUserSelect {
     SELECT_NONE, SELECT_TEXT, SELECT_ALL
 };
+
+// CSS3 Image Values
+enum ObjectFit { ObjectFitFill, ObjectFitContain, ObjectFitCover, ObjectFitNone, ObjectFitScaleDown };
 
 // Word Break Values. Matches WinIE, rather than CSS3
 
@@ -431,7 +445,6 @@ enum EDisplay {
     TABLE_CAPTION, BOX, INLINE_BOX,
     FLEX, INLINE_FLEX,
     GRID, INLINE_GRID,
-    LAZY_BLOCK,
     NONE
 };
 
@@ -498,12 +511,12 @@ enum DraggableRegionMode { DraggableRegionNone, DraggableRegionDrag, DraggableRe
 
 enum TouchAction { TouchActionAuto, TouchActionNone };
 
+enum EIsolation { IsolationAuto, IsolationIsolate };
+
 // Reasonable maximum to prevent insane font sizes from causing crashes on some platforms (such as Windows).
 static const float maximumAllowedFontSize = 1000000.0f;
 
-#if ENABLE(CSS3_TEXT)
 enum TextIndentLine { TextIndentFirstLine, TextIndentEachLine };
-#endif
 
 } // namespace WebCore
 

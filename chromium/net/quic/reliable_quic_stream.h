@@ -95,6 +95,12 @@ class NET_EXPORT_PRIVATE ReliableQuicStream : public
   // becomes unblocked.
   virtual void OnDecompressorAvailable();
 
+  // By default, this is the same as priority(), however it allows streams
+  // to temporarily alter effective priority.   For example if a SPDY stream has
+  // compressed but not written headers it can write the headers with a higher
+  // priority.
+  virtual QuicPriority EffectivePriority() const;
+
   QuicStreamId id() const { return id_; }
 
   QuicRstStreamErrorCode stream_error() const { return stream_error_; }
@@ -108,7 +114,6 @@ class NET_EXPORT_PRIVATE ReliableQuicStream : public
 
   const IPEndPoint& GetPeerAddress() const;
 
-  Visitor* visitor() { return visitor_; }
   void set_visitor(Visitor* visitor) { visitor_ = visitor; }
 
   QuicSpdyCompressor* compressor();
@@ -135,9 +140,18 @@ class NET_EXPORT_PRIVATE ReliableQuicStream : public
   // Close the write side of the socket.  Further writes will fail.
   void CloseWriteSide();
 
+  bool HasBufferedData();
+
   bool fin_buffered() { return fin_buffered_; }
 
   QuicSession* session() { return session_; }
+
+  // Sets priority_ to priority.  This should only be called before bytes are
+  // written to the server.
+  void set_priority(QuicPriority priority);
+  // This is protected because external classes should use EffectivePriority
+  // instead.
+  QuicPriority priority() const { return priority_; }
 
   // Sends as much of 'data' to the connection as the connection will consume,
   // and then buffers any remaining data in queued_data_.
@@ -149,9 +163,18 @@ class NET_EXPORT_PRIVATE ReliableQuicStream : public
   // Returns the number of bytes consumed by the connection.
   QuicConsumedData WriteDataInternal(base::StringPiece data, bool fin);
 
+  // Sends as many bytes in the first |count| buffers of |iov| to the connection
+  // as the connection will consume.
+  // Returns the number of bytes consumed by the connection.
+  QuicConsumedData WritevDataInternal(const struct iovec* iov,
+                                      int iov_count,
+                                      bool fin);
+
  private:
   friend class test::ReliableQuicStreamPeer;
   friend class QuicStreamUtils;
+
+  uint32 StripPriorityAndHeaderId(const char* data, uint32 data_len);
 
   std::list<string> queued_data_;
 
@@ -166,11 +189,13 @@ class NET_EXPORT_PRIVATE ReliableQuicStream : public
   uint64 stream_bytes_written_;
   // True if the headers have been completely decompresssed.
   bool headers_decompressed_;
+  // The priority of the stream, once parsed.
+  QuicPriority priority_;
   // ID of the header block sent by the peer, once parsed.
   QuicHeaderId headers_id_;
-  // Buffer into which we write bytes from the headers_id_
-  // until it is fully parsed.
-  string headers_id_buffer_;
+  // Buffer into which we write bytes from priority_ and headers_id_
+  // until each is fully parsed.
+  string headers_id_and_priority_buffer_;
   // Contains a copy of the decompressed headers_ until they are consumed
   // via ProcessData or Readv.
   string decompressed_headers_;
@@ -190,6 +215,8 @@ class NET_EXPORT_PRIVATE ReliableQuicStream : public
   // True if the write side is closed, and further writes should fail.
   bool write_side_closed_;
 
+  // True if the priority has been read, false otherwise.
+  bool priority_parsed_;
   bool fin_buffered_;
   bool fin_sent_;
 };

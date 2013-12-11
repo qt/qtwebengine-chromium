@@ -42,7 +42,7 @@ base.exportTo('base', function() {
     this.p4 = vec2.create();
   }
 
-  Quad.FromXYWH = function(x, y, w, h) {
+  Quad.fromXYWH = function(x, y, w, h) {
     var q = new Quad();
     vec2.set(q.p1, x, y);
     vec2.set(q.p2, x + w, y);
@@ -51,13 +51,13 @@ base.exportTo('base', function() {
     return q;
   }
 
-  Quad.FromRect = function(r) {
-    return new Quad.FromXYWH(
+  Quad.fromRect = function(r) {
+    return new Quad.fromXYWH(
         r.x, r.y,
         r.width, r.height);
   }
 
-  Quad.From4Vecs = function(p1, p2, p3, p4) {
+  Quad.from4Vecs = function(p1, p2, p3, p4) {
     var q = new Quad();
     vec2.set(q.p1, p1[0], p1[1]);
     vec2.set(q.p2, p2[0], p2[1]);
@@ -66,7 +66,7 @@ base.exportTo('base', function() {
     return q;
   }
 
-  Quad.From8Array = function(arr) {
+  Quad.from8Array = function(arr) {
     if (arr.length != 8)
       throw new Error('Array must be 8 long');
     var q = new Quad();
@@ -82,9 +82,9 @@ base.exportTo('base', function() {
   };
 
   Quad.prototype = {
-    vecInside: function(vec) {
-      return vecInTriangle2(vec, this.p1, this.p2, this.p3) ||
-          vecInTriangle2(vec, this.p1, this.p3, this.p4);
+    pointInside: function(point) {
+      return pointInImplicitQuad(point,
+                                 this.p1, this.p2, this.p3, this.p4);
     },
 
     boundingRect: function() {
@@ -94,7 +94,7 @@ base.exportTo('base', function() {
       var x1 = Math.max(this.p1[0], this.p2[0], this.p3[0], this.p4[0]);
       var y1 = Math.max(this.p1[1], this.p2[1], this.p3[1], this.p4[1]);
 
-      return new base.Rect.FromXYWH(x0, y0, x1 - x0, y1 - y0);
+      return new base.Rect.fromXYWH(x0, y0, x1 - x0, y1 - y0);
     },
 
     clone: function() {
@@ -208,15 +208,21 @@ base.exportTo('base', function() {
         (p2[0] - p3[0]) * (p1[1] - p3[1]);
   }
 
-  function vecInTriangle2(pt, p1, p2, p3) {
+  function pointInTriangle2(pt, p1, p2, p3) {
     var b1 = sign(pt, p1, p2) < 0.0;
     var b2 = sign(pt, p2, p3) < 0.0;
     var b3 = sign(pt, p3, p1) < 0.0;
     return ((b1 == b2) && (b2 == b3));
   }
 
+  function pointInImplicitQuad(point, p1, p2, p3, p4) {
+    return pointInTriangle2(point, p1, p2, p3) ||
+        pointInTriangle2(point, p1, p3, p4);
+  }
+
   return {
-    vecInTriangle2: vecInTriangle2,
+    pointInTriangle2: pointInTriangle2,
+    pointInImplicitQuad: pointInImplicitQuad,
     Quad: Quad
   };
 });

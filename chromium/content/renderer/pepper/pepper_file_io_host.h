@@ -105,7 +105,6 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
                                     int bytes_written);
 
   RendererPpapiHost* renderer_ppapi_host_;
-
   base::PlatformFile file_;
 
   // The file system type specified in the Open() call. This will be
@@ -130,8 +129,6 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
 
   int32_t open_flags_;
 
-  base::WeakPtrFactory<PepperFileIOHost> weak_factory_;
-
   ppapi::FileIOStateManager state_manager_;
 
   int routing_id_;
@@ -140,6 +137,8 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
       AsyncOpenFileCallback;
 
   IDMap<AsyncOpenFileCallback> pending_async_open_files_;
+
+  base::WeakPtrFactory<PepperFileIOHost> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PepperFileIOHost);
 };

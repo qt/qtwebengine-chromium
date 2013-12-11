@@ -11,10 +11,21 @@ base.require('tracing.analysis.analysis_results');
 base.exportTo('cc', function() {
   var tsRound = tracing.analysis.tsRound;
 
-  function Selection() {
+  var GenericObjectViewWithLabel = tracing.analysis.GenericObjectViewWithLabel;
 
+  function Selection() {
+    this.selectionToSetIfClicked = undefined;
   };
   Selection.prototype = {
+    /**
+     * When two things are picked in the UI, one must occasionally tie-break
+     * between them to decide what was really clicked. Things with higher
+     * specicifity will win.
+     */
+    get specicifity() {
+      throw new Error('Not implemented');
+    },
+
     /**
      * If a selection is related to a specific layer, then this returns the
      * layerId of that layer. If the selection is not related to a layer, for
@@ -51,7 +62,7 @@ base.exportTo('cc', function() {
     },
 
     /**
-     * Called when the selection is made active in the layer viewer. Must return
+     * Called when the selection is made active in the layer view. Must return
      * an HTMLElement that explains this selection in detail.
      */
     createAnalysis: function() {
@@ -79,6 +90,10 @@ base.exportTo('cc', function() {
   LayerSelection.prototype = {
     __proto__: Selection.prototype,
 
+    get specicifity() {
+      return 1;
+    },
+
     get associatedLayerId() {
       return this.layer_.layerId;
     },
@@ -92,7 +107,8 @@ base.exportTo('cc', function() {
     },
 
     createAnalysis: function() {
-      var dataView = new tracing.analysis.GenericObjectView();
+      var dataView = new GenericObjectViewWithLabel();
+      dataView.label = 'Layer ' + this.layer_.layerId;
       dataView.object = this.layer_.args;
       return dataView;
     },
@@ -120,6 +136,10 @@ base.exportTo('cc', function() {
   TileSelection.prototype = {
     __proto__: Selection.prototype,
 
+    get specicifity() {
+      return 2;
+    },
+
     get associatedLayerId() {
       return this.tile_.layerId;
     },
@@ -129,7 +149,9 @@ base.exportTo('cc', function() {
     },
 
     createAnalysis: function() {
-      var analysis = new tracing.analysis.GenericObjectView();
+      var analysis = new GenericObjectViewWithLabel();
+      analysis.label = 'Tile ' + this.tile_.objectInstance.id + ' on layer ' +
+          this.tile_.layerId;
       analysis.object = this.tile_.args;
       return analysis;
     },
@@ -153,12 +175,57 @@ base.exportTo('cc', function() {
   /**
    * @constructor
    */
+  function LayerRectSelection(layer, rectType, rect, opt_data) {
+    this.layer_ = layer;
+    this.rectType_ = rectType;
+    this.rect_ = rect;
+    this.data_ = opt_data !== undefined ? opt_data : rect;
+  }
+
+  LayerRectSelection.prototype = {
+    __proto__: Selection.prototype,
+
+    get specicifity() {
+      return 2;
+    },
+
+    get associatedLayerId() {
+      return this.layer_.layerId;
+    },
+
+    get layerRect() {
+      return this.rect_;
+    },
+
+    createAnalysis: function() {
+      var analysis = new GenericObjectViewWithLabel();
+      analysis.label = this.rectType_ + ' on layer ' + this.layer_.layerId;
+      analysis.object = this.data_;
+      return analysis;
+    },
+
+    get title() {
+      return this.rectType_;
+    },
+
+    findEquivalent: function(lthi) {
+      return undefined;
+    }
+  };
+
+  /**
+   * @constructor
+   */
   function RasterTaskSelection(rasterTask) {
     this.rasterTask_ = rasterTask;
   }
 
   RasterTaskSelection.prototype = {
     __proto__: Selection.prototype,
+
+    get specicifity() {
+      return 3;
+    },
 
     get tile() {
       return this.rasterTask_.args.data.tile_id;
@@ -173,8 +240,8 @@ base.exportTo('cc', function() {
     },
 
     createAnalysis: function() {
-      var sel = tracing.createSelectionFromObjectAndView(
-          this.rasterTask_, this);
+      var sel = new tracing.Selection();
+      sel.push(this.rasterTask_);
       var analysis = new tracing.analysis.AnalysisResults();
       tracing.analysis.analyzeSelection(analysis, sel);
       return analysis;
@@ -194,6 +261,7 @@ base.exportTo('cc', function() {
     Selection: Selection,
     LayerSelection: LayerSelection,
     TileSelection: TileSelection,
+    LayerRectSelection: LayerRectSelection,
     RasterTaskSelection: RasterTaskSelection
   };
 });

@@ -15,18 +15,16 @@ namespace media {
 
 class MEDIA_EXPORT AudioManagerCras : public AudioManagerBase {
  public:
-  // Unique ID of the "loopback" input device. This device captures post-mix,
-  // pre-DSP system audio.
-  static const char kLoopbackDeviceId[];
-
   AudioManagerCras();
 
   // AudioManager implementation.
   virtual bool HasAudioOutputDevices() OVERRIDE;
   virtual bool HasAudioInputDevices() OVERRIDE;
   virtual void ShowAudioInputSettings() OVERRIDE;
-  virtual void GetAudioInputDeviceNames(media::AudioDeviceNames* device_names)
-      OVERRIDE;
+  virtual void GetAudioInputDeviceNames(
+      AudioDeviceNames* device_names) OVERRIDE;
+  virtual void GetAudioOutputDeviceNames(
+      AudioDeviceNames* device_names) OVERRIDE;
   virtual AudioParameters GetInputStreamParameters(
       const std::string& device_id) OVERRIDE;
 
@@ -35,6 +33,7 @@ class MEDIA_EXPORT AudioManagerCras : public AudioManagerBase {
       const AudioParameters& params) OVERRIDE;
   virtual AudioOutputStream* MakeLowLatencyOutputStream(
       const AudioParameters& params,
+      const std::string& device_id,
       const std::string& input_device_id) OVERRIDE;
   virtual AudioInputStream* MakeLinearInputStream(
       const AudioParameters& params, const std::string& device_id) OVERRIDE;
@@ -45,12 +44,10 @@ class MEDIA_EXPORT AudioManagerCras : public AudioManagerBase {
   virtual ~AudioManagerCras();
 
   virtual AudioParameters GetPreferredOutputStreamParameters(
+      const std::string& output_device_id,
       const AudioParameters& input_params) OVERRIDE;
 
  private:
-  // Gets a list of available cras input devices.
-  void GetCrasAudioInputDevices(media::AudioDeviceNames* device_names);
-
   // Called by MakeLinearOutputStream and MakeLowLatencyOutputStream.
   AudioOutputStream* MakeOutputStream(const AudioParameters& params);
 

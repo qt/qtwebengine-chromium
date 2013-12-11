@@ -31,7 +31,7 @@ namespace WebCore {
 
 class HTMLFrameSetElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLFrameSetElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<HTMLFrameSetElement> create(const QualifiedName&, Document&);
 
     bool hasFrameBorder() const { return m_frameborder; }
     bool noResize() const { return m_noresize; }
@@ -67,20 +67,20 @@ public:
 #endif
 
 private:
-    HTMLFrameSetElement(const QualifiedName&, Document*);
+    HTMLFrameSetElement(const QualifiedName&, Document&);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
 
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual bool rendererIsNeeded(const NodeRenderingContext&);
+    virtual bool rendererIsNeeded(const RenderStyle&);
     virtual RenderObject* createRenderer(RenderStyle*);
 
     virtual void defaultEventHandler(Event*);
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void willRecalcStyle(StyleChange) OVERRIDE;
+    virtual void willRecalcStyle(StyleRecalcChange) OVERRIDE;
 
     Vector<HTMLDimension> m_rowLengths;
     Vector<HTMLDimension> m_colLengths;
@@ -94,6 +94,12 @@ private:
     bool m_frameborderSet;
     bool m_noresize;
 };
+
+inline HTMLFrameSetElement* toHTMLFrameSetElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::framesetTag));
+    return static_cast<HTMLFrameSetElement*>(node);
+}
 
 } // namespace WebCore
 

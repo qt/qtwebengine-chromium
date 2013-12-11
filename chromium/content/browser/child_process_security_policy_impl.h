@@ -122,6 +122,9 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
   // Revoke read raw cookies permission.
   void RevokeReadRawCookies(int child_id);
 
+  // Grants permission to send system exclusive message to any MIDI devices.
+  void GrantSendMIDISysExMessage(int child_id);
+
   // Before servicing a child process's request for a URL, the browser should
   // call this method to determine whether the process has the capability to
   // request the URL.
@@ -137,20 +140,6 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
   // Before servicing a child process's request to enumerate a directory
   // the browser should call this method to check for the capability.
   bool CanReadDirectory(int child_id, const base::FilePath& directory);
-
-  // Deprecated: Use CanReadFile, etc. methods instead.
-  // Determines if certain permissions were granted for a file. |permissions|
-  // must be a bitwise-or'd value of base::PlatformFileFlags.
-  bool HasPermissionsForFile(int child_id,
-                             const base::FilePath& file,
-                             int permissions);
-
-  // Deprecated: Use CanReadFileSystemFile, etc. methods instead.
-  // Determines if certain permissions were granted for a file in FileSystem
-  // API. |permissions| must be a bitwise-or'd value of base::PlatformFileFlags.
-  bool HasPermissionsForFileSystemFile(int child_id,
-                                       const fileapi::FileSystemURL& url,
-                                       int permissions);
 
   // Explicit permissions checks for FileSystemURL specified files.
   bool CanReadFileSystemFile(int child_id, const fileapi::FileSystemURL& url);
@@ -200,11 +189,15 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
       fileapi::FileSystemType type,
       int policy);
 
+  // Returns true if sending system exclusive messages is allowed.
+  bool CanSendMIDISysExMessage(int child_id);
+
  private:
   friend class ChildProcessSecurityPolicyInProcessBrowserTest;
   friend class ChildProcessSecurityPolicyTest;
   FRIEND_TEST_ALL_PREFIXES(ChildProcessSecurityPolicyInProcessBrowserTest,
                            NoLeak);
+  FRIEND_TEST_ALL_PREFIXES(ChildProcessSecurityPolicyTest, FilePermissions);
 
   class SecurityState;
 
@@ -240,6 +233,20 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
       int child_id,
       const std::string& filesystem_id,
       int permission);
+
+  // Deprecated: Use CanReadFile, etc. methods instead.
+  // Determines if certain permissions were granted for a file. |permissions|
+  // must be a bitwise-or'd value of base::PlatformFileFlags.
+  bool HasPermissionsForFile(int child_id,
+                             const base::FilePath& file,
+                             int permissions);
+
+  // Deprecated: Use CanReadFileSystemFile, etc. methods instead.
+  // Determines if certain permissions were granted for a file in FileSystem
+  // API. |permissions| must be a bitwise-or'd value of base::PlatformFileFlags.
+  bool HasPermissionsForFileSystemFile(int child_id,
+                                       const fileapi::FileSystemURL& url,
+                                       int permissions);
 
   // You must acquire this lock before reading or writing any members of this
   // class.  You must not block while holding this lock.

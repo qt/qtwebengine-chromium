@@ -8,6 +8,7 @@
 #include <iterator>
 
 #include "base/debug/trace_event.h"
+#include "cc/animation/animation_id_provider.h"
 #include "ui/compositor/layer_animation_delegate.h"
 #include "ui/compositor/layer_animation_element.h"
 #include "ui/compositor/layer_animation_observer.h"
@@ -76,8 +77,10 @@ void LayerAnimationSequence::Progress(base::TimeTicks now,
   }
 
   if (is_cyclic_ || last_element_ < elements_.size()) {
-    if (!elements_[current_index]->Started())
+    if (!elements_[current_index]->Started()) {
+      animation_group_id_ = cc::AnimationIdProvider::NextGroupId();
       elements_[current_index]->Start(delegate, animation_group_id_);
+    }
     if (elements_[current_index]->Progress(now, delegate))
       redraw_required = true;
     last_progressed_fraction_ =
@@ -239,6 +242,18 @@ void LayerAnimationSequence::OnAnimatorDestroyed() {
   }
 }
 
+size_t LayerAnimationSequence::size() const {
+  return elements_.size();
+}
+
+LayerAnimationElement* LayerAnimationSequence::FirstElement() const {
+  if (elements_.empty()) {
+    return NULL;
+  }
+
+  return elements_[0].get();
+}
+
 void LayerAnimationSequence::NotifyScheduled() {
   FOR_EACH_OBSERVER(LayerAnimationObserver,
                     observers_,
@@ -257,7 +272,7 @@ void LayerAnimationSequence::NotifyAborted() {
                     OnLayerAnimationAborted(this));
 }
 
-LayerAnimationElement* LayerAnimationSequence::CurrentElement() {
+LayerAnimationElement* LayerAnimationSequence::CurrentElement() const {
   if (elements_.empty())
     return NULL;
 

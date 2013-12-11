@@ -25,10 +25,11 @@
 
 #include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/rendering/svg/RenderSVGContainer.h"
-#include "core/rendering/svg/RenderSVGRoot.h"
 #include "core/rendering/svg/SVGRenderSupport.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGMarkerElement.h"
+
+#include "wtf/TemporaryChange.h"
 
 namespace WebCore {
 
@@ -45,10 +46,15 @@ RenderSVGResourceMarker::~RenderSVGResourceMarker()
 
 void RenderSVGResourceMarker::layout()
 {
-    StackStats::LayoutCheckPoint layoutCheckPoint;
+    ASSERT(needsLayout());
+    if (m_isInLayout)
+        return;
+
+    TemporaryChange<bool> inLayoutChange(m_isInLayout, true);
+
     // Invalidate all resources if our layout changed.
     if (everHadLayout() && selfNeedsLayout())
-        RenderSVGRoot::addResourceForClientInvalidation(this);
+        removeAllClientsFromCache();
 
     // RenderSVGHiddenContainer overwrites layout(). We need the
     // layouting of RenderSVGContainer for calculating  local
@@ -93,7 +99,7 @@ const AffineTransform& RenderSVGResourceMarker::localToParentTransform() const
 
 FloatPoint RenderSVGResourceMarker::referencePoint() const
 {
-    SVGMarkerElement* marker = toSVGMarkerElement(node());
+    SVGMarkerElement* marker = toSVGMarkerElement(element());
     ASSERT(marker);
 
     SVGLengthContext lengthContext(marker);
@@ -102,7 +108,7 @@ FloatPoint RenderSVGResourceMarker::referencePoint() const
 
 float RenderSVGResourceMarker::angle() const
 {
-    SVGMarkerElement* marker = toSVGMarkerElement(node());
+    SVGMarkerElement* marker = toSVGMarkerElement(element());
     ASSERT(marker);
 
     float angle = -1;
@@ -114,7 +120,7 @@ float RenderSVGResourceMarker::angle() const
 
 AffineTransform RenderSVGResourceMarker::markerTransformation(const FloatPoint& origin, float autoAngle, float strokeWidth) const
 {
-    SVGMarkerElement* marker = toSVGMarkerElement(node());
+    SVGMarkerElement* marker = toSVGMarkerElement(element());
     ASSERT(marker);
 
     float markerAngle = angle();
@@ -130,7 +136,7 @@ AffineTransform RenderSVGResourceMarker::markerTransformation(const FloatPoint& 
 void RenderSVGResourceMarker::draw(PaintInfo& paintInfo, const AffineTransform& transform)
 {
     // An empty viewBox disables rendering.
-    SVGMarkerElement* marker = toSVGMarkerElement(toSVGElement(node()));
+    SVGMarkerElement* marker = toSVGMarkerElement(element());
     ASSERT(marker);
     if (marker->hasAttribute(SVGNames::viewBoxAttr) && marker->viewBoxIsValid() && marker->viewBoxCurrentValue().isEmpty())
         return;
@@ -156,7 +162,7 @@ AffineTransform RenderSVGResourceMarker::markerContentTransformation(const Affin
 
 AffineTransform RenderSVGResourceMarker::viewportTransform() const
 {
-    SVGMarkerElement* marker = toSVGMarkerElement(node());
+    SVGMarkerElement* marker = toSVGMarkerElement(element());
     ASSERT(marker);
 
     return marker->viewBoxToViewTransform(m_viewport.width(), m_viewport.height());
@@ -167,7 +173,7 @@ void RenderSVGResourceMarker::calcViewport()
     if (!selfNeedsLayout())
         return;
 
-    SVGMarkerElement* marker = toSVGMarkerElement(node());
+    SVGMarkerElement* marker = toSVGMarkerElement(element());
     ASSERT(marker);
 
     SVGLengthContext lengthContext(marker);

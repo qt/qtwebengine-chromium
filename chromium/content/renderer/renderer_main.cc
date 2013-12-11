@@ -34,6 +34,11 @@
 #include "webkit/child/webkit_child_helpers.h"
 #include "webkit/glue/webkit_glue.h"
 
+#if defined(OS_ANDROID)
+#include "base/android/sys_utils.h"
+#include "third_party/skia/include/core/SkGraphics.h"
+#endif  // OS_ANDROID
+
 #if defined(OS_MACOSX)
 #include <Carbon/Carbon.h>
 #include <signal.h>
@@ -133,6 +138,13 @@ int RendererMain(const MainFunctionParams& parameters) {
   }
 #endif
 
+#if defined(OS_ANDROID)
+  const int kMB = 1024 * 1024;
+  size_t font_cache_limit =
+      base::android::SysUtils::IsLowEndDevice() ? kMB : 8 * kMB;
+  SkGraphics::SetFontCacheLimit(font_cache_limit);
+#endif
+
   // This function allows pausing execution using the --renderer-startup-dialog
   // flag allowing us to attach a debugger.
   // Do not move this function down since that would mean we can't easily debug
@@ -181,8 +193,6 @@ int RendererMain(const MainFunctionParams& parameters) {
   base::FieldTrialList field_trial_list(NULL);
   // Ensure any field trials in browser are reflected into renderer.
   if (parsed_command_line.HasSwitch(switches::kForceFieldTrials)) {
-    std::string persistent = parsed_command_line.GetSwitchValueASCII(
-        switches::kForceFieldTrials);
     // Field trials are created in an "activated" state to ensure they get
     // reported in crash reports.
     bool result = base::FieldTrialList::CreateTrialsFromString(

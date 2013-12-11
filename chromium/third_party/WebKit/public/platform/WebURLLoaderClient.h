@@ -55,7 +55,7 @@ public:
 
     // Called when a chunk of response data is downloaded. This is only called
     // if WebURLRequest's downloadToFile flag was set to true.
-    virtual void didDownloadData(WebURLLoader*, int dataLength) { }
+    virtual void didDownloadData(WebURLLoader*, int dataLength, int encodedDataLength) { }
 
     // Called when a chunk of response data is received.
     virtual void didReceiveData(WebURLLoader*, const char* data, int dataLength, int encodedDataLength) { }

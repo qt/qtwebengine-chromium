@@ -34,7 +34,7 @@
 
 #include "HTMLNames.h"
 #include "core/html/HTMLDivElement.h"
-#include "core/rendering/RenderBlock.h"
+#include "core/rendering/RenderBlockFlow.h"
 #include "wtf/Forward.h"
 
 namespace WebCore {
@@ -46,7 +46,7 @@ class FloatPoint;
 
 class SliderThumbElement FINAL : public HTMLDivElement {
 public:
-    static PassRefPtr<SliderThumbElement> create(Document*);
+    static PassRefPtr<SliderThumbElement> create(Document&);
 
     void setPositionFromValue();
 
@@ -60,7 +60,7 @@ public:
     void setPositionFromPoint(const LayoutPoint&);
 
 private:
-    SliderThumbElement(Document*);
+    SliderThumbElement(Document&);
     virtual RenderObject* createRenderer(RenderStyle*);
     virtual PassRefPtr<Element> cloneElementWithoutAttributesAndChildren();
     virtual bool isDisabledFormControl() const OVERRIDE;
@@ -73,17 +73,6 @@ private:
     bool m_inDragMode;
 };
 
-inline SliderThumbElement::SliderThumbElement(Document* document)
-    : HTMLDivElement(HTMLNames::divTag, document)
-    , m_inDragMode(false)
-{
-}
-
-inline PassRefPtr<SliderThumbElement> SliderThumbElement::create(Document* document)
-{
-    return adoptRef(new SliderThumbElement(document));
-}
-
 inline PassRefPtr<Element> SliderThumbElement::cloneElementWithoutAttributesAndChildren()
 {
     return create(document());
@@ -95,30 +84,26 @@ inline SliderThumbElement* toSliderThumbElement(Node* node)
     return static_cast<SliderThumbElement*>(node);
 }
 
-// This always return a valid pointer.
-// An assertion fails if the specified node is not a range input.
-SliderThumbElement* sliderThumbElementOf(Node*);
-HTMLElement* sliderTrackElementOf(Node*);
-
 // --------------------------------
 
-class RenderSliderThumb FINAL : public RenderBlock {
+class RenderSliderThumb FINAL : public RenderBlockFlow {
 public:
     RenderSliderThumb(SliderThumbElement*);
     void updateAppearance(RenderStyle* parentStyle);
 
 private:
     virtual bool isSliderThumb() const;
+    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
 };
 
 // --------------------------------
 
 class SliderContainerElement FINAL : public HTMLDivElement {
 public:
-    static PassRefPtr<SliderContainerElement> create(Document*);
+    static PassRefPtr<SliderContainerElement> create(Document&);
 
 private:
-    SliderContainerElement(Document*);
+    SliderContainerElement(Document&);
     virtual RenderObject* createRenderer(RenderStyle*);
     virtual const AtomicString& part() const;
 };

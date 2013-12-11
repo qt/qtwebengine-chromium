@@ -429,7 +429,7 @@ class ChromeTests:
     # http://crbug.com/260627: After the switch to content_shell from DRT, each
     # test now brings up 3 processes.  Under Valgrind, they become memory bound
     # and can eventually OOM if we don't reduce the total count.
-    jobs = int(multiprocessing.cpu_count() * 0.3)
+    jobs = max(1, int(multiprocessing.cpu_count() * 0.3))
     script_cmd = ["python", script, "-v",
                   "--run-singly",  # run a separate DumpRenderTree for each test
                   "--fully-parallel",
@@ -444,8 +444,9 @@ class ChromeTests:
     # the two values "Release" and "Debug".
     # TODO(Hercules): unify how all our scripts pass around build mode
     # (--mode / --target / --build_dir / --debug)
-    if self._options.build_dir.endswith("Debug"):
-      script_cmd.append("--debug");
+    if self._options.build_dir:
+      build_root, mode = os.path.split(self._options.build_dir)
+      script_cmd.extend(["--build-directory", build_root, "--target", mode])
     if (chunk_size > 0):
       script_cmd.append("--run-chunk=%d:%d" % (chunk_num, chunk_size))
     if len(self._args):

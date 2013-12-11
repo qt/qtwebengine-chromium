@@ -59,7 +59,9 @@ ViECapturer::ViECapturer(int capture_id,
       denoising_enabled_(false),
       observer_cs_(CriticalSectionWrapper::CreateCriticalSection()),
       observer_(NULL),
-      overuse_detector_(new OveruseFrameDetector(Clock::GetRealTimeClock())) {
+      overuse_detector_(new OveruseFrameDetector(Clock::GetRealTimeClock(),
+                                                 kNormalUseStdDevMs,
+                                                 kOveruseStdDevMs)) {
   WEBRTC_TRACE(kTraceMemory, kTraceVideo, ViEId(engine_id, capture_id),
                "ViECapturer::ViECapturer(capture_id: %d, engine_id: %d)",
                capture_id, engine_id);
@@ -350,7 +352,8 @@ void ViECapturer::OnIncomingCapturedFrame(const int32_t capture_id,
 
   captured_frame_.SwapFrame(&video_frame);
   capture_event_.Set();
-  overuse_detector_->FrameCaptured();
+  overuse_detector_->FrameCaptured(captured_frame_.width(),
+                                   captured_frame_.height());
   return;
 }
 
@@ -511,22 +514,8 @@ bool ViECapturer::ViECaptureThreadFunction(void* obj) {
 bool ViECapturer::ViECaptureProcess() {
   if (capture_event_.Wait(kThreadWaitTimeMs) == kEventSignaled) {
     deliver_cs_->Enter();
-    if (!captured_frame_.IsZeroSize()) {
-      // New I420 frame.
-      capture_cs_->Enter();
-      deliver_frame_.SwapFrame(&captured_frame_);
-      captured_frame_.ResetSize();
-      capture_cs_->Leave();
-
-      int64_t encode_start_time =
-          Clock::GetRealTimeClock()->TimeInMilliseconds();
+    if (SwapCapturedAndDeliverFrameIfAvailable()) {
       DeliverI420Frame(&deliver_frame_);
-
-      // The frame has been encoded, update the overuse detector with the
-      // duration.
-      overuse_detector_->FrameEncoded(
-          Clock::GetRealTimeClock()->TimeInMilliseconds() - encode_start_time,
-          deliver_frame_.width(), deliver_frame_.height());
     }
     deliver_cs_->Leave();
     if (current_brightness_level_ != reported_brightness_level_) {
@@ -658,6 +647,16 @@ void ViECapturer::OnNoPictureAlarm(const int32_t id,
   CriticalSectionScoped cs(observer_cs_.get());
   CaptureAlarm vie_alarm = (alarm == Raised) ? AlarmRaised : AlarmCleared;
   observer_->NoPictureAlarm(id, vie_alarm);
+}
+
+bool ViECapturer::SwapCapturedAndDeliverFrameIfAvailable() {
+  CriticalSectionScoped cs(capture_cs_.get());
+  if (captured_frame_.IsZeroSize())
+    return false;
+
+  deliver_frame_.SwapFrame(&captured_frame_);
+  captured_frame_.ResetSize();
+  return true;
 }
 
 }  // namespace webrtc

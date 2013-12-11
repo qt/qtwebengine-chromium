@@ -32,9 +32,9 @@
 #ifndef LinkLoader_h
 #define LinkLoader_h
 
+#include "core/fetch/ResourceClient.h"
+#include "core/fetch/ResourcePtr.h"
 #include "core/loader/LinkLoaderClient.h"
-#include "core/loader/cache/ResourceClient.h"
-#include "core/loader/cache/ResourcePtr.h"
 #include "core/platform/PrerenderClient.h"
 #include "core/platform/Timer.h"
 #include "wtf/RefPtr.h"
@@ -61,7 +61,7 @@ public:
     virtual void didSendDOMContentLoadedForPrerender() OVERRIDE;
 
     void released();
-    bool loadLink(const LinkRelAttribute&, const String& type, const KURL&, Document*);
+    bool loadLink(const LinkRelAttribute&, const String& type, const KURL&, Document&);
 
 private:
     void linkLoadTimerFired(Timer<LinkLoader>*);

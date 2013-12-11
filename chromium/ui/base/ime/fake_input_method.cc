@@ -6,19 +6,19 @@
 
 #include "base/logging.h"
 #include "base/strings/string16.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_constants.h"
-#include "ui/base/events/event_utils.h"
 #include "ui/base/glib/glib_integers.h"
 #include "ui/base/ime/input_method_delegate.h"
 #include "ui/base/ime/text_input_client.h"
-#include "ui/base/keycodes/keyboard_code_conversion.h"
+#include "ui/events/event.h"
+#include "ui/events/event_constants.h"
+#include "ui/events/event_utils.h"
+#include "ui/events/keycodes/keyboard_code_conversion.h"
 
 #if defined(USE_X11)
 #include <X11/X.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
-#include "ui/base/keycodes/keyboard_code_conversion_x.h"
+#include "ui/events/keycodes/keyboard_code_conversion_x.h"
 #endif
 
 namespace {
@@ -38,7 +38,8 @@ namespace ui {
 
 FakeInputMethod::FakeInputMethod(internal::InputMethodDelegate* delegate)
     : delegate_(NULL),
-      text_input_client_(NULL) {
+      text_input_client_(NULL),
+      is_sticky_text_input_client_(false) {
   SetDelegate(delegate);
 }
 
@@ -50,9 +51,27 @@ void FakeInputMethod::SetDelegate(internal::InputMethodDelegate* delegate) {
 }
 
 void FakeInputMethod::SetFocusedTextInputClient(TextInputClient* client) {
+  if (is_sticky_text_input_client_)
+    return;
   text_input_client_ = client;
   FOR_EACH_OBSERVER(InputMethodObserver, observers_,
                     OnTextInputStateChanged(client));
+}
+
+void FakeInputMethod::SetStickyFocusedTextInputClient(TextInputClient* client) {
+  text_input_client_ = client;
+  is_sticky_text_input_client_ = (client != NULL);
+  FOR_EACH_OBSERVER(InputMethodObserver, observers_,
+                    OnTextInputStateChanged(client));
+}
+
+void FakeInputMethod::DetachTextInputClient(TextInputClient* client) {
+  if (text_input_client_ == client) {
+    text_input_client_ = NULL;
+    is_sticky_text_input_client_ = false;
+    FOR_EACH_OBSERVER(InputMethodObserver, observers_,
+                      OnTextInputStateChanged(client));
+  }
 }
 
 TextInputClient* FakeInputMethod::GetTextInputClient() const {
@@ -88,6 +107,27 @@ bool FakeInputMethod::DispatchKeyEvent(const base::NativeEvent& native_event) {
         ch = ui::GetCharacterFromXEvent(native_event);
       if (!ch)
         ch = ui::GetCharacterFromKeyCode(key_code, state);
+      if (ch)
+        text_input_client_->InsertChar(ch, state);
+    }
+  }
+#elif defined(USE_OZONE)
+  DCHECK(native_event);
+  if (EventTypeFromNative(native_event) == ET_KEY_RELEASED) {
+    // On key release, just dispatch it.
+    handled = delegate_->DispatchKeyEventPostIME(native_event);
+  } else {
+    const uint32 state = EventFlagsFromNative(native_event);
+    // Send a RawKeyDown event first,
+    handled = delegate_->DispatchKeyEventPostIME(native_event);
+    if (text_input_client_) {
+      // then send a Char event via ui::TextInputClient.
+      const KeyboardCode key_code = ui::KeyboardCodeFromNative(native_event);
+      uint16 ch = 0;
+
+      // TODO(vignatti): Support EF_CONTROL_DOWN state
+
+      ch = ui::GetCharacterFromKeyCode(key_code, state);
       if (ch)
         text_input_client_->InsertChar(ch, state);
     }
@@ -141,8 +181,12 @@ bool FakeInputMethod::IsCandidatePopupOpen() const {
   return false;
 }
 
-ui::TextInputType FakeInputMethod::GetTextInputType() const {
-  return ui::TEXT_INPUT_TYPE_NONE;
+TextInputType FakeInputMethod::GetTextInputType() const {
+  return TEXT_INPUT_TYPE_NONE;
+}
+
+TextInputMode FakeInputMethod::GetTextInputMode() const {
+  return TEXT_INPUT_MODE_DEFAULT;
 }
 
 bool FakeInputMethod::CanComposeInline() const {

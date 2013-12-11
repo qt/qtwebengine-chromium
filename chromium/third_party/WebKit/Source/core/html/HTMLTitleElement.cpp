@@ -35,7 +35,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLTitleElement::HTMLTitleElement(const QualifiedName& tagName, Document* document)
+inline HTMLTitleElement::HTMLTitleElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
 {
     ASSERT(hasTagName(titleTag));
@@ -43,7 +43,7 @@ inline HTMLTitleElement::HTMLTitleElement(const QualifiedName& tagName, Document
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLTitleElement> HTMLTitleElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLTitleElement> HTMLTitleElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLTitleElement(tagName, document));
 }
@@ -52,7 +52,7 @@ Node::InsertionNotificationRequest HTMLTitleElement::insertedInto(ContainerNode*
 {
     HTMLElement::insertedInto(insertionPoint);
     if (inDocument() && !isInShadowTree())
-        document()->setTitleElement(textWithDirection(), this);
+        document().setTitleElement(text(), this);
     return InsertionDone;
 }
 
@@ -60,56 +60,14 @@ void HTMLTitleElement::removedFrom(ContainerNode* insertionPoint)
 {
     HTMLElement::removedFrom(insertionPoint);
     if (insertionPoint->inDocument() && !insertionPoint->isInShadowTree())
-        document()->removeTitle(this);
+        document().removeTitle(this);
 }
 
 void HTMLTitleElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
 {
     HTMLElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
     if (inDocument() && !isInShadowTree())
-        document()->setTitleElement(textWithDirection(), this);
-}
-
-void HTMLTitleElement::attach(const AttachContext& context)
-{
-    HTMLElement::attach(context);
-    // If after attaching nothing called styleForRenderer() on this node we
-    // manually cache the value. This happens if our parent doesn't have a
-    // renderer like <optgroup> or if it doesn't allow children like <select>.
-    if (!m_style)
-        updateNonRenderStyle();
-}
-
-void HTMLTitleElement::detach(const AttachContext& context)
-{
-    m_style.clear();
-    HTMLElement::detach(context);
-}
-
-void HTMLTitleElement::updateNonRenderStyle()
-{
-    m_style = document()->styleForElementIgnoringPendingStylesheets(this);
-}
-
-RenderStyle* HTMLTitleElement::nonRendererStyle() const
-{
-    return m_style.get();
-}
-
-PassRefPtr<RenderStyle> HTMLTitleElement::customStyleForRenderer()
-{
-    // styleForRenderer is called whenever a new style should be associated
-    // with an Element so now is a good time to update our cached style.
-    updateNonRenderStyle();
-    return m_style;
-}
-
-void HTMLTitleElement::didRecalcStyle(StyleChange)
-{
-    if (isInShadowTree())
-        return;
-
-    document()->setTitleElement(textWithDirection(), this);
+        document().setTitleElement(text(), this);
 }
 
 String HTMLTitleElement::text() const
@@ -122,14 +80,6 @@ String HTMLTitleElement::text() const
     }
 
     return result.toString();
-}
-
-StringWithDirection HTMLTitleElement::textWithDirection()
-{
-    TextDirection direction = LTR;
-    if (m_style)
-        direction = m_style->direction();
-    return StringWithDirection(text(), direction);
 }
 
 void HTMLTitleElement::setText(const String &value)
@@ -149,7 +99,7 @@ void HTMLTitleElement::setText(const String &value)
         if (numChildren > 0)
             removeChildren();
 
-        appendChild(document()->createTextNode(valueCopy.impl()), IGNORE_EXCEPTION);
+        appendChild(document().createTextNode(valueCopy.impl()), IGNORE_EXCEPTION);
     }
 }
 

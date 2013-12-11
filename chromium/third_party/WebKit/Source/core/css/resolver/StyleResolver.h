@@ -36,6 +36,7 @@
 #include "core/css/resolver/StyleBuilder.h"
 #include "core/css/resolver/StyleResolverState.h"
 #include "core/css/resolver/StyleResourceLoader.h"
+#include "wtf/Deque.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
 #include "wtf/RefPtr.h"
@@ -84,6 +85,9 @@ enum RuleMatchingBehavior {
     MatchAllRulesExcludingSMIL,
     MatchOnlyUserAgentRules,
 };
+
+const unsigned styleSharingListSize = 40;
+typedef WTF::Deque<RefPtr<Element>, styleSharingListSize> StyleSharingList;
 
 #undef STYLE_STATS
 
@@ -172,7 +176,7 @@ struct CSSPropertyValue {
 class StyleResolver {
     WTF_MAKE_NONCOPYABLE(StyleResolver); WTF_MAKE_FAST_ALLOCATED;
 public:
-    StyleResolver(Document*, bool matchAuthorAndUserStyles);
+    StyleResolver(Document&, bool matchAuthorAndUserStyles);
     ~StyleResolver();
 
     // FIXME: StyleResolver should not be keeping tree-walk state.
@@ -181,8 +185,8 @@ public:
     // Using these during tree walk will allow style selector to optimize child and descendant selector lookups.
     void pushParentElement(Element*);
     void popParentElement(Element*);
-    void pushParentShadowRoot(const ShadowRoot*);
-    void popParentShadowRoot(const ShadowRoot*);
+    void pushParentShadowRoot(const ShadowRoot&);
+    void popParentShadowRoot(const ShadowRoot&);
 
     PassRefPtr<RenderStyle> styleForElement(Element*, RenderStyle* parentStyle = 0, StyleSharingBehavior = AllowStyleSharing,
         RuleMatchingBehavior = MatchAllRules, RenderRegion* regionForStyling = 0);
@@ -190,9 +194,8 @@ public:
     // FIXME: The following logic related to animations and keyframes should be factored out of StyleResolver
     // The body of calculateCSSAnimationUpdate can move to CSSAnimations.cpp and take just const element, const style,
     // and const ScopedStyleTree
-    PassOwnPtr<CSSAnimationUpdate> calculateCSSAnimationUpdate(StyleResolverState&);
-    void resolveKeyframes(Element*, const RenderStyle*, const StringImpl* animationName, KeyframeAnimationEffect::KeyframeVector&);
-    const StylePropertySet* firstKeyframeStyles(const Element*, const StringImpl* animationName);
+    void calculateCSSAnimationUpdate(StyleResolverState&);
+    void resolveKeyframes(const Element*, const RenderStyle*, const AtomicString& animationName, TimingFunction* defaultTimingFunction, KeyframeAnimationEffect::KeyframeVector&, RefPtr<TimingFunction>&);
     void keyframeStylesForAnimation(Element*, const RenderStyle*, KeyframeList&);
     const StyleRuleKeyframes* matchScopedKeyframesRule(const Element*, const StringImpl* animationName);
     PassRefPtr<RenderStyle> styleForKeyframe(Element*, const RenderStyle*, const StyleKeyframe*);
@@ -203,19 +206,18 @@ public:
     PassRefPtr<RenderStyle> defaultStyleForElement();
     PassRefPtr<RenderStyle> styleForText(Text*);
 
-    static PassRefPtr<RenderStyle> styleForDocument(const Document*, CSSFontSelector* = 0);
+    static PassRefPtr<RenderStyle> styleForDocument(Document&, CSSFontSelector* = 0);
 
     // FIXME: This only has 5 callers and should be removed. Callers should be explicit about
     // their dependency on Document* instead of grabbing one through StyleResolver.
-    Document* document() { return m_document; }
+    Document& document() { return m_document; }
 
     // FIXME: It could be better to call m_ruleSets.appendAuthorStyleSheets() directly after we factor StyleRsolver further.
     // https://bugs.webkit.org/show_bug.cgi?id=108890
     void appendAuthorStyleSheets(unsigned firstNew, const Vector<RefPtr<CSSStyleSheet> >&);
-    // FIXME: resetAuthorStyle() will be removed when rulesets are reset in a per-scoping node manner.
-    void resetAuthorStyle();
     void resetAuthorStyle(const ContainerNode*);
     void resetAtHostRules(const ContainerNode*);
+    void finishAppendAuthorStyleSheets();
 
     DocumentRuleSets& ruleSets() { return m_ruleSets; }
     const DocumentRuleSets& ruleSets() const { return m_ruleSets; }
@@ -226,7 +228,7 @@ public:
 
     ScopedStyleResolver* ensureScopedStyleResolver(const ContainerNode* scope)
     {
-        return m_styleTree.ensureScopedStyleResolver(scope ? scope : document());
+        return m_styleTree.ensureScopedStyleResolver(scope ? *scope : document());
     }
 
     // FIXME: Used by SharingStyleFinder, but should be removed.
@@ -255,9 +257,6 @@ public:
     bool hasViewportDependentMediaQueries() const { return !m_viewportDependentMediaQueryResults.isEmpty(); }
     bool affectedByViewportChange() const;
 
-    // FIXME: This likely belongs on RuleSet.
-    void addKeyframeStyle(PassRefPtr<StyleRuleKeyframes>);
-
     // FIXME: Regions should not require special logic in StyleResolver.
     bool checkRegionStyle(Element* regionElement);
 
@@ -270,11 +269,20 @@ public:
     // FIXME: StyleResolver should not have this member or method.
     InspectorCSSOMWrappers& inspectorCSSOMWrappers() { return m_inspectorCSSOMWrappers; }
 
+    enum ViewportOrigin { UserAgentOrigin, AuthorOrigin };
+
     // Exposed for ScopedStyleResolver.
     // FIXME: Likely belongs on viewportStyleResolver.
-    void collectViewportRules(RuleSet*);
+    void collectViewportRules(RuleSet*, ViewportOrigin);
 
     const RuleFeatureSet& ruleFeatureSet() const { return m_features; }
+
+    StyleSharingList& styleSharingList() { return m_styleSharingList; }
+
+    bool supportsStyleSharing(Element*);
+
+    void addToStyleSharingList(Element*);
+    void clearStyleSharingList();
 
 #ifdef STYLE_STATS
     ALWAYS_INLINE static StyleSharingStats& styleSharingStats() { return m_styleSharingStats; }
@@ -311,11 +319,11 @@ private:
     template <StyleApplicationPass pass>
     void applyProperties(StyleResolverState&, const StylePropertySet* properties, StyleRule*, bool isImportant, bool inheritedOnly, PropertyWhitelistType = PropertyWhitelistNone);
     template <StyleApplicationPass pass>
-    void applyAnimatedProperties(StyleResolverState&, const Element*, const DocumentTimeline*, const CSSAnimationUpdate*);
+    bool applyAnimatedProperties(StyleResolverState&, const DocumentTimeline*);
     void matchPageRules(MatchResult&, RuleSet*, bool isLeftPage, bool isFirstPage, const String& pageName);
     void matchPageRulesForList(Vector<StyleRulePage*>& matchedRules, const Vector<StyleRulePage*>&, bool isLeftPage, bool isFirstPage, const String& pageName);
     void collectViewportRules();
-    Settings* documentSettings() { return m_document->settings(); }
+    Settings* documentSettings() { return m_document.settings(); }
 
     bool isLeftPage(int pageIndex) const;
     bool isRightPage(int pageIndex) const { return !isLeftPage(pageIndex); }
@@ -337,7 +345,7 @@ private:
     OwnPtr<MediaQueryEvaluator> m_medium;
     RefPtr<RenderStyle> m_rootDefaultStyle;
 
-    Document* m_document;
+    Document& m_document;
     SelectorFilter m_selectorFilter;
 
     bool m_matchAuthorAndUserStyles;
@@ -358,6 +366,8 @@ private:
     InspectorCSSOMWrappers m_inspectorCSSOMWrappers;
 
     StyleResourceLoader m_styleResourceLoader;
+
+    StyleSharingList m_styleSharingList;
 
 #ifdef STYLE_STATS
     static StyleSharingStats m_styleSharingStats;

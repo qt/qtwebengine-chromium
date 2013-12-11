@@ -31,92 +31,65 @@
 #include "config.h"
 #include "public/platform/WebCrypto.h"
 
+#include "modules/crypto/CryptoResult.h"
+#include "public/platform/WebArrayBuffer.h"
+#include <string.h>
+
 namespace WebKit {
 
-// FIXME: Assert that these methods are called from the right thread.
-
-void WebCryptoOperationResult::initializationFailed()
-{
-    m_impl->initializationFailed();
-    reset();
-}
-
-void WebCryptoOperationResult::initializationSucceeded(WebCryptoOperation* op)
-{
-    m_impl->initializationSucceeded(op);
-    reset();
-}
-
-void WebCryptoOperationResult::completeWithError()
+void WebCryptoResult::completeWithError()
 {
     m_impl->completeWithError();
     reset();
 }
 
-void WebCryptoOperationResult::completeWithArrayBuffer(const WebArrayBuffer& buffer)
+void WebCryptoResult::completeWithBuffer(const WebArrayBuffer& buffer)
 {
-    m_impl->completeWithArrayBuffer(buffer);
+    RELEASE_ASSERT(!buffer.isNull());
+    m_impl->completeWithBuffer(buffer);
     reset();
 }
 
-void WebCryptoOperationResult::completeWithBoolean(bool b)
+void WebCryptoResult::completeWithBuffer(const void* bytes, unsigned bytesSize)
+{
+    WebArrayBuffer buffer = WebKit::WebArrayBuffer::create(bytesSize, 1);
+    RELEASE_ASSERT(!buffer.isNull());
+    memcpy(buffer.data(), bytes, bytesSize);
+    completeWithBuffer(buffer);
+}
+
+void WebCryptoResult::completeWithBoolean(bool b)
 {
     m_impl->completeWithBoolean(b);
     reset();
 }
 
-void WebCryptoOperationResult::reset()
-{
-    m_impl.reset();
-}
-
-void WebCryptoOperationResult::assign(const WebCryptoOperationResult& o)
-{
-    m_impl = o.m_impl;
-}
-
-void WebCryptoOperationResult::assign(WebCryptoOperationResultPrivate* impl)
-{
-    m_impl = impl;
-}
-
-void WebCryptoKeyOperationResult::initializationFailed()
-{
-    m_impl->initializationFailed();
-    reset();
-}
-
-void WebCryptoKeyOperationResult::initializationSucceeded(WebCryptoKeyOperation* op)
-{
-    m_impl->initializationSucceeded(op);
-    reset();
-}
-
-void WebCryptoKeyOperationResult::completeWithError()
-{
-    m_impl->completeWithError();
-    reset();
-}
-
-void WebCryptoKeyOperationResult::completeWithKey(const WebCryptoKey& key)
+void WebCryptoResult::completeWithKey(const WebCryptoKey& key)
 {
     m_impl->completeWithKey(key);
     reset();
 }
 
-void WebCryptoKeyOperationResult::reset()
+void WebCryptoResult::completeWithKeyPair(const WebCryptoKey& publicKey, const WebCryptoKey& privateKey)
+{
+    m_impl->completeWithKeyPair(publicKey, privateKey);
+    reset();
+}
+
+WebCryptoResult::WebCryptoResult(const WTF::PassRefPtr<WebCore::CryptoResult>& impl)
+    : m_impl(impl)
+{
+    ASSERT(m_impl.get());
+}
+
+void WebCryptoResult::reset()
 {
     m_impl.reset();
 }
 
-void WebCryptoKeyOperationResult::assign(const WebCryptoKeyOperationResult& o)
+void WebCryptoResult::assign(const WebCryptoResult& o)
 {
     m_impl = o.m_impl;
-}
-
-void WebCryptoKeyOperationResult::assign(WebCryptoKeyOperationResultPrivate* impl)
-{
-    m_impl = impl;
 }
 
 } // namespace WebKit

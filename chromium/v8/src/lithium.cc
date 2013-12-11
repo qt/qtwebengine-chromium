@@ -233,36 +233,6 @@ void LPointerMap::PrintTo(StringStream* stream) {
 }
 
 
-int ElementsKindToShiftSize(ElementsKind elements_kind) {
-  switch (elements_kind) {
-    case EXTERNAL_BYTE_ELEMENTS:
-    case EXTERNAL_PIXEL_ELEMENTS:
-    case EXTERNAL_UNSIGNED_BYTE_ELEMENTS:
-      return 0;
-    case EXTERNAL_SHORT_ELEMENTS:
-    case EXTERNAL_UNSIGNED_SHORT_ELEMENTS:
-      return 1;
-    case EXTERNAL_INT_ELEMENTS:
-    case EXTERNAL_UNSIGNED_INT_ELEMENTS:
-    case EXTERNAL_FLOAT_ELEMENTS:
-      return 2;
-    case EXTERNAL_DOUBLE_ELEMENTS:
-    case FAST_DOUBLE_ELEMENTS:
-    case FAST_HOLEY_DOUBLE_ELEMENTS:
-      return 3;
-    case FAST_SMI_ELEMENTS:
-    case FAST_ELEMENTS:
-    case FAST_HOLEY_SMI_ELEMENTS:
-    case FAST_HOLEY_ELEMENTS:
-    case DICTIONARY_ELEMENTS:
-    case NON_STRICT_ARGUMENTS_ELEMENTS:
-      return kPointerSizeLog2;
-  }
-  UNREACHABLE();
-  return 0;
-}
-
-
 int StackSlotOffset(int index) {
   if (index >= 0) {
     // Local or spill slot. Skip the frame pointer, function, and
@@ -422,10 +392,11 @@ Representation LChunk::LookupLiteralRepresentation(
 LChunk* LChunk::NewChunk(HGraph* graph) {
   DisallowHandleAllocation no_handles;
   DisallowHeapAllocation no_gc;
+  graph->DisallowAddingNewValues();
   int values = graph->GetMaximumValueID();
   CompilationInfo* info = graph->info();
   if (values > LUnallocated::kMaxVirtualRegisters) {
-    info->set_bailout_reason("not enough virtual registers for values");
+    info->set_bailout_reason(kNotEnoughVirtualRegistersForValues);
     return NULL;
   }
   LAllocator allocator(values, graph);
@@ -434,7 +405,7 @@ LChunk* LChunk::NewChunk(HGraph* graph) {
   if (chunk == NULL) return NULL;
 
   if (!allocator.Allocate(chunk)) {
-    info->set_bailout_reason("not enough virtual registers (regalloc)");
+    info->set_bailout_reason(kNotEnoughVirtualRegistersRegalloc);
     return NULL;
   }
 
@@ -461,12 +432,10 @@ Handle<Code> LChunk::Codegen() {
         CodeGenerator::MakeCodeEpilogue(&assembler, flags, info());
     generator.FinishCode(code);
     code->set_is_crankshafted(true);
-    if (!code.is_null()) {
-      void* jit_handler_data =
-          assembler.positions_recorder()->DetachJITHandlerData();
-      LOG_CODE_EVENT(info()->isolate(),
-                     CodeEndLinePosInfoRecordEvent(*code, jit_handler_data));
-    }
+    void* jit_handler_data =
+        assembler.positions_recorder()->DetachJITHandlerData();
+    LOG_CODE_EVENT(info()->isolate(),
+                   CodeEndLinePosInfoRecordEvent(*code, jit_handler_data));
 
     CodeGenerator::PrintCode(code, info());
     return code;

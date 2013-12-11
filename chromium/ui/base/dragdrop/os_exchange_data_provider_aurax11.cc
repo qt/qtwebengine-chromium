@@ -6,7 +6,7 @@
 
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/message_loop/message_pump_aurax11.h"
+#include "base/message_loop/message_pump_x11.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/net_util.h"
@@ -42,7 +42,7 @@ const char* kAtomsToCache[] = {
 OSExchangeDataProviderAuraX11::OSExchangeDataProviderAuraX11(
     ::Window x_window,
     const SelectionFormatMap& selection)
-    : x_display_(GetXDisplay()),
+    : x_display_(gfx::GetXDisplay()),
       x_root_window_(DefaultRootWindow(x_display_)),
       own_window_(false),
       x_window_(x_window),
@@ -55,7 +55,7 @@ OSExchangeDataProviderAuraX11::OSExchangeDataProviderAuraX11(
 }
 
 OSExchangeDataProviderAuraX11::OSExchangeDataProviderAuraX11()
-    : x_display_(GetXDisplay()),
+    : x_display_(gfx::GetXDisplay()),
       x_root_window_(DefaultRootWindow(x_display_)),
       own_window_(true),
       x_window_(XCreateWindow(
@@ -77,12 +77,12 @@ OSExchangeDataProviderAuraX11::OSExchangeDataProviderAuraX11()
 
   XStoreName(x_display_, x_window_, "Chromium Drag & Drop Window");
 
-  base::MessagePumpAuraX11::Current()->AddDispatcherForWindow(this, x_window_);
+  base::MessagePumpX11::Current()->AddDispatcherForWindow(this, x_window_);
 }
 
 OSExchangeDataProviderAuraX11::~OSExchangeDataProviderAuraX11() {
   if (own_window_) {
-    base::MessagePumpAuraX11::Current()->RemoveDispatcherForWindow(x_window_);
+    base::MessagePumpX11::Current()->RemoveDispatcherForWindow(x_window_);
     XDestroyWindow(x_display_, x_window_);
   }
 }
@@ -196,13 +196,14 @@ bool OSExchangeDataProviderAuraX11::GetURLAndTitle(
 
       std::vector<base::string16> tokens;
       size_t num_tokens = Tokenize(unparsed, ASCIIToUTF16("\n"), &tokens);
-      if (num_tokens >= 2) {
+      if (num_tokens > 0) {
+        if (num_tokens > 1)
+          *title = tokens[1];
+        else
+          *title = string16();
+
         *url = GURL(tokens[0]);
-        *title = tokens[1];
         return true;
-      } else {
-        NOTREACHED() << "Data that claimed to be a Mozilla URL has "
-                     << num_tokens << " tokens instead of 2.";
       }
     } else if (data.GetType() == atom_cache_.GetAtom(
                    Clipboard::kMimeTypeURIList)) {

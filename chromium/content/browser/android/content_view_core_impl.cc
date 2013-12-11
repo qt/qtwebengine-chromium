@@ -15,10 +15,10 @@
 #include "base/values.h"
 #include "cc/layers/layer.h"
 #include "cc/output/begin_frame_args.h"
-#include "content/browser/android/browser_media_player_manager.h"
 #include "content/browser/android/interstitial_page_delegate_android.h"
 #include "content/browser/android/load_url_params.h"
 #include "content/browser/android/touch_point.h"
+#include "content/browser/media/android/browser_media_player_manager.h"
 #include "content/browser/renderer_host/compositor_impl_android.h"
 #include "content/browser/renderer_host/input/web_input_event_builders_android.h"
 #include "content/browser/renderer_host/java/java_bound_object.h"
@@ -260,6 +260,7 @@ void ContentViewCoreImpl::Observe(int type,
               env, obj.obj(), old_pid, new_pid);
         }
       }
+      SetFocusInternal(HasFocus());
       break;
     }
     case NOTIFICATION_RENDERER_PROCESS_CREATED: {
@@ -341,6 +342,13 @@ void ContentViewCoreImpl::Show() {
 
 void ContentViewCoreImpl::Hide() {
   GetWebContents()->WasHidden();
+  PauseVideo();
+}
+
+void ContentViewCoreImpl::PauseVideo() {
+  RenderViewHost* host = web_contents_->GetRenderViewHost();
+  if (host)
+    host->Send(new ViewMsg_PauseVideo(host->GetRoutingID()));
 }
 
 void ContentViewCoreImpl::OnTabCrashed() {
@@ -375,6 +383,10 @@ void ContentViewCoreImpl::UpdateFrameInfo(
     const gfx::Vector2dF& controls_offset,
     const gfx::Vector2dF& content_offset,
     float overdraw_bottom_height) {
+  if (window_android_)
+      window_android_->set_content_offset(
+          gfx::ScaleVector2d(content_offset, dpi_scale_));
+
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
@@ -577,15 +589,28 @@ void ContentViewCoreImpl::ShowDisambiguationPopup(
                                                java_bitmap.obj());
 }
 
-ScopedJavaLocalRef<jobject> ContentViewCoreImpl::CreateSmoothScroller(
-    bool scroll_down, int mouse_event_x, int mouse_event_y) {
+ScopedJavaLocalRef<jobject> ContentViewCoreImpl::CreateOnePointTouchGesture(
+    int32 start_x, int32 start_y, int32 delta_x, int32 delta_y) {
   JNIEnv* env = AttachCurrentThread();
 
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
     return ScopedJavaLocalRef<jobject>();
-  return Java_ContentViewCore_createSmoothScroller(
-      env, obj.obj(), scroll_down, mouse_event_x, mouse_event_y);
+  return Java_ContentViewCore_createOnePointTouchGesture(
+      env, obj.obj(), start_x, start_y, delta_x, delta_y);
+}
+
+ScopedJavaLocalRef<jobject> ContentViewCoreImpl::CreateTwoPointTouchGesture(
+    int32 start_x0, int32 start_y0, int32 delta_x0, int32 delta_y0,
+    int32 start_x1, int32 start_y1, int32 delta_x1, int32 delta_y1) {
+  JNIEnv* env = AttachCurrentThread();
+
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return ScopedJavaLocalRef<jobject>();
+  return Java_ContentViewCore_createTwoPointTouchGesture(
+      env, obj.obj(), start_x0, start_y0, delta_x0, delta_y0,
+      start_x1, start_y1, delta_x1, delta_y1);
 }
 
 void ContentViewCoreImpl::NotifyExternalSurface(
@@ -817,6 +842,10 @@ WebContents* ContentViewCoreImpl::GetWebContents() const {
 }
 
 void ContentViewCoreImpl::SetFocus(JNIEnv* env, jobject obj, jboolean focused) {
+  SetFocusInternal(focused);
+}
+
+void ContentViewCoreImpl::SetFocusInternal(bool focused) {
   if (!GetRenderWidgetHostViewAndroid())
     return;
 
@@ -947,20 +976,13 @@ void ContentViewCoreImpl::ScrollEnd(JNIEnv* env, jobject obj, jlong time_ms) {
 }
 
 void ContentViewCoreImpl::ScrollBy(JNIEnv* env, jobject obj, jlong time_ms,
-                                   jfloat x, jfloat y, jfloat dx, jfloat dy,
-                                   jboolean last_input_event_for_vsync) {
+                                   jfloat x, jfloat y, jfloat dx, jfloat dy) {
   WebGestureEvent event = MakeGestureEvent(
       WebInputEvent::GestureScrollUpdate, time_ms, x, y);
   event.data.scrollUpdate.deltaX = -dx / GetDpiScale();
   event.data.scrollUpdate.deltaY = -dy / GetDpiScale();
 
   SendGestureEvent(event);
-
-  // TODO(brianderson): Clean up last_input_event_for_vsync. crbug.com/247043
-  if (last_input_event_for_vsync) {
-    SendBeginFrame(base::TimeTicks() +
-                   base::TimeDelta::FromMilliseconds(time_ms));
-  }
 }
 
 void ContentViewCoreImpl::FlingStart(JNIEnv* env, jobject obj, jlong time_ms,
@@ -1083,19 +1105,12 @@ void ContentViewCoreImpl::PinchEnd(JNIEnv* env, jobject obj, jlong time_ms) {
 
 void ContentViewCoreImpl::PinchBy(JNIEnv* env, jobject obj, jlong time_ms,
                                   jfloat anchor_x, jfloat anchor_y,
-                                  jfloat delta,
-                                  jboolean last_input_event_for_vsync) {
+                                  jfloat delta) {
   WebGestureEvent event = MakeGestureEvent(
       WebInputEvent::GesturePinchUpdate, time_ms, anchor_x, anchor_y);
   event.data.pinchUpdate.scale = delta;
 
   SendGestureEvent(event);
-
-  // TODO(brianderson): Clean up last_input_event_for_vsync. crbug.com/247043
-  if (last_input_event_for_vsync) {
-    SendBeginFrame(base::TimeTicks() +
-                   base::TimeDelta::FromMilliseconds(time_ms));
-  }
 }
 
 void ContentViewCoreImpl::SelectBetweenCoordinates(JNIEnv* env, jobject obj,
@@ -1149,6 +1164,15 @@ void ContentViewCoreImpl::GoToNavigationIndex(JNIEnv* env,
                                               jint index) {
   web_contents_->GetController().GoToIndex(index);
   UpdateTabCrashedFlag();
+}
+
+void ContentViewCoreImpl::LoadIfNecessary(JNIEnv* env, jobject obj) {
+  web_contents_->GetController().LoadIfNecessary();
+  UpdateTabCrashedFlag();
+}
+
+void ContentViewCoreImpl::RequestRestoreLoad(JNIEnv* env, jobject obj) {
+  web_contents_->GetController().SetNeedsReload();
 }
 
 void ContentViewCoreImpl::StopLoading(JNIEnv* env, jobject obj) {
@@ -1296,12 +1320,8 @@ void ContentViewCoreImpl::AttachExternalVideoSurface(JNIEnv* env,
 #if defined(GOOGLE_TV)
   RenderViewHostImpl* rvhi = static_cast<RenderViewHostImpl*>(
       web_contents_->GetRenderViewHost());
-  BrowserMediaPlayerManager* browser_media_player_manager =
-      rvhi ? static_cast<BrowserMediaPlayerManager*>(
-                 rvhi->media_player_manager())
-           : NULL;
-  if (browser_media_player_manager) {
-    browser_media_player_manager->AttachExternalVideoSurface(
+  if (rvhi && rvhi->media_player_manager()) {
+    rvhi->media_player_manager()->AttachExternalVideoSurface(
         static_cast<int>(player_id), jsurface);
   }
 #endif
@@ -1313,12 +1333,8 @@ void ContentViewCoreImpl::DetachExternalVideoSurface(JNIEnv* env,
 #if defined(GOOGLE_TV)
   RenderViewHostImpl* rvhi = static_cast<RenderViewHostImpl*>(
       web_contents_->GetRenderViewHost());
-  BrowserMediaPlayerManager* browser_media_player_manager =
-      rvhi ? static_cast<BrowserMediaPlayerManager*>(
-                 rvhi->media_player_manager())
-           : NULL;
-  if (browser_media_player_manager) {
-    browser_media_player_manager->DetachExternalVideoSurface(
+  if (rvhi && rvhi->media_player_manager()) {
+    rvhi->media_player_manager()->DetachExternalVideoSurface(
         static_cast<int>(player_id));
   }
 #endif
@@ -1332,6 +1348,8 @@ jboolean ContentViewCoreImpl::IsRenderWidgetHostViewReady(JNIEnv* env,
 
 void ContentViewCoreImpl::ExitFullscreen(JNIEnv* env, jobject obj) {
   RenderViewHost* host = web_contents_->GetRenderViewHost();
+  if (!host)
+    return;
   host->ExitFullscreen();
 }
 
@@ -1341,6 +1359,8 @@ void ContentViewCoreImpl::UpdateTopControlsState(JNIEnv* env,
                                                  bool enable_showing,
                                                  bool animate) {
   RenderViewHost* host = web_contents_->GetRenderViewHost();
+  if (!host)
+    return;
   host->Send(new ViewMsg_UpdateTopControlsState(host->GetRoutingID(),
                                                 enable_hiding,
                                                 enable_showing,
@@ -1574,17 +1594,12 @@ void ContentViewCoreImpl::SetAccessibilityEnabled(JNIEnv* env, jobject obj,
     return;
   RenderWidgetHostImpl* host_impl = RenderWidgetHostImpl::From(
       host_view->GetRenderWidgetHost());
-  BrowserAccessibilityState* accessibility_state =
-      BrowserAccessibilityState::GetInstance();
   if (enabled) {
-    // This enables accessibility globally unless it was explicitly disallowed
-    // by a command-line flag.
-    accessibility_state->OnScreenReaderDetected();
-    // If it was actually enabled globally, enable it for this RenderWidget now.
-    if (accessibility_state->IsAccessibleBrowser() && host_impl)
+    BrowserAccessibilityState::GetInstance()->EnableAccessibility();
+    if (host_impl)
       host_impl->SetAccessibilityMode(AccessibilityModeComplete);
   } else {
-    accessibility_state->DisableAccessibility();
+    BrowserAccessibilityState::GetInstance()->DisableAccessibility();
     if (host_impl)
       host_impl->SetAccessibilityMode(AccessibilityModeOff);
   }

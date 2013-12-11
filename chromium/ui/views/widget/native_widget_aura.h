@@ -12,7 +12,8 @@
 #include "ui/aura/client/drag_drop_delegate.h"
 #include "ui/aura/client/focus_change_observer.h"
 #include "ui/aura/window_delegate.h"
-#include "ui/base/events/event_constants.h"
+#include "ui/base/cursor/cursor.h"
+#include "ui/events/event_constants.h"
 #include "ui/views/ime/input_method_delegate.h"
 #include "ui/views/views_export.h"
 #include "ui/views/widget/native_widget_private.h"
@@ -45,6 +46,12 @@ class VIEWS_EXPORT NativeWidgetAura
   // TODO(beng): Find a better place for this, and the similar method on
   //             NativeWidgetWin.
   static gfx::Font GetWindowTitleFont();
+
+  // Called internally by NativeWidgetAura and DesktopNativeWidgetAura to
+  // associate |native_widget| with |window|.
+  static void RegisterNativeWidgetForWindow(
+      internal::NativeWidgetPrivate* native_widget,
+      aura::Window* window);
 
   // Overridden from internal::NativeWidgetPrivate:
   virtual void InitNativeWidget(const Widget::InitParams& params) OVERRIDE;
@@ -125,6 +132,7 @@ class VIEWS_EXPORT NativeWidgetAura
   virtual void EndMoveLoop() OVERRIDE;
   virtual void SetVisibilityChangedAnimationsEnabled(bool value) OVERRIDE;
   virtual ui::NativeTheme* GetNativeTheme() const OVERRIDE;
+  virtual void OnRootViewLayout() const OVERRIDE;
 
   // Overridden from views::InputMethodDelegate:
   virtual void DispatchKeyEventPostIME(const ui::KeyEvent& key) OVERRIDE;
@@ -148,7 +156,8 @@ class VIEWS_EXPORT NativeWidgetAura
   virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE;
   virtual bool HasHitTestMask() const OVERRIDE;
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE;
-  virtual scoped_refptr<ui::Texture> CopyTexture() OVERRIDE;
+  virtual void DidRecreateLayer(ui::Layer* old_layer,
+                                ui::Layer* new_layer) OVERRIDE;
 
   // Overridden from ui::EventHandler:
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
@@ -189,6 +198,9 @@ class VIEWS_EXPORT NativeWidgetAura
 
   internal::NativeWidgetDelegate* delegate_;
 
+  // WARNING: set to NULL when destroyed. As the Widget is not necessarily
+  // destroyed along with |window_| all usage of |window_| should first verify
+  // non-NULL.
   aura::Window* window_;
 
   // See class documentation for Widget in widget.h for a note about ownership.

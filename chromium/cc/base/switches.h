@@ -17,9 +17,11 @@ namespace switches {
 
 // Switches for the renderer compositor only.
 CC_EXPORT extern const char kBackgroundColorInsteadOfCheckerboard[];
+CC_EXPORT extern const char kDisableLCDText[];
 CC_EXPORT extern const char kDisableImplSidePainting[];
 CC_EXPORT extern const char kDisableThreadedAnimation[];
 CC_EXPORT extern const char kDisableCompositedAntialiasing[];
+CC_EXPORT extern const char kEnableLCDText[];
 CC_EXPORT extern const char kEnableImplSidePainting[];
 CC_EXPORT extern const char kEnableTopControlsPositionCalculation[];
 CC_EXPORT extern const char kForceDirectLayerDrawing[];
@@ -37,7 +39,9 @@ CC_EXPORT extern const char kMaxUnusedResourceMemoryUsagePercentage[];
 CC_EXPORT extern const char kEnablePinchVirtualViewport[];
 CC_EXPORT extern const char kEnablePartialSwap[];
 CC_EXPORT extern const char kStrictLayerPropertyChangeChecking[];
-CC_EXPORT extern const char kUseMapImage[];
+CC_EXPORT extern const char kEnableMapImage[];
+CC_EXPORT extern const char kDisableMapImage[];
+CC_EXPORT extern const char kDisable4444Textures[];
 
 // Switches for both the renderer and ui compositors.
 CC_EXPORT extern const char kUIDisablePartialSwap[];
@@ -65,7 +69,9 @@ CC_EXPORT extern const char kUIShowNonOccludingRects[];
 // Unit test related.
 CC_EXPORT extern const char kCCLayerTreeTestNoTimeout[];
 
+CC_EXPORT bool IsLCDTextEnabled();
 CC_EXPORT bool IsImplSidePaintingEnabled();
+CC_EXPORT bool IsMapImageEnabled();
 
 }  // namespace switches
 }  // namespace cc

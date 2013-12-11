@@ -32,7 +32,7 @@ namespace WebCore {
 
 class HTMLTableCellElement FINAL : public HTMLTablePartElement {
 public:
-    static PassRefPtr<HTMLTableCellElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<HTMLTableCellElement> create(const QualifiedName&, Document&);
 
     int cellIndex() const;
 
@@ -51,7 +51,7 @@ public:
     HTMLTableCellElement* cellAbove() const;
 
 private:
-    HTMLTableCellElement(const QualifiedName&, Document*);
+    HTMLTableCellElement(const QualifiedName&, Document&);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
@@ -63,26 +63,20 @@ private:
     virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
 };
 
-HTMLTableCellElement* toHTMLTableCellElement(Node* node);
-const HTMLTableCellElement* toHTMLTableCellElement(const Node* node);
-
-// This will catch anyone doing an unnecessary cast.
-void toHTMLTableCellElement(const HTMLTableCellElement*);
-
-#ifdef NDEBUG
-
-// The debug versions of these, with assertions, are not inlined.
-
 inline HTMLTableCellElement* toHTMLTableCellElement(Node* node)
 {
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::tdTag) || node->hasTagName(HTMLNames::thTag));
     return static_cast<HTMLTableCellElement*>(node);
 }
 
 inline const HTMLTableCellElement* toHTMLTableCellElement(const Node* node)
 {
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::tdTag) || node->hasTagName(HTMLNames::thTag));
     return static_cast<const HTMLTableCellElement*>(node);
 }
-#endif
+
+// This will catch anyone doing an unnecessary cast.
+void toHTMLTableCellElement(const HTMLTableCellElement*);
 
 } // namespace
 

@@ -124,8 +124,8 @@ public:
 
     void removedLastRefToScope();
 
-    bool isInclusiveAncestorOf(const TreeScope*) const;
-    unsigned short comparePosition(const TreeScope*) const;
+    bool isInclusiveAncestorOf(const TreeScope&) const;
+    unsigned short comparePosition(const TreeScope&) const;
 
     Element* getElementByAccessKey(const String& key) const;
 

@@ -120,7 +120,6 @@ modules = [
             "NetworkRequest.js",
             "UISourceCode.js",
             "Workspace.js",
-            "protocol_externs.js",
         ]
     },
     {
@@ -128,7 +127,6 @@ modules = [
         "dependencies": ["common"],
         "sources": [
             "Checkbox.js",
-            "CodeMirrorTextEditor.js",
             "ContextMenu.js",
             "CompletionDictionary.js",
             "DOMSyntaxHighlighter.js",
@@ -155,7 +153,6 @@ modules = [
             "ShowMoreDataGridNode.js",
             "SidebarOverlay.js",
             "SoftContextMenu.js",
-            "SourceTokenizer.js",
             "Spectrum.js",
             "SplitView.js",
             "SidebarView.js",
@@ -163,9 +160,7 @@ modules = [
             "SuggestBox.js",
             "TabbedPane.js",
             "TextEditor.js",
-            "TextEditorHighlighter.js",
             "TextRange.js",
-            "TextEditorModel.js",
             "TextPrompt.js",
             "TextUtils.js",
             "TimelineGrid.js",
@@ -193,6 +188,7 @@ modules = [
             "InspectElementModeController.js",
             "ObjectPopoverHelper.js",
             "ObjectPropertiesSection.js",
+            "ScreencastView.js",
             "SourceFrame.js",
             "ResourceView.js",
         ]
@@ -207,6 +203,7 @@ modules = [
             "ElementsPanelDescriptor.js",
             "EventListenersSidebarPane.js",
             "MetricsSidebarPane.js",
+            "PlatformFontsSidebarPane.js",
             "PropertiesSidebarPane.js",
             "StylesSidebarPane.js",
         ]
@@ -265,10 +262,10 @@ modules = [
             "NavigatorView.js",
             "RevisionHistoryView.js",
             "ScopeChainSidebarPane.js",
-            "ScriptsNavigator.js",
-            "ScriptsPanel.js",
-            "ScriptsPanelDescriptor.js",
-            "ScriptsSearchScope.js",
+            "SourcesNavigator.js",
+            "SourcesPanel.js",
+            "SourcesPanelDescriptor.js",
+            "SourcesSearchScope.js",
             "StyleSheetOutlineDialog.js",
             "TabbedEditorContainer.js",
             "UISourceCodeFrame.js",
@@ -312,6 +309,25 @@ modules = [
         ]
     },
     {
+        "name": "codemirror",
+        "dependencies": ["components"],
+        "sources": [
+            "CodeMirrorTextEditor.js",
+            "CodeMirrorUtils.js",
+        ]
+    },
+    {
+        "name": "layers",
+        "dependencies": ["components"],
+        "sources": [
+            "LayerTreeModel.js",
+            "LayersPanel.js",
+            "LayerTree.js",
+            "Layers3DView.js",
+            "LayerDetailsView.js",
+        ]
+    },
+    {
         "name": "extensions",
         "dependencies": ["components"],
         "sources": [
@@ -328,6 +344,7 @@ modules = [
         "dependencies": ["components", "extensions"],
         "sources": [
             "SettingsScreen.js",
+            "EditFileSystemDialog.js",
             "OverridesView.js",
         ]
     },
@@ -342,6 +359,7 @@ modules = [
         "name": "profiler",
         "dependencies": ["components", "workers"],
         "sources": [
+            "AllocationProfile.js",
             "BottomUpProfileDataGridTree.js",
             "CPUProfileView.js",
             "FlameChart.js",
@@ -360,6 +378,7 @@ modules = [
             "ProfileLauncherView.js",
             "TopDownProfileDataGridTree.js",
             "CanvasProfileView.js",
+            "CanvasReplayStateView.js",
         ]
     },
     {
@@ -371,6 +390,37 @@ modules = [
         ]
     }
 ]
+
+# `importScript` function must not be used in any files
+# except module headers. Refer to devtools.gyp file for
+# the module header list.
+allowed_import_statements_files = [
+    "utilities.js",
+    "ElementsPanel.js",
+    "ResourcesPanel.js",
+    "NetworkPanel.js",
+    "SourcesPanel.js",
+    "TimelinePanel.js",
+    "ProfilesPanel.js",
+    "AuditsPanel.js",
+    "LayersPanel.js",
+    "CodeMirrorTextEditor.js",
+]
+
+
+def verify_importScript_usage():
+    for module in modules:
+        for file_name in module['sources']:
+            if file_name in allowed_import_statements_files:
+                continue
+            sourceFile = open(devtools_frontend_path + "/" + file_name, "r")
+            source = sourceFile.read()
+            sourceFile.close()
+            if "importScript(" in source:
+                print "ERROR: importScript function is allowed in module header files only (found in %s)" % file_name
+
+print "Verifying 'importScript' function usage..."
+verify_importScript_usage()
 
 if os.system("which java") != 0:
     print "Cannot find java ('which java' returns non-zero error code)"
@@ -417,13 +467,15 @@ if process_recursively:
             modules.append(modules_by_name[sys.argv[i]])
     for module in modules:
         command = compiler_command
-        command += "    --externs " + devtools_frontend_path + "/externs.js"
+        command += "    --externs " + devtools_frontend_path + "/externs.js" + " \\\n"
+        command += "    --externs " + protocol_externs_path
         command += dump_module(module["name"], True, {})
-        print "Compiling \"" + module["name"] + "\""
+        print "Compiling \"" + module["name"] + "\"..."
         os.system(command)
 else:
     command = compiler_command
-    command += "    --externs " + devtools_frontend_path + "/externs.js"
+    command += "    --externs " + devtools_frontend_path + "/externs.js" + " \\\n"
+    command += "    --externs " + protocol_externs_path
     for module in modules:
         command += dump_module(module["name"], False, {})
     print "Compiling front_end..."

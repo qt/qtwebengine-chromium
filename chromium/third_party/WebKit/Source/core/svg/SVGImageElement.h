@@ -36,10 +36,12 @@ class SVGImageElement FINAL : public SVGGraphicsElement,
                               public SVGExternalResourcesRequired,
                               public SVGURIReference {
 public:
-    static PassRefPtr<SVGImageElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGImageElement> create(const QualifiedName&, Document&);
+
+    bool currentFrameHasSingleSecurityOrigin() const;
 
 private:
-    SVGImageElement(const QualifiedName&, Document*);
+    SVGImageElement(const QualifiedName&, Document&);
 
     virtual bool isValid() const { return SVGTests::isValid(); }
     virtual bool supportsFocus() const OVERRIDE { return hasFocusEventListeners(); }
@@ -55,7 +57,7 @@ private:
 
     virtual RenderObject* createRenderer(RenderStyle*);
 
-    virtual const AtomicString& imageSourceURL() const OVERRIDE;
+    virtual const AtomicString imageSourceURL() const OVERRIDE;
     virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
 
     virtual bool haveLoadedRequiredResources();

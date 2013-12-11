@@ -31,8 +31,8 @@
 #include "content/public/common/content_constants.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "ui/base/win/dpi.h"
-#include "ui/base/win/hwnd_util.h"
+#include "ui/gfx/win/dpi.h"
+#include "ui/gfx/win/hwnd_util.h"
 #include "webkit/common/cursors/webcursor.h"
 
 using WebKit::WebKeyboardEvent;
@@ -220,10 +220,11 @@ LRESULT CALLBACK WebPluginDelegateImpl::MouseHookProc(
 }
 
 WebPluginDelegateImpl::WebPluginDelegateImpl(
+    WebPlugin* plugin,
     PluginInstance* instance)
     : instance_(instance),
       quirks_(0),
-      plugin_(NULL),
+      plugin_(plugin),
       windowless_(false),
       windowed_handle_(NULL),
       windowed_did_set_window_(false),
@@ -321,7 +322,7 @@ WebPluginDelegateImpl::~WebPluginDelegateImpl() {
     if (current_wnd_proc == DummyWindowProc) {
       SetWindowLongPtr(dummy_window_for_activation_,
                        GWLP_WNDPROC,
-                       reinterpret_cast<LONG>(old_dummy_window_proc_));
+                       reinterpret_cast<LONG_PTR>(old_dummy_window_proc_));
     }
     ::DestroyWindow(dummy_window_for_activation_);
   }
@@ -439,8 +440,7 @@ void WebPluginDelegateImpl::PlatformDestroyInstance() {
   }
 }
 
-void WebPluginDelegateImpl::Paint(WebKit::WebCanvas* canvas,
-                                  const gfx::Rect& rect) {
+void WebPluginDelegateImpl::Paint(SkCanvas* canvas, const gfx::Rect& rect) {
   if (windowless_ && skia::SupportsPlatformPaint(canvas)) {
     skia::ScopedPlatformPaint scoped_platform_paint(canvas);
     HDC hdc = scoped_platform_paint.GetPlatformSurface();
@@ -516,8 +516,9 @@ bool WebPluginDelegateImpl::WindowedCreatePlugin() {
 
   // Calling SetWindowLongPtrA here makes the window proc ASCII, which is
   // required by at least the Shockwave Director plug-in.
-  SetWindowLongPtrA(
-      windowed_handle_, GWLP_WNDPROC, reinterpret_cast<LONG>(DefWindowProcA));
+  SetWindowLongPtrA(windowed_handle_,
+                    GWLP_WNDPROC,
+                    reinterpret_cast<LONG_PTR>(DefWindowProcA));
 
   return true;
 }
@@ -530,7 +531,7 @@ void WebPluginDelegateImpl::WindowedDestroyWindow() {
     if (current_wnd_proc == NativeWndProc) {
       SetWindowLongPtr(windowed_handle_,
                        GWLP_WNDPROC,
-                       reinterpret_cast<LONG>(plugin_wnd_proc_));
+                       reinterpret_cast<LONG_PTR>(plugin_wnd_proc_));
     }
 
     plugin_->WillDestroyWindow(windowed_handle_);
@@ -716,7 +717,7 @@ BOOL CALLBACK EnumFlashWindows(HWND window, LPARAM arg) {
   if (current_wnd_proc != wnd_proc) {
     WNDPROC old_flash_proc = reinterpret_cast<WNDPROC>(SetWindowLongPtr(
         window, GWLP_WNDPROC,
-        reinterpret_cast<LONG>(wnd_proc)));
+        reinterpret_cast<LONG_PTR>(wnd_proc)));
     DCHECK(old_flash_proc);
     g_window_handle_proc_map.Get()[window] = old_flash_proc;
   }
@@ -751,7 +752,7 @@ bool WebPluginDelegateImpl::CreateDummyWindowForActivation() {
   DCHECK(result == TRUE) << "SetProp failed, last error = " << GetLastError();
   old_dummy_window_proc_ = reinterpret_cast<WNDPROC>(SetWindowLongPtr(
       dummy_window_for_activation_, GWLP_WNDPROC,
-      reinterpret_cast<LONG>(DummyWindowProc)));
+      reinterpret_cast<LONG_PTR>(DummyWindowProc)));
 
   // Flash creates background windows which use excessive CPU in our
   // environment; we wrap these windows and throttle them so that they don't
@@ -775,8 +776,8 @@ bool WebPluginDelegateImpl::WindowedReposition(
     return false;
   }
 
-  gfx::Rect window_rect = ui::win::DIPToScreenRect(window_rect_in_dip);
-  gfx::Rect clip_rect = ui::win::DIPToScreenRect(clip_rect_in_dip);
+  gfx::Rect window_rect = gfx::win::DIPToScreenRect(window_rect_in_dip);
+  gfx::Rect clip_rect = gfx::win::DIPToScreenRect(clip_rect_in_dip);
   if (window_rect_ == window_rect && clip_rect_ == clip_rect)
     return false;
 
@@ -843,8 +844,10 @@ void WebPluginDelegateImpl::WindowedSetWindow() {
   WNDPROC current_wnd_proc = reinterpret_cast<WNDPROC>(
         GetWindowLongPtr(windowed_handle_, GWLP_WNDPROC));
   if (current_wnd_proc != NativeWndProc) {
-    plugin_wnd_proc_ = reinterpret_cast<WNDPROC>(SetWindowLongPtr(
-        windowed_handle_, GWLP_WNDPROC, reinterpret_cast<LONG>(NativeWndProc)));
+    plugin_wnd_proc_ = reinterpret_cast<WNDPROC>(
+        SetWindowLongPtr(windowed_handle_,
+                         GWLP_WNDPROC,
+                         reinterpret_cast<LONG_PTR>(NativeWndProc)));
   }
 }
 
@@ -1459,7 +1462,7 @@ FARPROC WINAPI WebPluginDelegateImpl::GetProcAddressPatch(HMODULE module,
 
 void WebPluginDelegateImpl::HandleCaptureForMessage(HWND window,
                                                     UINT message) {
-  if (ui::GetClassName(window) != base::string16(kNativeWindowClassName))
+  if (gfx::GetClassName(window) != base::string16(kNativeWindowClassName))
     return;
 
   switch (message) {

@@ -43,25 +43,25 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLVideoElement::HTMLVideoElement(const QualifiedName& tagName, Document* document, bool createdByParser)
+inline HTMLVideoElement::HTMLVideoElement(const QualifiedName& tagName, Document& document, bool createdByParser)
     : HTMLMediaElement(tagName, document, createdByParser)
 {
     ASSERT(hasTagName(videoTag));
     ScriptWrappable::init(this);
-    if (document->settings())
-        m_defaultPosterURL = document->settings()->defaultVideoPosterURL();
+    if (document.settings())
+        m_defaultPosterURL = document.settings()->defaultVideoPosterURL();
 }
 
-PassRefPtr<HTMLVideoElement> HTMLVideoElement::create(const QualifiedName& tagName, Document* document, bool createdByParser)
+PassRefPtr<HTMLVideoElement> HTMLVideoElement::create(const QualifiedName& tagName, Document& document, bool createdByParser)
 {
     RefPtr<HTMLVideoElement> videoElement(adoptRef(new HTMLVideoElement(tagName, document, createdByParser)));
     videoElement->suspendIfNeeded();
     return videoElement.release();
 }
 
-bool HTMLVideoElement::rendererIsNeeded(const NodeRenderingContext& context)
+bool HTMLVideoElement::rendererIsNeeded(const RenderStyle& style)
 {
-    return HTMLElement::rendererIsNeeded(context);
+    return HTMLElement::rendererIsNeeded(style);
 }
 
 RenderObject* HTMLVideoElement::createRenderer(RenderStyle*)
@@ -120,8 +120,7 @@ void HTMLVideoElement::parseAttribute(const QualifiedName& name, const AtomicStr
 
 bool HTMLVideoElement::supportsFullscreen() const
 {
-    Page* page = document() ? document()->page() : 0;
-    if (!page)
+    if (!document().page())
         return false;
 
     if (!player() || !player()->supportsFullscreen())
@@ -163,7 +162,7 @@ bool HTMLVideoElement::isURLAttribute(const Attribute& attribute) const
     return attribute.name() == posterAttr || HTMLMediaElement::isURLAttribute(attribute);
 }
 
-const AtomicString& HTMLVideoElement::imageSourceURL() const
+const AtomicString HTMLVideoElement::imageSourceURL() const
 {
     const AtomicString& url = getAttribute(posterAttr);
     if (!stripLeadingAndTrailingHTMLSpaces(url).isEmpty())
@@ -279,7 +278,7 @@ KURL HTMLVideoElement::posterImageURL() const
     String url = stripLeadingAndTrailingHTMLSpaces(imageSourceURL());
     if (url.isEmpty())
         return KURL();
-    return document()->completeURL(url);
+    return document().completeURL(url);
 }
 
 }

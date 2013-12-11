@@ -80,6 +80,7 @@ class WebPrescientNetworking;
 class WebRTCPeerConnectionHandler;
 class WebRTCPeerConnectionHandlerClient;
 class WebSandboxSupport;
+class WebSocketHandle;
 class WebSocketStreamHandle;
 class WebSpeechSynthesizer;
 class WebSpeechSynthesizerClient;
@@ -283,6 +284,12 @@ public:
     // A wrapper for tcmalloc's GetHeapProfile()
     virtual WebString getHeapProfile() { return WebString(); }
 
+    static const size_t noDecodedImageByteLimit = static_cast<size_t>(-1);
+
+    // Returns the maximum amount of memory a decoded image should be allowed.
+    // See comments on ImageDecoder::m_maxDecodedBytes.
+    virtual size_t maxDecodedImageBytes() { return noDecodedImageByteLimit; }
+
 
     // Message Ports -------------------------------------------------------
 
@@ -301,6 +308,9 @@ public:
 
     // Returns a new WebSocketStreamHandle instance.
     virtual WebSocketStreamHandle* createSocketStreamHandle() { return 0; }
+
+    // Returns a new WebSocketHandle instance.
+    virtual WebSocketHandle* createWebSocketHandle() { return 0; }
 
     // Returns the User-Agent string that should be used for the given URL.
     virtual WebString userAgent(const WebURL&) { return WebString(); }
@@ -543,7 +553,6 @@ public:
 
     // WebCrypto ----------------------------------------------------------
 
-    // May return 0.
     virtual WebCrypto* crypto() { return 0; }
 
 

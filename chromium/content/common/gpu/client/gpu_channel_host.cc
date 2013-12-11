@@ -13,6 +13,7 @@
 #include "base/posix/eintr_wrapper.h"
 #include "base/threading/thread_restrictions.h"
 #include "content/common/gpu/client/command_buffer_proxy_impl.h"
+#include "content/common/gpu/client/gpu_video_encode_accelerator_host.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "ipc/ipc_sync_message_filter.h"
@@ -109,7 +110,6 @@ bool GpuChannelHost::Send(IPC::Message* msg) {
 CommandBufferProxyImpl* GpuChannelHost::CreateViewCommandBuffer(
     int32 surface_id,
     CommandBufferProxyImpl* share_group,
-    const std::string& allowed_extensions,
     const std::vector<int32>& attribs,
     const GURL& active_url,
     gfx::GpuPreference gpu_preference) {
@@ -121,7 +121,6 @@ CommandBufferProxyImpl* GpuChannelHost::CreateViewCommandBuffer(
   GPUCreateCommandBufferConfig init_params;
   init_params.share_group_id =
       share_group ? share_group->GetRouteID() : MSG_ROUTING_NONE;
-  init_params.allowed_extensions = allowed_extensions;
   init_params.attribs = attribs;
   init_params.active_url = active_url;
   init_params.gpu_preference = gpu_preference;
@@ -141,7 +140,6 @@ CommandBufferProxyImpl* GpuChannelHost::CreateViewCommandBuffer(
 CommandBufferProxyImpl* GpuChannelHost::CreateOffscreenCommandBuffer(
     const gfx::Size& size,
     CommandBufferProxyImpl* share_group,
-    const std::string& allowed_extensions,
     const std::vector<int32>& attribs,
     const GURL& active_url,
     gfx::GpuPreference gpu_preference) {
@@ -150,7 +148,6 @@ CommandBufferProxyImpl* GpuChannelHost::CreateOffscreenCommandBuffer(
   GPUCreateCommandBufferConfig init_params;
   init_params.share_group_id =
       share_group ? share_group->GetRouteID() : MSG_ROUTING_NONE;
-  init_params.allowed_extensions = allowed_extensions;
   init_params.attribs = attribs;
   init_params.active_url = active_url;
   init_params.gpu_preference = gpu_preference;
@@ -182,6 +179,21 @@ scoped_ptr<media::VideoDecodeAccelerator> GpuChannelHost::CreateVideoDecoder(
   DCHECK(it != proxies_.end());
   CommandBufferProxyImpl* proxy = it->second;
   return proxy->CreateVideoDecoder(profile, client).Pass();
+}
+
+scoped_ptr<media::VideoEncodeAccelerator> GpuChannelHost::CreateVideoEncoder(
+    media::VideoEncodeAccelerator::Client* client) {
+  TRACE_EVENT0("gpu", "GpuChannelHost::CreateVideoEncoder");
+
+  scoped_ptr<media::VideoEncodeAccelerator> vea;
+  int32 route_id = MSG_ROUTING_NONE;
+  if (!Send(new GpuChannelMsg_CreateVideoEncoder(&route_id)))
+    return vea.Pass();
+  if (route_id == MSG_ROUTING_NONE)
+    return vea.Pass();
+
+  vea.reset(new GpuVideoEncodeAcceleratorHost(client, this, route_id));
+  return vea.Pass();
 }
 
 void GpuChannelHost::DestroyCommandBuffer(

@@ -31,11 +31,11 @@
 #ifndef RenderRubyText_h
 #define RenderRubyText_h
 
-#include "core/rendering/RenderBlock.h"
+#include "core/rendering/RenderBlockFlow.h"
 
 namespace WebCore {
 
-class RenderRubyText FINAL : public RenderBlock {
+class RenderRubyText FINAL : public RenderBlockFlow {
 public:
     RenderRubyText(Element*);
     virtual ~RenderRubyText();
@@ -48,6 +48,8 @@ public:
 
 private:
     virtual bool avoidsFloats() const;
+
+    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
 
     virtual ETextAlign textAlignmentForLine(bool endsWithSoftBreak) const;
     virtual void adjustInlineDirectionLineBounds(int expansionOpportunityCount, float& logicalLeft, float& logicalWidth) const;

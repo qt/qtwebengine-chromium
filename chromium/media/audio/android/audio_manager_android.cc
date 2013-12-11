@@ -16,6 +16,13 @@
 
 namespace media {
 
+static void AddDefaultDevice(AudioDeviceNames* device_names) {
+  DCHECK(device_names->empty());
+  device_names->push_front(
+      AudioDeviceName(AudioManagerBase::kDefaultDeviceName,
+                      AudioManagerBase::kDefaultDeviceId));
+}
+
 // Maximum number of output streams that can be open simultaneously.
 static const int kMaxOutputStreams = 10;
 
@@ -51,10 +58,13 @@ bool AudioManagerAndroid::HasAudioInputDevices() {
 }
 
 void AudioManagerAndroid::GetAudioInputDeviceNames(
-    media::AudioDeviceNames* device_names) {
-  DCHECK(device_names->empty());
-  device_names->push_front(
-      media::AudioDeviceName(kDefaultDeviceName, kDefaultDeviceId));
+    AudioDeviceNames* device_names) {
+  AddDefaultDevice(device_names);
+}
+
+void AudioManagerAndroid::GetAudioOutputDeviceNames(
+    AudioDeviceNames* device_names) {
+  AddDefaultDevice(device_names);
 }
 
 AudioParameters AudioManagerAndroid::GetInputStreamParameters(
@@ -74,9 +84,12 @@ AudioParameters AudioManagerAndroid::GetInputStreamParameters(
 }
 
 AudioOutputStream* AudioManagerAndroid::MakeAudioOutputStream(
-    const AudioParameters& params, const std::string& input_device_id) {
+    const AudioParameters& params,
+    const std::string& device_id,
+    const std::string& input_device_id) {
   AudioOutputStream* stream =
-    AudioManagerBase::MakeAudioOutputStream(params, std::string());
+      AudioManagerBase::MakeAudioOutputStream(params, std::string(),
+          std::string());
   if (stream && output_stream_count() == 1) {
     SetAudioMode(kAudioModeInCommunication);
     RegisterHeadsetReceiver();
@@ -87,7 +100,7 @@ AudioOutputStream* AudioManagerAndroid::MakeAudioOutputStream(
 AudioInputStream* AudioManagerAndroid::MakeAudioInputStream(
     const AudioParameters& params, const std::string& device_id) {
   AudioInputStream* stream =
-    AudioManagerBase::MakeAudioInputStream(params, device_id);
+      AudioManagerBase::MakeAudioInputStream(params, device_id);
   return stream;
 }
 
@@ -104,13 +117,16 @@ void AudioManagerAndroid::ReleaseInputStream(AudioInputStream* stream) {
 }
 
 AudioOutputStream* AudioManagerAndroid::MakeLinearOutputStream(
-      const AudioParameters& params) {
+    const AudioParameters& params) {
   DCHECK_EQ(AudioParameters::AUDIO_PCM_LINEAR, params.format());
   return new OpenSLESOutputStream(this, params);
 }
 
 AudioOutputStream* AudioManagerAndroid::MakeLowLatencyOutputStream(
-      const AudioParameters& params, const std::string& input_device_id) {
+    const AudioParameters& params,
+    const std::string& device_id,
+    const std::string& input_device_id) {
+  DLOG_IF(ERROR, !device_id.empty()) << "Not implemented!";
   DCHECK_EQ(AudioParameters::AUDIO_PCM_LOW_LATENCY, params.format());
   return new OpenSLESOutputStream(this, params);
 }
@@ -140,7 +156,10 @@ int AudioManagerAndroid::GetOptimalOutputFrameSize(int sample_rate,
 }
 
 AudioParameters AudioManagerAndroid::GetPreferredOutputStreamParameters(
+    const std::string& output_device_id,
     const AudioParameters& input_params) {
+  // TODO(tommi): Support |output_device_id|.
+  DLOG_IF(ERROR, !output_device_id.empty()) << "Not implemented!";
   ChannelLayout channel_layout = CHANNEL_LAYOUT_STEREO;
   int sample_rate = GetNativeOutputSampleRate();
   int buffer_size = GetOptimalOutputFrameSize(sample_rate, 2);

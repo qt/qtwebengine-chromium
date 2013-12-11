@@ -39,7 +39,7 @@
 #include "wtf/Vector.h"
 
 namespace WebCore {
-    class DOMApplicationCache;
+    class ApplicationCache;
     class DocumentLoader;
     class Frame;
     class ResourceLoader;
@@ -118,15 +118,14 @@ namespace WebCore {
         void failedLoadingMainResource();
 
         void willStartLoadingResource(ResourceRequest&);
-        void willStartLoadingSynchronously(ResourceRequest&);
 
         Status status() const;
         bool update();
         bool swapCache();
         void abort();
 
-        void setDOMApplicationCache(DOMApplicationCache*);
-        void notifyDOMApplicationCache(EventID, int progressTotal, int progressDone);
+        void setApplicationCache(ApplicationCache*);
+        void notifyApplicationCache(EventID, int progressTotal, int progressDone);
 
         void stopDeferringEvents(); // Also raises the events that have been queued up.
 
@@ -144,7 +143,7 @@ namespace WebCore {
             DeferredEvent(EventID id, int total, int done) : eventID(id), progressTotal(total), progressDone(done) { }
         };
 
-        DOMApplicationCache* m_domApplicationCache;
+        ApplicationCache* m_domApplicationCache;
         DocumentLoader* m_documentLoader;
         bool m_defersEvents; // Events are deferred until after document onload.
         Vector<DeferredEvent> m_deferredEvents;

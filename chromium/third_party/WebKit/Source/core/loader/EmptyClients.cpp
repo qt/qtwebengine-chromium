@@ -91,7 +91,7 @@ String EmptyChromeClient::acceptLanguages()
     return String();
 }
 
-NavigationPolicy EmptyFrameLoaderClient::decidePolicyForNavigation(const ResourceRequest&, NavigationType, NavigationPolicy, bool)
+NavigationPolicy EmptyFrameLoaderClient::decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy)
 {
     return NavigationPolicyIgnore;
 }
@@ -109,7 +109,7 @@ PassRefPtr<DocumentLoader> EmptyFrameLoaderClient::createDocumentLoader(const Re
     return DocumentLoader::create(request, substituteData);
 }
 
-PassRefPtr<Frame> EmptyFrameLoaderClient::createFrame(const KURL&, const String&, HTMLFrameOwnerElement*, const String&, bool, int, int)
+PassRefPtr<Frame> EmptyFrameLoaderClient::createFrame(const KURL&, const String&, const String&, HTMLFrameOwnerElement*)
 {
     return 0;
 }

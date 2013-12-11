@@ -62,6 +62,11 @@ WINHTTP.dll!...
 WINHTTP.dll!WinHttpGetIEProxyConfigForCurrentUser
 *!net::ProxyConfigServiceWin::GetCurrentProxyConfig
 
+UNINITIALIZED READ
+name=http://crbug.com/30704 #f
+libpng.dll!wk_png_write_find_filter
+libpng.dll!wk_png_write_row
+
 ###############################################################
 # Suppress some false reports due to bugs in Dr.Memory like wrong analysis
 # assumptions or unhandled syscalls
@@ -1023,6 +1028,12 @@ name=deliberate histogram leak
 *!replace_operator_new
 ...
 *!*::*Histogram::FactoryGet
+
+LEAK
+name=deliberate leak for SampleMap
+...
+*!base::SampleMap::Accumulate
+*!base::SparseHistogram::Add
 
 LEAK
 name=deliberate LazyInstance leak

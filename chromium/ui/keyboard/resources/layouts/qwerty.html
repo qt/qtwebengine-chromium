@@ -4,15 +4,13 @@
   -- found in the LICENSE file.
   -->
 
-<link rel="import" href="../elements/kb-key-sequence.html">
-<link rel="import" href="../elements/kb-key-import.html">
 <link id="spacebar-row" rel="import" href="spacebar-row.html">
 
 <template>
   <kb-keyset id="qwerty-upper">
     <kb-row>
       <kb-key class="tab dark" char="&#x0009;" align="left">tab</kb-key>
-      <kb-key-sequence keys="QWERTYUIOP" superscripts="1234567890"></kb-key-sequence>
+      <kb-key-sequence keys="QWERTYUIOP" hintTexts="1234567890"></kb-key-sequence>
       <kb-key class="backspace dark" char="&#x0008;" repeat align="right">backspace</kb-key>
     </kb-row>
     <kb-row>
@@ -21,17 +19,17 @@
       <kb-key class='return dark' char="&#x000A;" align="right">enter</kb-key>
     </kb-row>
     <kb-row>
-      <kb-shift-key toKeyset="up:lower" weight="1.8" align="left">shift</kb-shift-key>
+      <kb-shift-key weight="1.8" align="left">shift</kb-shift-key>
       <kb-key-sequence keys="ZXCVBNM"></kb-key-sequence>
-      <kb-key invert superscript="!" char="!">,</kb-key>
-      <kb-key invert superscript="?" char="?">.</kb-key>
-      <kb-shift-key toKeyset="up:lower" weight="1.8" align="right">shift</kb-shift-key>
+      <kb-key invert hintText="!" char="!">,</kb-key>
+      <kb-key invert hintText="?" char="?">.</kb-key>
+      <kb-shift-key weight="1.8" align="right">shift</kb-shift-key>
     </kb-row>
     <kb-row>
-      <kb-key class="symbol dark" toKeyset="up:symbol" char="Invalid" align="left">#123</kb-key>
+      <kb-key class="symbol dark" toKeyset="down:symbol" char="Invalid" align="left">#123</kb-key>
       <kb-key-import importId="spacebar-row"></kb-key-import>
-      <kb-key class="symbol dark" toKeyset="up:symbol" char="Invalid" align="right">#123</kb-key>
-      <kb-layout-selector toLayout="dvorak"></kb-layout-selector>
+      <kb-key class="symbol dark" toKeyset="down:symbol" char="Invalid" align="right">#123</kb-key>
+      <kb-hide-keyboard-key></kb-hide-keyboard-key>
     </kb-row>
     <kb-altkey-container hidden>
     </kb-altkey-container>
@@ -40,7 +38,7 @@
   <kb-keyset id="qwerty-lower" isDefault=true>
     <kb-row>
       <kb-key class="tab dark" char="&#x0009;" align="left">tab</kb-key>
-      <kb-key-sequence keys="qwertyuiop" superscripts="1234567890"></kb-key-sequence>
+      <kb-key-sequence keys="qwertyuiop" hintTexts="1234567890"></kb-key-sequence>
       <kb-key class="backspace dark" char="&#x0008;" repeat align="right">backspace</kb-key>
     </kb-row>
     <kb-row>
@@ -49,16 +47,16 @@
       <kb-key class='return dark' char="&#x000A;" align="right">enter</kb-key>
     </kb-row>
     <kb-row>
-      <kb-shift-key toKeyset="up:upper:lower; long:upper; dbl:upper" weight="1.8" align="left">shift</kb-shift-key>
+      <kb-shift-key weight="1.8" align="left">shift</kb-shift-key>
       <kb-key-sequence keys="zxcvbnm"></kb-key-sequence>
-      <kb-key superscript="!">,</kb-key><kb-key superscript="?">.</kb-key>
-      <kb-shift-key toKeyset="up:upper:lower; long:upper; dbl:upper" weight="1.8" align="right">shift</kb-shift-key>
+      <kb-key hintText="!">,</kb-key><kb-key hintText="?">.</kb-key>
+      <kb-shift-key weight="1.8" align="right">shift</kb-shift-key>
     </kb-row>
     <kb-row>
-      <kb-key class="symbol dark" toKeyset="up:symbol" char="Invalid" align="left">#123</kb-key>
+      <kb-key class="symbol dark" toKeyset="down:symbol" char="Invalid" align="left">#123</kb-key>
       <kb-key-import importId="spacebar-row"></kb-key-import>
-      <kb-key class="symbol dark" toKeyset="up:symbol" char="Invalid" align="right">#123</kb-key>
-      <kb-layout-selector toLayout="dvorak"></kb-layout-selector>
+      <kb-key class="symbol dark" toKeyset="down:symbol" char="Invalid" align="right">#123</kb-key>
+      <kb-hide-keyboard-key></kb-hide-keyboard-key>
     </kb-row>
     <kb-altkey-container hidden>
     </kb-altkey-container>
@@ -82,17 +80,17 @@
       <kb-key class='return dark' char="&#x000A;" align="right">enter</kb-key>
     </kb-row>
     <kb-row>
-      <kb-key class="left-more dark" toKeyset="up:more" char="Invalid" align="left">more</kb-key>
+      <kb-key class="left-more dark" toKeyset="down:more" char="Invalid" align="left">more</kb-key>
       <kb-key>:</kb-key><kb-key>;</kb-key><kb-key>-</kb-key><kb-key>'</kb-key>
       <kb-key>"</kb-key><kb-key>!</kb-key>
       <kb-key>?</kb-key><kb-key>,</kb-key><kb-key>.</kb-key>
-      <kb-key class="right-more dark" toKeyset="up:more" char="Invalid" align="right">more</kb-key>
+      <kb-key class="right-more dark" toKeyset="down:more" char="Invalid" align="right">more</kb-key>
     </kb-row>
     <kb-row>
-      <kb-key class="symbol dark" toKeyset="up:lower" char="Invalid" align="left">abc</kb-key>
+      <kb-key class="symbol dark" toKeyset="down:lower" char="Invalid" align="left">abc</kb-key>
       <kb-key-import importId="spacebar-row"></kb-key-import>
-      <kb-key class="symbol dark" toKeyset="up:lower" char="Invalid" align="right">abc</kb-key>
-      <kb-layout-selector toLayout="dvorak"></kb-layout-selector>
+      <kb-key class="symbol dark" toKeyset="down:lower" char="Invalid" align="right">abc</kb-key>
+      <kb-hide-keyboard-key></kb-hide-keyboard-key>
     </kb-row>
     <kb-altkey-container hidden>
     </kb-altkey-container>
@@ -114,17 +112,17 @@
       <kb-key class='return dark' char="&#x000A;" align="right">enter</kb-key>
     </kb-row>
     <kb-row>
-      <kb-key class="left-more dark" toKeyset="up:symbol" char="Invalid" align="left">#123</kb-key>
+      <kb-key class="left-more dark" toKeyset="down:symbol" char="Invalid" align="left">#123</kb-key>
       <kb-key>&#x00D7;</kb-key><kb-key>&#x00F7;</kb-key><kb-key>_</kb-key><kb-key>&#x00A7;</kb-key>
       <kb-key>&#x00B6;</kb-key><kb-key>&#x00A1;</kb-key><kb-key>&#x00BF;</kb-key><kb-key>&#x2022;</kb-key>
       <kb-key>&#x0394;</kb-key>
-      <kb-key class="right-more dark" toKeyset="up:symbol" char="Invalid" align="right">#123</kb-key>
+      <kb-key class="right-more dark" toKeyset="down:symbol" char="Invalid" align="right">#123</kb-key>
     </kb-row>
     <kb-row>
-      <kb-key class="symbol dark" toKeyset="up:lower" char="Invalid" align="left">abc</kb-key>
+      <kb-key class="symbol dark" toKeyset="down:lower" char="Invalid" align="left">abc</kb-key>
       <kb-key-import importId="spacebar-row"></kb-key-import>
-      <kb-key class="symbol dark" toKeyset="up:lower" char="Invalid" align="right">abc</kb-key>
-      <kb-layout-selector toLayout="dvorak"></kb-layout-selector>
+      <kb-key class="symbol dark" toKeyset="down:lower" char="Invalid" align="right">abc</kb-key>
+      <kb-hide-keyboard-key></kb-hide-keyboard-key>
     </kb-row>
   </kb-keyset>
 </template>

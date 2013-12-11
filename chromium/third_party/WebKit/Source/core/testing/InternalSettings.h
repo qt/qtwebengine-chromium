@@ -53,20 +53,20 @@ public:
         bool m_originalAuthorShadowDOMForAnyElementEnabled;
         bool m_originalExperimentalWebSocketEnabled;
         bool m_originalStyleScoped;
+        bool m_originalOverlayScrollbarsEnabled;
         EditingBehaviorType m_originalEditingBehavior;
         bool m_originalTextAutosizingEnabled;
         IntSize m_originalTextAutosizingWindowSizeOverride;
         float m_originalTextAutosizingFontScaleFactor;
         String m_originalMediaTypeOverride;
-        bool m_originalLazyLayoutEnabled;
         bool m_originalMockScrollbarsEnabled;
-        bool m_originalUsesOverlayScrollbars;
         bool m_langAttributeAwareFormControlUIEnabled;
         bool m_imagesEnabled;
         bool m_shouldDisplaySubtitles;
         bool m_shouldDisplayCaptions;
         bool m_shouldDisplayTextDescriptions;
         String m_defaultVideoPosterURL;
+        bool m_originalCompositorDrivenAcceleratedScrollEnabled;
     };
 
     static PassRefPtr<InternalSettings> create(Page* page)
@@ -96,7 +96,7 @@ public:
     void setTextAutosizingFontScaleFactor(float fontScaleFactor, ExceptionState&);
     void setTextAutosizingWindowSizeOverride(int width, int height, ExceptionState&);
     void setTouchEventEmulationEnabled(bool, ExceptionState&);
-    void setUsesOverlayScrollbars(bool, ExceptionState&);
+    void setViewportEnabled(bool, ExceptionState&);
 
     // FIXME: This is a temporary flag and should be removed once accelerated
     // overflow scroll is ready (crbug.com/254111).
@@ -109,7 +109,7 @@ public:
     void setCSSExclusionsEnabled(bool);
     void setExperimentalWebSocketEnabled(bool);
     void setLangAttributeAwareFormControlUIEnabled(bool);
-    void setLazyLayoutEnabled(bool);
+    void setOverlayScrollbarsEnabled(bool);
     void setStyleScopedEnabled(bool);
 
 private:

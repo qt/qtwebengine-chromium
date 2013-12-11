@@ -4,8 +4,8 @@
 
 #include "ui/views/ime/input_method_bridge.h"
 
-#include "ui/base/events/event.h"
 #include "ui/base/ime/input_method.h"
+#include "ui/events/event.h"
 #include "ui/gfx/rect.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
@@ -16,8 +16,7 @@ InputMethodBridge::InputMethodBridge(internal::InputMethodDelegate* delegate,
                                      ui::InputMethod* host,
                                      bool shared_input_method)
     : host_(host),
-      shared_input_method_(shared_input_method),
-      context_focused_(false) {
+      shared_input_method_(shared_input_method) {
   DCHECK(host_);
   SetDelegate(delegate);
 }
@@ -29,8 +28,7 @@ InputMethodBridge::~InputMethodBridge() {
   // this and go into |widget_|. NULL out |widget_| so we don't attempt to use
   // it.
   DetachFromWidget();
-  if (host_->GetTextInputClient() == this)
-    host_->SetFocusedTextInputClient(NULL);
+  host_->DetachTextInputClient(this);
 }
 
 void InputMethodBridge::OnFocus() {
@@ -180,33 +178,33 @@ bool InputMethodBridge::HasCompositionText() {
   return client ? client->HasCompositionText() : false;
 }
 
-bool InputMethodBridge::GetTextRange(ui::Range* range) {
+bool InputMethodBridge::GetTextRange(gfx::Range* range) {
   TextInputClient* client = GetTextInputClient();
   return client ?  client->GetTextRange(range) : false;
 }
 
-bool InputMethodBridge::GetCompositionTextRange(ui::Range* range) {
+bool InputMethodBridge::GetCompositionTextRange(gfx::Range* range) {
   TextInputClient* client = GetTextInputClient();
   return client ? client->GetCompositionTextRange(range) : false;
 }
 
-bool InputMethodBridge::GetSelectionRange(ui::Range* range) {
+bool InputMethodBridge::GetSelectionRange(gfx::Range* range) {
   TextInputClient* client = GetTextInputClient();
   return client ? client->GetSelectionRange(range) : false;
 }
 
-bool InputMethodBridge::SetSelectionRange(const ui::Range& range) {
+bool InputMethodBridge::SetSelectionRange(const gfx::Range& range) {
   TextInputClient* client = GetTextInputClient();
   return client ? client->SetSelectionRange(range) : false;
 }
 
-bool InputMethodBridge::DeleteRange(const ui::Range& range) {
+bool InputMethodBridge::DeleteRange(const gfx::Range& range) {
   TextInputClient* client = GetTextInputClient();
   return client ? client->DeleteRange(range) : false;
 }
 
 bool InputMethodBridge::GetTextFromRange(
-    const ui::Range& range, string16* text) {
+    const gfx::Range& range, string16* text) {
   TextInputClient* client = GetTextInputClient();
   return client ? client->GetTextFromRange(range, text) : false;
 }

@@ -80,6 +80,7 @@ class CONTENT_EXPORT GpuDataManagerImpl
                             std::string* gl_renderer,
                             std::string* gl_version) OVERRIDE;
   virtual void DisableHardwareAcceleration() OVERRIDE;
+  virtual bool CanUseGpuBrowserCompositor() const OVERRIDE;
 
   // This collects preliminary GPU info, load GpuBlacklist, and compute the
   // preliminary blacklisted features; it should only be called at browser
@@ -141,8 +142,6 @@ class CONTENT_EXPORT GpuDataManagerImpl
   bool IsUsingAcceleratedSurface() const;
 #endif
 
-  bool CanUseGpuBrowserCompositor() const;
-
   // Maintenance of domains requiring explicit user permission before
   // using client-facing 3D APIs (WebGL, Pepper 3D), either because
   // the domain has caused the GPU to reset, or because too many GPU
@@ -176,6 +175,8 @@ class CONTENT_EXPORT GpuDataManagerImpl
 
   // Called when GPU process initialization failed.
   void OnGpuProcessInitFailure();
+
+  bool IsDriverBugWorkaroundActive(int feature) const;
 
  private:
   friend class GpuDataManagerImplPrivate;

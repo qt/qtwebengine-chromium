@@ -16,7 +16,7 @@
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
-#include "content/shell/shell.h"
+#include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
 #include "gpu/config/gpu_test_config.h"
@@ -59,7 +59,7 @@ bool ReadPNGFile(const base::FilePath& file_path, SkBitmap* bitmap) {
     return false;
 
   std::string png_data;
-  return file_util::ReadFileToString(abs_path, &png_data) &&
+  return base::ReadFileToString(abs_path, &png_data) &&
          gfx::PNGCodec::Decode(reinterpret_cast<unsigned char*>(&png_data[0]),
                                png_data.length(),
                                bitmap);
@@ -461,7 +461,7 @@ IN_PROC_BROWSER_TEST_F(GpuPixelBrowserTest, MANUAL_WebGLGreenTriangle) {
 IN_PROC_BROWSER_TEST_F(GpuPixelBrowserTest, MANUAL_CSS3DBlueBox) {
   // If test baseline needs to be updated after a given revision, update the
   // following number. If no revision requirement, then 0.
-  const int64 ref_img_revision_update = 209827;
+  const int64 ref_img_revision_update = 223891;
 
   const ReferencePixel ref_pixels[] = {
     // x, y, r, g, b
@@ -484,7 +484,7 @@ IN_PROC_BROWSER_TEST_F(GpuPixelBrowserTest, MANUAL_CSS3DBlueBox) {
 IN_PROC_BROWSER_TEST_F(GpuPixelBrowserTest, MANUAL_Canvas2DRedBoxHD) {
   // If test baseline needs to be updated after a given revision, update the
   // following number. If no revision requirement, then 0.
-  const int64 ref_img_revision_update = 123489;
+  const int64 ref_img_revision_update = 224170;
 
   const ReferencePixel ref_pixels[] = {
     // x, y, r, g, b
@@ -513,7 +513,7 @@ class GpuPixelTestCanvas2DSD : public GpuPixelBrowserTest {
 IN_PROC_BROWSER_TEST_F(GpuPixelTestCanvas2DSD, MANUAL_Canvas2DRedBoxSD) {
   // If test baseline needs to be updated after a given revision, update the
   // following number. If no revision requirement, then 0.
-  const int64 ref_img_revision_update = 123489;
+  const int64 ref_img_revision_update = 224170;
 
   const ReferencePixel ref_pixels[] = {
     // x, y, r, g, b

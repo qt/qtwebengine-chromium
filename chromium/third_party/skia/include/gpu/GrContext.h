@@ -8,17 +8,17 @@
 #ifndef GrContext_DEFINED
 #define GrContext_DEFINED
 
-#include "GrColor.h"
-#include "GrAARectRenderer.h"
 #include "GrClipData.h"
-#include "SkMatrix.h"
+#include "GrColor.h"
 #include "GrPaint.h"
 #include "GrPathRendererChain.h"
 #include "GrPoint.h"
 #include "GrRenderTarget.h"
-#include "GrRefCnt.h"
 #include "GrTexture.h"
+#include "SkMatrix.h"
+#include "SkTypes.h"
 
+class GrAARectRenderer;
 class GrAutoScratchTexture;
 class GrDrawState;
 class GrDrawTarget;
@@ -33,13 +33,14 @@ class GrPathRenderer;
 class GrResourceEntry;
 class GrResourceCache;
 class GrStencilBuffer;
+class GrTestTarget;
 class GrTextureParams;
 class GrVertexBuffer;
 class GrVertexBufferAllocPool;
 class GrSoftwarePathRenderer;
 class SkStrokeRec;
 
-class GR_API GrContext : public GrRefCnt {
+class SK_API GrContext : public SkRefCnt {
 public:
     SK_DECLARE_INST_COUNT(GrContext)
 
@@ -630,24 +631,24 @@ public:
     ///////////////////////////////////////////////////////////////////////////
     // Helpers
 
-    class AutoRenderTarget : public ::GrNoncopyable {
+    class AutoRenderTarget : public ::SkNoncopyable {
     public:
         AutoRenderTarget(GrContext* context, GrRenderTarget* target) {
             fPrevTarget = context->getRenderTarget();
-            GrSafeRef(fPrevTarget);
+            SkSafeRef(fPrevTarget);
             context->setRenderTarget(target);
             fContext = context;
         }
         AutoRenderTarget(GrContext* context) {
             fPrevTarget = context->getRenderTarget();
-            GrSafeRef(fPrevTarget);
+            SkSafeRef(fPrevTarget);
             fContext = context;
         }
         ~AutoRenderTarget() {
             if (NULL != fContext) {
                 fContext->setRenderTarget(fPrevTarget);
             }
-            GrSafeUnref(fPrevTarget);
+            SkSafeUnref(fPrevTarget);
         }
     private:
         GrContext*      fContext;
@@ -668,7 +669,7 @@ public:
      * paint if necessary. Hint: use SkTCopyOnFirstWrite if the AutoMatrix is conditionally
      * initialized.
      */
-    class AutoMatrix : GrNoncopyable {
+    class AutoMatrix : public ::SkNoncopyable {
     public:
         AutoMatrix() : fContext(NULL) {}
 
@@ -678,7 +679,7 @@ public:
          * Initializes by pre-concat'ing the context's current matrix with the preConcat param.
          */
         void setPreConcat(GrContext* context, const SkMatrix& preConcat, GrPaint* paint = NULL) {
-            GrAssert(NULL != context);
+            SkASSERT(NULL != context);
 
             this->restore();
 
@@ -692,7 +693,7 @@ public:
          * update a paint but the matrix cannot be inverted.
          */
         bool setIdentity(GrContext* context, GrPaint* paint = NULL) {
-            GrAssert(NULL != context);
+            SkASSERT(NULL != context);
 
             this->restore();
 
@@ -761,7 +762,7 @@ public:
         SkMatrix    fMatrix;
     };
 
-    class AutoClip : GrNoncopyable {
+    class AutoClip : public ::SkNoncopyable {
     public:
         // This enum exists to require a caller of the constructor to acknowledge that the clip will
         // initially be wide open. It also could be extended if there are other desirable initial
@@ -772,7 +773,7 @@ public:
 
         AutoClip(GrContext* context, InitialClip initialState)
         : fContext(context) {
-            GrAssert(kWideOpen_InitialClip == initialState);
+            SkASSERT(kWideOpen_InitialClip == initialState);
             fNewClipData.fClipStack = &fNewClipStack;
 
             fOldClip = context->getClip();
@@ -808,7 +809,7 @@ public:
             , fAutoRT(ctx, rt) {
             fAutoMatrix.setIdentity(ctx);
             // should never fail with no paint param.
-            GrAssert(fAutoMatrix.succeeded());
+            SkASSERT(fAutoMatrix.succeeded());
         }
 
     private:
@@ -825,6 +826,9 @@ public:
     GrDrawTarget* getTextTarget();
     const GrIndexBuffer* getQuadIndexBuffer() const;
 
+    // Called by tests that draw directly to the context via GrDrawTarget
+    void getTestTarget(GrTestTarget*);
+
     /**
      * Stencil buffers add themselves to the cache using addStencilBuffer. findStencilBuffer is
      * called to check the cache for a SB that matches an RT's criteria.
@@ -839,6 +843,7 @@ public:
                     bool allowSW,
                     GrPathRendererChain::DrawType drawType = GrPathRendererChain::kColor_DrawType,
                     GrPathRendererChain::StencilSupport* stencilSupport = NULL);
+
 
 #if GR_CACHE_STATS
     void printCacheStats() const;
@@ -868,6 +873,9 @@ private:
     GrIndexBufferAllocPool*         fDrawBufferIBAllocPool;
     GrInOrderDrawBuffer*            fDrawBuffer;
 
+    // Set by OverbudgetCB() to request that GrContext flush before exiting a draw.
+    bool                            fFlushToReduceCacheSize;
+
     GrAARectRenderer*               fAARectRenderer;
     GrOvalRenderer*                 fOvalRenderer;
 
@@ -890,9 +898,10 @@ private:
     void setupDrawBuffer();
 
     class AutoRestoreEffects;
+    class AutoCheckFlush;
     /// Sets the paint and returns the target to draw into. The paint can be NULL in which case the
     /// draw state is left unmodified.
-    GrDrawTarget* prepareToDraw(const GrPaint*, BufferedDraw, AutoRestoreEffects*);
+    GrDrawTarget* prepareToDraw(const GrPaint*, BufferedDraw, AutoRestoreEffects*, AutoCheckFlush*);
 
     void internalDrawPath(GrDrawTarget* target, bool useAA, const SkPath& path,
                           const SkStrokeRec& stroke);
@@ -929,14 +938,14 @@ private:
      */
     static bool OverbudgetCB(void* data);
 
-    typedef GrRefCnt INHERITED;
+    typedef SkRefCnt INHERITED;
 };
 
 /**
  * Gets and locks a scratch texture from a descriptor using either exact or approximate criteria.
  * Unlocks texture in the destructor.
  */
-class GrAutoScratchTexture : ::GrNoncopyable {
+class GrAutoScratchTexture : public ::SkNoncopyable {
 public:
     GrAutoScratchTexture()
         : fContext(NULL)
@@ -986,10 +995,10 @@ public:
         // The cache also has a ref which we are lending to the caller of detach(). When the caller
         // lets go of the ref and the ref count goes to 0 internal_dispose will see this flag is
         // set and re-ref the texture, thereby restoring the cache's ref.
-        GrAssert(texture->getRefCnt() > 1);
+        SkASSERT(texture->getRefCnt() > 1);
         texture->setFlag((GrTextureFlags) GrTexture::kReturnToCache_FlagBit);
         texture->unref();
-        GrAssert(NULL != texture->getCacheEntry());
+        SkASSERT(NULL != texture->getCacheEntry());
 
         return texture;
     }

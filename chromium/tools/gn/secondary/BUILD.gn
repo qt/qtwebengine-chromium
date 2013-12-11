@@ -1,6 +1,0 @@
-group("root") {
-  deps = [
-    "//tools/gn",
-    "//ipc",
-  ]
-}

@@ -33,10 +33,12 @@
 
 #include "core/platform/Timer.h"
 #include "wtf/Forward.h"
+#include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -71,7 +73,6 @@ public:
     explicit NavigationScheduler(Frame*);
     ~NavigationScheduler();
 
-    bool redirectScheduledDuringLoad();
     bool locationChangePending();
 
     void scheduleRedirect(double delay, const String& url);
@@ -97,6 +98,7 @@ private:
     Frame* m_frame;
     Timer<NavigationScheduler> m_timer;
     OwnPtr<ScheduledNavigation> m_redirect;
+    HashMap<String, OwnPtr<ScheduledNavigation> > m_additionalFormSubmissions;
 };
 
 } // namespace WebCore

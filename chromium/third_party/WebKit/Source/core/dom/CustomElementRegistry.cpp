@@ -34,12 +34,11 @@
 #include "HTMLNames.h"
 #include "SVGNames.h"
 #include "bindings/v8/CustomElementConstructorBuilder.h"
-#include "bindings/v8/ExceptionState.h"
 #include "core/dom/CustomElement.h"
 #include "core/dom/CustomElementDefinition.h"
+#include "core/dom/CustomElementException.h"
 #include "core/dom/CustomElementRegistrationContext.h"
 #include "core/dom/DocumentLifecycleObserver.h"
-#include "core/dom/ExceptionCode.h"
 
 namespace WebCore {
 
@@ -59,7 +58,7 @@ private:
     bool m_wentAway;
 };
 
-CustomElementDefinition* CustomElementRegistry::registerElement(Document* document, CustomElementConstructorBuilder* constructorBuilder, const AtomicString& userSuppliedName, ExceptionState& es)
+CustomElementDefinition* CustomElementRegistry::registerElement(Document* document, CustomElementConstructorBuilder* constructorBuilder, const AtomicString& userSuppliedName, CustomElement::NameSet validNames, ExceptionState& es)
 {
     // FIXME: In every instance except one it is the
     // CustomElementConstructorBuilder that observes document
@@ -67,31 +66,27 @@ CustomElementDefinition* CustomElementRegistry::registerElement(Document* docume
     // consolidated in one place.
     RegistrationContextObserver observer(document);
 
-    if (!constructorBuilder->isFeatureAllowed()) {
-        es.throwDOMException(NotSupportedError);
-        return 0;
-    }
-
     AtomicString type = userSuppliedName.lower();
-    if (!CustomElement::isValidTypeName(type)) {
-        es.throwDOMException(InvalidCharacterError);
+
+    if (!constructorBuilder->isFeatureAllowed()) {
+        CustomElementException::throwException(CustomElementException::CannotRegisterFromExtension, type, es);
         return 0;
     }
 
-    if (!constructorBuilder->validateOptions()) {
-        es.throwDOMException(InvalidStateError);
+    if (!CustomElement::isValidName(type, validNames)) {
+        CustomElementException::throwException(CustomElementException::InvalidName, type, es);
         return 0;
     }
 
     QualifiedName tagName = nullQName();
-    if (!constructorBuilder->findTagName(type, tagName)) {
-        es.throwDOMException(NamespaceError);
+    if (!constructorBuilder->validateOptions(type, tagName, es))
         return 0;
-    }
+
     ASSERT(tagName.namespaceURI() == HTMLNames::xhtmlNamespaceURI || tagName.namespaceURI() == SVGNames::svgNamespaceURI);
 
+    // FIXME: This should be done earlier in validateOptions.
     if (m_registeredTypeNames.contains(type)) {
-        es.throwDOMException(InvalidStateError);
+        CustomElementException::throwException(CustomElementException::TypeAlreadyRegistered, type, es);
         return 0;
     }
 
@@ -102,23 +97,21 @@ CustomElementDefinition* CustomElementRegistry::registerElement(Document* docume
     // Consulting the constructor builder could execute script and
     // kill the document.
     if (observer.registrationContextWentAway()) {
-        es.throwDOMException(InvalidStateError);
+        CustomElementException::throwException(CustomElementException::ContextDestroyedCreatingCallbacks, type, es);
         return 0;
     }
 
     const CustomElementDescriptor descriptor(type, tagName.namespaceURI(), tagName.localName());
     RefPtr<CustomElementDefinition> definition = CustomElementDefinition::create(descriptor, lifecycleCallbacks);
 
-    if (!constructorBuilder->createConstructor(document, definition.get())) {
-        es.throwDOMException(NotSupportedError);
+    if (!constructorBuilder->createConstructor(document, definition.get(), es))
         return 0;
-    }
 
     m_definitions.add(descriptor, definition);
     m_registeredTypeNames.add(descriptor.type());
 
     if (!constructorBuilder->didRegisterDefinition(definition.get())) {
-        es.throwDOMException(NotSupportedError);
+        CustomElementException::throwException(CustomElementException::ContextDestroyedRegisteringDefinition, type, es);
         return 0;
     }
 

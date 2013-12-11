@@ -185,6 +185,16 @@ var TypeUtils = {
     },
 
     /**
+     * @param {string} property
+     * @param {!Object} obj
+     * @return {boolean}
+     */
+    isEnumPropertyName: function(property, obj)
+    {
+        return (/^[A-Z][A-Z0-9_]+$/.test(property) && typeof obj[property] === "number");
+    },
+
+    /**
      * @return {CanvasRenderingContext2D}
      */
     _dummyCanvas2dContext: function()
@@ -199,7 +209,7 @@ var TypeUtils = {
     }
 }
 
-/** @typedef {{name: string, value: *, values: (!Array.<TypeUtils.InternalResourceStateDescriptor>|undefined)}} */
+/** @typedef {{name:string, valueIsEnum:(boolean|undefined), value:*, values:(!Array.<TypeUtils.InternalResourceStateDescriptor>|undefined), isArray:(boolean|undefined)}} */
 TypeUtils.InternalResourceStateDescriptor;
 
 /**
@@ -485,6 +495,13 @@ Call.prototype = {
      */
     replay: function(replayableCall, cache)
     {
+        var replayableResult = replayableCall.result();
+        if (replayableResult instanceof ReplayableResource && !cache.has(replayableResult.id())) {
+            var resource = replayableResult.replay(cache);
+            console.assert(resource.calls().length > 0, "Expected create* call for the Resource");
+            return resource.calls()[0];
+        }
+
         var replayObject = ReplayableResource.replay(replayableCall.replayableResource(), cache);
         var replayArgs = replayableCall.args().map(function(obj) {
             return ReplayableResource.replay(obj, cache);
@@ -497,8 +514,9 @@ Call.prototype = {
             var replayFunction = replayObject[replayableCall.functionName()];
             console.assert(typeof replayFunction === "function", "Expected a function to replay");
             replayResult = replayFunction.apply(replayObject, replayArgs);
-            if (replayableCall.result() instanceof ReplayableResource) {
-                var resource = replayableCall.result().replay(cache);
+
+            if (replayableResult instanceof ReplayableResource) {
+                var resource = replayableResult.replay(cache);
                 if (!resource.wrappedObject())
                     resource.setWrappedObject(replayResult);
             }
@@ -513,6 +531,11 @@ Call.prototype = {
         var attachments = replayableCall.attachments();
         if (attachments)
             this._attachments = TypeUtils.cloneObject(attachments);
+
+        var thisResource = Resource.forObject(replayObject);
+        if (thisResource)
+            thisResource.onCallReplayed(this);
+
         return this;
     }
 }
@@ -778,7 +801,7 @@ Resource.prototype = {
     },
 
     /**
-     * @return {!Array.<Call>}
+     * @return {!Array.<!Call>}
      */
     calls: function()
     {
@@ -822,6 +845,7 @@ Resource.prototype = {
             var pname = statePropertyNames[i];
             result.push({ name: pname, value: proxyObject[pname] });
         }
+        result.push({ name: "context", value: this.contextResource() });
         return result;
     },
 
@@ -911,6 +935,14 @@ Resource.prototype = {
     },
 
     /**
+     * @param {!Call} call
+     */
+    onCallReplayed: function(call)
+    {
+        // Ignore by default.
+    },
+
+    /**
      * @param {!Object} object
      */
     _bindObjectToResource: function(object)
@@ -961,7 +993,7 @@ Resource.prototype = {
                     proxy[property] = this._wrapCustomFunction(this, wrappedObject, wrappedObject[property], property, customWrapFunction);
                 else
                     proxy[property] = this._wrapFunction(this, wrappedObject, wrappedObject[property], property);
-            } else if (/^[A-Z0-9_]+$/.test(property) && typeof wrappedObject[property] === "number") {
+            } else if (TypeUtils.isEnumPropertyName(property, wrappedObject)) {
                 // Fast access to enums and constants.
                 proxy[property] = wrappedObject[property];
             } else {
@@ -1357,8 +1389,8 @@ WebGLBoundResource.prototype = {
      */
     pushBinding: function(target, bindMethodName)
     {
-        if (this._state.BINDING !== target) {
-            this._state.BINDING = target;
+        if (this._state.bindTarget !== target) {
+            this._state.bindTarget = target;
             this.pushCall(new Call(WebGLRenderingContextResource.forObject(this), bindMethodName, [target, this]));
         }
     },
@@ -1378,6 +1410,66 @@ function WebGLTextureResource(wrappedObject, name)
 }
 
 WebGLTextureResource.prototype = {
+    /**
+     * @override (overrides @return type)
+     * @return {WebGLTexture}
+     */
+    wrappedObject: function()
+    {
+        return this._wrappedObject;
+    },
+
+    /**
+     * @override
+     * @return {!Array.<TypeUtils.InternalResourceStateDescriptor>}
+     */
+    currentState: function()
+    {
+        var result = [];
+        var glResource = WebGLRenderingContextResource.forObject(this);
+        var gl = glResource.wrappedObject();
+        var texture = this.wrappedObject();
+        if (!gl || !texture)
+            return result;
+        result.push({ name: "isTexture", value: gl.isTexture(texture) });
+        result.push({ name: "context", value: this.contextResource() });
+
+        var target = this._state.bindTarget;
+        if (typeof target !== "number")
+            return result;
+
+        var bindingParameter;
+        switch (target) {
+        case gl.TEXTURE_2D:
+            bindingParameter = gl.TEXTURE_BINDING_2D;
+            break;
+        case gl.TEXTURE_CUBE_MAP:
+            bindingParameter = gl.TEXTURE_BINDING_CUBE_MAP;
+            break;
+        default:
+            console.error("ASSERT_NOT_REACHED: unknown texture target " + target);
+            return result;
+        }
+        result.push({ name: "target", value: target, valueIsEnum: true });
+
+        var oldTexture = /** @type {WebGLTexture} */ (gl.getParameter(bindingParameter));
+        if (oldTexture !== texture)
+            gl.bindTexture(target, texture);
+
+        var textureParameters = [
+            "TEXTURE_MAG_FILTER",
+            "TEXTURE_MIN_FILTER",
+            "TEXTURE_WRAP_S",
+            "TEXTURE_WRAP_T",
+            "TEXTURE_MAX_ANISOTROPY_EXT" // EXT_texture_filter_anisotropic extension
+        ];
+        glResource.queryStateValues(gl.getTexParameter, target, textureParameters, result);
+
+        if (oldTexture !== texture)
+            gl.bindTexture(target, oldTexture);
+        return result;
+    },
+
     /**
      * @override
      * @param {!Object} data
@@ -1480,18 +1572,83 @@ WebGLProgramResource.prototype = {
 
     /**
      * @override
-     * @param {!Object} data
-     * @param {!Cache.<ReplayableResource>} cache
+     * @return {!Array.<TypeUtils.InternalResourceStateDescriptor>}
      */
-    _populateReplayableData: function(data, cache)
+    currentState: function()
     {
+        /**
+         * @param {!Object} obj
+         * @param {!Array.<TypeUtils.InternalResourceStateDescriptor>} output
+         */
+        function convertToStateDescriptors(obj, output)
+        {
+            for (var pname in obj)
+                output.push({ name: pname, value: obj[pname], valueIsEnum: (pname === "type") });
+        }
+
+        var result = [];
+        var program = this.wrappedObject();
+        if (!program)
+            return result;
         var glResource = WebGLRenderingContextResource.forObject(this);
         var gl = glResource.wrappedObject();
-        var program = this.wrappedObject();
+        var programParameters = ["DELETE_STATUS", "LINK_STATUS", "VALIDATE_STATUS"];
+        glResource.queryStateValues(gl.getProgramParameter, program, programParameters, result);
+        result.push({ name: "getProgramInfoLog", value: gl.getProgramInfoLog(program) });
+        result.push({ name: "isProgram", value: gl.isProgram(program) });
+        result.push({ name: "context", value: this.contextResource() });
 
-        var originalErrors = glResource.getAllErrors();
+        // ATTACHED_SHADERS
+        var callFormatter = CallFormatter.forResource(this);
+        var shaders = gl.getAttachedShaders(program) || [];
+        var shaderDescriptors = [];
+        for (var i = 0, n = shaders.length; i < n; ++i) {
+            var shaderResource = Resource.forObject(shaders[i]);
+            var pname = callFormatter.enumNameForValue(shaderResource.type());
+            shaderDescriptors.push({ name: pname, value: shaderResource });
+        }
+        result.push({ name: "ATTACHED_SHADERS", values: shaderDescriptors, isArray: true });
 
+        // ACTIVE_UNIFORMS
+        var uniformDescriptors = [];
+        var uniforms = this._activeUniforms(true);
+        for (var i = 0, n = uniforms.length; i < n; ++i) {
+            var pname = "" + i;
+            var values = [];
+            convertToStateDescriptors(uniforms[i], values);
+            uniformDescriptors.push({ name: pname, values: values });
+        }
+        result.push({ name: "ACTIVE_UNIFORMS", values: uniformDescriptors, isArray: true });
+
+        // ACTIVE_ATTRIBUTES
+        var attributesCount = /** @type {number} */ (gl.getProgramParameter(program, gl.ACTIVE_ATTRIBUTES));
+        var attributeDescriptors = [];
+        for (var i = 0; i < attributesCount; ++i) {
+            var activeInfo = gl.getActiveAttrib(program, i);
+            if (!activeInfo)
+                continue;
+            var pname = "" + i;
+            var values = [];
+            convertToStateDescriptors(activeInfo, values);
+            attributeDescriptors.push({ name: pname, values: values });
+        }
+        result.push({ name: "ACTIVE_ATTRIBUTES", values: attributeDescriptors, isArray: true });
+
+        return result;
+    },
+
+    /**
+     * @param {boolean=} includeAllInfo
+     * @return {!Array.<{name:string, type:number, value:*, size:(number|undefined)}>}
+     */
+    _activeUniforms: function(includeAllInfo)
+    {
         var uniforms = [];
+        var program = this.wrappedObject();
+        if (!program)
+            return uniforms;
+
+        var gl = WebGLRenderingContextResource.forObject(this).wrappedObject();
         var uniformsCount = /** @type {number} */ (gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS));
         for (var i = 0; i < uniformsCount; ++i) {
             var activeInfo = gl.getActiveUniform(program, i);
@@ -1501,14 +1658,27 @@ WebGLProgramResource.prototype = {
             if (!uniformLocation)
                 continue;
             var value = gl.getUniform(program, uniformLocation);
-            uniforms.push({
-                name: activeInfo.name,
-                type: activeInfo.type,
-                value: value
-            });
+            var item = Object.create(null);
+            item.name = activeInfo.name;
+            item.type = activeInfo.type;
+            item.value = value;
+            if (includeAllInfo)
+                item.size = activeInfo.size;
+            uniforms.push(item);
         }
-        data.uniforms = uniforms;
+        return uniforms;
+    },
 
+    /**
+     * @override
+     * @param {!Object} data
+     * @param {!Cache.<ReplayableResource>} cache
+     */
+    _populateReplayableData: function(data, cache)
+    {
+        var glResource = WebGLRenderingContextResource.forObject(this);
+        var originalErrors = glResource.getAllErrors();
+        data.uniforms = this._activeUniforms();
         glResource.restoreErrors(originalErrors);
     },
 
@@ -1605,6 +1775,15 @@ function WebGLShaderResource(wrappedObject, name)
 
 WebGLShaderResource.prototype = {
     /**
+     * @override (overrides @return type)
+     * @return {WebGLShader}
+     */
+    wrappedObject: function()
+    {
+        return this._wrappedObject;
+    },
+
+    /**
      * @return {number}
      */
     type: function()
@@ -1614,6 +1793,36 @@ WebGLShaderResource.prototype = {
             return call.args()[0];
         console.error("ASSERT_NOT_REACHED: Failed to restore shader type from the log.", call);
         return 0;
+    },
+
+    /**
+     * @override
+     * @return {!Array.<TypeUtils.InternalResourceStateDescriptor>}
+     */
+    currentState: function()
+    {
+        var result = [];
+        var shader = this.wrappedObject();
+        if (!shader)
+            return result;
+        var glResource = WebGLRenderingContextResource.forObject(this);
+        var gl = glResource.wrappedObject();
+        var shaderParameters = ["SHADER_TYPE", "DELETE_STATUS", "COMPILE_STATUS"];
+        glResource.queryStateValues(gl.getShaderParameter, shader, shaderParameters, result);
+        result.push({ name: "getShaderInfoLog", value: gl.getShaderInfoLog(shader) });
+        result.push({ name: "getShaderSource", value: gl.getShaderSource(shader) });
+        result.push({ name: "isShader", value: gl.isShader(shader) });
+        result.push({ name: "context", value: this.contextResource() });
+
+        // getShaderPrecisionFormat
+        var shaderType = this.type();
+        var precisionValues = [];
+        var precisionParameters = ["LOW_FLOAT", "MEDIUM_FLOAT", "HIGH_FLOAT", "LOW_INT", "MEDIUM_INT", "HIGH_INT"];
+        for (var i = 0, pname; pname = precisionParameters[i]; ++i)
+            precisionValues.push({ name: pname, value: gl.getShaderPrecisionFormat(shaderType, gl[pname]) });
+        result.push({ name: "getShaderPrecisionFormat", values: precisionValues });
+
+        return result;
     },
 
     /**
@@ -1643,6 +1852,60 @@ function WebGLBufferResource(wrappedObject, name)
 
 WebGLBufferResource.prototype = {
     /**
+     * @override (overrides @return type)
+     * @return {WebGLBuffer}
+     */
+    wrappedObject: function()
+    {
+        return this._wrappedObject;
+    },
+
+    /**
+     * @override
+     * @return {!Array.<TypeUtils.InternalResourceStateDescriptor>}
+     */
+    currentState: function()
+    {
+        var result = [];
+        var glResource = WebGLRenderingContextResource.forObject(this);
+        var gl = glResource.wrappedObject();
+        var buffer = this.wrappedObject();
+        if (!gl || !buffer)
+            return result;
+        result.push({ name: "isBuffer", value: gl.isBuffer(buffer) });
+        result.push({ name: "context", value: this.contextResource() });
+
+        var target = this._state.bindTarget;
+        if (typeof target !== "number")
+            return result;
+
+        var bindingParameter;
+        switch (target) {
+        case gl.ARRAY_BUFFER:
+            bindingParameter = gl.ARRAY_BUFFER_BINDING;
+            break;
+        case gl.ELEMENT_ARRAY_BUFFER:
+            bindingParameter = gl.ELEMENT_ARRAY_BUFFER_BINDING;
+            break;
+        default:
+            console.error("ASSERT_NOT_REACHED: unknown buffer target " + target);
+            return result;
+        }
+        result.push({ name: "target", value: target, valueIsEnum: true });
+
+        var oldBuffer = /** @type {WebGLBuffer} */ (gl.getParameter(bindingParameter));
+        if (oldBuffer !== buffer)
+            gl.bindBuffer(target, buffer);
+
+        var bufferParameters = ["BUFFER_SIZE", "BUFFER_USAGE"];
+        glResource.queryStateValues(gl.getBufferParameter, target, bufferParameters, result);
+
+        if (oldBuffer !== buffer)
+            gl.bindBuffer(target, oldBuffer);
+        return result;
+    },
+
+    /**
      * @override
      * @param {!Call} call
      */
@@ -1669,6 +1932,50 @@ function WebGLFramebufferResource(wrappedObject, name)
 
 WebGLFramebufferResource.prototype = {
     /**
+     * @override (overrides @return type)
+     * @return {WebGLFramebuffer}
+     */
+    wrappedObject: function()
+    {
+        return this._wrappedObject;
+    },
+
+    /**
+     * @override
+     * @return {!Array.<TypeUtils.InternalResourceStateDescriptor>}
+     */
+    currentState: function()
+    {
+        var result = [];
+        var framebuffer = this.wrappedObject();
+        if (!framebuffer)
+            return result;
+        var gl = WebGLRenderingContextResource.forObject(this).wrappedObject();
+
+        var oldFramebuffer = /** @type {WebGLFramebuffer} */ (gl.getParameter(gl.FRAMEBUFFER_BINDING));
+        if (oldFramebuffer !== framebuffer)
+            gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+
+        var attachmentParameters = ["COLOR_ATTACHMENT0", "DEPTH_ATTACHMENT", "STENCIL_ATTACHMENT"];
+        var framebufferParameters = ["FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE", "FRAMEBUFFER_ATTACHMENT_OBJECT_NAME", "FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL", "FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE"];
+        for (var i = 0, attachment; attachment = attachmentParameters[i]; ++i) {
+            var values = [];
+            for (var j = 0, pname; pname = framebufferParameters[j]; ++j) {
+                var value = gl.getFramebufferAttachmentParameter(gl.FRAMEBUFFER, gl[attachment], gl[pname]);
+                value = Resource.forObject(value) || value;
+                values.push({ name: pname, value: value, valueIsEnum: WebGLRenderingContextResource.GetResultIsEnum[pname] });
+            }
+            result.push({ name: attachment, values: values });
+        }
+        result.push({ name: "isFramebuffer", value: gl.isFramebuffer(framebuffer) });
+        result.push({ name: "context", value: this.contextResource() });
+
+        if (oldFramebuffer !== framebuffer)
+            gl.bindFramebuffer(gl.FRAMEBUFFER, oldFramebuffer);
+        return result;
+    },
+
+    /**
      * @override
      * @param {!Call} call
      */
@@ -1694,6 +2001,42 @@ function WebGLRenderbufferResource(wrappedObject, name)
 
 WebGLRenderbufferResource.prototype = {
     /**
+     * @override (overrides @return type)
+     * @return {WebGLRenderbuffer}
+     */
+    wrappedObject: function()
+    {
+        return this._wrappedObject;
+    },
+
+    /**
+     * @override
+     * @return {!Array.<TypeUtils.InternalResourceStateDescriptor>}
+     */
+    currentState: function()
+    {
+        var result = [];
+        var renderbuffer = this.wrappedObject();
+        if (!renderbuffer)
+            return result;
+        var glResource = WebGLRenderingContextResource.forObject(this);
+        var gl = glResource.wrappedObject();
+
+        var oldRenderbuffer = /** @type {WebGLRenderbuffer} */ (gl.getParameter(gl.RENDERBUFFER_BINDING));
+        if (oldRenderbuffer !== renderbuffer)
+            gl.bindRenderbuffer(gl.RENDERBUFFER, renderbuffer);
+
+        var renderbufferParameters = ["RENDERBUFFER_WIDTH", "RENDERBUFFER_HEIGHT", "RENDERBUFFER_INTERNAL_FORMAT", "RENDERBUFFER_RED_SIZE", "RENDERBUFFER_GREEN_SIZE", "RENDERBUFFER_BLUE_SIZE", "RENDERBUFFER_ALPHA_SIZE", "RENDERBUFFER_DEPTH_SIZE", "RENDERBUFFER_STENCIL_SIZE"];
+        glResource.queryStateValues(gl.getRenderbufferParameter, gl.RENDERBUFFER, renderbufferParameters, result);
+        result.push({ name: "isRenderbuffer", value: gl.isRenderbuffer(renderbuffer) });
+        result.push({ name: "context", value: this.contextResource() });
+
+        if (oldRenderbuffer !== renderbuffer)
+            gl.bindRenderbuffer(gl.RENDERBUFFER, oldRenderbuffer);
+        return result;
+    },
+
+    /**
      * @override
      * @param {!Call} call
      */
@@ -1708,6 +2051,122 @@ WebGLRenderbufferResource.prototype = {
 
 /**
  * @constructor
+ * @extends {Resource}
+ * @param {!Object} wrappedObject
+ * @param {string} name
+ */
+function WebGLUniformLocationResource(wrappedObject, name)
+{
+    Resource.call(this, wrappedObject, name);
+}
+
+WebGLUniformLocationResource.prototype = {
+    /**
+     * @override (overrides @return type)
+     * @return {WebGLUniformLocation}
+     */
+    wrappedObject: function()
+    {
+        return this._wrappedObject;
+    },
+
+    /**
+     * @return {WebGLProgramResource}
+     */
+    program: function()
+    {
+        var call = this._calls[0];
+        if (call && call.functionName() === "getUniformLocation")
+            return /** @type {WebGLProgramResource} */ (Resource.forObject(call.args()[0]));
+        console.error("ASSERT_NOT_REACHED: Failed to restore WebGLUniformLocation from the log.", call);
+        return null;
+    },
+
+    /**
+     * @return {string}
+     */
+    name: function()
+    {
+        var call = this._calls[0];
+        if (call && call.functionName() === "getUniformLocation")
+            return call.args()[1];
+        console.error("ASSERT_NOT_REACHED: Failed to restore WebGLUniformLocation from the log.", call);
+        return "";
+    },
+
+    /**
+     * @override
+     * @return {!Array.<TypeUtils.InternalResourceStateDescriptor>}
+     */
+    currentState: function()
+    {
+        var result = [];
+        var location = this.wrappedObject();
+        if (!location)
+            return result;
+        var programResource = this.program();
+        var program = programResource && programResource.wrappedObject();
+        if (!program)
+            return result;
+        var gl = WebGLRenderingContextResource.forObject(this).wrappedObject();
+        var uniformValue = gl.getUniform(program, location);
+        var name = this.name();
+        result.push({ name: "name", value: name });
+        result.push({ name: "program", value: programResource });
+        result.push({ name: "value", value: uniformValue });
+        result.push({ name: "context", value: this.contextResource() });
+
+        if (typeof this._type !== "number") {
+            var altName = name + "[0]";
+            var uniformsCount = /** @type {number} */ (gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS));
+            for (var i = 0; i < uniformsCount; ++i) {
+                var activeInfo = gl.getActiveUniform(program, i);
+                if (!activeInfo)
+                    continue;
+                if (activeInfo.name === name || activeInfo.name === altName) {
+                    this._type = activeInfo.type;
+                    this._size = activeInfo.size;
+                    if (activeInfo.name === name)
+                        break;
+                }
+            }
+        }
+        if (typeof this._type === "number")
+            result.push({ name: "type", value: this._type, valueIsEnum: true });
+        if (typeof this._size === "number")
+            result.push({ name: "size", value: this._size });
+
+        return result;
+    },
+
+    /**
+     * @override
+     * @param {!Object} data
+     * @param {!Cache.<ReplayableResource>} cache
+     */
+    _populateReplayableData: function(data, cache)
+    {
+        data.type = this._type;
+        data.size = this._size;
+    },
+
+    /**
+     * @override
+     * @param {!Object} data
+     * @param {!Cache.<Resource>} cache
+     */
+    _doReplayCalls: function(data, cache)
+    {
+        this._type = data.type;
+        this._size = data.size;
+        Resource.prototype._doReplayCalls.call(this, data, cache);
+    },
+
+    __proto__: Resource.prototype
+}
+
+/**
+ * @constructor
  * @extends {ContextResource}
  * @param {!WebGLRenderingContext} glContext
  */
@@ -1716,8 +2175,10 @@ function WebGLRenderingContextResource(glContext)
     ContextResource.call(this, glContext, "WebGLRenderingContext");
     /** @type {Object.<number, boolean>} */
     this._customErrors = null;
-    /** @type {!Object.<string, boolean>} */
+    /** @type {!Object.<string, string>} */
     this._extensions = {};
+    /** @type {!Object.<string, number>} */
+    this._extensionEnums = {};
 }
 
 /**
@@ -1771,6 +2232,7 @@ WebGLRenderingContextResource.StateParameters = [
     "DEPTH_RANGE",
     "DEPTH_WRITEMASK",
     "ELEMENT_ARRAY_BUFFER_BINDING",
+    "FRAGMENT_SHADER_DERIVATIVE_HINT_OES", // OES_standard_derivatives extension
     "FRAMEBUFFER_BINDING",
     "FRONT_FACE",
     "GENERATE_MIPMAP_HINT",
@@ -1801,8 +2263,54 @@ WebGLRenderingContextResource.StateParameters = [
     "UNPACK_COLORSPACE_CONVERSION_WEBGL",
     "UNPACK_FLIP_Y_WEBGL",
     "UNPACK_PREMULTIPLY_ALPHA_WEBGL",
+    "VERTEX_ARRAY_BINDING_OES", // OES_vertex_array_object extension
     "VIEWPORT"
 ];
+
+/**
+ * True for those enums that return also an enum via a getter API method (e.g. getParameter, getShaderParameter, etc.).
+ * @const
+ * @type {!Object.<string, boolean>}
+ */
+WebGLRenderingContextResource.GetResultIsEnum = TypeUtils.createPrefixedPropertyNamesSet([
+    // gl.getParameter()
+    "ACTIVE_TEXTURE",
+    "BLEND_DST_ALPHA",
+    "BLEND_DST_RGB",
+    "BLEND_EQUATION_ALPHA",
+    "BLEND_EQUATION_RGB",
+    "BLEND_SRC_ALPHA",
+    "BLEND_SRC_RGB",
+    "CULL_FACE_MODE",
+    "DEPTH_FUNC",
+    "FRONT_FACE",
+    "GENERATE_MIPMAP_HINT",
+    "FRAGMENT_SHADER_DERIVATIVE_HINT_OES",
+    "STENCIL_BACK_FAIL",
+    "STENCIL_BACK_FUNC",
+    "STENCIL_BACK_PASS_DEPTH_FAIL",
+    "STENCIL_BACK_PASS_DEPTH_PASS",
+    "STENCIL_FAIL",
+    "STENCIL_FUNC",
+    "STENCIL_PASS_DEPTH_FAIL",
+    "STENCIL_PASS_DEPTH_PASS",
+    "UNPACK_COLORSPACE_CONVERSION_WEBGL",
+    // gl.getBufferParameter()
+    "BUFFER_USAGE",
+    // gl.getFramebufferAttachmentParameter()
+    "FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE",
+    // gl.getRenderbufferParameter()
+    "RENDERBUFFER_INTERNAL_FORMAT",
+    // gl.getTexParameter()
+    "TEXTURE_MAG_FILTER",
+    "TEXTURE_MIN_FILTER",
+    "TEXTURE_WRAP_S",
+    "TEXTURE_WRAP_T",
+    // gl.getShaderParameter()
+    "SHADER_TYPE",
+    // gl.getVertexAttrib()
+    "VERTEX_ATTRIB_ARRAY_TYPE"
+]);
 
 /**
  * @const
@@ -1921,11 +2429,51 @@ WebGLRenderingContextResource.prototype = {
 
     /**
      * @param {string} name
+     * @param {Object} obj
      */
-    addExtension: function(name)
+    registerWebGLExtension: function(name, obj)
     {
         // FIXME: Wrap OES_vertex_array_object extension.
-        this._extensions[name.toLowerCase()] = true;
+        var lowerName = name.toLowerCase();
+        if (obj && !this._extensions[lowerName]) {
+            this._extensions[lowerName] = name;
+            for (var property in obj) {
+                if (TypeUtils.isEnumPropertyName(property, obj))
+                    this._extensionEnums[property] = /** @type {number} */ (obj[property]);
+            }
+        }
+    },
+
+    /**
+     * @param {string} name
+     * @return {number|undefined}
+     */
+    _enumValueForName: function(name)
+    {
+        if (typeof this._extensionEnums[name] === "number")
+            return this._extensionEnums[name];
+        var gl = this.wrappedObject();
+        return (typeof gl[name] === "number" ? gl[name] : undefined);
+    },
+
+    /**
+     * @param {function(this:WebGLRenderingContext, T, number):*} func
+     * @param {T} targetOrWebGLObject
+     * @param {!Array.<string>} pnames
+     * @param {!Array.<TypeUtils.InternalResourceStateDescriptor>} output
+     * @template T
+     */
+    queryStateValues: function(func, targetOrWebGLObject, pnames, output)
+    {
+        var gl = this.wrappedObject();
+        for (var i = 0, pname; pname = pnames[i]; ++i) {
+            var enumValue = this._enumValueForName(pname);
+            if (typeof enumValue !== "number")
+                continue;
+            var value = func.call(gl, targetOrWebGLObject, enumValue);
+            value = Resource.forObject(value) || value;
+            output.push({ name: pname, value: value, valueIsEnum: WebGLRenderingContextResource.GetResultIsEnum[pname] });
+        }
     },
 
     /**
@@ -1941,9 +2489,10 @@ WebGLRenderingContextResource.prototype = {
         function convertToStateDescriptors(obj, output)
         {
             for (var pname in obj)
-                output.push({ name: pname, value: obj[pname] });
+                output.push({ name: pname, value: obj[pname], valueIsEnum: WebGLRenderingContextResource.GetResultIsEnum[pname] });
         }
 
+        var gl = this.wrappedObject();
         var glState = this._internalCurrentState(null);
 
         // VERTEX_ATTRIB_ARRAYS
@@ -1968,13 +2517,30 @@ WebGLRenderingContextResource.prototype = {
 
         var result = [];
         convertToStateDescriptors(glState, result);
-        result.push({ name: "VERTEX_ATTRIB_ARRAYS[" + vertexAttribStates.length + "]", values: vertexAttribStates });
-        result.push({ name: "TEXTURE_UNITS[" + textureUnits.length + "]", values: textureUnits });
+        result.push({ name: "VERTEX_ATTRIB_ARRAYS", values: vertexAttribStates, isArray: true });
+        result.push({ name: "TEXTURE_UNITS", values: textureUnits, isArray: true });
+
+        var textureBindingParameters = ["TEXTURE_BINDING_2D", "TEXTURE_BINDING_CUBE_MAP"];
+        for (var i = 0, pname; pname = textureBindingParameters[i]; ++i) {
+            var value = gl.getParameter(gl[pname]);
+            value = Resource.forObject(value) || value;
+            result.push({ name: pname, value: value });
+        }
+
+        // ENABLED_EXTENSIONS
+        var enabledExtensions = [];
+        for (var lowerName in this._extensions) {
+            var pname = this._extensions[lowerName];
+            var value = gl.getExtension(pname);
+            value = Resource.forObject(value) || value;
+            enabledExtensions.push({ name: pname, value: value });
+        }
+        result.push({ name: "ENABLED_EXTENSIONS", values: enabledExtensions, isArray: true });
+
         return result;
     },
 
     /**
-     * @override
      * @param {?Cache.<ReplayableResource>} cache
      * @return {!Object.<string, *>}
      */
@@ -1997,20 +2563,33 @@ WebGLRenderingContextResource.prototype = {
         WebGLRenderingContextResource.GLCapabilities.forEach(function(parameter) {
             glState[parameter] = gl.isEnabled(gl[parameter]);
         });
-        WebGLRenderingContextResource.StateParameters.forEach(function(parameter) {
-            glState[parameter] = maybeToReplayable(gl.getParameter(gl[parameter]));
-        });
+        for (var i = 0, pname; pname = WebGLRenderingContextResource.StateParameters[i]; ++i) {
+            var enumValue = this._enumValueForName(pname);
+            if (typeof enumValue === "number")
+                glState[pname] = maybeToReplayable(gl.getParameter(enumValue));
+        }
 
         // VERTEX_ATTRIB_ARRAYS
         var maxVertexAttribs = /** @type {number} */ (gl.getParameter(gl.MAX_VERTEX_ATTRIBS));
-        var vertexAttribParameters = ["VERTEX_ATTRIB_ARRAY_BUFFER_BINDING", "VERTEX_ATTRIB_ARRAY_ENABLED", "VERTEX_ATTRIB_ARRAY_SIZE", "VERTEX_ATTRIB_ARRAY_STRIDE", "VERTEX_ATTRIB_ARRAY_TYPE", "VERTEX_ATTRIB_ARRAY_NORMALIZED", "CURRENT_VERTEX_ATTRIB"];
+        var vertexAttribParameters = [
+            "VERTEX_ATTRIB_ARRAY_BUFFER_BINDING",
+            "VERTEX_ATTRIB_ARRAY_ENABLED",
+            "VERTEX_ATTRIB_ARRAY_SIZE",
+            "VERTEX_ATTRIB_ARRAY_STRIDE",
+            "VERTEX_ATTRIB_ARRAY_TYPE",
+            "VERTEX_ATTRIB_ARRAY_NORMALIZED",
+            "CURRENT_VERTEX_ATTRIB",
+            "VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE" // ANGLE_instanced_arrays extension
+        ];
         var vertexAttribStates = [];
-        for (var i = 0; i < maxVertexAttribs; ++i) {
+        for (var index = 0; index < maxVertexAttribs; ++index) {
             var state = Object.create(null);
-            vertexAttribParameters.forEach(function(attribParameter) {
-                state[attribParameter] = maybeToReplayable(gl.getVertexAttrib(i, gl[attribParameter]));
-            });
-            state.VERTEX_ATTRIB_ARRAY_POINTER = gl.getVertexAttribOffset(i, gl.VERTEX_ATTRIB_ARRAY_POINTER);
+            for (var i = 0, pname; pname = vertexAttribParameters[i]; ++i) {
+                var enumValue = this._enumValueForName(pname);
+                if (typeof enumValue === "number")
+                    state[pname] = maybeToReplayable(gl.getVertexAttrib(index, enumValue));
+            }
+            state.VERTEX_ATTRIB_ARRAY_POINTER = gl.getVertexAttribOffset(index, gl.VERTEX_ATTRIB_ARRAY_POINTER);
             vertexAttribStates.push(state);
         }
         glState.VERTEX_ATTRIB_ARRAYS = vertexAttribStates;
@@ -2044,6 +2623,7 @@ WebGLRenderingContextResource.prototype = {
         data.originalCanvas = gl.canvas;
         data.originalContextAttributes = gl.getContextAttributes();
         data.extensions = TypeUtils.cloneObject(this._extensions);
+        data.extensionEnums = TypeUtils.cloneObject(this._extensionEnums);
         data.glState = this._internalCurrentState(cache);
     },
 
@@ -2056,6 +2636,7 @@ WebGLRenderingContextResource.prototype = {
     {
         this._customErrors = null;
         this._extensions = TypeUtils.cloneObject(data.extensions) || {};
+        this._extensionEnums = TypeUtils.cloneObject(data.extensionEnums) || {};
 
         var canvas = data.originalCanvas.cloneNode(true);
         var replayContext = null;
@@ -2102,6 +2683,10 @@ WebGLRenderingContextResource.prototype = {
         gl.frontFace(glState.FRONT_FACE);
         gl.hint(gl.GENERATE_MIPMAP_HINT, glState.GENERATE_MIPMAP_HINT);
         gl.lineWidth(glState.LINE_WIDTH);
+
+        var enumValue = this._enumValueForName("FRAGMENT_SHADER_DERIVATIVE_HINT_OES");
+        if (typeof enumValue === "number")
+            gl.hint(enumValue, glState.FRAGMENT_SHADER_DERIVATIVE_HINT_OES);
 
         WebGLRenderingContextResource.PixelStoreParameters.forEach(function(parameter) {
             gl.pixelStorei(gl[parameter], glState[parameter]);
@@ -2210,6 +2795,30 @@ WebGLRenderingContextResource.prototype = {
 
     /**
      * @override
+     * @param {!Call} call
+     */
+    onCallReplayed: function(call)
+    {
+        var functionName = call.functionName();
+        var args = call.args();
+        switch (functionName) {
+        case "bindBuffer":
+        case "bindFramebuffer":
+        case "bindRenderbuffer":
+        case "bindTexture":
+            // Update BINDING state for Resources in the replay world.
+            var resource = Resource.forObject(args[1]);
+            if (resource)
+                resource.pushBinding(args[0], functionName);
+            break;
+        case "getExtension":
+            this.registerWebGLExtension(args[0], /** @type {Object} */ (call.result()));
+            break;
+        }
+    },
+
+    /**
+     * @override
      * @return {!Object.<string, Function>}
      */
     _customWrapFunctions: function()
@@ -2224,7 +2833,7 @@ WebGLRenderingContextResource.prototype = {
             wrapFunctions["createTexture"] = Resource.WrapFunction.resourceFactoryMethod(WebGLTextureResource, "WebGLTexture");
             wrapFunctions["createFramebuffer"] = Resource.WrapFunction.resourceFactoryMethod(WebGLFramebufferResource, "WebGLFramebuffer");
             wrapFunctions["createRenderbuffer"] = Resource.WrapFunction.resourceFactoryMethod(WebGLRenderbufferResource, "WebGLRenderbuffer");
-            wrapFunctions["getUniformLocation"] = Resource.WrapFunction.resourceFactoryMethod(Resource, "WebGLUniformLocation");
+            wrapFunctions["getUniformLocation"] = Resource.WrapFunction.resourceFactoryMethod(WebGLUniformLocationResource, "WebGLUniformLocation");
 
             /**
              * @param {string} methodName
@@ -2294,7 +2903,7 @@ WebGLRenderingContextResource.prototype = {
              */
             wrapFunctions["getExtension"] = function(name)
             {
-                this._resource.addExtension(name);
+                this._resource.registerWebGLExtension(name, this.result());
             }
 
             //
@@ -2340,6 +2949,7 @@ WebGLRenderingContextResource.prototype = {
              */
             wrapFunctions["bindBuffer"] = wrapFunctions["bindFramebuffer"] = wrapFunctions["bindRenderbuffer"] = function(target, obj)
             {
+                this._resource.currentBinding(target); // To call WebGLBoundResource.prototype.pushBinding().
                 this._resource._registerBoundResource("__bindBuffer_" + target, obj);
             }
             /**
@@ -2349,6 +2959,7 @@ WebGLRenderingContextResource.prototype = {
              */
             wrapFunctions["bindTexture"] = function(target, obj)
             {
+                this._resource.currentBinding(target); // To call WebGLBoundResource.prototype.pushBinding().
                 var gl = /** @type {WebGLRenderingContext} */ (this._originalObject);
                 var currentTextureBinding = /** @type {number} */ (gl.getParameter(gl.ACTIVE_TEXTURE));
                 this._resource._registerBoundResource("__bindTexture_" + target + "_" + currentTextureBinding, obj);
@@ -2497,6 +3108,7 @@ CanvasRenderingContext2DResource.prototype = {
         var state = this._internalCurrentState(null);
         for (var pname in state)
             result.push({ name: pname, value: state[pname] });
+        result.push({ name: "context", value: this.contextResource() });
         return result;
     },
 
@@ -2816,31 +3428,36 @@ function CallFormatter(drawingMethodNames)
 CallFormatter.prototype = {
     /**
      * @param {!ReplayableCall} replayableCall
+     * @param {string=} objectGroup
      * @return {!Object}
      */
-    formatCall: function(replayableCall)
+    formatCall: function(replayableCall, objectGroup)
     {
         var result = {};
         var functionName = replayableCall.functionName();
         if (functionName) {
             result.functionName = functionName;
-            result.arguments = replayableCall.args().map(this.formatValue.bind(this));
+            result.arguments = [];
+            var args = replayableCall.args();
+            for (var i = 0, n = args.length; i < n; ++i)
+                result.arguments.push(this.formatValue(args[i], objectGroup));
             if (replayableCall.result() !== undefined)
-                result.result = this.formatValue(replayableCall.result());
+                result.result = this.formatValue(replayableCall.result(), objectGroup);
             if (this._drawingMethodNames[functionName])
                 result.isDrawingCall = true;
         } else {
             result.property = replayableCall.propertyName();
-            result.value = this.formatValue(replayableCall.propertyValue());
+            result.value = this.formatValue(replayableCall.propertyValue(), objectGroup);
         }
         return result;
     },
 
     /**
      * @param {*} value
+     * @param {string=} objectGroup
      * @return {!CanvasAgent.CallArgument}
      */
-    formatValue: function(value)
+    formatValue: function(value, objectGroup)
     {
         if (value instanceof Resource || value instanceof ReplayableResource) {
             return {
@@ -2849,31 +3466,70 @@ CallFormatter.prototype = {
             };
         }
 
-        var remoteObject = injectedScript.wrapObject(value, "", true, false);
+        var remoteObject = injectedScript.wrapObject(value, objectGroup || "", true, false);
+        var description = remoteObject.description || ("" + value);
+
         var result = {
-            description: remoteObject.description || ("" + value),
+            description: description,
             type: /** @type {CanvasAgent.CallArgumentType} */ (remoteObject.type)
         };
         if (remoteObject.subtype)
             result.subtype = /** @type {CanvasAgent.CallArgumentSubtype} */ (remoteObject.subtype);
-        if (remoteObject.objectId)
-            injectedScript.releaseObject(remoteObject.objectId);
+        if (remoteObject.objectId) {
+            if (objectGroup)
+                result.remoteObject = remoteObject;
+            else
+                injectedScript.releaseObject(remoteObject.objectId);
+        }
         return result;
     },
 
     /**
+     * @param {string} name
+     * @return {?string}
+     */
+    enumValueForName: function(name)
+    {
+        return null;
+    },
+
+    /**
+     * @param {number} value
+     * @param {Array.<string>=} options
+     * @return {?string}
+     */
+    enumNameForValue: function(value, options)
+    {
+        return null;
+    },
+
+    /**
      * @param {!Array.<TypeUtils.InternalResourceStateDescriptor>} descriptors
+     * @param {string=} objectGroup
      * @return {!Array.<!CanvasAgent.ResourceStateDescriptor>}
      */
-    convertResourceStateDescriptors: function(descriptors)
+    formatResourceStateDescriptors: function(descriptors, objectGroup)
     {
         var result = [];
         for (var i = 0, n = descriptors.length; i < n; ++i) {
             var d = descriptors[i];
+            var item;
             if (d.values)
-                result.push({ name: d.name, values: this.convertResourceStateDescriptors(d.values) });
-            else
-                result.push({ name: d.name, value: this.formatValue(d.value) });
+                item = { name: d.name, values: this.formatResourceStateDescriptors(d.values, objectGroup) };
+            else {
+                item = { name: d.name, value: this.formatValue(d.value, objectGroup) };
+                if (d.valueIsEnum && typeof d.value === "number") {
+                    var enumName = this.enumNameForValue(d.value);
+                    if (enumName)
+                        item.value.enumName = enumName;
+                }
+            }
+            var enumValue = this.enumValueForName(d.name);
+            if (enumValue)
+                item.enumValueForName = enumValue;
+            if (d.isArray)
+                item.isArray = true;
+            result.push(item);
         }
         return result;
     }
@@ -2996,11 +3652,12 @@ WebGLCallFormatter.prototype = {
     /**
      * @override
      * @param {!ReplayableCall} replayableCall
+     * @param {string=} objectGroup
      * @return {!Object}
      */
-    formatCall: function(replayableCall)
+    formatCall: function(replayableCall, objectGroup)
     {
-        var result = CallFormatter.prototype.formatCall.call(this, replayableCall);
+        var result = CallFormatter.prototype.formatCall.call(this, replayableCall, objectGroup);
         if (!result.functionName)
             return result;
         var enumsInfo = this._findEnumsInfo(replayableCall);
@@ -3010,23 +3667,52 @@ WebGLCallFormatter.prototype = {
         for (var i = 0, n = enumArgsIndexes.length; i < n; ++i) {
             var index = enumArgsIndexes[i];
             var callArgument = result.arguments[index];
-            if (callArgument && !isNaN(callArgument.description))
-                callArgument.description = this._enumValueToString(+callArgument.description, enumsInfo["hints"]) || callArgument.description;
+            this._formatEnumValue(callArgument, enumsInfo["hints"]);
         }
         var bitfieldArgsIndexes = enumsInfo["bitfield"] || [];
         for (var i = 0, n = bitfieldArgsIndexes.length; i < n; ++i) {
             var index = bitfieldArgsIndexes[i];
             var callArgument = result.arguments[index];
-            if (callArgument && !isNaN(callArgument.description))
-                callArgument.description = this._enumBitmaskToString(+callArgument.description, enumsInfo["hints"]) || callArgument.description;
+            this._formatEnumBitmaskValue(callArgument, enumsInfo["hints"]);
         }
-        if (enumsInfo.returnType && result.result) {
-            if (enumsInfo.returnType === "enum")
-                result.result.description = this._enumValueToString(+result.result.description, enumsInfo["hints"]) || result.result.description;
-            else if (enumsInfo.returnType === "bitfield")
-                result.result.description = this._enumBitmaskToString(+result.result.description, enumsInfo["hints"]) || result.result.description;
-        }
+        if (enumsInfo.returnType === "enum")
+            this._formatEnumValue(result.result, enumsInfo["hints"]);
+        else if (enumsInfo.returnType === "bitfield")
+            this._formatEnumBitmaskValue(result.result, enumsInfo["hints"]);
         return result;
+    },
+
+    /**
+     * @override
+     * @param {string} name
+     * @return {?string}
+     */
+    enumValueForName: function(name)
+    {
+        this._initialize();
+        if (name in this._enumNameToValue)
+            return "" + this._enumNameToValue[name];
+        return null;
+    },
+
+    /**
+     * @override
+     * @param {number} value
+     * @param {Array.<string>=} options
+     * @return {?string}
+     */
+    enumNameForValue: function(value, options)
+    {
+        this._initialize();
+        options = options || [];
+        for (var i = 0, n = options.length; i < n; ++i) {
+            if (this._enumNameToValue[options[i]] === value)
+                return options[i];
+        }
+        var names = this._enumValueToNames[value];
+        if (!names || names.length !== 1)
+            return null;
+        return names[0];
     },
 
     /**
@@ -3063,34 +3749,30 @@ WebGLCallFormatter.prototype = {
     },
 
     /**
-     * @param {number} value
+     * @param {?CanvasAgent.CallArgument|undefined} callArgument
      * @param {Array.<string>=} options
-     * @return {string}
      */
-    _enumValueToString: function(value, options)
+    _formatEnumValue: function(callArgument, options)
     {
+        if (!callArgument || isNaN(callArgument.description))
+            return;
         this._initialize();
-        options = options || [];
-        for (var i = 0, n = options.length; i < n; ++i) {
-            if (this._enumNameToValue[options[i]] === value)
-                return options[i];
-        }
-        var names = this._enumValueToNames[value];
-        if (!names || names.length !== 1) {
-            console.warn("Ambiguous WebGL enum names for value " + value + ": " + names);
-            return "";
-        }
-        return names[0];
+        var value = +callArgument.description;
+        var enumName = this.enumNameForValue(value, options);
+        if (enumName)
+            callArgument.enumName = enumName;
     },
 
     /**
-     * @param {number} value
+     * @param {?CanvasAgent.CallArgument|undefined} callArgument
      * @param {Array.<string>=} options
-     * @return {string}
      */
-    _enumBitmaskToString: function(value, options)
+    _formatEnumBitmaskValue: function(callArgument, options)
     {
+        if (!callArgument || isNaN(callArgument.description))
+            return;
         this._initialize();
+        var value = +callArgument.description;
         options = options || [];
         /** @type {!Array.<string>} */
         var result = [];
@@ -3107,13 +3789,13 @@ WebGLCallFormatter.prototype = {
             var names = this._enumValueToNames[bitValue];
             if (!names || names.length !== 1) {
                 console.warn("Ambiguous WebGL enum names for value " + bitValue + ": " + names);
-                return "";
+                return;
             }
             result.push(names[0]);
             value = nextValue;
         }
         result.sort();
-        return result.join(" | ");
+        callArgument.enumName = result.join(" | ");
     },
 
     _initialize: function()
@@ -3135,7 +3817,7 @@ WebGLCallFormatter.prototype = {
             if (!obj)
                 return;
             for (var property in obj) {
-                if (/^[A-Z0-9_]+$/.test(property) && typeof obj[property] === "number") {
+                if (TypeUtils.isEnumPropertyName(property, obj)) {
                     var value = /** @type {number} */ (obj[property]);
                     this._enumNameToValue[property] = value;
                     var names = this._enumValueToNames[value];
@@ -3571,6 +4253,7 @@ InjectedCanvasModule.prototype = {
             this._manager.dropTraceLog(traceLog);
         delete this._traceLogs[id];
         delete this._traceLogPlayers[id];
+        injectedScript.releaseObjectGroup(id);
     },
 
     /**
@@ -3642,6 +4325,8 @@ InjectedCanvasModule.prototype = {
         if (!traceLog)
             return "Error: Trace log with the given ID not found.";
         this._traceLogPlayers[traceLogId] = this._traceLogPlayers[traceLogId] || new TraceLogPlayer(traceLog);
+
+        injectedScript.releaseObjectGroup(traceLogId);
 
         var beforeTime = TypeUtils.now();
         var lastCall = this._traceLogPlayers[traceLogId].stepTo(stepNo);
@@ -3747,7 +4432,7 @@ InjectedCanvasModule.prototype = {
         };
         if (resource) {
             result.imageURL = overrideImageURL || resource.toDataURL();
-            result.descriptors = CallFormatter.forResource(resource).convertResourceStateDescriptors(resource.currentState());
+            result.descriptors = CallFormatter.forResource(resource).formatResourceStateDescriptors(resource.currentState(), traceLogId);
         }
         return result;
     },

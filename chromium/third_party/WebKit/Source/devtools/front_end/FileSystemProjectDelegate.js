@@ -211,12 +211,15 @@ WebInspector.FileSystemProjectDelegate.prototype = {
 
         function innerCallback(files)
         {
-            function trimFileSystemPath(fullPath)
+            function trimAndNormalizeFileSystemPath(fullPath)
             {
-                return fullPath.substr(this._fileSystem.path().length + 1);
+                var trimmedPath = fullPath.substr(this._fileSystem.path().length + 1);
+                if (WebInspector.isWin())
+                    trimmedPath = trimmedPath.replace(/\\/g, "/");
+                return trimmedPath;
             }
 
-            files = files.map(trimFileSystemPath.bind(this));
+            files = files.map(trimAndNormalizeFileSystemPath.bind(this));
             var result = new StringMap();
             progress.setTotalWork(files.length);
             if (files.length === 0) {
@@ -384,6 +387,14 @@ WebInspector.FileSystemProjectDelegate.prototype = {
     refresh: function(path)
     {
         this._fileSystem.requestFilesRecursive(path, this._addFile.bind(this));
+    },
+
+    /**
+     * @param {string} path
+     */
+    excludeFolder: function(path)
+    {
+        WebInspector.isolatedFileSystemManager.mapping().addExcludedFolder(this._fileSystem.path(), path);
     },
 
     /**

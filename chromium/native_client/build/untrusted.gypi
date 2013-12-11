@@ -678,7 +678,7 @@
                   '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
                   '>@(extra_deps_newlib_arm)',
                   '>(source_list_newlib_arm)',
-                  '<(SHARED_INTERMEDIATE_DIR)/sdk/toolchain/<(OS)_x86_pnacl/stamp.prep'
+                  '<(SHARED_INTERMEDIATE_DIR)/sdk/toolchain/<(OS)_pnacl/stamp.prep'
                 ],
                 'outputs': ['>(out_newlib_arm)'],
                 'action': [
@@ -692,7 +692,7 @@
                   '--name', '>(out_newlib_arm)',
                   '--objdir', '>(objdir_newlib_arm)',
                   '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
-                  '--compile_flags=--pnacl-frontend-triple=armv7-unknown-nacl-gnueabi -mfloat-abi=hard ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
+                  '--compile_flags=--target=armv7-unknown-nacl-gnueabi -mfloat-abi=hard ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                   '--defines=^(defines) >(_defines)',
                   '--link_flags=-B>(tc_lib_dir_newlib_arm) ^(link_flags) >(_link_flags)',
                   '--source-list=^|(<(source_list_newlib_arm) ^(_sources) ^(sources))',
@@ -1010,7 +1010,7 @@
               '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
               '>@(extra_deps_pnacl_newlib)',
               '>(source_list_pnacl_newlib)',
-              '<(SHARED_INTERMEDIATE_DIR)/sdk/toolchain/<(OS)_x86_pnacl/stamp.prep',
+              '<(SHARED_INTERMEDIATE_DIR)/sdk/toolchain/<(OS)_pnacl/stamp.prep',
             ],
             'outputs': ['>(out_pnacl_newlib)'],
             'action': [
@@ -1126,7 +1126,7 @@
               '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
               '>@(extra_deps_pnacl_newlib)',
               '>(source_list_pnacl_newlib)',
-              '<(SHARED_INTERMEDIATE_DIR)/sdk/toolchain/<(OS)_x86_pnacl/stamp.prep',
+              '<(SHARED_INTERMEDIATE_DIR)/sdk/toolchain/<(OS)_pnacl/stamp.prep',
             ],
             'outputs': ['>(out_pnacl_newlib)'],
             'action': [

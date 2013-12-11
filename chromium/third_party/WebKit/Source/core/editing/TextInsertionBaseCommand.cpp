@@ -35,7 +35,7 @@
 
 namespace WebCore {
 
-TextInsertionBaseCommand::TextInsertionBaseCommand(Document* document)
+TextInsertionBaseCommand::TextInsertionBaseCommand(Document& document)
     : CompositeEditCommand(document)
 {
 }
@@ -47,10 +47,10 @@ void TextInsertionBaseCommand::applyTextInsertionCommand(Frame* frame, PassRefPt
         command->setStartingSelection(selectionForInsertion);
         command->setEndingSelection(selectionForInsertion);
     }
-    applyCommand(command);
+    command->apply();
     if (changeSelection) {
         command->setEndingSelection(endingSelection);
-        frame->selection()->setSelection(endingSelection);
+        frame->selection().setSelection(endingSelection);
     }
 }
 

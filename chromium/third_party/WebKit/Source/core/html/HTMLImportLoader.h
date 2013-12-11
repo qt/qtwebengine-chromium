@@ -31,9 +31,9 @@
 #ifndef HTMLImportLoader_h
 #define HTMLImportLoader_h
 
+#include "core/fetch/RawResource.h"
+#include "core/fetch/ResourcePtr.h"
 #include "core/html/HTMLImport.h"
-#include "core/loader/cache/RawResource.h"
-#include "core/loader/cache/ResourcePtr.h"
 #include "weborigin/KURL.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
@@ -52,12 +52,13 @@ public:
         StateReady
     };
 
-    HTMLImportLoader(HTMLImport*, const KURL&, const ResourcePtr<RawResource>&);
+    HTMLImportLoader(HTMLImport*, const KURL&);
     virtual ~HTMLImportLoader();
 
     Document* importedDocument() const;
     const KURL& url() const { return m_url; }
 
+    void setResource(const ResourcePtr<RawResource>&);
     void addClient(HTMLImportLoaderClient*);
     void removeClient(HTMLImportLoaderClient*);
     void importDestroyed();

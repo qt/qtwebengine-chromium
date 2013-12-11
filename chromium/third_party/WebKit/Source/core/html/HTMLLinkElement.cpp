@@ -34,15 +34,15 @@
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
-#include "core/dom/DocumentStyleSheetCollection.h"
 #include "core/dom/Event.h"
 #include "core/dom/EventSender.h"
+#include "core/dom/StyleEngine.h"
+#include "core/fetch/CSSStyleSheetResource.h"
+#include "core/fetch/FetchRequest.h"
+#include "core/fetch/ResourceFetcher.h"
 #include "core/html/LinkImport.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/loader/cache/CSSStyleSheetResource.h"
-#include "core/loader/cache/FetchRequest.h"
-#include "core/loader/cache/ResourceFetcher.h"
 #include "core/page/ContentSecurityPolicy.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
@@ -58,7 +58,7 @@ static LinkEventSender& linkLoadEventSender()
     return sharedLoadEventSender;
 }
 
-inline HTMLLinkElement::HTMLLinkElement(const QualifiedName& tagName, Document* document, bool createdByParser)
+inline HTMLLinkElement::HTMLLinkElement(const QualifiedName& tagName, Document& document, bool createdByParser)
     : HTMLElement(tagName, document)
     , m_linkLoader(this)
     , m_sizes(DOMSettableTokenList::create())
@@ -70,7 +70,7 @@ inline HTMLLinkElement::HTMLLinkElement(const QualifiedName& tagName, Document* 
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLLinkElement> HTMLLinkElement::create(const QualifiedName& tagName, Document* document, bool createdByParser)
+PassRefPtr<HTMLLinkElement> HTMLLinkElement::create(const QualifiedName& tagName, Document& document, bool createdByParser)
 {
     return adoptRef(new HTMLLinkElement(tagName, document, createdByParser));
 }
@@ -80,7 +80,7 @@ HTMLLinkElement::~HTMLLinkElement()
     m_link.clear();
 
     if (inDocument())
-        document()->styleSheetCollection()->removeStyleSheetCandidateNode(this);
+        document().styleEngine()->removeStyleSheetCandidateNode(this);
 
     linkLoadEventSender().cancelEvent(this);
 }
@@ -119,13 +119,13 @@ void HTMLLinkElement::parseAttribute(const QualifiedName& name, const AtomicStri
 bool HTMLLinkElement::shouldLoadLink()
 {
     bool continueLoad = true;
-    RefPtr<Document> originalDocument = document();
+    RefPtr<Document> originalDocument = &document();
     int recursionRank = ++m_beforeLoadRecurseCount;
     if (!dispatchBeforeLoadEvent(getNonEmptyURLAttribute(hrefAttr)))
         continueLoad = false;
 
     // A beforeload handler might have removed us from the document or changed the document.
-    if (continueLoad && (!inDocument() || document() != originalDocument))
+    if (continueLoad && (!inDocument() || &document() != originalDocument))
         continueLoad = false;
 
     // If the beforeload handler recurses into the link element by mutating it, we should only
@@ -198,7 +198,7 @@ Node::InsertionNotificationRequest HTMLLinkElement::insertedInto(ContainerNode* 
     if (m_isInShadowTree)
         return InsertionDone;
 
-    document()->styleSheetCollection()->addStyleSheetCandidateNode(this, m_createdByParser);
+    document().styleEngine()->addStyleSheetCandidateNode(this, m_createdByParser);
 
     process();
     return InsertionDone;
@@ -216,15 +216,15 @@ void HTMLLinkElement::removedFrom(ContainerNode* insertionPoint)
         ASSERT(!linkStyle() || !linkStyle()->hasSheet());
         return;
     }
-    document()->styleSheetCollection()->removeStyleSheetCandidateNode(this);
+    document().styleEngine()->removeStyleSheetCandidateNode(this);
 
     RefPtr<StyleSheet> removedSheet = sheet();
 
     if (m_link)
         m_link->ownerRemoved();
 
-    if (document()->renderer())
-        document()->removedStyleSheet(removedSheet.get());
+    if (document().renderer())
+        document().removedStyleSheet(removedSheet.get());
 }
 
 void HTMLLinkElement::finishParsingChildren()
@@ -240,32 +240,32 @@ bool HTMLLinkElement::styleSheetIsLoading() const
 
 void HTMLLinkElement::linkLoaded()
 {
-    dispatchEvent(Event::create(eventNames().loadEvent, false, false));
+    dispatchEvent(Event::create(eventNames().loadEvent));
 }
 
 void HTMLLinkElement::linkLoadingErrored()
 {
-    dispatchEvent(Event::create(eventNames().errorEvent, false, false));
+    dispatchEvent(Event::create(eventNames().errorEvent));
 }
 
 void HTMLLinkElement::didStartLinkPrerender()
 {
-    dispatchEvent(Event::create(eventNames().webkitprerenderstartEvent, false, false));
+    dispatchEvent(Event::create(eventNames().webkitprerenderstartEvent));
 }
 
 void HTMLLinkElement::didStopLinkPrerender()
 {
-    dispatchEvent(Event::create(eventNames().webkitprerenderstopEvent, false, false));
+    dispatchEvent(Event::create(eventNames().webkitprerenderstopEvent));
 }
 
 void HTMLLinkElement::didSendLoadForLinkPrerender()
 {
-    dispatchEvent(Event::create(eventNames().webkitprerenderloadEvent, false, false));
+    dispatchEvent(Event::create(eventNames().webkitprerenderloadEvent));
 }
 
 void HTMLLinkElement::didSendDOMContentLoadedForLinkPrerender()
 {
-    dispatchEvent(Event::create(eventNames().webkitprerenderdomcontentloadedEvent, false, false));
+    dispatchEvent(Event::create(eventNames().webkitprerenderdomcontentloadedEvent));
 }
 
 bool HTMLLinkElement::sheetLoaded()
@@ -313,7 +313,7 @@ bool HTMLLinkElement::isURLAttribute(const Attribute& attribute) const
 
 KURL HTMLLinkElement::href() const
 {
-    return document()->completeURL(getAttribute(hrefAttr));
+    return document().completeURL(getAttribute(hrefAttr));
 }
 
 String HTMLLinkElement::rel() const
@@ -395,7 +395,7 @@ LinkStyle::~LinkStyle()
         m_resource->removeClient(this);
 }
 
-Document* LinkStyle::document()
+Document& LinkStyle::document()
 {
     return m_owner->document();
 }
@@ -436,7 +436,7 @@ void LinkStyle::setCSSStyleSheet(const String& href, const KURL& baseURL, const 
     m_sheet->setMediaQueries(MediaQuerySet::create(m_owner->media()));
     m_sheet->setTitle(m_owner->title());
 
-    styleSheet->parseAuthorStyleSheet(cachedStyleSheet, m_owner->document()->securityOrigin());
+    styleSheet->parseAuthorStyleSheet(cachedStyleSheet, m_owner->document().securityOrigin());
 
     m_loading = false;
     styleSheet->notifyLoadedSheet(cachedStyleSheet);
@@ -496,7 +496,7 @@ void LinkStyle::addPendingSheet(PendingSheetType type)
 
     if (m_pendingSheetType == NonBlocking)
         return;
-    m_owner->document()->styleSheetCollection()->addPendingSheet();
+    m_owner->document().styleEngine()->addPendingSheet();
 }
 
 void LinkStyle::removePendingSheet(RemovePendingSheetNotificationType notification)
@@ -507,17 +507,19 @@ void LinkStyle::removePendingSheet(RemovePendingSheetNotificationType notificati
     if (type == None)
         return;
     if (type == NonBlocking) {
+        // Tell StyleEngine to re-compute styleSheets of this m_owner's treescope.
+        m_owner->document().styleEngine()->modifiedStyleSheetCandidateNode(m_owner);
         // Document::removePendingSheet() triggers the style selector recalc for blocking sheets.
         // FIXME: We don't have enough knowledge at this point to know if we're adding or removing a sheet
         // so we can't call addedStyleSheet() or removedStyleSheet().
-        m_owner->document()->styleResolverChanged(RecalcStyleImmediately);
+        m_owner->document().styleResolverChanged(RecalcStyleImmediately);
         return;
     }
 
-    m_owner->document()->styleSheetCollection()->removePendingSheet(
+    m_owner->document().styleEngine()->removePendingSheet(m_owner,
         notification == RemovePendingSheetNotifyImmediately
-        ? DocumentStyleSheetCollection::RemovePendingSheetNotifyImmediately
-        : DocumentStyleSheetCollection::RemovePendingSheetNotifyLater);
+        ? StyleEngine::RemovePendingSheetNotifyImmediately
+        : StyleEngine::RemovePendingSheetNotifyLater);
 }
 
 void LinkStyle::setDisabledState(bool disabled)
@@ -557,7 +559,7 @@ void LinkStyle::setDisabledState(bool disabled)
                 process();
         } else {
             // FIXME: We don't have enough knowledge here to know if we should call addedStyleSheet() or removedStyleSheet().
-            m_owner->document()->styleResolverChanged(DeferRecalcStyle);
+            m_owner->document().styleResolverChanged(RecalcStyleDeferred);
         }
     }
 }
@@ -571,19 +573,19 @@ void LinkStyle::process()
     if (m_owner->relAttribute().iconType() != InvalidIcon && builder.url().isValid() && !builder.url().isEmpty()) {
         if (!m_owner->shouldLoadLink())
             return;
-        if (!document()->securityOrigin()->canDisplay(builder.url()))
+        if (!document().securityOrigin()->canDisplay(builder.url()))
             return;
-        if (!document()->contentSecurityPolicy()->allowImageFromSource(builder.url()))
+        if (!document().contentSecurityPolicy()->allowImageFromSource(builder.url()))
             return;
-        if (document()->frame())
-            document()->frame()->loader()->client()->dispatchDidChangeIcons(m_owner->relAttribute().iconType());
+        if (document().frame())
+            document().frame()->loader()->client()->dispatchDidChangeIcons(m_owner->relAttribute().iconType());
     }
 
     if (!m_owner->loadLink(type, builder.url()))
         return;
 
     if ((m_disabledState != Disabled) && m_owner->relAttribute().isStyleSheet()
-        && document()->frame() && builder.url().isValid()) {
+        && document().frame() && builder.url().isValid()) {
 
         if (m_resource) {
             removePendingSheet();
@@ -600,7 +602,7 @@ void LinkStyle::process()
         if (!m_owner->media().isEmpty()) {
             RefPtr<RenderStyle> documentStyle = StyleResolver::styleForDocument(document());
             RefPtr<MediaQuerySet> media = MediaQuerySet::create(m_owner->media());
-            MediaQueryEvaluator evaluator(document()->frame()->view()->mediaType(), document()->frame(), documentStyle.get());
+            MediaQueryEvaluator evaluator(document().frame()->view()->mediaType(), document().frame(), documentStyle.get());
             mediaQueryMatches = evaluator.eval(media.get());
         }
 
@@ -611,7 +613,7 @@ void LinkStyle::process()
 
         // Load stylesheets that are not needed for the rendering immediately with low priority.
         FetchRequest request = builder.build(blocking);
-        m_resource = document()->fetcher()->requestCSSStyleSheet(request);
+        m_resource = document().fetcher()->fetchCSSStyleSheet(request);
 
         if (m_resource)
             m_resource->addClient(this);
@@ -624,7 +626,7 @@ void LinkStyle::process()
         // we no longer contain a stylesheet, e.g. perhaps rel or type was changed
         RefPtr<StyleSheet> removedSheet = m_sheet;
         clearSheet();
-        document()->removedStyleSheet(removedSheet.get());
+        document().removedStyleSheet(removedSheet.get());
     }
 }
 

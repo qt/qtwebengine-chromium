@@ -31,12 +31,12 @@
 #ifndef LayoutUnit_h
 #define LayoutUnit_h
 
-#include <limits.h>
-#include <limits>
-#include <math.h>
-#include <stdlib.h>
+#include "wtf/Assertions.h"
 #include "wtf/MathExtras.h"
 #include "wtf/SaturatedArithmetic.h"
+#include <limits.h>
+#include <limits>
+#include <stdlib.h>
 
 namespace WebCore {
 
@@ -131,7 +131,7 @@ public:
         returnValue.setRawValue(::abs(m_value));
         return returnValue;
     }
-#if OS(DARWIN)
+#if OS(MACOSX)
     int wtf_ceil() const
 #else
     int ceil() const

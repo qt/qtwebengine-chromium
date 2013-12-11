@@ -28,11 +28,17 @@ class WebCompositorSupportImpl : public WebKit::WebCompositorSupport {
   virtual WebKit::WebExternalTextureLayer* createExternalTextureLayer(
       WebKit::WebExternalTextureLayerClient* client);
   virtual WebKit::WebImageLayer* createImageLayer();
+  virtual WebKit::WebNinePatchLayer* createNinePatchLayer();
   virtual WebKit::WebSolidColorLayer* createSolidColorLayer();
   virtual WebKit::WebScrollbarLayer* createScrollbarLayer(
       WebKit::WebScrollbar* scrollbar,
       WebKit::WebScrollbarThemePainter painter,
       WebKit::WebScrollbarThemeGeometry*);
+  virtual WebKit::WebScrollbarLayer* createSolidColorScrollbarLayer(
+      WebKit::WebScrollbar::Orientation orientation, int thumb_thickness);
+  virtual WebKit::WebScrollbarLayer* createSolidColorScrollbarLayer(
+      WebKit::WebScrollbar::Orientation orientation, int thumb_thickness,
+      bool is_left_side_vertical_scrollbar);
   virtual WebKit::WebAnimation* createAnimation(
       const WebKit::WebAnimationCurve& curve,
       WebKit::WebAnimation::TargetProperty target,

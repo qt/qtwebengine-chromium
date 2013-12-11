@@ -289,7 +289,7 @@ public:
     virtual bool dispatchEvent(PassRefPtr<Event>) OVERRIDE;
 
 protected:
-    HTMLMediaElement(const QualifiedName&, Document*, bool);
+    HTMLMediaElement(const QualifiedName&, Document&, bool);
     virtual ~HTMLMediaElement();
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
@@ -336,15 +336,16 @@ private:
     virtual bool hasCustomFocusLogic() const OVERRIDE;
     virtual bool supportsFocus() const;
     virtual bool isMouseFocusable() const;
-    virtual bool rendererIsNeeded(const NodeRenderingContext&);
+    virtual bool rendererIsNeeded(const RenderStyle&);
     virtual RenderObject* createRenderer(RenderStyle*);
-    virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const OVERRIDE;
+    virtual bool childShouldCreateRenderer(const Node& child) const OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
-    virtual void didRecalcStyle(StyleChange);
+    virtual void didRecalcStyle(StyleRecalcChange);
 
     virtual void didBecomeFullscreenElement();
     virtual void willStopBeingFullscreenElement();
+    virtual bool isInteractiveContent() const OVERRIDE;
 
     // ActiveDOMObject functions.
     virtual bool canSuspend() const;
@@ -362,6 +363,7 @@ private:
     virtual void mediaPlayerTimeChanged() OVERRIDE;
     virtual void mediaPlayerDurationChanged() OVERRIDE;
     virtual void mediaPlayerPlaybackStateChanged() OVERRIDE;
+    virtual void mediaPlayerRequestSeek(double) OVERRIDE;
     virtual void mediaPlayerRepaint() OVERRIDE;
     virtual void mediaPlayerSizeChanged() OVERRIDE;
     virtual void mediaPlayerEngineUpdated() OVERRIDE;
@@ -600,14 +602,14 @@ struct ValueToString<TextTrackCue*> {
 };
 #endif
 
-inline bool isMediaElement(Node* node)
+inline bool isHTMLMediaElement(Node* node)
 {
     return node && node->isElementNode() && toElement(node)->isMediaElement();
 }
 
-inline HTMLMediaElement* toMediaElement(Node* node)
+inline HTMLMediaElement* toHTMLMediaElement(Node* node)
 {
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || isMediaElement(node));
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLMediaElement(node));
     return static_cast<HTMLMediaElement*>(node);
 }
 

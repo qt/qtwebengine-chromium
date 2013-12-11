@@ -37,7 +37,8 @@ public:
         ActiveDOMObjectType,
         DocumentLifecycleObserverType,
         GenericType,
-        PageLifecycleObserverType
+        PageLifecycleObserverType,
+        DOMWindowLifecycleObserverType
     };
 
     explicit LifecycleObserver(LifecycleContext*, Type = GenericType);
@@ -45,13 +46,15 @@ public:
     virtual void contextDestroyed();
 
     LifecycleContext* lifecycleContext() const { return m_lifecycleContext; }
+    Type observerType() const { return m_observerType; }
 
 protected:
     virtual ~LifecycleObserver();
 
-    void observeContext(LifecycleContext*, Type);
+    void observeContext(LifecycleContext*);
 
     LifecycleContext* m_lifecycleContext;
+    Type m_observerType;
 };
 
 } // namespace WebCore

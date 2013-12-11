@@ -37,6 +37,7 @@
 #include "core/dom/EventNames.h"
 #include "core/dom/EventQueue.h"
 #include "core/dom/ScriptExecutionContext.h"
+#include "core/platform/SharedBuffer.h"
 #include "modules/indexeddb/IDBCursorBackendInterface.h"
 #include "modules/indexeddb/IDBCursorWithValue.h"
 #include "modules/indexeddb/IDBDatabase.h"
@@ -78,7 +79,6 @@ IDBRequest::IDBRequest(ScriptExecutionContext* context, PassRefPtr<IDBAny> sourc
     , m_hasPendingActivity(true)
     , m_cursorType(IndexedDB::CursorKeyAndValue)
     , m_cursorDirection(IndexedDB::CursorNext)
-    , m_cursorFinished(false)
     , m_pendingCursor(0)
     , m_didFireUpgradeNeededEvent(false)
     , m_preventPropagation(false)
@@ -183,6 +183,7 @@ void IDBRequest::setPendingCursor(PassRefPtr<IDBCursor> cursor)
     ASSERT(!m_pendingCursor);
     ASSERT(cursor == getResultCursor());
 
+    m_hasPendingActivity = true;
     m_pendingCursor = cursor;
     m_result.clear();
     m_readyState = PENDING;
@@ -190,7 +191,7 @@ void IDBRequest::setPendingCursor(PassRefPtr<IDBCursor> cursor)
     m_transaction->registerRequest(this);
 }
 
-PassRefPtr<IDBCursor> IDBRequest::getResultCursor()
+IDBCursor* IDBRequest::getResultCursor()
 {
     if (!m_result)
         return 0;
@@ -201,26 +202,27 @@ PassRefPtr<IDBCursor> IDBRequest::getResultCursor()
     return 0;
 }
 
-void IDBRequest::setResultCursor(PassRefPtr<IDBCursor> cursor, PassRefPtr<IDBKey> key, PassRefPtr<IDBKey> primaryKey, const ScriptValue& value)
+void IDBRequest::setResultCursor(PassRefPtr<IDBCursor> cursor, PassRefPtr<IDBKey> key, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SharedBuffer> value)
 {
     ASSERT(m_readyState == PENDING);
     m_cursorKey = key;
     m_cursorPrimaryKey = primaryKey;
     m_cursorValue = value;
-
-    if (m_cursorType == IndexedDB::CursorKeyOnly) {
-        m_result = IDBAny::create(cursor);
-        return;
-    }
-
-    m_result = IDBAny::create(IDBCursorWithValue::fromCursor(cursor));
+    m_result = IDBAny::create(cursor);
 }
 
-void IDBRequest::finishCursor()
+void IDBRequest::checkForReferenceCycle()
 {
-    m_cursorFinished = true;
-    if (m_readyState != PENDING)
-        m_hasPendingActivity = false;
+    // If this request and its cursor have the only references
+    // to each other, then explicitly break the cycle.
+    IDBCursor* cursor = getResultCursor();
+    if (!cursor || cursor->request() != this)
+        return;
+
+    if (!hasOneRef() || !cursor->hasOneRef())
+        return;
+
+    m_result.clear();
 }
 
 bool IDBRequest::shouldEnqueueEvent() const
@@ -243,12 +245,12 @@ void IDBRequest::onError(PassRefPtr<DOMError> error)
 
     m_error = error;
     m_pendingCursor.clear();
-    enqueueEvent(Event::create(eventNames().errorEvent, true, true));
+    enqueueEvent(Event::createCancelableBubble(eventNames().errorEvent));
 }
 
 static PassRefPtr<Event> createSuccessEvent()
 {
-    return Event::create(eventNames().successEvent, false, false);
+    return Event::create(eventNames().successEvent);
 }
 
 void IDBRequest::onSuccess(const Vector<String>& stringList)
@@ -264,14 +266,12 @@ void IDBRequest::onSuccess(const Vector<String>& stringList)
     enqueueEvent(createSuccessEvent());
 }
 
-void IDBRequest::onSuccess(PassRefPtr<IDBCursorBackendInterface> backend, PassRefPtr<IDBKey> key, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SharedBuffer> buffer)
+void IDBRequest::onSuccess(PassRefPtr<IDBCursorBackendInterface> backend, PassRefPtr<IDBKey> key, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SharedBuffer> value)
 {
     IDB_TRACE("IDBRequest::onSuccess(IDBCursor)");
     if (!shouldEnqueueEvent())
         return;
 
-    DOMRequestState::Scope scope(m_requestState);
-    ScriptValue value = deserializeIDBValueBuffer(requestState(), buffer);
     ASSERT(!m_pendingCursor);
     RefPtr<IDBCursor> cursor;
     switch (m_cursorType) {
@@ -384,14 +384,12 @@ void IDBRequest::onSuccessInternal(const ScriptValue& value)
     enqueueEvent(createSuccessEvent());
 }
 
-void IDBRequest::onSuccess(PassRefPtr<IDBKey> key, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SharedBuffer> buffer)
+void IDBRequest::onSuccess(PassRefPtr<IDBKey> key, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SharedBuffer> value)
 {
     IDB_TRACE("IDBRequest::onSuccess(key, primaryKey, value)");
     if (!shouldEnqueueEvent())
         return;
 
-    DOMRequestState::Scope scope(m_requestState);
-    ScriptValue value = deserializeIDBValueBuffer(requestState(), buffer);
     ASSERT(m_pendingCursor);
     setResultCursor(m_pendingCursor.release(), key, primaryKey, value);
     enqueueEvent(createSuccessEvent());
@@ -462,10 +460,8 @@ bool IDBRequest::dispatchEvent(PassRefPtr<Event> event)
     RefPtr<IDBCursor> cursorToNotify;
     if (event->type() == eventNames().successEvent) {
         cursorToNotify = getResultCursor();
-        if (cursorToNotify) {
-            cursorToNotify->setValueReady(requestState(), m_cursorKey.release(), m_cursorPrimaryKey.release(), m_cursorValue);
-            m_cursorValue.clear();
-        }
+        if (cursorToNotify)
+            cursorToNotify->setValueReady(m_cursorKey.release(), m_cursorPrimaryKey.release(), m_cursorValue.release());
     }
 
     if (event->type() == eventNames().upgradeneededEvent) {
@@ -501,7 +497,7 @@ bool IDBRequest::dispatchEvent(PassRefPtr<Event> event)
     if (cursorToNotify)
         cursorToNotify->postSuccessHandlerCallback();
 
-    if (m_readyState == DONE && (!cursorToNotify || m_cursorFinished) && event->type() != eventNames().upgradeneededEvent)
+    if (m_readyState == DONE && event->type() != eventNames().upgradeneededEvent)
         m_hasPendingActivity = false;
 
     return dontPreventDefault;

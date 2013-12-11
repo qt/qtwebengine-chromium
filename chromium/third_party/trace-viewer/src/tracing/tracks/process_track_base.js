@@ -64,8 +64,16 @@ base.exportTo('tracing.tracks', function() {
 
       if (this.processBase_) {
         var modelSettings = new TraceModelSettings(this.processBase_.model);
+        var defaultValue;
+        if (this.processBase_.labels !== undefined &&
+            this.processBase_.labels.length == 1 &&
+            this.processBase_.labels[0] == 'chrome://tracing') {
+          defaultValue = false;
+        } else {
+          defaultValue = true;
+        }
         this.expanded = modelSettings.getSettingFor(
-            this.processBase_, 'expanded', true);
+            this.processBase_, 'expanded', defaultValue);
       }
 
       this.updateContents_();
@@ -126,9 +134,9 @@ base.exportTo('tracing.tracks', function() {
       this.didAppendTracks_();
     },
 
-    memoizeSlices_: function() {
+    addEventsToTrackMap: function(eventToTrackMap) {
       this.tracks_.forEach(function(track) {
-        track.memoizeSlices_();
+        track.addEventsToTrackMap(eventToTrackMap);
       });
     },
 
@@ -148,8 +156,8 @@ base.exportTo('tracing.tracks', function() {
       instanceTypeNames.forEach(function(typeName) {
         var allInstances = instancesByTypeName[typeName];
 
-        // If a object snapshot has a viewer it will be shown,
-        // unless the viewer asked for it to not be shown.
+        // If a object snapshot has a view it will be shown,
+        // unless the view asked for it to not be shown.
         var instanceViewInfo = ObjectInstanceView.getViewInfo(typeName);
         var snapshotViewInfo = ObjectSnapshotView.getViewInfo(typeName);
         if (instanceViewInfo && !instanceViewInfo.options.showInTrackView)
@@ -169,7 +177,7 @@ base.exportTo('tracing.tracks', function() {
             continue;
 
           // Do not create tracks for instances that have implicit snapshots
-          // and don't have a viewer.
+          // and don't have a view.
           if (instance.hasImplicitSnapshots && !hasViewInfo)
             continue;
 
@@ -185,7 +193,6 @@ base.exportTo('tracing.tracks', function() {
         if (!trackConstructor)
           trackConstructor = tracing.tracks.ObjectInstanceTrack;
         var track = new trackConstructor(this.viewport);
-        track.categoryFilter = this.categoryFilter_;
         track.objectInstances = visibleInstances;
         this.appendChild(track);
         didAppendAtLeastOneTrack = true;
@@ -196,14 +203,12 @@ base.exportTo('tracing.tracks', function() {
 
     appendCounterTracks_: function() {
       // Add counter tracks for this process.
-      var counters = base.dictionaryValues(this.processBase.counters).
-          filter(this.categoryFilter.matchCounter, this.categoryFilter);
+      var counters = base.dictionaryValues(this.processBase.counters);
       counters.sort(tracing.trace_model.Counter.compare);
 
       // Create the counters for this process.
       counters.forEach(function(counter) {
         var track = new tracing.tracks.CounterTrack(this.viewport);
-        track.categoryFilter = this.categoryFilter_;
         track.counter = counter;
         this.appendChild(track);
         this.appendChild(new SpacingTrack(this.viewport));
@@ -212,16 +217,12 @@ base.exportTo('tracing.tracks', function() {
 
     appendThreadTracks_: function() {
       // Get a sorted list of threads.
-      var threads = base.dictionaryValues(this.processBase.threads).
-          filter(function(thread) {
-            return this.categoryFilter_.matchThread(thread);
-          }, this);
+      var threads = base.dictionaryValues(this.processBase.threads);
       threads.sort(tracing.trace_model.Thread.compare);
 
       // Create the threads.
       threads.forEach(function(thread) {
         var track = new tracing.tracks.ThreadTrack(this.viewport);
-        track.categoryFilter = this.categoryFilter_;
         track.thread = thread;
         if (!track.hasVisibleContent)
           return;

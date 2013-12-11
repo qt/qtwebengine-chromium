@@ -1,73 +1,36 @@
 #!/usr/bin/python
-import json
-import optparse
-import os
+#
+# Copyright (C) 2013 Google Inc. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are
+# met:
+#
+#     * Redistributions of source code must retain the above copyright
+# notice, this list of conditions and the following disclaimer.
+#     * Redistributions in binary form must reproduce the above
+# copyright notice, this list of conditions and the following disclaimer
+# in the documentation and/or other materials provided with the
+# distribution.
+#     * Neither the name of Google Inc. nor the names of its
+# contributors may be used to endorse or promote products derived from
+# this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+# OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 import sys
 
-from webkitpy.common.host import Host
+from webkitpy.common import host
+from webkitpy.layout_tests import print_layout_test_times
 
-def main(argv):
-    parser = optparse.OptionParser(usage='%prog [times_ms.json]')
-    parser.add_option('-f', '--forward', action='store', type='int',
-                      help='group times by first N directories of test')
-    parser.add_option('-b', '--backward', action='store', type='int',
-                     help='group times by last N directories of test')
-
-    epilog = """
-       You can print out aggregate times per directory using the -f and -b
-       flags. The value passed to each flag indicates the "depth" of the flag,
-       similar to positive and negative arguments to python arrays.
-
-       For example, given fast/forms/week/week-input-type.html, -f 1
-       truncates to 'fast', -f 2 and -b 2 truncates to 'fast/forms', and -b 1
-       truncates to fast/forms/week . -f 0 truncates to '', which can be used
-       to produce a single total time for the run."""
-    parser.epilog = '\n'.join(s.lstrip() for s in epilog.splitlines())
-
-    options, args = parser.parse_args(argv)
-    host = Host()
-    if args and args[0]:
-        times_ms_path = args[0]
-    else:
-        times_ms_path = host.filesystem.join(host.port_factory.get().results_directory(), 'times_ms.json')
-
-    with open(times_ms_path, 'r') as fp:
-         times_trie = json.load(fp)
-
-    times = convert_trie_to_flat_paths(times_trie)
-
-    def key_for(path):
-        if options.forward is not None:
-            return os.sep.join(path.split(os.sep)[:-1][:options.forward])
-        if options.backward is not None:
-            return os.sep.join(path.split(os.sep)[:-options.backward])
-        return path
-
-    times_by_key = {}
-    for test_name in times:
-        key = key_for(test_name)
-        if key in times_by_key:
-            times_by_key[key] += times[test_name]
-        else:
-            times_by_key[key] = times[test_name]
-
-    for key in sorted(times_by_key):
-        print "%s %d" % (key, times_by_key[key])
-
-def convert_trie_to_flat_paths(trie, prefix=None):
-    # Cloned from webkitpy.layout_tests.layout_package.json_results_generator
-    # so that this code can stand alone.
-    result = {}
-    for name, data in trie.iteritems():
-        if prefix:
-            name = prefix + "/" + name
-        if isinstance(data, int):
-            result[name] = data
-        else:
-            result.update(convert_trie_to_flat_paths(data, name))
-
-    return result
-
-
-if __name__ ==  '__main__':
-    sys.exit(main(sys.argv[1:]))
+print_layout_test_times.main(host.Host(), sys.argv[1:])

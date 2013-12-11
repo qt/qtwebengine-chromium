@@ -35,9 +35,6 @@
 #include "core/dom/Document.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/loader/DocumentLoader.h"
-#include "core/loader/FrameLoader.h"
-#include "core/page/Frame.h"
 #include "weborigin/KURL.h"
 
 #include "DOMUtilitiesPrivate.h"
@@ -157,13 +154,13 @@ WebPasswordFormData::WebPasswordFormData(const WebFormElement& webForm)
     findPasswordFormFields(form.get(), &fields);
 
     // Get the document URL
-    KURL fullOrigin(ParsedURLString, form->document()->documentURI());
+    KURL fullOrigin(ParsedURLString, form->document().documentURI());
 
     // Calculate the canonical action URL
     String action = form->action();
     if (action.isNull())
         action = ""; // missing 'action' attribute implies current URL
-    KURL fullAction = form->document()->completeURL(action);
+    KURL fullAction = form->document().completeURL(action);
     if (!fullAction.isValid())
         return;
 

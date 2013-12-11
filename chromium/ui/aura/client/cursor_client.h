@@ -7,6 +7,7 @@
 
 #include "base/strings/string16.h"
 #include "ui/aura/aura_export.h"
+#include "ui/base/cursor/cursor.h"
 #include "ui/gfx/native_widget_types.h"
 
 namespace gfx {
@@ -34,6 +35,9 @@ class AURA_EXPORT CursorClient {
   // Sets the scale of the mouse cursor icon.
   virtual void SetScale(float scale) = 0;
 
+  // Sets the type of the mouse cursor icon.
+  virtual void SetCursorSet(ui::CursorSetType cursor_set) = 0;
+
   // Gets whether the cursor is visible.
   virtual bool IsCursorVisible() const = 0;
 
@@ -59,6 +63,9 @@ class AURA_EXPORT CursorClient {
   // set by the lastest call of SetCursor, ShowCursor/HideCursor, and
   // EnableMouseEvents/DisableMouseEvents.
   virtual void UnlockCursor() = 0;
+
+  // Returns true if the cursor is locked.
+  virtual bool IsCursorLocked() const = 0;
 
   // Used to add or remove a CursorClientObserver.
   virtual void AddObserver(CursorClientObserver* observer) = 0;

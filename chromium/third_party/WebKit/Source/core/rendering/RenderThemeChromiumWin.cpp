@@ -163,10 +163,10 @@ PassRefPtr<RenderTheme> RenderThemeChromiumWin::create()
     return adoptRef(new RenderThemeChromiumWin);
 }
 
-PassRefPtr<RenderTheme> RenderTheme::themeForPage(Page* page)
+RenderTheme& RenderTheme::theme()
 {
-    static RenderTheme* rt = RenderThemeChromiumWin::create().leakRef();
-    return rt;
+    static RenderTheme* renderTheme = RenderThemeChromiumWin::create().leakRef();
+    return *renderTheme;
 }
 
 bool RenderThemeChromiumWin::supportsFocusRing(const RenderStyle* style) const
@@ -552,7 +552,7 @@ bool RenderThemeChromiumWin::paintTextFieldInternal(RenderObject* o,
     // Fallback to white if the specified color object is invalid.
     Color backgroundColor(Color::white);
     if (o->style()->visitedDependentColor(CSSPropertyBackgroundColor).isValid())
-        backgroundColor = o->resolveColor(CSSPropertyBackgroundColor);
+        backgroundColor = o->style()->visitedDependentColor(CSSPropertyBackgroundColor);
 
     // If we have background-image, don't fill the content area to expose the
     // parent's background. Also, we shouldn't fill the content area if the

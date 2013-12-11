@@ -310,8 +310,10 @@ class StubConsumer : public media::VideoCaptureDevice::EventHandler {
   StubConsumer()
       : error_encountered_(false),
         wait_color_yuv_(0xcafe1950) {
-    buffer_pool_ =
-        new VideoCaptureBufferPool(kTestWidth * kTestHeight * 3 / 2, 2);
+    buffer_pool_ = new VideoCaptureBufferPool(
+        media::VideoFrame::AllocationSize(media::VideoFrame::I420,
+                                          gfx::Size(kTestWidth, kTestHeight)),
+        2);
     EXPECT_TRUE(buffer_pool_->Allocate());
   }
   virtual ~StubConsumer() {}
@@ -405,7 +407,7 @@ class StubConsumer : public media::VideoCaptureDevice::EventHandler {
     EXPECT_EQ(kTestWidth, info.width);
     EXPECT_EQ(kTestHeight, info.height);
     EXPECT_EQ(kTestFramesPerSecond, info.frame_rate);
-    EXPECT_EQ(media::VideoCaptureCapability::kI420, info.color);
+    EXPECT_EQ(media::PIXEL_FORMAT_I420, info.color);
   }
 
  private:
@@ -491,7 +493,7 @@ class WebContentsVideoCaptureDeviceTest : public testing::Test {
 
   // Accessors.
   CaptureTestSourceController* source() { return &controller_; }
-  media::VideoCaptureDevice* device() { return device_.get(); }
+  media::VideoCaptureDevice1* device() { return device_.get(); }
   StubConsumer* consumer() { return &consumer_; }
 
   void SimulateDrawEvent() {
@@ -530,7 +532,7 @@ class WebContentsVideoCaptureDeviceTest : public testing::Test {
   scoped_ptr<WebContents> web_contents_;
 
   // Finally, the WebContentsVideoCaptureDevice under test.
-  scoped_ptr<media::VideoCaptureDevice> device_;
+  scoped_ptr<media::VideoCaptureDevice1> device_;
 
   TestBrowserThreadBundle thread_bundle_;
 };
@@ -545,7 +547,7 @@ TEST_F(WebContentsVideoCaptureDeviceTest, InvalidInitialWebContentsError) {
       kTestWidth,
       kTestHeight,
       kTestFramesPerSecond,
-      media::VideoCaptureCapability::kI420,
+      media::PIXEL_FORMAT_I420,
       0,
       false,
       media::ConstantResolutionVideoCaptureDevice);
@@ -562,7 +564,7 @@ TEST_F(WebContentsVideoCaptureDeviceTest, WebContentsDestroyed) {
       kTestWidth,
       kTestHeight,
       kTestFramesPerSecond,
-      media::VideoCaptureCapability::kI420,
+      media::PIXEL_FORMAT_I420,
       0,
       false,
       media::ConstantResolutionVideoCaptureDevice);
@@ -591,7 +593,7 @@ TEST_F(WebContentsVideoCaptureDeviceTest,
       kTestWidth,
       kTestHeight,
       kTestFramesPerSecond,
-      media::VideoCaptureCapability::kI420,
+      media::PIXEL_FORMAT_I420,
       0,
       false,
       media::ConstantResolutionVideoCaptureDevice);
@@ -617,7 +619,7 @@ TEST_F(WebContentsVideoCaptureDeviceTest, StopWithRendererWorkToDo) {
       kTestWidth,
       kTestHeight,
       kTestFramesPerSecond,
-      media::VideoCaptureCapability::kI420,
+      media::PIXEL_FORMAT_I420,
       0,
       false,
       media::ConstantResolutionVideoCaptureDevice);
@@ -647,7 +649,7 @@ TEST_F(WebContentsVideoCaptureDeviceTest, DeviceRestart) {
       kTestWidth,
       kTestHeight,
       kTestFramesPerSecond,
-      media::VideoCaptureCapability::kI420,
+      media::PIXEL_FORMAT_I420,
       0,
       false,
       media::ConstantResolutionVideoCaptureDevice);
@@ -689,7 +691,7 @@ TEST_F(WebContentsVideoCaptureDeviceTest, GoesThroughAllTheMotions) {
       kTestWidth,
       kTestHeight,
       kTestFramesPerSecond,
-      media::VideoCaptureCapability::kI420,
+      media::PIXEL_FORMAT_I420,
       0,
       false,
       media::ConstantResolutionVideoCaptureDevice);
@@ -745,13 +747,13 @@ TEST_F(WebContentsVideoCaptureDeviceTest, RejectsInvalidAllocateParams) {
       1280,
       720,
       -2,
-      media::VideoCaptureCapability::kI420,
+      media::PIXEL_FORMAT_I420,
       0,
       false,
       media::ConstantResolutionVideoCaptureDevice);
   BrowserThread::PostTask(BrowserThread::UI,
                           FROM_HERE,
-                          base::Bind(&media::VideoCaptureDevice::Allocate,
+                          base::Bind(&media::VideoCaptureDevice1::Allocate,
                                      base::Unretained(device()),
                                      capture_format,
                                      consumer()));
@@ -763,7 +765,7 @@ TEST_F(WebContentsVideoCaptureDeviceTest, BadFramesGoodFrames) {
       kTestWidth,
       kTestHeight,
       kTestFramesPerSecond,
-      media::VideoCaptureCapability::kI420,
+      media::PIXEL_FORMAT_I420,
       0,
       false,
       media::ConstantResolutionVideoCaptureDevice);

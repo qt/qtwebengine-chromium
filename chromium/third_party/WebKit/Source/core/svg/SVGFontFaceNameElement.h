@@ -21,6 +21,7 @@
 #define SVGFontFaceNameElement_h
 
 #if ENABLE(SVG_FONTS)
+#include "SVGNames.h"
 #include "core/svg/SVGElement.h"
 
 namespace WebCore {
@@ -29,15 +30,21 @@ class CSSFontFaceSrcValue;
 
 class SVGFontFaceNameElement FINAL : public SVGElement {
 public:
-    static PassRefPtr<SVGFontFaceNameElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGFontFaceNameElement> create(const QualifiedName&, Document&);
 
     PassRefPtr<CSSFontFaceSrcValue> srcValue() const;
 
 private:
-    SVGFontFaceNameElement(const QualifiedName&, Document*);
+    SVGFontFaceNameElement(const QualifiedName&, Document&);
 
-    virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
 };
+
+inline SVGFontFaceNameElement* toSVGFontFaceNameElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::font_face_nameTag));
+    return static_cast<SVGFontFaceNameElement*>(node);
+}
 
 } // namespace WebCore
 

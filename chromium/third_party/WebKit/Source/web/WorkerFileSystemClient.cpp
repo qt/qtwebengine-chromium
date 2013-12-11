@@ -31,14 +31,13 @@
 #include "config.h"
 #include "WorkerFileSystemClient.h"
 
-#include "WebFileSystemCallbacksImpl.h"
 #include "WebWorkerBase.h"
 #include "WorkerAllowMainThreadBridgeBase.h"
-#include "WorkerFileSystemCallbacksBridge.h"
 #include "core/dom/ScriptExecutionContext.h"
 #include "core/platform/AsyncFileSystemCallbacks.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerThread.h"
+#include "public/platform/Platform.h"
 #include "public/platform/WebFileError.h"
 #include "public/platform/WebFileSystem.h"
 #include "public/platform/WebFileSystemType.h"
@@ -106,32 +105,6 @@ bool WorkerFileSystemClient::allowFileSystem(ScriptExecutionContext* context)
     }
 
     return bridge->result();
-}
-
-void WorkerFileSystemClient::openFileSystem(ScriptExecutionContext* context, WebCore::FileSystemType type, PassOwnPtr<AsyncFileSystemCallbacks> callbacks, FileSystemSynchronousType synchronousType, long long size, OpenFileSystemMode openMode)
-{
-    WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
-    WebWorkerBase* webWorker = static_cast<WebWorkerBase*>(workerGlobalScope->thread()->workerLoaderProxy().toWebWorkerBase());
-    WebCore::WorkerThread* workerThread = workerGlobalScope->thread();
-    WorkerRunLoop& runLoop = workerThread->runLoop();
-    WebCore::WorkerLoaderProxy* workerLoaderProxy =  &workerThread->workerLoaderProxy();
-
-    String mode = "openFileSystemMode";
-    mode.append(String::number(runLoop.createUniqueId()));
-
-    RefPtr<WorkerFileSystemCallbacksBridge> bridge = WorkerFileSystemCallbacksBridge::create(workerLoaderProxy, workerGlobalScope, new WebFileSystemCallbacksImpl(callbacks, context, synchronousType));
-    bridge->postOpenFileSystemToMainThread(webWorker->commonClient(), static_cast<WebFileSystemType>(type), size, openMode == CreateFileSystemIfNotPresent, mode);
-
-    if (synchronousType == SynchronousFileSystem) {
-        // FIXME: This synchoronous execution should be replaced with better model.
-        if (runLoop.runInMode(workerGlobalScope, mode) == MessageQueueTerminated)
-            bridge->stop();
-    }
-}
-
-void WorkerFileSystemClient::deleteFileSystem(WebCore::ScriptExecutionContext*, WebCore::FileSystemType, PassOwnPtr<WebCore::AsyncFileSystemCallbacks>)
-{
-    ASSERT_NOT_REACHED();
 }
 
 WorkerFileSystemClient::WorkerFileSystemClient()

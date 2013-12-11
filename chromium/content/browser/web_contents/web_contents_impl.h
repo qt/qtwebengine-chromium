@@ -223,6 +223,8 @@ class CONTENT_EXPORT WebContentsImpl
   virtual int GetEmbeddedInstanceID() const OVERRIDE;
   virtual int GetRoutingID() const OVERRIDE;
   virtual RenderWidgetHostView* GetRenderWidgetHostView() const OVERRIDE;
+  virtual RenderWidgetHostView* GetFullscreenRenderWidgetHostView() const
+      OVERRIDE;
   virtual WebContentsView* GetView() const OVERRIDE;
   virtual WebUI* CreateWebUI(const GURL& url) OVERRIDE;
   virtual WebUI* GetWebUI() const OVERRIDE;
@@ -275,7 +277,7 @@ class CONTENT_EXPORT WebContentsImpl
                          const Referrer& referrer) OVERRIDE;
   virtual void GenerateMHTML(
       const base::FilePath& file,
-      const base::Callback<void(const base::FilePath&, int64)>& callback)
+      const base::Callback<void(int64)>& callback)
           OVERRIDE;
   virtual bool IsActiveEntry(int32 page_id) OVERRIDE;
 
@@ -304,8 +306,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void DidEndColorChooser() OVERRIDE;
   virtual int DownloadImage(const GURL& url,
                             bool is_favicon,
-                            uint32_t preferred_image_size,
-                            uint32_t max_image_size,
+                            uint32_t max_bitmap_size,
                             const ImageDownloadCallback& callback) OVERRIDE;
 
   // Implementation of PageNavigator.
@@ -347,6 +348,10 @@ class CONTENT_EXPORT WebContentsImpl
       RenderViewHost* render_view_host,
       const ViewHostMsg_DidFailProvisionalLoadWithError_Params& params)
           OVERRIDE;
+  virtual void DidGetResourceResponseStart(
+      const ResourceRequestDetails& details) OVERRIDE;
+  virtual void DidGetRedirectForResourceRequest(
+      const ResourceRedirectDetails& details) OVERRIDE;
   virtual void DidNavigate(
       RenderViewHost* render_view_host,
       const ViewHostMsg_FrameNavigate_Params& params) OVERRIDE;
@@ -414,6 +419,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void OnUserGesture() OVERRIDE;
   virtual void OnIgnoredUIEvent() OVERRIDE;
   virtual void RendererUnresponsive(RenderViewHost* render_view_host,
+                                    bool is_during_beforeunload,
                                     bool is_during_unload) OVERRIDE;
   virtual void RendererResponsive(RenderViewHost* render_view_host) OVERRIDE;
   virtual void LoadStateChanged(const GURL& url,
@@ -487,6 +493,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void RenderProcessGoneFromRenderManager(
       RenderViewHost* render_view_host) OVERRIDE;
   virtual void UpdateRenderViewSizeForRenderManager() OVERRIDE;
+  virtual void CancelModalDialogsForRenderManager() OVERRIDE;
   virtual void NotifySwappedFromRenderManager(
       RenderViewHost* old_render_view_host) OVERRIDE;
   virtual int CreateOpenerRenderViewsForRenderManager(
@@ -499,6 +506,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual bool FocusLocationBarByDefault() OVERRIDE;
   virtual void SetFocusToLocationBar(bool select_all) OVERRIDE;
   virtual void CreateViewAndSetSizeForRVH(RenderViewHost* rvh) OVERRIDE;
+  virtual bool IsHidden() OVERRIDE;
 
   // NotificationObserver ------------------------------------------------------
 
@@ -625,8 +633,8 @@ class CONTENT_EXPORT WebContentsImpl
   void OnDidDownloadImage(int id,
                           int http_status_code,
                           const GURL& image_url,
-                          int requested_size,
-                          const std::vector<SkBitmap>& bitmaps);
+                          const std::vector<SkBitmap>& bitmaps,
+                          const std::vector<gfx::Size>& original_bitmap_sizes);
   void OnUpdateFaviconURL(int32 page_id,
                           const std::vector<FaviconURL>& candidates);
   void OnFrameAttached(int64 parent_frame_id,
@@ -738,7 +746,6 @@ class CONTENT_EXPORT WebContentsImpl
 
   // Helper functions for sending notifications.
   void NotifySwapped(RenderViewHost* old_render_view_host);
-  void NotifyConnected();
   void NotifyDisconnected();
   void NotifyNavigationEntryCommitted(const LoadCommittedDetails& load_details);
 
@@ -756,6 +763,9 @@ class CONTENT_EXPORT WebContentsImpl
 
   // Clear all PowerSaveBlockers, leave power_save_blocker_ empty.
   void ClearAllPowerSaveBlockers();
+
+  // Helper function to invoke WebContentsDelegate::GetSizeForNewRenderView().
+  gfx::Size GetSizeForNewRenderView() const;
 
   // Data for core operation ---------------------------------------------------
 

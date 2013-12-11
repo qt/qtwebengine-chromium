@@ -34,6 +34,7 @@
 #include "core/css/CSSPropertySourceData.h"
 #include "core/css/CSSSelector.h"
 #include "core/css/MediaQuery.h"
+#include "core/css/StylePropertySet.h"
 #include "core/page/UseCounter.h"
 #include "core/platform/graphics/Color.h"
 #include "wtf/HashSet.h"
@@ -109,6 +110,7 @@ public:
     bool parseDeclaration(MutableStylePropertySet*, const String&, SourceDataHandler*, StyleSheetContents* contextStyleSheet);
     static PassRefPtr<ImmutableStylePropertySet> parseInlineStyleDeclaration(const String&, Element*);
     PassRefPtr<MediaQuerySet> parseMediaQueryList(const String&);
+    PassOwnPtr<Vector<double> > parseKeyframeKeyList(const String&);
 
     void addPropertyWithPrefixingVariant(CSSPropertyID, PassRefPtr<CSSValue>, bool important, bool implicit = false);
     void addProperty(CSSPropertyID, PassRefPtr<CSSValue>, bool important, bool implicit = false);
@@ -123,7 +125,7 @@ public:
     bool parseContent(CSSPropertyID, bool important);
     bool parseQuotes(CSSPropertyID, bool important);
 
-    static bool parseValue(MutableStylePropertySet*, CSSPropertyID, const String&, bool important, Document*);
+    static bool parseValue(MutableStylePropertySet*, CSSPropertyID, const String&, bool important, const Document&);
     void storeVariableDeclaration(const CSSParserString&, PassOwnPtr<CSSParserValueList>, bool important);
 
     PassRefPtr<CSSValue> parseAttr(CSSParserValueList* args);
@@ -167,7 +169,7 @@ public:
     bool parseCubicBezierTimingFunctionValue(CSSParserValueList*& args, double& result);
     bool parseAnimationProperty(CSSPropertyID, RefPtr<CSSValue>&, AnimationParseContext&);
     bool parseTransitionShorthand(CSSPropertyID, bool important);
-    bool parseAnimationShorthand(bool important);
+    bool parseAnimationShorthand(CSSPropertyID, bool important);
 
     PassRefPtr<CSSValue> parseColumnWidth();
     PassRefPtr<CSSValue> parseColumnCount();
@@ -180,7 +182,7 @@ public:
     bool parseSingleGridAreaLonghand(RefPtr<CSSValue>&);
     bool parseGridTrackList(CSSPropertyID, bool important);
     bool parseGridTrackRepeatFunction(CSSValueList&);
-    PassRefPtr<CSSPrimitiveValue> parseGridTrackSize(CSSParserValueList& inputList);
+    PassRefPtr<CSSValue> parseGridTrackSize(CSSParserValueList& inputList);
     PassRefPtr<CSSPrimitiveValue> parseGridBreadth(CSSParserValue*);
     PassRefPtr<CSSValue> parseGridTemplate();
 
@@ -220,6 +222,8 @@ public:
     PassRefPtr<CSSValue> parseSVGColor();
     PassRefPtr<CSSValue> parseSVGStrokeDasharray();
 
+    PassRefPtr<CSSValue> parsePaintOrder() const;
+
     // CSS3 Parsing Routines (for properties specific to CSS3)
     PassRefPtr<CSSValueList> parseShadow(CSSParserValueList*, CSSPropertyID);
     bool parseBorderImage(CSSPropertyID, RefPtr<CSSValue>&, bool important = false);
@@ -234,6 +238,8 @@ public:
     bool parseReflect(CSSPropertyID, bool important);
 
     bool parseFlex(CSSParserValueList* args, bool important);
+
+    bool parseObjectPosition(bool important);
 
     // Image generators
     bool parseCanvas(CSSParserValueList*, RefPtr<CSSValue>&);
@@ -310,7 +316,7 @@ public:
     MediaQuerySet* createMediaQuerySet();
     StyleRuleBase* createImportRule(const CSSParserString&, MediaQuerySet*);
     StyleKeyframe* createKeyframe(CSSParserValueList*);
-    StyleRuleKeyframes* createKeyframesRule(const String&, PassOwnPtr<Vector<RefPtr<StyleKeyframe> > >);
+    StyleRuleKeyframes* createKeyframesRule(const String&, PassOwnPtr<Vector<RefPtr<StyleKeyframe> > >, bool isPrefixed);
 
     typedef Vector<RefPtr<StyleRuleBase> > RuleList;
     StyleRuleBase* createMediaRule(MediaQuerySet*, RuleList*);
@@ -456,6 +462,30 @@ private:
         WebCore::CSSParser* m_parser;
     };
 
+    class StyleDeclarationScope {
+        WTF_MAKE_NONCOPYABLE(StyleDeclarationScope);
+    public:
+        StyleDeclarationScope(CSSParser* parser, const StylePropertySet* declaration)
+            : m_parser(parser)
+            , m_mode(declaration->cssParserMode())
+        {
+            if (m_mode == ViewportMode) {
+                ASSERT(!m_parser->inViewport());
+                m_parser->markViewportRuleBodyStart();
+            }
+        }
+
+        ~StyleDeclarationScope()
+        {
+            if (m_mode == ViewportMode)
+                m_parser->markViewportRuleBodyEnd();
+        }
+
+    private:
+        CSSParser* m_parser;
+        CSSParserMode m_mode;
+    };
+
     bool is8BitSource() const { return m_is8BitSource; }
 
     template <typename SourceCharacterType>
@@ -533,8 +563,8 @@ private:
 
     void setStyleSheet(StyleSheetContents* styleSheet) { m_styleSheet = styleSheet; }
 
-    inline bool inStrictMode() const { return m_context.mode == CSSStrictMode || m_context.mode == SVGAttributeMode; }
-    inline bool inQuirksMode() const { return m_context.mode == CSSQuirksMode; }
+    inline bool inStrictMode() const { return isStrictParserMode(m_context.mode); }
+    inline bool inQuirksMode() const { return m_context.mode == CSSQuirksMode || m_context.mode == CSSAttributeMode; }
 
     KURL completeURL(const String& url) const;
 
@@ -613,6 +643,8 @@ private:
     bool m_inViewport;
 
     CSSParserLocation m_locationLabel;
+
+    bool useLegacyBackgroundSizeShorthandBehavior() const;
 
     int (CSSParser::*m_lexFunc)(void*);
 

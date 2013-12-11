@@ -37,13 +37,16 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/TextIterator.h"
-#include "core/html/FormController.h"
 #include "core/html/FormDataList.h"
+#include "core/html/forms/FormController.h"
+#include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/TextControlInnerElements.h"
 #include "core/page/Frame.h"
 #include "core/platform/LocalizedStrings.h"
+#include "core/platform/text/PlatformLocale.h"
 #include "core/rendering/RenderTextControlMultiLine.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
@@ -78,12 +81,11 @@ static inline unsigned computeLengthForSubmission(const String& text)
     return text.length() + numberOfLineBreaks(text);
 }
 
-HTMLTextAreaElement::HTMLTextAreaElement(const QualifiedName& tagName, Document* document, HTMLFormElement* form)
+HTMLTextAreaElement::HTMLTextAreaElement(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
     : HTMLTextFormControlElement(tagName, document, form)
     , m_rows(defaultRows)
     , m_cols(defaultCols)
     , m_wrap(SoftWrap)
-    , m_placeholder(0)
     , m_isDirty(false)
     , m_wasModifiedByUser(false)
 {
@@ -92,7 +94,7 @@ HTMLTextAreaElement::HTMLTextAreaElement(const QualifiedName& tagName, Document*
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLTextAreaElement> HTMLTextAreaElement::create(const QualifiedName& tagName, Document* document, HTMLFormElement* form)
+PassRefPtr<HTMLTextAreaElement> HTMLTextAreaElement::create(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
 {
     RefPtr<HTMLTextAreaElement> textArea = adoptRef(new HTMLTextAreaElement(tagName, document, form));
     textArea->ensureUserAgentShadowRoot();
@@ -101,7 +103,7 @@ PassRefPtr<HTMLTextAreaElement> HTMLTextAreaElement::create(const QualifiedName&
 
 void HTMLTextAreaElement::didAddUserAgentShadowRoot(ShadowRoot* root)
 {
-    root->appendChild(TextControlInnerTextElement::create(document()), ASSERT_NO_EXCEPTION);
+    root->appendChild(TextControlInnerTextElement::create(document()));
 }
 
 const AtomicString& HTMLTextAreaElement::formControlType() const
@@ -210,7 +212,7 @@ bool HTMLTextAreaElement::appendFormData(FormDataList& encoding, bool)
     if (name().isEmpty())
         return false;
 
-    document()->updateLayout();
+    document().updateLayout();
 
     const String& text = (m_wrap == HardWrap) ? valueWithHardLineBreaks() : value();
     encoding.appendData(name(), text);
@@ -252,8 +254,8 @@ void HTMLTextAreaElement::updateFocusAppearance(bool restorePreviousSelection)
     } else
         restoreCachedSelection();
 
-    if (document()->frame())
-        document()->frame()->selection()->revealSelection();
+    if (document().frame())
+        document().frame()->selection().revealSelection();
 }
 
 void HTMLTextAreaElement::defaultEventHandler(Event* event)
@@ -264,6 +266,12 @@ void HTMLTextAreaElement::defaultEventHandler(Event* event)
         handleBeforeTextInsertedEvent(static_cast<BeforeTextInsertedEvent*>(event));
 
     HTMLTextFormControlElement::defaultEventHandler(event);
+}
+
+void HTMLTextAreaElement::handleFocusEvent(Element*, FocusDirection)
+{
+    if (Frame* frame = document().frame())
+        frame->editor().textAreaOrTextFieldDidBeginEditing(this);
 }
 
 void HTMLTextAreaElement::subtreeHasChanged()
@@ -298,7 +306,7 @@ void HTMLTextAreaElement::handleBeforeTextInsertedEvent(BeforeTextInsertedEvent*
     // If the text field has no focus, we don't need to take account of the
     // selection length. The selection is the source of text drag-and-drop in
     // that case, and nothing in the text field will be removed.
-    unsigned selectionLength = focused() ? computeLengthForSubmission(plainText(document()->frame()->selection()->selection().toNormalizedRange().get())) : 0;
+    unsigned selectionLength = focused() ? computeLengthForSubmission(plainText(document().frame()->selection().selection().toNormalizedRange().get())) : 0;
     ASSERT(currentLength >= selectionLength);
     unsigned baseLength = currentLength - selectionLength;
     unsigned appendableLength = unsignedMaxLength > baseLength ? unsignedMaxLength - baseLength : 0;
@@ -380,7 +388,7 @@ void HTMLTextAreaElement::setValueCommon(const String& newValue)
     setFormControlValueMatchesRenderer(true);
 
     // Set the caret to the end of the text value.
-    if (document()->focusedElement() == this) {
+    if (document().focusedElement() == this) {
         unsigned endOfString = m_value.length();
         setSelectionRange(endOfString, endOfString);
     }
@@ -421,7 +429,7 @@ void HTMLTextAreaElement::setDefaultValue(const String& defaultValue)
     value.replace("\r\n", "\n");
     value.replace('\r', '\n');
 
-    insertBefore(document()->createTextNode(value), firstChild(), IGNORE_EXCEPTION);
+    insertBefore(document().createTextNode(value), firstChild(), IGNORE_EXCEPTION);
 
     if (!m_isDirty)
         setNonDirtyValue(value);
@@ -454,7 +462,7 @@ String HTMLTextAreaElement::validationMessage() const
         return validationMessageValueMissingText();
 
     if (tooLong())
-        return validationMessageTooLongText(computeLengthForSubmission(value()), maxLength());
+        return locale().validationMessageTooLongText(computeLengthForSubmission(value()), maxLength());
 
     return String();
 }
@@ -507,17 +515,6 @@ bool HTMLTextAreaElement::shouldUseInputMethod()
     return true;
 }
 
-HTMLElement* HTMLTextAreaElement::placeholderElement() const
-{
-    return m_placeholder;
-}
-
-void HTMLTextAreaElement::attach(const AttachContext& context)
-{
-    HTMLTextFormControlElement::attach(context);
-    fixPlaceholderRenderer(m_placeholder, innerTextElement());
-}
-
 bool HTMLTextAreaElement::matchesReadOnlyPseudoClass() const
 {
     return isReadOnly();
@@ -530,22 +527,26 @@ bool HTMLTextAreaElement::matchesReadWritePseudoClass() const
 
 void HTMLTextAreaElement::updatePlaceholderText()
 {
+    HTMLElement* placeholder = placeholderElement();
     String placeholderText = strippedPlaceholder();
     if (placeholderText.isEmpty()) {
-        if (m_placeholder) {
-            userAgentShadowRoot()->removeChild(m_placeholder, ASSERT_NO_EXCEPTION);
-            m_placeholder = 0;
-        }
+        if (placeholder)
+            userAgentShadowRoot()->removeChild(placeholder);
         return;
     }
-    if (!m_placeholder) {
-        RefPtr<HTMLDivElement> placeholder = HTMLDivElement::create(document());
-        m_placeholder = placeholder.get();
-        m_placeholder->setPart(AtomicString("-webkit-input-placeholder", AtomicString::ConstructFromLiteral));
-        userAgentShadowRoot()->insertBefore(m_placeholder, innerTextElement()->nextSibling(), ASSERT_NO_EXCEPTION);
+    if (!placeholder) {
+        RefPtr<HTMLDivElement> newElement = HTMLDivElement::create(document());
+        placeholder = newElement.get();
+        placeholder->setPart(AtomicString("-webkit-input-placeholder", AtomicString::ConstructFromLiteral));
+        placeholder->setAttribute(idAttr, ShadowElementNames::placeholder());
+        userAgentShadowRoot()->insertBefore(placeholder, innerTextElement()->nextSibling());
     }
-    m_placeholder->setInnerText(placeholderText, ASSERT_NO_EXCEPTION);
-    fixPlaceholderRenderer(m_placeholder, innerTextElement());
+    placeholder->setTextContent(placeholderText, ASSERT_NO_EXCEPTION);
+}
+
+bool HTMLTextAreaElement::isInteractiveContent() const
+{
+    return true;
 }
 
 }

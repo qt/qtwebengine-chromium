@@ -49,7 +49,7 @@ scoped_refptr<ProxyResolverScriptData> LoadScriptData(const char* filename) {
 
   // Try to read the file from disk.
   std::string file_contents;
-  bool ok = file_util::ReadFileToString(path, &file_contents);
+  bool ok = base::ReadFileToString(path, &file_contents);
 
   // If we can't load the file from disk, something is misconfigured.
   EXPECT_TRUE(ok) << "Failed to read file: " << path.value();
@@ -764,6 +764,7 @@ class BlockableHostResolver : public HostResolver {
       : num_cancelled_requests_(0), waiting_for_resolve_(false) {}
 
   virtual int Resolve(const RequestInfo& info,
+                      RequestPriority priority,
                       AddressList* addresses,
                       const CompletionCallback& callback,
                       RequestHandle* out_req,

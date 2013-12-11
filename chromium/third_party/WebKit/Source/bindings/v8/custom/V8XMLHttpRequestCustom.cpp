@@ -35,17 +35,19 @@
 #include "V8Document.h"
 #include "V8FormData.h"
 #include "V8HTMLDocument.h"
+#include "V8Stream.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8Utilities.h"
 #include "bindings/v8/custom/V8ArrayBufferCustom.h"
 #include "bindings/v8/custom/V8ArrayBufferViewCustom.h"
 #include "core/dom/Document.h"
+#include "core/fileapi/Stream.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/page/Frame.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/xml/XMLHttpRequest.h"
 #include "wtf/ArrayBuffer.h"
+#include <v8.h>
 
 namespace WebCore {
 
@@ -66,7 +68,7 @@ void V8XMLHttpRequest::constructorCustom(const v8::FunctionCallbackInfo<v8::Valu
     args.GetReturnValue().Set(wrapper);
 }
 
-void V8XMLHttpRequest::responseTextAttrGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
+void V8XMLHttpRequest::responseTextAttributeGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     XMLHttpRequest* xmlHttpRequest = V8XMLHttpRequest::toNative(info.Holder());
     ExceptionState es(info.GetIsolate());
@@ -80,15 +82,42 @@ void V8XMLHttpRequest::responseTextAttrGetterCustom(v8::Local<v8::String> name, 
     v8SetReturnValue(info, text.v8Value());
 }
 
-void V8XMLHttpRequest::responseAttrGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
+void V8XMLHttpRequest::responseAttributeGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     XMLHttpRequest* xmlHttpRequest = V8XMLHttpRequest::toNative(info.Holder());
 
     switch (xmlHttpRequest->responseTypeCode()) {
     case XMLHttpRequest::ResponseTypeDefault:
     case XMLHttpRequest::ResponseTypeText:
-        responseTextAttrGetterCustom(name, info);
+        responseTextAttributeGetterCustom(name, info);
         return;
+
+    case XMLHttpRequest::ResponseTypeJSON:
+        {
+            v8::Isolate* isolate = info.GetIsolate();
+
+            ExceptionState es(isolate);
+            ScriptString jsonSource = xmlHttpRequest->responseJSONSource();
+            if (es.throwIfNeeded())
+                return;
+
+            if (jsonSource.hasNoValue() || !jsonSource.v8Value()->IsString()) {
+                v8SetReturnValue(info, v8NullWithCheck(isolate));
+                return;
+            }
+
+            // Catch syntax error.
+            v8::TryCatch exceptionCatcher;
+
+            v8::Handle<v8::Value> json = v8::JSON::Parse(jsonSource.v8Value().As<v8::String>());
+
+            if (exceptionCatcher.HasCaught() || json.IsEmpty())
+                v8SetReturnValue(info, v8NullWithCheck(isolate));
+            else
+                v8SetReturnValue(info, json);
+
+            return;
+        }
 
     case XMLHttpRequest::ResponseTypeDocument:
         {
@@ -96,31 +125,31 @@ void V8XMLHttpRequest::responseAttrGetterCustom(v8::Local<v8::String> name, cons
             Document* document = xmlHttpRequest->responseXML(es);
             if (es.throwIfNeeded())
                 return;
-            v8SetReturnValue(info, toV8Fast(document, info, xmlHttpRequest));
+            v8SetReturnValueFast(info, document, xmlHttpRequest);
             return;
         }
 
     case XMLHttpRequest::ResponseTypeBlob:
         {
-            ExceptionState es(info.GetIsolate());
-            Blob* blob = xmlHttpRequest->responseBlob(es);
-            if (es.throwIfNeeded())
-                return;
-            v8SetReturnValue(info, toV8Fast(blob, info, xmlHttpRequest));
+            Blob* blob = xmlHttpRequest->responseBlob();
+            v8SetReturnValueFast(info, blob, xmlHttpRequest);
+            return;
+        }
+
+    case XMLHttpRequest::ResponseTypeStream:
+        {
+            Stream* stream = xmlHttpRequest->responseStream();
+            v8SetReturnValueFast(info, stream, xmlHttpRequest);
             return;
         }
 
     case XMLHttpRequest::ResponseTypeArrayBuffer:
         {
-            ExceptionState es(info.GetIsolate());
-            ArrayBuffer* arrayBuffer = xmlHttpRequest->responseArrayBuffer(es);
-            if (es.throwIfNeeded())
-                return;
-            if (arrayBuffer && !arrayBuffer->hasDeallocationObserver()) {
+            ArrayBuffer* arrayBuffer = xmlHttpRequest->responseArrayBuffer();
+            if (arrayBuffer) {
                 arrayBuffer->setDeallocationObserver(V8ArrayBufferDeallocationObserver::instance());
-                v8::V8::AdjustAmountOfExternalAllocatedMemory(arrayBuffer->byteLength());
             }
-            v8SetReturnValue(info, toV8Fast(arrayBuffer, info, xmlHttpRequest));
+            v8SetReturnValueFast(info, arrayBuffer, xmlHttpRequest);
             return;
         }
     }
@@ -141,8 +170,8 @@ void V8XMLHttpRequest::openMethodCustom(const v8::FunctionCallbackInfo<v8::Value
 
     XMLHttpRequest* xmlHttpRequest = V8XMLHttpRequest::toNative(args.Holder());
 
-    String method = toWebCoreString(args[0]);
-    String urlstring = toWebCoreString(args[1]);
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, method, args[0]);
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, urlstring, args[1]);
 
     ScriptExecutionContext* context = getScriptExecutionContext();
     KURL url = context->completeURL(urlstring);

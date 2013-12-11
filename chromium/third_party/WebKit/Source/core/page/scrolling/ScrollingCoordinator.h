@@ -76,7 +76,7 @@ public:
     // Should be called whenever the root layer for the given frame view changes.
     void frameViewRootLayerDidChange(FrameView*);
 
-#if OS(DARWIN)
+#if OS(MACOSX)
     // Dispatched by the scrolling tree during handleWheelEvent. This is required as long as scrollbars are painted on the main thread.
     void handleWheelEventPhase(PlatformWheelEventPhase);
 #endif
@@ -90,6 +90,8 @@ public:
     MainThreadScrollingReasons mainThreadScrollingReasons() const;
     bool shouldUpdateScrollLayerPositionOnMainThread() const { return mainThreadScrollingReasons() != 0; }
 
+    PassOwnPtr<WebKit::WebScrollbarLayer> createSolidColorScrollbarLayer(ScrollbarOrientation, int thumbThickness, bool isLeftSideVerticalScrollbar);
+
     void willDestroyScrollableArea(ScrollableArea*);
     // Returns true if the coordinator handled this change.
     bool scrollableAreaScrollLayerDidChange(ScrollableArea*);
@@ -97,18 +99,14 @@ public:
     void setLayerIsContainerForFixedPositionLayers(GraphicsLayer*, bool);
     void updateLayerPositionConstraint(RenderLayer*);
     void touchEventTargetRectsDidChange(const Document*);
+    void willDestroyRenderLayer(RenderLayer*);
+
+    void updateScrollParentForLayer(RenderLayer* child, RenderLayer* parent);
+    void updateClipParentForLayer(RenderLayer* child, RenderLayer* parent);
 
     static String mainThreadScrollingReasonsAsText(MainThreadScrollingReasons);
     String mainThreadScrollingReasonsAsText() const;
     Region computeShouldHandleScrollGestureOnMainThreadRegion(const Frame*, const IntPoint& frameLocation) const;
-
-    class TouchEventTargetRectsObserver {
-    public:
-        virtual void touchEventTargetRectsChanged(const LayerHitTestRects&) = 0;
-    };
-
-    void addTouchEventTargetRectsObserver(TouchEventTargetRectsObserver*);
-    void removeTouchEventTargetRectsObserver(TouchEventTargetRectsObserver*);
 
 protected:
     explicit ScrollingCoordinator(Page*);
@@ -147,8 +145,7 @@ private:
     typedef HashMap<ScrollableArea*, OwnPtr<WebKit::WebScrollbarLayer> > ScrollbarMap;
     ScrollbarMap m_horizontalScrollbars;
     ScrollbarMap m_verticalScrollbars;
-
-    HashSet<TouchEventTargetRectsObserver*> m_touchEventTargetRectsObservers;
+    HashSet<const RenderLayer*> m_layersWithTouchRects;
 };
 
 } // namespace WebCore

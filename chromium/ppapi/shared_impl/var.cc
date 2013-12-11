@@ -9,8 +9,10 @@
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "ppapi/c/pp_var.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
+#include "ppapi/shared_impl/resource_var.h"
 #include "ppapi/shared_impl/var_tracker.h"
 
 namespace ppapi {
@@ -62,6 +64,19 @@ std::string Var::PPVarToLogString(PP_Var var) {
       return "[Dictionary]";
     case PP_VARTYPE_ARRAY_BUFFER:
       return "[Array buffer]";
+    case PP_VARTYPE_RESOURCE: {
+      ResourceVar* resource(ResourceVar::FromPPVar(var));
+      if (!resource)
+        return "[Invalid resource]";
+
+      if (resource->IsPending()) {
+        return base::StringPrintf("[Pending resource]");
+      } else if (resource->GetPPResource()) {
+        return base::StringPrintf("[Resource %d]", resource->GetPPResource());
+      } else {
+        return "[Null resource]";
+      }
+    }
     default:
       return "[Invalid var]";
   }
@@ -88,6 +103,10 @@ ArrayVar* Var::AsArrayVar() {
 }
 
 DictionaryVar* Var::AsDictionaryVar() {
+  return NULL;
+}
+
+ResourceVar* Var::AsResourceVar() {
   return NULL;
 }
 

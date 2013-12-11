@@ -17,7 +17,6 @@
 #include <math.h>
 
 #include "vp9/common/vp9_alloccommon.h"
-#include "vp9/common/vp9_modecont.h"
 #include "vp9/common/vp9_common.h"
 #include "vp9/encoder/vp9_ratectrl.h"
 #include "vp9/common/vp9_entropymode.h"
@@ -33,46 +32,8 @@
 // Bits Per MB at different Q (Multiplied by 512)
 #define BPER_MB_NORMBITS    9
 
-// % adjustment to target kf size based on seperation from previous frame
-static const int kf_boost_seperation_adjustment[16] = {
-  30,   40,   50,   55,   60,   65,   70,   75,
-  80,   85,   90,   95,  100,  100,  100,  100,
-};
-
-static const int gf_adjust_table[101] = {
-  100,
-  115, 130, 145, 160, 175, 190, 200, 210, 220, 230,
-  240, 260, 270, 280, 290, 300, 310, 320, 330, 340,
-  350, 360, 370, 380, 390, 400, 400, 400, 400, 400,
-  400, 400, 400, 400, 400, 400, 400, 400, 400, 400,
-  400, 400, 400, 400, 400, 400, 400, 400, 400, 400,
-  400, 400, 400, 400, 400, 400, 400, 400, 400, 400,
-  400, 400, 400, 400, 400, 400, 400, 400, 400, 400,
-  400, 400, 400, 400, 400, 400, 400, 400, 400, 400,
-  400, 400, 400, 400, 400, 400, 400, 400, 400, 400,
-  400, 400, 400, 400, 400, 400, 400, 400, 400, 400,
-};
-
-static const int gf_intra_usage_adjustment[20] = {
-  125, 120, 115, 110, 105, 100,  95,  85,  80,  75,
-  70,  65,  60,  55,  50,  50,  50,  50,  50,  50,
-};
-
-static const int gf_interval_table[101] = {
-  7,
-  7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
-  7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
-  7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
-  8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
-  8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
-  9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
-  9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
-  10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
-  10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
-  11, 11, 11, 11, 11, 11, 11, 11, 11, 11,
-};
-
-static const unsigned int prior_key_frame_weight[KEY_FRAME_CONTEXT] = { 1, 2, 3, 4, 5 };
+static const unsigned int prior_key_frame_weight[KEY_FRAME_CONTEXT] =
+    { 1, 2, 3, 4, 5 };
 
 // These functions use formulaic calculations to make playing with the
 // quantizer tables easier. If necessary they can be replaced by lookup
@@ -110,7 +71,6 @@ int vp9_bits_per_mb(FRAME_TYPE frame_type, int qindex,
 void vp9_save_coding_context(VP9_COMP *cpi) {
   CODING_CONTEXT *const cc = &cpi->coding_context;
   VP9_COMMON *cm = &cpi->common;
-  MACROBLOCKD *xd = &cpi->mb.e_mbd;
 
   // Stores a snapshot of key state variables which can subsequently be
   // restored with a call to vp9_restore_coding_context. These functions are
@@ -128,7 +88,7 @@ void vp9_save_coding_context(VP9_COMP *cpi) {
   vp9_copy(cc->uv_mode_prob, cm->fc.uv_mode_prob);
   vp9_copy(cc->partition_prob, cm->fc.partition_prob);
 
-  vp9_copy(cc->segment_pred_probs, cm->segment_pred_probs);
+  vp9_copy(cc->segment_pred_probs, cm->seg.pred_probs);
 
   vp9_copy(cc->intra_inter_prob, cm->fc.intra_inter_prob);
   vp9_copy(cc->comp_inter_prob, cm->fc.comp_inter_prob);
@@ -138,21 +98,18 @@ void vp9_save_coding_context(VP9_COMP *cpi) {
   vpx_memcpy(cpi->coding_context.last_frame_seg_map_copy,
              cm->last_frame_seg_map, (cm->mi_rows * cm->mi_cols));
 
-  vp9_copy(cc->last_ref_lf_deltas, xd->last_ref_lf_deltas);
-  vp9_copy(cc->last_mode_lf_deltas, xd->last_mode_lf_deltas);
+  vp9_copy(cc->last_ref_lf_deltas, cm->lf.last_ref_deltas);
+  vp9_copy(cc->last_mode_lf_deltas, cm->lf.last_mode_deltas);
 
   vp9_copy(cc->coef_probs, cm->fc.coef_probs);
   vp9_copy(cc->switchable_interp_prob, cm->fc.switchable_interp_prob);
-  vp9_copy(cc->tx_probs_8x8p, cm->fc.tx_probs_8x8p);
-  vp9_copy(cc->tx_probs_16x16p, cm->fc.tx_probs_16x16p);
-  vp9_copy(cc->tx_probs_32x32p, cm->fc.tx_probs_32x32p);
+  cc->tx_probs = cm->fc.tx_probs;
   vp9_copy(cc->mbskip_probs, cm->fc.mbskip_probs);
 }
 
 void vp9_restore_coding_context(VP9_COMP *cpi) {
   CODING_CONTEXT *const cc = &cpi->coding_context;
   VP9_COMMON *cm = &cpi->common;
-  MACROBLOCKD *xd = &cpi->mb.e_mbd;
 
   // Restore key state variables to the snapshot state stored in the
   // previous call to vp9_save_coding_context.
@@ -168,7 +125,7 @@ void vp9_restore_coding_context(VP9_COMP *cpi) {
   vp9_copy(cm->fc.uv_mode_prob, cc->uv_mode_prob);
   vp9_copy(cm->fc.partition_prob, cc->partition_prob);
 
-  vp9_copy(cm->segment_pred_probs, cc->segment_pred_probs);
+  vp9_copy(cm->seg.pred_probs, cc->segment_pred_probs);
 
   vp9_copy(cm->fc.intra_inter_prob, cc->intra_inter_prob);
   vp9_copy(cm->fc.comp_inter_prob, cc->comp_inter_prob);
@@ -179,22 +136,19 @@ void vp9_restore_coding_context(VP9_COMP *cpi) {
              cpi->coding_context.last_frame_seg_map_copy,
              (cm->mi_rows * cm->mi_cols));
 
-  vp9_copy(xd->last_ref_lf_deltas, cc->last_ref_lf_deltas);
-  vp9_copy(xd->last_mode_lf_deltas, cc->last_mode_lf_deltas);
+  vp9_copy(cm->lf.last_ref_deltas, cc->last_ref_lf_deltas);
+  vp9_copy(cm->lf.last_mode_deltas, cc->last_mode_lf_deltas);
 
   vp9_copy(cm->fc.coef_probs, cc->coef_probs);
   vp9_copy(cm->fc.switchable_interp_prob, cc->switchable_interp_prob);
-  vp9_copy(cm->fc.tx_probs_8x8p, cc->tx_probs_8x8p);
-  vp9_copy(cm->fc.tx_probs_16x16p, cc->tx_probs_16x16p);
-  vp9_copy(cm->fc.tx_probs_32x32p, cc->tx_probs_32x32p);
+  cm->fc.tx_probs = cc->tx_probs;
   vp9_copy(cm->fc.mbskip_probs, cc->mbskip_probs);
 }
 
 void vp9_setup_key_frame(VP9_COMP *cpi) {
   VP9_COMMON *cm = &cpi->common;
-  MACROBLOCKD *xd = &cpi->mb.e_mbd;
 
-  vp9_setup_past_independence(cm, xd);
+  vp9_setup_past_independence(cm);
 
   // interval before next GF
   cpi->frames_till_gf_update_due = cpi->baseline_gf_interval;
@@ -205,9 +159,8 @@ void vp9_setup_key_frame(VP9_COMP *cpi) {
 
 void vp9_setup_inter_frame(VP9_COMP *cpi) {
   VP9_COMMON *cm = &cpi->common;
-  MACROBLOCKD *xd = &cpi->mb.e_mbd;
   if (cm->error_resilient_mode || cm->intra_only)
-    vp9_setup_past_independence(cm, xd);
+    vp9_setup_past_independence(cm);
 
   assert(cm->frame_context_idx < NUM_FRAME_CONTEXTS);
   cm->fc = cm->frame_contexts[cm->frame_context_idx];
@@ -456,7 +409,7 @@ static int estimate_keyframe_frequency(VP9_COMP *cpi) {
      * whichever is smaller.
      */
     int key_freq = cpi->oxcf.key_freq > 0 ? cpi->oxcf.key_freq : 1;
-    av_key_frame_frequency = (int)cpi->output_frame_rate * 2;
+    av_key_frame_frequency = (int)cpi->output_framerate * 2;
 
     if (cpi->oxcf.auto_key && av_key_frame_frequency > key_freq)
       av_key_frame_frequency = cpi->oxcf.key_freq;

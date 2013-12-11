@@ -29,21 +29,22 @@ namespace WebCore {
 
 class HTMLEmbedElement FINAL : public HTMLPlugInImageElement {
 public:
-    static PassRefPtr<HTMLEmbedElement> create(const QualifiedName&, Document*, bool createdByParser);
+    static PassRefPtr<HTMLEmbedElement> create(Document&);
+    static PassRefPtr<HTMLEmbedElement> create(const QualifiedName&, Document&, bool createdByParser);
 
 private:
-    HTMLEmbedElement(const QualifiedName&, Document*, bool createdByParser);
+    HTMLEmbedElement(const QualifiedName&, Document&, bool createdByParser);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
 
-    virtual bool rendererIsNeeded(const NodeRenderingContext&);
+    virtual bool rendererIsNeeded(const RenderStyle&);
 
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
-    virtual const AtomicString& imageSourceURL() const OVERRIDE;
+    virtual const AtomicString imageSourceURL() const OVERRIDE;
 
-    virtual RenderWidget* renderWidgetForJSBindings() const;
+    virtual RenderWidget* existingRenderWidget() const OVERRIDE;
 
     virtual void updateWidget(PluginCreationOption);
 
@@ -52,6 +53,7 @@ private:
     void parametersForPlugin(Vector<String>& paramNames, Vector<String>& paramValues);
 
     virtual bool shouldRegisterAsNamedItem() const OVERRIDE { return true; }
+    virtual bool isInteractiveContent() const OVERRIDE;
 };
 
 }

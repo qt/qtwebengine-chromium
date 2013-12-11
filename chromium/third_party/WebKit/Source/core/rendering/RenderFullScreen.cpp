@@ -26,19 +26,21 @@
 #include "core/rendering/RenderFullScreen.h"
 
 #include "core/dom/FullscreenElementStack.h"
+#include "core/rendering/RenderBlockFlow.h"
 
 using namespace WebCore;
 
-class RenderFullScreenPlaceholder FINAL : public RenderBlock {
+class RenderFullScreenPlaceholder FINAL : public RenderBlockFlow {
 public:
     RenderFullScreenPlaceholder(RenderFullScreen* owner)
-        : RenderBlock(0)
+        : RenderBlockFlow(0)
         , m_owner(owner)
     {
-        setDocumentForAnonymous(owner->document());
+        setDocumentForAnonymous(&owner->document());
     }
 private:
     virtual bool isRenderFullScreenPlaceholder() const { return true; }
+    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
     virtual void willBeDestroyed();
     RenderFullScreen* m_owner;
 };
@@ -74,11 +76,9 @@ void RenderFullScreen::willBeDestroyed()
 
     // RenderObjects are unretained, so notify the document (which holds a pointer to a RenderFullScreen)
     // if it's RenderFullScreen is destroyed.
-    if (document()) {
-        FullscreenElementStack* controller = FullscreenElementStack::from(document());
-        if (controller->fullScreenRenderer() == this)
-            controller->fullScreenRendererDestroyed();
-    }
+    FullscreenElementStack* controller = FullscreenElementStack::from(&document());
+    if (controller->fullScreenRenderer() == this)
+        controller->fullScreenRendererDestroyed();
 
     RenderFlexibleBox::willBeDestroyed();
 }
@@ -162,7 +162,7 @@ void RenderFullScreen::unwrapRenderer()
     if (placeholder())
         placeholder()->remove();
     remove();
-    FullscreenElementStack::from(document())->setFullScreenRenderer(0);
+    FullscreenElementStack::from(&document())->setFullScreenRenderer(0);
 }
 
 void RenderFullScreen::setPlaceholder(RenderBlock* placeholder)

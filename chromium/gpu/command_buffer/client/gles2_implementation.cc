@@ -17,7 +17,6 @@
 #include <GLES2/gl2extchromium.h>
 #include "gpu/command_buffer/client/buffer_tracker.h"
 #include "gpu/command_buffer/client/gpu_memory_buffer_tracker.h"
-#include "gpu/command_buffer/client/mapped_memory.h"
 #include "gpu/command_buffer/client/program_info_manager.h"
 #include "gpu/command_buffer/client/query_tracker.h"
 #include "gpu/command_buffer/client/transfer_buffer.h"
@@ -86,7 +85,7 @@ GLES2Implementation::GLES2Implementation(
       ShareGroup* share_group,
       TransferBufferInterface* transfer_buffer,
       bool bind_generates_resource,
-      ImageFactory* image_factory)
+      GpuControl* gpu_control)
     : helper_(helper),
       transfer_buffer_(transfer_buffer),
       angle_pack_reverse_row_order_status_(kUnknownExtensionStatus),
@@ -111,7 +110,7 @@ GLES2Implementation::GLES2Implementation(
       use_count_(0),
       current_query_(NULL),
       error_message_callback_(NULL),
-      image_factory_(image_factory) {
+      gpu_control_(gpu_control) {
   GPU_DCHECK(helper);
   GPU_DCHECK(transfer_buffer);
 
@@ -133,7 +132,8 @@ GLES2Implementation::GLES2Implementation(
 bool GLES2Implementation::Initialize(
     unsigned int starting_transfer_buffer_size,
     unsigned int min_transfer_buffer_size,
-    unsigned int max_transfer_buffer_size) {
+    unsigned int max_transfer_buffer_size,
+    unsigned int mapped_memory_limit) {
   GPU_DCHECK_GE(starting_transfer_buffer_size, min_transfer_buffer_size);
   GPU_DCHECK_LE(starting_transfer_buffer_size, max_transfer_buffer_size);
   GPU_DCHECK_GE(min_transfer_buffer_size, kStartingOffset);
@@ -148,8 +148,14 @@ bool GLES2Implementation::Initialize(
     return false;
   }
 
-  mapped_memory_.reset(new MappedMemoryManager(helper_));
-  SetSharedMemoryChunkSizeMultiple(1024 * 1024 * 2);
+  mapped_memory_.reset(new MappedMemoryManager(helper_, mapped_memory_limit));
+
+  unsigned chunk_size = 2 * 1024 * 1024;
+  if (mapped_memory_limit != kNoLimit) {
+    // Use smaller chunks if the client is very memory conscientious.
+    chunk_size = std::min(mapped_memory_limit / 4, chunk_size);
+  }
+  mapped_memory_->set_chunk_size_multiple(chunk_size);
 
   if (!QueryAndCacheStaticState())
     return false;
@@ -165,7 +171,7 @@ bool GLES2Implementation::Initialize(
 
   query_tracker_.reset(new QueryTracker(mapped_memory_.get()));
   buffer_tracker_.reset(new BufferTracker(mapped_memory_.get()));
-  gpu_memory_buffer_tracker_.reset(new GpuMemoryBufferTracker(image_factory_));
+  gpu_memory_buffer_tracker_.reset(new GpuMemoryBufferTracker(gpu_control_));
 
 #if defined(GLES2_SUPPORT_CLIENT_SIDE_ARRAYS)
   GetIdHandler(id_namespaces::kBuffers)->MakeIds(
@@ -287,11 +293,6 @@ int32 GLES2Implementation::GetResultShmId() {
 
 uint32 GLES2Implementation::GetResultShmOffset() {
   return transfer_buffer_->GetResultOffset();
-}
-
-void GLES2Implementation::SetSharedMemoryChunkSizeMultiple(
-    unsigned int multiple) {
-  mapped_memory_->set_chunk_size_multiple(multiple);
 }
 
 void GLES2Implementation::FreeUnusedSharedMemory() {
@@ -2089,7 +2090,7 @@ const GLubyte* GLES2Implementation::GetStringHelper(GLenum name) {
             "GL_CHROMIUM_map_sub "
             "GL_CHROMIUM_shallow_flush "
             "GL_EXT_unpack_subimage";
-        if (image_factory_ != NULL) {
+        if (gpu_control_ != NULL) {
           // The first space character is intentional.
           str += " GL_CHROMIUM_map_image";
         }

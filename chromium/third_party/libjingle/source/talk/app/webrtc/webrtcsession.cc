@@ -422,6 +422,17 @@ bool WebRtcSession::Initialize(
   // mandatory constraints can be fulfilled. Note that |constraints|
   // can be null.
   bool value;
+
+  // Enable DTLS by default if |dtls_identity_service| is valid.
+  bool dtls_enabled = (dtls_identity_service != NULL);
+  // |constraints| can override the default |dtls_enabled| value.
+  if (FindConstraint(
+        constraints,
+        MediaConstraintsInterface::kEnableDtlsSrtp,
+        &value, NULL)) {
+    dtls_enabled = value;
+  }
+
   // Enable creation of RTP data channels if the kEnableRtpDataChannels is set.
   // It takes precendence over the kEnableSctpDataChannels constraint.
   if (FindConstraint(
@@ -434,11 +445,6 @@ bool WebRtcSession::Initialize(
         constraints,
         MediaConstraintsInterface::kEnableSctpDataChannels,
         &value, NULL) && value;
-    bool dtls_enabled = FindConstraint(
-        constraints,
-        MediaConstraintsInterface::kEnableDtlsSrtp,
-        &value, NULL) && value;
-
     // DTLS has to be enabled to use SCTP.
     if (sctp_enabled && dtls_enabled) {
       LOG(LS_INFO) << "Allowing SCTP data engine.";
@@ -467,7 +473,7 @@ bool WebRtcSession::Initialize(
       this,
       id(),
       data_channel_type_,
-      constraints));
+      dtls_enabled));
 
   webrtc_session_desc_factory_->SignalIdentityReady.connect(
       this, &WebRtcSession::OnIdentityReady);
@@ -505,6 +511,26 @@ cricket::SecureMediaPolicy WebRtcSession::secure_policy() const {
   return webrtc_session_desc_factory_->secure();
 }
 
+bool WebRtcSession::GetSslRole(talk_base::SSLRole* role) {
+  if (local_description() == NULL || remote_description() == NULL) {
+    LOG(LS_INFO) << "Local and Remote descriptions must be applied to get "
+                 << "SSL Role of the session.";
+    return false;
+  }
+
+  // TODO(mallinath) - Return role of each transport, as role may differ from
+  // one another.
+  // In current implementaion we just return the role of first transport in the
+  // transport map.
+  for (cricket::TransportMap::const_iterator iter = transport_proxies().begin();
+       iter != transport_proxies().end(); ++iter) {
+    if (iter->second->impl()) {
+      return iter->second->impl()->GetSslRole(role);
+    }
+  }
+  return false;
+}
+
 void WebRtcSession::CreateOffer(CreateSessionDescriptionObserver* observer,
                                 const MediaConstraintsInterface* constraints) {
   webrtc_session_desc_factory_->CreateOffer(observer, constraints);
@@ -517,42 +543,22 @@ void WebRtcSession::CreateAnswer(CreateSessionDescriptionObserver* observer,
 
 bool WebRtcSession::SetLocalDescription(SessionDescriptionInterface* desc,
                                         std::string* err_desc) {
-  cricket::SecureMediaPolicy secure_policy =
-      webrtc_session_desc_factory_->secure();
   // Takes the ownership of |desc| regardless of the result.
   talk_base::scoped_ptr<SessionDescriptionInterface> desc_temp(desc);
 
-  if (error() != cricket::BaseSession::ERROR_NONE) {
-    return BadLocalSdp(SessionErrorMsg(error()), err_desc);
-  }
-
-  if (!desc || !desc->description()) {
-    return BadLocalSdp(kInvalidSdp, err_desc);
-  }
-
-  if (!VerifyBundleSettings(desc->description())) {
-    return BadLocalSdp(kBundleWithoutRtcpMux, err_desc);
-  }
-
-  Action action = GetAction(desc->type());
-  if (!ExpectSetLocalDescription(action)) {
-    std::string type = desc->type();
-    return BadLocalSdp(BadStateErrMsg(type, state()), err_desc);
-  }
-  if (secure_policy == cricket::SEC_REQUIRED &&
-      !VerifyCrypto(desc->description())) {
-    return BadLocalSdp(kSdpWithoutCrypto, err_desc);
-  }
-  if (action == kAnswer && !VerifyMediaDescriptions(
-          desc->description(), remote_description()->description())) {
-    return BadLocalSdp(kMlineMismatch, err_desc);
+  // Validate SDP.
+  if (!ValidateSessionDescription(desc, cricket::CS_LOCAL, err_desc)) {
+    return false;
   }
 
   // Update the initiator flag if this session is the initiator.
+  Action action = GetAction(desc->type());
   if (state() == STATE_INIT && action == kOffer) {
     set_initiator(true);
   }
 
+  cricket::SecureMediaPolicy secure_policy =
+      webrtc_session_desc_factory_->secure();
   // Update the MediaContentDescription crypto settings as per the policy set.
   UpdateSessionDescriptionSecurePolicy(secure_policy, desc->description());
 
@@ -589,40 +595,16 @@ bool WebRtcSession::SetLocalDescription(SessionDescriptionInterface* desc,
 
 bool WebRtcSession::SetRemoteDescription(SessionDescriptionInterface* desc,
                                          std::string* err_desc) {
-  cricket::SecureMediaPolicy secure_policy =
-      webrtc_session_desc_factory_->secure();
   // Takes the ownership of |desc| regardless of the result.
   talk_base::scoped_ptr<SessionDescriptionInterface> desc_temp(desc);
 
-  if (error() != cricket::BaseSession::ERROR_NONE) {
-    return BadRemoteSdp(SessionErrorMsg(error()), err_desc);
-  }
-
-  if (!desc || !desc->description()) {
-    return BadRemoteSdp(kInvalidSdp, err_desc);
-  }
-
-  if (!VerifyBundleSettings(desc->description())) {
-    return BadRemoteSdp(kBundleWithoutRtcpMux, err_desc);
-  }
-
-  Action action = GetAction(desc->type());
-  if (!ExpectSetRemoteDescription(action)) {
-    std::string type = desc->type();
-    return BadRemoteSdp(BadStateErrMsg(type, state()), err_desc);
-  }
-
-  if (action == kAnswer && !VerifyMediaDescriptions(
-          desc->description(), local_description()->description())) {
-    return BadRemoteSdp(kMlineMismatch, err_desc);
-  }
-
-  if (secure_policy == cricket::SEC_REQUIRED &&
-      !VerifyCrypto(desc->description())) {
-    return BadRemoteSdp(kSdpWithoutCrypto, err_desc);
+  // Validate SDP.
+  if (!ValidateSessionDescription(desc, cricket::CS_REMOTE, err_desc)) {
+    return false;
   }
 
   // Transport and Media channels will be created only when offer is set.
+  Action action = GetAction(desc->type());
   if (action == kOffer && !CreateChannels(desc->description())) {
     // TODO(mallinath) - Handle CreateChannel failure, as new local description
     // is applied. Restore back to old description.
@@ -962,7 +944,6 @@ talk_base::scoped_refptr<DataChannel> WebRtcSession::CreateDataChannel(
     if (data_channel_.get()) {
       channel->SetReceiveSsrc(new_config.id);
       channel->SetSendSsrc(new_config.id);
-      channel->ConnectToDataSession();
     }
     if (!config->negotiated) {
       talk_base::Buffer *payload = new talk_base::Buffer;
@@ -1092,36 +1073,6 @@ void WebRtcSession::OnTransportProxyCandidatesReady(
     cricket::TransportProxy* proxy, const cricket::Candidates& candidates) {
   ASSERT(signaling_thread()->IsCurrent());
   ProcessNewLocalCandidate(proxy->content_name(), candidates);
-}
-
-bool WebRtcSession::ExpectSetLocalDescription(Action action) {
-  return ((action == kOffer && state() == STATE_INIT) ||
-          // update local offer
-          (action == kOffer && state() == STATE_SENTINITIATE) ||
-          // update the current ongoing session.
-          (action == kOffer && state() == STATE_RECEIVEDACCEPT) ||
-          (action == kOffer && state() == STATE_SENTACCEPT) ||
-          (action == kOffer && state() == STATE_INPROGRESS) ||
-          // accept remote offer
-          (action == kAnswer && state() == STATE_RECEIVEDINITIATE) ||
-          (action == kAnswer && state() == STATE_SENTPRACCEPT) ||
-          (action == kPrAnswer && state() == STATE_RECEIVEDINITIATE) ||
-          (action == kPrAnswer && state() == STATE_SENTPRACCEPT));
-}
-
-bool WebRtcSession::ExpectSetRemoteDescription(Action action) {
-  return ((action == kOffer && state() == STATE_INIT) ||
-          // update remote offer
-          (action == kOffer && state() == STATE_RECEIVEDINITIATE) ||
-          // update the current ongoing session
-          (action == kOffer && state() == STATE_RECEIVEDACCEPT) ||
-          (action == kOffer && state() == STATE_SENTACCEPT) ||
-          (action == kOffer && state() == STATE_INPROGRESS) ||
-          // accept local offer
-          (action == kAnswer && state() == STATE_SENTINITIATE) ||
-          (action == kAnswer && state() == STATE_RECEIVEDPRACCEPT) ||
-          (action == kPrAnswer && state() == STATE_SENTINITIATE) ||
-          (action == kPrAnswer && state() == STATE_RECEIVEDPRACCEPT));
 }
 
 void WebRtcSession::OnCandidatesAllocationDone() {
@@ -1378,7 +1329,7 @@ void WebRtcSession::OnDataReceived(
 }
 
 // Returns false if bundle is enabled and rtcp_mux is disabled.
-bool WebRtcSession::VerifyBundleSettings(const SessionDescription* desc) {
+bool WebRtcSession::ValidateBundleSettings(const SessionDescription* desc) {
   bool bundle_enabled = desc->HasGroup(cricket::GROUP_TYPE_BUNDLE);
   if (!bundle_enabled)
     return true;
@@ -1407,6 +1358,81 @@ bool WebRtcSession::HasRtcpMuxEnabled(
   const cricket::MediaContentDescription* description =
       static_cast<cricket::MediaContentDescription*>(content->description);
   return description->rtcp_mux();
+}
+
+bool WebRtcSession::ValidateSessionDescription(
+    const SessionDescriptionInterface* sdesc,
+    cricket::ContentSource source, std::string* error_desc) {
+
+  if (error() != cricket::BaseSession::ERROR_NONE) {
+    return BadSdp(source, SessionErrorMsg(error()), error_desc);
+  }
+
+  if (!sdesc || !sdesc->description()) {
+    return BadSdp(source, kInvalidSdp, error_desc);
+  }
+
+  std::string type = sdesc->type();
+  Action action = GetAction(sdesc->type());
+  if (source == cricket::CS_LOCAL) {
+    if (!ExpectSetLocalDescription(action))
+      return BadSdp(source, BadStateErrMsg(type, state()), error_desc);
+  } else {
+    if (!ExpectSetRemoteDescription(action))
+      return BadSdp(source, BadStateErrMsg(type, state()), error_desc);
+  }
+
+  // Verify crypto settings.
+  if (webrtc_session_desc_factory_->secure() == cricket::SEC_REQUIRED &&
+      !VerifyCrypto(sdesc->description())) {
+    return BadSdp(source, kSdpWithoutCrypto, error_desc);
+  }
+
+  if (!ValidateBundleSettings(sdesc->description())) {
+    return BadSdp(source, kBundleWithoutRtcpMux, error_desc);
+  }
+
+  // Verify m-lines in Answer when compared against Offer.
+  if (action == kAnswer) {
+    const cricket::SessionDescription* offer_desc =
+        (source == cricket::CS_LOCAL) ? remote_description()->description() :
+            local_description()->description();
+    if (!VerifyMediaDescriptions(sdesc->description(), offer_desc)) {
+      return BadSdp(source, kMlineMismatch, error_desc);
+    }
+  }
+
+  return true;
+}
+
+bool WebRtcSession::ExpectSetLocalDescription(Action action) {
+  return ((action == kOffer && state() == STATE_INIT) ||
+          // update local offer
+          (action == kOffer && state() == STATE_SENTINITIATE) ||
+          // update the current ongoing session.
+          (action == kOffer && state() == STATE_RECEIVEDACCEPT) ||
+          (action == kOffer && state() == STATE_SENTACCEPT) ||
+          (action == kOffer && state() == STATE_INPROGRESS) ||
+          // accept remote offer
+          (action == kAnswer && state() == STATE_RECEIVEDINITIATE) ||
+          (action == kAnswer && state() == STATE_SENTPRACCEPT) ||
+          (action == kPrAnswer && state() == STATE_RECEIVEDINITIATE) ||
+          (action == kPrAnswer && state() == STATE_SENTPRACCEPT));
+}
+
+bool WebRtcSession::ExpectSetRemoteDescription(Action action) {
+  return ((action == kOffer && state() == STATE_INIT) ||
+          // update remote offer
+          (action == kOffer && state() == STATE_RECEIVEDINITIATE) ||
+          // update the current ongoing session
+          (action == kOffer && state() == STATE_RECEIVEDACCEPT) ||
+          (action == kOffer && state() == STATE_SENTACCEPT) ||
+          (action == kOffer && state() == STATE_INPROGRESS) ||
+          // accept local offer
+          (action == kAnswer && state() == STATE_SENTINITIATE) ||
+          (action == kAnswer && state() == STATE_RECEIVEDPRACCEPT) ||
+          (action == kPrAnswer && state() == STATE_SENTINITIATE) ||
+          (action == kPrAnswer && state() == STATE_RECEIVEDPRACCEPT));
 }
 
 }  // namespace webrtc

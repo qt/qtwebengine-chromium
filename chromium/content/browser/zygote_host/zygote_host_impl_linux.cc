@@ -29,6 +29,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "content/browser/renderer_host/render_sandbox_host_linux.h"
+#include "content/common/child_process_sandbox_support_impl_linux.h"
 #include "content/common/zygote_commands_linux.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_switches.h"
@@ -36,6 +37,7 @@
 #include "sandbox/linux/suid/client/setuid_sandbox_client.h"
 #include "sandbox/linux/suid/common/sandbox.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/gfx/switches.h"
 
 #if defined(USE_TCMALLOC)
 #include "third_party/tcmalloc/chromium/src/gperftools/heap-profiler.h"
@@ -149,7 +151,7 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
   // Start up the sandbox host process and get the file descriptor for the
   // renderers to talk to it.
   const int sfd = RenderSandboxHostLinux::GetInstance()->GetRendererSocket();
-  fds_to_map.push_back(std::make_pair(sfd, kZygoteRendererSocketFd));
+  fds_to_map.push_back(std::make_pair(sfd, GetSandboxFD()));
 
   int dummy_fd = -1;
   if (using_suid_sandbox_) {

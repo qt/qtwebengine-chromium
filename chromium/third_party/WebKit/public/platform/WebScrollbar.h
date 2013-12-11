@@ -30,7 +30,7 @@
 #include "WebSize.h"
 #include "WebVector.h"
 #if WEBKIT_IMPLEMENTATION
-#include <wtf/PassOwnPtr.h>
+#include "wtf/PassOwnPtr.h"
 #endif
 
 namespace WebCore {
@@ -106,6 +106,7 @@ public:
     virtual ScrollbarOverlayStyle scrollbarOverlayStyle() const = 0;
     virtual bool isCustomScrollbar() const = 0;
     virtual Orientation orientation() const = 0;
+    virtual bool isLeftSideVerticalScrollbar() const = 0;
     virtual bool isAlphaLocked() const { return false; }
     virtual void setIsAlphaLocked(bool) { }
 };

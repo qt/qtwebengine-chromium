@@ -46,7 +46,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLTableElement::HTMLTableElement(const QualifiedName& tagName, Document* document)
+HTMLTableElement::HTMLTableElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
     , m_borderAttr(false)
     , m_borderColorAttr(false)
@@ -58,12 +58,12 @@ HTMLTableElement::HTMLTableElement(const QualifiedName& tagName, Document* docum
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLTableElement> HTMLTableElement::create(Document* document)
+PassRefPtr<HTMLTableElement> HTMLTableElement::create(Document& document)
 {
     return adoptRef(new HTMLTableElement(tableTag, document));
 }
 
-PassRefPtr<HTMLTableElement> HTMLTableElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLTableElement> HTMLTableElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLTableElement(tagName, document));
 }
@@ -72,7 +72,7 @@ HTMLTableCaptionElement* HTMLTableElement::caption() const
 {
     for (Node* child = firstChild(); child; child = child->nextSibling()) {
         if (child->hasTagName(captionTag))
-            return static_cast<HTMLTableCaptionElement*>(child);
+            return toHTMLTableCaptionElement(child);
     }
     return 0;
 }
@@ -87,7 +87,7 @@ HTMLTableSectionElement* HTMLTableElement::tHead() const
 {
     for (Node* child = firstChild(); child; child = child->nextSibling()) {
         if (child->hasTagName(theadTag))
-            return static_cast<HTMLTableSectionElement*>(child);
+            return toHTMLTableSectionElement(child);
     }
     return 0;
 }
@@ -108,7 +108,7 @@ HTMLTableSectionElement* HTMLTableElement::tFoot() const
 {
     for (Node* child = firstChild(); child; child = child->nextSibling()) {
         if (child->hasTagName(tfootTag))
-            return static_cast<HTMLTableSectionElement*>(child);
+            return toHTMLTableSectionElement(child);
     }
     return 0;
 }
@@ -158,7 +158,7 @@ PassRefPtr<HTMLElement> HTMLTableElement::createTBody()
     RefPtr<HTMLTableSectionElement> body = HTMLTableSectionElement::create(tbodyTag, document());
     Node* referenceElement = lastBody() ? lastBody()->nextSibling() : 0;
 
-    insertBefore(body, referenceElement, ASSERT_NO_EXCEPTION);
+    insertBefore(body, referenceElement);
     return body.release();
 }
 
@@ -180,7 +180,7 @@ HTMLTableSectionElement* HTMLTableElement::lastBody() const
 {
     for (Node* child = lastChild(); child; child = child->previousSibling()) {
         if (child->hasTagName(tbodyTag))
-            return static_cast<HTMLTableSectionElement*>(child);
+            return toHTMLTableSectionElement(child);
     }
     return 0;
 }
@@ -221,13 +221,13 @@ PassRefPtr<HTMLElement> HTMLTableElement::insertRow(int index, ExceptionState& e
             RefPtr<HTMLTableSectionElement> newBody = HTMLTableSectionElement::create(tbodyTag, document());
             RefPtr<HTMLTableRowElement> newRow = HTMLTableRowElement::create(document());
             newBody->appendChild(newRow, es);
-            appendChild(newBody.release(), es, AttachLazily);
+            appendChild(newBody.release(), es);
             return newRow.release();
         }
     }
 
     RefPtr<HTMLTableRowElement> newRow = HTMLTableRowElement::create(document());
-    parent->insertBefore(newRow, row.get(), es, AttachLazily);
+    parent->insertBefore(newRow, row.get(), es);
     return newRow.release();
 }
 
@@ -317,7 +317,7 @@ void HTMLTableElement::collectStyleForPresentationAttribute(const QualifiedName&
     else if (name == backgroundAttr) {
         String url = stripLeadingAndTrailingHTMLSpaces(value);
         if (!url.isEmpty())
-            style->setProperty(CSSProperty(CSSPropertyBackgroundImage, CSSImageValue::create(document()->completeURL(url).string())));
+            style->setProperty(CSSProperty(CSSPropertyBackgroundImage, CSSImageValue::create(document().completeURL(url).string())));
     } else if (name == valignAttr) {
         if (!value.isEmpty())
             addPropertyToPresentationAttributeStyle(style, CSSPropertyVerticalAlign, value);
@@ -576,7 +576,7 @@ void HTMLTableElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) cons
 {
     HTMLElement::addSubresourceAttributeURLs(urls);
 
-    addSubresourceURL(urls, document()->completeURL(getAttribute(backgroundAttr)));
+    addSubresourceURL(urls, document().completeURL(getAttribute(backgroundAttr)));
 }
 
 }

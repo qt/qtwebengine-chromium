@@ -5,18 +5,19 @@
 #include "cc/trees/tree_synchronizer.h"
 
 #include "base/containers/hash_tables.h"
+#include "base/containers/scoped_ptr_hash_map.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "cc/animation/scrollbar_animation_controller.h"
 #include "cc/input/scrollbar.h"
 #include "cc/layers/layer.h"
 #include "cc/layers/layer_impl.h"
-#include "cc/layers/scrollbar_layer.h"
-#include "cc/layers/scrollbar_layer_impl.h"
+#include "cc/layers/scrollbar_layer_impl_base.h"
+#include "cc/layers/scrollbar_layer_interface.h"
 
 namespace cc {
 
-typedef ScopedPtrHashMap<int, LayerImpl> ScopedPtrLayerImplMap;
+typedef base::ScopedPtrHashMap<int, LayerImpl> ScopedPtrLayerImplMap;
 typedef base::hash_map<int, LayerImpl*> RawPtrLayerImplMap;
 
 void CollectExistingLayerImplRecursive(ScopedPtrLayerImplMap* old_layers,
@@ -154,18 +155,19 @@ void UpdateScrollbarLayerPointersRecursiveInternal(
     return;
 
   RawPtrLayerImplMap::const_iterator iter =
-      new_layers->find(scrollbar_layer->id());
-  ScrollbarLayerImpl* scrollbar_layer_impl =
-      iter != new_layers->end() ? static_cast<ScrollbarLayerImpl*>(iter->second)
-                               : NULL;
-  iter = new_layers->find(scrollbar_layer->scroll_layer_id());
+      new_layers->find(layer->id());
+  ScrollbarLayerImplBase* scrollbar_layer_impl =
+      iter != new_layers->end()
+          ? static_cast<ScrollbarLayerImplBase*>(iter->second)
+          : NULL;
+  iter = new_layers->find(scrollbar_layer->ScrollLayerId());
   LayerImpl* scroll_layer_impl =
       iter != new_layers->end() ? iter->second : NULL;
 
   DCHECK(scrollbar_layer_impl);
   DCHECK(scroll_layer_impl);
 
-  if (scrollbar_layer->Orientation() == HORIZONTAL)
+  if (scrollbar_layer->orientation() == HORIZONTAL)
     scroll_layer_impl->SetHorizontalScrollbarLayer(scrollbar_layer_impl);
   else
     scroll_layer_impl->SetVerticalScrollbarLayer(scrollbar_layer_impl);
@@ -173,14 +175,15 @@ void UpdateScrollbarLayerPointersRecursiveInternal(
 
 void UpdateScrollbarLayerPointersRecursive(const RawPtrLayerImplMap* new_layers,
                                            Layer* layer) {
-  UpdateScrollbarLayerPointersRecursiveInternal<Layer, ScrollbarLayer>(
+  UpdateScrollbarLayerPointersRecursiveInternal<Layer, ScrollbarLayerInterface>(
       new_layers, layer);
 }
 
 void UpdateScrollbarLayerPointersRecursive(const RawPtrLayerImplMap* new_layers,
                                            LayerImpl* layer) {
-  UpdateScrollbarLayerPointersRecursiveInternal<LayerImpl, ScrollbarLayerImpl>(
-      new_layers, layer);
+  UpdateScrollbarLayerPointersRecursiveInternal<
+      LayerImpl,
+      ScrollbarLayerImplBase>(new_layers, layer);
 }
 
 // static

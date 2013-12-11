@@ -70,6 +70,7 @@ public:
     static void collectGarbage();
     static ScriptObject objectByHeapObjectId(unsigned id);
     static unsigned getHeapObjectId(const ScriptValue&);
+    static void setSamplingInterval(int intervalUs);
     static void start(const String& title);
     static PassRefPtr<ScriptProfile> stop(const String& title);
     static PassRefPtr<ScriptHeapSnapshot> takeHeapSnapshot(const String& title, HeapSnapshotProgress*);
@@ -79,6 +80,7 @@ public:
     static void initialize();
     static void visitNodeWrappers(WrappedNodeVisitor*);
     static HashMap<String, double>* currentProfileNameIdleTimeMap();
+    static void setIdle(bool isIdle);
 };
 
 } // namespace WebCore

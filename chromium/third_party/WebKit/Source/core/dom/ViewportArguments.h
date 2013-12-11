@@ -29,6 +29,7 @@
 #define ViewportArguments_h
 
 #include "core/page/PageScaleConstraints.h"
+#include "core/platform/Length.h"
 #include "core/platform/graphics/FloatSize.h"
 #include "wtf/Forward.h"
 
@@ -48,12 +49,11 @@ struct ViewportArguments {
 
     enum Type {
         // These are ordered in increasing importance.
-        Implicit,
-        XHTMLMobileProfile,
+        UserAgentStyleSheet,
         HandheldFriendlyMeta,
         MobileOptimizedMeta,
         ViewportMeta,
-        CSSDeviceAdaptation
+        AuthorStyleSheet
     } type;
 
     enum {
@@ -69,14 +69,8 @@ struct ViewportArguments {
         ValueExtendToZoom = -10
     };
 
-    ViewportArguments(Type type = Implicit)
+    ViewportArguments(Type type = UserAgentStyleSheet)
         : type(type)
-        , width(ValueAuto)
-        , minWidth(ValueAuto)
-        , maxWidth(ValueAuto)
-        , height(ValueAuto)
-        , minHeight(ValueAuto)
-        , maxHeight(ValueAuto)
         , zoom(ValueAuto)
         , minZoom(ValueAuto)
         , maxZoom(ValueAuto)
@@ -87,14 +81,12 @@ struct ViewportArguments {
     }
 
     // All arguments are in CSS units.
-    PageScaleConstraints resolve(const FloatSize& initialViewportSize, const FloatSize& deviceSize, int defaultWidth) const;
+    PageScaleConstraints resolve(const FloatSize& initialViewportSize) const;
 
-    float width;
-    float minWidth;
-    float maxWidth;
-    float height;
-    float minHeight;
-    float maxHeight;
+    Length minWidth;
+    Length maxWidth;
+    Length minHeight;
+    Length maxHeight;
     float zoom;
     float minZoom;
     float maxZoom;
@@ -106,10 +98,8 @@ struct ViewportArguments {
     {
         // Used for figuring out whether to reset the viewport or not,
         // thus we are not taking type into account.
-        return width == other.width
-            && minWidth == other.minWidth
+        return minWidth == other.minWidth
             && maxWidth == other.maxWidth
-            && height == other.height
             && minHeight == other.minHeight
             && maxHeight == other.maxHeight
             && zoom == other.zoom
@@ -124,6 +114,12 @@ struct ViewportArguments {
     {
         return !(*this == other);
     }
+
+    bool isLegacyViewportType() const { return type >= HandheldFriendlyMeta && type <= ViewportMeta; }
+
+private:
+    enum Direction { Horizontal, Vertical };
+    static float resolveViewportLength(const Length&, const FloatSize& initialViewportSize, Direction);
 };
 
 void setViewportFeature(const String& keyString, const String& valueString, Document*, void* data);

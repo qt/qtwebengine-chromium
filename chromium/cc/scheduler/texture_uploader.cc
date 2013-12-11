@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <vector>
 
-#include "base/debug/alias.h"
 #include "base/debug/trace_event.h"
 #include "base/metrics/histogram.h"
 #include "cc/base/util.h"
@@ -135,7 +134,7 @@ void TextureUploader::Upload(const uint8* image,
                              gfx::Rect image_rect,
                              gfx::Rect source_rect,
                              gfx::Vector2d dest_offset,
-                             GLenum format,
+                             ResourceFormat format,
                              gfx::Size size) {
   CHECK(image_rect.Contains(source_rect));
 
@@ -178,39 +177,23 @@ void TextureUploader::UploadWithTexSubImage(const uint8* image,
                                             gfx::Rect image_rect,
                                             gfx::Rect source_rect,
                                             gfx::Vector2d dest_offset,
-                                            GLenum format) {
-  // Instrumentation to debug issue 156107
-  int source_rect_x = source_rect.x();
-  int source_rect_y = source_rect.y();
-  int source_rect_width = source_rect.width();
-  int source_rect_height = source_rect.height();
-  int image_rect_x = image_rect.x();
-  int image_rect_y = image_rect.y();
-  int image_rect_width = image_rect.width();
-  int image_rect_height = image_rect.height();
-  int dest_offset_x = dest_offset.x();
-  int dest_offset_y = dest_offset.y();
-  base::debug::Alias(&image);
-  base::debug::Alias(&source_rect_x);
-  base::debug::Alias(&source_rect_y);
-  base::debug::Alias(&source_rect_width);
-  base::debug::Alias(&source_rect_height);
-  base::debug::Alias(&image_rect_x);
-  base::debug::Alias(&image_rect_y);
-  base::debug::Alias(&image_rect_width);
-  base::debug::Alias(&image_rect_height);
-  base::debug::Alias(&dest_offset_x);
-  base::debug::Alias(&dest_offset_y);
+                                            ResourceFormat format) {
   TRACE_EVENT0("cc", "TextureUploader::UploadWithTexSubImage");
+
+  // Early-out if this is a no-op, and assert that |image| be valid if this is
+  // not a no-op.
+  if (source_rect.IsEmpty())
+    return;
+  DCHECK(image);
 
   // Offset from image-rect to source-rect.
   gfx::Vector2d offset(source_rect.origin() - image_rect.origin());
 
   const uint8* pixel_source;
-  unsigned int bytes_per_pixel = Resource::BytesPerPixel(format);
+  unsigned bytes_per_pixel = ResourceProvider::BytesPerPixel(format);
   // Use 4-byte row alignment (OpenGL default) for upload performance.
   // Assuming that GL_UNPACK_ALIGNMENT has not changed from default.
-  unsigned int upload_image_stride =
+  unsigned upload_image_stride =
       RoundUp(bytes_per_pixel * source_rect.width(), 4u);
 
   if (upload_image_stride == image_rect.width() * bytes_per_pixel &&
@@ -239,8 +222,8 @@ void TextureUploader::UploadWithTexSubImage(const uint8* image,
                           dest_offset.y(),
                           source_rect.width(),
                           source_rect.height(),
-                          format,
-                          GL_UNSIGNED_BYTE,
+                          ResourceProvider::GetGLDataFormat(format),
+                          ResourceProvider::GetGLDataType(format),
                           pixel_source);
 }
 
@@ -248,39 +231,22 @@ void TextureUploader::UploadWithMapTexSubImage(const uint8* image,
                                                gfx::Rect image_rect,
                                                gfx::Rect source_rect,
                                                gfx::Vector2d dest_offset,
-                                               GLenum format) {
-  // Instrumentation to debug issue 156107
-  int source_rect_x = source_rect.x();
-  int source_rect_y = source_rect.y();
-  int source_rect_width = source_rect.width();
-  int source_rect_height = source_rect.height();
-  int image_rect_x = image_rect.x();
-  int image_rect_y = image_rect.y();
-  int image_rect_width = image_rect.width();
-  int image_rect_height = image_rect.height();
-  int dest_offset_x = dest_offset.x();
-  int dest_offset_y = dest_offset.y();
-  base::debug::Alias(&image);
-  base::debug::Alias(&source_rect_x);
-  base::debug::Alias(&source_rect_y);
-  base::debug::Alias(&source_rect_width);
-  base::debug::Alias(&source_rect_height);
-  base::debug::Alias(&image_rect_x);
-  base::debug::Alias(&image_rect_y);
-  base::debug::Alias(&image_rect_width);
-  base::debug::Alias(&image_rect_height);
-  base::debug::Alias(&dest_offset_x);
-  base::debug::Alias(&dest_offset_y);
-
+                                               ResourceFormat format) {
   TRACE_EVENT0("cc", "TextureUploader::UploadWithMapTexSubImage");
+
+  // Early-out if this is a no-op, and assert that |image| be valid if this is
+  // not a no-op.
+  if (source_rect.IsEmpty())
+    return;
+  DCHECK(image);
 
   // Offset from image-rect to source-rect.
   gfx::Vector2d offset(source_rect.origin() - image_rect.origin());
 
-  unsigned int bytes_per_pixel = Resource::BytesPerPixel(format);
+  unsigned bytes_per_pixel = ResourceProvider::BytesPerPixel(format);
   // Use 4-byte row alignment (OpenGL default) for upload performance.
   // Assuming that GL_UNPACK_ALIGNMENT has not changed from default.
-  unsigned int upload_image_stride =
+  unsigned upload_image_stride =
       RoundUp(bytes_per_pixel * source_rect.width(), 4u);
 
   // Upload tile data via a mapped transfer buffer
@@ -291,8 +257,10 @@ void TextureUploader::UploadWithMapTexSubImage(const uint8* image,
                                          dest_offset.y(),
                                          source_rect.width(),
                                          source_rect.height(),
-                                         format,
-                                         GL_UNSIGNED_BYTE,
+                                         ResourceProvider::GetGLDataFormat(
+                                             format),
+                                         ResourceProvider::GetGLDataType(
+                                             format),
                                          GL_WRITE_ONLY));
 
   if (!pixel_dest) {

@@ -26,7 +26,6 @@
         'event_tracer_unittest.cc',
         'list_unittest.cc',
         'logging_unittest.cc',
-        'map_unittest.cc',
         'data_log_unittest.cc',
         'data_log_unittest_disabled.cc',
         'data_log_helpers_unittest.cc',
@@ -70,6 +69,24 @@
           'type': 'none',
           'dependencies': [
             '<(apk_tests_path):system_wrappers_unittests_apk',
+          ],
+        },
+      ],
+    }],
+    ['test_isolation_mode != "noop"', {
+      'targets': [
+        {
+          'target_name': 'system_wrappers_unittests_run',
+          'type': 'none',
+          'dependencies': [
+            '<(import_isolate_path):import_isolate_gypi',
+            'system_wrappers_unittests',
+          ],
+          'includes': [
+            'system_wrappers_unittests.isolate',
+          ],
+          'sources': [
+            'system_wrappers_unittests.isolate',
           ],
         },
       ],

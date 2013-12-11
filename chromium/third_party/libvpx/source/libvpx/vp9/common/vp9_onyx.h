@@ -22,7 +22,7 @@ extern "C"
 #include "vpx_scale/yv12config.h"
 #include "vp9/common/vp9_ppflags.h"
 
-#define MAX_MB_SEGMENTS 8
+#define MAX_SEGMENTS 8
 
   typedef int *VP9_PTR;
 
@@ -46,7 +46,8 @@ extern "C"
   typedef enum {
     USAGE_STREAM_FROM_SERVER    = 0x0,
     USAGE_LOCAL_FILE_PLAYBACK   = 0x1,
-    USAGE_CONSTRAINED_QUALITY   = 0x2
+    USAGE_CONSTRAINED_QUALITY   = 0x2,
+    USAGE_CONSTANT_QUALITY      = 0x3,
   } END_USAGE;
 
 
@@ -64,41 +65,13 @@ extern "C"
     FRAMEFLAGS_ALTREF = 4,
   } FRAMETYPE_FLAGS;
 
-
-#include <assert.h>
-  static INLINE void Scale2Ratio(int mode, int *hr, int *hs) {
-    switch (mode) {
-      case    NORMAL:
-        *hr = 1;
-        *hs = 1;
-        break;
-      case    FOURFIVE:
-        *hr = 4;
-        *hs = 5;
-        break;
-      case    THREEFIVE:
-        *hr = 3;
-        *hs = 5;
-        break;
-      case    ONETWO:
-        *hr = 1;
-        *hs = 2;
-        break;
-      default:
-        *hr = 1;
-        *hs = 1;
-        assert(0);
-        break;
-    }
-  }
-
   typedef struct {
     int version;  // 4 versions of bitstream defined:
                   //   0 - best quality/slowest decode,
                   //   3 - lowest quality/fastest decode
     int width;  // width of data passed to the compressor
     int height;  // height of data passed to the compressor
-    double frame_rate;       // set to passed in framerate
+    double framerate;       // set to passed in framerate
     int64_t target_bandwidth;    // bandwidth to be used in kilobits per second
 
     int noise_sensitivity;   // parameter used for applying pre processing blur: recommendation 0
@@ -158,6 +131,8 @@ extern "C"
     // END DATARATE CONTROL OPTIONS
     // ----------------------------------------------------------------
 
+    // Spatial scalability
+    int ss_number_layers;
 
     // these parameters aren't to be used in final build don't use!!!
     int play_alternate;
@@ -228,15 +203,22 @@ extern "C"
 
   int vp9_set_roimap(VP9_PTR comp, unsigned char *map,
                      unsigned int rows, unsigned int cols,
-                     int delta_q[MAX_MB_SEGMENTS],
-                     int delta_lf[MAX_MB_SEGMENTS],
-                     unsigned int threshold[MAX_MB_SEGMENTS]);
+                     int delta_q[MAX_SEGMENTS],
+                     int delta_lf[MAX_SEGMENTS],
+                     unsigned int threshold[MAX_SEGMENTS]);
 
   int vp9_set_active_map(VP9_PTR comp, unsigned char *map,
                          unsigned int rows, unsigned int cols);
 
   int vp9_set_internal_size(VP9_PTR comp,
                             VPX_SCALING horiz_mode, VPX_SCALING vert_mode);
+
+  int vp9_set_size_literal(VP9_PTR comp, unsigned int width,
+                           unsigned int height);
+
+  int vp9_switch_layer(VP9_PTR comp, int layer);
+
+  void vp9_set_svc(VP9_PTR comp, int use_svc);
 
   int vp9_get_quantizer(VP9_PTR c);
 

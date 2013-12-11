@@ -34,7 +34,7 @@
 #include "../platform/WebColor.h"
 #include "../platform/WebGraphicsContext3D.h"
 #include "../platform/WebString.h"
-#include "WebAccessibilityNotification.h"
+#include "WebAXEnums.h"
 #include "WebContentDetectionResult.h"
 #include "WebDragOperation.h"
 #include "WebEditingAction.h"
@@ -48,7 +48,7 @@
 
 namespace WebKit {
 
-class WebAccessibilityObject;
+class WebAXObject;
 class WebColorChooser;
 class WebColorChooserClient;
 class WebCompositorOutputSurface;
@@ -125,9 +125,12 @@ public:
 
     // Misc ----------------------------------------------------------------
 
+    // Whether or not we should report a detailed message for the given source.
+    virtual bool shouldReportDetailedMessageForSource(const WebString& source) { return false; }
+
     // A new message was added to the console.
     virtual void didAddMessageToConsole(
-        const WebConsoleMessage&, const WebString& sourceName, unsigned sourceLine) { }
+        const WebConsoleMessage&, const WebString& sourceName, unsigned sourceLine, const WebString& stackTrace) { }
 
     // Called when script in the page calls window.print().  If frame is
     // non-null, then it selects a particular frame, including its
@@ -216,6 +219,17 @@ public:
     // true. This function is used only if ExternalDateTimeChooser is used.
     virtual bool openDateTimeChooser(const WebDateTimeChooserParams&, WebDateTimeChooserCompletion*) { return false; }
 
+    // Show a notification popup for the specified form vaidation messages
+    // besides the anchor rectangle. An implementation of this function should
+    // not hide the popup until hideValidationMessage call.
+    virtual void showValidationMessage(const WebRect& anchorInRootView, const WebString& mainText, const WebString& supplementalText, WebTextDirection hint) { }
+
+    // Hide notifation popup for form validation messages.
+    virtual void hideValidationMessage() { }
+
+    // Move the existing notifation popup to the new anchor position.
+    virtual void moveValidationMessage(const WebRect& anchorInRootView) { }
+
     // Displays a modal alert dialog containing the given message.  Returns
     // once the user dismisses the dialog.
     virtual void runModalAlertDialog(
@@ -259,6 +273,10 @@ public:
     // the given frame. Additional context data is supplied.
     virtual void showContextMenu(WebFrame*, const WebContextMenuData&) { }
 
+    // Called when the data attached to the currently displayed context menu is
+    // invalidated. The context menu may be closed if possible.
+    virtual void clearContextMenu() { }
+
     // Called when a drag-n-drop operation should begin.
     virtual void startDragging(WebFrame*, const WebDragData&, WebDragOperationsMask, const WebImage&, const WebPoint& dragImageOffset) { }
 
@@ -301,15 +319,11 @@ public:
     virtual int historyBackListCount() { return 0; }
     virtual int historyForwardListCount() { return 0; }
 
-    // Called to notify the embedder when a new history item is added.
-    virtual void didAddHistoryItem() { }
-
 
     // Accessibility -------------------------------------------------------
 
-    // Notifies embedder about an accessibility notification.
-    virtual void postAccessibilityNotification(const WebAccessibilityObject&, WebAccessibilityNotification) { }
-
+    // Notifies embedder about an accessibility event.
+    virtual void postAccessibilityEvent(const WebAXObject&, WebAXEvent) { }
 
     // Developer tools -----------------------------------------------------
 

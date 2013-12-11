@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2013 Intel Corporation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,6 +28,7 @@
 #define GraphicsLayer_h
 
 #include "core/platform/animation/CSSAnimationData.h"
+#include "core/platform/animation/KeyframeValueList.h"
 #include "core/platform/graphics/Color.h"
 #include "core/platform/graphics/FloatPoint.h"
 #include "core/platform/graphics/FloatPoint3D.h"
@@ -35,18 +37,20 @@
 #include "core/platform/graphics/IntRect.h"
 #include "core/platform/graphics/chromium/OpaqueRectTrackingContentLayerDelegate.h"
 #include "core/platform/graphics/filters/FilterOperations.h"
-#include "core/platform/graphics/transforms/TransformOperations.h"
 #include "core/platform/graphics/transforms/TransformationMatrix.h"
 
 #include "wtf/HashMap.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
+#include "wtf/Vector.h"
 
 #include "public/platform/WebAnimationDelegate.h"
 #include "public/platform/WebCompositingReasons.h"
 #include "public/platform/WebContentLayer.h"
 #include "public/platform/WebImageLayer.h"
+#include "public/platform/WebLayerClient.h"
 #include "public/platform/WebLayerScrollClient.h"
+#include "public/platform/WebNinePatchLayer.h"
 #include "public/platform/WebSolidColorLayer.h"
 
 namespace WebKit {
@@ -62,127 +66,6 @@ class GraphicsLayerFactory;
 class Image;
 class ScrollableArea;
 class TextStream;
-class TimingFunction;
-
-// Base class for animation values (also used for transitions). Here to
-// represent values for properties being animated via the GraphicsLayer,
-// without pulling in style-related data from outside of the platform directory.
-// FIXME: Should be moved to its own header file.
-class AnimationValue {
-    WTF_MAKE_FAST_ALLOCATED;
-public:
-    explicit AnimationValue(float keyTime, PassRefPtr<TimingFunction> timingFunction = 0)
-        : m_keyTime(keyTime)
-        , m_timingFunction(timingFunction)
-    {
-    }
-
-    virtual ~AnimationValue() { }
-
-    float keyTime() const { return m_keyTime; }
-    const TimingFunction* timingFunction() const { return m_timingFunction.get(); }
-    virtual PassOwnPtr<AnimationValue> clone() const = 0;
-
-private:
-    float m_keyTime;
-    RefPtr<TimingFunction> m_timingFunction;
-};
-
-// Used to store one float value of an animation.
-// FIXME: Should be moved to its own header file.
-class FloatAnimationValue : public AnimationValue {
-public:
-    FloatAnimationValue(float keyTime, float value, PassRefPtr<TimingFunction> timingFunction = 0)
-        : AnimationValue(keyTime, timingFunction)
-        , m_value(value)
-    {
-    }
-    virtual PassOwnPtr<AnimationValue> clone() const OVERRIDE { return adoptPtr(new FloatAnimationValue(*this)); }
-
-    float value() const { return m_value; }
-
-private:
-    float m_value;
-};
-
-// Used to store one transform value in a keyframe list.
-// FIXME: Should be moved to its own header file.
-class TransformAnimationValue : public AnimationValue {
-public:
-    explicit TransformAnimationValue(float keyTime, const TransformOperations* value = 0, PassRefPtr<TimingFunction> timingFunction = 0)
-        : AnimationValue(keyTime, timingFunction)
-    {
-        if (value)
-            m_value = *value;
-    }
-    virtual PassOwnPtr<AnimationValue> clone() const OVERRIDE { return adoptPtr(new TransformAnimationValue(*this)); }
-
-    const TransformOperations* value() const { return &m_value; }
-
-private:
-    TransformOperations m_value;
-};
-
-// Used to store one filter value in a keyframe list.
-// FIXME: Should be moved to its own header file.
-class FilterAnimationValue : public AnimationValue {
-public:
-    explicit FilterAnimationValue(float keyTime, const FilterOperations* value = 0, PassRefPtr<TimingFunction> timingFunction = 0)
-        : AnimationValue(keyTime, timingFunction)
-    {
-        if (value)
-            m_value = *value;
-    }
-    virtual PassOwnPtr<AnimationValue> clone() const OVERRIDE { return adoptPtr(new FilterAnimationValue(*this)); }
-
-    const FilterOperations* value() const { return &m_value; }
-
-private:
-    FilterOperations m_value;
-};
-
-// Used to store a series of values in a keyframe list.
-// Values will all be of the same type, which can be inferred from the property.
-// FIXME: Should be moved to its own header file.
-class KeyframeValueList {
-public:
-    explicit KeyframeValueList(AnimatedPropertyID property)
-        : m_property(property)
-    {
-    }
-
-    KeyframeValueList(const KeyframeValueList& other)
-        : m_property(other.property())
-    {
-        for (size_t i = 0; i < other.m_values.size(); ++i)
-            m_values.append(other.m_values[i]->clone());
-    }
-
-    KeyframeValueList& operator=(const KeyframeValueList& other)
-    {
-        KeyframeValueList copy(other);
-        swap(copy);
-        return *this;
-    }
-
-    void swap(KeyframeValueList& other)
-    {
-        std::swap(m_property, other.m_property);
-        m_values.swap(other.m_values);
-    }
-
-    AnimatedPropertyID property() const { return m_property; }
-
-    size_t size() const { return m_values.size(); }
-    const AnimationValue* at(size_t i) const { return m_values.at(i).get(); }
-
-    // Insert, sorted by keyTime.
-    void insert(PassOwnPtr<const AnimationValue>);
-
-protected:
-    Vector<OwnPtr<const AnimationValue> > m_values;
-    AnimatedPropertyID m_property;
-};
 
 // FIXME: find a better home for this declaration.
 class LinkHighlightClient {
@@ -198,12 +81,13 @@ protected:
 // GraphicsLayer is an abstraction for a rendering surface with backing store,
 // which may have associated transformation and animations.
 
-class GraphicsLayer : public GraphicsContextPainter, public WebKit::WebAnimationDelegate, public WebKit::WebLayerScrollClient {
+class GraphicsLayer : public GraphicsContextPainter, public WebKit::WebAnimationDelegate, public WebKit::WebLayerScrollClient, public WebKit::WebLayerClient {
     WTF_MAKE_NONCOPYABLE(GraphicsLayer); WTF_MAKE_FAST_ALLOCATED;
 public:
     enum ContentsLayerPurpose {
         NoContentsLayer = 0,
         ContentsLayerForImage,
+        ContentsLayerForNinePatch,
         ContentsLayerForVideo,
         ContentsLayerForCanvas,
     };
@@ -214,11 +98,11 @@ public:
 
     GraphicsLayerClient* client() const { return m_client; }
 
-    // Layer name. Only used to identify layers in debug output
-    const String& name() const { return m_name; }
-    void setName(const String&);
+    // WebKit::WebLayerClient implementation.
+    virtual WebKit::WebString debugName(WebKit::WebLayer*) OVERRIDE;
 
     void setCompositingReasons(WebKit::WebCompositingReasons);
+    WebKit::WebCompositingReasons compositingReasons() const { return m_compositingReasons; }
 
     GraphicsLayer* parent() const { return m_parent; };
     void setParent(GraphicsLayer*); // Internal use only.
@@ -249,6 +133,8 @@ public:
     bool isReplicated() const { return m_replicaLayer; }
     // The layer that replicates this layer (if any).
     GraphicsLayer* replicaLayer() const { return m_replicaLayer; }
+    // The layer being replicated.
+    GraphicsLayer* replicatedLayer() const { return m_replicatedLayer; }
 
     const FloatPoint& replicatedLayerPosition() const { return m_replicatedLayerPosition; }
     void setReplicatedLayerPosition(const FloatPoint& p) { m_replicatedLayerPosition = p; }
@@ -348,6 +234,7 @@ public:
 
     // Layer contents
     void setContentsToImage(Image*);
+    void setContentsToNinePatch(Image*, const IntRect& aperture);
     bool shouldDirectlyCompositeImage(Image*) const { return true; }
     void setContentsToMedia(WebKit::WebLayer*); // video or plug-in
     // Pass an invalid color to remove the contents layer.
@@ -374,12 +261,7 @@ public:
 
     void dumpLayer(TextStream&, int indent = 0, LayerTreeFlags = LayerTreeNormal) const;
 
-    void setShowRepaintCounter(bool show) { m_showRepaintCounter = show; }
-    bool isShowingRepaintCounter() const { return m_showRepaintCounter; }
-
-    // FIXME: this is really a paint count.
-    int repaintCount() const { return m_repaintCount; }
-    int incrementRepaintCount() { return ++m_repaintCount; }
+    int paintCount() const { return m_paintCount; }
 
     // z-position is the z-equivalent of position(). It's only used for debugging purposes.
     float zPosition() const { return m_zPosition; }
@@ -407,9 +289,11 @@ public:
         return false;
     }
 
-    void setLinkHighlight(LinkHighlightClient*);
+    void addLinkHighlight(LinkHighlightClient*);
+    void removeLinkHighlight(LinkHighlightClient*);
     // Exposed for tests
-    LinkHighlightClient* linkHighlight() { return m_linkHighlight; }
+    unsigned numLinkHighlights() { return m_linkHighlights.size(); }
+    LinkHighlightClient* linkHighlight(int i) { return m_linkHighlights[i]; }
 
     void setScrollableArea(ScrollableArea*, bool isMainFrame);
     ScrollableArea* scrollableArea() const { return m_scrollableArea; }
@@ -433,6 +317,11 @@ public:
     virtual void didScroll() OVERRIDE;
 
 protected:
+    explicit GraphicsLayer(GraphicsLayerClient*);
+    // GraphicsLayerFactoryChromium that wants to create a GraphicsLayer need to be friends.
+    friend class WebKit::GraphicsLayerFactoryChromium;
+
+private:
     // Adds a child without calling updateChildList(), so that adding children
     // can be batched before updating.
     void addChildInternal(GraphicsLayer*);
@@ -442,23 +331,9 @@ protected:
     // needs to notifiy the change to the platform layer as needed.
     void clearFilters() { m_filters.clear(); }
 
-    // Given a KeyframeValueList containing filterOperations, return true if the operations are valid.
-    static int validateFilterOperations(const KeyframeValueList&);
-
-    // Given a list of TransformAnimationValues, see if all the operations for each keyframe match. If so
-    // return the index of the KeyframeValueList entry that has that list of operations (it may not be
-    // the first entry because some keyframes might have an empty transform and those match any list).
-    // If the lists don't match return -1. On return, if hasBigRotation is true, functions contain
-    // rotations of >= 180 degrees
-    static int validateTransformOperations(const KeyframeValueList&, bool& hasBigRotation);
-
-    // The layer being replicated.
-    GraphicsLayer* replicatedLayer() const { return m_replicatedLayer; }
     void setReplicatedLayer(GraphicsLayer* layer) { m_replicatedLayer = layer; }
 
-    // Any factory classes that want to create a GraphicsLayer need to be friends.
-    friend class WebKit::GraphicsLayerFactoryChromium;
-    explicit GraphicsLayer(GraphicsLayerClient*);
+    int incrementPaintCount() { return ++m_paintCount; }
 
     static void writeIndent(TextStream&, int indent);
 
@@ -466,7 +341,6 @@ protected:
     void dumpAdditionalProperties(TextStream&, int /*indent*/, LayerTreeFlags) const { }
 
     // Helper functions used by settors to keep layer's the state consistent.
-    void updateNames();
     void updateChildList();
     void updateLayerIsDrawable();
     void updateContentsRect();
@@ -477,7 +351,6 @@ protected:
     WebKit::WebLayer* contentsLayerIfRegistered();
 
     GraphicsLayerClient* m_client;
-    String m_name;
 
     // Offset from the owning renderer
     IntSize m_offsetFromRenderer;
@@ -503,7 +376,6 @@ protected:
     bool m_masksToBounds : 1;
     bool m_drawsContent : 1;
     bool m_contentsVisible : 1;
-    bool m_showRepaintCounter : 1;
 
     GraphicsLayerPaintingPhase m_paintingPhase;
     CompositingCoordinatesOrientation m_contentsOrientation; // affects orientation of layer contents
@@ -520,15 +392,11 @@ protected:
 
     IntRect m_contentsRect;
 
-    int m_repaintCount;
-
-    String m_nameBase;
-
-    Color m_contentsSolidColor;
+    int m_paintCount;
 
     OwnPtr<WebKit::WebContentLayer> m_layer;
     OwnPtr<WebKit::WebImageLayer> m_imageLayer;
-    OwnPtr<WebKit::WebSolidColorLayer> m_contentsSolidColorLayer;
+    OwnPtr<WebKit::WebNinePatchLayer> m_ninePatchLayer;
     WebKit::WebLayer* m_contentsLayer;
     // We don't have ownership of m_contentsLayer, but we do want to know if a given layer is the
     // same as our current layer in setContentsTo(). Since m_contentsLayer may be deleted at this point,
@@ -536,17 +404,17 @@ protected:
     // on.
     int m_contentsLayerId;
 
-    LinkHighlightClient* m_linkHighlight;
+    Vector<LinkHighlightClient*> m_linkHighlights;
 
     OwnPtr<OpaqueRectTrackingContentLayerDelegate> m_opaqueRectTrackingContentLayerDelegate;
 
     ContentsLayerPurpose m_contentsLayerPurpose;
-    bool m_inSetChildren;
 
     typedef HashMap<String, int> AnimationIdMap;
     AnimationIdMap m_animationIdMap;
 
     ScrollableArea* m_scrollableArea;
+    WebKit::WebCompositingReasons m_compositingReasons;
 };
 
 

@@ -6,9 +6,10 @@
 .analysis-view {
   background-color: white;
   display: -webkit-flex;
+  overflow: auto;
 }
 
-.analysis-view:not(.viewing-object) {
+.analysis-view.viewing-old-style-analysis {
   overflow: auto;
 }
 

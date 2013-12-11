@@ -1,0 +1,120 @@
+<!--
+Copyright (c) 2013 The Chromium Authors. All rights reserved.
+Use of this source code is governed by a BSD-style license that can be
+found in the LICENSE file.
+-->
+
+<template id="overlay-template">
+  <style>
+    @host {
+      :scope {
+        left: 0;
+        padding: 8px;
+        position: absolute;
+        top: 0;
+        z-index: 1000;
+        font-family: sans-serif;
+      }
+      :scope:focus {
+        outline: none;
+      }
+    }
+    overlay-mask {
+      -webkit-justify-content: center;
+      background: rgba(0, 0, 0, 0.8);
+      display: -webkit-flex;
+      height: 100%;
+      left: 0;
+      position: fixed;
+      top: 0;
+      width: 100%;
+    }
+    overlay-vertical-centering-container {
+      -webkit-justify-content: center;
+      -webkit-flex-direction: column;
+      display: -webkit-flex;
+    }
+    overlay-frame {
+      z-index: 1100;
+      background: rgb(255, 255, 255);
+      border: 1px solid #ccc;
+      margin: 75px;
+      display: -webkit-flex;
+      -webkit-flex-direction: column;
+    }
+    title-bar {
+      -webkit-align-items: center;
+      -webkit-flex-direction: row;
+      border-bottom: 1px solid #ccc;
+      background-color: #ddd;
+      display: -webkit-flex;
+      padding: 5px;
+      -webkit-flex: 0 0 auto;
+    }
+    title {
+      display: inline;
+      font-weight: bold;
+      -webkit-box-flex: 1;
+      -webkit-flex: 1 1 auto;
+    }
+    close-button {
+      -webkit-align-self: flex-end;
+      border: 1px solid #eee;
+      background-color: #999;
+      font-size: 10pt;
+      font-weight: bold;
+      padding: 2px;
+      text-align: center;
+      width: 16px;
+    }
+    close-button:hover {
+      background-color: #ddd;
+      border-color: black;
+      cursor: pointer;
+    }
+    overlay-content {
+      display: -webkit-flex;
+      -webkit-flex: 1 1 auto;
+      -webkit-flex-direction: column;
+      overflow-y: auto;
+      padding: 10px;
+      min-width: 300px;
+    }
+    button-bar {
+      -webkit-flex-direction: row;
+      border-top: 1px solid #ccc;
+      display: -webkit-flex;
+      padding:4px;
+      -webkit-align-items: baseline;
+      -webkit-flex: 0 0 auto;
+    }
+    button-bar > padding {
+      -webkit-box-flex: 1;
+      -webkit-flex: 1 1 auto;
+    }
+    button-bar > left-buttons,
+    button-bar > right-buttons {
+      display: -webkit-flex;
+      -webkit-flex-direction: row;
+    }
+  </style>
+
+  <overlay-mask>
+    <overlay-vertical-centering-container>
+      <overlay-frame>
+        <title-bar>
+          <title></title>
+          <close-button>&#x2715</close-button>
+        </title-bar>
+        <overlay-content>
+          <content></content>
+        </overlay-content>
+        <button-bar>
+          <left-buttons></left-buttons>
+          <padding></padding>
+          <right-buttons></right-buttons>
+        </button-bar>
+      </overlay-frame>
+    </overlay-vertical-centering-container>
+  </overlay-mask>
+</template>

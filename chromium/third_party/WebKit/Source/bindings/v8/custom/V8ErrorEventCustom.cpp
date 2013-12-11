@@ -41,13 +41,12 @@
 #include "bindings/v8/V8DOMWrapper.h"
 #include "bindings/v8/V8HiddenPropertyName.h"
 #include "core/dom/ContextFeatures.h"
-#include "core/page/Frame.h"
 
 namespace WebCore {
 
-void V8ErrorEvent::errorAttrGetterCustom(v8::Local<v8::String>, const v8::PropertyCallbackInfo<v8::Value>& info)
+void V8ErrorEvent::errorAttributeGetterCustom(v8::Local<v8::String>, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
-    v8::Handle<v8::Value> error = info.Holder()->GetHiddenValue(V8HiddenPropertyName::error());
+    v8::Handle<v8::Value> error = info.Holder()->GetHiddenValue(V8HiddenPropertyName::error(info.GetIsolate()));
 
     if (!error.IsEmpty()) {
         v8SetReturnValue(info, error);

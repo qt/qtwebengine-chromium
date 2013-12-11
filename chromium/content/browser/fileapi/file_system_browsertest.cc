@@ -13,7 +13,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
-#include "content/shell/shell.h"
+#include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
 #include "webkit/browser/quota/quota_manager.h"
@@ -36,7 +36,8 @@ class FileSystemBrowserTest : public ContentBrowserTest {
     LOG(INFO) << "Navigating to URL and blocking.";
     NavigateToURLBlockUntilNavigationsComplete(the_browser, test_url, 2);
     LOG(INFO) << "Navigation done.";
-    std::string result = the_browser->web_contents()->GetURL().ref();
+    std::string result =
+        the_browser->web_contents()->GetLastCommittedURL().ref();
     if (result != "pass") {
       std::string js_result;
       ASSERT_TRUE(ExecuteScriptAndExtractString(

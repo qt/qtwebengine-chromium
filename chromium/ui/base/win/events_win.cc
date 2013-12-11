@@ -4,15 +4,15 @@
 
 #include <windowsx.h>
 
-#include "ui/base/events/event_constants.h"
+#include "ui/events/event_constants.h"
 
 #include "base/logging.h"
 #include "base/time/time.h"
 #include "base/win/win_util.h"
-#include "ui/base/events/event_utils.h"
-#include "ui/base/keycodes/keyboard_code_conversion_win.h"
-#include "ui/base/win/dpi.h"
+#include "ui/events/event_utils.h"
+#include "ui/events/keycodes/keyboard_code_conversion_win.h"
 #include "ui/gfx/point.h"
+#include "ui/gfx/win/dpi.h"
 
 namespace ui {
 
@@ -213,7 +213,7 @@ gfx::Point EventLocationFromNative(const base::NativeEvent& native_event) {
                          GET_Y_LPARAM(native_event.lParam) };
   ScreenToClient(native_event.hwnd, &native_point);
   gfx::Point location(native_point);
-  location = ui::win::ScreenToDIPPoint(location);
+  location = gfx::win::ScreenToDIPPoint(location);
   return location;
 }
 
@@ -357,6 +357,8 @@ int GetModifiersFromKeyState() {
     modifiers |= EF_CONTROL_DOWN;
   if (base::win::IsAltPressed())
     modifiers |= EF_ALT_DOWN;
+  if (base::win::IsAltGrPressed())
+    modifiers |= EF_ALTGR_DOWN;
   return modifiers;
 }
 

@@ -12,7 +12,7 @@
 #include "ui/app_list/views/app_list_main_view.h"
 #include "ui/app_list/views/apps_grid_view.h"
 #include "ui/app_list/views/search_result_list_view.h"
-#include "ui/base/events/event.h"
+#include "ui/events/event.h"
 #include "ui/views/animation/bounds_animator.h"
 #include "ui/views/view_model.h"
 #include "ui/views/view_model_utils.h"
@@ -76,8 +76,13 @@ ContentsView::ContentsView(AppListMainView* app_list_main_view,
 ContentsView::~ContentsView() {
 }
 
+void ContentsView::CancelDrag() {
+  if (apps_grid_view_ && apps_grid_view_->has_dragged_view())
+    apps_grid_view_->EndDrag(true);
+}
+
 void ContentsView::SetDragAndDropHostOfCurrentAppList(
-    app_list::ApplicationDragAndDropHost* drag_and_drop_host) {
+    ApplicationDragAndDropHost* drag_and_drop_host) {
   apps_grid_view_->SetDragAndDropHostOfCurrentAppList(drag_and_drop_host);
 }
 

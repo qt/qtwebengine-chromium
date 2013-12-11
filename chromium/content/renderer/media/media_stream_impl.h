@@ -118,15 +118,16 @@ class CONTENT_EXPORT MediaStreamImpl
   // Structure for storing information about a WebKit request to create a
   // MediaStream.
   struct UserMediaRequestInfo {
-    UserMediaRequestInfo();
     UserMediaRequestInfo(int request_id,
                          WebKit::WebFrame* frame,
-                         const WebKit::WebUserMediaRequest& request);
+                         const WebKit::WebUserMediaRequest& request,
+                         bool enable_automatic_output_device_selection);
     ~UserMediaRequestInfo();
     int request_id;
     // True if MediaStreamDispatcher has generated the stream, see
     // OnStreamGenerated.
     bool generated;
+    const bool enable_automatic_output_device_selection;
     WebKit::WebFrame* frame;  // WebFrame that requested the MediaStream.
     WebKit::WebMediaStream web_stream;
     WebKit::WebUserMediaRequest request;
@@ -154,6 +155,16 @@ class CONTENT_EXPORT MediaStreamImpl
       webrtc::MediaStreamInterface* stream);
 
   void StopLocalAudioTrack(const WebKit::WebMediaStream& web_stream);
+
+  // Returns a valid session id if a single capture device is currently open
+  // (and then the matching session_id), otherwise -1.
+  // This is used to pass on a session id to a webrtc audio renderer (either
+  // local or remote), so that audio will be rendered to a matching output
+  // device, should one exist.
+  // Note that if there are more than one open capture devices the function
+  // will not be able to pick an appropriate device and return false.
+  bool GetAuthorizedDeviceInfoForAudioRenderer(
+      int* session_id, int* output_sample_rate, int* output_buffer_size);
 
   // Weak ref to a MediaStreamDependencyFactory, owned by the RenderThread.
   // It's valid for the lifetime of RenderThread.

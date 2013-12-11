@@ -21,17 +21,24 @@
 #ifndef SVGPolygonElement_h
 #define SVGPolygonElement_h
 
+#include "SVGNames.h"
 #include "core/svg/SVGPolyElement.h"
 
 namespace WebCore {
 
 class SVGPolygonElement FINAL : public SVGPolyElement {
 public:
-    static PassRefPtr<SVGPolygonElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGPolygonElement> create(const QualifiedName&, Document&);
 
 private:
-    SVGPolygonElement(const QualifiedName&, Document*);
+    SVGPolygonElement(const QualifiedName&, Document&);
 };
+
+inline SVGPolygonElement* toSVGPolygonElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::polygonTag));
+    return static_cast<SVGPolygonElement*>(node);
+}
 
 } // namespace WebCore
 

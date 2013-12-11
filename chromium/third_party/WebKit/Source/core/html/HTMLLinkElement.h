@@ -25,15 +25,15 @@
 #define HTMLLinkElement_h
 
 #include "core/css/CSSStyleSheet.h"
+#include "core/dom/DOMSettableTokenList.h"
 #include "core/dom/IconURL.h"
-#include "core/html/DOMSettableTokenList.h"
+#include "core/fetch/ResourcePtr.h"
+#include "core/fetch/StyleSheetResourceClient.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/LinkRelAttribute.h"
 #include "core/html/LinkResource.h"
 #include "core/loader/LinkLoader.h"
 #include "core/loader/LinkLoaderClient.h"
-#include "core/loader/cache/ResourcePtr.h"
-#include "core/loader/cache/StyleSheetResourceClient.h"
 
 namespace WebCore {
 
@@ -106,7 +106,7 @@ private:
     void clearSheet();
     void addPendingSheet(PendingSheetType);
     void removePendingSheet(RemovePendingSheetNotificationType = RemovePendingSheetNotifyImmediately);
-    Document* document();
+    Document& document();
 
     ResourcePtr<CSSStyleSheetResource> m_resource;
     RefPtr<CSSStyleSheet> m_sheet;
@@ -120,7 +120,7 @@ private:
 
 class HTMLLinkElement FINAL : public HTMLElement, public LinkLoaderClient {
 public:
-    static PassRefPtr<HTMLLinkElement> create(const QualifiedName&, Document*, bool createdByParser);
+    static PassRefPtr<HTMLLinkElement> create(const QualifiedName&, Document&, bool createdByParser);
     virtual ~HTMLLinkElement();
 
     KURL href() const;
@@ -189,7 +189,7 @@ private:
     virtual void didSendDOMContentLoadedForLinkPrerender() OVERRIDE;
 
 private:
-    HTMLLinkElement(const QualifiedName&, Document*, bool createdByParser);
+    HTMLLinkElement(const QualifiedName&, Document&, bool createdByParser);
 
     RefPtr<LinkResource> m_link;
     LinkLoader m_linkLoader;

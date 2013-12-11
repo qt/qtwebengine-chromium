@@ -23,7 +23,6 @@
 #define ContainerNodeAlgorithms_h
 
 #include "core/dom/Document.h"
-#include "core/dom/NodeTraversal.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "wtf/Assertions.h"
@@ -214,9 +213,9 @@ inline void ChildNodeInsertionNotifier::notify(Node* node)
 {
     ASSERT(!NoEventDispatchAssertion::isEventDispatchForbidden());
 
-    InspectorInstrumentation::didInsertDOMNode(node->document(), node);
+    InspectorInstrumentation::didInsertDOMNode(&node->document(), node);
 
-    RefPtr<Document> protectDocument(node->document());
+    RefPtr<Document> protectDocument(&node->document());
     RefPtr<Node> protectNode(node);
 
     if (m_insertionPoint->inDocument())
@@ -224,10 +223,20 @@ inline void ChildNodeInsertionNotifier::notify(Node* node)
     else if (node->isContainerNode())
         notifyNodeInsertedIntoTree(toContainerNode(node));
 
-    for (size_t i = 0; i < m_postInsertionNotificationTargets.size(); ++i)
-        m_postInsertionNotificationTargets[i]->didNotifySubtreeInsertions(m_insertionPoint);
-}
+    // Script runs in didNotifySubtreeInsertions so we should lazy attach before
+    // to ensure that triggering a style recalc in script attaches all nodes that
+    // were inserted.
+    // FIXME: We should merge the lazy attach logic into the tree traversal in
+    // notifyNodeInsertedIntoDocument.
+    if (!node->attached() && node->parentNode() && node->parentNode()->attached())
+        node->lazyAttach();
 
+    for (size_t i = 0; i < m_postInsertionNotificationTargets.size(); ++i) {
+        Node* node = m_postInsertionNotificationTargets[i].get();
+        if (node->inDocument())
+            node->didNotifySubtreeInsertionsToDocument();
+    }
+}
 
 inline void ChildNodeRemovalNotifier::notifyNodeRemovedFromDocument(Node* node)
 {
@@ -251,7 +260,7 @@ inline void ChildNodeRemovalNotifier::notify(Node* node)
 {
     if (node->inDocument()) {
         notifyNodeRemovedFromDocument(node);
-        node->document()->notifyRemovePendingSheetIfNeeded();
+        node->document().notifyRemovePendingSheetIfNeeded();
     } else if (node->isContainerNode())
         notifyNodeRemovedFromTree(toContainerNode(node));
 }
@@ -289,7 +298,7 @@ inline void ChildFrameDisconnector::collectFrameOwners(Node* root)
         return;
 
     if (root->isHTMLElement() && root->isFrameOwnerElement())
-        m_frameOwners.append(toFrameOwnerElement(root));
+        m_frameOwners.append(toHTMLFrameOwnerElement(root));
 
     for (Node* child = root->firstChild(); child; child = child->nextSibling())
         collectFrameOwners(child);

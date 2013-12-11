@@ -159,22 +159,6 @@ void ResourceIPCAccumulator::GetClassifiedMessages(ClassifiedMessages* msgs) {
   }
 }
 
-class MockURLRequestContextSelector
-    : public ResourceMessageFilter::URLRequestContextSelector {
- public:
-  explicit MockURLRequestContextSelector(
-      net::URLRequestContext* request_context)
-      : request_context_(request_context) {}
-
-  virtual net::URLRequestContext* GetRequestContext(
-      ResourceType::Type request_type) OVERRIDE {
-    return request_context_;
-  }
-
- private:
-  net::URLRequestContext* const request_context_;
-};
-
 // This class forwards the incoming messages to the ResourceDispatcherHostTest.
 // This is used to emulate different sub-processes, since this filter will
 // have a different ID than the original. For the test, we want all the incoming
@@ -185,11 +169,11 @@ class ForwardingFilter : public ResourceMessageFilter {
                             ResourceContext* resource_context)
     : ResourceMessageFilter(
         ChildProcessHostImpl::GenerateChildProcessUniqueId(),
-        PROCESS_TYPE_RENDERER,
-        resource_context, NULL, NULL, NULL,
-        new MockURLRequestContextSelector(
-            resource_context->GetRequestContext())),
-      dest_(dest) {
+        PROCESS_TYPE_RENDERER, NULL, NULL, NULL,
+        base::Bind(&ForwardingFilter::GetContexts,
+                   base::Unretained(this))),
+      dest_(dest),
+      resource_context_(resource_context) {
     OnChannelConnected(base::GetCurrentProcId());
   }
 
@@ -200,11 +184,21 @@ class ForwardingFilter : public ResourceMessageFilter {
     return dest_->Send(msg);
   }
 
+  ResourceContext* resource_context() { return resource_context_; }
+
  protected:
   virtual ~ForwardingFilter() {}
 
  private:
+  void GetContexts(const ResourceHostMsg_Request& request,
+                   ResourceContext** resource_context,
+                   net::URLRequestContext** request_context) {
+    *resource_context = resource_context_;
+    *request_context = resource_context_->GetRequestContext();
+  }
+
   IPC::Sender* dest_;
+  ResourceContext* resource_context_;
 
   DISALLOW_COPY_AND_ASSIGN(ForwardingFilter);
 };
@@ -708,7 +702,7 @@ class ResourceDispatcherHostTest : public testing::Test,
     bool result = PickleIterator(msg).ReadInt(&request_id);
     DCHECK(result);
     scoped_ptr<IPC::Message> ack(
-        new ResourceHostMsg_DataReceived_ACK(msg.routing_id(), request_id));
+        new ResourceHostMsg_DataReceived_ACK(request_id));
 
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
@@ -1609,7 +1603,7 @@ TEST_F(ResourceDispatcherHostTest, IgnoreCancelForDownloads) {
   EXPECT_TRUE(net::URLRequestTestJob::ProcessOnePendingMessage());
 
   // And now simulate a cancellation coming from the renderer.
-  ResourceHostMsg_CancelRequest msg(filter_->child_id(), request_id);
+  ResourceHostMsg_CancelRequest msg(request_id);
   bool msg_was_ok;
   host_.OnMessageReceived(msg, filter_.get(), &msg_was_ok);
 
@@ -1644,7 +1638,7 @@ TEST_F(ResourceDispatcherHostTest, CancelRequestsForContext) {
   EXPECT_TRUE(net::URLRequestTestJob::ProcessOnePendingMessage());
 
   // And now simulate a cancellation coming from the renderer.
-  ResourceHostMsg_CancelRequest msg(filter_->child_id(), request_id);
+  ResourceHostMsg_CancelRequest msg(request_id);
   bool msg_was_ok;
   host_.OnMessageReceived(msg, filter_.get(), &msg_was_ok);
 
@@ -1685,7 +1679,7 @@ TEST_F(ResourceDispatcherHostTest, CancelRequestsForContextTransferred) {
                                     GURL("http://example.com/blah"));
 
   // And now simulate a cancellation coming from the renderer.
-  ResourceHostMsg_CancelRequest msg(filter_->child_id(), request_id);
+  ResourceHostMsg_CancelRequest msg(request_id);
   bool msg_was_ok;
   host_.OnMessageReceived(msg, filter_.get(), &msg_was_ok);
 
@@ -1832,7 +1826,7 @@ TEST_F(ResourceDispatcherHostTest, TransferNavigationAndThenRedirect) {
 
   // Now, simulate the renderer choosing to follow the redirect.
   ResourceHostMsg_FollowRedirect redirect_msg(
-      new_render_view_id, new_request_id, false, GURL());
+      new_request_id, false, GURL());
   host_.OnMessageReceived(redirect_msg, second_filter.get(), &msg_was_ok);
   base::MessageLoop::current()->RunUntilIdle();
 
@@ -1938,7 +1932,7 @@ TEST_F(ResourceDispatcherHostTest, DelayedDataReceivedACKs) {
 
       EXPECT_EQ(ResourceMsg_DataReceived::ID, msgs[0][i].type());
 
-      ResourceHostMsg_DataReceived_ACK msg(0, 1);
+      ResourceHostMsg_DataReceived_ACK msg(1);
       bool msg_was_ok;
       host_.OnMessageReceived(msg, filter_.get(), &msg_was_ok);
     }
@@ -1973,7 +1967,7 @@ TEST_F(ResourceDispatcherHostTest, DataReceivedUnexpectedACKs) {
 
   // Send some unexpected ACKs.
   for (size_t i = 0; i < 128; ++i) {
-    ResourceHostMsg_DataReceived_ACK msg(0, 1);
+    ResourceHostMsg_DataReceived_ACK msg(1);
     bool msg_was_ok;
     host_.OnMessageReceived(msg, filter_.get(), &msg_was_ok);
   }
@@ -1992,7 +1986,7 @@ TEST_F(ResourceDispatcherHostTest, DataReceivedUnexpectedACKs) {
 
       EXPECT_EQ(ResourceMsg_DataReceived::ID, msgs[0][i].type());
 
-      ResourceHostMsg_DataReceived_ACK msg(0, 1);
+      ResourceHostMsg_DataReceived_ACK msg(1);
       bool msg_was_ok;
       host_.OnMessageReceived(msg, filter_.get(), &msg_was_ok);
     }

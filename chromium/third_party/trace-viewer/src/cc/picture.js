@@ -17,79 +17,16 @@ base.exportTo('cc', function() {
 
   // Number of pictures created. Used as an uniqueId because we are immutable.
   var PictureCount = 0;
+  var OPS_TIMING_ITERATIONS = 3;
 
-  /**
-   * @constructor
-   */
-  function PictureSnapshot() {
-    ObjectSnapshot.apply(this, arguments);
+  function Picture(skp64, layerRect, opaqueRect) {
+    this.skp64_ = skp64;
+    this.layerRect_ = layerRect;
+    this.opaqueRect_ = opaqueRect;
     this.guid_ = base.GUID.allocate();
   }
 
-  PictureSnapshot.CanRasterize = function() {
-    if (!window.chrome)
-      return false;
-    if (!window.chrome.skiaBenchmarking)
-      return false;
-    if (!window.chrome.skiaBenchmarking.rasterize)
-      return false;
-    return true;
-  }
-
-  PictureSnapshot.CanGetOps = function() {
-    if (!window.chrome)
-      return false;
-    if (!window.chrome.skiaBenchmarking)
-      return false;
-    if (!window.chrome.skiaBenchmarking.getOps)
-      return false;
-    return true;
-  }
-
-  PictureSnapshot.CanGetOpTimings = function() {
-    if (!window.chrome)
-      return false;
-    if (!window.chrome.skiaBenchmarking)
-      return false;
-    if (!window.chrome.skiaBenchmarking.getOpTimings)
-      return false;
-    return true;
-  }
-
-  PictureSnapshot.HowToEnablePictureDebugging = function() {
-    var usualReason = [
-      'For pictures to show up, you need to have Chrome running with ',
-      '--enable-skia-benchmarking. Please restart chrome with this flag ',
-      'and try again.'
-    ].join('');
-
-    if (!window.chrome)
-      return usualReason;
-    if (!window.chrome.skiaBenchmarking)
-      return usualReason;
-    if (!window.chrome.skiaBenchmarking.rasterize)
-      return 'Your chrome is old';
-    if (!window.chrome.skiaBenchmarking.getOps)
-      return 'Your chrome is old: skiaBenchmarking.getOps not found';
-    if (!window.chrome.skiaBenchmarking.getOpTimings)
-      return 'Your chrome is old: skiaBenchmarking.getOpTimings not found';
-    return 'Rasterizing is on';
-  }
-
-  PictureSnapshot.prototype = {
-    __proto__: ObjectSnapshot.prototype,
-
-    preInitialize: function() {
-      cc.preInitializeObject(this);
-      this.rasterResult_ = undefined;
-    },
-
-    initialize: function() {
-      if (!this.args.params.layerRect)
-        throw new Error('Missing layer rect');
-      this.layerRect_ = this.args.params.layerRect;
-    },
-
+  Picture.prototype = {
     get layerRect() {
       return this.layerRect_;
     },
@@ -99,7 +36,7 @@ base.exportTo('cc', function() {
     },
 
     getBase64SkpData: function() {
-      return this.args.skp64;
+      return this.skp64_;
     },
 
     getOps: function() {
@@ -109,10 +46,10 @@ base.exportTo('cc', function() {
       }
 
       var ops = window.chrome.skiaBenchmarking.getOps({
-        skp64: this.args.skp64,
+        skp64: this.skp64_,
         params: {
-          layer_rect: this.args.params.layerRect.toArray(),
-          opaque_rect: this.args.params.opaqueRect.toArray()
+          layer_rect: this.layerRect_.toArray(),
+          opaque_rect: this.opaqueRect_.toArray()
         }
       });
 
@@ -129,10 +66,10 @@ base.exportTo('cc', function() {
       }
 
       var opTimings = window.chrome.skiaBenchmarking.getOpTimings({
-        skp64: this.args.skp64,
+        skp64: this.skp64_,
         params: {
-          layer_rect: this.args.params.layerRect.toArray(),
-          opaque_rect: this.args.params.opaqueRect.toArray()
+          layer_rect: this.layerRect_.toArray(),
+          opaque_rect: this.opaqueRect_.toArray()
         }
       });
 
@@ -140,6 +77,36 @@ base.exportTo('cc', function() {
         console.error('Failed to get picture op timings.');
 
       return opTimings;
+    },
+
+    /**
+     * Tag each op with the time it takes to rasterize.
+     *
+     * FIXME: We should use real statistics to get better numbers here, see
+     *        https://code.google.com/p/trace-viewer/issues/detail?id=357
+     *
+     * @param {Array} ops Array of Skia operations.
+     * @return {Array} Skia ops where op.cmd_time contains the associated time
+     *         for a given op.
+     */
+    tagOpsWithTimings: function(ops) {
+      var opTimings = new Array();
+      for (var iteration = 0; iteration < OPS_TIMING_ITERATIONS; iteration++) {
+        opTimings[iteration] = this.getOpTimings();
+        if (!opTimings[iteration] || !opTimings[iteration].cmd_times)
+          return ops;
+        if (opTimings[iteration].cmd_times.length != ops.length)
+          return ops;
+      }
+
+      for (var opIndex = 0; opIndex < ops.length; opIndex++) {
+        var min = Number.MAX_VALUE;
+        for (var i = 0; i < OPS_TIMING_ITERATIONS; i++)
+          min = Math.min(min, opTimings[i].cmd_times[opIndex]);
+        ops[opIndex].cmd_time = min;
+      }
+
+      return ops;
     },
 
     /**
@@ -161,10 +128,10 @@ base.exportTo('cc', function() {
 
       var raster = window.chrome.skiaBenchmarking.rasterize(
           {
-            skp64: this.args.skp64,
+            skp64: this.skp64_,
             params: {
-              layer_rect: this.args.params.layerRect.toArray(),
-              opaque_rect: this.args.params.opaqueRect.toArray()
+              layer_rect: this.layerRect_.toArray(),
+              opaque_rect: this.opaqueRect_.toArray()
             }
           },
           {
@@ -190,9 +157,130 @@ base.exportTo('cc', function() {
     }
   };
 
+  /**
+   * @constructor
+   */
+  function PictureSnapshot() {
+    ObjectSnapshot.apply(this, arguments);
+  }
+
+  PictureSnapshot.HasSkiaBenchmarking = function() {
+    if (!window.chrome)
+      return false;
+    if (!window.chrome.skiaBenchmarking)
+      return false;
+    return true;
+  }
+
+  PictureSnapshot.CanRasterize = function() {
+    if (!PictureSnapshot.HasSkiaBenchmarking())
+      return false;
+    if (!window.chrome.skiaBenchmarking.rasterize)
+      return false;
+    return true;
+  }
+
+  PictureSnapshot.CanGetOps = function() {
+    if (!PictureSnapshot.HasSkiaBenchmarking())
+      return false;
+    if (!window.chrome.skiaBenchmarking.getOps)
+      return false;
+    return true;
+  }
+
+  PictureSnapshot.CanGetOpTimings = function() {
+    if (!PictureSnapshot.HasSkiaBenchmarking())
+      return false;
+    if (!window.chrome.skiaBenchmarking.getOpTimings)
+      return false;
+    return true;
+  }
+
+  PictureSnapshot.CanGetInfo = function() {
+    if (!PictureSnapshot.HasSkiaBenchmarking())
+      return false;
+    if (!window.chrome.skiaBenchmarking.getInfo)
+      return false;
+    return true;
+  }
+
+  PictureSnapshot.HowToEnablePictureDebugging = function() {
+    var usualReason = [
+      'For pictures to show up, you need to have Chrome running with ',
+      '--enable-skia-benchmarking. Please restart chrome with this flag ',
+      'and try again.'
+    ].join('');
+
+    if (!window.chrome)
+      return usualReason;
+    if (!window.chrome.skiaBenchmarking)
+      return usualReason;
+    if (!window.chrome.skiaBenchmarking.rasterize)
+      return 'Your chrome is old';
+    if (!window.chrome.skiaBenchmarking.getOps)
+      return 'Your chrome is old: skiaBenchmarking.getOps not found';
+    if (!window.chrome.skiaBenchmarking.getOpTimings)
+      return 'Your chrome is old: skiaBenchmarking.getOpTimings not found';
+    if (!window.chrome.skiaBenchmarking.getInfo)
+      return 'Your chrome is old: skiaBenchmarking.getInfo not found';
+    return 'Rasterizing is on';
+  }
+
+  PictureSnapshot.prototype = {
+    __proto__: ObjectSnapshot.prototype,
+
+    preInitialize: function() {
+      cc.preInitializeObject(this);
+      this.rasterResult_ = undefined;
+    },
+
+    initialize: function() {
+      // If we have an alias args, that means this picture was represented
+      // by an alias, and the real args is in alias.args.
+      if (this.args.alias)
+        this.args = this.args.alias.args;
+
+      if (!this.args.params.layerRect)
+        throw new Error('Missing layer rect');
+
+      this.layerRect_ = this.args.params.layerRect;
+      this.picture_ = new Picture(this.args.skp64,
+          this.args.params.layerRect, this.args.params.opaqueRect);
+    },
+
+    get layerRect() {
+      return this.layerRect_;
+    },
+
+    get guid() {
+      return this.picture_.guid;
+    },
+
+    getBase64SkpData: function() {
+      return this.picture_.getBase64SkpData();
+    },
+
+    getOps: function() {
+      return this.picture_.getOps();
+    },
+
+    getOpTimings: function() {
+      return this.picture_.getOpTimings();
+    },
+
+    tagOpsWithTimings: function(ops) {
+      return this.picture_.tagOpsWithTimings(ops);
+    },
+
+    rasterize: function(params, rasterCompleteCallback) {
+      this.picture_.rasterize(params, rasterCompleteCallback);
+    }
+  };
+
   ObjectSnapshot.register('cc::Picture', PictureSnapshot);
 
   return {
-    PictureSnapshot: PictureSnapshot
+    PictureSnapshot: PictureSnapshot,
+    Picture: Picture
   };
 });

@@ -33,7 +33,13 @@
       <output filename="component_strings_eo.pak" type="data_package" lang="eo" />
     </if>
     <output filename="component_strings_es.pak" type="data_package" lang="es" />
-    <output filename="component_strings_es-419.pak" type="data_package" lang="es-419" />
+    <if expr="is_ios">
+      <!-- iOS uses es-MX for es-419 -->
+      <output filename="component_strings_es-MX.pak" type="data_package" lang="es-419" />
+    </if>
+    <if expr="not is_ios">
+      <output filename="component_strings_es-419.pak" type="data_package" lang="es-419" />
+    </if>
     <output filename="component_strings_et.pak" type="data_package" lang="et" />
     <if expr="pp_ifdef('use_third_party_translations')">
       <output filename="component_strings_eu.pak" type="data_package" lang="eu" />
@@ -77,11 +83,11 @@
          be 'nb'. -->
     <output filename="component_strings_nb.pak" type="data_package" lang="no" />
     <output filename="component_strings_pl.pak" type="data_package" lang="pl" />
-    <if expr="pp_ifdef('ios')">
+    <if expr="is_ios">
       <!-- iOS uses pt for pt-BR -->
       <output filename="component_strings_pt.pak" type="data_package" lang="pt-BR" />
     </if>
-    <if expr="not pp_ifdef('ios')">
+    <if expr="not is_ios">
       <output filename="component_strings_pt-BR.pak" type="data_package" lang="pt-BR" />
     </if>
     <output filename="component_strings_pt-PT.pak" type="data_package" lang="pt-PT" />
@@ -162,6 +168,7 @@
   <release seq="1" allow_pseudo="false">
     <messages fallback_to_english="true">
       <part file="autofill_strings.grdp" />
+      <part file="dom_distiller_strings.grdp" />
     </messages>
   </release>
 </grit>

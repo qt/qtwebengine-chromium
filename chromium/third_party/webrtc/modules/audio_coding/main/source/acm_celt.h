@@ -19,6 +19,8 @@ struct CELT_decinst_t_;
 
 namespace webrtc {
 
+namespace acm1 {
+
 class ACMCELT : public ACMGenericCodec {
  public:
   explicit ACMCELT(int16_t codec_id);
@@ -36,15 +38,14 @@ class ACMCELT : public ACMGenericCodec {
       WebRtcACMCodecParams* codec_params) OVERRIDE;
 
  protected:
-  virtual int16_t DecodeSafe(
-      uint8_t* /* bitstream */,
-      int16_t /* bitstream_len_byte */,
-      int16_t* /* audio */,
-      int16_t* /* audio_samples */,
-      int8_t* /* speech_type */) OVERRIDE;
+  virtual int16_t DecodeSafe(uint8_t* /* bitstream */,
+                             int16_t /* bitstream_len_byte */,
+                             int16_t* /* audio */,
+                             int16_t* /* audio_samples */,
+                             int8_t* /* speech_type */) OVERRIDE;
 
   virtual int32_t CodecDef(WebRtcNetEQ_CodecDef& codec_def,
-                   const CodecInst& codec_inst) OVERRIDE;
+                           const CodecInst& codec_inst) OVERRIDE;
 
   virtual void DestructEncoderSafe() OVERRIDE;
 
@@ -70,6 +71,8 @@ class ACMCELT : public ACMGenericCodec {
   uint16_t channels_;
   uint16_t dec_channels_;
 };
+
+}  // namespace acm1
 
 }  // namespace webrtc
 

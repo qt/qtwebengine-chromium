@@ -33,8 +33,8 @@
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/dom/Element.h"
-#include "core/loader/cache/DocumentResource.h"
-#include "core/loader/cache/DocumentResourceReference.h"
+#include "core/fetch/DocumentResource.h"
+#include "core/fetch/DocumentResourceReference.h"
 #include "core/platform/graphics/filters/FilterEffect.h"
 #include "core/platform/graphics/filters/SourceAlpha.h"
 #include "core/rendering/svg/RenderSVGResourceFilter.h"
@@ -89,8 +89,7 @@ PassRefPtr<FilterEffect> ReferenceFilterBuilder::build(Filter* parentFilter, Ren
     if (!renderer)
         return 0;
 
-    Document* document = renderer->document();
-    ASSERT(document);
+    Document* document = &renderer->document();
 
     DocumentResourceReference* documentResourceReference = filterOperation->documentResourceReference();
     DocumentResource* cachedSVGDocument = documentResourceReference ? documentResourceReference->document() : 0;

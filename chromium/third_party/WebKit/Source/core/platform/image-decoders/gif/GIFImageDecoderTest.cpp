@@ -46,8 +46,6 @@
 using namespace WebCore;
 using namespace WebKit;
 
-#if !OS(ANDROID)
-
 namespace {
 
 PassRefPtr<SharedBuffer> readFile(const char* fileName)
@@ -60,7 +58,7 @@ PassRefPtr<SharedBuffer> readFile(const char* fileName)
 
 PassOwnPtr<GIFImageDecoder> createDecoder()
 {
-    return adoptPtr(new GIFImageDecoder(ImageSource::AlphaNotPremultiplied, ImageSource::GammaAndColorProfileApplied));
+    return adoptPtr(new GIFImageDecoder(ImageSource::AlphaNotPremultiplied, ImageSource::GammaAndColorProfileApplied, ImageDecoder::noDecodedImageByteLimit));
 }
 
 unsigned hashSkBitmap(const SkBitmap& bitmap)
@@ -395,14 +393,14 @@ TEST(GIFImageDecoderTest, updateRequiredPreviousFrameAfterFirstDecode)
         ++partialSize;
     } while (!decoder->frameCount() || decoder->frameBufferAtIndex(0)->status() == ImageFrame::FrameEmpty);
 
-    EXPECT_EQ(notFound, decoder->frameBufferAtIndex(0)->requiredPreviousFrameIndex());
+    EXPECT_EQ(kNotFound, decoder->frameBufferAtIndex(0)->requiredPreviousFrameIndex());
     unsigned frameCount = decoder->frameCount();
     for (size_t i = 1; i < frameCount; ++i)
         EXPECT_EQ(i - 1, decoder->frameBufferAtIndex(i)->requiredPreviousFrameIndex());
 
     decoder->setData(fullData.get(), true);
     for (size_t i = 0; i < frameCount; ++i)
-        EXPECT_EQ(notFound, decoder->frameBufferAtIndex(i)->requiredPreviousFrameIndex());
+        EXPECT_EQ(kNotFound, decoder->frameBufferAtIndex(i)->requiredPreviousFrameIndex());
 }
 
 TEST(GIFImageDecoderTest, randomFrameDecode)
@@ -446,12 +444,10 @@ TEST(GIFImageDecoderTest, resumePartialDecodeAfterClearFrameBufferCache)
     EXPECT_EQ(frameCount, decoder->frameCount());
     ImageFrame* lastFrame = decoder->frameBufferAtIndex(frameCount - 1);
     EXPECT_EQ(baselineHashes[frameCount - 1], hashSkBitmap(lastFrame->getSkBitmap()));
-    decoder->clearCacheExceptFrame(notFound);
+    decoder->clearCacheExceptFrame(kNotFound);
 
     // Resume decoding of the first frame.
     ImageFrame* firstFrame = decoder->frameBufferAtIndex(0);
     EXPECT_EQ(ImageFrame::FrameComplete, firstFrame->status());
     EXPECT_EQ(baselineHashes[0], hashSkBitmap(firstFrame->getSkBitmap()));
 }
-
-#endif

@@ -137,6 +137,9 @@
       'filepath': 'ui/views/bubble/|'\
                   'chrome/browser/ui/views/bubble/',
     },
+    'cast': {
+      'filepath': 'media/cast/',
+    },
     'cc': {
       'filepath': 'cc/|'\
                   'webkit/renderer/compositor_bindings/|'\
@@ -156,7 +159,8 @@
     },
     'chromeos_attestation': {
       'filepath': 'chromeos/attestation/|'\
-                  'chrome/browser/chromeos/attestation/',
+                  'chrome/browser/chromeos/attestation/|'\
+                  'chrome/browser/extensions/api/enterprise_platform_keys_private/',
     },
     'chromeos_calculator': {
       'filepath': 'chrome/common/extensions/docs/examples/apps/calculator/',
@@ -255,6 +259,9 @@
       'filepath': 'file_browser|' \
                   'file_manager|' \
                   'filebrowse'
+    },
+    'filesapp': {
+      'filepath': 'chrome/browser/resources/file_manager',
     },
     'ftp': {
       'filepath': 'ftp',
@@ -362,7 +369,8 @@
     },
     'nacl': {
       'filepath': 'chrome/nacl/|chrome/test/nacl/|'\
-        'chrome/browser/nacl_host/|chrome/common/nacl',
+        'chrome/browser/nacl_host/|chrome/common/nacl|'\
+        'native_client_sdk/src/doc/',
     },
     'native_client_sdk': {
       'filepath': '^native_client_sdk/',
@@ -466,6 +474,9 @@
                    '|third_party/hunspell_dictionaries/'\
                    '|webkit/tools/test_shell/mock_spellcheck'
     },
+    'streams': {
+      'filepath': 'content/browser/streams/',
+    },
     'sync': {
       'filepath': 'chrome/browser/sync/|sync/',
     },
@@ -567,14 +578,20 @@
                   'ui/views/view.cc|'\
                   'ui/views/widget/',
     },
+    'webkit': {
+      'filepath': 'webkit/',
+    },
+    'webrtc_media': {
+      'filepath': 'chrome/browser/media/|'\
+                  'content/browser/renderer_host/media/|'\
+                  'content/renderer/media/|'\
+                  'media/video/capture/',
+    },
     'website_settings': {
       'filepath': 'chrome/browser/content_settings/'\
                   '|chrome/browser/ui/views/website_settings/'\
                   '|chrome/browser/ui/website_settings/'\
                   '|chrome/common/content_settings',
-    },
-    'webkit': {
-      'filepath': 'webkit/',
     },
     'worker': {
       'filepath': 'chrome/browser/worker_host/|chrome/worker/|'\
@@ -600,7 +617,6 @@
                       'ctguil+watch@chromium.org',
                       'aboxhall+watch@chromium.org',
                       'davidbarr+watch@chromium.org',
-                      'zork+watch@chromium.org',
                       'hashimoto+watch@chromium.org',
                       'yoshiki+watch@chromium.org',
                       'yuzo+watch@chromium.org'],
@@ -624,8 +640,7 @@
                         'sievers+watch@chromium.org'],
     'autofill': ['isherman@chromium.org',
                  'dyu@chromium.org', 'abodenha@chromium.org',
-                 'estade+watch@chromium.org', 'ahutter@chromium.org',
-                 'dgwallinga@chromium.org', 'ramankk@chromium.org',
+                 'estade+watch@chromium.org', 'dgwallinga@chromium.org',
                  'benquan@chromium.org', 'rouslan+autofillwatch@chromium.org'],
     'automation': ['robertshield@chromium.org'],
     'base': ['erikwright+watch@chromium.org'],
@@ -641,6 +656,7 @@
     'browser_resources': ['arv+watch@chromium.org'],
     'browsing_data': ['markusheintz@chromium.org'],
     'bubble': ['alicet@chromium.org', 'msw+watch@chromium.org'],
+    'cast': ['miu+watch@chromium.org'],
     'cc': ['cc-bugs@chromium.org'],
     'chrome_frame': ['amit@chromium.org', 'grt+watch@chromium.org',
                      'robertshield@chromium.org'],
@@ -682,12 +698,13 @@
                   'extensions-reviews@chromium.org'],
     'fileapi': ['kinuko+watch@chromium.org', 'tzik+watch@chromium.org'],
     'filebrowse': ['rginda+watch@chromium.org'],
+    'filesapp': ['mtomasz+watch@chromium.org'],
     'ftp': ['phajdan.jr@chromium.org'],
     'fullscreen_controller': ['scheib+watch@chromium.org'],
     'geolocation': ['mvanouwerkerk@chromium.org'],
     'gfx_geometry': ['cc-bugs@chromium.org'],
     'gfx_image': ['rsesek+watch@chromium.org'],
-    'gpu': ['apatrick@chromium.org'],
+    'gpu': ['apatrick@chromium.org', 'piman+watch@chromium.org'],
     'history_ui': ['dubroy@chromium.org', 'pam+watch@chromium.org'],
     'i18n': ['jshin+watch@chromium.org'],
     'imageburner': ['tbarzic+watch@chromium.org'],
@@ -756,6 +773,7 @@
     'spellcheck': ['groby+spellwatch@chromium.org',
                    'rlp@chromium.org',
                    'rouslan+spellwatch@chromium.org'],
+    'streams': ['zork+watch@chromium.org'],
     'sync': ['haitaol+watch@chromium.org',
              'rsimha+watch@chromium.org',
              'tim+watch@chromium.org'],
@@ -786,8 +804,9 @@
                  'timurrrr+watch@chromium.org'],
     'views': ['tfarina@chromium.org'],
     'views_core': ['ben+watch@chromium.org'],
-    'website_settings': ['markusheintz@chromium.org'],
     'webkit': ['darin-cc@chromium.org'],
+    'webrtc_media': ['wjia+watch@chromium.org'],
+    'website_settings': ['markusheintz@chromium.org'],
     'worker': ['jam@chromium.org'],
     'x11': ['derat+watch@chromium.org',
             'sadrul@chromium.org',

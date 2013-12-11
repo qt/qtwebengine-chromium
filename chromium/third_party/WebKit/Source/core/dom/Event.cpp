@@ -138,6 +138,11 @@ bool Event::isTouchEvent() const
     return false;
 }
 
+bool Event::isGestureEvent() const
+{
+    return false;
+}
+
 bool Event::isDragEvent() const
 {
     return false;
@@ -148,18 +153,14 @@ bool Event::isClipboardEvent() const
     return false;
 }
 
-bool Event::storesResultAsString() const
-{
-    return false;
-}
-
 bool Event::isBeforeTextInsertedEvent() const
 {
     return false;
 }
 
-void Event::storeResult(const String&)
+bool Event::isBeforeUnloadEvent() const
 {
+    return false;
 }
 
 void Event::setTarget(PassRefPtr<EventTarget> target)

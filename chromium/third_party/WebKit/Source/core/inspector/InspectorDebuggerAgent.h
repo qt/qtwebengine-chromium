@@ -53,6 +53,7 @@ class JSONObject;
 class ScriptArguments;
 class ScriptCallStack;
 class ScriptDebugServer;
+class ScriptSourceCode;
 class ScriptValue;
 class RegularExpression;
 
@@ -82,10 +83,14 @@ public:
     void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String&, PassRefPtr<ScriptCallStack>, unsigned long);
     void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String&, ScriptState*, PassRefPtr<ScriptArguments>, unsigned long);
 
+    String preprocessEventListener(Frame*, const String& source, const String& url, const String& functionName);
+    PassOwnPtr<ScriptSourceCode> preprocess(Frame*, const ScriptSourceCode&);
+
     // Part of the protocol.
     virtual void enable(ErrorString*);
     virtual void disable(ErrorString*);
     virtual void setBreakpointsActive(ErrorString*, bool active);
+    virtual void setSkipAllPauses(ErrorString*, bool skipped, const bool* untilReload);
 
     virtual void setBreakpointByUrl(ErrorString*, int lineNumber, const String* optionalURL, const String* optionalURLRegex, const int* optionalColumnNumber, const String* optionalCondition, const bool* isAntiBreakpoint, TypeBuilder::Debugger::BreakpointId*, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::Location> >& locations);
     virtual void setBreakpoint(ErrorString*, const RefPtr<JSONObject>& location, const String* optionalCondition, TypeBuilder::Debugger::BreakpointId*, RefPtr<TypeBuilder::Debugger::Location>& actualLocation);
@@ -156,13 +161,13 @@ protected:
     virtual void unmuteConsole() = 0;
     InjectedScriptManager* injectedScriptManager() { return m_injectedScriptManager; }
     virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) = 0;
-    virtual void addConsoleMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL) = 0;
 
     virtual void enable();
     virtual void disable();
     virtual void didPause(ScriptState*, const ScriptValue& callFrames, const ScriptValue& exception, const Vector<String>& hitBreakpoints);
     virtual void didContinue();
     void reset();
+    void pageDidCommitLoad();
 
 private:
     void cancelPauseOnNextStatement();
@@ -205,6 +210,7 @@ private:
     Listener* m_listener;
 
     int m_skipStepInCount;
+    bool m_skipAllPauses;
     OwnPtr<RegularExpression> m_cachedSkipStackRegExp;
 };
 

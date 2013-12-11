@@ -56,8 +56,8 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
-#include "base/bind_helpers.h"
 #include "base/callback_forward.h"
+#include "base/callback_helpers.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -693,7 +693,7 @@ void RenderVideoFrame(const SkBitmap& input,
   }
 
   // The result is now ready.
-  failure_handler.Release();
+  ignore_result(failure_handler.Release());
   done_cb.Run(true);
 }
 
@@ -1076,7 +1076,7 @@ void WebContentsVideoCaptureDevice::Impl::Allocate(
   settings.frame_rate = frame_rate;
   // Note: the value of |settings.color| doesn't matter if we use only the
   // VideoFrame based methods on |consumer|.
-  settings.color = media::VideoCaptureCapability::kI420;
+  settings.color = media::PIXEL_FORMAT_I420;
   settings.expected_capture_delay = 0;
   settings.interlaced = false;
 
@@ -1228,7 +1228,7 @@ WebContentsVideoCaptureDevice::~WebContentsVideoCaptureDevice() {
 }
 
 // static
-media::VideoCaptureDevice* WebContentsVideoCaptureDevice::Create(
+media::VideoCaptureDevice1* WebContentsVideoCaptureDevice::Create(
     const std::string& device_id) {
   // Parse device_id into render_process_id and render_view_id.
   int render_process_id = -1;

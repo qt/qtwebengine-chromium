@@ -18,10 +18,10 @@
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/gpu/gpu_watchdog.h"
 #include "content/common/gpu/image_transport_surface.h"
+#include "content/common/gpu/media/gl_surface_capturer.h"
 #include "content/common/gpu/media/gpu_video_decode_accelerator.h"
 #include "content/common/gpu/sync_point_manager.h"
 #include "content/public/common/content_client.h"
-#include "content/public/common/content_switches.h"
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/common/mailbox.h"
@@ -108,7 +108,6 @@ GpuCommandBufferStub::GpuCommandBufferStub(
     gpu::gles2::ImageManager* image_manager,
     const gfx::Size& size,
     const gpu::gles2::DisallowedFeatures& disallowed_features,
-    const std::string& allowed_extensions,
     const std::vector<int32>& attribs,
     gfx::GpuPreference gpu_preference,
     bool use_virtualized_gl_context,
@@ -121,7 +120,6 @@ GpuCommandBufferStub::GpuCommandBufferStub(
       handle_(handle),
       initial_size_(size),
       disallowed_features_(disallowed_features),
-      allowed_extensions_(allowed_extensions),
       requested_attribs_(attribs),
       gpu_preference_(gpu_preference),
       use_virtualized_gl_context_(use_virtualized_gl_context),
@@ -152,6 +150,9 @@ GpuCommandBufferStub::GpuCommandBufferStub(
         stream_texture_manager,
         true);
   }
+
+  use_virtualized_gl_context_ |=
+      context_group_->feature_info()->workarounds().use_virtualized_gl_contexts;
 }
 
 GpuCommandBufferStub::~GpuCommandBufferStub() {
@@ -206,6 +207,8 @@ bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
                                     OnGetTransferBuffer);
     IPC_MESSAGE_HANDLER_DELAY_REPLY(GpuCommandBufferMsg_CreateVideoDecoder,
                                     OnCreateVideoDecoder)
+    IPC_MESSAGE_HANDLER_DELAY_REPLY(GpuCommandBufferMsg_CreateSurfaceCapturer,
+                                    OnCreateSurfaceCapturer)
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_SetSurfaceVisible,
                         OnSetSurfaceVisible)
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_DiscardBackbuffer,
@@ -438,9 +441,7 @@ void GpuCommandBufferStub::OnInitialize(
   }
 
   scoped_refptr<gfx::GLContext> context;
-  if ((CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableVirtualGLContexts) || use_virtualized_gl_context_) &&
-      channel_->share_group()) {
+  if (use_virtualized_gl_context_ && channel_->share_group()) {
     context = channel_->share_group()->GetSharedContext();
     if (!context.get()) {
       context = gfx::GLContext::CreateGLContext(
@@ -500,7 +501,6 @@ void GpuCommandBufferStub::OnInitialize(
                             !surface_id(),
                             initial_size_,
                             disallowed_features_,
-                            allowed_extensions_.c_str(),
                             requested_attribs_)) {
     DLOG(ERROR) << "Failed to initialize decoder.";
     OnInitializeFailed(reply_message);
@@ -720,11 +720,23 @@ void GpuCommandBufferStub::OnCreateVideoDecoder(
     IPC::Message* reply_message) {
   TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnCreateVideoDecoder");
   int decoder_route_id = channel_->GenerateRouteID();
-  GpuVideoDecodeAccelerator* decoder =
-      new GpuVideoDecodeAccelerator(decoder_route_id, this);
+  GpuVideoDecodeAccelerator* decoder = new GpuVideoDecodeAccelerator(
+      decoder_route_id, this, channel_->io_message_loop());
   decoder->Initialize(profile, reply_message);
   // decoder is registered as a DestructionObserver of this stub and will
   // self-delete during destruction of this stub.
+}
+
+void GpuCommandBufferStub::OnCreateSurfaceCapturer(
+    IPC::Message* reply_message) {
+  TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnCreateSurfaceCapturer");
+  int capturer_route_id = channel_->GenerateRouteID();
+  new GLSurfaceCapturer(capturer_route_id, this);
+  // The capturer is registered as a DestructionObserver of this stub and will
+  // self-delete during destruction of this stub.
+  GpuCommandBufferMsg_CreateSurfaceCapturer::WriteReplyParams(
+      reply_message, capturer_route_id);
+  Send(reply_message);
 }
 
 void GpuCommandBufferStub::OnSetSurfaceVisible(bool visible) {

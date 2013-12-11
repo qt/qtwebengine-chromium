@@ -28,11 +28,24 @@
 #include "core/loader/CookieJar.h"
 #include "core/loader/FrameLoader.h"
 #include "core/page/Frame.h"
+#include "core/page/NavigatorID.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
 #include "core/platform/Language.h"
 #include "core/plugins/DOMMimeTypeArray.h"
 #include "core/plugins/DOMPluginArray.h"
+
+#ifndef WEBCORE_NAVIGATOR_PRODUCT_SUB
+#define WEBCORE_NAVIGATOR_PRODUCT_SUB "20030107"
+#endif // ifndef WEBCORE_NAVIGATOR_PRODUCT_SUB
+
+#ifndef WEBCORE_NAVIGATOR_VENDOR
+#define WEBCORE_NAVIGATOR_VENDOR "Google Inc."
+#endif // ifndef WEBCORE_NAVIGATOR_VENDOR
+
+#ifndef WEBCORE_NAVIGATOR_VENDOR_SUB
+#define WEBCORE_NAVIGATOR_VENDOR_SUB ""
+#endif // ifndef WEBCORE_NAVIGATOR_VENDOR_SUB
 
 namespace WebCore {
 
@@ -67,7 +80,7 @@ String Navigator::appVersion() const
 {
     if (!m_frame)
         return String();
-    String appVersion = NavigatorBase::appVersion();
+    String appVersion = NavigatorID::appVersion(this);
     if (shouldHideFourDot(m_frame))
         appVersion.replace("4.", "4_");
     return appVersion;
@@ -76,6 +89,21 @@ String Navigator::appVersion() const
 String Navigator::language() const
 {
     return defaultLanguage();
+}
+
+String Navigator::productSub() const
+{
+    return WEBCORE_NAVIGATOR_PRODUCT_SUB;
+}
+
+String Navigator::vendor() const
+{
+    return WEBCORE_NAVIGATOR_VENDOR;
+}
+
+String Navigator::vendorSub() const
+{
+    return WEBCORE_NAVIGATOR_VENDOR_SUB;
 }
 
 String Navigator::userAgent() const
@@ -110,7 +138,7 @@ bool Navigator::cookieEnabled() const
     if (!m_frame)
         return false;
 
-    if (m_frame->page() && !m_frame->page()->settings()->cookieEnabled())
+    if (m_frame->page() && !m_frame->page()->settings().cookieEnabled())
         return false;
 
     return cookiesEnabled(m_frame->document());

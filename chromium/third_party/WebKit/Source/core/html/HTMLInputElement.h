@@ -26,7 +26,7 @@
 #define HTMLInputElement_h
 
 #include "core/html/HTMLTextFormControlElement.h"
-#include "core/html/StepRange.h"
+#include "core/html/forms/StepRange.h"
 #include "core/platform/FileChooser.h"
 
 namespace WebCore {
@@ -40,13 +40,14 @@ class HTMLImageLoader;
 class HTMLOptionElement;
 class Icon;
 class InputType;
+class InputTypeView;
 class KURL;
 class ListAttributeTargetObserver;
 struct DateTimeChooserParameters;
 
 class HTMLInputElement : public HTMLTextFormControlElement {
 public:
-    static PassRefPtr<HTMLInputElement> create(const QualifiedName&, Document*, HTMLFormElement*, bool createdByParser);
+    static PassRefPtr<HTMLInputElement> create(const QualifiedName&, Document&, HTMLFormElement*, bool createdByParser);
     virtual ~HTMLInputElement();
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitspeechchange);
@@ -120,15 +121,7 @@ public:
 
     HTMLElement* containerElement() const;
     virtual HTMLElement* innerTextElement() const;
-    HTMLElement* innerBlockElement() const;
-    HTMLElement* innerSpinButtonElement() const;
-#if ENABLE(INPUT_SPEECH)
-    HTMLElement* speechButtonElement() const;
-#endif
-    HTMLElement* sliderThumbElement() const;
-    HTMLElement* sliderTrackElement() const;
     HTMLElement* passwordGeneratorButtonElement() const;
-    virtual HTMLElement* placeholderElement() const;
 
     bool checked() const { return m_isChecked; }
     void setChecked(bool, TextFieldEventBehavior = DispatchNoEvent);
@@ -185,7 +178,7 @@ public:
     void setSelectionRangeForBinding(int start, int end, ExceptionState&);
     void setSelectionRangeForBinding(int start, int end, const String& direction, ExceptionState&);
 
-    virtual bool rendererIsNeeded(const NodeRenderingContext&);
+    virtual bool rendererIsNeeded(const RenderStyle&);
     virtual RenderObject* createRenderer(RenderStyle*);
     virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
 
@@ -262,7 +255,7 @@ public:
     bool capture() const;
 #endif
 
-    static const int maximumLength;
+    static const unsigned maximumLength;
 
     unsigned height() const;
     unsigned width() const;
@@ -292,7 +285,7 @@ public:
     bool supportsInputModeAttribute() const;
 
 protected:
-    HTMLInputElement(const QualifiedName&, Document*, HTMLFormElement*, bool createdByParser);
+    HTMLInputElement(const QualifiedName&, Document&, HTMLFormElement*, bool createdByParser);
 
     virtual void defaultEventHandler(Event*);
 
@@ -300,6 +293,7 @@ private:
     enum AutoCompleteSetting { Uninitialized, On, Off };
 
     virtual void didAddUserAgentShadowRoot(ShadowRoot*) OVERRIDE;
+    virtual void didAddShadowRoot(ShadowRoot&) OVERRIDE;
 
     virtual void willChangeForm() OVERRIDE;
     virtual void didChangeForm() OVERRIDE;
@@ -311,6 +305,7 @@ private:
     virtual bool isKeyboardFocusable() const OVERRIDE;
     virtual bool shouldShowFocusRingOnMouseFocus() const OVERRIDE;
     virtual bool isEnumeratable() const;
+    virtual bool isInteractiveContent() const OVERRIDE;
     virtual bool supportLabels() const OVERRIDE;
     virtual void updateFocusAppearance(bool restorePreviousSelection);
     virtual bool shouldUseInputMethod();
@@ -407,7 +402,8 @@ private:
     bool m_wasModifiedByUser : 1;
     bool m_canReceiveDroppedFiles : 1;
     bool m_hasTouchEventHandler : 1;
-    OwnPtr<InputType> m_inputType;
+    RefPtr<InputType> m_inputType;
+    RefPtr<InputTypeView> m_inputTypeView;
     // The ImageLoader must be owned by this element because the loader code assumes
     // that it lives as long as its owning element lives. If we move the loader into
     // the ImageInput object we may delete the loader while this element lives on.

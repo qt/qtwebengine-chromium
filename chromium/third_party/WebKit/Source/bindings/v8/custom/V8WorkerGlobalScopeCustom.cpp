@@ -70,7 +70,7 @@ void SetTimeoutOrInterval(const v8::FunctionCallbackInfo<v8::Value>& args, bool 
                 return;
             }
         }
-        action = adoptPtr(new ScheduledAction(v8Context, toWebCoreString(function), workerGlobalScope->url(), args.GetIsolate()));
+        action = adoptPtr(new ScheduledAction(v8Context, toWebCoreString(function.As<v8::String>()), workerGlobalScope->url(), args.GetIsolate()));
     } else if (function->IsFunction()) {
         size_t paramCount = argumentCount >= 2 ? argumentCount - 2 : 0;
         OwnArrayPtr<v8::Local<v8::Value> > params;
@@ -92,26 +92,6 @@ void SetTimeoutOrInterval(const v8::FunctionCallbackInfo<v8::Value>& args, bool 
         timerId = DOMWindowTimers::setInterval(workerGlobalScope, action.release(), timeout);
 
     v8SetReturnValue(args, timerId);
-}
-
-void V8WorkerGlobalScope::importScriptsMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
-{
-    if (!args.Length())
-        return;
-
-    Vector<String> urls;
-    for (int i = 0; i < args.Length(); i++) {
-        V8TRYCATCH_VOID(v8::Handle<v8::String>, scriptUrl, args[i]->ToString());
-        if (scriptUrl.IsEmpty())
-            return;
-        urls.append(toWebCoreString(scriptUrl));
-    }
-
-    WorkerGlobalScope* workerGlobalScope = V8WorkerGlobalScope::toNative(args.Holder());
-
-    ExceptionState es(args.GetIsolate());
-    workerGlobalScope->importScripts(urls, es);
-    es.throwIfNeeded();
 }
 
 void V8WorkerGlobalScope::setTimeoutMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
@@ -138,11 +118,6 @@ v8::Handle<v8::Value> toV8(WorkerGlobalScope* impl, v8::Handle<v8::Object> creat
     v8::Handle<v8::Object> global = script->context()->Global();
     ASSERT(!global.IsEmpty());
     return global;
-}
-
-v8::Handle<v8::Value> toV8ForMainWorld(WorkerGlobalScope* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
-{
-    return toV8(impl, creationContext, isolate);
 }
 
 } // namespace WebCore

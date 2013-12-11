@@ -8,10 +8,11 @@
 #include <string>
 
 #include "base/memory/scoped_vector.h"
+#include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
-#include "ui/app_list/apps_grid_view_delegate.h"
-#include "ui/app_list/search_box_view_delegate.h"
-#include "ui/app_list/search_result_list_view_delegate.h"
+#include "ui/app_list/views/apps_grid_view_delegate.h"
+#include "ui/app_list/views/search_box_view_delegate.h"
+#include "ui/app_list/views/search_result_list_view_delegate.h"
 #include "ui/views/view.h"
 
 namespace views {
@@ -39,7 +40,7 @@ class AppListMainView : public views::View,
   explicit AppListMainView(AppListViewDelegate* delegate,
                            AppListModel* model,
                            PaginationModel* pagination_model,
-                           views::View* anchor);
+                           gfx::NativeView parent);
   virtual ~AppListMainView();
 
   void ShowAppListWhenReady();
@@ -59,9 +60,9 @@ class AppListMainView : public views::View,
   class IconLoader;
 
   // Loads icon image for the apps in the selected page of |pagination_model|.
-  // |anchor| is used to determine the image scale factor to use.
+  // |parent| is used to determine the image scale factor to use.
   void PreloadIcons(PaginationModel* pagination_model,
-                    views::View* anchor);
+                    gfx::NativeView parent);
 
   // Invoked when |icon_loading_wait_timer_| fires.
   void OnIconLoadingWaitTimer();
@@ -98,6 +99,8 @@ class AppListMainView : public views::View,
   base::OneShotTimer<AppListMainView> icon_loading_wait_timer_;
 
   ScopedVector<IconLoader> pending_icon_loaders_;
+
+  base::WeakPtrFactory<AppListMainView> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListMainView);
 };
