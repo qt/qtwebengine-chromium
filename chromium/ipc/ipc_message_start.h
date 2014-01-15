@@ -13,6 +13,7 @@
 // for all new work.
 enum IPCMessageStart {
   AutomationMsgStart = 0,
+  QtMsgStart,
   FrameMsgStart,
   TestMsgStart,
   WorkerMsgStart,
