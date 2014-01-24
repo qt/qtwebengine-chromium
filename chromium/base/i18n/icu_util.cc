@@ -88,11 +88,16 @@ bool InitializeICU() {
   if (!mapped_file.IsValid()) {
     // Assume it is in the framework bundle's Resources directory.
 #if !defined(OS_MACOSX)
+    FilePath data_path;
+#if defined(OS_WIN)
+    // The data file will be in the same directory as the current module.
+    bool path_ok = PathService::Get(base::DIR_MODULE, &data_path);
+#else
     // For now, expect the data file to be alongside the executable.
     // This is sufficient while we work on unit tests, but will eventually
     // likely live in a data directory.
-    FilePath data_path;
     bool path_ok = PathService::Get(base::DIR_EXE, &data_path);
+#endif
     DCHECK(path_ok);
     data_path = data_path.AppendASCII(ICU_UTIL_DATA_FILE_NAME);
 #else
@@ -104,7 +109,7 @@ bool InitializeICU() {
     }
 #endif  // OS check
     if (!mapped_file.Initialize(data_path)) {
-      DLOG(ERROR) << "Couldn't mmap " << data_path.value();
+      DLOG(ERROR) << "Couldn't mmap " << data_path.AsUTF8Unsafe();
       return false;
     }
   }
