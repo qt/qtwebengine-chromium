@@ -140,14 +140,14 @@ MessagePumpX11::~MessagePumpX11() {
   XCloseDisplay(g_xdisplay);
   g_xdisplay = NULL;
 }
-
+/*
 // static
 Display* MessagePumpX11::GetDefaultXDisplay() {
   if (!g_xdisplay)
     g_xdisplay = XOpenDisplay(NULL);
   return g_xdisplay;
 }
-
+*/
 #if defined(TOOLKIT_GTK)
 // static
 MessagePumpX11* MessagePumpX11::Current() {
