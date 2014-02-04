@@ -150,6 +150,12 @@ typedef ui::ViewAndroid* NativeView;
 typedef ui::WindowAndroid* NativeWindow;
 typedef void* NativeRegion;
 typedef jobject NativeEvent;
+#elif defined(TOOLKIT_QT)
+typedef void* NativeCursor;
+typedef void* NativeView;
+typedef void* NativeWindow;
+typedef SkRegion* NativeRegion;
+typedef ui::Event* NativeEvent;
 #endif
 
 #if defined(OS_WIN)
@@ -171,6 +177,10 @@ typedef PangoFontDescription* NativeFont;
 typedef GtkWidget* NativeEditView;
 typedef cairo_t* NativeDrawingContext;
 typedef void* NativeViewAccessible;
+#elif defined(TOOLKIT_QT)
+typedef void* NativeFont;
+typedef void* NativeEditView;
+typedef void* NativeDrawingContext;
 #elif defined(USE_CAIRO)
 typedef PangoFontDescription* NativeFont;
 typedef void* NativeEditView;

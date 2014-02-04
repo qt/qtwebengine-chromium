@@ -822,6 +822,8 @@
       'target_name': 'xext',
       'type': 'none',
       'conditions': [
+      ['use_pango==1', {
+      'conditions': [
         ['_toolset=="target"', {
           'direct_dependent_settings': {
             'cflags': [
@@ -858,6 +860,8 @@
             ],
           },
         }],
+      ],
+      }],
       ],
     },
     {

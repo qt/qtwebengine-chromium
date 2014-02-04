@@ -88,7 +88,7 @@ class BitmapPlatformDevice : public SkBitmapDevice, public PlatformDevice {
                              const SkClipStack&) OVERRIDE;
 
   // Overridden from PlatformDevice:
-  virtual cairo_t* BeginPlatformPaint() OVERRIDE;
+  virtual PlatformSurface BeginPlatformPaint() OVERRIDE;
   virtual void DrawToNativeContext(PlatformSurface surface, int x, int y,
                                    const PlatformRect* src_rect) OVERRIDE;
 
