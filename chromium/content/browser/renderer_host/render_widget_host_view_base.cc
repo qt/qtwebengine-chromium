@@ -164,7 +164,6 @@ HWND ReparentWindow(HWND window, HWND parent) {
 }
 
 BOOL CALLBACK PaintEnumChildProc(HWND hwnd, LPARAM lparam) {
-  if (!PluginServiceImpl::GetInstance()->IsPluginWindow(hwnd))
     return TRUE;
 
   gfx::Rect* rect = reinterpret_cast<gfx::Rect*>(lparam);
@@ -191,11 +190,6 @@ BOOL CALLBACK DetachPluginWindowsCallbackInternal(HWND window, LPARAM param) {
 
 // static
 void RenderWidgetHostViewBase::DetachPluginWindowsCallback(HWND window) {
-  if (PluginServiceImpl::GetInstance()->IsPluginWindow(window) &&
-      !IsHungAppWindow(window)) {
-    ::ShowWindow(window, SW_HIDE);
-    SetParent(window, NULL);
-  }
 }
 
 // static
@@ -236,7 +230,7 @@ void RenderWidgetHostViewBase::MovePluginWindowsHelper(
     if (!::IsWindow(window))
       continue;
 
-    if (!PluginServiceImpl::GetInstance()->IsPluginWindow(window)) {
+    if (true) {
       // The renderer should only be trying to move plugin windows. However,
       // this may happen as a result of a race condition (i.e. even after the
       // check right above), so we ignore it.

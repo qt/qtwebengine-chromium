@@ -9,7 +9,7 @@
 
 #ifndef SkPDFDevice_DEFINED
 #define SkPDFDevice_DEFINED
-
+#if 0
 #include "SkBitmapDevice.h"
 #include "SkBitmap.h"
 #include "SkCanvas.h"
@@ -338,5 +338,5 @@ private:
     //friend class SkDocument_PDF;
     //friend class SkPDFImageShader;
 };
-
+#endif
 #endif

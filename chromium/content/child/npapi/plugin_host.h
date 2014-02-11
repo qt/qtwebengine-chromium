@@ -6,7 +6,7 @@
 
 #ifndef CONTENT_CHILD_NPAPI_PLUGIN_HOST_H_
 #define CONTENT_CHILD_NPAPI_PLUGIN_HOST_H_
-
+#if 0
 #include <string>
 #include <vector>
 
@@ -56,5 +56,5 @@ class PluginHost : public base::RefCounted<PluginHost> {
 };
 
 }  // namespace content
-
+#endif
 #endif  // CONTENT_CHILD_NPAPI_PLUGIN_HOST_H_

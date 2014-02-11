@@ -131,7 +131,7 @@ NPNetscapeFuncs *GetHostFunctions() {
 void PatchNPNFunctions() {
   g_plugin_process = true;
   NPNetscapeFuncs* funcs = GetHostFunctions();
-  PluginHost::Singleton()->PatchNPNetscapeFuncs(funcs);
+  //PluginHost::Singleton()->PatchNPNetscapeFuncs(funcs);
 }
 #endif
 

@@ -468,7 +468,7 @@
       # Enable PPAPI and NPAPI by default.
       # TODO(nileshagrawal): Make this flag enable/disable NPAPI as well
       # as PPAPI; see crbug.com/162667.
-      'enable_plugins%': 1,
+      'enable_plugins%': 0,
 
       # Specifies whether to use canvas_skia.cc in place of platform
       # specific implementations of gfx::Canvas. Affects text drawing in the
@@ -698,7 +698,7 @@
         ['(OS=="android" and google_tv!=1) or OS=="ios" or embedded==1', {
           'enable_plugins%': 0,
         }, {
-          'enable_plugins%': 1,
+          'enable_plugins%': 0,
         }],
 
         # linux_use_gold_binary: whether to use the binary checked into
