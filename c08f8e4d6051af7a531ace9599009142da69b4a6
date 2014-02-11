@@ -1,0 +1,7 @@
+Code-Review+2: Simon Hausmann <simon.hausmann@digia.com>
+Sanity-Review+1: Qt Sanity Bot <qt_sanitybot@qt-project.org>
+Submitted-by: Pierre Rossi <pierre.rossi@gmail.com>
+Submitted-at: Tue, 11 Feb 2014 11:56:25 +0100
+Reviewed-on: https://codereview.qt-project.org/77423
+Project: qt-labs/chromium
+Branch: refs/heads/master
