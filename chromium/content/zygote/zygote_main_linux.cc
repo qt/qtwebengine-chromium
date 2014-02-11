@@ -146,14 +146,18 @@ static LocaltimeRFunction g_libc_localtime_r;
 static LocaltimeRFunction g_libc_localtime64_r;
 
 static void InitLibcLocaltimeFunctions() {
+  void *handle_ld;
+  handle_ld = dlopen("/lib/libc.so.6", RTLD_NOW);
+
+
   g_libc_localtime = reinterpret_cast<LocaltimeFunction>(
-      dlsym(RTLD_NEXT, "localtime"));
+      dlsym(handle_ld, "localtime"));
   g_libc_localtime64 = reinterpret_cast<LocaltimeFunction>(
-      dlsym(RTLD_NEXT, "localtime64"));
+      dlsym(handle_ld, "localtime64"));
   g_libc_localtime_r = reinterpret_cast<LocaltimeRFunction>(
-      dlsym(RTLD_NEXT, "localtime_r"));
+      dlsym(handle_ld, "localtime_r"));
   g_libc_localtime64_r = reinterpret_cast<LocaltimeRFunction>(
-      dlsym(RTLD_NEXT, "localtime64_r"));
+      dlsym(handle_ld, "localtime64_r"));
 
   if (!g_libc_localtime || !g_libc_localtime_r) {
     // http://code.google.com/p/chromium/issues/detail?id=16800
