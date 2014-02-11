@@ -76,6 +76,8 @@ bool DelegatingRenderer::Initialize() {
   capabilities_.using_egl_image = caps.egl_image_external;
   capabilities_.using_map_image = settings_->use_map_image && caps.map_image;
 
+  capabilities_.allow_rasterize_on_demand = false;
+
   return true;
 }
 

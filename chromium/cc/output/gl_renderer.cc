@@ -210,6 +210,8 @@ GLRenderer::GLRenderer(RendererClient* client,
 
   capabilities_.using_discard_framebuffer = context_caps.discard_framebuffer;
 
+  capabilities_.allow_rasterize_on_demand = true;
+
   InitializeSharedObjects();
 }
 
