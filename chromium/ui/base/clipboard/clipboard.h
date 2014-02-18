@@ -87,6 +87,7 @@ class UI_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
     bool operator<(const FormatType& other) const;
 #endif
 
+#if !defined(TOOLKIT_QT)
 #if defined(OS_WIN)
     const FORMATETC& ToFormatEtc() const { return data_; }
 #elif defined(OS_MACOSX)
@@ -96,6 +97,7 @@ class UI_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
 #elif defined(USE_AURA)
     const std::string& ToString() const { return data_; }
 #endif
+#endif // TOOLKIT_QT
 
    private:
     friend class Clipboard;
@@ -110,7 +112,10 @@ class UI_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
     //
     // Note that in some cases, the accessor for the wrapped descriptor may be
     // public, as these format types can be used by drag and drop code as well.
-#if defined(OS_WIN)
+#if defined(TOOLKIT_QT)
+    explicit FormatType(const std::string& native_format);
+    std::string data_;
+#elif defined(OS_WIN)
     explicit FormatType(UINT native_format);
     FormatType(UINT native_format, LONG index);
     UINT ToUINT() const { return data_.cfFormat; }
