@@ -294,7 +294,13 @@ void LocatedEvent::UpdateForRootTransform(
 MouseEvent::MouseEvent(const base::NativeEvent& native_event)
     : LocatedEvent(native_event),
       changed_button_flags_(
-          GetChangedMouseButtonFlagsFromNative(native_event)) {
+// GetChangedMouseButtonFlagsFromNative isn't implemented on Mac. MouseEvent shouldn't be used.
+#if !defined(OS_MACOSX)
+          GetChangedMouseButtonFlagsFromNative(native_event)
+#else
+          0
+#endif
+      ) {
   if (type() == ET_MOUSE_PRESSED || type() == ET_MOUSE_RELEASED)
     SetClickCount(GetRepeatCount(*this));
 }
@@ -698,6 +704,8 @@ DropTargetEvent::DropTargetEvent(const OSExchangeData& data,
 
 ScrollEvent::ScrollEvent(const base::NativeEvent& native_event)
     : MouseEvent(native_event) {
+// GetScrollOffsets and GetFlingData aren't implemented on Mac. ScrollEvent shouldn't be used.
+#if !defined(OS_MACOSX)
   if (type() == ET_SCROLL) {
     GetScrollOffsets(native_event,
                      &x_offset_, &y_offset_,
@@ -709,7 +717,9 @@ ScrollEvent::ScrollEvent(const base::NativeEvent& native_event)
                  &x_offset_, &y_offset_,
                  &x_offset_ordinal_, &y_offset_ordinal_,
                  NULL);
-  } else {
+  } else
+#endif
+  {
     NOTREACHED() << "Unexpected event type " << type()
         << " when constructing a ScrollEvent.";
   }
