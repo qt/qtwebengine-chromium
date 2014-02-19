@@ -291,6 +291,7 @@ void LocatedEvent::UpdateForRootTransform(
 ////////////////////////////////////////////////////////////////////////////////
 // MouseEvent
 
+#if !defined(TOOLKIT_QT)
 MouseEvent::MouseEvent(const base::NativeEvent& native_event)
     : LocatedEvent(native_event),
       changed_button_flags_(
@@ -447,6 +448,7 @@ void MouseWheelEvent::UpdateForRootTransform(
   if (decomp.scale[1])
     offset_.set_y(offset_.y() * decomp.scale[1]);
 }
+#endif // TOOLKIT_QT
 
 ////////////////////////////////////////////////////////////////////////////////
 // TouchEvent
@@ -696,6 +698,7 @@ DropTargetEvent::DropTargetEvent(const OSExchangeData& data,
 ////////////////////////////////////////////////////////////////////////////////
 // ScrollEvent
 
+#if !defined(TOOLKIT_QT)
 ScrollEvent::ScrollEvent(const base::NativeEvent& native_event)
     : MouseEvent(native_event) {
   if (type() == ET_SCROLL) {
@@ -740,6 +743,7 @@ void ScrollEvent::Scale(const float factor) {
   x_offset_ordinal_ *= factor;
   y_offset_ordinal_ *= factor;
 }
+#endif // TOOLKIT_QT
 
 ////////////////////////////////////////////////////////////////////////////////
 // GestureEvent
