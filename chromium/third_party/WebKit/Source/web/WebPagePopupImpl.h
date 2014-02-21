@@ -38,6 +38,7 @@
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
+class GraphicsLayer;
 class Page;
 class PagePopupClient;
 class PlatformKeyboardEvent;
@@ -46,6 +47,8 @@ class PlatformKeyboardEvent;
 namespace blink {
 
 class PagePopupChromeClient;
+class WebLayerTreeView;
+class WebLayer;
 class WebViewImpl;
 
 class WebPagePopupImpl : public WebPagePopup,
@@ -68,6 +71,9 @@ private:
     virtual WebSize size() OVERRIDE;
     virtual void animate(double) OVERRIDE;
     virtual void layout() OVERRIDE;
+    virtual void enterForceCompositingMode(bool enter) OVERRIDE;
+    virtual void didExitCompositingMode() OVERRIDE;
+    virtual void willCloseLayerTreeView() OVERRIDE;
     virtual void paint(WebCanvas*, const WebRect&, PaintOptions = ReadbackFromCompositorIfAvailable) OVERRIDE;
     virtual void resize(const WebSize&) OVERRIDE;
     virtual void close() OVERRIDE;
@@ -83,6 +89,8 @@ private:
     explicit WebPagePopupImpl(WebWidgetClient*);
     bool initializePage();
     void destroyPage();
+    void setRootGraphicsLayer(WebCore::GraphicsLayer*);
+    void setIsAcceleratedCompositingActive(bool enter);
 
     WebWidgetClient* m_widgetClient;
     WebRect m_windowRectInScreen;
@@ -91,6 +99,11 @@ private:
     OwnPtr<PagePopupChromeClient> m_chromeClient;
     WebCore::PagePopupClient* m_popupClient;
     bool m_closing;
+
+    WebLayerTreeView* m_layerTreeView;
+    WebLayer* m_rootLayer;
+    WebCore::GraphicsLayer* m_rootGraphicsLayer;
+    bool m_isAcceleratedCompositingActive;
 
     friend class WebPagePopup;
     friend class PagePopupChromeClient;
