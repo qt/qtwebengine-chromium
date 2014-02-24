@@ -49,8 +49,8 @@
         ],
         'conditions': [
             ['OS=="win"', {
-                'gperf_exe': '<(DEPTH)/third_party/gperf/bin/gperf.exe',
-                'bison_exe': '<(DEPTH)/third_party/bison/bin/bison.exe',
+                'gperf_exe%': '<(DEPTH)/third_party/gperf/bin/gperf.exe',
+                'bison_exe%': '<(DEPTH)/third_party/bison/bin/bison.exe',
               },{
                 'gperf_exe': 'gperf',
                 'bison_exe': 'bison',
