@@ -1132,6 +1132,8 @@ class NinjaWriter(object):
 
     implicit_deps = set()
     solibs = set()
+    objects = list(link_deps)
+    libs = list()
     order_deps = set()
 
     if compile_deps:
@@ -1176,6 +1178,7 @@ class NinjaWriter(object):
         final_output = target.FinalOutput()
         if not linkable or final_output != target.binary:
           implicit_deps.add(final_output)
+      libs.extend(extra_link_deps)
 
     extra_bindings = []
     if self.uses_cpp and self.flavor != 'win':
@@ -1295,6 +1298,58 @@ class NinjaWriter(object):
       if pdbname:
         output = [output, pdbname]
 
+
+    if config.get('let_qmake_do_the_linking', 0):
+      def toAbsPaths(paths):
+        return [os.path.relpath(path, self.toplevel_build) if os.path.isabs(path) else path
+                for path in paths]
+      def qmakeLiteral(s):
+        return s.replace('"', '\\"')
+
+      # Generate this file for all solink targets, this assumes that
+      # a .pro file will pick up this pri file and do the rest of the work.
+      pri_file = open(os.path.join(self.toplevel_build, self.name + "_linking.pri"), 'w')
+
+      if self.flavor == 'win':
+        # qmake will take care of the manifest
+        ldflags = filter(lambda x: not x.lower().startswith('/manifest'), ldflags)
+        # adjust pdb file name
+        pdb_name = 'Qt5WebEngineCore.pdb'
+        if self.config_name.lower().startswith('debug'):
+            pdb_name = 'Qt5WebEngineCored.pdb'
+        if '/PDB:QtWebEngineCore.dll.pdb' in ldflags:
+            pdb_index = ldflags.index('/PDB:QtWebEngineCore.dll.pdb')
+            ldflags[pdb_index] = '/PDB:$$shell_quote($$shell_path($$[QT_HOST_LIBS/get]/)' + pdb_name + ')'
+
+      # Replace "$!PRODUCT_DIR" with "$$PWD" in link flags (which might contain some -L directives).
+      prefixed_lflags = [self.ExpandSpecial(f, '$$PWD') for f in ldflags]
+      prefixed_library_dirs = ['-L' + self.ExpandSpecial(f, '$$PWD') for f in config.get('library_dirs', [])]
+      prefixed_libraries = gyp.common.uniquer([self.ExpandSpecial(f, '$$PWD') for f in spec.get('libraries', [])])
+      if self.flavor == 'mac':
+        prefixed_libraries = self.xcode_settings.AdjustLibraries(prefixed_libraries)
+      elif self.flavor == 'win':
+        prefixed_libraries = self.msvs_settings.AdjustLibraries(prefixed_libraries)
+
+      # Make sure that we have relative paths to our out/(Release|Debug), where we generate our .pri file, and then prepend $$PWD to them.
+      prefixed_objects = ['$$PWD/' + o for o in toAbsPaths(objects)]
+      prefixed_archives = ['$$PWD/' + o for o in toAbsPaths(libs)]
+
+      pri_file.write("QMAKE_LFLAGS += %s\n" % qmakeLiteral(' '.join(prefixed_lflags)))
+      pri_file.write("OBJECTS += %s\n" % qmakeLiteral(' '.join(prefixed_objects)))
+      # Follow the logic of the link rule.
+      if self.flavor != 'mac' and self.flavor != 'win':
+        pri_file.write("LIBS_PRIVATE += -Wl,--start-group %s -Wl,--end-group\n" % qmakeLiteral(' '.join(prefixed_archives)))
+      else:
+        pri_file.write("LIBS_PRIVATE += %s\n" % qmakeLiteral(' '.join(prefixed_archives)))
+      # External libs have to come after objects/archives, the linker resolve them in order.
+      pri_file.write("LIBS_PRIVATE += %s\n" % qmakeLiteral(' '.join(prefixed_library_dirs + prefixed_libraries)))
+      # Make sure that if ninja modifies one of the inputs, qmake/make will link again.
+      pri_file.write("POST_TARGETDEPS += %s\n" % qmakeLiteral(' '.join(prefixed_objects + prefixed_archives)))
+      pri_file.close()
+
+      # In this mode we prevent letting ninja link at all.
+      command = 'phony'
+      command_suffix = ''
 
     if len(solibs):
       extra_bindings.append(('solibs',
