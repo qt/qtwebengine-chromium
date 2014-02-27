@@ -1090,6 +1090,33 @@ class NinjaWriter:
       else:
         command = command + '_notoc'
 
+      if config.get('let_qmake_do_the_linking', 0):
+        # Generate this file for all solink targets, this assumes that
+        # a .pro file will pick up this pri file and do the rest of the work.
+        pri_file = open(os.path.join(self.toplevel_build, self.name + "_linking.pri"), 'w')
+
+        # Replace "$!PRODUCT_DIR" with "$$PWD" in link flags (which might contain some -L directives)
+        prefixed_lflags = [self.ExpandSpecial(f, '$$PWD') for f in ldflags]
+        # Make sure that we have relative paths to our out/(Release|Debug), where we generate our .pri file, and then prepend $$PWD to them.
+        objects_and_archives = [os.path.relpath(path, self.toplevel_build) if os.path.isabs(path) else path for path in link_deps]
+        prefixed_object_and_archives = ['$$PWD/' + o for o in objects_and_archives]
+
+        pri_file.write("QMAKE_LFLAGS += %s\n" % ' '.join(prefixed_lflags))
+        # Follow the logic of the solink rule.
+        if self.flavor != 'mac' and self.flavor != 'win':
+          pri_file.write("LIBS_PRIVATE += -Wl,--whole-archive %s -Wl,--no-whole-archive\n" % ' '.join(prefixed_object_and_archives))
+        else:
+          pri_file.write("LIBS_PRIVATE += %s\n" % ' '.join(prefixed_object_and_archives))
+        # External libs have to come after objects/archives, the linker resolve them in order.
+        pri_file.write("LIBS_PRIVATE += %s\n" % ' '.join(library_dirs + libraries))
+        # Make sure that if ninja modifies one of the inputs, qmake/make will link again.
+        pri_file.write("POST_TARGETDEPS += %s\n" % ' '.join(prefixed_object_and_archives))
+        pri_file.close()
+
+        # In this mode we prevent letting ninja link at all.
+        command = 'phony'
+        command_suffix = ''
+
     if len(solibs):
       extra_bindings.append(('solibs', gyp.common.EncodePOSIXShellList(solibs)))
 
