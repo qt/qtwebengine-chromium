@@ -49,9 +49,9 @@
             ['OS=="win"', {
                 # Using native perl rather than cygwin perl cuts execution time
                 # of idl preprocessing rules by a bit more than 50%.
-                'perl_exe': '<(DEPTH)/third_party/perl/perl/bin/perl.exe',
-                'gperf_exe': '<(DEPTH)/third_party/gperf/bin/gperf.exe',
-                'bison_exe': '<(DEPTH)/third_party/bison/bin/bison.exe',
+                'perl_exe%': '<(DEPTH)/third_party/perl/perl/bin/perl.exe',
+                'gperf_exe%': '<(DEPTH)/third_party/gperf/bin/gperf.exe',
+                'bison_exe%': '<(DEPTH)/third_party/bison/bin/bison.exe',
                 # Using cl instead of cygwin gcc cuts the processing time from
                 # 1m58s to 0m52s.
                 'preprocessor': '--preprocessor "cl.exe -nologo -EP -TP"',
