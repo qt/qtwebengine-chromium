@@ -39,8 +39,6 @@ public:
     virtual float virtualLogicalHeight() const { return m_logicalHeight; }
     void setLogicalHeight(float height) { m_logicalHeight = height; }
 
-    virtual int selectionTop() { return top(); }
-    virtual int selectionHeight() { return static_cast<int>(ceilf(m_logicalHeight)); }
     virtual int offsetForPosition(float x, bool includePartialGlyphs = true) const;
     virtual float positionForOffset(int offset) const;
 
@@ -88,11 +86,7 @@ private:
     Vector<SVGTextFragment> m_textFragments;
 };
 
-inline SVGInlineTextBox* toSVGInlineTextBox(InlineBox* box)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!box || box->isSVGInlineTextBox());
-    return static_cast<SVGInlineTextBox*>(box);
-}
+DEFINE_INLINE_BOX_TYPE_CASTS(SVGInlineTextBox);
 
 } // namespace WebCore
 

@@ -38,20 +38,20 @@
 #include "ApplicationCacheHostInternal.h"
 #include "WebFrameImpl.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "core/dom/ProgressEvent.h"
+#include "core/events/ProgressEvent.h"
 #include "core/inspector/InspectorApplicationCacheAgent.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/appcache/ApplicationCache.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/platform/chromium/support/WrappedResourceRequest.h"
-#include "core/platform/chromium/support/WrappedResourceResponse.h"
-#include "weborigin/SecurityOrigin.h"
+#include "core/frame/Settings.h"
+#include "platform/exported/WrappedResourceRequest.h"
+#include "platform/exported/WrappedResourceResponse.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
-using namespace WebKit;
+using namespace blink;
 
 namespace WebCore {
 
@@ -109,7 +109,7 @@ void ApplicationCacheHost::selectCacheWithManifest(const KURL& manifestURL)
             // during navigation.
             // see WebCore::ApplicationCacheGroup::selectCache()
             Frame* frame = m_documentLoader->frame();
-            frame->navigationScheduler()->scheduleLocationChange(frame->document()->securityOrigin(),
+            frame->navigationScheduler().scheduleLocationChange(frame->document(),
                 frame->document()->url(), frame->document()->referrer());
         }
     }
@@ -174,7 +174,7 @@ ApplicationCacheHost::CacheInfo ApplicationCacheHost::applicationCacheInfo()
     if (!m_internal)
         return CacheInfo(KURL(), 0, 0, 0);
 
-    WebKit::WebApplicationCacheHost::CacheInfo webInfo;
+    blink::WebApplicationCacheHost::CacheInfo webInfo;
     m_internal->m_outerHost->getAssociatedCacheInfo(&webInfo);
     return CacheInfo(webInfo.manifestURL, webInfo.creationTime, webInfo.updateTime, webInfo.totalSize);
 }
@@ -184,7 +184,7 @@ void ApplicationCacheHost::fillResourceList(ResourceInfoList* resources)
     if (!m_internal)
         return;
 
-    WebKit::WebVector<WebKit::WebApplicationCacheHost::ResourceInfo> webResources;
+    blink::WebVector<blink::WebApplicationCacheHost::ResourceInfo> webResources;
     m_internal->m_outerHost->getResourceList(&webResources);
     for (size_t i = 0; i < webResources.size(); ++i) {
         resources->append(ResourceInfo(

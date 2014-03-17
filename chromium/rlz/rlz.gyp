@@ -34,6 +34,7 @@
         'chromeos/lib/machine_id_chromeos.cc',
         'chromeos/lib/rlz_value_store_chromeos.cc',
         'chromeos/lib/rlz_value_store_chromeos.h',
+        'ios/lib/machine_id_ios.cc',
         'lib/assert.cc',
         'lib/assert.h',
         'lib/crc32.h',
@@ -67,7 +68,6 @@
         'win/lib/process_info.h',
         'win/lib/registry_util.cc',
         'win/lib/registry_util.h',
-        'win/lib/rlz_lib.h',
         'win/lib/rlz_lib_win.cc',
         'win/lib/rlz_value_store_registry.cc',
         'win/lib/rlz_value_store_registry.h',
@@ -97,14 +97,38 @@
           },
         }],
       ],
+      'target_conditions': [
+        # Need 'target_conditions' to override default filename_rules to include
+        # the files on iOS.
+        ['OS=="ios"', {
+          'sources/': [
+            ['include', '^mac/lib/rlz_value_store_mac\\.'],
+          ],
+        }],
+      ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
+    },
+    {
+      'target_name': 'test_support_rlz',
+      'type': 'static_library',
+      'dependencies': [
+        ':rlz_lib',
+        '../base/base.gyp:base',
+        '../base/base.gyp:test_support_base',
+        '../testing/gtest.gyp:gtest',
+      ],
+      'sources': [
+        'test/rlz_test_helpers.cc',
+        'test/rlz_test_helpers.h',
+      ],
     },
     {
       'target_name': 'rlz_unittests',
       'type': 'executable',
       'dependencies': [
         ':rlz_lib',
+        ':test_support_rlz',
         '../base/base.gyp:base',
         '../base/base.gyp:base_prefs',
         '../testing/gmock.gyp:gmock',
@@ -119,8 +143,6 @@
         'lib/machine_id_unittest.cc',
         'lib/rlz_lib_test.cc',
         'lib/string_utils_unittest.cc',
-        'test/rlz_test_helpers.cc',
-        'test/rlz_test_helpers.h',
         'test/rlz_unittest_main.cc',
         'win/lib/machine_deal_test.cc',
       ],

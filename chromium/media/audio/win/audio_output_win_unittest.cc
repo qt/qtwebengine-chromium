@@ -14,7 +14,6 @@
 #include "base/win/windows_version.h"
 #include "media/base/limits.h"
 #include "media/audio/audio_io.h"
-#include "media/audio/audio_util.h"
 #include "media/audio/audio_manager.h"
 #include "media/audio/simple_sources.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -176,7 +175,7 @@ class ReadOnlyMappedFile {
 
 // Test that can it be created and closed.
 TEST(WinAudioTest, PCMWaveStreamGetAndClose) {
-  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
   if (!audio_man->HasAudioOutputDevices()) {
     LOG(WARNING) << "No output device detected.";
     return;
@@ -192,7 +191,7 @@ TEST(WinAudioTest, PCMWaveStreamGetAndClose) {
 
 // Test that can it be cannot be created with invalid parameters.
 TEST(WinAudioTest, SanityOnMakeParams) {
-  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
   if (!audio_man->HasAudioOutputDevices()) {
     LOG(WARNING) << "No output device detected.";
     return;
@@ -228,7 +227,7 @@ TEST(WinAudioTest, SanityOnMakeParams) {
 
 // Test that it can be opened and closed.
 TEST(WinAudioTest, PCMWaveStreamOpenAndClose) {
-  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
   if (!audio_man->HasAudioOutputDevices()) {
     LOG(WARNING) << "No output device detected.";
     return;
@@ -245,7 +244,7 @@ TEST(WinAudioTest, PCMWaveStreamOpenAndClose) {
 
 // Test that it has a maximum packet size.
 TEST(WinAudioTest, PCMWaveStreamOpenLimit) {
-  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
   if (!audio_man->HasAudioOutputDevices()) {
     LOG(WARNING) << "No output device detected.";
     return;
@@ -264,7 +263,7 @@ TEST(WinAudioTest, PCMWaveStreamOpenLimit) {
 // time. The actual EXPECT_GT are mostly meaningless and the real test is that
 // the test completes in reasonable time.
 TEST(WinAudioTest, PCMWaveSlowSource) {
-  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
   if (!audio_man->HasAudioOutputDevices()) {
     LOG(WARNING) << "No output device detected.";
     return;
@@ -292,7 +291,7 @@ TEST(WinAudioTest, PCMWaveSlowSource) {
 // gets paused. This test is best when run over RDP with audio enabled. See
 // bug 19276 for more details.
 TEST(WinAudioTest, PCMWaveStreamPlaySlowLoop) {
-  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
   if (!audio_man->HasAudioOutputDevices()) {
     LOG(WARNING) << "No output device detected.";
     return;
@@ -323,7 +322,7 @@ TEST(WinAudioTest, PCMWaveStreamPlaySlowLoop) {
 // device at 44.1K s/sec. Parameters have been chosen carefully so you should
 // not hear pops or noises while the sound is playing.
 TEST(WinAudioTest, PCMWaveStreamPlay200HzTone44Kss) {
-  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
   if (!audio_man->HasAudioOutputDevices()) {
     LOG(WARNING) << "No output device detected.";
     return;
@@ -351,7 +350,7 @@ TEST(WinAudioTest, PCMWaveStreamPlay200HzTone44Kss) {
 // not hear pops or noises while the sound is playing. The audio also should
 // sound with a lower volume than PCMWaveStreamPlay200HzTone44Kss.
 TEST(WinAudioTest, PCMWaveStreamPlay200HzTone22Kss) {
-  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
   if (!audio_man->HasAudioOutputDevices()) {
     LOG(WARNING) << "No output device detected.";
     return;
@@ -386,7 +385,7 @@ TEST(WinAudioTest, PCMWaveStreamPlay200HzTone22Kss) {
 // try hard to generate situation where the two threads are accessing the
 // object roughly at the same time.
 TEST(WinAudioTest, PushSourceFile16KHz)  {
-  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
   if (!audio_man->HasAudioOutputDevices()) {
     LOG(WARNING) << "No output device detected.";
     return;
@@ -429,7 +428,7 @@ TEST(WinAudioTest, PushSourceFile16KHz)  {
 // stopped. You will here two .5 seconds wave signal separated by 0.5 seconds
 // of silence.
 TEST(WinAudioTest, PCMWaveStreamPlayTwice200HzTone44Kss) {
-  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
   if (!audio_man->HasAudioOutputDevices()) {
     LOG(WARNING) << "No output device detected.";
     return;
@@ -466,7 +465,7 @@ TEST(WinAudioTest, PCMWaveStreamPlayTwice200HzTone44Kss) {
 // higher and Wave is used for XP and lower. It is possible to utilize a
 // smaller buffer size for WASAPI than for Wave.
 TEST(WinAudioTest, PCMWaveStreamPlay200HzToneLowLatency) {
-  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
   if (!audio_man->HasAudioOutputDevices()) {
     LOG(WARNING) << "No output device detected.";
     return;
@@ -510,7 +509,7 @@ TEST(WinAudioTest, PCMWaveStreamPlay200HzToneLowLatency) {
 
 // Check that the pending bytes value is correct what the stream starts.
 TEST(WinAudioTest, PCMWaveStreamPendingBytes) {
-  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
   if (!audio_man->HasAudioOutputDevices()) {
     LOG(WARNING) << "No output device detected.";
     return;
@@ -539,28 +538,22 @@ TEST(WinAudioTest, PCMWaveStreamPendingBytes) {
   EXPECT_CALL(source, OnMoreData(NotNull(),
                                  Field(&AudioBuffersState::pending_bytes, 0)))
       .WillOnce(Invoke(MockAudioSource::ClearData));
-  switch (NumberOfWaveOutBuffers()) {
-    case 2:
-      break;  // Calls are the same as at end of 3-buffer scheme.
-    case 3:
-      EXPECT_CALL(source, OnMoreData(NotNull(),
-                                     Field(&AudioBuffersState::pending_bytes,
-                                           bytes_100_ms)))
-          .WillOnce(Invoke(MockAudioSource::ClearData));
-      EXPECT_CALL(source, OnMoreData(NotNull(),
-                                     Field(&AudioBuffersState::pending_bytes,
-                                           2 * bytes_100_ms)))
-          .WillOnce(Invoke(MockAudioSource::ClearData));
-      EXPECT_CALL(source, OnMoreData(NotNull(),
-                                     Field(&AudioBuffersState::pending_bytes,
-                                           2 * bytes_100_ms)))
-          .Times(AnyNumber())
-          .WillRepeatedly(Return(0));
-      break;
-    default:
-      ASSERT_TRUE(false)
-          << "Unexpected number of buffers: " << NumberOfWaveOutBuffers();
-  }
+
+  // Note: If AudioManagerWin::NumberOfWaveOutBuffers() ever changes, or if this
+  // test is run on Vista, these expectations will fail.
+  EXPECT_CALL(source, OnMoreData(NotNull(),
+                                 Field(&AudioBuffersState::pending_bytes,
+                                       bytes_100_ms)))
+      .WillOnce(Invoke(MockAudioSource::ClearData));
+  EXPECT_CALL(source, OnMoreData(NotNull(),
+                                 Field(&AudioBuffersState::pending_bytes,
+                                       2 * bytes_100_ms)))
+      .WillOnce(Invoke(MockAudioSource::ClearData));
+  EXPECT_CALL(source, OnMoreData(NotNull(),
+                                 Field(&AudioBuffersState::pending_bytes,
+                                       2 * bytes_100_ms)))
+      .Times(AnyNumber())
+      .WillRepeatedly(Return(0));
   EXPECT_CALL(source, OnMoreData(NotNull(),
                                  Field(&AudioBuffersState::pending_bytes,
                                        bytes_100_ms)))
@@ -667,7 +660,7 @@ DWORD __stdcall SyncSocketThread(void* context) {
 // related to the two different audio-layers for AUDIO_PCM_LOW_LATENCY.
 // In this test you should hear a continuous 200Hz tone for 2 seconds.
 TEST(WinAudioTest, SyncSocketBasic) {
-  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
   if (!audio_man->HasAudioOutputDevices()) {
     LOG(WARNING) << "No output device detected.";
     return;

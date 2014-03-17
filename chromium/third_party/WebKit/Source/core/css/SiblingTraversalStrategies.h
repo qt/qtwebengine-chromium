@@ -31,7 +31,6 @@
 
 #include "core/dom/Element.h"
 #include "core/rendering/style/RenderStyle.h"
-#include "wtf/UnusedParam.h"
 
 namespace WebCore {
 
@@ -98,14 +97,8 @@ inline int DOMSiblingTraversalStrategy::countElementsOfTypeBefore(Element* eleme
 inline int DOMSiblingTraversalStrategy::countElementsAfter(Element* element) const
 {
     int count = 0;
-    for (const Element* sibling = element->nextElementSibling(); sibling; sibling = sibling->nextElementSibling()) {
-        unsigned index = sibling->childIndex();
-        if (index) {
-            count += index;
-            break;
-        }
+    for (const Element* sibling = element->nextElementSibling(); sibling; sibling = sibling->nextElementSibling())
         ++count;
-    }
 
     return count;
 }
@@ -122,7 +115,7 @@ inline int DOMSiblingTraversalStrategy::countElementsOfTypeAfter(Element* elemen
 }
 
 struct ShadowDOMSiblingTraversalStrategy {
-    ShadowDOMSiblingTraversalStrategy(const Vector<Node*>& siblings, int nth)
+    ShadowDOMSiblingTraversalStrategy(const Vector<Node*, 32>& siblings, int nth)
         : m_siblings(siblings)
         , m_nth(nth)
     {
@@ -139,14 +132,12 @@ struct ShadowDOMSiblingTraversalStrategy {
     int countElementsOfTypeAfter(Element*, const QualifiedName&) const;
 
 private:
-    Vector<Node*> m_siblings;
+    const Vector<Node*, 32>& m_siblings;
     int m_nth;
 };
 
 inline bool ShadowDOMSiblingTraversalStrategy::isFirstChild(Element* element) const
 {
-    UNUSED_PARAM(element);
-
     ASSERT(element == toElement(m_siblings[m_nth]));
 
     for (int i = m_nth - 1; i >= 0; --i) {
@@ -159,8 +150,6 @@ inline bool ShadowDOMSiblingTraversalStrategy::isFirstChild(Element* element) co
 
 inline bool ShadowDOMSiblingTraversalStrategy::isLastChild(Element* element) const
 {
-    UNUSED_PARAM(element);
-
     ASSERT(element == toElement(m_siblings[m_nth]));
 
     for (size_t i = m_nth + 1; i < m_siblings.size(); ++i) {
@@ -173,8 +162,6 @@ inline bool ShadowDOMSiblingTraversalStrategy::isLastChild(Element* element) con
 
 inline bool ShadowDOMSiblingTraversalStrategy::isFirstOfType(Element* element, const QualifiedName& type) const
 {
-    UNUSED_PARAM(element);
-
     ASSERT(element == toElement(m_siblings[m_nth]));
 
     for (int i = m_nth - 1; i >= 0; --i) {
@@ -187,8 +174,6 @@ inline bool ShadowDOMSiblingTraversalStrategy::isFirstOfType(Element* element, c
 
 inline bool ShadowDOMSiblingTraversalStrategy::isLastOfType(Element* element, const QualifiedName& type) const
 {
-    UNUSED_PARAM(element);
-
     ASSERT(element == toElement(m_siblings[m_nth]));
 
     for (size_t i = m_nth + 1; i < m_siblings.size(); ++i) {
@@ -201,8 +186,6 @@ inline bool ShadowDOMSiblingTraversalStrategy::isLastOfType(Element* element, co
 
 inline int ShadowDOMSiblingTraversalStrategy::countElementsBefore(Element* element) const
 {
-    UNUSED_PARAM(element);
-
     ASSERT(element == toElement(m_siblings[m_nth]));
 
     int count = 0;
@@ -216,8 +199,6 @@ inline int ShadowDOMSiblingTraversalStrategy::countElementsBefore(Element* eleme
 
 inline int ShadowDOMSiblingTraversalStrategy::countElementsAfter(Element* element) const
 {
-    UNUSED_PARAM(element);
-
     ASSERT(element == toElement(m_siblings[m_nth]));
 
     int count = 0;
@@ -231,8 +212,6 @@ inline int ShadowDOMSiblingTraversalStrategy::countElementsAfter(Element* elemen
 
 inline int ShadowDOMSiblingTraversalStrategy::countElementsOfTypeBefore(Element* element, const QualifiedName& type) const
 {
-    UNUSED_PARAM(element);
-
     ASSERT(element == toElement(m_siblings[m_nth]));
 
     int count = 0;
@@ -246,8 +225,6 @@ inline int ShadowDOMSiblingTraversalStrategy::countElementsOfTypeBefore(Element*
 
 inline int ShadowDOMSiblingTraversalStrategy::countElementsOfTypeAfter(Element* element, const QualifiedName& type) const
 {
-    UNUSED_PARAM(element);
-
     ASSERT(element == toElement(m_siblings[m_nth]));
 
     int count = 0;

@@ -24,19 +24,17 @@
 #include <algorithm>
 
 #include "core/dom/Document.h"
-#include "core/html/HTMLDivElement.h"
 #include "core/html/HTMLElement.h"
-#include "core/html/HTMLMetaElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/page/Settings.h"
-#include "core/platform/chromium/TraceEvent.h"
-#include "core/platform/graphics/IntSize.h"
+#include "core/frame/Settings.h"
 #include "core/rendering/RenderListItem.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderText.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/StyleInheritedData.h"
+#include "platform/TraceEvent.h"
+#include "platform/geometry/IntSize.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/Vector.h"
 
@@ -70,6 +68,14 @@ struct TextAutosizingClusterInfo {
     Vector<TextAutosizingClusterInfo> narrowDescendants;
 };
 
+#ifdef AUTOSIZING_DOM_DEBUG_INFO
+static void writeDebugInfo(RenderObject* renderObject, const AtomicString& output)
+{
+    Node* node = renderObject->node();
+    if (node && node->isElementNode())
+        toElement(node)->setAttribute("data-autosizing", output, ASSERT_NO_EXCEPTION);
+}
+#endif
 
 static const Vector<QualifiedName>& formInputTags()
 {
@@ -81,33 +87,6 @@ static const Vector<QualifiedName>& formInputTags()
         formInputTags.append(selectTag);
     }
     return formInputTags;
-}
-
-static const String& vBulletinForumCommentId()
-{
-    // Websites using vBulletin forum software typically contain <div id="post_message_*"..> blocks.
-    DEFINE_STATIC_LOCAL(const String, vBulletinForumCommentId, ("post_message_"));
-    return vBulletinForumCommentId;
-}
-
-static bool isVBulletinComment(const RenderBlock* block)
-{
-    Node* blockNode = block->node();
-    if (blockNode && blockNode->hasTagName(divTag)) {
-        const HTMLDivElement* element = toHTMLDivElement(blockNode);
-        if (element && element->hasID() && element->idForStyleResolution().startsWith(vBulletinForumCommentId()))
-            return true;
-    }
-    return false;
-}
-
-static bool hasForumCommentAncestor(const RenderBlock* container)
-{
-    for (const RenderBlock* block = container; block; block = block->containingBlock()) {
-        if (isVBulletinComment(block))
-            return true;
-    }
-    return false;
 }
 
 static RenderListItem* getAncestorListItem(const RenderObject* renderer)
@@ -133,11 +112,6 @@ static RenderObject* getAncestorList(const RenderObject* renderer)
 
 TextAutosizer::TextAutosizer(Document* document)
     : m_document(document)
-    , m_contentType(Unknown)
-{
-}
-
-TextAutosizer::~TextAutosizer()
 {
 }
 
@@ -151,28 +125,12 @@ void TextAutosizer::recalculateMultipliers()
     }
 }
 
-TextAutosizer::ContentType TextAutosizer::detectContentType()
-{
-    RefPtr<NodeList> metaElements = m_document->getElementsByTagNameNS(xhtmlNamespaceURI, metaTag.localName());
-    for (unsigned i = 0; i < metaElements->length(); ++i) {
-        HTMLMetaElement* metaElement = toHTMLMetaElement(metaElements->item(i));
-        if (equalIgnoringCase(metaElement->name(), "generator") && metaElement->content().startsWith("vBulletin", false))
-            return VBulletin;
-    }
-    return Default;
-}
-
 bool TextAutosizer::processSubtree(RenderObject* layoutRoot)
 {
     TRACE_EVENT0("webkit", "TextAutosizer::processSubtree");
 
-    // FIXME: Text Autosizing should only be enabled when m_document->page()->mainFrame()->view()->useFixedLayout()
-    // is true, but for now it's useful to ignore this so that it can be tested on desktop.
     if (!m_document->settings() || !m_document->settings()->textAutosizingEnabled() || layoutRoot->view()->document().printing() || !m_document->page())
         return false;
-
-    if (m_contentType == Unknown && m_document->body())
-        m_contentType = detectContentType();
 
     Frame* mainFrame = m_document->page()->mainFrame();
 
@@ -180,15 +138,13 @@ bool TextAutosizer::processSubtree(RenderObject* layoutRoot)
 
     // Window area, in logical (density-independent) pixels.
     windowInfo.windowSize = m_document->settings()->textAutosizingWindowSizeOverride();
-    if (windowInfo.windowSize.isEmpty()) {
-        bool includeScrollbars = !InspectorInstrumentation::shouldApplyScreenWidthOverride(mainFrame);
-        windowInfo.windowSize = mainFrame->view()->unscaledVisibleContentSize(includeScrollbars ? ScrollableArea::IncludeScrollbars : ScrollableArea::ExcludeScrollbars);
-    }
+    if (windowInfo.windowSize.isEmpty())
+        windowInfo.windowSize = mainFrame->view()->unscaledVisibleContentSize(ScrollableArea::IncludeScrollbars);
 
     // Largest area of block that can be visible at once (assuming the main
     // frame doesn't get scaled to less than overview scale), in CSS pixels.
     windowInfo.minLayoutSize = mainFrame->view()->layoutSize();
-    for (Frame* frame = m_document->frame(); frame; frame = frame->tree()->parent())
+    for (Frame* frame = m_document->frame(); frame; frame = frame->tree().parent())
         windowInfo.minLayoutSize = windowInfo.minLayoutSize.shrunkTo(frame->view()->layoutSize());
 
     // The layoutRoot could be neither a container nor a cluster, so walk up the tree till we find each of these.
@@ -200,8 +156,16 @@ bool TextAutosizer::processSubtree(RenderObject* layoutRoot)
     while (cluster && (!isAutosizingContainer(cluster) || !isIndependentDescendant(cluster)))
         cluster = cluster->containingBlock();
 
+    // Skip autosizing for orphaned trees, or if it will have no effect.
+    // Note: this might suppress autosizing of an inner cluster with a different writing mode.
+    // It's not clear what the correct behavior is for mixed writing modes anyway.
+    if (!cluster || clusterMultiplier(cluster->style()->writingMode(), windowInfo,
+        std::numeric_limits<float>::infinity()) == 1.0f)
+        return false;
+
     TextAutosizingClusterInfo clusterInfo(cluster);
     processCluster(clusterInfo, container, layoutRoot, windowInfo);
+    InspectorInstrumentation::didAutosizeText(layoutRoot);
     return true;
 }
 
@@ -213,13 +177,22 @@ float TextAutosizer::clusterMultiplier(WritingMode writingMode, const TextAutosi
     float logicalClusterWidth = std::min<float>(textWidth, logicalLayoutWidth);
 
     float multiplier = logicalClusterWidth / logicalWindowWidth;
-    multiplier *= m_document->settings()->textAutosizingFontScaleFactor();
+    multiplier *= m_document->settings()->accessibilityFontScaleFactor();
+
+    // If the page has a meta viewport or @viewport, don't apply the device scale adjustment.
+    const ViewportDescription& viewportDescription = m_document->page()->mainFrame()->document()->viewportDescription();
+    if (!viewportDescription.isSpecifiedByAuthor()) {
+        multiplier *= m_document->settings()->deviceScaleAdjustment();
+    }
     return std::max(1.0f, multiplier);
 }
 
 void TextAutosizer::processClusterInternal(TextAutosizingClusterInfo& clusterInfo, RenderBlock* container, RenderObject* subtreeRoot, const TextAutosizingWindowInfo& windowInfo, float multiplier)
 {
     processContainer(multiplier, container, clusterInfo, subtreeRoot, windowInfo);
+#ifdef AUTOSIZING_DOM_DEBUG_INFO
+    writeDebugInfo(clusterInfo.root, String::format("cluster:%f", multiplier));
+#endif
 
     Vector<Vector<TextAutosizingClusterInfo> > narrowDescendantsGroups;
     getNarrowDescendantsGroupedByWidth(clusterInfo, narrowDescendantsGroups);
@@ -265,6 +238,9 @@ void TextAutosizer::processCompositeCluster(Vector<TextAutosizingClusterInfo>& c
 void TextAutosizer::processContainer(float multiplier, RenderBlock* container, TextAutosizingClusterInfo& clusterInfo, RenderObject* subtreeRoot, const TextAutosizingWindowInfo& windowInfo)
 {
     ASSERT(isAutosizingContainer(container));
+#ifdef AUTOSIZING_DOM_DEBUG_INFO
+    writeDebugInfo(container, "container");
+#endif
 
     float localMultiplier = containerShouldBeAutosized(container) ? multiplier: 1;
 
@@ -300,9 +276,9 @@ void TextAutosizer::processContainer(float multiplier, RenderBlock* container, T
 
 void TextAutosizer::setMultiplier(RenderObject* renderer, float multiplier)
 {
-    // FIXME: Investigate if a clone() is needed and whether it does the right thing w.r.t. style sharing.
     RefPtr<RenderStyle> newStyle = RenderStyle::clone(renderer->style());
     newStyle->setTextAutosizingMultiplier(multiplier);
+    newStyle->setUnique();
     renderer->setStyle(newStyle.release());
 }
 
@@ -360,7 +336,10 @@ bool TextAutosizer::isAutosizingContainer(const RenderObject* renderer)
     // - Must not be list items, as items in the same list should look consistent (*).
     // - Must not be normal list items, as items in the same list should look
     //   consistent, unless they are floating or position:absolute/fixed.
-    if (!renderer->isRenderBlock() || (renderer->isInline() && !renderer->style()->isDisplayReplacedType()))
+    Node* node = renderer->generatingNode();
+    if ((node && !node->hasChildNodes())
+        || !renderer->isRenderBlock()
+        || (renderer->isInline() && !renderer->style()->isDisplayReplacedType()))
         return false;
     if (renderer->isListItem())
         return renderer->isFloating() || renderer->isOutOfFlowPositioned();
@@ -569,44 +548,18 @@ bool TextAutosizer::compositeClusterShouldBeAutosized(Vector<TextAutosizingClust
     // few lines of text you'll only need to pan across once or twice.
     //
     // An exception to the 4 lines of text are the textarea and contenteditable
-    // clusters, which are always autosized by default (i.e. treated as if they
+    // clusters, which are always autosized by default (i.e. threated as if they
     // contain more than 4 lines of text). This is to ensure that the text does
     // not suddenly get autosized when the user enters more than 4 lines of text.
-    // Another exception are the forum comments which are autosized by default
-    // to guarantee consistency.
     float totalTextWidth = 0;
     const float minLinesOfText = 4;
     float minTextWidth = blockWidth * minLinesOfText;
     for (size_t i = 0; i < clusterInfos.size(); ++i) {
         if (clusterInfos[i].root->isTextArea() || (clusterInfos[i].root->style() && clusterInfos[i].root->style()->userModify() != READ_ONLY))
             return true;
-        if (m_contentType == VBulletin) {
-            if (hasForumCommentAncestor(clusterInfos[i].blockContainingAllText)
-                || clusterContainsForumComment(clusterInfos[i].blockContainingAllText, clusterInfos[i]))
-                return true;
-        }
         measureDescendantTextWidth(clusterInfos[i].blockContainingAllText, clusterInfos[i], minTextWidth, totalTextWidth);
         if (totalTextWidth >= minTextWidth)
             return true;
-    }
-    return false;
-}
-
-bool TextAutosizer::clusterContainsForumComment(const RenderBlock* container, TextAutosizingClusterInfo& clusterInfo)
-{
-    ASSERT(m_contentType == VBulletin);
-
-    RenderObject* descendant = nextInPreOrderSkippingDescendantsOfContainers(container, container);
-    while (descendant) {
-        if (isAutosizingContainer(descendant)) {
-            RenderBlock* descendantBlock = toRenderBlock(descendant);
-            if (isVBulletinComment(descendantBlock))
-                return true;
-            if (!isAutosizingCluster(descendantBlock, clusterInfo)
-                && clusterContainsForumComment(descendantBlock, clusterInfo))
-                return true;
-        }
-        descendant = nextInPreOrderSkippingDescendantsOfContainers(descendant, container);
     }
     return false;
 }

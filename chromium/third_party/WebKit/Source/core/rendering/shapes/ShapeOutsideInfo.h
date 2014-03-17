@@ -30,30 +30,28 @@
 #ifndef ShapeOutsideInfo_h
 #define ShapeOutsideInfo_h
 
-#include "core/platform/graphics/LayoutSize.h"
 #include "core/rendering/shapes/ShapeInfo.h"
+#include "platform/geometry/LayoutSize.h"
 
 namespace WebCore {
 
-class RenderBlock;
+class RenderBlockFlow;
 class RenderBox;
 class FloatingObject;
 
 class ShapeOutsideInfo FINAL : public ShapeInfo<RenderBox>, public MappedInfo<RenderBox, ShapeOutsideInfo> {
 public:
-    LayoutUnit leftSegmentMarginBoxDelta() const { return m_leftSegmentMarginBoxDelta; }
-    LayoutUnit rightSegmentMarginBoxDelta() const { return m_rightSegmentMarginBoxDelta; }
+    LayoutUnit leftMarginBoxDelta() const { return m_leftMarginBoxDelta; }
+    LayoutUnit rightMarginBoxDelta() const { return m_rightMarginBoxDelta; }
 
-    bool computeSegmentsForContainingBlockLine(const RenderBlock*, const FloatingObject*, LayoutUnit lineTop, LayoutUnit lineHeight);
-    virtual bool computeSegmentsForLine(LayoutUnit lineTop, LayoutUnit lineHeight) OVERRIDE;
+    void updateDeltasForContainingBlockLine(const RenderBlockFlow*, const FloatingObject*, LayoutUnit lineTop, LayoutUnit lineHeight);
 
     static PassOwnPtr<ShapeOutsideInfo> createInfo(const RenderBox* renderer) { return adoptPtr(new ShapeOutsideInfo(renderer)); }
     static bool isEnabledFor(const RenderBox*);
 
     virtual bool lineOverlapsShapeBounds() const OVERRIDE
     {
-        return (logicalLineTop() < shapeLogicalBottom() && shapeLogicalTop() < logicalLineBottom())
-            || logicalLineTop() == shapeLogicalTop(); // case of zero height line or zero height shape
+        return computedShape()->lineOverlapsShapeMarginBounds(m_shapeLineTop, m_lineHeight);
     }
 
 protected:
@@ -67,8 +65,8 @@ protected:
 private:
     ShapeOutsideInfo(const RenderBox* renderer) : ShapeInfo<RenderBox>(renderer) { }
 
-    LayoutUnit m_leftSegmentMarginBoxDelta;
-    LayoutUnit m_rightSegmentMarginBoxDelta;
+    LayoutUnit m_leftMarginBoxDelta;
+    LayoutUnit m_rightMarginBoxDelta;
     LayoutUnit m_lineTop;
 };
 

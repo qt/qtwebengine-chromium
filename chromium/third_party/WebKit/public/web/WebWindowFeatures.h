@@ -35,11 +35,11 @@
 #include "../platform/WebString.h"
 #include "../platform/WebVector.h"
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
 #include "core/page/WindowFeatures.h"
 #endif
 
-namespace WebKit {
+namespace blink {
 
 struct WebWindowFeatures {
     float x;
@@ -79,7 +79,7 @@ struct WebWindowFeatures {
     }
 
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
     WebWindowFeatures(const WebCore::WindowFeatures& f)
         : x(f.x)
         , xSet(f.xSet)
@@ -127,6 +127,6 @@ struct WebWindowFeatures {
 #endif
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

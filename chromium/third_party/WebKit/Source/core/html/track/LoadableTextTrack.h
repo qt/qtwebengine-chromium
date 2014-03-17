@@ -35,25 +35,18 @@ namespace WebCore {
 class HTMLTrackElement;
 class LoadableTextTrack;
 
-class LoadableTextTrackClient : public TextTrackClient {
-public:
-    virtual ~LoadableTextTrackClient() { }
-
-    virtual bool canLoadUrl(LoadableTextTrack*, const KURL&) { return false; }
-    virtual void loadingCompleted(LoadableTextTrack*, bool /* loadingFailed */) { }
-};
-
 class LoadableTextTrack : public TextTrack, private TextTrackLoaderClient {
 public:
-    static PassRefPtr<LoadableTextTrack> create(HTMLTrackElement* track, const String& kind, const String& label, const String& language)
+    static PassRefPtr<LoadableTextTrack> create(HTMLTrackElement* track)
     {
-        return adoptRef(new LoadableTextTrack(track, kind, label, language));
+        return adoptRef(new LoadableTextTrack(track));
     }
     virtual ~LoadableTextTrack();
 
     void scheduleLoad(const KURL&);
 
-    virtual void clearClient();
+    // This shadows TextTrack::clearClient, but need not be virtual.
+    void clearClient();
 
     size_t trackElementIndex();
     HTMLTrackElement* trackElement() { return m_trackElement; }
@@ -63,15 +56,11 @@ public:
 
 private:
     // TextTrackLoaderClient
-    virtual bool shouldLoadCues(TextTrackLoader*) { return true; }
-    virtual void newCuesAvailable(TextTrackLoader*);
-    virtual void cueLoadingStarted(TextTrackLoader*);
-    virtual void cueLoadingCompleted(TextTrackLoader*, bool loadingFailed);
-#if ENABLE(WEBVTT_REGIONS)
-    virtual void newRegionsAvailable(TextTrackLoader*);
-#endif
+    virtual void newCuesAvailable(TextTrackLoader*) OVERRIDE;
+    virtual void cueLoadingCompleted(TextTrackLoader*, bool loadingFailed) OVERRIDE;
+    virtual void newRegionsAvailable(TextTrackLoader*) OVERRIDE;
 
-    LoadableTextTrack(HTMLTrackElement*, const String& kind, const String& label, const String& language);
+    LoadableTextTrack(HTMLTrackElement*);
 
     void loadTimerFired(Timer<LoadableTextTrack>*);
 

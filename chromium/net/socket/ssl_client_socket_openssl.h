@@ -15,6 +15,7 @@
 #include "net/cert/cert_verify_result.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/ssl_client_socket.h"
+#include "net/ssl/server_bound_cert_service.h"
 #include "net/ssl/ssl_config_service.h"
 
 // Avoid including misc OpenSSL headers, i.e.:
@@ -51,14 +52,6 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   const std::string& ssl_session_cache_shard() const {
     return ssl_session_cache_shard_;
   }
-
-  // Callback from the SSL layer that indicates the remote server is requesting
-  // a certificate for this client.
-  int ClientCertRequestCallback(SSL* ssl, X509** x509, EVP_PKEY** pkey);
-
-  // Callback from the SSL layer to check which NPN protocol we are supporting
-  int SelectNextProtoCallback(unsigned char** out, unsigned char* outlen,
-                              const unsigned char* in, unsigned int inlen);
 
   // SSLClientSocket implementation.
   virtual void GetSSLCertRequestInfo(
@@ -98,6 +91,10 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   virtual bool SetSendBufferSize(int32 size) OVERRIDE;
 
  private:
+  class SSLContext;
+  friend class SSLClientSocket;
+  friend class SSLContext;
+
   bool Init();
   void DoReadCallback(int result);
   void DoWriteCallback(int result);
@@ -124,7 +121,19 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   void BufferSendComplete(int result);
   void BufferRecvComplete(int result);
   void TransportWriteComplete(int result);
-  void TransportReadComplete(int result);
+  int TransportReadComplete(int result);
+
+  // Callback from the SSL layer that indicates the remote server is requesting
+  // a certificate for this client.
+  int ClientCertRequestCallback(SSL* ssl, X509** x509, EVP_PKEY** pkey);
+
+  // Callback from the SSL layer that indicates the remote server supports TLS
+  // Channel IDs.
+  void ChannelIDRequestCallback(SSL* ssl, EVP_PKEY** pkey);
+
+  // Callback from the SSL layer to check which NPN protocol we are supporting
+  int SelectNextProtoCallback(unsigned char** out, unsigned char* outlen,
+                              const unsigned char* in, unsigned int inlen);
 
   bool transport_send_busy_;
   bool transport_recv_busy_;
@@ -155,6 +164,10 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   // indicates an error.
   int pending_read_error_;
 
+  // Used by TransportWriteComplete() and TransportReadComplete() to signify an
+  // error writing to the transport socket. A value of OK indicates no error.
+  int transport_write_error_;
+
   // Set when handshake finishes.
   scoped_refptr<X509Certificate> server_cert_;
   CertVerifyResult server_cert_verify_result_;
@@ -169,6 +182,9 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
 
   CertVerifier* const cert_verifier_;
   scoped_ptr<SingleRequestCertVerifier> verifier_;
+
+  // The service for retrieving Channel ID keys.  May be NULL.
+  ServerBoundCertService* server_bound_cert_service_;
 
   // OpenSSL stuff
   SSL* ssl_;
@@ -195,6 +211,15 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   NextProtoStatus npn_status_;
   std::string npn_proto_;
   std::string server_protos_;
+  // Written by the |server_bound_cert_service_|.
+  std::string channel_id_private_key_;
+  std::string channel_id_cert_;
+  // The return value of the last call to |server_bound_cert_service_|.
+  int channel_id_request_return_value_;
+  // True if channel ID extension was negotiated.
+  bool channel_id_xtn_negotiated_;
+  // The request handle for |server_bound_cert_service_|.
+  ServerBoundCertService::RequestHandle channel_id_request_handle_;
   BoundNetLog net_log_;
 };
 

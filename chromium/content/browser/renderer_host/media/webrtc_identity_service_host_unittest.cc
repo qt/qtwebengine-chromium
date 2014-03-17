@@ -17,13 +17,12 @@ namespace content {
 
 namespace {
 
-static const char FAKE_ORIGIN[] = "http://fake.com";
-static const char FAKE_IDENTITY_NAME[] = "fake identity";
-static const char FAKE_COMMON_NAME[] = "fake common name";
-static const char FAKE_CERTIFICATE[] = "fake cert";
-static const char FAKE_PRIVATE_KEY[] = "fake private key";
-static const int FAKE_ERROR = 100;
-static const int FAKE_RENDERER_ID = 10;
+const char FAKE_ORIGIN[] = "http://fake.com";
+const char FAKE_IDENTITY_NAME[] = "fake identity";
+const char FAKE_COMMON_NAME[] = "fake common name";
+const char FAKE_CERTIFICATE[] = "fake cert";
+const char FAKE_PRIVATE_KEY[] = "fake private key";
+const int FAKE_RENDERER_ID = 10;
 const int FAKE_SEQUENCE_NUMBER = 1;
 
 class MockWebRTCIdentityStore : public WebRTCIdentityStore {
@@ -187,6 +186,13 @@ TEST_F(WebRTCIdentityServiceHostTest, TestOriginAccessDenied) {
 
   SendRequestToHost();
   VerifyRequestFailedMessage(net::ERR_ACCESS_DENIED);
+}
+
+// Verifies that we do not crash if we try to cancel a completed request.
+TEST_F(WebRTCIdentityServiceHostTest, TestCancelAfterRequestCompleted) {
+  SendRequestToHost();
+  store_->RunCompletionCallback(net::OK, FAKE_CERTIFICATE, FAKE_PRIVATE_KEY);
+  SendCancelRequestToHost();
 }
 
 }  // namespace content

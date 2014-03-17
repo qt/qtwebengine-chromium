@@ -137,9 +137,9 @@
             ['chromeos == 1', {
               # ChromeOS needs these files for animated WebM avatars.
               'sources': [
-                '<(libvpx_source)/libmkv/EbmlIDs.h',
-                '<(libvpx_source)/libmkv/EbmlWriter.c',
-                '<(libvpx_source)/libmkv/EbmlWriter.h',
+                '<(libvpx_source)/third_party/libmkv/EbmlIDs.h',
+                '<(libvpx_source)/third_party/libmkv/EbmlWriter.c',
+                '<(libvpx_source)/third_party/libmkv/EbmlWriter.h',
               ],
             }],
           ],
@@ -303,9 +303,9 @@
             ['chromeos == 1', {
               # ChromeOS needs these files for animated WebM avatars.
               'sources': [
-                '<(libvpx_source)/libmkv/EbmlIDs.h',
-                '<(libvpx_source)/libmkv/EbmlWriter.c',
-                '<(libvpx_source)/libmkv/EbmlWriter.h',
+                '<(libvpx_source)/third_party/libmkv/EbmlIDs.h',
+                '<(libvpx_source)/third_party/libmkv/EbmlWriter.c',
+                '<(libvpx_source)/third_party/libmkv/EbmlWriter.h',
               ],
             }],
           ],
@@ -332,6 +332,7 @@
       # A library that contains assembly offsets needed.
       'target_name': 'libvpx_asm_offsets_vp8',
       'type': 'static_library',
+      'android_unmangled_name': 1,
       'hard_dependency': 1,
       'include_dirs': [
         'source/config/<(OS_CATEGORY)/<(target_arch_full)',
@@ -355,6 +356,7 @@
       # libvpx_asm_offsets.
       'target_name': 'libvpx_asm_offsets_vpx_scale',
       'type': 'static_library',
+      'android_unmangled_name': 1,
       'hard_dependency': 1,
       'include_dirs': [
         'source/config/<(OS_CATEGORY)/<(target_arch_full)',
@@ -402,6 +404,7 @@
                 '-s', '<(PRODUCT_DIR)/obj/libvpx_asm_offsets_vp8/vp8_asm_enc_offsets.obj',
                 '-s', '<(ninja_obj_dir)/encoder/libvpx_asm_offsets_vp8.vp8_asm_enc_offsets.obj',
                 '-s', '<(PRODUCT_DIR)/obj/Source/WebKit/chromium/third_party/libvpx/<(libvpx_source)/vp8/encoder/libvpx_asm_offsets_vp8.vp8_asm_enc_offsets.obj',
+                '-s', '<(qtwe_chromium_obj_dir)/third_party/libvpx/<(libvpx_source)/vp8/encoder/libvpx_asm_offsets_vp8.vp8_asm_enc_offsets.obj',
               ],
               'process_output_as_sources': 1,
               'msvs_cygwin_shell': 1,
@@ -500,6 +503,7 @@
                 '-s', '<(PRODUCT_DIR)/obj/libvpx_asm_offsets_vpx_scale/vpx_scale_asm_offsets.obj',
                 '-s', '<(ninja_obj_dir)/encoder/libvpx_asm_offsets_vpx_scale.vpx_scale_asm_offsets.obj',
                 '-s', '<(PRODUCT_DIR)/obj/Source/WebKit/chromium/third_party/libvpx/<(libvpx_source)/vpx_scale/libvpx_asm_offsets_vpx_scale.vpx_scale_asm_offsets.obj',
+                '-s', '<(qtwe_chromium_obj_dir)/third_party/libvpx/<(libvpx_source)/vpx_scale/libvpx_asm_offsets_vpx_scale.vpx_scale_asm_offsets.obj',
               ],
               'process_output_as_sources': 1,
               'msvs_cygwin_shell': 1,

@@ -32,7 +32,7 @@
 #define SourceBufferList_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/dom/EventTarget.h"
+#include "core/events/EventTarget.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 
@@ -41,9 +41,10 @@ namespace WebCore {
 class SourceBuffer;
 class GenericEventQueue;
 
-class SourceBufferList : public RefCounted<SourceBufferList>, public ScriptWrappable, public EventTarget {
+class SourceBufferList : public RefCounted<SourceBufferList>, public ScriptWrappable, public EventTargetWithInlineData {
+    REFCOUNTED_EVENT_TARGET(SourceBufferList);
 public:
-    static PassRefPtr<SourceBufferList> create(ScriptExecutionContext* context, GenericEventQueue* asyncEventQueue)
+    static PassRefPtr<SourceBufferList> create(ExecutionContext* context, GenericEventQueue* asyncEventQueue)
     {
         return adoptRef(new SourceBufferList(context, asyncEventQueue));
     }
@@ -59,25 +60,14 @@ public:
 
     // EventTarget interface
     virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ScriptExecutionContext* scriptExecutionContext() const OVERRIDE;
-
-    using RefCounted<SourceBufferList>::ref;
-    using RefCounted<SourceBufferList>::deref;
-
-protected:
-    virtual EventTargetData* eventTargetData() OVERRIDE;
-    virtual EventTargetData* ensureEventTargetData() OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE;
 
 private:
-    SourceBufferList(ScriptExecutionContext*, GenericEventQueue*);
+    SourceBufferList(ExecutionContext*, GenericEventQueue*);
 
     void scheduleEvent(const AtomicString&);
 
-    virtual void refEventTarget() OVERRIDE { ref(); }
-    virtual void derefEventTarget() OVERRIDE { deref(); }
-
-    EventTargetData m_eventTargetData;
-    ScriptExecutionContext* m_scriptExecutionContext;
+    ExecutionContext* m_executionContext;
     GenericEventQueue* m_asyncEventQueue;
 
     Vector<RefPtr<SourceBuffer> > m_list;

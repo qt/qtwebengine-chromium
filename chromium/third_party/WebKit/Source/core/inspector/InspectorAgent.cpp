@@ -41,10 +41,9 @@
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
-#include "core/platform/JSONValues.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
@@ -86,7 +85,7 @@ void InspectorAgent::didClearWindowObjectInWorld(Frame* frame, DOMWrapperWorld* 
     scriptSource.append("(");
     scriptSource.appendNumber(injectedScriptId);
     scriptSource.append(")");
-    frame->script()->executeScript(scriptSource.toString());
+    frame->script().executeScriptInMainWorld(scriptSource.toString());
 }
 
 void InspectorAgent::setFrontend(InspectorFrontend* inspectorFrontend)
@@ -141,11 +140,6 @@ void InspectorAgent::domContentLoadedEventFired(Frame* frame)
     m_injectedScriptManager->injectedScriptHost()->clearInspectedObjects();
 }
 
-bool InspectorAgent::isMainResourceLoader(DocumentLoader* loader, const KURL& requestUrl)
-{
-    return loader->frame() == m_inspectedPage->mainFrame() && requestUrl == loader->requestURL();
-}
-
 void InspectorAgent::evaluateForTestInFrontend(long callId, const String& script)
 {
     if (m_state->getBoolean(InspectorAgentState::inspectorAgentEnabled))
@@ -169,18 +163,6 @@ void InspectorAgent::inspect(PassRefPtr<TypeBuilder::Runtime::RemoteObject> obje
     }
     m_pendingInspectData.first = objectToInspect;
     m_pendingInspectData.second = hints;
-}
-
-KURL InspectorAgent::inspectedURL() const
-{
-    return m_inspectedPage->mainFrame()->document()->url();
-}
-
-KURL InspectorAgent::inspectedURLWithoutFragment() const
-{
-    KURL url = inspectedURL();
-    url.removeFragmentIdentifier();
-    return url;
 }
 
 } // namespace WebCore

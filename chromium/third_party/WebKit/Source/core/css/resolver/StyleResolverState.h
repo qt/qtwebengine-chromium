@@ -26,7 +26,8 @@
 
 #include "core/animation/css/CSSAnimations.h"
 #include "core/css/CSSSVGDocumentValue.h"
-#include "core/css/CSSToStyleMap.h"
+#include "core/css/CSSToLengthConversionData.h"
+#include "core/css/resolver/CSSToStyleMap.h"
 #include "core/css/resolver/ElementResolveContext.h"
 #include "core/css/resolver/ElementStyleResources.h"
 #include "core/css/resolver/FontBuilder.h"
@@ -39,12 +40,12 @@ namespace WebCore {
 
 class FontDescription;
 class RenderRegion;
+class StyleRule;
 
 class StyleResolverState {
 WTF_MAKE_NONCOPYABLE(StyleResolverState);
 public:
     StyleResolverState(Document&, Element*, RenderStyle* parentStyle = 0, RenderRegion* regionForStyling = 0);
-    ~StyleResolverState();
 
     // In FontFaceSet and CanvasRenderingContext2D, we don't have an element to grab the document from.
     // This is why we have to store the document separately.
@@ -58,10 +59,12 @@ public:
 
     const ElementResolveContext& elementContext() const { return m_elementContext; }
 
-    void setStyle(PassRefPtr<RenderStyle> style) { m_style = style; }
+    void setStyle(PassRefPtr<RenderStyle> style) { m_style = style; m_cssToLengthConversionData.setStyle(m_style.get()); }
     const RenderStyle* style() const { return m_style.get(); }
     RenderStyle* style() { return m_style.get(); }
     PassRefPtr<RenderStyle> takeStyle() { return m_style.release(); }
+
+    const CSSToLengthConversionData& cssToLengthConversionData() const { return m_cssToLengthConversionData; }
 
     void setAnimationUpdate(PassOwnPtr<CSSAnimationUpdate> update) { m_animationUpdate = update; }
     const CSSAnimationUpdate* animationUpdate() { return m_animationUpdate.get(); }
@@ -72,6 +75,9 @@ public:
     RenderStyle* parentStyle() { return m_parentStyle.get(); }
 
     const RenderRegion* regionForStyling() const { return m_regionForStyling; }
+
+    void setCurrentRule(StyleRule* currentRule) { m_currentRule = currentRule; }
+    const StyleRule* currentRule() const { return m_currentRule; }
 
     // FIXME: These are effectively side-channel "out parameters" for the various
     // map functions. When we map from CSS to style objects we use this state object
@@ -101,7 +107,7 @@ public:
     // sites are extremely verbose.
     PassRefPtr<StyleImage> styleImage(CSSPropertyID propertyId, CSSValue* value)
     {
-        return m_elementStyleResources.styleImage(document().textLinkColors(), style()->visitedDependentColor(CSSPropertyColor), propertyId, value);
+        return m_elementStyleResources.styleImage(document().textLinkColors(), style()->color(), propertyId, value);
     }
 
     FontBuilder& fontBuilder() { return m_fontBuilder; }
@@ -129,13 +135,13 @@ public:
 private:
     friend class StyleResolveScope;
 
-    void initElement(Element*);
-
     ElementResolveContext m_elementContext;
     Document& m_document;
 
     // m_style is the primary output for each element's style resolve.
     RefPtr<RenderStyle> m_style;
+
+    CSSToLengthConversionData m_cssToLengthConversionData;
 
     // m_parentStyle is not always just element->parentNode()->style()
     // so we keep it separate from m_elementContext.
@@ -162,6 +168,8 @@ private:
     // a back-pointer to this object.
     CSSToStyleMap m_styleMap;
     Vector<AtomicString> m_contentAttrValues;
+
+    StyleRule* m_currentRule;
 };
 
 } // namespace WebCore

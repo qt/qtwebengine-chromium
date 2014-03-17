@@ -26,39 +26,33 @@
 #ifndef TextTrackLoader_h
 #define TextTrackLoader_h
 
-#include "core/fetch/ResourceClient.h"
-#include "core/fetch/ResourcePtr.h"
-#include "core/fetch/TextTrackResource.h"
-#include "core/html/track/WebVTTParser.h"
-#include "core/platform/Timer.h"
+#include "core/fetch/RawResource.h"
+#include "core/fetch/ResourceOwner.h"
+#include "core/html/track/vtt/VTTParser.h"
+#include "platform/Timer.h"
 #include "wtf/OwnPtr.h"
 
 namespace WebCore {
 
 class Document;
 class TextTrackLoader;
-class ScriptExecutionContext;
 
-class TextTrackLoaderClient {
+class TextTrackLoaderClient : public ResourceOwner<RawResource> {
 public:
     virtual ~TextTrackLoaderClient() { }
 
-    virtual bool shouldLoadCues(TextTrackLoader*) = 0;
     virtual void newCuesAvailable(TextTrackLoader*) = 0;
-    virtual void cueLoadingStarted(TextTrackLoader*) = 0;
     virtual void cueLoadingCompleted(TextTrackLoader*, bool loadingFailed) = 0;
-#if ENABLE(WEBVTT_REGIONS)
     virtual void newRegionsAvailable(TextTrackLoader*) = 0;
-#endif
 };
 
-class TextTrackLoader : public ResourceClient, private WebVTTParserClient {
+class TextTrackLoader : public ResourceOwner<RawResource>, private VTTParserClient {
     WTF_MAKE_NONCOPYABLE(TextTrackLoader);
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    static PassOwnPtr<TextTrackLoader> create(TextTrackLoaderClient* client, ScriptExecutionContext* context)
+    static PassOwnPtr<TextTrackLoader> create(TextTrackLoaderClient& client, Document& document)
     {
-        return adoptPtr(new TextTrackLoader(client, context));
+        return adoptPtr(new TextTrackLoader(client, document));
     }
     virtual ~TextTrackLoader();
 
@@ -68,37 +62,31 @@ public:
     enum State { Idle, Loading, Finished, Failed };
     State loadState() { return m_state; }
 
-    void getNewCues(Vector<RefPtr<TextTrackCue> >& outputCues);
-#if ENABLE(WEBVTT_REGIONS)
-    void getNewRegions(Vector<RefPtr<TextTrackRegion> >& outputRegions);
-#endif
+    void getNewCues(Vector<RefPtr<VTTCue> >& outputCues);
+    void getNewRegions(Vector<RefPtr<VTTRegion> >& outputRegions);
 private:
 
-    // ResourceClient
-    virtual void notifyFinished(Resource*);
-    virtual void deprecatedDidReceiveResource(Resource*);
+    // RawResourceClient
+    virtual void dataReceived(Resource*, const char* data, int length) OVERRIDE;
+    virtual void notifyFinished(Resource*) OVERRIDE;
 
-    // WebVTTParserClient
-    virtual void newCuesParsed();
-#if ENABLE(WEBVTT_REGIONS)
-    virtual void newRegionsParsed();
-#endif
-    virtual void fileFailedToParse();
+    // VTTParserClient
+    virtual void newCuesParsed() OVERRIDE;
+    virtual void newRegionsParsed() OVERRIDE;
+    virtual void fileFailedToParse() OVERRIDE;
 
-    TextTrackLoader(TextTrackLoaderClient*, ScriptExecutionContext*);
+    TextTrackLoader(TextTrackLoaderClient&, Document&);
 
-    void processNewCueData(Resource*);
     void cueLoadTimerFired(Timer<TextTrackLoader>*);
     void corsPolicyPreventedLoad();
 
-    TextTrackLoaderClient* m_client;
-    OwnPtr<WebVTTParser> m_cueParser;
-    ResourcePtr<TextTrackResource> m_cachedCueData;
-    ScriptExecutionContext* m_scriptExecutionContext;
+    TextTrackLoaderClient& m_client;
+    OwnPtr<VTTParser> m_cueParser;
+    // FIXME: Remove this pointer and get the Document from m_client.
+    Document& m_document;
     Timer<TextTrackLoader> m_cueLoadTimer;
     String m_crossOriginMode;
     State m_state;
-    unsigned m_parseOffset;
     bool m_newCuesAvailable;
 };
 

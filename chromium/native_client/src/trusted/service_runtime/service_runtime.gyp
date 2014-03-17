@@ -74,9 +74,11 @@
           'sys_exception.c',
           'sys_fdio.c',
           'sys_filename.c',
+          'sys_futex.c',
           'sys_imc.c',
           'sys_list_mappings.c',
           'sys_memory.c',
+          'sys_parallel_io.c',
           'thread_suspension_common.c',
           'thread_suspension_unwind.c',
         ],
@@ -99,7 +101,7 @@
               # TODO(gregoryd): find out how to generate a file
               # in such a location that can be found in both
               # NaCl and Chrome builds.
-              ['<@(python_exe)', 'nacl_syscall_handlers_gen.py',
+              ['python', 'nacl_syscall_handlers_gen.py',
                '-i', '<@(syscall_handler)',
                '-o', '<@(_outputs)'],
 
@@ -142,7 +144,7 @@
                   ],
                   'process_outputs_as_sources': 1,
                   'action': [
-                    '<(python_exe)', '<@(_inputs)', '<@(_outputs)',
+                    'python', '<@(_inputs)', '<@(_outputs)',
                   ],
                   'message': 'Generating mig plumbing for exc.defs',
                 },
@@ -178,6 +180,20 @@
                 'linux/nacl_signal_arm.c',
               ],
             }],
+            ['target_arch=="mipsel"', {
+              'sources': [
+                'arch/mips/nacl_app.c',
+                'arch/mips/nacl_switch.S',
+                'arch/mips/nacl_switch_to_app_mips.c',
+                'arch/mips/nacl_syscall.S',
+                'arch/mips/nacl_tls.c',
+                'arch/mips/sel_addrspace_mips.c',
+                'arch/mips/sel_ldr_mips.c',
+                'arch/mips/sel_rt.c',
+                'arch/mips/tramp_mips.S',
+                'linux/nacl_signal_mips.c',
+              ],
+            }],
             ['OS=="linux"', {
               'sources': [
                 'linux/nacl_bootstrap_args.c',
@@ -198,6 +214,11 @@
                 ['target_arch=="arm"', {
                   'sources': [
                     'linux/arm/sel_segments.c',
+                  ],
+                }],
+                ['target_arch=="mipsel"', {
+                  'sources': [
+                    'linux/mips/sel_segments.c',
                   ],
                 }],
               ],
@@ -255,6 +276,11 @@
         ['target_arch=="arm"', {
           'dependencies': [
             '<(DEPTH)/native_client/src/trusted/validator_arm/validator_arm.gyp:ncvalidate_arm_v2',
+          ],
+        }],
+        ['target_arch=="mipsel"', {
+          'dependencies': [
+            '<(DEPTH)/native_client/src/trusted/validator_mips/validator_mips.gyp:ncvalidate_mips',
           ],
         }],
         ['target_arch=="ia32" or target_arch=="x64"', {

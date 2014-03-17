@@ -36,7 +36,7 @@
 #include "ui/base/l10n/l10n_util_android.h"
 #endif
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
+#if defined(USE_GLIB)
 #include <glib.h>
 #endif
 
@@ -246,9 +246,79 @@ bool IsLocaleAvailable(const std::string& locale) {
   // See crbug.com/230432: CHECK failure in GetUserDataDir().
   return ResourceBundle::GetSharedInstance().LocaleDataPakExists(locale);
 }
+#endif
+
+// On Linux, the text layout engine Pango determines paragraph directionality
+// by looking at the first strongly-directional character in the text. This
+// means text such as "Google Chrome foo bar..." will be layed out LTR even
+// if "foo bar" is RTL. So this function prepends the necessary RLM in such
+// cases.
+void AdjustParagraphDirectionality(base::string16* paragraph) {
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
+  if (base::i18n::IsRTL() &&
+      base::i18n::StringContainsStrongRTLChars(*paragraph)) {
+    paragraph->insert(0, 1,
+                      static_cast<base::char16>(base::i18n::kRightToLeftMark));
+  }
+#endif
+}
+
+#if defined(OS_WIN)
+std::string GetCanonicalLocale(const std::string& locale) {
+  return base::i18n::GetCanonicalLocale(locale.c_str());
+}
+#endif
+
+struct AvailableLocalesTraits
+    : base::DefaultLazyInstanceTraits<std::vector<std::string> > {
+  static std::vector<std::string>* New(void* instance) {
+    std::vector<std::string>* locales =
+        base::DefaultLazyInstanceTraits<std::vector<std::string> >::New(
+            instance);
+    int num_locales = uloc_countAvailable();
+    for (int i = 0; i < num_locales; ++i) {
+      std::string locale_name = uloc_getAvailable(i);
+      // Filter out the names that have aliases.
+      if (IsDuplicateName(locale_name))
+        continue;
+      // Filter out locales for which we have only partially populated data
+      // and to which Chrome is not localized.
+      if (IsLocalePartiallyPopulated(locale_name))
+        continue;
+      if (!l10n_util::IsLocaleSupportedByOS(locale_name))
+        continue;
+      // Normalize underscores to hyphens because that's what our locale files
+      // use.
+      std::replace(locale_name.begin(), locale_name.end(), '_', '-');
+
+      // Map the Chinese locale names over to zh-CN and zh-TW.
+      if (LowerCaseEqualsASCII(locale_name, "zh-hans")) {
+        locale_name = "zh-CN";
+      } else if (LowerCaseEqualsASCII(locale_name, "zh-hant")) {
+        locale_name = "zh-TW";
+      }
+      locales->push_back(locale_name);
+    }
+
+    // Manually add 'es-419' to the list. See the comment in IsDuplicateName().
+    locales->push_back("es-419");
+    return locales;
+  }
+};
+
+base::LazyInstance<std::vector<std::string>, AvailableLocalesTraits>
+    g_available_locales = LAZY_INSTANCE_INITIALIZER;
+
+}  // namespace
+
+namespace l10n_util {
 
 bool CheckAndResolveLocale(const std::string& locale,
                            std::string* resolved_locale) {
+#if defined(OS_MACOSX)
+  NOTIMPLEMENTED();
+  return false;
+#else
   if (IsLocaleAvailable(locale)) {
     *resolved_locale = locale;
     return true;
@@ -326,72 +396,8 @@ bool CheckAndResolveLocale(const std::string& locale,
   }
 
   return false;
-}
-#endif
-
-// On Linux, the text layout engine Pango determines paragraph directionality
-// by looking at the first strongly-directional character in the text. This
-// means text such as "Google Chrome foo bar..." will be layed out LTR even
-// if "foo bar" is RTL. So this function prepends the necessary RLM in such
-// cases.
-void AdjustParagraphDirectionality(string16* paragraph) {
-#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
-  if (base::i18n::IsRTL() &&
-      base::i18n::StringContainsStrongRTLChars(*paragraph)) {
-    paragraph->insert(0, 1, static_cast<char16>(base::i18n::kRightToLeftMark));
-  }
 #endif
 }
-
-#if defined(OS_WIN)
-std::string GetCanonicalLocale(const std::string& locale) {
-  return base::i18n::GetCanonicalLocale(locale.c_str());
-}
-#endif
-
-struct AvailableLocalesTraits :
-    base::DefaultLazyInstanceTraits<std::vector<std::string> > {
-  static std::vector<std::string>* New(void* instance) {
-    std::vector<std::string>* locales =
-        base::DefaultLazyInstanceTraits<std::vector<std::string> >::New(
-            instance);
-    int num_locales = uloc_countAvailable();
-    for (int i = 0; i < num_locales; ++i) {
-      std::string locale_name = uloc_getAvailable(i);
-      // Filter out the names that have aliases.
-      if (IsDuplicateName(locale_name))
-        continue;
-      // Filter out locales for which we have only partially populated data
-      // and to which Chrome is not localized.
-      if (IsLocalePartiallyPopulated(locale_name))
-        continue;
-      if (!l10n_util::IsLocaleSupportedByOS(locale_name))
-        continue;
-      // Normalize underscores to hyphens because that's what our locale files
-      // use.
-      std::replace(locale_name.begin(), locale_name.end(), '_', '-');
-
-      // Map the Chinese locale names over to zh-CN and zh-TW.
-      if (LowerCaseEqualsASCII(locale_name, "zh-hans")) {
-        locale_name = "zh-CN";
-      } else if (LowerCaseEqualsASCII(locale_name, "zh-hant")) {
-        locale_name = "zh-TW";
-      }
-      locales->push_back(locale_name);
-    }
-
-    // Manually add 'es-419' to the list. See the comment in IsDuplicateName().
-    locales->push_back("es-419");
-    return locales;
-  }
-};
-
-base::LazyInstance<std::vector<std::string>, AvailableLocalesTraits >
-    g_available_locales = LAZY_INSTANCE_INITIALIZER;
-
-}  // namespace
-
-namespace l10n_util {
 
 std::string GetApplicationLocale(const std::string& pref_locale) {
 #if defined(OS_MACOSX)
@@ -442,19 +448,12 @@ std::string GetApplicationLocale(const std::string& pref_locale) {
     candidates.push_back(base::i18n::GetConfiguredLocale());
   }
 
-#elif defined(OS_CHROMEOS) || (defined(USE_AURA) && !defined(OS_LINUX))
-
-  // On ChromeOS, use the application locale preference.
-  if (!pref_locale.empty())
-    candidates.push_back(pref_locale);
-
 #elif defined(OS_ANDROID)
 
   // On Android, query java.util.Locale for the default locale.
   candidates.push_back(GetDefaultLocale());
 
-#elif defined(OS_POSIX)
-  // If we're on a different Linux system, we have glib.
+#elif defined(USE_GLIB) && !defined(OS_CHROMEOS)
 
   // GLib implements correct environment variable parsing with
   // the precedence order: LANGUAGE, LC_ALL, LC_MESSAGES and LANG.
@@ -470,7 +469,12 @@ std::string GetApplicationLocale(const std::string& pref_locale) {
   }
 
 #else
-#error Unsupported platform, see build/build_config.h
+
+  // By default, use the application locale preference. This applies to ChromeOS
+  // and linux systems without glib.
+  if (!pref_locale.empty())
+    candidates.push_back(pref_locale);
+
 #endif
 
   std::vector<std::string>::const_iterator i = candidates.begin();
@@ -495,7 +499,7 @@ std::string GetApplicationLocale(const std::string& pref_locale) {
 
 bool IsLocaleNameTranslated(const char* locale,
                             const std::string& display_locale) {
-  string16 display_name =
+  base::string16 display_name =
       l10n_util::GetDisplayNameForLocale(locale, display_locale, false);
   // Because ICU sets the error code to U_USING_DEFAULT_WARNING whether or not
   // uloc_getDisplayName returns the actual translation or the default
@@ -506,9 +510,9 @@ bool IsLocaleNameTranslated(const char* locale,
   return !IsStringASCII(display_name) || UTF16ToASCII(display_name) != locale;
 }
 
-string16 GetDisplayNameForLocale(const std::string& locale,
-                                 const std::string& display_locale,
-                                 bool is_for_ui) {
+base::string16 GetDisplayNameForLocale(const std::string& locale,
+                                       const std::string& display_locale,
+                                       bool is_for_ui) {
   std::string locale_code = locale;
   // Internally, we use the language code of zh-CN and zh-TW, but we want the
   // display names to be Chinese (Simplified) and Chinese (Traditional) instead
@@ -531,7 +535,7 @@ string16 GetDisplayNameForLocale(const std::string& locale,
   else if (locale_code == "zh-TW")
     locale_code = "zh-Hant";
 
-  string16 display_name;
+  base::string16 display_name;
 #if defined(OS_ANDROID)
   // Use Java API to get locale display name so that we can remove most of
   // the lang data from icu data to reduce binary size, except for zh-Hans and
@@ -559,8 +563,8 @@ string16 GetDisplayNameForLocale(const std::string& locale,
   return display_name;
 }
 
-string16 GetDisplayNameForCountry(const std::string& country_code,
-                                  const std::string& display_locale) {
+base::string16 GetDisplayNameForCountry(const std::string& country_code,
+                                        const std::string& display_locale) {
   return GetDisplayNameForLocale("_" + country_code, display_locale, false);
 }
 
@@ -660,23 +664,23 @@ std::string GetStringUTF8(int message_id) {
   return UTF16ToUTF8(GetStringUTF16(message_id));
 }
 
-string16 GetStringUTF16(int message_id) {
+base::string16 GetStringUTF16(int message_id) {
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  string16 str = rb.GetLocalizedString(message_id);
+  base::string16 str = rb.GetLocalizedString(message_id);
   AdjustParagraphDirectionality(&str);
 
   return str;
 }
 
-static string16 GetStringF(int message_id,
-                           const std::vector<string16>& replacements,
-                           std::vector<size_t>* offsets) {
+base::string16 GetStringFUTF16(int message_id,
+                               const std::vector<base::string16>& replacements,
+                               std::vector<size_t>* offsets) {
   // TODO(tc): We could save a string copy if we got the raw string as
   // a StringPiece and were able to call ReplaceStringPlaceholders with
-  // a StringPiece format string and string16 substitution strings.  In
+  // a StringPiece format string and base::string16 substitution strings.  In
   // practice, the strings should be relatively short.
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  const string16& format_string = rb.GetLocalizedString(message_id);
+  const base::string16& format_string = rb.GetLocalizedString(message_id);
 
 #ifndef NDEBUG
   // Make sure every replacement string is being used, so we don't just
@@ -706,124 +710,126 @@ static string16 GetStringF(int message_id,
   }
 #endif
 
-  string16 formatted = ReplaceStringPlaceholders(format_string, replacements,
-                                                 offsets);
+  base::string16 formatted = ReplaceStringPlaceholders(
+      format_string, replacements, offsets);
   AdjustParagraphDirectionality(&formatted);
 
   return formatted;
 }
 
 std::string GetStringFUTF8(int message_id,
-                           const string16& a) {
+                           const base::string16& a) {
   return UTF16ToUTF8(GetStringFUTF16(message_id, a));
 }
 
 std::string GetStringFUTF8(int message_id,
-                           const string16& a,
-                           const string16& b) {
+                           const base::string16& a,
+                           const base::string16& b) {
   return UTF16ToUTF8(GetStringFUTF16(message_id, a, b));
 }
 
 std::string GetStringFUTF8(int message_id,
-                           const string16& a,
-                           const string16& b,
-                           const string16& c) {
+                           const base::string16& a,
+                           const base::string16& b,
+                           const base::string16& c) {
   return UTF16ToUTF8(GetStringFUTF16(message_id, a, b, c));
 }
 
 std::string GetStringFUTF8(int message_id,
-                           const string16& a,
-                           const string16& b,
-                           const string16& c,
-                           const string16& d) {
+                           const base::string16& a,
+                           const base::string16& b,
+                           const base::string16& c,
+                           const base::string16& d) {
   return UTF16ToUTF8(GetStringFUTF16(message_id, a, b, c, d));
 }
 
-string16 GetStringFUTF16(int message_id,
-                         const string16& a) {
-  std::vector<string16> replacements;
+base::string16 GetStringFUTF16(int message_id,
+                               const base::string16& a) {
+  std::vector<base::string16> replacements;
   replacements.push_back(a);
-  return GetStringF(message_id, replacements, NULL);
+  return GetStringFUTF16(message_id, replacements, NULL);
 }
 
-string16 GetStringFUTF16(int message_id,
-                         const string16& a,
-                         const string16& b) {
+base::string16 GetStringFUTF16(int message_id,
+                               const base::string16& a,
+                               const base::string16& b) {
   return GetStringFUTF16(message_id, a, b, NULL);
 }
 
-string16 GetStringFUTF16(int message_id,
-                         const string16& a,
-                         const string16& b,
-                         const string16& c) {
-  std::vector<string16> replacements;
+base::string16 GetStringFUTF16(int message_id,
+                               const base::string16& a,
+                               const base::string16& b,
+                               const base::string16& c) {
+  std::vector<base::string16> replacements;
   replacements.push_back(a);
   replacements.push_back(b);
   replacements.push_back(c);
-  return GetStringF(message_id, replacements, NULL);
+  return GetStringFUTF16(message_id, replacements, NULL);
 }
 
-string16 GetStringFUTF16(int message_id,
-                         const string16& a,
-                         const string16& b,
-                         const string16& c,
-                         const string16& d) {
-  std::vector<string16> replacements;
+base::string16 GetStringFUTF16(int message_id,
+                               const base::string16& a,
+                               const base::string16& b,
+                               const base::string16& c,
+                               const base::string16& d) {
+  std::vector<base::string16> replacements;
   replacements.push_back(a);
   replacements.push_back(b);
   replacements.push_back(c);
   replacements.push_back(d);
-  return GetStringF(message_id, replacements, NULL);
+  return GetStringFUTF16(message_id, replacements, NULL);
 }
 
-string16 GetStringFUTF16(int message_id,
-                         const string16& a,
-                         const string16& b,
-                         const string16& c,
-                         const string16& d,
-                         const string16& e) {
-  std::vector<string16> replacements;
+base::string16 GetStringFUTF16(int message_id,
+                               const base::string16& a,
+                               const base::string16& b,
+                               const base::string16& c,
+                               const base::string16& d,
+                               const base::string16& e) {
+  std::vector<base::string16> replacements;
   replacements.push_back(a);
   replacements.push_back(b);
   replacements.push_back(c);
   replacements.push_back(d);
   replacements.push_back(e);
-  return GetStringF(message_id, replacements, NULL);
+  return GetStringFUTF16(message_id, replacements, NULL);
 }
 
-string16 GetStringFUTF16(int message_id, const string16& a, size_t* offset) {
+base::string16 GetStringFUTF16(int message_id,
+                               const base::string16& a,
+                               size_t* offset) {
   DCHECK(offset);
   std::vector<size_t> offsets;
-  std::vector<string16> replacements;
+  std::vector<base::string16> replacements;
   replacements.push_back(a);
-  string16 result = GetStringF(message_id, replacements, &offsets);
+  base::string16 result = GetStringFUTF16(message_id, replacements, &offsets);
   DCHECK(offsets.size() == 1);
   *offset = offsets[0];
   return result;
 }
 
-string16 GetStringFUTF16(int message_id,
-                         const string16& a,
-                         const string16& b,
-                         std::vector<size_t>* offsets) {
-  std::vector<string16> replacements;
+base::string16 GetStringFUTF16(int message_id,
+                               const base::string16& a,
+                               const base::string16& b,
+                               std::vector<size_t>* offsets) {
+  std::vector<base::string16> replacements;
   replacements.push_back(a);
   replacements.push_back(b);
-  return GetStringF(message_id, replacements, offsets);
+  return GetStringFUTF16(message_id, replacements, offsets);
 }
 
-string16 GetStringFUTF16Int(int message_id, int a) {
+base::string16 GetStringFUTF16Int(int message_id, int a) {
   return GetStringFUTF16(message_id, UTF8ToUTF16(base::IntToString(a)));
 }
 
-string16 GetStringFUTF16Int(int message_id, int64 a) {
+base::string16 GetStringFUTF16Int(int message_id, int64 a) {
   return GetStringFUTF16(message_id, UTF8ToUTF16(base::Int64ToString(a)));
 }
 
-// Specialization of operator() method for string16 version.
+// Specialization of operator() method for base::string16 version.
 template <>
-bool StringComparator<string16>::operator()(const string16& lhs,
-                                            const string16& rhs) {
+bool StringComparator<base::string16>::operator()(const base::string16& lhs,
+                                                  const base::string16& rhs) {
   // If we can not get collator instance for specified locale, just do simple
   // string compare.
   if (!collator_)
@@ -832,7 +838,7 @@ bool StringComparator<string16>::operator()(const string16& lhs,
       UCOL_LESS;
 };
 
-string16 GetPluralStringFUTF16(const std::vector<int>& message_ids,
+base::string16 GetPluralStringFUTF16(const std::vector<int>& message_ids,
                                int number) {
   scoped_ptr<icu::PluralFormat> format = BuildPluralFormat(message_ids);
   DCHECK(format);
@@ -841,7 +847,7 @@ string16 GetPluralStringFUTF16(const std::vector<int>& message_ids,
   icu::UnicodeString result_files_string = format->format(number, err);
   int capacity = result_files_string.length() + 1;
   DCHECK_GT(capacity, 1);
-  string16 result;
+  base::string16 result;
   result_files_string.extract(
       static_cast<UChar*>(WriteInto(&result, capacity)), capacity, err);
   DCHECK(U_SUCCESS(err));
@@ -854,7 +860,7 @@ std::string GetPluralStringFUTF8(const std::vector<int>& message_ids,
 }
 
 void SortStrings16(const std::string& locale,
-                   std::vector<string16>* strings) {
+                   std::vector<base::string16>* strings) {
   SortVectorWithStringKey(locale, strings, false);
 }
 

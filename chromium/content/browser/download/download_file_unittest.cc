@@ -195,7 +195,7 @@ class DownloadFileTest : public testing::Test {
   void VerifyStreamAndSize() {
     ::testing::Mock::VerifyAndClearExpectations(input_stream_);
     int64 size;
-    EXPECT_TRUE(file_util::GetFileSize(download_file_->FullPath(), &size));
+    EXPECT_TRUE(base::GetFileSize(download_file_->FullPath(), &size));
     EXPECT_EQ(expected_data_.size(), static_cast<size_t>(size));
   }
 
@@ -461,7 +461,7 @@ TEST_F(DownloadFileTest, RenameError) {
   // Create a subdirectory.
   base::FilePath tempdir(
       initial_path.DirName().Append(FILE_PATH_LITERAL("tempdir")));
-  ASSERT_TRUE(file_util::CreateDirectory(tempdir));
+  ASSERT_TRUE(base::CreateDirectory(tempdir));
   base::FilePath target_path(tempdir.Append(initial_path.BaseName()));
 
   // Targets

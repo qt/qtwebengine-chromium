@@ -54,13 +54,17 @@ class CC_EXPORT ContentLayer : public TiledLayer {
 
   virtual skia::RefPtr<SkPicture> GetPicture() const OVERRIDE;
 
+  virtual void OnOutputSurfaceCreated() OVERRIDE;
+
  protected:
   explicit ContentLayer(ContentLayerClient* client);
   virtual ~ContentLayer();
 
- private:
   // TiledLayer implementation.
   virtual LayerUpdater* Updater() const OVERRIDE;
+
+ private:
+  // TiledLayer implementation.
   virtual void CreateUpdaterIfNeeded() OVERRIDE;
 
   void UpdateCanUseLCDText();

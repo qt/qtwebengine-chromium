@@ -8,6 +8,7 @@
 
 #include "GrGLUtil.h"
 #include "SkMatrix.h"
+#include <stdio.h>
 
 void GrGLClearErr(const GrGLInterface* gl) {
     while (GR_GL_NO_ERROR != gl->fGetError()) {}
@@ -126,6 +127,10 @@ bool GrGLIsMesaFromVersionString(const char* versionString) {
     int major, minor, mesaMajor, mesaMinor;
     int n = sscanf(versionString, "%d.%d Mesa %d.%d", &major, &minor, &mesaMajor, &mesaMinor);
     return 4 == n;
+}
+
+bool GrGLIsChromiumFromRendererString(const char* rendererString) {
+    return 0 == strcmp(rendererString, "Chromium");
 }
 
 GrGLVersion GrGLGetVersionFromString(const char* versionString) {

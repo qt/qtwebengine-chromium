@@ -24,7 +24,7 @@ class Decryptor;
 class MEDIA_EXPORT MediaKeys {
  public:
   // Reported to UMA, so never reuse a value!
-  // Must be kept in sync with WebKit::WebMediaPlayerClient::MediaKeyErrorCode
+  // Must be kept in sync with blink::WebMediaPlayerClient::MediaKeyErrorCode
   // (enforced in webmediaplayer_impl.cc).
   enum KeyError {
     kUnknownError = 1,
@@ -37,27 +37,28 @@ class MEDIA_EXPORT MediaKeys {
     kMaxKeyError  // Must be last and greater than any legit value.
   };
 
+  const static uint32 kInvalidSessionId = 0;
+
   MediaKeys();
   virtual ~MediaKeys();
 
   // Generates a key request with the |type| and |init_data| provided.
   // Returns true if generating key request succeeded, false otherwise.
-  // Note: AddKey() and CancelKeyRequest() should only be called after
-  // GenerateKeyRequest() returns true.
-  virtual bool GenerateKeyRequest(const std::string& type,
-                                  const uint8* init_data,
-                                  int init_data_length) = 0;
+  // Note: UpdateSession() and ReleaseSession() should only be called after
+  // CreateSession() returns true.
+  // TODO(jrummell): Remove return value when prefixed API is removed.
+  virtual bool CreateSession(uint32 session_id,
+                             const std::string& type,
+                             const uint8* init_data,
+                             int init_data_length) = 0;
 
-  // Adds a |key| to the session. The |key| is not limited to a decryption
-  // key. It can be any data that the key system accepts, such as a license.
-  // If multiple calls of this function set different keys for the same
-  // key ID, the older key will be replaced by the newer key.
-  virtual void AddKey(const uint8* key, int key_length,
-                      const uint8* init_data, int init_data_length,
-                      const std::string& session_id) = 0;
+  // Updates a session specified by |session_id| with |response|.
+  virtual void UpdateSession(uint32 session_id,
+                             const uint8* response,
+                             int response_length) = 0;
 
-  // Cancels the key request specified by |session_id|.
-  virtual void CancelKeyRequest(const std::string& session_id) = 0;
+  // Releases the session specified by |session_id|.
+  virtual void ReleaseSession(uint32 session_id) = 0;
 
   // Gets the Decryptor object associated with the MediaKeys. Returns NULL if
   // no Decryptor object is associated. The returned object is only guaranteed
@@ -69,20 +70,23 @@ class MEDIA_EXPORT MediaKeys {
 };
 
 // Key event callbacks. See the spec for details:
-// http://dvcs.w3.org/hg/html-media/raw-file/eme-v0.1b/encrypted-media/encrypted-media.html#event-summary
-typedef base::Callback<void(const std::string& session_id)> KeyAddedCB;
+// https://dvcs.w3.org/hg/html-media/raw-file/default/encrypted-media/encrypted-media.html#event-summary
+typedef base::Callback<
+    void(uint32 session_id, const std::string& web_session_id)>
+    SessionCreatedCB;
 
-typedef base::Callback<void(const std::string& session_id,
-                            media::MediaKeys::KeyError error_code,
-                            int system_code)> KeyErrorCB;
-
-typedef base::Callback<void(const std::string& session_id,
+typedef base::Callback<void(uint32 session_id,
                             const std::vector<uint8>& message,
-                            const std::string& default_url)> KeyMessageCB;
+                            const std::string& destination_url)>
+    SessionMessageCB;
 
-typedef base::Callback<void(const std::string& session_id,
-                            const std::string& type,
-                            const std::vector<uint8>& init_data)> NeedKeyCB;
+typedef base::Callback<void(uint32 session_id)> SessionReadyCB;
+
+typedef base::Callback<void(uint32 session_id)> SessionClosedCB;
+
+typedef base::Callback<void(uint32 session_id,
+                            media::MediaKeys::KeyError error_code,
+                            int system_code)> SessionErrorCB;
 
 }  // namespace media
 

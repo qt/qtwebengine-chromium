@@ -4,17 +4,13 @@
 
 #include "net/quic/congestion_control/send_algorithm_interface.h"
 
-#include "net/quic/congestion_control/cubic.h"
 #include "net/quic/congestion_control/fix_rate_sender.h"
 #include "net/quic/congestion_control/tcp_cubic_sender.h"
+#include "net/quic/quic_protocol.h"
 
 namespace net {
 
 const bool kUseReno = false;
-// TODO(ianswett): Increase the max congestion window once the RTO logic is
-// improved, particularly in cases when RTT is larger than the RTO. b/10075719
-// Maximum number of outstanding packets for tcp.
-const QuicTcpCongestionWindow kMaxTcpCongestionWindow = 100;
 
 // Factory for send side congestion control algorithm.
 SendAlgorithmInterface* SendAlgorithmInterface::Create(

@@ -29,14 +29,13 @@ namespace WebCore {
 
 class ExceptionState;
 class RenderText;
-class ScriptExecutionContext;
+class ExecutionContext;
 
 class Text : public CharacterData {
 public:
     static const unsigned defaultLengthLimit = 1 << 16;
 
     static PassRefPtr<Text> create(Document&, const String&);
-    static PassRefPtr<Text> createWithLengthLimit(Document&, const String&, unsigned positionInString, unsigned lengthLimit = defaultLengthLimit);
     static PassRefPtr<Text> createEditingText(Document&, const String&);
 
     // mergeNextSiblingNodesIfPossible() merges next sibling nodes if possible
@@ -49,9 +48,9 @@ public:
     String wholeText() const;
     PassRefPtr<Text> replaceWholeText(const String&);
 
-    bool recalcTextStyle(StyleRecalcChange);
+    void recalcTextStyle(StyleRecalcChange, Text* nextTextSibling);
     bool textRendererIsNeeded(const NodeRenderingContext&);
-    virtual RenderText* createTextRenderer(RenderStyle*);
+    RenderText* createTextRenderer(RenderStyle*);
     void updateTextRenderer(unsigned offsetOfReplacedData, unsigned lengthOfReplacedData, RecalcStyleBehavior = DoNotRecalcStyle);
 
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE FINAL;
@@ -80,17 +79,7 @@ private:
 #endif
 };
 
-inline Text* toText(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isTextNode());
-    return static_cast<Text*>(node);
-}
-
-inline const Text* toText(const Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isTextNode());
-    return static_cast<const Text*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(Text, isTextNode());
 
 } // namespace WebCore
 

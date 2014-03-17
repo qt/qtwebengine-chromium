@@ -34,6 +34,7 @@
 #include "wtf/Assertions.h"
 #include "wtf/Deque.h"
 #include "wtf/Noncopyable.h"
+#include "wtf/PassOwnPtr.h"
 #include "wtf/ThreadingPrimitives.h"
 
 namespace WTF {
@@ -161,7 +162,7 @@ namespace WTF {
             return nullptr;
         }
 
-        ASSERT(found != m_queue.end());
+        ASSERT_WITH_SECURITY_IMPLICATION(found != m_queue.end());
         OwnPtr<DataType> message = adoptPtr(*found);
         m_queue.remove(found);
         result = MessageQueueMessageReceived;

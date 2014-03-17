@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2010 Nolan Lum <nol888@gmail.com>
- * Copyright (c) 2009 Loren Merritt <lorenm@u.washignton.edu>
+ * Copyright (c) 2009 Loren Merritt <lorenm@u.washington.edu>
  *
  * This file is part of FFmpeg.
  *
@@ -37,7 +37,6 @@
 #include "libavutil/cpu.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
-#include "libavutil/opt.h"
 #include "avfilter.h"
 #include "formats.h"
 #include "gradfun.h"
@@ -119,6 +118,7 @@ static void filter(GradFunContext *ctx, uint8_t *dst, const uint8_t *src, int wi
         ctx->filter_line(dst + y * dst_linesize, src + y * src_linesize, dc - r / 2, width, thresh, dither[y & 7]);
         if (++y >= height) break;
     }
+    emms_c();
 }
 
 static av_cold int init(AVFilterContext *ctx)
@@ -169,7 +169,7 @@ static int config_input(AVFilterLink *inlink)
     int vsub = desc->log2_chroma_h;
 
     av_freep(&s->buf);
-    s->buf = av_mallocz((FFALIGN(inlink->w, 16) * (s->radius + 1) / 2 + 32) * sizeof(uint16_t));
+    s->buf = av_calloc((FFALIGN(inlink->w, 16) * (s->radius + 1) / 2 + 32), sizeof(*s->buf));
     if (!s->buf)
         return AVERROR(ENOMEM);
 
@@ -228,7 +228,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 static const AVOption gradfun_options[] = {
     { "strength", "The maximum amount by which the filter will change any one pixel.", OFFSET(strength), AV_OPT_TYPE_FLOAT, { .dbl = 1.2 }, 0.51, 64, FLAGS },
     { "radius",   "The neighborhood to fit the gradient to.",                          OFFSET(radius),   AV_OPT_TYPE_INT,   { .i64 = 16  }, 4,    32, FLAGS },
-    { NULL },
+    { NULL }
 };
 
 AVFILTER_DEFINE_CLASS(gradfun);
@@ -251,7 +251,7 @@ static const AVFilterPad avfilter_vf_gradfun_outputs[] = {
     { NULL }
 };
 
-AVFilter avfilter_vf_gradfun = {
+AVFilter ff_vf_gradfun = {
     .name          = "gradfun",
     .description   = NULL_IF_CONFIG_SMALL("Debands video quickly using gradients."),
     .priv_size     = sizeof(GradFunContext),

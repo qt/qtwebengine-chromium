@@ -31,14 +31,14 @@
 #ifndef FindInPageCoordinates_h
 #define FindInPageCoordinates_h
 
-#include "core/platform/graphics/FloatRect.h"
+#include "platform/geometry/FloatRect.h"
 
 namespace WebCore {
 class Range;
 class RenderObject;
 }
 
-namespace WebKit {
+namespace blink {
 
 // Find-in-page coordinate conversion methods.
 //
@@ -56,6 +56,6 @@ namespace WebKit {
 WebCore::FloatRect findInPageRectFromAbsoluteRect(const WebCore::FloatRect&, const WebCore::RenderObject*);
 WebCore::FloatRect findInPageRectFromRange(WebCore::Range*);
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

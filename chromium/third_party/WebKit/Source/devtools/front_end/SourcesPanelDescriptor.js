@@ -39,15 +39,15 @@ WebInspector.SourcesPanelDescriptor = function()
 
 WebInspector.SourcesPanelDescriptor.prototype = {
     /**
-     * @param {WebInspector.ContextMenu} contextMenu
-     * @param {Object} target
+     * @param {!WebInspector.ContextMenu} contextMenu
+     * @param {!Object} target
      */
     appendApplicableItems: function(event, contextMenu, target)
     {
         var hasApplicableItems = target instanceof WebInspector.UISourceCode;
 
         if (!hasApplicableItems && target instanceof WebInspector.RemoteObject) {
-            var remoteObject = /** @type {WebInspector.RemoteObject} */ (target);
+            var remoteObject = /** @type {!WebInspector.RemoteObject} */ (target);
             if (remoteObject.type !== "function")
                 return;
         }
@@ -69,15 +69,36 @@ WebInspector.SourcesPanelDescriptor.prototype = {
         section.addRelatedKeys(nextAndPrevFrameKeys, WebInspector.UIString("Next/previous call frame"));
 
         section.addAlternateKeys(WebInspector.SourcesPanelDescriptor.ShortcutKeys.EvaluateSelectionInConsole, WebInspector.UIString("Evaluate selection in console"));
+        section.addAlternateKeys(WebInspector.SourcesPanelDescriptor.ShortcutKeys.AddSelectionToWatch, WebInspector.UIString("Add selection to watch"));
         section.addAlternateKeys(WebInspector.SourcesPanelDescriptor.ShortcutKeys.GoToMember, WebInspector.UIString("Go to member"));
         section.addAlternateKeys(WebInspector.SourcesPanelDescriptor.ShortcutKeys.ToggleBreakpoint, WebInspector.UIString("Toggle breakpoint"));
         section.addAlternateKeys(WebInspector.SourcesPanelDescriptor.ShortcutKeys.ToggleComment, WebInspector.UIString("Toggle comment"));
+        section.addAlternateKeys(WebInspector.SourcesPanelDescriptor.ShortcutKeys.IncreaseCSSUnitByOne, WebInspector.UIString("Increment CSS unit by 1"));
+        section.addAlternateKeys(WebInspector.SourcesPanelDescriptor.ShortcutKeys.DecreaseCSSUnitByOne, WebInspector.UIString("Decrement CSS unit by 1"));
+        section.addAlternateKeys(WebInspector.SourcesPanelDescriptor.ShortcutKeys.IncreaseCSSUnitByTen, WebInspector.UIString("Increment CSS unit by 10"));
+        section.addAlternateKeys(WebInspector.SourcesPanelDescriptor.ShortcutKeys.DecreaseCSSUnitByTen, WebInspector.UIString("Decrement CSS unit by 10"));
     },
 
     __proto__: WebInspector.PanelDescriptor.prototype
 }
 
 WebInspector.SourcesPanelDescriptor.ShortcutKeys = {
+    IncreaseCSSUnitByOne: [
+        WebInspector.KeyboardShortcut.makeDescriptor(WebInspector.KeyboardShortcut.Keys.Up, WebInspector.KeyboardShortcut.Modifiers.Alt)
+    ],
+
+    DecreaseCSSUnitByOne: [
+        WebInspector.KeyboardShortcut.makeDescriptor(WebInspector.KeyboardShortcut.Keys.Down, WebInspector.KeyboardShortcut.Modifiers.Alt)
+    ],
+
+    IncreaseCSSUnitByTen: [
+        WebInspector.KeyboardShortcut.makeDescriptor(WebInspector.KeyboardShortcut.Keys.PageUp, WebInspector.KeyboardShortcut.Modifiers.Alt)
+    ],
+
+    DecreaseCSSUnitByTen: [
+        WebInspector.KeyboardShortcut.makeDescriptor(WebInspector.KeyboardShortcut.Keys.PageDown, WebInspector.KeyboardShortcut.Modifiers.Alt)
+    ],
+
     RunSnippet: [
         WebInspector.KeyboardShortcut.makeDescriptor(WebInspector.KeyboardShortcut.Keys.Enter, WebInspector.KeyboardShortcut.Modifiers.CtrlOrMeta)
     ],
@@ -109,6 +130,10 @@ WebInspector.SourcesPanelDescriptor.ShortcutKeys = {
 
     EvaluateSelectionInConsole: [
         WebInspector.KeyboardShortcut.makeDescriptor("e", WebInspector.KeyboardShortcut.Modifiers.Shift | WebInspector.KeyboardShortcut.Modifiers.Ctrl)
+    ],
+
+    AddSelectionToWatch: [
+        WebInspector.KeyboardShortcut.makeDescriptor("a", WebInspector.KeyboardShortcut.Modifiers.Shift | WebInspector.KeyboardShortcut.Modifiers.Ctrl)
     ],
 
     GoToMember: [

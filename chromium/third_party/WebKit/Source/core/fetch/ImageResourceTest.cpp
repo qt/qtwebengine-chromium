@@ -37,13 +37,10 @@
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ResourcePtr.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/loader/EmptyClients.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
-#include "core/page/Page.h"
-#include "core/platform/SharedBuffer.h"
+#include "core/testing/DummyPageHolder.h"
+#include "core/testing/UnitTestHelpers.h"
+#include "platform/SharedBuffer.h"
 #include "public/platform/Platform.h"
-#include "public/platform/WebThread.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLResponse.h"
 #include "public/platform/WebUnitTestSupport.h"
@@ -51,20 +48,6 @@
 using namespace WebCore;
 
 namespace {
-
-class QuitTask : public WebKit::WebThread::Task {
-public:
-    virtual void run()
-    {
-        WebKit::Platform::current()->currentThread()->exitRunLoop();
-    }
-};
-
-void runPendingTasks()
-{
-    WebKit::Platform::current()->currentThread()->postTask(new QuitTask);
-    WebKit::Platform::current()->currentThread()->enterRunLoop();
-}
 
 TEST(ImageResourceTest, MultipartImage)
 {
@@ -114,23 +97,17 @@ TEST(ImageResourceTest, CancelOnDetach)
 {
     KURL testURL(ParsedURLString, "http://www.test.com/cancelTest.html");
 
-    WebKit::WebURLResponse response;
+    blink::WebURLResponse response;
     response.initialize();
     response.setMIMEType("text/html");
-    WTF::String localPath = WebKit::Platform::current()->unitTestSupport()->webKitRootDir();
+    WTF::String localPath = blink::Platform::current()->unitTestSupport()->webKitRootDir();
     localPath.append("/Source/web/tests/data/cancelTest.html");
-    WebKit::Platform::current()->unitTestSupport()->registerMockedURL(testURL, response, localPath);
+    blink::Platform::current()->unitTestSupport()->registerMockedURL(testURL, response, localPath);
 
     // Create enough of a mocked world to get a functioning ResourceLoader.
-    Page::PageClients pageClients;
-    fillWithEmptyClients(pageClients);
-    EmptyFrameLoaderClient frameLoaderClient;
-    Page page(pageClients);
-    RefPtr<Frame> frame = Frame::create(&page, 0, &frameLoaderClient);
-    frame->setView(FrameView::create(frame.get()));
-    frame->init();
+    OwnPtr<DummyPageHolder> dummyPageHolder = DummyPageHolder::create();
     RefPtr<DocumentLoader> documentLoader = DocumentLoader::create(ResourceRequest(testURL), SubstituteData());
-    documentLoader->setFrame(frame.get());
+    documentLoader->setFrame(&dummyPageHolder->frame());
 
     // Emulate starting a real load.
     ResourcePtr<ImageResource> cachedImage = new ImageResource(ResourceRequest(testURL));
@@ -147,11 +124,11 @@ TEST(ImageResourceTest, CancelOnDetach)
     EXPECT_NE(reinterpret_cast<Resource*>(0), memoryCache()->resourceForURL(testURL));
 
     // Trigger the cancel timer, ensure the load was cancelled and the resource was evicted from the cache.
-    runPendingTasks();
+    WebCore::testing::runPendingTasks();
     EXPECT_EQ(Resource::LoadError, cachedImage->status());
     EXPECT_EQ(reinterpret_cast<Resource*>(0), memoryCache()->resourceForURL(testURL));
 
-    WebKit::Platform::current()->unitTestSupport()->unregisterMockedURL(testURL);
+    blink::Platform::current()->unitTestSupport()->unregisterMockedURL(testURL);
 }
 
 } // namespace

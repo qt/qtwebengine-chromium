@@ -131,8 +131,8 @@ class MockQuotaManager : public QuotaManager {
 
   // The list of stored origins that have been added via AddOrigin.
   std::vector<OriginInfo> origins_;
-  base::WeakPtrFactory<MockQuotaManager> weak_factory_;
   UsageAndQuotaMap usage_and_quota_map_;
+  base::WeakPtrFactory<MockQuotaManager> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(MockQuotaManager);
 };
@@ -151,6 +151,15 @@ class MockQuotaManagerProxy : public QuotaManagerProxy {
   // We don't mock them.
   virtual void NotifyOriginInUse(const GURL& origin) OVERRIDE {}
   virtual void NotifyOriginNoLongerInUse(const GURL& origin) OVERRIDE {}
+  virtual void SetUsageCacheEnabled(QuotaClient::ID client_id,
+                                    const GURL& origin,
+                                    StorageType type,
+                                    bool enabled) OVERRIDE {}
+  virtual void GetUsageAndQuota(
+      base::SequencedTaskRunner* original_task_runner,
+      const GURL& origin,
+      StorageType type,
+      const QuotaManager::GetUsageAndQuotaCallback& callback) OVERRIDE {}
 
   // Validates the |client_id| and updates the internal access count
   // which can be accessed via notify_storage_accessed_count().

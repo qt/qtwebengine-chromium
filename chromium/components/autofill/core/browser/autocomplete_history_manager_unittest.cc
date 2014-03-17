@@ -5,7 +5,8 @@
 #include <vector>
 
 #include "base/memory/ref_counted.h"
-#include "base/prefs/testing_pref_service.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "base/prefs/pref_service.h"
 #include "base/run_loop.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
@@ -16,6 +17,7 @@
 #include "components/autofill/core/browser/autocomplete_history_manager.h"
 #include "components/autofill/core/browser/autofill_external_delegate.h"
 #include "components/autofill/core/browser/autofill_manager.h"
+#include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/test_autofill_driver.h"
 #include "components/autofill/core/browser/test_autofill_manager_delegate.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
@@ -27,7 +29,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/rect.h"
 
-using content::WebContents;
 using testing::_;
 
 namespace autofill {
@@ -37,84 +38,59 @@ namespace {
 class MockWebDataService : public AutofillWebDataService {
  public:
   MockWebDataService()
-      : AutofillWebDataService() {
-    current_mock_web_data_service_ = this;
-  }
+      : AutofillWebDataService(base::MessageLoopProxy::current(),
+                               base::MessageLoopProxy::current()) {}
 
   MOCK_METHOD1(AddFormFields, void(const std::vector<FormFieldData>&));
 
-  static scoped_refptr<MockWebDataService> GetCurrent() {
-    if (!current_mock_web_data_service_) {
-      return new MockWebDataService();
-    }
-    return current_mock_web_data_service_;
-  }
-
  protected:
   virtual ~MockWebDataService() {}
-
- private:
-  // Keep track of the most recently created instance, so that it can be
-  // associated with the current profile when Build() is called.
-  static MockWebDataService* current_mock_web_data_service_;
-};
-
-MockWebDataService* MockWebDataService::current_mock_web_data_service_ = NULL;
-
-class MockWebDataServiceWrapperCurrent : public MockWebDataServiceWrapperBase {
- public:
-  static BrowserContextKeyedService* Build(content::BrowserContext* profile) {
-    return new MockWebDataServiceWrapperCurrent();
-  }
-
-  MockWebDataServiceWrapperCurrent() {}
-
-  virtual scoped_refptr<AutofillWebDataService> GetAutofillWebData() OVERRIDE {
-    return MockWebDataService::GetCurrent();
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(MockWebDataServiceWrapperCurrent);
 };
 
 class MockAutofillManagerDelegate
     : public autofill::TestAutofillManagerDelegate {
  public:
-  MockAutofillManagerDelegate() {}
+  MockAutofillManagerDelegate(
+      scoped_refptr<MockWebDataService> web_data_service)
+      : web_data_service_(web_data_service),
+        prefs_(test::PrefServiceForTesting()) {
+  }
   virtual ~MockAutofillManagerDelegate() {}
-  virtual PrefService* GetPrefs() OVERRIDE { return &prefs_; }
+  virtual scoped_refptr<AutofillWebDataService>
+      GetDatabase() OVERRIDE { return web_data_service_; }
+  virtual PrefService* GetPrefs() OVERRIDE { return prefs_.get(); }
 
  private:
-  TestingPrefServiceSimple prefs_;
+  scoped_refptr<MockWebDataService> web_data_service_;
+  scoped_ptr<PrefService> prefs_;
 
   DISALLOW_COPY_AND_ASSIGN(MockAutofillManagerDelegate);
 };
 
 }  // namespace
 
-class AutocompleteHistoryManagerTest : public ChromeRenderViewHostTestHarness {
+class AutocompleteHistoryManagerTest : public testing::Test {
  protected:
+  AutocompleteHistoryManagerTest() {}
+
   virtual void SetUp() OVERRIDE {
-    ChromeRenderViewHostTestHarness::SetUp();
     web_data_service_ = new MockWebDataService();
-    WebDataServiceFactory::GetInstance()->SetTestingFactory(
-        profile(), MockWebDataServiceWrapperCurrent::Build);
-    autofill_driver_.reset(new TestAutofillDriver(web_contents()));
+    manager_delegate_.reset(new MockAutofillManagerDelegate(web_data_service_));
+    autofill_driver_.reset(new TestAutofillDriver());
     autocomplete_manager_.reset(
         new AutocompleteHistoryManager(autofill_driver_.get(),
-                                       &manager_delegate));
+                                       manager_delegate_.get()));
   }
 
   virtual void TearDown() OVERRIDE {
     autocomplete_manager_.reset();
-    web_data_service_ = NULL;
-    ChromeRenderViewHostTestHarness::TearDown();
   }
 
+  base::MessageLoop message_loop_;
   scoped_refptr<MockWebDataService> web_data_service_;
   scoped_ptr<AutocompleteHistoryManager> autocomplete_manager_;
   scoped_ptr<AutofillDriver> autofill_driver_;
-  MockAutofillManagerDelegate manager_delegate;
+  scoped_ptr<MockAutofillManagerDelegate> manager_delegate_;
 };
 
 // Tests that credit card numbers are not sent to the WebDatabase to be saved.
@@ -206,11 +182,9 @@ namespace {
 
 class MockAutofillExternalDelegate : public AutofillExternalDelegate {
  public:
-  MockAutofillExternalDelegate(content::WebContents* web_contents,
-                               AutofillManager* autofill_manager,
+  MockAutofillExternalDelegate(AutofillManager* autofill_manager,
                                AutofillDriver* autofill_driver)
-      : AutofillExternalDelegate(web_contents, autofill_manager,
-                                 autofill_driver) {}
+      : AutofillExternalDelegate(autofill_manager, autofill_driver) {}
   virtual ~MockAutofillExternalDelegate() {}
 
   MOCK_METHOD5(OnSuggestionsReturned,
@@ -241,16 +215,15 @@ class AutocompleteHistoryManagerNoIPC : public AutocompleteHistoryManager {
 // Make sure our external delegate is called at the right time.
 TEST_F(AutocompleteHistoryManagerTest, ExternalDelegate) {
   AutocompleteHistoryManagerNoIPC autocomplete_history_manager(
-      autofill_driver_.get(), &manager_delegate);
+      autofill_driver_.get(), manager_delegate_.get());
 
   scoped_ptr<AutofillManager> autofill_manager(new AutofillManager(
       autofill_driver_.get(),
-      &manager_delegate,
+      manager_delegate_.get(),
       "en-US",
       AutofillManager::ENABLE_AUTOFILL_DOWNLOAD_MANAGER));
 
-  MockAutofillExternalDelegate external_delegate(web_contents(),
-                                                 autofill_manager.get(),
+  MockAutofillExternalDelegate external_delegate(autofill_manager.get(),
                                                  autofill_driver_.get());
   autocomplete_history_manager.SetExternalDelegate(&external_delegate);
 

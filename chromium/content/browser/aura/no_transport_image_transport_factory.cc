@@ -22,9 +22,6 @@ class FakeTexture : public ui::Texture {
         texture_(context_provider_->Context3d()->createTexture()) {}
 
   virtual unsigned int PrepareTexture() OVERRIDE { return texture_; }
-  virtual WebKit::WebGraphicsContext3D* HostContext3D() OVERRIDE {
-    return context_provider_->Context3d();
-  }
 
   virtual void Consume(const std::string& mailbox_name,
                        const gfx::Size& new_size) OVERRIDE {
@@ -44,10 +41,8 @@ class FakeTexture : public ui::Texture {
 }  // anonymous namespace
 
 NoTransportImageTransportFactory::NoTransportImageTransportFactory(
-    ui::ContextFactory* context_factory)
-    : context_factory_(context_factory),
-      context_provider_(
-          context_factory_->OffscreenContextProviderForMainThread()) {}
+    scoped_ptr<ui::ContextFactory> context_factory)
+    : context_factory_(context_factory.Pass()) {}
 
 NoTransportImageTransportFactory::~NoTransportImageTransportFactory() {}
 
@@ -66,7 +61,8 @@ void NoTransportImageTransportFactory::DestroySharedSurfaceHandle(
 scoped_refptr<ui::Texture>
 NoTransportImageTransportFactory::CreateTransportClient(
     float device_scale_factor) {
-  return new FakeTexture(context_provider_, device_scale_factor);
+  return new FakeTexture(context_factory_->SharedMainThreadContextProvider(),
+                         device_scale_factor);
 }
 
 scoped_refptr<ui::Texture> NoTransportImageTransportFactory::CreateOwnedTexture(
@@ -77,8 +73,11 @@ scoped_refptr<ui::Texture> NoTransportImageTransportFactory::CreateOwnedTexture(
 }
 
 GLHelper* NoTransportImageTransportFactory::GetGLHelper() {
-  if (!gl_helper_)
-    gl_helper_.reset(new GLHelper(context_provider_->Context3d()));
+  if (!gl_helper_) {
+    context_provider_ = context_factory_->SharedMainThreadContextProvider();
+    gl_helper_.reset(new GLHelper(context_provider_->Context3d(),
+                                  context_provider_->ContextSupport()));
+  }
   return gl_helper_.get();
 }
 

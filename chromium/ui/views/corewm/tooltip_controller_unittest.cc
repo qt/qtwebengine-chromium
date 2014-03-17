@@ -6,26 +6,34 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "ui/aura/client/cursor_client.h"
+#include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/client/tooltip_client.h"
 #include "ui/aura/client/window_types.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/test/aura_test_base.h"
 #include "ui/aura/test/event_generator.h"
+#include "ui/aura/test/test_screen.h"
 #include "ui/aura/window.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/point.h"
+#include "ui/gfx/screen.h"
+#include "ui/gfx/screen_type_delegate.h"
 #include "ui/gfx/text_elider.h"
+#include "ui/views/corewm/tooltip_aura.h"
 #include "ui/views/corewm/tooltip_controller_test_helper.h"
 #include "ui/views/view.h"
+#include "ui/views/widget/tooltip_manager.h"
 #include "ui/views/widget/widget.h"
 
 #if defined(OS_WIN)
 #include "ui/base/win/scoped_ole_initializer.h"
 #endif
+
 #if !defined(OS_CHROMEOS)
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
+#include "ui/views/widget/desktop_aura/desktop_screen.h"
 #endif
 
 namespace views {
@@ -33,7 +41,7 @@ namespace corewm {
 namespace test {
 namespace {
 
-views::Widget* CreateWidget(aura::RootWindow* root) {
+views::Widget* CreateWidget(aura::Window* root) {
   views::Widget* widget = new views::Widget;
   views::Widget::InitParams params;
   params.type = views::Widget::InitParams::TYPE_WINDOW_FRAMELESS;
@@ -48,11 +56,6 @@ views::Widget* CreateWidget(aura::RootWindow* root) {
   widget->Init(params);
   widget->Show();
   return widget;
-}
-
-gfx::Font GetDefaultFont() {
-  return ui::ResourceBundle::GetSharedInstance().GetFont(
-      ui::ResourceBundle::BaseFont);
 }
 
 TooltipController* GetController(Widget* widget) {
@@ -71,7 +74,9 @@ class TooltipControllerTest : public aura::test::AuraTestBase {
   virtual void SetUp() OVERRIDE {
     aura::test::AuraTestBase::SetUp();
 #if defined(OS_CHROMEOS)
-    controller_.reset(new TooltipController(gfx::SCREEN_TYPE_ALTERNATE));
+    controller_.reset(new TooltipController(
+          scoped_ptr<views::corewm::Tooltip>(
+              new views::corewm::TooltipAura(gfx::SCREEN_TYPE_ALTERNATE))));
     root_window()->AddPreTargetHandler(controller_.get());
     SetTooltipClient(root_window(), controller_.get());
 #endif
@@ -88,7 +93,7 @@ class TooltipControllerTest : public aura::test::AuraTestBase {
   virtual void TearDown() OVERRIDE {
 #if defined(OS_CHROMEOS)
     root_window()->RemovePreTargetHandler(controller_.get());
-    SetTooltipClient(root_window(), NULL);
+    aura::client::SetTooltipClient(root_window(), NULL);
     controller_.reset();
 #endif
     generator_.reset();
@@ -102,7 +107,7 @@ class TooltipControllerTest : public aura::test::AuraTestBase {
     return widget_->GetNativeWindow();
   }
 
-  aura::RootWindow* GetRootWindow() {
+  aura::Window* GetRootWindow() {
     return GetWindow()->GetRootWindow();
   }
 
@@ -160,7 +165,7 @@ TEST_F(TooltipControllerTest, TooltipsInMultipleViews) {
 
   PrepareSecondView();
   aura::Window* window = GetWindow();
-  aura::RootWindow* root_window = GetRootWindow();
+  aura::Window* root_window = GetRootWindow();
 
   // Fire tooltip timer so tooltip becomes visible.
   generator_->MoveMouseRelativeTo(window, view_->bounds().CenterPoint());
@@ -200,7 +205,7 @@ TEST_F(TooltipControllerTest, EnableOrDisableTooltips) {
   helper_->FireTooltipTimer();
   EXPECT_TRUE(helper_->IsTooltipVisible());
 
-  // Diable tooltips and check again.
+  // Disable tooltips and check again.
   helper_->controller()->SetTooltipsEnabled(false);
   EXPECT_FALSE(helper_->IsTooltipVisible());
   helper_->FireTooltipTimer();
@@ -213,104 +218,16 @@ TEST_F(TooltipControllerTest, EnableOrDisableTooltips) {
   EXPECT_TRUE(helper_->IsTooltipVisible());
 }
 
-TEST_F(TooltipControllerTest, TrimTooltipToFitTests) {
-  const int max_width = 4000;
-  string16 tooltip;
-  int width, line_count, expect_lines;
-  int max_pixel_width = 400;  // copied from constants in tooltip_controller.cc
-  int max_lines = 10;  // copied from constants in tooltip_controller.cc
-  gfx::Font font = GetDefaultFont();
-  size_t tooltip_len;
+// Verifies tooltip isn't shown if tooltip text consists entirely of whitespace.
+TEST_F(TooltipControllerTest, DontShowEmptyTooltips) {
+  view_->set_tooltip_text(ASCIIToUTF16("                     "));
+  EXPECT_EQ(string16(), helper_->GetTooltipText());
+  EXPECT_EQ(NULL, helper_->GetTooltipWindow());
 
-  // Error in computed size vs. expected size should not be greater than the
-  // size of the longest word.
-  int error_in_pixel_width = font.GetStringWidth(ASCIIToUTF16("tooltip"));
+  generator_->MoveMouseRelativeTo(GetWindow(), view_->bounds().CenterPoint());
 
-  // Long tooltips should wrap to next line
-  tooltip.clear();
-  width = line_count = -1;
-  expect_lines = 3;
-  for (; font.GetStringWidth(tooltip) <= (expect_lines - 1) * max_pixel_width;)
-    tooltip.append(ASCIIToUTF16("This is part of the tooltip"));
-  tooltip_len = tooltip.length();
-  TooltipControllerTestHelper::TrimTooltipToFit(
-      max_width, &tooltip, &width, &line_count);
-  EXPECT_NEAR(max_pixel_width, width, error_in_pixel_width);
-  EXPECT_EQ(expect_lines, line_count);
-  EXPECT_EQ(tooltip_len + expect_lines - 1, tooltip.length());
-
-  // More than |max_lines| lines should get truncated at 10 lines.
-  tooltip.clear();
-  width = line_count = -1;
-  expect_lines = 13;
-  for (; font.GetStringWidth(tooltip) <= (expect_lines - 1) * max_pixel_width;)
-    tooltip.append(ASCIIToUTF16("This is part of the tooltip"));
-  TooltipControllerTestHelper::TrimTooltipToFit(
-      max_width, &tooltip, &width, &line_count);
-  EXPECT_NEAR(max_pixel_width, width, error_in_pixel_width);
-  EXPECT_EQ(max_lines, line_count);
-
-  // Long multi line tooltips should wrap individual lines.
-  tooltip.clear();
-  width = line_count = -1;
-  expect_lines = 4;
-  for (; font.GetStringWidth(tooltip) <= (expect_lines - 2) * max_pixel_width;)
-    tooltip.append(ASCIIToUTF16("This is part of the tooltip"));
-  tooltip.insert(tooltip.length() / 2, ASCIIToUTF16("\n"));
-  tooltip_len = tooltip.length();
-  TooltipControllerTestHelper::TrimTooltipToFit(
-      max_width, &tooltip, &width, &line_count);
-  EXPECT_NEAR(max_pixel_width, width, error_in_pixel_width);
-  EXPECT_EQ(expect_lines, line_count);
-  // We may have inserted the line break above near a space which will get
-  // trimmed. Hence we may be off by 1 in the final tooltip length calculation.
-  EXPECT_NEAR(tooltip_len + expect_lines - 2, tooltip.length(), 1);
-
-#if !defined(OS_WIN)
-  // Tooltip with really long word gets elided.
-  tooltip.clear();
-  width = line_count = -1;
-  tooltip = UTF8ToUTF16(std::string('a', max_pixel_width));
-  TooltipControllerTestHelper::TrimTooltipToFit(
-      max_width, &tooltip, &width, &line_count);
-  EXPECT_NEAR(max_pixel_width, width, 5);
-  EXPECT_EQ(1, line_count);
-  EXPECT_EQ(gfx::ElideText(UTF8ToUTF16(std::string('a', max_pixel_width)), font,
-                          max_pixel_width, gfx::ELIDE_AT_END), tooltip);
-#endif
-
-  // Normal small tooltip should stay as is.
-  tooltip.clear();
-  width = line_count = -1;
-  tooltip = ASCIIToUTF16("Small Tooltip");
-  TooltipControllerTestHelper::TrimTooltipToFit(
-      max_width, &tooltip, &width, &line_count);
-  EXPECT_EQ(font.GetStringWidth(ASCIIToUTF16("Small Tooltip")), width);
-  EXPECT_EQ(1, line_count);
-  EXPECT_EQ(ASCIIToUTF16("Small Tooltip"), tooltip);
-
-  // Normal small multi-line tooltip should stay as is.
-  tooltip.clear();
-  width = line_count = -1;
-  tooltip = ASCIIToUTF16("Multi line\nTooltip");
-  TooltipControllerTestHelper::TrimTooltipToFit(
-      max_width, &tooltip, &width, &line_count);
-  int expected_width = font.GetStringWidth(ASCIIToUTF16("Multi line"));
-  expected_width = std::max(expected_width,
-                            font.GetStringWidth(ASCIIToUTF16("Tooltip")));
-  EXPECT_EQ(expected_width, width);
-  EXPECT_EQ(2, line_count);
-  EXPECT_EQ(ASCIIToUTF16("Multi line\nTooltip"), tooltip);
-
-  // Whitespaces in tooltips are preserved.
-  tooltip.clear();
-  width = line_count = -1;
-  tooltip = ASCIIToUTF16("Small  Tool  t\tip");
-  TooltipControllerTestHelper::TrimTooltipToFit(
-      max_width, &tooltip, &width, &line_count);
-  EXPECT_EQ(font.GetStringWidth(ASCIIToUTF16("Small  Tool  t\tip")), width);
-  EXPECT_EQ(1, line_count);
-  EXPECT_EQ(ASCIIToUTF16("Small  Tool  t\tip"), tooltip);
+  helper_->FireTooltipTimer();
+  EXPECT_FALSE(helper_->IsTooltipVisible());
 }
 
 TEST_F(TooltipControllerTest, TooltipHidesOnKeyPressAndStaysHiddenUntilChange) {
@@ -427,6 +344,152 @@ TEST_F(TooltipControllerTest, HideOnExit) {
   EXPECT_FALSE(helper_->IsTooltipVisible());
 }
 
+namespace {
+
+// Returns the index of |window| in its parent's children.
+int IndexInParent(const aura::Window* window) {
+  aura::Window::Windows::const_iterator i =
+      std::find(window->parent()->children().begin(),
+                window->parent()->children().end(),
+                window);
+  return i == window->parent()->children().end() ? -1 :
+      static_cast<int>(i - window->parent()->children().begin());
+}
+
+class TestScreenPositionClient : public aura::client::ScreenPositionClient {
+ public:
+  TestScreenPositionClient() {}
+  virtual ~TestScreenPositionClient() {}
+
+  // ScreenPositionClient overrides:
+  virtual void ConvertPointToScreen(const aura::Window* window,
+                                    gfx::Point* point) OVERRIDE {
+  }
+  virtual void ConvertPointFromScreen(const aura::Window* window,
+                                      gfx::Point* point) OVERRIDE {
+  }
+  virtual void ConvertHostPointToScreen(aura::Window* root_gwindow,
+                                        gfx::Point* point) OVERRIDE {
+    NOTREACHED();
+  }
+  virtual void SetBounds(aura::Window* window,
+                         const gfx::Rect& bounds,
+                         const gfx::Display& display) OVERRIDE {
+    window->SetBounds(bounds);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(TestScreenPositionClient);
+};
+
+}  // namespace
+
+class TooltipControllerCaptureTest : public TooltipControllerTest {
+ public:
+  TooltipControllerCaptureTest() {}
+  virtual ~TooltipControllerCaptureTest() {}
+
+  virtual void SetUp() OVERRIDE {
+    TooltipControllerTest::SetUp();
+    aura::client::SetScreenPositionClient(GetRootWindow(),
+                                          &screen_position_client_);
+#if !defined(OS_CHROMEOS)
+    desktop_screen_.reset(CreateDesktopScreen());
+    gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE,
+                                   desktop_screen_.get());
+#endif
+  }
+
+  virtual void TearDown() OVERRIDE {
+#if !defined(OS_CHROMEOS)
+    gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, test_screen());
+    desktop_screen_.reset();
+#endif
+    aura::client::SetScreenPositionClient(GetRootWindow(), NULL);
+    TooltipControllerTest::TearDown();
+  }
+
+ private:
+  TestScreenPositionClient screen_position_client_;
+  scoped_ptr<gfx::Screen> desktop_screen_;
+
+  DISALLOW_COPY_AND_ASSIGN(TooltipControllerCaptureTest);
+};
+
+// Verifies when capture is released the TooltipController resets state.
+TEST_F(TooltipControllerCaptureTest, CloseOnCaptureLost) {
+  view_->GetWidget()->SetCapture(view_);
+  view_->set_tooltip_text(ASCIIToUTF16("Tooltip Text"));
+  generator_->MoveMouseToCenterOf(GetWindow());
+  string16 expected_tooltip = ASCIIToUTF16("Tooltip Text");
+  EXPECT_EQ(expected_tooltip, aura::client::GetTooltipText(GetWindow()));
+  EXPECT_EQ(string16(), helper_->GetTooltipText());
+  EXPECT_EQ(GetWindow(), helper_->GetTooltipWindow());
+
+  // Fire tooltip timer so tooltip becomes visible.
+  helper_->FireTooltipTimer();
+
+  EXPECT_TRUE(helper_->IsTooltipVisible());
+  view_->GetWidget()->ReleaseCapture();
+  EXPECT_FALSE(helper_->IsTooltipVisible());
+  EXPECT_TRUE(helper_->GetTooltipWindow() == NULL);
+}
+
+// Disabled on linux as DesktopScreenX11::GetWindowAtScreenPoint() doesn't
+// consider z-order.
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+#define MAYBE_Capture DISABLED_Capture
+#else
+#define MAYBE_Capture Capture
+#endif
+// Verifies the correct window is found for tooltips when there is a capture.
+TEST_F(TooltipControllerCaptureTest, MAYBE_Capture) {
+  const string16 tooltip_text(ASCIIToUTF16("1"));
+  const string16 tooltip_text2(ASCIIToUTF16("2"));
+
+  widget_->SetBounds(gfx::Rect(0, 0, 200, 200));
+  view_->set_tooltip_text(tooltip_text);
+
+  scoped_ptr<views::Widget> widget2(CreateWidget(root_window()));
+  widget2->SetContentsView(new View);
+  TooltipTestView* view2 = new TooltipTestView;
+  widget2->GetContentsView()->AddChildView(view2);
+  view2->set_tooltip_text(tooltip_text2);
+  widget2->SetBounds(gfx::Rect(0, 0, 200, 200));
+  view2->SetBoundsRect(widget2->GetContentsView()->GetLocalBounds());
+
+  widget_->SetCapture(view_);
+  EXPECT_TRUE(widget_->HasCapture());
+  widget2->Show();
+  EXPECT_GE(IndexInParent(widget2->GetNativeWindow()),
+            IndexInParent(widget_->GetNativeWindow()));
+
+  generator_->MoveMouseRelativeTo(widget_->GetNativeWindow(),
+                                  view_->bounds().CenterPoint());
+
+  EXPECT_TRUE(helper_->IsTooltipTimerRunning());
+  helper_->FireTooltipTimer();
+  // Even though the mouse is over a window with a tooltip it shouldn't be
+  // picked up because the windows don't have the same value for
+  // |TooltipManager::kGroupingPropertyKey|.
+  EXPECT_TRUE(helper_->GetTooltipText().empty());
+
+  // Now make both the windows have same transient value for
+  // kGroupingPropertyKey. In this case the tooltip should be picked up from
+  // |widget2| (because the mouse is over it).
+  const int grouping_key = 1;
+  widget_->SetNativeWindowProperty(TooltipManager::kGroupingPropertyKey,
+                                   reinterpret_cast<void*>(grouping_key));
+  widget2->SetNativeWindowProperty(TooltipManager::kGroupingPropertyKey,
+                                   reinterpret_cast<void*>(grouping_key));
+  generator_->MoveMouseBy(1, 10);
+  EXPECT_TRUE(helper_->IsTooltipTimerRunning());
+  helper_->FireTooltipTimer();
+  EXPECT_EQ(tooltip_text2, helper_->GetTooltipText());
+
+  widget2.reset();
+}
+
 #if !defined(OS_CHROMEOS)
 // This test creates two top level windows and verifies that the tooltip
 // displays correctly when mouse moves are dispatched to these windows.
@@ -438,7 +501,7 @@ TEST_F(TooltipControllerTest, TooltipsInMultipleRootWindows) {
   EXPECT_EQ(NULL, helper_->GetTooltipWindow());
 
   aura::Window* window = GetWindow();
-  aura::RootWindow* root_window = GetRootWindow();
+  aura::Window* root_window = GetRootWindow();
 
   // Fire tooltip timer so tooltip becomes visible.
   generator_->MoveMouseRelativeTo(window, view_->bounds().CenterPoint());
@@ -468,7 +531,7 @@ TEST_F(TooltipControllerTest, TooltipsInMultipleRootWindows) {
     view2->set_tooltip_text(ASCIIToUTF16("Tooltip Text For RootWindow2"));
 
   aura::Window* window2 = widget2->GetNativeWindow();
-  aura::RootWindow* root_window2 =
+  aura::Window* root_window2 =
       widget2->GetNativeWindow()->GetRootWindow();
   // Fire tooltip timer so tooltip becomes visible.
   generator_->MoveMouseRelativeTo(window2, view2->bounds().CenterPoint());

@@ -31,14 +31,10 @@
 #include "config.h"
 #include "core/platform/chromium/ChromiumDataObjectItem.h"
 
-#include "core/dom/DataTransferItem.h"
 #include "core/dom/StringCallback.h"
 #include "core/fileapi/Blob.h"
-#include "core/fileapi/File.h"
-#include "core/platform/SharedBuffer.h"
-#include "core/platform/chromium/ClipboardMimeTypes.h"
-#include "core/platform/chromium/ClipboardUtilitiesChromium.h"
-
+#include "core/platform/Pasteboard.h"
+#include "platform/clipboard/ClipboardMimeTypes.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebClipboard.h"
 
@@ -46,21 +42,21 @@ namespace WebCore {
 
 PassRefPtr<ChromiumDataObjectItem> ChromiumDataObjectItem::createFromString(const String& type, const String& data)
 {
-    RefPtr<ChromiumDataObjectItem> item = adoptRef(new ChromiumDataObjectItem(DataTransferItem::kindString, type));
+    RefPtr<ChromiumDataObjectItem> item = adoptRef(new ChromiumDataObjectItem(StringKind, type));
     item->m_data = data;
     return item.release();
 }
 
 PassRefPtr<ChromiumDataObjectItem> ChromiumDataObjectItem::createFromFile(PassRefPtr<File> file)
 {
-    RefPtr<ChromiumDataObjectItem> item = adoptRef(new ChromiumDataObjectItem(DataTransferItem::kindFile, file->type()));
+    RefPtr<ChromiumDataObjectItem> item = adoptRef(new ChromiumDataObjectItem(FileKind, file->type()));
     item->m_file = file;
     return item.release();
 }
 
 PassRefPtr<ChromiumDataObjectItem> ChromiumDataObjectItem::createFromURL(const String& url, const String& title)
 {
-    RefPtr<ChromiumDataObjectItem> item = adoptRef(new ChromiumDataObjectItem(DataTransferItem::kindString, mimeTypeTextURIList));
+    RefPtr<ChromiumDataObjectItem> item = adoptRef(new ChromiumDataObjectItem(StringKind, mimeTypeTextURIList));
     item->m_data = url;
     item->m_title = title;
     return item.release();
@@ -68,7 +64,7 @@ PassRefPtr<ChromiumDataObjectItem> ChromiumDataObjectItem::createFromURL(const S
 
 PassRefPtr<ChromiumDataObjectItem> ChromiumDataObjectItem::createFromHTML(const String& html, const KURL& baseURL)
 {
-    RefPtr<ChromiumDataObjectItem> item = adoptRef(new ChromiumDataObjectItem(DataTransferItem::kindString, mimeTypeTextHTML));
+    RefPtr<ChromiumDataObjectItem> item = adoptRef(new ChromiumDataObjectItem(StringKind, mimeTypeTextHTML));
     item->m_data = html;
     item->m_baseURL = baseURL;
     return item.release();
@@ -76,7 +72,7 @@ PassRefPtr<ChromiumDataObjectItem> ChromiumDataObjectItem::createFromHTML(const 
 
 PassRefPtr<ChromiumDataObjectItem> ChromiumDataObjectItem::createFromSharedBuffer(const String& name, PassRefPtr<SharedBuffer> buffer)
 {
-    RefPtr<ChromiumDataObjectItem> item = adoptRef(new ChromiumDataObjectItem(DataTransferItem::kindFile, String()));
+    RefPtr<ChromiumDataObjectItem> item = adoptRef(new ChromiumDataObjectItem(FileKind, String()));
     item->m_sharedBuffer = buffer;
     item->m_title = name;
     return item.release();
@@ -85,11 +81,11 @@ PassRefPtr<ChromiumDataObjectItem> ChromiumDataObjectItem::createFromSharedBuffe
 PassRefPtr<ChromiumDataObjectItem> ChromiumDataObjectItem::createFromPasteboard(const String& type, uint64_t sequenceNumber)
 {
     if (type == mimeTypeImagePng)
-        return adoptRef(new ChromiumDataObjectItem(DataTransferItem::kindFile, type, sequenceNumber));
-    return adoptRef(new ChromiumDataObjectItem(DataTransferItem::kindString, type, sequenceNumber));
+        return adoptRef(new ChromiumDataObjectItem(FileKind, type, sequenceNumber));
+    return adoptRef(new ChromiumDataObjectItem(StringKind, type, sequenceNumber));
 }
 
-ChromiumDataObjectItem::ChromiumDataObjectItem(const String& kind, const String& type)
+ChromiumDataObjectItem::ChromiumDataObjectItem(Kind kind, const String& type)
     : m_source(InternalSource)
     , m_kind(kind)
     , m_type(type)
@@ -97,7 +93,7 @@ ChromiumDataObjectItem::ChromiumDataObjectItem(const String& kind, const String&
 {
 }
 
-ChromiumDataObjectItem::ChromiumDataObjectItem(const String& kind, const String& type, uint64_t sequenceNumber)
+ChromiumDataObjectItem::ChromiumDataObjectItem(Kind kind, const String& type, uint64_t sequenceNumber)
     : m_source(PasteboardSource)
     , m_kind(kind)
     , m_type(type)
@@ -105,17 +101,17 @@ ChromiumDataObjectItem::ChromiumDataObjectItem(const String& kind, const String&
 {
 }
 
-void ChromiumDataObjectItem::getAsString(PassRefPtr<StringCallback> callback, ScriptExecutionContext* context) const
+void ChromiumDataObjectItem::getAsString(PassOwnPtr<StringCallback> callback, ExecutionContext* context) const
 {
-    if (!callback || kind() != DataTransferItem::kindString)
+    if (!callback || kind() != StringKind)
         return;
 
-    callback->scheduleCallback(context, internalGetAsString());
+    StringCallback::scheduleCallback(callback, context, internalGetAsString());
 }
 
 PassRefPtr<Blob> ChromiumDataObjectItem::getAsFile() const
 {
-    if (kind() != DataTransferItem::kindFile)
+    if (kind() != FileKind)
         return 0;
 
     if (m_source == InternalSource) {
@@ -139,13 +135,13 @@ PassRefPtr<Blob> ChromiumDataObjectItem::getAsFile() const
         // method to the blob registry; that way the data is only copied over
         // into the renderer when it's actually read, not when the blob is
         // initially constructed).
-        RefPtr<SharedBuffer> data = static_cast<PassRefPtr<SharedBuffer> >(WebKit::Platform::current()->clipboard()->readImage(WebKit::WebClipboard::BufferStandard));
+        RefPtr<SharedBuffer> data = static_cast<PassRefPtr<SharedBuffer> >(blink::Platform::current()->clipboard()->readImage(blink::WebClipboard::BufferStandard));
         RefPtr<RawData> rawData = RawData::create();
         rawData->mutableData()->append(data->data(), data->size());
         OwnPtr<BlobData> blobData = BlobData::create();
         blobData->appendData(rawData, 0, -1);
         blobData->setContentType(mimeTypeImagePng);
-        return Blob::create(blobData.release(), data->size());
+        return Blob::create(BlobDataHandle::create(blobData.release(), data->size()));
     }
 
     return 0;
@@ -153,32 +149,33 @@ PassRefPtr<Blob> ChromiumDataObjectItem::getAsFile() const
 
 String ChromiumDataObjectItem::internalGetAsString() const
 {
-    ASSERT(m_kind == DataTransferItem::kindString);
+    ASSERT(m_kind == StringKind);
 
     if (m_source == InternalSource)
         return m_data;
 
     ASSERT(m_source == PasteboardSource);
 
+    blink::WebClipboard::Buffer buffer = Pasteboard::generalPasteboard()->buffer();
     String data;
     // This is ugly but there's no real alternative.
     if (m_type == mimeTypeTextPlain)
-        data = WebKit::Platform::current()->clipboard()->readPlainText(currentPasteboardBuffer());
+        data = blink::Platform::current()->clipboard()->readPlainText(buffer);
     else if (m_type == mimeTypeTextHTML) {
-        WebKit::WebURL ignoredSourceURL;
+        blink::WebURL ignoredSourceURL;
         unsigned ignored;
-        data = WebKit::Platform::current()->clipboard()->readHTML(currentPasteboardBuffer(), &ignoredSourceURL, &ignored, &ignored);
+        data = blink::Platform::current()->clipboard()->readHTML(buffer, &ignoredSourceURL, &ignored, &ignored);
     } else
-        data = WebKit::Platform::current()->clipboard()->readCustomData(currentPasteboardBuffer(), m_type);
+        data = blink::Platform::current()->clipboard()->readCustomData(buffer, m_type);
 
-    return WebKit::Platform::current()->clipboard()->sequenceNumber(currentPasteboardBuffer()) == m_sequenceNumber ? data : String();
+    return blink::Platform::current()->clipboard()->sequenceNumber(buffer) == m_sequenceNumber ? data : String();
 }
 
 bool ChromiumDataObjectItem::isFilename() const
 {
     // FIXME: https://bugs.webkit.org/show_bug.cgi?id=81261: When we properly support File dragout,
     // we'll need to make sure this works as expected for DragDataChromium.
-    return m_kind == DataTransferItem::kindFile && m_file;
+    return m_kind == FileKind && m_file;
 }
 
 } // namespace WebCore

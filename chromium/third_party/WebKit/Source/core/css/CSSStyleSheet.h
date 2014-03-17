@@ -41,6 +41,11 @@ class MediaQuerySet;
 class SecurityOrigin;
 class StyleSheetContents;
 
+enum StyleSheetUpdateType {
+    PartialRuleUpdate,
+    EntireStyleSheetUpdate
+};
+
 class CSSStyleSheet : public StyleSheet {
 public:
     static PassRefPtr<CSSStyleSheet> create(PassRefPtr<StyleSheetContents>, CSSImportRule* ownerRule = 0);
@@ -59,19 +64,20 @@ public:
 
     PassRefPtr<CSSRuleList> cssRules();
     unsigned insertRule(const String& rule, unsigned index, ExceptionState&);
+    unsigned insertRule(const String& rule, ExceptionState&); // Deprecated.
     void deleteRule(unsigned index, ExceptionState&);
 
     // IE Extensions
     PassRefPtr<CSSRuleList> rules();
     int addRule(const String& selector, const String& style, int index, ExceptionState&);
     int addRule(const String& selector, const String& style, ExceptionState&);
-    void removeRule(unsigned index, ExceptionState& es) { deleteRule(index, es); }
+    void removeRule(unsigned index, ExceptionState& exceptionState) { deleteRule(index, exceptionState); }
 
     // For CSSRuleList.
     unsigned length() const;
     CSSRule* item(unsigned index);
 
-    virtual void clearOwnerNode() OVERRIDE { didMutate(); m_ownerNode = 0; }
+    virtual void clearOwnerNode() OVERRIDE { didMutate(EntireStyleSheetUpdate); m_ownerNode = 0; }
     virtual CSSRule* ownerRule() const OVERRIDE { return m_ownerRule; }
     virtual KURL baseURL() const OVERRIDE;
     virtual bool isLoading() const OVERRIDE;
@@ -95,10 +101,11 @@ public:
 
     void willMutateRules();
     void didMutateRules();
-    void didMutate();
+    void didMutate(StyleSheetUpdateType = PartialRuleUpdate);
 
     void clearChildRuleCSSOMWrappers();
-    void reattachChildRuleCSSOMWrappers();
+
+    void registerExtraChildRuleCSSOMWrapper(PassRefPtr<CSSRule>);
 
     StyleSheetContents* contents() const { return m_contents.get(); }
 
@@ -111,6 +118,9 @@ private:
 
     virtual bool isCSSStyleSheet() const { return true; }
     virtual String type() const { return "text/css"; }
+
+    void extraCSSOMWrapperIndices(Vector<unsigned>& indices);
+    void reattachChildRuleCSSOMWrappers(const Vector<unsigned>& extraCSSOMWrapperIndices);
 
     bool canAccessRules() const;
 
@@ -127,6 +137,9 @@ private:
 
     mutable RefPtr<MediaList> m_mediaCSSOMWrapper;
     mutable Vector<RefPtr<CSSRule> > m_childRuleCSSOMWrappers;
+    // These are CSSOMWrappers that come from getMatchedCSSRules and thus don't map 1-1 to
+    // the StyleRules in the StyleSheetContents.
+    mutable Vector<RefPtr<CSSRule> > m_extraChildRuleCSSOMWrappers;
     mutable OwnPtr<CSSRuleList> m_ruleListCSSOMWrapper;
 };
 
@@ -149,6 +162,8 @@ inline CSSStyleSheet::RuleMutationScope::~RuleMutationScope()
     if (m_styleSheet)
         m_styleSheet->didMutateRules();
 }
+
+DEFINE_TYPE_CASTS(CSSStyleSheet, StyleSheet, sheet, sheet->isCSSStyleSheet(), sheet.isCSSStyleSheet());
 
 } // namespace
 

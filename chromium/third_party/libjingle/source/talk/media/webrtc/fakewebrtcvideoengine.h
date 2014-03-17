@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "talk/base/basictypes.h"
+#include "talk/base/gunit.h"
 #include "talk/base/stringutils.h"
 #include "talk/media/base/codec.h"
 #include "talk/media/webrtc/fakewebrtccommon.h"
@@ -276,6 +277,8 @@ class FakeWebRtcVideoEngine
           send(false),
           receive_(false),
           can_transmit_(true),
+          remote_rtx_ssrc_(-1),
+          rtx_send_payload_type(-1),
           rtcp_status_(webrtc::kRtcpNone),
           key_frame_request_method_(webrtc::kViEKeyFrameRequestNone),
           tmmbr_(false),
@@ -306,6 +309,9 @@ class FakeWebRtcVideoEngine
     bool receive_;
     bool can_transmit_;
     std::map<int, int> ssrcs_;
+    std::map<int, int> rtx_ssrcs_;
+    int remote_rtx_ssrc_;
+    int rtx_send_payload_type;
     std::string cname_;
     webrtc::ViERTCPMode rtcp_status_;
     webrtc::ViEKeyFrameRequestMethod key_frame_request_method_;
@@ -333,12 +339,14 @@ class FakeWebRtcVideoEngine
   };
   class Capturer : public webrtc::ViEExternalCapture {
    public:
-    Capturer() : channel_id_(-1), denoising_(false), last_capture_time_(0) { }
+    Capturer() : channel_id_(-1), denoising_(false),
+                 last_capture_time_(0), incoming_frame_num_(0) { }
     int channel_id() const { return channel_id_; }
     void set_channel_id(int channel_id) { channel_id_ = channel_id; }
     bool denoising() const { return denoising_; }
     void set_denoising(bool denoising) { denoising_ = denoising; }
-    int64 last_capture_time() { return last_capture_time_; }
+    int64 last_capture_time() const { return last_capture_time_; }
+    int incoming_frame_num() const { return incoming_frame_num_; }
 
     // From ViEExternalCapture
     virtual int IncomingFrame(unsigned char* videoFrame,
@@ -353,6 +361,7 @@ class FakeWebRtcVideoEngine
         const webrtc::ViEVideoFrameI420& video_frame,
         unsigned long long captureTime) {
       last_capture_time_ = captureTime;
+      ++incoming_frame_num_;
       return 0;
     }
 
@@ -360,6 +369,7 @@ class FakeWebRtcVideoEngine
     int channel_id_;
     bool denoising_;
     int64 last_capture_time_;
+    int incoming_frame_num_;
   };
 
   FakeWebRtcVideoEngine(const cricket::VideoCodec* const* codecs,
@@ -402,6 +412,16 @@ class FakeWebRtcVideoEngine
 
   int GetLastCapturer() const { return last_capturer_; }
   int GetNumCapturers() const { return static_cast<int>(capturers_.size()); }
+  int GetIncomingFrameNum(int channel_id) const {
+    for (std::map<int, Capturer*>::const_iterator iter = capturers_.begin();
+         iter != capturers_.end(); ++iter) {
+      Capturer* capturer = iter->second;
+      if (capturer->channel_id() == channel_id) {
+        return capturer->incoming_frame_num();
+      }
+    }
+    return -1;
+  }
   void set_fail_alloc_capturer(bool fail_alloc_capturer) {
     fail_alloc_capturer_ = fail_alloc_capturer;
   }
@@ -500,9 +520,22 @@ class FakeWebRtcVideoEngine
     return static_cast<int>(
         channels_.find(channel)->second->ssrcs_.size());
   }
+  int GetNumRtxSsrcs(int channel) const {
+    WEBRTC_ASSERT_CHANNEL(channel);
+    return static_cast<int>(
+        channels_.find(channel)->second->rtx_ssrcs_.size());
+  }
   bool GetIsTransmitting(int channel) const {
     WEBRTC_ASSERT_CHANNEL(channel);
     return channels_.find(channel)->second->can_transmit_;
+  }
+  int GetRtxSsrc(int channel, int simulcast_idx) const {
+    WEBRTC_ASSERT_CHANNEL(channel);
+    if (channels_.find(channel)->second->rtx_ssrcs_.find(simulcast_idx) ==
+        channels_.find(channel)->second->rtx_ssrcs_.end()) {
+      return -1;
+    }
+    return channels_.find(channel)->second->rtx_ssrcs_[simulcast_idx];
   }
   bool ReceiveCodecRegistered(int channel,
                               const webrtc::VideoCodec& codec) const {
@@ -557,6 +590,14 @@ class FakeWebRtcVideoEngine
     WEBRTC_ASSERT_CHANNEL(channel);
     channels_[channel]->receive_bandwidth_ = receive_bandwidth;
   };
+  int GetRtxSendPayloadType(int channel) {
+    WEBRTC_CHECK_CHANNEL(channel);
+    return channels_[channel]->rtx_send_payload_type;
+  }
+  int GetRemoteRtxSsrc(int channel) {
+    WEBRTC_CHECK_CHANNEL(channel);
+    return channels_.find(channel)->second->remote_rtx_ssrc_;
+  }
 
   WEBRTC_STUB(Release, ());
 
@@ -599,6 +640,9 @@ class FakeWebRtcVideoEngine
   }
   WEBRTC_STUB(RegisterCpuOveruseObserver,
       (int channel, webrtc::CpuOveruseObserver* observer));
+#ifdef USE_WEBRTC_DEV_BRANCH
+  WEBRTC_STUB(CpuOveruseMeasures, (int, int*, int*, int*, int*));
+#endif
   WEBRTC_STUB(ConnectAudioChannel, (const int, const int));
   WEBRTC_STUB(DisconnectAudioChannel, (const int));
   WEBRTC_FUNC(StartSend, (const int channel)) {
@@ -716,6 +760,7 @@ class FakeWebRtcVideoEngine
   WEBRTC_STUB(WaitForFirstKeyFrame, (const int, const bool));
   WEBRTC_STUB(StartDebugRecording, (int, const char*));
   WEBRTC_STUB(StopDebugRecording, (int));
+  WEBRTC_VOID_STUB(SuspendBelowMinBitrate, (int));
 
   // webrtc::ViECapture
   WEBRTC_STUB(NumberOfCaptureDevices, ());
@@ -782,7 +827,12 @@ class FakeWebRtcVideoEngine
   }
   WEBRTC_STUB(RegisterSendTransport, (const int, webrtc::Transport&));
   WEBRTC_STUB(DeregisterSendTransport, (const int));
+#ifdef USE_WEBRTC_DEV_BRANCH
+  WEBRTC_STUB(ReceivedRTPPacket, (const int, const void*, const int,
+      const webrtc::PacketTime&));
+#else
   WEBRTC_STUB(ReceivedRTPPacket, (const int, const void*, const int));
+#endif
   WEBRTC_STUB(ReceivedRTCPPacket, (const int, const void*, const int));
   // Not using WEBRTC_STUB due to bool return value
   virtual bool IsIPv6Enabled(int channel) { return true; }
@@ -851,11 +901,28 @@ class FakeWebRtcVideoEngine
                              const webrtc::StreamType usage,
                              const unsigned char idx)) {
     WEBRTC_CHECK_CHANNEL(channel);
-    channels_[channel]->ssrcs_[idx] = ssrc;
+    switch (usage) {
+      case webrtc::kViEStreamTypeNormal:
+        channels_[channel]->ssrcs_[idx] = ssrc;
+        break;
+      case webrtc::kViEStreamTypeRtx:
+        channels_[channel]->rtx_ssrcs_[idx] = ssrc;
+        break;
+      default:
+        return -1;
+    }
     return 0;
   }
-  WEBRTC_STUB_CONST(SetRemoteSSRCType, (const int,
-        const webrtc::StreamType, const unsigned int));
+
+  WEBRTC_FUNC_CONST(SetRemoteSSRCType, (const int channel,
+        const webrtc::StreamType usage, const unsigned int ssrc)) {
+    WEBRTC_CHECK_CHANNEL(channel);
+    if (usage == webrtc::kViEStreamTypeRtx) {
+      channels_.find(channel)->second->remote_rtx_ssrc_ = ssrc;
+      return 0;
+    }
+    return -1;
+  }
 
   WEBRTC_FUNC_CONST(GetLocalSSRC, (const int channel,
                                    unsigned int& ssrc)) {
@@ -867,7 +934,12 @@ class FakeWebRtcVideoEngine
   WEBRTC_STUB_CONST(GetRemoteSSRC, (const int, unsigned int&));
   WEBRTC_STUB_CONST(GetRemoteCSRCs, (const int, unsigned int*));
 
-  WEBRTC_STUB(SetRtxSendPayloadType, (const int, const uint8));
+  WEBRTC_FUNC(SetRtxSendPayloadType, (const int channel,
+                                      const uint8 payload_type)) {
+    WEBRTC_CHECK_CHANNEL(channel);
+    channels_[channel]->rtx_send_payload_type = payload_type;
+    return 0;
+  }
   WEBRTC_STUB(SetRtxReceivePayloadType, (const int, const uint8));
 
   WEBRTC_STUB(SetStartSequenceNumber, (const int, unsigned short));
@@ -968,6 +1040,9 @@ class FakeWebRtcVideoEngine
     channels_[channel]->rtp_absolute_send_time_receive_id_ = (enable) ? id : 0;
     return 0;
   }
+#ifdef USE_WEBRTC_DEV_BRANCH
+  WEBRTC_STUB(SetRtcpXrRrtrStatus, (int, bool));
+#endif
   WEBRTC_FUNC(SetTransmissionSmoothingStatus, (int channel, bool enable)) {
     WEBRTC_CHECK_CHANNEL(channel);
     channels_[channel]->transmission_smoothing_ = enable;
@@ -979,6 +1054,12 @@ class FakeWebRtcVideoEngine
       unsigned int&, unsigned int&, unsigned int&, int&));
   WEBRTC_STUB_CONST(GetRTPStatistics, (const int, unsigned int&, unsigned int&,
       unsigned int&, unsigned int&));
+  WEBRTC_STUB_CONST(GetReceiveChannelRtcpStatistics, (const int,
+      webrtc::RtcpStatistics&, int&));
+  WEBRTC_STUB_CONST(GetSendChannelRtcpStatistics, (const int,
+      webrtc::RtcpStatistics&, int&));
+  WEBRTC_STUB_CONST(GetRtpStatistics, (const int, webrtc::StreamDataCounters&,
+      webrtc::StreamDataCounters&));
   WEBRTC_FUNC_CONST(GetBandwidthUsage, (const int channel,
       unsigned int& total_bitrate, unsigned int& video_bitrate,
       unsigned int& fec_bitrate, unsigned int& nack_bitrate)) {
@@ -1021,6 +1102,30 @@ class FakeWebRtcVideoEngine
     }
     return 0;
   }
+  WEBRTC_STUB(RegisterSendChannelRtcpStatisticsCallback,
+                    (int, webrtc::RtcpStatisticsCallback*));
+  WEBRTC_STUB(DeregisterSendChannelRtcpStatisticsCallback,
+                    (int, webrtc::RtcpStatisticsCallback*));
+  WEBRTC_STUB(RegisterReceiveChannelRtcpStatisticsCallback,
+                    (int, webrtc::RtcpStatisticsCallback*));
+  WEBRTC_STUB(DeregisterReceiveChannelRtcpStatisticsCallback,
+                    (int, webrtc::RtcpStatisticsCallback*));
+  WEBRTC_STUB(RegisterSendChannelRtpStatisticsCallback,
+                    (int, webrtc::StreamDataCountersCallback*));
+  WEBRTC_STUB(DeregisterSendChannelRtpStatisticsCallback,
+                    (int, webrtc::StreamDataCountersCallback*));
+  WEBRTC_STUB(RegisterReceiveChannelRtpStatisticsCallback,
+                    (int, webrtc::StreamDataCountersCallback*));
+  WEBRTC_STUB(DeregisterReceiveChannelRtpStatisticsCallback,
+                    (int, webrtc::StreamDataCountersCallback*));
+  WEBRTC_STUB(RegisterSendBitrateObserver,
+                    (int, webrtc::BitrateStatisticsObserver*));
+  WEBRTC_STUB(DeregisterSendBitrateObserver,
+                    (int, webrtc::BitrateStatisticsObserver*));
+  WEBRTC_STUB(RegisterSendFrameCountObserver,
+                    (int, webrtc::FrameCountObserver*));
+  WEBRTC_STUB(DeregisterSendFrameCountObserver,
+                    (int, webrtc::FrameCountObserver*));
 
   WEBRTC_STUB(StartRTPDump, (const int, const char*, webrtc::RTPDirections));
   WEBRTC_STUB(StopRTPDump, (const int, webrtc::RTPDirections));
@@ -1046,7 +1151,12 @@ class FakeWebRtcVideoEngine
     return 0;
   }
   WEBRTC_STUB(EnableColorEnhancement, (const int, const bool));
-
+  WEBRTC_VOID_STUB(RegisterPreEncodeCallback,
+                   (int, webrtc::I420FrameCallback*));
+  WEBRTC_VOID_STUB(DeRegisterPreEncodeCallback, (int));
+  WEBRTC_VOID_STUB(RegisterPreRenderCallback,
+                   (int, webrtc::I420FrameCallback*));
+  WEBRTC_VOID_STUB(DeRegisterPreRenderCallback, (int));
   // webrtc::ViEExternalCodec
   WEBRTC_FUNC(RegisterExternalSendCodec,
       (const int channel, const unsigned char pl_type, webrtc::VideoEncoder*,

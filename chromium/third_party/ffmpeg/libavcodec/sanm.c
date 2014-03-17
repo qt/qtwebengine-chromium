@@ -738,11 +738,10 @@ static int process_frame_obj(SANMVideoContext *ctx)
     }
 
     if (ctx->width < left + w || ctx->height < top + h) {
-        if (av_image_check_size(FFMAX(left + w, ctx->width),
-                                FFMAX(top  + h, ctx->height), 0, ctx->avctx) < 0)
-            return AVERROR_INVALIDDATA;
-        avcodec_set_dimensions(ctx->avctx, FFMAX(left + w, ctx->width),
-                                           FFMAX(top  + h, ctx->height));
+        int ret = ff_set_dimensions(ctx->avctx, FFMAX(left + w, ctx->width),
+                                                FFMAX(top  + h, ctx->height));
+        if (ret < 0)
+            return ret;
         init_sizes(ctx, FFMAX(left + w, ctx->width),
                         FFMAX(top  + h, ctx->height));
         if (init_buffers(ctx)) {
@@ -1296,6 +1295,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
 
 AVCodec ff_sanm_decoder = {
     .name           = "sanm",
+    .long_name      = NULL_IF_CONFIG_SMALL("LucasArts SMUSH video"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_SANM,
     .priv_data_size = sizeof(SANMVideoContext),
@@ -1303,5 +1303,4 @@ AVCodec ff_sanm_decoder = {
     .close          = decode_end,
     .decode         = decode_frame,
     .capabilities   = CODEC_CAP_DR1,
-    .long_name      = NULL_IF_CONFIG_SMALL("LucasArts SMUSH video"),
 };

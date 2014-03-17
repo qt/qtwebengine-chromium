@@ -5,6 +5,7 @@
 #include "webkit/renderer/compositor_bindings/web_filter_operations_impl.h"
 
 #include "base/basictypes.h"
+#include "skia/ext/refptr.h"
 #include "third_party/WebKit/public/platform/WebColor.h"
 #include "third_party/WebKit/public/platform/WebPoint.h"
 #include "third_party/skia/include/core/SkScalar.h"
@@ -57,9 +58,9 @@ void WebFilterOperationsImpl::appendBlurFilter(float amount) {
   filter_operations_.Append(cc::FilterOperation::CreateBlurFilter(amount));
 }
 
-void WebFilterOperationsImpl::appendDropShadowFilter(WebKit::WebPoint offset,
+void WebFilterOperationsImpl::appendDropShadowFilter(blink::WebPoint offset,
                                                      float std_deviation,
-                                                     WebKit::WebColor color) {
+                                                     blink::WebColor color) {
   filter_operations_.Append(cc::FilterOperation::CreateDropShadowFilter(
       offset, std_deviation, color));
 }
@@ -77,6 +78,12 @@ void WebFilterOperationsImpl::appendZoomFilter(float amount, int inset) {
 void WebFilterOperationsImpl::appendSaturatingBrightnessFilter(float amount) {
   filter_operations_.Append(
       cc::FilterOperation::CreateSaturatingBrightnessFilter(amount));
+}
+
+void WebFilterOperationsImpl::appendReferenceFilter(
+    SkImageFilter* image_filter) {
+  filter_operations_.Append(
+      cc::FilterOperation::CreateReferenceFilter(skia::SharePtr(image_filter)));
 }
 
 void WebFilterOperationsImpl::clear() {

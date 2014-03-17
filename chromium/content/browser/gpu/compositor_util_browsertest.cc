@@ -21,21 +21,35 @@ IN_PROC_BROWSER_TEST_F(CompositorUtilTest, CompositingModeAsExpected) {
   enum CompositingMode {
     DISABLED,
     ENABLED,
-    THREADED,
+    THREADED,  // Implies FCM
+    DELEGATED,  // Implies threaded
   } expected_mode = DISABLED;
-#if defined(OS_ANDROID) || defined(USE_AURA)
+#if defined(USE_AURA)
+  expected_mode = DELEGATED;
+#elif defined(OS_ANDROID)
   expected_mode = THREADED;
 #elif defined(OS_MACOSX)
-  if (base::mac::IsOSMountainLionOrLater())
-    expected_mode = ENABLED;
+  expected_mode = THREADED;
+  // Lion and SnowLeopard have compositing blacklisted when using the Apple
+  // software renderer, so results will vary depending if this test is being
+  // run in a VM versus actual hardware.
+  // http://crbug.com/230931
+  if (base::mac::IsOSLionOrEarlier())
+    return;
 #elif defined(OS_WIN)
   if (base::win::GetVersion() >= base::win::VERSION_VISTA)
-    expected_mode = ENABLED;
+    expected_mode = THREADED;
 #endif
 
-  EXPECT_EQ(expected_mode == ENABLED || expected_mode == THREADED,
+  EXPECT_EQ(expected_mode == ENABLED ||
+            expected_mode == THREADED ||
+            expected_mode == DELEGATED,
             IsForceCompositingModeEnabled());
-  EXPECT_EQ(expected_mode == THREADED, IsThreadedCompositingEnabled());
+  EXPECT_EQ(expected_mode == THREADED ||
+            expected_mode == DELEGATED,
+            IsThreadedCompositingEnabled());
+  EXPECT_EQ(expected_mode == DELEGATED,
+            IsDelegatedRendererEnabled());
 }
 
 }

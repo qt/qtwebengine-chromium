@@ -47,12 +47,18 @@ bool OAuth2TokenService::RequestParameters::operator<(
 }
 
 OAuth2TokenService::RequestImpl::RequestImpl(
+    const std::string& account_id,
     OAuth2TokenService::Consumer* consumer)
-    : consumer_(consumer) {
+    : account_id_(account_id),
+      consumer_(consumer) {
 }
 
 OAuth2TokenService::RequestImpl::~RequestImpl() {
   DCHECK(CalledOnValidThread());
+}
+
+std::string OAuth2TokenService::RequestImpl::GetAccountId() const {
+  return account_id_;
 }
 
 void OAuth2TokenService::RequestImpl::InformConsumer(
@@ -445,7 +451,7 @@ OAuth2TokenService::StartRequestForClientWithContext(
     Consumer* consumer) {
   DCHECK(CalledOnValidThread());
 
-  scoped_ptr<RequestImpl> request(new RequestImpl(consumer));
+  scoped_ptr<RequestImpl> request = CreateRequest(account_id, consumer);
 
   if (!RefreshTokenIsAvailable(account_id)) {
     base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
@@ -471,6 +477,12 @@ OAuth2TokenService::StartRequestForClientWithContext(
                      scopes);
   }
   return request.PassAs<Request>();
+}
+
+scoped_ptr<OAuth2TokenService::RequestImpl> OAuth2TokenService::CreateRequest(
+    const std::string& account_id,
+    Consumer* consumer) {
+  return scoped_ptr<RequestImpl>(new RequestImpl(account_id, consumer));
 }
 
 void OAuth2TokenService::FetchOAuth2Token(RequestImpl* request,

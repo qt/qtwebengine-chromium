@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "media/base/video_frame.h"
 
 namespace {
 
@@ -16,8 +17,6 @@ media::VideoCaptureHandlerProxy::VideoCaptureState GetState(
     media::VideoCapture* capture) {
   media::VideoCaptureHandlerProxy::VideoCaptureState state;
   state.started = capture->CaptureStarted();
-  state.width = capture->CaptureWidth();
-  state.height = capture->CaptureHeight();
   state.frame_rate = capture->CaptureFrameRate();
   return state;
 }
@@ -89,17 +88,6 @@ void VideoCaptureHandlerProxy::OnFrameReady(
                  frame));
 }
 
-void VideoCaptureHandlerProxy::OnDeviceInfoReceived(
-    VideoCapture* capture,
-    const VideoCaptureParams& device_info) {
-  main_message_loop_->PostTask(FROM_HERE, base::Bind(
-      &VideoCaptureHandlerProxy::OnDeviceInfoReceivedOnMainThread,
-      base::Unretained(this),
-      capture,
-      GetState(capture),
-      device_info));
-}
-
 void VideoCaptureHandlerProxy::OnStartedOnMainThread(
     VideoCapture* capture,
     const VideoCaptureState& state) {
@@ -142,14 +130,6 @@ void VideoCaptureHandlerProxy::OnFrameReadyOnMainThread(
     const scoped_refptr<VideoFrame>& frame) {
   state_ = state;
   proxied_->OnFrameReady(capture, frame);
-}
-
-void VideoCaptureHandlerProxy::OnDeviceInfoReceivedOnMainThread(
-    VideoCapture* capture,
-    const VideoCaptureState& state,
-    const VideoCaptureParams& device_info) {
-  state_ = state;
-  proxied_->OnDeviceInfoReceived(capture, device_info);
 }
 
 }  // namespace media

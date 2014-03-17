@@ -34,7 +34,7 @@ namespace WebCore {
 class SpeechGrammar;
 }
 
-namespace WebKit {
+namespace blink {
 
 class WebSpeechGrammar {
 public:
@@ -42,13 +42,13 @@ public:
     WebSpeechGrammar(const WebSpeechGrammar& grammar) { assign(grammar); }
     ~WebSpeechGrammar() { reset(); }
 
-    WEBKIT_EXPORT WebURL src() const;
-    WEBKIT_EXPORT float weight() const;
+    BLINK_EXPORT WebURL src() const;
+    BLINK_EXPORT float weight() const;
 
-    WEBKIT_EXPORT void reset();
-    WEBKIT_EXPORT void assign(const WebSpeechGrammar&);
+    BLINK_EXPORT void reset();
+    BLINK_EXPORT void assign(const WebSpeechGrammar&);
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
     WebSpeechGrammar(const WTF::PassRefPtr<WebCore::SpeechGrammar>&);
     WebSpeechGrammar& operator=(const WTF::PassRefPtr<WebCore::SpeechGrammar>&);
 #endif
@@ -57,6 +57,6 @@ private:
     WebPrivatePtr<WebCore::SpeechGrammar> m_private;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebSpeechGrammar_h

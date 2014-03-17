@@ -160,13 +160,18 @@ class BASE_EXPORT ProcessMetrics {
   // load and fragmentation.
   bool CalculateFreeMemory(FreeMBytes* free) const;
 
-  // Returns the CPU usage in percent since the last time this method was
-  // called. The first time this method is called it returns 0 and will return
-  // the actual CPU info on subsequent calls.
-  // On Windows, the CPU usage value is for all CPUs. So if you have 2 CPUs and
-  // your process is using all the cycles of 1 CPU and not the other CPU, this
-  // method returns 50.
+  // Returns the CPU usage in percent since the last time this method or
+  // GetPlatformIndependentCPUUsage() was called. The first time this method
+  // is called it returns 0 and will return the actual CPU info on subsequent
+  // calls. On Windows, the CPU usage value is for all CPUs. So if you have
+  // 2 CPUs and your process is using all the cycles of 1 CPU and not the other
+  // CPU, this method returns 50.
   double GetCPUUsage();
+
+  // Same as GetCPUUsage(), but will return consistent values on all platforms
+  // (cancelling the Windows exception mentioned above) by returning a value in
+  // the range of 0 to (100 * numCPUCores) everywhere.
+  double GetPlatformIndependentCPUUsage();
 
   // Retrieves accounting information for all I/O operations performed by the
   // process.
@@ -272,6 +277,16 @@ struct BASE_EXPORT SystemMemoryInfoKB {
   long long gem_size;
 #endif
 };
+
+// Parses a string containing the contents of /proc/meminfo
+// returns true on success or false for a parsing error
+BASE_EXPORT bool ParseProcMeminfo(const std::string& input,
+                                  SystemMemoryInfoKB* meminfo);
+
+// Parses a string containing the contents of /proc/vmstat
+// returns true on success or false for a parsing error
+BASE_EXPORT bool ParseProcVmstat(const std::string& input,
+                                 SystemMemoryInfoKB* meminfo);
 
 // Retrieves data from /proc/meminfo and /proc/vmstat
 // about system-wide memory consumption.

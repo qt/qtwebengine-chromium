@@ -32,13 +32,13 @@
 
 #include "public/platform/WebRTCSessionDescriptionRequest.h"
 
-#include "core/platform/mediastream/RTCSessionDescriptionRequest.h"
+#include "platform/mediastream/RTCSessionDescriptionRequest.h"
 #include "public/platform/WebRTCSessionDescription.h"
 #include "wtf/PassOwnPtr.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 namespace {
 
@@ -94,5 +94,5 @@ void WebRTCSessionDescriptionRequest::setExtraData(ExtraData* extraData)
     m_private->setExtraData(adoptRef(new ExtraDataContainer(extraData)));
 }
 
-} // namespace WebKit
+} // namespace blink
 

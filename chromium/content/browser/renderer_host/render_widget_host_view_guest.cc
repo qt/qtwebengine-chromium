@@ -15,7 +15,7 @@
 #include "content/common/webplugin_geometry.h"
 #include "content/public/common/content_switches.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/public/web/WebScreenInfo.h"
+#include "third_party/WebKit/public/platform/WebScreenInfo.h"
 
 #if defined(OS_MACOSX)
 #import "content/browser/renderer_host/render_widget_host_view_mac_dictionary_helper.h"
@@ -29,19 +29,21 @@ namespace content {
 
 namespace {
 
+#if defined(OS_WIN) || defined(USE_AURA)
 bool ShouldSendPinchGesture() {
   static bool pinch_allowed =
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnablePinch);
   return pinch_allowed;
 }
 
-WebKit::WebGestureEvent CreateFlingCancelEvent(double time_stamp) {
-  WebKit::WebGestureEvent gesture_event;
+blink::WebGestureEvent CreateFlingCancelEvent(double time_stamp) {
+  blink::WebGestureEvent gesture_event;
   gesture_event.timeStampSeconds = time_stamp;
-  gesture_event.type = WebKit::WebGestureEvent::GestureFlingCancel;
-  gesture_event.sourceDevice = WebKit::WebGestureEvent::Touchscreen;
+  gesture_event.type = blink::WebGestureEvent::GestureFlingCancel;
+  gesture_event.sourceDevice = blink::WebGestureEvent::Touchscreen;
   return gesture_event;
 }
+#endif  // defined(OS_WIN) || defined(USE_AURA)
 
 }  // namespace
 
@@ -51,15 +53,18 @@ RenderWidgetHostViewGuest::RenderWidgetHostViewGuest(
     RenderWidgetHostView* platform_view)
     : host_(RenderWidgetHostImpl::From(widget_host)),
       guest_(guest),
-      is_hidden_(host_->is_hidden()),
       platform_view_(static_cast<RenderWidgetHostViewPort*>(platform_view)) {
 #if defined(OS_WIN) || defined(USE_AURA)
-  gesture_recognizer_.reset(ui::GestureRecognizer::Create(this));
+  gesture_recognizer_.reset(ui::GestureRecognizer::Create());
+  gesture_recognizer_->AddGestureEventHelper(this);
 #endif  // defined(OS_WIN) || defined(USE_AURA)
   host_->SetView(this);
 }
 
 RenderWidgetHostViewGuest::~RenderWidgetHostViewGuest() {
+#if defined(OS_WIN) || defined(USE_AURA)
+  gesture_recognizer_->RemoveGestureEventHelper(this);
+#endif  // defined(OS_WIN) || defined(USE_AURA)
 }
 
 RenderWidgetHost* RenderWidgetHostViewGuest::GetRenderWidgetHost() const {
@@ -74,17 +79,15 @@ void RenderWidgetHostViewGuest::WasShown() {
   // first place: http://crbug.com/273089.
   //
   // |guest_| is NULL during test.
-  if (!is_hidden_ || (guest_ && guest_->is_in_destruction()))
+  if ((guest_ && guest_->is_in_destruction()) || !host_->is_hidden())
     return;
-  is_hidden_ = false;
   host_->WasShown();
 }
 
 void RenderWidgetHostViewGuest::WasHidden() {
   // |guest_| is NULL during test.
-  if (is_hidden_ || (guest_ && guest_->is_in_destruction()))
+  if ((guest_ && guest_->is_in_destruction()) || host_->is_hidden())
     return;
-  is_hidden_ = true;
   host_->WasHidden();
 }
 
@@ -135,7 +138,7 @@ void RenderWidgetHostViewGuest::Hide() {
 }
 
 bool RenderWidgetHostViewGuest::IsShowing() {
-  return !is_hidden_;
+  return !host_->is_hidden();
 }
 
 gfx::Rect RenderWidgetHostViewGuest::GetViewBounds() const {
@@ -166,8 +169,13 @@ void RenderWidgetHostViewGuest::Destroy() {
   platform_view_->Destroy();
 }
 
-void RenderWidgetHostViewGuest::SetTooltipText(const string16& tooltip_text) {
+void RenderWidgetHostViewGuest::SetTooltipText(
+    const base::string16& tooltip_text) {
   platform_view_->SetTooltipText(tooltip_text);
+}
+
+void RenderWidgetHostViewGuest::AcceleratedSurfaceInitialized(int host_id,
+                                                              int route_id) {
 }
 
 void RenderWidgetHostViewGuest::AcceleratedSurfaceBuffersSwapped(
@@ -251,7 +259,9 @@ gfx::NativeView RenderWidgetHostViewGuest::GetNativeView() const {
 }
 
 gfx::NativeViewId RenderWidgetHostViewGuest::GetNativeViewId() const {
-  return guest_->GetEmbedderRenderWidgetHostView()->GetNativeViewId();
+  if (guest_->GetEmbedderRenderWidgetHostView())
+    return guest_->GetEmbedderRenderWidgetHostView()->GetNativeViewId();
+  return static_cast<gfx::NativeViewId>(NULL);
 }
 
 gfx::NativeViewAccessible RenderWidgetHostViewGuest::GetNativeViewAccessible() {
@@ -291,19 +301,38 @@ void RenderWidgetHostViewGuest::TextInputTypeChanged(
     ui::TextInputType type,
     ui::TextInputMode input_mode,
     bool can_compose_inline) {
-  RenderWidgetHostViewPort::FromRWHV(
-      guest_->GetEmbedderRenderWidgetHostView())->
-          TextInputTypeChanged(type, input_mode, can_compose_inline);
+  RenderWidgetHostViewPort* rwhv = RenderWidgetHostViewPort::FromRWHV(
+      guest_->GetEmbedderRenderWidgetHostView());
+  if (!rwhv)
+    return;
+  // Forward the information to embedding RWHV.
+  rwhv->TextInputTypeChanged(type, input_mode, can_compose_inline);
 }
 
 void RenderWidgetHostViewGuest::ImeCancelComposition() {
-  platform_view_->ImeCancelComposition();
+  RenderWidgetHostViewPort* rwhv = RenderWidgetHostViewPort::FromRWHV(
+      guest_->GetEmbedderRenderWidgetHostView());
+  if (!rwhv)
+    return;
+  // Forward the information to embedding RWHV.
+  rwhv->ImeCancelComposition();
 }
 
 #if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
 void RenderWidgetHostViewGuest::ImeCompositionRangeChanged(
     const gfx::Range& range,
     const std::vector<gfx::Rect>& character_bounds) {
+  RenderWidgetHostViewPort* rwhv = RenderWidgetHostViewPort::FromRWHV(
+      guest_->GetEmbedderRenderWidgetHostView());
+  if (!rwhv)
+    return;
+  std::vector<gfx::Rect> guest_character_bounds;
+  for (size_t i = 0; i < character_bounds.size(); ++i) {
+    gfx::Rect guest_rect = guest_->ToGuestRect(character_bounds[i]);
+    guest_character_bounds.push_back(guest_rect);
+  }
+  // Forward the information to embedding RWHV.
+  rwhv->ImeCompositionRangeChanged(range, guest_character_bounds);
 }
 #endif
 
@@ -315,15 +344,27 @@ void RenderWidgetHostViewGuest::DidUpdateBackingStore(
   NOTREACHED();
 }
 
-void RenderWidgetHostViewGuest::SelectionChanged(const string16& text,
+void RenderWidgetHostViewGuest::SelectionChanged(const base::string16& text,
                                                  size_t offset,
                                                  const gfx::Range& range) {
-  platform_view_->SelectionChanged(text, offset, range);
+  RenderWidgetHostViewPort* rwhv = RenderWidgetHostViewPort::FromRWHV(
+      guest_->GetEmbedderRenderWidgetHostView());
+  if (!rwhv)
+    return;
+  // Forward the information to embedding RWHV.
+  rwhv->SelectionChanged(text, offset, range);
 }
 
 void RenderWidgetHostViewGuest::SelectionBoundsChanged(
     const ViewHostMsg_SelectionBounds_Params& params) {
-  platform_view_->SelectionBoundsChanged(params);
+  RenderWidgetHostViewPort* rwhv = RenderWidgetHostViewPort::FromRWHV(
+      guest_->GetEmbedderRenderWidgetHostView());
+  if (!rwhv)
+    return;
+  ViewHostMsg_SelectionBounds_Params guest_params(params);
+  guest_params.anchor_rect = guest_->ToGuestRect(params.anchor_rect);
+  guest_params.focus_rect = guest_->ToGuestRect(params.focus_rect);
+  rwhv->SelectionBoundsChanged(guest_params);
 }
 
 void RenderWidgetHostViewGuest::ScrollOffsetChanged() {
@@ -337,9 +378,10 @@ BackingStore* RenderWidgetHostViewGuest::AllocBackingStore(
 
 void RenderWidgetHostViewGuest::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
-    const gfx::Size& /* dst_size */,
+    const gfx::Size& dst_size,
     const base::Callback<void(bool, const SkBitmap&)>& callback) {
-  callback.Run(false, SkBitmap());
+  CHECK(guest_);
+  guest_->CopyFromCompositingSurface(src_subrect, dst_size, callback);
 }
 
 void RenderWidgetHostViewGuest::CopyFromCompositingSurfaceToVideoFrame(
@@ -397,11 +439,12 @@ void RenderWidgetHostViewGuest::UnlockMouse() {
   return platform_view_->UnlockMouse();
 }
 
-void RenderWidgetHostViewGuest::GetScreenInfo(WebKit::WebScreenInfo* results) {
+void RenderWidgetHostViewGuest::GetScreenInfo(blink::WebScreenInfo* results) {
   RenderWidgetHostViewPort* embedder_view =
       RenderWidgetHostViewPort::FromRWHV(
           guest_->GetEmbedderRenderWidgetHostView());
-  embedder_view->GetScreenInfo(results);
+  if (embedder_view)
+    embedder_view->GetScreenInfo(results);
 }
 
 void RenderWidgetHostViewGuest::OnAccessibilityEvents(
@@ -499,6 +542,11 @@ void RenderWidgetHostViewGuest::WillWmDestroy() {
 void RenderWidgetHostViewGuest::SetParentNativeViewAccessible(
     gfx::NativeViewAccessible accessible_parent) {
 }
+
+gfx::NativeViewId RenderWidgetHostViewGuest::GetParentForWindowlessPlugin()
+    const {
+  return NULL;
+}
 #endif
 
 void RenderWidgetHostViewGuest::DestroyGuestView() {
@@ -507,21 +555,26 @@ void RenderWidgetHostViewGuest::DestroyGuestView() {
   base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
 
-bool RenderWidgetHostViewGuest::DispatchLongPressGestureEvent(
-    ui::GestureEvent* event) {
-  return ForwardGestureEventToRenderer(event);
+bool RenderWidgetHostViewGuest::CanDispatchToConsumer(
+    ui::GestureConsumer* consumer) {
+  CHECK_EQ(static_cast<RenderWidgetHostViewGuest*>(consumer), this);
+  return true;
 }
 
-bool RenderWidgetHostViewGuest::DispatchCancelTouchEvent(
+void RenderWidgetHostViewGuest::DispatchPostponedGestureEvent(
+    ui::GestureEvent* event) {
+  ForwardGestureEventToRenderer(event);
+}
+
+void RenderWidgetHostViewGuest::DispatchCancelTouchEvent(
     ui::TouchEvent* event) {
   if (!host_)
-    return false;
+    return;
 
-  WebKit::WebTouchEvent cancel_event;
-  cancel_event.type = WebKit::WebInputEvent::TouchCancel;
+  blink::WebTouchEvent cancel_event;
+  cancel_event.type = blink::WebInputEvent::TouchCancel;
   cancel_event.timeStampSeconds = event->time_stamp().InSecondsF();
   host_->ForwardTouchEventWithLatencyInfo(cancel_event, *event->latency());
-  return true;
 }
 
 bool RenderWidgetHostViewGuest::ForwardGestureEventToRenderer(
@@ -539,7 +592,7 @@ bool RenderWidgetHostViewGuest::ForwardGestureEventToRenderer(
     return true;
   }
 
-  WebKit::WebGestureEvent web_gesture =
+  blink::WebGestureEvent web_gesture =
       MakeWebGestureEventFromUIEvent(*gesture);
   const gfx::Point& client_point = gesture->location();
   const gfx::Point& screen_point = gesture->location();
@@ -549,9 +602,9 @@ bool RenderWidgetHostViewGuest::ForwardGestureEventToRenderer(
   web_gesture.globalX = screen_point.x();
   web_gesture.globalY = screen_point.y();
 
-  if (web_gesture.type == WebKit::WebGestureEvent::Undefined)
+  if (web_gesture.type == blink::WebGestureEvent::Undefined)
     return false;
-  if (web_gesture.type == WebKit::WebGestureEvent::GestureTapDown) {
+  if (web_gesture.type == blink::WebGestureEvent::GestureTapDown) {
     host_->ForwardGestureEvent(
         CreateFlingCancelEvent(gesture->time_stamp().InSecondsF()));
   }

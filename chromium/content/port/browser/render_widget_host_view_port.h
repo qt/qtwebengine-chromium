@@ -5,7 +5,9 @@
 #ifndef CONTENT_PORT_BROWSER_RENDER_WIDGET_HOST_VIEW_PORT_H_
 #define CONTENT_PORT_BROWSER_RENDER_WIDGET_HOST_VIEW_PORT_H_
 
+#include "base/basictypes.h"
 #include "base/callback.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/process/kill.h"
 #include "base/strings/string16.h"
 #include "cc/output/compositor_frame.h"
@@ -34,7 +36,7 @@ namespace media {
 class VideoFrame;
 }
 
-namespace WebKit {
+namespace blink {
 struct WebScreenInfo;
 }
 
@@ -42,6 +44,7 @@ namespace content {
 class BackingStore;
 class RenderWidgetHostViewFrameSubscriber;
 class SyntheticGesture;
+class SyntheticGestureTarget;
 struct WebPluginGeometry;
 struct NativeWebKeyboardEvent;
 
@@ -60,7 +63,7 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   static RenderWidgetHostViewPort* CreateViewForWidget(
       RenderWidgetHost* widget);
 
-  static void GetDefaultScreenInfo(WebKit::WebScreenInfo* results);
+  static void GetDefaultScreenInfo(blink::WebScreenInfo* results);
 
   // Perform all the initialization steps necessary for this object to represent
   // a popup (such as a <select> dropdown), then shows the popup at |pos|.
@@ -143,10 +146,10 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
 
   // Tells the View that the tooltip text for the current mouse position over
   // the page has changed.
-  virtual void SetTooltipText(const string16& tooltip_text) = 0;
+  virtual void SetTooltipText(const base::string16& tooltip_text) = 0;
 
   // Notifies the View that the renderer text selection has changed.
-  virtual void SelectionChanged(const string16& text,
+  virtual void SelectionChanged(const base::string16& text,
                                 size_t offset,
                                 const gfx::Range& range) = 0;
 
@@ -212,6 +215,8 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
 
   // Called when accelerated compositing state changes.
   virtual void OnAcceleratedCompositingStateChange() = 0;
+  // Called when an accelerated compositing surface is initialized.
+  virtual void AcceleratedSurfaceInitialized(int host_id, int route_id) = 0;
   // |params.window| and |params.surface_id| indicate which accelerated
   // surface's buffers swapped. |params.renderer_id| and |params.route_id|
   // are used to formulate a reply to the GPU process to prevent it from getting
@@ -241,7 +246,7 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
       uint32 output_surface_id,
       scoped_ptr<cc::CompositorFrame> frame) = 0;
 
-  virtual void GetScreenInfo(WebKit::WebScreenInfo* results) = 0;
+  virtual void GetScreenInfo(blink::WebScreenInfo* results) = 0;
 
   // The size of the view's backing surface in non-DPI-adjusted pixels.
   virtual gfx::Size GetPhysicalBackingSize() const = 0;
@@ -255,6 +260,9 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
 
   virtual gfx::GLSurfaceHandle GetCompositingSurface() = 0;
 
+  // Resize compositing surface.
+  virtual void ResizeCompositingSurface(const gfx::Size&) = 0;
+
   // Because the associated remote WebKit instance can asynchronously
   // prevent-default on a dispatched touch event, the touch events are queued in
   // the GestureRecognizer until invocation of ProcessAckedTouchEvent releases
@@ -263,30 +271,30 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   virtual void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                                       InputEventAckState ack_result) = 0;
 
-  // Asks the view to create a synthetic gesture that will be used to
-  // simulate a user-initiated scroll.
-  virtual SyntheticGesture* CreateSmoothScrollGesture(
-      bool scroll_down, int pixels_to_scroll, int mouse_event_x,
-      int mouse_event_y) = 0;
-
-  // Asks the view to create a synthetic gesture that will be used to
-  // simulate a user-initiated pinch-to-zoom.
-  virtual SyntheticGesture* CreatePinchGesture(
-      bool zoom_in, int pixels_to_move, int anchor_x, int anchor_y) = 0;
-
   virtual void SetHasHorizontalScrollbar(bool has_horizontal_scrollbar) = 0;
   virtual void SetScrollOffsetPinning(
       bool is_pinned_to_left, bool is_pinned_to_right) = 0;
 
   // Called when a mousewheel event was not processed by the renderer.
-  virtual void UnhandledWheelEvent(const WebKit::WebMouseWheelEvent& event) = 0;
+  virtual void UnhandledWheelEvent(const blink::WebMouseWheelEvent& event) = 0;
 
   // Called prior to forwarding input event messages to the renderer, giving
   // the view a chance to perform in-process event filtering or processing.
   // Return values of |NOT_CONSUMED| or |UNKNOWN| will result in |input_event|
   // being forwarded.
   virtual InputEventAckState FilterInputEvent(
-      const WebKit::WebInputEvent& input_event) = 0;
+      const blink::WebInputEvent& input_event) = 0;
+
+  // Called by the host when it requires an input flush; the flush call should
+  // by synchronized with BeginFrame.
+  virtual void OnSetNeedsFlushInput() = 0;
+
+  // Called by the host when the input flush has completed.
+  virtual void OnDidFlushInput() = 0;
+
+  // Create a platform specific SyntheticGestureTarget implementation that will
+  // be used to inject synthetic input events.
+  virtual scoped_ptr<SyntheticGestureTarget> CreateSyntheticGestureTarget() = 0;
 
   virtual void GestureEventAck(int gesture_event_type,
                                InputEventAckState ack_result) = 0;
@@ -294,8 +302,8 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   virtual void OnOverscrolled(gfx::Vector2dF accumulated_overscroll,
                               gfx::Vector2dF current_fling_velocity) = 0;
 
-  virtual void SetPopupType(WebKit::WebPopupType popup_type) = 0;
-  virtual WebKit::WebPopupType GetPopupType() = 0;
+  virtual void SetPopupType(blink::WebPopupType popup_type) = 0;
+  virtual blink::WebPopupType GetPopupType() = 0;
 
   virtual BrowserAccessibilityManager*
       GetBrowserAccessibilityManager() const = 0;
@@ -334,6 +342,10 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
 #if defined(OS_WIN) && defined(USE_AURA)
   virtual void SetParentNativeViewAccessible(
       gfx::NativeViewAccessible accessible_parent) = 0;
+
+  // Returns an HWND that's given as the parent window for windowless Flash to
+  // workaround crbug.com/301548.
+  virtual gfx::NativeViewId GetParentForWindowlessPlugin() const = 0;
 #endif
 };
 

@@ -22,4 +22,3 @@ interface HTMLLegendElement : HTMLElement {
     readonly attribute HTMLFormElement form;
     [Reflect] attribute DOMString align;
 };
-

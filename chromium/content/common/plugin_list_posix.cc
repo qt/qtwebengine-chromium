@@ -108,7 +108,7 @@ bool IsBlacklistedBySha1sumAndQuirks(const base::FilePath& path) {
   };
 
   int64 size;
-  if (!file_util::GetFileSize(path, &size))
+  if (!base::GetFileSize(path, &size))
     return false;
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(bad_entries); i++) {
     if (bad_entries[i].size != size)
@@ -174,14 +174,14 @@ bool ELFMatchesCurrentArchitecture(const base::FilePath& filename) {
   if (fd < 0)
     return false;
   bool ret = (fstat(fd, &stat_buf) >= 0 && S_ISREG(stat_buf.st_mode));
-  if (HANDLE_EINTR(close(fd)) < 0)
+  if (IGNORE_EINTR(close(fd)) < 0)
     return false;
   if (!ret)
     return false;
 
   const size_t kELFBufferSize = 5;
   char buffer[kELFBufferSize];
-  if (!file_util::ReadFile(filename, buffer, kELFBufferSize))
+  if (!base::ReadFile(filename, buffer, kELFBufferSize))
     return false;
 
   if (buffer[0] != ELFMAG0 ||
@@ -465,7 +465,7 @@ void PluginList::GetPluginDirectories(std::vector<base::FilePath>* plugin_dirs) 
   // 2) NS_USER_PLUGINS_DIR: ~/.mozilla/plugins.
   // This is a de-facto standard, so even though we're not Mozilla, let's
   // look in there too.
-  base::FilePath home = file_util::GetHomeDir();
+  base::FilePath home = base::GetHomeDir();
   if (!home.empty())
     plugin_dirs->push_back(home.Append(".mozilla/plugins"));
 
@@ -546,7 +546,7 @@ void PluginList::GetPluginsInDir(
 
     // Get mtime.
     base::PlatformFileInfo info;
-    if (!file_util::GetFileInfo(path, &info))
+    if (!base::GetFileInfo(path, &info))
       continue;
 
     files.push_back(std::make_pair(path, info.last_modified));

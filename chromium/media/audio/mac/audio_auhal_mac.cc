@@ -7,28 +7,13 @@
 #include <CoreServices/CoreServices.h>
 
 #include "base/basictypes.h"
-#include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/mac/mac_logging.h"
-#include "media/audio/audio_util.h"
 #include "media/audio/mac/audio_manager_mac.h"
-#include "media/base/media_switches.h"
+#include "media/base/audio_pull_fifo.h"
 
 namespace media {
-
-static std::ostream& operator<<(std::ostream& os,
-                                const AudioStreamBasicDescription& format) {
-  os << "sample rate       : " << format.mSampleRate << std::endl
-     << "format ID         : " << format.mFormatID << std::endl
-     << "format flags      : " << format.mFormatFlags << std::endl
-     << "bytes per packet  : " << format.mBytesPerPacket << std::endl
-     << "frames per packet : " << format.mFramesPerPacket << std::endl
-     << "bytes per frame   : " << format.mBytesPerFrame << std::endl
-     << "channels per frame: " << format.mChannelsPerFrame << std::endl
-     << "bits per channel  : " << format.mBitsPerChannel;
-  return os;
-}
 
 static void ZeroBufferList(AudioBufferList* buffer_list) {
   for (size_t i = 0; i < buffer_list->mNumberBuffers; ++i) {
@@ -45,7 +30,7 @@ static void WrapBufferList(AudioBufferList* buffer_list,
   DCHECK(bus);
   const int channels = bus->channels();
   const int buffer_list_channels = buffer_list->mNumberBuffers;
-  DCHECK_EQ(channels, buffer_list_channels);
+  CHECK_EQ(channels, buffer_list_channels);
 
   // Copy pointers from AudioBufferList.
   for (int i = 0; i < channels; ++i) {
@@ -72,8 +57,8 @@ AUHALStream::AUHALStream(
       volume_(1),
       hardware_latency_frames_(0),
       stopped_(false),
-      notified_for_possible_device_change_(false),
-      input_buffer_list_(NULL) {
+      input_buffer_list_(NULL),
+      current_hardware_pending_bytes_(0) {
   // We must have a manager.
   DCHECK(manager_);
 
@@ -143,8 +128,12 @@ void AUHALStream::Close() {
   }
 
   if (audio_unit_) {
-    AudioUnitUninitialize(audio_unit_);
-    AudioComponentInstanceDispose(audio_unit_);
+    OSStatus result = AudioUnitUninitialize(audio_unit_);
+    OSSTATUS_DLOG_IF(ERROR, result != noErr, result)
+        << "AudioUnitUninitialize() failed.";
+    result = AudioComponentInstanceDispose(audio_unit_);
+    OSSTATUS_DLOG_IF(ERROR, result != noErr, result)
+        << "AudioComponentInstanceDispose() failed.";
   }
 
   // Inform the audio manager that we have been closed. This will cause our
@@ -160,20 +149,30 @@ void AUHALStream::Start(AudioSourceCallback* callback) {
   }
 
   stopped_ = false;
-  notified_for_possible_device_change_ = false;
+  audio_fifo_.reset();
   {
     base::AutoLock auto_lock(source_lock_);
     source_ = callback;
   }
 
-  AudioOutputUnitStart(audio_unit_);
+  OSStatus result = AudioOutputUnitStart(audio_unit_);
+  if (result == noErr)
+    return;
+
+  Stop();
+  OSSTATUS_DLOG(ERROR, result) << "AudioOutputUnitStart() failed.";
+  callback->OnError(this);
 }
 
 void AUHALStream::Stop() {
   if (stopped_)
     return;
 
-  AudioOutputUnitStop(audio_unit_);
+  OSStatus result = AudioOutputUnitStop(audio_unit_);
+  OSSTATUS_DLOG_IF(ERROR, result != noErr, result)
+      << "AudioOutputUnitStop() failed.";
+  if (result != noErr)
+    source_->OnError(this);
 
   base::AutoLock auto_lock(source_lock_);
   source_ = NULL;
@@ -200,73 +199,69 @@ OSStatus AUHALStream::Render(
     AudioBufferList* io_data) {
   TRACE_EVENT0("audio", "AUHALStream::Render");
 
+  // If the stream parameters change for any reason, we need to insert a FIFO
+  // since the OnMoreData() pipeline can't handle frame size changes.  Generally
+  // this is a temporary situation which can occur after a device change has
+  // occurred but the AudioManager hasn't received the notification yet.
   if (number_of_frames != number_of_frames_) {
-    // This can happen if we've suddenly changed sample-rates.
-    // The stream should be stopping very soon.
-    //
-    // Unfortunately AUAudioInputStream and AUHALStream share the frame
-    // size set by kAudioDevicePropertyBufferFrameSize above on a per process
-    // basis.  What this means is that the |number_of_frames| value may be
-    // larger or smaller than the value set during ConfigureAUHAL().
-    // In this case either audio input or audio output will be broken,
-    // so just output silence.
-    ZeroBufferList(io_data);
-
-    // In case we missed a device notification, notify the AudioManager that the
-    // device has changed.  HandleDeviceChanges() will check to make sure the
-    // device has actually changed before taking any action.
-    if (!notified_for_possible_device_change_) {
-      notified_for_possible_device_change_ = true;
-      manager_->GetMessageLoop()->PostTask(FROM_HERE, base::Bind(
-          &AudioManagerMac::HandleDeviceChanges, base::Unretained(manager_)));
+    // Create a FIFO on the fly to handle any discrepancies in callback rates.
+    if (!audio_fifo_) {
+      VLOG(1) << "Audio frame size change detected; adding FIFO to compensate.";
+      audio_fifo_.reset(new AudioPullFifo(
+          output_channels_,
+          number_of_frames_,
+          base::Bind(&AUHALStream::ProvideInput, base::Unretained(this))));
     }
 
-    return noErr;
-  }
-
-  if (input_channels_ > 0 && input_buffer_list_) {
-    // Get the input data.  |input_buffer_list_| is wrapped
-    // to point to the data allocated in |input_bus_|.
-    OSStatus result = AudioUnitRender(
-        audio_unit_,
-        flags,
-        output_time_stamp,
-        1,
-        number_of_frames,
-        input_buffer_list_);
-    if (result != noErr)
-      ZeroBufferList(input_buffer_list_);
+    // Synchronous IO is not supported in this state.
+    if (input_channels_ > 0)
+      input_bus_->Zero();
+  } else {
+    if (input_channels_ > 0 && input_buffer_list_) {
+      // Get the input data.  |input_buffer_list_| is wrapped
+      // to point to the data allocated in |input_bus_|.
+      OSStatus result = AudioUnitRender(audio_unit_,
+                                        flags,
+                                        output_time_stamp,
+                                        1,
+                                        number_of_frames,
+                                        input_buffer_list_);
+      if (result != noErr)
+        ZeroBufferList(input_buffer_list_);
+    }
   }
 
   // Make |output_bus_| wrap the output AudioBufferList.
   WrapBufferList(io_data, output_bus_.get(), number_of_frames);
 
   // Update the playout latency.
-  double playout_latency_frames = GetPlayoutLatency(output_time_stamp);
+  const double playout_latency_frames = GetPlayoutLatency(output_time_stamp);
+  current_hardware_pending_bytes_ = static_cast<uint32>(
+      (playout_latency_frames + 0.5) * params_.GetBytesPerFrame());
 
-  uint32 hardware_pending_bytes = static_cast<uint32>
-      ((playout_latency_frames + 0.5) * output_format_.mBytesPerFrame);
-
-  {
-    // Render() shouldn't be called except between AudioOutputUnitStart() and
-    // AudioOutputUnitStop() calls, but crash reports have shown otherwise:
-    // http://crbug.com/178765.  We use |source_lock_| to prevent races and
-    // crashes in Render() when |source_| is cleared.
-    base::AutoLock auto_lock(source_lock_);
-    if (!source_) {
-      ZeroBufferList(io_data);
-      return noErr;
-    }
-
-    // Supply the input data and render the output data.
-    source_->OnMoreIOData(
-        input_bus_.get(),
-        output_bus_.get(),
-        AudioBuffersState(0, hardware_pending_bytes));
-    output_bus_->Scale(volume_);
-  }
+  if (audio_fifo_)
+    audio_fifo_->Consume(output_bus_.get(), output_bus_->frames());
+  else
+    ProvideInput(0, output_bus_.get());
 
   return noErr;
+}
+
+void AUHALStream::ProvideInput(int frame_delay, AudioBus* dest) {
+  base::AutoLock auto_lock(source_lock_);
+  if (!source_) {
+    dest->Zero();
+    return;
+  }
+
+  // Supply the input data and render the output data.
+  source_->OnMoreIOData(
+      input_bus_.get(),
+      dest,
+      AudioBuffersState(0,
+                        current_hardware_pending_bytes_ +
+                            frame_delay * params_.GetBytesPerFrame()));
+  dest->Scale(volume_);
 }
 
 // AUHAL callback.
@@ -453,7 +448,7 @@ bool AUHALStream::ConfigureAUHAL() {
 
   OSStatus result = AudioComponentInstanceNew(comp, &audio_unit_);
   if (result != noErr) {
-    OSSTATUS_DLOG(WARNING, result) << "AudioComponentInstanceNew() failed.";
+    OSSTATUS_DLOG(ERROR, result) << "AudioComponentInstanceNew() failed.";
     return false;
   }
 
@@ -511,7 +506,7 @@ bool AUHALStream::ConfigureAUHAL() {
       &buffer_size,
       sizeof(buffer_size));
   if (result != noErr) {
-    OSSTATUS_DLOG(WARNING, result)
+    OSSTATUS_DLOG(ERROR, result)
         << "AudioUnitSetProperty(kAudioDevicePropertyBufferFrameSize) failed.";
     return false;
   }
@@ -532,7 +527,7 @@ bool AUHALStream::ConfigureAUHAL() {
 
   result = AudioUnitInitialize(audio_unit_);
   if (result != noErr) {
-    OSSTATUS_DLOG(WARNING, result) << "AudioUnitInitialize() failed.";
+    OSSTATUS_DLOG(ERROR, result) << "AudioUnitInitialize() failed.";
     return false;
   }
 

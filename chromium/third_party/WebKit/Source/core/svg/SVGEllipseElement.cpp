@@ -22,7 +22,6 @@
 
 #include "core/svg/SVGEllipseElement.h"
 
-#include "SVGNames.h"
 #include "core/rendering/svg/RenderSVGEllipse.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/svg/SVGElementInstance.h"
@@ -46,28 +45,26 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGEllipseElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGEllipseElement::SVGEllipseElement(const QualifiedName& tagName, Document& document)
-    : SVGGraphicsElement(tagName, document)
+inline SVGEllipseElement::SVGEllipseElement(Document& document)
+    : SVGGeometryElement(SVGNames::ellipseTag, document)
     , m_cx(LengthModeWidth)
     , m_cy(LengthModeHeight)
     , m_rx(LengthModeWidth)
     , m_ry(LengthModeHeight)
 {
-    ASSERT(hasTagName(SVGNames::ellipseTag));
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGEllipseElement();
 }
 
-PassRefPtr<SVGEllipseElement> SVGEllipseElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGEllipseElement> SVGEllipseElement::create(Document& document)
 {
-    return adoptRef(new SVGEllipseElement(tagName, document));
+    return adoptRef(new SVGEllipseElement(document));
 }
 
 bool SVGEllipseElement::isSupportedAttribute(const QualifiedName& attrName)
 {
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty()) {
-        SVGLangSpace::addSupportedAttributes(supportedAttributes);
         SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::cxAttr);
         supportedAttributes.add(SVGNames::cyAttr);
@@ -82,7 +79,7 @@ void SVGEllipseElement::parseAttribute(const QualifiedName& name, const AtomicSt
     SVGParsingError parseError = NoError;
 
     if (!isSupportedAttribute(name))
-        SVGGraphicsElement::parseAttribute(name, value);
+        SVGGeometryElement::parseAttribute(name, value);
     else if (name == SVGNames::cxAttr)
         setCxBaseValue(SVGLength::construct(LengthModeWidth, value, parseError));
     else if (name == SVGNames::cyAttr)
@@ -91,8 +88,7 @@ void SVGEllipseElement::parseAttribute(const QualifiedName& name, const AtomicSt
         setRxBaseValue(SVGLength::construct(LengthModeWidth, value, parseError, ForbidNegativeLengths));
     else if (name == SVGNames::ryAttr)
         setRyBaseValue(SVGLength::construct(LengthModeHeight, value, parseError, ForbidNegativeLengths));
-    else if (SVGLangSpace::parseAttribute(name, value)
-             || SVGExternalResourcesRequired::parseAttribute(name, value)) {
+    else if (SVGExternalResourcesRequired::parseAttribute(name, value)) {
     } else
         ASSERT_NOT_REACHED();
 
@@ -102,7 +98,7 @@ void SVGEllipseElement::parseAttribute(const QualifiedName& name, const AtomicSt
 void SVGEllipseElement::svgAttributeChanged(const QualifiedName& attrName)
 {
     if (!isSupportedAttribute(attrName)) {
-        SVGGraphicsElement::svgAttributeChanged(attrName);
+        SVGGeometryElement::svgAttributeChanged(attrName);
         return;
     }
 
@@ -126,7 +122,7 @@ void SVGEllipseElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    if (SVGLangSpace::isKnownAttribute(attrName) || SVGExternalResourcesRequired::isKnownAttribute(attrName)) {
+    if (SVGExternalResourcesRequired::isKnownAttribute(attrName)) {
         RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);
         return;
     }

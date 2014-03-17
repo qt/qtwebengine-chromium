@@ -16,7 +16,6 @@
 #include "build/build_config.h"
 #include "content/child/child_thread.h"
 #include "content/public/common/pepper_plugin_info.h"
-#include "ipc/ipc_listener.h"
 #include "ppapi/c/pp_module.h"
 #include "ppapi/c/trusted/ppp_broker.h"
 #include "ppapi/proxy/connection.h"
@@ -62,22 +61,6 @@ class PpapiThread : public ChildThread,
     LOAD_RESULT_MAX  // Boundary value for UMA_HISTOGRAM_ENUMERATION.
   };
 
-  // This class finds the target PluginDispatcher for each message it receives
-  // and forwards the message.
-  class DispatcherMessageListener : public IPC::Listener {
-   public:
-    explicit DispatcherMessageListener(PpapiThread* owner);
-    virtual ~DispatcherMessageListener();
-
-    // IPC::Listener implementation.
-    virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
-
-   private:
-    PpapiThread* owner_;
-
-    DISALLOW_COPY_AND_ASSIGN(DispatcherMessageListener);
-  };
-
   // ChildThread overrides.
   virtual bool Send(IPC::Message* msg) OVERRIDE;
   virtual bool OnControlMessageReceived(const IPC::Message& msg) OVERRIDE;
@@ -110,13 +93,11 @@ class PpapiThread : public ChildThread,
 
   // Message handlers.
   void OnLoadPlugin(const base::FilePath& path,
-                    const ppapi::PpapiPermissions& permissions);
+                    const ppapi::PpapiPermissions& permissions,
+                    bool supports_dev_channel);
   void OnCreateChannel(base::ProcessId renderer_pid,
                        int renderer_child_id,
                        bool incognito);
-  void OnResourceReply(
-      const ppapi::proxy::ResourceMessageReplyParams& reply_params,
-      const IPC::Message& nested_msg);
   void OnSetNetworkState(bool online);
   void OnCrash();
   void OnHang();
@@ -172,8 +153,6 @@ class PpapiThread : public ChildThread,
   // Caches the handle to the peer process if this is a broker.
   base::win::ScopedHandle peer_handle_;
 #endif
-
-  DispatcherMessageListener dispatcher_message_listener_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(PpapiThread);
 };

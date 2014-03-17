@@ -10,6 +10,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "ui/base/models/combobox_model.h"
 #include "ui/base/ui_base_paths.h"
+#include "ui/views/background.h"
 #include "ui/views/controls/combobox/combobox.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/examples/bubble_example.h"
@@ -79,7 +80,11 @@ class ExamplesWindowContents : public WidgetDelegateView,
     instance_ = this;
     combobox_->set_listener(this);
   }
-  virtual ~ExamplesWindowContents() {}
+  virtual ~ExamplesWindowContents() {
+    // Delete |combobox_| first as it references |combobox_model_|.
+    delete combobox_;
+    combobox_ = NULL;
+  }
 
   // Prints a message in the status area, at the bottom of the window.
   void SetStatus(const std::string& status) {

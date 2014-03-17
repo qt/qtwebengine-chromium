@@ -40,7 +40,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 class DOMActivityLoggerContainer : public V8DOMActivityLogger {
 public:
@@ -51,10 +51,6 @@ public:
 
     virtual void log(const String& apiName, int argc, const v8::Handle<v8::Value>* argv, const String& extraInfo) OVERRIDE
     {
-        // FIXME: Delete the first call once matching changes to chromium have
-        // landed.
-        m_domActivityLogger->log(WebString(apiName), argc, argv, WebString(extraInfo));
-
         KURL url;
         String title;
         if (Document* document = currentDocument()) {
@@ -79,4 +75,4 @@ void setDOMActivityLogger(int worldId, WebDOMActivityLogger* logger)
     DOMWrapperWorld::setActivityLogger(worldId, adoptPtr(new DOMActivityLoggerContainer(adoptPtr(logger))));
 }
 
-} // namespace WebKit
+} // namespace blink

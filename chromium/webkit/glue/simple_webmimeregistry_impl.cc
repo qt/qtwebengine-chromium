@@ -11,8 +11,8 @@
 #include "net/base/mime_util.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 
-using WebKit::WebString;
-using WebKit::WebMimeRegistry;
+using blink::WebString;
+using blink::WebMimeRegistry;
 
 namespace webkit_glue {
 
@@ -42,12 +42,6 @@ WebMimeRegistry::SupportsType
 
 // When debugging layout tests failures in the test shell,
 // see TestShellWebMimeRegistryImpl.
-WebMimeRegistry::SupportsType SimpleWebMimeRegistryImpl::supportsMediaMIMEType(
-    const WebString& mime_type, const WebString& codecs) {
-  // Media features are only supported at the content/ layer.
-  return IsNotSupported;
-}
-
 WebMimeRegistry::SupportsType SimpleWebMimeRegistryImpl::supportsMediaMIMEType(
     const WebString& mime_type,
     const WebString& codecs,

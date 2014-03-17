@@ -77,12 +77,20 @@ int UDPServerSocket::LeaveGroup(const IPAddressNumber& group_address) const {
   return socket_.LeaveGroup(group_address);
 }
 
+int UDPServerSocket::SetMulticastInterface(uint32 interface_index) {
+  return socket_.SetMulticastInterface(interface_index);
+}
+
 int UDPServerSocket::SetMulticastTimeToLive(int time_to_live) {
   return socket_.SetMulticastTimeToLive(time_to_live);
 }
 
 int UDPServerSocket::SetMulticastLoopbackMode(bool loopback) {
   return socket_.SetMulticastLoopbackMode(loopback);
+}
+
+int UDPServerSocket::SetDiffServCodePoint(DiffServCodePoint dscp) {
+  return socket_.SetDiffServCodePoint(dscp);
 }
 
 }  // namespace net

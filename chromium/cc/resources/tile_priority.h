@@ -75,25 +75,8 @@ struct CC_EXPORT TilePriority {
       std::min(active.distance_to_visible_in_pixels,
                pending.distance_to_visible_in_pixels);
   }
-  void set_current_screen_quad(const gfx::QuadF& q) { current_screen_quad = q; }
 
   scoped_ptr<base::Value> AsValue() const;
-
-  static inline float manhattanDistance(const gfx::RectF& a,
-                                        const gfx::RectF& b) {
-    // Compute the union explicitly.
-    gfx::RectF c = gfx::RectF(
-        std::min(a.x(), b.x()),
-        std::min(a.y(), b.y()),
-        std::max(a.right(), b.right()) - std::min(a.x(), b.x()),
-        std::max(a.bottom(), b.bottom()) - std::min(a.y(), b.y()));
-
-    // Rects touching the edge of the screen should not be considered visible.
-    // So we add 1 pixel here to avoid that situation.
-    float x = std::max(0.0f, c.width() - a.width() - b.width() + 1.0f);
-    float y = std::max(0.0f, c.height() - a.height() - b.height() + 1.0f);
-    return (x + y);
-  }
 
   // Calculate the time for the |current_bounds| to intersect with the
   // |target_bounds| given its previous location and time delta.
@@ -108,8 +91,6 @@ struct CC_EXPORT TilePriority {
         time_to_visible_in_seconds == other.time_to_visible_in_seconds &&
         distance_to_visible_in_pixels == other.distance_to_visible_in_pixels &&
         required_for_activation == other.required_for_activation;
-    // No need to compare current_screen_quad which is for debug only and
-    // never changes by itself.
   }
 
   bool operator !=(const TilePriority& other) const {
@@ -120,9 +101,6 @@ struct CC_EXPORT TilePriority {
   bool required_for_activation;
   float time_to_visible_in_seconds;
   float distance_to_visible_in_pixels;
-
- private:
-  gfx::QuadF current_screen_quad;
 };
 
 enum TileMemoryLimitPolicy {
@@ -171,6 +149,17 @@ class GlobalStateThatImpactsTilePriority {
   size_t num_resources_limit;
 
   TreePriority tree_priority;
+
+  bool operator==(const GlobalStateThatImpactsTilePriority& other) const {
+    return memory_limit_policy == other.memory_limit_policy
+        && memory_limit_in_bytes == other.memory_limit_in_bytes
+        && unused_memory_limit_in_bytes == other.unused_memory_limit_in_bytes
+        && num_resources_limit == other.num_resources_limit
+        && tree_priority == other.tree_priority;
+  }
+  bool operator!=(const GlobalStateThatImpactsTilePriority& other) const {
+    return !(*this == other);
+  }
 
   scoped_ptr<base::Value> AsValue() const;
 };

@@ -52,6 +52,10 @@ GLImageGLX::GLImageGLX(gfx::PluginWindowHandle window)
     glx_pixmap_(0) {
 }
 
+GLImageGLX::~GLImageGLX() {
+  Destroy();
+}
+
 bool GLImageGLX::Initialize() {
   if (!GLSurfaceGLX::IsTextureFromPixmapSupported()) {
     LOG(ERROR) << "GLX_EXT_texture_from_pixmap not supported.";
@@ -155,23 +159,29 @@ gfx::Size GLImageGLX::GetSize() {
   return size_;
 }
 
-bool GLImageGLX::BindTexImage() {
+bool GLImageGLX::BindTexImage(unsigned target) {
   if (!glx_pixmap_)
+    return false;
+
+  // Requires TEXTURE_2D target.
+  if (target != GL_TEXTURE_2D)
     return false;
 
   glXBindTexImageEXT(display_, glx_pixmap_, GLX_FRONT_LEFT_EXT, 0);
   return true;
 }
 
-void GLImageGLX::ReleaseTexImage() {
-  if (!glx_pixmap_)
-    return;
+void GLImageGLX::ReleaseTexImage(unsigned target) {
+  DCHECK(glx_pixmap_);
+  DCHECK_EQ(static_cast<GLenum>(GL_TEXTURE_2D), target);
 
   glXReleaseTexImageEXT(display_, glx_pixmap_, GLX_FRONT_LEFT_EXT);
 }
 
-GLImageGLX::~GLImageGLX() {
-  Destroy();
+void GLImageGLX::WillUseTexImage() {
+}
+
+void GLImageGLX::DidUseTexImage() {
 }
 
 }  // namespace gfx

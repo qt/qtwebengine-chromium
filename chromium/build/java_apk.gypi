@@ -48,7 +48,12 @@
 #    strings.xml files, if any.
 #  library_manifest_paths'- Paths to additional AndroidManifest.xml files from
 #    libraries.
-
+#  use_content_linker - Enable the content dynamic linker that allows sharing the
+#    RELRO section of the native libraries between the different processes.
+#  enable_content_linker_tests - Enable the content dynamic linker test support
+#    code. This allows a test APK to inject a Linker.TestRunner instance at
+#    runtime. Should only be used by the content_linker_test_apk target!!
+#  never_lint - Set to 1 to not run lint on this target.
 {
   'variables': {
     'additional_input_paths': [],
@@ -85,8 +90,12 @@
     'native_libraries_java_stamp': '<(intermediate_dir)/native_libraries_java.stamp',
     'native_libraries_template_data_dir': '<(intermediate_dir)/native_libraries/',
     'native_libraries_template_data_file': '<(native_libraries_template_data_dir)/native_libraries_array.h',
-    'native_libraries_template_data_stamp': '<(intermediate_dir)/native_libraries_template_data.stamp',
+    'native_libraries_template_version_file': '<(native_libraries_template_data_dir)/native_libraries_version.h',
     'compile_stamp': '<(intermediate_dir)/compile.stamp',
+    'lint_stamp': '<(intermediate_dir)/lint.stamp',
+    'lint_result': '<(intermediate_dir)/lint_result.xml',
+    'lint_config': '<(intermediate_dir)/lint_config.xml',
+    'never_lint%': 0,
     'instr_stamp': '<(intermediate_dir)/instr.stamp',
     'jar_stamp': '<(intermediate_dir)/jar.stamp',
     'obfuscate_stamp': '<(intermediate_dir)/obfuscate.stamp',
@@ -116,6 +125,10 @@
     'variables': {
       'variables': {
         'native_lib_target%': '',
+        'native_lib_version_name%': '',
+        'use_content_linker%': 0,
+        'enable_content_linker_tests%': 0,
+        'is_test_apk%': 0,
       },
       'conditions': [
         ['gyp_managed_install == 1 and native_lib_target != ""', {
@@ -128,10 +141,18 @@
         }, {
           'apk_package_native_libs_dir': '<(intermediate_dir)/libs',
         }],
+        ['is_test_apk == 0 and emma_coverage != 0', {
+          'emma_instrument': 1,
+        },{
+          'emma_instrument': 0,
+        }],
       ],
     },
     'native_lib_target%': '',
-    'emma_instrument': '<(emma_coverage)',
+    'native_lib_version_name%': '',
+    'use_content_linker%': 0,
+    'enable_content_linker_tests%': 0,
+    'emma_instrument': '<(emma_instrument)',
     'apk_package_native_libs_dir': '<(apk_package_native_libs_dir)',
     'unsigned_standalone_apk_path': '<(unsigned_standalone_apk_path)',
     'extra_native_libs': [],
@@ -164,6 +185,11 @@
         '<(DEPTH)/build/android/setup.gyp:copy_system_libraries',
       ],
     }],
+    ['use_content_linker == 1', {
+      'dependencies': [
+        '<(DEPTH)/content/content.gyp:content_android_linker',
+      ],
+    }],
     ['native_lib_target != ""', {
       'variables': {
         'compile_input_paths': [ '<(native_libraries_java_stamp)' ],
@@ -190,38 +216,85 @@
       'actions': [
         {
           'variables': {
+            'conditions': [
+              ['use_content_linker == 1', {
+                'variables': {
+                  'linker_input_libraries': [
+                    '<(SHARED_LIB_DIR)/libcontent_android_linker.>(android_product_extension)',
+                  ],
+                }
+              }, {
+                'variables': {
+                  'linker_input_libraries': [],
+                },
+              }],
+            ],
             'input_libraries': [
               '<@(native_libs_paths)',
               '<@(extra_native_libs)',
+              '<@(linker_input_libraries)',
             ],
           },
           'includes': ['../build/android/write_ordered_libraries.gypi'],
         },
         {
           'action_name': 'native_libraries_template_data_<(_target_name)',
-          'message': 'Creating native_libraries_list.h for <(_target_name).',
+          'message': 'Creating native_libraries_list.h for <(_target_name)',
           'inputs': [
             '<(DEPTH)/build/android/gyp/util/build_utils.py',
             '<(DEPTH)/build/android/gyp/create_native_libraries_header.py',
             '<(ordered_libraries_file)',
           ],
           'outputs': [
-            '<(native_libraries_template_data_stamp)',
+            '<(native_libraries_template_data_file)',
+            '<(native_libraries_template_version_file)',
           ],
           'action': [
             'python', '<(DEPTH)/build/android/gyp/create_native_libraries_header.py',
             '--ordered-libraries=<(ordered_libraries_file)',
-            '--output=<(native_libraries_template_data_file)',
-            '--stamp=<(native_libraries_template_data_stamp)',
+            '--version-name=<(native_lib_version_name)',
+            '--native-library-list=<(native_libraries_template_data_file)',
+            '--version-output=<(native_libraries_template_version_file)',
           ],
         },
         {
           'action_name': 'native_libraries_<(_target_name)',
+          'variables': {
+            'conditions': [
+              ['use_content_linker == 1', {
+                'variables': {
+                  'linker_gcc_preprocess_defines': [
+                    '--defines', 'ENABLE_CONTENT_LINKER',
+                  ],
+                }
+              }, {
+                'variables': {
+                  'linker_gcc_preprocess_defines': [],
+                },
+              }],
+              ['enable_content_linker_tests == 1', {
+                'variables': {
+                  'linker_tests_gcc_preprocess_defines': [
+                    '--defines', 'ENABLE_CONTENT_LINKER_TESTS',
+                  ],
+                }
+              }, {
+                'variables': {
+                  'linker_tests_gcc_preprocess_defines': [],
+                },
+              }],
+            ],
+            'gcc_preprocess_defines': [
+              '<@(linker_gcc_preprocess_defines)',
+              '<@(linker_tests_gcc_preprocess_defines)',
+            ],
+          },
           'message': 'Creating NativeLibraries.java for <(_target_name).',
           'inputs': [
             '<(DEPTH)/build/android/gyp/util/build_utils.py',
             '<(DEPTH)/build/android/gyp/gcc_preprocess.py',
-            '<(native_libraries_template_data_stamp)',
+            '<(native_libraries_template_data_file)',
+            '<(native_libraries_template_version_file)',
             '<(native_libraries_template)',
           ],
           'outputs': [
@@ -233,6 +306,7 @@
             '--output=<(native_libraries_java_file)',
             '--template=<(native_libraries_template)',
             '--stamp=<(native_libraries_java_stamp)',
+            '<@(gcc_preprocess_defines)',
           ],
         },
         {
@@ -483,6 +557,24 @@
       ],
     },
     {
+      'variables': {
+        'src_dirs': [
+          '<(java_in_dir)/src',
+          '>@(additional_src_dirs)',
+        ],
+        'stamp_path': '<(lint_stamp)',
+        'result_path': '<(lint_result)',
+        'config_path': '<(lint_config)',
+      },
+      'inputs': [
+        '<(compile_stamp)',
+      ],
+      'outputs': [
+        '<(lint_stamp)',
+      ],
+      'includes': [ 'android/lint_action.gypi' ],
+    },
+    {
       'action_name': 'instr_classes_<(_target_name)',
       'message': 'Instrumenting <(_target_name) classes',
       'variables': {
@@ -491,11 +583,11 @@
         'stamp_path': '<(instr_stamp)',
         'instr_type': 'classes',
       },
-      'outputs': [
-        '<(instr_stamp)',
-      ],
       'inputs': [
         '<(compile_stamp)',
+      ],
+      'outputs': [
+        '<(instr_stamp)',
       ],
       'includes': [ 'android/instr_action.gypi' ],
     },

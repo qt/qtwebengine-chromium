@@ -4,18 +4,6 @@
 
 #include "printing/backend/print_backend.h"
 
-#include <algorithm>
-
-#include "third_party/icu/source/common/unicode/uchar.h"
-#include "ui/gfx/text_elider.h"
-
-namespace {
-
-const wchar_t kDefaultDocumentTitle[] = L"Untitled Document";
-const int kMaxDocumentTitleLength = 50;
-
-}  // namespace
-
 namespace printing {
 
 PrinterBasicInfo::PrinterBasicInfo()
@@ -37,15 +25,5 @@ PrinterCapsAndDefaults::PrinterCapsAndDefaults() {}
 PrinterCapsAndDefaults::~PrinterCapsAndDefaults() {}
 
 PrintBackend::~PrintBackend() {}
-
-string16 PrintBackend::SimplifyDocumentTitle(const string16& title) {
-  string16 no_controls(title);
-  no_controls.erase(
-    std::remove_if(no_controls.begin(), no_controls.end(), &u_iscntrl),
-    no_controls.end());
-  string16 result;
-  gfx::ElideString(no_controls, kMaxDocumentTitleLength, &result);
-  return result;
-}
 
 }  // namespace printing

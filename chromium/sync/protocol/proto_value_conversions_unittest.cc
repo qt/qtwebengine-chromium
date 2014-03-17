@@ -53,7 +53,7 @@ TEST_F(ProtoValueConversionsTest, ProtoChangeCheck) {
   // If this number changes, that means we added or removed a data
   // type.  Don't forget to add a unit test for {New
   // type}SpecificsToValue below.
-  EXPECT_EQ(28, MODEL_TYPE_COUNT);
+  EXPECT_EQ(30, MODEL_TYPE_COUNT);
 
   // We'd also like to check if we changed any field in our messages.
   // However, that's hard to do: sizeof could work, but it's
@@ -91,6 +91,10 @@ TEST_F(ProtoValueConversionsTest, PasswordSpecificsData) {
   std::string password_value;
   EXPECT_TRUE(value->GetString("password_value", &password_value));
   EXPECT_EQ("<redacted>", password_value);
+}
+
+TEST_F(ProtoValueConversionsTest, AppListSpecificsToValue) {
+  TestSpecificsToValue(AppListSpecificsToValue);
 }
 
 TEST_F(ProtoValueConversionsTest, AppNotificationToValue) {
@@ -133,6 +137,13 @@ TEST_F(ProtoValueConversionsTest, BookmarkSpecificsData) {
   sync_pb::BookmarkSpecifics specifics;
   specifics.set_creation_time_us(creation_time.ToInternalValue());
   specifics.set_icon_url(icon_url);
+  sync_pb::MetaInfo* meta_1 = specifics.add_meta_info();
+  meta_1->set_key("key1");
+  meta_1->set_value("value1");
+  sync_pb::MetaInfo* meta_2 = specifics.add_meta_info();
+  meta_2->set_key("key2");
+  meta_2->set_value("value2");
+
   scoped_ptr<base::DictionaryValue> value(BookmarkSpecificsToValue(specifics));
   EXPECT_FALSE(value->empty());
   std::string encoded_time;
@@ -141,6 +152,22 @@ TEST_F(ProtoValueConversionsTest, BookmarkSpecificsData) {
   std::string encoded_icon_url;
   EXPECT_TRUE(value->GetString("icon_url", &encoded_icon_url));
   EXPECT_EQ(icon_url, encoded_icon_url);
+  base::ListValue* meta_info_list;
+  ASSERT_TRUE(value->GetList("meta_info", &meta_info_list));
+  EXPECT_EQ(2u, meta_info_list->GetSize());
+  base::DictionaryValue* meta_info;
+  std::string meta_key;
+  std::string meta_value;
+  ASSERT_TRUE(meta_info_list->GetDictionary(0, &meta_info));
+  EXPECT_TRUE(meta_info->GetString("key", &meta_key));
+  EXPECT_TRUE(meta_info->GetString("value", &meta_value));
+  EXPECT_EQ("key1", meta_key);
+  EXPECT_EQ("value1", meta_value);
+  ASSERT_TRUE(meta_info_list->GetDictionary(1, &meta_info));
+  EXPECT_TRUE(meta_info->GetString("key", &meta_key));
+  EXPECT_TRUE(meta_info->GetString("value", &meta_value));
+  EXPECT_EQ("key2", meta_key);
+  EXPECT_EQ("value2", meta_value);
 }
 
 TEST_F(ProtoValueConversionsTest, PriorityPreferenceSpecificsToValue) {
@@ -219,6 +246,10 @@ TEST_F(ProtoValueConversionsTest, DictionarySpecificsToValue) {
   TestSpecificsToValue(DictionarySpecificsToValue);
 }
 
+TEST_F(ProtoValueConversionsTest, ArticleSpecificsToValue) {
+  TestSpecificsToValue(ArticleSpecificsToValue);
+}
+
 // TODO(akalin): Figure out how to better test EntitySpecificsToValue.
 
 TEST_F(ProtoValueConversionsTest, EntitySpecificsToValue) {
@@ -228,8 +259,10 @@ TEST_F(ProtoValueConversionsTest, EntitySpecificsToValue) {
 #define SET_FIELD(key) (void)specifics.mutable_##key()
 
   SET_FIELD(app);
+  SET_FIELD(app_list);
   SET_FIELD(app_notification);
   SET_FIELD(app_setting);
+  SET_FIELD(article);
   SET_FIELD(autofill);
   SET_FIELD(autofill_profile);
   SET_FIELD(bookmark);

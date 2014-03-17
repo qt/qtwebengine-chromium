@@ -22,6 +22,7 @@
 
 class GrBinHashKeyBuilder;
 class GrGLEffect;
+class GrGLProgramEffects;
 class GrGLShaderBuilder;
 
 /**
@@ -60,6 +61,8 @@ public:
      * Gets the GL program ID for this program.
      */
     GrGLuint programID() const { return fProgramID; }
+
+    bool hasVertexShader() const { return fHasVertexShader; }
 
     /**
      * Some GL state that is relevant to programs is not stored per-program. In particular color
@@ -136,7 +139,6 @@ private:
         UniformHandle       fViewMatrixUni;
         UniformHandle       fColorUni;
         UniformHandle       fCoverageUni;
-        UniformHandle       fColorFilterUni;
 
         // We use the render target height to provide a y-down frag coord when specifying
         // origin_upper_left is not supported.
@@ -146,17 +148,6 @@ private:
         UniformHandle       fDstCopyTopLeftUni;
         UniformHandle       fDstCopyScaleUni;
         UniformHandle       fDstCopySamplerUni;
-    };
-
-    typedef SkSTArray<4, UniformHandle, true> SamplerUniSArray;
-    typedef SkSTArray<4, int, true> TextureUnitSArray;
-
-    struct EffectAndSamplers {
-        EffectAndSamplers() : fGLEffect(NULL) {}
-        ~EffectAndSamplers() { delete fGLEffect; }
-        GrGLEffect*         fGLEffect;
-        SamplerUniSArray    fSamplerUnis;  // sampler uni handles for effect's GrTextureAccess
-        TextureUnitSArray   fTextureUnits; // texture unit used for each entry of fSamplerUnis
     };
 
     GrGLProgram(GrGpuGL* gpu,
@@ -170,37 +161,12 @@ private:
      * This is the heavy initialization routine for building a GLProgram. colorStages and
      * coverageStages correspond to the output of GrGLProgramDesc::Build().
      */
-    bool genProgram(const GrEffectStage* colorStages[], const GrEffectStage* coverageStages[]);
-
-    GrSLConstantVec genInputColor(GrGLShaderBuilder* builder, SkString* inColor);
-
-    GrSLConstantVec genInputCoverage(GrGLShaderBuilder* builder, SkString* inCoverage);
-
-    void genGeometryShader(GrGLShaderBuilder::VertexBuilder* vertexBuilder) const;
-
-    // Creates a set of GrGLEffects and GrGLDrawEffects.
-    void buildGLEffects(SkTArray<EffectAndSamplers> GrGLProgram::* effectSet,
-                        const GrEffectStage* stages[],
-                        int count,
-                        bool hasExplicitLocalCoords,
-                        SkTArray<GrDrawEffect>* drawEffects,
-                        bool* hasVertexShaderEffects);
-
-    // Creates a GL program ID, binds shader attributes to GL vertex attrs, and links the program
-    bool bindOutputsAttribsAndLinkProgram(const GrGLShaderBuilder& builder,
-                                          bool bindColorOut,
-                                          bool bindDualSrcOut);
+    bool genProgram(GrGLShaderBuilder* builder,
+                    const GrEffectStage* colorStages[],
+                    const GrEffectStage* coverageStages[]);
 
     // Sets the texture units for samplers
     void initSamplerUniforms();
-    void initEffectSamplerUniforms(EffectAndSamplers* effect, int* texUnitIdx);
-
-    bool compileShaders(const GrGLShaderBuilder& builder);
-
-    const char* adjustInColor(const SkString& inColor) const;
-
-    // Helper for setData().
-    void setEffectData(const GrEffectStage& stage, const EffectAndSamplers& effect);
 
     // Helper for setData(). Makes GL calls to specify the initial color when there is not
     // per-vertex colors.
@@ -213,27 +179,26 @@ private:
     // Helper for setData() that sets the view matrix and loads the render target height uniform
     void setMatrixAndRenderTargetHeight(const GrDrawState&);
 
-    // GL IDs
-    GrGLuint                    fVShaderID;
-    GrGLuint                    fGShaderID;
-    GrGLuint                    fFShaderID;
+    // GL program ID
     GrGLuint                    fProgramID;
 
     // these reflect the current values of uniforms (GL uniform values travel with program)
-    MatrixState                 fMatrixState;
-    GrColor                     fColor;
-    GrColor                     fCoverage;
-    GrColor                     fColorFilterColor;
-    int                         fDstCopyTexUnit;
+    MatrixState                       fMatrixState;
+    GrColor                           fColor;
+    GrColor                           fCoverage;
+    int                               fDstCopyTexUnit;
 
-    SkTArray<EffectAndSamplers> fColorEffects;
-    SkTArray<EffectAndSamplers> fCoverageEffects;
+    SkAutoTDelete<GrGLProgramEffects> fColorEffects;
+    SkAutoTDelete<GrGLProgramEffects> fCoverageEffects;
 
-    GrGLProgramDesc             fDesc;
-    GrGpuGL*                    fGpu;
+    GrGLProgramDesc                   fDesc;
+    GrGpuGL*                          fGpu;
 
-    GrGLUniformManager          fUniformManager;
-    UniformHandles              fUniformHandles;
+    GrGLUniformManager                fUniformManager;
+    UniformHandles                    fUniformHandles;
+
+    bool                              fHasVertexShader;
+    int                               fNumTexCoordSets;
 
     typedef SkRefCnt INHERITED;
 };

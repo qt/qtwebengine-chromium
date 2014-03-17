@@ -36,6 +36,10 @@
 #include "base/mac/mac_util.h"
 #endif
 
+#if defined(OS_ANDROID)
+#include "base/android/sys_utils.h"
+#endif
+
 namespace content {
 
 RenderProcessImpl::RenderProcessImpl()
@@ -68,6 +72,11 @@ RenderProcessImpl::RenderProcessImpl()
   // Out of process dev tools rely upon auto break behavior.
   webkit_glue::SetJavaScriptFlags("--debugger-auto-break");
 
+#if defined(OS_ANDROID)
+  if (base::android::SysUtils::IsLowEndDevice())
+    webkit_glue::SetJavaScriptFlags("--optimize-for-size");
+#endif
+
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kJavaScriptFlags)) {
     webkit_glue::SetJavaScriptFlags(
@@ -81,7 +90,7 @@ RenderProcessImpl::RenderProcessImpl()
 
 RenderProcessImpl::~RenderProcessImpl() {
 #ifndef NDEBUG
-  int count = WebKit::WebFrame::instanceCount();
+  int count = blink::WebFrame::instanceCount();
   if (count)
     DLOG(ERROR) << "WebFrame LEAKED " << count << " TIMES";
 #endif

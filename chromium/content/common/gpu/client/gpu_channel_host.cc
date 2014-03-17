@@ -36,25 +36,37 @@ GpuListenerInfo::~GpuListenerInfo() {}
 scoped_refptr<GpuChannelHost> GpuChannelHost::Create(
     GpuChannelHostFactory* factory,
     int gpu_host_id,
-    int client_id,
     const gpu::GPUInfo& gpu_info,
     const IPC::ChannelHandle& channel_handle) {
   DCHECK(factory->IsMainThread());
   scoped_refptr<GpuChannelHost> host = new GpuChannelHost(
-      factory, gpu_host_id, client_id, gpu_info);
+      factory, gpu_host_id, gpu_info);
   host->Connect(channel_handle);
   return host;
 }
 
+// static
+bool GpuChannelHost::IsValidGpuMemoryBuffer(
+    gfx::GpuMemoryBufferHandle handle) {
+  switch (handle.type) {
+    case gfx::SHARED_MEMORY_BUFFER:
+#if defined(OS_MACOSX)
+    case gfx::IO_SURFACE_BUFFER:
+#endif
+      return true;
+    default:
+      return false;
+  }
+}
+
 GpuChannelHost::GpuChannelHost(GpuChannelHostFactory* factory,
                                int gpu_host_id,
-                               int client_id,
                                const gpu::GPUInfo& gpu_info)
     : factory_(factory),
-      client_id_(client_id),
       gpu_host_id_(gpu_host_id),
       gpu_info_(gpu_info) {
   next_transfer_buffer_id_.GetNext();
+  next_gpu_memory_buffer_id_.GetNext();
 }
 
 void GpuChannelHost::Connect(const IPC::ChannelHandle& channel_handle) {
@@ -246,8 +258,8 @@ base::SharedMemoryHandle GpuChannelHost::ShareToGpuProcess(
   if (!BrokerDuplicateHandle(source_handle,
                              channel_->peer_pid(),
                              &target_handle,
-                             0,
-                             DUPLICATE_SAME_ACCESS)) {
+                             FILE_GENERIC_READ | FILE_GENERIC_WRITE,
+                             0)) {
     return base::SharedMemory::NULLHandle();
   }
 
@@ -283,6 +295,29 @@ bool GpuChannelHost::GenerateMailboxNames(unsigned num,
 
 int32 GpuChannelHost::ReserveTransferBufferId() {
   return next_transfer_buffer_id_.GetNext();
+}
+
+gfx::GpuMemoryBufferHandle GpuChannelHost::ShareGpuMemoryBufferToGpuProcess(
+    gfx::GpuMemoryBufferHandle source_handle) {
+  switch (source_handle.type) {
+    case gfx::SHARED_MEMORY_BUFFER: {
+      gfx::GpuMemoryBufferHandle handle;
+      handle.type = gfx::SHARED_MEMORY_BUFFER;
+      handle.handle = ShareToGpuProcess(source_handle.handle);
+      return handle;
+    }
+#if defined(OS_MACOSX)
+    case gfx::IO_SURFACE_BUFFER:
+      return source_handle;
+#endif
+    default:
+      NOTREACHED();
+      return gfx::GpuMemoryBufferHandle();
+  }
+}
+
+int32 GpuChannelHost::ReserveGpuMemoryBufferId() {
+  return next_gpu_memory_buffer_id_.GetNext();
 }
 
 GpuChannelHost::~GpuChannelHost() {

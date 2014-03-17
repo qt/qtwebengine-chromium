@@ -80,7 +80,6 @@
 #include "wtf/Assertions.h"
 #include "wtf/CPU.h"
 #include "wtf/StdLibExtras.h"
-#include "wtf/UnusedParam.h"
 
 #if OS(MACOSX)
 #include <AvailabilityMacros.h>
@@ -300,14 +299,6 @@ extern "C"  const int jscore_fastmalloc_introspection = 0;
 #include <dispatch/dispatch.h>
 #endif
 
-#ifdef __has_include
-#if __has_include(<System/pthread_machdep.h>)
-
-#include <System/pthread_machdep.h>
-
-#endif
-#endif
-
 #ifndef PRIuS
 #define PRIuS "zu"
 #endif
@@ -317,13 +308,8 @@ extern "C"  const int jscore_fastmalloc_introspection = 0;
 // use a function pointer. But that's not necessarily faster on other platforms, and we had
 // problems with this technique on Windows, so we'll do this only on Mac OS X.
 #if OS(MACOSX)
-#if !USE(PTHREAD_GETSPECIFIC_DIRECT)
 static void* (*pthread_getspecific_function_pointer)(pthread_key_t) = pthread_getspecific;
 #define pthread_getspecific(key) pthread_getspecific_function_pointer(key)
-#else
-#define pthread_getspecific(key) _pthread_getspecific_direct(key)
-#define pthread_setspecific(key, val) _pthread_setspecific_direct(key, (val))
-#endif
 #endif
 
 #define DEFINE_VARIABLE(type, name, value, meaning) \
@@ -346,10 +332,13 @@ namespace WTF {
 #define free fastFree
 #define realloc fastRealloc
 
-#define MESSAGE LOG_ERROR
+#define MESSAGE WTF_LOG_ERROR
 #define CHECK_CONDITION ASSERT
 
+#if !OS(MACOSX)
 static const char kLLHardeningMask = 0;
+#endif
+
 template <unsigned> struct EntropySource;
 template <> struct EntropySource<4> {
     static uint32_t value()
@@ -692,15 +681,6 @@ static ALWAYS_INLINE void SLL_PushRange(HardenedSLL *head, HardenedSLL start, Ha
   if (!start) return;
   SLL_SetNext(end, *head, entropy);
   *head = start;
-}
-
-static ALWAYS_INLINE size_t SLL_Size(HardenedSLL head, uintptr_t entropy) {
-  int count = 0;
-  while (head) {
-    count++;
-    head = SLL_Next(head, entropy);
-  }
-  return count;
 }
 
 // Setup helper functions.
@@ -1289,7 +1269,7 @@ private:
     static void* zoneCalloc(malloc_zone_t*, size_t numItems, size_t size);
     static void zoneFree(malloc_zone_t*, void*);
     static void* zoneRealloc(malloc_zone_t*, void*, size_t);
-    static void* zoneValloc(malloc_zone_t*, size_t) { LOG_ERROR("valloc is not supported"); return 0; }
+    static void* zoneValloc(malloc_zone_t*, size_t) { WTF_LOG_ERROR("valloc is not supported"); return 0; }
     static void zoneDestroy(malloc_zone_t*) { }
 
     malloc_zone_t m_zone;
@@ -2338,7 +2318,6 @@ class TCMalloc_ThreadCache_FreeList {
     // is not present
     NEVER_INLINE void Validate(HardenedSLL missing, size_t size) {
         HardenedSLL node = list_;
-        UNUSED_PARAM(size);
         while (node) {
             RELEASE_ASSERT(node != missing);
             RELEASE_ASSERT(IS_DEFINITELY_POISONED(node.value(), size));
@@ -2547,13 +2526,6 @@ DWORD tlsIndex = TLS_OUT_OF_INDEXES;
 
 static ALWAYS_INLINE void setThreadHeap(TCMalloc_ThreadCache* heap)
 {
-#if USE(PTHREAD_GETSPECIFIC_DIRECT)
-    // Can't have two libraries both doing this in the same process,
-    // so check and make this crash right away.
-    if (pthread_getspecific(heap_key))
-        CRASH();
-#endif
-
     // Still do pthread_setspecific even if there's an alternate form
     // of thread-local storage in use, to benefit from the delete callback.
     pthread_setspecific(heap_key, heap);
@@ -3130,11 +3102,7 @@ inline TCMalloc_ThreadCache* TCMalloc_ThreadCache::GetCacheIfPresent() {
 
 void TCMalloc_ThreadCache::InitTSD() {
   ASSERT(!tsd_inited);
-#if USE(PTHREAD_GETSPECIFIC_DIRECT)
-  pthread_key_init_np(heap_key, DestroyThreadCache);
-#else
   pthread_key_create(&heap_key, DestroyThreadCache);
-#endif
 #if OS(WIN)
   tlsIndex = TlsAlloc();
 #endif
@@ -3321,12 +3289,14 @@ class TCMallocGuard {
 // Helpers for the exported routines below
 //-------------------------------------------------------------------
 
+#if !ASSERT_DISABLED
 static inline bool CheckCachedSizeClass(void *ptr) {
   PageID p = reinterpret_cast<uintptr_t>(ptr) >> kPageShift;
   size_t cached_value = pageheap->GetSizeClassIfCached(p);
   return cached_value == 0 ||
       cached_value == pageheap->GetDescriptor(p)->sizeclass;
 }
+#endif
 
 static inline void* CheckedMallocResult(void *result)
 {
@@ -3360,8 +3330,8 @@ static ALWAYS_INLINE void* do_malloc(size_t size) {
         // size-appropriate freelist, afer replenishing it if it's empty.
         ret = CheckedMallocResult(heap->Allocate(size));
     }
-    if (!ret)
-        CRASH();
+    // This is the out-of-memory crash line.
+    RELEASE_ASSERT(ret);
     return ret;
 }
 
@@ -3409,10 +3379,6 @@ static ALWAYS_INLINE void do_free(void* ptr) {
 }
 
 // Helpers for use by exported routines below:
-
-static inline int do_mallopt(int, int) {
-  return 1;     // Indicates error
-}
 
 #ifdef HAVE_STRUCT_MALLINFO  // mallinfo isn't defined on freebsd, for instance
 static inline struct mallinfo do_mallinfo() {

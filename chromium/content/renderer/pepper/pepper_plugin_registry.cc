@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "content/common/pepper_plugin_list.h"
+#include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/pepper/plugin_module.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
 
@@ -16,8 +17,10 @@ PepperPluginRegistry* PepperPluginRegistry::GetInstance() {
   static PepperPluginRegistry* registry = NULL;
   // This object leaks.  It is a temporary hack to work around a crash.
   // http://code.google.com/p/chromium/issues/detail?id=63234
-  if (!registry)
+  if (!registry) {
     registry = new PepperPluginRegistry;
+    registry->Initialize();
+  }
   return registry;
 }
 
@@ -41,10 +44,29 @@ const PepperPluginInfo* PepperPluginRegistry::GetInfoForPlugin(
 }
 
 PluginModule* PepperPluginRegistry::GetLiveModule(const base::FilePath& path) {
-  NonOwningModuleMap::iterator it = live_modules_.find(path);
-  if (it == live_modules_.end())
+  NonOwningModuleMap::iterator module_iter = live_modules_.find(path);
+  if (module_iter == live_modules_.end())
     return NULL;
-  return it->second;
+
+  // Check the instances for the module to see if they've all been Delete()d.
+  // We don't want to return a PluginModule in that case, since the plugin may
+  // have exited already.
+  const PluginModule::PluginInstanceSet& instance_set =
+      module_iter->second->GetAllInstances();
+
+  // If instance_set is empty, InstanceCreated() hasn't been called yet, so
+  // it's safe to return the PluginModule.
+  if (instance_set.empty())
+    return module_iter->second;
+
+  PluginModule::PluginInstanceSet::const_iterator instance_iter =
+      instance_set.begin();
+  while (instance_iter != instance_set.end()) {
+    if (!(*instance_iter)->is_deleted())
+      return module_iter->second;
+    ++instance_iter;
+  }
+  return NULL;
 }
 
 void PepperPluginRegistry::AddLiveModule(const base::FilePath& path,
@@ -79,6 +101,9 @@ PepperPluginRegistry::~PepperPluginRegistry() {
 }
 
 PepperPluginRegistry::PepperPluginRegistry() {
+}
+
+void PepperPluginRegistry::Initialize() {
   ComputePepperPluginList(&plugin_list_);
 
   // Note that in each case, AddLiveModule must be called before completing

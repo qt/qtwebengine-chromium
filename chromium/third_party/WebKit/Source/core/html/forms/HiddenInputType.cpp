@@ -33,24 +33,24 @@
 #include "core/html/forms/HiddenInputType.h"
 
 #include "HTMLNames.h"
+#include "InputTypeNames.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/forms/FormController.h"
-#include "core/html/forms/InputTypeNames.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-PassRefPtr<InputType> HiddenInputType::create(HTMLInputElement* element)
+PassRefPtr<InputType> HiddenInputType::create(HTMLInputElement& element)
 {
     return adoptRef(new HiddenInputType(element));
 }
 
 const AtomicString& HiddenInputType::formControlType() const
 {
-    return InputTypeNames::hidden();
+    return InputTypeNames::hidden;
 }
 
 FormControlState HiddenInputType::saveFormControlState() const
@@ -59,12 +59,12 @@ FormControlState HiddenInputType::saveFormControlState() const
     // controls create by createElement() or cloneNode(). It's ok for
     // now because we restore values only to form controls created by
     // parsing.
-    return element()->valueAttributeWasUpdatedAfterParsing() ? FormControlState(element()->value()) : FormControlState();
+    return element().valueAttributeWasUpdatedAfterParsing() ? FormControlState(element().value()) : FormControlState();
 }
 
 void HiddenInputType::restoreFormControlState(const FormControlState& state)
 {
-    element()->setAttribute(valueAttr, state[0]);
+    element().setAttribute(valueAttr, AtomicString(state[0]));
 }
 
 bool HiddenInputType::supportsValidation() const
@@ -94,7 +94,7 @@ bool HiddenInputType::storesValueSeparateFromAttribute()
 
 void HiddenInputType::setValue(const String& sanitizedValue, bool, TextFieldEventBehavior)
 {
-    element()->setAttribute(valueAttr, sanitizedValue);
+    element().setAttribute(valueAttr, AtomicString(sanitizedValue));
 }
 
 bool HiddenInputType::isHiddenType() const
@@ -104,8 +104,8 @@ bool HiddenInputType::isHiddenType() const
 
 bool HiddenInputType::appendFormData(FormDataList& encoding, bool isMultipartForm) const
 {
-    if (equalIgnoringCase(element()->name(), "_charset_")) {
-        encoding.appendData(element()->name(), String(encoding.encoding().name()));
+    if (equalIgnoringCase(element().name(), "_charset_")) {
+        encoding.appendData(element().name(), String(encoding.encoding().name()));
         return true;
     }
     return InputType::appendFormData(encoding, isMultipartForm);

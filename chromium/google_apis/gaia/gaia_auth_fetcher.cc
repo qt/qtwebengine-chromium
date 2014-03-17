@@ -182,6 +182,7 @@ GaiaAuthFetcher::GaiaAuthFetcher(GaiaAuthConsumer* consumer,
       uberauth_token_gurl_(GaiaUrls::GetInstance()->oauth1_login_url().Resolve(
           base::StringPrintf(kUberAuthTokenURLFormat, source.c_str()))),
       oauth_login_gurl_(GaiaUrls::GetInstance()->oauth1_login_url()),
+      list_accounts_gurl_(GaiaUrls::GetInstance()->list_accounts_url()),
       client_login_to_oauth2_gurl_(
           GaiaUrls::GetInstance()->client_login_to_oauth2_url()),
       fetch_pending_(false) {}
@@ -219,8 +220,8 @@ net::URLFetcher* GaiaAuthFetcher::CreateGaiaFetcher(
   // The Gaia token exchange requests do not require any cookie-based
   // identification as part of requests.  We suppress sending any cookies to
   // maintain a separation between the user's browsing and Chrome's internal
-  // services.  Where such mixing is desired (MergeSession), it will be done
-  // explicitly.
+  // services.  Where such mixing is desired (MergeSession or OAuthLogin), it
+  // will be done explicitly.
   to_return->SetLoadFlags(load_flags);
 
   // Fetchers are sometimes cancelled because a network change was detected,
@@ -636,7 +637,7 @@ void GaiaAuthFetcher::StartTokenFetchForUberAuthExchange(
                                    std::string(),
                                    authentication_header,
                                    uberauth_token_gurl_,
-                                   kLoadFlagsIgnoreCookies,
+                                   net::LOAD_NORMAL,
                                    this));
   fetch_pending_ = true;
   fetcher_->Start();
@@ -653,7 +654,20 @@ void GaiaAuthFetcher::StartOAuthLogin(const std::string& access_token,
                                    request_body_,
                                    authentication_header,
                                    oauth_login_gurl_,
-                                   kLoadFlagsIgnoreCookies,
+                                   net::LOAD_NORMAL,
+                                   this));
+  fetch_pending_ = true;
+  fetcher_->Start();
+}
+
+void GaiaAuthFetcher::StartListAccounts() {
+  DCHECK(!fetch_pending_) << "Tried to fetch two things at once!";
+
+  fetcher_.reset(CreateGaiaFetcher(getter_,
+                                   " ",  // To force an HTTP POST.
+                                   "Origin: https://www.google.com",
+                                   list_accounts_gurl_,
+                                   net::LOAD_NORMAL,
                                    this));
   fetch_pending_ = true;
   fetcher_->Start();
@@ -844,6 +858,16 @@ void GaiaAuthFetcher::OnOAuth2RevokeTokenFetched(
   consumer_->OnOAuth2RevokeTokenCompleted();
 }
 
+void GaiaAuthFetcher::OnListAccountsFetched(const std::string& data,
+                                            const net::URLRequestStatus& status,
+                                            int response_code) {
+  if (status.is_success() && response_code == net::HTTP_OK) {
+    consumer_->OnListAccountsSuccess(data);
+  } else {
+    consumer_->OnListAccountsFailure(GenerateAuthError(data, status));
+  }
+}
+
 void GaiaAuthFetcher::OnGetUserInfoFetched(
     const std::string& data,
     const net::URLRequestStatus& status,
@@ -937,6 +961,8 @@ void GaiaAuthFetcher::OnURLFetchComplete(const net::URLFetcher* source) {
     OnOAuthLoginFetched(data, status, response_code);
   } else if (url == oauth2_revoke_gurl_) {
     OnOAuth2RevokeTokenFetched(data, status, response_code);
+  } else if (url == list_accounts_gurl_) {
+    OnListAccountsFetched(data, status, response_code);
   } else {
     NOTREACHED();
   }

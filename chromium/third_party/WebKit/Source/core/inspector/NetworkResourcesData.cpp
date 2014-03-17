@@ -31,9 +31,8 @@
 
 #include "core/dom/DOMImplementation.h"
 #include "core/fetch/Resource.h"
-#include "core/fetch/TextResourceDecoder.h"
-#include "core/platform/SharedBuffer.h"
-#include "core/platform/network/ResourceResponse.h"
+#include "platform/SharedBuffer.h"
+#include "platform/network/ResourceResponse.h"
 
 namespace {
 // 100MB
@@ -46,17 +45,17 @@ static size_t maximumSingleResourceContentSize = 10 * 1000 * 1000;
 namespace WebCore {
 
 
-PassRefPtr<XHRReplayData> XHRReplayData::create(const String &method, const KURL& url, bool async, PassRefPtr<FormData> formData, bool includeCredentials)
+PassRefPtr<XHRReplayData> XHRReplayData::create(const AtomicString& method, const KURL& url, bool async, PassRefPtr<FormData> formData, bool includeCredentials)
 {
     return adoptRef(new XHRReplayData(method, url, async, formData, includeCredentials));
 }
 
-void XHRReplayData::addHeader(const AtomicString& key, const String& value)
+void XHRReplayData::addHeader(const AtomicString& key, const AtomicString& value)
 {
     m_headers.set(key, value);
 }
 
-XHRReplayData::XHRReplayData(const String &method, const KURL& url, bool async, PassRefPtr<FormData> formData, bool includeCredentials)
+XHRReplayData::XHRReplayData(const AtomicString& method, const KURL& url, bool async, PassRefPtr<FormData> formData, bool includeCredentials)
     : m_method(method)
     , m_url(url)
     , m_async(async)
@@ -155,9 +154,9 @@ void NetworkResourcesData::resourceCreated(const String& requestId, const String
     m_requestIdToResourceDataMap.set(requestId, new ResourceData(requestId, loaderId));
 }
 
-static PassRefPtr<TextResourceDecoder> createOtherResourceTextDecoder(const String& mimeType, const String& textEncodingName)
+static PassOwnPtr<TextResourceDecoder> createOtherResourceTextDecoder(const String& mimeType, const String& textEncodingName)
 {
-    RefPtr<TextResourceDecoder> decoder;
+    OwnPtr<TextResourceDecoder> decoder;
     if (!textEncodingName.isEmpty())
         decoder = TextResourceDecoder::create("text/plain", textEncodingName);
     else if (DOMImplementation::isXMLMIMEType(mimeType.lower())) {
@@ -167,7 +166,7 @@ static PassRefPtr<TextResourceDecoder> createOtherResourceTextDecoder(const Stri
         decoder = TextResourceDecoder::create("text/html", "UTF-8");
     else if (mimeType == "text/plain")
         decoder = TextResourceDecoder::create("text/plain", "ISO-8859-1");
-    return decoder;
+    return decoder.release();
 }
 
 void NetworkResourcesData::responseReceived(const String& requestId, const String& frameId, const ResourceResponse& response)

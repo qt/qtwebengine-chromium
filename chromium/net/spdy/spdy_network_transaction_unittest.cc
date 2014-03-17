@@ -12,6 +12,7 @@
 #include "base/memory/scoped_vector.h"
 #include "base/run_loop.h"
 #include "base/stl_util.h"
+#include "base/test/test_file_util.h"
 #include "net/base/auth.h"
 #include "net/base/net_log_unittest.h"
 #include "net/base/request_priority.h"
@@ -49,7 +50,7 @@ enum SpdyNetworkTransactionTestSSLType {
 
 struct SpdyNetworkTransactionTestParams {
   SpdyNetworkTransactionTestParams()
-      : protocol(kProtoSPDY2),
+      : protocol(kProtoSPDY3),
         ssl_type(SPDYNPN) {}
 
   SpdyNetworkTransactionTestParams(
@@ -423,7 +424,8 @@ class SpdyNetworkTransactionTest
       ScopedVector<UploadElementReader> element_readers;
       element_readers.push_back(
           new UploadBytesElementReader(kUploadData, kUploadDataSize));
-      upload_data_stream_.reset(new UploadDataStream(&element_readers, 0));
+      upload_data_stream_.reset(
+          new UploadDataStream(element_readers.Pass(), 0));
 
       google_post_request_.method = "POST";
       google_post_request_.url = GURL(kDefaultURL);
@@ -436,7 +438,7 @@ class SpdyNetworkTransactionTest
   const HttpRequestInfo& CreateFilePostRequest() {
     if (!google_post_request_initialized_) {
       base::FilePath file_path;
-      CHECK(file_util::CreateTemporaryFileInDir(temp_dir_.path(), &file_path));
+      CHECK(base::CreateTemporaryFileInDir(temp_dir_.path(), &file_path));
       CHECK_EQ(static_cast<int>(kUploadDataSize),
                file_util::WriteFile(file_path, kUploadData, kUploadDataSize));
 
@@ -447,13 +449,41 @@ class SpdyNetworkTransactionTest
                                       0,
                                       kUploadDataSize,
                                       base::Time()));
-      upload_data_stream_.reset(new UploadDataStream(&element_readers, 0));
+      upload_data_stream_.reset(
+          new UploadDataStream(element_readers.Pass(), 0));
 
       google_post_request_.method = "POST";
       google_post_request_.url = GURL(kDefaultURL);
       google_post_request_.upload_data_stream = upload_data_stream_.get();
       google_post_request_initialized_ = true;
     }
+    return google_post_request_;
+  }
+
+  const HttpRequestInfo& CreateUnreadableFilePostRequest() {
+    if (google_post_request_initialized_)
+      return google_post_request_;
+
+    base::FilePath file_path;
+    CHECK(base::CreateTemporaryFileInDir(temp_dir_.path(), &file_path));
+    CHECK_EQ(static_cast<int>(kUploadDataSize),
+             file_util::WriteFile(file_path, kUploadData, kUploadDataSize));
+    CHECK(file_util::MakeFileUnreadable(file_path));
+
+    ScopedVector<UploadElementReader> element_readers;
+    element_readers.push_back(
+        new UploadFileElementReader(base::MessageLoopProxy::current().get(),
+                                    file_path,
+                                    0,
+                                    kUploadDataSize,
+                                    base::Time()));
+    upload_data_stream_.reset(
+        new UploadDataStream(element_readers.Pass(), 0));
+
+    google_post_request_.method = "POST";
+    google_post_request_.url = GURL(kDefaultURL);
+    google_post_request_.upload_data_stream = upload_data_stream_.get();
+    google_post_request_initialized_ = true;
     return google_post_request_;
   }
 
@@ -464,7 +494,7 @@ class SpdyNetworkTransactionTest
       CHECK_LT(kFileRangeOffset + kFileRangeLength, kUploadDataSize);
 
       base::FilePath file_path;
-      CHECK(file_util::CreateTemporaryFileInDir(temp_dir_.path(), &file_path));
+      CHECK(base::CreateTemporaryFileInDir(temp_dir_.path(), &file_path));
       CHECK_EQ(static_cast<int>(kUploadDataSize),
                file_util::WriteFile(file_path, kUploadData, kUploadDataSize));
 
@@ -480,7 +510,8 @@ class SpdyNetworkTransactionTest
       element_readers.push_back(new UploadBytesElementReader(
           kUploadData + kFileRangeOffset + kFileRangeLength,
           kUploadDataSize - (kFileRangeOffset + kFileRangeLength)));
-      upload_data_stream_.reset(new UploadDataStream(&element_readers, 0));
+      upload_data_stream_.reset(
+          new UploadDataStream(element_readers.Pass(), 0));
 
       google_post_request_.method = "POST";
       google_post_request_.url = GURL(kDefaultURL);
@@ -650,9 +681,9 @@ INSTANTIATE_TEST_CASE_P(
     Spdy,
     SpdyNetworkTransactionTest,
     ::testing::Values(
-        SpdyNetworkTransactionTestParams(kProtoSPDY2, SPDYNOSSL),
-        SpdyNetworkTransactionTestParams(kProtoSPDY2, SPDYSSL),
-        SpdyNetworkTransactionTestParams(kProtoSPDY2, SPDYNPN),
+        SpdyNetworkTransactionTestParams(kProtoDeprecatedSPDY2, SPDYNOSSL),
+        SpdyNetworkTransactionTestParams(kProtoDeprecatedSPDY2, SPDYSSL),
+        SpdyNetworkTransactionTestParams(kProtoDeprecatedSPDY2, SPDYNPN),
         SpdyNetworkTransactionTestParams(kProtoSPDY3, SPDYNOSSL),
         SpdyNetworkTransactionTestParams(kProtoSPDY3, SPDYSSL),
         SpdyNetworkTransactionTestParams(kProtoSPDY3, SPDYNPN),
@@ -702,7 +733,7 @@ TEST_P(SpdyNetworkTransactionTest, Get) {
 }
 
 TEST_P(SpdyNetworkTransactionTest, GetAtEachPriority) {
-  for (RequestPriority p = MINIMUM_PRIORITY; p < NUM_PRIORITIES;
+  for (RequestPriority p = MINIMUM_PRIORITY; p <= MAXIMUM_PRIORITY;
        p = RequestPriority(p + 1)) {
     // Construct the request.
     scoped_ptr<SpdyFrame> req(
@@ -1782,6 +1813,28 @@ TEST_P(SpdyNetworkTransactionTest, FilePost) {
   EXPECT_EQ("hello!", out.response_data);
 }
 
+// Test that a POST with a unreadable file fails.
+TEST_P(SpdyNetworkTransactionTest, UnreadableFilePost) {
+  MockWrite writes[] = {
+    MockWrite(ASYNC, 0, 0)  // EOF
+  };
+  MockRead reads[] = {
+    MockRead(ASYNC, 0, 0)  // EOF
+  };
+
+  DelayedSocketData data(1, reads, arraysize(reads), writes, arraysize(writes));
+  NormalSpdyTransactionHelper helper(CreateUnreadableFilePostRequest(),
+                                     DEFAULT_PRIORITY,
+                                     BoundNetLog(), GetParam(), NULL);
+  helper.RunPreTestSetup();
+  helper.AddData(&data);
+  helper.RunDefaultTest();
+
+  base::RunLoop().RunUntilIdle();
+  helper.VerifyDataNotConsumed();
+  EXPECT_EQ(ERR_ACCESS_DENIED, helper.output().rv);
+}
+
 // Test that a complex POST works.
 TEST_P(SpdyNetworkTransactionTest, ComplexPost) {
   scoped_ptr<SpdyFrame> req(
@@ -1947,7 +2000,7 @@ TEST_P(SpdyNetworkTransactionTest, NullPost) {
 TEST_P(SpdyNetworkTransactionTest, EmptyPost) {
   // Create an empty UploadDataStream.
   ScopedVector<UploadElementReader> element_readers;
-  UploadDataStream stream(&element_readers, 0);
+  UploadDataStream stream(element_readers.Pass(), 0);
 
   // Setup the request
   HttpRequestInfo request;
@@ -1990,7 +2043,7 @@ TEST_P(SpdyNetworkTransactionTest, PostWithEarlySynReply) {
   ScopedVector<UploadElementReader> element_readers;
   element_readers.push_back(
       new UploadBytesElementReader(upload, sizeof(upload)));
-  UploadDataStream stream(&element_readers, 0);
+  UploadDataStream stream(element_readers.Pass(), 0);
 
   // Setup the request
   HttpRequestInfo request;
@@ -2463,8 +2516,10 @@ TEST_P(SpdyNetworkTransactionTest, RedirectGetRequest) {
   TestDelegate d;
   {
     SpdyURLRequestContext spdy_url_request_context(GetParam().protocol);
-    net::URLRequest r(
-        GURL("http://www.google.com/"), &d, &spdy_url_request_context);
+    net::URLRequest r(GURL("http://www.google.com/"),
+                      DEFAULT_PRIORITY,
+                      &d,
+                      &spdy_url_request_context);
     spdy_url_request_context.socket_factory().
         AddSocketDataProvider(&data);
     spdy_url_request_context.socket_factory().
@@ -2556,8 +2611,10 @@ TEST_P(SpdyNetworkTransactionTest, RedirectServerPush) {
   TestDelegate d2;
   SpdyURLRequestContext spdy_url_request_context(GetParam().protocol);
   {
-    net::URLRequest r(
-        GURL("http://www.google.com/"), &d, &spdy_url_request_context);
+    net::URLRequest r(GURL("http://www.google.com/"),
+                      DEFAULT_PRIORITY,
+                      &d,
+                      &spdy_url_request_context);
     spdy_url_request_context.socket_factory().
         AddSocketDataProvider(&data);
 
@@ -2568,8 +2625,10 @@ TEST_P(SpdyNetworkTransactionTest, RedirectServerPush) {
     std::string contents("hello!");
     EXPECT_EQ(contents, d.data_received());
 
-    net::URLRequest r2(
-        GURL("http://www.google.com/foo.dat"), &d2, &spdy_url_request_context);
+    net::URLRequest r2(GURL("http://www.google.com/foo.dat"),
+                       DEFAULT_PRIORITY,
+                       &d2,
+                       &spdy_url_request_context);
     spdy_url_request_context.socket_factory().
         AddSocketDataProvider(&data2);
 
@@ -3547,19 +3606,30 @@ TEST_P(SpdyNetworkTransactionTest, WriteError) {
       spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, LOWEST, true));
   MockWrite writes[] = {
     // We'll write 10 bytes successfully
-    MockWrite(ASYNC, req->data(), 10),
+    MockWrite(ASYNC, req->data(), 10, 0),
     // Followed by ERROR!
-    MockWrite(ASYNC, ERR_FAILED),
+    MockWrite(ASYNC, ERR_FAILED, 1),
   };
 
-  DelayedSocketData data(2, NULL, 0,
-                         writes, arraysize(writes));
+  MockRead reads[] = {
+    MockRead(ASYNC, 0, 2)  // EOF
+  };
+
+  DeterministicSocketData data(reads, arraysize(reads),
+                               writes, arraysize(writes));
+
   NormalSpdyTransactionHelper helper(CreateGetRequest(), DEFAULT_PRIORITY,
                                      BoundNetLog(), GetParam(), NULL);
-  helper.RunToCompletion(&data);
+  helper.SetDeterministic();
+  helper.RunPreTestSetup();
+  helper.AddDeterministicData(&data);
+  EXPECT_TRUE(helper.StartDefaultTest());
+  data.RunFor(2);
+  helper.FinishDefaultTest();
+  EXPECT_TRUE(data.at_write_eof());
+  EXPECT_TRUE(!data.at_read_eof());
   TransactionHelperResult out = helper.output();
   EXPECT_EQ(ERR_FAILED, out.rv);
-  data.Reset();
 }
 
 // Test that partial writes work.
@@ -5836,7 +5906,7 @@ TEST_P(SpdyNetworkTransactionTest, WindowUpdateReceived) {
     element_readers.push_back(
         new UploadBytesElementReader(content->c_str(), content->size()));
   }
-  UploadDataStream upload_data_stream(&element_readers, 0);
+  UploadDataStream upload_data_stream(element_readers.Pass(), 0);
 
   // Setup the request
   HttpRequestInfo request;
@@ -6009,7 +6079,7 @@ TEST_P(SpdyNetworkTransactionTest, WindowUpdateOverflow) {
     element_readers.push_back(
         new UploadBytesElementReader(content->c_str(), content->size()));
   }
-  UploadDataStream upload_data_stream(&element_readers, 0);
+  UploadDataStream upload_data_stream(element_readers.Pass(), 0);
 
   // Setup the request
   HttpRequestInfo request;
@@ -6125,7 +6195,7 @@ TEST_P(SpdyNetworkTransactionTest, FlowControlStallResume) {
   upload_data_string.append(kUploadData, kUploadDataSize);
   element_readers.push_back(new UploadBytesElementReader(
       upload_data_string.c_str(), upload_data_string.size()));
-  UploadDataStream upload_data_stream(&element_readers, 0);
+  UploadDataStream upload_data_stream(element_readers.Pass(), 0);
 
   HttpRequestInfo request;
   request.method = "POST";
@@ -6239,7 +6309,7 @@ TEST_P(SpdyNetworkTransactionTest, FlowControlStallResumeAfterSettings) {
   upload_data_string.append(kUploadData, kUploadDataSize);
   element_readers.push_back(new UploadBytesElementReader(
       upload_data_string.c_str(), upload_data_string.size()));
-  UploadDataStream upload_data_stream(&element_readers, 0);
+  UploadDataStream upload_data_stream(element_readers.Pass(), 0);
 
   HttpRequestInfo request;
   request.method = "POST";
@@ -6363,7 +6433,7 @@ TEST_P(SpdyNetworkTransactionTest, FlowControlNegativeSendWindowSize) {
   upload_data_string.append(kUploadData, kUploadDataSize);
   element_readers.push_back(new UploadBytesElementReader(
       upload_data_string.c_str(), upload_data_string.size()));
-  UploadDataStream upload_data_stream(&element_readers, 0);
+  UploadDataStream upload_data_stream(element_readers.Pass(), 0);
 
   HttpRequestInfo request;
   request.method = "POST";

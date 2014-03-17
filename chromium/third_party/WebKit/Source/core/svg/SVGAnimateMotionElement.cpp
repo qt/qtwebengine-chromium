@@ -24,7 +24,6 @@
 #include "core/svg/SVGAnimateMotionElement.h"
 
 #include "SVGNames.h"
-#include "core/platform/graphics/transforms/AffineTransform.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/SVGPathData.h"
@@ -33,6 +32,7 @@
 #include "core/svg/SVGParserUtilities.h"
 #include "core/svg/SVGPathElement.h"
 #include "core/svg/SVGPathUtilities.h"
+#include "platform/transforms/AffineTransform.h"
 #include "wtf/MathExtras.h"
 #include "wtf/StdLibExtras.h"
 
@@ -40,18 +40,23 @@ namespace WebCore {
 
 using namespace SVGNames;
 
-inline SVGAnimateMotionElement::SVGAnimateMotionElement(const QualifiedName& tagName, Document& document)
-    : SVGAnimationElement(tagName, document)
+inline SVGAnimateMotionElement::SVGAnimateMotionElement(Document& document)
+    : SVGAnimationElement(animateMotionTag, document)
     , m_hasToPointAtEndOfDuration(false)
 {
     setCalcMode(CalcModePaced);
-    ASSERT(hasTagName(animateMotionTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGAnimateMotionElement> SVGAnimateMotionElement::create(const QualifiedName& tagName, Document& document)
+SVGAnimateMotionElement::~SVGAnimateMotionElement()
 {
-    return adoptRef(new SVGAnimateMotionElement(tagName, document));
+    if (targetElement())
+        clearAnimatedType(targetElement());
+}
+
+PassRefPtr<SVGAnimateMotionElement> SVGAnimateMotionElement::create(Document& document)
+{
+    return adoptRef(new SVGAnimateMotionElement(document));
 }
 
 bool SVGAnimateMotionElement::hasValidAttributeType()

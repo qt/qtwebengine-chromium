@@ -29,15 +29,7 @@
 [
     GlobalContext=WorkerGlobalScope
 ] interface WorkerLocation {
-    readonly attribute DOMString href;
-    readonly attribute DOMString protocol;
-    readonly attribute DOMString host;
-    readonly attribute DOMString hostname;
-    readonly attribute DOMString port;
-    readonly attribute DOMString pathname;
-    readonly attribute DOMString search;
-    readonly attribute DOMString hash;
-
-    [NotEnumerable] DOMString toString();
 };
 
+// force rebuild: crbug.com/307023
+WorkerLocation implements URLUtilsReadOnly;

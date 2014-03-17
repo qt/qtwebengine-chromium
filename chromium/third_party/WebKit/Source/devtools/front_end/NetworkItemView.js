@@ -31,12 +31,12 @@
 /**
  * @constructor
  * @extends {WebInspector.TabbedPane}
- * @param {WebInspector.NetworkRequest} request
+ * @param {!WebInspector.NetworkRequest} request
  */
 WebInspector.NetworkItemView = function(request)
 {
     WebInspector.TabbedPane.call(this);
-    this.element.addStyleClass("network-item-view");
+    this.element.classList.add("network-item-view");
 
     var headersView = new WebInspector.RequestHeadersView(request);
     this.appendTab("headers", WebInspector.UIString("Headers"), headersView);
@@ -102,7 +102,7 @@ WebInspector.NetworkItemView.prototype = {
     },
 
     /**
-      * @return {WebInspector.NetworkRequest}
+      * @return {!WebInspector.NetworkRequest}
       */
     request: function()
     {
@@ -115,7 +115,7 @@ WebInspector.NetworkItemView.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.RequestView}
- * @param {WebInspector.NetworkRequest} request
+ * @param {!WebInspector.NetworkRequest} request
  */
 WebInspector.RequestContentView = function(request)
 {
@@ -151,10 +151,9 @@ WebInspector.RequestContentView.prototype = {
 
         /**
          * @param {?string} content
-         * @param {boolean} contentEncoded
-         * @param {string} mimeType
+         * @this {WebInspector.RequestContentView}
          */
-        function callback(content, contentEncoded, mimeType)
+        function callback(content)
         {
             this._innerViewShowRequested = false;
             this.contentLoaded();

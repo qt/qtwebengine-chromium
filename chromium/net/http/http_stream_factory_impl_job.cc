@@ -52,7 +52,7 @@ base::Value* NetLogHttpStreamJobCallback(const GURL* original_url,
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetString("original_url", original_url->GetOrigin().spec());
   dict->SetString("url", url->GetOrigin().spec());
-  dict->SetInteger("priority", priority);
+  dict->SetString("priority", RequestPriorityToString(priority));
   return dict;
 }
 
@@ -221,9 +221,9 @@ void HttpStreamFactoryImpl::Job::Orphan(const Request* request) {
       connection_->socket()->Disconnect();
     stream_factory_->OnOrphanedJobComplete(this);
   } else if (stream_factory_->for_websockets_) {
-    // We cancel this job because WebSocketStream can't be created
-    // without a WebSocketStreamBase::Factory which is stored in Request class
-    // and isn't accessible from this job.
+    // We cancel this job because a WebSocketHandshakeStream can't be created
+    // without a WebSocketHandshakeStreamBase::CreateHelper which is stored in
+    // the Request class and isn't accessible from this job.
     if (connection_ && connection_->socket())
       connection_->socket()->Disconnect();
     stream_factory_->OnOrphanedJobComplete(this);
@@ -314,7 +314,7 @@ void HttpStreamFactoryImpl::Job::OnStreamReadyCallback() {
   // |this| may be deleted after this call.
 }
 
-void HttpStreamFactoryImpl::Job::OnWebSocketStreamReadyCallback() {
+void HttpStreamFactoryImpl::Job::OnWebSocketHandshakeStreamReadyCallback() {
   DCHECK(websocket_stream_);
   DCHECK(!IsPreconnecting());
   DCHECK(stream_factory_->for_websockets_);
@@ -325,10 +325,10 @@ void HttpStreamFactoryImpl::Job::OnWebSocketStreamReadyCallback() {
                      protocol_negotiated(),
                      using_spdy(),
                      net_log_);
-  request_->OnWebSocketStreamReady(this,
-                                   server_ssl_config_,
-                                   proxy_info_,
-                                   websocket_stream_.release());
+  request_->OnWebSocketHandshakeStreamReady(this,
+                                            server_ssl_config_,
+                                            proxy_info_,
+                                            websocket_stream_.release());
   // |this| may be deleted after this call.
 }
 
@@ -532,9 +532,8 @@ int HttpStreamFactoryImpl::Job::RunLoop(int result) {
         DCHECK(websocket_stream_);
         base::MessageLoop::current()->PostTask(
             FROM_HERE,
-            base::Bind(
-                &Job::OnWebSocketStreamReadyCallback,
-                ptr_factory_.GetWeakPtr()));
+            base::Bind(&Job::OnWebSocketHandshakeStreamReadyCallback,
+                       ptr_factory_.GetWeakPtr()));
       } else {
         DCHECK(stream_.get());
         base::MessageLoop::current()->PostTask(
@@ -1065,10 +1064,10 @@ int HttpStreamFactoryImpl::Job::DoCreateStream() {
       CHECK(stream_.get());
     } else if (stream_factory_->for_websockets_) {
       DCHECK(request_);
-      DCHECK(request_->websocket_stream_factory());
+      DCHECK(request_->websocket_handshake_stream_create_helper());
       websocket_stream_.reset(
-          request_->websocket_stream_factory()->CreateBasicStream(
-              connection_.release(), using_proxy));
+          request_->websocket_handshake_stream_create_helper()
+              ->CreateBasicStream(connection_.Pass(), using_proxy));
     } else if (!using_proxy && IsRequestEligibleForPipelining()) {
       // TODO(simonjam): Support proxies.
       stream_.reset(
@@ -1082,8 +1081,7 @@ int HttpStreamFactoryImpl::Job::DoCreateStream() {
               protocol_negotiated_));
       CHECK(stream_.get());
     } else {
-      stream_.reset(new HttpBasicStream(connection_.release(), NULL,
-                                        using_proxy));
+      stream_.reset(new HttpBasicStream(connection_.release(), using_proxy));
     }
     return OK;
   }
@@ -1143,10 +1141,10 @@ int HttpStreamFactoryImpl::Job::DoCreateStream() {
 
   if (stream_factory_->for_websockets_) {
     DCHECK(request_);
-    DCHECK(request_->websocket_stream_factory());
+    DCHECK(request_->websocket_handshake_stream_create_helper());
     bool use_relative_url = direct || request_info_.url.SchemeIs("wss");
     websocket_stream_.reset(
-        request_->websocket_stream_factory()->CreateSpdyStream(
+        request_->websocket_handshake_stream_create_helper()->CreateSpdyStream(
             spdy_session, use_relative_url));
   } else {
     bool use_relative_url = direct || request_info_.url.SchemeIs("https");

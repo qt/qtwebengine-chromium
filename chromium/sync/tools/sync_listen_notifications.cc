@@ -28,6 +28,7 @@
 #include "sync/notifier/invalidation_util.h"
 #include "sync/notifier/invalidator.h"
 #include "sync/notifier/non_blocking_invalidator.h"
+#include "sync/notifier/object_id_invalidation_map.h"
 #include "sync/tools/null_invalidation_state_tracker.h"
 
 #if defined(OS_MACOSX)
@@ -45,7 +46,6 @@ const char kTokenSwitch[] = "token";
 const char kHostPortSwitch[] = "host-port";
 const char kTrySslTcpFirstSwitch[] = "try-ssltcp-first";
 const char kAllowInsecureConnectionSwitch[] = "allow-insecure-connection";
-const char kNotificationMethodSwitch[] = "notification-method";
 
 // Class to print received notifications events.
 class NotificationPrinter : public InvalidationHandler {
@@ -60,12 +60,10 @@ class NotificationPrinter : public InvalidationHandler {
 
   virtual void OnIncomingInvalidation(
       const ObjectIdInvalidationMap& invalidation_map) OVERRIDE {
-    for (ObjectIdInvalidationMap::const_iterator it = invalidation_map.begin();
-         it != invalidation_map.end(); ++it) {
-      LOG(INFO) << "Remote invalidation: id = "
-                << ObjectIdToString(it->first)
-                << ", version = " << it->second.version
-                << ", payload = " << it->second.payload;
+    ObjectIdSet ids = invalidation_map.GetObjectIds();
+    for (ObjectIdSet::const_iterator it = ids.begin(); it != ids.end(); ++it) {
+      LOG(INFO) << "Remote invalidation: "
+                << invalidation_map.ToString();
     }
   }
 
@@ -185,7 +183,7 @@ int SyncListenNotificationsMain(int argc, char* argv[]) {
       new NonBlockingInvalidator(
           notifier_options,
           base::RandBytesAsString(8),
-          null_invalidation_state_tracker.GetAllInvalidationStates(),
+          null_invalidation_state_tracker.GetSavedInvalidations(),
           null_invalidation_state_tracker.GetBootstrapData(),
           WeakHandle<InvalidationStateTracker>(
               null_invalidation_state_tracker.AsWeakPtr()),

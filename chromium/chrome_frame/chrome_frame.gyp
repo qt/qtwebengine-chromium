@@ -104,8 +104,8 @@
       'type': 'executable',
       'dependencies': [
         '../base/base.gyp:test_support_base',
-        '../chrome/app/policy/cloud_policy_codegen.gyp:policy',
         '../chrome/chrome.gyp:test_support_common',
+        '../components/components.gyp:policy',
         '../net/net.gyp:net',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
@@ -133,7 +133,6 @@
         'test/http_negotiate_unittest.cc',
         'test/infobar_unittests.cc',
         'test/policy_settings_unittest.cc',
-        'test/ready_mode_unittest.cc',
         'test/registry_watcher_unittest.cc',
         'test/simulate_input.h',
         'test/simulate_input.cc',
@@ -154,20 +153,6 @@
         '<(INTERMEDIATE_DIR)',
       ],
       'conditions': [
-        # We can't instrument code for coverage if it depends on 3rd party
-        # binaries that we don't have PDBs for. See here for more details:
-        # http://connect.microsoft.com/VisualStudio/feedback/details/176188/can-not-disable-warning-lnk4099
-        ['coverage==0', {
-          'conditions': [
-            ['OS=="win"', {
-              'dependencies': [
-                '../breakpad/breakpad.gyp:breakpad_handler',
-                # TODO(slightlyoff): Get automation targets working on OS X
-                '../chrome/chrome.gyp:automation',
-              ],
-            }],
-          ],
-        }],
         ['OS=="win" and buildtype=="Official"', {
           'configurations': {
             'Release': {
@@ -192,6 +177,7 @@
             },
           },
           'dependencies': [
+            '../breakpad/breakpad.gyp:breakpad_handler',
             # TODO(slightlyoff): Get automation targets working on OS X
             '../chrome/chrome.gyp:automation',
             '../chrome/chrome.gyp:installer_util',
@@ -351,7 +337,6 @@
       ],
       'sources': [
         '../base/test/perf_test_suite.h',
-        '../base/test/perftimer.cc',
         '../base/test/test_file_util.h',
         '../chrome/test/base/chrome_process_util.cc',
         '../chrome/test/base/chrome_process_util.h',
@@ -415,7 +400,7 @@
         '../chrome/chrome_resources.gyp:chrome_resources',
         '../content/content.gyp:content_app_both',
         '../content/content.gyp:content_gpu',
-        '../content/content.gyp:test_support_content',
+        '../content/content_shell_and_tests.gyp:test_support_content',
         '../net/net.gyp:net',
         '../net/net.gyp:net_test_support',
         '../skia/skia.gyp:skia',
@@ -423,7 +408,7 @@
         '../testing/gtest.gyp:gtest',
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
-        '../ui/ui.gyp:ui_resources',
+        '../ui/resources/ui_resources.gyp:ui_resources',
         'chrome_frame_ie',
         'chrome_tab_idl',
         'npchrome_frame',
@@ -431,6 +416,7 @@
       'include_dirs': [
         '<(DEPTH)/breakpad/src',
       ],
+      'defines': [ 'CHROME_FRAME_NET_TESTS=1' ],
       'sources': [
         '../net/url_request/url_request_unittest.cc',
         'test/chrome_frame_test_utils.cc',
@@ -455,6 +441,7 @@
       ],
       'conditions': [
         ['OS=="win"', {
+          'msvs_large_pdb': 1,
           'link_settings': {
             'libraries': [
               '-loleacc.lib',
@@ -535,6 +522,7 @@
       ],
       'conditions': [
         ['OS=="win"', {
+          'msvs_large_pdb': 1,
           'link_settings': {
             'libraries': [
               '-loleacc.lib',
@@ -679,9 +667,9 @@
       'target_name': 'chrome_frame_ie',
       'type': 'static_library',
       'dependencies': [
-        '../chrome/app/policy/cloud_policy_codegen.gyp:policy',
         '../chrome/chrome.gyp:common',
         '../chrome/chrome.gyp:utility',
+        '../components/components.gyp:policy',
         '../content/content.gyp:content_common',
         '../net/net.gyp:net',
         '../third_party/libxml/libxml.gyp:libxml',
@@ -753,25 +741,14 @@
         'policy_settings.h',
         'protocol_sink_wrap.cc',
         'protocol_sink_wrap.h',
-        'ready_mode/internal/ready_mode_state.h',
         'ready_mode/internal/ready_mode_web_browser_adapter.cc',
         'ready_mode/internal/ready_mode_web_browser_adapter.h',
-        'ready_mode/internal/ready_prompt_content.cc',
-        'ready_mode/internal/ready_prompt_content.h',
-        'ready_mode/internal/ready_prompt_window.cc',
-        'ready_mode/internal/ready_prompt_window.h',
-        'ready_mode/internal/registry_ready_mode_state.cc',
-        'ready_mode/internal/registry_ready_mode_state.h',
         'ready_mode/internal/url_launcher.h',
-        'ready_mode/ready_mode.cc',
-        'ready_mode/ready_mode.h',
         'register_bho.rgs',
         'registry_list_preferences_holder.cc',
         'registry_list_preferences_holder.h',
         'stream_impl.cc',
         'stream_impl.h',
-        'turndown_prompt/reshow_state.cc',
-        'turndown_prompt/reshow_state.h',
         'turndown_prompt/turndown_prompt.cc',
         'turndown_prompt/turndown_prompt.h',
         'turndown_prompt/turndown_prompt_content.cc',
@@ -838,7 +815,7 @@
           'process_outputs_as_sources': 1,
           'message':
               'Assembling <(RULE_INPUT_PATH) to ' \
-              '<(INTERMEDIATE_DIR)\<(RULE_INPUT_ROOT).obj.',
+              '<(INTERMEDIATE_DIR)\<(RULE_INPUT_ROOT).obj',
         },
       ],
       'msvs_settings': {
@@ -962,141 +939,4 @@
       ],
     },
   ],
-  'conditions': [
-    # To enable the coverage targets, do
-    #    GYP_DEFINES='coverage=1' gclient sync
-    ['coverage!=0',
-      { 'targets': [
-        {
-          # Coverage BUILD AND RUN.
-          # Not named coverage_build_and_run for historical reasons.
-          'target_name': 'gcf_coverage',
-          'dependencies': [ 'gcf_coverage_build', 'gcf_coverage_run' ],
-          # do NOT place this in the 'all' list; most won't want it.
-          'suppress_wildcard': 1,
-          'type': 'none',
-          'actions': [
-            {
-              'message': 'Coverage is now complete.',
-              # MSVS must have an input file and an output file.
-              'inputs': [ '<(PRODUCT_DIR)/gcf_coverage.info' ],
-              'outputs': [ '<(PRODUCT_DIR)/gcf_coverage-build-and-run.stamp' ],
-              'action_name': 'gcf_coverage',
-              # Wish gyp had some basic builtin commands (e.g. 'touch').
-              'action': [ 'python', '-c',
-                          'import os; ' \
-                          'open(' \
-                          '\'<(PRODUCT_DIR)\' + os.path.sep + ' \
-                          '\'gcf_coverage-build-and-run.stamp\'' \
-                          ', \'w\').close()' ],
-              # Use outputs of this action as inputs for the main target build.
-              # Seems as a misnomer but makes this happy on Linux (scons).
-              'process_outputs_as_sources': 1,
-            },
-          ],
-        },
-        # Coverage BUILD.  Compile only; does not run the bundles.
-        # Intended as the build phase for our coverage bots.
-        #
-        # Builds unit test bundles needed for coverage.
-        # Outputs this list of bundles into gcf_coverage_bundles.py.
-        #
-        # If you want to both build and run coverage from your IDE,
-        # use the 'gcf_coverage' target.
-        {
-          'target_name': 'gcf_coverage_build',
-          'suppress_wildcard': 1,
-          'type': 'none',
-          'dependencies': [
-            # Some tests are disabled because they depend on browser.lib which
-            # has some trouble to link with instrumentation. Until this is
-            # fixed on the Chrome side we won't get complete coverage from
-            # our tests but we at least get the process rolling...
-            # TODO(mad): FIX THIS!
-            #'chrome_frame_net_tests',
-            #'chrome_frame_reliability_tests',
-
-            # Other tests depend on Chrome bins being available when they run.
-            # Those should be re-enabled as soon as we setup the build slave to
-            # also build (or download an archive of) Chrome, even it it isn't
-            # instrumented itself.
-            # TODO(mad): FIX THIS!
-            #'chrome_frame_perftests',
-            #'chrome_frame_tests',
-
-            'chrome_frame_unittests',
-          ],  # 'dependencies'
-          'actions': [
-            {
-              # TODO(jrg):
-              # Technically I want inputs to be the list of
-              # executables created in <@(_dependencies) but use of
-              # that variable lists the dep by dep name, not their
-              # output executable name.
-              # Is there a better way to force this action to run, always?
-              #
-              # If a test bundle is added to this gcf_coverage_build target it
-              # necessarily means this file (chrome_frame.gyp) is changed,
-              # so the action is run (gcf_coverage_bundles.py is generated).
-              # Exceptions to that rule are theoretically possible
-              # (e.g. re-gyp with a GYP_DEFINES set).
-              # Else it's the same list of bundles as last time.  They are
-              # built (since on the deps list) but the action may not run.
-              # For now, things work, but it's less than ideal.
-              'inputs': [ 'chrome_frame.gyp' ],
-              'outputs': [ '<(PRODUCT_DIR)/gcf_coverage_bundles.py' ],
-              'action_name': 'gcf_coverage_build',
-              'action': [ 'python', '-c',
-                          'import os; '
-                          'f = open(' \
-                          '\'<(PRODUCT_DIR)\' + os.path.sep + ' \
-                          '\'gcf_coverage_bundles.py\'' \
-                          ', \'w\'); ' \
-                          'deplist = \'' \
-                          '<@(_dependencies)' \
-                          '\'.split(\' \'); ' \
-                          'f.write(str(deplist)); ' \
-                          'f.close()'],
-              # Use outputs of this action as inputs for the main target build.
-              # Seems as a misnomer but makes this happy on Linux (scons).
-              'process_outputs_as_sources': 1,
-            },
-          ],
-        },
-        # Coverage RUN.  Does not actually compile the bundles (though it
-        # depends on the gcf_coverage_build step which will do it).
-        # This target mirrors the run_coverage_bundles buildbot phase.
-        # If you update this command update the mirror in
-        # $BUILDBOT/scripts/master/factory/chromium_commands.py.
-        # If you want both build and run, use the 'gcf_coverage' target which
-        # adds a bit more magic to identify if we need to run or not.
-        {
-          'target_name': 'gcf_coverage_run',
-          'dependencies': [ 'gcf_coverage_build' ],
-          'suppress_wildcard': 1,
-          'type': 'none',
-          'actions': [
-            {
-              # MSVS must have an input file and an output file.
-              'inputs': [ '<(PRODUCT_DIR)/gcf_coverage_bundles.py' ],
-              'outputs': [ '<(PRODUCT_DIR)/gcf_coverage.info' ],
-              'action_name': 'gcf_coverage_run',
-              'action': [ 'python',
-                          '../tools/code_coverage/coverage_posix.py',
-                          '--directory',
-                          '<(PRODUCT_DIR)',
-                          '--src_root',
-                          '.',
-                          '--bundles',
-                          '<(PRODUCT_DIR)/gcf_coverage_bundles.py',
-                        ],
-              # Use outputs of this action as inputs for the main target build.
-              # Seems as a misnomer but makes this happy on Linux (scons).
-              'process_outputs_as_sources': 1,
-            },
-          ],
-        },
-      ],
-    }, ],  # 'coverage!=0'
-  ],  # 'conditions'
 }

@@ -31,14 +31,13 @@
 #include "public/testing/WebTestInterfaces.h"
 
 #include "MockWebAudioDevice.h"
-#include "MockWebCrypto.h"
 #include "MockWebMIDIAccessor.h"
 #include "MockWebMediaStreamCenter.h"
 #include "MockWebRTCPeerConnectionHandler.h"
 #include "TestInterfaces.h"
 #include "TestRunner.h"
 
-using namespace WebKit;
+using namespace blink;
 
 namespace WebTestRunner {
 
@@ -114,11 +113,6 @@ WebMIDIAccessor* WebTestInterfaces::createMIDIAccessor(WebMIDIAccessorClient* cl
 WebAudioDevice* WebTestInterfaces::createAudioDevice(double sampleRate)
 {
     return new MockWebAudioDevice(sampleRate);
-}
-
-WebCrypto* WebTestInterfaces::crypto()
-{
-    return MockWebCrypto::get();
 }
 
 }

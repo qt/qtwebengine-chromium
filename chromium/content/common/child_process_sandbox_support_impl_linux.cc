@@ -13,7 +13,7 @@
 #include "base/posix/unix_domain_socket_linux.h"
 #include "base/safe_numerics.h"
 #include "base/sys_byteorder.h"
-#include "content/common/sandbox_linux.h"
+#include "content/common/sandbox_linux/sandbox_linux.h"
 #include "third_party/WebKit/public/platform/linux/WebFontFamily.h"
 #include "third_party/WebKit/public/platform/linux/WebFontRenderStyle.h"
 
@@ -21,7 +21,7 @@ namespace content {
 
 void GetFontFamilyForCharacter(int32_t character,
                                const char* preferred_locale,
-                               WebKit::WebFontFamily* family) {
+                               blink::WebFontFamily* family) {
   TRACE_EVENT0("sandbox_ipc", "GetFontFamilyForCharacter");
 
   Pickle request;
@@ -50,7 +50,7 @@ void GetFontFamilyForCharacter(int32_t character,
 }
 
 void GetRenderStyleForStrike(const char* family, int sizeAndStyle,
-                             WebKit::WebFontRenderStyle* out) {
+                             blink::WebFontRenderStyle* out) {
   TRACE_EVENT0("sandbox_ipc", "GetRenderStyleForStrike");
 
   Pickle request;

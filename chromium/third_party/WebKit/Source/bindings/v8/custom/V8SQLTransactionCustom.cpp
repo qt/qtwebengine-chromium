@@ -36,7 +36,7 @@
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/V8Binding.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/platform/sql/SQLValue.h"
+#include "modules/webdatabase/sqlite/SQLValue.h"
 #include "modules/webdatabase/Database.h"
 #include "wtf/Vector.h"
 
@@ -44,26 +44,26 @@ using namespace WTF;
 
 namespace WebCore {
 
-void V8SQLTransaction::executeSqlMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8SQLTransaction::executeSqlMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    if (!args.Length()) {
-        setDOMException(SyntaxError, args.GetIsolate());
+    if (!info.Length()) {
+        setDOMException(SyntaxError, info.GetIsolate());
         return;
     }
 
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, statement, args[0]);
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, statement, info[0]);
 
     Vector<SQLValue> sqlValues;
 
-    if (args.Length() > 1 && !isUndefinedOrNull(args[1])) {
-        if (!args[1]->IsObject()) {
-            setDOMException(TypeMismatchError, args.GetIsolate());
+    if (info.Length() > 1 && !isUndefinedOrNull(info[1])) {
+        if (!info[1]->IsObject()) {
+            setDOMException(TypeMismatchError, info.GetIsolate());
             return;
         }
 
         uint32_t sqlArgsLength = 0;
-        v8::Local<v8::Object> sqlArgsObject = args[1]->ToObject();
-        V8TRYCATCH_VOID(v8::Local<v8::Value>, length, sqlArgsObject->Get(v8::String::NewSymbol("length")));
+        v8::Local<v8::Object> sqlArgsObject = info[1]->ToObject();
+        V8TRYCATCH_VOID(v8::Local<v8::Value>, length, sqlArgsObject->Get(v8AtomicString(info.GetIsolate(), "length")));
 
         if (isUndefinedOrNull(length))
             sqlArgsLength = sqlArgsObject->GetPropertyNames()->Length();
@@ -71,7 +71,7 @@ void V8SQLTransaction::executeSqlMethodCustom(const v8::FunctionCallbackInfo<v8:
             sqlArgsLength = length->Uint32Value();
 
         for (unsigned int i = 0; i < sqlArgsLength; ++i) {
-            v8::Handle<v8::Integer> key = v8::Integer::New(i, args.GetIsolate());
+            v8::Handle<v8::Integer> key = v8::Integer::New(i, info.GetIsolate());
             V8TRYCATCH_VOID(v8::Local<v8::Value>, value, sqlArgsObject->Get(key));
 
             if (value.IsEmpty() || value->IsNull())
@@ -86,31 +86,31 @@ void V8SQLTransaction::executeSqlMethodCustom(const v8::FunctionCallbackInfo<v8:
         }
     }
 
-    SQLTransaction* transaction = V8SQLTransaction::toNative(args.Holder());
+    SQLTransaction* transaction = V8SQLTransaction::toNative(info.Holder());
 
-    ScriptExecutionContext* scriptExecutionContext = getScriptExecutionContext();
+    ExecutionContext* executionContext = getExecutionContext();
 
-    RefPtr<SQLStatementCallback> callback;
-    if (args.Length() > 2 && !isUndefinedOrNull(args[2])) {
-        if (!args[2]->IsObject()) {
-            setDOMException(TypeMismatchError, args.GetIsolate());
+    OwnPtr<SQLStatementCallback> callback;
+    if (info.Length() > 2 && !isUndefinedOrNull(info[2])) {
+        if (!info[2]->IsFunction()) {
+            setDOMException(TypeMismatchError, info.GetIsolate());
             return;
         }
-        callback = V8SQLStatementCallback::create(args[2], scriptExecutionContext);
+        callback = V8SQLStatementCallback::create(v8::Handle<v8::Function>::Cast(info[2]), executionContext);
     }
 
-    RefPtr<SQLStatementErrorCallback> errorCallback;
-    if (args.Length() > 3 && !isUndefinedOrNull(args[3])) {
-        if (!args[3]->IsObject()) {
-            setDOMException(TypeMismatchError, args.GetIsolate());
+    OwnPtr<SQLStatementErrorCallback> errorCallback;
+    if (info.Length() > 3 && !isUndefinedOrNull(info[3])) {
+        if (!info[3]->IsFunction()) {
+            setDOMException(TypeMismatchError, info.GetIsolate());
             return;
         }
-        errorCallback = V8SQLStatementErrorCallback::create(args[3], scriptExecutionContext);
+        errorCallback = V8SQLStatementErrorCallback::create(v8::Handle<v8::Function>::Cast(info[3]), executionContext);
     }
 
-    ExceptionState es(args.GetIsolate());
-    transaction->executeSQL(statement, sqlValues, callback, errorCallback, es);
-    es.throwIfNeeded();
+    ExceptionState exceptionState(info.Holder(), info.GetIsolate());
+    transaction->executeSQL(statement, sqlValues, callback.release(), errorCallback.release(), exceptionState);
+    exceptionState.throwIfNeeded();
 }
 
 } // namespace WebCore

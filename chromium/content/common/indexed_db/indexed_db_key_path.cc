@@ -8,27 +8,27 @@
 
 namespace content {
 
-using WebKit::WebIDBKeyPathTypeArray;
-using WebKit::WebIDBKeyPathTypeNull;
-using WebKit::WebIDBKeyPathTypeString;
+using blink::WebIDBKeyPathTypeArray;
+using blink::WebIDBKeyPathTypeNull;
+using blink::WebIDBKeyPathTypeString;
 
 IndexedDBKeyPath::IndexedDBKeyPath() : type_(WebIDBKeyPathTypeNull) {}
 
-IndexedDBKeyPath::IndexedDBKeyPath(const string16& string)
+IndexedDBKeyPath::IndexedDBKeyPath(const base::string16& string)
     : type_(WebIDBKeyPathTypeString), string_(string) {}
 
-IndexedDBKeyPath::IndexedDBKeyPath(const std::vector<string16>& array)
+IndexedDBKeyPath::IndexedDBKeyPath(const std::vector<base::string16>& array)
     : type_(WebIDBKeyPathTypeArray), array_(array) {}
 
 IndexedDBKeyPath::~IndexedDBKeyPath() {}
 
-const std::vector<string16>& IndexedDBKeyPath::array() const {
-  DCHECK(type_ == WebKit::WebIDBKeyPathTypeArray);
+const std::vector<base::string16>& IndexedDBKeyPath::array() const {
+  DCHECK(type_ == blink::WebIDBKeyPathTypeArray);
   return array_;
 }
 
-const string16& IndexedDBKeyPath::string() const {
-  DCHECK(type_ == WebKit::WebIDBKeyPathTypeString);
+const base::string16& IndexedDBKeyPath::string() const {
+  DCHECK(type_ == blink::WebIDBKeyPathTypeString);
   return string_;
 }
 

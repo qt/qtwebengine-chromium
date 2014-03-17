@@ -4,18 +4,20 @@
 
 #include "media/cast/framer/cast_message_builder.h"
 
+#include "media/cast/cast_defines.h"
+
 namespace media {
 namespace cast {
 
-static const uint16 kCompleteFrameLost = 0xffff;
-
 CastMessageBuilder::CastMessageBuilder(
+    base::TickClock* clock,
     RtpPayloadFeedback* incoming_payload_feedback,
     FrameIdMap* frame_id_map,
     uint32 media_ssrc,
     bool decoder_faster_than_max_frame_rate,
     int max_unacked_frames)
-    : cast_feedback_(incoming_payload_feedback),
+    : clock_(clock),
+      cast_feedback_(incoming_payload_feedback),
       frame_id_map_(frame_id_map),
       media_ssrc_(media_ssrc),
       decoder_faster_than_max_frame_rate_(decoder_faster_than_max_frame_rate),
@@ -24,15 +26,13 @@ CastMessageBuilder::CastMessageBuilder(
       waiting_for_key_frame_(true),
       slowing_down_ack_(false),
       acked_last_frame_(true),
-      last_acked_frame_id_(kStartFrameId),
-      default_tick_clock_(new base::DefaultTickClock()),
-      clock_(default_tick_clock_.get()) {
+      last_acked_frame_id_(kStartFrameId) {
   cast_msg_.ack_frame_id_ = kStartFrameId;
 }
 
 CastMessageBuilder::~CastMessageBuilder() {}
 
-void CastMessageBuilder::CompleteFrameReceived(uint8 frame_id,
+void CastMessageBuilder::CompleteFrameReceived(uint32 frame_id,
                                                bool is_key_frame) {
   if (last_update_time_.is_null()) {
     // Our first update.
@@ -52,12 +52,12 @@ void CastMessageBuilder::CompleteFrameReceived(uint8 frame_id,
     // packet in the key-frame.
     UpdateAckMessage();
   } else {
-    if (!UpdateAckMessage())
-      return;
+    if (!UpdateAckMessage()) return;
 
     BuildPacketList();
   }
   // Send cast message.
+  VLOG(1) << "Send cast message Ack:" << static_cast<int>(frame_id);
   cast_feedback_->CastFeedback(cast_msg_);
 }
 
@@ -83,7 +83,7 @@ bool CastMessageBuilder::UpdateAckMessage() {
       // time; and it's not needed since we can skip frames to catch up.
     }
   } else {
-    uint8 frame_id = frame_id_map_->LastContinuousFrame();
+    uint32 frame_id = frame_id_map_->LastContinuousFrame();
 
     // Is it a new frame?
     if (last_acked_frame_id_ == frame_id) return false;
@@ -153,9 +153,8 @@ void CastMessageBuilder::BuildPacketList() {
   // Are we missing packets?
   if (frame_id_map_->Empty()) return;
 
-  uint8 newest_frame_id = frame_id_map_->NewestFrameId();
-  uint8 next_expected_frame_id =
-      static_cast<uint8>(cast_msg_.ack_frame_id_ + 1);
+  uint32 newest_frame_id = frame_id_map_->NewestFrameId();
+  uint32 next_expected_frame_id = cast_msg_.ack_frame_id_ + 1;
 
   // Iterate over all frames.
   for (; !IsNewerFrameId(next_expected_frame_id, newest_frame_id);
@@ -183,7 +182,7 @@ void CastMessageBuilder::BuildPacketList() {
       }
     } else {
       time_last_nacked_map_[next_expected_frame_id] = now;
-      missing.insert(kCompleteFrameLost);
+      missing.insert(kRtcpCastAllPacketsLost);
       cast_msg_.missing_frames_and_packets_[next_expected_frame_id] = missing;
     }
   }

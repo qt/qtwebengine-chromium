@@ -20,11 +20,11 @@
 #ifndef SVGTextLayoutEngine_h
 #define SVGTextLayoutEngine_h
 
-#include "core/platform/graphics/Path.h"
 #include "core/rendering/svg/SVGTextChunkBuilder.h"
 #include "core/rendering/svg/SVGTextFragment.h"
 #include "core/rendering/svg/SVGTextLayoutAttributes.h"
 #include "core/rendering/svg/SVGTextMetrics.h"
+#include "platform/graphics/Path.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
@@ -50,7 +50,6 @@ public:
     SVGTextLayoutEngine(Vector<SVGTextLayoutAttributes*>&);
 
     Vector<SVGTextLayoutAttributes*>& layoutAttributes() { return m_layoutAttributes; }
-    SVGTextChunkBuilder& chunkLayoutBuilder() { return m_chunkLayoutBuilder; }
 
     void beginTextPathLayout(RenderObject*, SVGTextLayoutEngine& lineLayout);
     void endTextPathLayout();

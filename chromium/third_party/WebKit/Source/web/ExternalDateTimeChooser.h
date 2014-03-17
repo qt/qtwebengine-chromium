@@ -27,13 +27,13 @@
 #define ExternalDateTimeChooser_h
 
 #if !ENABLE(INPUT_MULTIPLE_FIELDS_UI)
-#include "core/platform/DateTimeChooser.h"
+#include "platform/DateTimeChooser.h"
 
 namespace WebCore {
 class DateTimeChooserClient;
 }
 
-namespace WebKit {
+namespace blink {
 
 class ChromeClientImpl;
 class WebString;
@@ -46,6 +46,7 @@ public:
 
     // The following functions are for DateTimeChooserCompletion.
     void didChooseValue(const WebString&);
+    void didChooseValue(double);
     void didCancelChooser();
 
 private:

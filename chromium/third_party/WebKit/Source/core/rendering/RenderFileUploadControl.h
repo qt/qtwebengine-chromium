@@ -44,13 +44,10 @@ public:
 private:
     virtual const char* renderName() const { return "RenderFileUploadControl"; }
 
-    virtual bool canBeReplacedWithInlineRunIn() const OVERRIDE;
     virtual void updateFromElement();
     virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const OVERRIDE;
     virtual void computePreferredLogicalWidths();
     virtual void paintObject(PaintInfo&, const LayoutPoint&);
-
-    virtual bool requiresForcedStyleRecalcPropagation() const { return true; }
 
     virtual bool supportsPartialLayout() const OVERRIDE { return false; }
 
@@ -63,20 +60,7 @@ private:
     bool m_canReceiveDroppedFiles;
 };
 
-inline RenderFileUploadControl* toRenderFileUploadControl(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isFileUploadControl());
-    return static_cast<RenderFileUploadControl*>(object);
-}
-
-inline const RenderFileUploadControl* toRenderFileUploadControl(const RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isFileUploadControl());
-    return static_cast<const RenderFileUploadControl*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderFileUploadControl(const RenderFileUploadControl*);
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderFileUploadControl, isFileUploadControl());
 
 } // namespace WebCore
 

@@ -34,11 +34,12 @@
 #include "core/fetch/CachePolicy.h"
 #include "core/fetch/FetchInitiatorInfo.h"
 #include "core/fetch/Resource.h"
-#include "core/platform/network/ResourceLoadPriority.h"
+#include "platform/network/ResourceLoadPriority.h"
 #include "wtf/Noncopyable.h"
 
 namespace WebCore {
 
+class Document;
 class DocumentLoader;
 class Frame;
 class KURL;
@@ -58,16 +59,17 @@ public:
 
     virtual void reportLocalLoadFailed(const KURL&);
     virtual void addAdditionalRequestHeaders(Document&, ResourceRequest&, Resource::Type);
-    virtual CachePolicy cachePolicy(Resource::Type) const;
+    virtual CachePolicy cachePolicy(Document*) const;
 
     virtual void dispatchDidChangeResourcePriority(unsigned long identifier, ResourceLoadPriority);
     virtual void dispatchWillSendRequest(DocumentLoader*, unsigned long identifier, ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo& = FetchInitiatorInfo());
     virtual void dispatchDidLoadResourceFromMemoryCache(const ResourceRequest&, const ResourceResponse&);
     virtual void dispatchDidReceiveResponse(DocumentLoader*, unsigned long identifier, const ResourceResponse&, ResourceLoader* = 0);
     virtual void dispatchDidReceiveData(DocumentLoader*, unsigned long identifier, const char* data, int dataLength, int encodedDataLength);
+    virtual void dispatchDidDownloadData(DocumentLoader*, unsigned long identifier, int dataLength, int encodedDataLength);
     virtual void dispatchDidFinishLoading(DocumentLoader*, unsigned long identifier, double finishTime);
     virtual void dispatchDidFail(DocumentLoader*, unsigned long identifier, const ResourceError&);
-    virtual void sendRemainingDelegateMessages(DocumentLoader*, unsigned long identifier, const ResourceResponse&, const char* data, int dataLength, int encodedDataLength, const ResourceError&);
+    virtual void sendRemainingDelegateMessages(DocumentLoader*, unsigned long identifier, const ResourceResponse&, int dataLength);
 };
 
 }

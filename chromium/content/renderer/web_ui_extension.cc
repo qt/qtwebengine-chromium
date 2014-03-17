@@ -48,13 +48,14 @@ class WebUIExtensionWrapper : public v8::Extension {
   WebUIExtensionWrapper();
   virtual ~WebUIExtensionWrapper();
 
-  virtual v8::Handle<v8::FunctionTemplate> GetNativeFunction(
+  virtual v8::Handle<v8::FunctionTemplate> GetNativeFunctionTemplate(
+      v8::Isolate* isolate,
       v8::Handle<v8::String> name) OVERRIDE;
   static void Send(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void GetVariableValue(const v8::FunctionCallbackInfo<v8::Value>& args);
 
  private:
-  static bool ShouldRespondToRequest(WebKit::WebFrame** frame_ptr,
+  static bool ShouldRespondToRequest(blink::WebFrame** frame_ptr,
                                      RenderView** render_view_ptr);
 
   DISALLOW_COPY_AND_ASSIGN(WebUIExtensionWrapper);
@@ -65,20 +66,21 @@ WebUIExtensionWrapper::WebUIExtensionWrapper()
 
 WebUIExtensionWrapper::~WebUIExtensionWrapper() {}
 
-v8::Handle<v8::FunctionTemplate> WebUIExtensionWrapper::GetNativeFunction(
-    v8::Handle<v8::String> name) {
-  if (name->Equals(v8::String::New("Send")))
-    return v8::FunctionTemplate::New(Send);
-  if (name->Equals(v8::String::New("GetVariableValue")))
-    return v8::FunctionTemplate::New(GetVariableValue);
+v8::Handle<v8::FunctionTemplate>
+WebUIExtensionWrapper::GetNativeFunctionTemplate(v8::Isolate* isolate,
+                                                 v8::Handle<v8::String> name) {
+  if (name->Equals(v8::String::NewFromUtf8(isolate, "Send")))
+    return v8::FunctionTemplate::New(isolate, Send);
+  if (name->Equals(v8::String::NewFromUtf8(isolate, "GetVariableValue")))
+    return v8::FunctionTemplate::New(isolate, GetVariableValue);
   return v8::Handle<v8::FunctionTemplate>();
 }
 
 // static
 bool WebUIExtensionWrapper::ShouldRespondToRequest(
-    WebKit::WebFrame** frame_ptr,
+    blink::WebFrame** frame_ptr,
     RenderView** render_view_ptr) {
-  WebKit::WebFrame* frame = WebKit::WebFrame::frameForCurrentContext();
+  blink::WebFrame* frame = blink::WebFrame::frameForCurrentContext();
   if (!frame || !frame->view())
     return false;
 
@@ -104,7 +106,7 @@ bool WebUIExtensionWrapper::ShouldRespondToRequest(
 // static
 void WebUIExtensionWrapper::Send(
     const v8::FunctionCallbackInfo<v8::Value>& args) {
-  WebKit::WebFrame* frame;
+  blink::WebFrame* frame;
   RenderView* render_view;
   if (!ShouldRespondToRequest(&frame, &render_view))
     return;
@@ -145,7 +147,7 @@ void WebUIExtensionWrapper::Send(
 // static
 void WebUIExtensionWrapper::GetVariableValue(
     const v8::FunctionCallbackInfo<v8::Value>& args) {
-  WebKit::WebFrame* frame;
+  blink::WebFrame* frame;
   RenderView* render_view;
   if (!ShouldRespondToRequest(&frame, &render_view))
     return;
@@ -155,7 +157,10 @@ void WebUIExtensionWrapper::GetVariableValue(
 
   std::string key = *v8::String::Utf8Value(args[0]->ToString());
   std::string value = WebUIExtensionData::Get(render_view)->GetValue(key);
-  args.GetReturnValue().Set(v8::String::New(value.c_str(), value.length()));
+  args.GetReturnValue().Set(v8::String::NewFromUtf8(args.GetIsolate(),
+                                                    value.c_str(),
+                                                    v8::String::kNormalString,
+                                                    value.length()));
 }
 
 // static

@@ -33,7 +33,6 @@
 
 #include "core/inspector/ConsoleMessage.h"
 
-#include "InspectorFrontend.h"
 #include "bindings/v8/ScriptCallStackFactory.h"
 #include "bindings/v8/ScriptValue.h"
 #include "core/inspector/IdentifiersFactory.h"
@@ -123,7 +122,7 @@ void ConsoleMessage::autogenerateMetadata(bool canGenerateCallStack, ScriptState
         return;
 
     if (state)
-        m_callStack = createScriptCallStackForConsole(state);
+        m_callStack = createScriptCallStackForConsole();
     else if (canGenerateCallStack)
         m_callStack = createScriptCallStack(ScriptCallStack::maxCallStackSizeToCapture, true);
     else
@@ -171,8 +170,6 @@ static TypeBuilder::Console::ConsoleMessage::Type::Enum messageTypeValue(Message
     case StartGroupCollapsedMessageType: return TypeBuilder::Console::ConsoleMessage::Type::StartGroupCollapsed;
     case EndGroupMessageType: return TypeBuilder::Console::ConsoleMessage::Type::EndGroup;
     case AssertMessageType: return TypeBuilder::Console::ConsoleMessage::Type::Assert;
-    case ProfileMessageType: return TypeBuilder::Console::ConsoleMessage::Type::Profile;
-    case ProfileEndMessageType: return TypeBuilder::Console::ConsoleMessage::Type::ProfileEnd;
     }
     return TypeBuilder::Console::ConsoleMessage::Type::Log;
 }
@@ -184,6 +181,7 @@ static TypeBuilder::Console::ConsoleMessage::Level::Enum messageLevelValue(Messa
     case LogMessageLevel: return TypeBuilder::Console::ConsoleMessage::Level::Log;
     case WarningMessageLevel: return TypeBuilder::Console::ConsoleMessage::Level::Warning;
     case ErrorMessageLevel: return TypeBuilder::Console::ConsoleMessage::Level::Error;
+    case InfoMessageLevel: return TypeBuilder::Console::ConsoleMessage::Level::Info;
     }
     return TypeBuilder::Console::ConsoleMessage::Level::Log;
 }

@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_indata.c 255190 2013-09-03 19:31:59Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp_indata.c 258228 2013-11-16 16:09:09Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -806,13 +806,12 @@ sctp_deliver_reasm_check(struct sctp_tcb *stcb, struct sctp_association *asoc)
 			 * but should we?
 			 */
 			if (stcb->sctp_socket) {
-				pd_point = min(SCTP_SB_LIMIT_RCV(stcb->sctp_socket),
+				pd_point = min(SCTP_SB_LIMIT_RCV(stcb->sctp_socket) >> SCTP_PARTIAL_DELIVERY_SHIFT,
 				               stcb->sctp_ep->partial_delivery_point);
 			} else {
 				pd_point = stcb->sctp_ep->partial_delivery_point;
 			}
 			if (sctp_is_all_msg_on_reasm(asoc, &tsize) || (tsize >= pd_point)) {
-
 				/*
 				 * Yes, we setup to start reception, by
 				 * backing down the TSN just in case we
@@ -1802,7 +1801,6 @@ failed_express_del:
 				asoc->highest_tsn_inside_nr_map = tsn;
 			}
 			SCTP_STAT_INCR(sctps_recvexpressm);
-			control->sinfo_tsn = tsn;
 			asoc->tsn_last_delivered = tsn;
 			asoc->fragment_flags = chunk_flags;
 			asoc->tsn_of_pdapi_last_delivered = tsn;
@@ -2503,7 +2501,7 @@ sctp_service_queues(struct sctp_tcb *stcb, struct sctp_association *asoc)
 		 * delivery queue and something can be delivered.
 		 */
 		if (stcb->sctp_socket) {
-			pd_point = min(SCTP_SB_LIMIT_RCV(stcb->sctp_socket),
+			pd_point = min(SCTP_SB_LIMIT_RCV(stcb->sctp_socket) >> SCTP_PARTIAL_DELIVERY_SHIFT,
 				       stcb->sctp_ep->partial_delivery_point);
 		} else {
 			pd_point = stcb->sctp_ep->partial_delivery_point;

@@ -33,10 +33,8 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ScriptExecutionContext.h"
-#include "core/platform/Logging.h"
-#include "modules/webdatabase/DatabaseBackendContext.h"
-#include "modules/webdatabase/DatabaseBackendSync.h"
+#include "core/dom/ExecutionContext.h"
+#include "platform/Logging.h"
 #include "modules/webdatabase/DatabaseCallback.h"
 #include "modules/webdatabase/DatabaseContext.h"
 #include "modules/webdatabase/DatabaseManager.h"
@@ -44,21 +42,20 @@
 #include "modules/webdatabase/SQLError.h"
 #include "modules/webdatabase/SQLTransactionSync.h"
 #include "modules/webdatabase/SQLTransactionSyncCallback.h"
-#include "weborigin/SecurityOrigin.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/CString.h"
 
 namespace WebCore {
 
-PassRefPtr<DatabaseSync> DatabaseSync::create(ScriptExecutionContext*, PassRefPtr<DatabaseBackendBase> backend)
+PassRefPtr<DatabaseSync> DatabaseSync::create(ExecutionContext*, PassRefPtr<DatabaseBackendBase> backend)
 {
     return static_cast<DatabaseSync*>(backend.get());
 }
 
-DatabaseSync::DatabaseSync(PassRefPtr<DatabaseBackendContext> databaseContext,
+DatabaseSync::DatabaseSync(PassRefPtr<DatabaseContext> databaseContext,
     const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize)
-    : DatabaseBase(databaseContext->scriptExecutionContext())
+    : DatabaseBase(databaseContext->executionContext())
     , DatabaseBackendSync(databaseContext, name, expectedVersion, displayName, estimatedSize)
 {
     ScriptWrappable::init(this);
@@ -67,7 +64,7 @@ DatabaseSync::DatabaseSync(PassRefPtr<DatabaseBackendContext> databaseContext,
 
 DatabaseSync::~DatabaseSync()
 {
-    ASSERT(m_scriptExecutionContext->isContextThread());
+    ASSERT(m_executionContext->isContextThread());
 }
 
 PassRefPtr<DatabaseBackendSync> DatabaseSync::backend()
@@ -75,20 +72,20 @@ PassRefPtr<DatabaseBackendSync> DatabaseSync::backend()
     return this;
 }
 
-void DatabaseSync::changeVersion(const String& oldVersion, const String& newVersion, PassRefPtr<SQLTransactionSyncCallback> changeVersionCallback, ExceptionState& es)
+void DatabaseSync::changeVersion(const String& oldVersion, const String& newVersion, PassOwnPtr<SQLTransactionSyncCallback> changeVersionCallback, ExceptionState& exceptionState)
 {
-    ASSERT(m_scriptExecutionContext->isContextThread());
+    ASSERT(m_executionContext->isContextThread());
 
     if (sqliteDatabase().transactionInProgress()) {
         reportChangeVersionResult(1, SQLError::DATABASE_ERR, 0);
         setLastErrorMessage("unable to changeVersion from within a transaction");
-        es.throwDOMException(SQLDatabaseError);
+        exceptionState.throwUninformativeAndGenericDOMException(SQLDatabaseError);
         return;
     }
 
     RefPtr<SQLTransactionSync> transaction = SQLTransactionSync::create(this, changeVersionCallback, false);
-    transaction->begin(es);
-    if (es.hadException()) {
+    transaction->begin(exceptionState);
+    if (exceptionState.hadException()) {
         ASSERT(!lastErrorMessage().isEmpty());
         return;
     }
@@ -97,20 +94,20 @@ void DatabaseSync::changeVersion(const String& oldVersion, const String& newVers
     if (!getVersionFromDatabase(actualVersion)) {
         reportChangeVersionResult(2, SQLError::UNKNOWN_ERR, sqliteDatabase().lastError());
         setLastErrorMessage("unable to read the current version", sqliteDatabase().lastError(), sqliteDatabase().lastErrorMsg());
-        es.throwDOMException(UnknownError, SQLError::unknownErrorMessage);
+        exceptionState.throwDOMException(UnknownError, SQLError::unknownErrorMessage);
         return;
     }
 
     if (actualVersion != oldVersion) {
         reportChangeVersionResult(3, SQLError::VERSION_ERR, 0);
         setLastErrorMessage("current version of the database and `oldVersion` argument do not match");
-        es.throwDOMException(VersionError, SQLError::versionErrorMessage);
+        exceptionState.throwDOMException(VersionError, SQLError::versionErrorMessage);
         return;
     }
 
 
-    transaction->execute(es);
-    if (es.hadException()) {
+    transaction->execute(exceptionState);
+    if (exceptionState.hadException()) {
         ASSERT(!lastErrorMessage().isEmpty());
         return;
     }
@@ -118,12 +115,12 @@ void DatabaseSync::changeVersion(const String& oldVersion, const String& newVers
     if (!setVersionInDatabase(newVersion)) {
         reportChangeVersionResult(4, SQLError::UNKNOWN_ERR, sqliteDatabase().lastError());
         setLastErrorMessage("unable to set the new version", sqliteDatabase().lastError(), sqliteDatabase().lastErrorMsg());
-        es.throwDOMException(UnknownError, SQLError::unknownErrorMessage);
+        exceptionState.throwDOMException(UnknownError, SQLError::unknownErrorMessage);
         return;
     }
 
-    transaction->commit(es);
-    if (es.hadException()) {
+    transaction->commit(exceptionState);
+    if (exceptionState.hadException()) {
         ASSERT(!lastErrorMessage().isEmpty());
         setCachedVersion(oldVersion);
         return;
@@ -135,14 +132,14 @@ void DatabaseSync::changeVersion(const String& oldVersion, const String& newVers
     setLastErrorMessage("");
 }
 
-void DatabaseSync::transaction(PassRefPtr<SQLTransactionSyncCallback> callback, ExceptionState& es)
+void DatabaseSync::transaction(PassOwnPtr<SQLTransactionSyncCallback> callback, ExceptionState& exceptionState)
 {
-    runTransaction(callback, false, es);
+    runTransaction(callback, false, exceptionState);
 }
 
-void DatabaseSync::readTransaction(PassRefPtr<SQLTransactionSyncCallback> callback, ExceptionState& es)
+void DatabaseSync::readTransaction(PassOwnPtr<SQLTransactionSyncCallback> callback, ExceptionState& exceptionState)
 {
-    runTransaction(callback, true, es);
+    runTransaction(callback, true, exceptionState);
 }
 
 void DatabaseSync::rollbackTransaction(PassRefPtr<SQLTransactionSync> transaction)
@@ -153,31 +150,31 @@ void DatabaseSync::rollbackTransaction(PassRefPtr<SQLTransactionSync> transactio
     return;
 }
 
-void DatabaseSync::runTransaction(PassRefPtr<SQLTransactionSyncCallback> callback, bool readOnly, ExceptionState& es)
+void DatabaseSync::runTransaction(PassOwnPtr<SQLTransactionSyncCallback> callback, bool readOnly, ExceptionState& exceptionState)
 {
-    ASSERT(m_scriptExecutionContext->isContextThread());
+    ASSERT(m_executionContext->isContextThread());
 
     if (sqliteDatabase().transactionInProgress()) {
         setLastErrorMessage("unable to start a transaction from within a transaction");
-        es.throwDOMException(SQLDatabaseError);
+        exceptionState.throwUninformativeAndGenericDOMException(SQLDatabaseError);
         return;
     }
 
     RefPtr<SQLTransactionSync> transaction = SQLTransactionSync::create(this, callback, readOnly);
-    transaction->begin(es);
-    if (es.hadException()) {
+    transaction->begin(exceptionState);
+    if (exceptionState.hadException()) {
         rollbackTransaction(transaction);
         return;
     }
 
-    transaction->execute(es);
-    if (es.hadException()) {
+    transaction->execute(exceptionState);
+    if (exceptionState.hadException()) {
         rollbackTransaction(transaction);
         return;
     }
 
-    transaction->commit(es);
-    if (es.hadException()) {
+    transaction->commit(exceptionState);
+    if (exceptionState.hadException()) {
         rollbackTransaction(transaction);
         return;
     }
@@ -185,35 +182,9 @@ void DatabaseSync::runTransaction(PassRefPtr<SQLTransactionSyncCallback> callbac
     setLastErrorMessage("");
 }
 
-void DatabaseSync::markAsDeletedAndClose()
-{
-    // FIXME: need to do something similar to closeImmediately(), but in a sync way
-}
-
-class CloseSyncDatabaseOnContextThreadTask : public ScriptExecutionContext::Task {
-public:
-    static PassOwnPtr<CloseSyncDatabaseOnContextThreadTask> create(PassRefPtr<DatabaseSync> database)
-    {
-        return adoptPtr(new CloseSyncDatabaseOnContextThreadTask(database));
-    }
-
-    virtual void performTask(ScriptExecutionContext*)
-    {
-        m_database->closeImmediately();
-    }
-
-private:
-    CloseSyncDatabaseOnContextThreadTask(PassRefPtr<DatabaseSync> database)
-        : m_database(database)
-    {
-    }
-
-    RefPtr<DatabaseSync> m_database;
-};
-
 void DatabaseSync::closeImmediately()
 {
-    ASSERT(m_scriptExecutionContext->isContextThread());
+    ASSERT(m_executionContext->isContextThread());
 
     if (!opened())
         return;

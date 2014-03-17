@@ -36,7 +36,7 @@ void JavaBridgeDispatcher::EnsureChannelIsSetUp() {
 JavaBridgeDispatcher::~JavaBridgeDispatcher() {
   for (ObjectMap::const_iterator iter = objects_.begin();
       iter != objects_.end(); ++iter) {
-    WebKit::WebBindings::releaseObject(NPVARIANT_TO_OBJECT(iter->second));
+    blink::WebBindings::releaseObject(NPVARIANT_TO_OBJECT(iter->second));
   }
 }
 
@@ -51,7 +51,7 @@ bool JavaBridgeDispatcher::OnMessageReceived(const IPC::Message& msg) {
   return handled;
 }
 
-void JavaBridgeDispatcher::DidClearWindowObject(WebKit::WebFrame* web_frame) {
+void JavaBridgeDispatcher::DidClearWindowObject(blink::WebFrame* web_frame) {
   // Note that we have to (re)bind all objects, as they will have been unbound
   // when the window object was cleared.
   for (ObjectMap::const_iterator iter = objects_.begin();
@@ -65,7 +65,7 @@ void JavaBridgeDispatcher::DidClearWindowObject(WebKit::WebFrame* web_frame) {
 }
 
 void JavaBridgeDispatcher::OnAddNamedObject(
-    const string16& name,
+    const base::string16& name,
     const NPVariant_Param& variant_param) {
   DCHECK_EQ(variant_param.type, NPVARIANT_PARAM_SENDER_OBJECT_ROUTING_ID);
 
@@ -90,12 +90,12 @@ void JavaBridgeDispatcher::OnAddNamedObject(
   // OnRemoveNamedObject() is called for that object.
   ObjectMap::iterator iter = objects_.find(name);
   if (iter != objects_.end()) {
-    WebKit::WebBindings::releaseObject(NPVARIANT_TO_OBJECT(iter->second));
+    blink::WebBindings::releaseObject(NPVARIANT_TO_OBJECT(iter->second));
   }
   objects_[name] = variant;
 }
 
-void JavaBridgeDispatcher::OnRemoveNamedObject(const string16& name) {
+void JavaBridgeDispatcher::OnRemoveNamedObject(const base::string16& name) {
   if (!channel_.get()) {
     DCHECK(objects_.empty());
     return;
@@ -106,7 +106,7 @@ void JavaBridgeDispatcher::OnRemoveNamedObject(const string16& name) {
   // is present.
   ObjectMap::iterator iter = objects_.find(name);
   DCHECK(iter != objects_.end());
-  WebKit::WebBindings::releaseObject(NPVARIANT_TO_OBJECT(iter->second));
+  blink::WebBindings::releaseObject(NPVARIANT_TO_OBJECT(iter->second));
   objects_.erase(iter);
 }
 

@@ -24,10 +24,9 @@
 
 #include "core/rendering/svg/RenderSVGResourceGradient.h"
 
-#include "core/platform/graphics/GraphicsContext.h"
 #include "core/rendering/svg/RenderSVGShape.h"
 #include "core/rendering/svg/SVGRenderSupport.h"
-#include "wtf/UnusedParam.h"
+#include "platform/graphics/GraphicsContext.h"
 
 namespace WebCore {
 
@@ -57,6 +56,8 @@ bool RenderSVGResourceGradient::applyResource(RenderObject* object, RenderStyle*
     ASSERT(style);
     ASSERT(context);
     ASSERT(resourceMode != ApplyToDefaultMode);
+
+    clearInvalidationMask();
 
     // Be sure to synchronize all SVG properties on the gradientElement _before_ processing any further.
     // Otherwhise the call to collectGradientAttributes() in createTileImage(), may cause the SVG DOM property
@@ -137,11 +138,10 @@ bool RenderSVGResourceGradient::applyResource(RenderObject* object, RenderStyle*
     return true;
 }
 
-void RenderSVGResourceGradient::postApplyResource(RenderObject* object, GraphicsContext*& context, unsigned short resourceMode, const Path* path, const RenderSVGShape* shape)
+void RenderSVGResourceGradient::postApplyResource(RenderObject*, GraphicsContext*& context, unsigned short resourceMode, const Path* path, const RenderSVGShape* shape)
 {
     ASSERT(context);
     ASSERT(resourceMode != ApplyToDefaultMode);
-    UNUSED_PARAM(object);
 
     if (resourceMode & ApplyToFillMode) {
         if (path)

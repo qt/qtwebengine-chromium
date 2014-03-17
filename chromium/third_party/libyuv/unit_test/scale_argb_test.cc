@@ -17,10 +17,6 @@
 
 namespace libyuv {
 
-static __inline int Abs(int v) {
-  return v >= 0 ? v : -v;
-}
-
 // Test scaling with C vs Opt and return maximum pixel difference. 0 = exact.
 static int ARGBTestFilter(int src_width, int src_height,
                           int dst_width, int dst_height,
@@ -85,7 +81,7 @@ static int ARGBTestFilter(int src_width, int src_height,
   int max_diff = 0;
   for (i = b; i < (dst_height + b); ++i) {
     for (j = b * 4; j < (dst_width + b) * 4; ++j) {
-      int abs_diff = abs(dst_argb_c[(i * dst_stride_argb) + j] -
+      int abs_diff = Abs(dst_argb_c[(i * dst_stride_argb) + j] -
                          dst_argb_opt[(i * dst_stride_argb) + j]);
       if (abs_diff > max_diff) {
         max_diff = abs_diff;
@@ -99,8 +95,8 @@ static int ARGBTestFilter(int src_width, int src_height,
   return max_diff;
 }
 
-static const int kTileX = 16;
-static const int kTileY = 16;
+static const int kTileX = 8;
+static const int kTileY = 8;
 
 static int TileARGBScale(const uint8* src_argb, int src_stride_argb,
                          int src_width, int src_height,
@@ -184,7 +180,7 @@ static int ARGBClipTestFilter(int src_width, int src_height,
   int max_diff = 0;
   for (i = b; i < (dst_height + b); ++i) {
     for (j = b * 4; j < (dst_width + b) * 4; ++j) {
-      int abs_diff = abs(dst_argb_c[(i * dst_stride_argb) + j] -
+      int abs_diff = Abs(dst_argb_c[(i * dst_stride_argb) + j] -
                          dst_argb_opt[(i * dst_stride_argb) + j]);
       if (abs_diff > max_diff) {
         max_diff = abs_diff;
@@ -198,78 +194,83 @@ static int ARGBClipTestFilter(int src_width, int src_height,
   return max_diff;
 }
 
-#define TEST_FACTOR1(name, filter, factor, max_diff)                           \
+#define TEST_FACTOR1(name, filter, hfactor, vfactor, max_diff)                 \
     TEST_F(libyuvTest, ARGBScaleDownBy##name##_##filter) {                     \
       int diff = ARGBTestFilter(benchmark_width_, benchmark_height_,           \
-                                Abs(benchmark_width_) / factor,                \
-                                Abs(benchmark_height_) / factor,               \
+                                Abs(benchmark_width_) * hfactor,               \
+                                Abs(benchmark_height_) * vfactor,              \
                                 kFilter##filter, benchmark_iterations_);       \
       EXPECT_LE(diff, max_diff);                                               \
     }                                                                          \
     TEST_F(libyuvTest, ARGBScaleDownClipBy##name##_##filter) {                 \
       int diff = ARGBClipTestFilter(benchmark_width_, benchmark_height_,       \
-                                Abs(benchmark_width_) / factor,                \
-                                Abs(benchmark_height_) / factor,               \
+                                Abs(benchmark_width_) * hfactor,               \
+                                Abs(benchmark_height_) * vfactor,              \
                                 kFilter##filter, benchmark_iterations_);       \
       EXPECT_LE(diff, max_diff);                                               \
     }
 
-// Test a scale factor with all 2 filters.  Expect unfiltered to be exact, but
+// Test a scale factor with 2 filters.  Expect unfiltered to be exact, but
 // filtering is different fixed point implementations for SSSE3, Neon and C.
-#define TEST_FACTOR(name, factor)                                              \
-    TEST_FACTOR1(name, None, factor, 0)                                        \
-    TEST_FACTOR1(name, Bilinear, factor, 2)
+#define TEST_FACTOR(name, hfactor, vfactor)                                    \
+    TEST_FACTOR1(name, None, hfactor, vfactor, 2)                              \
+    TEST_FACTOR1(name, Linear, hfactor, vfactor, 2)                            \
+    TEST_FACTOR1(name, Bilinear, hfactor, vfactor, 2)                          \
+    TEST_FACTOR1(name, Box, hfactor, vfactor, 2)
 
 // TODO(fbarchard): ScaleDownBy1 should be lossless, but Box has error of 2.
-TEST_FACTOR(1, 1)
-TEST_FACTOR(2, 2)
-TEST_FACTOR(4, 4)
-TEST_FACTOR(5, 5)
-TEST_FACTOR(8, 8)
-TEST_FACTOR(16, 16)
-TEST_FACTOR(2by3, 2 / 3)
-TEST_FACTOR(3by4, 3 / 4)
-TEST_FACTOR(3by8, 3 / 8)
+TEST_FACTOR(1, 1 / 1, 1 / 1)
+TEST_FACTOR(2, 1 / 2, 1 / 2)
+TEST_FACTOR(4, 1 / 4, 1 / 4)
+TEST_FACTOR(8, 1 / 8, 1 / 8)
+TEST_FACTOR(16, 1 / 16, 1 / 16)
+TEST_FACTOR(2by3, 2 / 3, 2 / 3)
+TEST_FACTOR(3by4, 3 / 4, 3 / 4)
+TEST_FACTOR(3by8, 3 / 8, 3 / 8)
+TEST_FACTOR(Vertical2by3, 1, 2 / 3)
 #undef TEST_FACTOR1
 #undef TEST_FACTOR
 
-#define TEST_SCALETO1(width, height, filter, max_diff)                         \
-    TEST_F(libyuvTest, ARGBScaleTo##width##x##height##_##filter) {             \
+#define TEST_SCALETO1(name, width, height, filter, max_diff)                   \
+    TEST_F(libyuvTest, name##To##width##x##height##_##filter) {                \
       int diff = ARGBTestFilter(benchmark_width_, benchmark_height_,           \
                                 width, height,                                 \
                                 kFilter##filter, benchmark_iterations_);       \
       EXPECT_LE(diff, max_diff);                                               \
     }                                                                          \
-    TEST_F(libyuvTest, ARGBScaleFrom##width##x##height##_##filter) {           \
+    TEST_F(libyuvTest, name##From##width##x##height##_##filter) {              \
       int diff = ARGBTestFilter(width, height,                                 \
                                 Abs(benchmark_width_), Abs(benchmark_height_), \
                                 kFilter##filter, benchmark_iterations_);       \
       EXPECT_LE(diff, max_diff);                                               \
     }                                                                          \
-    TEST_F(libyuvTest, ARGBScaleClipTo##width##x##height##_##filter) {         \
+    TEST_F(libyuvTest, name##ClipTo##width##x##height##_##filter) {            \
       int diff = ARGBClipTestFilter(benchmark_width_, benchmark_height_,       \
                                 width, height,                                 \
                                 kFilter##filter, benchmark_iterations_);       \
       EXPECT_LE(diff, max_diff);                                               \
     }                                                                          \
-    TEST_F(libyuvTest, ARGBScaleClipFrom##width##x##height##_##filter) {       \
+    TEST_F(libyuvTest, name##ClipFrom##width##x##height##_##filter) {          \
       int diff = ARGBClipTestFilter(width, height,                             \
                                 Abs(benchmark_width_), Abs(benchmark_height_), \
                                 kFilter##filter, benchmark_iterations_);       \
       EXPECT_LE(diff, max_diff);                                               \
     }
 
-// Test scale to a specified size with all 3 filters.
-#define TEST_SCALETO(width, height)                                            \
-    TEST_SCALETO1(width, height, None, 0)                                      \
-    TEST_SCALETO1(width, height, Bilinear, 2)
+/// Test scale to a specified size with all 4 filters.
+#define TEST_SCALETO(name, width, height)                                      \
+    TEST_SCALETO1(name, width, height, None, 0)                                \
+    TEST_SCALETO1(name, width, height, Linear, 3)                              \
+    TEST_SCALETO1(name, width, height, Bilinear, 3)                            \
+    TEST_SCALETO1(name, width, height, Box, 3)
 
-TEST_SCALETO(640, 360)
-TEST_SCALETO(853, 480)
-TEST_SCALETO(1280, 720)
-TEST_SCALETO(1280, 800)
-TEST_SCALETO(1366, 768)
-TEST_SCALETO(1920, 1080)
+TEST_SCALETO(ARGBScale, 1, 1)
+TEST_SCALETO(ARGBScale, 320, 240)
+TEST_SCALETO(ARGBScale, 352, 288)
+TEST_SCALETO(ARGBScale, 640, 360)
+TEST_SCALETO(ARGBScale, 853, 480)
+TEST_SCALETO(ARGBScale, 1280, 720)
+TEST_SCALETO(ARGBScale, 1920, 1080)
 #undef TEST_SCALETO1
 #undef TEST_SCALETO
 

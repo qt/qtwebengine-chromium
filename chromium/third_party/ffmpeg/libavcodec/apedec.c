@@ -1456,7 +1456,8 @@ static int ape_decode_frame(AVCodecContext *avctx, void *data,
             }
             s->ptr += offset;
         } else {
-            init_get_bits(&s->gb, s->ptr, (s->data_end - s->ptr) * 8);
+            if ((ret = init_get_bits8(&s->gb, s->ptr, s->data_end - s->ptr)) < 0)
+                return ret;
             if (s->fileversion > 3800)
                 skip_bits_long(&s->gb, offset * 8);
             else
@@ -1569,6 +1570,7 @@ static const AVClass ape_decoder_class = {
 
 AVCodec ff_ape_decoder = {
     .name           = "ape",
+    .long_name      = NULL_IF_CONFIG_SMALL("Monkey's Audio"),
     .type           = AVMEDIA_TYPE_AUDIO,
     .id             = AV_CODEC_ID_APE,
     .priv_data_size = sizeof(APEContext),
@@ -1577,7 +1579,6 @@ AVCodec ff_ape_decoder = {
     .decode         = ape_decode_frame,
     .capabilities   = CODEC_CAP_SUBFRAMES | CODEC_CAP_DELAY | CODEC_CAP_DR1,
     .flush          = ape_flush,
-    .long_name      = NULL_IF_CONFIG_SMALL("Monkey's Audio"),
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_U8P,
                                                       AV_SAMPLE_FMT_S16P,
                                                       AV_SAMPLE_FMT_S32P,

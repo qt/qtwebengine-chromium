@@ -33,9 +33,9 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/EventNames.h"
-#include "core/dom/EventTarget.h"
+#include "core/events/EventListener.h"
+#include "core/events/EventTarget.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
@@ -45,34 +45,23 @@ namespace WebCore {
 
 class ExceptionState;
 class KURL;
-class ScriptExecutionContext;
+class ExecutionContext;
 
-class AbstractWorker : public RefCounted<AbstractWorker>, public EventTarget, public ActiveDOMObject {
+class AbstractWorker : public RefCounted<AbstractWorker>, public EventTargetWithInlineData, public ActiveDOMObject {
+    REFCOUNTED_EVENT_TARGET(AbstractWorker);
 public:
     // EventTarget APIs
-    virtual ScriptExecutionContext* scriptExecutionContext() const OVERRIDE { return ActiveDOMObject::scriptExecutionContext(); }
+    virtual ExecutionContext* executionContext() const OVERRIDE { return ActiveDOMObject::executionContext(); }
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(error);
 
-    using RefCounted<AbstractWorker>::ref;
-    using RefCounted<AbstractWorker>::deref;
-
-    virtual void contextDestroyed() OVERRIDE;
-    AbstractWorker(ScriptExecutionContext*);
+    AbstractWorker(ExecutionContext*);
     virtual ~AbstractWorker();
 
 protected:
     // Helper function that converts a URL to an absolute URL and checks the result for validity.
     KURL resolveURL(const String& url, ExceptionState&);
     intptr_t asID() const { return reinterpret_cast<intptr_t>(this); }
-
-private:
-    virtual void refEventTarget() OVERRIDE { ref(); }
-    virtual void derefEventTarget() OVERRIDE { deref(); }
-    virtual EventTargetData* eventTargetData() OVERRIDE;
-    virtual EventTargetData* ensureEventTargetData() OVERRIDE;
-
-    EventTargetData m_eventTargetData;
 };
 
 } // namespace WebCore

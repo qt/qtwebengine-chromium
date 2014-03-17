@@ -24,8 +24,7 @@
 #if ENABLE(SVG_FONTS)
 #include "core/svg/SVGFontElement.h"
 
-#include "SVGNames.h"
-#include "core/page/UseCounter.h"
+#include "core/frame/UseCounter.h"
 #include "core/svg/SVGGlyphElement.h"
 #include "core/svg/SVGHKernElement.h"
 #include "core/svg/SVGMissingGlyphElement.h"
@@ -42,21 +41,20 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGFontElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGFontElement::SVGFontElement(const QualifiedName& tagName, Document& document)
-    : SVGElement(tagName, document)
+inline SVGFontElement::SVGFontElement(Document& document)
+    : SVGElement(SVGNames::fontTag, document)
     , m_missingGlyph(0)
     , m_isGlyphCacheValid(false)
 {
-    ASSERT(hasTagName(SVGNames::fontTag));
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGFontElement();
 
-    UseCounter::count(&document, UseCounter::SVGFontElement);
+    UseCounter::count(document, UseCounter::SVGFontElement);
 }
 
-PassRefPtr<SVGFontElement> SVGFontElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGFontElement> SVGFontElement::create(Document& document)
 {
-    return adoptRef(new SVGFontElement(tagName, document));
+    return adoptRef(new SVGFontElement(document));
 }
 
 void SVGFontElement::invalidateGlyphCache()

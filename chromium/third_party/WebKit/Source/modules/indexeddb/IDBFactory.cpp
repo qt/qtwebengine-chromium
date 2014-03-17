@@ -29,26 +29,29 @@
 #include "config.h"
 #include "modules/indexeddb/IDBFactory.h"
 
-#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/IDBBindingUtilities.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/platform/HistogramSupport.h"
 #include "modules/indexeddb/IDBDatabase.h"
-#include "modules/indexeddb/IDBDatabaseCallbacksImpl.h"
+#include "modules/indexeddb/IDBDatabaseCallbacks.h"
 #include "modules/indexeddb/IDBFactoryBackendInterface.h"
 #include "modules/indexeddb/IDBHistograms.h"
 #include "modules/indexeddb/IDBKey.h"
-#include "modules/indexeddb/IDBOpenDBRequest.h"
 #include "modules/indexeddb/IDBTracing.h"
-#include "weborigin/DatabaseIdentifier.h"
-#include "weborigin/SecurityOrigin.h"
+#include "modules/indexeddb/WebIDBCallbacksImpl.h"
+#include "modules/indexeddb/WebIDBDatabaseCallbacksImpl.h"
+#include "platform/weborigin/DatabaseIdentifier.h"
+#include "platform/weborigin/SecurityOrigin.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebIDBFactory.h"
 
 namespace WebCore {
 
-IDBFactory::IDBFactory(IDBFactoryBackendInterface* factory)
-    : m_backend(factory)
+static const char permissionDeniedErrorMessage[] = "The user denied permission to access the database.";
+
+IDBFactory::IDBFactory(IDBFactoryBackendInterface* permissionClient)
+    : m_permissionClient(permissionClient)
 {
     // We pass a reference to this object before it can be adopted.
     relaxAdoptionRequirement();
@@ -59,7 +62,7 @@ IDBFactory::~IDBFactory()
 {
 }
 
-static bool isContextValid(ScriptExecutionContext* context)
+static bool isContextValid(ExecutionContext* context)
 {
     ASSERT(context->isDocument() || context->isWorkerGlobalScope());
     if (context->isDocument()) {
@@ -69,80 +72,98 @@ static bool isContextValid(ScriptExecutionContext* context)
     return true;
 }
 
-PassRefPtr<IDBRequest> IDBFactory::getDatabaseNames(ScriptExecutionContext* context, ExceptionState& es)
+PassRefPtr<IDBRequest> IDBFactory::getDatabaseNames(ExecutionContext* context, ExceptionState& exceptionState)
 {
     IDB_TRACE("IDBFactory::getDatabaseNames");
     if (!isContextValid(context))
         return 0;
     if (!context->securityOrigin()->canAccessDatabase()) {
-        es.throwSecurityError(ExceptionMessages::failedToExecute("getDatabaseNames", "IDBFactory", "access to the Indexed Database API is denied in this context."));
+        exceptionState.throwSecurityError("access to the Indexed Database API is denied in this context.");
         return 0;
     }
 
-    RefPtr<IDBRequest> request = IDBRequest::create(context, IDBAny::create(this), 0);
-    m_backend->getDatabaseNames(request, createDatabaseIdentifierFromSecurityOrigin(context->securityOrigin()), context);
+    RefPtr<IDBRequest> request = IDBRequest::create(context, IDBAny::createNull(), 0);
+
+    if (!m_permissionClient->allowIndexedDB(context, "Database Listing")) {
+        request->onError(DOMError::create(UnknownError, permissionDeniedErrorMessage));
+        return request;
+    }
+
+    blink::Platform::current()->idbFactory()->getDatabaseNames(WebIDBCallbacksImpl::create(request).leakPtr(), createDatabaseIdentifierFromSecurityOrigin(context->securityOrigin()));
     return request;
 }
 
-PassRefPtr<IDBOpenDBRequest> IDBFactory::open(ScriptExecutionContext* context, const String& name, unsigned long long version, ExceptionState& es)
+PassRefPtr<IDBOpenDBRequest> IDBFactory::open(ExecutionContext* context, const String& name, unsigned long long version, ExceptionState& exceptionState)
 {
     IDB_TRACE("IDBFactory::open");
     if (!version) {
-        es.throwTypeError();
+        exceptionState.throwUninformativeAndGenericTypeError();
         return 0;
     }
-    return openInternal(context, name, version, es);
+    return openInternal(context, name, version, exceptionState);
 }
 
-PassRefPtr<IDBOpenDBRequest> IDBFactory::openInternal(ScriptExecutionContext* context, const String& name, int64_t version, ExceptionState& es)
+PassRefPtr<IDBOpenDBRequest> IDBFactory::openInternal(ExecutionContext* context, const String& name, int64_t version, ExceptionState& exceptionState)
 {
-    HistogramSupport::histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBOpenCall, IDBMethodsMax);
+    blink::Platform::current()->histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBOpenCall, IDBMethodsMax);
     ASSERT(version >= 1 || version == IDBDatabaseMetadata::NoIntVersion);
     if (name.isNull()) {
-        es.throwTypeError();
+        exceptionState.throwUninformativeAndGenericTypeError();
         return 0;
     }
     if (!isContextValid(context))
         return 0;
     if (!context->securityOrigin()->canAccessDatabase()) {
-        es.throwSecurityError(ExceptionMessages::failedToExecute("open", "IDBFactory", "access to the Indexed Database API is denied in this context."));
+        exceptionState.throwSecurityError("access to the Indexed Database API is denied in this context.");
         return 0;
     }
 
-    RefPtr<IDBDatabaseCallbacksImpl> databaseCallbacks = IDBDatabaseCallbacksImpl::create();
+    RefPtr<IDBDatabaseCallbacks> databaseCallbacks = IDBDatabaseCallbacks::create();
     int64_t transactionId = IDBDatabase::nextTransactionId();
     RefPtr<IDBOpenDBRequest> request = IDBOpenDBRequest::create(context, databaseCallbacks, transactionId, version);
-    m_backend->open(name, version, transactionId, request, databaseCallbacks, createDatabaseIdentifierFromSecurityOrigin(context->securityOrigin()), context);
+
+    if (!m_permissionClient->allowIndexedDB(context, name)) {
+        request->onError(DOMError::create(UnknownError, permissionDeniedErrorMessage));
+        return request;
+    }
+
+    blink::Platform::current()->idbFactory()->open(name, version, transactionId, WebIDBCallbacksImpl::create(request).leakPtr(), WebIDBDatabaseCallbacksImpl::create(databaseCallbacks.release()).leakPtr(), createDatabaseIdentifierFromSecurityOrigin(context->securityOrigin()));
     return request;
 }
 
-PassRefPtr<IDBOpenDBRequest> IDBFactory::open(ScriptExecutionContext* context, const String& name, ExceptionState& es)
+PassRefPtr<IDBOpenDBRequest> IDBFactory::open(ExecutionContext* context, const String& name, ExceptionState& exceptionState)
 {
     IDB_TRACE("IDBFactory::open");
-    return openInternal(context, name, IDBDatabaseMetadata::NoIntVersion, es);
+    return openInternal(context, name, IDBDatabaseMetadata::NoIntVersion, exceptionState);
 }
 
-PassRefPtr<IDBOpenDBRequest> IDBFactory::deleteDatabase(ScriptExecutionContext* context, const String& name, ExceptionState& es)
+PassRefPtr<IDBOpenDBRequest> IDBFactory::deleteDatabase(ExecutionContext* context, const String& name, ExceptionState& exceptionState)
 {
     IDB_TRACE("IDBFactory::deleteDatabase");
-    HistogramSupport::histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBDeleteDatabaseCall, IDBMethodsMax);
+    blink::Platform::current()->histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBDeleteDatabaseCall, IDBMethodsMax);
     if (name.isNull()) {
-        es.throwTypeError();
+        exceptionState.throwUninformativeAndGenericTypeError();
         return 0;
     }
     if (!isContextValid(context))
         return 0;
     if (!context->securityOrigin()->canAccessDatabase()) {
-        es.throwSecurityError(ExceptionMessages::failedToExecute("deleteDatabase", "IDBFactory", "access to the Indexed Database API is denied in this context."));
+        exceptionState.throwSecurityError("access to the Indexed Database API is denied in this context.");
         return 0;
     }
 
     RefPtr<IDBOpenDBRequest> request = IDBOpenDBRequest::create(context, 0, 0, IDBDatabaseMetadata::DefaultIntVersion);
-    m_backend->deleteDatabase(name, request, createDatabaseIdentifierFromSecurityOrigin(context->securityOrigin()), context);
+
+    if (!m_permissionClient->allowIndexedDB(context, name)) {
+        request->onError(DOMError::create(UnknownError, permissionDeniedErrorMessage));
+        return request;
+    }
+
+    blink::Platform::current()->idbFactory()->deleteDatabase(name, WebIDBCallbacksImpl::create(request).leakPtr(), createDatabaseIdentifierFromSecurityOrigin(context->securityOrigin()));
     return request;
 }
 
-short IDBFactory::cmp(ScriptExecutionContext* context, const ScriptValue& firstValue, const ScriptValue& secondValue, ExceptionState& es)
+short IDBFactory::cmp(ExecutionContext* context, const ScriptValue& firstValue, const ScriptValue& secondValue, ExceptionState& exceptionState)
 {
     DOMRequestState requestState(context);
     RefPtr<IDBKey> first = scriptValueToIDBKey(&requestState, firstValue);
@@ -152,7 +173,7 @@ short IDBFactory::cmp(ScriptExecutionContext* context, const ScriptValue& firstV
     ASSERT(second);
 
     if (!first->isValid() || !second->isValid()) {
-        es.throwDOMException(DataError, IDBDatabase::notValidKeyErrorMessage);
+        exceptionState.throwDOMException(DataError, IDBDatabase::notValidKeyErrorMessage);
         return 0;
     }
 

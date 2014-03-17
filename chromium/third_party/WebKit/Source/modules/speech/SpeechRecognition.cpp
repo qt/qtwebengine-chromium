@@ -27,7 +27,6 @@
 
 #include "modules/speech/SpeechRecognition.h"
 
-#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
@@ -38,18 +37,18 @@
 
 namespace WebCore {
 
-PassRefPtr<SpeechRecognition> SpeechRecognition::create(ScriptExecutionContext* context)
+PassRefPtr<SpeechRecognition> SpeechRecognition::create(ExecutionContext* context)
 {
     RefPtr<SpeechRecognition> speechRecognition(adoptRef(new SpeechRecognition(context)));
     speechRecognition->suspendIfNeeded();
     return speechRecognition.release();
 }
 
-void SpeechRecognition::start(ExceptionState& es)
+void SpeechRecognition::start(ExceptionState& exceptionState)
 {
     ASSERT(m_controller);
     if (m_started) {
-        es.throwDOMException(InvalidStateError, ExceptionMessages::failedToExecute("start", "SpeechRecognition", "recognition has already started."));
+        exceptionState.throwDOMException(InvalidStateError, "recognition has already started.");
         return;
     }
 
@@ -79,32 +78,32 @@ void SpeechRecognition::abort()
 
 void SpeechRecognition::didStartAudio()
 {
-    dispatchEvent(Event::create(eventNames().audiostartEvent));
+    dispatchEvent(Event::create(EventTypeNames::audiostart));
 }
 
 void SpeechRecognition::didStartSound()
 {
-    dispatchEvent(Event::create(eventNames().soundstartEvent));
+    dispatchEvent(Event::create(EventTypeNames::soundstart));
 }
 
 void SpeechRecognition::didStartSpeech()
 {
-    dispatchEvent(Event::create(eventNames().speechstartEvent));
+    dispatchEvent(Event::create(EventTypeNames::speechstart));
 }
 
 void SpeechRecognition::didEndSpeech()
 {
-    dispatchEvent(Event::create(eventNames().speechendEvent));
+    dispatchEvent(Event::create(EventTypeNames::speechend));
 }
 
 void SpeechRecognition::didEndSound()
 {
-    dispatchEvent(Event::create(eventNames().soundendEvent));
+    dispatchEvent(Event::create(EventTypeNames::soundend));
 }
 
 void SpeechRecognition::didEndAudio()
 {
-    dispatchEvent(Event::create(eventNames().audioendEvent));
+    dispatchEvent(Event::create(EventTypeNames::audioend));
 }
 
 void SpeechRecognition::didReceiveResults(const Vector<RefPtr<SpeechRecognitionResult> >& newFinalResults, const Vector<RefPtr<SpeechRecognitionResult> >& currentInterimResults)
@@ -134,7 +133,7 @@ void SpeechRecognition::didReceiveError(PassRefPtr<SpeechRecognitionError> error
 
 void SpeechRecognition::didStart()
 {
-    dispatchEvent(Event::create(eventNames().startEvent));
+    dispatchEvent(Event::create(EventTypeNames::start));
 }
 
 void SpeechRecognition::didEnd()
@@ -142,18 +141,18 @@ void SpeechRecognition::didEnd()
     m_started = false;
     m_stopping = false;
     if (!m_stoppedByActiveDOMObject)
-        dispatchEvent(Event::create(eventNames().endEvent));
+        dispatchEvent(Event::create(EventTypeNames::end));
     unsetPendingActivity(this);
 }
 
 const AtomicString& SpeechRecognition::interfaceName() const
 {
-    return eventNames().interfaceForSpeechRecognition;
+    return EventTargetNames::SpeechRecognition;
 }
 
-ScriptExecutionContext* SpeechRecognition::scriptExecutionContext() const
+ExecutionContext* SpeechRecognition::executionContext() const
 {
-    return ActiveDOMObject::scriptExecutionContext();
+    return ActiveDOMObject::executionContext();
 }
 
 void SpeechRecognition::stop()
@@ -163,7 +162,7 @@ void SpeechRecognition::stop()
         abort();
 }
 
-SpeechRecognition::SpeechRecognition(ScriptExecutionContext* context)
+SpeechRecognition::SpeechRecognition(ExecutionContext* context)
     : ActiveDOMObject(context)
     , m_grammars(SpeechGrammarList::create()) // FIXME: The spec is not clear on the default value for the grammars attribute.
     , m_continuous(false)
@@ -175,7 +174,7 @@ SpeechRecognition::SpeechRecognition(ScriptExecutionContext* context)
     , m_stopping(false)
 {
     ScriptWrappable::init(this);
-    Document* document = toDocument(scriptExecutionContext());
+    Document* document = toDocument(executionContext());
 
     Page* page = document->page();
     ASSERT(page);

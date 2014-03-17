@@ -27,8 +27,8 @@
 
 #include <math.h>
 #include "HTMLNames.h"
+#include "core/accessibility/AXMenuList.h"
 #include "core/accessibility/AXObjectCache.h"
-#include "core/accessibility/AccessibilityMenuList.h"
 #include "core/css/CSSFontSelector.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/NodeRenderStyle.h"
@@ -36,16 +36,15 @@
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/HTMLSelectElement.h"
 #include "core/page/Chrome.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/platform/PopupMenu.h"
-#include "core/platform/graphics/FontCache.h"
-#include "core/platform/graphics/IntSize.h"
 #include "core/rendering/RenderBR.h"
 #include "core/rendering/RenderScrollbar.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
+#include "platform/fonts/FontCache.h"
+#include "platform/geometry/IntSize.h"
 
 using namespace std;
 
@@ -72,11 +71,6 @@ RenderMenuList::~RenderMenuList()
     if (m_popup)
         m_popup->disconnectClient();
     m_popup = 0;
-}
-
-bool RenderMenuList::canBeReplacedWithInlineRunIn() const
-{
-    return false;
 }
 
 void RenderMenuList::createInnerBlock()
@@ -384,13 +378,8 @@ void RenderMenuList::didUpdateActiveOption(int optionIndex)
     int listIndex = select->optionToListIndex(optionIndex);
     if (listIndex < 0 || listIndex >= static_cast<int>(select->listItems().size()))
         return;
-
-    HTMLElement* listItem = select->listItems()[listIndex];
-    ASSERT(listItem);
-    if (listItem->attached()) {
-        if (AccessibilityMenuList* menuList = toAccessibilityMenuList(document().axObjectCache()->get(this)))
-            menuList->didUpdateActiveOption(optionIndex);
-    }
+    if (AXMenuList* menuList = toAXMenuList(document().axObjectCache()->get(this)))
+        menuList->didUpdateActiveOption(optionIndex);
 }
 
 String RenderMenuList::itemText(unsigned listIndex) const
@@ -613,7 +602,7 @@ void RenderMenuList::setTextFromItem(unsigned listIndex)
 
 FontSelector* RenderMenuList::fontSelector() const
 {
-    return document().styleResolver()->fontSelector();
+    return document().styleEngine()->fontSelector();
 }
 
 }

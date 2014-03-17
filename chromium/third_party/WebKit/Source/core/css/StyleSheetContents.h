@@ -22,12 +22,14 @@
 #define StyleSheetContents_h
 
 #include "core/css/CSSParserMode.h"
-#include "weborigin/KURL.h"
+#include "core/css/RuleSet.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/HashMap.h"
 #include "wtf/ListHashSet.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 #include "wtf/text/AtomicStringHash.h"
+#include "wtf/text/StringHash.h"
 #include "wtf/text/TextPosition.h"
 
 
@@ -43,7 +45,7 @@ class StyleRuleImport;
 
 class StyleSheetContents : public RefCounted<StyleSheetContents> {
 public:
-    static PassRefPtr<StyleSheetContents> create(const CSSParserContext& context = CSSParserContext(CSSStrictMode))
+    static PassRefPtr<StyleSheetContents> create(const CSSParserContext& context = CSSParserContext(HTMLStandardMode))
     {
         return adoptRef(new StyleSheetContents(0, String(), context));
     }
@@ -78,7 +80,7 @@ public:
     Node* singleOwnerNode() const;
     Document* singleOwnerDocument() const;
 
-    const String& charset() const { return m_parserContext.charset; }
+    const String& charset() const { return m_parserContext.charset(); }
 
     bool loadCompleted() const { return m_loadCompleted; }
     bool hasFailedOrCanceledSubresources() const;
@@ -86,10 +88,11 @@ public:
     KURL completeURL(const String& url) const;
     void addSubresourceStyleURLs(ListHashSet<KURL>&);
 
-    void setIsUserStyleSheet(bool b) { m_isUserStyleSheet = b; }
-    bool isUserStyleSheet() const { return m_isUserStyleSheet; }
     void setHasSyntacticallyValidCSSHeader(bool b) { m_hasSyntacticallyValidCSSHeader = b; }
     bool hasSyntacticallyValidCSSHeader() const { return m_hasSyntacticallyValidCSSHeader; }
+
+    void setHasFontFaceRule(bool b) { m_hasFontFaceRule = b; }
+    bool hasFontFaceRule() const { return m_hasFontFaceRule; }
 
     void parserAddNamespace(const AtomicString& prefix, const AtomicString& uri);
     void parserAppendRule(PassRefPtr<StyleRuleBase>);
@@ -114,7 +117,7 @@ public:
     // this style sheet. This property probably isn't useful for much except
     // the JavaScript binding (which needs to use this value for security).
     String originalURL() const { return m_originalURL; }
-    const KURL& baseURL() const { return m_parserContext.baseURL; }
+    const KURL& baseURL() const { return m_parserContext.baseURL(); }
 
     unsigned ruleCount() const;
     StyleRuleBase* ruleAt(unsigned index) const;
@@ -139,7 +142,13 @@ public:
     void addedToMemoryCache();
     void removedFromMemoryCache();
 
+    void setHasMediaQueries();
+    bool hasMediaQueries() { return m_hasMediaQueries; }
+
     void shrinkToFit();
+    RuleSet& ruleSet() { ASSERT(m_ruleSet); return *m_ruleSet.get(); }
+    RuleSet& ensureRuleSet(const MediaQueryEvaluator&, AddRuleFlags);
+    void clearRuleSet();
 
 private:
     StyleSheetContents(StyleRuleImport* ownerRule, const String& originalURL, const CSSParserContext&);
@@ -158,16 +167,18 @@ private:
     PrefixNamespaceURIMap m_namespaces;
 
     bool m_loadCompleted : 1;
-    bool m_isUserStyleSheet : 1;
     bool m_hasSyntacticallyValidCSSHeader : 1;
     bool m_didLoadErrorOccur : 1;
     bool m_usesRemUnits : 1;
     bool m_isMutable : 1;
     bool m_isInMemoryCache : 1;
+    bool m_hasFontFaceRule : 1;
+    bool m_hasMediaQueries : 1;
 
     CSSParserContext m_parserContext;
 
     Vector<CSSStyleSheet*> m_clients;
+    OwnPtr<RuleSet> m_ruleSet;
 };
 
 } // namespace

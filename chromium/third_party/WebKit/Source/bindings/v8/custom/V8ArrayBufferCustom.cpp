@@ -31,6 +31,7 @@
 #include "config.h"
 #include "bindings/v8/custom/V8ArrayBufferCustom.h"
 
+#include "bindings/v8/ScriptPromiseResolver.h"
 #include "bindings/v8/V8Binding.h"
 #include "wtf/ArrayBuffer.h"
 #include "wtf/StdLibExtras.h"
@@ -39,23 +40,24 @@ namespace WebCore {
 
 using namespace WTF;
 
-V8ArrayBufferDeallocationObserver* V8ArrayBufferDeallocationObserver::instance()
+V8ArrayBufferDeallocationObserver* V8ArrayBufferDeallocationObserver::instanceTemplate()
 {
     DEFINE_STATIC_LOCAL(V8ArrayBufferDeallocationObserver, deallocationObserver, ());
     return &deallocationObserver;
 }
 
-WrapperTypeInfo V8ArrayBuffer::info = {
+const WrapperTypeInfo V8ArrayBuffer::wrapperTypeInfo = {
+    gin::kEmbedderBlink,
     0, V8ArrayBuffer::derefObject,
     0, 0, 0, 0, 0, WrapperTypeObjectPrototype
 };
 
-bool V8ArrayBuffer::HasInstance(v8::Handle<v8::Value> value, v8::Isolate*, WrapperWorldType)
+bool V8ArrayBuffer::hasInstance(v8::Handle<v8::Value> value, v8::Isolate*, WrapperWorldType)
 {
     return value->IsArrayBuffer();
 }
 
-bool V8ArrayBuffer::HasInstanceInAnyWorld(v8::Handle<v8::Value> value, v8::Isolate*)
+bool V8ArrayBuffer::hasInstanceInAnyWorld(v8::Handle<v8::Value> value, v8::Isolate*)
 {
     return value->IsArrayBuffer();
 }
@@ -70,10 +72,10 @@ v8::Handle<v8::Object> V8ArrayBuffer::createWrapper(PassRefPtr<ArrayBuffer> impl
     ASSERT(impl.get());
     ASSERT(!DOMDataStore::containsWrapper<V8ArrayBuffer>(impl.get(), isolate));
 
-    v8::Handle<v8::Object> wrapper = v8::ArrayBuffer::New(impl->data(), impl->byteLength());
-    impl->setDeallocationObserver(V8ArrayBufferDeallocationObserver::instance());
+    v8::Handle<v8::Object> wrapper = v8::ArrayBuffer::New(isolate, impl->data(), impl->byteLength());
+    impl->setDeallocationObserver(V8ArrayBufferDeallocationObserver::instanceTemplate());
 
-    V8DOMWrapper::associateObjectWithWrapper<V8ArrayBuffer>(impl, &info, wrapper, isolate, WrapperConfiguration::Independent);
+    V8DOMWrapper::associateObjectWithWrapper<V8ArrayBuffer>(impl, &wrapperTypeInfo, wrapper, isolate, WrapperConfiguration::Independent);
     return wrapper;
 }
 
@@ -89,13 +91,19 @@ ArrayBuffer* V8ArrayBuffer::toNative(v8::Handle<v8::Object> object)
 
     v8::ArrayBuffer::Contents v8Contents = v8buffer->Externalize();
     ArrayBufferContents contents(v8Contents.Data(), v8Contents.ByteLength(),
-        V8ArrayBufferDeallocationObserver::instance());
+        V8ArrayBufferDeallocationObserver::instanceTemplate());
     RefPtr<ArrayBuffer> buffer = ArrayBuffer::create(contents);
-    V8DOMWrapper::associateObjectWithWrapper<V8ArrayBuffer>(buffer.release(), &info, object, v8::Isolate::GetCurrent(), WrapperConfiguration::Dependent);
+    V8DOMWrapper::associateObjectWithWrapper<V8ArrayBuffer>(buffer.release(), &wrapperTypeInfo, object, v8::Isolate::GetCurrent(), WrapperConfiguration::Dependent);
 
     arraybufferPtr = object->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex);
     ASSERT(arraybufferPtr);
     return reinterpret_cast<ArrayBuffer*>(arraybufferPtr);
+}
+
+template<>
+v8::Handle<v8::Value> toV8NoInline(ArrayBuffer* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+{
+    return toV8(impl, creationContext, isolate);
 }
 
 } // namespace WebCore

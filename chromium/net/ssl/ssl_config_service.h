@@ -99,6 +99,14 @@ struct NET_EXPORT SSLConfig {
   bool cached_info_enabled;  // True if TLS cached info extension is enabled.
   bool channel_id_enabled;   // True if TLS channel ID extension is enabled.
   bool false_start_enabled;  // True if we'll use TLS False Start.
+  // True if the Certificate Transparency signed_certificate_timestamp
+  // TLS extension is enabled.
+  bool signed_cert_timestamps_enabled;
+
+  // require_forward_secrecy, if true, causes only (EC)DHE cipher suites to be
+  // enabled. NOTE: this only applies to server sockets currently, although
+  // that could be extended if needed.
+  bool require_forward_secrecy;
 
   // If |unrestricted_ssl3_fallback_enabled| is true, SSL 3.0 fallback will be
   // enabled for all sites.
@@ -170,6 +178,7 @@ class NET_EXPORT SSLConfigService
     //     disabled_cipher_suites
     //     channel_id_enabled
     //     false_start_enabled
+    //     require_forward_secrecy
     virtual void OnSSLConfigChanged() = 0;
 
    protected:

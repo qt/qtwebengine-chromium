@@ -34,14 +34,14 @@
 #include "WebDataSource.h"
 #include "WebPluginLoadObserver.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/platform/chromium/support/WrappedResourceRequest.h"
-#include "core/platform/chromium/support/WrappedResourceResponse.h"
-#include "weborigin/KURL.h"
+#include "platform/exported/WrappedResourceRequest.h"
+#include "platform/exported/WrappedResourceResponse.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebPluginLoadObserver;
 
@@ -61,6 +61,7 @@ public:
     virtual const WebURLResponse& response() const;
     virtual bool hasUnreachableURL() const;
     virtual WebURL unreachableURL() const;
+    virtual void appendRedirect(const WebURL&);
     virtual void redirectChain(WebVector<WebURL>&) const;
     virtual bool isClientRedirect() const;
     virtual bool replacesCurrentHistoryItem() const;
@@ -91,6 +92,6 @@ private:
     OwnPtr<WebPluginLoadObserver> m_pluginLoadObserver;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif  // WebDataSourceImpl_h

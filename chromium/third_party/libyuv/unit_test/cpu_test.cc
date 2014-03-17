@@ -41,6 +41,8 @@ TEST_F(libyuvTest, TestCpuHas) {
   printf("Has AVX2 %x\n", has_avx2);
   int has_erms = TestCpuFlag(kCpuHasERMS);
   printf("Has ERMS %x\n", has_erms);
+  int has_fma3 = TestCpuFlag(kCpuHasFMA3);
+  printf("Has FMA3 %x\n", has_fma3);
   int has_mips = TestCpuFlag(kCpuHasMIPS);
   printf("Has MIPS %x\n", has_mips);
   int has_mips_dsp = TestCpuFlag(kCpuHasMIPS_DSP);
@@ -54,7 +56,7 @@ TEST_F(libyuvTest, TestCpuHas) {
 TEST_F(libyuvTest, TestCpuId) {
   int has_x86 = TestCpuFlag(kCpuHasX86);
   if (has_x86) {
-    int cpu_info[4];
+    uint32 cpu_info[4];
     // Vendor ID:
     // AuthenticAMD AMD processor
     // CentaurHauls Centaur processor
@@ -66,7 +68,7 @@ TEST_F(libyuvTest, TestCpuId) {
     // RiseRiseRise Rise Technology processor
     // SiS SiS SiS  SiS processor
     // UMC UMC UMC  UMC processor
-    CpuId(cpu_info, 0);
+    CpuId(0, 0, cpu_info);
     cpu_info[0] = cpu_info[1];  // Reorder output
     cpu_info[1] = cpu_info[3];
     cpu_info[3] = 0;
@@ -81,7 +83,7 @@ TEST_F(libyuvTest, TestCpuId) {
     // 13:12 - Processor Type
     // 19:16 - Extended Model
     // 27:20 - Extended Family
-    CpuId(cpu_info, 1);
+    CpuId(1, 0, cpu_info);
     int family = ((cpu_info[0] >> 8) & 0x0f) | ((cpu_info[0] >> 16) & 0xff0);
     int model = ((cpu_info[0] >> 4) & 0x0f) | ((cpu_info[0] >> 12) & 0xf0);
     printf("Cpu Family %d (0x%x), Model %d (0x%x)\n", family, family,
@@ -93,10 +95,8 @@ TEST_F(libyuvTest, TestCpuId) {
 TEST_F(libyuvTest, TestLinuxNeon) {
   int testdata = ArmCpuCaps("unit_test/testdata/arm_v7.txt");
   if (testdata) {
-    EXPECT_EQ(0,
-              ArmCpuCaps("unit_test/testdata/arm_v7.txt"));
-    EXPECT_EQ(kCpuHasNEON,
-              ArmCpuCaps("unit_test/testdata/tegra3.txt"));
+    EXPECT_EQ(0, ArmCpuCaps("unit_test/testdata/arm_v7.txt"));
+    EXPECT_EQ(kCpuHasNEON, ArmCpuCaps("unit_test/testdata/tegra3.txt"));
   } else {
     printf("WARNING: unable to load \"unit_test/testdata/arm_v7.txt\"\n");
   }

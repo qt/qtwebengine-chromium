@@ -24,13 +24,13 @@
 #include "SVGNames.h"
 #include "core/fetch/ImageResource.h"
 #include "core/fetch/ResourcePtr.h"
-#include "core/platform/graphics/ImageBuffer.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedPreserveAspectRatio.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "core/svg/SVGURIReference.h"
 #include "core/svg/graphics/filters/SVGFEImage.h"
+#include "platform/graphics/ImageBuffer.h"
 
 namespace WebCore {
 
@@ -39,14 +39,14 @@ class SVGFEImageElement FINAL : public SVGFilterPrimitiveStandardAttributes,
                                 public SVGExternalResourcesRequired,
                                 public ImageResourceClient {
 public:
-    static PassRefPtr<SVGFEImageElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGFEImageElement> create(Document&);
 
     bool currentFrameHasSingleSecurityOrigin() const;
 
     virtual ~SVGFEImageElement();
 
 private:
-    SVGFEImageElement(const QualifiedName&, Document&);
+    explicit SVGFEImageElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
@@ -72,11 +72,7 @@ private:
     ResourcePtr<ImageResource> m_cachedImage;
 };
 
-inline SVGFEImageElement* toSVGFEImageElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::feImageTag));
-    return static_cast<SVGFEImageElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(SVGFEImageElement, hasTagName(SVGNames::feImageTag));
 
 } // namespace WebCore
 

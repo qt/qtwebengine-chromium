@@ -42,7 +42,7 @@ public:
         return adoptRef(new CSSMixFunctionValue());
     }
 
-    String customCssText() const;
+    String customCSSText() const;
 
     PassRefPtr<CSSMixFunctionValue> cloneForCSSOM() const;
 
@@ -52,6 +52,8 @@ private:
     CSSMixFunctionValue();
     CSSMixFunctionValue(const CSSMixFunctionValue& cloneFrom);
 };
+
+DEFINE_CSS_VALUE_TYPE_CASTS(CSSMixFunctionValue, isMixFunctionValue());
 
 } // namespace WebCore
 

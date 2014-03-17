@@ -39,10 +39,10 @@ class ExceptionState;
 
 class NumberInputType : public TextFieldInputType {
 public:
-    static PassRefPtr<InputType> create(HTMLInputElement*);
+    static PassRefPtr<InputType> create(HTMLInputElement&);
 
 private:
-    NumberInputType(HTMLInputElement* element) : TextFieldInputType(element) { }
+    NumberInputType(HTMLInputElement& element) : TextFieldInputType(element) { }
     virtual void countUsage() OVERRIDE;
     virtual const AtomicString& formControlType() const OVERRIDE;
     virtual void setValue(const String&, bool valueChanged, TextFieldEventBehavior) OVERRIDE;
@@ -63,11 +63,14 @@ private:
     virtual String sanitizeValue(const String&) const OVERRIDE;
     virtual bool hasBadInput() const OVERRIDE;
     virtual String badInputText() const OVERRIDE;
+    virtual String rangeOverflowText(const Decimal& maxmum) const OVERRIDE;
+    virtual String rangeUnderflowText(const Decimal& minimum) const OVERRIDE;
     virtual bool shouldRespectSpeechAttribute() OVERRIDE;
     virtual bool supportsPlaceholder() const OVERRIDE;
     virtual bool isNumberField() const OVERRIDE;
     virtual void minOrMaxAttributeChanged() OVERRIDE;
     virtual void stepAttributeChanged() OVERRIDE;
+    virtual bool supportsSelectionAPI() const OVERRIDE;
 };
 
 } // namespace WebCore

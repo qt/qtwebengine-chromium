@@ -7,44 +7,61 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "media/cast/cast_defines.h"
-#include "media/cast/cast_thread.h"
-#include "media/cast/pacing/mock_paced_packet_sender.h"
+#include "media/cast/cast_environment.h"
+#include "media/cast/net/pacing/mock_paced_packet_sender.h"
 #include "media/cast/test/fake_task_runner.h"
 #include "media/cast/video_receiver/video_receiver.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 static const int kPacketSize = 1500;
-static const int64 kStartMillisecond = 123456789;
+static const int64 kStartMillisecond = GG_INT64_C(12345678900000);
 
 namespace media {
 namespace cast {
 
 using testing::_;
 
-// was thread counted thread safe.
+namespace {
+// Was thread counted thread safe.
 class TestVideoReceiverCallback :
     public base::RefCountedThreadSafe<TestVideoReceiverCallback> {
  public:
   TestVideoReceiverCallback()
-      :num_called_(0) {}
+      : num_called_(0) {}
+
   // TODO(mikhal): Set and check expectations.
-  void DecodeComplete(scoped_ptr<I420VideoFrame> frame,
-      const base::TimeTicks render_time) {
+  void DecodeComplete(const scoped_refptr<media::VideoFrame>& video_frame,
+                      const base::TimeTicks& render_time) {
     ++num_called_;
   }
-  int number_times_called() { return num_called_;}
+
+  void FrameToDecode(scoped_ptr<EncodedVideoFrame> video_frame,
+      const base::TimeTicks& render_time) {
+    EXPECT_TRUE(video_frame->key_frame);
+    EXPECT_EQ(kVp8, video_frame->codec);
+    ++num_called_;
+  }
+
+  int number_times_called() const { return num_called_;}
+
+ protected:
+  virtual ~TestVideoReceiverCallback() {}
+
  private:
+  friend class base::RefCountedThreadSafe<TestVideoReceiverCallback>;
+
   int num_called_;
 };
+}  // namespace
 
 class PeerVideoReceiver : public VideoReceiver {
  public:
-  PeerVideoReceiver(scoped_refptr<CastThread> cast_thread,
+  PeerVideoReceiver(scoped_refptr<CastEnvironment> cast_environment,
                     const VideoReceiverConfig& video_config,
                     PacedPacketSender* const packet_sender)
-      : VideoReceiver(cast_thread, video_config, packet_sender) {
+      : VideoReceiver(cast_environment, video_config, packet_sender) {
   }
-  using VideoReceiver::IncomingRtpPacket;
+  using VideoReceiver::IncomingParsedRtpPacket;
 };
 
 
@@ -55,17 +72,17 @@ class VideoReceiverTest : public ::testing::Test {
     config_.codec = kVp8;
     config_.use_external_decoder = false;
     task_runner_ = new test::FakeTaskRunner(&testing_clock_);
-    cast_thread_ = new CastThread(task_runner_, task_runner_, task_runner_,
-                                  task_runner_, task_runner_);
+    cast_environment_ = new CastEnvironment(&testing_clock_, task_runner_,
+        task_runner_, task_runner_, task_runner_, task_runner_,
+        GetDefaultCastLoggingConfig());
     receiver_.reset(new
-        PeerVideoReceiver(cast_thread_, config_, &mock_transport_));
+        PeerVideoReceiver(cast_environment_, config_, &mock_transport_));
     testing_clock_.Advance(
         base::TimeDelta::FromMilliseconds(kStartMillisecond));
     video_receiver_callback_ = new TestVideoReceiverCallback();
-    receiver_->set_clock(&testing_clock_);
   }
 
-  ~VideoReceiverTest() {}
+  virtual ~VideoReceiverTest() {}
 
   virtual void SetUp() {
     payload_.assign(kPacketSize, 0);
@@ -87,50 +104,64 @@ class VideoReceiverTest : public ::testing::Test {
   base::SimpleTestTickClock testing_clock_;
 
   scoped_refptr<test::FakeTaskRunner> task_runner_;
-  scoped_refptr<CastThread> cast_thread_;
+  scoped_refptr<CastEnvironment> cast_environment_;
   scoped_refptr<TestVideoReceiverCallback> video_receiver_callback_;
 };
 
 TEST_F(VideoReceiverTest, GetOnePacketEncodedframe) {
   EXPECT_CALL(mock_transport_, SendRtcpPacket(_)).WillRepeatedly(
       testing::Return(true));
-  receiver_->IncomingRtpPacket(payload_.data(), payload_.size(), rtp_header_);
-  EncodedVideoFrame video_frame;
-  base::TimeTicks render_time;
-  EXPECT_TRUE(receiver_->GetEncodedVideoFrame(&video_frame, &render_time));
-  EXPECT_TRUE(video_frame.key_frame);
-  EXPECT_EQ(kVp8, video_frame.codec);
+  receiver_->IncomingParsedRtpPacket(payload_.data(), payload_.size(),
+                                     rtp_header_);
+
+  VideoFrameEncodedCallback frame_to_decode_callback =
+      base::Bind(&TestVideoReceiverCallback::FrameToDecode,
+                 video_receiver_callback_);
+
+  receiver_->GetEncodedVideoFrame(frame_to_decode_callback);
   task_runner_->RunTasks();
+  EXPECT_EQ(video_receiver_callback_->number_times_called(), 1);
 }
 
 TEST_F(VideoReceiverTest, MultiplePackets) {
   EXPECT_CALL(mock_transport_, SendRtcpPacket(_)).WillRepeatedly(
       testing::Return(true));
   rtp_header_.max_packet_id = 2;
-  receiver_->IncomingRtpPacket(payload_.data(), payload_.size(), rtp_header_);
+  receiver_->IncomingParsedRtpPacket(payload_.data(), payload_.size(),
+                                     rtp_header_);
   ++rtp_header_.packet_id;
   ++rtp_header_.webrtc.header.sequenceNumber;
-  receiver_->IncomingRtpPacket(payload_.data(), payload_.size(), rtp_header_);
+  receiver_->IncomingParsedRtpPacket(payload_.data(), payload_.size(),
+                                     rtp_header_);
   ++rtp_header_.packet_id;
-  receiver_->IncomingRtpPacket(payload_.data(), payload_.size(), rtp_header_);
-  EncodedVideoFrame video_frame;
-  base::TimeTicks render_time;
-  EXPECT_TRUE(receiver_->GetEncodedVideoFrame(&video_frame, &render_time));
+  receiver_->IncomingParsedRtpPacket(payload_.data(), payload_.size(),
+                                     rtp_header_);
+
+  VideoFrameEncodedCallback frame_to_decode_callback =
+      base::Bind(&TestVideoReceiverCallback::FrameToDecode,
+                 video_receiver_callback_);
+
+  receiver_->GetEncodedVideoFrame(frame_to_decode_callback);
+
   task_runner_->RunTasks();
+  EXPECT_EQ(video_receiver_callback_->number_times_called(), 1);
 }
 
-// TODO(pwestin): add encoded frames.
 TEST_F(VideoReceiverTest, GetOnePacketRawframe) {
   EXPECT_CALL(mock_transport_, SendRtcpPacket(_)).WillRepeatedly(
       testing::Return(true));
-  receiver_->IncomingRtpPacket(payload_.data(), payload_.size(), rtp_header_);
+  receiver_->IncomingParsedRtpPacket(payload_.data(), payload_.size(),
+                                     rtp_header_);
   // Decode error - requires legal input.
   VideoFrameDecodedCallback frame_decoded_callback =
       base::Bind(&TestVideoReceiverCallback::DecodeComplete,
                  video_receiver_callback_);
   receiver_->GetRawVideoFrame(frame_decoded_callback);
   task_runner_->RunTasks();
+  EXPECT_EQ(video_receiver_callback_->number_times_called(), 0);
 }
+
+// TODO(pwestin): add encoded frames.
 
 }  // namespace cast
 }  // namespace media

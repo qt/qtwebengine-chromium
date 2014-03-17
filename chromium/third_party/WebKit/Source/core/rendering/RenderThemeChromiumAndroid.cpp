@@ -27,18 +27,19 @@
 #include "core/rendering/RenderThemeChromiumAndroid.h"
 
 #include "CSSValueKeywords.h"
+#include "InputTypeNames.h"
 #include "UserAgentStyleSheets.h"
-#include "core/platform/LayoutTestSupport.h"
-#include "core/platform/ScrollbarTheme.h"
-#include "core/platform/graphics/Color.h"
 #include "core/rendering/PaintInfo.h"
-#include "core/rendering/RenderMediaControlsChromium.h"
+#include "core/rendering/RenderMediaControls.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderProgress.h"
 #include "core/rendering/RenderSlider.h"
-
-#include "public/platform/android/WebThemeEngine.h"
+#include "platform/LayoutTestSupport.h"
+#include "platform/graphics/Color.h"
+#include "platform/scroll/ScrollbarTheme.h"
 #include "public/platform/Platform.h"
+#include "public/platform/default/WebThemeEngine.h"
+#include "wtf/StdLibExtras.h"
 
 namespace WebCore {
 
@@ -49,7 +50,7 @@ PassRefPtr<RenderTheme> RenderThemeChromiumAndroid::create()
 
 RenderTheme& RenderTheme::theme()
 {
-    static RenderTheme* renderTheme = RenderThemeChromiumAndroid::create().leakRef();
+    DEFINE_STATIC_REF(RenderTheme, renderTheme, (RenderThemeChromiumAndroid::create()));
     return *renderTheme;
 }
 
@@ -83,7 +84,7 @@ void RenderThemeChromiumAndroid::adjustInnerSpinButtonStyle(RenderStyle* style, 
     if (isRunningLayoutTest()) {
         // Match Linux spin button style in layout tests.
         // FIXME: Consider removing the conditional if a future Android theme matches this.
-        IntSize size = WebKit::Platform::current()->themeEngine()->getSize(WebKit::WebThemeEngine::PartInnerSpinButton);
+        IntSize size = blink::Platform::current()->themeEngine()->getSize(blink::WebThemeEngine::PartInnerSpinButton);
 
         style->setWidth(Length(size.width(), Fixed));
         style->setMinWidth(Length(size.width(), Fixed));
@@ -92,20 +93,15 @@ void RenderThemeChromiumAndroid::adjustInnerSpinButtonStyle(RenderStyle* style, 
 
 bool RenderThemeChromiumAndroid::paintMediaOverlayPlayButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
-    return RenderMediaControlsChromium::paintMediaControlsPart(MediaOverlayPlayButton, object, paintInfo, rect);
+    return RenderMediaControls::paintMediaControlsPart(MediaOverlayPlayButton, object, paintInfo, rect);
 }
 
 int RenderThemeChromiumAndroid::menuListArrowPadding() const
 {
     // We cannot use the scrollbar thickness here, as it's width is 0 on Android.
     // Instead, use the width of the scrollbar down arrow.
-    IntSize scrollbarSize = WebKit::Platform::current()->themeEngine()->getSize(WebKit::WebThemeEngine::PartScrollbarDownArrow);
+    IntSize scrollbarSize = blink::Platform::current()->themeEngine()->getSize(blink::WebThemeEngine::PartScrollbarDownArrow);
     return scrollbarSize.width();
-}
-
-bool RenderThemeChromiumAndroid::supportsDataListUI(const AtomicString& type) const
-{
-    return false;
 }
 
 } // namespace WebCore

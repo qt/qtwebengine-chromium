@@ -25,9 +25,9 @@
 #include "config.h"
 #include "core/html/HTMLFormControlElement.h"
 
-#include "core/dom/Event.h"
-#include "core/dom/EventNames.h"
 #include "core/dom/PostAttachCallbacks.h"
+#include "core/events/Event.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/html/HTMLFieldSetElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
@@ -35,7 +35,7 @@
 #include "core/html/HTMLTextAreaElement.h"
 #include "core/html/ValidityState.h"
 #include "core/html/forms/ValidationMessage.h"
-#include "core/page/UseCounter.h"
+#include "core/frame/UseCounter.h"
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/RenderTheme.h"
 #include "wtf/Vector.h"
@@ -48,6 +48,7 @@ using namespace std;
 HTMLFormControlElement::HTMLFormControlElement(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
     : LabelableElement(tagName, document)
     , m_disabled(false)
+    , m_isAutofilled(false)
     , m_isReadOnly(false)
     , m_isRequired(false)
     , m_valueMatchesRenderer(false)
@@ -77,7 +78,7 @@ String HTMLFormControlElement::formEnctype() const
     return FormSubmission::Attributes::parseEncodingType(formEnctypeAttr);
 }
 
-void HTMLFormControlElement::setFormEnctype(const String& value)
+void HTMLFormControlElement::setFormEnctype(const AtomicString& value)
 {
     setAttribute(formenctypeAttr, value);
 }
@@ -90,7 +91,7 @@ String HTMLFormControlElement::formMethod() const
     return FormSubmission::Attributes::methodString(FormSubmission::Attributes::parseMethodType(formMethodAttr));
 }
 
-void HTMLFormControlElement::setFormMethod(const String& value)
+void HTMLFormControlElement::setFormMethod(const AtomicString& value)
 {
     setAttribute(formmethodAttr, value);
 }
@@ -121,11 +122,17 @@ void HTMLFormControlElement::ancestorDisabledStateWasChanged()
     disabledAttributeChanged();
 }
 
+void HTMLFormControlElement::reset()
+{
+    setAutofilled(false);
+    resetImpl();
+}
+
 void HTMLFormControlElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     if (name == formAttr) {
         formAttributeChanged();
-        UseCounter::count(&document(), UseCounter::FormAttribute);
+        UseCounter::count(document(), UseCounter::FormAttribute);
     } else if (name == disabledAttr) {
         bool oldDisabled = m_disabled;
         m_disabled = !value.isNull();
@@ -145,10 +152,10 @@ void HTMLFormControlElement::parseAttribute(const QualifiedName& name, const Ato
         m_isRequired = !value.isNull();
         if (wasRequired != m_isRequired)
             requiredAttributeChanged();
-        UseCounter::count(&document(), UseCounter::RequiredAttribute);
+        UseCounter::count(document(), UseCounter::RequiredAttribute);
     } else if (name == autofocusAttr) {
         HTMLElement::parseAttribute(name, value);
-        UseCounter::count(&document(), UseCounter::AutoFocusAttribute);
+        UseCounter::count(document(), UseCounter::AutoFocusAttribute);
     } else
         HTMLElement::parseAttribute(name, value);
 }
@@ -174,62 +181,76 @@ void HTMLFormControlElement::requiredAttributeChanged()
     setNeedsStyleRecalc();
 }
 
-static bool shouldAutofocus(HTMLFormControlElement* element)
-{
-    if (!element->fastHasAttribute(autofocusAttr))
-        return false;
-    if (!element->renderer())
-        return false;
-    if (element->document().ignoreAutofocus())
-        return false;
-    if (element->document().isSandboxed(SandboxAutomaticFeatures)) {
-        // FIXME: This message should be moved off the console once a solution to https://bugs.webkit.org/show_bug.cgi?id=103274 exists.
-        element->document().addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, "Blocked autofocusing on a form control because the form's frame is sandboxed and the 'allow-scripts' permission is not set.");
-        return false;
-    }
-    if (element->hasAutofocused())
-        return false;
-
-    // FIXME: Should this set of hasTagName checks be replaced by a
-    // virtual member function?
-    if (element->hasTagName(inputTag))
-        return !toHTMLInputElement(element)->isInputTypeHidden();
-    if (element->hasTagName(selectTag))
-        return true;
-    if (element->hasTagName(keygenTag))
-        return true;
-    if (element->hasTagName(buttonTag))
-        return true;
-    if (isHTMLTextAreaElement(element))
-        return true;
-
-    return false;
-}
-
 static void focusPostAttach(Node* element)
 {
     toElement(element)->focus();
     element->deref();
 }
 
+bool HTMLFormControlElement::isAutofocusable() const
+{
+    if (!fastHasAttribute(autofocusAttr))
+        return false;
+
+    // FIXME: Should this set of hasTagName checks be replaced by a
+    // virtual member function?
+    if (hasTagName(inputTag))
+        return !toHTMLInputElement(this)->isInputTypeHidden();
+    if (hasTagName(selectTag))
+        return true;
+    if (hasTagName(keygenTag))
+        return true;
+    if (hasTagName(buttonTag))
+        return true;
+    if (isHTMLTextAreaElement(this))
+        return true;
+    return false;
+}
+
+void HTMLFormControlElement::setAutofilled(bool autofilled)
+{
+    if (autofilled == m_isAutofilled)
+        return;
+
+    m_isAutofilled = autofilled;
+    setNeedsStyleRecalc();
+}
+
+static bool shouldAutofocusOnAttach(const HTMLFormControlElement* element)
+{
+    if (!element->isAutofocusable())
+        return false;
+    if (element->hasAutofocused())
+        return false;
+    if (element->document().isSandboxed(SandboxAutomaticFeatures)) {
+        // FIXME: This message should be moved off the console once a solution to https://bugs.webkit.org/show_bug.cgi?id=103274 exists.
+        element->document().addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, "Blocked autofocusing on a form control because the form's frame is sandboxed and the 'allow-scripts' permission is not set.");
+        return false;
+    }
+
+    return true;
+}
+
 void HTMLFormControlElement::attach(const AttachContext& context)
 {
     HTMLElement::attach(context);
 
+    if (!renderer())
+        return;
+
     // The call to updateFromElement() needs to go after the call through
     // to the base class's attach() because that can sometimes do a close
     // on the renderer.
-    if (renderer())
-        renderer()->updateFromElement();
+    renderer()->updateFromElement();
 
-    if (shouldAutofocus(this)) {
+    if (shouldAutofocusOnAttach(this)) {
         setAutofocused();
         ref();
         PostAttachCallbacks::queueCallback(focusPostAttach, this);
     }
 }
 
-void HTMLFormControlElement::didMoveToNewDocument(Document* oldDocument)
+void HTMLFormControlElement::didMoveToNewDocument(Document& oldDocument)
 {
     FormAssociatedElement::didMoveToNewDocument(oldDocument);
     HTMLElement::didMoveToNewDocument(oldDocument);
@@ -276,6 +297,11 @@ void HTMLFormControlElement::dispatchFormControlInputEvent()
     HTMLElement::dispatchInputEvent();
 }
 
+HTMLFormElement* HTMLFormControlElement::formOwner() const
+{
+    return FormAssociatedElement::form();
+}
+
 bool HTMLFormControlElement::isDisabledFormControl() const
 {
     if (m_disabled)
@@ -289,6 +315,11 @@ bool HTMLFormControlElement::isDisabledFormControl() const
 bool HTMLFormControlElement::isRequired() const
 {
     return m_isRequired;
+}
+
+String HTMLFormControlElement::resultForDialogSubmit()
+{
+    return fastGetAttribute(valueAttr);
 }
 
 static void updateFromElementCallback(Node* node)
@@ -338,7 +369,7 @@ bool HTMLFormControlElement::shouldHaveFocusAppearance() const
 
 void HTMLFormControlElement::willCallDefaultEventHandler(const Event& event)
 {
-    if (!event.isKeyboardEvent() || event.type() != eventNames().keydownEvent)
+    if (!event.isKeyboardEvent() || event.type() != EventTypeNames::keydown)
         return;
     if (!m_wasFocusedByMouse)
         return;
@@ -428,9 +459,9 @@ bool HTMLFormControlElement::checkValidity(Vector<RefPtr<FormAssociatedElement> 
         return false;
     // An event handler can deref this object.
     RefPtr<HTMLFormControlElement> protector(this);
-    RefPtr<Document> originalDocument(&document());
-    bool needsDefaultAction = dispatchEvent(Event::createCancelable(eventNames().invalidEvent));
-    if (needsDefaultAction && unhandledInvalidControls && inDocument() && originalDocument == &document())
+    RefPtr<Document> originalDocument(document());
+    bool needsDefaultAction = dispatchEvent(Event::createCancelable(EventTypeNames::invalid));
+    if (needsDefaultAction && unhandledInvalidControls && inDocument() && originalDocument == document())
         unhandledInvalidControls->append(this);
     return false;
 }
@@ -439,13 +470,13 @@ bool HTMLFormControlElement::isValidFormControlElement()
 {
     // If the following assertion fails, setNeedsValidityCheck() is not called
     // correctly when something which changes validity is updated.
-    ASSERT(m_isValid == validity()->valid());
+    ASSERT(m_isValid == valid());
     return m_isValid;
 }
 
 void HTMLFormControlElement::setNeedsValidityCheck()
 {
-    bool newIsValid = validity()->valid();
+    bool newIsValid = valid();
     if (willValidate() && newIsValid != m_isValid) {
         // Update style for pseudo classes such as :valid :invalid.
         setNeedsStyleRecalc();
@@ -472,9 +503,9 @@ void HTMLFormControlElement::dispatchBlurEvent(Element* newFocusedElement)
     hideVisibleValidationMessage();
 }
 
-HTMLFormElement* HTMLFormControlElement::virtualForm() const
+bool HTMLFormControlElement::isSuccessfulSubmitButton() const
 {
-    return FormAssociatedElement::form();
+    return canBeSuccessfulSubmitButton() && !isDisabledFormControl();
 }
 
 bool HTMLFormControlElement::isDefaultButtonForForm() const
@@ -489,6 +520,17 @@ HTMLFormControlElement* HTMLFormControlElement::enclosingFormControlElement(Node
             return toHTMLFormControlElement(node);
     }
     return 0;
+}
+
+String HTMLFormControlElement::nameForAutofill() const
+{
+    String fullName = name();
+    String trimmedName = fullName.stripWhiteSpace();
+    if (!trimmedName.isEmpty())
+        return trimmedName;
+    fullName = getIdAttribute();
+    trimmedName = fullName.stripWhiteSpace();
+    return trimmedName;
 }
 
 } // namespace Webcore

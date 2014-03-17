@@ -33,13 +33,13 @@
 
 #include "WebSettingsImpl.h"
 #include "WebViewImpl.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
-#include "core/platform/Scrollbar.h"
-#include "core/platform/graphics/FloatSize.h"
-#include "core/platform/graphics/GraphicsLayer.h"
 #include "core/rendering/RenderLayerCompositor.h"
+#include "platform/geometry/FloatSize.h"
+#include "platform/graphics/GraphicsLayer.h"
+#include "platform/scroll/Scrollbar.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositorSupport.h"
 #include "public/platform/WebLayer.h"
@@ -48,7 +48,7 @@
 
 using WebCore::GraphicsLayer;
 
-namespace WebKit {
+namespace blink {
 
 PassOwnPtr<PinchViewports> PinchViewports::create(WebViewImpl* owner)
 {
@@ -70,6 +70,7 @@ PinchViewports::PinchViewports(WebViewImpl* owner)
     m_innerViewportContainerLayer->setMasksToBounds(false);
 
     m_innerViewportScrollLayer->platformLayer()->setScrollable(true);
+    m_innerViewportScrollLayer->platformLayer()->setUserScrollable(true, true);
 
     m_innerViewportContainerLayer->addChild(m_pageScaleLayer.get());
     m_pageScaleLayer->addChild(m_innerViewportScrollLayer.get());
@@ -184,7 +185,7 @@ void PinchViewports::clearViewportLayersForTreeView(WebLayerTreeView* layerTreeV
     layerTreeView->clearViewportLayers();
 }
 
-void PinchViewports::notifyAnimationStarted(const GraphicsLayer*, double time)
+void PinchViewports::notifyAnimationStarted(const GraphicsLayer*, double wallClockTime, double monotonicTime)
 {
 }
 
@@ -212,4 +213,4 @@ String PinchViewports::debugName(const GraphicsLayer* graphicsLayer)
     return name;
 }
 
-} // namespace WebKit
+} // namespace blink

@@ -25,7 +25,7 @@
 
 #include "CSSValueKeywords.h"
 #include "StylePropertyShorthand.h"
-#include "core/page/RuntimeCSSEnabled.h"
+#include "core/css/RuntimeCSSEnabled.h"
 #include "wtf/BitArray.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -88,7 +88,7 @@ String StylePropertySerializer::asText() const
             continue;
         case CSSPropertyContent:
             if (property.value()->isValueList())
-                value = toCSSValueList(property.value())->customCssText(AlwaysQuoteCSSString);
+                value = toCSSValueList(property.value())->customCSSText(AlwaysQuoteCSSString);
             break;
         case CSSPropertyBorderTopWidth:
         case CSSPropertyBorderRightWidth:

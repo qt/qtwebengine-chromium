@@ -55,6 +55,9 @@ class JsonWriter(template_writer.TemplateWriter):
         example_value_str = 'false'
     elif policy['type'] == 'string-enum':
       example_value_str = '"%s"' % example_value;
+    elif policy['type'] == 'external':
+      # This type can only be set through cloud policy.
+      return
     else:
       raise Exception('unknown policy type %s:' % policy['type'])
 

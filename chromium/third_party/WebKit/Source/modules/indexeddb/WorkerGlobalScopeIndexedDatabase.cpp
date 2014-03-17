@@ -29,7 +29,7 @@
 
 #include "modules/indexeddb/WorkerGlobalScopeIndexedDatabase.h"
 
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
 #include "modules/indexeddb/IDBFactory.h"
 #include "modules/indexeddb/IDBFactoryBackendInterface.h"
 
@@ -48,9 +48,9 @@ const char* WorkerGlobalScopeIndexedDatabase::supplementName()
     return "WorkerGlobalScopeIndexedDatabase";
 }
 
-WorkerGlobalScopeIndexedDatabase* WorkerGlobalScopeIndexedDatabase::from(ScriptExecutionContext* context)
+WorkerGlobalScopeIndexedDatabase* WorkerGlobalScopeIndexedDatabase::from(WorkerSupplementable* context)
 {
-    WorkerGlobalScopeIndexedDatabase* supplement = static_cast<WorkerGlobalScopeIndexedDatabase*>(Supplement<ScriptExecutionContext>::from(context, supplementName()));
+    WorkerGlobalScopeIndexedDatabase* supplement = static_cast<WorkerGlobalScopeIndexedDatabase*>(WorkerSupplement::from(context, supplementName()));
     if (!supplement) {
         supplement = new WorkerGlobalScopeIndexedDatabase();
         provideTo(context, supplementName(), adoptPtr(supplement));
@@ -58,7 +58,7 @@ WorkerGlobalScopeIndexedDatabase* WorkerGlobalScopeIndexedDatabase::from(ScriptE
     return supplement;
 }
 
-IDBFactory* WorkerGlobalScopeIndexedDatabase::indexedDB(ScriptExecutionContext* context)
+IDBFactory* WorkerGlobalScopeIndexedDatabase::indexedDB(WorkerSupplementable* context)
 {
     return from(context)->indexedDB();
 }

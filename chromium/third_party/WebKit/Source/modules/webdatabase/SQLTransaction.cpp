@@ -32,7 +32,7 @@
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/VoidCallback.h"
-#include "core/platform/Logging.h"
+#include "platform/Logging.h"
 #include "modules/webdatabase/AbstractSQLTransactionBackend.h"
 #include "modules/webdatabase/Database.h"
 #include "modules/webdatabase/DatabaseAuthorizer.h"
@@ -48,20 +48,20 @@
 
 namespace WebCore {
 
-PassRefPtr<SQLTransaction> SQLTransaction::create(Database* db, PassRefPtr<SQLTransactionCallback> callback,
-    PassRefPtr<VoidCallback> successCallback, PassRefPtr<SQLTransactionErrorCallback> errorCallback,
+PassRefPtr<SQLTransaction> SQLTransaction::create(Database* db, PassOwnPtr<SQLTransactionCallback> callback,
+    PassOwnPtr<VoidCallback> successCallback, PassOwnPtr<SQLTransactionErrorCallback> errorCallback,
     bool readOnly)
 {
     return adoptRef(new SQLTransaction(db, callback, successCallback, errorCallback, readOnly));
 }
 
-SQLTransaction::SQLTransaction(Database* db, PassRefPtr<SQLTransactionCallback> callback,
-    PassRefPtr<VoidCallback> successCallback, PassRefPtr<SQLTransactionErrorCallback> errorCallback,
+SQLTransaction::SQLTransaction(Database* db, PassOwnPtr<SQLTransactionCallback> callback,
+    PassOwnPtr<VoidCallback> successCallback, PassOwnPtr<SQLTransactionErrorCallback> errorCallback,
     bool readOnly)
     : m_database(db)
-    , m_callbackWrapper(callback, db->scriptExecutionContext())
-    , m_successCallbackWrapper(successCallback, db->scriptExecutionContext())
-    , m_errorCallbackWrapper(errorCallback, db->scriptExecutionContext())
+    , m_callbackWrapper(callback, db->executionContext())
+    , m_successCallbackWrapper(successCallback, db->executionContext())
+    , m_errorCallbackWrapper(errorCallback, db->executionContext())
     , m_executeSqlAllowed(false)
     , m_readOnly(readOnly)
 {
@@ -119,7 +119,7 @@ SQLTransaction::StateFunction SQLTransaction::stateFunctionFor(SQLTransactionSta
 // modify is m_requestedState which is meant for this purpose.
 void SQLTransaction::requestTransitToState(SQLTransactionState nextState)
 {
-    LOG(StorageAPI, "Scheduling %s for transaction %p\n", nameForSQLTransactionState(nextState), this);
+    WTF_LOG(StorageAPI, "Scheduling %s for transaction %p\n", nameForSQLTransactionState(nextState), this);
     m_requestedState = nextState;
     m_database->scheduleTransactionCallback(this);
 }
@@ -140,7 +140,7 @@ SQLTransactionState SQLTransaction::deliverTransactionCallback()
     bool shouldDeliverErrorCallback = false;
 
     // Spec 4.3.2 4: Invoke the transaction callback with the new SQLTransaction object
-    RefPtr<SQLTransactionCallback> callback = m_callbackWrapper.unwrap();
+    OwnPtr<SQLTransactionCallback> callback = m_callbackWrapper.unwrap();
     if (callback) {
         m_executeSqlAllowed = true;
         shouldDeliverErrorCallback = !callback->handleEvent(this);
@@ -162,7 +162,7 @@ SQLTransactionState SQLTransaction::deliverTransactionErrorCallback()
 {
     // Spec 4.3.2.10: If exists, invoke error callback with the last
     // error to have occurred in this transaction.
-    RefPtr<SQLTransactionErrorCallback> errorCallback = m_errorCallbackWrapper.unwrap();
+    OwnPtr<SQLTransactionErrorCallback> errorCallback = m_errorCallbackWrapper.unwrap();
     if (errorCallback) {
         // If we get here with an empty m_transactionError, then the backend
         // must be waiting in the idle state waiting for this state to finish.
@@ -218,7 +218,7 @@ SQLTransactionState SQLTransaction::deliverQuotaIncreaseCallback()
 SQLTransactionState SQLTransaction::deliverSuccessCallback()
 {
     // Spec 4.3.2.8: Deliver success callback.
-    RefPtr<VoidCallback> successCallback = m_successCallbackWrapper.unwrap();
+    OwnPtr<VoidCallback> successCallback = m_successCallbackWrapper.unwrap();
     if (successCallback)
         successCallback->handleEvent();
 
@@ -251,10 +251,10 @@ void SQLTransaction::performPendingCallback()
     runStateMachine();
 }
 
-void SQLTransaction::executeSQL(const String& sqlStatement, const Vector<SQLValue>& arguments, PassRefPtr<SQLStatementCallback> callback, PassRefPtr<SQLStatementErrorCallback> callbackError, ExceptionState& es)
+void SQLTransaction::executeSQL(const String& sqlStatement, const Vector<SQLValue>& arguments, PassOwnPtr<SQLStatementCallback> callback, PassOwnPtr<SQLStatementErrorCallback> callbackError, ExceptionState& exceptionState)
 {
     if (!m_executeSqlAllowed || !m_database->opened()) {
-        es.throwDOMException(InvalidStateError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
 
@@ -281,7 +281,7 @@ bool SQLTransaction::computeNextStateAndCleanupIfNeeded()
             || m_nextState == SQLTransactionState::DeliverQuotaIncreaseCallback
             || m_nextState == SQLTransactionState::DeliverSuccessCallback);
 
-        LOG(StorageAPI, "Callback %s\n", nameForSQLTransactionState(m_nextState));
+        WTF_LOG(StorageAPI, "Callback %s\n", nameForSQLTransactionState(m_nextState));
         return false;
     }
 
@@ -297,6 +297,11 @@ void SQLTransaction::clearCallbackWrappers()
     m_callbackWrapper.clear();
     m_successCallbackWrapper.clear();
     m_errorCallbackWrapper.clear();
+}
+
+PassOwnPtr<SQLTransactionErrorCallback> SQLTransaction::releaseErrorCallback()
+{
+    return m_errorCallbackWrapper.unwrap();
 }
 
 } // namespace WebCore

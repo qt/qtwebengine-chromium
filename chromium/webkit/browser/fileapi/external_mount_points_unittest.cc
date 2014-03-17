@@ -111,6 +111,7 @@ TEST(ExternalMountPointsTest, AddMountPoint) {
               mount_points->RegisterFileSystem(
                   kTestCases[i].name,
                   fileapi::kFileSystemTypeNativeLocal,
+                  fileapi::FileSystemMountOption(),
                   base::FilePath(kTestCases[i].path)))
         << "Adding mount point: " << kTestCases[i].name << " with path "
         << kTestCases[i].path;
@@ -136,24 +137,30 @@ TEST(ExternalMountPointsTest, GetVirtualPath) {
 
   mount_points->RegisterFileSystem("c",
                                    fileapi::kFileSystemTypeNativeLocal,
+                                   fileapi::FileSystemMountOption(),
                                    base::FilePath(DRIVE FPL("/a/b/c")));
   // Note that "/a/b/c" < "/a/b/c(1)" < "/a/b/c/".
   mount_points->RegisterFileSystem("c(1)",
                                    fileapi::kFileSystemTypeNativeLocal,
+                                   fileapi::FileSystemMountOption(),
                                    base::FilePath(DRIVE FPL("/a/b/c(1)")));
   mount_points->RegisterFileSystem("x",
                                    fileapi::kFileSystemTypeNativeLocal,
+                                   fileapi::FileSystemMountOption(),
                                    base::FilePath(DRIVE FPL("/z/y/x")));
   mount_points->RegisterFileSystem("o",
                                    fileapi::kFileSystemTypeNativeLocal,
+                                   fileapi::FileSystemMountOption(),
                                    base::FilePath(DRIVE FPL("/m/n/o")));
   // A mount point whose name does not match its path base name.
   mount_points->RegisterFileSystem("mount",
                                    fileapi::kFileSystemTypeNativeLocal,
+                                   fileapi::FileSystemMountOption(),
                                    base::FilePath(DRIVE FPL("/root/foo")));
   // A mount point with an empty path.
   mount_points->RegisterFileSystem("empty_path",
                                    fileapi::kFileSystemTypeNativeLocal,
+                                   fileapi::FileSystemMountOption(),
                                    base::FilePath());
 
   struct TestCase {
@@ -265,15 +272,19 @@ TEST(ExternalMountPointsTest, CreateCrackedFileSystemURL) {
 
   mount_points->RegisterFileSystem("c",
                                    fileapi::kFileSystemTypeNativeLocal,
+                                   fileapi::FileSystemMountOption(),
                                    base::FilePath(DRIVE FPL("/a/b/c")));
   mount_points->RegisterFileSystem("c(1)",
                                    fileapi::kFileSystemTypeDrive,
+                                   fileapi::FileSystemMountOption(),
                                    base::FilePath(DRIVE FPL("/a/b/c(1)")));
   mount_points->RegisterFileSystem("empty_path",
                                    fileapi::kFileSystemTypeSyncable,
+                                   fileapi::FileSystemMountOption(),
                                    base::FilePath());
   mount_points->RegisterFileSystem("mount",
                                    fileapi::kFileSystemTypeDrive,
+                                   fileapi::FileSystemMountOption(),
                                    base::FilePath(DRIVE FPL("/root")));
 
   // Try cracking invalid GURL.
@@ -287,7 +298,9 @@ TEST(ExternalMountPointsTest, CreateCrackedFileSystemURL) {
 
   // Try native local which is not cracked.
   FileSystemURL native_local = mount_points->CreateCrackedFileSystemURL(
-      kTestOrigin, fileapi::kFileSystemTypeNativeLocal, base::FilePath(FPL("c")));
+      kTestOrigin,
+      fileapi::kFileSystemTypeNativeLocal,
+      base::FilePath(FPL("c")));
   EXPECT_FALSE(native_local.is_valid());
 
   struct TestCase {
@@ -355,8 +368,8 @@ TEST(ExternalMountPointsTest, CreateCrackedFileSystemURL) {
         << "Test case index: " << i;
     EXPECT_EQ(kTestCases[i].expect_type, cracked.type())
         << "Test case index: " << i;
-    EXPECT_EQ(base::FilePath(kTestCases[i].expect_path).NormalizePathSeparators(),
-                       cracked.path())
+    EXPECT_EQ(base::FilePath(
+        kTestCases[i].expect_path).NormalizePathSeparators(), cracked.path())
         << "Test case index: " << i;
     EXPECT_EQ(base::FilePath(kTestCases[i].path).NormalizePathSeparators(),
                        cracked.virtual_path())
@@ -376,15 +389,19 @@ TEST(ExternalMountPointsTest, CrackVirtualPath) {
 
   mount_points->RegisterFileSystem("c",
                                    fileapi::kFileSystemTypeNativeLocal,
+                                   fileapi::FileSystemMountOption(),
                                    base::FilePath(DRIVE FPL("/a/b/c")));
   mount_points->RegisterFileSystem("c(1)",
                                    fileapi::kFileSystemTypeDrive,
+                                   fileapi::FileSystemMountOption(),
                                    base::FilePath(DRIVE FPL("/a/b/c(1)")));
   mount_points->RegisterFileSystem("empty_path",
                                    fileapi::kFileSystemTypeSyncable,
+                                   fileapi::FileSystemMountOption(),
                                    base::FilePath());
   mount_points->RegisterFileSystem("mount",
                                    fileapi::kFileSystemTypeDrive,
+                                   fileapi::FileSystemMountOption(),
                                    base::FilePath(DRIVE FPL("/root")));
 
   struct TestCase {
@@ -440,9 +457,10 @@ TEST(ExternalMountPointsTest, CrackVirtualPath) {
     std::string cracked_name;
     fileapi::FileSystemType cracked_type;
     base::FilePath cracked_path;
+    fileapi::FileSystemMountOption cracked_option;
     EXPECT_EQ(kTestCases[i].expect_valid,
               mount_points->CrackVirtualPath(base::FilePath(kTestCases[i].path),
-                  &cracked_name, &cracked_type, &cracked_path))
+                  &cracked_name, &cracked_type, &cracked_path, &cracked_option))
         << "Test case index: " << i;
 
     if (!kTestCases[i].expect_valid)
@@ -450,12 +468,39 @@ TEST(ExternalMountPointsTest, CrackVirtualPath) {
 
     EXPECT_EQ(kTestCases[i].expect_type, cracked_type)
         << "Test case index: " << i;
-    EXPECT_EQ(base::FilePath(kTestCases[i].expect_path).NormalizePathSeparators(),
-                       cracked_path)
+    EXPECT_EQ(base::FilePath(
+        kTestCases[i].expect_path).NormalizePathSeparators(), cracked_path)
         << "Test case index: " << i;
     EXPECT_EQ(kTestCases[i].expect_name, cracked_name)
         << "Test case index: " << i;
   }
+}
+
+TEST(ExternalMountPointsTest, MountOption) {
+  scoped_refptr<fileapi::ExternalMountPoints> mount_points(
+      fileapi::ExternalMountPoints::CreateRefCounted());
+
+  mount_points->RegisterFileSystem(
+      "nosync",
+      fileapi::kFileSystemTypeNativeLocal,
+      fileapi::FileSystemMountOption(fileapi::COPY_SYNC_OPTION_NO_SYNC),
+      base::FilePath(DRIVE FPL("/nosync")));
+  mount_points->RegisterFileSystem(
+      "sync",
+      fileapi::kFileSystemTypeNativeLocal,
+      fileapi::FileSystemMountOption(fileapi::COPY_SYNC_OPTION_SYNC),
+      base::FilePath(DRIVE FPL("/sync")));
+
+  std::string name;
+  fileapi::FileSystemType type;
+  fileapi::FileSystemMountOption option;
+  base::FilePath path;
+  EXPECT_TRUE(mount_points->CrackVirtualPath(
+      base::FilePath(FPL("nosync/file")), &name, &type, &path, &option));
+  EXPECT_EQ(fileapi::COPY_SYNC_OPTION_NO_SYNC, option.copy_sync_option());
+  EXPECT_TRUE(mount_points->CrackVirtualPath(
+      base::FilePath(FPL("sync/file")), &name, &type, &path, &option));
+  EXPECT_EQ(fileapi::COPY_SYNC_OPTION_SYNC, option.copy_sync_option());
 }
 
 }  // namespace

@@ -32,24 +32,21 @@ class HTMLFormControlElement;
 
 class HTMLLegendElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLLegendElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<HTMLLegendElement> create(Document&);
+
+    HTMLFormElement* form() const;
 
 private:
-    HTMLLegendElement(const QualifiedName&, Document&);
+    explicit HTMLLegendElement(Document&);
 
     // Control in the legend's fieldset that gets focus and access key.
     HTMLFormControlElement* associatedControl();
 
     virtual void accessKeyAction(bool sendMouseEvents);
     virtual void focus(bool restorePreviousSelection, FocusDirection) OVERRIDE;
-    virtual HTMLFormElement* virtualForm() const OVERRIDE;
 };
 
-inline HTMLLegendElement* toHTMLLegendElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::legendTag));
-    return static_cast<HTMLLegendElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLLegendElement, hasTagName(HTMLNames::legendTag));
 
 } //namespace
 

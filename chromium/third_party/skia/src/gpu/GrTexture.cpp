@@ -15,8 +15,6 @@
 #include "GrRenderTarget.h"
 #include "GrResourceCache.h"
 
-SK_DEFINE_INST_COUNT(GrTexture)
-
 GrTexture::~GrTexture() {
     if (NULL != fRenderTarget.get()) {
         fRenderTarget.get()->owningTextureDestroyed();
@@ -42,6 +40,7 @@ void GrTexture::internal_dispose() const {
         return;
     }
 
+    SkASSERT(0 == this->getDeferredRefCount());
     this->INHERITED::internal_dispose();
 }
 

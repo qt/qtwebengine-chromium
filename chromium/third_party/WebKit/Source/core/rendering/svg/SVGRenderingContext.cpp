@@ -26,13 +26,12 @@
 
 #include "core/rendering/svg/SVGRenderingContext.h"
 
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/svg/RenderSVGImage.h"
 #include "core/rendering/svg/RenderSVGResource.h"
-#include "core/rendering/svg/RenderSVGResourceClipper.h"
 #include "core/rendering/svg/RenderSVGResourceFilter.h"
 #include "core/rendering/svg/RenderSVGResourceMasker.h"
 #include "core/rendering/svg/SVGResources.h"
@@ -115,13 +114,13 @@ void SVGRenderingContext::prepareToRenderSVGContent(RenderObject* object, PaintI
     // Setup transparency layers before setting up SVG resources!
     bool isRenderingMask = isRenderingMaskImage(m_object);
     float opacity = isRenderingMask ? 1 : style->opacity();
-    BlendMode blendMode = isRenderingMask ? BlendModeNormal : style->blendMode();
-    if (opacity < 1 || blendMode != BlendModeNormal) {
+    blink::WebBlendMode blendMode = isRenderingMask ? blink::WebBlendModeNormal : style->blendMode();
+    if (opacity < 1 || blendMode != blink::WebBlendModeNormal) {
         FloatRect repaintRect = m_object->repaintRectInLocalCoordinates();
 
-        if (opacity < 1 || blendMode != BlendModeNormal) {
+        if (opacity < 1 || blendMode != blink::WebBlendModeNormal) {
             m_paintInfo->context->clip(repaintRect);
-            if (blendMode != BlendModeNormal) {
+            if (blendMode != blink::WebBlendModeNormal) {
                 if (!(m_renderingFlags & RestoreGraphicsContext)) {
                     m_paintInfo->context->save();
                     m_renderingFlags |= RestoreGraphicsContext;
@@ -134,8 +133,8 @@ void SVGRenderingContext::prepareToRenderSVGContent(RenderObject* object, PaintI
     }
 
     ClipPathOperation* clipPathOperation = style->clipPath();
-    if (clipPathOperation && clipPathOperation->getOperationType() == ClipPathOperation::SHAPE) {
-        ShapeClipPathOperation* clipPath = static_cast<ShapeClipPathOperation*>(clipPathOperation);
+    if (clipPathOperation && clipPathOperation->type() == ClipPathOperation::SHAPE) {
+        ShapeClipPathOperation* clipPath = toShapeClipPathOperation(clipPathOperation);
         m_paintInfo->context->clipPath(clipPath->path(object->objectBoundingBox()), clipPath->windRule());
     }
 
@@ -226,7 +225,11 @@ void SVGRenderingContext::calculateTransformationToOutermostCoordinateSystem(con
             absoluteTransform = layerTransform->toAffineTransform() * absoluteTransform;
 
         // We can stop at compositing layers, to match the backing resolution.
-        if (layer->isComposited())
+        // FIXME: should we be computing the transform to the nearest composited layer,
+        // or the nearest composited layer that does not paint into its ancestor?
+        // I think this is the nearest composited ancestor since we will inherit its
+        // transforms in the composited layer tree.
+        if (layer->hasCompositedLayerMapping())
             break;
 
         layer = layer->parent();
@@ -234,29 +237,6 @@ void SVGRenderingContext::calculateTransformationToOutermostCoordinateSystem(con
 
     if (deviceScaleFactor != 1)
         absoluteTransform.scale(deviceScaleFactor);
-}
-
-bool SVGRenderingContext::createImageBufferForPattern(const FloatRect& absoluteTargetRect, const FloatRect& clampedAbsoluteTargetRect, OwnPtr<ImageBuffer>& imageBuffer, RenderingMode renderingMode)
-{
-    IntSize imageSize(roundedIntSize(clampedAbsoluteTargetRect.size()));
-    IntSize unclampedImageSize(roundedIntSize(absoluteTargetRect.size()));
-
-    // Don't create empty ImageBuffers.
-    if (imageSize.isEmpty())
-        return false;
-
-    OwnPtr<ImageBuffer> image = ImageBuffer::create(imageSize, 1, renderingMode);
-    if (!image)
-        return false;
-
-    GraphicsContext* imageContext = image->context();
-    ASSERT(imageContext);
-
-    // Compensate rounding effects, as the absolute target rect is using floating-point numbers and the image buffer size is integer.
-    imageContext->scale(FloatSize(unclampedImageSize.width() / absoluteTargetRect.width(), unclampedImageSize.height() / absoluteTargetRect.height()));
-
-    imageBuffer = image.release();
-    return true;
 }
 
 void SVGRenderingContext::renderSubtree(GraphicsContext* context, RenderObject* item, const AffineTransform& subtreeContentTransformation)
@@ -282,12 +262,6 @@ FloatRect SVGRenderingContext::clampedAbsoluteTargetRect(const FloatRect& absolu
     return FloatRect(absoluteTargetRect.location(), absoluteTargetRect.size().shrunkTo(maxImageBufferSize));
 }
 
-IntSize SVGRenderingContext::clampedAbsoluteSize(const IntSize& absoluteSize)
-{
-    const IntSize maxImageBufferSize(kMaxImageBufferSize, kMaxImageBufferSize);
-    return absoluteSize.shrunkTo(maxImageBufferSize);
-}
-
 void SVGRenderingContext::clear2DRotation(AffineTransform& transform)
 {
     AffineTransform::DecomposedType decomposition;
@@ -307,13 +281,13 @@ bool SVGRenderingContext::bufferForeground(OwnPtr<ImageBuffer>& imageBuffer)
         AffineTransform transform = m_paintInfo->context->getCTM(GraphicsContext::DefinitelyIncludeDeviceScale);
         IntSize expandedBoundingBox = expandedIntSize(boundingBox.size());
         IntSize bufferSize(static_cast<int>(ceil(expandedBoundingBox.width() * transform.xScale())), static_cast<int>(ceil(expandedBoundingBox.height() * transform.yScale())));
-        if (bufferSize != imageBuffer->internalSize())
+        if (bufferSize != imageBuffer->size())
             imageBuffer.clear();
     }
 
     // Create a new buffer and paint the foreground into it.
     if (!imageBuffer) {
-        if ((imageBuffer = m_paintInfo->context->createCompatibleBuffer(expandedIntSize(boundingBox.size()), true))) {
+        if ((imageBuffer = m_paintInfo->context->createCompatibleBuffer(expandedIntSize(boundingBox.size())))) {
             GraphicsContext* bufferedRenderingContext = imageBuffer->context();
             bufferedRenderingContext->translate(-boundingBox.x(), -boundingBox.y());
             PaintInfo bufferedInfo(*m_paintInfo);

@@ -13,7 +13,7 @@
 class GURL;
 
 #if defined(ENABLE_PEPPER_CDMS)
-namespace WebKit {
+namespace blink {
 class WebFrame;
 class WebMediaPlayerClient;
 }
@@ -21,7 +21,7 @@ class WebMediaPlayerClient;
 
 namespace content {
 
-class WebMediaPlayerProxyAndroid;
+class RendererMediaPlayerManager;
 
 class ContentDecryptionModuleFactory {
  public:
@@ -29,22 +29,24 @@ class ContentDecryptionModuleFactory {
       const std::string& key_system,
 #if defined(ENABLE_PEPPER_CDMS)
       // TODO(ddorwin): We need different pointers for the WD API.
-      WebKit::WebMediaPlayerClient* web_media_player_client,
-      WebKit::WebFrame* web_frame,
+      blink::WebMediaPlayerClient* web_media_player_client,
+      blink::WebFrame* web_frame,
       const base::Closure& destroy_plugin_cb,
 #elif defined(OS_ANDROID)
-      WebMediaPlayerProxyAndroid* proxy,
+      RendererMediaPlayerManager* manager,
       int media_keys_id,
       const GURL& frame_url,
 #endif  // defined(ENABLE_PEPPER_CDMS)
-      const media::KeyAddedCB& key_added_cb,
-      const media::KeyErrorCB& key_error_cb,
-      const media::KeyMessageCB& key_message_cb);
+      const media::SessionCreatedCB& session_created_cb,
+      const media::SessionMessageCB& session_message_cb,
+      const media::SessionReadyCB& session_ready_cb,
+      const media::SessionClosedCB& session_closed_cb,
+      const media::SessionErrorCB& session_error_cb);
 
 #if defined(ENABLE_PEPPER_CDMS)
   static void DestroyHelperPlugin(
-      WebKit::WebMediaPlayerClient* web_media_player_client,
-      WebKit::WebFrame* web_frame);
+      blink::WebMediaPlayerClient* web_media_player_client,
+      blink::WebFrame* web_frame);
 #endif  // defined(ENABLE_PEPPER_CDMS)
 };
 

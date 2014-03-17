@@ -23,7 +23,7 @@
 #include "core/svg/SVGSwitchElement.h"
 
 #include "SVGNames.h"
-#include "core/page/UseCounter.h"
+#include "core/frame/UseCounter.h"
 #include "core/rendering/svg/RenderSVGTransformableContainer.h"
 
 namespace WebCore {
@@ -36,25 +36,25 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGSwitchElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGSwitchElement::SVGSwitchElement(const QualifiedName& tagName, Document& document)
-    : SVGGraphicsElement(tagName, document)
+inline SVGSwitchElement::SVGSwitchElement(Document& document)
+    : SVGGraphicsElement(SVGNames::switchTag, document)
 {
-    ASSERT(hasTagName(SVGNames::switchTag));
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGSwitchElement();
 
-    UseCounter::count(&document, UseCounter::SVGSwitchElement);
+    UseCounter::count(document, UseCounter::SVGSwitchElement);
 }
 
-PassRefPtr<SVGSwitchElement> SVGSwitchElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGSwitchElement> SVGSwitchElement::create(Document& document)
 {
-    return adoptRef(new SVGSwitchElement(tagName, document));
+    return adoptRef(new SVGSwitchElement(document));
 }
 
 bool SVGSwitchElement::childShouldCreateRenderer(const Node& child) const
 {
     // FIXME: This function does not do what the comment below implies it does.
     // It will create a renderer for any valid SVG element children, not just the first one.
+    bool shouldCreateRenderer = false;
     for (Node* node = firstChild(); node; node = node->nextSibling()) {
         if (!node->isSVGElement())
             continue;
@@ -63,10 +63,11 @@ bool SVGSwitchElement::childShouldCreateRenderer(const Node& child) const
         if (!element || !element->isValid())
             continue;
 
-        return node == &child; // Only allow this child if it's the first valid child
+        shouldCreateRenderer = node == &child; // Only allow this child if it's the first valid child.
+        break;
     }
 
-    return false;
+    return shouldCreateRenderer && SVGGraphicsElement::childShouldCreateRenderer(child);
 }
 
 RenderObject* SVGSwitchElement::createRenderer(RenderStyle*)

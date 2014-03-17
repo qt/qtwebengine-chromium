@@ -7,6 +7,8 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/strings/string_util.h"
+#include "net/base/request_priority.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_job_factory.h"
 #include "webkit/browser/blob/blob_data_handle.h"
@@ -27,15 +29,15 @@ BlobDataHandle* GetRequestedBlobDataHandle(net::URLRequest* request) {
 }  // namespace
 
 // static
-net::URLRequest* BlobProtocolHandler::CreateBlobRequest(
+scoped_ptr<net::URLRequest> BlobProtocolHandler::CreateBlobRequest(
     scoped_ptr<BlobDataHandle> blob_data_handle,
     const net::URLRequestContext* request_context,
     net::URLRequest::Delegate* request_delegate) {
   const GURL kBlobUrl("blob://see_user_data/");
-  net::URLRequest* request = request_context->CreateRequest(
-      kBlobUrl, request_delegate);
-  SetRequestedBlobDataHandle(request, blob_data_handle.Pass());
-  return request;
+  scoped_ptr<net::URLRequest> request = request_context->CreateRequest(
+      kBlobUrl, net::DEFAULT_PRIORITY, request_delegate);
+  SetRequestedBlobDataHandle(request.get(), blob_data_handle.Pass());
+  return request.Pass();
 }
 
 // static
@@ -73,10 +75,14 @@ BlobProtocolHandler::LookupBlobData(net::URLRequest* request) const {
   if (!context_.get())
     return NULL;
 
-  // Retain support for looking up based on deprecated blob urls for now.
-  // The FeedbackExtensionAPI relies on this.
-  scoped_ptr<BlobDataHandle> handle = context_->GetBlobDataFromUUID(
-      context_->LookupUuidFromDeprecatedURL(request->url()));
+  // Support looking up based on uuid, the FeedbackExtensionAPI relies on this.
+  // TODO(michaeln): Replace this use case and others like it with a BlobReader
+  // impl that does not depend on urlfetching to perform this function.
+  const std::string kPrefix("blob:uuid/");
+  if (!StartsWithASCII(request->url().spec(), kPrefix, true))
+    return NULL;
+  std::string uuid = request->url().spec().substr(kPrefix.length());
+  scoped_ptr<BlobDataHandle> handle = context_->GetBlobDataFromUUID(uuid);
   return handle.get() ? handle->data() : NULL;
 }
 

@@ -3,15 +3,12 @@
 // found in the LICENSE file.
 
 // SyncSessionContext encapsulates the contextual information and engine
-// components specific to a SyncSession. A context is accessible via
-// a SyncSession so that session SyncerCommands and parts of the engine have
-// a convenient way to access other parts. In this way it can be thought of as
-// the surrounding environment for the SyncSession. The components of this
-// environment are either valid or not valid for the entire context lifetime,
-// or they are valid for explicitly scoped periods of time by using Scoped
-// installation utilities found below. This means that the context assumes no
-// ownership whatsoever of any object that was not created by the context
-// itself.
+// components specific to a SyncSession.  Unlike the SyncSession, the context
+// can be reused across several sync cycles.
+//
+// The context does not take ownership of its pointer members.  It's up to
+// the surrounding classes to ensure those members remain valid while the
+// context is in use.
 //
 // It can only be used from the SyncerThread.
 
@@ -22,7 +19,10 @@
 #include <string>
 #include <vector>
 
+#include "base/stl_util.h"
 #include "sync/base/sync_export.h"
+#include "sync/engine/sync_directory_commit_contributor.h"
+#include "sync/engine/sync_directory_update_handler.h"
 #include "sync/engine/sync_engine_event.h"
 #include "sync/engine/syncer_types.h"
 #include "sync/engine/traffic_recorder.h"
@@ -67,16 +67,18 @@ class SYNC_EXPORT_PRIVATE SyncSessionContext {
     return directory_;
   }
 
-  const ModelSafeRoutingInfo& routing_info() const {
-    return routing_info_;
+  ModelTypeSet enabled_types() const {
+    return enabled_types_;
   }
 
-  void set_routing_info(const ModelSafeRoutingInfo& routing_info) {
-    routing_info_ = routing_info;
+  void set_routing_info(const ModelSafeRoutingInfo& routing_info);
+
+  UpdateHandlerMap* update_handler_map() {
+    return &update_handler_map_;
   }
 
-  const std::vector<scoped_refptr<ModelSafeWorker> >& workers() const {
-    return workers_;
+  CommitContributorMap* commit_contributor_map() {
+    return &commit_contributor_map_;
   }
 
   ExtensionsActivity* extensions_activity() {
@@ -150,12 +152,28 @@ class SYNC_EXPORT_PRIVATE SyncSessionContext {
   ServerConnectionManager* const connection_manager_;
   syncable::Directory* const directory_;
 
-  // A cached copy of SyncBackendRegistrar's routing info.
-  // Must be updated manually when SBR's state is modified.
-  ModelSafeRoutingInfo routing_info_;
+  // The set of enabled types.  Derrived from the routing info set with
+  // set_routing_info().
+  ModelTypeSet enabled_types_;
+
+  // A map of 'update handlers', one for each enabled type.
+  // This must be kept in sync with the routing info.  Our temporary solution to
+  // that problem is to initialize this map in set_routing_info().
+  UpdateHandlerMap update_handler_map_;
+
+  // Deleter for the |update_handler_map_|.
+  STLValueDeleter<UpdateHandlerMap> update_handler_deleter_;
+
+  // A map of 'commit contributors', one for each enabled type.
+  // This must be kept in sync with the routing info.  Our temporary solution to
+  // that problem is to initialize this map in set_routing_info().
+  CommitContributorMap commit_contributor_map_;
+
+  // Deleter for the |commit_contributor_map_|.
+  STLValueDeleter<CommitContributorMap> commit_contributor_deleter_;
 
   // The set of ModelSafeWorkers.  Used to execute tasks of various threads.
-  std::vector<scoped_refptr<ModelSafeWorker> > workers_;
+  std::map<ModelSafeGroup, scoped_refptr<ModelSafeWorker> > workers_;
 
   // We use this to stuff extensions activity into CommitMessages so the server
   // can correlate commit traffic with extension-related bookmark mutations.

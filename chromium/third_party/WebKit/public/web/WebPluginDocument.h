@@ -33,11 +33,11 @@
 
 #include "WebDocument.h"
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
 namespace WebCore { class PluginDocument; }
 #endif
 
-namespace WebKit {
+namespace blink {
 class WebPlugin;
 
 // Wraps a WebDocument for full page plugins.
@@ -53,15 +53,15 @@ public:
     }
     void assign(const WebPluginDocument& d) { WebNode::assign(d); }
 
-    WEBKIT_EXPORT WebPlugin* plugin();
+    BLINK_EXPORT WebPlugin* plugin();
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
     WebPluginDocument(const WTF::PassRefPtr<WebCore::PluginDocument>&);
     WebPluginDocument& operator=(const WTF::PassRefPtr<WebCore::PluginDocument>&);
     operator WTF::PassRefPtr<WebCore::PluginDocument>() const;
 #endif
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

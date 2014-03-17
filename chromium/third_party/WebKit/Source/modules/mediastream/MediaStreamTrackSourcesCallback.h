@@ -27,16 +27,14 @@
 #define MediaStreamTrackSourcesCallback_h
 
 #include "modules/mediastream/SourceInfo.h"
-#include "wtf/RefCounted.h"
-
 namespace WebCore {
 
 class MediaStreamTrackSourcesResponse;
 
-class MediaStreamTrackSourcesCallback : public RefCounted<MediaStreamTrackSourcesCallback> {
+class MediaStreamTrackSourcesCallback {
 public:
     virtual ~MediaStreamTrackSourcesCallback() { }
-    virtual bool handleEvent(const SourceInfoVector&) = 0;
+    virtual void handleEvent(const SourceInfoVector&) = 0;
 };
 
 } // namespace WebCore

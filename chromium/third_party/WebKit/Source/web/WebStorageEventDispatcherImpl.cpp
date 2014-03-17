@@ -33,12 +33,12 @@
 
 #include "StorageAreaProxy.h"
 #include "WebViewImpl.h"
+#include "platform/weborigin/KURL.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/WebURL.h"
-#include "weborigin/KURL.h"
-#include "weborigin/SecurityOrigin.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebKit {
+namespace blink {
 
 void WebStorageEventDispatcher::dispatchLocalStorageEvent(
         const WebString& key, const WebString& oldValue,
@@ -64,4 +64,4 @@ void WebStorageEventDispatcher::dispatchSessionStorageEvent(
             sessionNamespace, sourceAreaInstance, originatedInProcess);
 }
 
-} // namespace WebKit
+} // namespace blink

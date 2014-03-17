@@ -14,6 +14,7 @@
 #include "media/base/decoder_buffer.h"
 #include "media/base/stream_parser_buffer.h"
 #include "media/base/test_data_util.h"
+#include "media/base/text_track_config.h"
 #include "media/base/video_decoder_config.h"
 #include "media/mp2t/mp2t_stream_parser.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -28,7 +29,8 @@ class Mp2tStreamParserTest : public testing::Test {
         video_frame_count_(0),
         video_min_dts_(kNoTimestamp()),
         video_max_dts_(kNoTimestamp()) {
-    parser_.reset(new Mp2tStreamParser());
+    bool has_sbr = false;
+    parser_.reset(new Mp2tStreamParser(has_sbr));
   }
 
  protected:
@@ -60,7 +62,9 @@ class Mp2tStreamParserTest : public testing::Test {
              << ", dur=" << duration.InMilliseconds();
   }
 
-  bool OnNewConfig(const AudioDecoderConfig& ac, const VideoDecoderConfig& vc) {
+  bool OnNewConfig(const AudioDecoderConfig& ac,
+                   const VideoDecoderConfig& vc,
+                   const StreamParser::TextTrackConfigMap& tc) {
     DVLOG(1) << "OnNewConfig: audio=" << ac.IsValidConfig()
              << ", video=" << vc.IsValidConfig();
     return true;
@@ -101,21 +105,9 @@ class Mp2tStreamParserTest : public testing::Test {
     return true;
   }
 
-  bool OnNewTextBuffers(TextTrack* text_track,
-                        const StreamParser::BufferQueue& buffers) {
-    return true;
-  }
-
   void OnKeyNeeded(const std::string& type,
                    const std::vector<uint8>& init_data) {
     DVLOG(1) << "OnKeyNeeded: " << init_data.size();
-  }
-
-  scoped_ptr<TextTrack> OnAddTextTrack(
-      TextKind kind,
-      const std::string& label,
-      const std::string& language) {
-    return scoped_ptr<TextTrack>();
   }
 
   void OnNewSegment() {
@@ -134,11 +126,8 @@ class Mp2tStreamParserTest : public testing::Test {
                    base::Unretained(this)),
         base::Bind(&Mp2tStreamParserTest::OnNewBuffers,
                    base::Unretained(this)),
-        base::Bind(&Mp2tStreamParserTest::OnNewTextBuffers,
-                   base::Unretained(this)),
+        StreamParser::NewTextBuffersCB(),
         base::Bind(&Mp2tStreamParserTest::OnKeyNeeded,
-                   base::Unretained(this)),
-        base::Bind(&Mp2tStreamParserTest::OnAddTextTrack,
                    base::Unretained(this)),
         base::Bind(&Mp2tStreamParserTest::OnNewSegment,
                    base::Unretained(this)),

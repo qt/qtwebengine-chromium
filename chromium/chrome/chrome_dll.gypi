@@ -80,8 +80,8 @@
           },
           'dependencies': [
             '<@(chromium_browser_dependencies)',
+            '../components/components.gyp:policy',
             '../content/content.gyp:content_app_browser',
-            'app/policy/cloud_policy_codegen.gyp:policy',
           ],
           'conditions': [
             ['use_aura==1', {
@@ -89,7 +89,12 @@
                 '../ui/compositor/compositor.gyp:compositor',
               ],
             }],
-            ['OS=="win" and target_arch=="ia32"', {
+            ['OS=="win" and target_arch=="ia32" and MSVS_VERSION!="2013"', {
+              # TODO(scottmg): The assembler is very broken in VS2013 and
+              # crashes on the generated .asm file, so disable this for now.
+              # This should be revisited after a VS2013 update. See
+              # http://crbug.com/288948.
+              #
               # Add a dependency to custom import library for user32 delay
               # imports only in x86 builds.
               'dependencies': [
@@ -105,7 +110,6 @@
                 'chrome_version_resources',
                 '../chrome/chrome_resources.gyp:chrome_unscaled_resources',
                 '../crypto/crypto.gyp:crypto',
-                '../printing/printing.gyp:printing',
                 '../net/net.gyp:net_resources',
                 '../ui/views/views.gyp:views',
                 '../webkit/webkit_resources.gyp:webkit_resources',
@@ -149,7 +153,7 @@
                       'OutputFile': '$(OutDir)\\initial\\chrome.dll',
                       'UseLibraryDependencyInputs': "true",
                     }],
-                    ['target_arch=="ia32"', {
+                    ['target_arch=="ia32" and MSVS_VERSION!="2013"', {
                       # Link against the XP-constrained user32 import library
                       # instead of the platform-SDK provided one to avoid
                       # inadvertently taking dependencies on post-XP user32
@@ -207,6 +211,11 @@
                 ['win_use_allocator_shim==1', {
                   'dependencies': [
                     '<(allocator_target)',
+                  ],
+                }],
+                ['enable_printing!=0', {
+                  'dependencies': [
+                    '../printing/printing.gyp:printing',
                   ],
                 }],
               ]
@@ -280,11 +289,9 @@
                   'dependencies': [
                     '../breakpad/breakpad.gyp:breakpad',
                     '../components/components.gyp:breakpad_component',
-                    'app/policy/cloud_policy_codegen.gyp:policy',
+                    '../components/components.gyp:policy',
                   ],
                   'sources': [
-                    'app/breakpad_mac.mm',
-                    'app/breakpad_mac.h',
                     'app/chrome_breakpad_client.cc',
                     'app/chrome_breakpad_client.h',
                     'app/chrome_breakpad_client_mac.mm',
@@ -293,10 +300,6 @@
                   # No Breakpad, put in the stubs.
                   'dependencies': [
                     '../components/components.gyp:breakpad_stubs',
-                  ],
-                  'sources': [
-                    'app/breakpad_mac_stubs.mm',
-                    'app/breakpad_mac.h',
                   ],
                 }],  # mac_breakpad_compiled_in
                 ['internal_pdf', {

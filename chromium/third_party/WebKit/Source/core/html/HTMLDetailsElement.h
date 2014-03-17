@@ -27,18 +27,18 @@ namespace WebCore {
 
 class HTMLDetailsElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLDetailsElement> create(const QualifiedName& tagName, Document&);
+    static PassRefPtr<HTMLDetailsElement> create(Document&);
     void toggleOpen();
 
     Element* findMainSummary() const;
 
 private:
-    HTMLDetailsElement(const QualifiedName&, Document&);
+    explicit HTMLDetailsElement(Document&);
 
     virtual RenderObject* createRenderer(RenderStyle*);
     virtual bool childShouldCreateRenderer(const Node& child) const OVERRIDE;
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void didAddUserAgentShadowRoot(ShadowRoot*) OVERRIDE;
+    virtual void didAddUserAgentShadowRoot(ShadowRoot&) OVERRIDE;
     virtual bool isInteractiveContent() const OVERRIDE;
 
     bool m_isOpen;
@@ -54,11 +54,7 @@ inline bool isHTMLDetailsElement(const Element* element)
     return element->hasTagName(HTMLNames::detailsTag);
 }
 
-inline HTMLDetailsElement* toHTMLDetailsElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLDetailsElement(node));
-    return static_cast<HTMLDetailsElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLDetailsElement, hasTagName(HTMLNames::detailsTag));
 
 } // namespace WebCore
 

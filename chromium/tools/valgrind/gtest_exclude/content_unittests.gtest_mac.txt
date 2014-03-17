@@ -47,13 +47,12 @@ WebRTCAudioDeviceTest.WebRtcRecordingSetupTime
 # http://crbug.com/247601
 FontSerializationTest.StyledFonts
 MacSandboxTest.FontLoadingTest
-
-# http://crbug.com/270254
-DeviceOrientationEventPumpTest.*
-
-# http://crbug.com/280495
-SyntheticGestureControllerTest.Tick
+VideoCaptureManagerTest.ManipulateDeviceAndCheckCapabilities
 
 # http://crbug.com/280583
 DesktopCaptureDeviceTest.ScreenResolutionChangeVariableResolution
 DesktopCaptureDeviceTest.Capture
+
+# http://crbug.com/303709
+GamepadProviderTest.PollingAccess
+GamepadProviderTest.UserGesture

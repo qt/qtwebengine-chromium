@@ -6,7 +6,7 @@
 
 namespace cc {
 
-bool Renderer::HaveCachedResourcesForRenderPassId(RenderPass::Id id) const {
+bool Renderer::HasAllocatedResourcesForTesting(RenderPass::Id id) const {
   return false;
 }
 

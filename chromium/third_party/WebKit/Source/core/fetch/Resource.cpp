@@ -33,11 +33,11 @@
 #include "core/fetch/ResourceLoader.h"
 #include "core/fetch/ResourcePtr.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/platform/Logging.h"
-#include "core/platform/PurgeableBuffer.h"
-#include "core/platform/SharedBuffer.h"
+#include "platform/Logging.h"
+#include "platform/PurgeableBuffer.h"
+#include "platform/SharedBuffer.h"
+#include "platform/weborigin/KURL.h"
 #include "public/platform/Platform.h"
-#include "weborigin/KURL.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/MathExtras.h"
 #include "wtf/RefCountedLeakCounter.h"
@@ -105,6 +105,7 @@ Resource::Resource(const ResourceRequest& request, Type type)
     , m_accessCount(0)
     , m_handleCount(0)
     , m_preloadCount(0)
+    , m_protectorCount(0)
     , m_preloadResult(PreloadNotReferenced)
     , m_cacheLiveResourcePriority(CacheLiveResourcePriorityLow)
     , m_inLiveDecodedResourcesList(false)
@@ -155,7 +156,7 @@ Resource::~Resource()
 
 void Resource::failBeforeStarting()
 {
-    LOG(ResourceLoading, "Cannot start loading '%s'", url().string().latin1().data());
+    WTF_LOG(ResourceLoading, "Cannot start loading '%s'", url().string().latin1().data());
     error(Resource::LoadError);
 }
 
@@ -182,6 +183,11 @@ void Resource::load(ResourceFetcher* fetcher, const ResourceLoaderOptions& optio
         m_fragmentIdentifierForRequest = String();
     }
     m_status = Pending;
+    if (m_loader) {
+        RELEASE_ASSERT(m_options.synchronousPolicy == RequestSynchronously);
+        m_loader->changeToSynchronous();
+        return;
+    }
     m_loader = ResourceLoader::create(fetcher, this, request, options);
     m_loader->start();
 }
@@ -198,6 +204,7 @@ void Resource::checkNotify()
 
 void Resource::appendData(const char* data, int length)
 {
+    TRACE_EVENT0("webkit", "Resource::appendData");
     ASSERT(!m_resourceToRevalidate);
     ASSERT(!errorOccurred());
     if (m_options.dataBufferingPolicy == DoNotBufferData)
@@ -345,7 +352,7 @@ void Resource::setCachedMetadata(unsigned dataTypeID, const char* data, size_t s
 
     m_cachedMetadata = CachedMetadata::create(dataTypeID, data, size);
     const Vector<char>& serializedData = m_cachedMetadata->serialize();
-    WebKit::Platform::current()->cacheMetadata(m_response.url(), m_response.responseTime(), serializedData.data(), serializedData.size());
+    blink::Platform::current()->cacheMetadata(m_response.url(), m_response.responseTime(), serializedData.data(), serializedData.size());
 }
 
 CachedMetadata* Resource::cachedMetadata(unsigned dataTypeID) const
@@ -357,7 +364,7 @@ CachedMetadata* Resource::cachedMetadata(unsigned dataTypeID) const
 
 void Resource::setCacheLiveResourcePriority(CacheLiveResourcePriority priority)
 {
-    if (inCache() && m_inLiveDecodedResourcesList && m_cacheLiveResourcePriority != priority) {
+    if (inCache() && m_inLiveDecodedResourcesList && cacheLiveResourcePriority() != static_cast<unsigned>(priority)) {
         memoryCache()->removeFromLiveDecodedResourcesList(this);
         m_cacheLiveResourcePriority = priority;
         memoryCache()->insertInLiveDecodedResourcesList(this);
@@ -493,12 +500,12 @@ bool Resource::deleteIfPossible()
     return false;
 }
 
-void Resource::setDecodedSize(unsigned size)
+void Resource::setDecodedSize(size_t size)
 {
     if (size == m_decodedSize)
         return;
 
-    int delta = size - m_decodedSize;
+    ptrdiff_t delta = size - m_decodedSize;
 
     // The object must now be moved to a different queue, since its size has been changed.
     // We have to remove explicitly before updating m_decodedSize, so that we find the correct previous
@@ -529,12 +536,12 @@ void Resource::setDecodedSize(unsigned size)
     }
 }
 
-void Resource::setEncodedSize(unsigned size)
+void Resource::setEncodedSize(size_t size)
 {
     if (size == m_encodedSize)
         return;
 
-    int delta = size - m_encodedSize;
+    ptrdiff_t delta = size - m_encodedSize;
 
     // The object must now be moved to a different queue, since its size has been changed.
     // We have to remove explicitly before updating m_encodedSize, so that we find the correct previous
@@ -583,7 +590,7 @@ void Resource::setResourceToRevalidate(Resource* resource)
     ASSERT(m_handlesToRevalidate.isEmpty());
     ASSERT(resource->type() == type());
 
-    LOG(ResourceLoading, "Resource %p setResourceToRevalidate %p", this, resource);
+    WTF_LOG(ResourceLoading, "Resource %p setResourceToRevalidate %p", this, resource);
 
     // The following assert should be investigated whenever it occurs. Although it should never fire, it currently does in rare circumstances.
     // https://bugs.webkit.org/show_bug.cgi?id=28604.
@@ -616,7 +623,7 @@ void Resource::switchClientsToRevalidatedResource()
     ASSERT(m_resourceToRevalidate->inCache());
     ASSERT(!inCache());
 
-    LOG(ResourceLoading, "Resource %p switchClientsToRevalidatedResource %p", this, m_resourceToRevalidate);
+    WTF_LOG(ResourceLoading, "Resource %p switchClientsToRevalidatedResource %p", this, m_resourceToRevalidate);
 
     m_resourceToRevalidate->m_identifier = m_identifier;
 
@@ -704,7 +711,7 @@ void Resource::revalidationSucceeded(const ResourceResponse& response)
 void Resource::revalidationFailed()
 {
     ASSERT(WTF::isMainThread());
-    LOG(ResourceLoading, "Revalidation failed for %p", this);
+    WTF_LOG(ResourceLoading, "Revalidation failed for %p", this);
     ASSERT(resourceToRevalidate());
     clearResourceToRevalidate();
 }
@@ -754,29 +761,15 @@ bool Resource::canUseCacheValidator() const
     return m_response.hasCacheValidatorFields();
 }
 
-bool Resource::mustRevalidateDueToCacheHeaders(CachePolicy cachePolicy) const
+bool Resource::mustRevalidateDueToCacheHeaders() const
 {
-    ASSERT(cachePolicy == CachePolicyRevalidate || cachePolicy == CachePolicyCache || cachePolicy == CachePolicyVerify);
-
-    if (cachePolicy == CachePolicyRevalidate)
-        return true;
-
     if (m_response.cacheControlContainsNoCache() || m_response.cacheControlContainsNoStore()) {
-        LOG(ResourceLoading, "Resource %p mustRevalidate because of m_response.cacheControlContainsNoCache() || m_response.cacheControlContainsNoStore()\n", this);
+        WTF_LOG(ResourceLoading, "Resource %p mustRevalidate because of m_response.cacheControlContainsNoCache() || m_response.cacheControlContainsNoStore()\n", this);
         return true;
     }
 
-    if (cachePolicy == CachePolicyCache) {
-        if (m_response.cacheControlContainsMustRevalidate() && isExpired()) {
-            LOG(ResourceLoading, "Resource %p mustRevalidate because of cachePolicy == CachePolicyCache and m_response.cacheControlContainsMustRevalidate() && isExpired()\n", this);
-            return true;
-        }
-        return false;
-    }
-
-    // CachePolicyVerify
     if (isExpired()) {
-        LOG(ResourceLoading, "Resource %p mustRevalidate because of isExpired()\n", this);
+        WTF_LOG(ResourceLoading, "Resource %p mustRevalidate because of isExpired()\n", this);
         return true;
     }
 
@@ -837,7 +830,7 @@ bool Resource::wasPurged() const
     return m_purgeableData && m_purgeableData->wasPurged();
 }
 
-unsigned Resource::overheadSize() const
+size_t Resource::overheadSize() const
 {
     static const int kAverageClientsHashMapSize = 384;
     return sizeof(Resource) + m_response.memoryUsage() + kAverageClientsHashMapSize + m_resourceRequest.url().string().length() * 2;
@@ -885,5 +878,40 @@ void Resource::ResourceCallback::timerFired(Timer<ResourceCallback>*)
         resources[i]->finishPendingClients();
 }
 
+#if !LOG_DISABLED
+const char* ResourceTypeName(Resource::Type type)
+{
+    switch (type) {
+    case Resource::MainResource:
+        return "MainResource";
+    case Resource::Image:
+        return "Image";
+    case Resource::CSSStyleSheet:
+        return "CSSStyleSheet";
+    case Resource::Script:
+        return "Script";
+    case Resource::Font:
+        return "Font";
+    case Resource::Raw:
+        return "Raw";
+    case Resource::SVGDocument:
+        return "SVGDocument";
+    case Resource::XSLStyleSheet:
+        return "XSLStyleSheet";
+    case Resource::LinkPrefetch:
+        return "LinkPrefetch";
+    case Resource::LinkSubresource:
+        return "LinkSubresource";
+    case Resource::TextTrack:
+        return "TextTrack";
+    case Resource::Shader:
+        return "Shader";
+    case Resource::ImportResource:
+        return "ImportResource";
+    }
+    ASSERT_NOT_REACHED();
+    return "Unknown";
 }
+#endif // !LOG_DISABLED
 
+}

@@ -23,6 +23,7 @@
 #include "net/base/load_timing_info.h"
 #include "net/base/net_errors.h"
 #include "net/base/network_delegate.h"
+#include "net/base/request_priority.h"
 #include "net/cert/cert_verifier.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/disk_cache/disk_cache.h"
@@ -107,9 +108,10 @@ class TestURLRequestContextGetter : public URLRequestContextGetter {
 
 class TestURLRequest : public URLRequest {
  public:
-  TestURLRequest(
-      const GURL& url, Delegate* delegate,
-      TestURLRequestContext* context, NetworkDelegate* network_delegate);
+  TestURLRequest(const GURL& url,
+                 RequestPriority priority,
+                 Delegate* delegate,
+                 TestURLRequestContext* context);
   virtual ~TestURLRequest();
 };
 
@@ -230,9 +232,16 @@ class TestNetworkDelegate : public NetworkDelegate {
   int created_requests() const { return created_requests_; }
   int destroyed_requests() const { return destroyed_requests_; }
   int completed_requests() const { return completed_requests_; }
+  int canceled_requests() const { return canceled_requests_; }
   int blocked_get_cookies_count() const { return blocked_get_cookies_count_; }
   int blocked_set_cookie_count() const { return blocked_set_cookie_count_; }
   int set_cookie_count() const { return set_cookie_count_; }
+
+  void set_can_access_files(bool val) { can_access_files_ = val; }
+  bool can_access_files() const { return can_access_files_; }
+
+  void set_can_throttle_requests(bool val) { can_throttle_requests_ = val; }
+  bool can_throttle_requests() const { return can_throttle_requests_; }
 
  protected:
   // NetworkDelegate:
@@ -285,6 +294,7 @@ class TestNetworkDelegate : public NetworkDelegate {
   int created_requests_;
   int destroyed_requests_;
   int completed_requests_;
+  int canceled_requests_;
   int cookie_options_bit_mask_;
   int blocked_get_cookies_count_;
   int blocked_set_cookie_count_;
@@ -305,6 +315,9 @@ class TestNetworkDelegate : public NetworkDelegate {
 
   LoadTimingInfo load_timing_info_before_auth_;
   bool has_load_timing_info_before_auth_;
+
+  bool can_access_files_;  // true by default
+  bool can_throttle_requests_;  // true by default
 };
 
 // Overrides the host used by the LocalHttpTestServer in

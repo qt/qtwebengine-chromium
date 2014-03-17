@@ -36,8 +36,10 @@
 #include "bindings/v8/V8NPObject.h"
 #include "bindings/v8/npruntime_impl.h"
 #include "bindings/v8/npruntime_priv.h"
-#include "core/page/DOMWindow.h"
+#include "core/frame/DOMWindow.h"
 #include "wtf/text/WTFString.h"
+
+#include <stdlib.h>
 
 namespace WebCore {
 
@@ -67,7 +69,7 @@ void convertV8ObjectToNPVariant(v8::Local<v8::Value> object, NPObject* owner, NP
         str->WriteUtf8(utf8Chars, length, 0, v8::String::HINT_MANY_WRITES_EXPECTED);
         STRINGN_TO_NPVARIANT(utf8Chars, length-1, *result);
     } else if (object->IsObject()) {
-        DOMWindow* window = toDOMWindow(v8::Context::GetCurrent());
+        DOMWindow* window = toDOMWindow(isolate->GetCurrentContext());
         NPObject* npobject = npCreateV8ScriptObject(0, v8::Handle<v8::Object>::Cast(object), window, isolate);
         if (npobject)
             _NPN_RegisterObject(npobject, owner);
@@ -92,7 +94,7 @@ v8::Handle<v8::Value> convertNPVariantToV8Object(const NPVariant* variant, NPObj
         return v8::Undefined(isolate);
     case NPVariantType_String: {
         NPString src = NPVARIANT_TO_STRING(*variant);
-        return v8::String::New(src.UTF8Characters, src.UTF8Length);
+        return v8::String::NewFromUtf8(isolate, src.UTF8Characters, v8::String::kNormalString, src.UTF8Length);
     }
     case NPVariantType_Object: {
         NPObject* object = NPVARIANT_TO_OBJECT(*variant);

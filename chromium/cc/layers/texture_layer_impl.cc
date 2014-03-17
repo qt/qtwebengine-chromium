@@ -66,6 +66,7 @@ void TextureLayerImpl::PushPropertiesTo(LayerImpl* layer) {
   texture_layer->set_uv_bottom_right(uv_bottom_right_);
   texture_layer->set_vertex_opacity(vertex_opacity_);
   texture_layer->set_premultiplied_alpha(premultiplied_alpha_);
+  texture_layer->set_blend_background_color(blend_background_color_);
   if (uses_mailbox_ && own_mailbox_) {
     texture_layer->SetTextureMailbox(texture_mailbox_,
                                      release_callback_.Pass());
@@ -104,7 +105,7 @@ bool TextureLayerImpl::WillDraw(DrawMode draw_mode,
       // Have to upload a copy to a texture for it to be used in a
       // hardware draw.
       if (!texture_copy_)
-        texture_copy_ = ScopedResource::create(resource_provider);
+        texture_copy_ = ScopedResource::Create(resource_provider);
       if (texture_copy_->size() != texture_mailbox_.shared_memory_size() ||
           resource_provider->InUseByConsumer(texture_copy_->id()))
         texture_copy_->Free();
@@ -183,12 +184,7 @@ void TextureLayerImpl::AppendQuads(QuadSink* quad_sink,
                bg_color,
                vertex_opacity_,
                flipped_);
-
-  // Perform explicit clipping on a quad to avoid setting a scissor later.
-  if (shared_quad_state->is_clipped && quad->PerformClipping())
-    shared_quad_state->is_clipped = false;
-  if (!quad->rect.IsEmpty())
-    quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
+  quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
 }
 
 void TextureLayerImpl::DidDraw(ResourceProvider* resource_provider) {
@@ -227,10 +223,6 @@ void TextureLayerImpl::DidLoseOutputSurface() {
 
 const char* TextureLayerImpl::LayerTypeAsString() const {
   return "cc::TextureLayerImpl";
-}
-
-bool TextureLayerImpl::CanClipSelf() const {
-  return true;
 }
 
 void TextureLayerImpl::FreeTextureMailbox() {

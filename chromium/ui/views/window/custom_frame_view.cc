@@ -38,15 +38,6 @@ namespace {
 // The frame border is only visible in restored mode and is hardcoded to 4 px on
 // each side regardless of the system window border size.
 const int kFrameBorderThickness = 4;
-// Various edges of the frame border have a 1 px shadow along their edges; in a
-// few cases we shift elements based on this amount for visual appeal.
-const int kFrameShadowThickness = 1;
-// While resize areas on Windows are normally the same size as the window
-// borders, our top area is shrunk by 1 px to make it easier to move the window
-// around with our thinner top grabbable strip.  (Incidentally, our side and
-// bottom resize areas don't match the frame border thickness either -- they
-// span the whole nonclient area, so there's no "dead zone" for the mouse.)
-const int kTopResizeAdjust = 1;
 // In the window corners, the resize areas don't actually expand bigger, but the
 // 16 px at the end of each edge triggers diagonal resizing.
 const int kResizeAreaCornerSize = 16;
@@ -64,10 +55,12 @@ const int kTitleIconOffsetX = 4;
 // The space between the title text and the caption buttons.
 const int kTitleCaptionSpacing = 5;
 
-#if defined(USE_AURA)
+#if defined(OS_CHROMEOS)
+// Chrome OS uses a dark gray.
 const SkColor kDefaultColorFrame = SkColorSetRGB(109, 109, 109);
 const SkColor kDefaultColorFrameInactive = SkColorSetRGB(176, 176, 176);
 #else
+// Windows and Linux use a blue.
 const SkColor kDefaultColorFrame = SkColorSetRGB(66, 116, 201);
 const SkColor kDefaultColorFrameInactive = SkColorSetRGB(161, 182, 228);
 #endif
@@ -99,7 +92,7 @@ CustomFrameView::CustomFrameView()
       maximize_button_(NULL),
       restore_button_(NULL),
       close_button_(NULL),
-      should_show_minmax_buttons_(false),
+      should_show_maximize_button_(false),
       frame_background_(new FrameBackground()) {
 }
 
@@ -125,7 +118,7 @@ void CustomFrameView::Init(Widget* frame) {
   restore_button_ = InitWindowCaptionButton(IDS_APP_ACCNAME_RESTORE,
       IDR_RESTORE, IDR_RESTORE_H, IDR_RESTORE_P);
 
-  should_show_minmax_buttons_ = frame_->widget_delegate()->CanMaximize();
+  should_show_maximize_button_ = frame_->widget_delegate()->CanMaximize();
 
   if (frame_->widget_delegate()->ShouldShowWindowIcon()) {
     window_icon_ = new ImageButton(this);
@@ -395,54 +388,68 @@ void CustomFrameView::PaintRestoredClientEdge(gfx::Canvas* canvas) {
   int client_area_top = client_area_bounds.y();
 
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  const gfx::ImageSkia* top_left = rb.GetImageNamed(
-      IDR_APP_TOP_LEFT).ToImageSkia();
-  const gfx::ImageSkia* top = rb.GetImageNamed(
-      IDR_APP_TOP_CENTER).ToImageSkia();
-  const gfx::ImageSkia* top_right = rb.GetImageNamed(
-      IDR_APP_TOP_RIGHT).ToImageSkia();
-  const gfx::ImageSkia* right = rb.GetImageNamed(
-      IDR_CONTENT_RIGHT_SIDE).ToImageSkia();
-  const gfx::ImageSkia* bottom_right = rb.GetImageNamed(
-      IDR_CONTENT_BOTTOM_RIGHT_CORNER).ToImageSkia();
-  const gfx::ImageSkia* bottom = rb.GetImageNamed(
-      IDR_CONTENT_BOTTOM_CENTER).ToImageSkia();
-  const gfx::ImageSkia* bottom_left = rb.GetImageNamed(
-      IDR_CONTENT_BOTTOM_LEFT_CORNER).ToImageSkia();
-  const gfx::ImageSkia* left = rb.GetImageNamed(
-      IDR_CONTENT_LEFT_SIDE).ToImageSkia();
 
-  // Top.
-  int top_edge_y = client_area_top - top->height();
-  canvas->DrawImageInt(*top_left, client_area_bounds.x() - top_left->width(),
+  // Top: left, center, right sides.
+  const gfx::ImageSkia* top_left = rb.GetImageSkiaNamed(IDR_APP_TOP_LEFT);
+  const gfx::ImageSkia* top_center = rb.GetImageSkiaNamed(IDR_APP_TOP_CENTER);
+  const gfx::ImageSkia* top_right = rb.GetImageSkiaNamed(IDR_APP_TOP_RIGHT);
+  int top_edge_y = client_area_top - top_center->height();
+  canvas->DrawImageInt(*top_left,
+                       client_area_bounds.x() - top_left->width(),
                        top_edge_y);
-  canvas->TileImageInt(*top, client_area_bounds.x(), top_edge_y,
-                       client_area_bounds.width(), top->height());
+  canvas->TileImageInt(*top_center,
+                       client_area_bounds.x(),
+                       top_edge_y,
+                       client_area_bounds.width(),
+                       top_center->height());
   canvas->DrawImageInt(*top_right, client_area_bounds.right(), top_edge_y);
 
-  // Right.
+  // Right side.
+  const gfx::ImageSkia* right = rb.GetImageSkiaNamed(IDR_CONTENT_RIGHT_SIDE);
   int client_area_bottom =
       std::max(client_area_top, client_area_bounds.bottom());
   int client_area_height = client_area_bottom - client_area_top;
-  canvas->TileImageInt(*right, client_area_bounds.right(), client_area_top,
-                       right->width(), client_area_height);
+  canvas->TileImageInt(*right,
+                       client_area_bounds.right(),
+                       client_area_top,
+                       right->width(),
+                       client_area_height);
 
-  // Bottom.
-  canvas->DrawImageInt(*bottom_right, client_area_bounds.right(),
-                       client_area_bottom);
-  canvas->TileImageInt(*bottom, client_area_bounds.x(), client_area_bottom,
-                       client_area_bounds.width(), bottom_right->height());
+  // Bottom: left, center, right sides.
+  const gfx::ImageSkia* bottom_left =
+      rb.GetImageSkiaNamed(IDR_CONTENT_BOTTOM_LEFT_CORNER);
+  const gfx::ImageSkia* bottom_center =
+      rb.GetImageSkiaNamed(IDR_CONTENT_BOTTOM_CENTER);
+  const gfx::ImageSkia* bottom_right =
+      rb.GetImageSkiaNamed(IDR_CONTENT_BOTTOM_RIGHT_CORNER);
+
   canvas->DrawImageInt(*bottom_left,
-      client_area_bounds.x() - bottom_left->width(), client_area_bottom);
+                       client_area_bounds.x() - bottom_left->width(),
+                       client_area_bottom);
 
-  // Left.
-  canvas->TileImageInt(*left, client_area_bounds.x() - left->width(),
-      client_area_top, left->width(), client_area_height);
+  canvas->TileImageInt(*bottom_center,
+                       client_area_bounds.x(),
+                       client_area_bottom,
+                       client_area_bounds.width(),
+                       bottom_right->height());
+
+  canvas->DrawImageInt(*bottom_right,
+                       client_area_bounds.right(),
+                       client_area_bottom);
+  // Left side.
+  const gfx::ImageSkia* left = rb.GetImageSkiaNamed(IDR_CONTENT_LEFT_SIDE);
+  canvas->TileImageInt(*left,
+                       client_area_bounds.x() - left->width(),
+                       client_area_top,
+                       left->width(),
+                       client_area_height);
 
   // Draw the color to fill in the edges.
-  canvas->FillRect(gfx::Rect(client_area_bounds.x() - 1, client_area_top - 1,
-      client_area_bounds.width() + 1, client_area_bottom - client_area_top + 1),
-      kClientEdgeColor);
+  canvas->FillRect(gfx::Rect(client_area_bounds.x() - 1,
+                             client_area_top - 1,
+                             client_area_bounds.width() + 1,
+                             client_area_bottom - client_area_top + 1),
+                   kClientEdgeColor);
 }
 
 SkColor CustomFrameView::GetFrameColor() const {
@@ -480,7 +487,8 @@ void CustomFrameView::LayoutWindowControls() {
   ImageButton* visible_button = is_restored ? maximize_button_
                                             : restore_button_;
   FramePartImage normal_part, hot_part, pushed_part;
-  if (should_show_minmax_buttons_) {
+  int next_button_x;
+  if (should_show_maximize_button_) {
     visible_button->SetVisible(true);
     visible_button->SetImageAlignment(ImageButton::ALIGN_LEFT,
                                       ImageButton::ALIGN_BOTTOM);
@@ -488,27 +496,24 @@ void CustomFrameView::LayoutWindowControls() {
     visible_button->SetBounds(close_button_->x() - visible_button_size.width(),
                               caption_y, visible_button_size.width(),
                               visible_button_size.height());
-
-    minimize_button_->SetVisible(true);
-    minimize_button_->SetImageAlignment(ImageButton::ALIGN_LEFT,
-                                        ImageButton::ALIGN_BOTTOM);
-    gfx::Size minimize_button_size = minimize_button_->GetPreferredSize();
-    minimize_button_->SetBounds(
-        visible_button->x() - minimize_button_size.width(), caption_y,
-        minimize_button_size.width(),
-        minimize_button_size.height());
-
-    normal_part = IDR_CLOSE;
-    hot_part = IDR_CLOSE_H;
-    pushed_part = IDR_CLOSE_P;
+    next_button_x = visible_button->x();
   } else {
     visible_button->SetVisible(false);
-    minimize_button_->SetVisible(false);
-
-    normal_part = IDR_CLOSE_SA;
-    hot_part = IDR_CLOSE_SA_H;
-    pushed_part = IDR_CLOSE_SA_P;
+    next_button_x = close_button_->x();
   }
+
+  minimize_button_->SetVisible(true);
+  minimize_button_->SetImageAlignment(ImageButton::ALIGN_LEFT,
+                                      ImageButton::ALIGN_BOTTOM);
+  gfx::Size minimize_button_size = minimize_button_->GetPreferredSize();
+  minimize_button_->SetBounds(
+      next_button_x - minimize_button_size.width(), caption_y,
+      minimize_button_size.width(),
+      minimize_button_size.height());
+
+  normal_part = IDR_CLOSE;
+  hot_part = IDR_CLOSE_H;
+  pushed_part = IDR_CLOSE_P;
 
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
 
@@ -539,8 +544,7 @@ void CustomFrameView::LayoutTitleBar() {
   // title from overlapping the 3D edge at the bottom of the titlebar.
   title_bounds_.SetRect(title_x,
       icon_bounds.y() + ((icon_bounds.height() - title_height - 1) / 2),
-      std::max(0, (should_show_minmax_buttons_ ?
-          minimize_button_->x() : close_button_->x()) - kTitleCaptionSpacing -
+      std::max(0, minimize_button_->x() - kTitleCaptionSpacing -
       title_x), title_height);
 }
 

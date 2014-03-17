@@ -31,11 +31,11 @@
 #include "config.h"
 #include "WebDOMMouseEvent.h"
 
-#include "core/dom/MouseEvent.h"
+#include "core/events/MouseEvent.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 int WebDOMMouseEvent::screenX() const
 {
@@ -97,4 +97,4 @@ bool WebDOMMouseEvent::buttonDown() const
     return constUnwrap<MouseEvent>()->buttonDown();
 }
 
-} // namespace WebKit
+} // namespace blink

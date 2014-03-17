@@ -117,6 +117,19 @@ TEST_F(TransportSecurityStateTest, SubdomainMatches) {
   EXPECT_FALSE(state.GetDomainState("com", true, &domain_state));
 }
 
+TEST_F(TransportSecurityStateTest, InvalidDomains) {
+  TransportSecurityState state;
+  TransportSecurityState::DomainState domain_state;
+  const base::Time current_time(base::Time::Now());
+  const base::Time expiry = current_time + base::TimeDelta::FromSeconds(1000);
+
+  EXPECT_FALSE(state.GetDomainState("yahoo.com", true, &domain_state));
+  bool include_subdomains = true;
+  state.AddHSTS("yahoo.com", expiry, include_subdomains);
+  EXPECT_TRUE(state.GetDomainState("www-.foo.yahoo.com", true, &domain_state));
+  EXPECT_TRUE(state.GetDomainState("2\x01.foo.yahoo.com", true, &domain_state));
+}
+
 TEST_F(TransportSecurityStateTest, DeleteAllDynamicDataSince) {
   TransportSecurityState state;
   TransportSecurityState::DomainState domain_state;
@@ -506,7 +519,8 @@ TEST_F(TransportSecurityStateTest, BuiltinCertPins) {
   EXPECT_TRUE(HasPublicKeyPins("apis.google.com"));
 
   EXPECT_TRUE(HasPublicKeyPins("ssl.gstatic.com"));
-  EXPECT_FALSE(HasPublicKeyPins("www.gstatic.com"));
+  EXPECT_TRUE(HasPublicKeyPins("gstatic.com"));
+  EXPECT_TRUE(HasPublicKeyPins("www.gstatic.com"));
   EXPECT_TRUE(HasPublicKeyPins("ssl.google-analytics.com"));
   EXPECT_TRUE(HasPublicKeyPins("www.googleplex.com"));
 
@@ -521,7 +535,6 @@ TEST_F(TransportSecurityStateTest, BuiltinCertPins) {
   EXPECT_TRUE(HasPublicKeyPins("business.twitter.com"));
   EXPECT_TRUE(HasPublicKeyPins("platform.twitter.com"));
   EXPECT_TRUE(HasPublicKeyPins("si0.twimg.com"));
-  EXPECT_TRUE(HasPublicKeyPins("twimg0-a.akamaihd.net"));
 }
 
 static bool AddHash(const std::string& type_and_base64,
@@ -532,43 +545,6 @@ static bool AddHash(const std::string& type_and_base64,
 
   out->push_back(hash);
   return true;
-}
-
-TEST_F(TransportSecurityStateTest, PinValidationWithRejectedCerts) {
-  // kGoodPath is plus.google.com via Google Internet Authority.
-  static const char* kGoodPath[] = {
-    "sha1/4BjDjn8v2lWeUFQnqSs0BgbIcrU=",
-    "sha1/QMVAHW+MuvCLAO3vse6H0AWzuc0=",
-    "sha1/SOZo+SvSspXXR9gjIBBPM5iQn9Q=",
-    NULL,
-  };
-
-  // kBadPath is plus.google.com via Trustcenter, which contains a required
-  // certificate (Equifax root), but also an excluded certificate
-  // (Trustcenter).
-  static const char* kBadPath[] = {
-    "sha1/4BjDjn8v2lWeUFQnqSs0BgbIcrU=",
-    "sha1/gzuEEAB/bkqdQS3EIjk2by7lW+k=",
-    "sha1/SOZo+SvSspXXR9gjIBBPM5iQn9Q=",
-    NULL,
-  };
-
-  HashValueVector good_hashes, bad_hashes;
-
-  for (size_t i = 0; kGoodPath[i]; i++) {
-    EXPECT_TRUE(AddHash(kGoodPath[i], &good_hashes));
-  }
-  for (size_t i = 0; kBadPath[i]; i++) {
-    EXPECT_TRUE(AddHash(kBadPath[i], &bad_hashes));
-  }
-
-  TransportSecurityState state;
-  TransportSecurityState::DomainState domain_state;
-  EXPECT_TRUE(state.GetDomainState("plus.google.com", true, &domain_state));
-  EXPECT_TRUE(domain_state.HasPublicKeyPins());
-
-  EXPECT_TRUE(domain_state.CheckPublicKeyPins(good_hashes));
-  EXPECT_FALSE(domain_state.CheckPublicKeyPins(bad_hashes));
 }
 
 TEST_F(TransportSecurityStateTest, PinValidationWithoutRejectedCerts) {
@@ -605,100 +581,6 @@ TEST_F(TransportSecurityStateTest, PinValidationWithoutRejectedCerts) {
 
   EXPECT_TRUE(domain_state.CheckPublicKeyPins(good_hashes));
   EXPECT_FALSE(domain_state.CheckPublicKeyPins(bad_hashes));
-}
-
-TEST_F(TransportSecurityStateTest, PinValidationWithRejectedCertsMixedHashes) {
-  static const char* ee_sha1 = "sha1/4BjDjn8v2lWeUFQnqSs0BgbIcrU=";
-  static const char* ee_sha256 =
-      "sha256/sRJBQqWhpaKIGcc1NA7/jJ4vgWj+47oYfyU7waOS1+I=";
-  static const char* google_1024_sha1 = "sha1/QMVAHW+MuvCLAO3vse6H0AWzuc0=";
-  static const char* google_1024_sha256 =
-      "sha256/trlUMquuV/4CDLK3T0+fkXPIxwivyecyrOIyeQR8bQU=";
-  static const char* equifax_sha1 = "sha1/SOZo+SvSspXXR9gjIBBPM5iQn9Q=";
-  static const char* equifax_sha256 =
-      "sha256//1aAzXOlcD2gSBegdf1GJQanNQbEuBoVg+9UlHjSZHY=";
-  static const char* trustcenter_sha1 = "sha1/gzuEEAB/bkqdQS3EIjk2by7lW+k=";
-  static const char* trustcenter_sha256 =
-      "sha256/Dq58KIA4NMLsboWMLU8/aTREzaAGEFW+EtUule8dd/M=";
-
-  // Good chains for plus.google.com chain up through google_1024_sha{1,256}
-  // to equifax_sha{1,256}. Bad chains chain up to Equifax through
-  // trustcenter_sha{1,256}, which is a blacklisted key. Even though Equifax
-  // and Google1024 are known-good, the blacklistedness of Trustcenter
-  // should override and cause pin validation failure.
-
-  TransportSecurityState state;
-  TransportSecurityState::DomainState domain_state;
-  EXPECT_TRUE(state.GetDomainState("plus.google.com", true, &domain_state));
-  EXPECT_TRUE(domain_state.HasPublicKeyPins());
-
-  // The statically-defined pins are all SHA-1, so we add some SHA-256 pins
-  // manually:
-  EXPECT_TRUE(AddHash(google_1024_sha256, &domain_state.static_spki_hashes));
-  EXPECT_TRUE(AddHash(trustcenter_sha256,
-                      &domain_state.bad_static_spki_hashes));
-
-  // Try an all-good SHA1 chain.
-  HashValueVector validated_chain;
-  EXPECT_TRUE(AddHash(ee_sha1, &validated_chain));
-  EXPECT_TRUE(AddHash(google_1024_sha1, &validated_chain));
-  EXPECT_TRUE(AddHash(equifax_sha1, &validated_chain));
-  EXPECT_TRUE(domain_state.CheckPublicKeyPins(validated_chain));
-
-  // Try an all-bad SHA1 chain.
-  validated_chain.clear();
-  EXPECT_TRUE(AddHash(ee_sha1, &validated_chain));
-  EXPECT_TRUE(AddHash(trustcenter_sha1, &validated_chain));
-  EXPECT_TRUE(AddHash(equifax_sha1, &validated_chain));
-  EXPECT_FALSE(domain_state.CheckPublicKeyPins(validated_chain));
-
-  // Try an all-good SHA-256 chain.
-  validated_chain.clear();
-  EXPECT_TRUE(AddHash(ee_sha256, &validated_chain));
-  EXPECT_TRUE(AddHash(google_1024_sha256, &validated_chain));
-  EXPECT_TRUE(AddHash(equifax_sha256, &validated_chain));
-  EXPECT_TRUE(domain_state.CheckPublicKeyPins(validated_chain));
-
-  // Try an all-bad SHA-256 chain.
-  validated_chain.clear();
-  EXPECT_TRUE(AddHash(ee_sha256, &validated_chain));
-  EXPECT_TRUE(AddHash(trustcenter_sha256, &validated_chain));
-  EXPECT_TRUE(AddHash(equifax_sha256, &validated_chain));
-  EXPECT_FALSE(domain_state.CheckPublicKeyPins(validated_chain));
-
-  // Try a mixed-hash good chain.
-  validated_chain.clear();
-  EXPECT_TRUE(AddHash(ee_sha256, &validated_chain));
-  EXPECT_TRUE(AddHash(google_1024_sha1, &validated_chain));
-  EXPECT_TRUE(AddHash(equifax_sha256, &validated_chain));
-  EXPECT_TRUE(domain_state.CheckPublicKeyPins(validated_chain));
-
-  // Try a mixed-hash bad chain.
-  validated_chain.clear();
-  EXPECT_TRUE(AddHash(ee_sha1, &validated_chain));
-  EXPECT_TRUE(AddHash(trustcenter_sha256, &validated_chain));
-  EXPECT_TRUE(AddHash(equifax_sha1, &validated_chain));
-  EXPECT_FALSE(domain_state.CheckPublicKeyPins(validated_chain));
-
-  // Try a chain with all good hashes.
-  validated_chain.clear();
-  EXPECT_TRUE(AddHash(ee_sha1, &validated_chain));
-  EXPECT_TRUE(AddHash(google_1024_sha1, &validated_chain));
-  EXPECT_TRUE(AddHash(equifax_sha1, &validated_chain));
-  EXPECT_TRUE(AddHash(ee_sha256, &validated_chain));
-  EXPECT_TRUE(AddHash(google_1024_sha256, &validated_chain));
-  EXPECT_TRUE(AddHash(equifax_sha256, &validated_chain));
-  EXPECT_TRUE(domain_state.CheckPublicKeyPins(validated_chain));
-
-  // Try a chain with all bad hashes.
-  validated_chain.clear();
-  EXPECT_TRUE(AddHash(ee_sha1, &validated_chain));
-  EXPECT_TRUE(AddHash(trustcenter_sha1, &validated_chain));
-  EXPECT_TRUE(AddHash(equifax_sha1, &validated_chain));
-  EXPECT_TRUE(AddHash(ee_sha256, &validated_chain));
-  EXPECT_TRUE(AddHash(trustcenter_sha256, &validated_chain));
-  EXPECT_TRUE(AddHash(equifax_sha256, &validated_chain));
-  EXPECT_FALSE(domain_state.CheckPublicKeyPins(validated_chain));
 }
 
 TEST_F(TransportSecurityStateTest, OptionalHSTSCertPins) {
@@ -743,38 +625,6 @@ TEST_F(TransportSecurityStateTest, OverrideBuiltins) {
 
   EXPECT_TRUE(state.GetDomainState("www.google.com", true, &domain_state));
 }
-
-static const uint8 kSidePinLeafSPKI[] = {
-  0x30, 0x5c, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01,
-  0x01, 0x01, 0x05, 0x00, 0x03, 0x4b, 0x00, 0x30, 0x48, 0x02, 0x41, 0x00, 0xe4,
-  0x1d, 0xcc, 0xf2, 0x92, 0xe7, 0x7a, 0xc6, 0x36, 0xf7, 0x1a, 0x62, 0x31, 0x7d,
-  0x37, 0xea, 0x0d, 0xa2, 0xa8, 0x12, 0x2b, 0xc2, 0x1c, 0x82, 0x3e, 0xa5, 0x70,
-  0x4a, 0x83, 0x5d, 0x9b, 0x84, 0x82, 0x70, 0xa4, 0x88, 0x98, 0x98, 0x41, 0x29,
-  0x31, 0xcb, 0x6e, 0x2a, 0x54, 0x65, 0x14, 0x60, 0xcc, 0x00, 0xe8, 0x10, 0x30,
-  0x0a, 0x4a, 0xd1, 0xa7, 0x52, 0xfe, 0x2d, 0x31, 0x2a, 0x1d, 0x0d, 0x02, 0x03,
-  0x01, 0x00, 0x01,
-};
-
-static const uint8 kSidePinInfo[] = {
-  0x01, 0x00, 0x53, 0x50, 0x49, 0x4e, 0xa0, 0x00, 0x03, 0x00, 0x53, 0x49, 0x47,
-  0x00, 0x50, 0x55, 0x42, 0x4b, 0x41, 0x4c, 0x47, 0x4f, 0x47, 0x00, 0x41, 0x00,
-  0x04, 0x00, 0x30, 0x45, 0x02, 0x21, 0x00, 0xfb, 0x26, 0xd5, 0xe8, 0x76, 0x35,
-  0x96, 0x6d, 0x91, 0x9b, 0x5b, 0x27, 0xe6, 0x09, 0x1c, 0x7b, 0x6c, 0xcd, 0xc8,
-  0x10, 0x25, 0x95, 0xc0, 0xa5, 0xf6, 0x6c, 0x6f, 0xfb, 0x59, 0x1e, 0x2d, 0xf4,
-  0x02, 0x20, 0x33, 0x0a, 0xf8, 0x8b, 0x3e, 0xc4, 0xca, 0x75, 0x28, 0xdf, 0x5f,
-  0xab, 0xe4, 0x46, 0xa0, 0xdd, 0x2d, 0xe5, 0xad, 0xc3, 0x81, 0x44, 0x70, 0xb2,
-  0x10, 0x87, 0xe8, 0xc3, 0xd6, 0x6e, 0x12, 0x5d, 0x04, 0x67, 0x0b, 0x7d, 0xf2,
-  0x99, 0x75, 0x57, 0x99, 0x3a, 0x98, 0xf8, 0xe4, 0xdf, 0x79, 0xdf, 0x8e, 0x02,
-  0x2c, 0xbe, 0xd8, 0xfd, 0x75, 0x80, 0x18, 0xb1, 0x6f, 0x43, 0xd9, 0x8a, 0x79,
-  0xc3, 0x6e, 0x18, 0xdf, 0x79, 0xc0, 0x59, 0xab, 0xd6, 0x77, 0x37, 0x6a, 0x94,
-  0x5a, 0x7e, 0xfb, 0xa9, 0xc5, 0x54, 0x14, 0x3a, 0x7b, 0x97, 0x17, 0x2a, 0xb6,
-  0x1e, 0x59, 0x4f, 0x2f, 0xb1, 0x15, 0x1a, 0x34, 0x50, 0x32, 0x35, 0x36,
-};
-
-static const uint8 kSidePinExpectedHash[20] = {
-  0xb5, 0x91, 0x66, 0x47, 0x43, 0x16, 0x62, 0x86, 0xd4, 0x1e, 0x5d, 0x36, 0xe1,
-  0xc4, 0x09, 0x3d, 0x2d, 0x1d, 0xea, 0x1e,
-};
 
 TEST_F(TransportSecurityStateTest, GooglePinnedProperties) {
   EXPECT_FALSE(TransportSecurityState::IsGooglePinnedProperty(

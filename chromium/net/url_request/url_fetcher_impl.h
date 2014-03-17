@@ -70,9 +70,11 @@ class NET_EXPORT_PRIVATE URLFetcherImpl : public URLFetcher {
   virtual void SetAutomaticallyRetryOnNetworkChanges(int max_retries) OVERRIDE;
   virtual void SaveResponseToFileAtPath(
       const base::FilePath& file_path,
-      scoped_refptr<base::TaskRunner> file_task_runner) OVERRIDE;
+      scoped_refptr<base::SequencedTaskRunner> file_task_runner) OVERRIDE;
   virtual void SaveResponseToTemporaryFile(
-      scoped_refptr<base::TaskRunner> file_task_runner) OVERRIDE;
+      scoped_refptr<base::SequencedTaskRunner> file_task_runner) OVERRIDE;
+  virtual void SaveResponseWithWriter(
+      scoped_ptr<URLFetcherResponseWriter> response_writer) OVERRIDE;
   virtual HttpResponseHeaders* GetResponseHeaders() const OVERRIDE;
   virtual HostPortPair GetSocketAddress() const OVERRIDE;
   virtual bool WasFetchedViaProxy() const OVERRIDE;
@@ -82,7 +84,6 @@ class NET_EXPORT_PRIVATE URLFetcherImpl : public URLFetcher {
   virtual const URLRequestStatus& GetStatus() const OVERRIDE;
   virtual int GetResponseCode() const OVERRIDE;
   virtual const ResponseCookies& GetCookies() const OVERRIDE;
-  virtual bool FileErrorOccurred(int* out_error_code) const OVERRIDE;
   virtual void ReceivedContentWasMalformed() OVERRIDE;
   virtual bool GetResponseAsString(
       std::string* out_response_string) const OVERRIDE;

@@ -7,7 +7,9 @@
 #include "net/quic/crypto/crypto_handshake.h"
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/quic_protocol.h"
+#include "net/quic/quic_sent_packet_manager.h"
 #include "net/quic/quic_time.h"
+#include "net/quic/test_tools/quic_test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using std::string;
@@ -20,12 +22,15 @@ class QuicConfigTest : public ::testing::Test {
  protected:
   QuicConfigTest() {
     config_.SetDefaults();
+    config_.set_initial_round_trip_time_us(kMaxInitialRoundTripTimeUs, 0);
   }
 
   QuicConfig config_;
 };
 
 TEST_F(QuicConfigTest, ToHandshakeMessage) {
+  FLAGS_enable_quic_pacing = false;
+  config_.SetDefaults();
   config_.set_idle_connection_state_lifetime(QuicTime::Delta::FromSeconds(5),
                                              QuicTime::Delta::FromSeconds(2));
   config_.set_max_streams_per_connection(4, 2);
@@ -48,6 +53,21 @@ TEST_F(QuicConfigTest, ToHandshakeMessage) {
   EXPECT_EQ(kQBIC, *out);
 }
 
+TEST_F(QuicConfigTest, ToHandshakeMessageWithPacing) {
+  ValueRestore<bool> old_flag(&FLAGS_enable_quic_pacing, true);
+
+  config_.SetDefaults();
+  CryptoHandshakeMessage msg;
+  config_.ToHandshakeMessage(&msg);
+
+  const QuicTag* out;
+  size_t out_len;
+  EXPECT_EQ(QUIC_NO_ERROR, msg.GetTaglist(kCGST, &out, &out_len));
+  EXPECT_EQ(2u, out_len);
+  EXPECT_EQ(kPACE, out[0]);
+  EXPECT_EQ(kQBIC, out[1]);
+}
+
 TEST_F(QuicConfigTest, ProcessClientHello) {
   QuicConfig client_config;
   QuicTagVector cgst;
@@ -59,6 +79,9 @@ TEST_F(QuicConfigTest, ProcessClientHello) {
       QuicTime::Delta::FromSeconds(kDefaultTimeoutSecs));
   client_config.set_max_streams_per_connection(
       2 * kDefaultMaxStreamsPerConnection, kDefaultMaxStreamsPerConnection);
+  client_config.set_initial_round_trip_time_us(
+      10 * base::Time::kMicrosecondsPerMillisecond,
+      10 * base::Time::kMicrosecondsPerMillisecond);
 
   CryptoHandshakeMessage msg;
   client_config.ToHandshakeMessage(&msg);
@@ -72,6 +95,8 @@ TEST_F(QuicConfigTest, ProcessClientHello) {
   EXPECT_EQ(kDefaultMaxStreamsPerConnection,
             config_.max_streams_per_connection());
   EXPECT_EQ(QuicTime::Delta::FromSeconds(0), config_.keepalive_timeout());
+  EXPECT_EQ(10 * base::Time::kMicrosecondsPerMillisecond,
+            config_.initial_round_trip_time_us());
 }
 
 TEST_F(QuicConfigTest, ProcessServerHello) {
@@ -85,6 +110,11 @@ TEST_F(QuicConfigTest, ProcessServerHello) {
   server_config.set_max_streams_per_connection(
       kDefaultMaxStreamsPerConnection / 2,
       kDefaultMaxStreamsPerConnection / 2);
+  server_config.set_server_initial_congestion_window(kDefaultInitialWindow / 2,
+                                                     kDefaultInitialWindow / 2);
+  server_config.set_initial_round_trip_time_us(
+      10 * base::Time::kMicrosecondsPerMillisecond,
+      10 * base::Time::kMicrosecondsPerMillisecond);
 
   CryptoHandshakeMessage msg;
   server_config.ToHandshakeMessage(&msg);
@@ -97,7 +127,11 @@ TEST_F(QuicConfigTest, ProcessServerHello) {
             config_.idle_connection_state_lifetime());
   EXPECT_EQ(kDefaultMaxStreamsPerConnection / 2,
             config_.max_streams_per_connection());
+  EXPECT_EQ(kDefaultInitialWindow / 2,
+            config_.server_initial_congestion_window());
   EXPECT_EQ(QuicTime::Delta::FromSeconds(0), config_.keepalive_timeout());
+  EXPECT_EQ(10 * base::Time::kMicrosecondsPerMillisecond,
+            config_.initial_round_trip_time_us());
 }
 
 TEST_F(QuicConfigTest, MissingValueInCHLO) {

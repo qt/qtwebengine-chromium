@@ -31,7 +31,7 @@
 #include "config.h"
 #include "core/animation/KeyframeAnimationEffect.h"
 
-#include "wtf/MathExtras.h"
+#include "core/animation/TimedItem.h"
 #include "wtf/text/StringHash.h"
 
 namespace {
@@ -115,13 +115,26 @@ private:
 namespace WebCore {
 
 Keyframe::Keyframe()
-    : m_offset(std::numeric_limits<double>::quiet_NaN())
+    : m_offset(nullValue())
     , m_composite(AnimationEffect::CompositeReplace)
 { }
+
+Keyframe::Keyframe(const Keyframe& copyFrom)
+    : m_offset(copyFrom.m_offset)
+    , m_composite(copyFrom.m_composite)
+{
+    for (PropertyValueMap::const_iterator iter = copyFrom.m_propertyValues.begin(); iter != copyFrom.m_propertyValues.end(); ++iter)
+        setPropertyValue(iter->key, iter->value.get());
+}
 
 void Keyframe::setPropertyValue(CSSPropertyID property, const AnimatableValue* value)
 {
     m_propertyValues.add(property, const_cast<AnimatableValue*>(value));
+}
+
+void Keyframe::clearPropertyValue(CSSPropertyID property)
+{
+    m_propertyValues.remove(property);
 }
 
 const AnimatableValue* Keyframe::propertyValue(CSSPropertyID property) const
@@ -132,8 +145,8 @@ const AnimatableValue* Keyframe::propertyValue(CSSPropertyID property) const
 
 PropertySet Keyframe::properties() const
 {
-    // This is only used when setting up the keyframe groups, so there's no
-    // need to cache the result.
+    // This is not used in time-critical code, so we probably don't need to
+    // worry about caching this result.
     PropertySet properties;
     for (PropertyValueMap::const_iterator iter = m_propertyValues.begin(); iter != m_propertyValues.end(); ++iter)
         properties.add(*iter.keys());
@@ -142,26 +155,41 @@ PropertySet Keyframe::properties() const
 
 PassRefPtr<Keyframe> Keyframe::cloneWithOffset(double offset) const
 {
-    RefPtr<Keyframe> clone = Keyframe::create();
-    clone->setOffset(offset);
-    clone->setComposite(m_composite);
-    for (PropertyValueMap::const_iterator iter = m_propertyValues.begin(); iter != m_propertyValues.end(); ++iter)
-        clone->setPropertyValue(iter->key, iter->value.get());
-    return clone.release();
+    RefPtr<Keyframe> theClone = clone();
+    theClone->setOffset(offset);
+    return theClone.release();
 }
-
 
 KeyframeAnimationEffect::KeyframeAnimationEffect(const KeyframeVector& keyframes)
     : m_keyframes(keyframes)
 {
 }
 
-PassOwnPtr<AnimationEffect::CompositableValueMap> KeyframeAnimationEffect::sample(int iteration, double fraction) const
+PropertySet KeyframeAnimationEffect::properties() const
 {
+    PropertySet result;
+    const KeyframeVector& frames = getFrames();
+    if (!frames.size()) {
+        return result;
+    }
+    result = frames[0]->properties();
+    for (size_t i = 1; i < frames.size(); i++) {
+        PropertySet extras = frames[i]->properties();
+        for (PropertySet::const_iterator it = extras.begin(); it != extras.end(); ++it) {
+            result.add(*it);
+        }
+    }
+    return result;
+}
+
+PassOwnPtr<AnimationEffect::CompositableValueList> KeyframeAnimationEffect::sample(int iteration, double fraction) const
+{
+    ASSERT(iteration >= 0);
+    ASSERT(!isNull(fraction));
     const_cast<KeyframeAnimationEffect*>(this)->ensureKeyframeGroups();
-    OwnPtr<CompositableValueMap> map = adoptPtr(new CompositableValueMap());
+    OwnPtr<CompositableValueList> map = adoptPtr(new CompositableValueList());
     for (KeyframeGroupMap::const_iterator iter = m_keyframeGroups->begin(); iter != m_keyframeGroups->end(); ++iter)
-        map->add(iter->key, iter->value->sample(iteration, fraction));
+        map->append(std::make_pair(iter->key, iter->value->sample(iteration, fraction)));
     return map.release();
 }
 
@@ -172,25 +200,25 @@ KeyframeAnimationEffect::KeyframeVector KeyframeAnimationEffect::normalizedKeyfr
     // Set offsets at 0.0 and 1.0 at ends if unset.
     if (keyframes.size() >= 2) {
         Keyframe* firstKeyframe = keyframes.first().get();
-        if (std::isnan(firstKeyframe->offset()))
+        if (isNull(firstKeyframe->offset()))
             firstKeyframe->setOffset(0.0);
     }
     if (keyframes.size() >= 1) {
         Keyframe* lastKeyframe = keyframes.last().get();
-        if (lastKeyframe && std::isnan(lastKeyframe->offset()))
+        if (lastKeyframe && isNull(lastKeyframe->offset()))
             lastKeyframe->setOffset(1.0);
     }
 
     // FIXME: Distribute offsets where missing.
     for (KeyframeVector::iterator iter = keyframes.begin(); iter != keyframes.end(); ++iter)
-        ASSERT(!std::isnan((*iter)->offset()));
+        ASSERT(!isNull((*iter)->offset()));
 
     // Sort by offset.
     std::stable_sort(keyframes.begin(), keyframes.end(), Keyframe::compareOffsets);
     return keyframes;
 }
 
-void KeyframeAnimationEffect::ensureKeyframeGroups()
+void KeyframeAnimationEffect::ensureKeyframeGroups() const
 {
     if (m_keyframeGroups)
         return;
@@ -233,7 +261,7 @@ KeyframeAnimationEffect::PropertySpecificKeyframe::PropertySpecificKeyframe(doub
     : m_offset(offset)
     , m_value(value)
 {
-    ASSERT(!std::isnan(m_offset));
+    ASSERT(!isNull(m_offset));
 }
 
 PassOwnPtr<KeyframeAnimationEffect::PropertySpecificKeyframe> KeyframeAnimationEffect::PropertySpecificKeyframe::cloneWithOffset(double offset) const
@@ -260,7 +288,7 @@ void KeyframeAnimationEffect::PropertySpecificKeyframeGroup::removeRedundantKeyf
     for (int i = m_keyframes.size() - 1; i >= 0; --i) {
         double offset = m_keyframes[i]->offset();
         bool hasSameOffsetAsPreviousNeighbor = !i || m_keyframes[i - 1]->offset() == offset;
-        bool hasSameOffsetAsNextNeighbor = i == m_keyframes.size() - 1 || m_keyframes[i + 1]->offset() == offset;
+        bool hasSameOffsetAsNextNeighbor = i == static_cast<int>(m_keyframes.size() - 1) || m_keyframes[i + 1]->offset() == offset;
         if (hasSameOffsetAsPreviousNeighbor && hasSameOffsetAsNextNeighbor)
             m_keyframes.remove(i);
     }
@@ -291,6 +319,11 @@ PassRefPtr<AnimationEffect::CompositableValue> KeyframeAnimationEffect::Property
 {
     // FIXME: Implement accumulation.
     ASSERT_UNUSED(iteration, iteration >= 0);
+    ASSERT(!isNull(offset));
+
+    // Bail if offset is null, as this can lead to buffer overflow below.
+    if (isNull(offset))
+        return const_cast<CompositableValue*>(m_keyframes.first()->value());
 
     double minimumOffset = m_keyframes.first()->offset();
     double maximumOffset = m_keyframes.last()->offset();

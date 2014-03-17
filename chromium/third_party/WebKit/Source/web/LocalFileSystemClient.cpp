@@ -33,20 +33,16 @@
 
 #include "WebFrameImpl.h"
 #include "WebViewImpl.h"
+#include "WorkerPermissionClient.h"
 #include "core/dom/Document.h"
-#include "core/platform/AsyncFileSystemCallbacks.h"
-#include "public/platform/Platform.h"
-#include "public/platform/WebFileError.h"
-#include "public/platform/WebFileSystem.h"
-#include "public/platform/WebFileSystemCallbacks.h"
-#include "public/platform/WebFileSystemType.h"
+#include "core/workers/WorkerGlobalScope.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "public/web/WebPermissionClient.h"
-#include "weborigin/SecurityOrigin.h"
 #include "wtf/text/WTFString.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 PassOwnPtr<FileSystemClient> LocalFileSystemClient::create()
 {
@@ -57,17 +53,22 @@ LocalFileSystemClient::~LocalFileSystemClient()
 {
 }
 
-bool LocalFileSystemClient::allowFileSystem(ScriptExecutionContext* context)
+bool LocalFileSystemClient::allowFileSystem(ExecutionContext* context)
 {
-    Document* document = toDocument(context);
-    WebFrameImpl* webFrame = WebFrameImpl::fromFrame(document->frame());
-    WebKit::WebViewImpl* webView = webFrame->viewImpl();
-
-    return !webView->permissionClient() || webView->permissionClient()->allowFileSystem(webFrame);
+    if (context->isDocument()) {
+        Document* document = toDocument(context);
+        WebFrameImpl* webFrame = WebFrameImpl::fromFrame(document->frame());
+        if (webFrame->permissionClient())
+            return webFrame->permissionClient()->allowFileSystem(webFrame);
+        blink::WebViewImpl* webView = webFrame->viewImpl();
+        return !webView->permissionClient() || webView->permissionClient()->allowFileSystem(webFrame);
+    }
+    ASSERT(context->isWorkerGlobalScope());
+    return WorkerPermissionClient::from(toWorkerGlobalScope(context))->allowFileSystem();
 }
 
 LocalFileSystemClient::LocalFileSystemClient()
 {
 }
 
-} // namespace WebKit
+} // namespace blink

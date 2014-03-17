@@ -15,8 +15,6 @@
 #include "ui/message_center/notification_list.h"
 #include "ui/message_center/notification_types.h"
 
-class TrayViewControllerTest;
-
 namespace base {
 class DictionaryValue;
 }
@@ -27,6 +25,10 @@ class DictionaryValue;
 // is shown, closed, or clicked on.
 
 namespace message_center {
+
+namespace test {
+class MessagePopupCollectionTest;
+}
 
 class MessageCenterObserver;
 class NotificationBlocker;
@@ -58,9 +60,14 @@ class MESSAGE_CENTER_EXPORT MessageCenter {
   virtual bool IsQuietMode() const = 0;
   virtual bool HasClickedListener(const std::string& id) = 0;
 
-  // Getters of the current notifications.
-  virtual const NotificationList::Notifications& GetNotifications() = 0;
-  // Gets all notifications being shown as popups.
+  // Gets all notifications to be shown to the user in the message center.  Note
+  // that queued changes due to the message center being open are not reflected
+  // in this list.
+  virtual const NotificationList::Notifications& GetVisibleNotifications() = 0;
+
+  // Gets all notifications being shown as popups.  This should not be affected
+  // by the change queue since notifications are not held up while the state is
+  // VISIBILITY_TRANSIENT or VISIBILITY_SETTINGS.
   virtual NotificationList::PopupNotifications GetPopupNotifications() = 0;
 
   // Management of NotificaitonBlockers.
@@ -80,6 +87,7 @@ class MESSAGE_CENTER_EXPORT MessageCenter {
   // Removes an existing notification.
   virtual void RemoveNotification(const std::string& id, bool by_user) = 0;
   virtual void RemoveAllNotifications(bool by_user) = 0;
+  virtual void RemoveAllVisibleNotifications(bool by_user) = 0;
 
   // Sets the icon image. Icon appears at the top-left of the notification.
   virtual void SetNotificationIcon(const std::string& notification_id,
@@ -146,7 +154,7 @@ class MESSAGE_CENTER_EXPORT MessageCenter {
   virtual void SetVisibility(Visibility visible) = 0;
 
   // Allows querying the visibility of the center.
-  virtual bool IsMessageCenterVisible() = 0;
+  virtual bool IsMessageCenterVisible() const = 0;
 
   // UI classes should call this when there is cause to leave popups visible for
   // longer than the default (for example, when the mouse hovers over a popup).
@@ -157,7 +165,8 @@ class MESSAGE_CENTER_EXPORT MessageCenter {
   virtual void RestartPopupTimers() = 0;
 
  protected:
-  friend class ::TrayViewControllerTest;
+  friend class TrayViewControllerTest;
+  friend class test::MessagePopupCollectionTest;
   virtual void DisableTimersForTest() = 0;
 
   MessageCenter();

@@ -54,12 +54,10 @@ void GrDrawState::setFromPaint(const GrPaint& paint, const SkMatrix& vm, GrRende
     this->enableState(GrDrawState::kClip_StateBit);
 
     this->setColor(paint.getColor());
-    this->setCoverage4(paint.getCoverage());
     this->setState(GrDrawState::kDither_StateBit, paint.isDither());
     this->setState(GrDrawState::kHWAntialias_StateBit, paint.isAntiAlias());
 
     this->setBlendFunc(paint.getSrcBlendCoeff(), paint.getDstBlendCoeff());
-    this->setColorFilter(paint.getColorFilterColor(), paint.getColorFilterMode());
     this->setCoverage(paint.getCoverage());
 }
 
@@ -219,16 +217,9 @@ bool GrDrawState::srcAlphaWillBeOne() const {
         (*effect)->getConstantColorComponents(&color, &validComponentFlags);
     }
 
-    // Check if the color filter could introduce an alpha.
-    // We could skip the above work when this is true, but it is rare and the right fix is to make
-    // the color filter a GrEffect and implement getConstantColorComponents() for it.
-    if (SkXfermode::kDst_Mode != this->getColorFilterMode()) {
-        validComponentFlags = 0;
-    }
-
     // Check whether coverage is treated as color. If so we run through the coverage computation.
     if (this->isCoverageDrawing()) {
-        GrColor coverageColor = this->getCoverage();
+        GrColor coverageColor = this->getCoverageColor();
         GrColor oldColor = color;
         color = 0;
         for (int c = 0; c < 4; ++c) {
@@ -320,7 +311,7 @@ GrDrawState::BlendOptFlags GrDrawState::getBlendOpts(bool forceCoverage,
 
     bool covIsZero = !this->isCoverageDrawing() &&
                      !this->hasCoverageVertexAttribute() &&
-                     0 == this->getCoverage();
+                     0 == this->getCoverageColor();
     // When coeffs are (0,1) there is no reason to draw at all, unless
     // stenciling is enabled. Having color writes disabled is effectively
     // (0,1). The same applies when coverage is known to be 0.
@@ -335,7 +326,7 @@ GrDrawState::BlendOptFlags GrDrawState::getBlendOpts(bool forceCoverage,
 
     // check for coverage due to constant coverage, per-vertex coverage, or coverage stage
     bool hasCoverage = forceCoverage ||
-                       0xffffffff != this->getCoverage() ||
+                       0xffffffff != this->getCoverageColor() ||
                        this->hasCoverageVertexAttribute() ||
                        fCoverageStages.count() > 0;
 

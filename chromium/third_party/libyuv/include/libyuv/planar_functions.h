@@ -72,6 +72,7 @@ int YUY2ToI422(const uint8* src_yuy2, int src_stride_yuy2,
                int width, int height);
 
 // Convert UYVY to I422.
+LIBYUV_API
 int UYVYToI422(const uint8* src_uyvy, int src_stride_uyvy,
                uint8* dst_y, int dst_stride_y,
                uint8* dst_u, int dst_stride_u,
@@ -187,14 +188,27 @@ int ARGBSepia(uint8* dst_argb, int dst_stride_argb,
               int x, int y, int width, int height);
 
 // Apply a matrix rotation to each ARGB pixel.
+// matrix_argb is 4 signed ARGB values. -128 to 127 representing -2 to 2.
+// The first 4 coefficients apply to B, G, R, A and produce B of the output.
+// The next 4 coefficients apply to B, G, R, A and produce G of the output.
+// The next 4 coefficients apply to B, G, R, A and produce R of the output.
+// The last 4 coefficients apply to B, G, R, A and produce A of the output.
+LIBYUV_API
+int ARGBColorMatrix(const uint8* src_argb, int src_stride_argb,
+                    uint8* dst_argb, int dst_stride_argb,
+                    const int8* matrix_argb,
+                    int width, int height);
+
+// Deprecated. Use ARGBColorMatrix instead.
+// Apply a matrix rotation to each ARGB pixel.
 // matrix_argb is 3 signed ARGB values. -128 to 127 representing -1 to 1.
 // The first 4 coefficients apply to B, G, R, A and produce B of the output.
 // The next 4 coefficients apply to B, G, R, A and produce G of the output.
 // The last 4 coefficients apply to B, G, R, A and produce R of the output.
 LIBYUV_API
-int ARGBColorMatrix(uint8* dst_argb, int dst_stride_argb,
-                    const int8* matrix_argb,
-                    int x, int y, int width, int height);
+int RGBColorMatrix(uint8* dst_argb, int dst_stride_argb,
+                   const int8* matrix_rgb,
+                   int x, int y, int width, int height);
 
 // Apply a color table each ARGB pixel.
 // Table contains 256 ARGB values.
@@ -202,6 +216,36 @@ LIBYUV_API
 int ARGBColorTable(uint8* dst_argb, int dst_stride_argb,
                    const uint8* table_argb,
                    int x, int y, int width, int height);
+
+// Apply a color table each ARGB pixel but preserve destination alpha.
+// Table contains 256 ARGB values.
+LIBYUV_API
+int RGBColorTable(uint8* dst_argb, int dst_stride_argb,
+                  const uint8* table_argb,
+                  int x, int y, int width, int height);
+
+// Apply a luma/color table each ARGB pixel but preserve destination alpha.
+// Table contains 32768 values indexed by [Y][C] where 7 it 7 bit luma from
+// RGB (YJ style) and C is an 8 bit color component (R, G or B).
+LIBYUV_API
+int ARGBLumaColorTable(const uint8* src_argb, int src_stride_argb,
+                       uint8* dst_argb, int dst_stride_argb,
+                       const uint8* luma_rgb_table,
+                       int width, int height);
+
+// Apply a 3 term polynomial to ARGB values.
+// poly points to a 4x4 matrix.  The first row is constants.  The 2nd row is
+// coefficients for b, g, r and a.  The 3rd row is coefficients for b squared,
+// g squared, r squared and a squared.  The 4rd row is coefficients for b to
+// the 3, g to the 3, r to the 3 and a to the 3.  The values are summed and
+// result clamped to 0 to 255.
+// A polynomial approximation can be dirived using software such as 'R'.
+
+LIBYUV_API
+int ARGBPolynomial(const uint8* src_argb, int src_stride_argb,
+                   uint8* dst_argb, int dst_stride_argb,
+                   const float* poly,
+                   int width, int height);
 
 // Quantize a rectangle of ARGB. Alpha unaffected.
 // scale is a 16 bit fractional fixed point scaler between 0 and 65535.
@@ -217,6 +261,18 @@ LIBYUV_API
 int ARGBCopy(const uint8* src_argb, int src_stride_argb,
              uint8* dst_argb, int dst_stride_argb,
              int width, int height);
+
+// Copy ARGB to ARGB.
+LIBYUV_API
+int ARGBCopyAlpha(const uint8* src_argb, int src_stride_argb,
+                  uint8* dst_argb, int dst_stride_argb,
+                  int width, int height);
+
+// Copy ARGB to ARGB.
+LIBYUV_API
+int ARGBCopyYToAlpha(const uint8* src_y, int src_stride_y,
+                     uint8* dst_argb, int dst_stride_argb,
+                     int width, int height);
 
 typedef void (*ARGBBlendRow)(const uint8* src_argb0, const uint8* src_argb1,
                              uint8* dst_argb, int width);
@@ -288,6 +344,7 @@ int MJPGToARGB(const uint8* sample, size_t sample_size,
                uint8* argb, int argb_stride,
                int w, int h, int dw, int dh);
 
+// Internal function - do not call directly.
 // Computes table of cumulative sum for image where the value is the sum
 // of all values above and to the left of the entry. Used by ARGBBlur.
 LIBYUV_API
@@ -296,8 +353,11 @@ int ARGBComputeCumulativeSum(const uint8* src_argb, int src_stride_argb,
                              int width, int height);
 
 // Blur ARGB image.
-// Caller should allocate dst_cumsum table of width * height * 16 bytes aligned
-// to 16 byte boundary.
+// dst_cumsum table of width * (height + 1) * 16 bytes aligned to
+//   16 byte boundary.
+// dst_stride32_cumsum is number of ints in a row (width * 4).
+// radius is number of pixels around the center.  e.g. 1 = 3x3. 2=5x5.
+// Blur is optimized for radius of 5 (11x11) or less.
 LIBYUV_API
 int ARGBBlur(const uint8* src_argb, int src_stride_argb,
              uint8* dst_argb, int dst_stride_argb,
@@ -346,6 +406,12 @@ LIBYUV_API
 int ARGBShuffle(const uint8* src_bgra, int src_stride_bgra,
                 uint8* dst_argb, int dst_stride_argb,
                 const uint8* shuffler, int width, int height);
+
+// Sobel ARGB effect with planar output.
+LIBYUV_API
+int ARGBSobelToPlane(const uint8* src_argb, int src_stride_argb,
+                     uint8* dst_y, int dst_stride_y,
+                     int width, int height);
 
 // Sobel ARGB effect.
 LIBYUV_API

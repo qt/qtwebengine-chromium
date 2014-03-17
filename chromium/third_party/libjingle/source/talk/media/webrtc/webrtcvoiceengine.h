@@ -43,6 +43,8 @@
 #include "talk/media/webrtc/webrtcexport.h"
 #include "talk/media/webrtc/webrtcvoe.h"
 #include "talk/session/media/channel.h"
+#include "webrtc/common.h"
+#include "webrtc/modules/audio_coding/main/interface/audio_coding_module.h"
 
 #if !defined(LIBPEERCONNECTION_LIB) && \
     !defined(LIBPEERCONNECTION_IMPLEMENTATION)
@@ -105,12 +107,8 @@ class WebRtcVoiceEngine
 
   SoundclipMedia* CreateSoundclip();
 
-  // TODO(pthatcher): Rename to SetOptions and replace the old
-  // flags-based SetOptions.
-  bool SetAudioOptions(const AudioOptions& options);
-  // Eventually, we will replace them with AudioOptions.
-  // In the meantime, we leave this here for backwards compat.
-  bool SetOptions(int flags);
+  AudioOptions GetOptions() const { return options_; }
+  bool SetOptions(const AudioOptions& options);
   // Overrides, when set, take precedence over the options on a
   // per-option basis.  For example, if AGC is set in options and AEC
   // is set in overrides, AGC and AEC will be both be set.  Overrides
@@ -179,6 +177,10 @@ class WebRtcVoiceEngine
   // Check whether the supplied trace should be ignored.
   bool ShouldIgnoreTrace(const std::string& trace);
 
+  // Create a VoiceEngine Channel.
+  int CreateMediaVoiceChannel();
+  int CreateSoundclipVoiceChannel();
+
  private:
   typedef std::vector<WebRtcSoundclipMedia *> SoundclipList;
   typedef std::vector<WebRtcVoiceMediaChannel *> ChannelList;
@@ -188,6 +190,7 @@ class WebRtcVoiceEngine
   void Construct();
   void ConstructCodecs();
   bool InitInternal();
+  bool EnsureSoundclipEngineInit();
   void SetTraceFilter(int filter);
   void SetTraceOptions(const std::string& options);
   // Applies either options or overrides.  Every option that is "set"
@@ -195,6 +198,9 @@ class WebRtcVoiceEngine
   // allows us to selectively turn on and off different options easily
   // at any time.
   bool ApplyOptions(const AudioOptions& options);
+  // Configure for using ACM2, if |enable| is true, otherwise configure for
+  // ACM1.
+  void EnableExperimentalAcm(bool enable);
   virtual void Print(webrtc::TraceLevel level, const char* trace, int length);
   virtual void CallbackOnError(int channel, int errCode);
   // Given the device type, name, and id, find device id. Return true and
@@ -218,6 +224,7 @@ class WebRtcVoiceEngine
 
   void StartAecDump(const std::string& filename);
   void StopAecDump();
+  int CreateVoiceChannel(VoEWrapper* voe);
 
   // When a voice processor registers with the engine, it is connected
   // to either the Rx or Tx signals, based on the direction parameter.
@@ -231,6 +238,7 @@ class WebRtcVoiceEngine
   talk_base::scoped_ptr<VoEWrapper> voe_wrapper_;
   // A secondary instance, for playing out soundclips (on the 'ring' device).
   talk_base::scoped_ptr<VoEWrapper> voe_wrapper_sc_;
+  bool voe_wrapper_sc_initialized_;
   talk_base::scoped_ptr<VoETraceWrapper> tracing_;
   // The external audio device manager
   webrtc::AudioDeviceModule* adm_;
@@ -248,6 +256,10 @@ class WebRtcVoiceEngine
   // callback as well as the RegisterChannel/UnregisterChannel.
   talk_base::CriticalSection channels_cs_;
   webrtc::AgcConfig default_agc_config_;
+
+  webrtc::Config voe_config_;
+  bool use_experimental_acm_;
+
   bool initialized_;
   // See SetOptions and SetOptionOverrides for a description of the
   // difference between options and overrides.
@@ -344,8 +356,10 @@ class WebRtcVoiceMediaChannel
   virtual bool CanInsertDtmf();
   virtual bool InsertDtmf(uint32 ssrc, int event, int duration, int flags);
 
-  virtual void OnPacketReceived(talk_base::Buffer* packet);
-  virtual void OnRtcpReceived(talk_base::Buffer* packet);
+  virtual void OnPacketReceived(talk_base::Buffer* packet,
+                                const talk_base::PacketTime& packet_time);
+  virtual void OnRtcpReceived(talk_base::Buffer* packet,
+                              const talk_base::PacketTime& packet_time);
   virtual void OnReadyToSend(bool ready) {}
   virtual bool MuteStream(uint32 ssrc, bool on);
   virtual bool SetSendBandwidth(bool autobw, int bps);
@@ -396,6 +410,7 @@ class WebRtcVoiceMediaChannel
   bool ChangeSend(SendFlags send);
   bool ChangeSend(int channel, SendFlags send);
   void ConfigureSendChannel(int channel);
+  bool ConfigureRecvChannel(int channel);
   bool DeleteChannel(int channel);
   bool InConferenceMode() const {
     return options_.conference_mode.GetWithDefaultIfUnset(false);
@@ -404,12 +419,16 @@ class WebRtcVoiceMediaChannel
     return channel_id == voe_channel();
   }
   bool SetSendCodecs(int channel, const std::vector<AudioCodec>& codecs);
+  bool SetSendBandwidthInternal(bool autobw, int bps);
 
   talk_base::scoped_ptr<WebRtcSoundclipStream> ringback_tone_;
   std::set<int> ringback_channels_;  // channels playing ringback
   std::vector<AudioCodec> recv_codecs_;
   std::vector<AudioCodec> send_codecs_;
   talk_base::scoped_ptr<webrtc::CodecInst> send_codec_;
+  bool send_bw_setting_;
+  bool send_autobw_;
+  int send_bw_bps_;
   AudioOptions options_;
   bool dtmf_allowed_;
   bool desired_playout_;

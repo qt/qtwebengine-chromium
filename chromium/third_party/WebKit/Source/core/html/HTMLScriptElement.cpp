@@ -28,26 +28,25 @@
 #include "bindings/v8/ScriptEventListener.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
-#include "core/dom/Event.h"
-#include "core/dom/EventNames.h"
 #include "core/dom/ScriptLoader.h"
 #include "core/dom/Text.h"
+#include "core/events/Event.h"
+#include "core/events/ThreadLocalEventNames.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLScriptElement::HTMLScriptElement(const QualifiedName& tagName, Document& document, bool wasInsertedByParser, bool alreadyStarted)
-    : HTMLElement(tagName, document)
+inline HTMLScriptElement::HTMLScriptElement(Document& document, bool wasInsertedByParser, bool alreadyStarted)
+    : HTMLElement(scriptTag, document)
     , m_loader(ScriptLoader::create(this, wasInsertedByParser, alreadyStarted))
 {
-    ASSERT(hasTagName(scriptTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLScriptElement> HTMLScriptElement::create(const QualifiedName& tagName, Document& document, bool wasInsertedByParser, bool alreadyStarted)
+PassRefPtr<HTMLScriptElement> HTMLScriptElement::create(Document& document, bool wasInsertedByParser, bool alreadyStarted)
 {
-    return adoptRef(new HTMLScriptElement(tagName, document, wasInsertedByParser, alreadyStarted));
+    return adoptRef(new HTMLScriptElement(document, wasInsertedByParser, alreadyStarted));
 }
 
 bool HTMLScriptElement::isURLAttribute(const Attribute& attribute) const
@@ -68,7 +67,7 @@ void HTMLScriptElement::parseAttribute(const QualifiedName& name, const AtomicSt
     else if (name == asyncAttr)
         m_loader->handleAsyncAttribute();
     else if (name == onbeforeloadAttr)
-        setAttributeEventListener(eventNames().beforeloadEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::beforeload, createAttributeEventListener(this, name, value));
     else
         HTMLElement::parseAttribute(name, value);
 }
@@ -168,12 +167,12 @@ bool HTMLScriptElement::hasSourceAttribute() const
 void HTMLScriptElement::dispatchLoadEvent()
 {
     ASSERT(!m_loader->haveFiredLoadEvent());
-    dispatchEvent(Event::create(eventNames().loadEvent));
+    dispatchEvent(Event::create(EventTypeNames::load));
 }
 
 PassRefPtr<Element> HTMLScriptElement::cloneElementWithoutAttributesAndChildren()
 {
-    return adoptRef(new HTMLScriptElement(tagQName(), document(), false, m_loader->alreadyStarted()));
+    return adoptRef(new HTMLScriptElement(document(), false, m_loader->alreadyStarted()));
 }
 
 }

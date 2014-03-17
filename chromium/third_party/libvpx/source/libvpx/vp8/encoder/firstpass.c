@@ -711,8 +711,8 @@ skip_motion_search:
                         neutral_count++;
                     }
 
-                    d->bmi.mv.as_mv.row <<= 3;
-                    d->bmi.mv.as_mv.col <<= 3;
+                    d->bmi.mv.as_mv.row *= 8;
+                    d->bmi.mv.as_mv.col *= 8;
                     this_error = motion_error;
                     vp8_set_mbmode_and_mvs(x, NEWMV, &d->bmi.mv);
                     vp8_encode_inter16x16y(x);
@@ -909,13 +909,16 @@ extern const int vp8_bits_per_mb[2][QINDEX_RANGE];
 
 static double bitcost( double prob )
 {
-    return -(log( prob ) / log( 2.0 ));
+  if (prob > 0.000122)
+    return -log(prob) / log(2.0);
+  else
+    return 13.0;
 }
 static int64_t estimate_modemvcost(VP8_COMP *cpi,
                                      FIRSTPASS_STATS * fpstats)
 {
     int mv_cost;
-    int mode_cost;
+    int64_t mode_cost;
 
     double av_pct_inter = fpstats->pcnt_inter / fpstats->count;
     double av_pct_motion = fpstats->pcnt_motion / fpstats->count;
@@ -937,10 +940,9 @@ static int64_t estimate_modemvcost(VP8_COMP *cpi,
     /* Crude estimate of overhead cost from modes
      * << 9 is the normalization to (bits * 512) used in vp8_bits_per_mb
      */
-    mode_cost =
-        (int)( ( ((av_pct_inter - av_pct_motion) * zz_cost) +
-                 (av_pct_motion * motion_cost) +
-                 (av_intra * intra_cost) ) * cpi->common.MBs ) << 9;
+    mode_cost =((((av_pct_inter - av_pct_motion) * zz_cost) +
+                (av_pct_motion * motion_cost) +
+                (av_intra * intra_cost)) * cpi->common.MBs) * 512;
 
     return mv_cost + mode_cost;
 }

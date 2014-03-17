@@ -35,10 +35,10 @@ class RenderObject;
 class SVGClipPathElement FINAL : public SVGGraphicsElement,
                                  public SVGExternalResourcesRequired {
 public:
-    static PassRefPtr<SVGClipPathElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGClipPathElement> create(Document&);
 
 private:
-    SVGClipPathElement(const QualifiedName&, Document&);
+    explicit SVGClipPathElement(Document&);
 
     virtual bool isValid() const { return SVGTests::isValid(); }
     virtual bool needsPendingResourceHandling() const { return false; }
@@ -56,11 +56,7 @@ private:
     END_DECLARE_ANIMATED_PROPERTIES
 };
 
-inline SVGClipPathElement* toSVGClipPathElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::clipPathTag));
-    return static_cast<SVGClipPathElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(SVGClipPathElement, hasTagName(SVGNames::clipPathTag));
 
 }
 

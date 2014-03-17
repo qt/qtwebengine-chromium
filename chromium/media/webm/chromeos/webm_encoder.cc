@@ -16,8 +16,8 @@ extern "C" {
 // Getting the right degree of C compatibility has been a constant struggle.
 // - Stroustrup, C++ Report, 12(7), July/August 2000.
 #define private priv
-#include "third_party/libvpx/source/libvpx/libmkv/EbmlIDs.h"
-#include "third_party/libvpx/source/libvpx/libmkv/EbmlWriter.h"
+#include "third_party/libvpx/source/libvpx/third_party/libmkv/EbmlIDs.h"
+#include "third_party/libvpx/source/libvpx/third_party/libmkv/EbmlWriter.h"
 #undef private
 }
 
@@ -157,7 +157,7 @@ bool WebmEncoder::EncodeFromSprite(const SkBitmap& sprite,
 }
 
 bool WebmEncoder::WriteWebmHeader() {
-  output_ = file_util::OpenFile(output_path_, "wb");
+  output_ = base::OpenFile(output_path_, "wb");
   if (!output_)
     return false;
 
@@ -251,7 +251,7 @@ bool WebmEncoder::WriteWebmFooter() {
   EndSubElement();  // Cluster
   EndSubElement();  // Segment
   DCHECK(ebml_sub_elements_.empty());
-  return file_util::CloseFile(output_) && !has_errors_;
+  return base::CloseFile(output_) && !has_errors_;
 }
 
 void WebmEncoder::StartSubElement(unsigned long class_id) {

@@ -56,7 +56,7 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   virtual void SetVideoSurface(gfx::ScopedJavaSurface surface) OVERRIDE;
   virtual void Start() OVERRIDE;
   virtual void Pause(bool is_media_related_action ALLOW_UNUSED) OVERRIDE;
-  virtual void SeekTo(base::TimeDelta time) OVERRIDE;
+  virtual void SeekTo(const base::TimeDelta& timestamp) OVERRIDE;
   virtual void Release() OVERRIDE;
   virtual void SetVolume(double volume) OVERRIDE;
   virtual int GetVideoWidth() OVERRIDE;
@@ -71,17 +71,22 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   virtual GURL GetUrl() OVERRIDE;
   virtual GURL GetFirstPartyForCookies() OVERRIDE;
 
+  // MediaPlayerListener callbacks.
+  void OnVideoSizeChanged(int width, int height);
+  void OnMediaError(int error_type);
+  void OnBufferingUpdate(int percent);
+  void OnPlaybackComplete();
+  void OnMediaInterrupted();
+  void OnSeekComplete();
+  void OnDidSetDataUriDataSource(JNIEnv* env, jobject obj, jboolean success);
+
  protected:
   void SetJavaMediaPlayerBridge(jobject j_media_player_bridge);
+  base::android::ScopedJavaLocalRef<jobject> GetJavaMediaPlayerBridge();
   void SetMediaPlayerListener();
   void SetDuration(base::TimeDelta time);
 
-  // MediaPlayerAndroid implementation.
-  virtual void OnVideoSizeChanged(int width, int height) OVERRIDE;
-  virtual void OnPlaybackComplete() OVERRIDE;
-  virtual void OnMediaInterrupted() OVERRIDE;
-
-  virtual void PendingSeekInternal(base::TimeDelta time);
+  virtual void PendingSeekInternal(const base::TimeDelta& time);
 
   // Prepare the player for playback, asynchronously. When succeeds,
   // OnMediaPrepared() will be called. Otherwise, OnMediaError() will
@@ -92,6 +97,9 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   // Create the corresponding Java class instance.
   virtual void CreateJavaMediaPlayerBridge();
 
+  // Get allowed operations from the player.
+  virtual base::android::ScopedJavaLocalRef<jobject> GetAllowedOperations();
+
  private:
   // Set the data source for the media player.
   void SetDataSource(const std::string& url);
@@ -101,8 +109,11 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   void PauseInternal();
   void SeekInternal(base::TimeDelta time);
 
-  // Get allowed operations from the player.
-  void GetAllowedOperations();
+  // Called when |time_update_timer_| fires.
+  void OnTimeUpdateTimerFired();
+
+  // Update allowed operations from the player.
+  void UpdateAllowedOperations();
 
   // Callback function passed to |resource_getter_|. Called when the cookies
   // are retrieved.

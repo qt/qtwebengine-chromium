@@ -13,6 +13,10 @@
 #include "media/mp3/mp3_stream_parser.h"
 #include "media/webm/webm_stream_parser.h"
 
+#if defined(OS_ANDROID)
+#include "base/android/build_info.h"
+#endif
+
 #if defined(USE_PROPRIETARY_CODECS)
 #if defined(ENABLE_MPEG2TS_STREAM_PARSER)
 #include "media/mp2t/mp2t_stream_parser.h"
@@ -75,11 +79,7 @@ static const CodecInfo kOpusCodecInfo = { "opus", CodecInfo::AUDIO, NULL,
 
 static const CodecInfo* kVideoWebMCodecs[] = {
   &kVP8CodecInfo,
-#if !defined(OS_ANDROID)
-  // TODO(wonsik): crbug.com/285016 query Android platform for codec
-  // capabilities.
   &kVP9CodecInfo,
-#endif
   &kVorbisCodecInfo,
   &kOpusCodecInfo,
   NULL
@@ -130,8 +130,10 @@ bool ValidateMP4ACodecID(const std::string& codec_id, const LogCB& log_cb) {
   return false;
 }
 
-static const CodecInfo kH264CodecInfo = { "avc1.*", CodecInfo::VIDEO, NULL,
-                                          CodecInfo::HISTOGRAM_H264 };
+static const CodecInfo kH264AVC1CodecInfo = { "avc1.*", CodecInfo::VIDEO, NULL,
+                                              CodecInfo::HISTOGRAM_H264 };
+static const CodecInfo kH264AVC3CodecInfo = { "avc3.*", CodecInfo::VIDEO, NULL,
+                                              CodecInfo::HISTOGRAM_H264 };
 static const CodecInfo kMPEG4AACCodecInfo = { "mp4a.40.*", CodecInfo::AUDIO,
                                               &ValidateMP4ACodecID,
                                               CodecInfo::HISTOGRAM_MPEG4AAC };
@@ -145,7 +147,8 @@ static const CodecInfo kEAC3CodecInfo = { "mp4a.a6", CodecInfo::AUDIO, NULL,
 #endif
 
 static const CodecInfo* kVideoMP4Codecs[] = {
-  &kH264CodecInfo,
+  &kH264AVC1CodecInfo,
+  &kH264AVC3CodecInfo,
   &kMPEG4AACCodecInfo,
   &kMPEG2AACLCCodecInfo,
   NULL
@@ -208,7 +211,8 @@ static StreamParser* BuildMP3Parser(
 
 #if defined(ENABLE_MPEG2TS_STREAM_PARSER)
 static const CodecInfo* kVideoMP2TCodecs[] = {
-  &kH264CodecInfo,
+  &kH264AVC1CodecInfo,
+  &kH264AVC3CodecInfo,
   &kMPEG4AACCodecInfo,
   &kMPEG2AACLCCodecInfo,
   NULL
@@ -216,7 +220,16 @@ static const CodecInfo* kVideoMP2TCodecs[] = {
 
 static StreamParser* BuildMP2TParser(
     const std::vector<std::string>& codecs, const media::LogCB& log_cb) {
-  return new media::mp2t::Mp2tStreamParser();
+  bool has_sbr = false;
+  for (size_t i = 0; i < codecs.size(); ++i) {
+    std::string codec_id = codecs[i];
+    if (MatchPattern(codec_id, kMPEG4AACCodecInfo.pattern) &&
+        GetMP4AudioObjectType(codec_id, log_cb) == kAACSBRObjectType) {
+      has_sbr = true;
+    }
+  }
+
+  return new media::mp2t::Mp2tStreamParser(has_sbr);
 }
 #endif
 #endif
@@ -259,13 +272,20 @@ static bool VerifyCodec(
 #endif
       if (codec_info->tag == CodecInfo::HISTOGRAM_OPUS) {
         const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-        if (!cmd_line->HasSwitch(switches::kEnableOpusPlayback))
+        if (cmd_line->HasSwitch(switches::kDisableOpusPlayback))
           return false;
       }
       if (audio_codecs)
         audio_codecs->push_back(codec_info->tag);
       return true;
     case CodecInfo::VIDEO:
+#if defined(OS_ANDROID)
+      // VP9 is only supported on KitKat+ (API Level 19).
+      if (codec_info->tag == CodecInfo::HISTOGRAM_VP9 &&
+          base::android::BuildInfo::GetInstance()->sdk_int() < 19) {
+        return false;
+      }
+#endif
       if (video_codecs)
         video_codecs->push_back(codec_info->tag);
       return true;

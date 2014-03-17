@@ -31,7 +31,6 @@
 #include "config.h"
 #include "core/css/CSSGridTemplateValue.h"
 
-#include "core/rendering/style/GridCoordinate.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
@@ -67,7 +66,7 @@ static String stringForPosition(const NamedGridAreaMap& gridAreaMap, size_t row,
     return ".";
 }
 
-String CSSGridTemplateValue::customCssText() const
+String CSSGridTemplateValue::customCSSText() const
 {
     StringBuilder builder;
     for (size_t row = 0; row < m_rowCount; ++row) {

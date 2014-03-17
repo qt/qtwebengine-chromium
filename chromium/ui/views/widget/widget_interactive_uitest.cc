@@ -8,14 +8,22 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/views/test/widget_test.h"
 #include "ui/views/widget/widget.h"
+#include "ui/views/window/dialog_delegate.h"
 
 #if defined(USE_AURA)
 #include "ui/aura/client/activation_client.h"
+#include "ui/aura/client/focus_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
-#if !defined(OS_CHROMEOS)
+#include "ui/aura/window.h"
+#endif
+
+#if defined(USE_AURA) && !defined(OS_CHROMEOS)
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
 #endif
+
+#if defined(OS_WIN)
+#include "ui/views/win/hwnd_util.h"
 #endif
 
 namespace views {
@@ -154,7 +162,7 @@ class NestedLoopCaptureView : public View {
 TEST_F(WidgetTest, DesktopNativeWidgetAuraActivationAndFocusTest) {
   // Create widget 1 and expect the active window to be its window.
   View* contents_view1 = new View;
-  contents_view1->set_focusable(true);
+  contents_view1->SetFocusable(true);
   Widget widget1;
   Widget::InitParams init_params =
       CreateParams(Widget::InitParams::TYPE_WINDOW_FRAMELESS);
@@ -164,7 +172,7 @@ TEST_F(WidgetTest, DesktopNativeWidgetAuraActivationAndFocusTest) {
   widget1.Init(init_params);
   widget1.SetContentsView(contents_view1);
   widget1.Show();
-  aura::RootWindow* root_window1= widget1.GetNativeView()->GetRootWindow();
+  aura::Window* root_window1= widget1.GetNativeView()->GetRootWindow();
   contents_view1->RequestFocus();
 
   EXPECT_TRUE(root_window1 != NULL);
@@ -184,9 +192,10 @@ TEST_F(WidgetTest, DesktopNativeWidgetAuraActivationAndFocusTest) {
   widget2.Init(init_params2);
   widget2.SetContentsView(contents_view2);
   widget2.Show();
-  aura::RootWindow* root_window2 = widget2.GetNativeView()->GetRootWindow();
+  aura::Window* root_window2 = widget2.GetNativeView()->GetRootWindow();
   contents_view2->RequestFocus();
-  ::SetActiveWindow(root_window2->GetAcceleratedWidget());
+  ::SetActiveWindow(
+      root_window2->GetDispatcher()->host()->GetAcceleratedWidget());
 
   aura::client::ActivationClient* activation_client2 =
       aura::client::GetActivationClient(root_window2);
@@ -198,7 +207,8 @@ TEST_F(WidgetTest, DesktopNativeWidgetAuraActivationAndFocusTest) {
   // Now set focus back to widget 1 and expect the active window to be its
   // window.
   contents_view1->RequestFocus();
-  ::SetActiveWindow(root_window1->GetAcceleratedWidget());
+  ::SetActiveWindow(
+      root_window1->GetDispatcher()->host()->GetAcceleratedWidget());
   EXPECT_EQ(activation_client2->GetActiveWindow(),
             reinterpret_cast<aura::Window*>(NULL));
   EXPECT_EQ(activation_client1->GetActiveWindow(), widget1.GetNativeView());
@@ -290,15 +300,7 @@ TEST_F(WidgetTest, ResetCaptureOnGestureEnd) {
 // Checks that if a mouse-press triggers a capture on a different widget (which
 // consumes the mouse-release event), then the target of the press does not have
 // capture.
-// Fails on chromium.webkit Windows bot, see crbug.com/264872.
-#if defined(OS_WIN)
-#define MAYBE_DisableCaptureWidgetFromMousePress\
-    DISABLED_CaptureWidgetFromMousePress
-#else
-#define MAYBE_DisableCaptureWidgetFromMousePress\
-    CaptureWidgetFromMousePress
-#endif
-TEST_F(WidgetTest, MAYBE_DisableCaptureWidgetFromMousePress) {
+TEST_F(WidgetTest, DisableCaptureWidgetFromMousePress) {
   // The test creates two widgets: |first| and |second|.
   // The View in |first| makes |second| visible, sets capture on it, and starts
   // a nested loop (like a menu does). The View in |second| terminates the
@@ -440,6 +442,346 @@ TEST_F(WidgetTest, CheckResizeControllerEvents) {
 
   toplevel->CloseNow();
 }
+
+#if defined(OS_WIN)
+
+// This class subclasses the Widget class to listen for activation change
+// notifications and provides accessors to return information as to whether
+// the widget is active. We need this to ensure that users of the widget
+// class activate the widget only when the underlying window becomes really
+// active. Previously we would activate the widget in the WM_NCACTIVATE
+// message which is incorrect because APIs like FlashWindowEx flash the
+// window caption by sending fake WM_NCACTIVATE messages.
+class WidgetActivationTest : public Widget {
+ public:
+  WidgetActivationTest()
+      : active_(false) {}
+
+  virtual ~WidgetActivationTest() {}
+
+  virtual void OnNativeWidgetActivationChanged(bool active) OVERRIDE {
+    active_ = active;
+  }
+
+  bool active() const { return active_; }
+
+ private:
+  bool active_;
+
+  DISALLOW_COPY_AND_ASSIGN(WidgetActivationTest);
+};
+
+// Tests whether the widget only becomes active when the underlying window
+// is really active.
+TEST_F(WidgetTest, WidgetNotActivatedOnFakeActivationMessages) {
+  WidgetActivationTest widget1;
+  Widget::InitParams init_params =
+      CreateParams(Widget::InitParams::TYPE_WINDOW_FRAMELESS);
+  init_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+#if defined(USE_AURA)
+  init_params.native_widget = new DesktopNativeWidgetAura(&widget1);
+#endif
+  init_params.bounds = gfx::Rect(0, 0, 200, 200);
+  widget1.Init(init_params);
+  widget1.Show();
+  EXPECT_EQ(true, widget1.active());
+
+  WidgetActivationTest widget2;
+#if defined(USE_AURA)
+  init_params.native_widget = new DesktopNativeWidgetAura(&widget2);
+#endif
+  widget2.Init(init_params);
+  widget2.Show();
+  EXPECT_EQ(true, widget2.active());
+  EXPECT_EQ(false, widget1.active());
+
+  HWND win32_native_window1 = HWNDForWidget(&widget1);
+  EXPECT_TRUE(::IsWindow(win32_native_window1));
+
+  ::SendMessage(win32_native_window1, WM_NCACTIVATE, 1, 0);
+  EXPECT_EQ(false, widget1.active());
+  EXPECT_EQ(true, widget2.active());
+
+  ::SetActiveWindow(win32_native_window1);
+  EXPECT_EQ(true, widget1.active());
+  EXPECT_EQ(false, widget2.active());
+}
+#endif
+
+#if defined(USE_AURA) && !defined(OS_CHROMEOS)
+// Provides functionality to create a window modal dialog.
+class ModalDialogDelegate : public DialogDelegateView {
+ public:
+  explicit ModalDialogDelegate(ui::ModalType type) : type_(type) {}
+  virtual ~ModalDialogDelegate() {}
+
+  // WidgetDelegate overrides.
+  virtual ui::ModalType GetModalType() const OVERRIDE {
+    return type_;
+  }
+
+ private:
+  ui::ModalType type_;
+
+  DISALLOW_COPY_AND_ASSIGN(ModalDialogDelegate);
+};
+
+// Tests whether the focused window is set correctly when a modal window is
+// created and destroyed. When it is destroyed it should focus the owner
+// window.
+TEST_F(WidgetTest, WindowModalWindowDestroyedActivationTest) {
+  // Create a top level widget.
+  Widget top_level_widget;
+  Widget::InitParams init_params =
+      CreateParams(Widget::InitParams::TYPE_WINDOW);
+  init_params.show_state = ui::SHOW_STATE_NORMAL;
+  gfx::Rect initial_bounds(0, 0, 500, 500);
+  init_params.bounds = initial_bounds;
+  init_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  init_params.native_widget = new DesktopNativeWidgetAura(&top_level_widget);
+  top_level_widget.Init(init_params);
+  top_level_widget.Show();
+
+  aura::Window* top_level_window = top_level_widget.GetNativeWindow();
+  EXPECT_EQ(top_level_window, aura::client::GetFocusClient(
+                top_level_window)->GetFocusedWindow());
+
+  // Create a modal dialog.
+  // This instance will be destroyed when the dialog is destroyed.
+  ModalDialogDelegate* dialog_delegate =
+      new ModalDialogDelegate(ui::MODAL_TYPE_WINDOW);
+
+  Widget* modal_dialog_widget = views::DialogDelegate::CreateDialogWidget(
+      dialog_delegate, NULL, top_level_widget.GetNativeWindow());
+  modal_dialog_widget->SetBounds(gfx::Rect(100, 100, 200, 200));
+  modal_dialog_widget->Show();
+  aura::Window* dialog_window = modal_dialog_widget->GetNativeWindow();
+  EXPECT_EQ(dialog_window, aura::client::GetFocusClient(
+                top_level_window)->GetFocusedWindow());
+
+  modal_dialog_widget->CloseNow();
+  EXPECT_EQ(top_level_window, aura::client::GetFocusClient(
+                top_level_window)->GetFocusedWindow());
+  top_level_widget.CloseNow();
+}
+
+// Test that when opening a system-modal window, capture is released.
+TEST_F(WidgetTest, SystemModalWindowReleasesCapture) {
+  // Create a top level widget.
+  Widget top_level_widget;
+  Widget::InitParams init_params =
+      CreateParams(Widget::InitParams::TYPE_WINDOW);
+  init_params.show_state = ui::SHOW_STATE_NORMAL;
+  gfx::Rect initial_bounds(0, 0, 500, 500);
+  init_params.bounds = initial_bounds;
+  init_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  init_params.native_widget = new DesktopNativeWidgetAura(&top_level_widget);
+  top_level_widget.Init(init_params);
+  top_level_widget.Show();
+
+  aura::Window* top_level_window = top_level_widget.GetNativeWindow();
+  EXPECT_EQ(top_level_window, aura::client::GetFocusClient(
+                top_level_window)->GetFocusedWindow());
+
+  EXPECT_FALSE(top_level_window->HasCapture());
+  top_level_window->SetCapture();
+  EXPECT_TRUE(top_level_window->HasCapture());
+
+  // Create a modal dialog.
+  ModalDialogDelegate* dialog_delegate =
+      new ModalDialogDelegate(ui::MODAL_TYPE_SYSTEM);
+
+  Widget* modal_dialog_widget = views::DialogDelegate::CreateDialogWidget(
+      dialog_delegate, NULL, top_level_widget.GetNativeWindow());
+  modal_dialog_widget->SetBounds(gfx::Rect(100, 100, 200, 200));
+  modal_dialog_widget->Show();
+
+  EXPECT_FALSE(top_level_window->HasCapture());
+
+  modal_dialog_widget->CloseNow();
+  top_level_widget.CloseNow();
+}
+
+#endif
+
+namespace {
+
+// Used to veirfy OnMouseCaptureLost() has been invoked.
+class CaptureLostTrackingWidget : public Widget {
+ public:
+  CaptureLostTrackingWidget() : got_capture_lost_(false) {}
+  virtual ~CaptureLostTrackingWidget() {}
+
+  bool GetAndClearGotCaptureLost() {
+    bool value = got_capture_lost_;
+    got_capture_lost_ = false;
+    return value;
+  }
+
+  // Widget:
+  virtual void OnMouseCaptureLost() OVERRIDE {
+    got_capture_lost_ = true;
+    Widget::OnMouseCaptureLost();
+  }
+
+ private:
+  bool got_capture_lost_;
+
+  DISALLOW_COPY_AND_ASSIGN(CaptureLostTrackingWidget);
+};
+
+}  // namespace
+
+class WidgetCaptureTest : public ViewsTestBase {
+ public:
+  WidgetCaptureTest() {
+  }
+
+  virtual ~WidgetCaptureTest() {
+  }
+
+  // Verifies Widget::SetCapture() results in updating native capture along with
+  // invoking the right Widget function.
+  void TestCapture(bool use_desktop_native_widget) {
+    CaptureLostTrackingWidget widget1;
+    Widget::InitParams params1 =
+        CreateParams(views::Widget::InitParams::TYPE_WINDOW);
+    params1.native_widget = CreateNativeWidget(use_desktop_native_widget,
+                                               &widget1);
+    params1.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+    widget1.Init(params1);
+    widget1.Show();
+
+    CaptureLostTrackingWidget widget2;
+    Widget::InitParams params2 =
+        CreateParams(views::Widget::InitParams::TYPE_WINDOW);
+    params2.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+    params2.native_widget = CreateNativeWidget(use_desktop_native_widget,
+                                               &widget2);
+    widget2.Init(params2);
+    widget2.Show();
+
+    // Set capture to widget2 and verity it gets it.
+    widget2.SetCapture(widget2.GetRootView());
+    EXPECT_FALSE(widget1.HasCapture());
+    EXPECT_TRUE(widget2.HasCapture());
+    EXPECT_FALSE(widget1.GetAndClearGotCaptureLost());
+    EXPECT_FALSE(widget2.GetAndClearGotCaptureLost());
+
+    // Set capture to widget1 and verify it gets it.
+    widget1.SetCapture(widget1.GetRootView());
+    EXPECT_TRUE(widget1.HasCapture());
+    EXPECT_FALSE(widget2.HasCapture());
+    EXPECT_FALSE(widget1.GetAndClearGotCaptureLost());
+    EXPECT_TRUE(widget2.GetAndClearGotCaptureLost());
+
+    // Release and verify no one has it.
+    widget1.ReleaseCapture();
+    EXPECT_FALSE(widget1.HasCapture());
+    EXPECT_FALSE(widget2.HasCapture());
+    EXPECT_TRUE(widget1.GetAndClearGotCaptureLost());
+    EXPECT_FALSE(widget2.GetAndClearGotCaptureLost());
+  }
+
+ private:
+  NativeWidget* CreateNativeWidget(bool create_desktop_native_widget,
+                                   Widget* widget) {
+#if defined(USE_AURA) && !defined(OS_CHROMEOS)
+    if (create_desktop_native_widget)
+      return new DesktopNativeWidgetAura(widget);
+#endif
+    return NULL;
+  }
+
+  DISALLOW_COPY_AND_ASSIGN(WidgetCaptureTest);
+};
+
+// See description in TestCapture().
+TEST_F(WidgetCaptureTest, Capture) {
+  TestCapture(false);
+}
+
+#if defined(USE_AURA) && !defined(OS_LINUX)
+// See description in TestCapture(). Creates DesktopNativeWidget.
+TEST_F(WidgetCaptureTest, CaptureDesktopNativeWidget) {
+  TestCapture(true);
+}
+#endif
+
+#if defined(USE_AURA) && !defined(OS_CHROMEOS)
+namespace {
+
+// Used to veirfy OnMouseEvent() has been invoked.
+class MouseEventTrackingWidget : public Widget {
+ public:
+  MouseEventTrackingWidget() : got_mouse_event_(false) {}
+  virtual ~MouseEventTrackingWidget() {}
+
+  bool GetAndClearGotMouseEvent() {
+    bool value = got_mouse_event_;
+    got_mouse_event_ = false;
+    return value;
+  }
+
+  // Widget:
+  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE {
+    got_mouse_event_ = true;
+    Widget::OnMouseEvent(event);
+  }
+
+ private:
+  bool got_mouse_event_;
+
+  DISALLOW_COPY_AND_ASSIGN(MouseEventTrackingWidget);
+};
+
+}  // namespace
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+// TODO(erg): linux_aura bringup: http://crbug.com/163931
+#define MAYBE_MouseEventDispatchedToRightWindow \
+  DISABLED_MouseEventDispatchedToRightWindow
+#else
+#define MAYBE_MouseEventDispatchedToRightWindow \
+  MouseEventDispatchedToRightWindow
+#endif
+
+// Verifies if a mouse event is received on a widget that doesn't have capture
+// it is correctly processed by the widget that doesn't have capture.
+TEST_F(WidgetCaptureTest, MAYBE_MouseEventDispatchedToRightWindow) {
+  MouseEventTrackingWidget widget1;
+  Widget::InitParams params1 =
+      CreateParams(views::Widget::InitParams::TYPE_WINDOW);
+  params1.native_widget = new DesktopNativeWidgetAura(&widget1);
+  params1.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  widget1.Init(params1);
+  widget1.Show();
+
+  MouseEventTrackingWidget widget2;
+  Widget::InitParams params2 =
+      CreateParams(views::Widget::InitParams::TYPE_WINDOW);
+  params2.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params2.native_widget = new DesktopNativeWidgetAura(&widget2);
+  widget2.Init(params2);
+  widget2.Show();
+
+  // Set capture to widget2 and verity it gets it.
+  widget2.SetCapture(widget2.GetRootView());
+  EXPECT_FALSE(widget1.HasCapture());
+  EXPECT_TRUE(widget2.HasCapture());
+
+  widget1.GetAndClearGotMouseEvent();
+  widget2.GetAndClearGotMouseEvent();
+  // Send a mouse event to the RootWindow associated with |widget1|. Even though
+  // |widget2| has capture, |widget1| should still get the event.
+  ui::MouseEvent mouse_event(ui::ET_MOUSE_EXITED, gfx::Point(), gfx::Point(),
+                             ui::EF_NONE);
+  widget1.GetNativeWindow()->GetDispatcher()->AsRootWindowHostDelegate()->
+      OnHostMouseEvent(&mouse_event);
+  EXPECT_TRUE(widget1.GetAndClearGotMouseEvent());
+  EXPECT_FALSE(widget2.GetAndClearGotMouseEvent());
+}
+#endif
 
 }  // namespace test
 }  // namespace views

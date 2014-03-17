@@ -128,6 +128,9 @@ typedef struct FFV1Context {
     int slice_height;
     int slice_x;
     int slice_y;
+    int slice_reset_contexts;
+    int slice_coding_mode;
+    int slice_rct_y_coef;
 } FFV1Context;
 
 int ffv1_common_init(AVCodecContext *avctx);

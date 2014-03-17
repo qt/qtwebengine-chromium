@@ -15,7 +15,6 @@
 #include "media/base/demuxer.h"
 #include "media/base/ranges.h"
 #include "media/base/stream_parser.h"
-#include "media/base/text_track.h"
 #include "media/filters/source_buffer_stream.h"
 
 namespace media {
@@ -38,19 +37,19 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   //   is ready to receive media data via AppenData().
   // |need_key_cb| Run when the demuxer determines that an encryption key is
   //   needed to decrypt the content.
-  // |add_text_track_cb| Run when demuxer detects the presence of an inband
-  //   text track.
+  // |enable_text| Process inband text tracks in the normal way when true,
+  //   otherwise ignore them.
   // |log_cb| Run when parsing error messages need to be logged to the error
   //   console.
   ChunkDemuxer(const base::Closure& open_cb,
                const NeedKeyCB& need_key_cb,
-               const AddTextTrackCB& add_text_track_cb,
                const LogCB& log_cb);
   virtual ~ChunkDemuxer();
 
   // Demuxer implementation.
   virtual void Initialize(DemuxerHost* host,
-                          const PipelineStatusCB& cb) OVERRIDE;
+                          const PipelineStatusCB& cb,
+                          bool enable_text_tracks) OVERRIDE;
   virtual void Stop(const base::Closure& callback) OVERRIDE;
   virtual void Seek(base::TimeDelta time, const PipelineStatusCB&  cb) OVERRIDE;
   virtual void OnAudioRendererDisabled() OVERRIDE;
@@ -140,6 +139,12 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
 
   void SetMemoryLimitsForTesting(int memory_limit);
 
+  // Returns the ranges representing the buffered data in the demuxer.
+  // TODO(wolenetz): Remove this method once MediaSourceDelegate no longer
+  // requires it for doing hack browser seeks to I-frame on Android. See
+  // http://crbug.com/304234.
+  Ranges<base::TimeDelta> GetBufferedRanges() const;
+
  private:
   enum State {
     WAITING_FOR_INIT,
@@ -171,8 +176,8 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   // has not been created before. Returns NULL otherwise.
   ChunkDemuxerStream* CreateDemuxerStream(DemuxerStream::Type type);
 
-  bool OnTextBuffers(TextTrack* text_track,
-                     const StreamParser::BufferQueue& buffers);
+  void OnNewTextTrack(ChunkDemuxerStream* text_stream,
+                      const TextTrackConfig& config);
   void OnNewMediaSegment(const std::string& source_id,
                          base::TimeDelta start_timestamp);
 
@@ -203,7 +208,7 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   void UpdateDuration(base::TimeDelta new_duration);
 
   // Returns the ranges representing the buffered data in the demuxer.
-  Ranges<base::TimeDelta> GetBufferedRanges() const;
+  Ranges<base::TimeDelta> GetBufferedRanges_Locked() const;
 
   // Start returning data on all DemuxerStreams.
   void StartReturningData();
@@ -224,12 +229,16 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   DemuxerHost* host_;
   base::Closure open_cb_;
   NeedKeyCB need_key_cb_;
-  AddTextTrackCB add_text_track_cb_;
+  bool enable_text_;
   // Callback used to report error strings that can help the web developer
   // figure out what is wrong with the content.
   LogCB log_cb_;
 
   PipelineStatusCB init_cb_;
+  // Callback to execute upon seek completion.
+  // TODO(wolenetz/acolwell): Protect against possible double-locking by first
+  // releasing |lock_| before executing this callback. See
+  // http://crbug.com/308226
   PipelineStatusCB seek_cb_;
 
   scoped_ptr<ChunkDemuxerStream> audio_;

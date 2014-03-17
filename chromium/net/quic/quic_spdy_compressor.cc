@@ -28,7 +28,8 @@ string QuicSpdyCompressor::CompressHeadersWithPriority(
 
 string QuicSpdyCompressor::CompressHeaders(
     const SpdyHeaderBlock& headers) {
-  return CompressHeadersInternal(0, headers, false);
+  // CompressHeadersInternal ignores priority when write_priority is false.
+  return CompressHeadersInternal(0 /* ignored */, headers, false);
 }
 
 string QuicSpdyCompressor::CompressHeadersInternal(
@@ -39,7 +40,7 @@ string QuicSpdyCompressor::CompressHeadersInternal(
   // CreateCompressedHeaderBlock method, or some such.
   SpdyStreamId stream_id = 3;    // unused.
   scoped_ptr<SpdyFrame> frame(spdy_framer_.CreateHeaders(
-      stream_id, CONTROL_FLAG_NONE, true, &headers));
+      stream_id, CONTROL_FLAG_NONE, &headers));
 
   // The size of the spdy HEADER frame's fixed prefix which
   // needs to be stripped off from the resulting frame.

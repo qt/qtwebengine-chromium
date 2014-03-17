@@ -208,7 +208,8 @@ static gint browser_accessibility_get_n_children(AtkObject* atk_object) {
   BrowserAccessibilityGtk* obj = ToBrowserAccessibilityGtk(atk_object);
   if (!obj)
     return 0;
-  return obj->children().size();
+
+  return obj->PlatformChildCount();
 }
 
 static AtkObject* browser_accessibility_ref_child(
@@ -216,6 +217,10 @@ static AtkObject* browser_accessibility_ref_child(
   BrowserAccessibilityGtk* obj = ToBrowserAccessibilityGtk(atk_object);
   if (!obj)
     return NULL;
+
+  if (index < 0 || index >= static_cast<gint>(obj->PlatformChildCount()))
+    return NULL;
+
   AtkObject* result =
       obj->children()[index]->ToBrowserAccessibilityGtk()->GetAtkObject();
   g_object_ref(result);
@@ -250,11 +255,11 @@ static AtkStateSet* browser_accessibility_ref_state_set(AtkObject* atk_object) {
           ref_state_set(atk_object);
   int32 state = obj->state();
 
-  if (state & (1 << WebKit::WebAXStateFocusable))
+  if (state & (1 << blink::WebAXStateFocusable))
     atk_state_set_add_state(state_set, ATK_STATE_FOCUSABLE);
   if (obj->manager()->GetFocus(NULL) == obj)
     atk_state_set_add_state(state_set, ATK_STATE_FOCUSED);
-  if (state & (1 << WebKit::WebAXStateEnabled))
+  if (state & (1 << blink::WebAXStateEnabled))
     atk_state_set_add_state(state_set, ATK_STATE_ENABLED);
 
   return state_set;
@@ -359,9 +364,9 @@ static int GetInterfaceMaskFromObject(BrowserAccessibilityGtk* obj) {
   interface_mask |= 1 << ATK_COMPONENT_INTERFACE;
 
   int role = obj->role();
-  if (role == WebKit::WebAXRoleProgressIndicator ||
-      role == WebKit::WebAXRoleScrollBar ||
-      role == WebKit::WebAXRoleSlider) {
+  if (role == blink::WebAXRoleProgressIndicator ||
+      role == blink::WebAXRoleScrollBar ||
+      role == blink::WebAXRoleSlider) {
     interface_mask |= 1 << ATK_VALUE_INTERFACE;
   }
 
@@ -470,38 +475,38 @@ bool BrowserAccessibilityGtk::IsNative() const {
 }
 
 void BrowserAccessibilityGtk::InitRoleAndState() {
-  switch(role_) {
-    case WebKit::WebAXRoleDocument:
-    case WebKit::WebAXRoleRootWebArea:
-    case WebKit::WebAXRoleWebArea:
+  switch(role()) {
+    case blink::WebAXRoleDocument:
+    case blink::WebAXRoleRootWebArea:
+    case blink::WebAXRoleWebArea:
       atk_role_ = ATK_ROLE_DOCUMENT_WEB;
       break;
-    case WebKit::WebAXRoleGroup:
-    case WebKit::WebAXRoleDiv:
+    case blink::WebAXRoleGroup:
+    case blink::WebAXRoleDiv:
       atk_role_ = ATK_ROLE_SECTION;
       break;
-    case WebKit::WebAXRoleButton:
+    case blink::WebAXRoleButton:
       atk_role_ = ATK_ROLE_PUSH_BUTTON;
       break;
-    case WebKit::WebAXRoleCheckBox:
+    case blink::WebAXRoleCheckBox:
       atk_role_ = ATK_ROLE_CHECK_BOX;
       break;
-    case WebKit::WebAXRoleComboBox:
+    case blink::WebAXRoleComboBox:
       atk_role_ = ATK_ROLE_COMBO_BOX;
       break;
-    case WebKit::WebAXRoleLink:
+    case blink::WebAXRoleLink:
       atk_role_ = ATK_ROLE_LINK;
       break;
-    case WebKit::WebAXRoleRadioButton:
+    case blink::WebAXRoleRadioButton:
       atk_role_ = ATK_ROLE_RADIO_BUTTON;
       break;
-    case WebKit::WebAXRoleStaticText:
+    case blink::WebAXRoleStaticText:
       atk_role_ = ATK_ROLE_TEXT;
       break;
-    case WebKit::WebAXRoleTextArea:
+    case blink::WebAXRoleTextArea:
       atk_role_ = ATK_ROLE_ENTRY;
       break;
-    case WebKit::WebAXRoleTextField:
+    case blink::WebAXRoleTextField:
       atk_role_ = ATK_ROLE_ENTRY;
       break;
     default:

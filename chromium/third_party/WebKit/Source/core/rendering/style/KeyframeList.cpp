@@ -42,15 +42,11 @@ void KeyframeValue::addProperties(const StylePropertySet* propertySet)
     }
 }
 
-TimingFunction* KeyframeValue::timingFunction(const RenderStyle* keyframeStyle, const AtomicString& name)
+TimingFunction* KeyframeValue::timingFunction(const RenderStyle& keyframeStyle)
 {
-    ASSERT(keyframeStyle && keyframeStyle->animations());
-    for (size_t i = 0; i < keyframeStyle->animations()->size(); i++) {
-        if (name == keyframeStyle->animations()->animation(i)->name())
-            return keyframeStyle->animations()->animation(i)->timingFunction();
-    }
-    ASSERT_NOT_REACHED();
-    return 0;
+    const CSSAnimationDataList* animations = keyframeStyle.animations();
+    ASSERT(animations && !animations->isEmpty());
+    return animations->animation(0)->timingFunction();
 }
 
 KeyframeList::~KeyframeList()
@@ -62,25 +58,6 @@ void KeyframeList::clear()
 {
     m_keyframes.clear();
     m_properties.clear();
-}
-
-bool KeyframeList::operator==(const KeyframeList& o) const
-{
-    if (m_keyframes.size() != o.m_keyframes.size())
-        return false;
-
-    Vector<KeyframeValue>::const_iterator it2 = o.m_keyframes.begin();
-    for (Vector<KeyframeValue>::const_iterator it1 = m_keyframes.begin(); it1 != m_keyframes.end(); ++it1) {
-        if (it1->key() != it2->key())
-            return false;
-        const RenderStyle& style1 = *it1->style();
-        const RenderStyle& style2 = *it2->style();
-        if (style1 != style2)
-            return false;
-        ++it2;
-    }
-
-    return true;
 }
 
 void KeyframeList::insert(const KeyframeValue& keyframe)

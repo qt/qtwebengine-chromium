@@ -291,6 +291,7 @@ extern "C" {
 #define SSL_TXT_CAMELLIA128	"CAMELLIA128"
 #define SSL_TXT_CAMELLIA256	"CAMELLIA256"
 #define SSL_TXT_CAMELLIA	"CAMELLIA"
+#define SSL_TXT_CHACHA20	"CHACHA20"
 
 #define SSL_TXT_MD5		"MD5"
 #define SSL_TXT_SHA1		"SHA1"
@@ -399,7 +400,9 @@ struct ssl_cipher_st
 	unsigned long algorithm_ssl;	/* (major) protocol version */
 
 	unsigned long algo_strength;	/* strength and export flags */
-	unsigned long algorithm2;	/* Extra flags */
+	unsigned long algorithm2;	/* Extra flags. See SSL2_CF_* in ssl2.h
+					   and algorithm2 section in
+					   ssl_locl.h */
 	int strength_bits;		/* Number of bits really used */
 	int alg_bits;			/* Number of bits for algorithm */
 	};
@@ -728,6 +731,9 @@ int SRP_generate_client_master_secret(SSL *s,unsigned char *master_key);
 
 #endif
 
+struct ssl_aead_ctx_st;
+typedef struct ssl_aead_ctx_st SSL_AEAD_CTX;
+
 #if defined(OPENSSL_SYS_MSDOS) && !defined(OPENSSL_SYS_WIN32)
 #define SSL_MAX_CERT_LIST_DEFAULT 1024*30 /* 30k max cert list :-) */
 #else
@@ -847,6 +853,9 @@ struct ssl_ctx_st
 
 	/* get client cert callback */
 	int (*client_cert_cb)(SSL *ssl, X509 **x509, EVP_PKEY **pkey);
+
+	/* get channel id callback */
+	void (*channel_id_cb)(SSL *ssl, EVP_PKEY **pkey);
 
     /* cookie generate callback */
     int (*app_gen_cookie_cb)(SSL *ssl, unsigned char *cookie, 
@@ -1043,6 +1052,8 @@ void SSL_CTX_set_info_callback(SSL_CTX *ctx, void (*cb)(const SSL *ssl,int type,
 void (*SSL_CTX_get_info_callback(SSL_CTX *ctx))(const SSL *ssl,int type,int val);
 void SSL_CTX_set_client_cert_cb(SSL_CTX *ctx, int (*client_cert_cb)(SSL *ssl, X509 **x509, EVP_PKEY **pkey));
 int (*SSL_CTX_get_client_cert_cb(SSL_CTX *ctx))(SSL *ssl, X509 **x509, EVP_PKEY **pkey);
+void SSL_CTX_set_channel_id_cb(SSL_CTX *ctx, void (*channel_id_cb)(SSL *ssl, EVP_PKEY **pkey));
+void (*SSL_CTX_get_channel_id_cb(SSL_CTX *ctx))(SSL *ssl, EVP_PKEY **pkey);
 #ifndef OPENSSL_NO_ENGINE
 int SSL_CTX_set_client_cert_engine(SSL_CTX *ctx, ENGINE *e);
 #endif
@@ -1104,12 +1115,14 @@ const char *SSL_get_psk_identity(const SSL *s);
 #define SSL_WRITING	2
 #define SSL_READING	3
 #define SSL_X509_LOOKUP	4
+#define SSL_CHANNEL_ID_LOOKUP	5
 
 /* These will only be used when doing non-blocking IO */
 #define SSL_want_nothing(s)	(SSL_want(s) == SSL_NOTHING)
 #define SSL_want_read(s)	(SSL_want(s) == SSL_READING)
 #define SSL_want_write(s)	(SSL_want(s) == SSL_WRITING)
 #define SSL_want_x509_lookup(s)	(SSL_want(s) == SSL_X509_LOOKUP)
+#define SSL_want_channel_id_lookup(s)	(SSL_want(s) == SSL_CHANNEL_ID_LOOKUP)
 
 #define SSL_MAC_FLAG_READ_MAC_STREAM 1
 #define SSL_MAC_FLAG_WRITE_MAC_STREAM 2
@@ -1206,6 +1219,9 @@ struct ssl_st
 	/* These are the ones being used, the ones in SSL_SESSION are
 	 * the ones to be 'copied' into these ones */
 	int mac_flags; 
+	SSL_AEAD_CTX *aead_read_ctx;	/* AEAD context. If non-NULL, then
+					   |enc_read_ctx| and |read_hash| are
+					   ignored. */
 	EVP_CIPHER_CTX *enc_read_ctx;		/* cryptographic state */
 	EVP_MD_CTX *read_hash;		/* used for mac generation */
 #ifndef OPENSSL_NO_COMP
@@ -1214,6 +1230,9 @@ struct ssl_st
 	char *expand;
 #endif
 
+	SSL_AEAD_CTX *aead_write_ctx;	/* AEAD context. If non-NULL, then
+					   |enc_write_ctx| and |write_hash| are
+					   ignored. */
 	EVP_CIPHER_CTX *enc_write_ctx;		/* cryptographic state */
 	EVP_MD_CTX *write_hash;		/* used for mac generation */
 #ifndef OPENSSL_NO_COMP
@@ -1535,6 +1554,7 @@ DECLARE_PEM_rw(SSL_SESSION, SSL_SESSION)
 #define SSL_ERROR_ZERO_RETURN		6
 #define SSL_ERROR_WANT_CONNECT		7
 #define SSL_ERROR_WANT_ACCEPT		8
+#define SSL_ERROR_WANT_CHANNEL_ID_LOOKUP	9
 
 #define SSL_CTRL_NEED_TMP_RSA			1
 #define SSL_CTRL_SET_TMP_RSA			2
@@ -1672,10 +1692,11 @@ DECLARE_PEM_rw(SSL_SESSION, SSL_SESSION)
 #define SSL_set_tmp_ecdh(ssl,ecdh) \
 	SSL_ctrl(ssl,SSL_CTRL_SET_TMP_ECDH,0,(char *)ecdh)
 
-/* SSL_enable_tls_channel_id configures a TLS server to accept TLS client
- * IDs from clients. Returns 1 on success. */
-#define SSL_enable_tls_channel_id(ctx) \
-	SSL_ctrl(ctx,SSL_CTRL_CHANNEL_ID,0,NULL)
+/* SSL_enable_tls_channel_id either configures a TLS server to accept TLS client
+ * IDs from clients, or configures a client to send TLS client IDs to server.
+ * Returns 1 on success. */
+#define SSL_enable_tls_channel_id(ssl) \
+	SSL_ctrl(ssl,SSL_CTRL_CHANNEL_ID,0,NULL)
 /* SSL_set1_tls_channel_id configures a TLS client to send a TLS Channel ID to
  * compatible servers. private_key must be a P-256 EVP_PKEY*. Returns 1 on
  * success. */
@@ -2318,8 +2339,11 @@ void ERR_load_SSL_strings(void);
 #define SSL_F_SSL_USE_RSAPRIVATEKEY_FILE		 206
 #define SSL_F_SSL_VERIFY_CERT_CHAIN			 207
 #define SSL_F_SSL_WRITE					 208
+#define SSL_F_TLS1_AEAD_CTX_INIT			 339
 #define SSL_F_TLS1_CERT_VERIFY_MAC			 286
 #define SSL_F_TLS1_CHANGE_CIPHER_STATE			 209
+#define SSL_F_TLS1_CHANGE_CIPHER_STATE_AEAD		 340
+#define SSL_F_TLS1_CHANGE_CIPHER_STATE_CIPHER		 338
 #define SSL_F_TLS1_CHECK_SERVERHELLO_TLSEXT		 274
 #define SSL_F_TLS1_ENC					 210
 #define SSL_F_TLS1_EXPORT_KEYING_MATERIAL		 314

@@ -41,7 +41,7 @@ extern "C" {
 #endif
 #endif
 
-#if !defined(LIBYUV_DISABLE_NEON) && \
+#if !defined(LIBYUV_DISABLE_NEON) && !defined(__native_client__) && \
     (defined(__ARM_NEON__) || defined(LIBYUV_NEON))
 #define HAS_MIRRORROW_NEON
 void MirrorRow_NEON(const uint8* src, uint8* dst, int width);
@@ -57,7 +57,8 @@ void TransposeUVWx8_NEON(const uint8* src, int src_stride,
                          int width);
 #endif  // defined(__ARM_NEON__)
 
-#if !defined(LIBYUV_DISABLE_MIPS) && defined(__mips__) && \
+#if !defined(LIBYUV_DISABLE_MIPS) && !defined(__native_client__) && \
+    defined(__mips__) && \
     defined(__mips_dsp) && (__mips_dsp_rev >= 2)
 #define HAS_TRANSPOSE_WX8_MIPS_DSPR2
 void TransposeWx8_MIPS_DSPR2(const uint8* src, int src_stride,
@@ -72,7 +73,8 @@ void TransposeUVWx8_MIPS_DSPR2(const uint8* src, int src_stride,
                                int width);
 #endif  // defined(__mips__)
 
-#if !defined(LIBYUV_DISABLE_X86) && defined(_M_IX86) && defined(_MSC_VER)
+#if !defined(LIBYUV_DISABLE_X86) && \
+    defined(_M_IX86) && defined(_MSC_VER)
 #define HAS_TRANSPOSE_WX8_SSSE3
 __declspec(naked) __declspec(align(16))
 static void TransposeWx8_SSSE3(const uint8* src, int src_stride,
@@ -89,7 +91,7 @@ static void TransposeWx8_SSSE3(const uint8* src, int src_stride,
 
     // Read in the data from the source pointer.
     // First round of bit swap.
-    align      16
+    align      4
  convertloop:
     movq      xmm0, qword ptr [eax]
     lea       ebp, [eax + 8]
@@ -188,7 +190,7 @@ static void TransposeUVWx8_SSE2(const uint8* src, int src_stride,
     mov       [esp + 16], ecx
     mov       ecx, [ecx + 16 + 28]  // w
 
-    align      16
+    align      4
  convertloop:
     // Read in the data from the source pointer.
     // First round of bit swap.
@@ -294,14 +296,15 @@ static void TransposeUVWx8_SSE2(const uint8* src, int src_stride,
     ret
   }
 }
-#elif !defined(LIBYUV_DISABLE_X86) && (defined(__i386__) || defined(__x86_64__))
+#elif !defined(LIBYUV_DISABLE_X86) && \
+    (defined(__i386__) || (defined(__x86_64__) && !defined(__native_client__)))
 #define HAS_TRANSPOSE_WX8_SSSE3
 static void TransposeWx8_SSSE3(const uint8* src, int src_stride,
                                uint8* dst, int dst_stride, int width) {
   asm volatile (
     // Read in the data from the source pointer.
     // First round of bit swap.
-    ".p2align  4                                 \n"
+    ".p2align  2                                 \n"
   "1:                                            \n"
     "movq       (%0),%%xmm0                      \n"
     "movq       (%0,%3),%%xmm1                   \n"
@@ -383,7 +386,7 @@ static void TransposeWx8_SSSE3(const uint8* src, int src_stride,
   );
 }
 
-#if !defined(LIBYUV_DISABLE_X86) && defined (__i386__)
+#if !defined(LIBYUV_DISABLE_X86) && defined(__i386__)
 #define HAS_TRANSPOSE_UVWX8_SSE2
 extern "C" void TransposeUVWx8_SSE2(const uint8* src, int src_stride,
                                     uint8* dst_a, int dst_stride_a,
@@ -503,9 +506,16 @@ extern "C" void TransposeUVWx8_SSE2(const uint8* src, int src_stride,
     "pop    %edi                               \n"
     "pop    %esi                               \n"
     "pop    %ebx                               \n"
+#if defined(__native_client__)
+    "pop    %ecx                               \n"
+    "and    $0xffffffe0,%ecx                   \n"
+    "jmp    *%ecx                              \n"
+#else
     "ret                                       \n"
+#endif
 );
-#elif !defined(LIBYUV_DISABLE_X86) && defined(__x86_64__)
+#elif !defined(LIBYUV_DISABLE_X86) && !defined(__native_client__) && \
+    defined(__x86_64__)
 // 64 bit version has enough registers to do 16x8 to 8x16 at a time.
 #define HAS_TRANSPOSE_WX8_FAST_SSSE3
 static void TransposeWx8_FAST_SSSE3(const uint8* src, int src_stride,
@@ -513,7 +523,7 @@ static void TransposeWx8_FAST_SSSE3(const uint8* src, int src_stride,
   asm volatile (
   // Read in the data from the source pointer.
   // First round of bit swap.
-  ".p2align  4                                 \n"
+  ".p2align  2                                 \n"
 "1:                                            \n"
   "movdqa     (%0),%%xmm0                      \n"
   "movdqa     (%0,%3),%%xmm1                   \n"
@@ -654,7 +664,7 @@ static void TransposeUVWx8_SSE2(const uint8* src, int src_stride,
   asm volatile (
   // Read in the data from the source pointer.
   // First round of bit swap.
-  ".p2align  4                                 \n"
+  ".p2align  2                                 \n"
 "1:                                            \n"
   "movdqa     (%0),%%xmm0                      \n"
   "movdqa     (%0,%4),%%xmm1                   \n"
@@ -857,7 +867,7 @@ void RotatePlane270(const uint8* src, int src_stride,
   TransposePlane(src, src_stride, dst, dst_stride, width, height);
 }
 
-LIBYUV_API
+LIBYUV_API SAFEBUFFERS
 void RotatePlane180(const uint8* src, int src_stride,
                     uint8* dst, int dst_stride,
                     int width, int height) {

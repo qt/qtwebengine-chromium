@@ -29,10 +29,11 @@
 #include "bindings/v8/ScriptPromise.h"
 #include "core/css/FontFace.h"
 #include "core/dom/ActiveDOMObject.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/EventNames.h"
-#include "core/dom/EventTarget.h"
-#include "core/platform/Timer.h"
+#include "core/events/EventListener.h"
+#include "core/events/EventTarget.h"
+#include "core/events/ThreadLocalEventNames.h"
+#include "platform/AsyncMethodRunner.h"
+#include "platform/RefCountedSupplement.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
@@ -47,20 +48,15 @@ namespace WebCore {
 class CSSFontFaceSource;
 class Dictionary;
 class Document;
-class Event;
 class ExceptionState;
 class Font;
 class FontResource;
 class FontsReadyPromiseResolver;
-class LoadFontPromiseResolver;
-class ScriptExecutionContext;
+class ExecutionContext;
 
-class FontFaceSet : public RefCounted<FontFaceSet>, public ActiveDOMObject, public EventTarget {
+class FontFaceSet : public RefCountedSupplement<Document, FontFaceSet>, public ActiveDOMObject, public EventTargetWithInlineData {
+    REFCOUNTED_EVENT_TARGET(FontFaceSet);
 public:
-    static PassRefPtr<FontFaceSet> create(Document* document)
-    {
-        return adoptRef<FontFaceSet>(new FontFaceSet(document));
-    }
     virtual ~FontFaceSet();
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(loading);
@@ -74,11 +70,8 @@ public:
 
     AtomicString status() const;
 
-    virtual ScriptExecutionContext* scriptExecutionContext() const;
-    virtual const AtomicString& interfaceName() const;
-
-    using RefCounted<FontFaceSet>::ref;
-    using RefCounted<FontFaceSet>::deref;
+    virtual ExecutionContext* executionContext() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
 
     Document* document() const;
 
@@ -86,9 +79,23 @@ public:
     void beginFontLoading(FontFace*);
     void fontLoaded(FontFace*);
     void loadError(FontFace*);
-    void scheduleResolve(LoadFontPromiseResolver*);
+
+    // ActiveDOMObject
+    virtual void suspend() OVERRIDE;
+    virtual void resume() OVERRIDE;
+    virtual void stop() OVERRIDE;
+
+    static PassRefPtr<FontFaceSet> from(Document*);
+    static void didLayout(Document*);
 
 private:
+    typedef RefCountedSupplement<Document, FontFaceSet> SupplementType;
+
+    static PassRefPtr<FontFaceSet> create(Document* document)
+    {
+        return adoptRef<FontFaceSet>(new FontFaceSet(document));
+    }
+
     class FontLoadHistogram {
     public:
         FontLoadHistogram() : m_count(0), m_recorded(false) { }
@@ -102,28 +109,23 @@ private:
 
     FontFaceSet(Document*);
 
-    virtual void refEventTarget() { ref(); }
-    virtual void derefEventTarget() { deref(); }
-    virtual EventTargetData* eventTargetData();
-    virtual EventTargetData* ensureEventTargetData();
+    bool hasLoadedFonts() const { return !m_loadedFonts.isEmpty() || !m_failedFonts.isEmpty(); }
 
-    void scheduleEvent(PassRefPtr<Event>);
     void queueDoneEvent(FontFace*);
-    void firePendingEvents();
-    void resolvePendingLoadPromises();
+    void fireLoadingEvent();
     void fireDoneEventIfPossible();
     bool resolveFontStyle(const String&, Font&);
-    void timerFired(Timer<FontFaceSet>*);
+    void handlePendingEventsAndPromisesSoon();
+    void handlePendingEventsAndPromises();
 
-    EventTargetData m_eventTargetData;
     unsigned m_loadingCount;
-    Vector<RefPtr<Event> > m_pendingEvents;
-    Vector<RefPtr<LoadFontPromiseResolver> > m_pendingLoadResolvers;
+    bool m_shouldFireLoadingEvent;
     Vector<OwnPtr<FontsReadyPromiseResolver> > m_readyResolvers;
     FontFaceArray m_loadedFonts;
     FontFaceArray m_failedFonts;
-    bool m_shouldFireDoneEvent;
-    Timer<FontFaceSet> m_timer;
+
+    AsyncMethodRunner<FontFaceSet> m_asyncRunner;
+
     FontLoadHistogram m_histogram;
 };
 

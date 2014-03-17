@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// OS X implementation of VideoCaptureDevice, using QTKit as native capture API.
+// MacOSX implementation of generic VideoCaptureDevice, using either QTKit or
+// AVFoundation as native capture API. QTKit is used in OSX versions 10.6 and
+// previous, and AVFoundation is used in the rest.
 
 #ifndef MEDIA_VIDEO_CAPTURE_MAC_VIDEO_CAPTURE_DEVICE_MAC_H_
 #define MEDIA_VIDEO_CAPTURE_MAC_VIDEO_CAPTURE_DEVICE_MAC_H_
@@ -16,31 +18,29 @@
 #include "media/video/capture/video_capture_device.h"
 #include "media/video/capture/video_capture_types.h"
 
-@class VideoCaptureDeviceQTKit;
+@protocol PlatformVideoCapturingMac;
 
 namespace media {
 
 // Called by VideoCaptureManager to open, close and start, stop video capture
 // devices.
-class VideoCaptureDeviceMac : public VideoCaptureDevice1 {
+class VideoCaptureDeviceMac : public VideoCaptureDevice {
  public:
   explicit VideoCaptureDeviceMac(const Name& device_name);
   virtual ~VideoCaptureDeviceMac();
 
   // VideoCaptureDevice implementation.
-  virtual void Allocate(const VideoCaptureCapability& capture_format,
-                         VideoCaptureDevice::EventHandler* observer) OVERRIDE;
-  virtual void Start() OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void DeAllocate() OVERRIDE;
-  virtual const Name& device_name() OVERRIDE;
+  virtual void AllocateAndStart(const VideoCaptureParams& params,
+                                scoped_ptr<VideoCaptureDevice::Client> client)
+      OVERRIDE;
+  virtual void StopAndDeAllocate() OVERRIDE;
 
   bool Init();
 
   // Called to deliver captured video frames.
   void ReceiveFrame(const uint8* video_frame,
                     int video_frame_length,
-                    const VideoCaptureCapability& frame_info,
+                    const VideoCaptureFormat& frame_format,
                     int aspect_numerator,
                     int aspect_denominator);
 
@@ -54,16 +54,16 @@ class VideoCaptureDeviceMac : public VideoCaptureDevice1 {
   enum InternalState {
     kNotInitialized,
     kIdle,
-    kAllocated,
     kCapturing,
     kError
   };
 
   Name device_name_;
-  VideoCaptureDevice::EventHandler* observer_;
+  scoped_ptr<VideoCaptureDevice::Client> client_;
 
-  VideoCaptureCapability current_settings_;
+  VideoCaptureFormat capture_format_;
   bool sent_frame_info_;
+  bool tried_to_square_pixels_;
 
   // Only read and write state_ from inside this loop.
   const scoped_refptr<base::MessageLoopProxy> loop_proxy_;
@@ -74,7 +74,7 @@ class VideoCaptureDeviceMac : public VideoCaptureDevice1 {
   base::WeakPtrFactory<VideoCaptureDeviceMac> weak_factory_;
   base::WeakPtr<VideoCaptureDeviceMac> weak_this_;
 
-  VideoCaptureDeviceQTKit* capture_device_;
+  id<PlatformVideoCapturingMac> capture_device_;
 
   DISALLOW_COPY_AND_ASSIGN(VideoCaptureDeviceMac);
 };

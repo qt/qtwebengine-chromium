@@ -30,7 +30,7 @@
 #include "bindings/v8/ExceptionState.h"
 #include "core/html/canvas/WebGLRenderingContext.h"
 #include "core/html/canvas/WebGLVertexArrayObjectOES.h"
-#include "core/platform/graphics/Extensions3D.h"
+#include "platform/graphics/Extensions3D.h"
 
 namespace WebCore {
 
@@ -94,7 +94,7 @@ void OESVertexArrayObject::bindVertexArrayOES(WebGLVertexArrayObjectOES* arrayOb
         return;
 
     if (arrayObject && (arrayObject->isDeleted() || !arrayObject->validate(0, context()))) {
-        m_context->graphicsContext3D()->synthesizeGLError(GraphicsContext3D::INVALID_OPERATION);
+        m_context->graphicsContext3D()->synthesizeGLError(GL_INVALID_OPERATION);
         return;
     }
 

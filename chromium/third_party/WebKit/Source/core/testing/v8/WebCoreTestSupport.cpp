@@ -30,8 +30,8 @@
 #include "Internals.h"
 #include "V8Internals.h"
 #include "core/dom/Document.h"
-#include "core/dom/ScriptExecutionContext.h"
-#include "core/page/Frame.h"
+#include "core/dom/ExecutionContext.h"
+#include "core/frame/Frame.h"
 
 #include <v8.h>
 
@@ -43,9 +43,9 @@ void injectInternalsObject(v8::Local<v8::Context> context)
 {
     v8::Context::Scope contextScope(context);
     v8::HandleScope scope(context->GetIsolate());
-    ScriptExecutionContext* scriptContext = getScriptExecutionContext();
+    ExecutionContext* scriptContext = getExecutionContext();
     if (scriptContext->isDocument())
-        context->Global()->Set(v8::String::New(Internals::internalsId), toV8(Internals::create(toDocument(scriptContext)), v8::Handle<v8::Object>(), context->GetIsolate()));
+        context->Global()->Set(v8::String::NewFromUtf8(context->GetIsolate(), Internals::internalsId), toV8(Internals::create(toDocument(scriptContext)), v8::Handle<v8::Object>(), context->GetIsolate()));
 }
 
 void resetInternalsObject(v8::Local<v8::Context> context)
@@ -57,7 +57,7 @@ void resetInternalsObject(v8::Local<v8::Context> context)
     v8::Context::Scope contextScope(context);
     v8::HandleScope scope(context->GetIsolate());
 
-    ScriptExecutionContext* scriptContext = getScriptExecutionContext();
+    ExecutionContext* scriptContext = getExecutionContext();
     Page* page = toDocument(scriptContext)->frame()->page();
     Internals::resetToConsistentState(page);
     InternalSettings::from(page)->resetToConsistentState();

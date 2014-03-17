@@ -47,36 +47,36 @@ struct WrapperTypeInfo;
         static bool maybeDOMWrapper(v8::Handle<v8::Value>);
 #endif
 
-        static v8::Local<v8::Object> createWrapper(v8::Handle<v8::Object> creationContext, WrapperTypeInfo*, void*, v8::Isolate*);
+        static v8::Local<v8::Object> createWrapper(v8::Handle<v8::Object> creationContext, const WrapperTypeInfo*, void*, v8::Isolate*);
 
         template<typename V8T, typename T>
-        static inline v8::Handle<v8::Object> associateObjectWithWrapper(PassRefPtr<T>, WrapperTypeInfo*, v8::Handle<v8::Object>, v8::Isolate*, WrapperConfiguration::Lifetime);
-        static inline void setNativeInfo(v8::Handle<v8::Object>, WrapperTypeInfo*, void*);
-        static inline void clearNativeInfo(v8::Handle<v8::Object>, WrapperTypeInfo*);
+        static inline v8::Handle<v8::Object> associateObjectWithWrapper(PassRefPtr<T>, const WrapperTypeInfo*, v8::Handle<v8::Object>, v8::Isolate*, WrapperConfiguration::Lifetime);
+        static inline void setNativeInfo(v8::Handle<v8::Object>, const WrapperTypeInfo*, void*);
+        static inline void clearNativeInfo(v8::Handle<v8::Object>, const WrapperTypeInfo*);
 
         static bool isDOMWrapper(v8::Handle<v8::Value>);
-        static bool isWrapperOfType(v8::Handle<v8::Value>, WrapperTypeInfo*);
+        static bool isWrapperOfType(v8::Handle<v8::Value>, const WrapperTypeInfo*);
     };
 
-    inline void V8DOMWrapper::setNativeInfo(v8::Handle<v8::Object> wrapper, WrapperTypeInfo* type, void* object)
+    inline void V8DOMWrapper::setNativeInfo(v8::Handle<v8::Object> wrapper, const WrapperTypeInfo* type, void* object)
     {
         ASSERT(wrapper->InternalFieldCount() >= 2);
         ASSERT(object);
         ASSERT(type);
         wrapper->SetAlignedPointerInInternalField(v8DOMWrapperObjectIndex, object);
-        wrapper->SetAlignedPointerInInternalField(v8DOMWrapperTypeIndex, type);
+        wrapper->SetAlignedPointerInInternalField(v8DOMWrapperTypeIndex, const_cast<WrapperTypeInfo*>(type));
     }
 
-    inline void V8DOMWrapper::clearNativeInfo(v8::Handle<v8::Object> wrapper, WrapperTypeInfo* type)
+    inline void V8DOMWrapper::clearNativeInfo(v8::Handle<v8::Object> wrapper, const WrapperTypeInfo* type)
     {
         ASSERT(wrapper->InternalFieldCount() >= 2);
         ASSERT(type);
-        wrapper->SetAlignedPointerInInternalField(v8DOMWrapperTypeIndex, type);
+        wrapper->SetAlignedPointerInInternalField(v8DOMWrapperTypeIndex, const_cast<WrapperTypeInfo*>(type));
         wrapper->SetAlignedPointerInInternalField(v8DOMWrapperObjectIndex, 0);
     }
 
     template<typename V8T, typename T>
-    inline v8::Handle<v8::Object> V8DOMWrapper::associateObjectWithWrapper(PassRefPtr<T> object, WrapperTypeInfo* type, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate, WrapperConfiguration::Lifetime lifetime)
+    inline v8::Handle<v8::Object> V8DOMWrapper::associateObjectWithWrapper(PassRefPtr<T> object, const WrapperTypeInfo* type, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate, WrapperConfiguration::Lifetime lifetime)
     {
         setNativeInfo(wrapper, type, V8T::toInternalPointer(object.get()));
         ASSERT(maybeDOMWrapper(wrapper));
@@ -84,6 +84,41 @@ struct WrapperTypeInfo;
         DOMDataStore::setWrapper<V8T>(object.leakRef(), wrapper, isolate, configuration);
         return wrapper;
     }
+
+    class V8WrapperInstantiationScope {
+    public:
+        V8WrapperInstantiationScope(v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+            : m_didEnterContext(false)
+            , m_context(isolate->GetCurrentContext())
+        {
+            // FIXME: Remove all empty creationContexts from caller sites.
+            // If a creationContext is empty, we will end up creating a new object
+            // in the context currently entered. This is wrong.
+            if (creationContext.IsEmpty())
+                return;
+            v8::Handle<v8::Context> contextForWrapper = creationContext->CreationContext();
+            // For performance, we enter the context only if the currently running context
+            // is different from the context that we are about to enter.
+            if (contextForWrapper == m_context)
+                return;
+            m_context = v8::Local<v8::Context>::New(isolate, contextForWrapper);
+            m_didEnterContext = true;
+            m_context->Enter();
+        }
+
+        ~V8WrapperInstantiationScope()
+        {
+            if (!m_didEnterContext)
+                return;
+            m_context->Exit();
+        }
+
+        v8::Handle<v8::Context> context() const { return m_context; }
+
+    private:
+        bool m_didEnterContext;
+        v8::Handle<v8::Context> m_context;
+    };
 
 }
 

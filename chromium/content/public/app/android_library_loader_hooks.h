@@ -18,6 +18,16 @@ namespace content {
 // once the native library has fully loaded.
 CONTENT_EXPORT bool RegisterLibraryLoaderEntryHook(JNIEnv* env);
 
+// Register all content JNI functions now, rather than waiting for the process
+// of fully loading the native library to complete.  This must only be called
+// during JNI_OnLoad.
+CONTENT_EXPORT bool EnsureJniRegistered(JNIEnv* env);
+
+// Pass the version name to Content. This used to check that the library version
+// matches the version expected by Java before completing JNI registration.
+// Note: argument must remain valid at least until library loading is complete.
+CONTENT_EXPORT void SetVersionNumber(const char* version_number);
+
 // Call on exit to delete the AtExitManager which OnLibraryLoadedOnUIThread
 // created.
 CONTENT_EXPORT void LibraryLoaderExitHook();

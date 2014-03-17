@@ -23,6 +23,7 @@
 
 #include "core/rendering/svg/RenderSVGBlock.h"
 
+#include "core/rendering/style/ShadowList.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
 #include "core/svg/SVGElement.h"
 
@@ -37,25 +38,10 @@ LayoutRect RenderSVGBlock::visualOverflowRect() const
 {
     LayoutRect borderRect = borderBoxRect();
 
-    if (const ShadowData* textShadow = style()->textShadow())
+    if (const ShadowList* textShadow = style()->textShadow())
         textShadow->adjustRectForShadow(borderRect);
 
     return borderRect;
-}
-
-void RenderSVGBlock::setStyle(PassRefPtr<RenderStyle> style)
-{
-    RefPtr<RenderStyle> useStyle = style;
-
-    // SVG text layout code expects us to be a block-level style element.
-    if (useStyle->isDisplayInlineType()) {
-        RefPtr<RenderStyle> newStyle = RenderStyle::create();
-        newStyle->inheritFrom(useStyle.get());
-        newStyle->setDisplay(BLOCK);
-        useStyle = newStyle.release();
-    }
-
-    RenderBlock::setStyle(useStyle.release());
 }
 
 void RenderSVGBlock::updateFromStyle()
@@ -86,18 +72,14 @@ void RenderSVGBlock::absoluteRects(Vector<IntRect>&, const LayoutPoint&) const
 void RenderSVGBlock::willBeDestroyed()
 {
     SVGResourcesCache::clientDestroyed(this);
-    RenderBlock::willBeDestroyed();
-}
-
-void RenderSVGBlock::styleWillChange(StyleDifference diff, const RenderStyle* newStyle)
-{
-    if (diff == StyleDifferenceLayout)
-        setNeedsBoundariesUpdate();
-    RenderBlock::styleWillChange(diff, newStyle);
+    RenderBlockFlow::willBeDestroyed();
 }
 
 void RenderSVGBlock::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
 {
+    if (diff == StyleDifferenceLayout)
+        setNeedsBoundariesUpdate();
+
     RenderBlock::styleDidChange(diff, oldStyle);
     SVGResourcesCache::clientStyleChanged(this, diff, style());
 }

@@ -38,91 +38,50 @@
 #include "V8Window.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8WindowShell.h"
 #include "core/html/HTMLAllCollection.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/HTMLIFrameElement.h"
-#include "core/page/Frame.h"
-#include "wtf/OwnArrayPtr.h"
+#include "core/frame/Frame.h"
+#include "wtf/OwnPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/StdLibExtras.h"
-#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
 // HTMLDocument ----------------------------------------------------------------
 
-// Concatenates "args" to a string. If args is empty, returns empty string.
-// Firefox/Safari/IE support non-standard arguments to document.write, ex:
-//   document.write("a", "b", "c") --> document.write("abc")
-//   document.write() --> document.write("")
-static String writeHelperGetString(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8HTMLDocument::openMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    StringBuilder builder;
-    for (int i = 0; i < args.Length(); ++i) {
-        V8TRYCATCH_FOR_V8STRINGRESOURCE_RETURN(V8StringResource<>, stringArgument, args[i], String());
-        builder.append(stringArgument);
-    }
-    return builder.toString();
-}
+    HTMLDocument* htmlDocument = V8HTMLDocument::toNative(info.Holder());
 
-void V8HTMLDocument::writeMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
-{
-    HTMLDocument* htmlDocument = V8HTMLDocument::toNative(args.Holder());
-    htmlDocument->write(writeHelperGetString(args), activeDOMWindow()->document());
-}
-
-void V8HTMLDocument::writelnMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
-{
-    HTMLDocument* htmlDocument = V8HTMLDocument::toNative(args.Holder());
-    htmlDocument->writeln(writeHelperGetString(args), activeDOMWindow()->document());
-}
-
-void V8HTMLDocument::openMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
-{
-    HTMLDocument* htmlDocument = V8HTMLDocument::toNative(args.Holder());
-
-    if (args.Length() > 2) {
+    if (info.Length() > 2) {
         if (RefPtr<Frame> frame = htmlDocument->frame()) {
             // Fetch the global object for the frame.
-            v8::Local<v8::Context> context = frame->script()->currentWorldContext();
+            v8::Local<v8::Context> context = frame->script().currentWorldContext();
             // Bail out if we cannot get the context.
             if (context.IsEmpty())
                 return;
             v8::Local<v8::Object> global = context->Global();
             // Get the open property of the global object.
-            v8::Local<v8::Value> function = global->Get(v8::String::NewSymbol("open"));
+            v8::Local<v8::Value> function = global->Get(v8AtomicString(info.GetIsolate(), "open"));
             // If the open property is not a function throw a type error.
             if (!function->IsFunction()) {
-                throwTypeError("open is not a function", args.GetIsolate());
+                throwTypeError("open is not a function", info.GetIsolate());
                 return;
             }
             // Wrap up the arguments and call the function.
-            OwnArrayPtr<v8::Local<v8::Value> > params = adoptArrayPtr(new v8::Local<v8::Value>[args.Length()]);
-            for (int i = 0; i < args.Length(); i++)
-                params[i] = args[i];
+            OwnPtr<v8::Local<v8::Value>[]> params = adoptArrayPtr(new v8::Local<v8::Value>[info.Length()]);
+            for (int i = 0; i < info.Length(); i++)
+                params[i] = info[i];
 
-            v8SetReturnValue(args, frame->script()->callFunction(v8::Local<v8::Function>::Cast(function), global, args.Length(), params.get()));
+            v8SetReturnValue(info, frame->script().callFunction(v8::Local<v8::Function>::Cast(function), global, info.Length(), params.get()));
             return;
         }
     }
 
     htmlDocument->open(activeDOMWindow()->document());
-    v8SetReturnValue(args, args.Holder());
-}
-
-v8::Handle<v8::Object> wrap(HTMLDocument* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
-{
-    ASSERT(impl);
-    v8::Handle<v8::Object> wrapper = V8HTMLDocument::createWrapper(impl, creationContext, isolate);
-    if (wrapper.IsEmpty())
-        return wrapper;
-    if (!isolatedWorldForEnteredContext()) {
-        if (Frame* frame = impl->frame())
-            frame->script()->windowShell(mainThreadNormalWorld())->updateDocumentWrapper(wrapper);
-    }
-    return wrapper;
+    v8SetReturnValue(info, info.Holder());
 }
 
 } // namespace WebCore

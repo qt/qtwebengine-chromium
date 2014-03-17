@@ -36,8 +36,11 @@
 #include "core/css/CSSCursorImageValue.h"
 #include "core/css/CSSFilterValue.h"
 #include "core/css/CSSFontFaceSrcValue.h"
+#include "core/css/CSSFontFeatureValue.h"
+#include "core/css/CSSFontValue.h"
 #include "core/css/CSSFunctionValue.h"
 #include "core/css/CSSGradientValue.h"
+#include "core/css/CSSGridLineNamesValue.h"
 #include "core/css/CSSGridTemplateValue.h"
 #include "core/css/CSSImageSetValue.h"
 #include "core/css/CSSImageValue.h"
@@ -49,14 +52,12 @@
 #include "core/css/CSSReflectValue.h"
 #include "core/css/CSSSVGDocumentValue.h"
 #include "core/css/CSSShaderValue.h"
+#include "core/css/CSSShadowValue.h"
 #include "core/css/CSSTimingFunctionValue.h"
 #include "core/css/CSSTransformValue.h"
 #include "core/css/CSSUnicodeRangeValue.h"
 #include "core/css/CSSValueList.h"
 #include "core/css/CSSVariableValue.h"
-#include "core/css/FontFeatureValue.h"
-#include "core/css/FontValue.h"
-#include "core/css/ShadowValue.h"
 #include "core/svg/SVGColor.h"
 #include "core/svg/SVGPaint.h"
 
@@ -66,7 +67,7 @@ struct SameSizeAsCSSValue : public RefCounted<SameSizeAsCSSValue> {
     uint32_t bitfields;
 };
 
-COMPILE_ASSERT(sizeof(CSSValue) == sizeof(SameSizeAsCSSValue), CSS_value_should_stay_small);
+COMPILE_ASSERT(sizeof(CSSValue) <= sizeof(SameSizeAsCSSValue), CSS_value_should_stay_small);
 
 class TextCloneCSSValue : public CSSValue {
 public:
@@ -85,9 +86,11 @@ private:
     String m_cssText;
 };
 
+DEFINE_CSS_VALUE_TYPE_CASTS(TextCloneCSSValue, isTextCloneCSSValue());
+
 bool CSSValue::isImplicitInitialValue() const
 {
-    return m_classType == InitialClass && static_cast<const CSSInitialValue*>(this)->isImplicit();
+    return m_classType == InitialClass && toCSSInitialValue(this)->isImplicit();
 }
 
 CSSValue::Type CSSValue::cssValueType() const
@@ -113,9 +116,9 @@ void CSSValue::addSubresourceStyleURLs(ListHashSet<KURL>& urls, const StyleSheet
     else if (isValueList())
         toCSSValueList(this)->addSubresourceStyleURLs(urls, styleSheet);
     else if (classType() == FontFaceSrcClass)
-        static_cast<const CSSFontFaceSrcValue*>(this)->addSubresourceStyleURLs(urls, styleSheet);
+        toCSSFontFaceSrcValue(this)->addSubresourceStyleURLs(urls, styleSheet);
     else if (classType() == ReflectClass)
-        static_cast<const CSSReflectValue*>(this)->addSubresourceStyleURLs(urls, styleSheet);
+        toCSSReflectValue(this)->addSubresourceStyleURLs(urls, styleSheet);
 }
 
 bool CSSValue::hasFailedOrCanceledSubresources() const
@@ -126,13 +129,13 @@ bool CSSValue::hasFailedOrCanceledSubresources() const
     if (isValueList())
         return toCSSValueList(this)->hasFailedOrCanceledSubresources();
     if (classType() == FontFaceSrcClass)
-        return static_cast<const CSSFontFaceSrcValue*>(this)->hasFailedOrCanceledSubresources();
+        return toCSSFontFaceSrcValue(this)->hasFailedOrCanceledSubresources();
     if (classType() == ImageClass)
         return toCSSImageValue(this)->hasFailedOrCanceledSubresources();
     if (classType() == CrossfadeClass)
-        return static_cast<const CSSCrossfadeValue*>(this)->hasFailedOrCanceledSubresources();
+        return toCSSCrossfadeValue(this)->hasFailedOrCanceledSubresources();
     if (classType() == ImageSetClass)
-        return static_cast<const CSSImageSetValue*>(this)->hasFailedOrCanceledSubresources();
+        return toCSSImageSetValue(this)->hasFailedOrCanceledSubresources();
 
     return false;
 }
@@ -147,7 +150,7 @@ bool CSSValue::equals(const CSSValue& other) const
 {
     if (m_isTextClone) {
         ASSERT(isCSSOMSafe());
-        return static_cast<const TextCloneCSSValue*>(this)->cssText() == other.cssText();
+        return toTextCloneCSSValue(this)->cssText() == other.cssText();
     }
 
     if (m_classType == other.m_classType) {
@@ -161,11 +164,11 @@ bool CSSValue::equals(const CSSValue& other) const
         case CursorImageClass:
             return compareCSSValues<CSSCursorImageValue>(*this, other);
         case FontClass:
-            return compareCSSValues<FontValue>(*this, other);
+            return compareCSSValues<CSSFontValue>(*this, other);
         case FontFaceSrcClass:
             return compareCSSValues<CSSFontFaceSrcValue>(*this, other);
         case FontFeatureClass:
-            return compareCSSValues<FontFeatureValue>(*this, other);
+            return compareCSSValues<CSSFontFeatureValue>(*this, other);
         case FunctionClass:
             return compareCSSValues<CSSFunctionValue>(*this, other);
         case LinearGradientClass:
@@ -180,6 +183,8 @@ bool CSSValue::equals(const CSSValue& other) const
             return compareCSSValues<CSSInheritedValue>(*this, other);
         case InitialClass:
             return compareCSSValues<CSSInitialValue>(*this, other);
+        case GridLineNamesClass:
+            return compareCSSValues<CSSGridLineNamesValue>(*this, other);
         case GridTemplateClass:
             return compareCSSValues<CSSGridTemplateValue>(*this, other);
         case PrimitiveClass:
@@ -187,7 +192,7 @@ bool CSSValue::equals(const CSSValue& other) const
         case ReflectClass:
             return compareCSSValues<CSSReflectValue>(*this, other);
         case ShadowClass:
-            return compareCSSValues<ShadowValue>(*this, other);
+            return compareCSSValues<CSSShadowValue>(*this, other);
         case CubicBezierTimingFunctionClass:
             return compareCSSValues<CSSCubicBezierTimingFunctionValue>(*this, other);
         case StepsTimingFunctionClass:
@@ -235,79 +240,81 @@ String CSSValue::cssText() const
 {
     if (m_isTextClone) {
          ASSERT(isCSSOMSafe());
-        return static_cast<const TextCloneCSSValue*>(this)->cssText();
+        return toTextCloneCSSValue(this)->cssText();
     }
     ASSERT(!isCSSOMSafe() || isSubtypeExposedToCSSOM());
 
     switch (classType()) {
     case AspectRatioClass:
-        return static_cast<const CSSAspectRatioValue*>(this)->customCssText();
+        return toCSSAspectRatioValue(this)->customCSSText();
     case BorderImageSliceClass:
-        return static_cast<const CSSBorderImageSliceValue*>(this)->customCssText();
+        return toCSSBorderImageSliceValue(this)->customCSSText();
     case CanvasClass:
-        return static_cast<const CSSCanvasValue*>(this)->customCssText();
+        return toCSSCanvasValue(this)->customCSSText();
     case CursorImageClass:
-        return static_cast<const CSSCursorImageValue*>(this)->customCssText();
+        return toCSSCursorImageValue(this)->customCSSText();
     case FontClass:
-        return static_cast<const FontValue*>(this)->customCssText();
+        return toCSSFontValue(this)->customCSSText();
     case FontFaceSrcClass:
-        return static_cast<const CSSFontFaceSrcValue*>(this)->customCssText();
+        return toCSSFontFaceSrcValue(this)->customCSSText();
     case FontFeatureClass:
-        return static_cast<const FontFeatureValue*>(this)->customCssText();
+        return toCSSFontFeatureValue(this)->customCSSText();
     case FunctionClass:
-        return static_cast<const CSSFunctionValue*>(this)->customCssText();
+        return toCSSFunctionValue(this)->customCSSText();
     case LinearGradientClass:
-        return static_cast<const CSSLinearGradientValue*>(this)->customCssText();
+        return toCSSLinearGradientValue(this)->customCSSText();
     case RadialGradientClass:
-        return static_cast<const CSSRadialGradientValue*>(this)->customCssText();
+        return toCSSRadialGradientValue(this)->customCSSText();
     case CrossfadeClass:
-        return static_cast<const CSSCrossfadeValue*>(this)->customCssText();
+        return toCSSCrossfadeValue(this)->customCSSText();
     case ImageClass:
-        return toCSSImageValue(this)->customCssText();
+        return toCSSImageValue(this)->customCSSText();
     case InheritedClass:
-        return static_cast<const CSSInheritedValue*>(this)->customCssText();
+        return toCSSInheritedValue(this)->customCSSText();
     case InitialClass:
-        return static_cast<const CSSInitialValue*>(this)->customCssText();
+        return toCSSInitialValue(this)->customCSSText();
+    case GridLineNamesClass:
+        return toCSSGridLineNamesValue(this)->customCSSText();
     case GridTemplateClass:
-        return static_cast<const CSSGridTemplateValue*>(this)->customCssText();
+        return toCSSGridTemplateValue(this)->customCSSText();
     case PrimitiveClass:
-        return toCSSPrimitiveValue(this)->customCssText();
+        return toCSSPrimitiveValue(this)->customCSSText();
     case ReflectClass:
-        return static_cast<const CSSReflectValue*>(this)->customCssText();
+        return toCSSReflectValue(this)->customCSSText();
     case ShadowClass:
-        return static_cast<const ShadowValue*>(this)->customCssText();
+        return toCSSShadowValue(this)->customCSSText();
     case CubicBezierTimingFunctionClass:
-        return static_cast<const CSSCubicBezierTimingFunctionValue*>(this)->customCssText();
+        return toCSSCubicBezierTimingFunctionValue(this)->customCSSText();
     case StepsTimingFunctionClass:
-        return static_cast<const CSSStepsTimingFunctionValue*>(this)->customCssText();
+        return toCSSStepsTimingFunctionValue(this)->customCSSText();
     case UnicodeRangeClass:
-        return static_cast<const CSSUnicodeRangeValue*>(this)->customCssText();
+        return toCSSUnicodeRangeValue(this)->customCSSText();
     case ValueListClass:
-        return toCSSValueList(this)->customCssText();
+        return toCSSValueList(this)->customCSSText();
     case CSSTransformClass:
-        return static_cast<const CSSTransformValue*>(this)->customCssText();
+        return toCSSTransformValue(this)->customCSSText();
     case LineBoxContainClass:
-        return static_cast<const CSSLineBoxContainValue*>(this)->customCssText();
+        return toCSSLineBoxContainValue(this)->customCSSText();
     case CalculationClass:
-        return static_cast<const CSSCalcValue*>(this)->customCssText();
+        return toCSSCalcValue(this)->customCSSText();
     case ImageSetClass:
-        return static_cast<const CSSImageSetValue*>(this)->customCssText();
+        return toCSSImageSetValue(this)->customCSSText();
     case CSSFilterClass:
-        return static_cast<const CSSFilterValue*>(this)->customCssText();
+        return toCSSFilterValue(this)->customCSSText();
     case CSSArrayFunctionValueClass:
-        return static_cast<const CSSArrayFunctionValue*>(this)->customCssText();
+        return toCSSArrayFunctionValue(this)->customCSSText();
     case CSSMixFunctionValueClass:
-        return static_cast<const CSSMixFunctionValue*>(this)->customCssText();
+        return toCSSMixFunctionValue(this)->customCSSText();
     case CSSShaderClass:
-        return static_cast<const CSSShaderValue*>(this)->customCssText();
+        return toCSSShaderValue(this)->customCSSText();
     case VariableClass:
         return toCSSVariableValue(this)->value();
     case SVGColorClass:
-        return static_cast<const SVGColor*>(this)->customCssText();
+        return toSVGColor(this)->customCSSText();
     case SVGPaintClass:
-        return static_cast<const SVGPaint*>(this)->customCssText();
+        return toSVGPaint(this)->customCSSText();
     case CSSSVGDocumentClass:
-        return static_cast<const CSSSVGDocumentValue*>(this)->customCssText();
+        return toCSSSVGDocumentValue(this)->customCSSText();
     }
     ASSERT_NOT_REACHED();
     return String();
@@ -319,11 +326,11 @@ String CSSValue::serializeResolvingVariables(const HashMap<AtomicString, String>
     case PrimitiveClass:
         return toCSSPrimitiveValue(this)->customSerializeResolvingVariables(variables);
     case ReflectClass:
-        return static_cast<const CSSReflectValue*>(this)->customSerializeResolvingVariables(variables);
+        return toCSSReflectValue(this)->customSerializeResolvingVariables(variables);
     case ValueListClass:
         return toCSSValueList(this)->customSerializeResolvingVariables(variables);
     case CSSTransformClass:
-        return static_cast<const CSSTransformValue*>(this)->customSerializeResolvingVariables(variables);
+        return toCSSTransformValue(this)->customSerializeResolvingVariables(variables);
     default:
         return cssText();
     }
@@ -333,113 +340,116 @@ void CSSValue::destroy()
 {
     if (m_isTextClone) {
         ASSERT(isCSSOMSafe());
-        delete static_cast<TextCloneCSSValue*>(this);
+        delete toTextCloneCSSValue(this);
         return;
     }
     ASSERT(!isCSSOMSafe() || isSubtypeExposedToCSSOM());
 
     switch (classType()) {
     case AspectRatioClass:
-        delete static_cast<CSSAspectRatioValue*>(this);
+        delete toCSSAspectRatioValue(this);
         return;
     case BorderImageSliceClass:
-        delete static_cast<CSSBorderImageSliceValue*>(this);
+        delete toCSSBorderImageSliceValue(this);
         return;
     case CanvasClass:
-        delete static_cast<CSSCanvasValue*>(this);
+        delete toCSSCanvasValue(this);
         return;
     case CursorImageClass:
-        delete static_cast<CSSCursorImageValue*>(this);
+        delete toCSSCursorImageValue(this);
         return;
     case FontClass:
-        delete static_cast<FontValue*>(this);
+        delete toCSSFontValue(this);
         return;
     case FontFaceSrcClass:
-        delete static_cast<CSSFontFaceSrcValue*>(this);
+        delete toCSSFontFaceSrcValue(this);
         return;
     case FontFeatureClass:
-        delete static_cast<FontFeatureValue*>(this);
+        delete toCSSFontFeatureValue(this);
         return;
     case FunctionClass:
-        delete static_cast<CSSFunctionValue*>(this);
+        delete toCSSFunctionValue(this);
         return;
     case LinearGradientClass:
-        delete static_cast<CSSLinearGradientValue*>(this);
+        delete toCSSLinearGradientValue(this);
         return;
     case RadialGradientClass:
-        delete static_cast<CSSRadialGradientValue*>(this);
+        delete toCSSRadialGradientValue(this);
         return;
     case CrossfadeClass:
-        delete static_cast<CSSCrossfadeValue*>(this);
+        delete toCSSCrossfadeValue(this);
         return;
     case ImageClass:
         delete toCSSImageValue(this);
         return;
     case InheritedClass:
-        delete static_cast<CSSInheritedValue*>(this);
+        delete toCSSInheritedValue(this);
         return;
     case InitialClass:
-        delete static_cast<CSSInitialValue*>(this);
+        delete toCSSInitialValue(this);
+        return;
+    case GridLineNamesClass:
+        delete toCSSGridLineNamesValue(this);
         return;
     case GridTemplateClass:
-        delete static_cast<CSSGridTemplateValue*>(this);
+        delete toCSSGridTemplateValue(this);
         return;
     case PrimitiveClass:
         delete toCSSPrimitiveValue(this);
         return;
     case ReflectClass:
-        delete static_cast<CSSReflectValue*>(this);
+        delete toCSSReflectValue(this);
         return;
     case ShadowClass:
-        delete static_cast<ShadowValue*>(this);
+        delete toCSSShadowValue(this);
         return;
     case CubicBezierTimingFunctionClass:
-        delete static_cast<CSSCubicBezierTimingFunctionValue*>(this);
+        delete toCSSCubicBezierTimingFunctionValue(this);
         return;
     case StepsTimingFunctionClass:
-        delete static_cast<CSSStepsTimingFunctionValue*>(this);
+        delete toCSSStepsTimingFunctionValue(this);
         return;
     case UnicodeRangeClass:
-        delete static_cast<CSSUnicodeRangeValue*>(this);
+        delete toCSSUnicodeRangeValue(this);
         return;
     case ValueListClass:
         delete toCSSValueList(this);
         return;
     case CSSTransformClass:
-        delete static_cast<CSSTransformValue*>(this);
+        delete toCSSTransformValue(this);
         return;
     case LineBoxContainClass:
-        delete static_cast<CSSLineBoxContainValue*>(this);
+        delete toCSSLineBoxContainValue(this);
         return;
     case CalculationClass:
-        delete static_cast<CSSCalcValue*>(this);
+        delete toCSSCalcValue(this);
         return;
     case ImageSetClass:
-        delete static_cast<CSSImageSetValue*>(this);
+        delete toCSSImageSetValue(this);
         return;
     case CSSFilterClass:
-        delete static_cast<CSSFilterValue*>(this);
+        delete toCSSFilterValue(this);
         return;
     case CSSArrayFunctionValueClass:
-        delete static_cast<CSSArrayFunctionValue*>(this);
+        delete toCSSArrayFunctionValue(this);
         return;
     case CSSMixFunctionValueClass:
-        delete static_cast<CSSMixFunctionValue*>(this);
+        delete toCSSMixFunctionValue(this);
         return;
     case CSSShaderClass:
-        delete static_cast<CSSShaderValue*>(this);
+        delete toCSSShaderValue(this);
         return;
     case VariableClass:
         delete toCSSVariableValue(this);
         return;
     case SVGColorClass:
-        delete static_cast<SVGColor*>(this);
+        delete toSVGColor(this);
         return;
     case SVGPaintClass:
-        delete static_cast<SVGPaint*>(this);
+        delete toSVGPaint(this);
         return;
     case CSSSVGDocumentClass:
-        delete static_cast<CSSSVGDocumentValue*>(this);
+        delete toCSSSVGDocumentValue(this);
         return;
     }
     ASSERT_NOT_REACHED();
@@ -456,19 +466,19 @@ PassRefPtr<CSSValue> CSSValue::cloneForCSSOM() const
     case CursorImageClass:
         return toCSSImageValue(this)->cloneForCSSOM();
     case CSSFilterClass:
-        return static_cast<const CSSFilterValue*>(this)->cloneForCSSOM();
+        return toCSSFilterValue(this)->cloneForCSSOM();
     case CSSArrayFunctionValueClass:
-        return static_cast<const CSSArrayFunctionValue*>(this)->cloneForCSSOM();
+        return toCSSArrayFunctionValue(this)->cloneForCSSOM();
     case CSSMixFunctionValueClass:
-        return static_cast<const CSSMixFunctionValue*>(this)->cloneForCSSOM();
+        return toCSSMixFunctionValue(this)->cloneForCSSOM();
     case CSSTransformClass:
-        return static_cast<const CSSTransformValue*>(this)->cloneForCSSOM();
+        return toCSSTransformValue(this)->cloneForCSSOM();
     case ImageSetClass:
-        return static_cast<const CSSImageSetValue*>(this)->cloneForCSSOM();
+        return toCSSImageSetValue(this)->cloneForCSSOM();
     case SVGColorClass:
-        return static_cast<const SVGColor*>(this)->cloneForCSSOM();
+        return toSVGColor(this)->cloneForCSSOM();
     case SVGPaintClass:
-        return static_cast<const SVGPaint*>(this)->cloneForCSSOM();
+        return toSVGPaint(this)->cloneForCSSOM();
     default:
         ASSERT(!isSubtypeExposedToCSSOM());
         return TextCloneCSSValue::create(classType(), cssText());

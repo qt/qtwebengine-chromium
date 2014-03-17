@@ -33,7 +33,6 @@
 #include "RuntimeEnabledFeatures.h"
 #include "core/dom/DOMNamedFlowCollection.h"
 #include "core/dom/Document.h"
-#include "core/dom/NamedFlow.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
@@ -41,7 +40,7 @@
 namespace WebCore {
 
 NamedFlowCollection::NamedFlowCollection(Document* document)
-    : ContextLifecycleObserver(document)
+    : DocumentLifecycleObserver(document)
 {
     ASSERT(RuntimeEnabledFeatures::cssRegionsEnabled());
 }
@@ -62,7 +61,7 @@ Vector<RefPtr<NamedFlow> > NamedFlowCollection::namedFlows()
 
 NamedFlow* NamedFlowCollection::flowByName(const String& flowName)
 {
-    NamedFlowSet::iterator it = m_namedFlows.find<String, NamedFlowHashTranslator>(flowName);
+    NamedFlowSet::iterator it = m_namedFlows.find<NamedFlowHashTranslator>(flowName);
     if (it == m_namedFlows.end() || (*it)->flowState() == NamedFlow::FlowStateNull)
         return 0;
 
@@ -71,7 +70,7 @@ NamedFlow* NamedFlowCollection::flowByName(const String& flowName)
 
 PassRefPtr<NamedFlow> NamedFlowCollection::ensureFlowWithName(const String& flowName)
 {
-    NamedFlowSet::iterator it = m_namedFlows.find<String, NamedFlowHashTranslator>(flowName);
+    NamedFlowSet::iterator it = m_namedFlows.find<NamedFlowHashTranslator>(flowName);
     if (it != m_namedFlows.end()) {
         NamedFlow* namedFlow = *it;
         ASSERT(namedFlow->flowState() == NamedFlow::FlowStateNull);
@@ -103,8 +102,7 @@ void NamedFlowCollection::discardNamedFlow(NamedFlow* namedFlow)
 
 Document* NamedFlowCollection::document() const
 {
-    ScriptExecutionContext* context = ContextLifecycleObserver::scriptExecutionContext();
-    return toDocument(context);
+    return lifecycleContext();
 }
 
 PassRefPtr<DOMNamedFlowCollection> NamedFlowCollection::createCSSOMSnapshot()

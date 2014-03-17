@@ -16,7 +16,6 @@
 #include "sync/notifier/fake_invalidation_state_tracker.h"
 #include "sync/notifier/invalidation_state_tracker.h"
 #include "sync/notifier/invalidator_test_template.h"
-#include "sync/notifier/object_id_invalidation_map_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace syncer {
@@ -41,7 +40,7 @@ class InvalidationNotifierTestDelegate {
         new InvalidationNotifier(
             scoped_ptr<notifier::PushClient>(new notifier::FakePushClient()),
             invalidator_client_id,
-            InvalidationStateMap(),
+            UnackedInvalidationsMap(),
             initial_state,
             MakeWeakHandle(invalidation_state_tracker),
             "fake_client_info"));

@@ -6,6 +6,8 @@
 #define MEDIA_BASE_ANDROID_MEDIA_DRM_BRIDGE_H_
 
 #include <jni.h>
+#include <map>
+#include <queue>
 #include <string>
 #include <vector>
 
@@ -59,13 +61,14 @@ class MEDIA_EXPORT MediaDrmBridge : public MediaKeys {
   static bool RegisterMediaDrmBridge(JNIEnv* env);
 
   // MediaKeys implementations.
-  virtual bool GenerateKeyRequest(const std::string& type,
-                                  const uint8* init_data,
-                                  int init_data_length) OVERRIDE;
-  virtual void AddKey(const uint8* key, int key_length,
-                      const uint8* init_data, int init_data_length,
-                      const std::string& session_id) OVERRIDE;
-  virtual void CancelKeyRequest(const std::string& session_id) OVERRIDE;
+  virtual bool CreateSession(uint32 session_id,
+                             const std::string& type,
+                             const uint8* init_data,
+                             int init_data_length) OVERRIDE;
+  virtual void UpdateSession(uint32 session_id,
+                             const uint8* response,
+                             int response_length) OVERRIDE;
+  virtual void ReleaseSession(uint32 session_id) OVERRIDE;
 
   // Returns a MediaCrypto object if it's already created. Returns a null object
   // otherwise.
@@ -76,17 +79,21 @@ class MEDIA_EXPORT MediaDrmBridge : public MediaKeys {
   void SetMediaCryptoReadyCB(const base::Closure& closure);
 
   // Called after a MediaCrypto object is created.
-  void OnMediaCryptoReady(JNIEnv* env, jobject);
+  void OnMediaCryptoReady(JNIEnv* env, jobject j_media_drm);
 
-  // Called after we got the response for GenerateKeyRequest().
-  void OnKeyMessage(JNIEnv* env, jobject, jstring j_session_id,
-                    jbyteArray message, jstring destination_url);
-
-  // Called when key is added.
-  void OnKeyAdded(JNIEnv* env, jobject, jstring j_session_id);
-
-  // Called when error happens.
-  void OnKeyError(JNIEnv* env, jobject, jstring j_session_id);
+  // Callbacks for firing session events.
+  void OnSessionCreated(JNIEnv* env,
+                        jobject j_media_drm,
+                        jint j_session_id,
+                        jstring j_web_session_id);
+  void OnSessionMessage(JNIEnv* env,
+                        jobject j_media_drm,
+                        jint j_session_id,
+                        jbyteArray j_message,
+                        jstring j_destination_url);
+  void OnSessionReady(JNIEnv* env, jobject j_media_drm, jint j_session_id);
+  void OnSessionClosed(JNIEnv* env, jobject j_media_drm, jint j_session_id);
+  void OnSessionError(JNIEnv* env, jobject j_media_drm, jint j_session_id);
 
   // Reset the device credentials.
   void ResetDeviceCredentials(const ResetCredentialsCB& callback);
@@ -102,14 +109,8 @@ class MEDIA_EXPORT MediaDrmBridge : public MediaKeys {
 
   GURL frame_url() const { return frame_url_; }
 
-  static void set_can_use_media_drm(bool can_use_media_drm) {
-    can_use_media_drm_ = can_use_media_drm;
-  }
-
  private:
   static bool IsSecureDecoderRequired(SecurityLevel security_level);
-
-  static bool can_use_media_drm_;
 
   MediaDrmBridge(int media_keys_id,
                  const std::vector<uint8>& scheme_uuid,

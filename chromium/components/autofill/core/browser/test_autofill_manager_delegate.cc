@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "components/autofill/core/browser/test_autofill_manager_delegate.h"
+#include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 
 namespace autofill {
 
@@ -11,6 +12,11 @@ TestAutofillManagerDelegate::~TestAutofillManagerDelegate() {}
 
 PersonalDataManager* TestAutofillManagerDelegate::GetPersonalDataManager() {
   return NULL;
+}
+
+scoped_refptr<AutofillWebDataService>
+TestAutofillManagerDelegate::GetDatabase() {
+  return scoped_refptr<AutofillWebDataService>(NULL);
 }
 
 PrefService* TestAutofillManagerDelegate::GetPrefs() {
@@ -23,7 +29,6 @@ void TestAutofillManagerDelegate::ShowAutofillSettings() {}
 
 void TestAutofillManagerDelegate::ConfirmSaveCreditCard(
     const AutofillMetrics& metric_logger,
-    const CreditCard& credit_card,
     const base::Closure& save_card_callback) {}
 
 void TestAutofillManagerDelegate::ShowRequestAutocompleteDialog(

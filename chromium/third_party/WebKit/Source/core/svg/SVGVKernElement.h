@@ -29,12 +29,12 @@ namespace WebCore {
 
 class SVGVKernElement FINAL : public SVGElement {
 public:
-    static PassRefPtr<SVGVKernElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGVKernElement> create(Document&);
 
     void buildVerticalKerningPair(KerningPairVector&);
 
 private:
-    SVGVKernElement(const QualifiedName&, Document&);
+    explicit SVGVKernElement(Document&);
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
@@ -42,11 +42,7 @@ private:
     virtual bool rendererIsNeeded(const RenderStyle&) { return false; }
 };
 
-inline SVGVKernElement* toSVGVKernElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::vkernTag));
-    return static_cast<SVGVKernElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(SVGVKernElement, hasTagName(SVGNames::vkernTag));
 
 } // namespace WebCore
 

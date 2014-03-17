@@ -17,6 +17,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "content/common/child_process_messages.h"
+#include "content/common/gpu/client/gpu_memory_buffer_impl.h"
 #include "content/public/common/child_process_host_delegate.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
@@ -247,6 +248,8 @@ bool ChildProcessHostImpl::OnMessageReceived(const IPC::Message& msg) {
                           OnShutdownRequest)
       IPC_MESSAGE_HANDLER(ChildProcessHostMsg_SyncAllocateSharedMemory,
                           OnAllocateSharedMemory)
+      IPC_MESSAGE_HANDLER(ChildProcessHostMsg_SyncAllocateGpuMemoryBuffer,
+                          OnAllocateGpuMemoryBuffer)
       IPC_MESSAGE_UNHANDLED(handled = false)
     IPC_END_MESSAGE_MAP()
 
@@ -291,6 +294,18 @@ void ChildProcessHostImpl::OnAllocateSharedMemory(
 void ChildProcessHostImpl::OnShutdownRequest() {
   if (delegate_->CanShutdown())
     Send(new ChildProcessMsg_Shutdown());
+}
+
+void ChildProcessHostImpl::OnAllocateGpuMemoryBuffer(
+    uint32 width,
+    uint32 height,
+    uint32 internalformat,
+    gfx::GpuMemoryBufferHandle* handle) {
+  handle->type = gfx::SHARED_MEMORY_BUFFER;
+  AllocateSharedMemory(
+      width * height * GpuMemoryBufferImpl::BytesPerPixel(internalformat),
+      peer_handle_,
+      &handle->handle);
 }
 
 }  // namespace content

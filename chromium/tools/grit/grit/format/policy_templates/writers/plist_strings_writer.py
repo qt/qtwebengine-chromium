@@ -49,7 +49,10 @@ class PListStringsWriter(template_writer.TemplateWriter):
         string table.
     '''
     desc = policy['desc']
-    if policy['type'] in ('int-enum','string-enum'):
+    if policy['type'] == 'external':
+      # This type can only be set through cloud policy.
+      return
+    elif policy['type'] in ('int-enum','string-enum'):
       # Append the captions of enum items to the description string.
       item_descs = []
       for item in policy['items']:

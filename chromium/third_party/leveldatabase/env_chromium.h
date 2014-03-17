@@ -7,6 +7,7 @@
 
 #include <deque>
 #include <map>
+#include <set>
 
 #include "base/metrics/histogram.h"
 #include "base/platform_file.h"
@@ -14,6 +15,8 @@
 #include "leveldb/env.h"
 #include "leveldb/slice.h"
 #include "leveldb/status.h"
+#include "port/port_chromium.h"
+#include "util/mutexlock.h"
 
 namespace leveldb_env {
 
@@ -38,6 +41,7 @@ enum MethodID {
   kGetTestDirectory,
   kNewLogger,
   kSyncParent,
+  kGetChildren,
   kNumEntries
 };
 
@@ -65,7 +69,12 @@ enum ErrorParsingResult {
 ErrorParsingResult ParseMethodAndError(const char* string,
                                        MethodID* method,
                                        int* error);
-bool IndicatesDiskFull(leveldb::Status status);
+int GetCorruptionCode(const leveldb::Status& status);
+int GetNumCorruptionCodes();
+std::string GetCorruptionMessage(const leveldb::Status& status);
+bool IndicatesDiskFull(const leveldb::Status& status);
+bool IsIOError(const leveldb::Status& status);
+bool IsCorruption(const leveldb::Status& status);
 std::string FilePathToString(const base::FilePath& file_path);
 
 class UMALogger {
@@ -74,6 +83,7 @@ class UMALogger {
   virtual void RecordOSError(MethodID method, int saved_errno) const = 0;
   virtual void RecordOSError(MethodID method,
                              base::PlatformFileError error) const = 0;
+  virtual void RecordBackupResult(bool success) const = 0;
 };
 
 class RetrierProvider {
@@ -96,7 +106,8 @@ class ChromiumWritableFile : public leveldb::WritableFile {
   ChromiumWritableFile(const std::string& fname,
                        FILE* f,
                        const UMALogger* uma_logger,
-                       WriteTracker* tracker);
+                       WriteTracker* tracker,
+                       bool make_backup);
   virtual ~ChromiumWritableFile();
   virtual leveldb::Status Append(const leveldb::Slice& data);
   virtual leveldb::Status Close();
@@ -104,14 +115,20 @@ class ChromiumWritableFile : public leveldb::WritableFile {
   virtual leveldb::Status Sync();
 
  private:
+  enum Type {
+    kManifest,
+    kTable,
+    kOther
+  };
   leveldb::Status SyncParent();
 
   std::string filename_;
   FILE* file_;
   const UMALogger* uma_logger_;
   WriteTracker* tracker_;
-  bool is_manifest_;
+  Type file_type_;
   std::string parent_dir_;
+  bool make_backup_;
 };
 
 class ChromiumEnv : public leveldb::Env,
@@ -155,8 +172,26 @@ class ChromiumEnv : public leveldb::Env,
   virtual void DidSyncDir(const std::string& fname);
 
   std::string name_;
+  bool make_backup_;
 
  private:
+  // File locks may not be exclusive within a process (e.g. on POSIX). Track
+  // locks held by the ChromiumEnv to prevent access within the process.
+  class LockTable {
+   public:
+    bool Insert(const std::string& fname) {
+      leveldb::MutexLock l(&mu_);
+      return locked_files_.insert(fname).second;
+    }
+    bool Remove(const std::string& fname) {
+      leveldb::MutexLock l(&mu_);
+      return locked_files_.erase(fname) == 1;
+    }
+   private:
+    leveldb::port::Mutex mu_;
+    std::set<std::string> locked_files_;
+  };
+
   std::map<std::string, bool> needs_sync_map_;
   base::Lock map_lock_;
 
@@ -171,6 +206,10 @@ class ChromiumEnv : public leveldb::Env,
   virtual void RecordOSError(MethodID method, int saved_errno) const;
   virtual void RecordOSError(MethodID method,
                              base::PlatformFileError error) const;
+  virtual void RecordBackupResult(bool result) const;
+  void RestoreIfNecessary(const std::string& dir,
+                          std::vector<std::string>* children);
+  base::FilePath RestoreFromBackup(const base::FilePath& base_name);
   void RecordOpenFilesLimit(const std::string& type);
   void RecordLockFileAncestors(int num_missing_ancestors) const;
   base::HistogramBase* GetOSErrorHistogram(MethodID method, int limit) const;
@@ -197,6 +236,7 @@ class ChromiumEnv : public leveldb::Env,
   };
   typedef std::deque<BGItem> BGQueue;
   BGQueue queue_;
+  LockTable locks_;
 };
 
 }  // namespace leveldb_env

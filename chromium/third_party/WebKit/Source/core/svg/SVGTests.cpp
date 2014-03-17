@@ -24,9 +24,8 @@
 
 #include "SVGNames.h"
 #include "core/dom/DOMImplementation.h"
-#include "core/platform/Language.h"
+#include "platform/Language.h"
 #include "core/svg/SVGElement.h"
-#include "core/svg/SVGStringList.h"
 
 namespace WebCore {
 
@@ -144,23 +143,6 @@ bool SVGTests::isKnownAttribute(const QualifiedName& attrName)
     return attrName == SVGNames::requiredFeaturesAttr
         || attrName == SVGNames::requiredExtensionsAttr
         || attrName == SVGNames::systemLanguageAttr;
-}
-
-bool SVGTests::handleAttributeChange(SVGElement* targetElement, const QualifiedName& attrName)
-{
-    ASSERT(targetElement);
-    if (!isKnownAttribute(attrName))
-        return false;
-    if (!targetElement->inDocument())
-        return true;
-
-    bool valid = targetElement->isValid();
-    if (valid && !targetElement->attached() && targetElement->parentNode()->attached())
-        targetElement->lazyAttach();
-    else if (!valid && targetElement->attached())
-        targetElement->detach();
-
-    return true;
 }
 
 void SVGTests::addSupportedAttributes(HashSet<QualifiedName>& supportedAttributes)

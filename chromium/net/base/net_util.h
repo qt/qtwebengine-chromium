@@ -15,8 +15,6 @@
 #include <sys/socket.h>
 #endif
 
-#include <list>
-#include <set>
 #include <string>
 #include <vector>
 
@@ -175,8 +173,8 @@ NET_EXPORT std::string GetHostName();
 // Extracts the unescaped username/password from |url|, saving the results
 // into |*username| and |*password|.
 NET_EXPORT_PRIVATE void GetIdentityFromURL(const GURL& url,
-                        base::string16* username,
-                        base::string16* password);
+                                           base::string16* username,
+                                           base::string16* password);
 
 // Returns either the host from |url|, or, if the host is empty, the full spec.
 NET_EXPORT std::string GetHostOrSpecFromURL(const GURL& url);
@@ -203,7 +201,7 @@ NET_EXPORT std::string GetSpecificHeader(const std::string& headers,
 // script-language pairs (currently Han, Kana and Hangul for zh,ja and ko).
 // When |languages| is empty, even that mixing is not allowed.
 NET_EXPORT base::string16 IDNToUnicode(const std::string& host,
-                                 const std::string& languages);
+                                       const std::string& languages);
 
 // Canonicalizes |host| and returns it.  Also fills |host_info| with
 // IP address information.  |host_info| must not be NULL.
@@ -430,7 +428,7 @@ NET_EXPORT void SetExplicitlyAllowedPorts(const std::string& allowed_ports);
 
 class NET_EXPORT ScopedPortException {
  public:
-  ScopedPortException(int port);
+  explicit ScopedPortException(int port);
   ~ScopedPortException();
 
  private:
@@ -449,7 +447,7 @@ NET_EXPORT_PRIVATE AddressFamily GetAddressFamily(
     const IPAddressNumber& address);
 
 // Maps the given AddressFamily to either AF_INET, AF_INET6 or AF_UNSPEC.
-int ConvertAddressFamily(AddressFamily address_family);
+NET_EXPORT_PRIVATE int ConvertAddressFamily(AddressFamily address_family);
 
 // Parses an IP address literal (either IPv4 or IPv6) to its numeric value.
 // Returns true on success and fills |ip_number| with the numeric value.
@@ -516,11 +514,16 @@ NET_EXPORT_PRIVATE bool IsLocalhost(const std::string& host);
 // interface.
 struct NET_EXPORT NetworkInterface {
   NetworkInterface();
-  NetworkInterface(const std::string& name, const IPAddressNumber& address);
+  NetworkInterface(const std::string& name,
+                   uint32 interface_index,
+                   const IPAddressNumber& address,
+                   size_t network_prefix);
   ~NetworkInterface();
 
   std::string name;
+  uint32 interface_index;  // Always 0 on Android.
   IPAddressNumber address;
+  size_t network_prefix;
 };
 
 typedef std::vector<NetworkInterface> NetworkInterfaceList;
@@ -552,6 +555,41 @@ enum WifiPHYLayerProtocol {
 // Characterize the PHY mode of the currently associated access point.
 // Currently only available on OS_WIN.
 NET_EXPORT WifiPHYLayerProtocol GetWifiPHYLayerProtocol();
+
+// Returns number of matching initial bits between the addresses |a1| and |a2|.
+unsigned CommonPrefixLength(const IPAddressNumber& a1,
+                            const IPAddressNumber& a2);
+
+// Computes the number of leading 1-bits in |mask|.
+unsigned MaskPrefixLength(const IPAddressNumber& mask);
+
+// Differentiated Services Code Point.
+// See http://tools.ietf.org/html/rfc2474 for details.
+enum DiffServCodePoint {
+  DSCP_NO_CHANGE = -1,
+  DSCP_DEFAULT = 0,  // Same as DSCP_CS0
+  DSCP_CS0  = 0,   // The default
+  DSCP_CS1  = 8,   // Bulk/background traffic
+  DSCP_AF11 = 10,
+  DSCP_AF12 = 12,
+  DSCP_AF13 = 14,
+  DSCP_CS2  = 16,
+  DSCP_AF21 = 18,
+  DSCP_AF22 = 20,
+  DSCP_AF23 = 22,
+  DSCP_CS3  = 24,
+  DSCP_AF31 = 26,
+  DSCP_AF32 = 28,
+  DSCP_AF33 = 30,
+  DSCP_CS4  = 32,
+  DSCP_AF41 = 34,  // Video
+  DSCP_AF42 = 36,  // Video
+  DSCP_AF43 = 38,  // Video
+  DSCP_CS5  = 40,  // Video
+  DSCP_EF   = 46,  // Voice
+  DSCP_CS6  = 48,  // Voice
+  DSCP_CS7  = 56,  // Control messages
+};
 
 }  // namespace net
 

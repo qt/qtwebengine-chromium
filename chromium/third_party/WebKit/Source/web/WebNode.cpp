@@ -44,19 +44,19 @@
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 #include "core/dom/Node.h"
 #include "core/dom/NodeList.h"
 #include "core/editing/markup.h"
-#include "core/platform/Widget.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderWidget.h"
+#include "platform/Widget.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebVector.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 void WebNode::reset()
 {
@@ -96,12 +96,6 @@ WebString WebNode::nodeName() const
 WebString WebNode::nodeValue() const
 {
     return m_private->nodeValue();
-}
-
-bool WebNode::setNodeValue(const WebString& value)
-{
-    m_private->setNodeValue(value);
-    return true;
 }
 
 WebDocument WebNode::document() const
@@ -203,9 +197,9 @@ WebNodeList WebNode::getElementsByTagName(const WebString& tag) const
 
 WebElement WebNode::querySelector(const WebString& tag, WebExceptionCode& ec) const
 {
-    TrackExceptionState es;
-    WebElement element(m_private->querySelector(tag, es));
-    ec = es.code();
+    TrackExceptionState exceptionState;
+    WebElement element(m_private->querySelector(tag, exceptionState));
+    ec = exceptionState.code();
     return element;
 }
 
@@ -221,9 +215,9 @@ bool WebNode::focused() const
 
 bool WebNode::remove()
 {
-    TrackExceptionState es;
-    m_private->remove(es);
-    return !es.hadException();
+    TrackExceptionState exceptionState;
+    m_private->remove(exceptionState);
+    return !exceptionState.hadException();
 }
 
 bool WebNode::hasNonEmptyBoundingBox() const
@@ -272,4 +266,4 @@ WebNode::operator PassRefPtr<Node>() const
     return m_private.get();
 }
 
-} // namespace WebKit
+} // namespace blink

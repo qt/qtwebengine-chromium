@@ -35,7 +35,7 @@ class SVGMPathElement FINAL : public SVGElement,
                               public SVGURIReference,
                               public SVGExternalResourcesRequired {
 public:
-    static PassRefPtr<SVGMPathElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGMPathElement> create(Document&);
 
     virtual ~SVGMPathElement();
 
@@ -44,7 +44,7 @@ public:
     void targetPathChanged();
 
 private:
-    SVGMPathElement(const QualifiedName&, Document&);
+    explicit SVGMPathElement(Document&);
 
     void buildPendingResource();
     void clearResourceReferences();
@@ -64,11 +64,7 @@ private:
     END_DECLARE_ANIMATED_PROPERTIES
 };
 
-inline SVGMPathElement* toSVGMPathElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::mpathTag));
-    return static_cast<SVGMPathElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(SVGMPathElement, hasTagName(SVGNames::mpathTag));
 
 } // namespace WebCore
 

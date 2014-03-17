@@ -31,12 +31,94 @@
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/shadow/ContentDistribution.h"
-#include "core/dom/shadow/InsertionPoint.h"
-#include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/shadow/HTMLContentElement.h"
 #include "core/html/shadow/HTMLShadowElement.h"
 
 namespace WebCore {
+
+class DistributionPool {
+public:
+    explicit DistributionPool(const ContainerNode&);
+    void clear();
+    ~DistributionPool();
+    void distributeTo(InsertionPoint*, ElementShadow*);
+    void populateChildren(const ContainerNode&);
+
+private:
+    void detachNonDistributedNodes();
+    Vector<Node*, 32> m_nodes;
+    Vector<bool, 32> m_distributed;
+};
+
+inline DistributionPool::DistributionPool(const ContainerNode& parent)
+{
+    populateChildren(parent);
+}
+
+inline void DistributionPool::clear()
+{
+    detachNonDistributedNodes();
+    m_nodes.clear();
+    m_distributed.clear();
+}
+
+inline void DistributionPool::populateChildren(const ContainerNode& parent)
+{
+    clear();
+    for (Node* child = parent.firstChild(); child; child = child->nextSibling()) {
+        if (isActiveInsertionPoint(*child)) {
+            InsertionPoint* insertionPoint = toInsertionPoint(child);
+            for (size_t i = 0; i < insertionPoint->size(); ++i)
+                m_nodes.append(insertionPoint->at(i));
+        } else {
+            m_nodes.append(child);
+        }
+    }
+    m_distributed.resize(m_nodes.size());
+    m_distributed.fill(false);
+}
+
+void DistributionPool::distributeTo(InsertionPoint* insertionPoint, ElementShadow* elementShadow)
+{
+    ContentDistribution distribution;
+
+    for (size_t i = 0; i < m_nodes.size(); ++i) {
+        if (m_distributed[i])
+            continue;
+
+        if (isHTMLContentElement(insertionPoint) && !toHTMLContentElement(insertionPoint)->canSelectNode(m_nodes, i))
+            continue;
+
+        Node* node = m_nodes[i];
+        distribution.append(node);
+        elementShadow->didDistributeNode(node, insertionPoint);
+        m_distributed[i] = true;
+    }
+
+    // Distributes fallback elements
+    if (insertionPoint->isContentInsertionPoint() && distribution.isEmpty()) {
+        for (Node* fallbackNode = insertionPoint->firstChild(); fallbackNode; fallbackNode = fallbackNode->nextSibling()) {
+            distribution.append(fallbackNode);
+            elementShadow->didDistributeNode(fallbackNode, insertionPoint);
+        }
+    }
+    insertionPoint->setDistribution(distribution);
+}
+
+inline DistributionPool::~DistributionPool()
+{
+    detachNonDistributedNodes();
+}
+
+inline void DistributionPool::detachNonDistributedNodes()
+{
+    for (size_t i = 0; i < m_nodes.size(); ++i) {
+        if (m_distributed[i])
+            continue;
+        if (m_nodes[i]->renderer())
+            m_nodes[i]->lazyReattachIfAttached();
+    }
+}
 
 PassOwnPtr<ElementShadow> ElementShadow::create()
 {
@@ -55,45 +137,46 @@ ElementShadow::~ElementShadow()
     removeAllShadowRoots();
 }
 
-ShadowRoot* ElementShadow::addShadowRoot(Element* shadowHost, ShadowRoot::ShadowRootType type)
+ShadowRoot& ElementShadow::addShadowRoot(Element& shadowHost, ShadowRoot::ShadowRootType type)
 {
-    RefPtr<ShadowRoot> shadowRoot = ShadowRoot::create(&shadowHost->document(), type);
+    RefPtr<ShadowRoot> shadowRoot = ShadowRoot::create(&shadowHost.document(), type);
 
-    shadowRoot->setParentOrShadowHostNode(shadowHost);
-    shadowRoot->setParentTreeScope(&shadowHost->treeScope());
+    for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot())
+        root->lazyReattachIfAttached();
+
+    shadowRoot->setParentOrShadowHostNode(&shadowHost);
+    shadowRoot->setParentTreeScope(&shadowHost.treeScope());
     m_shadowRoots.push(shadowRoot.get());
-    ChildNodeInsertionNotifier(shadowHost).notify(shadowRoot.get());
+    ChildNodeInsertionNotifier(shadowHost).notify(*shadowRoot);
     setNeedsDistributionRecalc();
-    shadowHost->lazyReattachIfAttached();
 
     // addShadowRoot() affects apply-author-styles. However, we know that the youngest shadow root has not had any children yet.
     // The youngest shadow root's apply-author-styles is default (false). So we can just set m_applyAuthorStyles false.
     m_applyAuthorStyles = false;
 
-    shadowHost->didAddShadowRoot(*shadowRoot);
-    InspectorInstrumentation::didPushShadowRoot(shadowHost, shadowRoot.get());
+    shadowHost.didAddShadowRoot(*shadowRoot);
+    InspectorInstrumentation::didPushShadowRoot(&shadowHost, shadowRoot.get());
 
-    return shadowRoot.get();
+    ASSERT(m_shadowRoots.head());
+    ASSERT(shadowRoot.get() == m_shadowRoots.head());
+    return *m_shadowRoots.head();
 }
 
 void ElementShadow::removeAllShadowRoots()
 {
     // Dont protect this ref count.
     Element* shadowHost = host();
+    ASSERT(shadowHost);
 
     while (RefPtr<ShadowRoot> oldRoot = m_shadowRoots.head()) {
         InspectorInstrumentation::willPopShadowRoot(shadowHost, oldRoot.get());
         shadowHost->document().removeFocusedElementOfSubtree(oldRoot.get());
-
-        if (oldRoot->attached())
-            oldRoot->detach();
-
         m_shadowRoots.removeHead();
         oldRoot->setParentOrShadowHostNode(0);
         oldRoot->setParentTreeScope(&shadowHost->document());
         oldRoot->setPrev(0);
         oldRoot->setNext(0);
-        ChildNodeRemovalNotifier(shadowHost).notify(oldRoot.get());
+        ChildNodeRemovalNotifier(*shadowHost).notify(*oldRoot);
     }
 }
 
@@ -103,7 +186,7 @@ void ElementShadow::attach(const Node::AttachContext& context)
     childrenContext.resolvedStyle = 0;
 
     for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot()) {
-        if (!root->attached())
+        if (root->needsAttach())
             root->attach(childrenContext);
     }
 }
@@ -113,16 +196,14 @@ void ElementShadow::detach(const Node::AttachContext& context)
     Node::AttachContext childrenContext(context);
     childrenContext.resolvedStyle = 0;
 
-    for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot()) {
-        if (root->attached())
-            root->detach(childrenContext);
-    }
+    for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot())
+        root->detach(childrenContext);
 }
 
 void ElementShadow::removeAllEventListeners()
 {
     for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot()) {
-        for (Node* node = root; node; node = NodeTraversal::next(node))
+        for (Node* node = root; node; node = NodeTraversal::next(*node))
             node->removeAllEventListeners();
     }
 }
@@ -169,137 +250,71 @@ bool ElementShadow::resolveApplyAuthorStyles() const
     return false;
 }
 
-InsertionPoint* ElementShadow::findInsertionPointFor(const Node* key) const
+const InsertionPoint* ElementShadow::finalDestinationInsertionPointFor(const Node* key) const
 {
-    return m_nodeToInsertionPoint.get(key);
+    NodeToDestinationInsertionPoints::const_iterator it = m_nodeToInsertionPoints.find(key);
+    return it == m_nodeToInsertionPoints.end() ? 0: it->value.last().get();
 }
 
-void ElementShadow::populate(Node* node, Vector<Node*>& pool)
+const DestinationInsertionPoints* ElementShadow::destinationInsertionPointsFor(const Node* key) const
 {
-    if (!isActiveInsertionPoint(node)) {
-        pool.append(node);
-        return;
-    }
-
-    InsertionPoint* insertionPoint = toInsertionPoint(node);
-    if (insertionPoint->hasDistribution()) {
-        for (size_t i = 0; i < insertionPoint->size(); ++i)
-            pool.append(insertionPoint->at(i));
-    } else {
-        for (Node* fallbackNode = insertionPoint->firstChild(); fallbackNode; fallbackNode = fallbackNode->nextSibling())
-            pool.append(fallbackNode);
-    }
+    NodeToDestinationInsertionPoints::const_iterator it = m_nodeToInsertionPoints.find(key);
+    return it == m_nodeToInsertionPoints.end() ? 0: &it->value;
 }
 
 void ElementShadow::distribute()
 {
-    Vector<Node*> pool;
-    pool.reserveInitialCapacity(32);
-    for (Node* node = host()->firstChild(); node; node = node->nextSibling())
-        populate(node, pool);
-
     host()->setNeedsStyleRecalc();
+    Vector<HTMLShadowElement*, 32> shadowInsertionPoints;
+    DistributionPool pool(*host());
 
-    Vector<bool> distributed;
-    distributed.fill(false, pool.size());
-
-    Vector<HTMLShadowElement*, 32> activeShadowInsertionPoints;
     for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot()) {
-        HTMLShadowElement* firstActiveShadowInsertionPoint = 0;
-
-        const Vector<RefPtr<InsertionPoint> >& insertionPoints = root->childInsertionPoints();
+        HTMLShadowElement* shadowInsertionPoint = 0;
+        const Vector<RefPtr<InsertionPoint> >& insertionPoints = root->descendantInsertionPoints();
         for (size_t i = 0; i < insertionPoints.size(); ++i) {
             InsertionPoint* point = insertionPoints[i].get();
             if (!point->isActive())
                 continue;
-
             if (isHTMLShadowElement(point)) {
-                if (!firstActiveShadowInsertionPoint)
-                    firstActiveShadowInsertionPoint = toHTMLShadowElement(point);
+                if (!shadowInsertionPoint)
+                    shadowInsertionPoint = toHTMLShadowElement(point);
             } else {
-                distributeSelectionsTo(point, pool, distributed);
-                if (ElementShadow* shadow = shadowOfParentForDistribution(point))
+                pool.distributeTo(point, this);
+                if (ElementShadow* shadow = shadowWhereNodeCanBeDistributed(*point))
                     shadow->setNeedsDistributionRecalc();
             }
         }
-
-        if (firstActiveShadowInsertionPoint)
-            activeShadowInsertionPoints.append(firstActiveShadowInsertionPoint);
+        if (shadowInsertionPoint) {
+            shadowInsertionPoints.append(shadowInsertionPoint);
+            if (shadowInsertionPoint->hasChildNodes())
+                pool.populateChildren(*shadowInsertionPoint);
+        } else {
+            pool.clear();
+        }
     }
 
-    for (size_t i = activeShadowInsertionPoints.size(); i > 0; --i) {
-        HTMLShadowElement* shadowElement = activeShadowInsertionPoints[i - 1];
-        ShadowRoot* root = shadowElement->containingShadowRoot();
+    for (size_t i = shadowInsertionPoints.size(); i > 0; --i) {
+        HTMLShadowElement* shadowInsertionPoint = shadowInsertionPoints[i - 1];
+        ShadowRoot* root = shadowInsertionPoint->containingShadowRoot();
         ASSERT(root);
-        if (root->olderShadowRoot() && root->olderShadowRoot()->type() == root->type()) {
+        if (root->isOldest()) {
+            pool.distributeTo(shadowInsertionPoint, this);
+        } else if (root->olderShadowRoot()->type() == root->type()) {
             // Only allow reprojecting older shadow roots between the same type to
             // disallow reprojecting UA elements into author shadows.
-            distributeNodeChildrenTo(shadowElement, root->olderShadowRoot());
-            root->olderShadowRoot()->setInsertionPoint(shadowElement);
-        } else if (!root->olderShadowRoot()) {
-            // There's assumed to always be a UA shadow that selects all nodes.
-            // We don't actually add it, instead we just distribute the pool to the
-            // <shadow> in the oldest shadow root.
-            distributeSelectionsTo(shadowElement, pool, distributed);
+            DistributionPool olderShadowRootPool(*root->olderShadowRoot());
+            olderShadowRootPool.distributeTo(shadowInsertionPoint, this);
+            root->olderShadowRoot()->setShadowInsertionPointOfYoungerShadowRoot(shadowInsertionPoint);
         }
-        if (ElementShadow* shadow = shadowOfParentForDistribution(shadowElement))
+        if (ElementShadow* shadow = shadowWhereNodeCanBeDistributed(*shadowInsertionPoint))
             shadow->setNeedsDistributionRecalc();
     }
-
-    // Detach all nodes that were not distributed and have a renderer.
-    for (size_t i = 0; i < pool.size(); ++i) {
-        if (distributed[i])
-            continue;
-        if (pool[i]->renderer())
-            pool[i]->lazyReattachIfAttached();
-    }
 }
 
-void ElementShadow::distributeSelectionsTo(InsertionPoint* insertionPoint, const Vector<Node*>& pool, Vector<bool>& distributed)
+void ElementShadow::didDistributeNode(const Node* node, InsertionPoint* insertionPoint)
 {
-    ContentDistribution distribution;
-
-    for (size_t i = 0; i < pool.size(); ++i) {
-        if (distributed[i])
-            continue;
-
-        if (isHTMLContentElement(insertionPoint) && !toHTMLContentElement(insertionPoint)->canSelectNode(pool, i))
-            continue;
-
-        Node* child = pool[i];
-        distribution.append(child);
-        m_nodeToInsertionPoint.add(child, insertionPoint);
-        distributed[i] = true;
-    }
-
-    insertionPoint->setDistribution(distribution);
-}
-
-void ElementShadow::distributeNodeChildrenTo(InsertionPoint* insertionPoint, ContainerNode* containerNode)
-{
-    ContentDistribution distribution;
-    for (Node* node = containerNode->firstChild(); node; node = node->nextSibling()) {
-        if (isActiveInsertionPoint(node)) {
-            InsertionPoint* innerInsertionPoint = toInsertionPoint(node);
-            if (innerInsertionPoint->hasDistribution()) {
-                for (size_t i = 0; i < innerInsertionPoint->size(); ++i) {
-                    Node* nodeToAdd = innerInsertionPoint->at(i);
-                    distribution.append(nodeToAdd);
-                    m_nodeToInsertionPoint.add(nodeToAdd, insertionPoint);
-                }
-            } else {
-                for (Node* child = innerInsertionPoint->firstChild(); child; child = child->nextSibling()) {
-                    distribution.append(child);
-                    m_nodeToInsertionPoint.add(child, insertionPoint);
-                }
-            }
-        } else {
-            distribution.append(node);
-            m_nodeToInsertionPoint.add(node, insertionPoint);
-        }
-    }
-
-    insertionPoint->setDistribution(distribution);
+    NodeToDestinationInsertionPoints::AddResult result = m_nodeToInsertionPoints.add(node, DestinationInsertionPoints());
+    result.iterator->value.append(insertionPoint);
 }
 
 const SelectRuleFeatureSet& ElementShadow::ensureSelectFeatureSet()
@@ -309,17 +324,17 @@ const SelectRuleFeatureSet& ElementShadow::ensureSelectFeatureSet()
 
     m_selectFeatures.clear();
     for (ShadowRoot* root = oldestShadowRoot(); root; root = root->youngerShadowRoot())
-        collectSelectFeatureSetFrom(root);
+        collectSelectFeatureSetFrom(*root);
     m_needsSelectFeatureSet = false;
     return m_selectFeatures;
 }
 
-void ElementShadow::collectSelectFeatureSetFrom(ShadowRoot* root)
+void ElementShadow::collectSelectFeatureSetFrom(ShadowRoot& root)
 {
-    if (!root->containsShadowRoots() && !root->containsContentElements())
+    if (!root.containsShadowRoots() && !root.containsContentElements())
         return;
 
-    for (Element* element = ElementTraversal::firstWithin(root); element; element = ElementTraversal::next(element, root)) {
+    for (Element* element = ElementTraversal::firstWithin(root); element; element = ElementTraversal::next(*element, &root)) {
         if (ElementShadow* shadow = element->shadow())
             m_selectFeatures.add(shadow->ensureSelectFeatureSet());
         if (!isHTMLContentElement(element))
@@ -350,10 +365,10 @@ void ElementShadow::willAffectSelector()
 
 void ElementShadow::clearDistribution()
 {
-    m_nodeToInsertionPoint.clear();
+    m_nodeToInsertionPoints.clear();
 
     for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot())
-        root->setInsertionPoint(0);
+        root->setShadowInsertionPointOfYoungerShadowRoot(0);
 }
 
 } // namespace

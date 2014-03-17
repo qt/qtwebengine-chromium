@@ -33,14 +33,12 @@
 
 #include "WebMIDIClient.h"
 #include "WebMIDIPermissionRequest.h"
-#include "WebViewClient.h"
-#include "WebViewImpl.h"
 #include "modules/webmidi/MIDIAccess.h"
 #include "wtf/RefPtr.h"
 
-using namespace WebCore;
+using WebCore::MIDIAccess;
 
-namespace WebKit {
+namespace blink {
 
 MIDIClientProxy::MIDIClientProxy(WebMIDIClient* client)
     : m_client(client)
@@ -61,4 +59,4 @@ void MIDIClientProxy::cancelSysExPermissionRequest(MIDIAccess* access)
         m_client->cancelSysExPermissionRequest(WebMIDIPermissionRequest(access));
 }
 
-} // namespace WebKit
+} // namespace blink

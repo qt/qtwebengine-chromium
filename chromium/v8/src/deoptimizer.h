@@ -60,17 +60,18 @@ class FrameDescription;
 class TranslationIterator;
 class DeoptimizedFrameInfo;
 
+template<typename T>
 class HeapNumberMaterializationDescriptor BASE_EMBEDDED {
  public:
-  HeapNumberMaterializationDescriptor(Address slot_address, double val)
-      : slot_address_(slot_address), val_(val) { }
+  HeapNumberMaterializationDescriptor(T destination, double value)
+      : destination_(destination), value_(value) { }
 
-  Address slot_address() const { return slot_address_; }
-  double value() const { return val_; }
+  T destination() const { return destination_; }
+  double value() const { return value_; }
 
  private:
-  Address slot_address_;
-  double val_;
+  T destination_;
+  double value_;
 };
 
 
@@ -129,11 +130,6 @@ class Deoptimizer : public Malloced {
     // This last bailout type is not really a bailout, but used by the
     // debugger to deoptimize stack frames to allow inspection.
     DEBUGGER
-  };
-
-  enum InterruptPatchState {
-    NOT_PATCHED,
-    PATCHED_FOR_OSR
   };
 
   static const int kBailoutTypesWithCodeEntry = SOFT + 1;
@@ -212,39 +208,6 @@ class Deoptimizer : public Malloced {
 
   // The size in bytes of the code required at a lazy deopt patch site.
   static int patch_size();
-
-  // Patch all interrupts with allowed loop depth in the unoptimized code to
-  // unconditionally call replacement_code.
-  static void PatchInterruptCode(Isolate* isolate,
-                                 Code* unoptimized_code);
-
-  // Patch the interrupt at the instruction before pc_after in
-  // the unoptimized code to unconditionally call replacement_code.
-  static void PatchInterruptCodeAt(Code* unoptimized_code,
-                                   Address pc_after,
-                                   Code* replacement_code);
-
-  // Change all patched interrupts patched in the unoptimized code
-  // back to normal interrupts.
-  static void RevertInterruptCode(Isolate* isolate,
-                                  Code* unoptimized_code);
-
-  // Change patched interrupt in the unoptimized code
-  // back to a normal interrupt.
-  static void RevertInterruptCodeAt(Code* unoptimized_code,
-                                    Address pc_after,
-                                    Code* interrupt_code);
-
-#ifdef DEBUG
-  static InterruptPatchState GetInterruptPatchState(Isolate* isolate,
-                                                    Code* unoptimized_code,
-                                                    Address pc_after);
-
-  // Verify that all back edges of a certain loop depth are patched.
-  static bool VerifyInterruptCode(Isolate* isolate,
-                                  Code* unoptimized_code,
-                                  int loop_nesting_level);
-#endif  // DEBUG
 
   ~Deoptimizer();
 
@@ -370,15 +333,9 @@ class Deoptimizer : public Malloced {
                          int object_index,
                          int field_index);
 
-  enum DeoptimizerTranslatedValueType {
-    TRANSLATED_VALUE_IS_NATIVE,
-    TRANSLATED_VALUE_IS_TAGGED
-  };
-
   void DoTranslateCommand(TranslationIterator* iterator,
-      int frame_index,
-      unsigned output_offset,
-      DeoptimizerTranslatedValueType value_type = TRANSLATED_VALUE_IS_TAGGED);
+                          int frame_index,
+                          unsigned output_offset);
 
   unsigned ComputeInputFrameSize() const;
   unsigned ComputeFixedSize(JSFunction* function) const;
@@ -449,6 +406,10 @@ class Deoptimizer : public Malloced {
   // at the dynamic alignment state slot inside the frame.
   bool HasAlignmentPadding(JSFunction* function);
 
+  // Select the version of NotifyStubFailure builtin that either saves or
+  // doesn't save the double registers depending on CPU features.
+  Code* NotifyStubFailureBuiltin();
+
   Isolate* isolate_;
   JSFunction* function_;
   Code* compiled_code_;
@@ -469,9 +430,10 @@ class Deoptimizer : public Malloced {
 
   // Deferred values to be materialized.
   List<Object*> deferred_objects_tagged_values_;
-  List<double> deferred_objects_double_values_;
+  List<HeapNumberMaterializationDescriptor<int> >
+      deferred_objects_double_values_;
   List<ObjectMaterializationDescriptor> deferred_objects_;
-  List<HeapNumberMaterializationDescriptor> deferred_heap_numbers_;
+  List<HeapNumberMaterializationDescriptor<Address> > deferred_heap_numbers_;
 
   // Output frame information. Only used during heap object materialization.
   List<Handle<JSFunction> > jsframe_functions_;
@@ -487,7 +449,7 @@ class Deoptimizer : public Malloced {
   DisallowHeapAllocation* disallow_heap_allocation_;
 #endif  // DEBUG
 
-  bool trace_;
+  CodeTracer::Scope* trace_scope_;
 
   static const int table_entry_size_;
 
@@ -542,7 +504,15 @@ class FrameDescription {
   void SetCallerFp(unsigned offset, intptr_t value);
 
   intptr_t GetRegister(unsigned n) const {
-    ASSERT(n < ARRAY_SIZE(registers_));
+#if DEBUG
+    // This convoluted ASSERT is needed to work around a gcc problem that
+    // improperly detects an array bounds overflow in optimized debug builds
+    // when using a plain ASSERT.
+    if (n >= ARRAY_SIZE(registers_)) {
+      ASSERT(false);
+      return 0;
+    }
+#endif
     return registers_[n];
   }
 
@@ -717,29 +687,36 @@ class TranslationIterator BASE_EMBEDDED {
 };
 
 
+#define TRANSLATION_OPCODE_LIST(V)                                             \
+  V(BEGIN)                                                                     \
+  V(JS_FRAME)                                                                  \
+  V(CONSTRUCT_STUB_FRAME)                                                      \
+  V(GETTER_STUB_FRAME)                                                         \
+  V(SETTER_STUB_FRAME)                                                         \
+  V(ARGUMENTS_ADAPTOR_FRAME)                                                   \
+  V(COMPILED_STUB_FRAME)                                                       \
+  V(DUPLICATED_OBJECT)                                                         \
+  V(ARGUMENTS_OBJECT)                                                          \
+  V(CAPTURED_OBJECT)                                                           \
+  V(REGISTER)                                                                  \
+  V(INT32_REGISTER)                                                            \
+  V(UINT32_REGISTER)                                                           \
+  V(DOUBLE_REGISTER)                                                           \
+  V(STACK_SLOT)                                                                \
+  V(INT32_STACK_SLOT)                                                          \
+  V(UINT32_STACK_SLOT)                                                         \
+  V(DOUBLE_STACK_SLOT)                                                         \
+  V(LITERAL)
+
+
 class Translation BASE_EMBEDDED {
  public:
+#define DECLARE_TRANSLATION_OPCODE_ENUM(item) item,
   enum Opcode {
-    BEGIN,
-    JS_FRAME,
-    CONSTRUCT_STUB_FRAME,
-    GETTER_STUB_FRAME,
-    SETTER_STUB_FRAME,
-    ARGUMENTS_ADAPTOR_FRAME,
-    COMPILED_STUB_FRAME,
-    DUPLICATED_OBJECT,
-    ARGUMENTS_OBJECT,
-    CAPTURED_OBJECT,
-    REGISTER,
-    INT32_REGISTER,
-    UINT32_REGISTER,
-    DOUBLE_REGISTER,
-    STACK_SLOT,
-    INT32_STACK_SLOT,
-    UINT32_STACK_SLOT,
-    DOUBLE_STACK_SLOT,
-    LITERAL
+    TRANSLATION_OPCODE_LIST(DECLARE_TRANSLATION_OPCODE_ENUM)
+    LAST = LITERAL
   };
+#undef DECLARE_TRANSLATION_OPCODE_ENUM
 
   Translation(TranslationBuffer* buffer, int frame_count, int jsframe_count,
               Zone* zone)

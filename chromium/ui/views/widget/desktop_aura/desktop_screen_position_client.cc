@@ -14,9 +14,10 @@ namespace views {
 
 namespace {
 
-gfx::Point GetOrigin(const aura::RootWindow* root_window) {
-  gfx::Point origin_in_pixels = root_window->GetHostOrigin();
-  aura::RootWindow* window = const_cast<aura::RootWindow*>(root_window);
+gfx::Point GetOrigin(const aura::Window* root_window) {
+  gfx::Point origin_in_pixels =
+      root_window->GetDispatcher()->host()->GetBounds().origin();
+  aura::Window* window = const_cast<aura::Window*>(root_window);
   float scale = gfx::Screen::GetScreenFor(window)->
        GetDisplayNearestWindow(window).device_scale_factor();
   return gfx::ToFlooredPoint(
@@ -44,7 +45,7 @@ DesktopScreenPositionClient::~DesktopScreenPositionClient() {
 
 void DesktopScreenPositionClient::ConvertPointToScreen(
     const aura::Window* window, gfx::Point* point) {
-  const aura::RootWindow* root_window = window->GetRootWindow();
+  const aura::Window* root_window = window->GetRootWindow();
   aura::Window::ConvertPointToTarget(window, root_window, point);
   gfx::Point origin = GetOrigin(root_window);
   point->Offset(origin.x(), origin.y());
@@ -52,15 +53,16 @@ void DesktopScreenPositionClient::ConvertPointToScreen(
 
 void DesktopScreenPositionClient::ConvertPointFromScreen(
     const aura::Window* window, gfx::Point* point) {
-  const aura::RootWindow* root_window = window->GetRootWindow();
+  const aura::Window* root_window = window->GetRootWindow();
   gfx::Point origin = GetOrigin(root_window);
   point->Offset(-origin.x(), -origin.y());
   aura::Window::ConvertPointToTarget(root_window, window, point);
 }
 
 void DesktopScreenPositionClient::ConvertHostPointToScreen(
-    aura::RootWindow* window, gfx::Point* point) {
-  ConvertPointToScreen(window, point);
+    aura::Window* window, gfx::Point* point) {
+  aura::Window* root_window = window->GetRootWindow();
+  ConvertPointToScreen(root_window, point);
 }
 
 void DesktopScreenPositionClient::SetBounds(
@@ -68,7 +70,7 @@ void DesktopScreenPositionClient::SetBounds(
     const gfx::Rect& bounds,
     const gfx::Display& display) {
   // TODO: Use the 3rd parameter, |display|.
-  aura::RootWindow* root = window->GetRootWindow();
+  aura::Window* root = window->GetRootWindow();
 
   if (PositionWindowInScreenCoordinates(window)) {
     // The caller expects windows we consider "embedded" to be placed in the
@@ -87,7 +89,7 @@ void DesktopScreenPositionClient::SetBounds(
   DesktopNativeWidgetAura* desktop_native_widget =
       DesktopNativeWidgetAura::ForWindow(window);
   if (desktop_native_widget) {
-    root->SetHostBounds(bounds);
+    root->GetDispatcher()->SetHostBounds(bounds);
     // Setting bounds of root resizes |window|.
   } else {
     window->SetBounds(bounds);

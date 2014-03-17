@@ -32,11 +32,12 @@
 #define FrameFetchContext_h
 
 #include "core/fetch/FetchContext.h"
-#include "core/platform/network/ResourceRequest.h"
+#include "platform/network/ResourceRequest.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
+class Document;
 class DocumentLoader;
 class Frame;
 class Page;
@@ -51,15 +52,16 @@ public:
 
     virtual void reportLocalLoadFailed(const KURL&) OVERRIDE;
     virtual void addAdditionalRequestHeaders(Document&, ResourceRequest&, Resource::Type) OVERRIDE;
-    virtual CachePolicy cachePolicy(Resource::Type) const OVERRIDE;
+    virtual CachePolicy cachePolicy(Document*) const OVERRIDE;
     virtual void dispatchDidChangeResourcePriority(unsigned long identifier, ResourceLoadPriority);
     virtual void dispatchWillSendRequest(DocumentLoader*, unsigned long identifier, ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo& = FetchInitiatorInfo()) OVERRIDE;
     virtual void dispatchDidLoadResourceFromMemoryCache(const ResourceRequest&, const ResourceResponse&) OVERRIDE;
     virtual void dispatchDidReceiveResponse(DocumentLoader*, unsigned long identifier, const ResourceResponse&, ResourceLoader* = 0) OVERRIDE;
-    virtual void dispatchDidReceiveData(DocumentLoader*, unsigned long identifier, const char* data, int dataLength, int encodedDataLength)  OVERRIDE;
+    virtual void dispatchDidReceiveData(DocumentLoader*, unsigned long identifier, const char* data, int dataLength, int encodedDataLength) OVERRIDE;
+    virtual void dispatchDidDownloadData(DocumentLoader*, unsigned long identifier, int dataLength, int encodedDataLength)  OVERRIDE;
     virtual void dispatchDidFinishLoading(DocumentLoader*, unsigned long identifier, double finishTime) OVERRIDE;
     virtual void dispatchDidFail(DocumentLoader*, unsigned long identifier, const ResourceError&) OVERRIDE;
-    virtual void sendRemainingDelegateMessages(DocumentLoader*, unsigned long identifier, const ResourceResponse&, const char* data, int dataLength, int encodedDataLength, const ResourceError&) OVERRIDE;
+    virtual void sendRemainingDelegateMessages(DocumentLoader*, unsigned long identifier, const ResourceResponse&, int dataLength) OVERRIDE;
 
 private:
     explicit FrameFetchContext(Frame*);

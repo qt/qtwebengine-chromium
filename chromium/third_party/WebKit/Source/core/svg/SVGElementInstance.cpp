@@ -24,9 +24,9 @@
 #include "core/svg/SVGElementInstance.h"
 
 #include "core/dom/ContainerNodeAlgorithms.h"
-#include "core/dom/Event.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/EventNames.h"
+#include "core/events/Event.h"
+#include "core/events/EventListener.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGElementInstanceList.h"
 #include "core/svg/SVGUseElement.h"
@@ -125,7 +125,7 @@ SVGElementInstance::~SVGElementInstance()
 // delete an SVGElementInstance at each deref call site.
 void SVGElementInstance::removedLastRef()
 {
-#ifndef NDEBUG
+#if SECURITY_ASSERT_ENABLED
     m_deletionHasBegun = true;
 #endif
     delete this;
@@ -149,7 +149,7 @@ void SVGElementInstance::detach()
     m_directUseElement = 0;
     m_correspondingUseElement = 0;
 
-    removeDetachedChildrenInContainer<SVGElementInstance, SVGElementInstance>(this);
+    removeDetachedChildrenInContainer<SVGElementInstance, SVGElementInstance>(*this);
 }
 
 PassRefPtr<SVGElementInstanceList> SVGElementInstance::childNodes()
@@ -165,7 +165,7 @@ void SVGElementInstance::setShadowTreeElement(SVGElement* element)
 
 void SVGElementInstance::appendChild(PassRefPtr<SVGElementInstance> child)
 {
-    appendChildToContainer<SVGElementInstance, SVGElementInstance>(child.get(), this);
+    appendChildToContainer<SVGElementInstance, SVGElementInstance>(*child, *this);
 }
 
 void SVGElementInstance::invalidateAllInstancesOfElement(SVGElement* element)
@@ -200,10 +200,10 @@ void SVGElementInstance::invalidateAllInstancesOfElement(SVGElement* element)
 
 const AtomicString& SVGElementInstance::interfaceName() const
 {
-    return eventNames().interfaceForSVGElementInstance;
+    return EventTargetNames::SVGElementInstance;
 }
 
-ScriptExecutionContext* SVGElementInstance::scriptExecutionContext() const
+ExecutionContext* SVGElementInstance::executionContext() const
 {
     return &m_element->document();
 }
@@ -248,12 +248,12 @@ EventTargetData* SVGElementInstance::eventTargetData()
     return 0;
 }
 
-EventTargetData* SVGElementInstance::ensureEventTargetData()
+EventTargetData& SVGElementInstance::ensureEventTargetData()
 {
     // EventTarget would use these methods if we were actually using its add/removeEventListener logic.
     // As we're forwarding those calls to the correspondingElement(), no one should ever call this function.
     ASSERT_NOT_REACHED();
-    return 0;
+    return *eventTargetData();
 }
 
 SVGElementInstance::InstanceUpdateBlocker::InstanceUpdateBlocker(SVGElement* targetElement)

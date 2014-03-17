@@ -7,13 +7,15 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "content/child/image_decoder.h"
+#include "content/public/renderer/resource_fetcher.h"
+#include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/size.h"
 
-using WebKit::WebFrame;
-using WebKit::WebURLRequest;
-using WebKit::WebURLResponse;
+using blink::WebFrame;
+using blink::WebURLRequest;
+using blink::WebURLResponse;
 
 namespace content {
 
@@ -27,15 +29,13 @@ MultiResolutionImageResourceFetcher::MultiResolutionImageResourceFetcher(
       id_(id),
       http_status_code_(0),
       image_url_(image_url) {
-  fetcher_.reset(new ResourceFetcher(
+  fetcher_.reset(ResourceFetcher::Create(
       image_url, frame, target_type,
       base::Bind(&MultiResolutionImageResourceFetcher::OnURLFetchComplete,
                  base::Unretained(this))));
 }
 
 MultiResolutionImageResourceFetcher::~MultiResolutionImageResourceFetcher() {
-  if (!fetcher_->completed())
-    fetcher_->Cancel();
 }
 
 void MultiResolutionImageResourceFetcher::OnURLFetchComplete(

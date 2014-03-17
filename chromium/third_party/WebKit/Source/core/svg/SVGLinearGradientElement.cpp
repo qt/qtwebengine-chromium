@@ -25,7 +25,6 @@
 
 #include "core/svg/SVGLinearGradientElement.h"
 
-#include "SVGNames.h"
 #include "core/rendering/svg/RenderSVGResourceLinearGradient.h"
 #include "core/svg/LinearGradientAttributes.h"
 #include "core/svg/SVGElementInstance.h"
@@ -48,22 +47,21 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGLinearGradientElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGradientElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGLinearGradientElement::SVGLinearGradientElement(const QualifiedName& tagName, Document& document)
-    : SVGGradientElement(tagName, document)
+inline SVGLinearGradientElement::SVGLinearGradientElement(Document& document)
+    : SVGGradientElement(SVGNames::linearGradientTag, document)
     , m_x1(LengthModeWidth)
     , m_y1(LengthModeHeight)
     , m_x2(LengthModeWidth, "100%")
     , m_y2(LengthModeHeight)
 {
     // Spec: If the x2 attribute is not specified, the effect is as if a value of "100%" were specified.
-    ASSERT(hasTagName(SVGNames::linearGradientTag));
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGLinearGradientElement();
 }
 
-PassRefPtr<SVGLinearGradientElement> SVGLinearGradientElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGLinearGradientElement> SVGLinearGradientElement::create(Document& document)
 {
-    return adoptRef(new SVGLinearGradientElement(tagName, document));
+    return adoptRef(new SVGLinearGradientElement(document));
 }
 
 bool SVGLinearGradientElement::isSupportedAttribute(const QualifiedName& attrName)
@@ -109,8 +107,9 @@ void SVGLinearGradientElement::svgAttributeChanged(const QualifiedName& attrName
 
     updateRelativeLengthsInformation();
 
-    if (RenderObject* object = renderer())
-        object->setNeedsLayout();
+    RenderSVGResourceContainer* renderer = toRenderSVGResourceContainer(this->renderer());
+    if (renderer)
+        renderer->invalidateCacheAndMarkForLayout();
 }
 
 RenderObject* SVGLinearGradientElement::createRenderer(RenderStyle*)

@@ -18,6 +18,7 @@
         '../base/base.gyp:base_java_activity_state',
         '../base/base.gyp:base_java_memory_pressure_level_list',
         '../content/content.gyp:page_transition_types_java',
+        '../content/content.gyp:popup_item_type_java',
         '../content/content.gyp:result_codes_java',
         '../content/content.gyp:speech_recognition_error_java',
         '../media/media.gyp:media_android_imageformat_list',
@@ -25,7 +26,7 @@
         '../net/net.gyp:cert_verify_result_android_java',
         '../net/net.gyp:net_errors_java',
         '../net/net.gyp:private_key_types_java',
-        '../ui/ui.gyp:window_open_disposition_java',
+        '../ui/android/ui_android.gyp:window_open_disposition_java',
       ],
     }, # target_name: All
   ],  # targets

@@ -12,6 +12,7 @@
       'target_name': 'audio_device',
       'type': 'static_library',
       'dependencies': [
+        'webrtc_utility',
         '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
         '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
       ],
@@ -109,8 +110,27 @@
             'win/audio_device_utility_win.h',
             'win/audio_mixer_manager_win.cc',
             'win/audio_mixer_manager_win.h',
+            'android/audio_device_template.h',
             'android/audio_device_utility_android.cc',
             'android/audio_device_utility_android.h',
+            'android/audio_manager_jni.cc',
+            'android/audio_manager_jni.h',
+            'android/audio_record_jni.cc',
+            'android/audio_record_jni.h',
+            'android/audio_track_jni.cc',
+            'android/audio_track_jni.h',
+            'android/fine_audio_buffer.cc',
+            'android/fine_audio_buffer.h',
+            'android/low_latency_event_posix.cc',
+            'android/low_latency_event.h',
+            'android/opensles_common.cc',
+            'android/opensles_common.h',
+            'android/opensles_input.cc',
+            'android/opensles_input.h',
+            'android/opensles_output.cc',
+            'android/opensles_output.h',
+            'android/single_rw_fifo.cc',
+            'android/single_rw_fifo.h',
           ],
           'conditions': [
             ['OS=="android"', {
@@ -120,33 +140,6 @@
                   '-lOpenSLES',
                 ],
               },
-              'conditions': [
-                ['enable_android_opensl==1', {
-                  'sources': [
-                    'android/audio_device_opensles_android.cc',
-                    'android/audio_device_opensles_android.h',
-                    'android/audio_manager_jni.cc',
-                    'android/audio_manager_jni.h',
-                    'android/fine_audio_buffer.cc',
-                    'android/fine_audio_buffer.h',
-                    'android/low_latency_event_posix.cc',
-                    'android/low_latency_event.h',
-                    'android/opensles_common.cc',
-                    'android/opensles_common.h',
-                    'android/opensles_input.cc',
-                    'android/opensles_input.h',
-                    'android/opensles_output.cc',
-                    'android/opensles_output.h',
-                    'android/single_rw_fifo.cc',
-                    'android/single_rw_fifo.h',
-                  ],
-                }, {
-                  'sources': [
-                    'android/audio_device_jni_android.cc',
-                    'android/audio_device_jni_android.h',
-                  ],
-                }],
-              ],
             }],
             ['OS=="linux"', {
               'defines': [
@@ -241,10 +234,10 @@
               'target_name': 'audio_device_tests_run',
               'type': 'none',
               'dependencies': [
-                '<(import_isolate_path):import_isolate_gypi',
                 'audio_device_tests',
               ],
               'includes': [
+                '../../build/isolate.gypi',
                 'audio_device_tests.isolate',
               ],
               'sources': [
@@ -253,6 +246,66 @@
             },
           ],
         }],
+        ['OS=="android"', {
+          'targets': [
+            {
+              'target_name': 'libopensl-demo-jni',
+              'type': 'loadable_module',
+              'dependencies': [
+                'audio_device',
+              ],
+              'sources': [
+                'android/test/jni/opensl_runner.cc',
+                'android/test/fake_audio_device_buffer.cc',
+              ],
+              'link_settings': {
+                'libraries': [
+                  '-llog',
+                  '-lOpenSLES',
+                ],
+              },
+            },
+            {
+              'target_name': 'OpenSlDemo',
+              'type': 'none',
+              'dependencies': [
+                'libopensl-demo-jni',
+                '<(modules_java_gyp_path):*',
+              ],
+              'actions': [
+                {
+                  # TODO(henrik): Convert building of the demo to a proper GYP
+                  # target so this action is not needed once chromium's
+                  # apk-building machinery can be used. (crbug.com/225101)
+                  'action_name': 'build_opensldemo_apk',
+                  'variables': {
+                    'android_opensl_demo_root': '<(webrtc_root)/modules/audio_device/android/test',
+                  },
+                  'inputs' : [
+                    '<(PRODUCT_DIR)/lib.java/audio_device_module_java.jar',
+                    '<(PRODUCT_DIR)/libopensl-demo-jni.so',
+                    '<!@(find <(android_opensl_demo_root)/src -name "*.java")',
+                    '<!@(find <(android_opensl_demo_root)/res -name "*.xml")',
+                    '<!@(find <(android_opensl_demo_root)/res -name "*.png")',
+                    '<(android_opensl_demo_root)/AndroidManifest.xml',
+                    '<(android_opensl_demo_root)/build.xml',
+                    '<(android_opensl_demo_root)/project.properties',
+                  ],
+                  'outputs': ['<(PRODUCT_DIR)/OpenSlDemo-debug.apk'],
+                  'action': ['bash', '-ec',
+                             'rm -f <(_outputs) && '
+                             'mkdir -p <(android_opensl_demo_root)/libs/<(android_app_abi) && '
+                             '<(android_strip) -o <(android_opensl_demo_root)/libs/<(android_app_abi)/libopensl-demo-jni.so <(PRODUCT_DIR)/libopensl-demo-jni.so && '
+                             'cp <(PRODUCT_DIR)/lib.java/audio_device_module_java.jar <(android_opensl_demo_root)/libs/ &&'
+                             'cd <(android_opensl_demo_root) && '
+                             'ant debug && '
+                             'cd - && '
+                             'cp <(android_opensl_demo_root)/bin/OpenSlDemo-debug.apk <(_outputs)'
+                           ],
+                },
+              ],
+            }],
+          }],
         ['OS=="android" and enable_android_opensl==1', {
           'targets': [
             {

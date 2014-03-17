@@ -71,6 +71,10 @@ fileapi::FileSystemURL PepperInternalFileRefBackend::GetFileSystemURL() const {
   return fs_url_;
 }
 
+base::FilePath PepperInternalFileRefBackend::GetExternalFilePath() const {
+  return base::FilePath();
+}
+
 scoped_refptr<fileapi::FileSystemContext>
 PepperInternalFileRefBackend::GetFileSystemContext() const {
   if (!fs_host_.get())
@@ -151,6 +155,7 @@ int32_t PepperInternalFileRefBackend::Rename(
   GetFileSystemContext()->operation_runner()->Move(
       GetFileSystemURL(),
       new_url,
+      fileapi::FileSystemOperation::OPTION_NONE,
       base::Bind(&PepperInternalFileRefBackend::DidFinish,
                  weak_factory_.GetWeakPtr(),
                  reply_context,

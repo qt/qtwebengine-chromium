@@ -14,7 +14,6 @@
 #include "ui/aura/window_observer.h"
 #include "ui/events/event_handler.h"
 #include "ui/gfx/point.h"
-#include "ui/gfx/screen_type_delegate.h"
 #include "ui/views/views_export.h"
 
 namespace aura {
@@ -24,16 +23,18 @@ class Window;
 namespace views {
 namespace corewm {
 
+class Tooltip;
+
 namespace test {
 class TooltipControllerTestHelper;
 }  // namespace test
 
-// TooltipController provides tooltip functionality for aura shell.
+// TooltipController provides tooltip functionality for aura.
 class VIEWS_EXPORT TooltipController : public aura::client::TooltipClient,
                                        public ui::EventHandler,
                                        public aura::WindowObserver {
  public:
-  explicit TooltipController(gfx::ScreenType screen_type);
+  explicit TooltipController(scoped_ptr<Tooltip> tooltip);
   virtual ~TooltipController();
 
   // Overridden from aura::client::TooltipClient.
@@ -56,24 +57,6 @@ class VIEWS_EXPORT TooltipController : public aura::client::TooltipClient,
  private:
   friend class test::TooltipControllerTestHelper;
 
-  class Tooltip;
-
-  // Returns the max width of the tooltip when shown at the specified location.
-  int GetMaxWidth(const gfx::Point& location) const;
-
-  // Returns the bounds to fit the tooltip in.
-  gfx::Rect GetBoundsForTooltip(const gfx::Point& origin) const;
-
-  // Trims the tooltip to fit in the width |max_width|, setting |text| to the
-  // clipped result, |width| to the width (in pixels) of the clipped text
-  // and |line_count| to the number of lines of text in the tooltip. |x| and |y|
-  // give the location of the tooltip in screen coordinates. |max_width| comes
-  // from GetMaxWidth().
-  static void TrimTooltipToFit(int max_width,
-                               string16* text,
-                               int* width,
-                               int* line_count);
-
   void TooltipTimerFired();
   void TooltipShownTimerFired();
 
@@ -86,24 +69,17 @@ class VIEWS_EXPORT TooltipController : public aura::client::TooltipClient,
 
   bool IsDragDropInProgress();
 
-  // This lazily creates the Tooltip instance so that the tooltip window will
-  // be initialized with appropriate drop shadows.
-  Tooltip* GetTooltip();
-
   // Returns true if the cursor is visible.
   bool IsCursorVisible();
 
   int GetTooltipShownTimeout();
 
-  const gfx::ScreenType screen_type_;
-
   aura::Window* tooltip_window_;
-  string16 tooltip_text_;
+  base::string16 tooltip_text_;
 
   // These fields are for tracking state when the user presses a mouse button.
   aura::Window* tooltip_window_at_mouse_press_;
-  string16 tooltip_text_at_mouse_press_;
-  bool mouse_pressed_;
+  base::string16 tooltip_text_at_mouse_press_;
 
   scoped_ptr<Tooltip> tooltip_;
 
@@ -113,6 +89,7 @@ class VIEWS_EXPORT TooltipController : public aura::client::TooltipClient,
   // this timer fires.
   base::OneShotTimer<TooltipController> tooltip_shown_timer_;
 
+  // Location of the last event in |tooltip_window_|'s coordinates.
   gfx::Point curr_mouse_loc_;
 
   bool tooltips_enabled_;

@@ -8,6 +8,8 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/base/models/combobox_model.h"
+#include "ui/views/background.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/button/radio_button.h"
@@ -134,7 +136,7 @@ class BorderView : public NativeViewHost {
  public:
   explicit BorderView(View* child) : child_(child), widget_(NULL) {
     DCHECK(child);
-    set_focusable(false);
+    SetFocusable(false);
   }
 
   virtual ~BorderView() {}
@@ -507,7 +509,7 @@ void FocusTraversalTest::InitContentView() {
   text_field->SetBounds(10, 50, 100, 20);
   text_field->set_id(kStyleTextEditID);
 
-  style_tab_ = new TabbedPane(false);
+  style_tab_ = new TabbedPane();
   style_tab_->set_id(kStyleContainerID);
   GetContentsView()->AddChildView(style_tab_);
   style_tab_->SetBounds(10, y, 210, 100);
@@ -543,7 +545,7 @@ void FocusTraversalTest::InitContentView() {
   y += 60;
 
   contents = new View();
-  contents->set_focusable(true);
+  contents->SetFocusable(true);
   contents->set_background(Background::CreateSolidBackground(SK_ColorBLUE));
   contents->set_id(kThumbnailContainerID);
   button = new LabelButton(NULL, ASCIIToUTF16("Star"));
@@ -756,10 +758,10 @@ TEST_F(FocusTraversalTest, PaneTraversal) {
 
   FocusSearch focus_search_right(right_container_, true, true);
   right_container_->EnablePaneFocus(&focus_search_right);
-  FindViewByID(kRosettaLinkID)->set_focusable(false);
-  FindViewByID(kStupeurEtTremblementLinkID)->set_focusable(false);
-  FindViewByID(kDinerGameLinkID)->set_accessibility_focusable(true);
-  FindViewByID(kDinerGameLinkID)->set_focusable(false);
+  FindViewByID(kRosettaLinkID)->SetFocusable(false);
+  FindViewByID(kStupeurEtTremblementLinkID)->SetFocusable(false);
+  FindViewByID(kDinerGameLinkID)->SetAccessibilityFocusable(true);
+  FindViewByID(kDinerGameLinkID)->SetFocusable(false);
   FindViewByID(kAsterixLinkID)->RequestFocus();
 
   // Traverse the focus hierarchy within the pane several times.

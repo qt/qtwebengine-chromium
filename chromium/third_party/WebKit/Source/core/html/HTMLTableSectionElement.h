@@ -41,17 +41,17 @@ public:
 
     int numRows() const;
 
-    String align() const;
-    void setAlign(const String&);
+    const AtomicString& align() const;
+    void setAlign(const AtomicString&);
 
-    String ch() const;
-    void setCh(const String&);
+    const AtomicString& ch() const;
+    void setCh(const AtomicString&);
 
-    String chOff() const;
-    void setChOff(const String&);
+    const AtomicString& chOff() const;
+    void setChOff(const AtomicString&);
 
-    String vAlign() const;
-    void setVAlign(const String&);
+    const AtomicString& vAlign() const;
+    void setVAlign(const AtomicString&);
 
     PassRefPtr<HTMLCollection> rows();
 
@@ -61,11 +61,12 @@ private:
     virtual const StylePropertySet* additionalPresentationAttributeStyle() OVERRIDE;
 };
 
-inline HTMLTableSectionElement* toHTMLTableSectionElement(Node* node)
+inline bool isHTMLTableSectionElement(const Node& node)
 {
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::tbodyTag) || node->hasTagName(HTMLNames::tfootTag) || node->hasTagName(HTMLNames::theadTag));
-    return static_cast<HTMLTableSectionElement*>(node);
+    return node.hasTagName(HTMLNames::tbodyTag) || node.hasTagName(HTMLNames::tfootTag) || node.hasTagName(HTMLNames::theadTag);
 }
+
+DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(HTMLTableSectionElement);
 
 } //namespace
 

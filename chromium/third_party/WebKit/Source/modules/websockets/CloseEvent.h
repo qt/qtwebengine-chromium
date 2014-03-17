@@ -31,8 +31,8 @@
 #ifndef CloseEvent_h
 #define CloseEvent_h
 
-#include "core/dom/Event.h"
-#include "core/dom/EventNames.h"
+#include "core/events/Event.h"
+#include "core/events/ThreadLocalEventNames.h"
 
 namespace WebCore {
 
@@ -70,11 +70,11 @@ public:
     String reason() const { return m_reason; }
 
     // Event function.
-    virtual const AtomicString& interfaceName() const OVERRIDE { return eventNames().interfaceForCloseEvent; }
+    virtual const AtomicString& interfaceName() const OVERRIDE { return EventNames::CloseEvent; }
 
 private:
     CloseEvent()
-        : Event(eventNames().closeEvent, false, false)
+        : Event(EventTypeNames::close, false, false)
         , m_wasClean(false)
         , m_code(0)
     {
@@ -82,7 +82,7 @@ private:
     }
 
     CloseEvent(bool wasClean, int code, const String& reason)
-        : Event(eventNames().closeEvent, false, false)
+        : Event(EventTypeNames::close, false, false)
         , m_wasClean(wasClean)
         , m_code(code)
         , m_reason(reason)

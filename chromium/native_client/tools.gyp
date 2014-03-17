@@ -17,6 +17,17 @@
     'disable_newlib_untar%': 0,
     'disable_arm_untar%': 0,
     'disable_pnacl_untar%': 0,
+    'conditions': [
+      ['OS=="win"', {
+        'TOOLCHAIN_OS': 'i686_w64_mingw32'
+      }],
+      ['OS=="linux"', {
+        'TOOLCHAIN_OS': 'i686_linux'
+      }],
+      ['OS=="mac"', {
+        'TOOLCHAIN_OS': 'x86_64_apple_darwin'
+      }],
+    ]
   },
   'targets' : [
     {
@@ -65,7 +76,7 @@
               ],
               'outputs': ['>(newlib_dir)/stamp.untar'],
               'action': [
-                '>(python_exe)',
+                'python',
                 '<(DEPTH)/native_client/build/untar_toolchain.py',
                 '--tool', 'x86_newlib',
                 '--tmp', '<(SHARED_INTERMEDIATE_DIR)/untar',
@@ -88,7 +99,7 @@
               ],
               'outputs': ['>(glibc_dir)/stamp.untar'],
               'action': [
-                '>(python_exe)',
+                'python',
                 '<(DEPTH)/native_client/build/untar_toolchain.py',
                 '--tool', 'x86_glibc',
                 '--tmp', '<(SHARED_INTERMEDIATE_DIR)/untar',
@@ -111,7 +122,7 @@
               ],
               'outputs': ['>(pnacl_dir)/stamp.untar'],
               'action': [
-                '>(python_exe)',
+                'python',
                 '<(DEPTH)/native_client/build/untar_toolchain.py',
                 '--tool', 'pnacl',
                 '--tmp', '<(SHARED_INTERMEDIATE_DIR)/untar',
@@ -130,21 +141,21 @@
               'description': 'Untar arm toolchain',
               'inputs': [
                  '<(DEPTH)/native_client/build/cygtar.py',
-                 '<(DEPTH)/native_client/toolchain/.tars/gcc_arm.tgz',
-                 '<(DEPTH)/native_client/toolchain/.tars/binutils_arm.tgz',
+                 '<(DEPTH)/native_client/toolchain/.tars/gcc_arm_<(TOOLCHAIN_OS).tgz',
+                 '<(DEPTH)/native_client/toolchain/.tars/binutils_arm_<(TOOLCHAIN_OS).tgz',
                  '<(DEPTH)/native_client/toolchain/.tars/newlib_arm.tgz',
                  '<(DEPTH)/native_client/toolchain/.tars/gcc_libs_arm.tgz',
               ],
               'outputs': ['>(arm_dir)/stamp.untar'],
               'action': [
-                '>(python_exe)',
+                'python',
                 '<(DEPTH)/native_client/build/untar_toolchain.py',
                 '--tool', 'arm_newlib',
                 '--tmp', '<(SHARED_INTERMEDIATE_DIR)/untar',
                 '--sdk', '<(SHARED_INTERMEDIATE_DIR)/sdk',
                 '--os', '<(OS)',
-                '<(DEPTH)/native_client/toolchain/.tars/gcc_arm.tgz',
-                '<(DEPTH)/native_client/toolchain/.tars/binutils_arm.tgz',
+                '<(DEPTH)/native_client/toolchain/.tars/gcc_arm_<(TOOLCHAIN_OS).tgz',
+                '<(DEPTH)/native_client/toolchain/.tars/binutils_arm_<(TOOLCHAIN_OS).tgz',
                 '<(DEPTH)/native_client/toolchain/.tars/newlib_arm.tgz',
                 '<(DEPTH)/native_client/toolchain/.tars/gcc_libs_arm.tgz',
               ],
@@ -178,7 +189,7 @@
               ],
               'outputs': ['<(newlib_dir)/stamp.prep'],
               'action': [
-                '>(python_exe)',
+                'python',
                 '<(DEPTH)/native_client/build/prep_nacl_sdk.py',
                 '--tool', 'x86_newlib',
                 '--path', '<(newlib_dir)',
@@ -198,7 +209,7 @@
               ],
               'outputs': ['<(glibc_dir)/stamp.prep'],
               'action': [
-                '>(python_exe)',
+                'python',
                 '<(DEPTH)/native_client/build/prep_nacl_sdk.py',
                 '--tool', 'x86_glibc',
                 '--path', '<(glibc_dir)',
@@ -218,7 +229,7 @@
               ],
               'outputs': ['<(arm_dir)/stamp.prep'],
               'action': [
-                '>(python_exe)',
+                'python',
                 '<(DEPTH)/native_client/build/prep_nacl_sdk.py',
                 '--tool', 'arm_newlib',
                 '--path', '<(arm_dir)',
@@ -238,7 +249,7 @@
               ],
               'outputs': ['<(pnacl_dir)/stamp.prep'],
               'action': [
-                '>(python_exe)',
+                'python',
                 '<(DEPTH)/native_client/build/prep_nacl_sdk.py',
                 '--tool', 'pnacl',
                 '--path', '<(pnacl_dir)',

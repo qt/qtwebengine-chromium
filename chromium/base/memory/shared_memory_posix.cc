@@ -30,13 +30,12 @@
 #include "third_party/ashmem/ashmem.h"
 #endif
 
+using file_util::ScopedFD;
+using file_util::ScopedFILE;
+
 namespace base {
 
 namespace {
-
-// Paranoia. Semaphores and shared memory segments should live in different
-// namespaces, but who knows what's out there.
-const char kSemaphoreSuffix[] = "-sem";
 
 LazyInstance<Lock>::Leaky g_thread_lock_ = LAZY_INSTANCE_INITIALIZER;
 
@@ -44,6 +43,7 @@ LazyInstance<Lock>::Leaky g_thread_lock_ = LAZY_INSTANCE_INITIALIZER;
 
 SharedMemory::SharedMemory()
     : mapped_file_(-1),
+      readonly_mapped_file_(-1),
       inode_(0),
       mapped_size_(0),
       memory_(NULL),
@@ -53,6 +53,7 @@ SharedMemory::SharedMemory()
 
 SharedMemory::SharedMemory(SharedMemoryHandle handle, bool read_only)
     : mapped_file_(handle.fd),
+      readonly_mapped_file_(-1),
       inode_(0),
       mapped_size_(0),
       memory_(NULL),
@@ -69,6 +70,7 @@ SharedMemory::SharedMemory(SharedMemoryHandle handle, bool read_only)
 SharedMemory::SharedMemory(SharedMemoryHandle handle, bool read_only,
                            ProcessHandle process)
     : mapped_file_(handle.fd),
+      readonly_mapped_file_(-1),
       inode_(0),
       mapped_size_(0),
       memory_(NULL),
@@ -96,7 +98,7 @@ SharedMemoryHandle SharedMemory::NULLHandle() {
 // static
 void SharedMemory::CloseHandle(const SharedMemoryHandle& handle) {
   DCHECK_GE(handle.fd, 0);
-  if (HANDLE_EINTR(close(handle.fd)) < 0)
+  if (close(handle.fd) < 0)
     DPLOG(ERROR) << "close";
 }
 
@@ -128,8 +130,10 @@ bool SharedMemory::Create(const SharedMemoryCreateOptions& options) {
   // and be deleted before they ever make it out to disk.
   base::ThreadRestrictions::ScopedAllowIO allow_io;
 
-  FILE *fp;
+  ScopedFILE fp;
   bool fix_size = true;
+  int readonly_fd_storage = -1;
+  ScopedFD readonly_fd(&readonly_fd_storage);
 
   FilePath path;
   if (options.name == NULL || options.name->empty()) {
@@ -137,12 +141,18 @@ bool SharedMemory::Create(const SharedMemoryCreateOptions& options) {
     DCHECK(!options.open_existing);
     // Q: Why not use the shm_open() etc. APIs?
     // A: Because they're limited to 4mb on OS X.  FFFFFFFUUUUUUUUUUU
-    fp = file_util::CreateAndOpenTemporaryShmemFile(&path, options.executable);
+    fp.reset(base::CreateAndOpenTemporaryShmemFile(&path, options.executable));
 
-    // Deleting the file prevents anyone else from mapping it in (making it
-    // private), and prevents the need for cleanup (once the last fd is closed,
-    // it is truly freed).
     if (fp) {
+      // Also open as readonly so that we can ShareReadOnlyToProcess.
+      *readonly_fd = HANDLE_EINTR(open(path.value().c_str(), O_RDONLY));
+      if (*readonly_fd < 0) {
+        DPLOG(ERROR) << "open(\"" << path.value() << "\", O_RDONLY) failed";
+        fp.reset();
+      }
+      // Deleting the file prevents anyone else from mapping it in (making it
+      // private), and prevents the need for cleanup (once the last fd is
+      // closed, it is truly freed).
       if (unlink(path.value().c_str()))
         PLOG(WARNING) << "unlink";
     }
@@ -179,32 +189,35 @@ bool SharedMemory::Create(const SharedMemoryCreateOptions& options) {
            sb.st_uid != effective_uid)) {
         LOG(ERROR) <<
             "Invalid owner when opening existing shared memory file.";
-        HANDLE_EINTR(close(fd));
+        close(fd);
         return false;
       }
 
       // An existing file was opened, so its size should not be fixed.
       fix_size = false;
     }
-    fp = NULL;
+
+    // Also open as readonly so that we can ShareReadOnlyToProcess.
+    *readonly_fd = HANDLE_EINTR(open(path.value().c_str(), O_RDONLY));
+    if (*readonly_fd < 0) {
+      DPLOG(ERROR) << "open(\"" << path.value() << "\", O_RDONLY) failed";
+      close(fd);
+      fd = -1;
+    }
     if (fd >= 0) {
       // "a+" is always appropriate: if it's a new file, a+ is similar to w+.
-      fp = fdopen(fd, "a+");
+      fp.reset(fdopen(fd, "a+"));
     }
   }
   if (fp && fix_size) {
     // Get current size.
     struct stat stat;
-    if (fstat(fileno(fp), &stat) != 0) {
-      file_util::CloseFile(fp);
+    if (fstat(fileno(fp.get()), &stat) != 0)
       return false;
-    }
     const size_t current_size = stat.st_size;
     if (current_size != options.size) {
-      if (HANDLE_EINTR(ftruncate(fileno(fp), options.size)) != 0) {
-        file_util::CloseFile(fp);
+      if (HANDLE_EINTR(ftruncate(fileno(fp.get()), options.size)) != 0)
         return false;
-      }
     }
     requested_size_ = options.size;
   }
@@ -225,7 +238,7 @@ bool SharedMemory::Create(const SharedMemoryCreateOptions& options) {
     return false;
   }
 
-  return PrepareMapFile(fp);
+  return PrepareMapFile(fp.Pass(), readonly_fd.Pass());
 }
 
 // Our current implementation of shmem is with mmap()ing of files.
@@ -251,8 +264,14 @@ bool SharedMemory::Open(const std::string& name, bool read_only) {
   read_only_ = read_only;
 
   const char *mode = read_only ? "r" : "r+";
-  FILE *fp = file_util::OpenFile(path, mode);
-  return PrepareMapFile(fp);
+  ScopedFILE fp(base::OpenFile(path, mode));
+  int readonly_fd_storage = -1;
+  ScopedFD readonly_fd(&readonly_fd_storage);
+  *readonly_fd = HANDLE_EINTR(open(path.value().c_str(), O_RDONLY));
+  if (*readonly_fd < 0) {
+    DPLOG(ERROR) << "open(\"" << path.value() << "\", O_RDONLY) failed";
+  }
+  return PrepareMapFile(fp.Pass(), readonly_fd.Pass());
 }
 
 #endif  // !defined(OS_ANDROID)
@@ -309,9 +328,14 @@ void SharedMemory::Close() {
   Unmap();
 
   if (mapped_file_ > 0) {
-    if (HANDLE_EINTR(close(mapped_file_)) < 0)
+    if (close(mapped_file_) < 0)
       PLOG(ERROR) << "close";
     mapped_file_ = -1;
+  }
+  if (readonly_mapped_file_ > 0) {
+    if (close(readonly_mapped_file_) < 0)
+      PLOG(ERROR) << "close";
+    readonly_mapped_file_ = -1;
   }
 }
 
@@ -326,18 +350,28 @@ void SharedMemory::Unlock() {
 }
 
 #if !defined(OS_ANDROID)
-bool SharedMemory::PrepareMapFile(FILE *fp) {
+bool SharedMemory::PrepareMapFile(ScopedFILE fp, ScopedFD readonly_fd) {
   DCHECK_EQ(-1, mapped_file_);
-  if (fp == NULL) return false;
+  DCHECK_EQ(-1, readonly_mapped_file_);
+  if (fp == NULL || *readonly_fd < 0) return false;
 
   // This function theoretically can block on the disk, but realistically
   // the temporary files we create will just go into the buffer cache
   // and be deleted before they ever make it out to disk.
   base::ThreadRestrictions::ScopedAllowIO allow_io;
 
-  file_util::ScopedFILE file_closer(fp);
+  struct stat st = {};
+  struct stat readonly_st = {};
+  if (fstat(fileno(fp.get()), &st))
+    NOTREACHED();
+  if (fstat(*readonly_fd, &readonly_st))
+    NOTREACHED();
+  if (st.st_dev != readonly_st.st_dev || st.st_ino != readonly_st.st_ino) {
+    LOG(ERROR) << "writable and read-only inodes don't match; bailing";
+    return false;
+  }
 
-  mapped_file_ = dup(fileno(fp));
+  mapped_file_ = dup(fileno(fp.get()));
   if (mapped_file_ == -1) {
     if (errno == EMFILE) {
       LOG(WARNING) << "Shared memory creation failed; out of file descriptors";
@@ -346,11 +380,8 @@ bool SharedMemory::PrepareMapFile(FILE *fp) {
       NOTREACHED() << "Call to dup failed, errno=" << errno;
     }
   }
-
-  struct stat st;
-  if (fstat(mapped_file_, &st))
-    NOTREACHED();
   inode_ = st.st_ino;
+  readonly_mapped_file_ = *readonly_fd.release();
 
   return true;
 }
@@ -367,7 +398,7 @@ bool SharedMemory::FilePathForMemoryName(const std::string& mem_name,
   DCHECK_EQ(std::string::npos, mem_name.find('\0'));
 
   FilePath temp_dir;
-  if (!file_util::GetShmemTempDir(&temp_dir, false))
+  if (!GetShmemTempDir(false, &temp_dir))
     return false;
 
 #if !defined(OS_MACOSX)
@@ -403,9 +434,23 @@ void SharedMemory::LockOrUnlockCommon(int function) {
 }
 
 bool SharedMemory::ShareToProcessCommon(ProcessHandle process,
-                                        SharedMemoryHandle *new_handle,
-                                        bool close_self) {
-  const int new_fd = dup(mapped_file_);
+                                        SharedMemoryHandle* new_handle,
+                                        bool close_self,
+                                        ShareMode share_mode) {
+  int handle_to_dup = -1;
+  switch(share_mode) {
+    case SHARE_CURRENT_MODE:
+      handle_to_dup = mapped_file_;
+      break;
+    case SHARE_READONLY:
+      // We could imagine re-opening the file from /dev/fd, but that can't make
+      // it readonly on Mac: https://codereview.chromium.org/27265002/#msg10
+      CHECK(readonly_mapped_file_ >= 0);
+      handle_to_dup = readonly_mapped_file_;
+      break;
+  }
+
+  const int new_fd = dup(handle_to_dup);
   if (new_fd < 0) {
     DPLOG(ERROR) << "dup() failed.";
     return false;

@@ -80,7 +80,7 @@ class ItemModelObserverBridge : public app_list::AppListItemModelObserver {
 
  private:
   AppsGridViewItem* parent_;  // Weak. Owns us.
-  AppListItemModel* model_;  // Weak. Owned by AppListModel::Apps.
+  AppListItemModel* model_;  // Weak. Owned by AppListModel.
   base::scoped_nsobject<MenuController> context_menu_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(ItemModelObserverBridge);
@@ -456,6 +456,13 @@ void ItemModelObserverBridge::ItemPercentDownloadedChanged() {
   [super drawImage:image
          withFrame:frame
             inView:controlView];
+}
+
+// Workaround for http://crbug.com/324365: AppKit in Mavericks tries to call
+// - [NSButtonCell item] when inspecting accessibility. Without this, an
+// unrecognized selector exception is thrown inside AppKit, crashing Chrome.
+- (id)item {
+  return nil;
 }
 
 @end

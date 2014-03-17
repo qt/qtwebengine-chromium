@@ -29,10 +29,10 @@
 #include "WebCommon.h"
 #include "WebString.h"
 
-namespace WebKit {
+namespace blink {
 class WebRTCDTMFSenderHandlerClient;
 
-class WebRTCDTMFSenderHandler {
+class BLINK_PLATFORM_EXPORT WebRTCDTMFSenderHandler {
 public:
     virtual ~WebRTCDTMFSenderHandler() { }
 
@@ -44,6 +44,6 @@ public:
     virtual bool insertDTMF(const WebString& tones, long duration, long interToneGap) = 0;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebRTCDTMFSenderHandler_h

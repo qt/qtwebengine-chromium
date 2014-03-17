@@ -24,6 +24,7 @@
 #include "sync/notifier/invalidator.h"
 #include "sync/notifier/invalidator_registrar.h"
 #include "sync/notifier/invalidator_state.h"
+#include "sync/notifier/object_id_invalidation_map.h"
 
 namespace notifier {
 class PushClient;
@@ -105,8 +106,6 @@ class SYNC_EXPORT_PRIVATE P2PInvalidator
   virtual void UpdateRegisteredIds(InvalidationHandler* handler,
                                    const ObjectIdSet& ids) OVERRIDE;
   virtual void UnregisterHandler(InvalidationHandler* handler) OVERRIDE;
-  virtual void Acknowledge(const invalidation::ObjectId& id,
-                           const AckHandle& ack_handle) OVERRIDE;
   virtual InvalidatorState GetInvalidatorState() const OVERRIDE;
   virtual void UpdateCredentials(
       const std::string& email, const std::string& token) OVERRIDE;
@@ -118,8 +117,7 @@ class SYNC_EXPORT_PRIVATE P2PInvalidator
   virtual void OnIncomingNotification(
       const notifier::Notification& notification) OVERRIDE;
 
-  void SendInvalidation(
-      const ObjectIdInvalidationMap& invalidation_map);
+  void SendInvalidation(const ObjectIdSet& ids);
 
   void SendNotificationDataForTest(
       const P2PNotificationData& notification_data);

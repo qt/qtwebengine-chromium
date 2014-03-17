@@ -25,30 +25,33 @@
 #include "config.h"
 #include "core/html/HTMLFormElement.h"
 
+#include <limits>
 #include "HTMLNames.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptEventListener.h"
 #include "core/dom/Attribute.h"
-#include "core/dom/AutocompleteErrorEvent.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/dom/Event.h"
-#include "core/dom/EventNames.h"
 #include "core/dom/NamedNodesCollection.h"
+#include "core/events/AutocompleteErrorEvent.h"
+#include "core/events/Event.h"
+#include "core/events/ScopedEventQueue.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/html/HTMLCollection.h"
+#include "core/html/HTMLDialogElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLObjectElement.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/html/forms/FormController.h"
-#include "core/loader/FormState.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/page/ContentSecurityPolicy.h"
-#include "core/page/Frame.h"
-#include "core/page/UseCounter.h"
+#include "core/frame/ContentSecurityPolicy.h"
+#include "core/frame/DOMWindow.h"
+#include "core/frame/Frame.h"
+#include "core/frame/UseCounter.h"
 #include "core/rendering/RenderTextControl.h"
-#include <limits>
+#include "platform/UserGestureIndicator.h"
 
 using namespace std;
 
@@ -56,8 +59,8 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLFormElement::HTMLFormElement(const QualifiedName& tagName, Document& document)
-    : HTMLElement(tagName, document)
+HTMLFormElement::HTMLFormElement(Document& document)
+    : HTMLElement(formTag, document)
     , m_associatedElementsBeforeIndex(0)
     , m_associatedElementsAfterIndex(0)
     , m_wasUserSubmitted(false)
@@ -67,20 +70,13 @@ HTMLFormElement::HTMLFormElement(const QualifiedName& tagName, Document& documen
     , m_wasDemoted(false)
     , m_requestAutocompleteTimer(this, &HTMLFormElement::requestAutocompleteTimerFired)
 {
-    ASSERT(hasTagName(formTag));
     ScriptWrappable::init(this);
 }
 
 PassRefPtr<HTMLFormElement> HTMLFormElement::create(Document& document)
 {
-    UseCounter::count(&document, UseCounter::FormElement);
-    return adoptRef(new HTMLFormElement(formTag, document));
-}
-
-PassRefPtr<HTMLFormElement> HTMLFormElement::create(const QualifiedName& tagName, Document& document)
-{
-    UseCounter::count(&document, UseCounter::FormElement);
-    return adoptRef(new HTMLFormElement(tagName, document));
+    UseCounter::count(document, UseCounter::FormElement);
+    return adoptRef(new HTMLFormElement(document));
 }
 
 HTMLFormElement::~HTMLFormElement()
@@ -153,7 +149,7 @@ void HTMLFormElement::removedFrom(ContainerNode* insertionPoint)
 void HTMLFormElement::handleLocalEvents(Event* event)
 {
     Node* targetNode = event->target()->toNode();
-    if (event->eventPhase() != Event::CAPTURING_PHASE && targetNode && targetNode != this && (event->type() == eventNames().submitEvent || event->type() == eventNames().resetEvent)) {
+    if (event->eventPhase() != Event::CAPTURING_PHASE && targetNode && targetNode != this && (event->type() == EventTypeNames::submit || event->type() == EventTypeNames::reset)) {
         event->stopPropagation();
         return;
     }
@@ -177,18 +173,27 @@ Node* HTMLFormElement::item(unsigned index)
 void HTMLFormElement::submitImplicitly(Event* event, bool fromImplicitSubmissionTrigger)
 {
     int submissionTriggerCount = 0;
+    bool seenDefaultButton = false;
     for (unsigned i = 0; i < m_associatedElements.size(); ++i) {
         FormAssociatedElement* formAssociatedElement = m_associatedElements[i];
         if (!formAssociatedElement->isFormControlElement())
             continue;
         HTMLFormControlElement* control = toHTMLFormControlElement(formAssociatedElement);
-        if (control->isSuccessfulSubmitButton()) {
-            if (control->renderer()) {
-                control->dispatchSimulatedClick(event);
+        if (!seenDefaultButton && control->canBeSuccessfulSubmitButton()) {
+            if (fromImplicitSubmissionTrigger)
+                seenDefaultButton = true;
+            if (control->isSuccessfulSubmitButton()) {
+                if (control->renderer()) {
+                    control->dispatchSimulatedClick(event);
+                    return;
+                }
+            } else if (fromImplicitSubmissionTrigger) {
+                // Default (submit) button is not activated; no implicit submission.
                 return;
             }
-        } else if (control->canTriggerImplicitSubmission())
+        } else if (control->canTriggerImplicitSubmission()) {
             ++submissionTriggerCount;
+        }
     }
     if (fromImplicitSubmissionTrigger && submissionTriggerCount == 1)
         prepareForSubmission(event);
@@ -276,9 +281,9 @@ bool HTMLFormElement::prepareForSubmission(Event* event)
     StringPairVector controlNamesAndValues;
     getTextFieldValues(controlNamesAndValues);
     RefPtr<FormState> formState = FormState::create(this, controlNamesAndValues, &document(), NotSubmittedByJavaScript);
-    frame->loader()->client()->dispatchWillSendSubmitEvent(formState.release());
+    frame->loader().client()->dispatchWillSendSubmitEvent(formState.release());
 
-    if (dispatchEvent(Event::createCancelableBubble(eventNames().submitEvent)))
+    if (dispatchEvent(Event::createCancelableBubble(EventTypeNames::submit)))
         m_shouldSubmit = true;
 
     m_isSubmittingOrPreparingForSubmission = false;
@@ -296,7 +301,7 @@ void HTMLFormElement::submit()
 
 void HTMLFormElement::submitFromJavaScript()
 {
-    submit(0, false, ScriptController::processingUserGesture(), SubmittedByJavaScript);
+    submit(0, false, UserGestureIndicator::processingUserGesture(), SubmittedByJavaScript);
 }
 
 void HTMLFormElement::getTextFieldValues(StringPairVector& fieldNamesAndValues) const
@@ -315,6 +320,16 @@ void HTMLFormElement::getTextFieldValues(StringPairVector& fieldNamesAndValues) 
             continue;
 
         fieldNamesAndValues.append(make_pair(input->name().string(), input->value()));
+    }
+}
+
+void HTMLFormElement::submitDialog(PassRefPtr<FormSubmission> formSubmission)
+{
+    for (Node* node = this; node; node = node->parentOrShadowHostNode()) {
+        if (node->hasTagName(dialogTag)) {
+            toHTMLDialogElement(node)->closeDialog(formSubmission->result());
+            return;
+        }
     }
 }
 
@@ -352,7 +367,12 @@ void HTMLFormElement::submit(Event* event, bool activateSubmitButton, bool proce
     if (needButtonActivation && firstSuccessfulSubmitButton)
         firstSuccessfulSubmitButton->setActivatedSubmit(true);
 
-    scheduleFormSubmission(FormSubmission::create(this, m_attributes, event, formSubmissionTrigger));
+    RefPtr<FormSubmission> formSubmission = FormSubmission::create(this, m_attributes, event, formSubmissionTrigger);
+    EventQueueScope scopeForDialogClose; // Delay dispatching 'close' to dialog until done submitting.
+    if (formSubmission->method() == FormSubmission::DialogMethod)
+        submitDialog(formSubmission.release());
+    else
+        scheduleFormSubmission(formSubmission.release());
 
     if (needButtonActivation && firstSuccessfulSubmitButton)
         firstSuccessfulSubmitButton->setActivatedSubmit(false);
@@ -377,13 +397,25 @@ void HTMLFormElement::scheduleFormSubmission(PassRefPtr<FormSubmission> submissi
     if (protocolIsJavaScript(submission->action())) {
         if (!document().contentSecurityPolicy()->allowFormAction(KURL(submission->action())))
             return;
-        document().frame()->script()->executeScriptIfJavaScriptURL(submission->action());
+        document().frame()->script().executeScriptIfJavaScriptURL(submission->action());
         return;
     }
-    submission->setReferrer(document().frame()->loader()->outgoingReferrer());
-    submission->setOrigin(document().frame()->loader()->outgoingOrigin());
 
-    document().frame()->navigationScheduler()->scheduleFormSubmission(submission);
+    Frame* targetFrame = document().frame()->loader().findFrameForNavigation(submission->target(), submission->state()->sourceDocument());
+    if (!targetFrame) {
+        if (!DOMWindow::allowPopUp(document().frame()) && !UserGestureIndicator::processingUserGesture())
+            return;
+        targetFrame = document().frame();
+    } else {
+        submission->clearTarget();
+    }
+    if (!targetFrame->page())
+        return;
+
+    submission->setReferrer(document().outgoingReferrer());
+    submission->setOrigin(document().outgoingOrigin());
+
+    targetFrame->navigationScheduler().scheduleFormSubmission(submission);
 }
 
 void HTMLFormElement::reset()
@@ -394,7 +426,7 @@ void HTMLFormElement::reset()
 
     m_isInResetFunction = true;
 
-    if (!dispatchEvent(Event::createCancelableBubble(eventNames().resetEvent))) {
+    if (!dispatchEvent(Event::createCancelableBubble(EventTypeNames::reset))) {
         m_isInResetFunction = false;
         return;
     }
@@ -413,7 +445,7 @@ void HTMLFormElement::requestAutocomplete()
     if (!frame)
         return;
 
-    if (!shouldAutocomplete() || !ScriptController::processingUserGesture()) {
+    if (!shouldAutocomplete() || !UserGestureIndicator::processingUserGesture()) {
         finishRequestAutocomplete(AutocompleteResultErrorDisabled);
         return;
     }
@@ -421,14 +453,14 @@ void HTMLFormElement::requestAutocomplete()
     StringPairVector controlNamesAndValues;
     getTextFieldValues(controlNamesAndValues);
     RefPtr<FormState> formState = FormState::create(this, controlNamesAndValues, &document(), SubmittedByJavaScript);
-    frame->loader()->client()->didRequestAutocomplete(formState.release());
+    frame->loader().client()->didRequestAutocomplete(formState.release());
 }
 
 void HTMLFormElement::finishRequestAutocomplete(AutocompleteResult result)
 {
     RefPtr<Event> event;
     if (result == AutocompleteResultSuccess)
-        event = Event::create(eventNames().autocompleteEvent);
+        event = Event::create(EventTypeNames::autocomplete);
     else if (result == AutocompleteResultErrorDisabled)
         event = AutocompleteErrorEvent::create("disabled");
     else if (result == AutocompleteResultErrorCancel)
@@ -465,9 +497,9 @@ void HTMLFormElement::parseAttribute(const QualifiedName& name, const AtomicStri
     else if (name == accept_charsetAttr)
         m_attributes.setAcceptCharset(value);
     else if (name == onautocompleteAttr)
-        setAttributeEventListener(eventNames().autocompleteEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::autocomplete, createAttributeEventListener(this, name, value));
     else if (name == onautocompleteerrorAttr)
-        setAttributeEventListener(eventNames().autocompleteerrorEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::autocompleteerror, createAttributeEventListener(this, name, value));
     else
         HTMLElement::parseAttribute(name, value);
 }
@@ -515,20 +547,20 @@ unsigned HTMLFormElement::formElementIndexWithFormAttribute(Element* element, un
     return left + 1;
 }
 
-unsigned HTMLFormElement::formElementIndex(FormAssociatedElement* associatedElement)
+unsigned HTMLFormElement::formElementIndex(FormAssociatedElement& associatedElement)
 {
-    HTMLElement* associatedHTMLElement = toHTMLElement(associatedElement);
+    HTMLElement& associatedHTMLElement = toHTMLElement(associatedElement);
     // Treats separately the case where this element has the form attribute
     // for performance consideration.
-    if (associatedHTMLElement->fastHasAttribute(formAttr)) {
-        unsigned short position = compareDocumentPosition(associatedHTMLElement);
+    if (associatedHTMLElement.fastHasAttribute(formAttr)) {
+        unsigned short position = compareDocumentPosition(&associatedHTMLElement);
         if (position & DOCUMENT_POSITION_PRECEDING) {
             ++m_associatedElementsBeforeIndex;
             ++m_associatedElementsAfterIndex;
-            return HTMLFormElement::formElementIndexWithFormAttribute(associatedHTMLElement, 0, m_associatedElementsBeforeIndex - 1);
+            return HTMLFormElement::formElementIndexWithFormAttribute(&associatedHTMLElement, 0, m_associatedElementsBeforeIndex - 1);
         }
         if (position & DOCUMENT_POSITION_FOLLOWING && !(position & DOCUMENT_POSITION_CONTAINED_BY))
-            return HTMLFormElement::formElementIndexWithFormAttribute(associatedHTMLElement, m_associatedElementsAfterIndex, m_associatedElements.size());
+            return HTMLFormElement::formElementIndexWithFormAttribute(&associatedHTMLElement, m_associatedElementsAfterIndex, m_associatedElements.size());
     }
 
     // Check for the special case where this element is the very last thing in
@@ -537,14 +569,14 @@ unsigned HTMLFormElement::formElementIndex(FormAssociatedElement* associatedElem
     // that says "add this form element to the end of the array".
     if (ElementTraversal::next(associatedHTMLElement, this)) {
         unsigned i = m_associatedElementsBeforeIndex;
-        for (Element* element = this; element; element = ElementTraversal::next(element, this)) {
+        for (Element* element = this; element; element = ElementTraversal::next(*element, this)) {
             if (element == associatedHTMLElement) {
                 ++m_associatedElementsAfterIndex;
                 return i;
             }
             if (!element->isFormControlElement() && !element->hasTagName(objectTag))
                 continue;
-            if (!element->isHTMLElement() || toHTMLElement(element)->form() != this)
+            if (!element->isHTMLElement() || toHTMLElement(element)->formOwner() != this)
                 continue;
             ++i;
         }
@@ -552,9 +584,9 @@ unsigned HTMLFormElement::formElementIndex(FormAssociatedElement* associatedElem
     return m_associatedElementsAfterIndex++;
 }
 
-void HTMLFormElement::registerFormElement(FormAssociatedElement* e)
+void HTMLFormElement::registerFormElement(FormAssociatedElement& e)
 {
-    m_associatedElements.insert(formElementIndex(e), e);
+    m_associatedElements.insert(formElementIndex(e), &e);
 }
 
 void HTMLFormElement::removeFormElement(FormAssociatedElement* e)
@@ -609,17 +641,17 @@ bool HTMLFormElement::noValidate() const
 // FIXME: This function should be removed because it does not do the same thing as the
 // JavaScript binding for action, which treats action as a URL attribute. Last time I
 // (Darin Adler) removed this, someone added it back, so I am leaving it in for now.
-String HTMLFormElement::action() const
+const AtomicString& HTMLFormElement::action() const
 {
     return getAttribute(actionAttr);
 }
 
-void HTMLFormElement::setAction(const String &value)
+void HTMLFormElement::setAction(const AtomicString& value)
 {
     setAttribute(actionAttr, value);
 }
 
-void HTMLFormElement::setEnctype(const String &value)
+void HTMLFormElement::setEnctype(const AtomicString& value)
 {
     setAttribute(enctypeAttr, value);
 }
@@ -629,7 +661,7 @@ String HTMLFormElement::method() const
     return FormSubmission::Attributes::methodString(m_attributes.method());
 }
 
-void HTMLFormElement::setMethod(const String &value)
+void HTMLFormElement::setMethod(const AtomicString& value)
 {
     setAttribute(methodAttr, value);
 }
@@ -681,7 +713,7 @@ bool HTMLFormElement::checkInvalidControlsAndCollectUnhandled(Vector<RefPtr<Form
     for (unsigned i = 0; i < elements.size(); ++i) {
         if (elements[i]->form() == this && elements[i]->isFormControlElement()) {
             HTMLFormControlElement* control = toHTMLFormControlElement(elements[i].get());
-            if (!control->checkValidity(unhandledInvalidControls, dispatchEvents) && control->form() == this)
+            if (!control->checkValidity(unhandledInvalidControls, dispatchEvents) && control->formOwner() == this)
                 hasInvalidControls = true;
         }
     }
@@ -692,11 +724,11 @@ Node* HTMLFormElement::elementFromPastNamesMap(const AtomicString& pastName) con
 {
     if (pastName.isEmpty() || !m_pastNamesMap)
         return 0;
-    Node* node = m_pastNamesMap->get(pastName.impl());
+    Node* node = m_pastNamesMap->get(pastName);
 #if !ASSERT_DISABLED
     if (!node)
         return 0;
-    ASSERT_WITH_SECURITY_IMPLICATION(toHTMLElement(node)->form() == this);
+    ASSERT_WITH_SECURITY_IMPLICATION(toHTMLElement(node)->formOwner() == this);
     if (node->hasTagName(imgTag)) {
         ASSERT_WITH_SECURITY_IMPLICATION(m_imageElements.find(node) != kNotFound);
     } else if (node->hasTagName(objectTag)) {
@@ -714,7 +746,7 @@ void HTMLFormElement::addToPastNamesMap(Node* element, const AtomicString& pastN
         return;
     if (!m_pastNamesMap)
         m_pastNamesMap = adoptPtr(new PastNamesMap);
-    m_pastNamesMap->set(pastName.impl(), element);
+    m_pastNamesMap->set(pastName, element);
 }
 
 void HTMLFormElement::removeFromPastNamesMap(HTMLElement& element)
@@ -723,7 +755,7 @@ void HTMLFormElement::removeFromPastNamesMap(HTMLElement& element)
         return;
     PastNamesMap::iterator end = m_pastNamesMap->end();
     for (PastNamesMap::iterator it = m_pastNamesMap->begin(); it != end; ++it) {
-        if (it->value.get() == &element) {
+        if (it->value == &element) {
             it->value = 0;
             // Keep looping. Single element can have multiple names.
         }
@@ -790,7 +822,7 @@ void HTMLFormElement::anonymousNamedGetter(const AtomicString& name, bool& retur
 void HTMLFormElement::setDemoted(bool demoted)
 {
     if (demoted)
-        UseCounter::count(&document(), UseCounter::DemotedFormElement);
+        UseCounter::count(document(), UseCounter::DemotedFormElement);
     m_wasDemoted = demoted;
 }
 

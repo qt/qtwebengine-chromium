@@ -36,12 +36,17 @@ struct GPU_EXPORT GPUInfo {
     // The strings that describe the GPU.
     // In Linux these strings are obtained through libpci.
     // In Win/MacOSX, these two strings are not filled at the moment.
+    // In Android, these are respectively GL_VENDOR and GL_RENDERER.
     std::string vendor_string;
     std::string device_string;
   };
 
   GPUInfo();
   ~GPUInfo();
+
+  bool SupportsAccelerated2dCanvas() const {
+    return !can_lose_context && !software_rendering;
+  }
 
   // Whether more GPUInfo fields might be collected in the future.
   bool finalized;

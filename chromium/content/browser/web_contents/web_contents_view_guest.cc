@@ -7,10 +7,10 @@
 #include "build/build_config.h"
 #include "content/browser/browser_plugin/browser_plugin_embedder.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
+#include "content/browser/frame_host/interstitial_page_impl.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_guest.h"
-#include "content/browser/web_contents/interstitial_page_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/drag_messages.h"
 #include "content/public/browser/web_contents_delegate.h"
@@ -25,8 +25,8 @@
 #include "ui/aura/window.h"
 #endif
 
-using WebKit::WebDragOperation;
-using WebKit::WebDragOperationsMask;
+using blink::WebDragOperation;
+using blink::WebDragOperationsMask;
 
 namespace content {
 
@@ -106,6 +106,15 @@ void WebContentsViewGuest::SetAllowOverlappingViews(bool overlapping) {
 bool WebContentsViewGuest::GetAllowOverlappingViews() const {
   return platform_view_->GetAllowOverlappingViews();
 }
+
+void WebContentsViewGuest::SetOverlayView(
+    WebContentsView* overlay, const gfx::Point& offset) {
+  platform_view_->SetOverlayView(overlay, offset);
+}
+
+void WebContentsViewGuest::RemoveOverlayView() {
+  platform_view_->RemoveOverlayView();
+}
 #endif
 
 void WebContentsViewGuest::CreateView(const gfx::Size& initial_size,
@@ -142,7 +151,7 @@ RenderWidgetHostView* WebContentsViewGuest::CreateViewForPopupWidget(
   return RenderWidgetHostViewPort::CreateViewForWidget(render_widget_host);
 }
 
-void WebContentsViewGuest::SetPageTitle(const string16& title) {
+void WebContentsViewGuest::SetPageTitle(const base::string16& title) {
 }
 
 void WebContentsViewGuest::RenderViewCreated(RenderViewHost* host) {

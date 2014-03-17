@@ -14,6 +14,7 @@
 #include "content/browser/android/in_process/synchronous_compositor_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "gpu/command_buffer/client/gl_in_process_context.h"
+#include "gpu/command_buffer/common/gpu_memory_allocation.h"
 #include "third_party/skia/include/core/SkBitmapDevice.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/gfx/rect_conversions.h"
@@ -35,7 +36,7 @@ CreateWebGraphicsContext3D(scoped_refptr<gfx::GLSurface> surface) {
 
   const gfx::GpuPreference gpu_preference = gfx::PreferDiscreteGpu;
 
-  WebKit::WebGraphicsContext3D::Attributes attributes;
+  blink::WebGraphicsContext3D::Attributes attributes;
   attributes.antialias = false;
   attributes.shareResources = true;
   attributes.noAutomaticFlushes = true;
@@ -104,7 +105,7 @@ SynchronousCompositorOutputSurface::SynchronousCompositorOutputSurface(
     : cc::OutputSurface(
           scoped_ptr<cc::SoftwareOutputDevice>(new SoftwareDevice(this))),
       routing_id_(routing_id),
-      needs_begin_frame_(false),
+      needs_begin_impl_frame_(false),
       invoking_composite_(false),
       did_swap_buffer_(false),
       current_sw_canvas_(NULL),
@@ -115,6 +116,9 @@ SynchronousCompositorOutputSurface::SynchronousCompositorOutputSurface(
   capabilities_.adjust_deadline_for_parent = false;
   // Cannot call out to GetDelegate() here as the output surface is not
   // constructed on the correct thread.
+
+  memory_policy_.priority_cutoff_when_visible =
+      gpu::MemoryAllocation::CUTOFF_ALLOW_NICE_TO_HAVE;
 }
 
 SynchronousCompositorOutputSurface::~SynchronousCompositorOutputSurface() {
@@ -155,14 +159,14 @@ void SynchronousCompositorOutputSurface::Reshape(
   // Intentional no-op: surface size is controlled by the embedder.
 }
 
-void SynchronousCompositorOutputSurface::SetNeedsBeginFrame(
+void SynchronousCompositorOutputSurface::SetNeedsBeginImplFrame(
     bool enable) {
   DCHECK(CalledOnValidThread());
-  cc::OutputSurface::SetNeedsBeginFrame(enable);
-  needs_begin_frame_ = enable;
+  cc::OutputSurface::SetNeedsBeginImplFrame(enable);
+  needs_begin_impl_frame_ = enable;
   SynchronousCompositorOutputSurfaceDelegate* delegate = GetDelegate();
   if (delegate)
-    delegate->SetContinuousInvalidate(needs_begin_frame_);
+    delegate->SetContinuousInvalidate(needs_begin_impl_frame_);
 }
 
 void SynchronousCompositorOutputSurface::SwapBuffers(
@@ -261,8 +265,8 @@ void SynchronousCompositorOutputSurface::InvokeComposite(
       adjusted_transform, viewport, clip, valid_for_tile_management);
   SetNeedsRedrawRect(gfx::Rect(viewport.size()));
 
-  if (needs_begin_frame_)
-    BeginFrame(cc::BeginFrameArgs::CreateForSynchronousCompositor());
+  if (needs_begin_impl_frame_)
+    BeginImplFrame(cc::BeginFrameArgs::CreateForSynchronousCompositor());
 
   // After software draws (which might move the viewport arbitrarily), restore
   // the previous hardware viewport to allow CC's tile manager to prioritize
@@ -280,8 +284,9 @@ void SynchronousCompositorOutputSurface::InvokeComposite(
     OnSwapBuffersComplete();
 }
 
-void SynchronousCompositorOutputSurface::PostCheckForRetroactiveBeginFrame() {
-  // Synchronous compositor cannot perform retroactive begin frames, so
+void
+SynchronousCompositorOutputSurface::PostCheckForRetroactiveBeginImplFrame() {
+  // Synchronous compositor cannot perform retroactive BeginImplFrames, so
   // intentionally no-op here.
 }
 

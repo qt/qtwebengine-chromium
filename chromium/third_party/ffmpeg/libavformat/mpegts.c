@@ -238,10 +238,10 @@ static void clear_programs(MpegTSContext *ts)
 static void add_pat_entry(MpegTSContext *ts, unsigned int programid)
 {
     struct Program *p;
-    void *tmp = av_realloc(ts->prg, (ts->nb_prg+1)*sizeof(struct Program));
-    if(!tmp)
+    if (av_reallocp_array(&ts->prg, ts->nb_prg + 1, sizeof(*ts->prg)) < 0) {
+        ts->nb_prg = 0;
         return;
-    ts->prg = tmp;
+    }
     p = &ts->prg[ts->nb_prg];
     p->id = programid;
     p->nb_pids = 0;
@@ -452,22 +452,19 @@ static void mpegts_close_filter(MpegTSContext *ts, MpegTSFilter *filter)
 static int analyze(const uint8_t *buf, int size, int packet_size, int *index){
     int stat[TS_MAX_PACKET_SIZE];
     int i;
-    int x=0;
     int best_score=0;
 
-    memset(stat, 0, packet_size*sizeof(int));
+    memset(stat, 0, packet_size*sizeof(*stat));
 
-    for(x=i=0; i<size-3; i++){
+    for(i=0; i<size-3; i++){
         if(buf[i] == 0x47 && !(buf[i+1] & 0x80) && buf[i+3] != 0x47){
+            int x = i % packet_size;
             stat[x]++;
             if(stat[x] > best_score){
                 best_score= stat[x];
                 if(index) *index= x;
             }
         }
-
-        x++;
-        if(x == packet_size) x= 0;
     }
 
     return best_score;
@@ -599,6 +596,7 @@ static const StreamType ISO_types[] = {
     { 0x11, AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_AAC_LATM }, /* LATM syntax */
 #endif
     { 0x1b, AVMEDIA_TYPE_VIDEO,       AV_CODEC_ID_H264 },
+    { 0x24, AVMEDIA_TYPE_VIDEO,       AV_CODEC_ID_HEVC },
     { 0x42, AVMEDIA_TYPE_VIDEO,       AV_CODEC_ID_CAVS },
     { 0xd1, AVMEDIA_TYPE_VIDEO,      AV_CODEC_ID_DIRAC },
     { 0xea, AVMEDIA_TYPE_VIDEO,        AV_CODEC_ID_VC1 },
@@ -633,8 +631,14 @@ static const StreamType REGD_types[] = {
     { MKTAG('D','T','S','1'), AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_DTS },
     { MKTAG('D','T','S','2'), AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_DTS },
     { MKTAG('D','T','S','3'), AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_DTS },
+    { MKTAG('H','E','V','C'), AVMEDIA_TYPE_VIDEO,  AV_CODEC_ID_HEVC },
     { MKTAG('K','L','V','A'), AVMEDIA_TYPE_DATA,    AV_CODEC_ID_SMPTE_KLV },
     { MKTAG('V','C','-','1'), AVMEDIA_TYPE_VIDEO,   AV_CODEC_ID_VC1 },
+    { 0 },
+};
+
+static const StreamType METADATA_types[] = {
+    { MKTAG('K','L','V','A'), AVMEDIA_TYPE_DATA, AV_CODEC_ID_SMPTE_KLV },
     { 0 },
 };
 
@@ -968,7 +972,10 @@ static int mpegts_push_data(MpegTSFilter *filter,
                 pes->pts = AV_NOPTS_VALUE;
                 pes->dts = AV_NOPTS_VALUE;
                 if ((flags & 0xc0) == 0x80) {
-                    pes->dts = pes->pts = ff_parse_pes_pts(r);
+                    pes->pts = ff_parse_pes_pts(r);
+                    /* video pts is not monotonic, can't be used for dts */
+                    if (pes->st->codec->codec_type != AVMEDIA_TYPE_VIDEO)
+                        pes->dts = pes->pts;
                     r += 5;
                 } else if ((flags & 0xc0) == 0xc0) {
                     pes->pts = ff_parse_pes_pts(r);
@@ -999,6 +1006,12 @@ static int mpegts_push_data(MpegTSFilter *filter,
                     pes->pes_header_size += sl_header_bytes;
                     p += sl_header_bytes;
                     buf_size -= sl_header_bytes;
+                }
+                if (pes->stream_type == 0x15 && buf_size >= 5) {
+                    /* skip metadata access unit header */
+                    pes->pes_header_size += 5;
+                    p += 5;
+                    buf_size -= 5;
                 }
                 if (pes->ts->fix_teletext_pts && pes->st->codec->codec_id == AV_CODEC_ID_DVB_TELETEXT) {
                     AVProgram *p = NULL;
@@ -1454,9 +1467,7 @@ int ff_parse_mpeg2_descriptor(AVFormatContext *fc, AVStream *st, int stream_type
             if (st->codec->extradata_size == 4 && memcmp(st->codec->extradata, *pp, 4))
                 avpriv_request_sample(fc, "DVB sub with multiple IDs");
         } else {
-            st->codec->extradata = av_malloc(4 + FF_INPUT_BUFFER_PADDING_SIZE);
-            if (st->codec->extradata) {
-                st->codec->extradata_size = 4;
+            if (!ff_alloc_extradata(st->codec, 4)) {
                 memcpy(st->codec->extradata, *pp, 4);
             }
         }
@@ -1488,6 +1499,15 @@ int ff_parse_mpeg2_descriptor(AVFormatContext *fc, AVStream *st, int stream_type
         break;
     case 0x52: /* stream identifier descriptor */
         st->stream_identifier = 1 + get8(pp, desc_end);
+        break;
+    case 0x26: /* metadata descriptor */
+        if (get16(pp, desc_end) == 0xFFFF)
+            *pp += 4;
+        if (get8(pp, desc_end) == 0xFF) {
+            st->codec->codec_tag = bytestream_get_le32(pp);
+            if (st->codec->codec_id == AV_CODEC_ID_NONE)
+                mpegts_find_stream_type(st, st->codec->codec_tag, METADATA_types);
+        }
         break;
     default:
         break;
@@ -1862,8 +1882,10 @@ static int handle_packet(MpegTSContext *ts, const uint8_t *packet)
         return 0;
 
     pos = avio_tell(ts->stream->pb);
-    av_assert0(pos >= TS_PACKET_SIZE);
-    ts->pos47_full = pos - TS_PACKET_SIZE;
+    if (pos >= 0) {
+        av_assert0(pos >= TS_PACKET_SIZE);
+        ts->pos47_full = pos - TS_PACKET_SIZE;
+    }
 
     if (tss->type == MPEGTS_SECTION) {
         if (is_start) {
@@ -1974,7 +1996,9 @@ static int read_packet(AVFormatContext *s, uint8_t *buf, int raw_packet_size, co
         /* check packet sync byte */
         if ((*data)[0] != 0x47) {
             /* find a new packet start */
-            avio_seek(pb, -raw_packet_size, SEEK_CUR);
+            uint64_t pos = avio_tell(pb);
+            avio_seek(pb, -FFMIN(raw_packet_size, pos), SEEK_CUR);
+
             if (mpegts_resync(s) < 0)
                 return AVERROR(EAGAIN);
             else
@@ -2362,7 +2386,7 @@ static int64_t mpegts_get_dts(AVFormatContext *s, int stream_index,
         if(pkt.dts != AV_NOPTS_VALUE && pkt.pos >= 0){
             ff_reduce_index(s, pkt.stream_index);
             av_add_index_entry(s->streams[pkt.stream_index], pkt.pos, pkt.dts, 0, 0, AVINDEX_KEYFRAME /* FIXME keyframe? */);
-            if(pkt.stream_index == stream_index){
+            if(pkt.stream_index == stream_index && pkt.pos >= *ppos){
                 *ppos= pkt.pos;
                 return pkt.dts;
             }

@@ -20,10 +20,10 @@
 #ifndef SVGFEMorphologyElement_h
 #define SVGFEMorphologyElement_h
 
-#include "core/platform/graphics/filters/FEMorphology.h"
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGAnimatedNumber.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
+#include "platform/graphics/filters/FEMorphology.h"
 
 namespace WebCore {
 
@@ -58,12 +58,12 @@ struct SVGPropertyTraits<MorphologyOperatorType> {
 
 class SVGFEMorphologyElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
-    static PassRefPtr<SVGFEMorphologyElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGFEMorphologyElement> create(Document&);
 
     void setRadius(float radiusX, float radiusY);
 
 private:
-    SVGFEMorphologyElement(const QualifiedName&, Document&);
+    explicit SVGFEMorphologyElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;

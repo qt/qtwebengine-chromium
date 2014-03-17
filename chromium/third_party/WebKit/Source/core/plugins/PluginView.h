@@ -26,13 +26,13 @@
 #ifndef PluginView_h
 #define PluginView_h
 
-#include "core/platform/ScrollTypes.h"
-#include "core/platform/Widget.h"
+#include "platform/Widget.h"
+#include "platform/scroll/ScrollTypes.h"
 #include "wtf/text/WTFString.h"
 
 struct NPObject;
 
-namespace WebKit { class WebLayer; }
+namespace blink { class WebLayer; }
 
 namespace WebCore {
 
@@ -44,11 +44,12 @@ class PluginView : public Widget {
 public:
     virtual bool isPluginView() const { return true; }
 
-    virtual WebKit::WebLayer* platformLayer() const { return 0; }
+    virtual blink::WebLayer* platformLayer() const { return 0; }
     virtual NPObject* scriptableObject() { return 0; }
     virtual bool getFormValue(String&) { return false; }
     virtual bool wantsWheelEvents() { return false; }
     virtual bool supportsKeyboardFocus() const { return false; }
+    virtual bool supportsInputMethod() const { return false; }
     virtual bool canProcessDrag() const { return false; }
 
     virtual void didReceiveResponse(const ResourceResponse&) { }
@@ -60,20 +61,7 @@ protected:
     PluginView() : Widget() { }
 };
 
-inline PluginView* toPluginView(Widget* widget)
-{
-    ASSERT(!widget || widget->isPluginView());
-    return static_cast<PluginView*>(widget);
-}
-
-inline const PluginView* toPluginView(const Widget* widget)
-{
-    ASSERT(!widget || widget->isPluginView());
-    return static_cast<const PluginView*>(widget);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toPluginView(const PluginView*);
+DEFINE_TYPE_CASTS(PluginView, Widget, widget, widget->isPluginView(), widget.isPluginView());
 
 } // namespace WebCore
 

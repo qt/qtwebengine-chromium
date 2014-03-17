@@ -196,6 +196,10 @@ void TextureImageTransportSurface::SetLatencyInfo(
   latency_info_ = latency_info;
 }
 
+void TextureImageTransportSurface::WakeUpGpu() {
+  NOTIMPLEMENTED();
+}
+
 bool TextureImageTransportSurface::SwapBuffers() {
   DCHECK(IsContextValid(helper_.get()));
   DCHECK(backbuffer_suggested_allocation_);
@@ -369,8 +373,7 @@ void TextureImageTransportSurface::ReleaseFrontTexture() {
   front_mailbox_name_ = MailboxName();
   glFlush();
   CHECK_GL_ERROR();
-  GpuHostMsg_AcceleratedSurfaceRelease_Params params;
-  helper_->SendAcceleratedSurfaceRelease(params);
+  helper_->SendAcceleratedSurfaceRelease();
 }
 
 void TextureImageTransportSurface::CreateBackTexture() {

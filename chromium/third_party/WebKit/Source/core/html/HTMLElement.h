@@ -47,15 +47,10 @@ public:
     virtual short tabIndex() const;
     void setTabIndex(int);
 
-    String innerHTML() const;
-    String outerHTML() const;
-    void setInnerHTML(const String&, ExceptionState&);
-    void setOuterHTML(const String&, ExceptionState&);
     void setInnerText(const String&, ExceptionState&);
     void setOuterText(const String&, ExceptionState&);
 
     Element* insertAdjacentElement(const String& where, Element* newChild, ExceptionState&);
-    void insertAdjacentHTML(const String& where, const String& html, ExceptionState&);
     void insertAdjacentText(const String& where, const String& text, ExceptionState&);
 
     virtual bool hasCustomFocusLogic() const;
@@ -82,7 +77,7 @@ public:
     virtual bool rendererIsNeeded(const RenderStyle&);
     virtual RenderObject* createRenderer(RenderStyle*);
 
-    HTMLFormElement* form() const { return virtualForm(); }
+    virtual HTMLFormElement* formOwner() const { return 0; }
 
     HTMLFormElement* findFormAncestor() const;
 
@@ -118,9 +113,6 @@ private:
 
     void mapLanguageAttributeToLocale(const AtomicString&, MutableStylePropertySet*);
 
-    virtual HTMLFormElement* virtualForm() const;
-
-    Node* insertAdjacent(const String& where, Node* newChild, ExceptionState&);
     PassRefPtr<DocumentFragment> textToFragment(const String&, ExceptionState&);
 
     void dirAttributeChanged(const AtomicString&);
@@ -130,31 +122,18 @@ private:
 
     TranslateAttributeMode translateAttributeMode() const;
 
-    AtomicString eventNameForAttributeName(const QualifiedName& attrName) const;
+    const AtomicString& eventNameForAttributeName(const QualifiedName& attrName) const;
 
     void handleKeypressEvent(KeyboardEvent*);
     bool supportsSpatialNavigationFocus() const;
 };
 
-inline HTMLElement* toHTMLElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isHTMLElement());
-    return static_cast<HTMLElement*>(node);
-}
-
-inline const HTMLElement* toHTMLElement(const Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isHTMLElement());
-    return static_cast<const HTMLElement*>(node);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toHTMLElement(const HTMLElement*);
+DEFINE_NODE_TYPE_CASTS(HTMLElement, isHTMLElement());
 
 inline HTMLElement::HTMLElement(const QualifiedName& tagName, Document& document, ConstructionType type = CreateHTMLElement)
     : Element(tagName, &document, type)
 {
-    ASSERT(tagName.localName().impl());
+    ASSERT(!tagName.localName().isNull());
     ScriptWrappable::init(this);
 }
 

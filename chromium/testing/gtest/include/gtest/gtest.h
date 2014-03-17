@@ -154,6 +154,7 @@ class ExecDeathTest;
 class NoExecDeathTest;
 class FinalSuccessChecker;
 class GTestFlagSaver;
+class StreamingListenerTest;
 class TestResultAccessor;
 class TestEventListenersAccessor;
 class TestEventRepeater;
@@ -161,18 +162,6 @@ class WindowsDeathTest;
 class UnitTestImpl* GetUnitTestImpl();
 void ReportFailureInUnknownLocation(TestPartResult::Type result_type,
                                     const std::string& message);
-
-// Converts a streamable value to an std::string.  A NULL pointer is
-// converted to "(null)".  When the input value is a ::string,
-// ::std::string, ::wstring, or ::std::wstring object, each NUL
-// character in it is replaced with "\\0".
-// Declared in gtest-internal.h but defined here, so that it has access
-// to the definition of the Message class, required by the ARM
-// compiler.
-template <typename T>
-std::string StreamableToString(const T& streamable) {
-  return (Message() << streamable).GetString();
-}
 
 }  // namespace internal
 
@@ -679,8 +668,10 @@ class GTEST_API_ TestInfo {
   friend class Test;
   friend class TestCase;
   friend class internal::UnitTestImpl;
+  friend class internal::StreamingListenerTest;
   friend TestInfo* internal::MakeAndRegisterTestInfo(
-      const char* test_case_name, const char* name,
+      const char* test_case_name,
+      const char* name,
       const char* type_param,
       const char* value_param,
       internal::TypeId fixture_class_id,
@@ -690,9 +681,10 @@ class GTEST_API_ TestInfo {
 
   // Constructs a TestInfo object. The newly constructed instance assumes
   // ownership of the factory object.
-  TestInfo(const char* test_case_name, const char* name,
-           const char* a_type_param,
-           const char* a_value_param,
+  TestInfo(const std::string& test_case_name,
+           const std::string& name,
+           const char* a_type_param,   // NULL if not a type-parameterized test
+           const char* a_value_param,  // NULL if not a value-parameterized test
            internal::TypeId fixture_class_id,
            internal::TestFactoryBase* factory);
 
@@ -1217,6 +1209,7 @@ class GTEST_API_ UnitTest {
   friend class Test;
   friend class internal::AssertHelper;
   friend class internal::ScopedTrace;
+  friend class internal::StreamingListenerTest;
   friend Environment* AddGlobalTestEnvironment(Environment* env);
   friend internal::UnitTestImpl* internal::GetUnitTestImpl();
   friend void internal::ReportFailureInUnknownLocation(
@@ -2222,15 +2215,20 @@ bool StaticAssertTypeEq() {
   GTEST_TEST_(test_fixture, test_name, test_fixture, \
               ::testing::internal::GetTypeId<test_fixture>())
 
-// Use this macro in main() to run all tests.  It returns 0 if all
+}  // namespace testing
+
+// Use this function in main() to run all tests.  It returns 0 if all
 // tests are successful, or 1 otherwise.
 //
 // RUN_ALL_TESTS() should be invoked after the command line has been
 // parsed by InitGoogleTest().
+//
+// This function was formerly a macro; thus, it is in the global
+// namespace and has an all-caps name.
+int RUN_ALL_TESTS() GTEST_MUST_USE_RESULT_;
 
-#define RUN_ALL_TESTS()\
-  (::testing::UnitTest::GetInstance()->Run())
-
-}  // namespace testing
+inline int RUN_ALL_TESTS() {
+  return ::testing::UnitTest::GetInstance()->Run();
+}
 
 #endif  // GTEST_INCLUDE_GTEST_GTEST_H_

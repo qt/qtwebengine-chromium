@@ -35,29 +35,14 @@ namespace WebCore {
 
 namespace InspectorInstrumentation {
 
-bool profilerEnabledImpl(InstrumentingAgents*);
 bool isDebuggerPausedImpl(InstrumentingAgents*);
 bool collectingHTMLParseErrorsImpl(InstrumentingAgents*);
 PassOwnPtr<ScriptSourceCode> preprocessImpl(InstrumentingAgents*, Frame*, const ScriptSourceCode&);
 String preprocessEventListenerImpl(InstrumentingAgents*, Frame*, const String& source, const String& url, const String& functionName);
 
-bool canvasAgentEnabled(ScriptExecutionContext*);
-bool consoleAgentEnabled(ScriptExecutionContext*);
-bool timelineAgentEnabled(ScriptExecutionContext*);
-
-inline bool profilerEnabled(WorkerGlobalScope* scope)
-{
-    if (InstrumentingAgents* instrumentingAgents = instrumentingAgentsFor(scope))
-        return profilerEnabledImpl(instrumentingAgents);
-    return false;
-}
-
-inline bool profilerEnabled(Page* page)
-{
-    if (InstrumentingAgents* instrumentingAgents = instrumentingAgentsFor(page))
-        return profilerEnabledImpl(instrumentingAgents);
-    return false;
-}
+bool canvasAgentEnabled(ExecutionContext*);
+bool consoleAgentEnabled(ExecutionContext*);
+bool timelineAgentEnabled(ExecutionContext*);
 
 inline bool isDebuggerPaused(Frame* frame)
 {

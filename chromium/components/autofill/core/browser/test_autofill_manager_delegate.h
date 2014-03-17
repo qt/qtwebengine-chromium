@@ -20,12 +20,13 @@ class TestAutofillManagerDelegate : public AutofillManagerDelegate {
 
   // AutofillManagerDelegate implementation.
   virtual PersonalDataManager* GetPersonalDataManager() OVERRIDE;
+  virtual scoped_refptr<AutofillWebDataService>
+      GetDatabase() OVERRIDE;
   virtual PrefService* GetPrefs() OVERRIDE;
   virtual void HideRequestAutocompleteDialog() OVERRIDE;
   virtual void ShowAutofillSettings() OVERRIDE;
   virtual void ConfirmSaveCreditCard(
       const AutofillMetrics& metric_logger,
-      const CreditCard& credit_card,
       const base::Closure& save_card_callback) OVERRIDE;
   virtual void ShowRequestAutocompleteDialog(
       const FormData& form,

@@ -32,31 +32,46 @@
 #include "config.h"
 #include "core/html/forms/PasswordInputType.h"
 
+#include "CSSPropertyNames.h"
+#include "CSSValueKeywords.h"
+#include "InputTypeNames.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/forms/FormController.h"
-#include "core/html/forms/InputTypeNames.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
+#include "core/frame/Settings.h"
 #include "wtf/Assertions.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
-PassRefPtr<InputType> PasswordInputType::create(HTMLInputElement* element)
+PassRefPtr<InputType> PasswordInputType::create(HTMLInputElement& element)
 {
     return adoptRef(new PasswordInputType(element));
 }
 
-HTMLElement* PasswordInputType::passwordGeneratorButtonElement() const
+void PasswordInputType::countUsage()
 {
-    return m_generatorButton.get();
+    countUsageIfVisible(UseCounter::InputTypePassword);
+    if (element().fastHasAttribute(HTMLNames::maxlengthAttr))
+        countUsageIfVisible(UseCounter::InputTypePasswordMaxLength);
 }
 
 bool PasswordInputType::isPasswordGenerationEnabled() const
 {
-    if (Page* page = element()->document().page())
+    if (isPasswordGenerationDecorationEnabled())
+        return true;
+    if (Page* page = element().document().page())
         return page->chrome().client().isPasswordGenerationEnabled();
+    return false;
+}
+
+bool PasswordInputType::isPasswordGenerationDecorationEnabled() const
+{
+    if (Page* page = element().document().page())
+        return page->settings().passwordGenerationDecorationEnabled();
     return false;
 }
 
@@ -68,21 +83,17 @@ bool PasswordInputType::needsContainer() const
 void PasswordInputType::createShadowSubtree()
 {
     BaseTextInputType::createShadowSubtree();
-    if (isPasswordGenerationEnabled()) {
-        m_generatorButton = PasswordGeneratorButtonElement::create(element()->document());
-        m_generatorButton->decorate(element());
-    }
-}
-
-void PasswordInputType::destroyShadowSubtree()
-{
-    BaseTextInputType::destroyShadowSubtree();
-    m_generatorButton = 0;
+    if (!isPasswordGenerationEnabled())
+        return;
+    RefPtr<PasswordGeneratorButtonElement> generatorButton = PasswordGeneratorButtonElement::create(element().document());
+    if (!isPasswordGenerationDecorationEnabled())
+        generatorButton->setInlineStyleProperty(CSSPropertyDisplay, CSSValueNone);
+    containerElement()->appendChild(generatorButton.release());
 }
 
 const AtomicString& PasswordInputType::formControlType() const
 {
-    return InputTypeNames::password();
+    return InputTypeNames::password;
 }
 
 bool PasswordInputType::shouldSaveAndRestoreFormControlState() const
@@ -132,14 +143,14 @@ bool PasswordInputType::isPasswordField() const
 
 void PasswordInputType::enableSecureTextInput()
 {
-    if (element()->document().frame())
-        element()->document().setUseSecureKeyboardEntryWhenActive(true);
+    if (element().document().frame())
+        element().document().setUseSecureKeyboardEntryWhenActive(true);
 }
 
 void PasswordInputType::disableSecureTextInput()
 {
-    if (element()->document().frame())
-        element()->document().setUseSecureKeyboardEntryWhenActive(false);
+    if (element().document().frame())
+        element().document().setUseSecureKeyboardEntryWhenActive(false);
 }
 
 } // namespace WebCore

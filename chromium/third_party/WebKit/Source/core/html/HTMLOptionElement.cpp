@@ -46,35 +46,29 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLOptionElement::HTMLOptionElement(const QualifiedName& tagName, Document& document)
-    : HTMLElement(tagName, document)
+HTMLOptionElement::HTMLOptionElement(Document& document)
+    : HTMLElement(optionTag, document)
     , m_disabled(false)
     , m_isSelected(false)
 {
-    ASSERT(hasTagName(optionTag));
     setHasCustomStyleCallbacks();
     ScriptWrappable::init(this);
 }
 
 PassRefPtr<HTMLOptionElement> HTMLOptionElement::create(Document& document)
 {
-    return adoptRef(new HTMLOptionElement(optionTag, document));
+    return adoptRef(new HTMLOptionElement(document));
 }
 
-PassRefPtr<HTMLOptionElement> HTMLOptionElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<HTMLOptionElement> HTMLOptionElement::createForJSConstructor(Document& document, const String& data, const AtomicString& value,
+    bool defaultSelected, bool selected, ExceptionState& exceptionState)
 {
-    return adoptRef(new HTMLOptionElement(tagName, document));
-}
-
-PassRefPtr<HTMLOptionElement> HTMLOptionElement::createForJSConstructor(Document& document, const String& data, const String& value,
-    bool defaultSelected, bool selected, ExceptionState& es)
-{
-    RefPtr<HTMLOptionElement> element = adoptRef(new HTMLOptionElement(optionTag, document));
+    RefPtr<HTMLOptionElement> element = adoptRef(new HTMLOptionElement(document));
 
     RefPtr<Text> text = Text::create(document, data.isNull() ? "" : data);
 
-    element->appendChild(text.release(), es);
-    if (es.hadException())
+    element->appendChild(text.release(), exceptionState);
+    if (exceptionState.hadException())
         return 0;
 
     if (!value.isNull())
@@ -123,12 +117,10 @@ String HTMLOptionElement::text() const
     if (text.isEmpty())
         text = collectOptionInnerText();
 
-    // FIXME: Is displayStringModifiedByEncoding helpful here?
-    // If it's correct here, then isn't it needed in the value and label functions too?
-    return document.displayStringModifiedByEncoding(text).stripWhiteSpace(isHTMLSpace<UChar>).simplifyWhiteSpace(isHTMLSpace<UChar>);
+    return text.stripWhiteSpace(isHTMLSpace<UChar>).simplifyWhiteSpace(isHTMLSpace<UChar>);
 }
 
-void HTMLOptionElement::setText(const String &text, ExceptionState& es)
+void HTMLOptionElement::setText(const String &text, ExceptionState& exceptionState)
 {
     RefPtr<Node> protectFromMutationEvents(this);
 
@@ -145,7 +137,7 @@ void HTMLOptionElement::setText(const String &text, ExceptionState& es)
         toText(child)->setData(text);
     else {
         removeChildren();
-        appendChild(Text::create(document(), text), es);
+        appendChild(Text::create(document(), text), exceptionState);
     }
 
     if (selectIsMenuList && select->selectedIndex() != oldSelectedIndex)
@@ -210,7 +202,7 @@ String HTMLOptionElement::value() const
     return collectOptionInnerText().stripWhiteSpace(isHTMLSpace<UChar>).simplifyWhiteSpace(isHTMLSpace<UChar>);
 }
 
-void HTMLOptionElement::setValue(const String& value)
+void HTMLOptionElement::setValue(const AtomicString& value)
 {
     setAttribute(valueAttr, value);
 }
@@ -293,7 +285,7 @@ String HTMLOptionElement::label() const
     return collectOptionInnerText().stripWhiteSpace(isHTMLSpace<UChar>).simplifyWhiteSpace(isHTMLSpace<UChar>);
 }
 
-void HTMLOptionElement::setLabel(const String& label)
+void HTMLOptionElement::setLabel(const AtomicString& label)
 {
     setAttribute(labelAttr, label);
 }
@@ -367,11 +359,20 @@ String HTMLOptionElement::collectOptionInnerText() const
             text.append(node->nodeValue());
         // Text nodes inside script elements are not part of the option text.
         if (node->isElementNode() && toScriptLoaderIfPossible(toElement(node)))
-            node = NodeTraversal::nextSkippingChildren(node, this);
+            node = NodeTraversal::nextSkippingChildren(*node, this);
         else
-            node = NodeTraversal::next(node, this);
+            node = NodeTraversal::next(*node, this);
     }
     return text.toString();
+}
+
+HTMLFormElement* HTMLOptionElement::form() const
+{
+    HTMLSelectElement* selectElement = ownerSelectElement();
+    if (!selectElement)
+        return 0;
+
+    return selectElement->formOwner();
 }
 
 } // namespace WebCore

@@ -108,7 +108,7 @@ class SQL_EXPORT Statement {
   bool BindDouble(int col, double val);
   bool BindCString(int col, const char* val);
   bool BindString(int col, const std::string& val);
-  bool BindString16(int col, const string16& value);
+  bool BindString16(int col, const base::string16& value);
   bool BindBlob(int col, const void* value, int value_len);
 
   // Retrieving ----------------------------------------------------------------
@@ -131,7 +131,7 @@ class SQL_EXPORT Statement {
   int64 ColumnInt64(int col) const;
   double ColumnDouble(int col) const;
   std::string ColumnString(int col) const;
-  string16 ColumnString16(int col) const;
+  base::string16 ColumnString16(int col) const;
 
   // When reading a blob, you can get a raw pointer to the underlying data,
   // along with the length, or you can just ask us to copy the blob into a
@@ -139,7 +139,7 @@ class SQL_EXPORT Statement {
   int ColumnByteLength(int col) const;
   const void* ColumnBlob(int col) const;
   bool ColumnBlobAsString(int col, std::string* blob);
-  bool ColumnBlobAsString16(int col, string16* val) const;
+  bool ColumnBlobAsString16(int col, base::string16* val) const;
   bool ColumnBlobAsVector(int col, std::vector<char>* val) const;
   bool ColumnBlobAsVector(int col, std::vector<unsigned char>* val) const;
 
@@ -177,6 +177,11 @@ class SQL_EXPORT Statement {
   // by the connection, which is why it's refcounted. This pointer is
   // guaranteed non-NULL.
   scoped_refptr<Connection::StatementRef> ref_;
+
+  // Set after Step() or Run() are called, reset by Reset().  Used to
+  // prevent accidental calls to API functions which would not work
+  // correctly after stepping has started.
+  bool stepped_;
 
   // See Succeeded() for what this holds.
   bool succeeded_;

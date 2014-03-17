@@ -1,8 +1,7 @@
-# NOTE(piman): This is not an invitation to add WebKit stuff in general into
-# the compositor/ui. These lines will disappear once we can extract the Chromium
-# Compositor out of WebKit.
 include_rules = [
   "+cc",
-  "+third_party/WebKit/public/platform/WebGraphicsContext3D.h",
-  "+webkit/common/gpu",
+  "+gpu/command_buffer/client/gles2_interface.h",
+  "+third_party/skia",
+  "+ui/gfx",
+  "+ui/gl",
 ]

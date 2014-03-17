@@ -31,15 +31,15 @@
 #include "config.h"
 #include "WebNetworkStateNotifier.h"
 
-#include "core/platform/network/NetworkStateNotifier.h"
+#include "core/page/NetworkStateNotifier.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 void WebNetworkStateNotifier::setOnLine(bool onLine)
 {
     networkStateNotifier().setOnLine(onLine);
 }
 
-} // namespace WebKit
+} // namespace blink

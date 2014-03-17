@@ -76,7 +76,7 @@ class CreateTemporaryHelper {
   void RunWork(int additional_file_flags) {
     // TODO(darin): file_util should have a variant of CreateTemporaryFile
     // that returns a FilePath and a PlatformFile.
-    file_util::CreateTemporaryFile(&file_path_);
+    base::CreateTemporaryFile(&file_path_);
 
     int file_flags =
         PLATFORM_FILE_WRITE |
@@ -111,7 +111,7 @@ class GetFileInfoHelper {
       error_ = PLATFORM_FILE_ERROR_NOT_FOUND;
       return;
     }
-    if (!file_util::GetFileInfo(file_path, &file_info_))
+    if (!GetFileInfo(file_path, &file_info_))
       error_ = PLATFORM_FILE_ERROR_FAILED;
   }
 
@@ -213,7 +213,7 @@ PlatformFileError DeleteAdapter(const FilePath& file_path, bool recursive) {
     return PLATFORM_FILE_ERROR_NOT_FOUND;
   }
   if (!base::DeleteFile(file_path, recursive)) {
-    if (!recursive && !file_util::IsDirectoryEmpty(file_path)) {
+    if (!recursive && !base::IsDirectoryEmpty(file_path)) {
       return PLATFORM_FILE_ERROR_NOT_EMPTY;
     }
     return PLATFORM_FILE_ERROR_FAILED;
@@ -357,8 +357,7 @@ bool FileUtilProxy::Touch(
   return base::PostTaskAndReplyWithResult(
       task_runner,
       FROM_HERE,
-      Bind(&file_util::TouchFile, file_path,
-           last_access_time, last_modified_time),
+      Bind(&TouchFile, file_path, last_access_time, last_modified_time),
       Bind(&CallWithTranslatedParameter, callback));
 }
 

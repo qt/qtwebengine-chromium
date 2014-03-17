@@ -9,7 +9,6 @@
       'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
-        '../ui/ui.gyp:ui',
       ],
       'include_dirs': [
         '..',

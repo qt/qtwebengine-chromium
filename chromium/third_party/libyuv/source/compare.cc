@@ -30,11 +30,16 @@ extern "C" {
 uint32 HashDjb2_C(const uint8* src, int count, uint32 seed);
 
 // This module is for Visual C x86
-#if !defined(LIBYUV_DISABLE_X86) && (defined(_M_IX86) || \
+#if !defined(LIBYUV_DISABLE_X86) && \
+    (defined(_M_IX86) || \
     (defined(__x86_64__) || (defined(__i386__) && !defined(__pic__))))
 #define HAS_HASHDJB2_SSE41
-
 uint32 HashDjb2_SSE41(const uint8* src, int count, uint32 seed);
+
+#if _MSC_VER >= 1700
+#define HAS_HASHDJB2_AVX2
+uint32 HashDjb2_AVX2(const uint8* src, int count, uint32 seed);
+#endif
 
 #endif  // HAS_HASHDJB2_SSE41
 
@@ -45,6 +50,11 @@ uint32 HashDjb2(const uint8* src, uint64 count, uint32 seed) {
 #if defined(HAS_HASHDJB2_SSE41)
   if (TestCpuFlag(kCpuHasSSE41)) {
     HashDjb2_SSE = HashDjb2_SSE41;
+  }
+#endif
+#if defined(HAS_HASHDJB2_AVX2)
+  if (TestCpuFlag(kCpuHasAVX2)) {
+    HashDjb2_SSE = HashDjb2_AVX2;
   }
 #endif
 
@@ -73,8 +83,8 @@ uint32 SumSquareError_C(const uint8* src_a, const uint8* src_b, int count);
 #define HAS_SUMSQUAREERROR_NEON
 uint32 SumSquareError_NEON(const uint8* src_a, const uint8* src_b, int count);
 #endif
-#if !defined(LIBYUV_DISABLE_X86) && (defined(_M_IX86) || \
-    defined(__x86_64__) || defined(__i386__))
+#if !defined(LIBYUV_DISABLE_X86) && \
+    (defined(_M_IX86) || defined(__x86_64__) || defined(__i386__))
 #define HAS_SUMSQUAREERROR_SSE2
 uint32 SumSquareError_SSE2(const uint8* src_a, const uint8* src_b, int count);
 #endif
@@ -138,7 +148,9 @@ LIBYUV_API
 uint64 ComputeSumSquareErrorPlane(const uint8* src_a, int stride_a,
                                   const uint8* src_b, int stride_b,
                                   int width, int height) {
-  if (stride_a == width && stride_b == width) {
+  // Coalesce rows.
+  if (stride_a == width &&
+      stride_b == width) {
     return ComputeSumSquareError(src_a, src_b, width * height);
   }
   uint32 (*SumSquareError)(const uint8* src_a, const uint8* src_b, int count) =

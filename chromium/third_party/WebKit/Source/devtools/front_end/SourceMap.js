@@ -33,7 +33,7 @@
  * for format description.
  * @constructor
  * @param {string} sourceMappingURL
- * @param {SourceMapV3} payload
+ * @param {!SourceMapV3} payload
  */
 WebInspector.SourceMap = function(sourceMappingURL, payload)
 {
@@ -63,7 +63,8 @@ WebInspector.SourceMap.hasSourceMapRequestHeader = function(request)
 /**
  * @param {string} sourceMapURL
  * @param {string} compiledURL
- * @param {function(WebInspector.SourceMap)} callback
+ * @param {function(?WebInspector.SourceMap)} callback
+ * @this {WebInspector.SourceMap}
  */
 WebInspector.SourceMap.load = function(sourceMapURL, compiledURL, callback)
 {
@@ -74,7 +75,7 @@ WebInspector.SourceMap.load = function(sourceMapURL, compiledURL, callback)
     /**
      * @param {?Protocol.Error} error
      * @param {number} statusCode
-     * @param {NetworkAgent.Headers} headers
+     * @param {!NetworkAgent.Headers} headers
      * @param {string} content
      */
     function contentLoaded(error, statusCode, headers, content)
@@ -87,7 +88,7 @@ WebInspector.SourceMap.load = function(sourceMapURL, compiledURL, callback)
         if (content.slice(0, 3) === ")]}")
             content = content.substring(content.indexOf('\n'));
         try {
-            var payload = /** @type {SourceMapV3} */ (JSON.parse(content));
+            var payload = /** @type {!SourceMapV3} */ (JSON.parse(content));
             var baseURL = sourceMapURL.startsWith("data:") ? compiledURL : sourceMapURL;
             callback(new WebInspector.SourceMap(baseURL, payload));
         } catch(e) {
@@ -99,7 +100,15 @@ WebInspector.SourceMap.load = function(sourceMapURL, compiledURL, callback)
 
 WebInspector.SourceMap.prototype = {
     /**
-     * @return {Array.<string>}
+     * @return {string}
+     */
+    url: function()
+    {
+        return this._sourceMappingURL;
+    },
+
+   /**
+     * @return {!Array.<string>}
      */
     sources: function()
     {
@@ -117,22 +126,19 @@ WebInspector.SourceMap.prototype = {
 
     /**
      * @param {string} sourceURL
-     * @param {WebInspector.ResourceType} contentType
-     * @return {WebInspector.ContentProvider}
+     * @param {!WebInspector.ResourceType} contentType
+     * @return {!WebInspector.ContentProvider}
      */
     sourceContentProvider: function(sourceURL, contentType)
     {
-        var lastIndexOfDot = sourceURL.lastIndexOf(".");
-        var extension = lastIndexOfDot !== -1 ? sourceURL.substr(lastIndexOfDot + 1) : "";
-        var mimeType = WebInspector.ResourceType.mimeTypesForExtensions[extension.toLowerCase()];
         var sourceContent = this.sourceContent(sourceURL);
         if (sourceContent)
-            return new WebInspector.StaticContentProvider(contentType, sourceContent, mimeType);
-        return new WebInspector.CompilerSourceMappingContentProvider(sourceURL, contentType, mimeType);
+            return new WebInspector.StaticContentProvider(contentType, sourceContent);
+        return new WebInspector.CompilerSourceMappingContentProvider(sourceURL, contentType);
     },
 
     /**
-     * @param {SourceMapV3} mappingPayload
+     * @param {!SourceMapV3} mappingPayload
      */
     _parseMappingPayload: function(mappingPayload)
     {
@@ -143,7 +149,7 @@ WebInspector.SourceMap.prototype = {
     },
 
     /**
-     * @param {Array.<SourceMapV3.Section>} sections
+     * @param {!Array.<!SourceMapV3.Section>} sections
      */
     _parseSections: function(sections)
     {
@@ -156,7 +162,7 @@ WebInspector.SourceMap.prototype = {
     /**
      * @param {number} lineNumber in compiled resource
      * @param {number} columnNumber in compiled resource
-     * @return {?Array}
+     * @return {?Array.<*>}
      */
     findEntry: function(lineNumber, columnNumber)
     {
@@ -182,7 +188,7 @@ WebInspector.SourceMap.prototype = {
     /**
      * @param {string} sourceURL of the originating resource
      * @param {number} lineNumber in the originating resource
-     * @return {Array}
+     * @return {!Array.<*>}
      */
     findEntryReversed: function(sourceURL, lineNumber)
     {
@@ -281,7 +287,7 @@ WebInspector.SourceMap.prototype = {
     },
 
     /**
-     * @param {WebInspector.SourceMap.StringCharIterator} stringCharIterator
+     * @param {!WebInspector.SourceMap.StringCharIterator} stringCharIterator
      * @return {number}
      */
     _decodeVLQ: function(stringCharIterator)

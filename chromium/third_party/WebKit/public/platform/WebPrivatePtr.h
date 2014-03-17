@@ -33,11 +33,11 @@
 
 #include "WebCommon.h"
 
-#if INSIDE_WEBKIT
+#if INSIDE_BLINK
 #include "wtf/PassRefPtr.h"
 #endif
 
-namespace WebKit {
+namespace blink {
 
 // This class is an implementation detail of the WebKit API.  It exists
 // to help simplify the implementation of WebKit interfaces that merely
@@ -56,15 +56,15 @@ namespace WebKit {
 //            assign(other);
 //            return *this;
 //        }
-//        WEBKIT_EXPORT void assign(const WebFoo&);  // Implemented in the body.
+//        BLINK_EXPORT void assign(const WebFoo&);  // Implemented in the body.
 //
 //        // Methods that are exposed to Chromium and which are specific to
 //        // WebFoo go here.
-//        WEBKIT_EXPORT doWebFooThing();
+//        BLINK_EXPORT doWebFooThing();
 //
 //        // Methods that are used only by other WebKit/chromium API classes
-//        // should only be declared when INSIDE_WEBKIT is set.
-//    #if INSIDE_WEBKIT
+//        // should only be declared when INSIDE_BLINK is set.
+//    #if INSIDE_BLINK
 //        WebFoo(const WTF::PassRefPtr<WebCore::Foo>&);
 //    #endif
 //
@@ -76,11 +76,11 @@ template <typename T>
 class WebPrivatePtr {
 public:
     WebPrivatePtr() : m_ptr(0) { }
-    ~WebPrivatePtr() { WEBKIT_ASSERT(!m_ptr); }
+    ~WebPrivatePtr() { BLINK_ASSERT(!m_ptr); }
 
     bool isNull() const { return !m_ptr; }
 
-#if INSIDE_WEBKIT
+#if INSIDE_BLINK
     WebPrivatePtr(const PassRefPtr<T>& prp)
         : m_ptr(prp.leakRef())
     {
@@ -119,7 +119,7 @@ public:
 #endif
 
 private:
-#if INSIDE_WEBKIT
+#if INSIDE_BLINK
     void assign(T* p)
     {
         // p is already ref'd for us by the caller
@@ -129,7 +129,7 @@ private:
     }
 #else
     // Disable the assignment operator; we define it above for when
-    // INSIDE_WEBKIT is set, but we need to make sure that it is not
+    // INSIDE_BLINK is set, but we need to make sure that it is not
     // used outside there; the compiler-provided version won't handle reference
     // counting properly.
     WebPrivatePtr<T>& operator=(const WebPrivatePtr<T>& other);
@@ -141,6 +141,6 @@ private:
     T* m_ptr;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

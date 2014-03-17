@@ -282,39 +282,25 @@ LayoutRect RenderMultiColumnSet::flowThreadPortionOverflowRect(const LayoutRect&
     bool isLastColumn = index == colCount - 1;
     bool isLeftmostColumn = style()->isLeftToRightDirection() ? isFirstColumn : isLastColumn;
     bool isRightmostColumn = style()->isLeftToRightDirection() ? isLastColumn : isFirstColumn;
-    LayoutRect overflowRect(portionRect);
+
+    // Calculate the overflow rectangle, based on the flow thread's, clipped at column logical
+    // top/bottom unless it's the first/last column.
+    LayoutRect overflowRect = overflowRectForFlowThreadPortion(portionRect, isFirstColumn && isFirstRegion(), isLastColumn && isLastRegion());
+
+    // Avoid overflowing into neighboring columns, by clipping in the middle of adjacent column
+    // gaps. Also make sure that we avoid rounding errors.
     if (isHorizontalWritingMode()) {
-        if (isLeftmostColumn) {
-            // Shift to the logical left overflow of the flow thread to make sure it's all covered.
-            overflowRect.shiftXEdgeTo(min(flowThread()->visualOverflowRect().x(), portionRect.x()));
-        } else {
-            // Expand into half of the logical left column gap.
+        if (!isLeftmostColumn)
             overflowRect.shiftXEdgeTo(portionRect.x() - colGap / 2);
-        }
-        if (isRightmostColumn) {
-            // Shift to the logical right overflow of the flow thread to ensure content can spill out of the column.
-            overflowRect.shiftMaxXEdgeTo(max(flowThread()->visualOverflowRect().maxX(), portionRect.maxX()));
-        } else {
-            // Expand into half of the logical right column gap.
-            overflowRect.shiftMaxXEdgeTo(portionRect.maxX() + colGap / 2);
-        }
+        if (!isRightmostColumn)
+            overflowRect.shiftMaxXEdgeTo(portionRect.maxX() + colGap - colGap / 2);
     } else {
-        if (isLeftmostColumn) {
-            // Shift to the logical left overflow of the flow thread to make sure it's all covered.
-            overflowRect.shiftYEdgeTo(min(flowThread()->visualOverflowRect().y(), portionRect.y()));
-        } else {
-            // Expand into half of the logical left column gap.
+        if (!isLeftmostColumn)
             overflowRect.shiftYEdgeTo(portionRect.y() - colGap / 2);
-        }
-        if (isRightmostColumn) {
-            // Shift to the logical right overflow of the flow thread to ensure content can spill out of the column.
-            overflowRect.shiftMaxYEdgeTo(max(flowThread()->visualOverflowRect().maxY(), portionRect.maxY()));
-        } else {
-            // Expand into half of the logical right column gap.
-            overflowRect.shiftMaxYEdgeTo(portionRect.maxY() + colGap / 2);
-        }
+        if (!isRightmostColumn)
+            overflowRect.shiftMaxYEdgeTo(portionRect.maxY() + colGap - colGap / 2);
     }
-    return overflowRectForFlowThreadPortion(overflowRect, isFirstRegion() && isFirstColumn, isLastRegion() && isLastColumn);
+    return overflowRect;
 }
 
 void RenderMultiColumnSet::paintObject(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
@@ -429,13 +415,24 @@ void RenderMultiColumnSet::repaintFlowThreadContent(const LayoutRect& repaintRec
 
 void RenderMultiColumnSet::collectLayerFragments(LayerFragments& fragments, const LayoutRect& layerBoundingBox, const LayoutRect& dirtyRect)
 {
-    // Put the layer bounds into flow thread-local coordinates by flipping it first.
+    // The two rectangles passed to this method are physical, except that we pretend that there's
+    // only one long column (that's how a flow thread works).
+    //
+    // Then there's the output from this method - the stuff we put into the list of fragments. The
+    // fragment.paginationOffset point is the actual physical translation required to get from a
+    // location in the flow thread to a location in a given column. The fragment.paginationClip
+    // rectangle, on the other hand, is in the same coordinate system as the two rectangles passed
+    // to this method (flow thread coordinates).
+    //
+    // All other rectangles in this method are sized physically, and the inline direction coordinate
+    // is physical too, but the block direction coordinate is "logical top". This is the same as
+    // e.g. RenderBox::frameRect(). These rectangles also pretend that there's only one long column,
+    // i.e. they are for the flow thread.
+
+    // Put the layer bounds into flow thread-local coordinates by flipping it first. Since we're in
+    // a renderer, most rectangles are represented this way.
     LayoutRect layerBoundsInFlowThread(layerBoundingBox);
     flowThread()->flipForWritingMode(layerBoundsInFlowThread);
-
-    // Do the same for the dirty rect.
-    LayoutRect dirtyRectInFlowThread(dirtyRect);
-    flowThread()->flipForWritingMode(dirtyRectInFlowThread);
 
     // Now we can compare with the flow thread portions owned by each column. First let's
     // see if the rect intersects our flow thread portion at all.
@@ -488,11 +485,11 @@ void RenderMultiColumnSet::collectLayerFragments(LayerFragments& fragments, cons
         // multicolumn block as well. This won't be an issue until we start creating multiple multicolumn sets.
 
         // Shift the dirty rect to be in flow thread coordinates with this translation applied.
-        LayoutRect translatedDirtyRect(dirtyRectInFlowThread);
+        LayoutRect translatedDirtyRect(dirtyRect);
         translatedDirtyRect.moveBy(-translationOffset);
 
         // See if we intersect the dirty rect.
-        clippedRect = layerBoundsInFlowThread;
+        clippedRect = layerBoundingBox;
         clippedRect.intersect(translatedDirtyRect);
         if (clippedRect.isEmpty())
             continue;
@@ -503,7 +500,8 @@ void RenderMultiColumnSet::collectLayerFragments(LayerFragments& fragments, cons
         fragment.paginationOffset = translationOffset;
 
         LayoutRect flippedFlowThreadOverflowPortion(flowThreadOverflowPortion);
-        flipForWritingMode(flippedFlowThreadOverflowPortion);
+        // Flip it into more a physical (RenderLayer-style) rectangle.
+        flowThread()->flipForWritingMode(flippedFlowThreadOverflowPortion);
         fragment.paginationClip = flippedFlowThreadOverflowPortion;
         fragments.append(fragment);
     }

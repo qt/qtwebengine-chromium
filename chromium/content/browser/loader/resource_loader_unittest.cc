@@ -11,6 +11,7 @@
 #include "content/public/test/mock_resource_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/test/test_content_browser_client.h"
+#include "net/base/request_priority.h"
 #include "net/cert/x509_certificate.h"
 #include "net/ssl/client_cert_store.h"
 #include "net/ssl/ssl_cert_request_info.h"
@@ -48,12 +49,13 @@ class ClientCertStoreStub : public net::ClientCertStore {
   }
 
   // net::ClientCertStore:
-  virtual bool GetClientCerts(const net::SSLCertRequestInfo& cert_request_info,
-                              net::CertificateList* selected_certs) OVERRIDE {
+  virtual void GetClientCerts(const net::SSLCertRequestInfo& cert_request_info,
+                              net::CertificateList* selected_certs,
+                              const base::Closure& callback) OVERRIDE {
     ++request_count_;
     requested_authorities_ = cert_request_info.cert_authorities;
     *selected_certs = response_;
-    return true;
+    callback.Run();
   }
 
  private:
@@ -66,6 +68,8 @@ class ClientCertStoreStub : public net::ClientCertStore {
 // initialize ResourceLoader.
 class ResourceHandlerStub : public ResourceHandler {
  public:
+  ResourceHandlerStub() : ResourceHandler(NULL) {}
+
   virtual bool OnUploadProgress(int request_id,
                                 uint64 position,
                                 uint64 size) OVERRIDE {
@@ -90,7 +94,7 @@ class ResourceHandlerStub : public ResourceHandler {
   }
 
   virtual bool OnWillRead(int request_id,
-                          net::IOBuffer** buf,
+                          scoped_refptr<net::IOBuffer>* buf,
                           int* buf_size,
                           int min_size) OVERRIDE {
     return true;
@@ -102,10 +106,10 @@ class ResourceHandlerStub : public ResourceHandler {
     return true;
   }
 
-  virtual bool OnResponseCompleted(int request_id,
+  virtual void OnResponseCompleted(int request_id,
                                    const net::URLRequestStatus& status,
-                                   const std::string& security_info) OVERRIDE {
-    return true;
+                                   const std::string& security_info,
+                                   bool* defer) OVERRIDE {
   }
 
   virtual void OnDataDownloaded(int request_id,
@@ -139,6 +143,23 @@ class SelectCertificateBrowserClient : public TestContentBrowserClient {
  private:
   net::CertificateList passed_certs_;
   int call_count_;
+};
+
+class ResourceContextStub : public MockResourceContext {
+ public:
+  explicit ResourceContextStub(net::URLRequestContext* test_request_context)
+      : MockResourceContext(test_request_context) {}
+
+  virtual scoped_ptr<net::ClientCertStore> CreateClientCertStore() OVERRIDE {
+    return dummy_cert_store_.Pass();
+  }
+
+  void SetClientCertStore(scoped_ptr<net::ClientCertStore> store) {
+    dummy_cert_store_ = store.Pass();
+  }
+
+ private:
+  scoped_ptr<net::ClientCertStore> dummy_cert_store_;
 };
 
 }  // namespace
@@ -180,12 +201,9 @@ class ResourceLoaderTest : public testing::Test,
   content::TestBrowserThreadBundle thread_bundle_;
 
   net::TestURLRequestContext test_url_request_context_;
-  content::MockResourceContext resource_context_;
+  ResourceContextStub resource_context_;
 };
 
-// When OpenSSL is used, client cert store is not being queried in
-// ResourceLoader.
-#if !defined(USE_OPENSSL)
 // Verifies if a call to net::UrlRequest::Delegate::OnCertificateRequested()
 // causes client cert store to be queried for certificates and if the returned
 // certificates are correctly passed to the content browser client for
@@ -194,14 +212,17 @@ TEST_F(ResourceLoaderTest, ClientCertStoreLookup) {
   const int kRenderProcessId = 1;
   const int kRenderViewId = 2;
 
-  scoped_ptr<net::URLRequest> request(new net::URLRequest(
-      GURL("dummy"), NULL,
-      resource_context_.GetRequestContext()));
+  scoped_ptr<net::URLRequest> request(
+      new net::URLRequest(GURL("dummy"),
+                          net::DEFAULT_PRIORITY,
+                          NULL,
+                          resource_context_.GetRequestContext()));
   ResourceRequestInfo::AllocateForTesting(request.get(),
                                           ResourceType::MAIN_FRAME,
                                           &resource_context_,
                                           kRenderProcessId,
-                                          kRenderViewId);
+                                          kRenderViewId,
+                                          false);
 
   // Set up the test client cert store.
   net::CertificateList dummy_certs(1, scoped_refptr<net::X509Certificate>(
@@ -215,10 +236,11 @@ TEST_F(ResourceLoaderTest, ClientCertStoreLookup) {
   // later.
   net::URLRequest* raw_ptr_to_request = request.get();
   ClientCertStoreStub* raw_ptr_to_store = test_store.get();
+  resource_context_.SetClientCertStore(
+      test_store.PassAs<net::ClientCertStore>());
 
   scoped_ptr<ResourceHandler> resource_handler(new ResourceHandlerStub());
-  ResourceLoader loader(request.Pass(), resource_handler.Pass(), this,
-                        test_store.PassAs<net::ClientCertStore>());
+  ResourceLoader loader(request.Pass(), resource_handler.Pass(), this);
 
   // Prepare a dummy certificate request.
   scoped_refptr<net::SSLCertRequestInfo> cert_request_info(
@@ -247,6 +269,55 @@ TEST_F(ResourceLoaderTest, ClientCertStoreLookup) {
   EXPECT_EQ(1, test_client.call_count());
   EXPECT_EQ(dummy_certs, test_client.passed_certs());
 }
-#endif  // !defined(OPENSSL)
+
+// Verifies if a call to net::URLRequest::Delegate::OnCertificateRequested()
+// on a platform with a NULL client cert store still calls the content browser
+// client for selection.
+TEST_F(ResourceLoaderTest, ClientCertStoreNull) {
+  const int kRenderProcessId = 1;
+  const int kRenderViewId = 2;
+
+  scoped_ptr<net::URLRequest> request(
+      new net::URLRequest(GURL("dummy"),
+                          net::DEFAULT_PRIORITY,
+                          NULL,
+                          resource_context_.GetRequestContext()));
+  ResourceRequestInfo::AllocateForTesting(request.get(),
+                                          ResourceType::MAIN_FRAME,
+                                          &resource_context_,
+                                          kRenderProcessId,
+                                          kRenderViewId,
+                                          false);
+
+  // Ownership of the |request| is about to be turned over to ResourceLoader. We
+  // need to keep a raw pointer copy to access this object later.
+  net::URLRequest* raw_ptr_to_request = request.get();
+
+  scoped_ptr<ResourceHandler> resource_handler(new ResourceHandlerStub());
+  ResourceLoader loader(request.Pass(), resource_handler.Pass(), this);
+
+  // Prepare a dummy certificate request.
+  scoped_refptr<net::SSLCertRequestInfo> cert_request_info(
+      new net::SSLCertRequestInfo());
+  std::vector<std::string> dummy_authority(1, "dummy");
+  cert_request_info->cert_authorities = dummy_authority;
+
+  // Plug in test content browser client.
+  SelectCertificateBrowserClient test_client;
+  ContentBrowserClient* old_client = SetBrowserClientForTesting(&test_client);
+
+  // Everything is set up. Trigger the resource loader certificate request event
+  // and run the message loop.
+  loader.OnCertificateRequested(raw_ptr_to_request, cert_request_info.get());
+  base::RunLoop().RunUntilIdle();
+
+  // Restore the original content browser client.
+  SetBrowserClientForTesting(old_client);
+
+  // Check if the SelectClientCertificate was called on the content browser
+  // client.
+  EXPECT_EQ(1, test_client.call_count());
+  EXPECT_EQ(net::CertificateList(), test_client.passed_certs());
+}
 
 }  // namespace content

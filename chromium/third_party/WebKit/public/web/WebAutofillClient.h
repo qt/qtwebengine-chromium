@@ -31,7 +31,7 @@
 #ifndef WebAutofillClient_h
 #define WebAutofillClient_h
 
-namespace WebKit {
+namespace blink {
 
 class WebFormElement;
 class WebFrame;
@@ -91,6 +91,8 @@ public:
     virtual void textFieldDidEndEditing(const WebInputElement&) { }
     virtual void textFieldDidChange(const WebInputElement&) { }
     virtual void textFieldDidReceiveKeyDown(const WebInputElement&, const WebKeyboardEvent&) { }
+    // This is called when a datalist indicator is clicked.
+    virtual void openTextDataListChooser(const WebInputElement&) { }
 
     // Informs the client whether or not any subsequent text changes should be ignored.
     virtual void setIgnoreTextChanges(bool ignore) { }
@@ -101,6 +103,6 @@ protected:
     virtual ~WebAutofillClient() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

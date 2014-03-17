@@ -32,12 +32,7 @@ VP9_DX_SRCS-yes += decoder/vp9_thread.c
 VP9_DX_SRCS-yes += decoder/vp9_thread.h
 VP9_DX_SRCS-yes += decoder/vp9_treereader.h
 VP9_DX_SRCS-yes += decoder/vp9_onyxd_if.c
-VP9_DX_SRCS-yes += decoder/vp9_idct_blk.c
-VP9_DX_SRCS-yes += decoder/vp9_idct_blk.h
 VP9_DX_SRCS-yes += decoder/vp9_dsubexp.c
 VP9_DX_SRCS-yes += decoder/vp9_dsubexp.h
 
 VP9_DX_SRCS-yes := $(filter-out $(VP9_DX_SRCS_REMOVE-yes),$(VP9_DX_SRCS-yes))
-
-VP9_DX_SRCS-$(HAVE_SSE2) += decoder/x86/vp9_dequantize_sse2.c
-VP9_DX_SRCS-$(HAVE_NEON) += decoder/arm/neon/vp9_add_constant_residual_neon$(ASM)

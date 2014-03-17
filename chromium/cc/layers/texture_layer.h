@@ -13,8 +13,6 @@
 #include "cc/layers/layer.h"
 #include "cc/resources/texture_mailbox.h"
 
-namespace WebKit { class WebGraphicsContext3D; }
-
 namespace cc {
 class BlockingTaskRunner;
 class SingleReleaseCallback;
@@ -143,13 +141,16 @@ class CC_EXPORT TextureLayer : public Layer {
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
   virtual Region VisibleContentOpaqueRegion() const OVERRIDE;
 
-  virtual bool CanClipSelf() const OVERRIDE;
-
  protected:
   TextureLayer(TextureLayerClient* client, bool uses_mailbox);
   virtual ~TextureLayer();
 
  private:
+  void SetTextureMailboxInternal(
+      const TextureMailbox& mailbox,
+      scoped_ptr<SingleReleaseCallback> release_callback,
+      bool requires_commit);
+
   TextureLayerClient* client_;
   bool uses_mailbox_;
 

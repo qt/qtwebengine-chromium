@@ -25,11 +25,14 @@
 #include "core/rendering/RenderReplaced.h"
 
 #include "RuntimeEnabledFeatures.h"
-#include "core/platform/graphics/GraphicsContext.h"
+#include "core/rendering/GraphicsContextAnnotator.h"
+#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/RenderBlock.h"
+#include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
+#include "platform/graphics/GraphicsContext.h"
 
 using namespace std;
 
@@ -78,6 +81,7 @@ void RenderReplaced::layout()
 {
     ASSERT(needsLayout());
 
+    LayoutRectRecorder recorder(*this);
     LayoutRepainter repainter(*this, checkForRepaintDuringLayout());
 
     setHeight(minimumReplacedHeight());
@@ -119,11 +123,14 @@ void RenderReplaced::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
         return;
     }
 
+    if (paintInfo.phase == PaintPhaseClippingMask && (!hasLayer() || !layer()->hasCompositedClippingMask()))
+        return;
+
     LayoutRect paintRect = LayoutRect(adjustedPaintOffset, size());
     if ((paintInfo.phase == PaintPhaseOutline || paintInfo.phase == PaintPhaseSelfOutline) && style()->outlineWidth())
         paintOutline(paintInfo, paintRect);
 
-    if (paintInfo.phase != PaintPhaseForeground && paintInfo.phase != PaintPhaseSelection && !canHaveChildren())
+    if (paintInfo.phase != PaintPhaseForeground && paintInfo.phase != PaintPhaseSelection && !canHaveChildren() && paintInfo.phase != PaintPhaseClippingMask)
         return;
 
     if (!paintInfo.shouldPaintWithinRoot(this))
@@ -152,7 +159,11 @@ void RenderReplaced::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
     }
 
     if (!completelyClippedOut) {
-        paintReplaced(paintInfo, adjustedPaintOffset);
+        if (paintInfo.phase == PaintPhaseClippingMask) {
+            paintClippingMask(paintInfo, adjustedPaintOffset);
+        } else {
+            paintReplaced(paintInfo, adjustedPaintOffset);
+        }
 
         if (style()->hasBorderRadius())
             paintInfo.context->restore();
@@ -170,7 +181,7 @@ void RenderReplaced::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 bool RenderReplaced::shouldPaint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
     if (paintInfo.phase != PaintPhaseForeground && paintInfo.phase != PaintPhaseOutline && paintInfo.phase != PaintPhaseSelfOutline
-            && paintInfo.phase != PaintPhaseSelection && paintInfo.phase != PaintPhaseMask)
+        && paintInfo.phase != PaintPhaseSelection && paintInfo.phase != PaintPhaseMask && paintInfo.phase != PaintPhaseClippingMask)
         return false;
 
     if (!paintInfo.shouldPaintWithinRoot(this))
@@ -270,8 +281,11 @@ void RenderReplaced::computeAspectRatioInformationForRenderBox(RenderBox* conten
             ASSERT(!isPercentageIntrinsicSize);
 
         // Handle zoom & vertical writing modes here, as the embedded document doesn't know about them.
-        if (!isPercentageIntrinsicSize)
+        if (!isPercentageIntrinsicSize) {
             intrinsicSize.scale(style()->effectiveZoom());
+            if (isRenderImage())
+                intrinsicSize.scale(toRenderImage(this)->imageDevicePixelRatio());
+        }
 
         if (rendererHasAspectRatio(this) && isPercentageIntrinsicSize)
             intrinsicRatio = 1;

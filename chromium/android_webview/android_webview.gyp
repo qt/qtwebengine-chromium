@@ -5,8 +5,12 @@
   'variables': {
     'chromium_code': 1,
   },
-  'includes': [
-    'android_webview_tests.gypi',
+  'conditions': [
+    ['android_webview_build==0', {
+      'includes': [
+        'android_webview_tests.gypi',
+      ],
+    }],
   ],
   'targets': [
     {
@@ -17,6 +21,11 @@
         'android_webview_common',
       ],
       'conditions': [
+        # Avoid clashes between the versions of this library built with
+        # android_webview_build==1 by using a different name prefix.
+        [ 'android_webview_build==0', {
+          'product_prefix': 'libstandalone',
+        }],
         # The general approach is to allow the executable target to choose
         # the allocator, but as in the WebView case we are building a library
         # only, put the dependency on the allocator here
@@ -46,7 +55,7 @@
       'dependencies': [
         '<(DEPTH)/content/content_resources.gyp:content_resources',
         '<(DEPTH)/net/net.gyp:net_resources',
-        '<(DEPTH)/ui/ui.gyp:ui_resources',
+        '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
         '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
       ],
       'variables': {
@@ -88,11 +97,13 @@
         '../components/components.gyp:visitedlink_renderer',
         '../components/components.gyp:web_contents_delegate_android',
         '../content/content.gyp:content_app_both',
-        '../skia/skia.gyp:skia',
         '../gpu/gpu.gyp:command_buffer_service',
         '../gpu/gpu.gyp:gles2_implementation',
+        '../printing/printing.gyp:printing',
+        '../skia/skia.gyp:skia',
+        '../third_party/WebKit/public/blink.gyp:blink',
         '../ui/gl/gl.gyp:gl',
-        '../ui/ui.gyp:shell_dialogs',
+        '../ui/shell_dialogs/shell_dialogs.gyp:shell_dialogs',
         '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
         'android_webview_pak',
       ],
@@ -125,15 +136,19 @@
         'browser/aw_javascript_dialog_manager.h',
         'browser/aw_login_delegate.cc',
         'browser/aw_login_delegate.h',
+        'browser/aw_pref_store.cc',
+        'browser/aw_pref_store.h',
         'browser/aw_quota_manager_bridge.cc',
         'browser/aw_quota_manager_bridge.h',
         'browser/aw_quota_permission_context.cc',
         'browser/aw_quota_permission_context.h',
-        'browser/aw_pref_store.cc',
-        'browser/aw_pref_store.h',
         'browser/aw_request_interceptor.cc',
         'browser/aw_request_interceptor.h',
+        'browser/aw_resource_context.cc',
+        'browser/aw_resource_context.h',
         'browser/aw_result_codes.h',
+        'browser/aw_web_preferences_populater.cc',
+        'browser/aw_web_preferences_populater.h',
         'browser/browser_view_renderer.h',
         'browser/find_helper.cc',
         'browser/find_helper.h',
@@ -144,6 +159,7 @@
         'browser/in_process_view_renderer.cc',
         'browser/in_process_view_renderer.h',
         'browser/input_stream.h',
+        'browser/intercepted_request_data.cc',
         'browser/intercepted_request_data.h',
         'browser/jni_dependency_factory.h',
         'browser/gl_view_renderer_manager.cc',
@@ -165,6 +181,8 @@
         'browser/renderer_host/aw_render_view_host_ext.h',
         'browser/renderer_host/aw_resource_dispatcher_host_delegate.cc',
         'browser/renderer_host/aw_resource_dispatcher_host_delegate.h',
+        'browser/renderer_host/print_manager.cc',
+        'browser/renderer_host/print_manager.h',
         'browser/scoped_allow_wait_for_legacy_web_view_api.h',
         'browser/scoped_app_gl_state_restore.cc',
         'browser/scoped_app_gl_state_restore.h',
@@ -177,6 +195,8 @@
         'common/aw_resource.h',
         'common/aw_switches.cc',
         'common/aw_switches.h',
+        'common/print_messages.cc',
+        'common/print_messages.h',
         'common/render_view_messages.cc',
         'common/render_view_messages.h',
         'common/url_constants.cc',
@@ -188,10 +208,16 @@
         'public/browser/draw_gl.h',
         'renderer/aw_content_renderer_client.cc',
         'renderer/aw_content_renderer_client.h',
+        'renderer/aw_key_systems.cc',
+        'renderer/aw_key_systems.h',
         'renderer/aw_render_process_observer.cc',
         'renderer/aw_render_process_observer.h',
         'renderer/aw_render_view_ext.cc',
         'renderer/aw_render_view_ext.h',
+        'renderer/print_web_view_helper.cc',
+        'renderer/print_web_view_helper.h',
+        'renderer/print_web_view_helper_android.cc',
+        'renderer/print_web_view_helper_linux.cc',
       ],
     },
     {
@@ -201,7 +227,7 @@
         '../components/components.gyp:navigation_interception_java',
         '../components/components.gyp:web_contents_delegate_android_java',
         '../content/content.gyp:content_java',
-        '../ui/ui.gyp:ui_java',
+        '../ui/android/ui_android.gyp:ui_java',
       ],
       'variables': {
         'java_in_dir': '../android_webview/java',

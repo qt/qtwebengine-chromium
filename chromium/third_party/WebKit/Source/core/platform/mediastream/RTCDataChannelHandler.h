@@ -25,7 +25,6 @@
 #ifndef RTCDataChannelHandler_h
 #define RTCDataChannelHandler_h
 
-#include "core/platform/mediastream/RTCDataChannelHandler.h"
 #include "core/platform/mediastream/RTCDataChannelHandlerClient.h"
 #include "public/platform/WebRTCDataChannelHandler.h"
 #include "public/platform/WebRTCDataChannelHandlerClient.h"
@@ -36,9 +35,9 @@ namespace WebCore {
 
 class RTCDataChannelHandlerClient;
 
-class RTCDataChannelHandler : public WebKit::WebRTCDataChannelHandlerClient {
+class RTCDataChannelHandler : public blink::WebRTCDataChannelHandlerClient {
 public:
-    static PassOwnPtr<RTCDataChannelHandler> create(WebKit::WebRTCDataChannelHandler*);
+    static PassOwnPtr<RTCDataChannelHandler> create(blink::WebRTCDataChannelHandler*);
     virtual ~RTCDataChannelHandler();
 
     void setClient(RTCDataChannelHandlerClient*);
@@ -60,16 +59,16 @@ public:
     bool sendRawData(const char*, size_t);
     void close();
 
-    // WebKit::WebRTCDataChannelHandlerClient implementation.
+    // blink::WebRTCDataChannelHandlerClient implementation.
     virtual void didChangeReadyState(ReadyState) const OVERRIDE;
-    virtual void didReceiveStringData(const WebKit::WebString&) const OVERRIDE;
+    virtual void didReceiveStringData(const blink::WebString&) const OVERRIDE;
     virtual void didReceiveRawData(const char*, size_t) const OVERRIDE;
     virtual void didDetectError() const OVERRIDE;
 
 private:
-    explicit RTCDataChannelHandler(WebKit::WebRTCDataChannelHandler*);
+    explicit RTCDataChannelHandler(blink::WebRTCDataChannelHandler*);
 
-    OwnPtr<WebKit::WebRTCDataChannelHandler> m_webHandler;
+    OwnPtr<blink::WebRTCDataChannelHandler> m_webHandler;
     RTCDataChannelHandlerClient* m_client;
 };
 

@@ -216,29 +216,6 @@ error::Error GLES2DecoderImpl::HandleBufferSubData(
   return error::kNoError;
 }
 
-error::Error GLES2DecoderImpl::HandleBufferSubDataImmediate(
-    uint32 immediate_data_size, const gles2::cmds::BufferSubDataImmediate& c) {
-  GLenum target = static_cast<GLenum>(c.target);
-  GLintptr offset = static_cast<GLintptr>(c.offset);
-  GLsizeiptr size = static_cast<GLsizeiptr>(c.size);
-  uint32 data_size = size;
-  const void* data = GetImmediateDataAs<const void*>(
-      c, data_size, immediate_data_size);
-  if (!validators_->buffer_target.IsValid(target)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM("glBufferSubData", target, "target");
-    return error::kNoError;
-  }
-  if (size < 0) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glBufferSubData", "size < 0");
-    return error::kNoError;
-  }
-  if (data == NULL) {
-    return error::kOutOfBounds;
-  }
-  DoBufferSubData(target, offset, size, data);
-  return error::kNoError;
-}
-
 error::Error GLES2DecoderImpl::HandleCheckFramebufferStatus(
     uint32 immediate_data_size, const gles2::cmds::CheckFramebufferStatus& c) {
   GLenum target = static_cast<GLenum>(c.target);
@@ -259,8 +236,10 @@ error::Error GLES2DecoderImpl::HandleCheckFramebufferStatus(
 
 error::Error GLES2DecoderImpl::HandleClear(
     uint32 immediate_data_size, const gles2::cmds::Clear& c) {
-  if (ShouldDeferDraws())
-    return error::kDeferCommandUntilLater;
+  error::Error error;
+  error = WillAccessBoundFramebufferForDraw();
+  if (error != error::kNoError)
+    return error;
   GLbitfield mask = static_cast<GLbitfield>(c.mask);
   DoClear(mask);
   return error::kNoError;
@@ -378,57 +357,12 @@ error::Error GLES2DecoderImpl::HandleCompressedTexSubImage2D(
   return error::kNoError;
 }
 
-error::Error GLES2DecoderImpl::HandleCompressedTexSubImage2DImmediate(
-    uint32 immediate_data_size,
-    const gles2::cmds::CompressedTexSubImage2DImmediate& c) {
-  GLenum target = static_cast<GLenum>(c.target);
-  GLint level = static_cast<GLint>(c.level);
-  GLint xoffset = static_cast<GLint>(c.xoffset);
-  GLint yoffset = static_cast<GLint>(c.yoffset);
-  GLsizei width = static_cast<GLsizei>(c.width);
-  GLsizei height = static_cast<GLsizei>(c.height);
-  GLenum format = static_cast<GLenum>(c.format);
-  GLsizei imageSize = static_cast<GLsizei>(c.imageSize);
-  uint32 data_size = imageSize;
-  const void* data = GetImmediateDataAs<const void*>(
-      c, data_size, immediate_data_size);
-  if (!validators_->texture_target.IsValid(target)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM("glCompressedTexSubImage2D", target,
-    "target");
-    return error::kNoError;
-  }
-  if (width < 0) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_VALUE, "glCompressedTexSubImage2D", "width < 0");
-    return error::kNoError;
-  }
-  if (height < 0) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_VALUE, "glCompressedTexSubImage2D", "height < 0");
-    return error::kNoError;
-  }
-  if (!validators_->compressed_texture_format.IsValid(format)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM("glCompressedTexSubImage2D", format,
-    "format");
-    return error::kNoError;
-  }
-  if (imageSize < 0) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_VALUE, "glCompressedTexSubImage2D", "imageSize < 0");
-    return error::kNoError;
-  }
-  if (data == NULL) {
-    return error::kOutOfBounds;
-  }
-  DoCompressedTexSubImage2D(
-      target, level, xoffset, yoffset, width, height, format, imageSize, data);
-  return error::kNoError;
-}
-
 error::Error GLES2DecoderImpl::HandleCopyTexImage2D(
     uint32 immediate_data_size, const gles2::cmds::CopyTexImage2D& c) {
-  if (ShouldDeferReads())
-    return error::kDeferCommandUntilLater;
+  error::Error error;
+  error = WillAccessBoundFramebufferForRead();
+  if (error != error::kNoError)
+    return error;
   GLenum target = static_cast<GLenum>(c.target);
   GLint level = static_cast<GLint>(c.level);
   GLenum internalformat = static_cast<GLenum>(c.internalformat);
@@ -465,8 +399,10 @@ error::Error GLES2DecoderImpl::HandleCopyTexImage2D(
 
 error::Error GLES2DecoderImpl::HandleCopyTexSubImage2D(
     uint32 immediate_data_size, const gles2::cmds::CopyTexSubImage2D& c) {
-  if (ShouldDeferReads())
-    return error::kDeferCommandUntilLater;
+  error::Error error;
+  error = WillAccessBoundFramebufferForRead();
+  if (error != error::kNoError)
+    return error;
   GLenum target = static_cast<GLenum>(c.target);
   GLint level = static_cast<GLint>(c.level);
   GLint xoffset = static_cast<GLint>(c.xoffset);
@@ -739,8 +675,10 @@ error::Error GLES2DecoderImpl::HandleEnableVertexAttribArray(
 
 error::Error GLES2DecoderImpl::HandleFinish(
     uint32 immediate_data_size, const gles2::cmds::Finish& c) {
-  if (ShouldDeferReads())
-    return error::kDeferCommandUntilLater;
+  error::Error error;
+  error = WillAccessBoundFramebufferForRead();
+  if (error != error::kNoError)
+    return error;
   DoFinish();
   return error::kNoError;
 }
@@ -2698,10 +2636,16 @@ error::Error GLES2DecoderImpl::HandleViewport(
   return error::kNoError;
 }
 
-error::Error GLES2DecoderImpl::HandleBlitFramebufferEXT(
-    uint32 immediate_data_size, const gles2::cmds::BlitFramebufferEXT& c) {
-  if (ShouldDeferDraws() || ShouldDeferReads())
-    return error::kDeferCommandUntilLater;
+error::Error GLES2DecoderImpl::HandleBlitFramebufferCHROMIUM(
+    uint32 immediate_data_size,
+    const gles2::cmds::BlitFramebufferCHROMIUM& c) {
+  error::Error error;
+  error = WillAccessBoundFramebufferForDraw();
+  if (error != error::kNoError)
+    return error;
+  error = WillAccessBoundFramebufferForRead();
+  if (error != error::kNoError)
+    return error;
   GLint srcX0 = static_cast<GLint>(c.srcX0);
   GLint srcY0 = static_cast<GLint>(c.srcY0);
   GLint srcX1 = static_cast<GLint>(c.srcX1);
@@ -2713,11 +2657,48 @@ error::Error GLES2DecoderImpl::HandleBlitFramebufferEXT(
   GLbitfield mask = static_cast<GLbitfield>(c.mask);
   GLenum filter = static_cast<GLenum>(c.filter);
   if (!validators_->blit_filter.IsValid(filter)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM("glBlitFramebufferEXT", filter, "filter");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glBlitFramebufferCHROMIUM", filter,
+    "filter");
     return error::kNoError;
   }
-  DoBlitFramebufferEXT(
+  DoBlitFramebufferCHROMIUM(
       srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask, filter);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleRenderbufferStorageMultisampleCHROMIUM(
+    uint32 immediate_data_size,
+    const gles2::cmds::RenderbufferStorageMultisampleCHROMIUM& c) {
+  GLenum target = static_cast<GLenum>(c.target);
+  GLsizei samples = static_cast<GLsizei>(c.samples);
+  GLenum internalformat = static_cast<GLenum>(c.internalformat);
+  GLsizei width = static_cast<GLsizei>(c.width);
+  GLsizei height = static_cast<GLsizei>(c.height);
+  if (!validators_->render_buffer_target.IsValid(target)) {
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glRenderbufferStorageMultisampleCHROMIUM", target, "target");  // NOLINT
+    return error::kNoError;
+  }
+  if (samples < 0) {
+    LOCAL_SET_GL_ERROR(
+        GL_INVALID_VALUE, "glRenderbufferStorageMultisampleCHROMIUM", "samples < 0");  // NOLINT
+    return error::kNoError;
+  }
+  if (!validators_->render_buffer_format.IsValid(internalformat)) {
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glRenderbufferStorageMultisampleCHROMIUM", internalformat, "internalformat");  // NOLINT
+    return error::kNoError;
+  }
+  if (width < 0) {
+    LOCAL_SET_GL_ERROR(
+        GL_INVALID_VALUE, "glRenderbufferStorageMultisampleCHROMIUM", "width < 0");  // NOLINT
+    return error::kNoError;
+  }
+  if (height < 0) {
+    LOCAL_SET_GL_ERROR(
+        GL_INVALID_VALUE, "glRenderbufferStorageMultisampleCHROMIUM", "height < 0");  // NOLINT
+    return error::kNoError;
+  }
+  DoRenderbufferStorageMultisampleCHROMIUM(
+      target, samples, internalformat, width, height);
   return error::kNoError;
 }
 
@@ -2752,7 +2733,7 @@ error::Error GLES2DecoderImpl::HandleRenderbufferStorageMultisampleEXT(
         GL_INVALID_VALUE, "glRenderbufferStorageMultisampleEXT", "height < 0");
     return error::kNoError;
   }
-  DoRenderbufferStorageMultisample(
+  DoRenderbufferStorageMultisampleEXT(
       target, samples, internalformat, width, height);
   return error::kNoError;
 }

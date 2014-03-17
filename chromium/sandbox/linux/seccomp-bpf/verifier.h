@@ -10,8 +10,9 @@
 #include <utility>
 #include <vector>
 
+namespace sandbox {
 
-namespace playground2 {
+class SandboxBPFPolicy;
 
 class Verifier {
  public:
@@ -22,10 +23,10 @@ class Verifier {
   // set by the "evaluators".
   // Upon success, "err" is set to NULL. Upon failure, it contains a static
   // error message that does not need to be free()'d.
-  static bool VerifyBPF(Sandbox *sandbox,
+  static bool VerifyBPF(SandboxBPF* sandbox,
                         const std::vector<struct sock_filter>& program,
-                        const Sandbox::Evaluators& evaluators,
-                        const char **err);
+                        const SandboxBPFPolicy& policy,
+                        const char** err);
 
   // Evaluate a given BPF program for a particular set of system call
   // parameters. If evaluation failed for any reason, "err" will be set to
@@ -37,12 +38,12 @@ class Verifier {
   // BPF compiler, we might have to extend this BPF interpreter.
   static uint32_t EvaluateBPF(const std::vector<struct sock_filter>& program,
                               const struct arch_seccomp_data& data,
-                              const char **err);
+                              const char** err);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(Verifier);
 };
 
-}  // namespace
+}  // namespace sandbox
 
 #endif  // SANDBOX_LINUX_SECCOMP_BPF_VERIFIER_H__

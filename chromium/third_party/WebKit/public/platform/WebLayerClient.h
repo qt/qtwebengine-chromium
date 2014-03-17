@@ -31,17 +31,26 @@
 #ifndef WebLayerClient_h
 #define WebLayerClient_h
 
-namespace WebKit {
+#include "WebCommon.h"
 
-class WebLayerClient {
+namespace blink {
+
+class WebGraphicsLayerDebugInfo;
+
+class BLINK_PLATFORM_EXPORT WebLayerClient {
 public:
     virtual WebString debugName(WebLayer*) = 0;
+
+    // Returns a pointer to a debug info object, if one has been computed.
+    // If not, returns 0. If the returned pointer is non-zero, the caller takes
+    // ownership of the pointer.
+    virtual WebGraphicsLayerDebugInfo* takeDebugInfo() = 0;
 
 protected:
     virtual ~WebLayerClient() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebLayerClient_h
 

@@ -44,45 +44,88 @@ typedef int ExceptionCode;
 class ExceptionState {
     WTF_MAKE_NONCOPYABLE(ExceptionState);
 public:
-    explicit ExceptionState(v8::Isolate* isolate)
+    enum Context {
+        ConstructionContext,
+        ExecutionContext,
+        DeletionContext,
+        GetterContext,
+        SetterContext,
+        UnknownContext, // FIXME: Remove this once we've flipped over to the new API.
+    };
+
+    explicit ExceptionState(const v8::Handle<v8::Object>& creationContext, v8::Isolate* isolate)
         : m_code(0)
+        , m_context(UnknownContext)
+        , m_propertyName(0)
+        , m_interfaceName(0)
+        , m_creationContext(creationContext)
         , m_isolate(isolate) { }
 
-    virtual void throwDOMException(const ExceptionCode&,  const String& message = String());
-    virtual void throwTypeError(const String& message = String());
+    ExceptionState(Context context, const char* propertyName, const char* interfaceName, const v8::Handle<v8::Object>& creationContext, v8::Isolate* isolate)
+        : m_code(0)
+        , m_context(context)
+        , m_propertyName(propertyName)
+        , m_interfaceName(interfaceName)
+        , m_creationContext(creationContext)
+        , m_isolate(isolate) { }
+
+    ExceptionState(Context context, const char* interfaceName, const v8::Handle<v8::Object>& creationContext, v8::Isolate* isolate)
+        : m_code(0)
+        , m_context(context)
+        , m_propertyName(0)
+        , m_interfaceName(interfaceName)
+        , m_creationContext(creationContext)
+        , m_isolate(isolate) { ASSERT(m_context == ConstructionContext); }
+
+    virtual void throwDOMException(const ExceptionCode&, const String& message);
+    virtual void throwTypeError(const String& message);
     virtual void throwSecurityError(const String& sanitizedMessage, const String& unsanitizedMessage = String());
+
+    // Please don't use these methods. Use ::throwDOMException and ::throwTypeError, and pass in a useful exception message.
+    virtual void throwUninformativeAndGenericDOMException(const ExceptionCode& ec) { throwDOMException(ec, String()); }
+    virtual void throwUninformativeAndGenericTypeError() { throwTypeError(String()); }
 
     bool hadException() const { return !m_exception.isEmpty() || m_code; }
     void clearException();
 
-    ExceptionCode code() { return m_code; }
+    ExceptionCode code() const { return m_code; }
 
     bool throwIfNeeded()
     {
         if (m_exception.isEmpty()) {
             if (!m_code)
                 return false;
-            throwDOMException(m_code);
+            throwUninformativeAndGenericDOMException(m_code);
         }
 
         V8ThrowException::throwError(m_exception.newLocal(m_isolate), m_isolate);
         return true;
     }
 
+    Context context() const { return m_context; }
+    const char* propertyName() const { return m_propertyName; }
+    const char* interfaceName() const { return m_interfaceName; }
+
 protected:
     ExceptionCode m_code;
+    Context m_context;
+    const char* m_propertyName;
+    const char* m_interfaceName;
 
 private:
     void setException(v8::Handle<v8::Value>);
 
+    String addExceptionContext(const String&) const;
+
     ScopedPersistent<v8::Value> m_exception;
+    v8::Handle<v8::Object> m_creationContext;
     v8::Isolate* m_isolate;
 };
 
 class TrackExceptionState : public ExceptionState {
 public:
-    TrackExceptionState(): ExceptionState(0) { }
-    virtual void throwDOMException(const ExceptionCode&, const String& message = String()) OVERRIDE FINAL;
+    TrackExceptionState(): ExceptionState(v8::Handle<v8::Object>(), 0) { }
+    virtual void throwDOMException(const ExceptionCode&, const String& message) OVERRIDE FINAL;
     virtual void throwTypeError(const String& message = String()) OVERRIDE FINAL;
     virtual void throwSecurityError(const String& sanitizedMessage, const String& unsanitizedMessage = String()) OVERRIDE FINAL;
 };

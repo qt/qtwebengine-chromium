@@ -26,15 +26,13 @@
 
 #include "core/svg/SVGUseElement.h"
 
-#include "SVGNames.h"
 #include "XLinkNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
-#include "core/fetch/DocumentResource.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/rendering/svg/RenderSVGResource.h"
@@ -71,8 +69,8 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGUseElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGUseElement::SVGUseElement(const QualifiedName& tagName, Document& document, bool wasInsertedByParser)
-    : SVGGraphicsElement(tagName, document)
+inline SVGUseElement::SVGUseElement(Document& document, bool wasInsertedByParser)
+    : SVGGraphicsElement(SVGNames::useTag, document)
     , m_x(LengthModeWidth)
     , m_y(LengthModeHeight)
     , m_width(LengthModeWidth)
@@ -83,15 +81,14 @@ inline SVGUseElement::SVGUseElement(const QualifiedName& tagName, Document& docu
     , m_svgLoadEventTimer(this, &SVGElement::svgLoadEventTimerFired)
 {
     ASSERT(hasCustomStyleCallbacks());
-    ASSERT(hasTagName(SVGNames::useTag));
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGUseElement();
 }
 
-PassRefPtr<SVGUseElement> SVGUseElement::create(const QualifiedName& tagName, Document& document, bool wasInsertedByParser)
+PassRefPtr<SVGUseElement> SVGUseElement::create(Document& document, bool wasInsertedByParser)
 {
     // Always build a #shadow-root for SVGUseElement.
-    RefPtr<SVGUseElement> use = adoptRef(new SVGUseElement(tagName, document, wasInsertedByParser));
+    RefPtr<SVGUseElement> use = adoptRef(new SVGUseElement(document, wasInsertedByParser));
     use->ensureUserAgentShadowRoot();
     return use.release();
 }
@@ -125,7 +122,6 @@ bool SVGUseElement::isSupportedAttribute(const QualifiedName& attrName)
 {
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty()) {
-        SVGLangSpace::addSupportedAttributes(supportedAttributes);
         SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
         SVGURIReference::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::xAttr);
@@ -150,8 +146,7 @@ void SVGUseElement::parseAttribute(const QualifiedName& name, const AtomicString
         setWidthBaseValue(SVGLength::construct(LengthModeWidth, value, parseError, ForbidNegativeLengths));
     else if (name == SVGNames::heightAttr)
         setHeightBaseValue(SVGLength::construct(LengthModeHeight, value, parseError, ForbidNegativeLengths));
-    else if (SVGLangSpace::parseAttribute(name, value)
-             || SVGExternalResourcesRequired::parseAttribute(name, value)
+    else if (SVGExternalResourcesRequired::parseAttribute(name, value)
              || SVGURIReference::parseAttribute(name, value)) {
     } else
         ASSERT_NOT_REACHED();
@@ -159,12 +154,14 @@ void SVGUseElement::parseAttribute(const QualifiedName& name, const AtomicString
     reportAttributeParsingError(parseError, name, value);
 }
 
+#if !ASSERT_DISABLED
 static inline bool isWellFormedDocument(Document* document)
 {
     if (document->isSVGDocument() || document->isXHTMLDocument())
         return static_cast<XMLDocumentParser*>(document->parser())->wellFormed();
     return true;
 }
+#endif
 
 Node::InsertionNotificationRequest SVGUseElement::insertedInto(ContainerNode* rootParent)
 {
@@ -250,8 +247,7 @@ void SVGUseElement::svgAttributeChanged(const QualifiedName& attrName)
     if (!renderer)
         return;
 
-    if (SVGLangSpace::isKnownAttribute(attrName)
-        || SVGExternalResourcesRequired::isKnownAttribute(attrName)) {
+    if (SVGExternalResourcesRequired::isKnownAttribute(attrName)) {
         invalidateShadowTree();
         return;
     }
@@ -657,7 +653,7 @@ bool SVGUseElement::hasCycleUseReferencing(SVGUseElement* use, SVGElementInstanc
     while (instance) {
         SVGElement* element = instance->correspondingElement();
 
-        if (element->hasID() && element->getIdAttribute() == targetId && &element->document() == &newTarget->document())
+        if (element->hasID() && element->getIdAttribute() == targetId && element->document() == newTarget->document())
             return true;
 
         instance = instance->parentNode();
@@ -665,18 +661,19 @@ bool SVGUseElement::hasCycleUseReferencing(SVGUseElement* use, SVGElementInstanc
     return false;
 }
 
-static inline void removeDisallowedElementsFromSubtree(Element* subtree)
+static inline void removeDisallowedElementsFromSubtree(Element& subtree)
 {
-    ASSERT(!subtree->inDocument());
+    ASSERT(!subtree.inDocument());
     Element* element = ElementTraversal::firstWithin(subtree);
     while (element) {
         if (isDisallowedElement(element)) {
-            Element* next = ElementTraversal::nextSkippingChildren(element, subtree);
+            Element* next = ElementTraversal::nextSkippingChildren(*element, &subtree);
             // The subtree is not in document so this won't generate events that could mutate the tree.
             element->parentNode()->removeChild(element);
             element = next;
-        } else
-            element = ElementTraversal::next(element, subtree);
+        } else {
+            element = ElementTraversal::next(*element, &subtree);
+        }
     }
 }
 
@@ -694,7 +691,7 @@ void SVGUseElement::buildShadowTree(SVGElement* target, SVGElementInstance* targ
     // Though if there are disallowed elements in the subtree, we have to remove them.
     // For instance: <use> on <g> containing <foreignObject> (indirect case).
     if (subtreeContainsDisallowedElement(newChild.get()))
-        removeDisallowedElementsFromSubtree(newChild.get());
+        removeDisallowedElementsFromSubtree(*newChild);
 
     userAgentShadowRoot()->appendChild(newChild.release());
 }
@@ -720,7 +717,7 @@ void SVGUseElement::expandUseElementsInShadowTree(Node* element)
 
         // Don't ASSERT(target) here, it may be "pending", too.
         // Setup sub-shadow tree root node
-        RefPtr<SVGGElement> cloneParent = SVGGElement::create(SVGNames::gTag, *referencedDocument());
+        RefPtr<SVGGElement> cloneParent = SVGGElement::create(*referencedDocument());
         use->cloneChildNodes(cloneParent.get());
 
         // Spec: In the generated content, the 'use' will be replaced by 'g', where all attributes from the
@@ -739,7 +736,7 @@ void SVGUseElement::expandUseElementsInShadowTree(Node* element)
         // Though if there are disallowed elements in the subtree, we have to remove them.
         // For instance: <use> on <g> containing <foreignObject> (indirect case).
         if (subtreeContainsDisallowedElement(cloneParent.get()))
-            removeDisallowedElementsFromSubtree(cloneParent.get());
+            removeDisallowedElementsFromSubtree(*cloneParent);
 
         RefPtr<Node> replacingElement(cloneParent.get());
 
@@ -768,7 +765,7 @@ void SVGUseElement::expandSymbolElementsInShadowTree(Node* element)
         // the generated 'svg'. If attributes width and/or height are not specified, the generated
         // 'svg' element will use values of 100% for these attributes.
         ASSERT(referencedDocument());
-        RefPtr<SVGSVGElement> svgElement = SVGSVGElement::create(SVGNames::svgTag, *referencedDocument());
+        RefPtr<SVGSVGElement> svgElement = SVGSVGElement::create(*referencedDocument());
 
         // Transfer all data (attributes, etc.) from <symbol> to the new <svg> element.
         svgElement->cloneDataFromElement(*toElement(element));
@@ -785,7 +782,7 @@ void SVGUseElement::expandSymbolElementsInShadowTree(Node* element)
         // Though if there are disallowed elements in the subtree, we have to remove them.
         // For instance: <use> on <g> containing <foreignObject> (indirect case).
         if (subtreeContainsDisallowedElement(svgElement.get()))
-            removeDisallowedElementsFromSubtree(svgElement.get());
+            removeDisallowedElementsFromSubtree(*svgElement);
 
         RefPtr<Node> replacingElement(svgElement.get());
 
@@ -891,7 +888,7 @@ SVGElementInstance* SVGUseElement::instanceForShadowTreeElement(Node* element, S
 
 void SVGUseElement::invalidateShadowTree()
 {
-    if (!attached() || m_needsShadowTreeRecreation)
+    if (!inActiveDocument() || m_needsShadowTreeRecreation)
         return;
     m_needsShadowTreeRecreation = true;
     setNeedsStyleRecalc();
@@ -940,7 +937,7 @@ bool SVGUseElement::selfHasRelativeLengths() const
     if (!element)
         return false;
 
-    return toSVGElement(element)->hasRelativeLengths();
+    return element->hasRelativeLengths();
 }
 
 void SVGUseElement::notifyFinished(Resource* resource)
@@ -950,7 +947,7 @@ void SVGUseElement::notifyFinished(Resource* resource)
 
     invalidateShadowTree();
     if (resource->errorOccurred())
-        dispatchEvent(Event::create(eventNames().errorEvent));
+        dispatchEvent(Event::create(EventTypeNames::error));
     else if (!resource->wasCanceled())
         SVGExternalResourcesRequired::dispatchLoadEvent(this);
 }

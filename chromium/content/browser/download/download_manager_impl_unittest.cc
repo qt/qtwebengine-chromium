@@ -120,7 +120,7 @@ class MockDownloadItemImpl : public DownloadItemImpl {
   MOCK_CONST_METHOD0(CurrentSpeed, int64());
   MOCK_CONST_METHOD0(PercentComplete, int());
   MOCK_CONST_METHOD0(AllDataSaved, bool());
-  MOCK_CONST_METHOD1(MatchesQuery, bool(const string16& query));
+  MOCK_CONST_METHOD1(MatchesQuery, bool(const base::string16& query));
   MOCK_CONST_METHOD0(IsDone, bool());
   MOCK_CONST_METHOD0(GetFullPath, const base::FilePath&());
   MOCK_CONST_METHOD0(GetTargetFilePath, const base::FilePath&());
@@ -404,11 +404,17 @@ class MockBrowserContext : public BrowserContext {
   MOCK_METHOD2(GetMediaRequestContextForStoragePartition,
                net::URLRequestContextGetter*(
                    const base::FilePath& partition_path, bool in_memory));
-  MOCK_METHOD4(RequestMIDISysExPermission,
+  MOCK_METHOD5(RequestMIDISysExPermission,
                void(int render_process_id,
                     int render_view_id,
+                    int bridge_id,
                     const GURL& requesting_frame,
                     const MIDISysExPermissionCallback& callback));
+  MOCK_METHOD4(CancelMIDISysExPermissionRequest,
+               void(int render_process_id,
+                    int render_view_id,
+                    int bridge_id,
+                    const GURL& requesting_frame));
   MOCK_METHOD0(GetResourceContext, ResourceContext*());
   MOCK_METHOD0(GetDownloadManagerDelegate, DownloadManagerDelegate*());
   MOCK_METHOD0(GetGeolocationPermissionContext,

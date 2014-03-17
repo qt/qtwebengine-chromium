@@ -22,36 +22,10 @@
 #ifndef RenderWidget_h
 #define RenderWidget_h
 
-#include "core/platform/Widget.h"
 #include "core/rendering/RenderReplaced.h"
+#include "platform/Widget.h"
 
 namespace WebCore {
-
-class WidgetHierarchyUpdatesSuspensionScope {
-public:
-    WidgetHierarchyUpdatesSuspensionScope()
-    {
-        s_widgetHierarchyUpdateSuspendCount++;
-    }
-    ~WidgetHierarchyUpdatesSuspensionScope()
-    {
-        ASSERT(s_widgetHierarchyUpdateSuspendCount);
-        if (s_widgetHierarchyUpdateSuspendCount == 1)
-            moveWidgets();
-        s_widgetHierarchyUpdateSuspendCount--;
-    }
-
-    static bool isSuspended() { return s_widgetHierarchyUpdateSuspendCount; }
-    static void scheduleWidgetToMove(Widget* widget, FrameView* frame) { widgetNewParentMap().set(widget, frame); }
-
-private:
-    typedef HashMap<RefPtr<Widget>, FrameView*> WidgetToParentMap;
-    static WidgetToParentMap& widgetNewParentMap();
-
-    void moveWidgets();
-
-    static unsigned s_widgetHierarchyUpdateSuspendCount;
-};
 
 class RenderWidget : public RenderReplaced {
 public:
@@ -60,21 +34,22 @@ public:
     Widget* widget() const { return m_widget.get(); }
     virtual void setWidget(PassRefPtr<Widget>);
 
-    static RenderWidget* find(const Widget*);
-
     void updateWidgetPosition();
     void widgetPositionsUpdated();
-    IntRect windowClipRect() const;
 
     void setIsOverlapped(bool);
 
     void ref() { ++m_refCount; }
     void deref();
 
-protected:
-    RenderWidget(Element*);
+    class UpdateSuspendScope {
+    public:
+        UpdateSuspendScope();
+        ~UpdateSuspendScope();
+    };
 
-    FrameView* frameView() const { return m_frameView; }
+protected:
+    explicit RenderWidget(Element*);
 
     void clearWidget();
 
@@ -101,20 +76,7 @@ private:
     int m_refCount;
 };
 
-inline RenderWidget* toRenderWidget(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isWidget());
-    return static_cast<RenderWidget*>(object);
-}
-
-inline const RenderWidget* toRenderWidget(const RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isWidget());
-    return static_cast<const RenderWidget*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderWidget(const RenderWidget*);
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderWidget, isWidget());
 
 } // namespace WebCore
 

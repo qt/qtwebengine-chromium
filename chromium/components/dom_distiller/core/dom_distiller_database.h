@@ -14,10 +14,13 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop.h"
+#include "base/threading/thread_checker.h"
+#include "base/threading/thread_collision_warner.h"
+#include "components/dom_distiller/core/article_entry.h"
 
 namespace base {
 class SequencedTaskRunner;
+class MessageLoop;
 }
 
 namespace leveldb {
@@ -26,7 +29,6 @@ class DB;
 
 namespace dom_distiller {
 
-class ArticleEntry;
 typedef std::vector<ArticleEntry> EntryVector;
 
 // Interface for classes providing persistent storage of DomDistiller entries.
@@ -34,33 +36,31 @@ class DomDistillerDatabaseInterface {
  public:
   typedef std::vector<std::string> ArticleEntryIds;
   typedef base::Callback<void(bool success)> InitCallback;
-  typedef base::Callback<void(bool success)> SaveCallback;
+  typedef base::Callback<void(bool success)> UpdateCallback;
   typedef base::Callback<void(bool success, scoped_ptr<EntryVector>)>
       LoadCallback;
 
-  // Asynchronously destroys the object after all in-progress file operations
-  // have completed. The callbacks for in-progress operations will still be
-  // called.
-  virtual void Destroy() {}
+  virtual ~DomDistillerDatabaseInterface() {}
 
   // Asynchronously initializes the object. |callback| will be invoked on the UI
   // thread when complete.
   virtual void Init(const base::FilePath& database_dir,
                     InitCallback callback) = 0;
 
-  // Asynchronously saves |entries_to_save| database. |callback| will be invoked
-  // on the UI thread when complete.
-  virtual void SaveEntries(scoped_ptr<EntryVector> entries_to_save,
-                           SaveCallback callback) = 0;
+  // Asynchronously saves |entries_to_save| and deletes entries from
+  // |entries_to_remove| from the database. |callback| will be invoked on the UI
+  // thread when complete.
+  virtual void UpdateEntries(scoped_ptr<EntryVector> entries_to_save,
+                             scoped_ptr<EntryVector> entries_to_remove,
+                             UpdateCallback callback) = 0;
 
   // Asynchronously loads all entries from the database and invokes |callback|
   // when complete.
   virtual void LoadEntries(LoadCallback callback) = 0;
-
- protected:
-  virtual ~DomDistillerDatabaseInterface() {}
 };
 
+// When the DomDistillerDatabase instance is deleted, in-progress asynchronous
+// operations will be completed and the corresponding callbacks will be called.
 class DomDistillerDatabase
     : public DomDistillerDatabaseInterface {
  public:
@@ -68,32 +68,39 @@ class DomDistillerDatabase
   class Database {
    public:
     virtual bool Init(const base::FilePath& database_dir) = 0;
-    virtual bool Save(const EntryVector& entries) = 0;
+    virtual bool Save(const EntryVector& entries_to_save,
+                      const EntryVector& entries_to_remove) = 0;
     virtual bool Load(EntryVector* entries) = 0;
     virtual ~Database() {}
   };
 
+  // Once constructed, function calls and destruction should all occur on the
+  // same thread (not necessarily the same as the constructor).
   class LevelDB : public Database {
    public:
     LevelDB();
     virtual ~LevelDB();
     virtual bool Init(const base::FilePath& database_dir) OVERRIDE;
-    virtual bool Save(const EntryVector& entries) OVERRIDE;
+    virtual bool Save(const EntryVector& entries_to_save,
+                      const EntryVector& entries_to_remove) OVERRIDE;
     virtual bool Load(EntryVector* entries) OVERRIDE;
 
    private:
-
+    DFAKE_MUTEX(thread_checker_);
     scoped_ptr<leveldb::DB> db_;
   };
 
-  DomDistillerDatabase(scoped_refptr<base::SequencedTaskRunner> task_runner);
+  explicit DomDistillerDatabase(
+      scoped_refptr<base::SequencedTaskRunner> task_runner);
+
+  virtual ~DomDistillerDatabase();
 
   // DomDistillerDatabaseInterface implementation.
-  virtual void Destroy() OVERRIDE;
   virtual void Init(const base::FilePath& database_dir,
                     InitCallback callback) OVERRIDE;
-  virtual void SaveEntries(scoped_ptr<EntryVector> entries_to_save,
-                           SaveCallback callback) OVERRIDE;
+  virtual void UpdateEntries(scoped_ptr<EntryVector> entries_to_save,
+                           scoped_ptr<EntryVector> entries_to_remove,
+                           UpdateCallback callback) OVERRIDE;
   virtual void LoadEntries(LoadCallback callback) OVERRIDE;
 
   // Allow callers to provide their own Database implementation.
@@ -101,40 +108,13 @@ class DomDistillerDatabase
                         const base::FilePath& database_dir,
                         InitCallback callback);
 
- protected:
-  virtual ~DomDistillerDatabase();
-
  private:
-  // Whether currently being run by |task_runner_|.
-  bool IsRunByTaskRunner() const;
-
-  // Whether currently being run on |main_loop_|.
-  bool IsRunOnMainLoop() const;
-
-  // Deletes |this|.
-  void DestroyFromTaskRunner();
-
-  // Initializes the database in |database_dir| and updates |success|.
-  void InitFromTaskRunner(const base::FilePath& database_dir, bool* success);
-
-  // Saves data to disk and updates |success|.
-  void SaveEntriesFromTaskRunner(scoped_ptr<EntryVector> entries_to_save,
-                                 bool* success);
-
-  // Loads entries from disk and updates |success|.
-  void LoadEntriesFromTaskRunner(EntryVector* entries, bool* success);
-
-  // The MessageLoop that the database was created on.
-  base::MessageLoop* main_loop_;
+  base::ThreadChecker thread_checker_;
 
   // Used to run blocking tasks in-order.
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
 
   scoped_ptr<Database> db_;
-
-  // Note: This should remain the last member so it'll be destroyed and
-  // invalidate its weak pointers before any other members are destroyed.
-  base::WeakPtrFactory<DomDistillerDatabase> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DomDistillerDatabase);
 };

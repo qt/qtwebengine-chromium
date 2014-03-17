@@ -16,6 +16,7 @@
 #include "base/observer_list_threadsafe.h"
 #include "crypto/nss_util.h"
 #include "crypto/nss_util_internal.h"
+#include "crypto/scoped_nss_types.h"
 #include "net/base/crypto_module.h"
 #include "net/base/net_errors.h"
 #include "net/cert/cert_database.h"
@@ -69,49 +70,45 @@ void NSSCertDatabase::ListCerts(CertificateList* certs) {
   CERT_DestroyCertList(cert_list);
 }
 
-CryptoModule* NSSCertDatabase::GetPublicModule() const {
-  CryptoModule* module =
-      CryptoModule::CreateFromHandle(crypto::GetPublicNSSKeySlot());
-  // The module is already referenced when returned from
-  // GetPublicNSSKeySlot, so we need to deref it once.
-  PK11_FreeSlot(module->os_module_handle());
+crypto::ScopedPK11Slot NSSCertDatabase::GetPublicSlot() const {
+  return crypto::ScopedPK11Slot(crypto::GetPublicNSSKeySlot());
+}
 
-  return module;
+crypto::ScopedPK11Slot NSSCertDatabase::GetPrivateSlot() const {
+  return crypto::ScopedPK11Slot(crypto::GetPrivateNSSKeySlot());
+}
+
+CryptoModule* NSSCertDatabase::GetPublicModule() const {
+  crypto::ScopedPK11Slot slot(GetPublicSlot());
+  return CryptoModule::CreateFromHandle(slot.get());
 }
 
 CryptoModule* NSSCertDatabase::GetPrivateModule() const {
-  CryptoModule* module =
-      CryptoModule::CreateFromHandle(crypto::GetPrivateNSSKeySlot());
-  // The module is already referenced when returned from
-  // GetPrivateNSSKeySlot, so we need to deref it once.
-  PK11_FreeSlot(module->os_module_handle());
-
-  return module;
+  crypto::ScopedPK11Slot slot(GetPrivateSlot());
+  return CryptoModule::CreateFromHandle(slot.get());
 }
 
 void NSSCertDatabase::ListModules(CryptoModuleList* modules,
                                   bool need_rw) const {
   modules->clear();
 
-  PK11SlotList* slot_list = NULL;
   // The wincx arg is unused since we don't call PK11_SetIsLoggedInFunc.
-  slot_list = PK11_GetAllTokens(CKM_INVALID_MECHANISM,
-                                need_rw ? PR_TRUE : PR_FALSE,  // needRW
-                                PR_TRUE,  // loadCerts (unused)
-                                NULL);  // wincx
+  crypto::ScopedPK11SlotList slot_list(
+      PK11_GetAllTokens(CKM_INVALID_MECHANISM,
+                        need_rw ? PR_TRUE : PR_FALSE,  // needRW
+                        PR_TRUE,                       // loadCerts (unused)
+                        NULL));                        // wincx
   if (!slot_list) {
     LOG(ERROR) << "PK11_GetAllTokens failed: " << PORT_GetError();
     return;
   }
 
-  PK11SlotListElement* slot_element = PK11_GetFirstSafe(slot_list);
+  PK11SlotListElement* slot_element = PK11_GetFirstSafe(slot_list.get());
   while (slot_element) {
     modules->push_back(CryptoModule::CreateFromHandle(slot_element->slot));
-    slot_element = PK11_GetNextSafe(slot_list, slot_element,
+    slot_element = PK11_GetNextSafe(slot_list.get(), slot_element,
                                     PR_FALSE);  // restart
   }
-
-  PK11_FreeSlotList(slot_list);
 }
 
 int NSSCertDatabase::ImportFromPKCS12(
@@ -164,11 +161,12 @@ X509Certificate* NSSCertDatabase::FindRootInList(
 bool NSSCertDatabase::ImportCACerts(const CertificateList& certificates,
                                     TrustBits trust_bits,
                                     ImportCertFailureList* not_imported) {
+  crypto::ScopedPK11Slot slot(GetPublicSlot());
   X509Certificate* root = FindRootInList(certificates);
-  bool success = psm::ImportCACerts(certificates, root, trust_bits,
-                                    not_imported);
+  bool success = psm::ImportCACerts(
+      slot.get(), certificates, root, trust_bits, not_imported);
   if (success)
-    NotifyObserversOfCertTrustChanged(NULL);
+    NotifyObserversOfCACertChanged(NULL);
 
   return success;
 }
@@ -176,7 +174,9 @@ bool NSSCertDatabase::ImportCACerts(const CertificateList& certificates,
 bool NSSCertDatabase::ImportServerCert(const CertificateList& certificates,
                                        TrustBits trust_bits,
                                        ImportCertFailureList* not_imported) {
-  return psm::ImportServerCert(certificates, trust_bits, not_imported);
+  crypto::ScopedPK11Slot slot(GetPublicSlot());
+  return psm::ImportServerCert(
+      slot.get(), certificates, trust_bits, not_imported);
 }
 
 NSSCertDatabase::TrustBits NSSCertDatabase::GetCertTrust(
@@ -284,7 +284,7 @@ bool NSSCertDatabase::SetCertTrust(const X509Certificate* cert,
                                 TrustBits trust_bits) {
   bool success = psm::SetCertTrust(cert, type, trust_bits);
   if (success)
-    NotifyObserversOfCertTrustChanged(cert);
+    NotifyObserversOfCACertChanged(cert);
 
   return success;
 }
@@ -319,6 +319,11 @@ bool NSSCertDatabase::IsReadOnly(const X509Certificate* cert) const {
   return slot && PK11_IsReadOnly(slot);
 }
 
+bool NSSCertDatabase::IsHardwareBacked(const X509Certificate* cert) const {
+  PK11SlotInfo* slot = cert->os_cert_handle()->slot;
+  return slot && PK11_IsHW(slot);
+}
+
 void NSSCertDatabase::AddObserver(Observer* observer) {
   observer_list_->AddObserver(observer);
 }
@@ -336,10 +341,10 @@ void NSSCertDatabase::NotifyObserversOfCertRemoved(
   observer_list_->Notify(&Observer::OnCertRemoved, make_scoped_refptr(cert));
 }
 
-void NSSCertDatabase::NotifyObserversOfCertTrustChanged(
+void NSSCertDatabase::NotifyObserversOfCACertChanged(
     const X509Certificate* cert) {
   observer_list_->Notify(
-      &Observer::OnCertTrustChanged, make_scoped_refptr(cert));
+      &Observer::OnCACertChanged, make_scoped_refptr(cert));
 }
 
 }  // namespace net

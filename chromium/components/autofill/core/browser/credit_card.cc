@@ -25,10 +25,15 @@
 #include "components/autofill/core/browser/validation.h"
 #include "components/autofill/core/common/form_field_data.h"
 #include "grit/component_strings.h"
-#include "grit/webkit_resources.h"
 #include "third_party/icu/source/common/unicode/uloc.h"
 #include "third_party/icu/source/i18n/unicode/dtfmtsym.h"
 #include "ui/base/l10n/l10n_util.h"
+
+// TODO(blundell): Eliminate the need for this conditional include.
+// crbug.com/328150
+#if !defined(OS_IOS)
+#include "grit/webkit_resources.h"
+#endif
 
 namespace autofill {
 
@@ -133,9 +138,9 @@ CreditCard::~CreditCard() {}
 
 // static
 const base::string16 CreditCard::StripSeparators(const base::string16& number) {
-  const char16 kSeparators[] = {'-', ' ', '\0'};
+  const base::char16 kSeparators[] = {'-', ' ', '\0'};
   base::string16 stripped;
-  RemoveChars(number, kSeparators, &stripped);
+  base::RemoveChars(number, kSeparators, &stripped);
   return stripped;
 }
 
@@ -164,6 +169,12 @@ base::string16 CreditCard::TypeForDisplay(const std::string& type) {
 
 // static
 int CreditCard::IconResourceId(const std::string& type) {
+  // TODO(blundell): Either move these resources out of webkit_resources or
+  // this function into //components/autofill/content/browser to eliminate the
+  // need for this ifdef-ing. crbug.com/328150
+#if defined(OS_IOS)
+  return 0;
+#else
   if (type == kAmericanExpressCard)
     return IDR_AUTOFILL_CC_AMEX;
   if (type == kDinersCard)
@@ -183,6 +194,7 @@ int CreditCard::IconResourceId(const std::string& type) {
   // include a new card.
   DCHECK_EQ(kGenericCard, type);
   return IDR_AUTOFILL_CC_GENERIC;
+#endif  // defined(OS_IOS)
 }
 
 // static
@@ -532,31 +544,6 @@ bool CreditCard::UpdateFromImportedCard(const CreditCard& imported_card,
   expiration_year_ = imported_card.expiration_year_;
 
   return true;
-}
-
-void CreditCard::FillFormField(const AutofillField& field,
-                               size_t /*variant*/,
-                               const std::string& app_locale,
-                               FormFieldData* field_data) const {
-  DCHECK_EQ(CREDIT_CARD, field.Type().group());
-  DCHECK(field_data);
-
-  if (field_data->form_control_type == "select-one") {
-    FillSelectControl(field.Type(), app_locale, field_data);
-  } else if (field_data->form_control_type == "month") {
-    // HTML5 input="month" consists of year-month.
-    base::string16 year =
-        GetInfo(AutofillType(CREDIT_CARD_EXP_4_DIGIT_YEAR), app_locale);
-    base::string16 month =
-        GetInfo(AutofillType(CREDIT_CARD_EXP_MONTH), app_locale);
-    if (!year.empty() && !month.empty()) {
-      // Fill the value only if |this| includes both year and month
-      // information.
-      field_data->value = year + ASCIIToUTF16("-") + month;
-    }
-  } else {
-    field_data->value = GetInfo(field.Type(), app_locale);
-  }
 }
 
 int CreditCard::Compare(const CreditCard& credit_card) const {

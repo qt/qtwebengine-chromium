@@ -25,21 +25,19 @@ class QuicPacketCreatorPeer;
 
 class QuicAckNotifier;
 class QuicRandom;
+class QuicRandomBoolSource;
 
 class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
  public:
   // Options for controlling how packets are created.
   struct Options {
     Options()
-        : max_packet_length(kMaxPacketSize),
-          random_reorder(false),
+        : max_packet_length(kDefaultMaxPacketSize),
           max_packets_per_fec_group(0),
           send_guid_length(PACKET_8BYTE_GUID),
-          send_sequence_number_length(PACKET_1BYTE_SEQUENCE_NUMBER) {
-    }
+          send_sequence_number_length(PACKET_1BYTE_SEQUENCE_NUMBER) {}
 
     size_t max_packet_length;
-    bool random_reorder;   // Inefficient: rewrite if used at scale.
     // 0 indicates fec is disabled.
     size_t max_packets_per_fec_group;
     // Length of guid to send over the wire.
@@ -62,10 +60,6 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
   // Checks if it's time to send an FEC packet.  |force_close| forces this to
   // return true if an fec group is open.
   bool ShouldSendFec(bool force_close) const;
-
-  // Starts a new FEC group with the next serialized packet, if FEC is enabled
-  // and there is not already an FEC group open.
-  void MaybeStartFEC();
 
   // Makes the framer not serialize the protocol version in sent packets.
   void StopSendingVersion();
@@ -91,7 +85,7 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
   // If data is empty and fin is true, the expected behavior is to consume the
   // fin but return 0.
   size_t CreateStreamFrame(QuicStreamId id,
-                           base::StringPiece data,
+                           const IOVector& data,
                            QuicStreamOffset offset,
                            bool fin,
                            QuicFrame* frame);
@@ -101,7 +95,7 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
   // The |notifier| is not owned by the QuicPacketGenerator and must outlive the
   // generated packet.
   size_t CreateStreamFrameWithNotifier(QuicStreamId id,
-                                       base::StringPiece data,
+                                       const IOVector& data,
                                        QuicStreamOffset offset,
                                        bool fin,
                                        QuicAckNotifier* notifier,
@@ -121,12 +115,21 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
   // Returns true if there are frames pending to be serialized.
   bool HasPendingFrames();
 
-  // Returns the number of bytes which are free to frames in the current packet.
+  // Returns the number of bytes which are available to be used by additional
+  // frames in the packet.  Since stream frames are slightly smaller when they
+  // are the last frame in a packet, this method will return a different
+  // value than max_packet_size - PacketSize(), in this case.
   size_t BytesFree() const;
 
-  // Returns the number of bytes in the current packet, including the header.
+  // Returns the number of bytes in the current packet, including the header,
+  // if serialized with the current frames.  Adding a frame to the packet
+  // may change the serialized length of existing frames, as per the comment
+  // in BytesFree.
   size_t PacketSize() const;
 
+  // TODO(jri): AddSavedFrame calls AddFrame, which only saves the frame
+  // if it is a stream frame, not other types of frames. Fix this API;
+  // add a AddNonSavedFrame method.
   // Adds |frame| to the packet creator's list of frames to be serialized.
   // Returns false if the frame doesn't fit into the current packet.
   bool AddSavedFrame(const QuicFrame& frame);
@@ -177,6 +180,10 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
 
   static bool ShouldRetransmit(const QuicFrame& frame);
 
+  // Starts a new FEC group with the next serialized packet, if FEC is enabled
+  // and there is not already an FEC group open.
+  void MaybeStartFEC();
+
   void FillPacketHeader(QuicFecGroupNumber fec_group,
                         bool fec_flag,
                         bool fec_entropy_flag,
@@ -186,10 +193,15 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
   // Particularly useful for retransmits using SerializeAllFrames().
   bool AddFrame(const QuicFrame& frame, bool save_retransmittable_frames);
 
+  // Adds a padding frame to the current packet only if the current packet
+  // contains a handshake message, and there is sufficient room to fit a
+  // padding frame.
+  void MaybeAddPadding();
+
   Options options_;
   QuicGuid guid_;
   QuicFramer* framer_;
-  QuicRandom* random_generator_;
+  scoped_ptr<QuicRandomBoolSource> random_bool_source_;
   QuicPacketSequenceNumber sequence_number_;
   QuicFecGroupNumber fec_group_number_;
   scoped_ptr<QuicFecGroup> fec_group_;

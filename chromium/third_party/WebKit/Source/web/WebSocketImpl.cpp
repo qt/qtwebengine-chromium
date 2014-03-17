@@ -32,13 +32,11 @@
 #include "WebSocketImpl.h"
 
 #include "WebDocument.h"
-#include "WebSocketClient.h"
 #include "core/dom/Document.h"
-#include "core/page/ConsoleTypes.h"
-#include "core/page/Settings.h"
+#include "core/frame/ConsoleTypes.h"
+#include "core/frame/Settings.h"
 #include "modules/websockets/MainThreadWebSocketChannel.h"
 #include "modules/websockets/WebSocketChannel.h"
-#include "modules/websockets/WebSocketChannelClient.h"
 #include "public/platform/WebArrayBuffer.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
@@ -46,7 +44,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 WebSocketImpl::WebSocketImpl(const WebDocument& document, WebSocketClient* client)
     : m_client(client)
@@ -167,4 +165,4 @@ void WebSocketImpl::didClose(unsigned long bufferedAmount, ClosingHandshakeCompl
     m_client->didClose(bufferedAmount, static_cast<WebSocketClient::ClosingHandshakeCompletionStatus>(status), code, WebString(reason));
 }
 
-} // namespace WebKit
+} // namespace blink

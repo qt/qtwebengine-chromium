@@ -58,7 +58,6 @@ protected:
     virtual float getAvgCharWidth(AtomicString family);
     virtual LayoutUnit preferredContentLogicalWidth(float charWidth) const = 0;
     virtual LayoutUnit computeControlLogicalHeight(LayoutUnit lineHeight, LayoutUnit nonContentHeight) const = 0;
-    virtual RenderStyle* textBaseStyle() const = 0;
 
     virtual void updateFromElement();
     virtual void computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues&) const OVERRIDE;
@@ -78,31 +77,15 @@ private:
     virtual void removeLeftoverAnonymousBlock(RenderBlock*) { }
     virtual bool avoidsFloats() const { return true; }
     virtual bool canHaveGeneratedChildren() const OVERRIDE { return false; }
-    virtual bool canBeReplacedWithInlineRunIn() const OVERRIDE;
 
     virtual void addChild(RenderObject* newChild, RenderObject* beforeChild = 0) OVERRIDE FINAL;
 
     virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer = 0) OVERRIDE;
 
     virtual bool canBeProgramaticallyScrolled() const { return true; }
-
-    virtual bool requiresForcedStyleRecalcPropagation() const { return true; }
 };
 
-inline RenderTextControl* toRenderTextControl(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isTextControl());
-    return static_cast<RenderTextControl*>(object);
-}
-
-inline const RenderTextControl* toRenderTextControl(const RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isTextControl());
-    return static_cast<const RenderTextControl*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderTextControl(const RenderTextControl*);
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderTextControl, isTextControl());
 
 // Renderer for our inner container, for <search> and others.
 // We can't use RenderFlexibleBox directly, because flexboxes have a different

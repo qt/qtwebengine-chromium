@@ -8,8 +8,11 @@ The details of the protocol are described mostly by comments in the protocol
 buffer definition at chrome/browser/sync/protocol/sync.proto.
 """
 
+import base64
 import cgi
 import copy
+import google.protobuf.text_format
+import hashlib
 import operator
 import pickle
 import random
@@ -18,12 +21,16 @@ import sys
 import threading
 import time
 import urlparse
+import uuid
 
+import app_list_specifics_pb2
 import app_notification_specifics_pb2
 import app_setting_specifics_pb2
 import app_specifics_pb2
+import article_specifics_pb2
 import autofill_specifics_pb2
 import bookmark_specifics_pb2
+import client_commands_pb2
 import dictionary_specifics_pb2
 import get_updates_caller_info_pb2
 import extension_setting_specifics_pb2
@@ -41,6 +48,8 @@ import search_engine_specifics_pb2
 import session_specifics_pb2
 import sync_pb2
 import sync_enums_pb2
+import synced_notification_data_pb2
+import synced_notification_render_pb2
 import synced_notification_specifics_pb2
 import theme_specifics_pb2
 import typed_url_specifics_pb2
@@ -52,8 +61,10 @@ import typed_url_specifics_pb2
 ALL_TYPES = (
     TOP_LEVEL,  # The type of the 'Google Chrome' folder.
     APPS,
+    APP_LIST,
     APP_NOTIFICATION,
     APP_SETTINGS,
+    ARTICLE,
     AUTOFILL,
     AUTOFILL_PROFILE,
     BOOKMARK,
@@ -75,7 +86,7 @@ ALL_TYPES = (
     TYPED_URL,
     EXTENSION_SETTINGS,
     FAVICON_IMAGES,
-    FAVICON_TRACKING) = range(26)
+    FAVICON_TRACKING) = range(28)
 
 # An enumeration on the frequency at which the server should send errors
 # to the client. This would be specified by the url that triggers the error.
@@ -92,9 +103,11 @@ TOP_LEVEL_FOLDER_TAG = 'google_chrome'
 # to that datatype.  Note that TOP_LEVEL has no such token.
 SYNC_TYPE_FIELDS = sync_pb2.EntitySpecifics.DESCRIPTOR.fields_by_name
 SYNC_TYPE_TO_DESCRIPTOR = {
+    APP_LIST: SYNC_TYPE_FIELDS['app_list'],
     APP_NOTIFICATION: SYNC_TYPE_FIELDS['app_notification'],
     APP_SETTINGS: SYNC_TYPE_FIELDS['app_setting'],
     APPS: SYNC_TYPE_FIELDS['app'],
+    ARTICLE: SYNC_TYPE_FIELDS['article'],
     AUTOFILL: SYNC_TYPE_FIELDS['autofill'],
     AUTOFILL_PROFILE: SYNC_TYPE_FIELDS['autofill_profile'],
     BOOKMARK: SYNC_TYPE_FIELDS['bookmark'],
@@ -174,6 +187,10 @@ class SyncInducedError(Error):
 
 class InducedErrorFrequencyNotDefined(Error):
   """The error frequency defined is not handled."""
+
+
+class ClientNotConnectedError(Error):
+  """The client is not connected to the server."""
 
 
 def GetEntryType(entry):
@@ -448,8 +465,7 @@ class UpdateSieve(object):
         final_stamp = max(old_timestamp, new_timestamp)
         final_migration = self._migration_history.GetLatestVersion(data_type)
         new_marker.token = pickle.dumps((final_stamp, final_migration))
-        if new_marker not in self._original_request.from_progress_marker:
-          get_updates_response.new_progress_marker.add().MergeFrom(new_marker)
+        get_updates_response.new_progress_marker.add().MergeFrom(new_marker)
     elif self._original_request.HasField('from_timestamp'):
       if self._original_request.from_timestamp < new_timestamp:
         get_updates_response.new_timestamp = new_timestamp
@@ -463,6 +479,8 @@ class SyncDataModel(object):
   _PERMANENT_ITEM_SPECS = [
       PermanentItem('google_chrome_apps', name='Apps',
                     parent_tag=ROOT_ID, sync_type=APPS),
+      PermanentItem('google_chrome_app_list', name='App List',
+                    parent_tag=ROOT_ID, sync_type=APP_LIST),
       PermanentItem('google_chrome_app_notifications', name='App Notifications',
                     parent_tag=ROOT_ID, sync_type=APP_NOTIFICATION),
       PermanentItem('google_chrome_app_settings',
@@ -530,6 +548,8 @@ class SyncDataModel(object):
                     parent_tag=ROOT_ID, sync_type=TYPED_URL),
       PermanentItem('google_chrome_dictionary', name='Dictionary',
                     parent_tag=ROOT_ID, sync_type=DICTIONARY),
+      PermanentItem('google_chrome_articles', name='Articles',
+                    parent_tag=ROOT_ID, sync_type=ARTICLE),
       ]
 
   def __init__(self):
@@ -925,7 +945,7 @@ class SyncDataModel(object):
     # tombstone.  A sync server must track deleted IDs forever, since it does
     # not keep track of client knowledge (there's no deletion ACK event).
     if entry.deleted:
-      def MakeTombstone(id_string):
+      def MakeTombstone(id_string, datatype):
         """Make a tombstone entry that will replace the entry being deleted.
 
         Args:
@@ -934,13 +954,11 @@ class SyncDataModel(object):
           A new SyncEntity reflecting the fact that the entry is deleted.
         """
         # Only the ID, version and deletion state are preserved on a tombstone.
-        # TODO(nick): Does the production server not preserve the type?  Not
-        # doing so means that tombstones cannot be filtered based on
-        # requested_types at GetUpdates time.
         tombstone = sync_pb2.SyncEntity()
         tombstone.id_string = id_string
         tombstone.deleted = True
         tombstone.name = ''
+        tombstone.specifics.CopyFrom(GetDefaultEntitySpecifics(datatype))
         return tombstone
 
       def IsChild(child_id):
@@ -963,10 +981,12 @@ class SyncDataModel(object):
 
       # Mark all children that were identified as deleted.
       for child_id in child_ids:
-        self._SaveEntry(MakeTombstone(child_id))
+        datatype = GetEntryType(self._entries[child_id])
+        self._SaveEntry(MakeTombstone(child_id, datatype))
 
       # Delete entry itself.
-      entry = MakeTombstone(entry.id_string)
+      datatype = GetEntryType(self._entries[entry.id_string])
+      entry = MakeTombstone(entry.id_string, datatype)
     else:
       # Comments in sync.proto detail how the representation of positional
       # ordering works.
@@ -1134,6 +1154,85 @@ class SyncDataModel(object):
   def GetInducedError(self):
     return self.induced_error
 
+  def AddSyncedNotification(self, serialized_notification):
+    """Adds a synced notification to the server data.
+
+    The notification will be delivered to the client on the next GetUpdates
+    call.
+
+    Args:
+      serialized_notification: A serialized CoalescedSyncedNotification.
+
+    Returns:
+      The string representation of the added SyncEntity.
+
+    Raises:
+      ClientNotConnectedError: if the client has not yet connected to this
+      server
+    """
+    # A unique string used wherever a unique ID for this notification is
+    # required.
+    unique_notification_id = str(uuid.uuid4())
+
+    specifics = self._CreateSyncedNotificationEntitySpecifics(
+        unique_notification_id, serialized_notification)
+
+    # Create the root SyncEntity representing a single notification.
+    entity = sync_pb2.SyncEntity()
+    entity.specifics.CopyFrom(specifics)
+    entity.parent_id_string = self._ServerTagToId(
+        'google_chrome_synced_notifications')
+    entity.name = 'Synced notification added for testing'
+    entity.server_defined_unique_tag = unique_notification_id
+
+    # Set the version to one more than the greatest version number already seen.
+    entries = sorted(self._entries.values(), key=operator.attrgetter('version'))
+    if len(entries) < 1:
+      raise ClientNotConnectedError
+    entity.version = entries[-1].version + 1
+
+    entity.client_defined_unique_tag = self._CreateSyncedNotificationClientTag(
+        specifics.synced_notification.coalesced_notification.key)
+    entity.id_string = self._ClientTagToId(GetEntryType(entity),
+                                          entity.client_defined_unique_tag)
+
+    self._entries[entity.id_string] = copy.deepcopy(entity)
+
+    return google.protobuf.text_format.MessageToString(entity)
+
+  def _CreateSyncedNotificationEntitySpecifics(self, unique_id,
+                                               serialized_notification):
+    """Create the EntitySpecifics proto for a synced notification."""
+    coalesced = synced_notification_data_pb2.CoalescedSyncedNotification()
+    google.protobuf.text_format.Merge(serialized_notification, coalesced)
+
+    # Override the provided key so that we have a unique one.
+    coalesced.key = unique_id
+
+    specifics = sync_pb2.EntitySpecifics()
+    notification_specifics = \
+        synced_notification_specifics_pb2.SyncedNotificationSpecifics()
+    notification_specifics.coalesced_notification.CopyFrom(coalesced)
+    specifics.synced_notification.CopyFrom(notification_specifics)
+
+    return specifics
+
+
+  def _CreateSyncedNotificationClientTag(self, key):
+    """Create the client_defined_unique_tag value for a SyncedNotification.
+
+    Args:
+      key: The entity used to create the client tag.
+
+    Returns:
+      The string value of the to be used as the client_defined_unique_tag.
+    """
+    serialized_type = sync_pb2.EntitySpecifics()
+    specifics = synced_notification_specifics_pb2.SyncedNotificationSpecifics()
+    serialized_type.synced_notification.CopyFrom(specifics)
+    hash_input = serialized_type.SerializeToString() + key
+    return base64.b64encode(hashlib.sha1(hash_input).digest())
+
 
 class TestServer(object):
   """An object to handle requests for one (and only one) Chrome Sync account.
@@ -1154,6 +1253,16 @@ class TestServer(object):
         for times in xrange(0, sys.maxint) for c in xrange(ord('A'), ord('Z')))
     self.transient_error = False
     self.sync_count = 0
+    # Gaia OAuth2 Token fields and their default values.
+    self.response_code = 200
+    self.request_token = 'rt1'
+    self.access_token = 'at1'
+    self.expires_in = 3600
+    self.token_type = 'Bearer'
+    # The ClientCommand to send back on each ServerToClientResponse. If set to
+    # None, no ClientCommand should be sent.
+    self._client_command = None
+
 
   def GetShortClientName(self, query):
     parsed = cgi.parse_qs(query[query.find('?')+1:])
@@ -1340,6 +1449,10 @@ class TestServer(object):
 
       response = sync_pb2.ClientToServerResponse()
       response.error_code = sync_enums_pb2.SyncEnums.SUCCESS
+
+      if self._client_command:
+        response.client_command.CopyFrom(self._client_command)
+
       self.CheckStoreBirthday(request)
       response.store_birthday = self.account.store_birthday
       self.CheckTransientError()
@@ -1478,3 +1591,53 @@ class TestServer(object):
 
     if update_request.need_encryption_key or sending_nigori_node:
       update_response.encryption_keys.extend(self.account.GetKeystoreKeys())
+
+  def HandleGetOauth2Token(self):
+    return (int(self.response_code),
+            '{\n'
+            '  \"refresh_token\": \"' + self.request_token + '\",\n'
+            '  \"access_token\": \"' + self.access_token + '\",\n'
+            '  \"expires_in\": ' + str(self.expires_in) + ',\n'
+            '  \"token_type\": \"' + self.token_type +'\"\n'
+            '}')
+
+  def HandleSetOauth2Token(self, response_code, request_token, access_token,
+                           expires_in, token_type):
+    if response_code != 0:
+      self.response_code = response_code
+    if request_token != '':
+      self.request_token = request_token
+    if access_token != '':
+      self.access_token = access_token
+    if expires_in != 0:
+      self.expires_in = expires_in
+    if token_type != '':
+      self.token_type = token_type
+
+    return (200,
+            '<html><title>Set OAuth2 Token</title>'
+            '<H1>This server will now return the OAuth2 Token:</H1>'
+            '<p>response_code: ' + str(self.response_code) + '</p>'
+            '<p>request_token: ' + self.request_token + '</p>'
+            '<p>access_token: ' + self.access_token + '</p>'
+            '<p>expires_in: ' + str(self.expires_in) + '</p>'
+            '<p>token_type: ' + self.token_type + '</p>'
+            '</html>')
+
+  def CustomizeClientCommand(self, sessions_commit_delay_seconds):
+    """Customizes the value of the ClientCommand of ServerToClientResponse.
+
+    Currently, this only allows for changing the sessions_commit_delay_seconds
+    field. This is useful for testing in conjunction with
+    AddSyncedNotification so that synced notifications are seen immediately
+    after triggering them with an HTTP call to the test server.
+
+    Args:
+      sessions_commit_delay_seconds: The desired sync delay time for sessions.
+    """
+    if not self._client_command:
+      self._client_command = client_commands_pb2.ClientCommand()
+
+    self._client_command.sessions_commit_delay_seconds = \
+        sessions_commit_delay_seconds
+    return self._client_command

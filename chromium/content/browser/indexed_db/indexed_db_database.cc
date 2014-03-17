@@ -12,7 +12,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "content/browser/indexed_db/indexed_db_backing_store.h"
 #include "content/browser/indexed_db/indexed_db_connection.h"
 #include "content/browser/indexed_db/indexed_db_cursor.h"
 #include "content/browser/indexed_db/indexed_db_factory.h"
@@ -25,7 +24,7 @@
 #include "third_party/WebKit/public/platform/WebIDBDatabaseException.h"
 
 using base::Int64ToString16;
-using WebKit::WebIDBKeyTypeNumber;
+using blink::WebIDBKeyTypeNumber;
 
 namespace content {
 
@@ -86,22 +85,16 @@ class IndexedDBDatabase::PendingSuccessCall {
  public:
   PendingSuccessCall(scoped_refptr<IndexedDBCallbacks> callbacks,
                      IndexedDBConnection* connection,
-                     int64 transaction_id,
                      int64 version)
-      : callbacks_(callbacks),
-        connection_(connection),
-        version_(version),
-        transaction_id_(transaction_id) {}
+      : callbacks_(callbacks), connection_(connection), version_(version) {}
   scoped_refptr<IndexedDBCallbacks> Callbacks() { return callbacks_; }
   IndexedDBConnection* Connection() { return connection_; }
   int64 Version() { return version_; }
-  int64 TransactionId() const { return transaction_id_; }
 
  private:
   scoped_refptr<IndexedDBCallbacks> callbacks_;
   IndexedDBConnection* connection_;
   int64 version_;
-  const int64 transaction_id_;
 };
 
 class IndexedDBDatabase::PendingDeleteCall {
@@ -115,7 +108,7 @@ class IndexedDBDatabase::PendingDeleteCall {
 };
 
 scoped_refptr<IndexedDBDatabase> IndexedDBDatabase::Create(
-    const string16& name,
+    const base::string16& name,
     IndexedDBBackingStore* backing_store,
     IndexedDBFactory* factory,
     const Identifier& unique_identifier) {
@@ -135,7 +128,7 @@ bool Contains(const T& container, const U& item) {
 }
 }
 
-IndexedDBDatabase::IndexedDBDatabase(const string16& name,
+IndexedDBDatabase::IndexedDBDatabase(const base::string16& name,
                                      IndexedDBBackingStore* backing_store,
                                      IndexedDBFactory* factory,
                                      const Identifier& unique_identifier)
@@ -147,8 +140,7 @@ IndexedDBDatabase::IndexedDBDatabase(const string16& name,
                 kInvalidId),
       identifier_(unique_identifier),
       factory_(factory),
-      running_version_change_transaction_(NULL),
-      closing_connection_(false) {
+      running_version_change_transaction_(NULL) {
   DCHECK(!metadata_.name.empty());
 }
 
@@ -220,10 +212,6 @@ IndexedDBDatabase::~IndexedDBDatabase() {
   DCHECK(pending_delete_calls_.empty());
 }
 
-scoped_refptr<IndexedDBBackingStore> IndexedDBDatabase::BackingStore() const {
-  return backing_store_;
-}
-
 IndexedDBTransaction* IndexedDBDatabase::GetTransaction(
     int64 transaction_id) const {
   TransactionMap::const_iterator trans_iterator =
@@ -285,7 +273,7 @@ bool IndexedDBDatabase::ValidateObjectStoreIdAndNewIndexId(
 
 void IndexedDBDatabase::CreateObjectStore(int64 transaction_id,
                                           int64 object_store_id,
-                                          const string16& name,
+                                          const base::string16& name,
                                           const IndexedDBKeyPath& key_path,
                                           bool auto_increment) {
   IDB_TRACE("IndexedDBDatabase::CreateObjectStore");
@@ -329,7 +317,7 @@ void IndexedDBDatabase::CreateObjectStoreOperation(
           object_store_metadata.key_path,
           object_store_metadata.auto_increment)) {
     transaction->Abort(IndexedDBDatabaseError(
-        WebKit::WebIDBDatabaseExceptionUnknownError,
+        blink::WebIDBDatabaseExceptionUnknownError,
         ASCIIToUTF16("Internal error creating object store '") +
             object_store_metadata.name + ASCIIToUTF16("'.")));
     return;
@@ -363,7 +351,7 @@ void IndexedDBDatabase::DeleteObjectStore(int64 transaction_id,
 void IndexedDBDatabase::CreateIndex(int64 transaction_id,
                                     int64 object_store_id,
                                     int64 index_id,
-                                    const string16& name,
+                                    const base::string16& name,
                                     const IndexedDBKeyPath& key_path,
                                     bool unique,
                                     bool multi_entry) {
@@ -404,10 +392,11 @@ void IndexedDBDatabase::CreateIndexOperation(
                                    index_metadata.key_path,
                                    index_metadata.unique,
                                    index_metadata.multi_entry)) {
-    string16 error_string = ASCIIToUTF16("Internal error creating index '") +
-                            index_metadata.name + ASCIIToUTF16("'.");
+    base::string16 error_string =
+        ASCIIToUTF16("Internal error creating index '") +
+        index_metadata.name + ASCIIToUTF16("'.");
     transaction->Abort(IndexedDBDatabaseError(
-        WebKit::WebIDBDatabaseExceptionUnknownError, error_string));
+        blink::WebIDBDatabaseExceptionUnknownError, error_string));
     return;
   }
 }
@@ -458,10 +447,11 @@ void IndexedDBDatabase::DeleteIndexOperation(
                                         object_store_id,
                                         index_metadata.id);
   if (!ok) {
-    string16 error_string = ASCIIToUTF16("Internal error deleting index '") +
-                            index_metadata.name + ASCIIToUTF16("'.");
+    base::string16 error_string =
+        ASCIIToUTF16("Internal error deleting index '") +
+        index_metadata.name + ASCIIToUTF16("'.");
     transaction->Abort(IndexedDBDatabaseError(
-        WebKit::WebIDBDatabaseExceptionUnknownError, error_string));
+        blink::WebIDBDatabaseExceptionUnknownError, error_string));
   }
 }
 
@@ -594,7 +584,7 @@ void IndexedDBDatabase::GetOperation(
                                    &value);
     if (!ok) {
       callbacks->OnError(
-          IndexedDBDatabaseError(WebKit::WebIDBDatabaseExceptionUnknownError,
+          IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionUnknownError,
                                  "Internal error in GetRecord."));
       return;
     }
@@ -624,7 +614,7 @@ void IndexedDBDatabase::GetOperation(
       &primary_key);
   if (!ok) {
     callbacks->OnError(
-        IndexedDBDatabaseError(WebKit::WebIDBDatabaseExceptionUnknownError,
+        IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionUnknownError,
                                "Internal error in GetPrimaryKeyViaIndex."));
     return;
   }
@@ -647,7 +637,7 @@ void IndexedDBDatabase::GetOperation(
                                  &value);
   if (!ok) {
     callbacks->OnError(
-        IndexedDBDatabaseError(WebKit::WebIDBDatabaseExceptionUnknownError,
+        IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionUnknownError,
                                "Internal error in GetRecord."));
     return;
   }
@@ -767,7 +757,7 @@ void IndexedDBDatabase::PutOperation(scoped_ptr<PutOperationParams> params,
     key_was_generated = true;
     if (!auto_inc_key->IsValid()) {
       params->callbacks->OnError(
-          IndexedDBDatabaseError(WebKit::WebIDBDatabaseExceptionConstraintError,
+          IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionConstraintError,
                                  "Maximum key generator value reached."));
       return;
     }
@@ -790,20 +780,20 @@ void IndexedDBDatabase::PutOperation(scoped_ptr<PutOperationParams> params,
         &found);
     if (!ok) {
       params->callbacks->OnError(
-          IndexedDBDatabaseError(WebKit::WebIDBDatabaseExceptionUnknownError,
+          IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionUnknownError,
                                  "Internal error checking key existence."));
       return;
     }
     if (found) {
       params->callbacks->OnError(
-          IndexedDBDatabaseError(WebKit::WebIDBDatabaseExceptionConstraintError,
+          IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionConstraintError,
                                  "Key already exists in the object store."));
       return;
     }
   }
 
   ScopedVector<IndexWriter> index_writers;
-  string16 error_message;
+  base::string16 error_message;
   bool obeys_constraints = false;
   bool backing_store_success = MakeIndexWriters(transaction,
                                                 backing_store_.get(),
@@ -818,13 +808,13 @@ void IndexedDBDatabase::PutOperation(scoped_ptr<PutOperationParams> params,
                                                 &obeys_constraints);
   if (!backing_store_success) {
     params->callbacks->OnError(IndexedDBDatabaseError(
-        WebKit::WebIDBDatabaseExceptionUnknownError,
+        blink::WebIDBDatabaseExceptionUnknownError,
         "Internal error: backing store error updating index keys."));
     return;
   }
   if (!obeys_constraints) {
     params->callbacks->OnError(IndexedDBDatabaseError(
-        WebKit::WebIDBDatabaseExceptionConstraintError, error_message));
+        blink::WebIDBDatabaseExceptionConstraintError, error_message));
     return;
   }
 
@@ -839,7 +829,7 @@ void IndexedDBDatabase::PutOperation(scoped_ptr<PutOperationParams> params,
                                 &record_identifier);
   if (!backing_store_success) {
     params->callbacks->OnError(IndexedDBDatabaseError(
-        WebKit::WebIDBDatabaseExceptionUnknownError,
+        blink::WebIDBDatabaseExceptionUnknownError,
         "Internal error: backing store error performing put/add."));
     return;
   }
@@ -864,7 +854,7 @@ void IndexedDBDatabase::PutOperation(scoped_ptr<PutOperationParams> params,
                                  !key_was_generated);
     if (!ok) {
       params->callbacks->OnError(
-          IndexedDBDatabaseError(WebKit::WebIDBDatabaseExceptionUnknownError,
+          IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionUnknownError,
                                  "Internal error updating key generator."));
       return;
     }
@@ -884,40 +874,39 @@ void IndexedDBDatabase::SetIndexKeys(int64 transaction_id,
     return;
   DCHECK_EQ(transaction->mode(), indexed_db::TRANSACTION_VERSION_CHANGE);
 
-  scoped_refptr<IndexedDBBackingStore> store = BackingStore();
   // TODO(alecflett): This method could be asynchronous, but we need to
   // evaluate if it's worth the extra complexity.
   IndexedDBBackingStore::RecordIdentifier record_identifier;
   bool found = false;
-  bool ok =
-      store->KeyExistsInObjectStore(transaction->BackingStoreTransaction(),
-                                    metadata_.id,
-                                    object_store_id,
-                                    *primary_key,
-                                    &record_identifier,
-                                    &found);
+  bool ok = backing_store_->KeyExistsInObjectStore(
+      transaction->BackingStoreTransaction(),
+      metadata_.id,
+      object_store_id,
+      *primary_key,
+      &record_identifier,
+      &found);
   if (!ok) {
     transaction->Abort(
-        IndexedDBDatabaseError(WebKit::WebIDBDatabaseExceptionUnknownError,
+        IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionUnknownError,
                                "Internal error setting index keys."));
     return;
   }
   if (!found) {
     transaction->Abort(IndexedDBDatabaseError(
-        WebKit::WebIDBDatabaseExceptionUnknownError,
+        blink::WebIDBDatabaseExceptionUnknownError,
         "Internal error setting index keys for object store."));
     return;
   }
 
   ScopedVector<IndexWriter> index_writers;
-  string16 error_message;
+  base::string16 error_message;
   bool obeys_constraints = false;
   DCHECK(metadata_.object_stores.find(object_store_id) !=
          metadata_.object_stores.end());
   const IndexedDBObjectStoreMetadata& object_store_metadata =
       metadata_.object_stores[object_store_id];
   bool backing_store_success = MakeIndexWriters(transaction,
-                                                store,
+                                                backing_store_,
                                                 id(),
                                                 object_store_metadata,
                                                 *primary_key,
@@ -929,20 +918,20 @@ void IndexedDBDatabase::SetIndexKeys(int64 transaction_id,
                                                 &obeys_constraints);
   if (!backing_store_success) {
     transaction->Abort(IndexedDBDatabaseError(
-        WebKit::WebIDBDatabaseExceptionUnknownError,
+        blink::WebIDBDatabaseExceptionUnknownError,
         "Internal error: backing store error updating index keys."));
     return;
   }
   if (!obeys_constraints) {
     transaction->Abort(IndexedDBDatabaseError(
-        WebKit::WebIDBDatabaseExceptionConstraintError, error_message));
+        blink::WebIDBDatabaseExceptionConstraintError, error_message));
     return;
   }
 
   for (size_t i = 0; i < index_writers.size(); ++i) {
     IndexWriter* index_writer = index_writers[i];
     index_writer->WriteIndexKeys(record_identifier,
-                                 store,
+                                 backing_store_,
                                  transaction->BackingStoreTransaction(),
                                  id(),
                                  object_store_id);
@@ -1182,7 +1171,7 @@ void IndexedDBDatabase::DeleteRangeOperation(
               object_store_id,
               backing_store_cursor->record_identifier())) {
         callbacks->OnError(
-            IndexedDBDatabaseError(WebKit::WebIDBDatabaseExceptionUnknownError,
+            IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionUnknownError,
                                    "Internal error deleting data in range"));
         return;
       }
@@ -1216,7 +1205,7 @@ void IndexedDBDatabase::ClearOperation(
   if (!backing_store_->ClearObjectStore(
           transaction->BackingStoreTransaction(), id(), object_store_id)) {
     callbacks->OnError(
-        IndexedDBDatabaseError(WebKit::WebIDBDatabaseExceptionUnknownError,
+        IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionUnknownError,
                                "Internal error clearing object store"));
     return;
   }
@@ -1232,11 +1221,11 @@ void IndexedDBDatabase::DeleteObjectStoreOperation(
                                         transaction->database()->id(),
                                         object_store_metadata.id);
   if (!ok) {
-    string16 error_string =
+    base::string16 error_string =
         ASCIIToUTF16("Internal error deleting object store '") +
         object_store_metadata.name + ASCIIToUTF16("'.");
     transaction->Abort(IndexedDBDatabaseError(
-        WebKit::WebIDBDatabaseExceptionUnknownError, error_string));
+        blink::WebIDBDatabaseExceptionUnknownError, error_string));
   }
 }
 
@@ -1244,7 +1233,8 @@ void IndexedDBDatabase::VersionChangeOperation(
     int64 version,
     scoped_refptr<IndexedDBCallbacks> callbacks,
     scoped_ptr<IndexedDBConnection> connection,
-    WebKit::WebIDBCallbacks::DataLoss data_loss,
+    blink::WebIDBDataLoss data_loss,
+    std::string data_loss_message,
     IndexedDBTransaction* transaction) {
   IDB_TRACE("IndexedDBDatabase::VersionChangeOperation");
   int64 old_version = metadata_.int_version;
@@ -1255,7 +1245,7 @@ void IndexedDBDatabase::VersionChangeOperation(
           id(),
           metadata_.int_version)) {
     IndexedDBDatabaseError error(
-        WebKit::WebIDBDatabaseExceptionUnknownError,
+        blink::WebIDBDatabaseExceptionUnknownError,
         ASCIIToUTF16(
             "Internal error writing data to stable storage when "
             "updating version."));
@@ -1264,10 +1254,10 @@ void IndexedDBDatabase::VersionChangeOperation(
     return;
   }
   DCHECK(!pending_second_half_open_);
-  pending_second_half_open_.reset(new PendingSuccessCall(
-      callbacks, connection.get(), transaction->id(), version));
+  pending_second_half_open_.reset(
+      new PendingSuccessCall(callbacks, connection.get(), version));
   callbacks->OnUpgradeNeeded(
-      old_version, connection.Pass(), metadata(), data_loss);
+      old_version, connection.Pass(), metadata(), data_loss, data_loss_message);
 }
 
 void IndexedDBDatabase::TransactionStarted(IndexedDBTransaction* transaction) {
@@ -1294,7 +1284,7 @@ void IndexedDBDatabase::TransactionFinishedAndAbortFired(
   if (transaction->mode() == indexed_db::TRANSACTION_VERSION_CHANGE) {
     if (pending_second_half_open_) {
       pending_second_half_open_->Callbacks()->OnError(
-          IndexedDBDatabaseError(WebKit::WebIDBDatabaseExceptionAbortError,
+          IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionAbortError,
                                  "Version change transaction was aborted in "
                                  "upgradeneeded event handler."));
       pending_second_half_open_.reset();
@@ -1320,6 +1310,13 @@ void IndexedDBDatabase::TransactionFinishedAndCompleteFired(
     }
     ProcessPendingCalls();
   }
+}
+
+void IndexedDBDatabase::TransactionCommitFailed() {
+  // Factory may be null in unit tests.
+  if (!factory_)
+    return;
+  factory_->HandleBackingStoreFailure(backing_store_->origin_url());
 }
 
 size_t IndexedDBDatabase::ConnectionCount() const {
@@ -1398,7 +1395,7 @@ void IndexedDBDatabase::CreateTransaction(
     const std::vector<int64>& object_store_ids,
     uint16 mode) {
 
-  DCHECK(connections_.has(connection));
+  DCHECK(connections_.count(connection));
   DCHECK(transactions_.find(transaction_id) == transactions_.end());
   if (transactions_.find(transaction_id) != transactions_.end())
     return;
@@ -1408,8 +1405,14 @@ void IndexedDBDatabase::CreateTransaction(
       connection->callbacks(),
       std::set<int64>(object_store_ids.begin(), object_store_ids.end()),
       static_cast<indexed_db::TransactionMode>(mode),
-      this);
-  transactions_[transaction_id] = transaction;
+      this,
+      new IndexedDBBackingStore::Transaction(backing_store_));
+  TransactionCreated(transaction);
+}
+
+void IndexedDBDatabase::TransactionCreated(
+    scoped_refptr<IndexedDBTransaction> transaction) {
+  transactions_[transaction->id()] = transaction;
 }
 
 bool IndexedDBDatabase::IsOpenConnectionBlocked() const {
@@ -1423,10 +1426,10 @@ void IndexedDBDatabase::OpenConnection(
     scoped_refptr<IndexedDBDatabaseCallbacks> database_callbacks,
     int64 transaction_id,
     int64 version) {
-  const WebKit::WebIDBCallbacks::DataLoss kDataLoss =
-      WebKit::WebIDBCallbacks::DataLossNone;
+  const blink::WebIDBDataLoss kDataLoss =
+      blink::WebIDBDataLossNone;
   OpenConnection(
-      callbacks, database_callbacks, transaction_id, version, kDataLoss);
+      callbacks, database_callbacks, transaction_id, version, kDataLoss, "");
 }
 
 void IndexedDBDatabase::OpenConnection(
@@ -1434,7 +1437,8 @@ void IndexedDBDatabase::OpenConnection(
     scoped_refptr<IndexedDBDatabaseCallbacks> database_callbacks,
     int64 transaction_id,
     int64 version,
-    WebKit::WebIDBCallbacks::DataLoss data_loss) {
+    blink::WebIDBDataLoss data_loss,
+    std::string data_loss_message) {
   DCHECK(backing_store_);
 
   // TODO(jsbell): Should have a priority queue so that higher version
@@ -1443,7 +1447,7 @@ void IndexedDBDatabase::OpenConnection(
     // The backing store only detects data loss when it is first opened. The
     // presence of existing connections means we didn't even check for data loss
     // so there'd better not be any.
-    DCHECK_NE(WebKit::WebIDBCallbacks::DataLossTotal, data_loss);
+    DCHECK_NE(blink::WebIDBDataLossTotal, data_loss);
     pending_open_calls_.push_back(new PendingOpenCall(
         callbacks, database_callbacks, transaction_id, version));
     return;
@@ -1456,16 +1460,17 @@ void IndexedDBDatabase::OpenConnection(
       DCHECK_EQ(IndexedDBDatabaseMetadata::NO_INT_VERSION,
                 metadata_.int_version);
     } else {
-      string16 message;
-      if (version == IndexedDBDatabaseMetadata::NO_INT_VERSION)
+      base::string16 message;
+      if (version == IndexedDBDatabaseMetadata::NO_INT_VERSION) {
         message = ASCIIToUTF16(
             "Internal error opening database with no version specified.");
-      else
+      } else {
         message =
             ASCIIToUTF16("Internal error opening database with version ") +
             Int64ToString16(version);
+      }
       callbacks->OnError(IndexedDBDatabaseError(
-          WebKit::WebIDBDatabaseExceptionUnknownError, message));
+          blink::WebIDBDatabaseExceptionUnknownError, message));
       return;
     }
   }
@@ -1502,13 +1507,17 @@ void IndexedDBDatabase::OpenConnection(
 
   if (version > metadata_.int_version) {
     connections_.insert(connection.get());
-    RunVersionChangeTransaction(
-        callbacks, connection.Pass(), transaction_id, version, data_loss);
+    RunVersionChangeTransaction(callbacks,
+                                connection.Pass(),
+                                transaction_id,
+                                version,
+                                data_loss,
+                                data_loss_message);
     return;
   }
   if (version < metadata_.int_version) {
     callbacks->OnError(IndexedDBDatabaseError(
-        WebKit::WebIDBDatabaseExceptionVersionError,
+        blink::WebIDBDatabaseExceptionVersionError,
         ASCIIToUTF16("The requested version (") + Int64ToString16(version) +
             ASCIIToUTF16(") is less than the existing version (") +
             Int64ToString16(metadata_.int_version) + ASCIIToUTF16(").")));
@@ -1524,12 +1533,13 @@ void IndexedDBDatabase::RunVersionChangeTransaction(
     scoped_ptr<IndexedDBConnection> connection,
     int64 transaction_id,
     int64 requested_version,
-    WebKit::WebIDBCallbacks::DataLoss data_loss) {
+    blink::WebIDBDataLoss data_loss,
+    std::string data_loss_message) {
 
   DCHECK(callbacks);
-  DCHECK(connections_.has(connection.get()));
+  DCHECK(connections_.count(connection.get()));
   if (ConnectionCount() > 1) {
-    DCHECK_NE(WebKit::WebIDBCallbacks::DataLossTotal, data_loss);
+    DCHECK_NE(blink::WebIDBDataLossTotal, data_loss);
     // Front end ensures the event is not fired at connections that have
     // close_pending set.
     for (ConnectionSet::const_iterator it = connections_.begin();
@@ -1554,7 +1564,8 @@ void IndexedDBDatabase::RunVersionChangeTransaction(
                                    connection.Pass(),
                                    transaction_id,
                                    requested_version,
-                                   data_loss);
+                                   data_loss,
+                                   data_loss_message);
 }
 
 void IndexedDBDatabase::RunVersionChangeTransactionFinal(
@@ -1562,13 +1573,14 @@ void IndexedDBDatabase::RunVersionChangeTransactionFinal(
     scoped_ptr<IndexedDBConnection> connection,
     int64 transaction_id,
     int64 requested_version) {
-  const WebKit::WebIDBCallbacks::DataLoss kDataLoss =
-      WebKit::WebIDBCallbacks::DataLossNone;
+  const blink::WebIDBDataLoss kDataLoss =
+      blink::WebIDBDataLossNone;
   RunVersionChangeTransactionFinal(callbacks,
                                    connection.Pass(),
                                    transaction_id,
                                    requested_version,
-                                   kDataLoss);
+                                   kDataLoss,
+                                   "");
 }
 
 void IndexedDBDatabase::RunVersionChangeTransactionFinal(
@@ -1576,7 +1588,8 @@ void IndexedDBDatabase::RunVersionChangeTransactionFinal(
     scoped_ptr<IndexedDBConnection> connection,
     int64 transaction_id,
     int64 requested_version,
-    WebKit::WebIDBCallbacks::DataLoss data_loss) {
+    blink::WebIDBDataLoss data_loss,
+    std::string data_loss_message) {
 
   std::vector<int64> object_store_ids;
   CreateTransaction(transaction_id,
@@ -1592,7 +1605,8 @@ void IndexedDBDatabase::RunVersionChangeTransactionFinal(
                  requested_version,
                  callbacks,
                  base::Passed(&connection),
-                 data_loss),
+                 data_loss,
+                 data_loss_message),
       base::Bind(&IndexedDBDatabase::VersionChangeAbortOperation,
                  this,
                  metadata_.version,
@@ -1633,7 +1647,7 @@ void IndexedDBDatabase::DeleteDatabaseFinal(
   DCHECK(backing_store_);
   if (!backing_store_->DeleteDatabase(metadata_.name)) {
     callbacks->OnError(
-        IndexedDBDatabaseError(WebKit::WebIDBDatabaseExceptionUnknownError,
+        IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionUnknownError,
                                "Internal error deleting database."));
     return;
   }
@@ -1644,14 +1658,15 @@ void IndexedDBDatabase::DeleteDatabaseFinal(
   callbacks->OnSuccess();
 }
 
-void IndexedDBDatabase::Close(IndexedDBConnection* connection) {
-  DCHECK(connections_.has(connection));
+void IndexedDBDatabase::Close(IndexedDBConnection* connection, bool forced) {
+  DCHECK(connections_.count(connection));
+  DCHECK(connection->IsConnected());
+  DCHECK(connection->database() == this);
 
-  // Close outstanding transactions from the closing connection. This
+  // Abort outstanding transactions from the closing connection. This
   // can not happen if the close is requested by the connection itself
   // as the front-end defers the close until all transactions are
-  // complete, so something unusual has happened e.g. unexpected
-  // process termination.
+  // complete, but can occur on process termination or forced close.
   {
     TransactionMap transactions(transactions_);
     for (TransactionMap::const_iterator it = transactions.begin(),
@@ -1660,7 +1675,7 @@ void IndexedDBDatabase::Close(IndexedDBConnection* connection) {
          ++it) {
       if (it->second->connection() == connection->callbacks())
         it->second->Abort(
-            IndexedDBDatabaseError(WebKit::WebIDBDatabaseExceptionUnknownError,
+            IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionUnknownError,
                                    "Connection is closing."));
     }
   }
@@ -1669,19 +1684,11 @@ void IndexedDBDatabase::Close(IndexedDBConnection* connection) {
   if (pending_second_half_open_ &&
       pending_second_half_open_->Connection() == connection) {
     pending_second_half_open_->Callbacks()->OnError(
-        IndexedDBDatabaseError(WebKit::WebIDBDatabaseExceptionAbortError,
+        IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionAbortError,
                                "The connection was closed."));
     pending_second_half_open_.reset();
   }
 
-  // process_pending_calls allows the inspector to process a pending open call
-  // and call close, reentering IndexedDBDatabase::close. Then the
-  // backend would be removed both by the inspector closing its connection, and
-  // by the connection that first called close.
-  // To avoid that situation, don't proceed in case of reentrancy.
-  if (closing_connection_)
-    return;
-  base::AutoReset<bool> ClosingConnection(&closing_connection_, true);
   ProcessPendingCalls();
 
   // TODO(jsbell): Add a test for the pending_open_calls_ cases below.
@@ -1689,12 +1696,15 @@ void IndexedDBDatabase::Close(IndexedDBConnection* connection) {
       !pending_delete_calls_.size()) {
     DCHECK(transactions_.empty());
 
+    const GURL origin_url = backing_store_->origin_url();
     backing_store_ = NULL;
 
     // factory_ should only be null in unit tests.
     // TODO(jsbell): DCHECK(factory_ || !in_unit_tests) - somehow.
-    if (factory_)
-      factory_->RemoveIDBDatabaseBackend(identifier_);
+    if (factory_) {
+      factory_->ReleaseDatabase(identifier_, origin_url, forced);
+      factory_ = NULL;
+    }
   }
 }
 
@@ -1716,7 +1726,7 @@ void IndexedDBDatabase::DeleteObjectStoreAbortOperation(
 }
 
 void IndexedDBDatabase::VersionChangeAbortOperation(
-    const string16& previous_version,
+    const base::string16& previous_version,
     int64 previous_int_version,
     IndexedDBTransaction* transaction) {
   IDB_TRACE("IndexedDBDatabase::VersionChangeAbortOperation");

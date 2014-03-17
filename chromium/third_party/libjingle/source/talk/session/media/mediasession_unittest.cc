@@ -536,8 +536,8 @@ TEST_F(MediaSessionDescriptionFactoryTest,
   ASSERT_CRYPTO(dcd, 1U, CS_AES_CM_128_HMAC_SHA1_80);
   EXPECT_EQ(std::string(cricket::kMediaProtocolSavpf), dcd->protocol());
 }
-// Create a typical data offer, and ensure it matches what we expect.
-TEST_F(MediaSessionDescriptionFactoryTest, TestCreateDataOffer) {
+// Create a RTP data offer, and ensure it matches what we expect.
+TEST_F(MediaSessionDescriptionFactoryTest, TestCreateRtpDataOffer) {
   MediaSessionOptions opts;
   opts.data_channel_type = cricket::DCT_RTP;
   f1_.set_secure(SEC_ENABLED);
@@ -569,6 +569,18 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateDataOffer) {
   EXPECT_TRUE(dcd->rtcp_mux());                 // rtcp-mux defaults on
   ASSERT_CRYPTO(dcd, 1U, CS_AES_CM_128_HMAC_SHA1_80);
   EXPECT_EQ(std::string(cricket::kMediaProtocolSavpf), dcd->protocol());
+}
+
+// Create an SCTP data offer with bundle without error.
+TEST_F(MediaSessionDescriptionFactoryTest, TestCreateSctpDataOffer) {
+  MediaSessionOptions opts;
+  opts.has_audio = false;
+  opts.bundle_enabled = true;
+  opts.data_channel_type = cricket::DCT_SCTP;
+  f1_.set_secure(SEC_ENABLED);
+  talk_base::scoped_ptr<SessionDescription> offer(f1_.CreateOffer(opts, NULL));
+  EXPECT_TRUE(offer.get() != NULL);
+  EXPECT_TRUE(offer->GetContentByName("data") != NULL);
 }
 
 // Create an audio, video offer without legacy StreamParams.
@@ -870,8 +882,8 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateVideoAnswerRtcpMux) {
   answer_opts.data_channel_type = cricket::DCT_RTP;
   offer_opts.data_channel_type = cricket::DCT_RTP;
 
-  talk_base::scoped_ptr<SessionDescription> offer(NULL);
-  talk_base::scoped_ptr<SessionDescription> answer(NULL);
+  talk_base::scoped_ptr<SessionDescription> offer;
+  talk_base::scoped_ptr<SessionDescription> answer;
 
   offer_opts.rtcp_mux_enabled = true;
   answer_opts.rtcp_mux_enabled = true;
@@ -1148,6 +1160,28 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateMultiStreamVideoOffer) {
   ASSERT_EQ(1U, updated_data_streams[1].ssrcs.size());
   EXPECT_NE(0U, updated_data_streams[1].ssrcs[0]);
   EXPECT_EQ(updated_data_streams[0].cname, updated_data_streams[1].cname);
+}
+
+// Create an offer with simulcast video stream.
+TEST_F(MediaSessionDescriptionFactoryTest, TestCreateSimulcastVideoOffer) {
+  MediaSessionOptions opts;
+  const int num_sim_layers = 3;
+  opts.AddVideoStream(kVideoTrack1, kMediaStream1, num_sim_layers);
+  talk_base::scoped_ptr<SessionDescription> offer(f1_.CreateOffer(opts, NULL));
+
+  ASSERT_TRUE(offer.get() != NULL);
+  const ContentInfo* vc = offer->GetContentByName("video");
+  ASSERT_TRUE(vc != NULL);
+  const VideoContentDescription* vcd =
+      static_cast<const VideoContentDescription*>(vc->description);
+
+  const StreamParamsVec& video_streams = vcd->streams();
+  ASSERT_EQ(1U, video_streams.size());
+  EXPECT_EQ(kVideoTrack1, video_streams[0].id);
+  const SsrcGroup* sim_ssrc_group =
+      video_streams[0].get_ssrc_group(cricket::kSimSsrcGroupSemantics);
+  ASSERT_TRUE(sim_ssrc_group != NULL);
+  EXPECT_EQ(static_cast<size_t>(num_sim_layers), sim_ssrc_group->ssrcs.size());
 }
 
 // Create an audio and video answer to a standard video offer with:
@@ -1458,7 +1492,7 @@ TEST_F(MediaSessionDescriptionFactoryTest,
       GetFirstVideoContentDescription(updated_answer.get());
 
   ASSERT_EQ("H264", updated_vcd->codecs()[0].name);
-  ASSERT_EQ(cricket::kRtxCodecName, updated_vcd->codecs()[1].name);
+  ASSERT_EQ(std::string(cricket::kRtxCodecName), updated_vcd->codecs()[1].name);
   int new_h264_pl_type =  updated_vcd->codecs()[0].id;
   EXPECT_NE(used_pl_type, new_h264_pl_type);
   VideoCodec rtx = updated_vcd->codecs()[1];
@@ -1799,6 +1833,26 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCryptoDtls) {
   audio_trans_desc = answer->GetTransportDescriptionByName("audio");
   ASSERT_TRUE(audio_trans_desc != NULL);
   video_trans_desc = answer->GetTransportDescriptionByName("video");
+  ASSERT_TRUE(video_trans_desc != NULL);
+  ASSERT_TRUE(audio_trans_desc->identity_fingerprint.get() != NULL);
+  ASSERT_TRUE(video_trans_desc->identity_fingerprint.get() != NULL);
+
+  // Try creating offer again. DTLS enabled now, crypto's should be empty
+  // in new offer.
+  offer.reset(f1_.CreateOffer(options, offer.get()));
+  ASSERT_TRUE(offer.get() != NULL);
+  audio_media_desc = static_cast<const cricket::MediaContentDescription*>(
+      offer->GetContentDescriptionByName("audio"));
+  ASSERT_TRUE(audio_media_desc != NULL);
+  video_media_desc = static_cast<const cricket::MediaContentDescription*>(
+      offer->GetContentDescriptionByName("video"));
+  ASSERT_TRUE(video_media_desc != NULL);
+  EXPECT_TRUE(audio_media_desc->cryptos().empty());
+  EXPECT_TRUE(video_media_desc->cryptos().empty());
+
+  audio_trans_desc = offer->GetTransportDescriptionByName("audio");
+  ASSERT_TRUE(audio_trans_desc != NULL);
+  video_trans_desc = offer->GetTransportDescriptionByName("video");
   ASSERT_TRUE(video_trans_desc != NULL);
   ASSERT_TRUE(audio_trans_desc->identity_fingerprint.get() != NULL);
   ASSERT_TRUE(video_trans_desc->identity_fingerprint.get() != NULL);

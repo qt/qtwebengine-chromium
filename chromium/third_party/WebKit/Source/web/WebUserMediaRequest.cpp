@@ -41,15 +41,15 @@
 #include "WebDocument.h"
 #include "WebSecurityOrigin.h"
 #include "core/dom/Document.h"
-#include "core/platform/mediastream/MediaConstraints.h"
 #include "core/platform/mediastream/MediaStreamDescriptor.h"
-#include "core/platform/mediastream/MediaStreamSource.h"
 #include "modules/mediastream/UserMediaRequest.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/mediastream/MediaConstraints.h"
+#include "platform/mediastream/MediaStreamSource.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 WebUserMediaRequest::WebUserMediaRequest(const PassRefPtr<UserMediaRequest>& request)
     : m_private(request)
@@ -92,8 +92,8 @@ WebMediaConstraints WebUserMediaRequest::videoConstraints() const
 
 WebSecurityOrigin WebUserMediaRequest::securityOrigin() const
 {
-    ASSERT(!isNull() && m_private->scriptExecutionContext());
-    return WebSecurityOrigin(m_private->scriptExecutionContext()->securityOrigin());
+    ASSERT(!isNull() && m_private->executionContext());
+    return WebSecurityOrigin(m_private->executionContext()->securityOrigin());
 }
 
 WebDocument WebUserMediaRequest::ownerDocument() const
@@ -137,4 +137,4 @@ WebUserMediaRequest::operator UserMediaRequest*() const
     return m_private.get();
 }
 
-} // namespace WebKit
+} // namespace blink

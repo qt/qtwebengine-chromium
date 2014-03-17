@@ -38,11 +38,12 @@
 #include "V8VoidCallback.h"
 #include "V8Window.h"
 #include "bindings/v8/ArrayValue.h"
+#include "bindings/v8/ExceptionMessages.h"
+#include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8Utilities.h"
 #include "bindings/v8/custom/V8ArrayBufferViewCustom.h"
 #include "bindings/v8/custom/V8Uint8ArrayCustom.h"
-#include "core/dom/DOMStringList.h"
 #include "modules/indexeddb/IDBKeyRange.h"
 #include "modules/speech/SpeechRecognitionError.h"
 #include "modules/speech/SpeechRecognitionResult.h"
@@ -62,7 +63,7 @@ Dictionary::Dictionary()
 {
 }
 
-Dictionary::Dictionary(const v8::Local<v8::Value>& options, v8::Isolate* isolate)
+Dictionary::Dictionary(const v8::Handle<v8::Value>& options, v8::Isolate* isolate)
     : m_options(options)
     , m_isolate(isolate)
 {
@@ -92,6 +93,22 @@ bool Dictionary::isUndefinedOrNull() const
     return WebCore::isUndefinedOrNull(m_options);
 }
 
+bool Dictionary::hasProperty(const String& key) const
+{
+    if (isUndefinedOrNull())
+        return false;
+    v8::Local<v8::Object> options = m_options->ToObject();
+    ASSERT(!options.IsEmpty());
+
+    ASSERT(m_isolate);
+    ASSERT(m_isolate == v8::Isolate::GetCurrent());
+    v8::Handle<v8::String> v8Key = v8String(m_isolate, key);
+    if (!options->Has(v8Key))
+        return false;
+
+    return true;
+}
+
 bool Dictionary::getKey(const String& key, v8::Local<v8::Value>& value) const
 {
     if (isUndefinedOrNull())
@@ -101,7 +118,7 @@ bool Dictionary::getKey(const String& key, v8::Local<v8::Value>& value) const
 
     ASSERT(m_isolate);
     ASSERT(m_isolate == v8::Isolate::GetCurrent());
-    v8::Handle<v8::String> v8Key = v8String(key, m_isolate);
+    v8::Handle<v8::String> v8Key = v8String(m_isolate, key);
     if (!options->Has(v8Key))
         return false;
     value = options->Get(v8Key);
@@ -128,6 +145,13 @@ bool Dictionary::get(const String& key, bool& value) const
     return true;
 }
 
+bool Dictionary::convert(ConversionContext& context, const String& key, bool& value) const
+{
+    ConversionContextScope scope(context);
+    get(key, value);
+    return true;
+}
+
 bool Dictionary::get(const String& key, int32_t& value) const
 {
     v8::Local<v8::Value> v8Value;
@@ -150,7 +174,7 @@ bool Dictionary::get(const String& key, double& value, bool& hasValue) const
     }
 
     hasValue = true;
-    v8::Local<v8::Number> v8Number = v8Value->ToNumber();
+    V8TRYCATCH_RETURN(v8::Local<v8::Number>, v8Number, v8Value->ToNumber(), false);
     if (v8Number.IsEmpty())
         return false;
     value = v8Number->Value();
@@ -161,6 +185,18 @@ bool Dictionary::get(const String& key, double& value) const
 {
     bool unused;
     return get(key, value, unused);
+}
+
+bool Dictionary::convert(ConversionContext& context, const String& key, double& value) const
+{
+    ConversionContextScope scope(context);
+
+    bool hasValue = false;
+    if (!get(key, value, hasValue) && hasValue) {
+        context.throwTypeError(ExceptionMessages::incorrectPropertyType(key, "is not of type 'double'."));
+        return false;
+    }
+    return true;
 }
 
 bool Dictionary::get(const String& key, String& value) const
@@ -174,6 +210,19 @@ bool Dictionary::get(const String& key, String& value) const
     return true;
 }
 
+bool Dictionary::convert(ConversionContext& context, const String& key, String& value) const
+{
+    ConversionContextScope scope(context);
+
+    v8::Local<v8::Value> v8Value;
+    if (!getKey(key, v8Value))
+        return true;
+
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_RETURN(V8StringResource<>, stringValue, v8Value, false);
+    value = stringValue;
+    return true;
+}
+
 bool Dictionary::get(const String& key, ScriptValue& value) const
 {
     v8::Local<v8::Value> v8Value;
@@ -181,6 +230,14 @@ bool Dictionary::get(const String& key, ScriptValue& value) const
         return false;
 
     value = ScriptValue(v8Value, m_isolate);
+    return true;
+}
+
+bool Dictionary::convert(ConversionContext& context, const String& key, ScriptValue& value) const
+{
+    ConversionContextScope scope(context);
+
+    get(key, value);
     return true;
 }
 
@@ -242,7 +299,7 @@ bool Dictionary::get(const String& key, unsigned long long& value) const
     if (!getKey(key, v8Value))
         return false;
 
-    v8::Local<v8::Number> v8Number = v8Value->ToNumber();
+    V8TRYCATCH_RETURN(v8::Local<v8::Number>, v8Number, v8Value->ToNumber(), false);
     if (v8Number.IsEmpty())
         return false;
     double d = v8Number->Value();
@@ -261,7 +318,7 @@ bool Dictionary::get(const String& key, RefPtr<DOMWindow>& value) const
     value = 0;
     if (v8Value->IsObject()) {
         v8::Handle<v8::Object> wrapper = v8::Handle<v8::Object>::Cast(v8Value);
-        v8::Handle<v8::Object> window = wrapper->FindInstanceInPrototypeChain(V8Window::GetTemplate(m_isolate, worldTypeInMainThread(m_isolate)));
+        v8::Handle<v8::Object> window = wrapper->FindInstanceInPrototypeChain(V8Window::domTemplate(m_isolate, worldTypeInMainThread(m_isolate)));
         if (!window.IsEmpty())
             value = V8Window::toNative(window);
     }
@@ -275,7 +332,7 @@ bool Dictionary::get(const String& key, RefPtr<Storage>& value) const
         return false;
 
     value = 0;
-    if (V8Storage::HasInstance(v8Value, m_isolate, worldType(m_isolate)))
+    if (V8Storage::hasInstance(v8Value, m_isolate, worldType(m_isolate)))
         value = V8Storage::toNative(v8::Handle<v8::Object>::Cast(v8Value));
     return true;
 }
@@ -288,7 +345,18 @@ bool Dictionary::get(const String& key, MessagePortArray& value) const
 
     ASSERT(m_isolate);
     ASSERT(m_isolate == v8::Isolate::GetCurrent());
-    return getMessagePortArray(v8Value, value, m_isolate);
+    return getMessagePortArray(v8Value, key, value, m_isolate);
+}
+
+bool Dictionary::convert(ConversionContext& context, const String& key, MessagePortArray& value) const
+{
+    ConversionContextScope scope(context);
+
+    v8::Local<v8::Value> v8Value;
+    if (!getKey(key, v8Value))
+        return true;
+
+    return get(key, value);
 }
 
 bool Dictionary::get(const String& key, HashSet<AtomicString>& value) const
@@ -313,16 +381,30 @@ bool Dictionary::get(const String& key, HashSet<AtomicString>& value) const
     return true;
 }
 
+bool Dictionary::convert(ConversionContext& context, const String& key, HashSet<AtomicString>& value) const
+{
+    ConversionContextScope scope(context);
+
+    v8::Local<v8::Value> v8Value;
+    if (!getKey(key, v8Value))
+        return true;
+
+    if (context.isNullable() && WebCore::isUndefinedOrNull(v8Value))
+        return true;
+
+    if (!v8Value->IsArray()) {
+        context.throwTypeError(ExceptionMessages::notASequenceTypeProperty(key));
+        return false;
+    }
+
+    return get(key, value);
+}
+
 bool Dictionary::getWithUndefinedOrNullCheck(const String& key, String& value) const
 {
     v8::Local<v8::Value> v8Value;
-    if (!getKey(key, v8Value) || v8Value->IsNull() || v8Value->IsUndefined())
+    if (!getKey(key, v8Value) || WebCore::isUndefinedOrNull(v8Value))
         return false;
-
-    if (WebCore::isUndefinedOrNull(v8Value)) {
-        value = String();
-        return true;
-    }
 
     V8TRYCATCH_FOR_V8STRINGRESOURCE_RETURN(V8StringResource<>, stringValue, v8Value, false);
     value = stringValue;
@@ -336,7 +418,7 @@ bool Dictionary::get(const String& key, RefPtr<Uint8Array>& value) const
         return false;
 
     value = 0;
-    if (V8Uint8Array::HasInstance(v8Value, m_isolate, worldType(m_isolate)))
+    if (V8Uint8Array::hasInstance(v8Value, m_isolate, worldType(m_isolate)))
         value = V8Uint8Array::toNative(v8::Handle<v8::Object>::Cast(v8Value));
     return true;
 }
@@ -348,7 +430,7 @@ bool Dictionary::get(const String& key, RefPtr<ArrayBufferView>& value) const
         return false;
 
     value = 0;
-    if (V8ArrayBufferView::HasInstance(v8Value, m_isolate, worldType(m_isolate)))
+    if (V8ArrayBufferView::hasInstance(v8Value, m_isolate, worldType(m_isolate)))
         value = V8ArrayBufferView::toNative(v8::Handle<v8::Object>::Cast(v8Value));
     return true;
 }
@@ -360,7 +442,7 @@ bool Dictionary::get(const String& key, RefPtr<MIDIPort>& value) const
         return false;
 
     value = 0;
-    if (V8MIDIPort::HasInstance(v8Value, m_isolate, worldType(m_isolate)))
+    if (V8MIDIPort::hasInstance(v8Value, m_isolate, worldType(m_isolate)))
         value = V8MIDIPort::toNative(v8::Handle<v8::Object>::Cast(v8Value));
     return true;
 }
@@ -372,7 +454,7 @@ bool Dictionary::get(const String& key, RefPtr<MediaKeyError>& value) const
         return false;
 
     value = 0;
-    if (V8MediaKeyError::HasInstance(v8Value, m_isolate, worldType(m_isolate)))
+    if (V8MediaKeyError::hasInstance(v8Value, m_isolate, worldType(m_isolate)))
         value = V8MediaKeyError::toNative(v8::Handle<v8::Object>::Cast(v8Value));
     return true;
 }
@@ -389,7 +471,7 @@ bool Dictionary::get(const String& key, RefPtr<TrackBase>& value) const
 
         // FIXME: this will need to be changed so it can also return an AudioTrack or a VideoTrack once
         // we add them.
-        v8::Handle<v8::Object> track = wrapper->FindInstanceInPrototypeChain(V8TextTrack::GetTemplate(m_isolate, worldType(m_isolate)));
+        v8::Handle<v8::Object> track = wrapper->FindInstanceInPrototypeChain(V8TextTrack::domTemplate(m_isolate, worldType(m_isolate)));
         if (!track.IsEmpty())
             source = V8TextTrack::toNative(track);
     }
@@ -404,7 +486,7 @@ bool Dictionary::get(const String& key, RefPtr<SpeechRecognitionError>& value) c
         return false;
 
     value = 0;
-    if (V8SpeechRecognitionError::HasInstance(v8Value, m_isolate, worldType(m_isolate)))
+    if (V8SpeechRecognitionError::hasInstance(v8Value, m_isolate, worldType(m_isolate)))
         value = V8SpeechRecognitionError::toNative(v8::Handle<v8::Object>::Cast(v8Value));
     return true;
 }
@@ -416,7 +498,7 @@ bool Dictionary::get(const String& key, RefPtr<SpeechRecognitionResult>& value) 
         return false;
 
     value = 0;
-    if (V8SpeechRecognitionResult::HasInstance(v8Value, m_isolate, worldType(m_isolate)))
+    if (V8SpeechRecognitionResult::hasInstance(v8Value, m_isolate, worldType(m_isolate)))
         value = V8SpeechRecognitionResult::toNative(v8::Handle<v8::Object>::Cast(v8Value));
     return true;
 }
@@ -428,7 +510,7 @@ bool Dictionary::get(const String& key, RefPtr<SpeechRecognitionResultList>& val
         return false;
 
     value = 0;
-    if (V8SpeechRecognitionResultList::HasInstance(v8Value, m_isolate, worldType(m_isolate)))
+    if (V8SpeechRecognitionResultList::hasInstance(v8Value, m_isolate, worldType(m_isolate)))
         value = V8SpeechRecognitionResultList::toNative(v8::Handle<v8::Object>::Cast(v8Value));
     return true;
 }
@@ -440,7 +522,7 @@ bool Dictionary::get(const String& key, RefPtr<MediaStream>& value) const
         return false;
 
     value = 0;
-    if (V8MediaStream::HasInstance(v8Value, m_isolate, worldType(m_isolate)))
+    if (V8MediaStream::hasInstance(v8Value, m_isolate, worldType(m_isolate)))
         value = V8MediaStream::toNative(v8::Handle<v8::Object>::Cast(v8Value));
     return true;
 }
@@ -456,7 +538,7 @@ bool Dictionary::get(const String& key, RefPtr<EventTarget>& value) const
     // exists on a prototype chain of v8Value.
     if (v8Value->IsObject()) {
         v8::Handle<v8::Object> wrapper = v8::Handle<v8::Object>::Cast(v8Value);
-        v8::Handle<v8::Object> window = wrapper->FindInstanceInPrototypeChain(V8Window::GetTemplate(m_isolate, worldTypeInMainThread(m_isolate)));
+        v8::Handle<v8::Object> window = wrapper->FindInstanceInPrototypeChain(V8Window::domTemplate(m_isolate, worldTypeInMainThread(m_isolate)));
         if (!window.IsEmpty()) {
             value = toWrapperTypeInfo(window)->toEventTarget(window);
             return true;
@@ -485,6 +567,24 @@ bool Dictionary::get(const String& key, Dictionary& value) const
     return true;
 }
 
+bool Dictionary::convert(ConversionContext& context, const String& key, Dictionary& value) const
+{
+    ConversionContextScope scope(context);
+
+    v8::Local<v8::Value> v8Value;
+    if (!getKey(key, v8Value))
+        return true;
+
+    if (v8Value->IsObject())
+        return get(key, value);
+
+    if (context.isNullable() && WebCore::isUndefinedOrNull(v8Value))
+        return true;
+
+    context.throwTypeError(ExceptionMessages::incorrectPropertyType(key, "does not have a Dictionary type."));
+    return false;
+}
+
 bool Dictionary::get(const String& key, Vector<String>& value) const
 {
     v8::Local<v8::Value> v8Value;
@@ -504,6 +604,25 @@ bool Dictionary::get(const String& key, Vector<String>& value) const
     return true;
 }
 
+bool Dictionary::convert(ConversionContext& context, const String& key, Vector<String>& value) const
+{
+    ConversionContextScope scope(context);
+
+    v8::Local<v8::Value> v8Value;
+    if (!getKey(key, v8Value))
+        return true;
+
+    if (context.isNullable() && WebCore::isUndefinedOrNull(v8Value))
+        return true;
+
+    if (!v8Value->IsArray()) {
+        context.throwTypeError(ExceptionMessages::notASequenceTypeProperty(key));
+        return false;
+    }
+
+    return get(key, value);
+}
+
 bool Dictionary::get(const String& key, ArrayValue& value) const
 {
     v8::Local<v8::Value> v8Value;
@@ -519,6 +638,25 @@ bool Dictionary::get(const String& key, ArrayValue& value) const
     return true;
 }
 
+bool Dictionary::convert(ConversionContext& context, const String& key, ArrayValue& value) const
+{
+    ConversionContextScope scope(context);
+
+    v8::Local<v8::Value> v8Value;
+    if (!getKey(key, v8Value))
+        return true;
+
+    if (context.isNullable() && WebCore::isUndefinedOrNull(v8Value))
+        return true;
+
+    if (!v8Value->IsArray()) {
+        context.throwTypeError(ExceptionMessages::notASequenceTypeProperty(key));
+        return false;
+    }
+
+    return get(key, value);
+}
+
 bool Dictionary::get(const String& key, RefPtr<DOMError>& value) const
 {
     v8::Local<v8::Value> v8Value;
@@ -528,7 +666,7 @@ bool Dictionary::get(const String& key, RefPtr<DOMError>& value) const
     DOMError* error = 0;
     if (v8Value->IsObject()) {
         v8::Handle<v8::Object> wrapper = v8::Handle<v8::Object>::Cast(v8Value);
-        v8::Handle<v8::Object> domError = wrapper->FindInstanceInPrototypeChain(V8DOMError::GetTemplate(m_isolate, worldType(m_isolate)));
+        v8::Handle<v8::Object> domError = wrapper->FindInstanceInPrototypeChain(V8DOMError::domTemplate(m_isolate, worldType(m_isolate)));
         if (!domError.IsEmpty())
             error = V8DOMError::toNative(domError);
     }
@@ -536,7 +674,7 @@ bool Dictionary::get(const String& key, RefPtr<DOMError>& value) const
     return true;
 }
 
-bool Dictionary::get(const String& key, RefPtr<VoidCallback>& value) const
+bool Dictionary::get(const String& key, OwnPtr<VoidCallback>& value) const
 {
     v8::Local<v8::Value> v8Value;
     if (!getKey(key, v8Value))
@@ -545,7 +683,7 @@ bool Dictionary::get(const String& key, RefPtr<VoidCallback>& value) const
     if (!v8Value->IsFunction())
         return false;
 
-    value = V8VoidCallback::create(v8Value, getScriptExecutionContext());
+    value = V8VoidCallback::create(v8::Handle<v8::Function>::Cast(v8Value), getExecutionContext());
     return true;
 }
 
@@ -597,6 +735,35 @@ bool Dictionary::getOwnPropertyNames(Vector<String>& names) const
     }
 
     return true;
+}
+
+void Dictionary::ConversionContext::resetPerPropertyContext()
+{
+    if (m_dirty) {
+        m_dirty = false;
+        m_isNullable = false;
+        m_propertyTypeName = "";
+    }
+}
+
+Dictionary::ConversionContext& Dictionary::ConversionContext::setConversionType(const String& typeName, bool isNullable)
+{
+    ASSERT(!m_dirty);
+    m_dirty = true;
+    m_isNullable = isNullable;
+    m_propertyTypeName = typeName;
+
+    return *this;
+}
+
+void Dictionary::ConversionContext::throwTypeError(const String& detail)
+{
+    if (forConstructor()) {
+        exceptionState().throwTypeError(detail);
+    } else {
+        ASSERT(!methodName().isEmpty());
+        exceptionState().throwTypeError(ExceptionMessages::failedToExecute(interfaceName(), methodName(), detail));
+    }
 }
 
 } // namespace WebCore

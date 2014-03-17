@@ -29,11 +29,11 @@
 
 namespace WebCore { class AudioBus; }
 
-#if WEBKIT_IMPLEMENTATION
+#if INSIDE_BLINK
 namespace WTF { template <typename T> class PassRefPtr; }
 #endif
 
-namespace WebKit {
+namespace blink {
 
 class WebAudioBusPrivate;
 
@@ -41,28 +41,28 @@ class WebAudioBusPrivate;
 //
 // WARNING: It is not safe to pass a WebAudioBus across threads!!!
 //
-class WebAudioBus {
+class BLINK_PLATFORM_EXPORT WebAudioBus {
 public:
     WebAudioBus() : m_private(0) { }
     ~WebAudioBus() { reset(); }
 
     // initialize() allocates memory of the given length for the given number of channels.
-    WEBKIT_EXPORT void initialize(unsigned numberOfChannels, size_t length, double sampleRate);
+    void initialize(unsigned numberOfChannels, size_t length, double sampleRate);
 
     // resizeSmaller() can only be called after initialize() with a new length <= the initialization length.
     // The data stored in the bus will remain undisturbed.
-    WEBKIT_EXPORT void resizeSmaller(size_t newLength);
+    void resizeSmaller(size_t newLength);
 
     // reset() releases the memory allocated from initialize().
-    WEBKIT_EXPORT void reset();
+    void reset();
 
-    WEBKIT_EXPORT unsigned numberOfChannels() const;
-    WEBKIT_EXPORT size_t length() const;
-    WEBKIT_EXPORT double sampleRate() const;
+    unsigned numberOfChannels() const;
+    size_t length() const;
+    double sampleRate() const;
 
-    WEBKIT_EXPORT float* channelData(unsigned channelIndex);
+    float* channelData(unsigned channelIndex);
 
-#if WEBKIT_IMPLEMENTATION
+#if INSIDE_BLINK
     WTF::PassRefPtr<WebCore::AudioBus> release();
 #endif
 
@@ -74,6 +74,6 @@ private:
     WebCore::AudioBus* m_private;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebAudioBus_h

@@ -42,7 +42,7 @@ namespace WebCore {
 
 typedef uint32_t SnapshotObjectId;
 
-class ScriptHeapSnapshot : public RefCounted<ScriptHeapSnapshot> {
+class ScriptHeapSnapshot FINAL : public RefCounted<ScriptHeapSnapshot> {
 public:
     class OutputStream {
     public:
@@ -55,7 +55,7 @@ public:
     {
         return adoptRef(new ScriptHeapSnapshot(snapshot));
     }
-    virtual ~ScriptHeapSnapshot();
+    ~ScriptHeapSnapshot();
 
     String title() const;
     unsigned int uid() const;

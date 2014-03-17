@@ -25,6 +25,7 @@ namespace autofill {
 
 class AutofillMetrics;
 class AutofillPopupDelegate;
+class AutofillWebDataService;
 class CreditCard;
 class FormStructure;
 class PasswordGenerator;
@@ -47,6 +48,9 @@ class AutofillManagerDelegate {
   // Gets the PersonalDataManager instance associated with the delegate.
   virtual PersonalDataManager* GetPersonalDataManager() = 0;
 
+  // Gets the AutofillWebDataService instance associated with the delegate.
+  virtual scoped_refptr<AutofillWebDataService> GetDatabase() = 0;
+
   // Gets the preferences associated with the delegate.
   virtual PrefService* GetPrefs() = 0;
 
@@ -60,7 +64,6 @@ class AutofillManagerDelegate {
   // data. |metric_logger| can be used to log user actions.
   virtual void ConfirmSaveCreditCard(
       const AutofillMetrics& metric_logger,
-      const CreditCard& credit_card,
       const base::Closure& save_card_callback) = 0;
 
   // Causes the dialog for request autocomplete feature to be shown.

@@ -10,6 +10,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "ui/views/view.h"
 
+namespace content {
+class WebContents;
+}
+
 namespace views {
 class BoundsAnimator;
 class ViewModel;
@@ -19,8 +23,11 @@ namespace app_list {
 
 class AppsGridView;
 class ApplicationDragAndDropHost;
+class AppListFolderItem;
 class AppListMainView;
 class AppListModel;
+class AppListViewDelegate;
+class AppsContainerView;
 class PaginationModel;
 
 // A view to manage sub views under the search box (apps grid view + page
@@ -31,7 +38,8 @@ class ContentsView : public views::View {
  public:
   ContentsView(AppListMainView* app_list_main_view,
                PaginationModel* pagination_model,
-               AppListModel* model);
+               AppListModel* model,
+               content::WebContents* start_page_contents);
   virtual ~ContentsView();
 
   // The app list gets closed and drag and drop operations need to be cancelled.
@@ -43,8 +51,11 @@ class ContentsView : public views::View {
       ApplicationDragAndDropHost* drag_and_drop_host);
 
   void ShowSearchResults(bool show);
+  void ShowFolderContent(AppListFolderItem* folder);
 
   void Prerender();
+
+  AppsContainerView* apps_container_view() { return apps_container_view_; }
 
  private:
   enum ShowState {
@@ -74,7 +85,7 @@ class ContentsView : public views::View {
   ShowState show_state_;
   PaginationModel* pagination_model_;  // Owned by AppListController.
 
-  AppsGridView* apps_grid_view_;  // Owned by the view.
+  AppsContainerView* apps_container_view_;  // Owned by the views hierarchy.
 
   scoped_ptr<views::ViewModel> view_model_;
   scoped_ptr<views::BoundsAnimator> bounds_animator_;

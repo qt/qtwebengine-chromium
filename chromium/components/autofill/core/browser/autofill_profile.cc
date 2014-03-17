@@ -135,8 +135,7 @@ void CopyValuesToItems(ServerFieldType type,
                        const T& prototype) {
   form_group_items->resize(values.size(), prototype);
   for (size_t i = 0; i < form_group_items->size(); ++i) {
-    (*form_group_items)[i].SetRawInfo(type,
-                                      CollapseWhitespace(values[i], false));
+    (*form_group_items)[i].SetRawInfo(type, values[i]);
   }
   // Must have at least one (possibly empty) element.
   if (form_group_items->empty())
@@ -251,7 +250,6 @@ AutofillProfile& AutofillProfile::operator=(const AutofillProfile& profile) {
   set_guid(profile.guid());
   set_origin(profile.origin());
 
-  label_ = profile.label_;
   name_ = profile.name_;
   email_ = profile.email_;
   company_ = profile.company_;
@@ -286,7 +284,7 @@ void AutofillProfile::SetRawInfo(ServerFieldType type,
                                  const base::string16& value) {
   FormGroup* form_group = MutableFormGroupForType(AutofillType(type));
   if (form_group)
-    form_group->SetRawInfo(type, CollapseWhitespace(value, false));
+    form_group->SetRawInfo(type, value);
 }
 
 base::string16 AutofillProfile::GetInfo(const AutofillType& type,
@@ -305,8 +303,25 @@ bool AutofillProfile::SetInfo(const AutofillType& type,
   if (!form_group)
     return false;
 
-  return
-      form_group->SetInfo(type, CollapseWhitespace(value, false), app_locale);
+  base::string16 trimmed_value;
+  TrimWhitespace(value, TRIM_ALL, &trimmed_value);
+  return form_group->SetInfo(type, trimmed_value, app_locale);
+}
+
+base::string16 AutofillProfile::GetInfoForVariant(
+    const AutofillType& type,
+    size_t variant,
+    const std::string& app_locale) const {
+  std::vector<base::string16> values;
+  GetMultiInfo(type, app_locale, &values);
+
+  if (variant >= values.size()) {
+    // If the variant is unavailable, bail. This case is reachable, for
+    // example if Sync updates a profile during the filling process.
+    return base::string16();
+  }
+
+  return values[variant];
 }
 
 void AutofillProfile::SetRawMultiInfo(
@@ -352,62 +367,6 @@ void AutofillProfile::GetMultiInfo(const AutofillType& type,
   GetMultiInfoImpl(type, app_locale, values);
 }
 
-void AutofillProfile::FillFormField(const AutofillField& field,
-                                    size_t variant,
-                                    const std::string& app_locale,
-                                    FormFieldData* field_data) const {
-  AutofillType type = field.Type();
-  DCHECK_NE(CREDIT_CARD, type.group());
-  DCHECK(field_data);
-
-  if (type.GetStorableType() == PHONE_HOME_NUMBER) {
-    FillPhoneNumberField(field, variant, app_locale, field_data);
-  } else if (field_data->form_control_type == "select-one") {
-    FillSelectControl(type, app_locale, field_data);
-  } else {
-    std::vector<base::string16> values;
-    GetMultiInfo(type, app_locale, &values);
-    if (variant >= values.size()) {
-      // If the variant is unavailable, bail.  This case is reachable, for
-      // example if Sync updates a profile during the filling process.
-      return;
-    }
-
-    field_data->value = values[variant];
-  }
-}
-
-void AutofillProfile::FillPhoneNumberField(const AutofillField& field,
-                                           size_t variant,
-                                           const std::string& app_locale,
-                                           FormFieldData* field_data) const {
-  std::vector<base::string16> values;
-  GetMultiInfo(field.Type(), app_locale, &values);
-  DCHECK(variant < values.size());
-
-  // If we are filling a phone number, check to see if the size field
-  // matches the "prefix" or "suffix" sizes and fill accordingly.
-  base::string16 number = values[variant];
-  if (number.length() ==
-          PhoneNumber::kPrefixLength + PhoneNumber::kSuffixLength) {
-    if (field.phone_part() == AutofillField::PHONE_PREFIX ||
-        field_data->max_length == PhoneNumber::kPrefixLength) {
-      number = number.substr(PhoneNumber::kPrefixOffset,
-                             PhoneNumber::kPrefixLength);
-    } else if (field.phone_part() == AutofillField::PHONE_SUFFIX ||
-               field_data->max_length == PhoneNumber::kSuffixLength) {
-      number = number.substr(PhoneNumber::kSuffixOffset,
-                             PhoneNumber::kSuffixLength);
-    }
-  }
-
-  field_data->value = number;
-}
-
-const base::string16 AutofillProfile::Label() const {
-  return label_;
-}
-
 bool AutofillProfile::IsEmpty(const std::string& app_locale) const {
   ServerFieldTypeSet types;
   GetNonEmptyTypes(app_locale, &types);
@@ -441,13 +400,17 @@ bool AutofillProfile::IsPresentButInvalid(ServerFieldType type) const {
 
 
 int AutofillProfile::Compare(const AutofillProfile& profile) const {
-  const ServerFieldType single_value_types[] = { COMPANY_NAME,
-                                                 ADDRESS_HOME_LINE1,
-                                                 ADDRESS_HOME_LINE2,
-                                                 ADDRESS_HOME_CITY,
-                                                 ADDRESS_HOME_STATE,
-                                                 ADDRESS_HOME_ZIP,
-                                                 ADDRESS_HOME_COUNTRY };
+  const ServerFieldType single_value_types[] = {
+    COMPANY_NAME,
+    ADDRESS_HOME_LINE1,
+    ADDRESS_HOME_LINE2,
+    ADDRESS_HOME_DEPENDENT_LOCALITY,
+    ADDRESS_HOME_CITY,
+    ADDRESS_HOME_STATE,
+    ADDRESS_HOME_ZIP,
+    ADDRESS_HOME_SORTING_CODE,
+    ADDRESS_HOME_COUNTRY,
+  };
 
   for (size_t i = 0; i < arraysize(single_value_types); ++i) {
     int comparison = GetRawInfo(single_value_types[i]).compare(
@@ -502,11 +465,12 @@ bool AutofillProfile::IsSubsetOf(const AutofillProfile& profile,
 
   for (ServerFieldTypeSet::const_iterator it = types.begin(); it != types.end();
        ++it) {
-    if (*it == NAME_FULL) {
+    if (*it == NAME_FULL || *it == ADDRESS_HOME_STREET_ADDRESS) {
       // Ignore the compound "full name" field type.  We are only interested in
       // comparing the constituent parts.  For example, if |this| has a middle
       // name saved, but |profile| lacks one, |profile| could still be a subset
-      // of |this|.
+      // of |this|.  Likewise, ignore the compound "street address" type, as we
+      // are only interested in matching line-by-line.
       continue;
     } else if (AutofillType(*it).group() == PHONE_HOME) {
       // Phone numbers should be canonicalized prior to being compared.
@@ -540,6 +504,12 @@ void AutofillProfile::OverwriteWithOrAddTo(const AutofillProfile& profile,
   // Only transfer "full" types (e.g. full name) and not fragments (e.g.
   // first name, last name).
   CollapseCompoundFieldTypes(&field_types);
+
+  // TODO(isherman): Revisit this decision in the context of i18n and storing
+  // full addresses rather than storing 1-to-2 lines of an address.
+  // For addresses, do the opposite: transfer individual address lines, rather
+  // than full addresses.
+  field_types.erase(ADDRESS_HOME_STREET_ADDRESS);
 
   for (ServerFieldTypeSet::const_iterator iter = field_types.begin();
        iter != field_types.end(); ++iter) {
@@ -592,35 +562,22 @@ bool AutofillProfile::SupportsMultiValue(ServerFieldType type) {
 }
 
 // static
-bool AutofillProfile::AdjustInferredLabels(
-    std::vector<AutofillProfile*>* profiles) {
+void AutofillProfile::CreateDifferentiatingLabels(
+    const std::vector<AutofillProfile*>& profiles,
+    std::vector<base::string16>* labels) {
   const size_t kMinimalFieldsShown = 2;
-
-  std::vector<base::string16> created_labels;
   CreateInferredLabels(profiles, NULL, UNKNOWN_TYPE, kMinimalFieldsShown,
-                       &created_labels);
-  DCHECK_EQ(profiles->size(), created_labels.size());
-
-  bool updated_labels = false;
-  for (size_t i = 0; i < profiles->size(); ++i) {
-    if ((*profiles)[i]->Label() != created_labels[i]) {
-      updated_labels = true;
-      (*profiles)[i]->label_ = created_labels[i];
-    }
-  }
-  return updated_labels;
+                       labels);
+  DCHECK_EQ(profiles.size(), labels->size());
 }
 
 // static
 void AutofillProfile::CreateInferredLabels(
-    const std::vector<AutofillProfile*>* profiles,
+    const std::vector<AutofillProfile*>& profiles,
     const std::vector<ServerFieldType>* suggested_fields,
     ServerFieldType excluded_field,
     size_t minimal_fields_shown,
-    std::vector<base::string16>* created_labels) {
-  DCHECK(profiles);
-  DCHECK(created_labels);
-
+    std::vector<base::string16>* labels) {
   std::vector<ServerFieldType> fields_to_use;
   GetFieldsForDistinguishingProfiles(suggested_fields, excluded_field,
                                      &fields_to_use);
@@ -628,28 +585,28 @@ void AutofillProfile::CreateInferredLabels(
   // Construct the default label for each profile. Also construct a map that
   // associates each label with the profiles that have this label. This map is
   // then used to detect which labels need further differentiating fields.
-  std::map<base::string16, std::list<size_t> > labels;
-  for (size_t i = 0; i < profiles->size(); ++i) {
+  std::map<base::string16, std::list<size_t> > labels_to_profiles;
+  for (size_t i = 0; i < profiles.size(); ++i) {
     base::string16 label =
-        (*profiles)[i]->ConstructInferredLabel(fields_to_use,
-                                               minimal_fields_shown);
-    labels[label].push_back(i);
+        profiles[i]->ConstructInferredLabel(fields_to_use,
+                                            minimal_fields_shown);
+    labels_to_profiles[label].push_back(i);
   }
 
-  created_labels->resize(profiles->size());
+  labels->resize(profiles.size());
   for (std::map<base::string16, std::list<size_t> >::const_iterator it =
-           labels.begin();
-       it != labels.end(); ++it) {
+           labels_to_profiles.begin();
+       it != labels_to_profiles.end(); ++it) {
     if (it->second.size() == 1) {
       // This label is unique, so use it without any further ado.
       base::string16 label = it->first;
       size_t profile_index = it->second.front();
-      (*created_labels)[profile_index] = label;
+      (*labels)[profile_index] = label;
     } else {
       // We have more than one profile with the same label, so add
       // differentiating fields.
-      CreateDifferentiatingLabels(*profiles, it->second, fields_to_use,
-                                  minimal_fields_shown, created_labels);
+      CreateInferredLabelsHelper(profiles, it->second, fields_to_use,
+                                 minimal_fields_shown, labels);
     }
   }
 }
@@ -659,28 +616,6 @@ void AutofillProfile::GetSupportedTypes(
   FormGroupList info = FormGroups();
   for (FormGroupList::const_iterator it = info.begin(); it != info.end(); ++it)
     (*it)->GetSupportedTypes(supported_types);
-}
-
-bool AutofillProfile::FillCountrySelectControl(
-    const std::string& app_locale,
-    FormFieldData* field_data) const {
-  std::string country_code = UTF16ToASCII(GetRawInfo(ADDRESS_HOME_COUNTRY));
-
-  DCHECK_EQ(field_data->option_values.size(),
-            field_data->option_contents.size());
-  for (size_t i = 0; i < field_data->option_values.size(); ++i) {
-    // Canonicalize each <option> value to a country code, and compare to the
-    // target country code.
-    base::string16 value = field_data->option_values[i];
-    base::string16 contents = field_data->option_contents[i];
-    if (country_code == AutofillCountry::GetCountryCode(value, app_locale) ||
-        country_code == AutofillCountry::GetCountryCode(contents, app_locale)) {
-      field_data->value = value;
-      return true;
-    }
-  }
-
-  return false;
 }
 
 void AutofillProfile::GetMultiInfoImpl(
@@ -742,16 +677,23 @@ base::string16 AutofillProfile::ConstructInferredLabel(
     label.append(field);
     ++num_fields_used;
   }
+
+  // Flatten the label if need be.
+  const char16 kNewline[] = { '\n', 0 };
+  const base::string16 newline_separator =
+      l10n_util::GetStringUTF16(IDS_AUTOFILL_ADDRESS_LINE_SEPARATOR);
+  base::ReplaceChars(label, kNewline, newline_separator, &label);
+
   return label;
 }
 
 // static
-void AutofillProfile::CreateDifferentiatingLabels(
+void AutofillProfile::CreateInferredLabelsHelper(
     const std::vector<AutofillProfile*>& profiles,
     const std::list<size_t>& indices,
     const std::vector<ServerFieldType>& fields,
     size_t num_fields_to_include,
-    std::vector<base::string16>* created_labels) {
+    std::vector<base::string16>* labels) {
   // For efficiency, we first construct a map of fields to their text values and
   // each value's frequency.
   std::map<ServerFieldType,
@@ -816,9 +758,8 @@ void AutofillProfile::CreateDifferentiatingLabels(
         break;
     }
 
-    (*created_labels)[*it] =
-        profile->ConstructInferredLabel(label_fields,
-                                        label_fields.size());
+    (*labels)[*it] =
+        profile->ConstructInferredLabel(label_fields, label_fields.size());
   }
 }
 
@@ -870,8 +811,6 @@ FormGroup* AutofillProfile::MutableFormGroupForType(const AutofillType& type) {
 // So we can compare AutofillProfiles with EXPECT_EQ().
 std::ostream& operator<<(std::ostream& os, const AutofillProfile& profile) {
   return os
-      << UTF16ToUTF8(profile.Label())
-      << " "
       << profile.guid()
       << " "
       << profile.origin()
@@ -890,11 +829,15 @@ std::ostream& operator<<(std::ostream& os, const AutofillProfile& profile) {
       << " "
       << UTF16ToUTF8(profile.GetRawInfo(ADDRESS_HOME_LINE2))
       << " "
+      << UTF16ToUTF8(profile.GetRawInfo(ADDRESS_HOME_DEPENDENT_LOCALITY))
+      << " "
       << UTF16ToUTF8(profile.GetRawInfo(ADDRESS_HOME_CITY))
       << " "
       << UTF16ToUTF8(profile.GetRawInfo(ADDRESS_HOME_STATE))
       << " "
       << UTF16ToUTF8(profile.GetRawInfo(ADDRESS_HOME_ZIP))
+      << " "
+      << UTF16ToUTF8(profile.GetRawInfo(ADDRESS_HOME_SORTING_CODE))
       << " "
       << UTF16ToUTF8(profile.GetRawInfo(ADDRESS_HOME_COUNTRY))
       << " "

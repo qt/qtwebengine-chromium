@@ -9,6 +9,7 @@
 #define NET_SOCKET_NSS_SSL_UTIL_H_
 
 #include <prerror.h>
+#include <prio.h>
 
 #include "net/base/net_export.h"
 
@@ -26,6 +27,10 @@ void LogFailedNSSFunction(const BoundNetLog& net_log,
 
 // Map network error code to NSS error code.
 PRErrorCode MapErrorToNSS(int result);
+
+// GetNSSModelSocket returns either NULL, or an NSS socket that can be passed
+// to |SSL_ImportFD| in order to inherit some default options.
+PRFileDesc* GetNSSModelSocket();
 
 // Map NSS error code to network error code.
 int MapNSSError(PRErrorCode err);

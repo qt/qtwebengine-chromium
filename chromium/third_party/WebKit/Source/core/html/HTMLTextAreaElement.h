@@ -34,7 +34,7 @@ class VisibleSelection;
 
 class HTMLTextAreaElement FINAL : public HTMLTextFormControlElement {
 public:
-    static PassRefPtr<HTMLTextAreaElement> create(const QualifiedName&, Document&, HTMLFormElement*);
+    static PassRefPtr<HTMLTextAreaElement> create(Document&, HTMLFormElement*);
 
     int cols() const { return m_cols; }
     int rows() const { return m_rows; }
@@ -54,19 +54,17 @@ public:
     virtual bool tooLong() const OVERRIDE;
     bool isValidValue(const String&) const;
 
-    virtual HTMLElement* innerTextElement() const;
-
     void rendererWillBeDestroyed();
 
     void setCols(int);
     void setRows(int);
 
 private:
-    HTMLTextAreaElement(const QualifiedName&, Document&, HTMLFormElement*);
+    HTMLTextAreaElement(Document&, HTMLFormElement*);
 
     enum WrapMethod { NoWrap, SoftWrap, HardWrap };
 
-    virtual void didAddUserAgentShadowRoot(ShadowRoot*) OVERRIDE;
+    virtual void didAddUserAgentShadowRoot(ShadowRoot&) OVERRIDE;
     // FIXME: Author shadows should be allowed
     // https://bugs.webkit.org/show_bug.cgi?id=92608
     virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
@@ -106,7 +104,7 @@ private:
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
     virtual RenderObject* createRenderer(RenderStyle*);
     virtual bool appendFormData(FormDataList&, bool);
-    virtual void reset();
+    virtual void resetImpl() OVERRIDE;
     virtual bool hasCustomFocusLogic() const OVERRIDE;
     virtual bool shouldShowFocusRingOnMouseFocus() const OVERRIDE;
     virtual bool isKeyboardFocusable() const OVERRIDE;
@@ -126,7 +124,6 @@ private:
     WrapMethod m_wrap;
     mutable String m_value;
     mutable bool m_isDirty;
-    mutable bool m_wasModifiedByUser;
 };
 
 inline bool isHTMLTextAreaElement(const Node* node)
@@ -139,11 +136,7 @@ inline bool isHTMLTextAreaElement(const Element* element)
     return element->hasTagName(HTMLNames::textareaTag);
 }
 
-inline HTMLTextAreaElement* toHTMLTextAreaElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLTextAreaElement(node));
-    return static_cast<HTMLTextAreaElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLTextAreaElement, hasTagName(HTMLNames::textareaTag));
 
 } //namespace
 

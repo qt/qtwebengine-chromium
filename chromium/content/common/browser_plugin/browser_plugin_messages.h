@@ -21,11 +21,14 @@
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_message_utils.h"
+#include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/WebKit/public/web/WebCompositionUnderline.h"
 #include "third_party/WebKit/public/web/WebDragOperation.h"
 #include "third_party/WebKit/public/web/WebDragStatus.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
+#include "url/gurl.h"
 #include "webkit/common/cursors/webcursor.h"
 
 #undef IPC_MESSAGE_EXPORT
@@ -34,7 +37,7 @@
 #define IPC_MESSAGE_START BrowserPluginMsgStart
 
 
-IPC_ENUM_TRAITS(WebKit::WebDragStatus)
+IPC_ENUM_TRAITS(blink::WebDragStatus)
 
 IPC_STRUCT_BEGIN(BrowserPluginHostMsg_AutoSize_Params)
   IPC_STRUCT_MEMBER(bool, enable)
@@ -67,8 +70,10 @@ IPC_STRUCT_BEGIN(BrowserPluginHostMsg_Attach_Params)
   IPC_STRUCT_MEMBER(bool, persist_storage)
   IPC_STRUCT_MEMBER(bool, focused)
   IPC_STRUCT_MEMBER(bool, visible)
+  IPC_STRUCT_MEMBER(bool, opaque)
   IPC_STRUCT_MEMBER(std::string, name)
   IPC_STRUCT_MEMBER(std::string, src)
+  IPC_STRUCT_MEMBER(GURL, embedder_frame_url)
   IPC_STRUCT_MEMBER(BrowserPluginHostMsg_AutoSize_Params, auto_size_params)
   IPC_STRUCT_MEMBER(BrowserPluginHostMsg_ResizeGuest_Params,
                     resize_guest_params)
@@ -151,6 +156,30 @@ IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_SetEditCommandsForNextKeyEvent,
                     int /* instance_id */,
                     std::vector<content::EditCommand> /* edit_commands */)
 
+// This message is sent from BrowserPlugin to BrowserPluginGuest whenever IME
+// composition state is updated.
+IPC_MESSAGE_ROUTED5(
+    BrowserPluginHostMsg_ImeSetComposition,
+    int /* instance_id */,
+    std::string /* text */,
+    std::vector<blink::WebCompositionUnderline> /* underlines */,
+    int /* selectiont_start */,
+    int /* selection_end */)
+
+// This message is sent from BrowserPlugin to BrowserPluginGuest to notify that
+// confirming the current composition is requested.
+IPC_MESSAGE_ROUTED3(BrowserPluginHostMsg_ImeConfirmComposition,
+                    int /* instance_id */,
+                    std::string /* text */,
+                    bool /* keep selection */)
+
+// Deletes the current selection plus the specified number of characters before
+// and after the selection or caret.
+IPC_MESSAGE_ROUTED3(BrowserPluginHostMsg_ExtendSelectionAndDelete,
+                    int /* instance_id */,
+                    int /* before */,
+                    int /* after */)
+
 // This message is sent to the browser process to enable or disable autosize
 // mode.
 IPC_MESSAGE_ROUTED3(
@@ -209,8 +238,22 @@ IPC_MESSAGE_ROUTED5(BrowserPluginHostMsg_BuffersSwappedACK,
                     std::string /* mailbox_name */,
                     uint32 /* sync_point */)
 
+IPC_MESSAGE_ROUTED3(BrowserPluginHostMsg_CopyFromCompositingSurfaceAck,
+                    int /* instance_id */,
+                    int /* request_id */,
+                    SkBitmap);
+
 // Acknowledge that we presented an ubercomp frame.
 IPC_MESSAGE_ROUTED5(BrowserPluginHostMsg_CompositorFrameACK,
+                    int /* instance_id */,
+                    int /* route_id */,
+                    uint32 /* output_surface_id */,
+                    int /* renderer_host_id */,
+                    cc::CompositorFrameAck /* ack */)
+
+// Notify the guest renderer that some resources given to the embededer
+// are not used any more.
+IPC_MESSAGE_ROUTED5(BrowserPluginHostMsg_ReclaimCompositorResources,
                     int /* instance_id */,
                     int /* route_id */,
                     uint32 /* output_surface_id */,
@@ -227,12 +270,17 @@ IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_SetVisibility,
                     int /* instance_id */,
                     bool /* visible */)
 
+// Tells the guest to change its background opacity.
+IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_SetContentsOpaque,
+                    int /* instance_id */,
+                    bool /* opaque */)
+
 // Tells the guest that a drag event happened on the plugin.
 IPC_MESSAGE_ROUTED5(BrowserPluginHostMsg_DragStatusUpdate,
                     int /* instance_id */,
-                    WebKit::WebDragStatus /* drag_status */,
+                    blink::WebDragStatus /* drag_status */,
                     content::DropData /* drop_data */,
-                    WebKit::WebDragOperationsMask /* operation_mask */,
+                    blink::WebDragOperationsMask /* operation_mask */,
                     gfx::Point /* plugin_location */)
 
 // Response to BrowserPluginMsg_PluginAtPositionRequest, returns the browser
@@ -321,6 +369,12 @@ IPC_MESSAGE_CONTROL2(BrowserPluginMsg_UpdateRect,
                      int /* instance_id */,
                      BrowserPluginMsg_UpdateRect_Params)
 
+IPC_MESSAGE_CONTROL4(BrowserPluginMsg_CopyFromCompositingSurface,
+                     int /* instance_id */,
+                     int /* request_id */,
+                     gfx::Rect  /* source_rect */,
+                     gfx::Size  /* dest_size */)
+
 // Requests the renderer to find out if a browser plugin is at position
 // (|x|, |y|) within the embedder.
 // The response message is BrowserPluginHostMsg_PluginAtPositionResponse.
@@ -353,4 +407,3 @@ IPC_MESSAGE_CONTROL5(BrowserPluginMsg_CompositorFrameSwapped,
 IPC_MESSAGE_CONTROL2(BrowserPluginMsg_SetMouseLock,
                      int /* instance_id */,
                      bool /* enable */)
-

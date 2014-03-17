@@ -30,7 +30,7 @@
 class MockServerProcess(object):
     def __init__(self, port_obj=None, name=None, cmd=None, env=None, universal_newlines=False, treat_no_data_as_crash=False, logging=False, lines=None, crashed=False):
         self.timed_out = False
-        self.lines = lines or []
+        self.lines = lines or ['#READY']
         self.crashed = crashed
         self.writes = []
         self.cmd = cmd
@@ -71,7 +71,7 @@ class MockServerProcess(object):
     def start(self):
         self.started = True
 
-    def stop(self, kill_directly=False):
+    def stop(self, timeout_sec=0.0):
         self.stopped = True
         return
 

@@ -33,11 +33,11 @@
 
 #include "../platform/WebCommon.h"
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
 namespace WebCore { class EventTarget; }
 #endif
 
-namespace WebKit {
+namespace blink {
 
 class EventListenerWrapper;
 class WebDOMEvent;
@@ -47,13 +47,13 @@ class WebString;
 
 class WebDOMEventListener {
 public:
-    WEBKIT_EXPORT WebDOMEventListener();
-    WEBKIT_EXPORT virtual ~WebDOMEventListener();
+    BLINK_EXPORT WebDOMEventListener();
+    BLINK_EXPORT virtual ~WebDOMEventListener();
 
     // Called when an event is received.
     virtual void handleEvent(const WebDOMEvent&) = 0;
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
     void notifyEventListenerDeleted(EventListenerWrapper*);
     EventListenerWrapper* createEventListenerWrapper(const WebString& eventType, bool useCapture, WebCore::EventTarget*);
     EventListenerWrapper* getEventListenerWrapper(const WebString& eventType, bool useCapture, WebCore::EventTarget*);
@@ -63,6 +63,6 @@ private:
     WebDOMEventListenerPrivate* m_private;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

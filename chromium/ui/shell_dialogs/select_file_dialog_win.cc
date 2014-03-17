@@ -34,6 +34,7 @@
 #if defined(USE_AURA)
 #include "ui/aura/remote_root_window_host_win.h"
 #include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
 #endif
 
 namespace {
@@ -85,7 +86,7 @@ bool CallGetSaveFileName(OPENFILENAME* ofn) {
 // Distinguish directories from regular files.
 bool IsDirectory(const base::FilePath& path) {
   base::PlatformFileInfo file_info;
-  return file_util::GetFileInfo(path, &file_info) ?
+  return base::GetFileInfo(path, &file_info) ?
       file_info.is_directory : path.EndsWithSeparator();
 }
 
@@ -599,7 +600,7 @@ void SelectFileDialogImpl::SelectFileImpl(
     }
   }
   HWND owner = owning_window && owning_window->GetRootWindow()
-               ? owning_window->GetRootWindow()->GetAcceleratedWidget() : NULL;
+      ? owning_window->GetDispatcher()->host()->GetAcceleratedWidget() : NULL;
 #else
   HWND owner = owning_window;
 #endif
@@ -621,7 +622,7 @@ bool SelectFileDialogImpl::IsRunning(gfx::NativeWindow owning_window) const {
 #if defined(USE_AURA)
   if (!owning_window->GetRootWindow())
     return false;
-  HWND owner = owning_window->GetRootWindow()->GetAcceleratedWidget();
+  HWND owner = owning_window->GetDispatcher()->host()->GetAcceleratedWidget();
 #else
   HWND owner = owning_window;
 #endif
@@ -845,7 +846,7 @@ bool SelectFileDialogImpl::RunOpenMultiFileDialog(
   // We use OFN_NOCHANGEDIR so that the user can rename or delete the directory
   // without having to close Chrome first.
   ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_EXPLORER
-               | OFN_HIDEREADONLY | OFN_ALLOWMULTISELECT;
+               | OFN_HIDEREADONLY | OFN_ALLOWMULTISELECT | OFN_NOCHANGEDIR;
 
   if (!filter.empty()) {
     ofn.lpstrFilter = filter.c_str();

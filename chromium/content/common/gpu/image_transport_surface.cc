@@ -12,11 +12,12 @@
 #include "content/common/gpu/gpu_channel_manager.h"
 #include "content/common/gpu/gpu_command_buffer_stub.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/common/gpu/sync_point_manager.h"
 #include "content/common/gpu/texture_image_transport_surface.h"
 #include "gpu/command_buffer/service/gpu_scheduler.h"
+#include "ui/gfx/vsync_provider.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_switches.h"
-#include "ui/gl/vsync_provider.h"
 
 namespace content {
 
@@ -72,6 +73,9 @@ bool ImageTransportHelper::Initialize() {
       base::Bind(&ImageTransportHelper::SetLatencyInfo,
                  base::Unretained(this)));
 
+  manager_->Send(new GpuHostMsg_AcceleratedSurfaceInitialized(
+      stub_->surface_id(), route_id_));
+
   return true;
 }
 
@@ -83,6 +87,7 @@ bool ImageTransportHelper::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(AcceleratedSurfaceMsg_BufferPresented,
                         OnBufferPresented)
     IPC_MESSAGE_HANDLER(AcceleratedSurfaceMsg_ResizeViewACK, OnResizeViewACK);
+    IPC_MESSAGE_HANDLER(AcceleratedSurfaceMsg_WakeUpGpu, OnWakeUpGpu);
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -107,10 +112,9 @@ void ImageTransportHelper::SendAcceleratedSurfacePostSubBuffer(
   manager_->Send(new GpuHostMsg_AcceleratedSurfacePostSubBuffer(params));
 }
 
-void ImageTransportHelper::SendAcceleratedSurfaceRelease(
-    GpuHostMsg_AcceleratedSurfaceRelease_Params params) {
+void ImageTransportHelper::SendAcceleratedSurfaceRelease() {
+  GpuHostMsg_AcceleratedSurfaceRelease_Params params;
   params.surface_id = stub_->surface_id();
-  params.route_id = route_id_;
   manager_->Send(new GpuHostMsg_AcceleratedSurfaceRelease(params));
 }
 
@@ -191,6 +195,10 @@ void ImageTransportHelper::OnResizeViewACK() {
   surface_->OnResizeViewACK();
 }
 
+void ImageTransportHelper::OnWakeUpGpu() {
+  surface_->WakeUpGpu();
+}
+
 void ImageTransportHelper::Resize(gfx::Size size, float scale_factor) {
   surface_->OnResize(size, scale_factor);
 
@@ -251,7 +259,8 @@ bool PassThroughImageTransportSurface::SwapBuffers() {
   // crbug.com/223558.
   SendVSyncUpdateIfAvailable();
   bool result = gfx::GLSurfaceAdapter::SwapBuffers();
-  latency_info_.swap_timestamp = base::TimeTicks::HighResNow();
+  latency_info_.AddLatencyNumber(
+      ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
 
   if (transport_) {
     DCHECK(!is_swap_buffers_pending_);
@@ -274,7 +283,8 @@ bool PassThroughImageTransportSurface::PostSubBuffer(
     int x, int y, int width, int height) {
   SendVSyncUpdateIfAvailable();
   bool result = gfx::GLSurfaceAdapter::PostSubBuffer(x, y, width, height);
-  latency_info_.swap_timestamp = base::TimeTicks::HighResNow();
+  latency_info_.AddLatencyNumber(
+      ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
 
   if (transport_) {
     DCHECK(!is_swap_buffers_pending_);
@@ -342,6 +352,10 @@ void PassThroughImageTransportSurface::OnResize(gfx::Size size,
 
 gfx::Size PassThroughImageTransportSurface::GetSize() {
   return GLSurfaceAdapter::GetSize();
+}
+
+void PassThroughImageTransportSurface::WakeUpGpu() {
+  NOTIMPLEMENTED();
 }
 
 PassThroughImageTransportSurface::~PassThroughImageTransportSurface() {}

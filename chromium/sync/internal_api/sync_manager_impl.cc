@@ -40,6 +40,7 @@
 #include "sync/js/js_reply_handler.h"
 #include "sync/notifier/invalidation_util.h"
 #include "sync/notifier/invalidator.h"
+#include "sync/notifier/object_id_invalidation_map.h"
 #include "sync/protocol/proto_value_conversions.h"
 #include "sync/protocol/sync.pb.h"
 #include "sync/syncable/directory.h"
@@ -168,14 +169,14 @@ class NudgeStrategy {
 
 SyncManagerImpl::SyncManagerImpl(const std::string& name)
     : name_(name),
-      weak_ptr_factory_(this),
       change_delegate_(NULL),
       initialized_(false),
       observing_network_connectivity_changes_(false),
       invalidator_state_(DEFAULT_INVALIDATION_ERROR),
       traffic_recorder_(kMaxMessagesToRecord, kMaxMessageSizeToRecord),
       encryptor_(NULL),
-      report_unrecoverable_error_function_(NULL) {
+      report_unrecoverable_error_function_(NULL),
+      weak_ptr_factory_(this) {
   // Pre-fill |notification_info_map_|.
   for (int i = FIRST_REAL_MODEL_TYPE; i < MODEL_TYPE_COUNT; ++i) {
     notification_info_map_.insert(
@@ -330,11 +331,11 @@ void SyncManagerImpl::ConfigureSyncer(
   ConfigurationParams params(GetSourceFromReason(reason),
                              to_download,
                              new_routing_info,
-                             ready_task);
+                             ready_task,
+                             retry_task);
 
   scheduler_->Start(SyncScheduler::CONFIGURATION_MODE);
-  if (!scheduler_->ScheduleConfiguration(params))
-    retry_task.Run();
+  scheduler_->ScheduleConfiguration(params);
 }
 
 void SyncManagerImpl::Init(
@@ -355,7 +356,6 @@ void SyncManagerImpl::Init(
     Encryptor* encryptor,
     scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
     ReportUnrecoverableErrorFunction report_unrecoverable_error_function,
-    bool use_oauth2_token,
     CancelationSignal* cancelation_signal) {
   CHECK(!initialized_);
   DCHECK(thread_checker_.CalledOnValidThread());
@@ -410,18 +410,13 @@ void SyncManagerImpl::Init(
 
   DVLOG(1) << "Username: " << username;
   if (!OpenDirectory(username)) {
-    FOR_EACH_OBSERVER(SyncManager::Observer, observers_,
-                      OnInitializationComplete(
-                          MakeWeakHandle(weak_ptr_factory_.GetWeakPtr()),
-                          MakeWeakHandle(
-                              debug_info_event_listener_.GetWeakPtr()),
-                          false, ModelTypeSet()));
+    NotifyInitializationFailure();
     LOG(ERROR) << "Sync manager initialization failed!";
     return;
   }
 
   connection_manager_.reset(new SyncAPIServerConnectionManager(
-      sync_server_and_path, port, use_ssl, use_oauth2_token,
+      sync_server_and_path, port, use_ssl,
       post_factory.release(), cancelation_signal));
   connection_manager_->set_client_id(directory()->cache_guid());
   connection_manager_->AddListener(this);
@@ -462,11 +457,23 @@ void SyncManagerImpl::Init(
 
   UpdateCredentials(credentials);
 
+  NotifyInitializationSuccess();
+}
+
+void SyncManagerImpl::NotifyInitializationSuccess() {
   FOR_EACH_OBSERVER(SyncManager::Observer, observers_,
                     OnInitializationComplete(
                         MakeWeakHandle(weak_ptr_factory_.GetWeakPtr()),
                         MakeWeakHandle(debug_info_event_listener_.GetWeakPtr()),
                         true, InitialSyncEndedTypes()));
+}
+
+void SyncManagerImpl::NotifyInitializationFailure() {
+  FOR_EACH_OBSERVER(SyncManager::Observer, observers_,
+                    OnInitializationComplete(
+                        MakeWeakHandle(weak_ptr_factory_.GetWeakPtr()),
+                        MakeWeakHandle(debug_info_event_listener_.GetWeakPtr()),
+                        false, ModelTypeSet()));
 }
 
 void SyncManagerImpl::OnPassphraseRequired(
@@ -927,8 +934,8 @@ void SyncManagerImpl::OnSyncEngineEvent(const SyncEngineEvent& event) {
   // whether we should sync again.
   if (event.what_happened == SyncEngineEvent::SYNC_CYCLE_ENDED) {
     if (!initialized_) {
-      LOG(INFO) << "OnSyncCycleCompleted not sent because sync api is not "
-                << "initialized";
+      DVLOG(1) << "OnSyncCycleCompleted not sent because sync api is not "
+               << "initialized";
       return;
     }
 
@@ -940,12 +947,6 @@ void SyncManagerImpl::OnSyncEngineEvent(const SyncEngineEvent& event) {
   if (event.what_happened == SyncEngineEvent::STOP_SYNCING_PERMANENTLY) {
     FOR_EACH_OBSERVER(SyncManager::Observer, observers_,
                       OnStopSyncingPermanently());
-    return;
-  }
-
-  if (event.what_happened == SyncEngineEvent::UPDATED_TOKEN) {
-    FOR_EACH_OBSERVER(SyncManager::Observer, observers_,
-                      OnUpdatedToken(event.updated_token));
     return;
   }
 
@@ -1005,7 +1006,7 @@ base::DictionaryValue* SyncManagerImpl::NotificationInfoToValue(
 
   for (NotificationInfoMap::const_iterator it = notification_info.begin();
       it != notification_info.end(); ++it) {
-    const std::string& model_type_str = ModelTypeToString(it->first);
+    const std::string model_type_str = ModelTypeToString(it->first);
     value->Set(model_type_str, it->second.ToValue());
   }
 
@@ -1148,13 +1149,22 @@ JsArgList SyncManagerImpl::GetChildNodeIds(const JsArgList& args) {
 
 void SyncManagerImpl::UpdateNotificationInfo(
     const ObjectIdInvalidationMap& invalidation_map) {
-  for (ObjectIdInvalidationMap::const_iterator it = invalidation_map.begin();
-       it != invalidation_map.end(); ++it) {
+  ObjectIdSet ids = invalidation_map.GetObjectIds();
+  for (ObjectIdSet::const_iterator it = ids.begin(); it != ids.end(); ++it) {
     ModelType type = UNSPECIFIED;
-    if (ObjectIdToRealModelType(it->first, &type)) {
+    if (!ObjectIdToRealModelType(*it, &type)) {
+      continue;
+    }
+    const SingleObjectInvalidationSet& type_invalidations =
+        invalidation_map.ForObject(*it);
+    for (SingleObjectInvalidationSet::const_iterator inv_it =
+         type_invalidations.begin(); inv_it != type_invalidations.end();
+         ++inv_it) {
       NotificationInfo* info = &notification_info_map_[type];
       info->total_count++;
-      info->payload = it->second.payload;
+      std::string payload =
+          inv_it->is_unknown_version() ? "UNKNOWN" : inv_it->payload();
+      info->payload = payload;
     }
   }
 }
@@ -1185,7 +1195,7 @@ void SyncManagerImpl::OnIncomingInvalidation(
   DCHECK(thread_checker_.CalledOnValidThread());
 
   // We should never receive IDs from non-sync objects.
-  ObjectIdSet ids = ObjectIdInvalidationMapToSet(invalidation_map);
+  ObjectIdSet ids = invalidation_map.GetObjectIds();
   for (ObjectIdSet::const_iterator it = ids.begin(); it != ids.end(); ++it) {
     ModelType type;
     if (!ObjectIdToRealModelType(*it, &type)) {
@@ -1193,7 +1203,7 @@ void SyncManagerImpl::OnIncomingInvalidation(
     }
   }
 
-  if (invalidation_map.empty()) {
+  if (invalidation_map.Empty()) {
     LOG(WARNING) << "Sync received invalidation without any type information.";
   } else {
     allstatus_.IncrementNudgeCounter(NUDGE_SOURCE_NOTIFICATION);
@@ -1209,7 +1219,8 @@ void SyncManagerImpl::OnIncomingInvalidation(
     base::DictionaryValue details;
     base::ListValue* changed_types = new base::ListValue();
     details.Set("changedTypes", changed_types);
-    ObjectIdSet id_set = ObjectIdInvalidationMapToSet(invalidation_map);
+
+    ObjectIdSet id_set = invalidation_map.GetObjectIds();
     ModelTypeSet nudged_types = ObjectIdSetToModelTypeSet(id_set);
     DCHECK(!nudged_types.Empty());
     for (ModelTypeSet::Iterator it = nudged_types.First();

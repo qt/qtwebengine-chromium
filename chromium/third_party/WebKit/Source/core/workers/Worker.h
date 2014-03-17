@@ -28,10 +28,10 @@
 #define Worker_h
 
 #include "core/dom/ActiveDOMObject.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/EventNames.h"
-#include "core/dom/EventTarget.h"
 #include "core/dom/MessagePort.h"
+#include "core/events/EventListener.h"
+#include "core/events/EventTarget.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/workers/AbstractWorker.h"
 #include "core/workers/WorkerScriptLoaderClient.h"
 #include "wtf/Forward.h"
@@ -42,13 +42,13 @@
 namespace WebCore {
 
 class ExceptionState;
-class ScriptExecutionContext;
+class ExecutionContext;
 class WorkerGlobalScopeProxy;
 class WorkerScriptLoader;
 
 class Worker : public AbstractWorker, public ScriptWrappable, private WorkerScriptLoaderClient {
 public:
-    static PassRefPtr<Worker> create(ScriptExecutionContext*, const String& url, ExceptionState&);
+    static PassRefPtr<Worker> create(ExecutionContext*, const String& url, ExceptionState&);
     virtual ~Worker();
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
@@ -57,21 +57,17 @@ public:
 
     void terminate();
 
-    virtual bool canSuspend() const OVERRIDE;
     virtual void stop() OVERRIDE;
     virtual bool hasPendingActivity() const OVERRIDE;
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(message);
 
 private:
-    explicit Worker(ScriptExecutionContext*);
+    explicit Worker(ExecutionContext*);
 
     // WorkerScriptLoaderClient callbacks
     virtual void didReceiveResponse(unsigned long identifier, const ResourceResponse&) OVERRIDE;
     virtual void notifyFinished() OVERRIDE;
-
-    virtual void refEventTarget() OVERRIDE { ref(); }
-    virtual void derefEventTarget() OVERRIDE { deref(); }
 
     RefPtr<WorkerScriptLoader> m_scriptLoader;
     WorkerGlobalScopeProxy* m_contextProxy; // The proxy outlives the worker to perform thread shutdown.

@@ -31,8 +31,18 @@
 
 namespace WebCore {
 
+template<> void observerContext(Page* context, LifecycleObserver<Page>* observer)
+{
+    context->wasObservedBy(observer);
+}
+
+template<> void unobserverContext(Page* context, LifecycleObserver<Page>* observer)
+{
+    context->wasUnobservedBy(observer);
+}
+
 PageLifecycleObserver::PageLifecycleObserver(Page* page)
-    : LifecycleObserver(page, PageLifecycleObserverType)
+    : LifecycleObserver<Page>(page, PageLifecycleObserverType)
 {
 }
 

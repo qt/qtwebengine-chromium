@@ -8,6 +8,8 @@
 #ifndef GPU_CONFIG_DX_DIAG_NODE_H_
 #define GPU_CONFIG_DX_DIAG_NODE_H_
 
+#include "build/build_config.h"
+
 #if defined(OS_WIN)
 
 #include <map>

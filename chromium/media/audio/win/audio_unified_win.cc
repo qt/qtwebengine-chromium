@@ -51,23 +51,6 @@ static const char kUnifiedAudioDebugFileName[] = "unified_win_debug.txt";
 static const char kUnifiedAudioParamsFileName[] = "unified_win_params.txt";
 #endif
 
-typedef uint32 ChannelConfig;
-
-// Retrieves an integer mask which corresponds to the channel layout the
-// audio engine uses for its internal processing/mixing of shared-mode
-// streams. This mask indicates which channels are present in the multi-
-// channel stream. The least significant bit corresponds with the Front Left
-// speaker, the next least significant bit corresponds to the Front Right
-// speaker, and so on, continuing in the order defined in KsMedia.h.
-// See http://msdn.microsoft.com/en-us/library/windows/hardware/ff537083(v=vs.85).aspx
-// for more details.
-static ChannelConfig GetChannelConfig(EDataFlow data_flow) {
-  WAVEFORMATPCMEX format;
-  return SUCCEEDED(media::CoreAudioUtil::GetDefaultSharedModeMixFormat(
-                   data_flow, eConsole, &format)) ?
-                   static_cast<int>(format.dwChannelMask) : 0;
-}
-
 // Use the acquired IAudioClock interface to derive a time stamp of the audio
 // sample which is currently playing through the speakers.
 static double SpeakerStreamPosInMilliseconds(IAudioClock* clock) {
@@ -178,7 +161,7 @@ WASAPIUnifiedStream::~WASAPIUnifiedStream() {
   base::FilePath data_file_name;
   PathService::Get(base::DIR_EXE, &data_file_name);
   data_file_name = data_file_name.AppendASCII(kUnifiedAudioDebugFileName);
-  data_file_ = file_util::OpenFile(data_file_name, "wt");
+  data_file_ = base::OpenFile(data_file_name, "wt");
   DVLOG(1) << ">> Output file " << data_file_name.value() << " is created.";
 
   size_t n = 0;
@@ -192,16 +175,16 @@ WASAPIUnifiedStream::~WASAPIUnifiedStream() {
         fifo_rate_comps_[n]);
     ++n;
   }
-  file_util::CloseFile(data_file_);
+  base::CloseFile(data_file_);
 
   base::FilePath param_file_name;
   PathService::Get(base::DIR_EXE, &param_file_name);
   param_file_name = param_file_name.AppendASCII(kUnifiedAudioParamsFileName);
-  param_file_ = file_util::OpenFile(param_file_name, "wt");
+  param_file_ = base::OpenFile(param_file_name, "wt");
   DVLOG(1) << ">> Output file " << param_file_name.value() << " is created.";
   fprintf(param_file_, "%d %d\n", input_params_[0], input_params_[1]);
   fprintf(param_file_, "%d %d\n", output_params_[0], output_params_[1]);
-  file_util::CloseFile(param_file_);
+  base::CloseFile(param_file_);
 #endif
 }
 
@@ -575,8 +558,9 @@ void WASAPIUnifiedStream::SetIOFormats(const AudioParameters& input_params,
     // Add the parts which are unique to WAVE_FORMAT_EXTENSIBLE.
     // Note that we always open up using the native channel layout.
     (*xformat).Samples.wValidBitsPerSample = format->wBitsPerSample;
-    (*xformat).dwChannelMask = (n == 0) ?
-        GetChannelConfig(eCapture) : GetChannelConfig(eRender);
+    (*xformat).dwChannelMask =
+        CoreAudioUtil::GetChannelConfig(
+            std::string(), n == 0 ? eCapture : eRender);
     (*xformat).SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
   }
 

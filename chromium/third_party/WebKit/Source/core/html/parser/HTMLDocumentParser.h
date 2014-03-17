@@ -29,6 +29,7 @@
 #include "core/dom/ParserContentPolicy.h"
 #include "core/dom/ScriptableDocumentParser.h"
 #include "core/fetch/ResourceClient.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/parser/BackgroundHTMLInputStream.h"
 #include "core/html/parser/CompactHTMLToken.h"
 #include "core/html/parser/HTMLInputStream.h"
@@ -41,7 +42,7 @@
 #include "core/html/parser/HTMLTreeBuilderSimulator.h"
 #include "core/html/parser/XSSAuditor.h"
 #include "core/html/parser/XSSAuditorDelegate.h"
-#include "core/platform/text/SegmentedString.h"
+#include "platform/text/SegmentedString.h"
 #include "wtf/Deque.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/WeakPtr.h"
@@ -95,6 +96,8 @@ public:
         TokenPreloadScannerCheckpoint preloadScannerCheckpoint;
     };
     void didReceiveParsedChunkFromBackgroundParser(PassOwnPtr<ParsedChunk>);
+
+    UseCounter* useCounter() { return UseCounter::getFrom(contextForParsingSession()); }
 
 protected:
     virtual void insert(const SegmentedString&) OVERRIDE;

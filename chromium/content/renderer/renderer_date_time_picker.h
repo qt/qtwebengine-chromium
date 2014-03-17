@@ -11,9 +11,9 @@
 
 struct ViewHostMsg_DateTimeDialogValue_Params;
 
-namespace WebKit {
+namespace blink {
 class WebDateTimeChooserCompletion;
-}  // namespace WebKit
+}  // namespace blink
 
 namespace content {
 class RenderViewImpl;
@@ -22,21 +22,21 @@ class RendererDateTimePicker : public RenderViewObserver {
  public:
   RendererDateTimePicker(
       RenderViewImpl* sender,
-      const WebKit::WebDateTimeChooserParams& params,
-      WebKit::WebDateTimeChooserCompletion* completion);
+      const blink::WebDateTimeChooserParams& params,
+      blink::WebDateTimeChooserCompletion* completion);
   virtual ~RendererDateTimePicker();
 
   bool Open();
 
  private:
-  void OnReplaceDateTime(const ViewHostMsg_DateTimeDialogValue_Params& value);
+  void OnReplaceDateTime(double value);
   void OnCancel();
 
   // RenderViewObserver
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
-  WebKit::WebDateTimeChooserParams chooser_params_;
-  WebKit::WebDateTimeChooserCompletion* chooser_completion_;  // Not owned by us
+  blink::WebDateTimeChooserParams chooser_params_;
+  blink::WebDateTimeChooserCompletion* chooser_completion_;  // Not owned by us
 
   DISALLOW_COPY_AND_ASSIGN(RendererDateTimePicker);
 };

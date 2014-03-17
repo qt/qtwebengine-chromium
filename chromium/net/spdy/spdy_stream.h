@@ -383,13 +383,16 @@ class NET_EXPORT_PRIVATE SpdyStream {
   bool IsIdle() const;
 
   // Returns the protocol used by this stream. Always between
-  // kProtoSPDY2 and kProtoSPDYMaximumVersion.
-  //
-  // TODO(akalin): Change the lower bound to kProtoSPDYMinimumVersion
-  // once we stop supporting SPDY/1.
+  // kProtoSPDYMinimumVersion and kProtoSPDYMaximumVersion.
   NextProto GetProtocol() const;
 
   int response_status() const { return response_status_; }
+
+  void IncrementRawReceivedBytes(size_t received_bytes) {
+    raw_received_bytes_ += received_bytes;
+  }
+
+  int64 raw_received_bytes() const { return raw_received_bytes_; }
 
   bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const;
 
@@ -407,7 +410,7 @@ class NET_EXPORT_PRIVATE SpdyStream {
   // TODO(akalin): Remove this, as it's only used in tests.
   bool HasUrlFromHeaders() const;
 
-  int GetProtocolVersion() const;
+  SpdyMajorVersion GetProtocolVersion() const;
 
  private:
   class SynStreamBufferProducer;
@@ -415,26 +418,16 @@ class NET_EXPORT_PRIVATE SpdyStream {
 
   enum State {
     STATE_NONE,
-    STATE_GET_DOMAIN_BOUND_CERT,
-    STATE_GET_DOMAIN_BOUND_CERT_COMPLETE,
-    STATE_SEND_DOMAIN_BOUND_CERT,
-    STATE_SEND_DOMAIN_BOUND_CERT_COMPLETE,
     STATE_SEND_REQUEST_HEADERS,
     STATE_SEND_REQUEST_HEADERS_COMPLETE,
     STATE_IDLE,
     STATE_CLOSED
   };
 
-  void OnGetDomainBoundCertComplete(int result);
-
   // Try to make progress sending/receiving the request/response.
   int DoLoop(int result);
 
   // The implementations of each state of the state machine.
-  int DoGetDomainBoundCert();
-  int DoGetDomainBoundCertComplete(int result);
-  int DoSendDomainBoundCert();
-  int DoSendDomainBoundCertComplete(int result);
   int DoSendRequestHeaders();
   int DoSendRequestHeadersComplete();
   int DoReadHeaders();
@@ -532,6 +525,10 @@ class NET_EXPORT_PRIVATE SpdyStream {
   base::TimeTicks send_time_;
   base::TimeTicks recv_first_byte_time_;
   base::TimeTicks recv_last_byte_time_;
+
+  // Number of bytes that have been received on this stream, including frame
+  // overhead and headers.
+  int64 raw_received_bytes_;
 
   // Number of data bytes that have been sent/received on this stream, not
   // including frame overhead. Note that this does not count headers.

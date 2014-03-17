@@ -49,6 +49,7 @@ class MESSAGE_CENTER_EXPORT RichNotificationData {
   int progress;
   std::vector<ButtonInfo> buttons;
   bool should_make_spoken_feedback_for_popup_updates;
+  bool clickable;
 };
 
 class MESSAGE_CENTER_EXPORT Notification {
@@ -86,6 +87,10 @@ class MESSAGE_CENTER_EXPORT Notification {
   const string16& display_source() const { return display_source_; }
 
   const NotifierId& notifier_id() const { return notifier_id_; }
+
+  void set_profile_id(const std::string& profile_id) {
+    notifier_id_.profile_id = profile_id;
+  }
 
   // Begin unpacked values from optional_fields.
   int priority() const { return optional_fields_.priority; }
@@ -132,6 +137,9 @@ class MESSAGE_CENTER_EXPORT Notification {
   const std::vector<ButtonInfo>& buttons() const {
     return optional_fields_.buttons;
   }
+  void set_buttons(const std::vector<ButtonInfo>& buttons) {
+    optional_fields_.buttons = buttons;
+  }
   void SetButtonIcon(size_t index, const gfx::Image& icon);
 
   bool shown_as_popup() const { return shown_as_popup_; }
@@ -140,7 +148,7 @@ class MESSAGE_CENTER_EXPORT Notification {
   }
 
   // Read status in the message center.
-  bool is_read() const { return is_read_; }
+  bool IsRead() const;
   void set_is_read(bool read) { is_read_ = read; }
 
   // Expanded status in the message center (not the popups).
@@ -158,7 +166,14 @@ class MESSAGE_CENTER_EXPORT Notification {
   }
 
   bool never_timeout() const { return optional_fields_.never_timeout; }
+
+  bool clickable() const { return optional_fields_.clickable; }
+  void set_clickable(bool clickable) {
+    optional_fields_.clickable = clickable;
+  }
+
   NotificationDelegate* delegate() const { return delegate_.get(); }
+
   const RichNotificationData& rich_notification_data() const {
     return optional_fields_;
   }
@@ -175,14 +190,14 @@ class MESSAGE_CENTER_EXPORT Notification {
   void ButtonClick(int index) const { delegate()->ButtonClick(index); }
   void Close(bool by_user) const { delegate()->Close(by_user); }
 
-  // Helper method to create a simple System notification. |click_callback|
+  // Helper method to create a simple system notification. |click_callback|
   // will be invoked when the notification is clicked.
   static scoped_ptr<Notification> CreateSystemNotification(
       const std::string& notification_id,
       const base::string16& title,
       const base::string16& message,
       const gfx::Image& icon,
-      int system_component_id,
+      const std::string& system_component_id,
       const base::Closure& click_callback);
 
  protected:

@@ -72,6 +72,9 @@
       case ::syncer::APPS: \
         PER_DATA_TYPE_MACRO("Apps"); \
         break; \
+      case ::syncer::APP_LIST: \
+        PER_DATA_TYPE_MACRO("AppList"); \
+        break; \
       case ::syncer::APP_SETTINGS: \
         PER_DATA_TYPE_MACRO("AppSettings"); \
         break; \
@@ -110,6 +113,9 @@
         break; \
       case ::syncer::MANAGED_USERS: \
         PER_DATA_TYPE_MACRO("ManagedUser"); \
+        break; \
+      case ::syncer::ARTICLES: \
+        PER_DATA_TYPE_MACRO("Article"); \
         break; \
       case ::syncer::PROXY_TABS: \
         PER_DATA_TYPE_MACRO("Tabs"); \

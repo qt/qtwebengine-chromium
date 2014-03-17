@@ -52,7 +52,10 @@ class RegWriter(template_writer.TemplateWriter):
   def _WritePolicy(self, policy, key, list):
     example_value = policy['example_value']
 
-    if policy['type'] == 'list':
+    if policy['type'] == 'external':
+      # This type can only be set through cloud policy.
+      return
+    elif policy['type'] == 'list':
       self._StartBlock(key, policy['name'], list)
       i = 1
       for item in example_value:

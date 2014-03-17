@@ -31,11 +31,11 @@
 #ifndef PaintAggregator_h
 #define PaintAggregator_h
 
-#include "core/platform/graphics/IntPoint.h"
-#include "core/platform/graphics/IntRect.h"
+#include "platform/geometry/IntPoint.h"
+#include "platform/geometry/IntRect.h"
 #include "wtf/Vector.h"
 
-namespace WebKit {
+namespace blink {
 
 // This class is responsible for aggregating multiple invalidation and scroll
 // commands to produce a scroll and repaint sequence.
@@ -87,6 +87,6 @@ private:
     PendingUpdate m_update;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

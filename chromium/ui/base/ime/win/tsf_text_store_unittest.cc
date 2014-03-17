@@ -35,20 +35,23 @@ class MockTextInputClient : public TextInputClient {
   MOCK_CONST_METHOD0(GetTextInputType, ui::TextInputType());
   MOCK_CONST_METHOD0(GetTextInputMode, ui::TextInputMode());
   MOCK_CONST_METHOD0(CanComposeInline, bool());
-  MOCK_METHOD0(GetCaretBounds, gfx::Rect());
-  MOCK_METHOD2(GetCompositionCharacterBounds, bool(uint32, gfx::Rect*));
-  MOCK_METHOD0(HasCompositionText, bool());
-  MOCK_METHOD1(GetTextRange, bool(gfx::Range*));
-  MOCK_METHOD1(GetCompositionTextRange, bool(gfx::Range*));
-  MOCK_METHOD1(GetSelectionRange, bool(gfx::Range*));
+  MOCK_CONST_METHOD0(GetCaretBounds, gfx::Rect());
+  MOCK_CONST_METHOD2(GetCompositionCharacterBounds, bool(uint32, gfx::Rect*));
+  MOCK_CONST_METHOD0(HasCompositionText, bool());
+  MOCK_CONST_METHOD1(GetTextRange, bool(gfx::Range*));
+  MOCK_CONST_METHOD1(GetCompositionTextRange, bool(gfx::Range*));
+  MOCK_CONST_METHOD1(GetSelectionRange, bool(gfx::Range*));
   MOCK_METHOD1(SetSelectionRange, bool(const gfx::Range&));
   MOCK_METHOD1(DeleteRange, bool(const gfx::Range&));
-  MOCK_METHOD2(GetTextFromRange, bool(const gfx::Range&, string16*));
+  MOCK_CONST_METHOD2(GetTextFromRange, bool(const gfx::Range&, string16*));
   MOCK_METHOD0(OnInputMethodChanged, void());
   MOCK_METHOD1(ChangeTextDirectionAndLayoutAlignment,
                bool(base::i18n::TextDirection));
   MOCK_METHOD2(ExtendSelectionAndDelete, void(size_t, size_t));
   MOCK_METHOD1(EnsureCaretInRect, void(const gfx::Rect&));
+  MOCK_METHOD0(OnCandidateWindowShown, void());
+  MOCK_METHOD0(OnCandidateWindowUpdated, void());
+  MOCK_METHOD0(OnCandidateWindowHidden, void());
 };
 
 class MockStoreACPSink : public ITextStoreACPSink {
@@ -123,6 +126,10 @@ class TSFTextStoreTest : public testing::Test {
     sink_ = NULL;
     text_store_ = NULL;
   }
+
+  // Accessors to the internal state of TSFTextStore.
+  string16* string_buffer() { return &text_store_->string_buffer_; }
+  size_t* committed_size() { return &text_store_->committed_size_; }
 
   base::win::ScopedCOMInitializer com_initializer_;
   MockTextInputClient text_input_client_;
@@ -302,6 +309,47 @@ TEST_F(TSFTextStoreTest, GetStatusTest) {
   EXPECT_EQ(S_OK, text_store_->GetStatus(&status));
   EXPECT_EQ(0, status.dwDynamicFlags);
   EXPECT_EQ(TS_SS_TRANSITORY | TS_SS_NOHIDDENTEXT, status.dwStaticFlags);
+}
+
+TEST_F(TSFTextStoreTest, QueryInsertTest) {
+  LONG result_start = 0;
+  LONG result_end = 0;
+  *string_buffer() = L"";
+  *committed_size() = 0;
+  EXPECT_EQ(E_INVALIDARG,
+            text_store_->QueryInsert(0, 0, 0, NULL, &result_end));
+  EXPECT_EQ(E_INVALIDARG,
+            text_store_->QueryInsert(0, 0, 0, &result_start, NULL));
+  EXPECT_EQ(S_OK,
+            text_store_->QueryInsert(0, 0, 0, &result_start, &result_end));
+  EXPECT_EQ(0, result_start);
+  EXPECT_EQ(0, result_end);
+  *string_buffer() = L"1234";
+  *committed_size() = 1;
+  EXPECT_EQ(S_OK,
+            text_store_->QueryInsert(0, 1, 0, &result_start, &result_end));
+  EXPECT_EQ(1, result_start);
+  EXPECT_EQ(1, result_end);
+  EXPECT_EQ(E_INVALIDARG,
+            text_store_->QueryInsert(1, 0, 0, &result_start, &result_end));
+  EXPECT_EQ(S_OK,
+            text_store_->QueryInsert(2, 2, 0, &result_start, &result_end));
+  EXPECT_EQ(2, result_start);
+  EXPECT_EQ(2, result_end);
+  EXPECT_EQ(S_OK,
+            text_store_->QueryInsert(2, 3, 0, &result_start, &result_end));
+  EXPECT_EQ(2, result_start);
+  EXPECT_EQ(3, result_end);
+  EXPECT_EQ(E_INVALIDARG,
+            text_store_->QueryInsert(3, 2, 0, &result_start, &result_end));
+  EXPECT_EQ(S_OK,
+            text_store_->QueryInsert(3, 4, 0, &result_start, &result_end));
+  EXPECT_EQ(3, result_start);
+  EXPECT_EQ(4, result_end);
+  EXPECT_EQ(S_OK,
+            text_store_->QueryInsert(3, 5, 0, &result_start, &result_end));
+  EXPECT_EQ(3, result_start);
+  EXPECT_EQ(4, result_end);
 }
 
 class SyncRequestLockTestCallback : public TSFTextStoreTestCallback {

@@ -31,11 +31,11 @@
 #include "config.h"
 #include "WebPerformance.h"
 
-#include "core/page/Performance.h"
+#include "core/timing/Performance.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 static double millisecondsToSeconds(unsigned long long milliseconds)
 {
@@ -184,4 +184,4 @@ WebPerformance::operator PassRefPtr<Performance>() const
     return m_private.get();
 }
 
-} // namespace WebKit
+} // namespace blink

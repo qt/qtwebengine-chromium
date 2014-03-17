@@ -31,7 +31,7 @@
 #define NamedFlow_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/dom/EventTarget.h"
+#include "core/events/EventTarget.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/AtomicString.h"
@@ -43,9 +43,10 @@ class NamedFlowCollection;
 class Node;
 class NodeList;
 class RenderNamedFlowThread;
-class ScriptExecutionContext;
+class ExecutionContext;
 
-class NamedFlow : public RefCounted<NamedFlow>, public ScriptWrappable, public EventTarget {
+class NamedFlow : public RefCounted<NamedFlow>, public ScriptWrappable, public EventTargetWithInlineData {
+    REFCOUNTED_EVENT_TARGET(NamedFlow);
 public:
     static PassRefPtr<NamedFlow> create(PassRefPtr<NamedFlowCollection> manager, const AtomicString& flowThreadName);
 
@@ -58,11 +59,8 @@ public:
     PassRefPtr<NodeList> getRegions();
     PassRefPtr<NodeList> getContent();
 
-    using RefCounted<NamedFlow>::ref;
-    using RefCounted<NamedFlow>::deref;
-
-    virtual const AtomicString& interfaceName() const;
-    virtual ScriptExecutionContext* scriptExecutionContext() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE;
 
     // This function is called from the JS binding code to determine if the NamedFlow object is reachable or not.
     // If the object has listeners, the object should only be discarded if the parent Document is not reachable.
@@ -83,20 +81,11 @@ public:
 private:
     NamedFlow(PassRefPtr<NamedFlowCollection>, const AtomicString&);
 
-    // EventTarget implementation.
-    virtual void refEventTarget() { ref(); }
-    virtual void derefEventTarget() { deref(); }
-
-    virtual EventTargetData* eventTargetData() OVERRIDE;
-    virtual EventTargetData* ensureEventTargetData() OVERRIDE;
-
     // The name of the flow thread as specified in CSS.
     AtomicString m_flowThreadName;
 
     RefPtr<NamedFlowCollection> m_flowManager;
     RenderNamedFlowThread* m_parentFlowThread;
-
-    EventTargetData m_eventTargetData;
 };
 
 }

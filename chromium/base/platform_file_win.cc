@@ -86,6 +86,20 @@ PlatformFile CreatePlatformFileUnsafe(const FilePath& name,
   HANDLE file = CreateFile(name.value().c_str(), access, sharing, NULL,
                            disposition, create_flags, NULL);
 
+  if (INVALID_HANDLE_VALUE != file){
+    // Don't allow directories to be opened without the proper flag (block ADS).
+    if (!(flags & PLATFORM_FILE_BACKUP_SEMANTICS)) {
+      BY_HANDLE_FILE_INFORMATION info = { 0 };
+      BOOL result = GetFileInformationByHandle(file, &info);
+      DCHECK(result);
+      if (info.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY |
+                                   FILE_ATTRIBUTE_REPARSE_POINT)) {
+        CloseHandle(file);
+        file = INVALID_HANDLE_VALUE;
+      }
+    }
+  }
+
   if (created && (INVALID_HANDLE_VALUE != file)) {
     if (flags & (PLATFORM_FILE_OPEN_ALWAYS))
       *created = (ERROR_ALREADY_EXISTS != GetLastError());
@@ -134,7 +148,7 @@ int64 SeekPlatformFile(PlatformFile file,
 
 int ReadPlatformFile(PlatformFile file, int64 offset, char* data, int size) {
   base::ThreadRestrictions::AssertIOAllowed();
-  if (file == kInvalidPlatformFileValue)
+  if (file == kInvalidPlatformFileValue || size < 0)
     return -1;
 
   LARGE_INTEGER offset_li;
@@ -147,14 +161,24 @@ int ReadPlatformFile(PlatformFile file, int64 offset, char* data, int size) {
   DWORD bytes_read;
   if (::ReadFile(file, data, size, &bytes_read, &overlapped) != 0)
     return bytes_read;
-  else if (ERROR_HANDLE_EOF == GetLastError())
+  if (ERROR_HANDLE_EOF == GetLastError())
     return 0;
 
   return -1;
 }
 
 int ReadPlatformFileAtCurrentPos(PlatformFile file, char* data, int size) {
-  return ReadPlatformFile(file, 0, data, size);
+  base::ThreadRestrictions::AssertIOAllowed();
+  if (file == kInvalidPlatformFileValue || size < 0)
+    return -1;
+
+  DWORD bytes_read;
+  if (::ReadFile(file, data, size, &bytes_read, NULL) != 0)
+    return bytes_read;
+  if (ERROR_HANDLE_EOF == GetLastError())
+    return 0;
+
+  return -1;
 }
 
 int ReadPlatformFileNoBestEffort(PlatformFile file, int64 offset, char* data,
@@ -164,7 +188,7 @@ int ReadPlatformFileNoBestEffort(PlatformFile file, int64 offset, char* data,
 
 int ReadPlatformFileCurPosNoBestEffort(PlatformFile file,
                                        char* data, int size) {
-  return ReadPlatformFile(file, 0, data, size);
+  return ReadPlatformFileAtCurrentPos(file, data, size);
 }
 
 int WritePlatformFile(PlatformFile file, int64 offset,
@@ -260,6 +284,20 @@ bool GetPlatformFileInfo(PlatformFile file, PlatformFileInfo* info) {
   info->last_accessed = base::Time::FromFileTime(file_info.ftLastAccessTime);
   info->creation_time = base::Time::FromFileTime(file_info.ftCreationTime);
   return true;
+}
+
+PlatformFileError LockPlatformFile(PlatformFile file) {
+  BOOL result = LockFile(file, 0, 0, MAXDWORD, MAXDWORD);
+  if (!result)
+    return LastErrorToPlatformFileError(GetLastError());
+  return PLATFORM_FILE_OK;
+}
+
+PlatformFileError UnlockPlatformFile(PlatformFile file) {
+  BOOL result = UnlockFile(file, 0, 0, MAXDWORD, MAXDWORD);
+  if (!result)
+    return LastErrorToPlatformFileError(GetLastError());
+  return PLATFORM_FILE_OK;
 }
 
 PlatformFileError LastErrorToPlatformFileError(DWORD last_error) {

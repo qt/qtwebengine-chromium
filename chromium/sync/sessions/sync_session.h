@@ -4,12 +4,8 @@
 
 // A class representing an attempt to synchronize the local syncable data
 // store with a sync server. A SyncSession instance is passed as a stateful
-// bundle to and from various SyncerCommands with the goal of converging the
-// client view of data with that of the server. The commands twiddle with
-// session status in response to events and hiccups along the way, set and
-// query session progress with regards to conflict resolution and applying
-// server updates, and access the SyncSessionContext for the current session
-// via SyncSession instances.
+// bundle throughout the sync cycle.  The SyncSession is not reused across
+// sync cycles; each cycle starts with a new one.
 
 #ifndef SYNC_SESSIONS_SYNC_SESSION_H_
 #define SYNC_SESSIONS_SYNC_SESSION_H_
@@ -27,7 +23,6 @@
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/engine/model_safe_worker.h"
 #include "sync/internal_api/public/sessions/sync_session_snapshot.h"
-#include "sync/sessions/ordered_commit_set.h"
 #include "sync/sessions/status_controller.h"
 #include "sync/sessions/sync_session_context.h"
 
@@ -77,17 +72,6 @@ class SYNC_EXPORT_PRIVATE SyncSession {
     // delay.
     virtual void OnReceivedSessionsCommitDelay(
         const base::TimeDelta& new_delay) = 0;
-
-    // The client needs to cease and desist syncing at once.  This occurs when
-    // the Syncer detects that the backend store has fundamentally changed or
-    // is a different instance altogether (e.g. swapping from a test instance
-    // to production, or a global stop syncing operation has wiped the store).
-    // TODO(lipalani) : Replace this function with the one below. This function
-    // stops the current sync cycle and purges the client. In the new model
-    // the former would be done by the |SyncProtocolError| and
-    // the latter(which is an action) would be done in ProfileSyncService
-    // along with the rest of the actions.
-    virtual void OnShouldStopSyncingPermanently() = 0;
 
     // Called for the syncer to respond to the error sent by the server.
     virtual void OnSyncProtocolError(

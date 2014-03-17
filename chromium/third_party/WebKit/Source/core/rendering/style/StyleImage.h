@@ -25,9 +25,9 @@
 #define StyleImage_h
 
 #include "core/css/CSSValue.h"
-#include "core/platform/graphics/Image.h"
-#include "core/platform/graphics/IntSize.h"
-#include "core/platform/graphics/LayoutSize.h"
+#include "platform/geometry/IntSize.h"
+#include "platform/geometry/LayoutSize.h"
+#include "platform/graphics/Image.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
@@ -96,6 +96,11 @@ protected:
     bool m_isGeneratedImage:1;
     bool m_isImageResourceSet:1;
 };
+
+#define DEFINE_STYLE_IMAGE_TYPE_CASTS(thisType, function) \
+    DEFINE_TYPE_CASTS(thisType, StyleImage, styleImage, styleImage->function, styleImage.function); \
+    inline thisType* to##thisType(const RefPtr<StyleImage>& styleImage) { return to##thisType(styleImage.get()); } \
+    typedef int NeedsSemiColonAfterDefineStyleImageTypeCasts
 
 }
 #endif

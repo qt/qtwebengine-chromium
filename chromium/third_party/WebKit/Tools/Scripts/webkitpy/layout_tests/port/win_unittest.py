@@ -32,12 +32,12 @@ import webkitpy.thirdparty.unittest2 as unittest
 from webkitpy.common.system import outputcapture
 from webkitpy.common.system.executive_mock import MockExecutive
 from webkitpy.common.system.filesystem_mock import MockFileSystem
-from webkitpy.layout_tests.port import chromium_port_testcase
+from webkitpy.layout_tests.port import port_testcase
 from webkitpy.layout_tests.port import win
 from webkitpy.tool.mocktool import MockOptions
 
 
-class WinPortTest(chromium_port_testcase.ChromiumPortTestCase):
+class WinPortTest(port_testcase.PortTestCase):
     port_name = 'win'
     port_maker = win.WinPort
     os_name = 'win'
@@ -59,12 +59,12 @@ class WinPortTest(chromium_port_testcase.ChromiumPortTestCase):
     def test_setup_environ_for_server_cygpath(self):
         port = self.make_port()
         env = port.setup_environ_for_server(port.driver_name())
-        self.assertEqual(env['CYGWIN_PATH'], '/mock-checkout/Source/WebKit/chromium/third_party/cygwin/bin')
+        self.assertEqual(env['CYGWIN_PATH'], '/mock-checkout/third_party/cygwin/bin')
 
     def test_setup_environ_for_server_register_cygwin(self):
         port = self.make_port(options=MockOptions(register_cygwin=True, results_directory='/'))
         port._executive = MockExecutive(should_log=True)
-        expected_logs = "MOCK run_command: ['/mock-checkout/Source/WebKit/chromium/third_party/cygwin/setup_mount.bat'], cwd=None\n"
+        expected_logs = "MOCK run_command: ['/mock-checkout/third_party/cygwin/setup_mount.bat'], cwd=None\n"
         output = outputcapture.OutputCapture()
         output.assert_outputs(self, port.setup_environ_for_server, expected_logs=expected_logs)
 
@@ -100,15 +100,15 @@ class WinPortTest(chromium_port_testcase.ChromiumPortTestCase):
     def test_build_path(self):
         # Test that optional paths are used regardless of whether they exist.
         options = MockOptions(configuration='Release', build_directory='/foo')
-        self.assert_build_path(options, ['/mock-checkout/Source/WebKit/chromium/out/Release'], '/foo/Release')
+        self.assert_build_path(options, ['/mock-checkout/out/Release'], '/foo/Release')
 
         # Test that optional relative paths are returned unmodified.
         options = MockOptions(configuration='Release', build_directory='foo')
-        self.assert_build_path(options, ['/mock-checkout/Source/WebKit/chromium/out/Release'], 'foo/Release')
+        self.assert_build_path(options, ['/mock-checkout/out/Release'], 'foo/Release')
 
         # Test that we prefer the legacy dir over the new dir.
         options = MockOptions(configuration='Release', build_directory=None)
-        self.assert_build_path(options, ['/mock-checkout/Source/WebKit/chromium/build/Release', '/mock-checkout/Source/WebKit/chromium/out'], '/mock-checkout/Source/WebKit/chromium/build/Release')
+        self.assert_build_path(options, ['/mock-checkout/build/Release', '/mock-checkout/out'], '/mock-checkout/build/Release')
 
     def test_build_path_timestamps(self):
         options = MockOptions(configuration='Release', build_directory=None)

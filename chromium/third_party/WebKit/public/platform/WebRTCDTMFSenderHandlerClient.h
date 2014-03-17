@@ -28,15 +28,15 @@
 
 #include "WebCommon.h"
 
-namespace WebKit {
+namespace blink {
 
-class WebRTCDTMFSenderHandlerClient {
+class BLINK_PLATFORM_EXPORT WebRTCDTMFSenderHandlerClient {
 public:
     virtual ~WebRTCDTMFSenderHandlerClient() { }
 
     virtual void didPlayTone(const WebString& tone) const = 0;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebRTCDTMFSenderHandlerClient_h

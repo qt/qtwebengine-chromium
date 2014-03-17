@@ -31,10 +31,10 @@
 #include "config.h"
 #include "modules/filesystem/DraggedIsolatedFileSystem.h"
 
-#include "core/dom/ScriptExecutionContext.h"
-#include "core/platform/Supplementable.h"
+#include "core/dom/ExecutionContext.h"
 #include "modules/filesystem/DOMFileSystem.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/Supplementable.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/MainThread.h"
 
 namespace WebCore {
@@ -43,12 +43,12 @@ DraggedIsolatedFileSystem::~DraggedIsolatedFileSystem()
 {
 }
 
-DOMFileSystem* DraggedIsolatedFileSystem::getDOMFileSystem(ScriptExecutionContext* scriptExecutionContext)
+DOMFileSystem* DraggedIsolatedFileSystem::getDOMFileSystem(ExecutionContext* executionContext)
 {
     ASSERT(!m_filesystemId.isEmpty());
     if (!m_filesystem) {
-        ASSERT(scriptExecutionContext);
-        m_filesystem = DOMFileSystem::createIsolatedFileSystem(scriptExecutionContext, m_filesystemId);
+        ASSERT(executionContext);
+        m_filesystem = DOMFileSystem::createIsolatedFileSystem(executionContext, m_filesystemId);
     }
     return m_filesystem.get();
 }

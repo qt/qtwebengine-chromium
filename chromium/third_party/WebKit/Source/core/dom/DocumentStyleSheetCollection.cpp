@@ -28,6 +28,7 @@
 #include "core/dom/DocumentStyleSheetCollection.h"
 
 #include "HTMLNames.h"
+#include "RuntimeEnabledFeatures.h"
 #include "SVGNames.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/resolver/StyleResolver.h"
@@ -38,7 +39,7 @@
 #include "core/html/HTMLIFrameElement.h"
 #include "core/html/HTMLLinkElement.h"
 #include "core/html/HTMLStyleElement.h"
-#include "core/page/Settings.h"
+#include "core/frame/Settings.h"
 #include "core/svg/SVGStyleElement.h"
 
 namespace WebCore {
@@ -48,14 +49,11 @@ using namespace HTMLNames;
 DocumentStyleSheetCollection::DocumentStyleSheetCollection(TreeScope& treeScope)
     : StyleSheetCollection(treeScope)
 {
-    ASSERT(treeScope.rootNode() == &treeScope.rootNode()->document());
+    ASSERT(treeScope.rootNode() == treeScope.rootNode()->document());
 }
 
-void DocumentStyleSheetCollection::collectStyleSheets(StyleEngine* collections, Vector<RefPtr<StyleSheet> >& styleSheets, Vector<RefPtr<CSSStyleSheet> >& activeSheets)
+void DocumentStyleSheetCollection::collectStyleSheetsFromCandidates(StyleEngine* engine, StyleSheetCollectionBase& collection, DocumentStyleSheetCollection::CollectFor collectFor)
 {
-    if (document()->settings() && !document()->settings()->authorAndUserStylesEnabled())
-        return;
-
     DocumentOrderedList::iterator begin = m_styleSheetCandidateNodes.begin();
     DocumentOrderedList::iterator end = m_styleSheetCandidateNodes.end();
     for (DocumentOrderedList::iterator it = begin; it != end; ++it) {
@@ -67,7 +65,7 @@ void DocumentStyleSheetCollection::collectStyleSheets(StyleEngine* collections, 
             // We don't support linking to embedded CSS stylesheets, see <https://bugs.webkit.org/show_bug.cgi?id=49281> for discussion.
             ProcessingInstruction* pi = toProcessingInstruction(n);
             // Don't apply XSL transforms to already transformed documents -- <rdar://problem/4132806>
-            if (pi->isXSL() && !document()->transformSourceDocument()) {
+            if (RuntimeEnabledFeatures::xsltEnabled() && pi->isXSL() && !document()->transformSourceDocument()) {
                 // Don't apply XSL transforms until loading is finished.
                 if (!document()->parsing() && !pi->isLoading())
                     document()->applyXSLTransform(pi);
@@ -75,7 +73,7 @@ void DocumentStyleSheetCollection::collectStyleSheets(StyleEngine* collections, 
             }
             sheet = pi->sheet();
             if (sheet && !sheet->disabled() && sheet->isCSSStyleSheet())
-                activeSheet = static_cast<CSSStyleSheet*>(sheet);
+                activeSheet = toCSSStyleSheet(sheet);
         } else if ((n->isHTMLElement() && (n->hasTagName(linkTag) || n->hasTagName(styleTag))) || (n->isSVGElement() && n->hasTagName(SVGNames::styleTag))) {
             Element* e = toElement(n);
             AtomicString title = e->getAttribute(titleAttr);
@@ -86,11 +84,11 @@ void DocumentStyleSheetCollection::collectStyleSheets(StyleEngine* collections, 
                 enabledViaScript = linkElement->isEnabledViaScript();
                 if (!linkElement->isDisabled() && linkElement->styleSheetIsLoading()) {
                     // it is loading but we should still decide which style sheet set to use
-                    if (!enabledViaScript && !title.isEmpty() && collections->preferredStylesheetSetName().isEmpty()) {
+                    if (!enabledViaScript && !title.isEmpty() && engine->preferredStylesheetSetName().isEmpty()) {
                         const AtomicString& rel = e->getAttribute(relAttr);
                         if (!rel.contains("alternate")) {
-                            collections->setPreferredStylesheetSetName(title);
-                            collections->setSelectedStylesheetSetName(title);
+                            engine->setPreferredStylesheetSetName(title);
+                            engine->setSelectedStylesheetSetName(title);
                         }
                     }
 
@@ -106,7 +104,7 @@ void DocumentStyleSheetCollection::collectStyleSheets(StyleEngine* collections, 
             }
 
             if (sheet && !sheet->disabled() && sheet->isCSSStyleSheet())
-                activeSheet = static_cast<CSSStyleSheet*>(sheet);
+                activeSheet = toCSSStyleSheet(sheet);
 
             // Check to see if this sheet belongs to a styleset
             // (thus making it PREFERRED or ALTERNATE rather than
@@ -114,73 +112,81 @@ void DocumentStyleSheetCollection::collectStyleSheets(StyleEngine* collections, 
             AtomicString rel = e->getAttribute(relAttr);
             if (!enabledViaScript && sheet && !title.isEmpty()) {
                 // Yes, we have a title.
-                if (collections->preferredStylesheetSetName().isEmpty()) {
+                if (engine->preferredStylesheetSetName().isEmpty()) {
                     // No preferred set has been established. If
                     // we are NOT an alternate sheet, then establish
                     // us as the preferred set. Otherwise, just ignore
                     // this sheet.
                     if (e->hasLocalName(styleTag) || !rel.contains("alternate")) {
-                        collections->setPreferredStylesheetSetName(title);
-                        collections->setSelectedStylesheetSetName(title);
+                        engine->setPreferredStylesheetSetName(title);
+                        engine->setSelectedStylesheetSetName(title);
                     }
                 }
-                if (title != collections->preferredStylesheetSetName())
+                if (title != engine->preferredStylesheetSetName())
                     activeSheet = 0;
             }
 
             if (rel.contains("alternate") && title.isEmpty())
                 activeSheet = 0;
         }
-        if (sheet)
-            styleSheets.append(sheet);
+
+        if (sheet && collectFor == CollectForList)
+            collection.appendSheetForList(sheet);
         if (activeSheet)
-            activeSheets.append(activeSheet);
+            collection.appendActiveStyleSheet(activeSheet);
     }
 }
 
-static void collectActiveCSSStyleSheetsFromSeamlessParents(Vector<RefPtr<CSSStyleSheet> >& sheets, Document* document)
+static void collectActiveCSSStyleSheetsFromSeamlessParents(StyleSheetCollectionBase& collection, Document* document)
 {
     HTMLIFrameElement* seamlessParentIFrame = document->seamlessParentIFrame();
     if (!seamlessParentIFrame)
         return;
-    sheets.append(seamlessParentIFrame->document().styleEngine()->activeAuthorStyleSheets());
+    collection.appendActiveStyleSheets(seamlessParentIFrame->document().styleEngine()->activeAuthorStyleSheets());
 }
 
-bool DocumentStyleSheetCollection::updateActiveStyleSheets(StyleEngine* collections, StyleResolverUpdateMode updateMode)
+void DocumentStyleSheetCollection::collectStyleSheets(StyleEngine* engine, StyleSheetCollectionBase& collection, DocumentStyleSheetCollection::CollectFor colletFor)
 {
-    Vector<RefPtr<StyleSheet> > styleSheets;
-    Vector<RefPtr<CSSStyleSheet> > activeCSSStyleSheets;
-    activeCSSStyleSheets.append(collections->injectedAuthorStyleSheets());
-    activeCSSStyleSheets.append(collections->documentAuthorStyleSheets());
-    collectActiveCSSStyleSheetsFromSeamlessParents(activeCSSStyleSheets, document());
-    collectStyleSheets(collections, styleSheets, activeCSSStyleSheets);
+    ASSERT(document()->styleEngine() == engine);
+    collection.appendActiveStyleSheets(engine->injectedAuthorStyleSheets());
+    collection.appendActiveStyleSheets(engine->documentAuthorStyleSheets());
+    collectActiveCSSStyleSheetsFromSeamlessParents(collection, document());
+    collectStyleSheetsFromCandidates(engine, collection, colletFor);
+}
 
-    StyleResolverUpdateType styleResolverUpdateType;
-    bool requiresFullStyleRecalc;
-    analyzeStyleSheetChange(updateMode, activeAuthorStyleSheets(), activeCSSStyleSheets, styleResolverUpdateType, requiresFullStyleRecalc);
+bool DocumentStyleSheetCollection::updateActiveStyleSheets(StyleEngine* engine, StyleResolverUpdateMode updateMode)
+{
+    StyleSheetCollectionBase collection;
+    engine->collectDocumentActiveStyleSheets(collection);
 
-    if (styleResolverUpdateType == Reconstruct) {
-        document()->clearStyleResolver();
-    } else {
-        StyleResolver* styleResolver = document()->styleResolverIfExists();
-        ASSERT(styleResolver);
+    StyleSheetChange change;
+    analyzeStyleSheetChange(updateMode, collection, change);
+
+    if (change.styleResolverUpdateType == Reconstruct) {
+        engine->clearMasterResolver();
+        engine->resetFontSelector();
+    } else if (StyleResolver* styleResolver = engine->resolver()) {
         // FIXME: We might have already had styles in child treescope. In this case, we cannot use buildScopedStyleTreeInDocumentOrder.
         // Need to change "false" to some valid condition.
         styleResolver->setBuildScopedStyleTreeInDocumentOrder(false);
-        if (styleResolverUpdateType == Reset) {
+        if (change.styleResolverUpdateType != Additive) {
+            ASSERT(change.styleResolverUpdateType == Reset || change.styleResolverUpdateType == ResetStyleResolverAndFontSelector);
             resetAllRuleSetsInTreeScope(styleResolver);
-            styleResolver->appendAuthorStyleSheets(0, activeCSSStyleSheets);
+            if (change.styleResolverUpdateType == ResetStyleResolverAndFontSelector)
+                engine->resetFontSelector();
+            styleResolver->removePendingAuthorStyleSheets(m_activeAuthorStyleSheets);
+            styleResolver->lazyAppendAuthorStyleSheets(0, collection.activeAuthorStyleSheets());
         } else {
-            ASSERT(styleResolverUpdateType == Additive);
-            styleResolver->appendAuthorStyleSheets(m_activeAuthorStyleSheets.size(), activeCSSStyleSheets);
+            styleResolver->lazyAppendAuthorStyleSheets(m_activeAuthorStyleSheets.size(), collection.activeAuthorStyleSheets());
         }
+    } else if (change.styleResolverUpdateType == ResetStyleResolverAndFontSelector) {
+        engine->resetFontSelector();
     }
     m_scopingNodesForStyleScoped.didRemoveScopingNodes();
-    m_activeAuthorStyleSheets.swap(activeCSSStyleSheets);
-    m_styleSheetsForStyleSheetList.swap(styleSheets);
+    collection.swap(*this);
     updateUsesRemUnits();
 
-    return requiresFullStyleRecalc;
+    return change.requiresFullStyleRecalc;
 }
 
 }

@@ -148,8 +148,7 @@ class PolicyTemplateGenerator:
       if not 'label' in policy:
         # If 'label' is not specified, then it defaults to 'caption':
         policy['label'] = policy['caption']
-      policy['supported_on'] = self._ProcessSupportedOn(
-          policy['supported_on'])
+      policy['supported_on'] = self._ProcessSupportedOn(policy['supported_on'])
 
   def _ProcessPolicyList(self, policy_list):
     '''Adds localized message strings to each item in a list of policies and

@@ -32,7 +32,7 @@ static int MakeSelectors(const int blue_index,
                          const int green_index,
                          const int red_index,
                          uint32 dst_fourcc_bayer,
-                         uint32 *index_map) {
+                         uint32* index_map) {
   // Now build a lookup table containing the indices for the four pixels in each
   // 2x2 Bayer grid.
   switch (dst_fourcc_bayer) {
@@ -280,7 +280,7 @@ int BayerToARGB(const uint8* src_bayer, int src_stride_bayer,
 }
 
 // Converts any Bayer RGB format to ARGB.
-LIBYUV_API
+LIBYUV_API SAFEBUFFERS
 int BayerToI420(const uint8* src_bayer, int src_stride_bayer,
                 uint8* dst_y, int dst_stride_y,
                 uint8* dst_u, int dst_stride_u,
@@ -310,7 +310,7 @@ int BayerToI420(const uint8* src_bayer, int src_stride_bayer,
                       uint8* dst_u, uint8* dst_v, int width) = ARGBToUVRow_C;
   void (*ARGBToYRow)(const uint8* src_argb, uint8* dst_y, int pix) =
       ARGBToYRow_C;
-#if defined(HAS_ARGBTOYROW_SSSE3)
+#if defined(HAS_ARGBTOYROW_SSSE3) && defined(HAS_ARGBTOUVROW_SSSE3)
   if (TestCpuFlag(kCpuHasSSSE3) && width >= 16) {
     ARGBToUVRow = ARGBToUVRow_Any_SSSE3;
     ARGBToYRow = ARGBToYRow_Any_SSSE3;
@@ -380,7 +380,7 @@ int BayerToI420(const uint8* src_bayer, int src_stride_bayer,
 }
 
 // Convert I420 to Bayer.
-LIBYUV_API
+LIBYUV_API SAFEBUFFERS
 int I420ToBayer(const uint8* src_y, int src_stride_y,
                 const uint8* src_u, int src_stride_u,
                 const uint8* src_v, int src_stride_v,

@@ -39,14 +39,19 @@ namespace WebCore {
 
 PassRefPtr<EventListener> V8EventListenerList::getEventListener(v8::Local<v8::Value> value, bool isAttribute, ListenerLookupType lookup)
 {
-    v8::Handle<v8::Context> context = v8::Context::GetCurrent();
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    v8::Handle<v8::Context> context = isolate->GetCurrentContext();
     if (context.IsEmpty())
         return 0;
-    if (lookup == ListenerFindOnly)
-        return V8EventListenerList::findWrapper(value, isAttribute, context->GetIsolate());
-    if (V8DOMWrapper::isWrapperOfType(toInnerGlobalObject(context), &V8Window::info))
-        return V8EventListenerList::findOrCreateWrapper<V8EventListener>(value, isAttribute, context->GetIsolate());
-    return V8EventListenerList::findOrCreateWrapper<V8WorkerGlobalScopeEventListener>(value, isAttribute, context->GetIsolate());
+    if (lookup == ListenerFindOnly) {
+        // Used by EventTarget::removeEventListener, specifically
+        // EventTargetV8Internal::removeEventListenerMethod
+        ASSERT(!isAttribute);
+        return V8EventListenerList::findWrapper(value, isolate);
+    }
+    if (V8DOMWrapper::isWrapperOfType(toInnerGlobalObject(context), &V8Window::wrapperTypeInfo))
+        return V8EventListenerList::findOrCreateWrapper<V8EventListener>(value, isAttribute, isolate);
+    return V8EventListenerList::findOrCreateWrapper<V8WorkerGlobalScopeEventListener>(value, isAttribute, isolate);
 }
 
 } // namespace WebCore

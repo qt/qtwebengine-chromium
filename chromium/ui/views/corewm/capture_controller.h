@@ -20,10 +20,10 @@ namespace corewm {
 class VIEWS_EXPORT CaptureController : public aura::client::CaptureClient {
  public:
   // Adds |root| to the list of RootWindows notified when capture changes.
-  void Attach(aura::RootWindow* root);
+  void Attach(aura::Window* root);
 
   // Removes |root| from the list of RootWindows notified when capture changes.
-  void Detach(aura::RootWindow* root);
+  void Detach(aura::Window* root);
 
   // Returns true if this CaptureController is installed on at least one
   // RootWindow.
@@ -33,10 +33,11 @@ class VIEWS_EXPORT CaptureController : public aura::client::CaptureClient {
   virtual void SetCapture(aura::Window* window) OVERRIDE;
   virtual void ReleaseCapture(aura::Window* window) OVERRIDE;
   virtual aura::Window* GetCaptureWindow() OVERRIDE;
+  virtual aura::Window* GetGlobalCaptureWindow() OVERRIDE;
 
  private:
   friend class ScopedCaptureClient;
-  typedef std::set<aura::RootWindow*> RootWindows;
+  typedef std::set<aura::Window*> RootWindows;
 
   CaptureController();
   virtual ~CaptureController();
@@ -55,7 +56,7 @@ class VIEWS_EXPORT CaptureController : public aura::client::CaptureClient {
 // among all ScopedCaptureClients and adds the RootWindow to it.
 class VIEWS_EXPORT ScopedCaptureClient : public aura::WindowObserver {
  public:
-  explicit ScopedCaptureClient(aura::RootWindow* root);
+  explicit ScopedCaptureClient(aura::Window* root);
   virtual ~ScopedCaptureClient();
 
   // Returns true if there is a CaptureController with at least one RootWindow.
@@ -76,7 +77,7 @@ class VIEWS_EXPORT ScopedCaptureClient : public aura::WindowObserver {
   static CaptureController* capture_controller_;
 
   // RootWindow this ScopedCaptureClient was create for.
-  aura::RootWindow* root_window_;
+  aura::Window* root_window_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopedCaptureClient);
 };

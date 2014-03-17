@@ -28,7 +28,8 @@ class WebSocketHandshakeHandlerSpdyTest
 INSTANTIATE_TEST_CASE_P(
     NextProto,
     WebSocketHandshakeHandlerSpdyTest,
-    testing::Values(kProtoSPDY2, kProtoSPDY3, kProtoSPDY31, kProtoSPDY4a2,
+    testing::Values(kProtoDeprecatedSPDY2,
+                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4a2,
                     kProtoHTTP2Draft04));
 
 TEST_P(WebSocketHandshakeHandlerSpdyTest, RequestResponse) {
@@ -48,7 +49,6 @@ TEST_P(WebSocketHandshakeHandlerSpdyTest, RequestResponse) {
 
   EXPECT_TRUE(request_handler.ParseRequest(kHandshakeRequestMessage,
                                            strlen(kHandshakeRequestMessage)));
-  EXPECT_EQ(13, request_handler.protocol_version());
 
   GURL url("ws://example.com/demo");
   std::string challenge;
@@ -85,7 +85,6 @@ TEST_P(WebSocketHandshakeHandlerSpdyTest, RequestResponse) {
   spdy_util_.SetHeader("sec-websocket-extensions", "foo", &headers);
 
   WebSocketHandshakeResponseHandler response_handler;
-  response_handler.set_protocol_version(13);
   EXPECT_TRUE(response_handler.ParseResponseHeaderBlock(
       headers, challenge, spdy_util_.spdy_version()));
   EXPECT_TRUE(response_handler.HasResponse());
@@ -122,7 +121,6 @@ TEST_P(WebSocketHandshakeHandlerSpdyTest, RequestResponseWithCookies) {
 
   EXPECT_TRUE(request_handler.ParseRequest(kHandshakeRequestMessage,
                                            strlen(kHandshakeRequestMessage)));
-  EXPECT_EQ(13, request_handler.protocol_version());
 
   GURL url("ws://example.com/demo");
   std::string challenge;
@@ -166,7 +164,6 @@ TEST_P(WebSocketHandshakeHandlerSpdyTest, RequestResponseWithCookies) {
 
 
   WebSocketHandshakeResponseHandler response_handler;
-  response_handler.set_protocol_version(13);
   EXPECT_TRUE(response_handler.ParseResponseHeaderBlock(
       headers, challenge, spdy_util_.spdy_version()));
   EXPECT_TRUE(response_handler.HasResponse());

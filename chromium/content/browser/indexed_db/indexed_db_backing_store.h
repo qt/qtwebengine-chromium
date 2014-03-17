@@ -12,7 +12,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/weak_ptr.h"
+#include "base/timer/timer.h"
 #include "content/browser/indexed_db/indexed_db.h"
 #include "content/browser/indexed_db/indexed_db_metadata.h"
 #include "content/browser/indexed_db/leveldb/leveldb_iterator.h"
@@ -21,8 +21,8 @@
 #include "content/common/indexed_db/indexed_db_key.h"
 #include "content/common/indexed_db/indexed_db_key_path.h"
 #include "content/common/indexed_db/indexed_db_key_range.h"
-#include "third_party/WebKit/public/platform/WebIDBCallbacks.h"
 #include "third_party/leveldatabase/src/include/leveldb/status.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -32,11 +32,10 @@ class LevelDBDatabase;
 class LevelDBFactory {
  public:
   virtual ~LevelDBFactory() {}
-  virtual leveldb::Status OpenLevelDB(
-      const base::FilePath& file_name,
-      const LevelDBComparator* comparator,
-      scoped_ptr<LevelDBDatabase>* db,
-      bool* is_disk_full) = 0;
+  virtual leveldb::Status OpenLevelDB(const base::FilePath& file_name,
+                                      const LevelDBComparator* comparator,
+                                      scoped_ptr<LevelDBDatabase>* db,
+                                      bool* is_disk_full) = 0;
   virtual bool DestroyLevelDB(const base::FilePath& file_name) = 0;
 };
 
@@ -45,46 +44,44 @@ class CONTENT_EXPORT IndexedDBBackingStore
  public:
   class CONTENT_EXPORT Transaction;
 
+  const GURL& origin_url() const { return origin_url_; }
+  base::OneShotTimer<IndexedDBBackingStore>* close_timer() {
+    return &close_timer_;
+  }
+
   static scoped_refptr<IndexedDBBackingStore> Open(
-      const std::string& origin_identifier,
+      const GURL& origin_url,
       const base::FilePath& path_base,
-      const std::string& file_identifier,
-      WebKit::WebIDBCallbacks::DataLoss* data_loss,
+      blink::WebIDBDataLoss* data_loss,
+      std::string* data_loss_message,
       bool* disk_full);
 
   static scoped_refptr<IndexedDBBackingStore> Open(
-      const std::string& origin_identifier,
+      const GURL& origin_url,
       const base::FilePath& path_base,
-      const std::string& file_identifier,
-      WebKit::WebIDBCallbacks::DataLoss* data_loss,
+      blink::WebIDBDataLoss* data_loss,
+      std::string* data_loss_message,
       bool* disk_full,
       LevelDBFactory* factory);
   static scoped_refptr<IndexedDBBackingStore> OpenInMemory(
-      const std::string& file_identifier);
+      const GURL& origin_url);
   static scoped_refptr<IndexedDBBackingStore> OpenInMemory(
-      const std::string& file_identifier,
+      const GURL& origin_url,
       LevelDBFactory* factory);
-  base::WeakPtr<IndexedDBBackingStore> GetWeakPtr() {
-    return weak_factory_.GetWeakPtr();
-  }
 
-  virtual std::vector<string16> GetDatabaseNames();
-  virtual bool GetIDBDatabaseMetaData(const string16& name,
+  virtual std::vector<base::string16> GetDatabaseNames();
+  virtual bool GetIDBDatabaseMetaData(const base::string16& name,
                                       IndexedDBDatabaseMetadata* metadata,
                                       bool* success) WARN_UNUSED_RESULT;
-  virtual bool CreateIDBDatabaseMetaData(const string16& name,
-                                         const string16& version,
+  virtual bool CreateIDBDatabaseMetaData(const base::string16& name,
+                                         const base::string16& version,
                                          int64 int_version,
                                          int64* row_id);
-  virtual bool UpdateIDBDatabaseMetaData(
-      IndexedDBBackingStore::Transaction* transaction,
-      int64 row_id,
-      const string16& version);
   virtual bool UpdateIDBDatabaseIntVersion(
       IndexedDBBackingStore::Transaction* transaction,
       int64 row_id,
       int64 int_version);
-  virtual bool DeleteDatabase(const string16& name);
+  virtual bool DeleteDatabase(const base::string16& name);
 
   bool GetObjectStores(int64 database_id,
                        IndexedDBDatabaseMetadata::ObjectStoreMap* map)
@@ -93,7 +90,7 @@ class CONTENT_EXPORT IndexedDBBackingStore
       IndexedDBBackingStore::Transaction* transaction,
       int64 database_id,
       int64 object_store_id,
-      const string16& name,
+      const base::string16& name,
       const IndexedDBKeyPath& key_path,
       bool auto_increment);
   virtual bool DeleteObjectStore(
@@ -163,7 +160,7 @@ class CONTENT_EXPORT IndexedDBBackingStore
                            int64 database_id,
                            int64 object_store_id,
                            int64 index_id,
-                           const string16& name,
+                           const base::string16& name,
                            const IndexedDBKeyPath& key_path,
                            bool is_unique,
                            bool is_multi_entry) WARN_UNUSED_RESULT;
@@ -217,14 +214,19 @@ class CONTENT_EXPORT IndexedDBBackingStore
     };
 
     const IndexedDBKey& key() const { return *current_key_; }
-    bool Continue() { return Continue(NULL, SEEK); }
-    bool Continue(const IndexedDBKey* key, IteratorState state);
+    bool Continue() { return Continue(NULL, NULL, SEEK); }
+    bool Continue(const IndexedDBKey* key, IteratorState state) {
+      return Continue(key, NULL, state);
+    }
+    bool Continue(const IndexedDBKey* key,
+                  const IndexedDBKey* primary_key,
+                  IteratorState state);
     bool Advance(uint32 count);
     bool FirstSeek();
 
     virtual Cursor* Clone() = 0;
     virtual const IndexedDBKey& primary_key() const;
-    virtual std::string* Value() = 0;
+    virtual std::string* value() = 0;
     virtual const RecordIdentifier& record_identifier() const;
     virtual bool LoadCurrentRow() = 0;
 
@@ -234,6 +236,8 @@ class CONTENT_EXPORT IndexedDBBackingStore
     explicit Cursor(const IndexedDBBackingStore::Cursor* other);
 
     virtual std::string EncodeKey(const IndexedDBKey& key) = 0;
+    virtual std::string EncodeKey(const IndexedDBKey& key,
+                                  const IndexedDBKey& primary_key) = 0;
 
     bool IsPastBounds() const;
     bool HaveEnteredRange() const;
@@ -275,19 +279,16 @@ class CONTENT_EXPORT IndexedDBBackingStore
   class Transaction {
    public:
     explicit Transaction(IndexedDBBackingStore* backing_store);
-    ~Transaction();
-    void Begin();
-    bool Commit();
-    void Rollback();
+    virtual ~Transaction();
+    virtual void Begin();
+    virtual bool Commit();
+    virtual void Rollback();
     void Reset() {
       backing_store_ = NULL;
       transaction_ = NULL;
     }
 
-    static LevelDBTransaction* LevelDBTransactionFrom(
-        Transaction* transaction) {
-      return transaction->transaction_;
-    }
+    LevelDBTransaction* transaction() { return transaction_; }
 
    private:
     IndexedDBBackingStore* backing_store_;
@@ -295,7 +296,7 @@ class CONTENT_EXPORT IndexedDBBackingStore
   };
 
  protected:
-  IndexedDBBackingStore(const std::string& identifier,
+  IndexedDBBackingStore(const GURL& origin_url,
                         scoped_ptr<LevelDBDatabase> db,
                         scoped_ptr<LevelDBComparator> comparator);
   virtual ~IndexedDBBackingStore();
@@ -303,7 +304,7 @@ class CONTENT_EXPORT IndexedDBBackingStore
 
  private:
   static scoped_refptr<IndexedDBBackingStore> Create(
-      const std::string& identifier,
+      const GURL& origin_url,
       scoped_ptr<LevelDBDatabase> db,
       scoped_ptr<LevelDBComparator> comparator);
 
@@ -319,11 +320,19 @@ class CONTENT_EXPORT IndexedDBBackingStore
                   IndexedDBObjectStoreMetadata::IndexMap* map)
       WARN_UNUSED_RESULT;
 
-  std::string identifier_;
+  const GURL origin_url_;
+
+  // The origin identifier is a key prefix unique to the origin used in the
+  // leveldb backing store to partition data by origin. It is a normalized
+  // version of the origin URL with a versioning suffix appended, e.g.
+  // "http_localhost_81@1" Since only one origin is stored per backing store
+  // this is redundant but necessary for backwards compatibility; the suffix
+  // provides for future flexibility.
+  const std::string origin_identifier_;
 
   scoped_ptr<LevelDBDatabase> db_;
   scoped_ptr<LevelDBComparator> comparator_;
-  base::WeakPtrFactory<IndexedDBBackingStore> weak_factory_;
+  base::OneShotTimer<IndexedDBBackingStore> close_timer_;
 };
 
 }  // namespace content

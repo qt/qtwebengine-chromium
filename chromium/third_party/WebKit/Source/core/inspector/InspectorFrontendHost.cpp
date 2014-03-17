@@ -31,26 +31,27 @@
 #include "core/inspector/InspectorFrontendHost.h"
 
 #include "bindings/v8/ScriptFunctionCall.h"
-#include "core/dom/UserGestureIndicator.h"
+#include "bindings/v8/ScriptState.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/TextResourceDecoder.h"
+#include "core/frame/Frame.h"
 #include "core/inspector/InspectorController.h"
 #include "core/inspector/InspectorFrontendClient.h"
 #include "core/loader/FrameLoader.h"
 #include "core/page/ContextMenuController.h"
 #include "core/page/ContextMenuProvider.h"
-#include "core/page/Frame.h"
 #include "core/page/Page.h"
-#include "core/platform/ContextMenu.h"
-#include "core/platform/ContextMenuItem.h"
-#include "core/platform/JSONValues.h"
 #include "core/platform/Pasteboard.h"
-#include "core/platform/SharedBuffer.h"
-#include "core/platform/network/ResourceError.h"
-#include "core/platform/network/ResourceRequest.h"
-#include "core/platform/network/ResourceResponse.h"
 #include "core/rendering/RenderTheme.h"
 #include "modules/filesystem/DOMFileSystem.h"
+#include "platform/ContextMenu.h"
+#include "platform/ContextMenuItem.h"
+#include "platform/JSONValues.h"
+#include "platform/SharedBuffer.h"
+#include "platform/UserGestureIndicator.h"
+#include "platform/network/ResourceError.h"
+#include "platform/network/ResourceRequest.h"
+#include "platform/network/ResourceResponse.h"
 
 namespace WebCore {
 
@@ -135,20 +136,6 @@ void InspectorFrontendHost::disconnectClient()
     m_frontendPage = 0;
 }
 
-void InspectorFrontendHost::loaded()
-{
-}
-
-void InspectorFrontendHost::closeWindow()
-{
-    if (m_client) {
-        RefPtr<JSONObject> message = JSONObject::create();
-        message->setString("method", "closeWindow");
-        sendMessageToEmbedder(message->toJSONString());
-        disconnectClient(); // Disconnect from client.
-    }
-}
-
 void InspectorFrontendHost::setZoomFactor(float zoom)
 {
     m_frontendPage->mainFrame()->setPageAndTextZoomFactors(zoom, 1);
@@ -160,32 +147,14 @@ void InspectorFrontendHost::inspectedURLChanged(const String& newURL)
         m_client->inspectedURLChanged(newURL);
 }
 
-void InspectorFrontendHost::setAttachedWindowHeight(unsigned height)
-{
-}
-
 void InspectorFrontendHost::setInjectedScriptForOrigin(const String& origin, const String& script)
 {
     m_frontendPage->inspectorController().setInjectedScriptForOrigin(origin, script);
 }
 
-String InspectorFrontendHost::localizedStringsURL()
-{
-    return "";
-}
-
 void InspectorFrontendHost::copyText(const String& text)
 {
     Pasteboard::generalPasteboard()->writePlainText(text, Pasteboard::CannotSmartReplace);
-}
-
-bool InspectorFrontendHost::canSave()
-{
-    return true;
-}
-
-void InspectorFrontendHost::close(const String&)
-{
 }
 
 void InspectorFrontendHost::sendMessageToBackend(const String& message)
@@ -217,23 +186,6 @@ void InspectorFrontendHost::showContextMenu(Event* event, const Vector<ContextMe
     m_menuProvider = menuProvider.get();
 }
 
-String InspectorFrontendHost::loadResourceSynchronously(const String& url)
-{
-    FetchRequest request(url, FetchInitiatorInfo());
-    ResourcePtr<Resource> resource = m_frontendPage->mainFrame()->document()->fetcher()->fetchSynchronously(request);
-    if (!resource)
-        return emptyString();
-    WTF::TextEncoding textEncoding(resource->response().textEncodingName());
-    bool useDetector = false;
-    if (!textEncoding.isValid()) {
-        textEncoding = UTF8Encoding();
-        useDetector = true;
-    }
-    RefPtr<TextResourceDecoder> decoder = TextResourceDecoder::create("text/plain", textEncoding, useDetector);
-    SharedBuffer* data = resource->resourceBuffer();
-    return decoder->decode(data->data(), data->size()) + decoder->flush();
-}
-
 String InspectorFrontendHost::getSelectionBackgroundColor()
 {
     Color color = RenderTheme::theme().activeSelectionBackgroundColor();
@@ -246,35 +198,28 @@ String InspectorFrontendHost::getSelectionForegroundColor()
     return color.isValid() ? color.serialized() : "";
 }
 
-bool InspectorFrontendHost::supportsFileSystems()
-{
-    return true;
-}
-
 PassRefPtr<DOMFileSystem> InspectorFrontendHost::isolatedFileSystem(const String& fileSystemName, const String& rootURL)
 {
-    ScriptExecutionContext* context = m_frontendPage->mainFrame()->document();
+    ExecutionContext* context = m_frontendPage->mainFrame()->document();
     return DOMFileSystem::create(context, fileSystemName, FileSystemTypeIsolated, KURL(ParsedURLString, rootURL));
+}
+
+void InspectorFrontendHost::upgradeDraggedFileSystemPermissions(DOMFileSystem* domFileSystem)
+{
+    if (!m_client)
+        return;
+    RefPtr<JSONObject> message = JSONObject::create();
+    message->setNumber("id", 0);
+    message->setString("method", "upgradeDraggedFileSystemPermissions");
+    RefPtr<JSONArray> params = JSONArray::create();
+    message->setArray("params", params);
+    params->pushString(domFileSystem->rootURL().string());
+    sendMessageToEmbedder(message->toJSONString());
 }
 
 bool InspectorFrontendHost::isUnderTest()
 {
     return m_client && m_client->isUnderTest();
-}
-
-bool InspectorFrontendHost::canSaveAs()
-{
-    return false;
-}
-
-bool InspectorFrontendHost::canInspectWorkers()
-{
-    return false;
-}
-
-String InspectorFrontendHost::hiddenPanels()
-{
-    return "";
 }
 
 } // namespace WebCore

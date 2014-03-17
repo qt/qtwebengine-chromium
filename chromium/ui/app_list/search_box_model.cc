@@ -9,6 +9,16 @@
 
 namespace app_list {
 
+SearchBoxModel::ButtonProperty::ButtonProperty(
+    const gfx::ImageSkia& icon,
+    const base::string16& tooltip)
+    : icon(icon),
+      tooltip(tooltip) {
+}
+
+SearchBoxModel::ButtonProperty::~ButtonProperty() {
+}
+
 SearchBoxModel::SearchBoxModel() {
 }
 
@@ -18,6 +28,14 @@ SearchBoxModel::~SearchBoxModel() {
 void SearchBoxModel::SetIcon(const gfx::ImageSkia& icon) {
   icon_ = icon;
   FOR_EACH_OBSERVER(SearchBoxModelObserver, observers_, IconChanged());
+}
+
+void SearchBoxModel::SetSpeechRecognitionButton(
+    scoped_ptr<SearchBoxModel::ButtonProperty> speech_button) {
+  speech_button_ = speech_button.Pass();
+  FOR_EACH_OBSERVER(SearchBoxModelObserver,
+                    observers_,
+                    SpeechRecognitionButtonPropChanged());
 }
 
 void SearchBoxModel::SetHintText(const base::string16& hint_text) {

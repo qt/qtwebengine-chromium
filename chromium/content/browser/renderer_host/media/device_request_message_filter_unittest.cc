@@ -25,18 +25,20 @@ class MockMediaStreamManager : public MediaStreamManager {
 
   virtual ~MockMediaStreamManager() {}
 
-  MOCK_METHOD6(EnumerateDevices,
+  MOCK_METHOD7(EnumerateDevices,
                std::string(MediaStreamRequester* requester,
                            int render_process_id,
                            int render_view_id,
+                           const ResourceContext::SaltCallback& rc,
                            int page_request_id,
                            MediaStreamType type,
                            const GURL& security_origin));
-  MOCK_METHOD1(StopGeneratedStream, void(const std::string& label));
+  MOCK_METHOD1(CancelRequest, void(const std::string& label));
 
   std::string DoEnumerateDevices(MediaStreamRequester* requester,
                                  int render_process_id,
                                  int render_view_id,
+                                 const ResourceContext::SaltCallback& rc,
                                  int page_request_id,
                                  MediaStreamType type,
                                  const GURL& security_origin) {
@@ -93,10 +95,10 @@ class DeviceRequestMessageFilterTest : public testing::Test {
     AddVideoDevices(number_video_devices);
     GURL origin("https://test.com");
     EXPECT_CALL(*media_stream_manager_,
-                EnumerateDevices(_, _, _, _, MEDIA_DEVICE_AUDIO_CAPTURE, _))
+                EnumerateDevices(_, _, _, _, _, MEDIA_DEVICE_AUDIO_CAPTURE, _))
         .Times(1);
     EXPECT_CALL(*media_stream_manager_,
-                EnumerateDevices(_, _, _, _, MEDIA_DEVICE_VIDEO_CAPTURE, _))
+                EnumerateDevices(_, _, _, _, _, MEDIA_DEVICE_VIDEO_CAPTURE, _))
         .Times(1);
     // Send message to get devices. Should trigger 2 EnumerateDevice() requests.
     const int kRequestId = 123;
@@ -108,20 +110,15 @@ class DeviceRequestMessageFilterTest : public testing::Test {
     EXPECT_EQ(0u, host_->requested_devices().size());
 
     // After the video device callback is fired, |message| should be populated.
-    EXPECT_CALL(*media_stream_manager_, StopGeneratedStream(kAudioLabel))
+    EXPECT_CALL(*media_stream_manager_, CancelRequest(kAudioLabel))
         .Times(1);
-    EXPECT_CALL(*media_stream_manager_, StopGeneratedStream(kVideoLabel))
+    EXPECT_CALL(*media_stream_manager_, CancelRequest(kVideoLabel))
         .Times(1);
     FireVideoDeviceCallback();
     EXPECT_EQ(static_cast<size_t>(number_audio_devices + number_video_devices),
               host_->requested_devices().size());
 
     EXPECT_EQ(kRequestId, host_->received_id());
-    // Check to make sure no devices have raw ids.
-    EXPECT_FALSE(DoesContainRawIds(host_->requested_devices()));
-
-    // Check to make sure every GUID produced matches a raw device id.
-    EXPECT_TRUE(DoesEveryDeviceMapToRawId(host_->requested_devices(), origin));
   }
 
   bool AreLabelsPresent(MediaStreamType type) {
@@ -142,7 +139,7 @@ class DeviceRequestMessageFilterTest : public testing::Test {
         new TestBrowserThread(BrowserThread::IO, message_loop_.get()));
 
     media_stream_manager_.reset(new MockMediaStreamManager());
-    ON_CALL(*media_stream_manager_, EnumerateDevices(_, _, _, _, _, _))
+    ON_CALL(*media_stream_manager_, EnumerateDevices(_, _, _, _, _, _, _))
         .WillByDefault(Invoke(media_stream_manager_.get(),
                               &MockMediaStreamManager::DoEnumerateDevices));
 
@@ -163,10 +160,10 @@ class DeviceRequestMessageFilterTest : public testing::Test {
   void AddAudioDevices(int number_of_devices) {
     for (int i = 0; i < number_of_devices; i++) {
       physical_audio_devices_.push_back(
-          StreamDeviceInfo(MEDIA_DEVICE_AUDIO_CAPTURE,
-                           "/dev/audio/" + base::IntToString(next_device_id_),
-                           "Audio Device" + base::IntToString(next_device_id_),
-                           false));
+          StreamDeviceInfo(
+              MEDIA_DEVICE_AUDIO_CAPTURE,
+              "/dev/audio/" + base::IntToString(next_device_id_),
+              "Audio Device" + base::IntToString(next_device_id_)));
       next_device_id_++;
     }
   }
@@ -174,10 +171,10 @@ class DeviceRequestMessageFilterTest : public testing::Test {
   void AddVideoDevices(int number_of_devices) {
     for (int i = 0; i < number_of_devices; i++) {
       physical_video_devices_.push_back(
-          StreamDeviceInfo(MEDIA_DEVICE_VIDEO_CAPTURE,
-                           "/dev/video/" + base::IntToString(next_device_id_),
-                           "Video Device" + base::IntToString(next_device_id_),
-                           false));
+          StreamDeviceInfo(
+              MEDIA_DEVICE_VIDEO_CAPTURE,
+              "/dev/video/" + base::IntToString(next_device_id_),
+              "Video Device" + base::IntToString(next_device_id_)));
       next_device_id_++;
     }
   }
@@ -191,53 +188,11 @@ class DeviceRequestMessageFilterTest : public testing::Test {
   }
 
   void FireAudioDeviceCallback() {
-    host_->DevicesEnumerated(kAudioLabel, physical_audio_devices_);
+    host_->DevicesEnumerated(-1, -1, kAudioLabel, physical_audio_devices_);
   }
 
   void FireVideoDeviceCallback() {
-    host_->DevicesEnumerated(kVideoLabel, physical_video_devices_);
-  }
-
-  bool DoesContainRawIds(const StreamDeviceInfoArray& devices) {
-    for (size_t i = 0; i < devices.size(); i++) {
-      for (size_t j = 0; j < physical_audio_devices_.size(); ++j) {
-        if (physical_audio_devices_[j].device.id == devices[i].device.id)
-          return true;
-      }
-      for (size_t j = 0; j < physical_video_devices_.size(); ++j) {
-        if (physical_video_devices_[j].device.id == devices[i].device.id)
-          return true;
-      }
-    }
-    return false;
-  }
-
-  bool DoesEveryDeviceMapToRawId(const StreamDeviceInfoArray& devices,
-                                 const GURL& origin) {
-    for (size_t i = 0; i < devices.size(); i++) {
-      bool found_match = false;
-      for (size_t j = 0; j < physical_audio_devices_.size(); ++j) {
-        if (DeviceRequestMessageFilter::DoesRawIdMatchGuid(
-                origin,
-                devices[i].device.id,
-                physical_audio_devices_[j].device.id)) {
-          EXPECT_FALSE(found_match);
-          found_match = true;
-        }
-      }
-      for (size_t j = 0; j < physical_video_devices_.size(); ++j) {
-        if (DeviceRequestMessageFilter::DoesRawIdMatchGuid(
-                origin,
-                devices[i].device.id,
-                physical_video_devices_[j].device.id)) {
-          EXPECT_FALSE(found_match);
-          found_match = true;
-        }
-      }
-      if (!found_match)
-        return false;
-    }
-    return true;
+    host_->DevicesEnumerated(-1, -1, kVideoLabel, physical_video_devices_);
   }
 
   int next_device_id_;
@@ -299,22 +254,6 @@ TEST_F(DeviceRequestMessageFilterTest, TestGetSources_AllowMicAllowCamera) {
   RunTest(3, 3);
   EXPECT_TRUE(AreLabelsPresent(MEDIA_DEVICE_AUDIO_CAPTURE));
   EXPECT_TRUE(AreLabelsPresent(MEDIA_DEVICE_VIDEO_CAPTURE));
-}
-
-TEST_F(DeviceRequestMessageFilterTest, TestRawIdMatchGuid_EmptyGuid) {
-  GURL origin("https://test.com");
-  const std::string device_guid = "";
-  const std::string raw_device_id = "device";
-  EXPECT_FALSE(DeviceRequestMessageFilter::DoesRawIdMatchGuid(
-      origin, device_guid, raw_device_id));
-}
-
-TEST_F(DeviceRequestMessageFilterTest, TestRawIdMatchGuid_NonHexGuid) {
-  GURL origin("https://test.com");
-  const std::string device_guid = "garbage";
-  const std::string raw_device_id = "device";
-  EXPECT_FALSE(DeviceRequestMessageFilter::DoesRawIdMatchGuid(
-      origin, device_guid, raw_device_id));
 }
 
 };  // namespace content

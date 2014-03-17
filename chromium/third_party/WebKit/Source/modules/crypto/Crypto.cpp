@@ -59,14 +59,18 @@ Crypto::Crypto()
 }
 
 // Note: This implementation must be thread-safe, as it is used by workers.
-void Crypto::getRandomValues(ArrayBufferView* array, ExceptionState& es)
+void Crypto::getRandomValues(ArrayBufferView* array, ExceptionState& exceptionState)
 {
-    if (!array || !isIntegerArray(array)) {
-        es.throwDOMException(TypeMismatchError);
+    if (!array) {
+        exceptionState.throwDOMException(TypeMismatchError, "The provided ArrayBufferView is null.");
+        return;
+    }
+    if (!isIntegerArray(array)) {
+        exceptionState.throwDOMException(TypeMismatchError, String::format("The provided ArrayBufferView is of type '%s', which is not an integer array type.", array->typeName()));
         return;
     }
     if (array->byteLength() > 65536) {
-        es.throwDOMException(QuotaExceededError);
+        exceptionState.throwDOMException(QuotaExceededError, String::format("The ArrayBufferView's byte length (%u) exceeds the number of bytes of entropy available via this API (65536).", array->byteLength()));
         return;
     }
     cryptographicallyRandomValues(array->baseAddress(), array->byteLength());

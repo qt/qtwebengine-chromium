@@ -31,50 +31,42 @@
 #include "config.h"
 #include "modules/webdatabase/SQLTransactionClient.h"
 
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
 #include "modules/webdatabase/DatabaseBackendBase.h"
-#include "modules/webdatabase/DatabaseBackendContext.h"
-#include "modules/webdatabase/DatabaseObserver.h"
+#include "modules/webdatabase/DatabaseContext.h"
+#include "platform/weborigin/DatabaseIdentifier.h"
+#include "platform/weborigin/SecurityOrigin.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebDatabaseObserver.h"
+#include "wtf/Functional.h"
 
 namespace WebCore {
 
-class NotifyDatabaseChangedTask : public ScriptExecutionContext::Task {
-public:
-    static PassOwnPtr<NotifyDatabaseChangedTask> create(DatabaseBackendBase *database)
-    {
-        return adoptPtr(new NotifyDatabaseChangedTask(database));
+static void databaseModified(DatabaseBackendBase* database)
+{
+    if (blink::Platform::current()->databaseObserver()) {
+        blink::Platform::current()->databaseObserver()->databaseModified(
+            createDatabaseIdentifierFromSecurityOrigin(database->securityOrigin()),
+            database->stringIdentifier());
     }
-
-    virtual void performTask(ScriptExecutionContext*)
-    {
-        WebCore::DatabaseObserver::databaseModified(m_database.get());
-    }
-
-private:
-    NotifyDatabaseChangedTask(PassRefPtr<DatabaseBackendBase> database)
-        : m_database(database)
-    {
-    }
-
-    RefPtr<DatabaseBackendBase> m_database;
-};
+}
 
 void SQLTransactionClient::didCommitWriteTransaction(DatabaseBackendBase* database)
 {
-    ScriptExecutionContext* scriptExecutionContext = database->databaseContext()->scriptExecutionContext();
-    if (!scriptExecutionContext->isContextThread()) {
-        scriptExecutionContext->postTask(NotifyDatabaseChangedTask::create(database));
+    ExecutionContext* executionContext = database->databaseContext()->executionContext();
+    if (!executionContext->isContextThread()) {
+        executionContext->postTask(bind(&databaseModified, PassRefPtr<DatabaseBackendBase>(database)));
         return;
     }
 
-    WebCore::DatabaseObserver::databaseModified(database);
+    databaseModified(database);
 }
 
 bool SQLTransactionClient::didExceedQuota(DatabaseBackendBase* database)
 {
     // Chromium does not allow users to manually change the quota for an origin (for now, at least).
     // Don't do anything.
-    ASSERT(database->databaseContext()->scriptExecutionContext()->isContextThread());
+    ASSERT(database->databaseContext()->executionContext()->isContextThread());
     return false;
 }
 

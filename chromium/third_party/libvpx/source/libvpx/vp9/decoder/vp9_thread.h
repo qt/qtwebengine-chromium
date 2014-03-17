@@ -17,7 +17,7 @@
 #ifndef VP9_DECODER_VP9_THREAD_H_
 #define VP9_DECODER_VP9_THREAD_H_
 
-#include "vpx_config.h"
+#include "./vpx_config.h"
 
 #if defined(__cplusplus) || defined(c_plusplus)
 extern "C" {
@@ -27,7 +27,7 @@ extern "C" {
 
 #if defined(_WIN32)
 
-#include <windows.h>
+#include <windows.h>  // NOLINT
 typedef HANDLE pthread_t;
 typedef CRITICAL_SECTION pthread_mutex_t;
 typedef struct {
@@ -38,7 +38,7 @@ typedef struct {
 
 #else
 
-#include <pthread.h>
+#include <pthread.h> // NOLINT
 
 #endif    /* _WIN32 */
 #endif    /* CONFIG_MULTITHREAD */
@@ -80,6 +80,11 @@ int vp9_worker_sync(VP9Worker* const worker);
 // hook/data1/data2 can be changed at any time before calling this function,
 // but not be changed afterward until the next call to vp9_worker_sync().
 void vp9_worker_launch(VP9Worker* const worker);
+// This function is similar to vp9_worker_launch() except that it calls the
+// hook directly instead of using a thread. Convenient to bypass the thread
+// mechanism while still using the VP9Worker structs. vp9_worker_sync() must
+// still be called afterward (for error reporting).
+void vp9_worker_execute(VP9Worker* const worker);
 // Kill the thread and terminate the object. To use the object again, one
 // must call vp9_worker_reset() again.
 void vp9_worker_end(VP9Worker* const worker);
@@ -90,4 +95,4 @@ void vp9_worker_end(VP9Worker* const worker);
 }    // extern "C"
 #endif
 
-#endif  /* VP9_DECODER_VP9_THREAD_H_ */
+#endif  // VP9_DECODER_VP9_THREAD_H_

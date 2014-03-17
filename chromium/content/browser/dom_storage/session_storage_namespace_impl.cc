@@ -25,6 +25,13 @@ SessionStorageNamespaceImpl::SessionStorageNamespaceImpl(
     : session_(new DOMStorageSession(context->context(), persistent_id)) {
 }
 
+SessionStorageNamespaceImpl::SessionStorageNamespaceImpl(
+    SessionStorageNamespaceImpl* master_session_storage_namespace)
+    : session_(new DOMStorageSession(
+          master_session_storage_namespace->session_)) {
+}
+
+
 int64 SessionStorageNamespaceImpl::id() const {
   return session_->namespace_id();
 }
@@ -56,6 +63,33 @@ SessionStorageNamespaceImpl::SessionStorageNamespaceImpl(
 }
 
 SessionStorageNamespaceImpl::~SessionStorageNamespaceImpl() {
+}
+
+void SessionStorageNamespaceImpl::AddTransactionLogProcessId(int process_id) {
+  session_->AddTransactionLogProcessId(process_id);
+}
+
+void SessionStorageNamespaceImpl::RemoveTransactionLogProcessId(
+    int process_id) {
+  session_->RemoveTransactionLogProcessId(process_id);
+}
+
+void SessionStorageNamespaceImpl::Merge(
+    bool actually_merge,
+    int process_id,
+    SessionStorageNamespace* other,
+    const MergeResultCallback& callback) {
+  SessionStorageNamespaceImpl* other_impl =
+      static_cast<SessionStorageNamespaceImpl*>(other);
+  session_->Merge(actually_merge, process_id, other_impl->session_, callback);
+}
+
+bool SessionStorageNamespaceImpl::IsAliasOf(SessionStorageNamespace* other) {
+  return persistent_id() == other->persistent_id();
+}
+
+SessionStorageNamespace* SessionStorageNamespaceImpl::CreateAlias() {
+  return new SessionStorageNamespaceImpl(this);
 }
 
 }  // namespace content

@@ -45,7 +45,7 @@ public:
         return adoptRef(new CSSFunctionValue(name, args));
     }
 
-    String customCssText() const;
+    String customCSSText() const;
 
     bool equals(const CSSFunctionValue&) const;
 
@@ -59,20 +59,7 @@ private:
     RefPtr<CSSValueList> m_args;
 };
 
-inline CSSFunctionValue* toCSSFunctionValue(CSSValue* value)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(value->isFunctionValue());
-    return static_cast<CSSFunctionValue*>(value);
-}
-
-inline const CSSFunctionValue* toCSSFunctionValue(const CSSValue* value)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(value->isFunctionValue());
-    return static_cast<const CSSFunctionValue*>(value);
-}
-
-// Catch any unneeded cast.
-void toCSSFunctionValue(const CSSFunctionValue*);
+DEFINE_CSS_VALUE_TYPE_CASTS(CSSFunctionValue, isFunctionValue());
 
 } // namespace WebCore
 

@@ -4,28 +4,25 @@
 
 {
   'sources': [
-    'character_composer_unittest.cc',
+    'chromeos/character_composer_unittest.cc',
+    'composition_text_util_pango_unittest.cc',
     'input_method_base_unittest.cc',
     'input_method_ibus_unittest.cc',
+    'remote_input_method_win_unittest.cc',
     'win/imm32_manager_unittest.cc',
     'win/tsf_input_scope_unittest.cc',
     'win/tsf_text_store_unittest.cc',
   ],
   'conditions': [
-    ['use_aura==0 or use_x11==0 or chromeos==0', {
+    ['chromeos==0 or use_x11==0', {
       'sources!': [
-        'character_composer_unittest.cc',
+        'chromeos/character_composer_unittest.cc',
         'input_method_ibus_unittest.cc',
       ],
     }],
-    ['use_aura==0 and OS!="win"', {
+    ['use_x11==0', {
       'sources!': [
-        'input_method_base_unittest.cc',
-      ],
-    }],
-    ['OS!="win"', {
-      'sources/': [
-        ['exclude', '^win'],
+        'composition_text_util_pango_unittest.cc',
       ],
     }],
   ],

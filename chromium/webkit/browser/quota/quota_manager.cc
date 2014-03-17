@@ -41,7 +41,22 @@ const int64 kMBytes = 1024 * 1024;
 const int kMinutesInMilliSeconds = 60 * 1000;
 
 const int64 kReportHistogramInterval = 60 * 60 * 1000;  // 1 hour
-const double kTemporaryQuotaRatioToAvail = 0.5;  // 50%
+const double kTemporaryQuotaRatioToAvail = 1.0 / 3.0;  // 33%
+
+void DidGetUsageAndQuota(
+    base::SequencedTaskRunner* original_task_runner,
+    const QuotaManagerProxy::GetUsageAndQuotaCallback& callback,
+    QuotaStatusCode status, int64 usage, int64 quota) {
+  if (!original_task_runner->RunsTasksOnCurrentThread()) {
+    original_task_runner->PostTask(
+        FROM_HERE,
+        base::Bind(&DidGetUsageAndQuota,
+                   make_scoped_refptr(original_task_runner),
+                   callback, status, usage, quota));
+    return;
+  }
+  callback.Run(status, usage, quota);
+}
 
 }  // namespace
 
@@ -184,7 +199,7 @@ bool UpdateModifiedTimeOnDBThread(const GURL& origin,
 
 int64 CallSystemGetAmountOfFreeDiskSpace(const base::FilePath& profile_path) {
   // Ensure the profile path exists.
-  if(!file_util::CreateDirectory(profile_path)) {
+  if(!base::CreateDirectory(profile_path)) {
     LOG(WARNING) << "Create directory failed for path" << profile_path.value();
     return 0;
   }
@@ -504,6 +519,7 @@ class QuotaManager::GetUsageInfoTask : public QuotaTask {
   }
 
   void DidGetGlobalUsage(StorageType type, int64, int64) {
+    DCHECK(manager()->GetUsageTracker(type));
     AddEntries(type, manager()->GetUsageTracker(type));
   }
 
@@ -513,8 +529,8 @@ class QuotaManager::GetUsageInfoTask : public QuotaTask {
 
   GetUsageInfoCallback callback_;
   UsageInfoEntries entries_;
-  base::WeakPtrFactory<GetUsageInfoTask> weak_factory_;
   int remaining_trackers_;
+  base::WeakPtrFactory<GetUsageInfoTask> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(GetUsageInfoTask);
 };
@@ -805,8 +821,8 @@ QuotaManager::QuotaManager(bool is_incognito,
     temporary_quota_override_(-1),
     desired_available_space_(-1),
     special_storage_policy_(special_storage_policy),
-    weak_factory_(this),
-    get_disk_space_fn_(&CallSystemGetAmountOfFreeDiskSpace) {
+    get_disk_space_fn_(&CallSystemGetAmountOfFreeDiskSpace),
+    weak_factory_(this) {
 }
 
 void QuotaManager::GetUsageInfo(const GetUsageInfoCallback& callback) {
@@ -851,6 +867,7 @@ void QuotaManager::GetUsageAndQuotaForWebApps(
     }
   }
 
+  DCHECK(GetUsageTracker(type));
   GetUsageTracker(type)->GetHostUsage(net::GetHostOrSpecFromURL(origin),
                                       dispatcher->GetHostUsageCallback());
 
@@ -909,6 +926,7 @@ void QuotaManager::SetUsageCacheEnabled(QuotaClient::ID client_id,
                                         StorageType type,
                                         bool enabled) {
   LazyInitialize();
+  DCHECK(GetUsageTracker(type));
   GetUsageTracker(type)->SetUsageCacheEnabled(client_id, origin, enabled);
 }
 
@@ -1066,6 +1084,7 @@ void QuotaManager::SetPersistentHostQuota(const std::string& host,
 void QuotaManager::GetGlobalUsage(StorageType type,
                                   const GlobalUsageCallback& callback) {
   LazyInitialize();
+  DCHECK(GetUsageTracker(type));
   GetUsageTracker(type)->GetGlobalUsage(callback);
 }
 
@@ -1073,7 +1092,29 @@ void QuotaManager::GetHostUsage(const std::string& host,
                                 StorageType type,
                                 const UsageCallback& callback) {
   LazyInitialize();
+  DCHECK(GetUsageTracker(type));
   GetUsageTracker(type)->GetHostUsage(host, callback);
+}
+
+void QuotaManager::GetHostUsage(const std::string& host,
+                                StorageType type,
+                                QuotaClient::ID client_id,
+                                const UsageCallback& callback) {
+  LazyInitialize();
+  DCHECK(GetUsageTracker(type));
+  ClientUsageTracker* tracker =
+      GetUsageTracker(type)->GetClientTracker(client_id);
+  if (!tracker) {
+    callback.Run(0);
+    return;
+  }
+  tracker->GetHostUsage(host, callback);
+}
+
+bool QuotaManager::IsTrackingHostUsage(StorageType type,
+                                       QuotaClient::ID client_id) const {
+  UsageTracker* tracker = GetUsageTracker(type);
+  return tracker && tracker->GetClientTracker(client_id);
 }
 
 void QuotaManager::GetStatistics(
@@ -1095,8 +1136,10 @@ bool QuotaManager::IsStorageUnlimited(const GURL& origin,
   // quota must be capped by the server limit).
   if (type == kStorageTypeSyncable)
     return false;
+  if (type == kStorageTypeQuotaNotManaged)
+    return true;
   return special_storage_policy_.get() &&
-          special_storage_policy_->IsStorageUnlimited(origin);
+         special_storage_policy_->IsStorageUnlimited(origin);
 }
 
 void QuotaManager::GetOriginsModifiedSince(StorageType type,
@@ -1199,7 +1242,9 @@ UsageTracker* QuotaManager::GetUsageTracker(StorageType type) const {
       return persistent_usage_tracker_.get();
     case kStorageTypeSyncable:
       return syncable_usage_tracker_.get();
-    default:
+    case kStorageTypeQuotaNotManaged:
+      return NULL;
+    case kStorageTypeUnknown:
       NOTREACHED();
   }
   return NULL;
@@ -1240,6 +1285,7 @@ void QuotaManager::NotifyStorageModifiedInternal(
     int64 delta,
     base::Time modified_time) {
   LazyInitialize();
+  DCHECK(GetUsageTracker(type));
   GetUsageTracker(type)->UpdateUsageCache(client_id, origin, delta);
 
   PostTaskAndReplyWithResultForDBThread(
@@ -1647,6 +1693,29 @@ void QuotaManagerProxy::SetUsageCacheEnabled(QuotaClient::ID client_id,
   }
   if (manager_)
     manager_->SetUsageCacheEnabled(client_id, origin, type, enabled);
+}
+
+void QuotaManagerProxy::GetUsageAndQuota(
+    base::SequencedTaskRunner* original_task_runner,
+    const GURL& origin,
+    StorageType type,
+    const GetUsageAndQuotaCallback& callback) {
+  if (!io_thread_->BelongsToCurrentThread()) {
+    io_thread_->PostTask(
+        FROM_HERE,
+        base::Bind(&QuotaManagerProxy::GetUsageAndQuota, this,
+                   make_scoped_refptr(original_task_runner),
+                   origin, type, callback));
+    return;
+  }
+  if (!manager_) {
+    DidGetUsageAndQuota(original_task_runner, callback, kQuotaErrorAbort, 0, 0);
+    return;
+  }
+  manager_->GetUsageAndQuota(
+      origin, type,
+      base::Bind(&DidGetUsageAndQuota,
+                 make_scoped_refptr(original_task_runner), callback));
 }
 
 QuotaManager* QuotaManagerProxy::quota_manager() const {

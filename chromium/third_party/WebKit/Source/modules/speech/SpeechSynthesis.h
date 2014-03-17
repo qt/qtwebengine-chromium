@@ -27,10 +27,12 @@
 #define SpeechSynthesis_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/platform/PlatformSpeechSynthesisUtterance.h"
-#include "core/platform/PlatformSpeechSynthesizer.h"
+#include "core/dom/ContextLifecycleObserver.h"
+#include "core/events/EventTarget.h"
 #include "modules/speech/SpeechSynthesisUtterance.h"
 #include "modules/speech/SpeechSynthesisVoice.h"
+#include "platform/speech/PlatformSpeechSynthesisUtterance.h"
+#include "platform/speech/PlatformSpeechSynthesizer.h"
 #include "wtf/Deque.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -38,18 +40,20 @@
 
 namespace WebCore {
 
+class ExceptionState;
 class PlatformSpeechSynthesizerClient;
 class SpeechSynthesisVoice;
 
-class SpeechSynthesis : public PlatformSpeechSynthesizerClient, public ScriptWrappable, public RefCounted<SpeechSynthesis> {
+class SpeechSynthesis : public PlatformSpeechSynthesizerClient, public ScriptWrappable, public RefCounted<SpeechSynthesis>, public ContextLifecycleObserver, public EventTargetWithInlineData {
+    REFCOUNTED_EVENT_TARGET(SpeechSynthesis);
 public:
-    static PassRefPtr<SpeechSynthesis> create();
+    static PassRefPtr<SpeechSynthesis> create(ExecutionContext*);
 
     bool pending() const;
     bool speaking() const;
     bool paused() const;
 
-    void speak(SpeechSynthesisUtterance*);
+    void speak(SpeechSynthesisUtterance*, ExceptionState&);
     void cancel();
     void pause();
     void resume();
@@ -59,8 +63,12 @@ public:
     // Used in testing to use a mock platform synthesizer
     void setPlatformSynthesizer(PassOwnPtr<PlatformSpeechSynthesizer>);
 
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(voiceschanged);
+
+    virtual ExecutionContext* executionContext() const;
+
 private:
-    SpeechSynthesis();
+    explicit SpeechSynthesis(ExecutionContext*);
 
     // PlatformSpeechSynthesizerClient override methods.
     virtual void voicesDidChange() OVERRIDE;
@@ -71,15 +79,20 @@ private:
     virtual void speakingErrorOccurred(PassRefPtr<PlatformSpeechSynthesisUtterance>) OVERRIDE;
     virtual void boundaryEventOccurred(PassRefPtr<PlatformSpeechSynthesisUtterance>, SpeechBoundary, unsigned charIndex) OVERRIDE;
 
-    void startSpeakingImmediately(SpeechSynthesisUtterance*);
+    void startSpeakingImmediately();
     void handleSpeakingCompleted(SpeechSynthesisUtterance*, bool errorOccurred);
     void fireEvent(const AtomicString& type, SpeechSynthesisUtterance*, unsigned long charIndex, const String& name);
 
+    // Returns the utterance at the front of the queue.
+    SpeechSynthesisUtterance* currentSpeechUtterance() const;
+
     OwnPtr<PlatformSpeechSynthesizer> m_platformSpeechSynthesizer;
     Vector<RefPtr<SpeechSynthesisVoice> > m_voiceList;
-    SpeechSynthesisUtterance* m_currentSpeechUtterance;
     Deque<RefPtr<SpeechSynthesisUtterance> > m_utteranceQueue;
     bool m_isPaused;
+
+    // EventTarget
+    virtual const AtomicString& interfaceName() const OVERRIDE;
 };
 
 } // namespace WebCore

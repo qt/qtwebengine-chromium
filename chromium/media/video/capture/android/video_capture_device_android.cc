@@ -53,6 +53,12 @@ void VideoCaptureDevice::GetDeviceNames(Names* device_names) {
   }
 }
 
+// static
+void VideoCaptureDevice::GetDeviceSupportedFormats(const Name& device,
+    VideoCaptureFormats* formats) {
+  NOTIMPLEMENTED();
+}
+
 const std::string VideoCaptureDevice::Name::GetModel() const {
   // Android cameras are not typically USB devices, and this method is currently
   // only used for USB model identifiers, so this implementation just indicates
@@ -80,15 +86,10 @@ bool VideoCaptureDeviceAndroid::RegisterVideoCaptureDevice(JNIEnv* env) {
 }
 
 VideoCaptureDeviceAndroid::VideoCaptureDeviceAndroid(const Name& device_name)
-    : state_(kIdle),
-      got_first_frame_(false),
-      observer_(NULL),
-      device_name_(device_name),
-      current_settings_() {
-}
+    : state_(kIdle), got_first_frame_(false), device_name_(device_name) {}
 
 VideoCaptureDeviceAndroid::~VideoCaptureDeviceAndroid() {
-  DeAllocate();
+  StopAndDeAllocate();
 }
 
 bool VideoCaptureDeviceAndroid::Init() {
@@ -100,78 +101,60 @@ bool VideoCaptureDeviceAndroid::Init() {
 
   j_capture_.Reset(Java_VideoCapture_createVideoCapture(
       env, base::android::GetApplicationContext(), id,
-      reinterpret_cast<jint>(this)));
+      reinterpret_cast<intptr_t>(this)));
 
   return true;
 }
 
-const VideoCaptureDevice::Name& VideoCaptureDeviceAndroid::device_name() {
-  return device_name_;
-}
-
-void VideoCaptureDeviceAndroid::Allocate(
-    const VideoCaptureCapability& capture_format,
-    EventHandler* observer) {
+void VideoCaptureDeviceAndroid::AllocateAndStart(
+    const VideoCaptureParams& params,
+    scoped_ptr<Client> client) {
+  DVLOG(1) << "VideoCaptureDeviceAndroid::AllocateAndStart";
   {
     base::AutoLock lock(lock_);
     if (state_ != kIdle)
       return;
-    observer_ = observer;
-    state_ = kAllocated;
+    client_ = client.Pass();
+    got_first_frame_ = false;
   }
 
   JNIEnv* env = AttachCurrentThread();
 
-  jboolean ret = Java_VideoCapture_allocate(env,
-                                            j_capture_.obj(),
-                                            capture_format.width,
-                                            capture_format.height,
-                                            capture_format.frame_rate);
+  jboolean ret =
+      Java_VideoCapture_allocate(env,
+                                 j_capture_.obj(),
+                                 params.requested_format.frame_size.width(),
+                                 params.requested_format.frame_size.height(),
+                                 params.requested_format.frame_rate);
   if (!ret) {
     SetErrorState("failed to allocate");
     return;
   }
 
   // Store current width and height.
-  current_settings_.width =
-      Java_VideoCapture_queryWidth(env, j_capture_.obj());
-  current_settings_.height =
-      Java_VideoCapture_queryHeight(env, j_capture_.obj());
-  current_settings_.frame_rate =
+  capture_format_.frame_size.SetSize(
+      Java_VideoCapture_queryWidth(env, j_capture_.obj()),
+      Java_VideoCapture_queryHeight(env, j_capture_.obj()));
+  capture_format_.frame_rate =
       Java_VideoCapture_queryFrameRate(env, j_capture_.obj());
-  current_settings_.color = GetColorspace();
-  DCHECK_NE(current_settings_.color, media::PIXEL_FORMAT_UNKNOWN);
-  CHECK(current_settings_.width > 0 && !(current_settings_.width % 2));
-  CHECK(current_settings_.height > 0 && !(current_settings_.height % 2));
+  capture_format_.pixel_format = GetColorspace();
+  DCHECK_NE(capture_format_.pixel_format, media::PIXEL_FORMAT_UNKNOWN);
+  CHECK(capture_format_.frame_size.GetArea() > 0);
+  CHECK(!(capture_format_.frame_size.width() % 2));
+  CHECK(!(capture_format_.frame_size.height() % 2));
 
-  if (capture_format.frame_rate > 0) {
+  if (capture_format_.frame_rate > 0) {
     frame_interval_ = base::TimeDelta::FromMicroseconds(
-        (base::Time::kMicrosecondsPerSecond + capture_format.frame_rate - 1) /
-        capture_format.frame_rate);
+        (base::Time::kMicrosecondsPerSecond + capture_format_.frame_rate - 1) /
+        capture_format_.frame_rate);
   }
 
-  DVLOG(1) << "VideoCaptureDeviceAndroid::Allocate: queried width="
-           << current_settings_.width
-           << ", height="
-           << current_settings_.height
-           << ", frame_rate="
-           << current_settings_.frame_rate;
-  // Report the frame size to the observer.
-  observer_->OnFrameInfo(current_settings_);
-}
+  DVLOG(1) << "VideoCaptureDeviceAndroid::Allocate: queried frame_size="
+           << capture_format_.frame_size.ToString()
+           << ", frame_rate=" << capture_format_.frame_rate;
 
-void VideoCaptureDeviceAndroid::Start() {
-  DVLOG(1) << "VideoCaptureDeviceAndroid::Start";
-  {
-    base::AutoLock lock(lock_);
-    got_first_frame_ = false;
-    DCHECK_EQ(state_, kAllocated);
-  }
-
-  JNIEnv* env = AttachCurrentThread();
-
-  jint ret = Java_VideoCapture_startCapture(env, j_capture_.obj());
-  if (ret < 0) {
+  jint result = Java_VideoCapture_startCapture(env, j_capture_.obj());
+  if (result < 0) {
     SetErrorState("failed to start capture");
     return;
   }
@@ -182,14 +165,12 @@ void VideoCaptureDeviceAndroid::Start() {
   }
 }
 
-void VideoCaptureDeviceAndroid::Stop() {
-  DVLOG(1) << "VideoCaptureDeviceAndroid::Stop";
+void VideoCaptureDeviceAndroid::StopAndDeAllocate() {
+  DVLOG(1) << "VideoCaptureDeviceAndroid::StopAndDeAllocate";
   {
     base::AutoLock lock(lock_);
     if (state_ != kCapturing && state_ != kError)
       return;
-    if (state_ == kCapturing)
-      state_ = kAllocated;
   }
 
   JNIEnv* env = AttachCurrentThread();
@@ -199,27 +180,12 @@ void VideoCaptureDeviceAndroid::Stop() {
     SetErrorState("failed to stop capture");
     return;
   }
-}
 
-void VideoCaptureDeviceAndroid::DeAllocate() {
-  DVLOG(1) << "VideoCaptureDeviceAndroid::DeAllocate";
   {
     base::AutoLock lock(lock_);
-    if (state_ == kIdle)
-      return;
-
-    if (state_ == kCapturing) {
-      base::AutoUnlock unlock(lock_);
-      Stop();
-    }
-
-    if (state_ == kAllocated)
-      state_ = kIdle;
-
-    observer_ = NULL;
+    state_ = kIdle;
+    client_.reset();
   }
-
-  JNIEnv* env = AttachCurrentThread();
 
   Java_VideoCapture_deallocate(env, j_capture_.obj());
 }
@@ -229,13 +195,11 @@ void VideoCaptureDeviceAndroid::OnFrameAvailable(
     jobject obj,
     jbyteArray data,
     jint length,
-    jint rotation,
-    jboolean flip_vert,
-    jboolean flip_horiz) {
+    jint rotation) {
   DVLOG(3) << "VideoCaptureDeviceAndroid::OnFrameAvailable: length =" << length;
 
   base::AutoLock lock(lock_);
-  if (state_ != kCapturing || !observer_)
+  if (state_ != kCapturing || !client_.get())
     return;
 
   jbyte* buffer = env->GetByteArrayElements(data, NULL);
@@ -256,9 +220,11 @@ void VideoCaptureDeviceAndroid::OnFrameAvailable(
   if (expected_next_frame_time_ <= current_time) {
     expected_next_frame_time_ += frame_interval_;
 
-    observer_->OnIncomingCapturedFrame(
-        reinterpret_cast<uint8*>(buffer), length, base::Time::Now(),
-        rotation, flip_vert, flip_horiz);
+    client_->OnIncomingCapturedFrame(reinterpret_cast<uint8*>(buffer),
+                                     length,
+                                     base::Time::Now(),
+                                     rotation,
+                                     capture_format_);
   }
 
   env->ReleaseByteArrayElements(data, buffer, JNI_ABORT);
@@ -291,7 +257,7 @@ void VideoCaptureDeviceAndroid::SetErrorState(const std::string& reason) {
     base::AutoLock lock(lock_);
     state_ = kError;
   }
-  observer_->OnError();
+  client_->OnError();
 }
 
 }  // namespace media

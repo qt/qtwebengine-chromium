@@ -195,79 +195,6 @@ BUILTIN(EmptyFunction) {
 }
 
 
-static MaybeObject* ArrayCodeGenericCommon(Arguments* args,
-                                           Isolate* isolate,
-                                           JSFunction* constructor) {
-  ASSERT(args->length() >= 1);
-  Heap* heap = isolate->heap();
-  isolate->counters()->array_function_runtime()->Increment();
-
-  JSArray* array;
-  if (CalledAsConstructor(isolate)) {
-    array = JSArray::cast((*args)[0]);
-    // Initialize elements and length in case later allocations fail so that the
-    // array object is initialized in a valid state.
-    MaybeObject* maybe_array = array->Initialize(0);
-    if (maybe_array->IsFailure()) return maybe_array;
-
-    AllocationMemento* memento = AllocationMemento::FindForJSObject(array);
-    if (memento != NULL && memento->IsValid()) {
-      AllocationSite* site = memento->GetAllocationSite();
-      ElementsKind to_kind = site->GetElementsKind();
-      if (IsMoreGeneralElementsKindTransition(array->GetElementsKind(),
-                                              to_kind)) {
-        // We have advice that we should change the elements kind
-        if (FLAG_trace_track_allocation_sites) {
-          PrintF("AllocationSite: pre-transitioning array %p(%s->%s)\n",
-                 reinterpret_cast<void*>(array),
-                 ElementsKindToString(array->GetElementsKind()),
-                 ElementsKindToString(to_kind));
-        }
-
-        maybe_array = array->TransitionElementsKind(to_kind);
-        if (maybe_array->IsFailure()) return maybe_array;
-      }
-    }
-
-    if (!FLAG_smi_only_arrays) {
-      Context* native_context = isolate->context()->native_context();
-      if (array->GetElementsKind() == GetInitialFastElementsKind() &&
-          !native_context->js_array_maps()->IsUndefined()) {
-        FixedArray* map_array =
-            FixedArray::cast(native_context->js_array_maps());
-        array->set_map(Map::cast(map_array->
-                                 get(TERMINAL_FAST_ELEMENTS_KIND)));
-      }
-    }
-  } else {
-    // Allocate the JS Array
-    MaybeObject* maybe_obj = heap->AllocateJSObject(constructor);
-    if (!maybe_obj->To(&array)) return maybe_obj;
-  }
-
-  Arguments adjusted_arguments(args->length() - 1, args->arguments() - 1);
-  ASSERT(adjusted_arguments.length() < 1 ||
-         adjusted_arguments[0] == (*args)[1]);
-  return ArrayConstructInitializeElements(array, &adjusted_arguments);
-}
-
-
-BUILTIN(InternalArrayCodeGeneric) {
-  return ArrayCodeGenericCommon(
-      &args,
-      isolate,
-      isolate->context()->native_context()->internal_array_function());
-}
-
-
-BUILTIN(ArrayCodeGeneric) {
-  return ArrayCodeGenericCommon(
-      &args,
-      isolate,
-      isolate->context()->native_context()->array_function());
-}
-
-
 static void MoveDoubleElements(FixedDoubleArray* dst,
                                int dst_index,
                                FixedDoubleArray* src,
@@ -346,10 +273,15 @@ static FixedArrayBase* LeftTrimFixedArray(Heap* heap,
     MemoryChunk::IncrementLiveBytesFromMutator(elms->address(), -size_delta);
   }
 
-  HEAP_PROFILE(heap, ObjectMoveEvent(elms->address(),
-                                     elms->address() + size_delta));
-  return FixedArrayBase::cast(HeapObject::FromAddress(
-      elms->address() + to_trim * entry_size));
+  FixedArrayBase* new_elms = FixedArrayBase::cast(HeapObject::FromAddress(
+      elms->address() + size_delta));
+  HeapProfiler* profiler = heap->isolate()->heap_profiler();
+  if (profiler->is_tracking_object_moves()) {
+    profiler->ObjectMoveEvent(elms->address(),
+                              new_elms->address(),
+                              new_elms->Size());
+  }
+  return new_elms;
 }
 
 
@@ -374,6 +306,8 @@ static inline MaybeObject* EnsureJSArrayWithWritableFastElements(
     Heap* heap, Object* receiver, Arguments* args, int first_added_arg) {
   if (!receiver->IsJSArray()) return NULL;
   JSArray* array = JSArray::cast(receiver);
+  if (array->map()->is_observed()) return NULL;
+  if (!array->map()->is_extensible()) return NULL;
   HeapObject* elms = array->elements();
   Map* map = elms->map();
   if (map == heap->fixed_array_map()) {
@@ -1166,7 +1100,7 @@ BUILTIN(StrictModePoisonPill) {
 static inline Object* FindHidden(Heap* heap,
                                  Object* object,
                                  FunctionTemplateInfo* type) {
-  if (object->IsInstanceOf(type)) return object;
+  if (type->IsTemplateFor(object)) return object;
   Object* proto = object->GetPrototype(heap->isolate());
   if (proto->IsJSObject() &&
       JSObject::cast(proto)->map()->is_hidden_prototype()) {
@@ -1392,7 +1326,8 @@ static void Generate_LoadIC_Normal(MacroAssembler* masm) {
 
 
 static void Generate_LoadIC_Getter_ForDeopt(MacroAssembler* masm) {
-  LoadStubCompiler::GenerateLoadViaGetter(masm, Handle<JSFunction>());
+  LoadStubCompiler::GenerateLoadViaGetter(
+      masm, LoadStubCompiler::registers()[0], Handle<JSFunction>());
 }
 
 
@@ -1412,12 +1347,7 @@ static void Generate_KeyedLoadIC_Slow(MacroAssembler* masm) {
 
 
 static void Generate_KeyedLoadIC_Miss(MacroAssembler* masm) {
-  KeyedLoadIC::GenerateMiss(masm, MISS);
-}
-
-
-static void Generate_KeyedLoadIC_MissForceGeneric(MacroAssembler* masm) {
-  KeyedLoadIC::GenerateMiss(masm, MISS_FORCE_GENERIC);
+  KeyedLoadIC::GenerateMiss(masm);
 }
 
 
@@ -1481,28 +1411,15 @@ static void Generate_StoreIC_Normal(MacroAssembler* masm) {
 }
 
 
-static void Generate_StoreIC_Normal_Strict(MacroAssembler* masm) {
-  StoreIC::GenerateNormal(masm);
-}
-
-
 static void Generate_StoreIC_Megamorphic(MacroAssembler* masm) {
-  StoreIC::GenerateMegamorphic(masm, kNonStrictMode);
+  StoreIC::GenerateMegamorphic(masm,
+                               StoreIC::ComputeExtraICState(kNonStrictMode));
 }
 
 
 static void Generate_StoreIC_Megamorphic_Strict(MacroAssembler* masm) {
-  StoreIC::GenerateMegamorphic(masm, kStrictMode);
-}
-
-
-static void Generate_StoreIC_GlobalProxy(MacroAssembler* masm) {
-  StoreIC::GenerateRuntimeSetProperty(masm, kNonStrictMode);
-}
-
-
-static void Generate_StoreIC_GlobalProxy_Strict(MacroAssembler* masm) {
-  StoreIC::GenerateRuntimeSetProperty(masm, kStrictMode);
+  StoreIC::GenerateMegamorphic(masm,
+                               StoreIC::ComputeExtraICState(kStrictMode));
 }
 
 
@@ -1532,12 +1449,7 @@ static void Generate_KeyedStoreIC_Generic_Strict(MacroAssembler* masm) {
 
 
 static void Generate_KeyedStoreIC_Miss(MacroAssembler* masm) {
-  KeyedStoreIC::GenerateMiss(masm, MISS);
-}
-
-
-static void Generate_KeyedStoreIC_MissForceGeneric(MacroAssembler* masm) {
-  KeyedStoreIC::GenerateMiss(masm, MISS_FORCE_GENERIC);
+  KeyedStoreIC::GenerateMiss(masm);
 }
 
 
@@ -1728,8 +1640,20 @@ void Builtins::InitBuiltinFunctionTable() {
     functions->extra_args = NO_EXTRA_ARGUMENTS;                             \
     ++functions;
 
+#define DEF_FUNCTION_PTR_H(aname, kind)                                     \
+    functions->generator = FUNCTION_ADDR(Generate_##aname);                 \
+    functions->c_code = NULL;                                               \
+    functions->s_name = #aname;                                             \
+    functions->name = k##aname;                                             \
+    functions->flags = Code::ComputeFlags(                                  \
+        Code::HANDLER, MONOMORPHIC, kNoExtraICState,                        \
+        Code::NORMAL, Code::kind);                                          \
+    functions->extra_args = NO_EXTRA_ARGUMENTS;                             \
+    ++functions;
+
   BUILTIN_LIST_C(DEF_FUNCTION_PTR_C)
   BUILTIN_LIST_A(DEF_FUNCTION_PTR_A)
+  BUILTIN_LIST_H(DEF_FUNCTION_PTR_H)
   BUILTIN_LIST_DEBUG_A(DEF_FUNCTION_PTR_A)
 
 #undef DEF_FUNCTION_PTR_C
@@ -1791,9 +1715,10 @@ void Builtins::SetUp(Isolate* isolate, bool create_heap_objects) {
       builtins_[i] = code;
 #ifdef ENABLE_DISASSEMBLER
       if (FLAG_print_builtin_code) {
-        PrintF("Builtin: %s\n", functions[i].s_name);
-        Code::cast(code)->Disassemble(functions[i].s_name);
-        PrintF("\n");
+        CodeTracer::Scope trace_scope(isolate->GetCodeTracer());
+        PrintF(trace_scope.file(), "Builtin: %s\n", functions[i].s_name);
+        Code::cast(code)->Disassemble(functions[i].s_name, trace_scope.file());
+        PrintF(trace_scope.file(), "\n");
       }
 #endif
     } else {
@@ -1854,8 +1779,15 @@ Handle<Code> Builtins::name() {                             \
       reinterpret_cast<Code**>(builtin_address(k##name));   \
   return Handle<Code>(code_address);                        \
 }
+#define DEFINE_BUILTIN_ACCESSOR_H(name, kind)               \
+Handle<Code> Builtins::name() {                             \
+  Code** code_address =                                     \
+      reinterpret_cast<Code**>(builtin_address(k##name));   \
+  return Handle<Code>(code_address);                        \
+}
 BUILTIN_LIST_C(DEFINE_BUILTIN_ACCESSOR_C)
 BUILTIN_LIST_A(DEFINE_BUILTIN_ACCESSOR_A)
+BUILTIN_LIST_H(DEFINE_BUILTIN_ACCESSOR_H)
 BUILTIN_LIST_DEBUG_A(DEFINE_BUILTIN_ACCESSOR_A)
 #undef DEFINE_BUILTIN_ACCESSOR_C
 #undef DEFINE_BUILTIN_ACCESSOR_A

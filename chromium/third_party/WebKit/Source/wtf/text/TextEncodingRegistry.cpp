@@ -118,7 +118,7 @@ static bool didExtendTextCodecMaps;
 static HashSet<const char*>* japaneseEncodings;
 static HashSet<const char*>* nonBackslashEncodings;
 
-static const char* const textEncodingNameBlacklist[] = { "UTF-7" };
+static const char textEncodingNameBlacklist[][6] = { "UTF-7" };
 
 #if ERROR_DISABLED
 
@@ -138,7 +138,7 @@ static void checkExistingName(const char* alias, const char* atomicName)
             && strcmp(oldAtomicName, "ISO-8859-8-I") == 0
             && strcasecmp(atomicName, "iso-8859-8") == 0)
         return;
-    LOG_ERROR("alias %s maps to %s already, but someone is trying to make it map to %s", alias, oldAtomicName, atomicName);
+    WTF_LOG_ERROR("alias %s maps to %s already, but someone is trying to make it map to %s", alias, oldAtomicName, atomicName);
 }
 
 #endif

@@ -31,11 +31,10 @@
 #include "core/dom/Element.h"
 #include "core/dom/Range.h"
 #include "core/editing/TextIterator.h"
-#include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
-#include "core/platform/graphics/LayoutPoint.h"
 #include "core/rendering/RenderObject.h"
+#include "platform/geometry/LayoutPoint.h"
 #include "wtf/Assertions.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringBuilder.h"
@@ -218,14 +217,14 @@ static PassRefPtr<Range> makeSearchRange(const Position& pos)
         return 0;
 
     RefPtr<Range> searchRange(Range::create(d));
-    TrackExceptionState es;
+    TrackExceptionState exceptionState;
 
     Position start(pos.parentAnchoredEquivalent());
-    searchRange->selectNodeContents(boundary, es);
-    searchRange->setStart(start.containerNode(), start.offsetInContainerNode(), es);
+    searchRange->selectNodeContents(boundary, exceptionState);
+    searchRange->setStart(start.containerNode(), start.offsetInContainerNode(), exceptionState);
 
-    ASSERT(!es.hadException());
-    if (es.hadException())
+    ASSERT(!exceptionState.hadException());
+    if (exceptionState.hadException())
         return 0;
 
     return searchRange.release();
@@ -472,7 +471,7 @@ static Position adjustPositionForEnd(const Position& currentPosition, Node* star
 {
     TreeScope& treeScope = startContainerNode->treeScope();
 
-    ASSERT(&currentPosition.containerNode()->treeScope() != &treeScope);
+    ASSERT(currentPosition.containerNode()->treeScope() != treeScope);
 
     if (Node* ancestor = treeScope.ancestorInThisScope(currentPosition.containerNode())) {
         if (ancestor->contains(startContainerNode))
@@ -490,7 +489,7 @@ static Position adjustPositionForStart(const Position& currentPosition, Node* en
 {
     TreeScope& treeScope = endContainerNode->treeScope();
 
-    ASSERT(&currentPosition.containerNode()->treeScope() != &treeScope);
+    ASSERT(currentPosition.containerNode()->treeScope() != treeScope);
 
     if (Node* ancestor = treeScope.ancestorInThisScope(currentPosition.containerNode())) {
         if (ancestor->contains(endContainerNode))
@@ -509,7 +508,7 @@ void VisibleSelection::adjustSelectionToAvoidCrossingShadowBoundaries()
     if (m_base.isNull() || m_start.isNull() || m_end.isNull())
         return;
 
-    if (&m_start.anchorNode()->treeScope() == &m_end.anchorNode()->treeScope())
+    if (m_start.anchorNode()->treeScope() == m_end.anchorNode()->treeScope())
         return;
 
     if (m_baseIsFirst) {
@@ -520,7 +519,7 @@ void VisibleSelection::adjustSelectionToAvoidCrossingShadowBoundaries()
         m_start = m_extent;
     }
 
-    ASSERT(&m_start.anchorNode()->treeScope() == &m_end.anchorNode()->treeScope());
+    ASSERT(m_start.anchorNode()->treeScope() == m_end.anchorNode()->treeScope());
 }
 
 void VisibleSelection::adjustSelectionToAvoidCrossingEditingBoundaries()

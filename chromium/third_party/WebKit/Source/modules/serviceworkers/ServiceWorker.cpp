@@ -31,11 +31,10 @@
 #include "config.h"
 #include "ServiceWorker.h"
 
-#include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
-ServiceWorker::ServiceWorker(PassOwnPtr<WebKit::WebServiceWorker> worker)
+ServiceWorker::ServiceWorker(PassOwnPtr<blink::WebServiceWorker> worker)
     : m_outerWorker(worker)
 {
 }

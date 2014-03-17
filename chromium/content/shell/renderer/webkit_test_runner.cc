@@ -50,7 +50,6 @@
 #include "third_party/WebKit/public/web/WebContextMenuData.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebDevToolsAgent.h"
-#include "third_party/WebKit/public/web/WebDeviceOrientation.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
@@ -61,30 +60,28 @@
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/gfx/rect.h"
 #include "webkit/common/webpreferences.h"
-#include "webkit/glue/webkit_glue.h"
 
-using WebKit::Platform;
-using WebKit::WebArrayBufferView;
-using WebKit::WebContextMenuData;
-using WebKit::WebDevToolsAgent;
-using WebKit::WebDeviceMotionData;
-using WebKit::WebDeviceOrientationData;
-using WebKit::WebDeviceOrientation;
-using WebKit::WebElement;
-using WebKit::WebFrame;
-using WebKit::WebGamepads;
-using WebKit::WebHistoryItem;
-using WebKit::WebPoint;
-using WebKit::WebRect;
-using WebKit::WebScriptSource;
-using WebKit::WebSize;
-using WebKit::WebString;
-using WebKit::WebURL;
-using WebKit::WebURLError;
-using WebKit::WebURLRequest;
-using WebKit::WebTestingSupport;
-using WebKit::WebVector;
-using WebKit::WebView;
+using blink::Platform;
+using blink::WebArrayBufferView;
+using blink::WebContextMenuData;
+using blink::WebDevToolsAgent;
+using blink::WebDeviceMotionData;
+using blink::WebDeviceOrientationData;
+using blink::WebElement;
+using blink::WebFrame;
+using blink::WebGamepads;
+using blink::WebHistoryItem;
+using blink::WebPoint;
+using blink::WebRect;
+using blink::WebScriptSource;
+using blink::WebSize;
+using blink::WebString;
+using blink::WebURL;
+using blink::WebURLError;
+using blink::WebURLRequest;
+using blink::WebTestingSupport;
+using blink::WebVector;
+using blink::WebView;
 using WebTestRunner::WebTask;
 using WebTestRunner::WebTestInterfaces;
 using WebTestRunner::WebTestProxyBase;
@@ -188,6 +185,20 @@ class NavigateAwayVisitor : public RenderViewVisitor {
   DISALLOW_COPY_AND_ASSIGN(NavigateAwayVisitor);
 };
 
+class UseSynchronousResizeModeVisitor : public RenderViewVisitor {
+ public:
+  explicit UseSynchronousResizeModeVisitor(bool enable) : enable_(enable) {}
+  virtual ~UseSynchronousResizeModeVisitor() {}
+
+  virtual bool Visit(RenderView* render_view) OVERRIDE {
+    UseSynchronousResizeMode(render_view, enable_);
+    return true;
+  }
+
+ private:
+  bool enable_;
+};
+
 }  // namespace
 
 WebKitTestRunner::WebKitTestRunner(RenderView* render_view)
@@ -243,7 +254,7 @@ void WebKitTestRunner::postDelayedTask(WebTask* task, long long ms) {
 }
 
 WebString WebKitTestRunner::registerIsolatedFileSystem(
-    const WebKit::WebVector<WebKit::WebString>& absolute_filenames) {
+    const blink::WebVector<blink::WebString>& absolute_filenames) {
   std::vector<base::FilePath> files;
   for (size_t i = 0; i < absolute_filenames.size(); ++i)
     files.push_back(base::FilePath::FromUTF16Unsafe(absolute_filenames[i]));
@@ -281,8 +292,7 @@ WebURL WebKitTestRunner::localFileToDataURL(const WebURL& file_url) {
         routing_id(), local_path, &contents));
 
   std::string contents_base64;
-  if (!base::Base64Encode(contents, &contents_base64))
-    return WebURL();
+  base::Base64Encode(contents, &contents_base64);
 
   const char data_url_prefix[] = "data:text/css:charset=utf-8;base64,";
   return WebURL(GURL(data_url_prefix + contents_base64));
@@ -351,8 +361,9 @@ std::string WebKitTestRunner::makeURLErrorDescription(
       domain.c_str(), code, error.unreachableURL.spec().data());
 }
 
-void WebKitTestRunner::setClientWindowRect(const WebRect& rect) {
-  ForceResizeRenderView(render_view(), WebSize(rect.width, rect.height));
+void WebKitTestRunner::useUnfortunateSynchronousResizeMode(bool enable) {
+  UseSynchronousResizeModeVisitor visitor(enable);
+  RenderView::ForEach(&visitor);
 }
 
 void WebKitTestRunner::enableAutoResizeMode(const WebSize& min_size,
@@ -501,7 +512,7 @@ bool WebKitTestRunner::allowExternalPages() {
 
 void WebKitTestRunner::captureHistoryForWindow(
     WebTestProxyBase* proxy,
-    WebVector<WebKit::WebHistoryItem>* history,
+    WebVector<blink::WebHistoryItem>* history,
     size_t* currentEntryIndex) {
   size_t pos = 0;
   std::vector<int>::iterator id;
@@ -591,8 +602,6 @@ void WebKitTestRunner::Reset() {
   render_view()->GetWebView()->mainFrame()->clearOpener();
   render_view()->GetWebView()->setPageScaleFactorLimits(-1, -1);
   render_view()->GetWebView()->setPageScaleFactor(1, WebPoint(0, 0));
-  render_view()->GetWebView()->enableFixedLayoutMode(false);
-  render_view()->GetWebView()->setFixedLayoutSize(WebSize(0, 0));
 
   // Resetting the internals object also overrides the WebPreferences, so we
   // have to sync them to WebKit again.

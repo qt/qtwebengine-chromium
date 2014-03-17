@@ -76,10 +76,10 @@ ifeq ($(snapshot), off)
 endif
 # extrachecks=on/off
 ifeq ($(extrachecks), on)
-  GYPFLAGS += -Dv8_enable_extra_checks=1
+  GYPFLAGS += -Dv8_enable_extra_checks=1 -Dv8_enable_handle_zapping=1
 endif
 ifeq ($(extrachecks), off)
-  GYPFLAGS += -Dv8_enable_extra_checks=0
+  GYPFLAGS += -Dv8_enable_extra_checks=0 -Dv8_enable_handle_zapping=0
 endif
 # gdbjit=on/off
 ifeq ($(gdbjit), on)
@@ -94,7 +94,7 @@ ifeq ($(vtunejit), on)
 endif
 # optdebug=on
 ifeq ($(optdebug), on)
-  GYPFLAGS += -Dv8_optimized_debug=1
+  GYPFLAGS += -Dv8_optimized_debug=2
 endif
 # debuggersupport=off
 ifeq ($(debuggersupport), off)
@@ -103,6 +103,10 @@ endif
 # unalignedaccess=on
 ifeq ($(unalignedaccess), on)
   GYPFLAGS += -Dv8_can_use_unaligned_accesses=true
+endif
+# randomseed=12345, disable random seed via randomseed=0
+ifdef randomseed
+  GYPFLAGS += -Dv8_random_seed=$(randomseed)
 endif
 # soname_version=1.2.3
 ifdef soname_version
@@ -124,10 +128,15 @@ endif
 ifeq ($(regexp), interpreted)
   GYPFLAGS += -Dv8_interpreted_regexp=1
 endif
-# i18nsupport=on
-ifeq ($(i18nsupport), on)
-  GYPFLAGS += -Dv8_enable_i18n_support=1
+# i18nsupport=off
+ifeq ($(i18nsupport), off)
+  GYPFLAGS += -Dv8_enable_i18n_support=0
+  TESTFLAGS += --noi18n
 endif
+# deprecation_warnings=on
+ifeq ($(deprecationwarnings), on)
+  GYPFLAGS += -Dv8_deprecation_warnings=1
+endif 
 # arm specific flags.
 # armv7=false/true
 ifeq ($(armv7), false)
@@ -217,8 +226,8 @@ NACL_ARCHES = nacl_ia32 nacl_x64
 
 # List of files that trigger Makefile regeneration:
 GYPFILES = build/all.gyp build/features.gypi build/standalone.gypi \
-	   build/toolchain.gypi preparser/preparser.gyp samples/samples.gyp \
-	   src/d8.gyp test/cctest/cctest.gyp tools/gyp/v8.gyp
+           build/toolchain.gypi samples/samples.gyp src/d8.gyp \
+           test/cctest/cctest.gyp tools/gyp/v8.gyp
 
 # If vtunejit=on, the v8vtune.gyp will be appended.
 ifeq ($(vtunejit), on)
@@ -323,7 +332,7 @@ $(addsuffix .check, $(ANDROID_BUILDS)): $$(basename $$@).sync
 	@tools/run-tests.py $(TESTJOBS) --outdir=$(OUTDIR) \
 	     --arch-and-mode=$(basename $@) \
 	     --timeout=600 \
-	     --command-prefix="tools/android-run.py"
+	     --command-prefix="tools/android-run.py" $(TESTFLAGS)
 
 $(addsuffix .check, $(ANDROID_ARCHES)): \
                 $(addprefix $$(basename $$@).,$(MODES)).check
@@ -331,7 +340,7 @@ $(addsuffix .check, $(ANDROID_ARCHES)): \
 $(addsuffix .check, $(NACL_BUILDS)): $$(basename $$@)
 	@tools/run-tests.py $(TESTJOBS) --outdir=$(OUTDIR) \
 	     --arch-and-mode=$(basename $@) \
-	     --timeout=600 --nopresubmit \
+	     --timeout=600 --nopresubmit --noi18n \
 	     --command-prefix="tools/nacl-run.py"
 
 $(addsuffix .check, $(NACL_ARCHES)): \
@@ -340,6 +349,16 @@ $(addsuffix .check, $(NACL_ARCHES)): \
 native.check: native
 	@tools/run-tests.py $(TESTJOBS) --outdir=$(OUTDIR)/native \
 	    --arch-and-mode=. $(TESTFLAGS)
+
+FASTTESTFLAGS = --flaky-tests=skip --slow-tests=skip --pass-fail-tests=skip \
+                --variants=default,stress
+FASTTESTMODES = ia32.release,x64.release,ia32.debug,x64.debug,arm.debug
+
+quickcheck:
+	@$(MAKE) all optdebug=on
+	@tools/run-tests.py $(TESTJOBS) --outdir=$(OUTDIR) \
+	    --arch-and-mode=$(FASTTESTMODES) $(FASTTESTFLAGS) $(TESTFLAGS)
+qc: quickcheck
 
 # Clean targets. You can clean each architecture individually, or everything.
 $(addsuffix .clean, $(ARCHES) $(ANDROID_ARCHES) $(NACL_ARCHES)):

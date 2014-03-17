@@ -138,7 +138,7 @@ class BASE_PREFS_EXPORT PrefService : public base::NonThreadSafe {
     const PrefService* pref_service_;
   };
 
-  // You may wish to use PrefServiceBuilder or one of its subclasses
+  // You may wish to use PrefServiceFactory or one of its subclasses
   // for simplified construction.
   PrefService(
       PrefNotifierImpl* pref_notifier,
@@ -149,11 +149,6 @@ class BASE_PREFS_EXPORT PrefService : public base::NonThreadSafe {
           read_error_callback,
       bool async);
   virtual ~PrefService();
-
-  // Reloads the data from file. This should only be called when the importer
-  // is running during first run, and the main process may not change pref
-  // values while the importer process is running. Returns true on success.
-  bool ReloadPersistentPrefs();
 
   // Lands pending writes to disk. This should only be used if we need to save
   // immediately (basically, during shutdown).
@@ -234,7 +229,18 @@ class BASE_PREFS_EXPORT PrefService : public base::NonThreadSafe {
 
   // Returns a dictionary with effective preference values. The ownership
   // is passed to the caller.
-  base::DictionaryValue* GetPreferenceValues() const;
+  scoped_ptr<base::DictionaryValue> GetPreferenceValues() const;
+
+  // Returns a dictionary with effective preference values. Contrary to
+  // GetPreferenceValues(), the paths of registered preferences are not split on
+  // '.' characters. If a registered preference stores a dictionary, however,
+  // the hierarchical structure inside the preference will be preserved.
+  // For example, if "foo.bar" is a registered preference, the result could look
+  // like this:
+  //   {"foo.bar": {"a": {"b": true}}}.
+  // The ownership is passed to the caller.
+  scoped_ptr<base::DictionaryValue> GetPreferenceValuesWithoutPathExpansion()
+      const;
 
   bool ReadOnly() const;
 
@@ -252,20 +258,19 @@ class BASE_PREFS_EXPORT PrefService : public base::NonThreadSafe {
   // Returns the PrefRegistry object for this service. You should not
   // use this; the intent is for no registrations to take place after
   // PrefService has been constructed.
+  //
+  // Instead of using this method, the recommended approach is to
+  // register all preferences for a class Xyz up front in a static
+  // Xyz::RegisterPrefs function, which gets invoked early in the
+  // application's start-up, before a PrefService is created.
+  //
+  // As an example, prefs registration in Chrome is triggered by the
+  // functions chrome::RegisterPrefs (for global preferences) and
+  // chrome::RegisterProfilePrefs (for user-specific preferences)
+  // implemented in chrome/browser/prefs/browser_prefs.cc.
   PrefRegistry* DeprecatedGetPrefRegistry();
 
  protected:
-  // Adds the registered preferences from the PrefRegistry instance
-  // passed to us at construction time.
-  void AddInitialPreferences();
-
-  // Updates local caches for a preference registered at |path|. The
-  // |default_value| must not be NULL as it determines the preference
-  // value's type.  AddRegisteredPreference must not be called twice
-  // for the same path.
-  void AddRegisteredPreference(const char* path,
-                               base::Value* default_value);
-
   // The PrefNotifier handles registering and notifying preference observers.
   // It is created and owned by this PrefService. Subclasses may access it for
   // unit testing.

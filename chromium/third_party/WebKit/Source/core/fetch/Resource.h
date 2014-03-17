@@ -23,13 +23,12 @@
 #ifndef Resource_h
 #define Resource_h
 
-#include "core/fetch/CachePolicy.h"
 #include "core/fetch/ResourceLoaderOptions.h"
-#include "core/platform/Timer.h"
-#include "core/platform/network/ResourceError.h"
-#include "core/platform/network/ResourceLoadPriority.h"
-#include "core/platform/network/ResourceRequest.h"
-#include "core/platform/network/ResourceResponse.h"
+#include "platform/Timer.h"
+#include "platform/network/ResourceError.h"
+#include "platform/network/ResourceLoadPriority.h"
+#include "platform/network/ResourceRequest.h"
+#include "platform/network/ResourceResponse.h"
 #include "wtf/HashCountedSet.h"
 #include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
@@ -109,7 +108,8 @@ public:
     ResourceRequest& resourceRequest() { return m_resourceRequest; }
     const KURL& url() const { return m_resourceRequest.url();}
     Type type() const { return static_cast<Type>(m_type); }
-    const ResourceLoaderOptions& options() const {  return m_options; }
+    const ResourceLoaderOptions& options() const { return m_options; }
+    void setOptions(const ResourceLoaderOptions& options) { m_options = options; }
 
     void didChangePriority(ResourceLoadPriority);
 
@@ -135,10 +135,10 @@ public:
     Status status() const { return static_cast<Status>(m_status); }
     void setStatus(Status status) { m_status = status; }
 
-    unsigned size() const { return encodedSize() + decodedSize() + overheadSize(); }
-    unsigned encodedSize() const { return m_encodedSize; }
-    unsigned decodedSize() const { return m_decodedSize; }
-    unsigned overheadSize() const;
+    size_t size() const { return encodedSize() + decodedSize() + overheadSize(); }
+    size_t encodedSize() const { return m_encodedSize; }
+    size_t decodedSize() const { return m_decodedSize; }
+    size_t overheadSize() const;
 
     bool isLoaded() const { return !m_loading; } // FIXME. Method name is inaccurate. Loading might not have started yet.
 
@@ -200,7 +200,7 @@ public:
     // Returns cached metadata of the given type associated with this resource.
     CachedMetadata* cachedMetadata(unsigned dataTypeID) const;
 
-    bool canDelete() const { return !hasClients() && !m_loader && !m_preloadCount && !m_handleCount && !m_resourceToRevalidate && !m_proxyResource; }
+    bool canDelete() const { return !hasClients() && !m_loader && !m_preloadCount && !m_handleCount && !m_protectorCount && !m_resourceToRevalidate && !m_proxyResource; }
     bool hasOneHandle() const { return m_handleCount == 1; }
 
     bool isExpired() const;
@@ -227,7 +227,7 @@ public:
     void unregisterHandle(ResourcePtrBase* h);
 
     bool canUseCacheValidator() const;
-    bool mustRevalidateDueToCacheHeaders(CachePolicy) const;
+    bool mustRevalidateDueToCacheHeaders() const;
     bool isCacheValidator() const { return m_resourceToRevalidate; }
     Resource* resourceToRevalidate() const { return m_resourceToRevalidate; }
     void setResourceToRevalidate(Resource*);
@@ -251,8 +251,34 @@ protected:
     virtual void checkNotify();
     virtual void finishOnePart();
 
-    void setEncodedSize(unsigned);
-    void setDecodedSize(unsigned);
+    // Normal resource pointers will silently switch what Resource* they reference when we
+    // successfully revalidated the resource. We need a way to guarantee that the Resource
+    // that received the 304 response survives long enough to switch everything over to the
+    // revalidatedresource. The normal mechanisms for keeping a Resource alive externally
+    // (ResourcePtrs and ResourceClients registering themselves) don't work in this case, so
+    // have a separate internal protector).
+    class InternalResourcePtr {
+    public:
+        explicit InternalResourcePtr(Resource* resource)
+            : m_resource(resource)
+        {
+            m_resource->incrementProtectorCount();
+        }
+
+        ~InternalResourcePtr()
+        {
+            m_resource->decrementProtectorCount();
+            m_resource->deleteIfPossible();
+        }
+    private:
+        Resource* m_resource;
+    };
+
+    void incrementProtectorCount() { m_protectorCount++; }
+    void decrementProtectorCount() { m_protectorCount--; }
+
+    void setEncodedSize(size_t);
+    void setDecodedSize(size_t);
     void didAccessDecodedData(double timeStamp);
 
     bool isSafeToMakePurgeable() const;
@@ -315,11 +341,12 @@ private:
 
     unsigned long m_identifier;
 
-    unsigned m_encodedSize;
-    unsigned m_decodedSize;
+    size_t m_encodedSize;
+    size_t m_decodedSize;
     unsigned m_accessCount;
     unsigned m_handleCount;
     unsigned m_preloadCount;
+    unsigned m_protectorCount;
 
     unsigned m_preloadResult : 2; // PreloadResult
     unsigned m_cacheLiveResourcePriority : 2; // CacheLiveResourcePriority
@@ -357,6 +384,15 @@ private:
     // These handles will need to be updated to point to the m_resourceToRevalidate in case we get 304 response.
     HashSet<ResourcePtrBase*> m_handlesToRevalidate;
 };
+
+#if !LOG_DISABLED
+// Intended to be used in LOG statements.
+const char* ResourceTypeName(Resource::Type);
+#endif
+
+#define DEFINE_RESOURCE_TYPE_CASTS(typeName) \
+    DEFINE_TYPE_CASTS(typeName##Resource, Resource, resource, resource->type() == Resource::typeName, resource.type() == Resource::typeName); \
+    inline typeName##Resource* to##typeName##Resource(const ResourcePtr<Resource>& ptr) { return to##typeName##Resource(ptr.get()); }
 
 }
 

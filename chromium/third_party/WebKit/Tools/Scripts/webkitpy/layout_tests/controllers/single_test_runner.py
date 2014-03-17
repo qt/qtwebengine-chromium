@@ -32,7 +32,7 @@ import re
 import time
 
 from webkitpy.layout_tests.controllers import test_result_writer
-from webkitpy.layout_tests.port.driver import DriverInput, DriverOutput
+from webkitpy.layout_tests.port.driver import DeviceFailure, DriverInput, DriverOutput
 from webkitpy.layout_tests.models import test_expectations
 from webkitpy.layout_tests.models import test_failures
 from webkitpy.layout_tests.models.test_results import TestResult
@@ -43,7 +43,11 @@ _log = logging.getLogger(__name__)
 
 def run_single_test(port, options, results_directory, worker_name, driver, test_input, stop_when_done):
     runner = SingleTestRunner(port, options, results_directory, worker_name, driver, test_input, stop_when_done)
-    return runner.run()
+    try:
+        return runner.run()
+    except DeviceFailure as e:
+        _log.error("device failed: %s", str(e))
+        return TestResult(test_input.test_name, device_failed=True)
 
 
 class SingleTestRunner(object):
@@ -91,7 +95,20 @@ class SingleTestRunner(object):
         image_hash = None
         if self._should_fetch_expected_checksum():
             image_hash = self._port.expected_checksum(self._test_name)
-        return DriverInput(self._test_name, self._timeout, image_hash, self._should_run_pixel_test)
+
+        test_base = self._port.lookup_virtual_test_base(self._test_name)
+        if test_base:
+            # If the file actually exists under the virtual dir, we want to use it (largely for virtual references),
+            # but we want to use the extra command line args either way.
+            if self._filesystem.exists(self._port.abspath_for_test(self._test_name)):
+                test_name = self._test_name
+            else:
+                test_name = test_base
+            args = self._port.lookup_virtual_test_args(self._test_name)
+        else:
+            test_name = self._test_name
+            args = []
+        return DriverInput(test_name, self._timeout, image_hash, self._should_run_pixel_test, args)
 
     def run(self):
         if self._reference_files:
@@ -122,7 +139,8 @@ class SingleTestRunner(object):
         # FIXME: It the test crashed or timed out, it might be better to avoid
         # to write new baselines.
         self._overwrite_baselines(driver_output)
-        return TestResult(self._test_name, failures, driver_output.test_time, driver_output.has_stderr(), pid=driver_output.pid)
+        return TestResult(self._test_name, failures, driver_output.test_time, driver_output.has_stderr(),
+                          pid=driver_output.pid)
 
     _render_tree_dump_pattern = re.compile(r"^layer at \(\d+,\d+\) size \d+x\d+\n")
 
@@ -215,13 +233,15 @@ class SingleTestRunner(object):
         if driver_output.crash:
             # Don't continue any more if we already have a crash.
             # In case of timeouts, we continue since we still want to see the text and image output.
-            return TestResult(self._test_name, failures, driver_output.test_time, driver_output.has_stderr(), pid=driver_output.pid)
+            return TestResult(self._test_name, failures, driver_output.test_time, driver_output.has_stderr(),
+                              pid=driver_output.pid)
 
         failures.extend(self._compare_text(expected_driver_output.text, driver_output.text))
         failures.extend(self._compare_audio(expected_driver_output.audio, driver_output.audio))
         if self._should_run_pixel_test:
             failures.extend(self._compare_image(expected_driver_output, driver_output))
-        return TestResult(self._test_name, failures, driver_output.test_time, driver_output.has_stderr(), pid=driver_output.pid)
+        return TestResult(self._test_name, failures, driver_output.test_time, driver_output.has_stderr(),
+                          pid=driver_output.pid)
 
     def _compare_text(self, expected_text, actual_text):
         failures = []
@@ -300,7 +320,8 @@ class SingleTestRunner(object):
         for expectation, reference_filename in putAllMismatchBeforeMatch(self._reference_files):
             reference_test_name = self._port.relative_test_filename(reference_filename)
             reference_test_names.append(reference_test_name)
-            reference_output = self._driver.run_test(DriverInput(reference_test_name, self._timeout, None, should_run_pixel_test=True), self._stop_when_done)
+            driver_input = DriverInput(reference_test_name, self._timeout, image_hash=None, should_run_pixel_test=True, args=self._port.lookup_virtual_test_args(reference_test_name))
+            reference_output = self._driver.run_test(driver_input, self._stop_when_done)
             test_result = self._compare_output_with_reference(reference_output, test_output, reference_filename, expectation == '!=')
 
             if (expectation == '!=' and test_result.failures) or (expectation == '==' and not test_result.failures):
@@ -313,7 +334,9 @@ class SingleTestRunner(object):
         # FIXME: We don't really deal with a mix of reftest types properly. We pass in a set() to reftest_type
         # and only really handle the first of the references in the result.
         reftest_type = list(set([reference_file[0] for reference_file in self._reference_files]))
-        return TestResult(self._test_name, test_result.failures, total_test_time + test_result.test_run_time, test_result.has_stderr, reftest_type=reftest_type, pid=test_result.pid, references=reference_test_names)
+        return TestResult(self._test_name, test_result.failures, total_test_time + test_result.test_run_time,
+                          test_result.has_stderr, reftest_type=reftest_type, pid=test_result.pid,
+                          references=reference_test_names)
 
     def _compare_output_with_reference(self, reference_driver_output, actual_driver_output, reference_filename, mismatch):
         total_test_time = reference_driver_output.test_time + actual_driver_output.test_time

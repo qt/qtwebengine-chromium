@@ -24,27 +24,30 @@
 #include "core/svg/SVGAnimatedTransformList.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGTests.h"
-#include "core/svg/SVGTransformable.h"
 
 namespace WebCore {
 
 class AffineTransform;
 class Path;
 
-class SVGGraphicsElement : public SVGElement, public SVGTransformable, public SVGTests {
+class SVGGraphicsElement : public SVGElement, public SVGTests {
 public:
     virtual ~SVGGraphicsElement();
 
-    virtual AffineTransform getCTM(StyleUpdateStrategy = AllowStyleUpdate);
-    virtual AffineTransform getScreenCTM(StyleUpdateStrategy = AllowStyleUpdate);
-    virtual SVGElement* nearestViewportElement() const;
-    virtual SVGElement* farthestViewportElement() const;
+    enum StyleUpdateStrategy { AllowStyleUpdate, DisallowStyleUpdate };
 
-    virtual AffineTransform localCoordinateSpaceTransform(SVGLocatable::CTMScope mode) const { return SVGTransformable::localCoordinateSpaceTransform(mode); }
+    AffineTransform getCTM(StyleUpdateStrategy = AllowStyleUpdate);
+    AffineTransform getScreenCTM(StyleUpdateStrategy = AllowStyleUpdate);
+    AffineTransform getTransformToElement(SVGElement*, ExceptionState&);
+    SVGElement* nearestViewportElement() const;
+    SVGElement* farthestViewportElement() const;
+
+    virtual AffineTransform localCoordinateSpaceTransform(SVGElement::CTMScope) const OVERRIDE { return animatedLocalTransform(); }
     virtual AffineTransform animatedLocalTransform() const;
     virtual AffineTransform* supplementalTransform();
 
-    virtual SVGRect getBBox(StyleUpdateStrategy = AllowStyleUpdate);
+    virtual SVGRect getBBox();
+    SVGRect getStrokeBBox();
 
     // "base class" methods for all the elements which render as paths
     virtual void toClipPath(Path&);
@@ -73,12 +76,12 @@ private:
     OwnPtr<AffineTransform> m_supplementalTransform;
 };
 
-inline SVGGraphicsElement* toSVGGraphicsElement(Node* node)
+inline bool isSVGGraphicsElement(const Node& node)
 {
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isSVGElement());
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || toSVGElement(node)->isSVGGraphicsElement());
-    return static_cast<SVGGraphicsElement*>(node);
+    return node.isSVGElement() && toSVGElement(node).isSVGGraphicsElement();
 }
+
+DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(SVGGraphicsElement);
 
 } // namespace WebCore
 

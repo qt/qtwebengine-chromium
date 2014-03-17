@@ -135,7 +135,8 @@ void MockAudioSource::UnregisterObserver(webrtc::ObserverInterface* observer) {
 }
 
 void MockAudioSource::SetLive() {
-  DCHECK_EQ(MediaSourceInterface::kInitializing, state_);
+  DCHECK(state_ == MediaSourceInterface::kInitializing ||
+         state_ == MediaSourceInterface::kLive);
   state_ = MediaSourceInterface::kLive;
   if (observer_)
     observer_->OnChanged();
@@ -202,7 +203,8 @@ void MockVideoSource::FireOnChanged() {
 }
 
 void MockVideoSource::SetLive() {
-  DCHECK_EQ(MediaSourceInterface::kInitializing, state_);
+  DCHECK(state_ == MediaSourceInterface::kInitializing ||
+         state_ == MediaSourceInterface::kLive);
   state_ = MediaSourceInterface::kLive;
   FireOnChanged();
 }
@@ -384,7 +386,7 @@ scoped_refptr<webrtc::PeerConnectionInterface>
 MockMediaStreamDependencyFactory::CreatePeerConnection(
     const webrtc::PeerConnectionInterface::IceServers& ice_servers,
     const webrtc::MediaConstraintsInterface* constraints,
-    WebKit::WebFrame* frame,
+    blink::WebFrame* frame,
     webrtc::PeerConnectionObserver* observer) {
   DCHECK(mock_pc_factory_created_);
   return new talk_base::RefCountedObject<MockPeerConnectionImpl>(this);
@@ -409,7 +411,7 @@ MockMediaStreamDependencyFactory::CreateLocalVideoSource(
 
 scoped_refptr<WebAudioCapturerSource>
 MockMediaStreamDependencyFactory::CreateWebAudioSource(
-    WebKit::WebMediaStreamSource* source,
+    blink::WebMediaStreamSource* source,
     RTCMediaConstraints* constraints) {
   return NULL;
 }

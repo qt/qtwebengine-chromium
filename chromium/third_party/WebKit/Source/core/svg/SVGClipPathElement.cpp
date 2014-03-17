@@ -23,7 +23,6 @@
 
 #include "core/svg/SVGClipPathElement.h"
 
-#include "SVGNames.h"
 #include "core/rendering/svg/RenderSVGResourceClipper.h"
 #include "core/svg/SVGElementInstance.h"
 
@@ -39,18 +38,17 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGClipPathElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGClipPathElement::SVGClipPathElement(const QualifiedName& tagName, Document& document)
-    : SVGGraphicsElement(tagName, document)
+inline SVGClipPathElement::SVGClipPathElement(Document& document)
+    : SVGGraphicsElement(SVGNames::clipPathTag, document)
     , m_clipPathUnits(SVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE)
 {
-    ASSERT(hasTagName(SVGNames::clipPathTag));
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGClipPathElement();
 }
 
-PassRefPtr<SVGClipPathElement> SVGClipPathElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGClipPathElement> SVGClipPathElement::create(Document& document)
 {
-    return adoptRef(new SVGClipPathElement(tagName, document));
+    return adoptRef(new SVGClipPathElement(document));
 }
 
 bool SVGClipPathElement::isSupportedAttribute(const QualifiedName& attrName)
@@ -92,8 +90,9 @@ void SVGClipPathElement::svgAttributeChanged(const QualifiedName& attrName)
 
     SVGElementInstance::InvalidationGuard invalidationGuard(this);
 
-    if (RenderObject* object = renderer())
-        object->setNeedsLayout();
+    RenderSVGResourceContainer* renderer = toRenderSVGResourceContainer(this->renderer());
+    if (renderer)
+        renderer->invalidateCacheAndMarkForLayout();
 }
 
 void SVGClipPathElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)

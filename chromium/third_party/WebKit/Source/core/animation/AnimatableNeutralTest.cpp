@@ -40,12 +40,12 @@ using namespace WebCore;
 
 namespace {
 
-TEST(AnimatableNeutral, Create)
+TEST(AnimationAnimatableNeutralTest, Create)
 {
     EXPECT_TRUE(AnimatableValue::neutralValue());
 }
 
-TEST(AnimatableNeutral, Add)
+TEST(AnimationAnimatableNeutralTest, Add)
 {
     RefPtr<CSSValue> cssValue = CSSArrayFunctionValue::create();
     RefPtr<AnimatableValue> animatableUnknown = AnimatableUnknown::create(cssValue);

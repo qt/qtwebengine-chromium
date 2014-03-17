@@ -37,7 +37,6 @@ public:
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE FINAL;
 
     virtual bool isSVGResourceContainer() const OVERRIDE FINAL { return true; }
-    virtual RenderSVGResourceContainer* toRenderSVGResourceContainer() OVERRIDE FINAL { return this; }
 
     static bool shouldTransformOnTextPainting(RenderObject*, AffineTransform&);
     static AffineTransform transformOnNonScalingStroke(RenderObject*, const AffineTransform& resourceTransform);
@@ -47,18 +46,23 @@ public:
     void addClientRenderLayer(RenderLayer*);
     void removeClientRenderLayer(RenderLayer*);
 
+    void invalidateCacheAndMarkForLayout(SubtreeLayoutScope* = 0);
+
 protected:
+    // When adding modes, make sure we don't overflow m_invalidationMask below.
     enum InvalidationMode {
-        LayoutAndBoundariesInvalidation,
-        BoundariesInvalidation,
-        RepaintInvalidation,
-        ParentOnlyInvalidation
+        LayoutAndBoundariesInvalidation = 1 << 0,
+        BoundariesInvalidation = 1 << 1,
+        RepaintInvalidation = 1 << 2,
+        ParentOnlyInvalidation = 1 << 3
     };
 
     // Used from the invalidateClient/invalidateClients methods from classes, inheriting from us.
     void markAllClientsForInvalidation(InvalidationMode);
     void markAllClientLayersForInvalidation();
     void markClientForInvalidation(RenderObject*, InvalidationMode);
+
+    void clearInvalidationMask() { m_invalidationMask = 0; }
 
     bool m_isInLayout;
 
@@ -71,8 +75,13 @@ private:
     void registerResource();
 
     AtomicString m_id;
+    // Track global (markAllClientsForInvalidation) invals to avoid redundant crawls.
+    unsigned m_invalidationMask : 8;
+
     bool m_registered : 1;
     bool m_isInvalidating : 1;
+    // 22 padding bits available
+
     HashSet<RenderObject*> m_clients;
     HashSet<RenderLayer*> m_clientLayers;
 };
@@ -96,6 +105,8 @@ Renderer* getRenderSVGResourceById(Document& document, const AtomicString& id)
 
     return 0;
 }
+
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderSVGResourceContainer, isSVGResourceContainer());
 
 }
 

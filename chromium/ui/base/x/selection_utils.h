@@ -16,7 +16,7 @@
 #include "base/memory/ref_counted_memory.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/ui_export.h"
-#include "ui/base/x/x11_atom_cache.h"
+#include "ui/gfx/x/x11_atom_cache.h"
 
 namespace ui {
 class SelectionData;
@@ -32,9 +32,9 @@ UI_EXPORT std::vector< ::Atom> GetTextAtomsFrom(const X11AtomCache* atom_cache);
 
 UI_EXPORT std::vector< ::Atom> GetURLAtomsFrom(const X11AtomCache* atom_cache);
 
-// Places the intersection of |one| and |two| into |output|.
-UI_EXPORT void GetAtomIntersection(const std::vector< ::Atom>& one,
-                                   const std::vector< ::Atom>& two,
+// Places the intersection of |desired| and |offered| into |output|.
+UI_EXPORT void GetAtomIntersection(const std::vector< ::Atom>& desired,
+                                   const std::vector< ::Atom>& offered,
                                    std::vector< ::Atom>* output);
 
 // Takes the raw bytes of the string16 and copies them into |bytes|.

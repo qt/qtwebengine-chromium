@@ -23,9 +23,6 @@
         '<(webrtc_root)/common_video/common_video.gyp:common_video',
         '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
       ],
-      'include_dirs': [
-        '.',
-      ],
       'sources': [
         'testsupport/metrics/video_metrics.h',
         'testsupport/metrics/video_metrics.cc',
@@ -73,10 +70,10 @@
           'target_name': 'metrics_unittests_run',
           'type': 'none',
           'dependencies': [
-            '<(import_isolate_path):import_isolate_gypi',
             'metrics_unittests',
           ],
           'includes': [
+            '../build/isolate.gypi',
             'metrics_unittests.isolate',
           ],
           'sources': [

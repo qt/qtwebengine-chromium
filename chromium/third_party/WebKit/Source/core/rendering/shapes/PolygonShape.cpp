@@ -30,8 +30,8 @@
 #include "config.h"
 #include "core/rendering/shapes/PolygonShape.h"
 
-#include "core/platform/graphics/LayoutPoint.h"
 #include "core/rendering/shapes/ShapeInterval.h"
+#include "platform/geometry/LayoutPoint.h"
 #include "wtf/MathExtras.h"
 
 namespace WebCore {
@@ -182,7 +182,7 @@ static inline PassOwnPtr<FloatPolygon> computeShapeMarginBounds(const FloatPolyg
 const FloatPolygon& PolygonShape::shapePaddingBounds() const
 {
     ASSERT(shapePadding() >= 0);
-    if (!shapePadding())
+    if (!shapePadding() || m_polygon.isEmpty())
         return m_polygon;
 
     if (!m_paddingBounds)
@@ -194,7 +194,7 @@ const FloatPolygon& PolygonShape::shapePaddingBounds() const
 const FloatPolygon& PolygonShape::shapeMarginBounds() const
 {
     ASSERT(shapeMargin() >= 0);
-    if (!shapeMargin())
+    if (!shapeMargin() || m_polygon.isEmpty())
         return m_polygon;
 
     if (!m_marginBounds)

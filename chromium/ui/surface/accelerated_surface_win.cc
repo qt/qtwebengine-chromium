@@ -14,6 +14,7 @@
 #include "base/debug/trace_event.h"
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
+#include "base/metrics/histogram.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/scoped_native_library.h"
@@ -27,6 +28,7 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/win/shell.h"
 #include "ui/events/latency_info.h"
+#include "ui/gfx/frame_time.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/win/dpi.h"
 #include "ui/gfx/win/hwnd_util.h"
@@ -521,11 +523,10 @@ bool AcceleratedPresenter::DoCopyToARGB(const gfx::Rect& requested_src_subrect,
     }
   }
 
-  bitmap->setConfig(SkBitmap::kARGB_8888_Config,
-                    dst_size.width(), dst_size.height());
+  bitmap->setConfig(SkBitmap::kARGB_8888_Config, dst_size.width(),
+                    dst_size.height(), 0, kOpaque_SkAlphaType);
   if (!bitmap->allocPixels())
     return false;
-  bitmap->setIsOpaque(true);
 
   // Copy |final_surface| to |bitmap|. This is always a synchronous operation.
   return gpu_ops->ReadFast(final_surface,
@@ -846,7 +847,8 @@ void AcceleratedPresenter::DoPresentAndAcknowledge(
     ReleaseDC(window_, dc);
   }
 
-  latency_info_.swap_timestamp = base::TimeTicks::HighResNow();
+  latency_info_.AddLatencyNumber(
+      ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
 
   hidden_ = false;
 
@@ -864,6 +866,9 @@ void AcceleratedPresenter::DoPresentAndAcknowledge(
     return;
   }
 
+  UMA_HISTOGRAM_CUSTOM_COUNTS("GPU.AcceleratedSurfaceRefreshRate",
+                              display_mode.RefreshRate, 0, 121, 122);
+
   // I can't figure out how to determine how many scanlines are in the
   // vertical blank so clamp it such that scanline / height <= 1.
   int clamped_scanline = std::min(raster_status.ScanLine, display_mode.Height);
@@ -873,18 +878,22 @@ void AcceleratedPresenter::DoPresentAndAcknowledge(
   if (raster_status.InVBlank)
     clamped_scanline = display_mode.Height;
 
-  base::TimeTicks current_time = base::TimeTicks::HighResNow();
-
   // Figure out approximately how far back in time the last vsync was based on
   // the ratio of the raster scanline to the display height.
   base::TimeTicks last_vsync_time;
   base::TimeDelta refresh_period;
+
   if (display_mode.Height) {
+    refresh_period = base::TimeDelta::FromMicroseconds(
+        1000000 / display_mode.RefreshRate);
+    // If FrameTime is not high resolution, we use a timebase of zero to avoid
+    // introducing jitter into our frame start times.
+    if (gfx::FrameTime::TimestampsAreHighRes()) {
+      base::TimeTicks current_time = gfx::FrameTime::Now();
       last_vsync_time = current_time -
         base::TimeDelta::FromMilliseconds((clamped_scanline * 1000) /
             (display_mode.RefreshRate * display_mode.Height));
-      refresh_period = base::TimeDelta::FromMicroseconds(
-          1000000 / display_mode.RefreshRate);
+    }
   }
 
   // Wait for the StretchRect to complete before notifying the GPU process

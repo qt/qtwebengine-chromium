@@ -29,26 +29,22 @@ class HTMLDetailsElement;
 
 class HTMLSummaryElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLSummaryElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<HTMLSummaryElement> create(Document&);
     bool isMainSummary() const;
     virtual bool willRespondToMouseClickEvents() OVERRIDE;
 
 private:
-    HTMLSummaryElement(const QualifiedName&, Document&);
+    explicit HTMLSummaryElement(Document&);
 
     virtual RenderObject* createRenderer(RenderStyle*);
     virtual void defaultEventHandler(Event*);
-    virtual void didAddUserAgentShadowRoot(ShadowRoot*) OVERRIDE;
+    virtual void didAddUserAgentShadowRoot(ShadowRoot&) OVERRIDE;
     HTMLDetailsElement* detailsElement() const;
 
     bool supportsFocus() const OVERRIDE;
 };
 
-inline HTMLSummaryElement* toHTMLSummaryElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::summaryTag));
-    return static_cast<HTMLSummaryElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLSummaryElement, hasTagName(HTMLNames::summaryTag));
 
 }
 

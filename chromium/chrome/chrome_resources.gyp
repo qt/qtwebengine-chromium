@@ -5,6 +5,7 @@
   'variables': {
     'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/chrome',
     'about_credits_file': '<(SHARED_INTERMEDIATE_DIR)/about_credits.html',
+    'additional_modules_list_file': '<(SHARED_INTERMEDIATE_DIR)/chrome/browser/internal/additional_modules_list.txt',
     'repack_locales_cmd': ['python', 'tools/build/repack_locales.py'],
   },
   'targets': [
@@ -106,6 +107,43 @@
             },
           ],
         }],
+        ['chromeos==1 and disable_nacl==0 and disable_nacl_untrusted==0', {
+          'dependencies': [
+            '../chrome/third_party/chromevox/chromevox.gyp:chromevox_resources',
+          ],
+        }],
+      ],
+    },
+    {
+      'target_name': 'chrome_internal_resources_gen',
+      'type': 'none',
+      'conditions': [
+        ['branding=="Chrome"', {
+          'actions': [
+            {
+              'action_name': 'transform_additional_modules_list',
+              'variables': {
+                'additional_modules_input_path':
+                  'browser/internal/resources/additional_modules_list.input',
+                'additional_modules_py_path':
+                  'browser/internal/transform_additional_modules_list.py',
+              },
+              'inputs': [
+                '<(additional_modules_input_path)',
+              ],
+              'outputs': [
+                '<(additional_modules_list_file)',
+              ],
+              'action': [
+                'python',
+                '<(additional_modules_py_path)',
+                '<(additional_modules_input_path)',
+                '<@(_outputs)',
+              ],
+              'message': 'Transforming additional modules list.',
+            }
+          ],
+        }],
       ],
     },
     {
@@ -117,6 +155,7 @@
       'type': 'none',
       'dependencies': [
         'about_credits',
+        'chrome_internal_resources_gen',
       ],
       'actions': [
         # Data resources.
@@ -126,6 +165,7 @@
             'grit_grd_file': 'browser/browser_resources.grd',
             'grit_additional_defines': [
               '-E', 'about_credits_file=<(about_credits_file)',
+              '-E', 'additional_modules_list_file=<(additional_modules_list_file)',
             ],
           },
           'includes': [ '../build/grit_action.gypi' ],
@@ -268,7 +308,7 @@
       'dependencies': [
         'chrome_unscaled_resources',
         'theme_resources_gen',
-        '<(DEPTH)/ui/ui.gyp:ui_resources',
+        '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
       ],
     },
     {
@@ -317,7 +357,7 @@
         '<(DEPTH)/components/component_strings.gyp:component_strings',
         '<(DEPTH)/net/net.gyp:net_resources',
         '<(DEPTH)/ui/base/strings/ui_strings.gyp:ui_strings',
-        '<(DEPTH)/ui/ui.gyp:ui_resources',
+        '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
       ],
       'actions': [
         {
@@ -337,12 +377,6 @@
         },
         {
           'includes': ['chrome_repack_chrome_touch_100_percent.gypi']
-        },
-        {
-          'includes': ['chrome_repack_chrome_touch_140_percent.gypi']
-        },
-        {
-          'includes': ['chrome_repack_chrome_touch_180_percent.gypi']
         },
       ],
       'conditions': [
@@ -427,8 +461,6 @@
                   'destination': '<(PRODUCT_DIR)',
                   'files': [
                     '<(SHARED_INTERMEDIATE_DIR)/repack/chrome_touch_100_percent.pak',
-                    '<(SHARED_INTERMEDIATE_DIR)/repack/chrome_touch_140_percent.pak',
-                    '<(SHARED_INTERMEDIATE_DIR)/repack/chrome_touch_180_percent.pak',
                   ],
                 },
               ],
@@ -476,7 +508,7 @@
                      'credits',
                      '<(about_credits_file)',
           ],
-          'message': 'Generating about:credits.',
+          'message': 'Generating about:credits',
         },
       ],
     },

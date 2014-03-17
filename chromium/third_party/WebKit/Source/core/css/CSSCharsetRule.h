@@ -42,13 +42,15 @@ public:
     virtual void reattach(StyleRuleBase* rule) OVERRIDE { ASSERT_UNUSED(rule, !rule); }
 
     const String& encoding() const { return m_encoding; }
-    void setEncoding(const String& encoding, ExceptionState&) { m_encoding = encoding; }
+    void setEncoding(const String& encoding) { m_encoding = encoding; }
 
 private:
     CSSCharsetRule(CSSStyleSheet* parent, const String& encoding);
 
     String m_encoding;
 };
+
+DEFINE_CSS_RULE_TYPE_CASTS(CSSCharsetRule, CHARSET_RULE);
 
 } // namespace WebCore
 

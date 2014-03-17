@@ -9,11 +9,12 @@
 #include "base/message_loop/message_loop.h"
 #include "media/audio/clockless_audio_sink.h"
 #include "media/audio/null_audio_sink.h"
+#include "media/base/demuxer.h"
 #include "media/base/filter_collection.h"
 #include "media/base/media_keys.h"
 #include "media/base/pipeline.h"
 #include "media/base/video_frame.h"
-#include "media/filters/video_renderer_base.h"
+#include "media/filters/video_renderer_impl.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 namespace base {
@@ -23,7 +24,6 @@ class FilePath;
 namespace media {
 
 class Decryptor;
-class Demuxer;
 
 // Empty MD5 hash string.  Used to verify empty video tracks.
 extern const char kNullVideoHash[];
@@ -31,10 +31,21 @@ extern const char kNullVideoHash[];
 // Empty hash string.  Used to verify empty audio tracks.
 extern const char kNullAudioHash[];
 
+// Dummy tick clock which advances extremely quickly (1 minute every time
+// NowTicks() is called).
+class DummyTickClock : public base::TickClock {
+ public:
+  DummyTickClock() : now_() {}
+  virtual ~DummyTickClock() {}
+  virtual base::TimeTicks NowTicks() OVERRIDE;
+ private:
+  base::TimeTicks now_;
+};
+
 // Integration tests for Pipeline. Real demuxers, real decoders, and
 // base renderer implementations are used to verify pipeline functionality. The
 // renderers used in these tests rely heavily on the AudioRendererBase &
-// VideoRendererBase implementations which contain a majority of the code used
+// VideoRendererImpl implementations which contain a majority of the code used
 // in the real AudioRendererImpl & SkCanvasVideoRenderer implementations used in
 // the browser. The renderers in this test don't actually write data to a
 // display or audio device. Both of these devices are simulated since they have
@@ -95,8 +106,9 @@ class PipelineIntegrationTestBase {
   scoped_refptr<ClocklessAudioSink> clockless_audio_sink_;
   bool ended_;
   PipelineStatus pipeline_status_;
-  NeedKeyCB need_key_cb_;
+  Demuxer::NeedKeyCB need_key_cb_;
   VideoFrame::Format last_video_frame_format_;
+  DummyTickClock dummy_clock_;
 
   void OnStatusCallbackChecked(PipelineStatus expected_status,
                                PipelineStatus status);
@@ -104,7 +116,7 @@ class PipelineIntegrationTestBase {
   PipelineStatusCB QuitOnStatusCB(PipelineStatus expected_status);
   void DemuxerNeedKeyCB(const std::string& type,
                         const std::vector<uint8>& init_data);
-    void set_need_key_cb(const NeedKeyCB& need_key_cb) {
+  void set_need_key_cb(const Demuxer::NeedKeyCB& need_key_cb) {
     need_key_cb_ = need_key_cb;
   }
 

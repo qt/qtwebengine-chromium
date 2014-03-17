@@ -26,21 +26,22 @@
 #include "config.h"
 #include "modules/indexeddb/IDBVersionChangeEvent.h"
 
-#include "core/dom/EventNames.h"
-#include "modules/indexeddb/IDBAny.h"
+#include "bindings/v8/IDBBindingUtilities.h"
+#include "core/events/ThreadLocalEventNames.h"
 
 namespace WebCore {
 
-PassRefPtr<IDBVersionChangeEvent> IDBVersionChangeEvent::create(PassRefPtr<IDBAny> oldVersion, PassRefPtr<IDBAny> newVersion, const AtomicString& eventType, WebKit::WebIDBCallbacks::DataLoss dataLoss)
+PassRefPtr<IDBVersionChangeEvent> IDBVersionChangeEvent::create(PassRefPtr<IDBAny> oldVersion, PassRefPtr<IDBAny> newVersion, const AtomicString& eventType, blink::WebIDBDataLoss dataLoss, const String& dataLossMessage)
 {
-    return adoptRef(new IDBVersionChangeEvent(oldVersion, newVersion, eventType, dataLoss));
+    return adoptRef(new IDBVersionChangeEvent(oldVersion, newVersion, eventType, dataLoss, dataLossMessage));
 }
 
-IDBVersionChangeEvent::IDBVersionChangeEvent(PassRefPtr<IDBAny> oldVersion, PassRefPtr<IDBAny> newVersion, const AtomicString& eventType, WebKit::WebIDBCallbacks::DataLoss dataLoss)
+IDBVersionChangeEvent::IDBVersionChangeEvent(PassRefPtr<IDBAny> oldVersion, PassRefPtr<IDBAny> newVersion, const AtomicString& eventType, blink::WebIDBDataLoss dataLoss, const String& dataLossMessage)
     : Event(eventType, false /*canBubble*/, false /*cancelable*/)
     , m_oldVersion(oldVersion)
     , m_newVersion(newVersion)
     , m_dataLoss(dataLoss)
+    , m_dataLossMessage(dataLossMessage)
 {
     ScriptWrappable::init(this);
 }
@@ -49,10 +50,22 @@ IDBVersionChangeEvent::~IDBVersionChangeEvent()
 {
 }
 
-const AtomicString& IDBVersionChangeEvent::dataLoss()
+ScriptValue IDBVersionChangeEvent::oldVersion(ExecutionContext* context) const
+{
+    DOMRequestState requestState(context);
+    return idbAnyToScriptValue(&requestState, m_oldVersion);
+}
+
+ScriptValue IDBVersionChangeEvent::newVersion(ExecutionContext* context) const
+{
+    DOMRequestState requestState(context);
+    return idbAnyToScriptValue(&requestState, m_newVersion);
+}
+
+const AtomicString& IDBVersionChangeEvent::dataLoss() const
 {
     DEFINE_STATIC_LOCAL(AtomicString, total, ("total", AtomicString::ConstructFromLiteral));
-    if (m_dataLoss == WebKit::WebIDBCallbacks::DataLossTotal)
+    if (m_dataLoss == blink::WebIDBDataLossTotal)
         return total;
     DEFINE_STATIC_LOCAL(AtomicString, none, ("none", AtomicString::ConstructFromLiteral));
     return none;
@@ -60,7 +73,7 @@ const AtomicString& IDBVersionChangeEvent::dataLoss()
 
 const AtomicString& IDBVersionChangeEvent::interfaceName() const
 {
-    return eventNames().interfaceForIDBVersionChangeEvent;
+    return EventNames::IDBVersionChangeEvent;
 }
 
 } // namespace WebCore

@@ -26,10 +26,10 @@
 #include "config.h"
 #include "modules/device_orientation/DeviceMotionEvent.h"
 
+#include "core/events/ThreadLocalEventNames.h"
 #include "modules/device_orientation/DeviceAcceleration.h"
 #include "modules/device_orientation/DeviceMotionData.h"
 #include "modules/device_orientation/DeviceRotationRate.h"
-#include "core/dom/EventNames.h"
 
 namespace WebCore {
 
@@ -107,7 +107,7 @@ double DeviceMotionEvent::interval(bool& isNull) const
 
 const AtomicString& DeviceMotionEvent::interfaceName() const
 {
-    return eventNames().interfaceForDeviceMotionEvent;
+    return EventNames::DeviceMotionEvent;
 }
 
 } // namespace WebCore

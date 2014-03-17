@@ -29,7 +29,7 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/html/canvas/CanvasContextAttributes.h"
-#include "core/platform/graphics/GraphicsContext3D.h"
+#include "platform/graphics/GraphicsContext3D.h"
 #include "wtf/PassRefPtr.h"
 
 namespace WebCore {
@@ -70,6 +70,11 @@ public:
     // screen; default=false
     bool preserveDrawingBuffer() const;
     void setPreserveDrawingBuffer(bool);
+
+    // Whether or not to fail context creation if performance will be
+    // significantly degraded compared to a native GL context; default=false
+    bool failIfMajorPerformanceCaveat() const;
+    void setFailIfMajorPerformanceCaveat(bool);
 
     // Fetches a copy of the attributes stored in this object in a
     // form that can be used to initialize a GraphicsContext3D.

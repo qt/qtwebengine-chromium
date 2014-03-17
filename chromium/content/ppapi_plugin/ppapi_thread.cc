@@ -36,8 +36,9 @@
 #include "ppapi/c/ppp.h"
 #include "ppapi/proxy/interface_list.h"
 #include "ppapi/proxy/plugin_globals.h"
+#include "ppapi/proxy/plugin_message_filter.h"
 #include "ppapi/proxy/ppapi_messages.h"
-#include "ppapi/shared_impl/api_id.h"
+#include "ppapi/proxy/resource_reply_thread_registrar.h"
 #include "third_party/WebKit/public/web/WebKit.h"
 #include "ui/base/ui_base_switches.h"
 
@@ -60,49 +61,25 @@ namespace content {
 typedef int32_t (*InitializeBrokerFunc)
     (PP_ConnectInstance_Func* connect_instance_func);
 
-PpapiThread::DispatcherMessageListener::DispatcherMessageListener(
-    PpapiThread* owner) : owner_(owner) {
-}
-
-PpapiThread::DispatcherMessageListener::~DispatcherMessageListener() {
-}
-
-bool PpapiThread::DispatcherMessageListener::OnMessageReceived(
-    const IPC::Message& msg) {
-  // The first parameter should be a plugin dispatcher ID.
-  PickleIterator iter(msg);
-  uint32 id = 0;
-  if (!msg.ReadUInt32(&iter, &id)) {
-    NOTREACHED();
-    return false;
-  }
-  std::map<uint32, ppapi::proxy::PluginDispatcher*>::iterator dispatcher =
-      owner_->plugin_dispatchers_.find(id);
-  if (dispatcher != owner_->plugin_dispatchers_.end())
-    return dispatcher->second->OnMessageReceived(msg);
-
-  return false;
-}
-
 PpapiThread::PpapiThread(const CommandLine& command_line, bool is_broker)
     : is_broker_(is_broker),
       connect_instance_func_(NULL),
       local_pp_module_(
           base::RandInt(0, std::numeric_limits<PP_Module>::max())),
-      next_plugin_dispatcher_id_(1),
-      dispatcher_message_listener_(this) {
+      next_plugin_dispatcher_id_(1) {
   ppapi::proxy::PluginGlobals* globals = ppapi::proxy::PluginGlobals::Get();
   globals->set_plugin_proxy_delegate(this);
   globals->set_command_line(
       command_line.GetSwitchValueASCII(switches::kPpapiFlashArgs));
 
   webkit_platform_support_.reset(new PpapiWebKitPlatformSupportImpl);
-  WebKit::initialize(webkit_platform_support_.get());
+  blink::initialize(webkit_platform_support_.get());
 
-  // Register interfaces that expect messages from the browser process. Please
-  // note that only those InterfaceProxy-based ones require registration.
-  AddRoute(ppapi::API_ID_PPB_HOSTRESOLVER_PRIVATE,
-           &dispatcher_message_listener_);
+  if (!is_broker_) {
+    channel()->AddFilter(
+        new ppapi::proxy::PluginMessageFilter(
+            NULL, globals->resource_reply_thread_registrar()));
+  }
 }
 
 PpapiThread::~PpapiThread() {
@@ -112,7 +89,8 @@ void PpapiThread::Shutdown() {
   ppapi::proxy::PluginGlobals::Get()->set_plugin_proxy_delegate(NULL);
   if (plugin_entry_points_.shutdown_module)
     plugin_entry_points_.shutdown_module();
-  WebKit::shutdown();
+  webkit_platform_support_->Shutdown();
+  blink::shutdown();
 }
 
 bool PpapiThread::Send(IPC::Message* msg) {
@@ -134,7 +112,6 @@ bool PpapiThread::OnControlMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(PpapiMsg_SetNetworkState, OnSetNetworkState)
     IPC_MESSAGE_HANDLER(PpapiMsg_Crash, OnCrash)
     IPC_MESSAGE_HANDLER(PpapiMsg_Hang, OnHang)
-    IPC_MESSAGE_HANDLER(PpapiPluginMsg_ResourceReply, OnResourceReply)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -229,7 +206,8 @@ void PpapiThread::Unregister(uint32 plugin_dispatcher_id) {
 }
 
 void PpapiThread::OnLoadPlugin(const base::FilePath& path,
-                               const ppapi::PpapiPermissions& permissions) {
+                               const ppapi::PpapiPermissions& permissions,
+                               bool supports_dev_channel) {
   // In case of crashes, the crash dump doesn't indicate which plugin
   // it came from.
   base::debug::SetCrashKeyValue("ppapi_path", path.MaybeAsASCII());
@@ -239,6 +217,7 @@ void PpapiThread::OnLoadPlugin(const base::FilePath& path,
   // This must be set before calling into the plugin so it can get the
   // interfaces it has permission for.
   ppapi::proxy::InterfaceList::SetProcessGlobalPermissions(permissions);
+  ppapi::proxy::InterfaceList::SetSupportsDevChannel(supports_dev_channel);
   permissions_ = permissions;
 
   // Trusted Pepper plugins may be "internal", i.e. built-in to the browser
@@ -383,13 +362,6 @@ void PpapiThread::OnCreateChannel(base::ProcessId renderer_pid,
   }
 
   Send(new PpapiHostMsg_ChannelCreated(channel_handle));
-}
-
-void PpapiThread::OnResourceReply(
-    const ppapi::proxy::ResourceMessageReplyParams& reply_params,
-    const IPC::Message& nested_msg) {
-  ppapi::proxy::PluginDispatcher::DispatchResourceReply(reply_params,
-                                                        nested_msg);
 }
 
 void PpapiThread::OnSetNetworkState(bool online) {

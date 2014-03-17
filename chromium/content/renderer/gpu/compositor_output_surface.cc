@@ -8,6 +8,7 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
+#include "cc/output/managed_memory_policy.h"
 #include "cc/output/output_surface_client.h"
 #include "content/common/gpu/client/command_buffer_proxy_impl.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
@@ -76,7 +77,7 @@ CompositorOutputSurface::CompositorOutputSurface(
 
 CompositorOutputSurface::~CompositorOutputSurface() {
   DCHECK(CalledOnValidThread());
-  SetNeedsBeginFrame(false);
+  SetNeedsBeginImplFrame(false);
   if (!HasClient())
     return;
   UpdateSmoothnessTakesPriority(false);
@@ -97,6 +98,14 @@ bool CompositorOutputSurface::BindToClient(
       routing_id_,
       base::Bind(&CompositorOutputSurfaceProxy::OnMessageReceived,
                  output_surface_proxy_));
+
+  if (!context_provider()) {
+    // Without a GPU context, the memory policy otherwise wouldn't be set.
+    client->SetMemoryPolicy(cc::ManagedMemoryPolicy(
+        64 * 1024 * 1024,
+        gpu::MemoryAllocation::CUTOFF_ALLOW_NICE_TO_HAVE,
+        cc::ManagedMemoryPolicy::kDefaultNumResourcesLimit));
+  }
 
   return true;
 }
@@ -133,7 +142,7 @@ void CompositorOutputSurface::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_SwapCompositorFrameAck, OnSwapAck);
     IPC_MESSAGE_HANDLER(ViewMsg_ReclaimCompositorResources, OnReclaimResources);
 #if defined(OS_ANDROID)
-    IPC_MESSAGE_HANDLER(ViewMsg_BeginFrame, OnBeginFrame);
+    IPC_MESSAGE_HANDLER(ViewMsg_BeginFrame, OnBeginImplFrame);
 #endif
   IPC_END_MESSAGE_MAP()
 }
@@ -145,16 +154,16 @@ void CompositorOutputSurface::OnUpdateVSyncParameters(
 }
 
 #if defined(OS_ANDROID)
-void CompositorOutputSurface::SetNeedsBeginFrame(bool enable) {
+void CompositorOutputSurface::SetNeedsBeginImplFrame(bool enable) {
   DCHECK(CalledOnValidThread());
-  if (needs_begin_frame_ != enable)
+  if (needs_begin_impl_frame_ != enable)
     Send(new ViewHostMsg_SetNeedsBeginFrame(routing_id_, enable));
-  OutputSurface::SetNeedsBeginFrame(enable);
+  OutputSurface::SetNeedsBeginImplFrame(enable);
 }
 
-void CompositorOutputSurface::OnBeginFrame(const cc::BeginFrameArgs& args) {
+void CompositorOutputSurface::OnBeginImplFrame(const cc::BeginFrameArgs& args) {
   DCHECK(CalledOnValidThread());
-  BeginFrame(args);
+  BeginImplFrame(args);
 }
 #endif  // defined(OS_ANDROID)
 

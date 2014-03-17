@@ -13,7 +13,7 @@
 #include "content/public/browser/browser_context.h"
 
 void BrowserContextKeyedServiceFactory::SetTestingFactory(
-    content::BrowserContext* context, FactoryFunction factory) {
+    content::BrowserContext* context, TestingFactoryFunction testing_factory) {
   // Destroying the context may cause us to lose data about whether |context|
   // has our preferences registered on it (since the context object itself
   // isn't dead). See if we need to readd it once we've gone through normal
@@ -29,15 +29,15 @@ void BrowserContextKeyedServiceFactory::SetTestingFactory(
   if (add_context)
     MarkPreferencesSetOn(context);
 
-  factories_[context] = factory;
+  testing_factories_[context] = testing_factory;
 }
 
 BrowserContextKeyedService*
 BrowserContextKeyedServiceFactory::SetTestingFactoryAndUse(
     content::BrowserContext* context,
-    FactoryFunction factory) {
-  DCHECK(factory);
-  SetTestingFactory(context, factory);
+    TestingFactoryFunction testing_factory) {
+  DCHECK(testing_factory);
+  SetTestingFactory(context, testing_factory);
   return GetServiceForBrowserContext(context, true);
 }
 
@@ -72,12 +72,12 @@ BrowserContextKeyedServiceFactory::GetServiceForBrowserContext(
   // Check to see if we have a per-BrowserContext testing factory that we should
   // use instead of default behavior.
   BrowserContextKeyedService* service = NULL;
-  BrowserContextOverriddenFunctions::const_iterator jt =
-      factories_.find(context);
-  if (jt != factories_.end()) {
+  BrowserContextOverriddenTestingFunctions::const_iterator jt =
+      testing_factories_.find(context);
+  if (jt != testing_factories_.end()) {
     if (jt->second) {
       if (!context->IsOffTheRecord())
-        RegisterUserPrefsOnBrowserContext(context);
+        RegisterUserPrefsOnBrowserContextForTest(context);
       service = jt->second(context);
     }
   } else {
@@ -95,6 +95,15 @@ void BrowserContextKeyedServiceFactory::Associate(
   mapping_.insert(std::make_pair(context, service));
 }
 
+void BrowserContextKeyedServiceFactory::Disassociate(
+    content::BrowserContext* context) {
+  BrowserContextKeyedServices::iterator it = mapping_.find(context);
+  if (it != mapping_.end()) {
+    delete it->second;
+    mapping_.erase(it);
+  }
+}
+
 void BrowserContextKeyedServiceFactory::BrowserContextShutdown(
     content::BrowserContext* context) {
   BrowserContextKeyedServices::iterator it = mapping_.find(context);
@@ -104,17 +113,13 @@ void BrowserContextKeyedServiceFactory::BrowserContextShutdown(
 
 void BrowserContextKeyedServiceFactory::BrowserContextDestroyed(
     content::BrowserContext* context) {
-  BrowserContextKeyedServices::iterator it = mapping_.find(context);
-  if (it != mapping_.end()) {
-    delete it->second;
-    mapping_.erase(it);
-  }
+  Disassociate(context);
 
   // For unit tests, we also remove the factory function both so we don't
   // maintain a big map of dead pointers, but also since we may have a second
   // object that lives at the same address (see other comments about unit tests
   // in this file).
-  factories_.erase(context);
+  testing_factories_.erase(context);
 
   BrowserContextKeyedBaseFactory::BrowserContextDestroyed(context);
 }

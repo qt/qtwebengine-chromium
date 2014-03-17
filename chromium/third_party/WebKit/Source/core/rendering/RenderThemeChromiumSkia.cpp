@@ -25,17 +25,18 @@
 #include "core/rendering/RenderThemeChromiumSkia.h"
 
 #include "UserAgentStyleSheets.h"
-#include "core/platform/LayoutTestSupport.h"
-#include "core/platform/ScrollbarTheme.h"
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/Image.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderBox.h"
-#include "core/rendering/RenderMediaControlsChromium.h"
+#include "core/rendering/RenderMediaControls.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderProgress.h"
 #include "core/rendering/RenderThemeChromiumFontProvider.h"
+#include "platform/LayoutTestSupport.h"
+#include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/Image.h"
+#include "platform/scroll/ScrollbarTheme.h"
 #include "wtf/CurrentTime.h"
+#include "wtf/StdLibExtras.h"
 
 namespace WebCore {
 
@@ -243,8 +244,8 @@ bool RenderThemeChromiumSkia::paintSearchFieldCancelButton(RenderObject* cancelB
                                 cancelButtonSize, cancelButtonSize);
     IntRect paintingRect = convertToPaintingRect(inputRenderBox, cancelButtonObject, cancelButtonRect, r);
 
-    static Image* cancelImage = Image::loadPlatformResource("searchCancel").leakRef();
-    static Image* cancelPressedImage = Image::loadPlatformResource("searchCancelPressed").leakRef();
+    DEFINE_STATIC_REF(Image, cancelImage, (Image::loadPlatformResource("searchCancel")));
+    DEFINE_STATIC_REF(Image, cancelPressedImage, (Image::loadPlatformResource("searchCancelPressed")));
     paintInfo.context->drawImage(isPressed(cancelButtonObject) ? cancelPressedImage : cancelImage, paintingRect);
     return false;
 }
@@ -286,64 +287,64 @@ bool RenderThemeChromiumSkia::paintSearchFieldResultsDecoration(RenderObject* ma
                              magnifierSize, magnifierSize);
     IntRect paintingRect = convertToPaintingRect(inputRenderBox, magnifierObject, magnifierRect, r);
 
-    static Image* magnifierImage = Image::loadPlatformResource("searchMagnifier").leakRef();
+    DEFINE_STATIC_REF(Image, magnifierImage, (Image::loadPlatformResource("searchMagnifier")));
     paintInfo.context->drawImage(magnifierImage, paintingRect);
     return false;
 }
 
 bool RenderThemeChromiumSkia::paintMediaSliderTrack(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
-    return RenderMediaControlsChromium::paintMediaControlsPart(MediaSlider, object, paintInfo, rect);
+    return RenderMediaControls::paintMediaControlsPart(MediaSlider, object, paintInfo, rect);
 }
 
 bool RenderThemeChromiumSkia::paintMediaVolumeSliderTrack(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
-    return RenderMediaControlsChromium::paintMediaControlsPart(MediaVolumeSlider, object, paintInfo, rect);
+    return RenderMediaControls::paintMediaControlsPart(MediaVolumeSlider, object, paintInfo, rect);
 }
 
 void RenderThemeChromiumSkia::adjustSliderThumbSize(RenderStyle* style, Element*) const
 {
-    RenderMediaControlsChromium::adjustMediaSliderThumbSize(style);
+    RenderMediaControls::adjustMediaSliderThumbSize(style);
 }
 
 bool RenderThemeChromiumSkia::paintMediaSliderThumb(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
-    return RenderMediaControlsChromium::paintMediaControlsPart(MediaSliderThumb, object, paintInfo, rect);
+    return RenderMediaControls::paintMediaControlsPart(MediaSliderThumb, object, paintInfo, rect);
 }
 
 bool RenderThemeChromiumSkia::paintMediaToggleClosedCaptionsButton(RenderObject* o, const PaintInfo& paintInfo, const IntRect& r)
 {
-    return RenderMediaControlsChromium::paintMediaControlsPart(MediaShowClosedCaptionsButton, o, paintInfo, r);
+    return RenderMediaControls::paintMediaControlsPart(MediaShowClosedCaptionsButton, o, paintInfo, r);
 }
 
 bool RenderThemeChromiumSkia::paintMediaVolumeSliderThumb(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
-    return RenderMediaControlsChromium::paintMediaControlsPart(MediaVolumeSliderThumb, object, paintInfo, rect);
+    return RenderMediaControls::paintMediaControlsPart(MediaVolumeSliderThumb, object, paintInfo, rect);
 }
 
 bool RenderThemeChromiumSkia::paintMediaPlayButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
-    return RenderMediaControlsChromium::paintMediaControlsPart(MediaPlayButton, object, paintInfo, rect);
+    return RenderMediaControls::paintMediaControlsPart(MediaPlayButton, object, paintInfo, rect);
 }
 
 bool RenderThemeChromiumSkia::paintMediaMuteButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
-    return RenderMediaControlsChromium::paintMediaControlsPart(MediaMuteButton, object, paintInfo, rect);
+    return RenderMediaControls::paintMediaControlsPart(MediaMuteButton, object, paintInfo, rect);
 }
 
 String RenderThemeChromiumSkia::formatMediaControlsTime(float time) const
 {
-    return RenderMediaControlsChromium::formatMediaControlsTime(time);
+    return RenderMediaControls::formatMediaControlsTime(time);
 }
 
 String RenderThemeChromiumSkia::formatMediaControlsCurrentTime(float currentTime, float duration) const
 {
-    return RenderMediaControlsChromium::formatMediaControlsCurrentTime(currentTime, duration);
+    return RenderMediaControls::formatMediaControlsCurrentTime(currentTime, duration);
 }
 
 bool RenderThemeChromiumSkia::paintMediaFullscreenButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
-    return RenderMediaControlsChromium::paintMediaControlsPart(MediaEnterFullscreenButton, object, paintInfo, rect);
+    return RenderMediaControls::paintMediaControlsPart(MediaEnterFullscreenButton, object, paintInfo, rect);
 }
 
 void RenderThemeChromiumSkia::adjustMenuListStyle(RenderStyle* style, WebCore::Element*) const
@@ -425,9 +426,8 @@ bool RenderThemeChromiumSkia::shouldShowPlaceholderWhenFocused() const
 //
 // Following values are come from default of GTK+
 //
-static const int progressDeltaPixelsPerSecond = 100;
 static const int progressActivityBlocks = 5;
-static const int progressAnimationFrmaes = 10;
+static const int progressAnimationFrames = 10;
 static const double progressAnimationInterval = 0.125;
 
 IntRect RenderThemeChromiumSkia::determinateProgressValueRectFor(RenderProgress* renderProgress, const IntRect& rect) const
@@ -457,7 +457,7 @@ double RenderThemeChromiumSkia::animationRepeatIntervalForProgressBar(RenderProg
 
 double RenderThemeChromiumSkia::animationDurationForProgressBar(RenderProgress* renderProgress) const
 {
-    return progressAnimationInterval * progressAnimationFrmaes * 2; // "2" for back and forth
+    return progressAnimationInterval * progressAnimationFrames * 2; // "2" for back and forth
 }
 
 IntRect RenderThemeChromiumSkia::progressValueRectFor(RenderProgress* renderProgress, const IntRect& rect) const

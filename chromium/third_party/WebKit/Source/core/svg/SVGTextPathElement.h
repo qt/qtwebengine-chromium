@@ -109,10 +109,10 @@ public:
         TEXTPATH_SPACINGTYPE_EXACT = SVGTextPathSpacingExact
     };
 
-    static PassRefPtr<SVGTextPathElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGTextPathElement> create(Document&);
 
 private:
-    SVGTextPathElement(const QualifiedName&, Document&);
+    explicit SVGTextPathElement(Document&);
 
     virtual ~SVGTextPathElement();
 
@@ -140,11 +140,7 @@ private:
     END_DECLARE_ANIMATED_PROPERTIES
 };
 
-inline SVGTextPathElement* toSVGTextPathElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::textPathTag));
-    return static_cast<SVGTextPathElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(SVGTextPathElement, hasTagName(SVGNames::textPathTag));
 
 } // namespace WebCore
 

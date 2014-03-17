@@ -70,18 +70,20 @@ public:
 
     virtual ~TimedItem() { }
 
+    virtual bool isAnimation() const { return false; }
+
     Phase phase() const { return ensureCalculated().phase; }
     bool isCurrent() const { return ensureCalculated().isCurrent; }
     bool isInEffect() const { return ensureCalculated().isInEffect; }
     bool isInPlay() const { return ensureCalculated().isInPlay; }
-
-    double startTime() const { return m_startTime; }
+    double timeToEffectChange() const { return ensureCalculated().timeToEffectChange; }
 
     double currentIteration() const { return ensureCalculated().currentIteration; }
     double activeDuration() const { return ensureCalculated().activeDuration; }
     double timeFraction() const { return ensureCalculated().timeFraction; }
+    double startTime() const { return m_startTime; }
     const Player* player() const { return m_player; }
-
+    Player* player() { return m_player; }
     const Timing& specified() const { return m_specified; }
 
 protected:
@@ -90,13 +92,24 @@ protected:
     // When TimedItem receives a new inherited time via updateInheritedTime
     // it will (if necessary) recalculate timings and (if necessary) call
     // updateChildrenAndEffects.
-    void updateInheritedTime(double inheritedTime) const;
-    virtual void updateChildrenAndEffects(bool wasInEffect) const = 0;
-    virtual double intrinsicIterationDuration() const { return 0; };
-    virtual void willDetach() = 0;
+    // Returns whether style recalc was triggered.
+    bool updateInheritedTime(double inheritedTime) const;
+    void invalidate() const { m_needsUpdate = true; };
 
 private:
-    void attach(Player* player) { m_player = player; };
+    // Returns whether style recalc was triggered.
+    virtual bool updateChildrenAndEffects() const = 0;
+    virtual double intrinsicIterationDuration() const { return 0; };
+    virtual double calculateTimeToEffectChange(double localTime, double timeToNextIteration) const = 0;
+    virtual void didAttach() { };
+    virtual void willDetach() { };
+
+    void attach(Player* player)
+    {
+        m_player = player;
+        didAttach();
+    };
+
     void detach()
     {
         ASSERT(m_player);
@@ -120,8 +133,11 @@ private:
         bool isCurrent;
         bool isInEffect;
         bool isInPlay;
+        double timeToEffectChange;
     } m_calculated;
     mutable bool m_isFirstSample;
+    mutable bool m_needsUpdate;
+    mutable double m_lastUpdateTime;
 
     // FIXME: Should check the version and reinherit time if inconsistent.
     const CalculatedTiming& ensureCalculated() const { return m_calculated; }

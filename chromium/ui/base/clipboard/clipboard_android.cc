@@ -97,10 +97,26 @@ void ClipboardMap::Set(const std::string& format, const std::string& data) {
 
   map_[format] = data;
   if (format == kPlainTextFormat) {
-    ScopedJavaLocalRef<jstring> str = ConvertUTF8ToJavaString(
-        env, data.c_str());
-    DCHECK(str.obj() && !ClearException(env));
+    ScopedJavaLocalRef<jstring> str = ConvertUTF8ToJavaString(env, data);
+    DCHECK(str.obj());
+
     Java_Clipboard_setText(env, clipboard_manager_.obj(), str.obj());
+  } else if (format == kHTMLFormat) {
+    // Android's API for storing HTML content on the clipboard requires a plain-
+    // text representation to be available as well. ScopedClipboardWriter has a
+    // stable order for setting clipboard data, ensuring that plain-text data
+    // is available first. Do not write to the clipboard when only HTML data is
+    // available, because otherwise others apps may not be able to paste it.
+    if (!ContainsKey(map_, kPlainTextFormat))
+      return;
+
+    ScopedJavaLocalRef<jstring> html = ConvertUTF8ToJavaString(env, data);
+    ScopedJavaLocalRef<jstring> text = ConvertUTF8ToJavaString(
+        env, map_[kPlainTextFormat].c_str());
+
+    DCHECK(html.obj() && text.obj());
+    Java_Clipboard_setHTMLText(
+        env, clipboard_manager_.obj(), html.obj(), text.obj());
   }
 }
 
@@ -113,39 +129,50 @@ void ClipboardMap::Clear() {
 
 // If the internal map contains a plain-text entry and it does not match that
 // in the Android clipboard, clear the map and insert the Android text into it.
+// If there is an HTML entry in the Android clipboard it gets inserted in the
+// map.
 void ClipboardMap::SyncWithAndroidClipboard() {
   lock_.AssertAcquired();
   JNIEnv* env = AttachCurrentThread();
 
+  // Update the plain text clipboard entry
   std::map<std::string, std::string>::const_iterator it =
     map_.find(kPlainTextFormat);
-
-  if (!Java_Clipboard_hasPlainText(env, clipboard_manager_.obj())) {
-    if (it != map_.end())
-      // We have plain text on this side, but Android doesn't. Nuke ours.
-      map_.clear();
-    return;
-  }
-
-  ScopedJavaLocalRef<jstring> java_string =
+  ScopedJavaLocalRef<jstring> java_string_text =
       Java_Clipboard_getCoercedText(env, clipboard_manager_.obj());
-
-  if (!java_string.obj()) {
-    // Tolerate a null value from the Java side, even though that should not
-    // happen since hasPlainText has already returned true.
-    // Should only happen if someone is using the clipboard on multiple
-    // threads and clears it out after hasPlainText but before we get here...
-    if (it != map_.end())
+  if (java_string_text.obj()) {
+    std::string android_string = ConvertJavaStringToUTF8(java_string_text);
+    if (!android_string.empty() &&
+        (it == map_.end() || it->second != android_string)) {
+      // There is a different string in the Android clipboard than we have.
+      // Clear the map on our side.
+      map_.clear();
+      map_[kPlainTextFormat] = android_string;
+    }
+  } else {
+    if (it != map_.end()) {
       // We have plain text on this side, but Android doesn't. Nuke ours.
       map_.clear();
+    }
+  }
+
+  if (!Java_Clipboard_isHTMLClipboardSupported(env)) {
     return;
   }
 
-  // If Android text differs from ours (or we have none), then copy Android's.
-  std::string android_string = ConvertJavaStringToUTF8(java_string);
-  if (it == map_.end() || it->second != android_string) {
-    map_.clear();
-    map_[kPlainTextFormat] = android_string;
+  // Update the html clipboard entry
+  ScopedJavaLocalRef<jstring> java_string_html =
+      Java_Clipboard_getHTMLText(env, clipboard_manager_.obj());
+  if (java_string_html.obj()) {
+    std::string android_string = ConvertJavaStringToUTF8(java_string_html);
+    if (!android_string.empty()) {
+      map_[kHTMLFormat] = android_string;
+      return;
+    }
+  }
+  it = map_.find(kHTMLFormat);
+  if (it != map_.end()) {
+    map_.erase(kHTMLFormat);
   }
 }
 
@@ -171,6 +198,10 @@ Clipboard::FormatType Clipboard::FormatType::Deserialize(
   return FormatType(serialization);
 }
 
+bool Clipboard::FormatType::operator<(const FormatType& other) const {
+  return data_ < other.data_;
+}
+
 bool Clipboard::FormatType::Equals(const FormatType& other) const {
   return data_ == other.data_;
 }
@@ -184,9 +215,9 @@ Clipboard::~Clipboard() {
 }
 
 // Main entry point used to write several values in the clipboard.
-void Clipboard::WriteObjects(Buffer buffer, const ObjectMap& objects) {
+void Clipboard::WriteObjects(ClipboardType type, const ObjectMap& objects) {
   DCHECK(CalledOnValidThread());
-  DCHECK_EQ(buffer, BUFFER_STANDARD);
+  DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
   g_map.Get().Clear();
   for (ObjectMap::const_iterator iter = objects.begin();
        iter != objects.end(); ++iter) {
@@ -194,7 +225,7 @@ void Clipboard::WriteObjects(Buffer buffer, const ObjectMap& objects) {
   }
 }
 
-uint64 Clipboard::GetSequenceNumber(Clipboard::Buffer /* buffer */) {
+uint64 Clipboard::GetSequenceNumber(ClipboardType /* type */) {
   DCHECK(CalledOnValidThread());
   // TODO: implement this. For now this interface will advertise
   // that the clipboard never changes. That's fine as long as we
@@ -203,22 +234,23 @@ uint64 Clipboard::GetSequenceNumber(Clipboard::Buffer /* buffer */) {
 }
 
 bool Clipboard::IsFormatAvailable(const Clipboard::FormatType& format,
-                                  Clipboard::Buffer buffer) const {
+                                  ClipboardType type) const {
   DCHECK(CalledOnValidThread());
-  DCHECK_EQ(buffer, BUFFER_STANDARD);
+  DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
   return g_map.Get().HasFormat(format.data());
 }
 
-void Clipboard::Clear(Buffer buffer) {
+void Clipboard::Clear(ClipboardType type) {
   DCHECK(CalledOnValidThread());
-  DCHECK_EQ(buffer, BUFFER_STANDARD);
+  DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
   g_map.Get().Clear();
 }
 
-void Clipboard::ReadAvailableTypes(Buffer buffer, std::vector<string16>* types,
+void Clipboard::ReadAvailableTypes(ClipboardType type,
+                                   std::vector<string16>* types,
                                    bool* contains_filenames) const {
   DCHECK(CalledOnValidThread());
-  DCHECK_EQ(buffer, BUFFER_STANDARD);
+  DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
 
   if (!types || !contains_filenames) {
     NOTREACHED();
@@ -231,29 +263,28 @@ void Clipboard::ReadAvailableTypes(Buffer buffer, std::vector<string16>* types,
   *contains_filenames = false;
 }
 
-void Clipboard::ReadText(Clipboard::Buffer buffer, string16* result) const {
+void Clipboard::ReadText(ClipboardType type, string16* result) const {
   DCHECK(CalledOnValidThread());
-  DCHECK_EQ(buffer, BUFFER_STANDARD);
+  DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
   std::string utf8;
-  ReadAsciiText(buffer, &utf8);
+  ReadAsciiText(type, &utf8);
   *result = UTF8ToUTF16(utf8);
 }
 
-void Clipboard::ReadAsciiText(Clipboard::Buffer buffer,
-                              std::string* result) const {
+void Clipboard::ReadAsciiText(ClipboardType type, std::string* result) const {
   DCHECK(CalledOnValidThread());
-  DCHECK_EQ(buffer, BUFFER_STANDARD);
+  DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
   *result = g_map.Get().Get(kPlainTextFormat);
 }
 
 // Note: |src_url| isn't really used. It is only implemented in Windows
-void Clipboard::ReadHTML(Clipboard::Buffer buffer,
+void Clipboard::ReadHTML(ClipboardType type,
                          string16* markup,
                          std::string* src_url,
                          uint32* fragment_start,
                          uint32* fragment_end) const {
   DCHECK(CalledOnValidThread());
-  DCHECK_EQ(buffer, BUFFER_STANDARD);
+  DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
   if (src_url)
     src_url->clear();
 
@@ -264,14 +295,14 @@ void Clipboard::ReadHTML(Clipboard::Buffer buffer,
   *fragment_end = static_cast<uint32>(markup->length());
 }
 
-void Clipboard::ReadRTF(Buffer buffer, std::string* result) const {
+void Clipboard::ReadRTF(ClipboardType type, std::string* result) const {
   DCHECK(CalledOnValidThread());
   NOTIMPLEMENTED();
 }
 
-SkBitmap Clipboard::ReadImage(Buffer buffer) const {
+SkBitmap Clipboard::ReadImage(ClipboardType type) const {
   DCHECK(CalledOnValidThread());
-  DCHECK_EQ(buffer, BUFFER_STANDARD);
+  DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
   std::string input = g_map.Get().Get(kBitmapFormat);
 
   SkBitmap bmp;
@@ -279,19 +310,17 @@ SkBitmap Clipboard::ReadImage(Buffer buffer) const {
     DCHECK_LE(sizeof(gfx::Size), input.size());
     const gfx::Size* size = reinterpret_cast<const gfx::Size*>(input.data());
 
-    bmp.setConfig(
-        SkBitmap::kARGB_8888_Config, size->width(), size->height(), 0);
+    bmp.setConfig(SkBitmap::kARGB_8888_Config, size->width(), size->height());
     bmp.allocPixels();
 
-    int bm_size = size->width() * size->height() * 4;
-    DCHECK_EQ(sizeof(gfx::Size) + bm_size, input.size());
+    DCHECK_EQ(sizeof(gfx::Size) + bmp.getSize(), input.size());
 
-    memcpy(bmp.getPixels(), input.data() + sizeof(gfx::Size), bm_size);
+    memcpy(bmp.getPixels(), input.data() + sizeof(gfx::Size), bmp.getSize());
   }
   return bmp;
 }
 
-void Clipboard::ReadCustomData(Buffer buffer,
+void Clipboard::ReadCustomData(ClipboardType clipboard_type,
                                const string16& type,
                                string16* result) const {
   DCHECK(CalledOnValidThread());
@@ -310,7 +339,7 @@ void Clipboard::ReadData(const Clipboard::FormatType& format,
 }
 
 // static
-Clipboard::FormatType Clipboard::GetFormatType(
+Clipboard::FormatType Clipboard::GetFormatTypeInternal(
     const std::string& format_string) {
   return FormatType::Deserialize(format_string);
 }
@@ -353,13 +382,15 @@ const Clipboard::FormatType& Clipboard::GetBitmapFormatType() {
 
 // static
 const Clipboard::FormatType& Clipboard::GetWebCustomDataFormatType() {
-  CR_DEFINE_STATIC_LOCAL(FormatType, type, (kMimeTypeWebCustomData));
+  CR_DEFINE_STATIC_LOCAL(
+      FormatType, type, (GetFormatType(kMimeTypeWebCustomData)));
   return type;
 }
 
 // static
 const Clipboard::FormatType& Clipboard::GetPepperCustomDataFormatType() {
-  CR_DEFINE_STATIC_LOCAL(FormatType, type, (kMimeTypePepperCustomData));
+  CR_DEFINE_STATIC_LOCAL(
+      FormatType, type, (GetFormatType(kMimeTypePepperCustomData)));
   return type;
 }
 
@@ -391,16 +422,17 @@ void Clipboard::WriteWebSmartPaste() {
   g_map.Get().Set(kWebKitSmartPasteFormat, std::string());
 }
 
-// All platforms use gfx::Size for size data but it is passed as a const char*
-// Further, pixel_data is expected to be 32 bits per pixel
 // Note: we implement this to pass all unit tests but it is currently unclear
 // how some code would consume this.
-void Clipboard::WriteBitmap(const char* pixel_data, const char* size_data) {
-  const gfx::Size* size = reinterpret_cast<const gfx::Size*>(size_data);
-  int bm_size = size->width() * size->height() * 4;
+void Clipboard::WriteBitmap(const SkBitmap& bitmap) {
+  gfx::Size size(bitmap.width(), bitmap.height());
 
-  std::string packed(size_data, sizeof(gfx::Size));
-  packed += std::string(pixel_data, bm_size);
+  std::string packed(reinterpret_cast<const char*>(&size), sizeof(size));
+  {
+    SkAutoLockPixels bitmap_lock(bitmap);
+    packed += std::string(static_cast<const char*>(bitmap.getPixels()),
+                          bitmap.getSize());
+  }
   g_map.Get().Set(kBitmapFormat, packed);
 }
 

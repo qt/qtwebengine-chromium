@@ -33,7 +33,7 @@
 
 #include "../platform/WebString.h"
 
-namespace WebKit {
+namespace blink {
 
 // Options used when performing a find-in-page query.
 struct WebFindOptions {
@@ -46,12 +46,21 @@ struct WebFindOptions {
     // Whether this operation is the first request or a follow-up.
     bool findNext;
 
+    // Whether this operation should look for matches only at the start of words.
+    bool wordStart;
+
+    // When combined with wordStart, accepts a match in the middle of a word if the match begins with
+    // an uppercase letter followed by a lowercase or non-letter. Accepts several other intra-word matches.
+    bool medialCapitalAsWordStart;
+
     WebFindOptions()
         : forward(true)
         , matchCase(false)
-        , findNext(false) { }
+        , findNext(false)
+        , wordStart(false)
+        , medialCapitalAsWordStart(false) { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

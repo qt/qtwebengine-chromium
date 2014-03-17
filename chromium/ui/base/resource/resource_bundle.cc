@@ -40,6 +40,15 @@
 #include "ui/gfx/platform_font_pango.h"
 #endif
 
+#if defined(OS_WIN)
+#include "ui/base/win/dpi_setup.h"
+#include "ui/gfx/win/dpi.h"
+#endif
+
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+#include "base/mac/mac_util.h"
+#endif
+
 namespace ui {
 
 namespace {
@@ -57,10 +66,19 @@ const unsigned char kPngDataChunkType[4] = { 'I', 'D', 'A', 'T' };
 
 ResourceBundle* g_shared_instance_ = NULL;
 
-void InitDefaultFont() {
+void InitDefaultFontList() {
 #if defined(OS_CHROMEOS)
+  gfx::FontList::SetDefaultFontDescription(
+      l10n_util::GetStringUTF8(IDS_UI_FONT_FAMILY_CROS));
+
+  // TODO(yukishiino): Remove SetDefaultFontDescription() once the migration to
+  // the font list is done.  We will no longer need SetDefaultFontDescription()
+  // after every client gets started using a FontList instead of a Font.
   gfx::PlatformFontPango::SetDefaultFontDescription(
       l10n_util::GetStringUTF8(IDS_UI_FONT_FAMILY_CROS));
+#else
+  // Use a single default font as the default font list.
+  gfx::FontList::SetDefaultFontDescription(std::string());
 #endif
 }
 
@@ -80,18 +98,19 @@ class ResourceBundle::ResourceBundleImageSource : public gfx::ImageSkiaSource {
   virtual ~ResourceBundleImageSource() {}
 
   // gfx::ImageSkiaSource overrides:
-  virtual gfx::ImageSkiaRep GetImageForScale(
-      ui::ScaleFactor scale_factor) OVERRIDE {
+  virtual gfx::ImageSkiaRep GetImageForScale(float scale) OVERRIDE {
     SkBitmap image;
     bool fell_back_to_1x = false;
+    ScaleFactor scale_factor = GetSupportedScaleFactor(scale);
     bool found = rb_->LoadBitmap(resource_id_, &scale_factor,
                                  &image, &fell_back_to_1x);
+    // Force to a supported scale.
+    scale = ui::GetImageScale(scale_factor);
     if (!found)
       return gfx::ImageSkiaRep();
 
     if (fell_back_to_1x) {
       // GRIT fell back to the 100% image, so rescale it to the correct size.
-      float scale = GetScaleFactorScale(scale_factor);
       image = skia::ImageOperations::Resize(
           image,
           skia::ImageOperations::RESIZE_LANCZOS3,
@@ -112,7 +131,7 @@ class ResourceBundle::ResourceBundleImageSource : public gfx::ImageSkiaSource {
       }
     }
 
-    return gfx::ImageSkiaRep(image, scale_factor);
+    return gfx::ImageSkiaRep(image, scale);
   }
 
  private:
@@ -125,32 +144,26 @@ class ResourceBundle::ResourceBundleImageSource : public gfx::ImageSkiaSource {
 // static
 std::string ResourceBundle::InitSharedInstanceWithLocale(
     const std::string& pref_locale, Delegate* delegate) {
-  DCHECK(g_shared_instance_ == NULL) << "ResourceBundle initialized twice";
-  g_shared_instance_ = new ResourceBundle(delegate);
-
+  InitSharedInstance(delegate);
   g_shared_instance_->LoadCommonResources();
   std::string result = g_shared_instance_->LoadLocaleResources(pref_locale);
-  InitDefaultFont();
+  InitDefaultFontList();
   return result;
 }
 
 // static
 std::string ResourceBundle::InitSharedInstanceLocaleOnly(
     const std::string& pref_locale, Delegate* delegate) {
-  DCHECK(g_shared_instance_ == NULL) << "ResourceBundle initialized twice";
-  g_shared_instance_ = new ResourceBundle(delegate);
-
+  InitSharedInstance(delegate);
   std::string result = g_shared_instance_->LoadLocaleResources(pref_locale);
-  InitDefaultFont();
+  InitDefaultFontList();
   return result;
 }
 
 // static
 void ResourceBundle::InitSharedInstanceWithPakFile(
     base::PlatformFile pak_file, bool should_load_common_resources) {
-  DCHECK(g_shared_instance_ == NULL) << "ResourceBundle initialized twice";
-  g_shared_instance_ = new ResourceBundle(NULL);
-
+  InitSharedInstance(NULL);
   if (should_load_common_resources)
     g_shared_instance_->LoadCommonResources();
 
@@ -161,17 +174,15 @@ void ResourceBundle::InitSharedInstanceWithPakFile(
     return;
   }
   g_shared_instance_->locale_resources_data_.reset(data_pack.release());
-  InitDefaultFont();
+  InitDefaultFontList();
 }
 
 // static
 void ResourceBundle::InitSharedInstanceWithPakPath(const base::FilePath& path) {
-  DCHECK(g_shared_instance_ == NULL) << "ResourceBundle initialized twice";
-  g_shared_instance_ = new ResourceBundle(NULL);
-
+  InitSharedInstance(NULL);
   g_shared_instance_->LoadTestResources(path, path);
 
-  InitDefaultFont();
+  InitDefaultFontList();
 }
 
 // static
@@ -287,8 +298,7 @@ std::string ResourceBundle::LoadLocaleResources(
 void ResourceBundle::LoadTestResources(const base::FilePath& path,
                                        const base::FilePath& locale_path) {
   // Use the given resource pak for both common and localized resources.
-  scoped_ptr<DataPack> data_pack(
-      new DataPack(SCALE_FACTOR_100P));
+  scoped_ptr<DataPack> data_pack(new DataPack(SCALE_FACTOR_100P));
   if (!path.empty() && data_pack->LoadFromPath(path))
     AddDataPack(data_pack.release());
 
@@ -296,8 +306,7 @@ void ResourceBundle::LoadTestResources(const base::FilePath& path,
   if (!locale_path.empty() && data_pack->LoadFromPath(locale_path)) {
     locale_resources_data_.reset(data_pack.release());
   } else {
-    locale_resources_data_.reset(
-        new DataPack(ui::SCALE_FACTOR_NONE));
+    locale_resources_data_.reset(new DataPack(ui::SCALE_FACTOR_NONE));
   }
 }
 
@@ -341,18 +350,20 @@ gfx::Image& ResourceBundle::GetImageNamed(int resource_id) {
     DCHECK(!data_packs_.empty()) <<
         "Missing call to SetResourcesDataDLL?";
 
+#if defined(OS_CHROMEOS)
+    ui::ScaleFactor scale_factor_to_load = GetMaxScaleFactor();
+#else
+    ui::ScaleFactor scale_factor_to_load = ui::SCALE_FACTOR_100P;
+#endif
+
+    float scale = GetImageScale(scale_factor_to_load);
     // TODO(oshima): Consider reading the image size from png IHDR chunk and
     // skip decoding here and remove #ifdef below.
     // ResourceBundle::GetSharedInstance() is destroyed after the
     // BrowserMainLoop has finished running. |image_skia| is guaranteed to be
     // destroyed before the resource bundle is destroyed.
-#if defined(OS_CHROMEOS)
-    ui::ScaleFactor scale_factor_to_load = ui::GetMaxScaleFactor();
-#else
-    ui::ScaleFactor scale_factor_to_load = ui::SCALE_FACTOR_100P;
-#endif
     gfx::ImageSkia image_skia(new ResourceBundleImageSource(this, resource_id),
-                              scale_factor_to_load);
+                              scale);
     if (image_skia.isNull()) {
       LOG(WARNING) << "Unable to load image with id " << resource_id;
       NOTREACHED();  // Want to assert in debug mode.
@@ -431,8 +442,8 @@ base::StringPiece ResourceBundle::GetRawDataResourceForScale(
   return base::StringPiece();
 }
 
-string16 ResourceBundle::GetLocalizedString(int message_id) {
-  string16 string;
+base::string16 ResourceBundle::GetLocalizedString(int message_id) {
+  base::string16 string;
   if (delegate_ && delegate_->GetLocalizedString(message_id, &string))
     return string;
 
@@ -444,7 +455,7 @@ string16 ResourceBundle::GetLocalizedString(int message_id) {
   // string (better than crashing).
   if (!locale_resources_data_.get()) {
     LOG(WARNING) << "locale resources are not loaded";
-    return string16();
+    return base::string16();
   }
 
   base::StringPiece data;
@@ -454,7 +465,7 @@ string16 ResourceBundle::GetLocalizedString(int message_id) {
     data = GetRawDataResource(message_id);
     if (data.empty()) {
       NOTREACHED() << "unable to find resource: " << message_id;
-      return string16();
+      return base::string16();
     }
   }
 
@@ -465,10 +476,10 @@ string16 ResourceBundle::GetLocalizedString(int message_id) {
       << "requested localized string from binary pack file";
 
   // Data pack encodes strings as either UTF8 or UTF16.
-  string16 msg;
+  base::string16 msg;
   if (encoding == ResourceHandle::UTF16) {
-    msg = string16(reinterpret_cast<const char16*>(data.data()),
-                   data.length() / 2);
+    msg = base::string16(reinterpret_cast<const base::char16*>(data.data()),
+                         data.length() / 2);
   } else if (encoding == ResourceHandle::UTF8) {
     msg = UTF8ToUTF16(data);
   }
@@ -510,6 +521,14 @@ void ResourceBundle::ReloadFonts() {
   LoadFontsIfNecessary();
 }
 
+ScaleFactor ResourceBundle::GetMaxScaleFactor() const {
+#if defined(OS_CHROMEOS)
+  return max_scale_factor_;
+#else
+  return GetSupportedScaleFactors().back();
+#endif
+}
+
 ResourceBundle::ResourceBundle(Delegate* delegate)
     : delegate_(delegate),
       images_and_fonts_lock_(new base::Lock),
@@ -520,6 +539,45 @@ ResourceBundle::ResourceBundle(Delegate* delegate)
 ResourceBundle::~ResourceBundle() {
   FreeImages();
   UnloadLocaleResources();
+}
+
+// static
+void ResourceBundle::InitSharedInstance(Delegate* delegate) {
+  DCHECK(g_shared_instance_ == NULL) << "ResourceBundle initialized twice";
+  g_shared_instance_ = new ResourceBundle(delegate);
+  static std::vector<ScaleFactor> supported_scale_factors;
+#if !defined(OS_IOS)
+  // On platforms other than iOS, 100P is always a supported scale factor.
+  supported_scale_factors.push_back(SCALE_FACTOR_100P);
+#endif
+#if defined(OS_ANDROID)
+  const gfx::Display display =
+      gfx::Screen::GetNativeScreen()->GetPrimaryDisplay();
+  const float display_density = display.device_scale_factor();
+  const ScaleFactor closest = FindClosestScaleFactorUnsafe(display_density);
+  if (closest != SCALE_FACTOR_100P)
+    supported_scale_factors.push_back(closest);
+#elif defined(OS_IOS)
+    gfx::Display display = gfx::Screen::GetNativeScreen()->GetPrimaryDisplay();
+  if (display.device_scale_factor() > 1.0) {
+    DCHECK_EQ(2.0, display.device_scale_factor());
+    supported_scale_factors.push_back(SCALE_FACTOR_200P);
+  } else {
+    supported_scale_factors.push_back(SCALE_FACTOR_100P);
+  }
+#elif defined(OS_MACOSX)
+  if (base::mac::IsOSLionOrLater())
+    supported_scale_factors.push_back(SCALE_FACTOR_200P);
+#elif defined(OS_CHROMEOS)
+  // TODO(oshima): Include 200P only if the device support 200P
+  supported_scale_factors.push_back(SCALE_FACTOR_200P);
+#endif
+  ui::SetSupportedScaleFactors(supported_scale_factors);
+#if defined(OS_WIN)
+  // Must be called _after_ supported scale factors are set since it
+  // uses them.
+  ui::win::InitDeviceScaleFactor();
+#endif
 }
 
 void ResourceBundle::FreeImages() {
@@ -554,8 +612,8 @@ void ResourceBundle::AddDataPackFromPathInternal(const base::FilePath& path,
 void ResourceBundle::AddDataPack(DataPack* data_pack) {
   data_packs_.push_back(data_pack);
 
-  if (GetScaleFactorScale(data_pack->GetScaleFactor()) >
-      GetScaleFactorScale(max_scale_factor_))
+  if (GetImageScale(data_pack->GetScaleFactor()) >
+      GetImageScale(max_scale_factor_))
     max_scale_factor_ = data_pack->GetScaleFactor();
 }
 
@@ -573,14 +631,8 @@ void ResourceBundle::LoadFontsIfNecessary() {
       large_bold_font_list_ = GetFontListFromDelegate(LargeBoldFont);
     }
 
-    if (!base_font_list_.get()) {
-#if defined(OS_CHROMEOS)
-      base_font_list_.reset(new gfx::FontList(
-          l10n_util::GetStringUTF8(IDS_UI_FONT_FAMILY_CROS)));
-#else
+    if (!base_font_list_.get())
       base_font_list_.reset(new gfx::FontList());
-#endif
-    }
 
     if (!bold_font_list_.get()) {
       bold_font_list_.reset(new gfx::FontList());

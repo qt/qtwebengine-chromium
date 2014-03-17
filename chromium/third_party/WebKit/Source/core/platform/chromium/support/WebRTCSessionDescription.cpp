@@ -36,12 +36,11 @@
 #include "wtf/RefCounted.h"
 #include "public/platform/WebString.h"
 
-namespace WebKit {
+namespace blink {
 
-class WebRTCSessionDescriptionPrivate : public RefCounted<WebRTCSessionDescriptionPrivate> {
+class WebRTCSessionDescriptionPrivate FINAL : public RefCounted<WebRTCSessionDescriptionPrivate> {
 public:
     static PassRefPtr<WebRTCSessionDescriptionPrivate> create(const WebString& type, const WebString& sdp);
-    virtual ~WebRTCSessionDescriptionPrivate();
 
     WebString type() { return m_type; }
     void setType(const WebString& type) { m_type = type; }
@@ -64,10 +63,6 @@ PassRefPtr<WebRTCSessionDescriptionPrivate> WebRTCSessionDescriptionPrivate::cre
 WebRTCSessionDescriptionPrivate::WebRTCSessionDescriptionPrivate(const WebString& type, const WebString& sdp)
     : m_type(type)
     , m_sdp(sdp)
-{
-}
-
-WebRTCSessionDescriptionPrivate::~WebRTCSessionDescriptionPrivate()
 {
 }
 
@@ -110,5 +105,5 @@ void WebRTCSessionDescription::setSDP(const WebString& sdp)
     return m_private->setSdp(sdp);
 }
 
-} // namespace WebKit
+} // namespace blink
 

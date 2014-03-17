@@ -5,16 +5,21 @@
 #ifndef MEDIA_AUDIO_ANDROID_AUDIO_MANAGER_ANDROID_H_
 #define MEDIA_AUDIO_ANDROID_AUDIO_MANAGER_ANDROID_H_
 
+#include <set>
+
 #include "base/android/jni_android.h"
 #include "base/gtest_prod_util.h"
+#include "base/synchronization/lock.h"
 #include "media/audio/audio_manager_base.h"
 
 namespace media {
 
+class OpenSLESOutputStream;
+
 // Android implemention of AudioManager.
 class MEDIA_EXPORT AudioManagerAndroid : public AudioManagerBase {
  public:
-  AudioManagerAndroid();
+  AudioManagerAndroid(AudioLogFactory* audio_log_factory);
 
   // Implementation of AudioManager.
   virtual bool HasAudioOutputDevices() OVERRIDE;
@@ -52,6 +57,8 @@ class MEDIA_EXPORT AudioManagerAndroid : public AudioManagerBase {
 
   static bool RegisterAudioManager(JNIEnv* env);
 
+  void SetMute(JNIEnv* env, jobject obj, jboolean muted);
+
  protected:
   virtual ~AudioManagerAndroid();
 
@@ -60,19 +67,29 @@ class MEDIA_EXPORT AudioManagerAndroid : public AudioManagerBase {
       const AudioParameters& input_params) OVERRIDE;
 
  private:
+  void Init();
+  void Close();
   void SetAudioMode(int mode);
-  void RegisterHeadsetReceiver();
-  void UnregisterHeadsetReceiver();
+  void SetAudioDevice(const std::string& device_id);
   int GetNativeOutputSampleRate();
   bool IsAudioLowLatencySupported();
   int GetAudioLowLatencyOutputFrameSize();
   int GetOptimalOutputFrameSize(int sample_rate, int channels);
 
+  void DoSetMuteOnAudioThread(bool muted);
+
   // Allow the AudioAndroidTest to access private methods.
-  FRIEND_TEST_ALL_PREFIXES(AudioAndroidTest, IsAudioLowLatencySupported);
+  FRIEND_TEST_ALL_PREFIXES(AudioAndroidOutputTest, IsAudioLowLatencySupported);
 
   // Java AudioManager instance.
   base::android::ScopedJavaGlobalRef<jobject> j_audio_manager_;
+
+  typedef std::set<OpenSLESOutputStream*> OutputStreams;
+  OutputStreams streams_;
+  // TODO(wjia): remove this lock once unit test modules are fixed to call
+  // AudioManager::MakeAudioOutputStream on the audio thread. For now, this
+  // lock is used to guard access to |streams_|.
+  base::Lock streams_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioManagerAndroid);
 };

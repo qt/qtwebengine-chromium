@@ -31,7 +31,6 @@
 #ifndef ScriptDebugServer_h
 #define ScriptDebugServer_h
 
-
 #include "InspectorBackendDispatcher.h"
 #include "bindings/v8/ScopedPersistent.h"
 #include "core/inspector/ScriptBreakpoint.h"
@@ -75,11 +74,11 @@ public:
     void breakProgram();
     void continueProgram();
     void stepIntoStatement();
-    void stepOverStatement();
-    void stepOutOfFunction();
+    void stepOverStatement(const ScriptValue& frame);
+    void stepOutOfFunction(const ScriptValue& frame);
 
     bool setScriptSource(const String& sourceID, const String& newContent, bool preview, String* error, RefPtr<TypeBuilder::Debugger::SetScriptSourceError>&, ScriptValue* newCallFrames, ScriptObject* result);
-    void updateCallStack(ScriptValue* callFrame);
+    ScriptValue currentCallFrames();
 
     class Task {
     public:
@@ -109,13 +108,11 @@ protected:
     explicit ScriptDebugServer(v8::Isolate*);
     virtual ~ScriptDebugServer();
 
-    ScriptValue currentCallFrame();
-
     virtual ScriptDebugListener* getDebugListenerForContext(v8::Handle<v8::Context>) = 0;
     virtual void runMessageLoopOnPause(v8::Handle<v8::Context>) = 0;
     virtual void quitMessageLoopOnPause() = 0;
 
-    static void breakProgramCallback(const v8::FunctionCallbackInfo<v8::Value>& args);
+    static void breakProgramCallback(const v8::FunctionCallbackInfo<v8::Value>&);
     void handleProgramBreak(v8::Handle<v8::Object> executionState, v8::Handle<v8::Value> exception, v8::Handle<v8::Array> hitBreakpoints);
     void handleProgramBreak(const v8::Debug::EventDetails&, v8::Handle<v8::Value> exception, v8::Handle<v8::Array> hitBreakpointNumbers);
 
@@ -136,6 +133,7 @@ protected:
     v8::Isolate* m_isolate;
 
 private:
+    void stepCommandWithFrame(const char* functionName, const ScriptValue& frame);
     PassRefPtr<JavaScriptCallFrame> wrapCallFrames(v8::Handle<v8::Object> executionState, int maximumLimit);
     bool executeSkipPauseRequest(ScriptDebugListener::SkipPauseRequest, v8::Handle<v8::Object> executionState);
 

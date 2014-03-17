@@ -15,6 +15,7 @@
 #include "cc/output/output_surface.h"
 #include "content/browser/aura/browser_compositor_output_surface.h"
 #include "content/browser/aura/browser_compositor_output_surface_proxy.h"
+#include "content/browser/aura/gpu_browser_compositor_output_surface.h"
 #include "content/browser/aura/reflector_impl.h"
 #include "content/browser/aura/software_browser_compositor_output_surface.h"
 #include "content/browser/gpu/browser_gpu_channel_host_factory.h"
@@ -27,8 +28,10 @@
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "gpu/GLES2/gl2extchromium.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "ui/compositor/compositor.h"
+#include "ui/compositor/compositor_constants.h"
 #include "ui/compositor/compositor_switches.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
@@ -36,15 +39,19 @@
 #if defined(OS_WIN)
 #include "content/browser/aura/software_output_device_win.h"
 #include "ui/surface/accelerated_surface_win.h"
+#elif defined(USE_OZONE)
+#include "content/browser/aura/software_output_device_ozone.h"
 #elif defined(USE_X11)
 #include "content/browser/aura/software_output_device_x11.h"
 #endif
+
+using cc::ContextProvider;
+using gpu::gles2::GLES2Interface;
 
 namespace content {
 
 struct GpuProcessTransportFactory::PerCompositorData {
   int surface_id;
-  scoped_ptr<CompositorSwapClient> swap_client;
 #if defined(OS_WIN)
   scoped_ptr<AcceleratedSurface> accelerated_surface;
 #endif
@@ -53,29 +60,30 @@ struct GpuProcessTransportFactory::PerCompositorData {
 
 class OwnedTexture : public ui::Texture, ImageTransportFactoryObserver {
  public:
-  OwnedTexture(WebKit::WebGraphicsContext3D* host_context,
+  OwnedTexture(const scoped_refptr<ContextProvider>& provider,
                const gfx::Size& size,
                float device_scale_factor,
-               unsigned int texture_id)
+               GLuint texture_id)
       : ui::Texture(true, size, device_scale_factor),
-        host_context_(host_context),
+        provider_(provider),
         texture_id_(texture_id) {
     ImageTransportFactory::GetInstance()->AddObserver(this);
   }
 
   // ui::Texture overrides:
   virtual unsigned int PrepareTexture() OVERRIDE {
+    // It's possible that we may have lost the context owning our
+    // texture but not yet fired the OnLostResources callback, so poll to see if
+    // it's still valid.
+    if (provider_ && provider_->IsContextLost())
+      texture_id_ = 0u;
     return texture_id_;
-  }
-
-  virtual WebKit::WebGraphicsContext3D* HostContext3D() OVERRIDE {
-    return host_context_;
   }
 
   // ImageTransportFactory overrides:
   virtual void OnLostResources() OVERRIDE {
     DeleteTexture();
-    host_context_ = NULL;
+    provider_ = NULL;
   }
 
  protected:
@@ -87,29 +95,27 @@ class OwnedTexture : public ui::Texture, ImageTransportFactoryObserver {
  protected:
   void DeleteTexture() {
     if (texture_id_) {
-      host_context_->deleteTexture(texture_id_);
+      provider_->ContextGL()->DeleteTextures(1, &texture_id_);
       texture_id_ = 0;
     }
   }
 
-  // The OnLostResources() callback will happen before this context
-  // pointer is destroyed.
-  WebKit::WebGraphicsContext3D* host_context_;
-  unsigned texture_id_;
+  scoped_refptr<cc::ContextProvider> provider_;
+  GLuint texture_id_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(OwnedTexture);
 };
 
 class ImageTransportClientTexture : public OwnedTexture {
  public:
-  ImageTransportClientTexture(
-      WebKit::WebGraphicsContext3D* host_context,
-      float device_scale_factor)
-      : OwnedTexture(host_context,
+  ImageTransportClientTexture(const scoped_refptr<ContextProvider>& provider,
+                              float device_scale_factor,
+                              GLuint texture_id)
+      : OwnedTexture(provider,
                      gfx::Size(0, 0),
                      device_scale_factor,
-                     host_context->createTexture()) {
-  }
+                     texture_id) {}
 
   virtual void Consume(const std::string& mailbox_name,
                        const gfx::Size& new_size) OVERRIDE {
@@ -118,18 +124,16 @@ class ImageTransportClientTexture : public OwnedTexture {
     if (mailbox_name.empty())
       return;
 
-    DCHECK(host_context_ && texture_id_);
-    host_context_->bindTexture(GL_TEXTURE_2D, texture_id_);
-    host_context_->consumeTextureCHROMIUM(
-        GL_TEXTURE_2D,
-        reinterpret_cast<const signed char*>(mailbox_name.c_str()));
+    DCHECK(provider_ && texture_id_);
+    GLES2Interface* gl = provider_->ContextGL();
+    gl->BindTexture(GL_TEXTURE_2D, texture_id_);
+    gl->ConsumeTextureCHROMIUM(
+        GL_TEXTURE_2D, reinterpret_cast<const GLbyte*>(mailbox_name.c_str()));
     size_ = new_size;
-    host_context_->shallowFlushCHROMIUM();
+    gl->ShallowFlushCHROMIUM();
   }
 
-  virtual std::string Produce() OVERRIDE {
-    return mailbox_name_;
-  }
+  virtual std::string Produce() OVERRIDE { return mailbox_name_; }
 
  protected:
   virtual ~ImageTransportClientTexture() {}
@@ -137,48 +141,6 @@ class ImageTransportClientTexture : public OwnedTexture {
  private:
   std::string mailbox_name_;
   DISALLOW_COPY_AND_ASSIGN(ImageTransportClientTexture);
-};
-
-class CompositorSwapClient
-    : public base::SupportsWeakPtr<CompositorSwapClient>,
-      public WebGraphicsContext3DSwapBuffersClient {
- public:
-  CompositorSwapClient(ui::Compositor* compositor,
-                       GpuProcessTransportFactory* factory)
-      : compositor_(compositor),
-        factory_(factory) {
-  }
-
-  virtual ~CompositorSwapClient() {
-  }
-
-  virtual void OnViewContextSwapBuffersPosted() OVERRIDE {
-    compositor_->OnSwapBuffersPosted();
-  }
-
-  virtual void OnViewContextSwapBuffersComplete() OVERRIDE {
-    compositor_->OnSwapBuffersComplete();
-  }
-
-  virtual void OnViewContextSwapBuffersAborted() OVERRIDE {
-    // Recreating contexts directly from here causes issues, so post a task
-    // instead.
-    // TODO(piman): Fix the underlying issues.
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&CompositorSwapClient::OnLostContext, this->AsWeakPtr()));
-  }
-
- private:
-  void OnLostContext() {
-    factory_->OnLostContext(compositor_);
-    // Note: previous line destroyed this. Don't access members from now on.
-  }
-
-  ui::Compositor* compositor_;
-  GpuProcessTransportFactory* factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(CompositorSwapClient);
 };
 
 GpuProcessTransportFactory::GpuProcessTransportFactory()
@@ -196,14 +158,16 @@ GpuProcessTransportFactory::~GpuProcessTransportFactory() {
 
 scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
 GpuProcessTransportFactory::CreateOffscreenCommandBufferContext() {
-  base::WeakPtr<WebGraphicsContext3DSwapBuffersClient> swap_client;
-  return CreateContextCommon(swap_client, 0);
+  return CreateContextCommon(0);
 }
 
 scoped_ptr<cc::SoftwareOutputDevice> CreateSoftwareOutputDevice(
     ui::Compositor* compositor) {
 #if defined(OS_WIN)
   return scoped_ptr<cc::SoftwareOutputDevice>(new SoftwareOutputDeviceWin(
+      compositor));
+#elif defined(USE_OZONE)
+  return scoped_ptr<cc::SoftwareOutputDevice>(new SoftwareOutputDeviceOzone(
       compositor));
 #elif defined(USE_X11)
   return scoped_ptr<cc::SoftwareOutputDevice>(new SoftwareOutputDeviceX11(
@@ -215,20 +179,32 @@ scoped_ptr<cc::SoftwareOutputDevice> CreateSoftwareOutputDevice(
 }
 
 scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
-    ui::Compositor* compositor) {
+    ui::Compositor* compositor, bool software_fallback) {
   PerCompositorData* data = per_compositor_data_[compositor];
   if (!data)
     data = CreatePerCompositorData(compositor);
 
+  bool force_software_renderer = false;
+#if defined(OS_WIN)
+  if (::GetProp(compositor->widget(), kForceSoftwareCompositor)) {
+    force_software_renderer = reinterpret_cast<bool>(
+        ::RemoveProp(compositor->widget(), kForceSoftwareCompositor));
+  }
+#endif
+
   scoped_refptr<ContextProviderCommandBuffer> context_provider;
 
+  // Software fallback does not happen on Chrome OS.
+#if defined(OS_CHROMEOS)
+  software_fallback = false;
+#endif
+
   CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (!command_line->HasSwitch(switches::kUIEnableSoftwareCompositing)) {
+  if (!command_line->HasSwitch(switches::kUIEnableSoftwareCompositing) &&
+      !force_software_renderer && !software_fallback) {
     context_provider = ContextProviderCommandBuffer::Create(
-        GpuProcessTransportFactory::CreateContextCommon(
-            data->swap_client->AsWeakPtr(),
-            data->surface_id),
-            "Compositor");
+        GpuProcessTransportFactory::CreateContextCommon(data->surface_id),
+        "Compositor");
   }
 
   UMA_HISTOGRAM_BOOLEAN("Aura.CreatedGpuBrowserCompositor", !!context_provider);
@@ -239,9 +215,14 @@ scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
                  " compositing with browser threaded compositing. Aborting.";
     }
 
-    scoped_ptr<SoftwareBrowserCompositorOutputSurface> surface =
-        SoftwareBrowserCompositorOutputSurface::Create(
-            CreateSoftwareOutputDevice(compositor));
+    scoped_ptr<SoftwareBrowserCompositorOutputSurface> surface(
+        new SoftwareBrowserCompositorOutputSurface(
+            output_surface_proxy_,
+            CreateSoftwareOutputDevice(compositor),
+            per_compositor_data_[compositor]->surface_id,
+            &output_surface_map_,
+            base::MessageLoopProxy::current().get(),
+            compositor->AsWeakPtr()));
     return surface.PassAs<cc::OutputSurface>();
   }
 
@@ -256,7 +237,7 @@ scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
       compositor_thread_task_runner.get());
 
   scoped_ptr<BrowserCompositorOutputSurface> surface(
-      new BrowserCompositorOutputSurface(
+      new GpuBrowserCompositorOutputSurface(
           context_provider,
           per_compositor_data_[compositor]->surface_id,
           &output_surface_map_,
@@ -317,16 +298,17 @@ ui::ContextFactory* GpuProcessTransportFactory::AsContextFactory() {
 }
 
 gfx::GLSurfaceHandle GpuProcessTransportFactory::CreateSharedSurfaceHandle() {
-  CreateSharedContextLazy();
-  if (!shared_contexts_main_thread_ ||
-      !shared_contexts_main_thread_->Context3d())
+  scoped_refptr<cc::ContextProvider> provider =
+      SharedMainThreadContextProvider();
+  if (!provider.get())
     return gfx::GLSurfaceHandle();
+  typedef WebGraphicsContext3DCommandBufferImpl WGC3DCBI;
+  WGC3DCBI* context = static_cast<WGC3DCBI*>(provider->Context3d());
   gfx::GLSurfaceHandle handle = gfx::GLSurfaceHandle(
       gfx::kNullPluginWindow, gfx::TEXTURE_TRANSPORT);
-  handle.parent_gpu_process_id =
-      shared_contexts_main_thread_->Context3d()->GetGPUProcessID();
+  handle.parent_gpu_process_id = context->GetGPUProcessID();
   handle.parent_client_id =
-      shared_contexts_main_thread_->Context3d()->GetChannelID();
+      BrowserGpuChannelHostFactory::instance()->GetGpuChannelId();
   return handle;
 }
 
@@ -335,12 +317,15 @@ void GpuProcessTransportFactory::DestroySharedSurfaceHandle(
 
 scoped_refptr<ui::Texture> GpuProcessTransportFactory::CreateTransportClient(
     float device_scale_factor) {
-  if (!shared_contexts_main_thread_.get())
+  scoped_refptr<cc::ContextProvider> provider =
+      SharedMainThreadContextProvider();
+  if (!provider.get())
     return NULL;
+  GLuint texture_id = 0;
+  provider->ContextGL()->GenTextures(1, &texture_id);
   scoped_refptr<ImageTransportClientTexture> image(
       new ImageTransportClientTexture(
-          shared_contexts_main_thread_->Context3d(),
-          device_scale_factor));
+          provider, device_scale_factor, texture_id));
   return image;
 }
 
@@ -348,36 +333,40 @@ scoped_refptr<ui::Texture> GpuProcessTransportFactory::CreateOwnedTexture(
     const gfx::Size& size,
     float device_scale_factor,
     unsigned int texture_id) {
-  if (!shared_contexts_main_thread_.get())
+  scoped_refptr<cc::ContextProvider> provider =
+      SharedMainThreadContextProvider();
+  if (!provider.get())
     return NULL;
   scoped_refptr<OwnedTexture> image(new OwnedTexture(
-      shared_contexts_main_thread_->Context3d(),
-      size,
-      device_scale_factor,
-      texture_id));
+      provider, size, device_scale_factor, texture_id));
   return image;
 }
 
 GLHelper* GpuProcessTransportFactory::GetGLHelper() {
   if (!gl_helper_) {
-    CreateSharedContextLazy();
-    WebGraphicsContext3DCommandBufferImpl* context_for_main_thread =
-        shared_contexts_main_thread_->Context3d();
-    gl_helper_.reset(new GLHelper(context_for_main_thread));
+    scoped_refptr<cc::ContextProvider> provider =
+        SharedMainThreadContextProvider();
+    if (provider.get())
+      gl_helper_.reset(new GLHelper(provider->Context3d(),
+                                    provider->ContextSupport()));
   }
   return gl_helper_.get();
 }
 
 uint32 GpuProcessTransportFactory::InsertSyncPoint() {
-  if (!shared_contexts_main_thread_.get())
+  scoped_refptr<cc::ContextProvider> provider =
+      SharedMainThreadContextProvider();
+  if (!provider.get())
     return 0;
-  return shared_contexts_main_thread_->Context3d()->insertSyncPoint();
+  return provider->Context3d()->insertSyncPoint();
 }
 
 void GpuProcessTransportFactory::WaitSyncPoint(uint32 sync_point) {
-  if (!shared_contexts_main_thread_.get())
+  scoped_refptr<cc::ContextProvider> provider =
+      SharedMainThreadContextProvider();
+  if (!provider.get())
     return;
-  shared_contexts_main_thread_->Context3d()->waitSyncPoint(sync_point);
+  provider->Context3d()->waitSyncPoint(sync_point);
 }
 
 void GpuProcessTransportFactory::AddObserver(
@@ -391,50 +380,52 @@ void GpuProcessTransportFactory::RemoveObserver(
 }
 
 scoped_refptr<cc::ContextProvider>
-GpuProcessTransportFactory::OffscreenContextProviderForMainThread() {
+GpuProcessTransportFactory::OffscreenCompositorContextProvider() {
   // Don't check for DestroyedOnMainThread() here. We hear about context
   // loss for this context through the lost context callback. If the context
   // is lost, we want to leave this ContextProvider available until the lost
   // context notification is sent to the ImageTransportFactoryObserver clients.
-  if (!shared_contexts_main_thread_.get()) {
-    shared_contexts_main_thread_ = ContextProviderCommandBuffer::Create(
-        GpuProcessTransportFactory::CreateOffscreenCommandBufferContext(),
-        "Compositor-Offscreen-MainThread");
-    if (shared_contexts_main_thread_) {
-      shared_contexts_main_thread_->SetLostContextCallback(base::Bind(
-          &GpuProcessTransportFactory::
-              OnLostMainThreadSharedContextInsideCallback,
-          callback_factory_.GetWeakPtr()));
+  if (offscreen_compositor_contexts_.get())
+    return offscreen_compositor_contexts_;
 
-      if (!shared_contexts_main_thread_->BindToCurrentThread())
-        shared_contexts_main_thread_ = NULL;
-    }
-  }
-  return shared_contexts_main_thread_;
+  offscreen_compositor_contexts_ = ContextProviderCommandBuffer::Create(
+      GpuProcessTransportFactory::CreateOffscreenCommandBufferContext(),
+      "Compositor-Offscreen");
+
+  return offscreen_compositor_contexts_;
 }
 
 scoped_refptr<cc::ContextProvider>
-GpuProcessTransportFactory::OffscreenContextProviderForCompositorThread() {
-  // The lifetime of this context is tied to the main thread context so that
-  // they are always in the same share group. So do not check for
-  // DestroyedOnMainThread().
-  if (!shared_contexts_compositor_thread_.get()) {
-    shared_contexts_compositor_thread_ = ContextProviderCommandBuffer::Create(
+GpuProcessTransportFactory::SharedMainThreadContextProvider() {
+  if (shared_main_thread_contexts_.get())
+    return shared_main_thread_contexts_;
+
+  if (ui::Compositor::WasInitializedWithThread()) {
+    // In threaded compositing mode, we have to create our own context for the
+    // main thread since the compositor's context will be bound to the
+    // compositor thread.
+    shared_main_thread_contexts_ = ContextProviderCommandBuffer::Create(
         GpuProcessTransportFactory::CreateOffscreenCommandBufferContext(),
-        "Compositor-Offscreen");
+        "Offscreen-MainThread");
+  } else {
+    // In single threaded compositing mode, we can just reuse the compositor's
+    // shared context.
+    shared_main_thread_contexts_ =
+        static_cast<ContextProviderCommandBuffer*>(
+            OffscreenCompositorContextProvider().get());
   }
-  return shared_contexts_compositor_thread_;
-}
 
-void GpuProcessTransportFactory::OnLostContext(ui::Compositor* compositor) {
-  LOG(ERROR) << "Lost UI compositor context.";
-  PerCompositorData* data = per_compositor_data_[compositor];
-  DCHECK(data);
-
-  // Prevent callbacks from other contexts in the same share group from
-  // calling us again.
-  data->swap_client.reset(new CompositorSwapClient(compositor, this));
-  compositor->OnSwapBuffersAborted();
+  if (shared_main_thread_contexts_) {
+    shared_main_thread_contexts_->SetLostContextCallback(
+        base::Bind(&GpuProcessTransportFactory::
+                        OnLostMainThreadSharedContextInsideCallback,
+                   callback_factory_.GetWeakPtr()));
+    if (!shared_main_thread_contexts_->BindToCurrentThread()) {
+      shared_main_thread_contexts_ = NULL;
+      offscreen_compositor_contexts_ = NULL;
+    }
+  }
+  return shared_main_thread_contexts_;
 }
 
 GpuProcessTransportFactory::PerCompositorData*
@@ -442,14 +433,11 @@ GpuProcessTransportFactory::CreatePerCompositorData(
     ui::Compositor* compositor) {
   DCHECK(!per_compositor_data_[compositor]);
 
-  CreateSharedContextLazy();
-
   gfx::AcceleratedWidget widget = compositor->widget();
   GpuSurfaceTracker* tracker = GpuSurfaceTracker::Get();
 
   PerCompositorData* data = new PerCompositorData;
   data->surface_id = tracker->AddSurfaceForNativeWidget(widget);
-  data->swap_client.reset(new CompositorSwapClient(compositor, this));
 #if defined(OS_WIN)
   if (GpuDataManagerImpl::GetInstance()->IsUsingAcceleratedSurface())
     data->accelerated_surface.reset(new AcceleratedSurface(widget));
@@ -464,36 +452,31 @@ GpuProcessTransportFactory::CreatePerCompositorData(
 }
 
 scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
-GpuProcessTransportFactory::CreateContextCommon(
-    const base::WeakPtr<WebGraphicsContext3DSwapBuffersClient>& swap_client,
-    int surface_id) {
+GpuProcessTransportFactory::CreateContextCommon(int surface_id) {
   if (!GpuDataManagerImpl::GetInstance()->CanUseGpuBrowserCompositor())
     return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
-  WebKit::WebGraphicsContext3D::Attributes attrs;
+  blink::WebGraphicsContext3D::Attributes attrs;
   attrs.shareResources = true;
   attrs.depth = false;
   attrs.stencil = false;
   attrs.antialias = false;
   attrs.noAutomaticFlushes = true;
-  GpuChannelHostFactory* factory = BrowserGpuChannelHostFactory::instance();
+  CauseForGpuLaunch cause =
+      CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE;
+  scoped_refptr<GpuChannelHost> gpu_channel_host(
+      BrowserGpuChannelHostFactory::instance()->EstablishGpuChannelSync(cause));
+  if (!gpu_channel_host)
+    return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
   GURL url("chrome://gpu/GpuProcessTransportFactory::CreateContextCommon");
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context(
       new WebGraphicsContext3DCommandBufferImpl(
           surface_id,
           url,
-          factory,
-          swap_client));
-  if (!context->InitializeWithDefaultBufferSizes(
-        attrs,
-        false,
-        CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE))
-    return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
+          gpu_channel_host.get(),
+          attrs,
+          false,
+          WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits()));
   return context.Pass();
-}
-
-void GpuProcessTransportFactory::CreateSharedContextLazy() {
-  scoped_refptr<cc::ContextProvider> provider =
-      OffscreenContextProviderForMainThread();
 }
 
 void GpuProcessTransportFactory::OnLostMainThreadSharedContextInsideCallback() {
@@ -510,13 +493,12 @@ void GpuProcessTransportFactory::OnLostMainThreadSharedContext() {
   // new resources are created if needed.
   // Kill shared contexts for both threads in tandem so they are always in
   // the same share group.
-
-  scoped_refptr<cc::ContextProvider> lost_shared_contexts_main_thread =
-      shared_contexts_main_thread_;
-  scoped_refptr<cc::ContextProvider> lost_shared_contexts_compositor_thread =
-      shared_contexts_compositor_thread_;
-  shared_contexts_main_thread_ = NULL;
-  shared_contexts_compositor_thread_ = NULL;
+  scoped_refptr<cc::ContextProvider> lost_offscreen_compositor_contexts =
+      offscreen_compositor_contexts_;
+  scoped_refptr<cc::ContextProvider> lost_shared_main_thread_contexts =
+      shared_main_thread_contexts_;
+  offscreen_compositor_contexts_ = NULL;
+  shared_main_thread_contexts_  = NULL;
 
   scoped_ptr<GLHelper> lost_gl_helper = gl_helper_.Pass();
 
@@ -526,8 +508,8 @@ void GpuProcessTransportFactory::OnLostMainThreadSharedContext() {
 
   // Kill things that use the shared context before killing the shared context.
   lost_gl_helper.reset();
-  lost_shared_contexts_main_thread = NULL;
-  lost_shared_contexts_compositor_thread = NULL;
+  lost_offscreen_compositor_contexts = NULL;
+  lost_shared_main_thread_contexts  = NULL;
 }
 
 }  // namespace content

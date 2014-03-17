@@ -39,6 +39,7 @@ border-top-right-radius type_name=LengthSize, initial=initialBorderRadius, conve
 border-top-style type_name=EBorderStyle, initial=initialBorderStyle
 border-top-width type_name=unsigned, initial=initialBorderWidth, converter=convertLineWidth<unsigned>
 bottom type_name=Length, initial=initialOffset, converter=convertLengthOrAuto
+box-shadow converter=convertShadow
 box-sizing
 caption-side
 clear
@@ -57,6 +58,7 @@ flex-shrink type_name=float
 flex-wrap
 float type_name=EFloat, name_for_methods=Floating
 font-family custom_all
+font-kerning custom_all
 font-size custom_all
 font-style custom_all
 font-variant custom_all
@@ -81,7 +83,7 @@ max-height type_name=Length, initial=initialMaxSize, converter=convertLengthMaxS
 max-width type_name=Length, initial=initialMaxSize, converter=convertLengthMaxSizing
 min-height type_name=Length, initial=initialMinSize, converter=convertLengthSizing
 min-width type_name=Length, initial=initialMinSize, converter=convertLengthSizing
-mix-blend-mode type_name=BlendMode, name_for_methods=BlendMode
+mix-blend-mode type_name=blink::WebBlendMode, name_for_methods=BlendMode
 object-fit type_name=ObjectFit
 object-position type_name=LengthPoint, initial=initialObjectPosition, converter=convertLengthPoint
 opacity type_name=float
@@ -105,6 +107,11 @@ pointer-events
 position
 resize custom_value
 right type_name=Length, initial=initialOffset, converter=convertLengthOrAuto
+shape-image-threshold type_name=float
+shape-inside type_name=ShapeValue*, custom_value
+shape-margin type_name=Length, converter=convertLength
+shape-outside type_name=ShapeValue*, custom_value
+shape-padding type_name=Length, converter=convertLength
 size custom_all
 speak
 table-layout
@@ -116,11 +123,14 @@ text-decoration-line use_handlers_for=CSSPropertyTextDecoration
 text-decoration-color custom_all
 text-decoration-style type_name=TextDecorationStyle
 text-indent custom_all
+text-justify type_name=TextJustify
 text-overflow type_name=TextOverflow
 text-rendering custom_all
+text-shadow converter=convertShadow
 text-transform
 top type_name=Length, initial=initialOffset, converter=convertLengthOrAuto
-touch-action type_name=TouchAction, initial=initialTouchAction
+touch-action type_name=TouchAction, custom_value
+touch-action-delay type_name=TouchActionDelay, initial=initialTouchActionDelay
 unicode-bidi
 vertical-align custom_value
 visibility
@@ -162,12 +172,14 @@ z-index type_name=int, custom_all
 -webkit-box-ordinal-group type_name=unsigned int
 -webkit-box-orient
 -webkit-box-pack
+-webkit-box-shadow use_handlers_for=CSSPropertyBoxShadow
 -webkit-clip-path custom_value
 -webkit-column-axis type_name=ColumnAxis
 -webkit-column-break-after type_name=EPageBreak, initial=initialPageBreak
 -webkit-column-break-before type_name=EPageBreak, initial=initialPageBreak
 -webkit-column-break-inside type_name=EPageBreak, initial=initialPageBreak
 -webkit-column-count type_name=unsigned short, custom_all
+column-fill type_name=ColumnFill
 -webkit-column-gap type_name=float, custom_all
 -webkit-column-progression type_name=ColumnProgression
 -webkit-column-rule-color custom_all
@@ -177,7 +189,6 @@ z-index type_name=int, custom_all
 -webkit-column-width type_name=float, custom_all
 -webkit-flow-from type_name=AtomicString, name_for_methods=RegionThread, converter=convertString<CSSValueNone>
 -webkit-flow-into type_name=AtomicString, name_for_methods=FlowThread, converter=convertString<CSSValueNone>
--webkit-font-kerning custom_all
 -webkit-font-smoothing custom_all
 -webkit-font-variant-ligatures custom_all
 -webkit-highlight type_name=AtomicString, converter=convertString<CSSValueNone>
@@ -196,7 +207,6 @@ z-index type_name=int, custom_all
 -internal-marquee-repetition type_name=int, name_for_methods=MarqueeLoopCount, custom_value
 -internal-marquee-speed custom_value, name_for_methods=MarqueeSpeed
 -internal-marquee-style name_for_methods=MarqueeBehavior
--webkit-mask-box-image initial=initialNinePieceImage, custom_value
 -webkit-mask-box-image-outset custom_all
 -webkit-mask-box-image-repeat custom_all
 -webkit-mask-box-image-slice custom_all
@@ -221,10 +231,6 @@ z-index type_name=int, custom_all
 -webkit-region-fragment type_name=RegionFragment
 -webkit-rtl-ordering type_name=Order, getter=rtlOrdering, setter=setRTLOrdering, initial=initialRTLOrdering
 -webkit-ruby-position type_name=RubyPosition
--webkit-shape-inside type_name=ShapeValue*, custom_value
--webkit-shape-margin type_name=Length, converter=convertLength
--webkit-shape-outside type_name=ShapeValue*, custom_value
--webkit-shape-padding type_name=Length, converter=convertLength
 -webkit-text-combine type_name=TextCombine
 -webkit-text-emphasis-color custom_all
 -webkit-text-emphasis-position type_name=TextEmphasisPosition
@@ -232,7 +238,7 @@ z-index type_name=int, custom_all
 -webkit-text-fill-color custom_all
 -webkit-text-security
 -webkit-text-stroke-color custom_all
--webkit-text-underline-position custom_value, condition=CSS3_TEXT
+text-underline-position custom_value
 -webkit-transform-origin-x type_name=Length, converter=convertLength
 -webkit-transform-origin-y type_name=Length, converter=convertLength
 -webkit-transform-origin-z type_name=float, converter=convertComputedLength<float>
@@ -249,16 +255,30 @@ z-index type_name=int, custom_all
 
 alignment-baseline svg
 buffered-rendering svg
+clip-path svg, type_name=String, name_for_methods=ClipperResource, converter=convertFragmentIdentifier
 clip-rule svg, type_name=WindRule
 color-interpolation svg
 color-interpolation-filters svg, type_name=EColorInterpolation
 color-rendering svg
 dominant-baseline svg
+fill-opacity svg, type_name=float, converter=convertNumberOrPercentage
 fill-rule svg, type_name=WindRule
+filter svg, type_name=String, name_for_methods=FilterResource, converter=convertFragmentIdentifier
+flood-opacity svg, type_name=float, converter=convertNumberOrPercentage
+kerning svg, type_name=SVGLength, converter=convertSVGLength
+marker-start svg, type_name=String, name_for_methods=MarkerStartResource, converter=convertFragmentIdentifier
+marker-mid svg, type_name=String, name_for_methods=MarkerMidResource, converter=convertFragmentIdentifier
+marker-end svg, type_name=String, name_for_methods=MarkerEndResource, converter=convertFragmentIdentifier
+mask svg, type_name=String, name_for_methods=MaskerResource, converter=convertFragmentIdentifier
 mask-type svg
 shape-rendering svg
+stop-opacity svg, type_name=float, converter=convertNumberOrPercentage
+stroke-dashoffset svg, type_name=SVGLength, name_for_methods=StrokeDashOffset, converter=convertSVGLength
 stroke-linecap svg, type_name=LineCap, name_for_methods=CapStyle
 stroke-linejoin svg, type_name=LineJoin, name_for_methods=JoinStyle
+stroke-miterlimit svg, type_name=float, name_for_methods=StrokeMiterLimit
+stroke-opacity svg, type_name=float, converter=convertNumberOrPercentage
+stroke-width svg, type_name=SVGLength, converter=convertSVGLength
 text-anchor svg
 vector-effect svg
 writing-mode svg, type_name=SVGWritingMode

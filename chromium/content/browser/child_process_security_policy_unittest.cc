@@ -89,6 +89,27 @@ class ChildProcessSecurityPolicyTest : public testing::Test {
     p->GrantPermissionsForFile(child_id, file, permissions);
   }
 
+  void CheckHasNoFileSystemPermission(ChildProcessSecurityPolicyImpl* p,
+                                      const std::string& child_id) {
+    EXPECT_FALSE(p->CanReadFileSystem(kRendererID, child_id));
+    EXPECT_FALSE(p->CanReadWriteFileSystem(kRendererID, child_id));
+    EXPECT_FALSE(p->CanCopyIntoFileSystem(kRendererID, child_id));
+    EXPECT_FALSE(p->CanDeleteFromFileSystem(kRendererID, child_id));
+  }
+
+  void CheckHasNoFileSystemFilePermission(ChildProcessSecurityPolicyImpl* p,
+                                          const base::FilePath& file,
+                                          const fileapi::FileSystemURL& url) {
+    EXPECT_FALSE(p->CanReadFile(kRendererID, file));
+    EXPECT_FALSE(p->CanCreateReadWriteFile(kRendererID, file));
+    EXPECT_FALSE(p->CanReadFileSystemFile(kRendererID, url));
+    EXPECT_FALSE(p->CanWriteFileSystemFile(kRendererID, url));
+    EXPECT_FALSE(p->CanCreateFileSystemFile(kRendererID, url));
+    EXPECT_FALSE(p->CanCreateReadWriteFileSystemFile(kRendererID, url));
+    EXPECT_FALSE(p->CanCopyIntoFileSystemFile(kRendererID, url));
+    EXPECT_FALSE(p->CanDeleteFileSystemFile(kRendererID, url));
+  }
+
  private:
   ChildProcessSecurityPolicyTestBrowserClient test_browser_client_;
   ContentBrowserClient* old_browser_client_;
@@ -101,7 +122,7 @@ TEST_F(ChildProcessSecurityPolicyTest, IsWebSafeSchemeTest) {
 
   EXPECT_TRUE(p->IsWebSafeScheme(kHttpScheme));
   EXPECT_TRUE(p->IsWebSafeScheme(kHttpsScheme));
-  EXPECT_TRUE(p->IsWebSafeScheme(chrome::kFtpScheme));
+  EXPECT_TRUE(p->IsWebSafeScheme(kFtpScheme));
   EXPECT_TRUE(p->IsWebSafeScheme(chrome::kDataScheme));
   EXPECT_TRUE(p->IsWebSafeScheme("feed"));
   EXPECT_TRUE(p->IsWebSafeScheme(chrome::kBlobScheme));
@@ -300,70 +321,63 @@ TEST_F(ChildProcessSecurityPolicyTest, FileSystemGrantsTest) {
       RegisterFileSystemForVirtualPath(fileapi::kFileSystemTypeTest,
                                        "copy_into_filesystem",
                                        base::FilePath());
+  std::string delete_from_id = fileapi::IsolatedContext::GetInstance()->
+      RegisterFileSystemForVirtualPath(fileapi::kFileSystemTypeTest,
+                                       "delete_from_filesystem",
+                                       base::FilePath());
 
   // Test initially having no permissions.
-  EXPECT_FALSE(p->CanReadFileSystem(kRendererID, read_id));
-  EXPECT_FALSE(p->CanReadWriteFileSystem(kRendererID, read_id));
-  EXPECT_FALSE(p->CanCopyIntoFileSystem(kRendererID, read_id));
-
-  EXPECT_FALSE(p->CanReadFileSystem(kRendererID, read_write_id));
-  EXPECT_FALSE(p->CanReadWriteFileSystem(kRendererID, read_write_id));
-  EXPECT_FALSE(p->CanCopyIntoFileSystem(kRendererID, read_write_id));
-
-  EXPECT_FALSE(p->CanReadFileSystem(kRendererID, copy_into_id));
-  EXPECT_FALSE(p->CanReadWriteFileSystem(kRendererID, copy_into_id));
-  EXPECT_FALSE(p->CanCopyIntoFileSystem(kRendererID, copy_into_id));
+  CheckHasNoFileSystemPermission(p, read_id);
+  CheckHasNoFileSystemPermission(p, read_write_id);
+  CheckHasNoFileSystemPermission(p, copy_into_id);
+  CheckHasNoFileSystemPermission(p, delete_from_id);
 
   // Testing varying combinations of grants and checks.
   p->GrantReadFileSystem(kRendererID, read_id);
   EXPECT_TRUE(p->CanReadFileSystem(kRendererID, read_id));
   EXPECT_FALSE(p->CanReadWriteFileSystem(kRendererID, read_id));
   EXPECT_FALSE(p->CanCopyIntoFileSystem(kRendererID, read_id));
+  EXPECT_FALSE(p->CanDeleteFromFileSystem(kRendererID, read_id));
 
   p->GrantReadFileSystem(kRendererID, read_write_id);
   p->GrantWriteFileSystem(kRendererID, read_write_id);
   EXPECT_TRUE(p->CanReadFileSystem(kRendererID, read_write_id));
   EXPECT_TRUE(p->CanReadWriteFileSystem(kRendererID, read_write_id));
   EXPECT_FALSE(p->CanCopyIntoFileSystem(kRendererID, read_write_id));
+  EXPECT_FALSE(p->CanDeleteFromFileSystem(kRendererID, read_write_id));
 
   p->GrantCopyIntoFileSystem(kRendererID, copy_into_id);
   EXPECT_FALSE(p->CanReadFileSystem(kRendererID, copy_into_id));
   EXPECT_FALSE(p->CanReadWriteFileSystem(kRendererID, copy_into_id));
   EXPECT_TRUE(p->CanCopyIntoFileSystem(kRendererID, copy_into_id));
+  EXPECT_FALSE(p->CanDeleteFromFileSystem(kRendererID, copy_into_id));
+
+  p->GrantDeleteFromFileSystem(kRendererID, delete_from_id);
+  EXPECT_FALSE(p->CanReadFileSystem(kRendererID, delete_from_id));
+  EXPECT_FALSE(p->CanReadWriteFileSystem(kRendererID, delete_from_id));
+  EXPECT_FALSE(p->CanCopyIntoFileSystem(kRendererID, delete_from_id));
+  EXPECT_TRUE(p->CanDeleteFromFileSystem(kRendererID, delete_from_id));
 
   // Test revoke permissions on renderer ID removal.
   p->Remove(kRendererID);
-  EXPECT_FALSE(p->CanReadFileSystem(kRendererID, read_id));
-  EXPECT_FALSE(p->CanReadWriteFileSystem(kRendererID, read_id));
-  EXPECT_FALSE(p->CanCopyIntoFileSystem(kRendererID, read_id));
-
-  EXPECT_FALSE(p->CanReadFileSystem(kRendererID, read_write_id));
-  EXPECT_FALSE(p->CanReadWriteFileSystem(kRendererID, read_write_id));
-  EXPECT_FALSE(p->CanCopyIntoFileSystem(kRendererID, read_write_id));
-
-  EXPECT_FALSE(p->CanReadFileSystem(kRendererID, copy_into_id));
-  EXPECT_FALSE(p->CanReadWriteFileSystem(kRendererID, copy_into_id));
-  EXPECT_FALSE(p->CanCopyIntoFileSystem(kRendererID, copy_into_id));
+  CheckHasNoFileSystemPermission(p, read_id);
+  CheckHasNoFileSystemPermission(p, read_write_id);
+  CheckHasNoFileSystemPermission(p, copy_into_id);
+  CheckHasNoFileSystemPermission(p, delete_from_id);
 
   // Test having no permissions upon re-adding same renderer ID.
   p->Add(kRendererID);
-  EXPECT_FALSE(p->CanReadFileSystem(kRendererID, read_id));
-  EXPECT_FALSE(p->CanReadWriteFileSystem(kRendererID, read_id));
-  EXPECT_FALSE(p->CanCopyIntoFileSystem(kRendererID, read_id));
-
-  EXPECT_FALSE(p->CanReadFileSystem(kRendererID, read_write_id));
-  EXPECT_FALSE(p->CanReadWriteFileSystem(kRendererID, read_write_id));
-  EXPECT_FALSE(p->CanCopyIntoFileSystem(kRendererID, read_write_id));
-
-  EXPECT_FALSE(p->CanReadFileSystem(kRendererID, copy_into_id));
-  EXPECT_FALSE(p->CanReadWriteFileSystem(kRendererID, copy_into_id));
-  EXPECT_FALSE(p->CanCopyIntoFileSystem(kRendererID, copy_into_id));
+  CheckHasNoFileSystemPermission(p, read_id);
+  CheckHasNoFileSystemPermission(p, read_write_id);
+  CheckHasNoFileSystemPermission(p, copy_into_id);
+  CheckHasNoFileSystemPermission(p, delete_from_id);
 
   // Cleanup.
   p->Remove(kRendererID);
   fileapi::IsolatedContext::GetInstance()->RevokeFileSystem(read_id);
   fileapi::IsolatedContext::GetInstance()->RevokeFileSystem(read_write_id);
   fileapi::IsolatedContext::GetInstance()->RevokeFileSystem(copy_into_id);
+  fileapi::IsolatedContext::GetInstance()->RevokeFileSystem(delete_from_id);
 }
 
 TEST_F(ChildProcessSecurityPolicyTest, FilePermissionGrantingAndRevoking) {
@@ -381,139 +395,51 @@ TEST_F(ChildProcessSecurityPolicyTest, FilePermissionGrantingAndRevoking) {
       GURL("http://foo/"), fileapi::kFileSystemTypeTest, file);
 
   // Test initially having no permissions.
-  EXPECT_FALSE(p->CanReadFile(kRendererID, file));
-  EXPECT_FALSE(p->CanWriteFile(kRendererID, file));
-  EXPECT_FALSE(p->CanCreateFile(kRendererID, file));
-  EXPECT_FALSE(p->CanCreateWriteFile(kRendererID, file));
-  EXPECT_FALSE(p->CanReadFileSystemFile(kRendererID, url));
-  EXPECT_FALSE(p->CanWriteFileSystemFile(kRendererID, url));
-  EXPECT_FALSE(p->CanCreateFileSystemFile(kRendererID, url));
-  EXPECT_FALSE(p->CanCreateWriteFileSystemFile(kRendererID, url));
+  CheckHasNoFileSystemFilePermission(p, file, url);
 
   // Testing every combination of permissions granting and revoking.
   p->GrantReadFile(kRendererID, file);
   EXPECT_TRUE(p->CanReadFile(kRendererID, file));
-  EXPECT_FALSE(p->CanWriteFile(kRendererID, file));
-  EXPECT_FALSE(p->CanCreateFile(kRendererID, file));
-  EXPECT_FALSE(p->CanCreateWriteFile(kRendererID, file));
+  EXPECT_FALSE(p->CanCreateReadWriteFile(kRendererID, file));
   EXPECT_TRUE(p->CanReadFileSystemFile(kRendererID, url));
   EXPECT_FALSE(p->CanWriteFileSystemFile(kRendererID, url));
   EXPECT_FALSE(p->CanCreateFileSystemFile(kRendererID, url));
-  EXPECT_FALSE(p->CanCreateWriteFileSystemFile(kRendererID, url));
+  EXPECT_FALSE(p->CanCreateReadWriteFileSystemFile(kRendererID, url));
+  EXPECT_FALSE(p->CanCopyIntoFileSystemFile(kRendererID, url));
+  EXPECT_FALSE(p->CanDeleteFileSystemFile(kRendererID, url));
   p->RevokeAllPermissionsForFile(kRendererID, file);
-  EXPECT_FALSE(p->CanReadFile(kRendererID, file));
-  EXPECT_FALSE(p->CanWriteFile(kRendererID, file));
-  EXPECT_FALSE(p->CanCreateFile(kRendererID, file));
-  EXPECT_FALSE(p->CanCreateWriteFile(kRendererID, file));
-  EXPECT_FALSE(p->CanReadFileSystemFile(kRendererID, url));
-  EXPECT_FALSE(p->CanWriteFileSystemFile(kRendererID, url));
-  EXPECT_FALSE(p->CanCreateFileSystemFile(kRendererID, url));
-  EXPECT_FALSE(p->CanCreateWriteFileSystemFile(kRendererID, url));
+  CheckHasNoFileSystemFilePermission(p, file, url);
 
   p->GrantCreateReadWriteFile(kRendererID, file);
   EXPECT_TRUE(p->CanReadFile(kRendererID, file));
-  EXPECT_TRUE(p->CanWriteFile(kRendererID, file));
-  EXPECT_TRUE(p->CanCreateFile(kRendererID, file));
-  EXPECT_TRUE(p->CanCreateWriteFile(kRendererID, file));
+  EXPECT_TRUE(p->CanCreateReadWriteFile(kRendererID, file));
   EXPECT_TRUE(p->CanReadFileSystemFile(kRendererID, url));
   EXPECT_TRUE(p->CanWriteFileSystemFile(kRendererID, url));
   EXPECT_TRUE(p->CanCreateFileSystemFile(kRendererID, url));
-  EXPECT_TRUE(p->CanCreateWriteFileSystemFile(kRendererID, url));
+  EXPECT_TRUE(p->CanCreateReadWriteFileSystemFile(kRendererID, url));
+  EXPECT_TRUE(p->CanCopyIntoFileSystemFile(kRendererID, url));
+  EXPECT_TRUE(p->CanDeleteFileSystemFile(kRendererID, url));
   p->RevokeAllPermissionsForFile(kRendererID, file);
-  EXPECT_FALSE(p->CanReadFile(kRendererID, file));
-  EXPECT_FALSE(p->CanWriteFile(kRendererID, file));
-  EXPECT_FALSE(p->CanCreateFile(kRendererID, file));
-  EXPECT_FALSE(p->CanCreateWriteFile(kRendererID, file));
-  EXPECT_FALSE(p->CanReadFileSystemFile(kRendererID, url));
-  EXPECT_FALSE(p->CanWriteFileSystemFile(kRendererID, url));
-  EXPECT_FALSE(p->CanCreateFileSystemFile(kRendererID, url));
-  EXPECT_FALSE(p->CanCreateWriteFileSystemFile(kRendererID, url));
-
-  p->GrantCreateWriteFile(kRendererID, file);
-  EXPECT_FALSE(p->CanReadFile(kRendererID, file));
-  EXPECT_TRUE(p->CanWriteFile(kRendererID, file));
-  EXPECT_TRUE(p->CanCreateFile(kRendererID, file));
-  EXPECT_TRUE(p->CanCreateWriteFile(kRendererID, file));
-  EXPECT_FALSE(p->CanReadFileSystemFile(kRendererID, url));
-  EXPECT_TRUE(p->CanWriteFileSystemFile(kRendererID, url));
-  EXPECT_TRUE(p->CanCreateFileSystemFile(kRendererID, url));
-  EXPECT_TRUE(p->CanCreateWriteFileSystemFile(kRendererID, url));
-  p->RevokeAllPermissionsForFile(kRendererID, file);
-  EXPECT_FALSE(p->CanReadFile(kRendererID, file));
-  EXPECT_FALSE(p->CanWriteFile(kRendererID, file));
-  EXPECT_FALSE(p->CanCreateFile(kRendererID, file));
-  EXPECT_FALSE(p->CanCreateWriteFile(kRendererID, file));
-  EXPECT_FALSE(p->CanReadFileSystemFile(kRendererID, url));
-  EXPECT_FALSE(p->CanWriteFileSystemFile(kRendererID, url));
-  EXPECT_FALSE(p->CanCreateFileSystemFile(kRendererID, url));
-  EXPECT_FALSE(p->CanCreateWriteFileSystemFile(kRendererID, url));
+  CheckHasNoFileSystemFilePermission(p, file, url);
 
   // Test revoke permissions on renderer ID removal.
   p->GrantCreateReadWriteFile(kRendererID, file);
   EXPECT_TRUE(p->CanReadFile(kRendererID, file));
-  EXPECT_TRUE(p->CanWriteFile(kRendererID, file));
-  EXPECT_TRUE(p->CanCreateFile(kRendererID, file));
-  EXPECT_TRUE(p->CanCreateWriteFile(kRendererID, file));
+  EXPECT_TRUE(p->CanCreateReadWriteFile(kRendererID, file));
   EXPECT_TRUE(p->CanReadFileSystemFile(kRendererID, url));
   EXPECT_TRUE(p->CanWriteFileSystemFile(kRendererID, url));
   EXPECT_TRUE(p->CanCreateFileSystemFile(kRendererID, url));
-  EXPECT_TRUE(p->CanCreateWriteFileSystemFile(kRendererID, url));
+  EXPECT_TRUE(p->CanCreateReadWriteFileSystemFile(kRendererID, url));
+  EXPECT_TRUE(p->CanCopyIntoFileSystemFile(kRendererID, url));
+  EXPECT_TRUE(p->CanDeleteFileSystemFile(kRendererID, url));
   p->Remove(kRendererID);
-  EXPECT_FALSE(p->CanReadFile(kRendererID, file));
-  EXPECT_FALSE(p->CanWriteFile(kRendererID, file));
-  EXPECT_FALSE(p->CanCreateFile(kRendererID, file));
-  EXPECT_FALSE(p->CanCreateWriteFile(kRendererID, file));
-  EXPECT_FALSE(p->CanReadFileSystemFile(kRendererID, url));
-  EXPECT_FALSE(p->CanWriteFileSystemFile(kRendererID, url));
-  EXPECT_FALSE(p->CanCreateFileSystemFile(kRendererID, url));
-  EXPECT_FALSE(p->CanCreateWriteFileSystemFile(kRendererID, url));
+  CheckHasNoFileSystemFilePermission(p, file, url);
 
   // Test having no permissions upon re-adding same renderer ID.
   p->Add(kRendererID);
-  EXPECT_FALSE(p->CanReadFile(kRendererID, file));
-  EXPECT_FALSE(p->CanWriteFile(kRendererID, file));
-  EXPECT_FALSE(p->CanCreateFile(kRendererID, file));
-  EXPECT_FALSE(p->CanCreateWriteFile(kRendererID, file));
-  EXPECT_FALSE(p->CanReadFileSystemFile(kRendererID, url));
-  EXPECT_FALSE(p->CanWriteFileSystemFile(kRendererID, url));
-  EXPECT_FALSE(p->CanCreateFileSystemFile(kRendererID, url));
-  EXPECT_FALSE(p->CanCreateWriteFileSystemFile(kRendererID, url));
+  CheckHasNoFileSystemFilePermission(p, file, url);
 
   // Cleanup.
-  p->Remove(kRendererID);
-}
-
-TEST_F(ChildProcessSecurityPolicyTest, CanReadDirectories) {
-  ChildProcessSecurityPolicyImpl* p =
-      ChildProcessSecurityPolicyImpl::GetInstance();
-
-  p->Add(kRendererID);
-
-  EXPECT_FALSE(p->CanReadDirectory(kRendererID,
-                                   base::FilePath(TEST_PATH("/etc/"))));
-  p->GrantReadDirectory(kRendererID,
-                        base::FilePath(TEST_PATH("/etc/")));
-  EXPECT_TRUE(p->CanReadDirectory(kRendererID,
-                                  base::FilePath(TEST_PATH("/etc/"))));
-  EXPECT_TRUE(p->CanReadFile(kRendererID,
-                             base::FilePath(TEST_PATH("/etc/passwd"))));
-
-  p->Remove(kRendererID);
-  p->Add(kRendererID);
-
-  EXPECT_FALSE(p->CanReadDirectory(kRendererID,
-                                   base::FilePath(TEST_PATH("/etc/"))));
-  EXPECT_FALSE(p->CanReadFile(kRendererID,
-                              base::FilePath(TEST_PATH("/etc/passwd"))));
-
-  // Just granting read permission as a file doesn't imply reading as a
-  // directory.
-  p->GrantReadFile(kRendererID, base::FilePath(TEST_PATH("/etc/")));
-  EXPECT_TRUE(p->CanReadFile(kRendererID,
-                             base::FilePath(TEST_PATH("/etc/passwd"))));
-  EXPECT_FALSE(p->CanReadDirectory(kRendererID,
-                                   base::FilePath(TEST_PATH("/etc/"))));
-
   p->Remove(kRendererID);
 }
 

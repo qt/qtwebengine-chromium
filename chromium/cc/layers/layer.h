@@ -13,9 +13,11 @@
 #include "base/observer_list.h"
 #include "cc/animation/layer_animation_controller.h"
 #include "cc/animation/layer_animation_value_observer.h"
+#include "cc/animation/layer_animation_value_provider.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/region.h"
 #include "cc/base/scoped_ptr_vector.h"
+#include "cc/debug/micro_benchmark.h"
 #include "cc/layers/compositing_reasons.h"
 #include "cc/layers/draw_properties.h"
 #include "cc/layers/layer_lists.h"
@@ -28,12 +30,19 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "third_party/skia/include/core/SkPicture.h"
+#include "third_party/skia/include/core/SkXfermode.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_f.h"
 #include "ui/gfx/transform.h"
 
 namespace gfx {
 class BoxF;
+}
+
+namespace base {
+namespace debug {
+class ConvertableToTraceFormat;
+}
 }
 
 namespace cc {
@@ -57,8 +66,13 @@ struct AnimationEvent;
 // Base class for composited layers. Special layer types are derived from
 // this class.
 class CC_EXPORT Layer : public base::RefCounted<Layer>,
-                        public LayerAnimationValueObserver {
+                        public LayerAnimationValueObserver,
+                        public LayerAnimationValueProvider {
  public:
+  typedef RenderSurfaceLayerList RenderSurfaceListType;
+  typedef LayerList LayerListType;
+  typedef RenderSurface RenderSurfaceType;
+
   enum LayerIdLabels {
     INVALID_ID = -1,
   };
@@ -121,11 +135,25 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool OpacityIsAnimating() const;
   virtual bool OpacityCanAnimateOnImplThread() const;
 
+  void SetBlendMode(SkXfermode::Mode blend_mode);
+  SkXfermode::Mode blend_mode() const { return blend_mode_; }
+
+  bool uses_default_blend_mode() const {
+    return blend_mode_ == SkXfermode::kSrcOver_Mode;
+  }
+
+  // A layer is root for an isolated group when it and all its descendants are
+  // drawn over a black and fully transparent background, creating an isolated
+  // group. It should be used along with SetBlendMode(), in order to restrict
+  // layers within the group to blend with layers outside this group.
+  void SetIsRootForIsolatedGroup(bool root);
+  bool is_root_for_isolated_group() const {
+    return is_root_for_isolated_group_;
+  }
+
   void SetFilters(const FilterOperations& filters);
   const FilterOperations& filters() const { return filters_; }
-
-  void SetFilter(const skia::RefPtr<SkImageFilter>& filter);
-  skia::RefPtr<SkImageFilter> filter() const { return filter_; }
+  bool FilterIsAnimating() const;
 
   // Background filters are filters applied to what is behind this layer, when
   // they are viewed through non-opaque regions in this layer. They are used
@@ -186,10 +214,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
     return clip_children_.get();
   }
 
-  DrawProperties<Layer, RenderSurface>& draw_properties() {
-    return draw_properties_;
-  }
-  const DrawProperties<Layer, RenderSurface>& draw_properties() const {
+  DrawProperties<Layer>& draw_properties() { return draw_properties_; }
+  const DrawProperties<Layer>& draw_properties() const {
     return draw_properties_;
   }
 
@@ -249,6 +275,12 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   void SetScrollable(bool scrollable);
   bool scrollable() const { return scrollable_; }
+
+  void SetUserScrollable(bool horizontal, bool vertical);
+  bool user_scrollable_horizontal() const {
+    return user_scrollable_horizontal_;
+  }
+  bool user_scrollable_vertical() const { return user_scrollable_vertical_; }
 
   void SetShouldScrollOnMainThread(bool should_scroll_on_main_thread);
   bool should_scroll_on_main_thread() const {
@@ -329,8 +361,10 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   virtual bool NeedMoreUpdates();
   virtual void SetIsMask(bool is_mask) {}
   virtual void ReduceMemoryUsage() {}
+  virtual void OnOutputSurfaceCreated() {}
 
   virtual std::string DebugName();
+  virtual scoped_refptr<base::debug::ConvertableToTraceFormat> TakeDebugInfo();
 
   void SetLayerClient(LayerClient* client) { client_ = client; }
 
@@ -367,9 +401,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void PauseAnimation(int animation_id, double time_offset);
   void RemoveAnimation(int animation_id);
 
-  void SuspendAnimations(double monotonic_time);
-  void ResumeAnimations(double monotonic_time);
-
   bool AnimatedBoundsForBox(const gfx::BoxF& box, gfx::BoxF* bounds) {
     return layer_animation_controller_->AnimatedBoundsForBox(box, bounds);
   }
@@ -399,8 +430,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   virtual skia::RefPtr<SkPicture> GetPicture() const;
 
-  virtual bool CanClipSelf() const;
-
   // Constructs a LayerImpl of the correct runtime type for this Layer type.
   virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl);
 
@@ -428,6 +457,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
     return num_dependents_need_push_properties_ > 0;
   }
 
+  virtual void RunMicroBenchmark(MicroBenchmark* benchmark);
+
  protected:
   friend class LayerImpl;
   friend class TreeSynchronizer;
@@ -453,6 +484,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   // before finishing the commit and unblocking the main thread. Used to ensure
   // unused resources on the impl thread are returned before commit completes.
   void SetNextCommitWaitsForActivation();
+
+  // Called when the blend mode or filters have been changed.
+  void SetNeedsFilterContextIfNeeded();
 
   void SetNeedsPushProperties();
   void AddDependentNeedsPushProperties();
@@ -513,9 +547,15 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   // This should only be called from RemoveFromParent().
   void RemoveChildOrDependent(Layer* child);
 
+  // LayerAnimationValueProvider implementation.
+  virtual gfx::Vector2dF ScrollOffsetForAnimation() const OVERRIDE;
+
   // LayerAnimationValueObserver implementation.
+  virtual void OnFilterAnimated(const FilterOperations& filters) OVERRIDE;
   virtual void OnOpacityAnimated(float opacity) OVERRIDE;
   virtual void OnTransformAnimated(const gfx::Transform& transform) OVERRIDE;
+  virtual void OnScrollOffsetAnimated(gfx::Vector2dF scroll_offset) OVERRIDE;
+  virtual void OnAnimationWaitingForDeletion() OVERRIDE;
   virtual bool IsActive() const OVERRIDE;
 
   LayerList children_;
@@ -533,9 +573,22 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   gfx::Vector2d scroll_offset_;
   gfx::Vector2d max_scroll_offset_;
-  bool scrollable_;
-  bool should_scroll_on_main_thread_;
-  bool have_wheel_event_handlers_;
+  bool scrollable_ : 1;
+  bool should_scroll_on_main_thread_ : 1;
+  bool have_wheel_event_handlers_ : 1;
+  bool user_scrollable_horizontal_ : 1;
+  bool user_scrollable_vertical_ : 1;
+  bool is_root_for_isolated_group_ : 1;
+  bool is_container_for_fixed_position_layers_ : 1;
+  bool is_drawable_ : 1;
+  bool hide_layer_and_subtree_ : 1;
+  bool masks_to_bounds_ : 1;
+  bool contents_opaque_ : 1;
+  bool double_sided_ : 1;
+  bool preserves_3d_ : 1;
+  bool use_parent_backface_visibility_ : 1;
+  bool draw_checkerboard_for_missing_tiles_ : 1;
+  bool force_render_surface_ : 1;
   Region non_fast_scrollable_region_;
   Region touch_event_handler_region_;
   gfx::PointF position_;
@@ -543,21 +596,11 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   SkColor background_color_;
   CompositingReasons compositing_reasons_;
   float opacity_;
-  skia::RefPtr<SkImageFilter> filter_;
+  SkXfermode::Mode blend_mode_;
   FilterOperations filters_;
   FilterOperations background_filters_;
   float anchor_point_z_;
-  bool is_container_for_fixed_position_layers_;
   LayerPositionConstraint position_constraint_;
-  bool is_drawable_;
-  bool hide_layer_and_subtree_;
-  bool masks_to_bounds_;
-  bool contents_opaque_;
-  bool double_sided_;
-  bool preserves_3d_;
-  bool use_parent_backface_visibility_;
-  bool draw_checkerboard_for_missing_tiles_;
-  bool force_render_surface_;
   Layer* scroll_parent_;
   scoped_ptr<std::set<Layer*> > scroll_children_;
 
@@ -579,7 +622,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   base::Closure did_scroll_callback_;
 
-  DrawProperties<Layer, RenderSurface> draw_properties_;
+  DrawProperties<Layer> draw_properties_;
 
   PaintProperties paint_properties_;
 

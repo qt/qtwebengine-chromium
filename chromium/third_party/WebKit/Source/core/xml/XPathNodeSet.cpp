@@ -28,7 +28,6 @@
 
 #include "core/dom/Attr.h"
 #include "core/dom/Element.h"
-#include "core/dom/Node.h"
 #include "core/dom/NodeTraversal.h"
 
 namespace WebCore {
@@ -207,7 +206,7 @@ void NodeSet::traversalSort() const
     Vector<RefPtr<Node> > sortedNodes;
     sortedNodes.reserveInitialCapacity(nodeCount);
 
-    for (Node* n = findRootNode(m_nodes.first().get()); n; n = NodeTraversal::next(n)) {
+    for (Node* n = findRootNode(m_nodes.first().get()); n; n = NodeTraversal::next(*n)) {
         if (nodes.contains(n))
             sortedNodes.append(n);
 

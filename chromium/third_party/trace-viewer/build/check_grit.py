@@ -9,12 +9,10 @@ import re
 srcdir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../src"))
 
 def GritCheck():
-  filenames = [os.path.join(srcdir, x) for x in [
-      "base.js",
-      "about_tracing/profiling_view.js"]]
-
+  filenames = ["base.js",
+               "about_tracing/profiling_view.js"]
   grit_files = []
-  load_sequence = parse_deps.calc_load_sequence(filenames, srcdir)
+  load_sequence = parse_deps.calc_load_sequence(filenames, [srcdir])
   for module in load_sequence:
     for style_sheet in module.style_sheets:
       # I'm assuming we only have url()'s associated with images
@@ -31,6 +29,8 @@ def GritCheck():
   for (dirpath, dirnames, filenames) in os.walk('src/images'):
     for name in filenames:
       known_images.append(os.path.join(dirpath, name))
+    if '.svn' in dirnames:
+      dirnames.remove('.svn')
 
   u = set(grit_files).union(set(known_images))
   i = set(grit_files).intersection(set(known_images))

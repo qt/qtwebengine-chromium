@@ -31,8 +31,8 @@
 #ifndef NavigatorDoNotTrack_h
 #define NavigatorDoNotTrack_h
 
-#include "core/page/DOMWindowProperty.h"
-#include "core/platform/Supplementable.h"
+#include "core/frame/DOMWindowProperty.h"
+#include "platform/Supplementable.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {

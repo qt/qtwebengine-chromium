@@ -35,11 +35,11 @@
 #include "WebElement.h"
 #include "WebFormElement.h"
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
 namespace WebCore { class HTMLFormControlElement; }
 #endif
 
-namespace WebKit {
+namespace blink {
 
 // Provides readonly access to some properties of a DOM form control element node.
 class WebFormControlElement : public WebElement {
@@ -54,27 +54,30 @@ public:
     }
     void assign(const WebFormControlElement& e) { WebElement::assign(e); }
 
-    WEBKIT_EXPORT bool isEnabled() const;
-    WEBKIT_EXPORT bool isReadOnly() const;
-    WEBKIT_EXPORT WebString formControlName() const;
-    WEBKIT_EXPORT WebString formControlType() const;
+    BLINK_EXPORT bool isEnabled() const;
+    BLINK_EXPORT bool isReadOnly() const;
+    BLINK_EXPORT WebString formControlName() const;
+    BLINK_EXPORT WebString formControlType() const;
 
-    WEBKIT_EXPORT void dispatchFormControlChangeEvent();
+    BLINK_EXPORT void dispatchFormControlChangeEvent();
+
+    BLINK_EXPORT bool isAutofilled() const;
+    BLINK_EXPORT void setAutofilled(bool);
 
     // Returns the name that should be used for the specified |element| when
     // storing autofill data.  This is either the field name or its id, an empty
     // string if it has no name and no id.
-    WEBKIT_EXPORT WebString nameForAutofill() const;
+    BLINK_EXPORT WebString nameForAutofill() const;
 
-    WEBKIT_EXPORT WebFormElement form() const;
+    BLINK_EXPORT WebFormElement form() const;
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
     WebFormControlElement(const WTF::PassRefPtr<WebCore::HTMLFormControlElement>&);
     WebFormControlElement& operator=(const WTF::PassRefPtr<WebCore::HTMLFormControlElement>&);
     operator WTF::PassRefPtr<WebCore::HTMLFormControlElement>() const;
 #endif
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

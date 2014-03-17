@@ -57,7 +57,7 @@ class WorkerDevToolsManager {
 
   struct InspectedWorker {
     InspectedWorker(WorkerProcessHost* host, int route_id, const GURL& url,
-                    const string16& name)
+                    const base::string16& name)
         : host(host),
           route_id(route_id),
           worker_url(url),
@@ -65,7 +65,7 @@ class WorkerDevToolsManager {
     WorkerProcessHost* const host;
     int const route_id;
     GURL worker_url;
-    string16 worker_name;
+    base::string16 worker_name;
   };
 
   typedef std::list<InspectedWorker> InspectedWorkersList;
@@ -98,13 +98,13 @@ class WorkerDevToolsManager {
   InspectedWorkersList inspected_workers_;
 
   struct TerminatedInspectedWorker {
-    TerminatedInspectedWorker(WorkerId id, const GURL& url, const string16& name)
+    TerminatedInspectedWorker(WorkerId id, const GURL& url, const base::string16& name)
         : old_worker_id(id),
           worker_url(url),
           worker_name(name) {}
     WorkerId old_worker_id;
     GURL worker_url;
-    string16 worker_name;
+    base::string16 worker_name;
   };
 
   typedef std::list<TerminatedInspectedWorker> TerminatedInspectedWorkers;

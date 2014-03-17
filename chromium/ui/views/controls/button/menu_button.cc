@@ -22,7 +22,7 @@
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget.h"
 
-using base::Time;
+using base::TimeTicks;
 using base::TimeDelta;
 
 namespace views {
@@ -114,7 +114,7 @@ bool MenuButton::Activate() {
     destroyed_flag_ = NULL;
 
     menu_visible_ = false;
-    menu_closed_time_ = Time::Now();
+    menu_closed_time_ = TimeTicks::Now();
 
     // Now that the menu has closed, we need to manually reset state to
     // "normal" since the menu modal loop will have prevented normal
@@ -136,21 +136,8 @@ bool MenuButton::Activate() {
 void MenuButton::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
   TextButton::PaintButton(canvas, mode);
 
-  if (show_menu_marker_) {
-    gfx::Insets insets = GetInsets();
-
-    // We can not use the views' mirroring infrastructure for mirroring a
-    // MenuButton control (see TextButton::OnPaint() for a detailed explanation
-    // regarding why we can not flip the canvas). Therefore, we need to
-    // manually mirror the position of the down arrow.
-    gfx::Rect arrow_bounds(width() - insets.right() -
-                           menu_marker_->width() - kMenuMarkerPaddingRight,
-                           height() / 2 - menu_marker_->height() / 2,
-                           menu_marker_->width(),
-                           menu_marker_->height());
-    arrow_bounds.set_x(GetMirroredXForRect(arrow_bounds));
-    canvas->DrawImageInt(*menu_marker_, arrow_bounds.x(), arrow_bounds.y());
-  }
+  if (show_menu_marker_)
+    PaintMenuMarker(canvas);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -181,7 +168,7 @@ bool MenuButton::OnMousePressed(const ui::MouseEvent& event) {
     if (event.IsOnlyLeftMouseButton() &&
         HitTestPoint(event.location()) &&
         GetDragOperations(event.location()) == ui::DragDropTypes::DRAG_NONE) {
-      TimeDelta delta = Time::Now() - menu_closed_time_;
+      TimeDelta delta = TimeTicks::Now() - menu_closed_time_;
       if (delta.InMilliseconds() > kMinimumMsBetweenButtonClicks)
         return Activate();
     }
@@ -262,6 +249,22 @@ void MenuButton::GetAccessibleState(ui::AccessibleViewState* state) {
   state->role = ui::AccessibilityTypes::ROLE_BUTTONMENU;
   state->default_action = l10n_util::GetStringUTF16(IDS_APP_ACCACTION_PRESS);
   state->state = ui::AccessibilityTypes::STATE_HASPOPUP;
+}
+
+void MenuButton::PaintMenuMarker(gfx::Canvas* canvas) {
+  gfx::Insets insets = GetInsets();
+
+  // We can not use the views' mirroring infrastructure for mirroring a
+  // MenuButton control (see TextButton::OnPaint() for a detailed explanation
+  // regarding why we can not flip the canvas). Therefore, we need to
+  // manually mirror the position of the down arrow.
+  gfx::Rect arrow_bounds(width() - insets.right() -
+                         menu_marker_->width() - kMenuMarkerPaddingRight,
+                         height() / 2 - menu_marker_->height() / 2,
+                         menu_marker_->width(),
+                         menu_marker_->height());
+  arrow_bounds.set_x(GetMirroredXForRect(arrow_bounds));
+  canvas->DrawImageInt(*menu_marker_, arrow_bounds.x(), arrow_bounds.y());
 }
 
 int MenuButton::GetMaximumScreenXCoordinate() {

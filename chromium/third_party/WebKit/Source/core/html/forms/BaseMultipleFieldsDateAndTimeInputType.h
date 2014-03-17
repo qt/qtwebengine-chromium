@@ -53,7 +53,7 @@ public:
     virtual bool isValidFormat(bool hasYear, bool hasMonth, bool hasWeek, bool hasDay, bool hasAMPM, bool hasHour, bool hasMinute, bool hasSecond) const = 0;
 
 protected:
-    BaseMultipleFieldsDateAndTimeInputType(HTMLInputElement*);
+    BaseMultipleFieldsDateAndTimeInputType(HTMLInputElement&);
     virtual ~BaseMultipleFieldsDateAndTimeInputType();
 
     virtual void setupLayoutParameters(DateTimeEditElement::LayoutParameters&, const DateComponents&) const = 0;
@@ -78,6 +78,7 @@ private:
     // PickerIndicatorElement::PickerIndicatorOwner functions
     virtual bool isPickerIndicatorOwnerDisabledOrReadOnly() const OVERRIDE FINAL;
     virtual void pickerIndicatorChooseValue(const String&) OVERRIDE FINAL;
+    virtual void pickerIndicatorChooseValue(double) OVERRIDE FINAL;
     virtual bool setupDateTimeChooserParameters(DateTimeChooserParameters&) OVERRIDE FINAL;
 
     // ClearButtonElement::ClearButtonOwner functions.
@@ -105,7 +106,7 @@ private:
     virtual void setValue(const String&, bool valueChanged, TextFieldEventBehavior) OVERRIDE FINAL;
     virtual bool shouldUseInputMethod() const OVERRIDE FINAL;
     virtual void stepAttributeChanged() OVERRIDE FINAL;
-    virtual void updateInnerTextValue() OVERRIDE FINAL;
+    virtual void updateView() OVERRIDE FINAL;
     virtual void valueAttributeChanged() OVERRIDE;
     virtual void listAttributeTargetChanged() OVERRIDE FINAL;
     virtual void updateClearButtonVisibility() OVERRIDE FINAL;

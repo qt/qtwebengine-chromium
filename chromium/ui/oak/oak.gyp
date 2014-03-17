@@ -18,8 +18,10 @@
         '../../url/url.gyp:url_lib',
         '../aura/aura.gyp:aura',
         '../compositor/compositor.gyp:compositor',
+        '../events/events.gyp:events',
+        '../gfx/gfx.gyp:gfx',
+        '../resources/ui_resources.gyp:ui_resources',
         '../ui.gyp:ui',
-        '../ui.gyp:ui_resources',
         '../views/views.gyp:views',
       ],
       'defines': [

@@ -26,6 +26,7 @@
 #ifndef HTMLDialogElement_h
 #define HTMLDialogElement_h
 
+#include "RuntimeEnabledFeatures.h"
 #include "core/html/HTMLElement.h"
 
 namespace WebCore {
@@ -36,34 +37,44 @@ class QualifiedName;
 
 class HTMLDialogElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLDialogElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<HTMLDialogElement> create(Document&);
 
     void close(const String& returnValue, ExceptionState&);
+    void closeDialog(const String& returnValue = String());
     void show();
     void showModal(ExceptionState&);
+
+    enum CenteringMode { Uninitialized, Centered, NotCentered };
+    CenteringMode centeringMode() const { return m_centeringMode; }
+    LayoutUnit centeredPosition() const
+    {
+        ASSERT(m_centeringMode == Centered);
+        return m_centeredPosition;
+    }
+    void setCentered(LayoutUnit centeredPosition);
+    void setNotCentered();
 
     String returnValue() const { return m_returnValue; }
     void setReturnValue(const String& returnValue) { m_returnValue = returnValue; }
 
 private:
-    HTMLDialogElement(const QualifiedName&, Document&);
+    explicit HTMLDialogElement(Document&);
 
-    virtual PassRefPtr<RenderStyle> customStyleForRenderer() OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void defaultEventHandler(Event*) OVERRIDE;
     virtual bool shouldBeReparentedUnderRenderView(const RenderStyle*) const OVERRIDE;
 
-    void closeDialog(const String& returnValue = String());
-    void reposition();
+    void forceLayoutForCentering();
 
-    bool m_topIsValid;
-    LayoutUnit m_top;
+    CenteringMode m_centeringMode;
+    LayoutUnit m_centeredPosition;
     String m_returnValue;
 };
 
 inline HTMLDialogElement* toHTMLDialogElement(Node* node)
 {
     ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::dialogTag));
+    ASSERT_WITH_SECURITY_IMPLICATION(RuntimeEnabledFeatures::dialogElementEnabled());
     return static_cast<HTMLDialogElement*>(node);
 }
 

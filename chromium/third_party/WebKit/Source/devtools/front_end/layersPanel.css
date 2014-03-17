@@ -126,6 +126,11 @@
     border-color: rgb(150, 150, 255);
 }
 
+.layer-container .paint-rect {
+    position: absolute;
+    border-style: solid;
+}
+
 .layer-details-view .empty-view {
     font-size: 16px;
 }
@@ -136,6 +141,26 @@
 
 .layer-details-view table td:first-child {
     font-weight: bold;
+}
+
+.paint-profiler-view canvas {
+    z-index: 200;
+    opacity: 0.8;
+    background-color: white;
+}
+
+.paint-profiler-view {
+    overflow: hidden;
+}
+
+.paint-profiler-view .overview-grid-dividers-background,
+.paint-profiler-view .overview-grid-window {
+    bottom: 0;
+    height: auto;
+}
+
+.paint-profiler-view .overview-grid-window-resizer {
+    z-index: 2000;
 }
 
 }

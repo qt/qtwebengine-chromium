@@ -29,10 +29,10 @@
  */
 
 [
-    EnabledAtRuntime=MediaSource,
     ActiveDOMObject,
     Constructor,
-    ConstructorCallWith=ScriptExecutionContext
+    ConstructorCallWith=ExecutionContext,
+    RuntimeEnabled=MediaSource,
 ] interface MediaSource : EventTarget {
     // All the source buffers created by this object.
     readonly attribute SourceBufferList sourceBuffers;
@@ -40,7 +40,7 @@
     // Subset of sourceBuffers that provide data for the selected/enabled tracks.
     readonly attribute SourceBufferList activeSourceBuffers;
 
-    [SetterRaisesException] attribute double duration;
+    [RaisesException=Setter] attribute double duration;
 
     [RaisesException] SourceBuffer addSourceBuffer(DOMString type);
     [RaisesException] void removeSourceBuffer(SourceBuffer buffer);

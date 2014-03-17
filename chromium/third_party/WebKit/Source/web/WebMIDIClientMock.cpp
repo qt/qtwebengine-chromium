@@ -31,20 +31,15 @@
 #include "config.h"
 #include "WebMIDIClientMock.h"
 
-#include "core/platform/mock/MIDIClientMock.h"
 #include "modules/webmidi/MIDIAccess.h"
+#include "modules/webmidi/MIDIClientMock.h"
 #include "public/web/WebMIDIPermissionRequest.h"
 
-namespace WebKit {
+namespace blink {
 
 WebMIDIClientMock::WebMIDIClientMock()
 {
     m_clientMock.reset(new WebCore::MIDIClientMock());
-}
-
-WebMIDIClientMock* WebMIDIClientMock::create()
-{
-    return new WebMIDIClientMock();
 }
 
 void WebMIDIClientMock::setSysExPermission(bool allowed)
@@ -72,4 +67,4 @@ void WebMIDIClientMock::reset()
     m_clientMock.reset(0);
 }
 
-} // WebKit
+} // blink

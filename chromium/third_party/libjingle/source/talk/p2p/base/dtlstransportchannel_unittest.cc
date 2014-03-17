@@ -233,7 +233,7 @@ class DtlsTestClient : public sigslot::has_slots<> {
 
   void SendPackets(size_t channel, size_t size, size_t count, bool srtp) {
     ASSERT(channel < channels_.size());
-    talk_base::scoped_array<char> packet(new char[size]);
+    talk_base::scoped_ptr<char[]> packet(new char[size]);
     size_t sent = 0;
     do {
       // Fill the packet with a known value and a sequence number to check
@@ -307,6 +307,7 @@ class DtlsTestClient : public sigslot::has_slots<> {
 
   void OnTransportChannelReadPacket(cricket::TransportChannel* channel,
                                     const char* data, size_t size,
+                                    const talk_base::PacketTime& packet_time,
                                     int flags) {
     uint32 packet_num = 0;
     ASSERT_TRUE(VerifyPacket(data, size, &packet_num));
@@ -320,6 +321,7 @@ class DtlsTestClient : public sigslot::has_slots<> {
   // Hook into the raw packet stream to make sure DTLS packets are encrypted.
   void OnFakeTransportChannelReadPacket(cricket::TransportChannel* channel,
                                         const char* data, size_t size,
+                                        const talk_base::PacketTime& time,
                                         int flags) {
     // Flags shouldn't be set on the underlying TransportChannel packets.
     ASSERT_EQ(0, flags);
@@ -750,4 +752,57 @@ TEST_F(DtlsTransportChannelTest, TestDtlsReOfferWithDifferentSetupAttr) {
               cricket::CONNECTIONROLE_ACTPASS, NF_REOFFER);
   TestTransfer(0, 1000, 100, true);
   TestTransfer(1, 1000, 100, true);
+}
+
+// Test Certificates state after negotiation but before connection.
+TEST_F(DtlsTransportChannelTest, TestCertificatesBeforeConnect) {
+  MAYBE_SKIP_TEST(HaveDtls);
+  PrepareDtls(true, true);
+  Negotiate();
+
+  talk_base::scoped_ptr<talk_base::SSLIdentity> identity1;
+  talk_base::scoped_ptr<talk_base::SSLIdentity> identity2;
+  talk_base::scoped_ptr<talk_base::SSLCertificate> remote_cert1;
+  talk_base::scoped_ptr<talk_base::SSLCertificate> remote_cert2;
+
+  // After negotiation, each side has a distinct local certificate, but still no
+  // remote certificate, because connection has not yet occurred.
+  ASSERT_TRUE(client1_.transport()->GetIdentity(identity1.accept()));
+  ASSERT_TRUE(client2_.transport()->GetIdentity(identity2.accept()));
+  ASSERT_NE(identity1->certificate().ToPEMString(),
+            identity2->certificate().ToPEMString());
+  ASSERT_FALSE(
+      client1_.transport()->GetRemoteCertificate(remote_cert1.accept()));
+  ASSERT_FALSE(remote_cert1 != NULL);
+  ASSERT_FALSE(
+      client2_.transport()->GetRemoteCertificate(remote_cert2.accept()));
+  ASSERT_FALSE(remote_cert2 != NULL);
+}
+
+// Test Certificates state after connection.
+TEST_F(DtlsTransportChannelTest, TestCertificatesAfterConnect) {
+  MAYBE_SKIP_TEST(HaveDtls);
+  PrepareDtls(true, true);
+  ASSERT_TRUE(Connect());
+
+  talk_base::scoped_ptr<talk_base::SSLIdentity> identity1;
+  talk_base::scoped_ptr<talk_base::SSLIdentity> identity2;
+  talk_base::scoped_ptr<talk_base::SSLCertificate> remote_cert1;
+  talk_base::scoped_ptr<talk_base::SSLCertificate> remote_cert2;
+
+  // After connection, each side has a distinct local certificate.
+  ASSERT_TRUE(client1_.transport()->GetIdentity(identity1.accept()));
+  ASSERT_TRUE(client2_.transport()->GetIdentity(identity2.accept()));
+  ASSERT_NE(identity1->certificate().ToPEMString(),
+            identity2->certificate().ToPEMString());
+
+  // Each side's remote certificate is the other side's local certificate.
+  ASSERT_TRUE(
+      client1_.transport()->GetRemoteCertificate(remote_cert1.accept()));
+  ASSERT_EQ(remote_cert1->ToPEMString(),
+            identity2->certificate().ToPEMString());
+  ASSERT_TRUE(
+      client2_.transport()->GetRemoteCertificate(remote_cert2.accept()));
+  ASSERT_EQ(remote_cert2->ToPEMString(),
+            identity1->certificate().ToPEMString());
 }

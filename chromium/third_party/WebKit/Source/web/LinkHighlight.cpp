@@ -32,15 +32,15 @@
 #include "WebKit.h"
 #include "WebViewImpl.h"
 #include "core/dom/Node.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
-#include "core/platform/graphics/Color.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
+#include "core/rendering/CompositedLayerMapping.h"
 #include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderLayerBacking.h"
 #include "core/rendering/RenderLayerModelObject.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/style/ShadowData.h"
+#include "platform/graphics/Color.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebAnimationCurve.h"
 #include "public/platform/WebCompositorSupport.h"
@@ -52,7 +52,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 class WebViewImpl;
 
@@ -111,7 +111,7 @@ RenderLayer* LinkHighlight::computeEnclosingCompositingLayer()
 
     // Find the nearest enclosing composited layer and attach to it. We may need to cross frame boundaries
     // to find a suitable layer.
-    RenderLayerModelObject* renderer = toRenderLayerModelObject(m_node->renderer());
+    RenderObject* renderer = m_node->renderer();
     RenderLayerModelObject* repaintContainer;
     do {
         repaintContainer = renderer->containerForRepaint();
@@ -123,18 +123,17 @@ RenderLayer* LinkHighlight::computeEnclosingCompositingLayer()
     } while (!repaintContainer);
     RenderLayer* renderLayer = repaintContainer->layer();
 
-    if (!renderLayer || !renderLayer->isComposited())
+    if (!renderLayer || renderLayer->compositingState() == NotComposited)
         return 0;
 
-    GraphicsLayer* newGraphicsLayer = renderLayer->backing()->graphicsLayer();
+    GraphicsLayer* newGraphicsLayer = renderLayer->compositedLayerMapping()->mainGraphicsLayer();
     m_clipLayer->setSublayerTransform(SkMatrix44());
 
     if (!newGraphicsLayer->drawsContent()) {
-        if (renderLayer->usesCompositedScrolling()) {
-            ASSERT(renderLayer->backing() && renderLayer->backing()->scrollingContentsLayer());
-            newGraphicsLayer = renderLayer->backing()->scrollingContentsLayer();
-        } else
-            ASSERT_NOT_REACHED();
+        if (renderLayer->scrollableArea() && renderLayer->scrollableArea()->usesCompositedScrolling()) {
+            ASSERT(renderLayer->hasCompositedLayerMapping() && renderLayer->compositedLayerMapping()->scrollingContentsLayer());
+            newGraphicsLayer = renderLayer->compositedLayerMapping()->scrollingContentsLayer();
+        }
     }
 
     if (m_currentGraphicsLayer != newGraphicsLayer) {
@@ -187,7 +186,7 @@ static void addQuadToPath(const FloatQuad& quad, Path& path)
 
 bool LinkHighlight::computeHighlightLayerPathAndPosition(RenderLayer* compositingLayer)
 {
-    if (!m_node || !m_node->renderer())
+    if (!m_node || !m_node->renderer() || !m_currentGraphicsLayer)
         return false;
 
     ASSERT(compositingLayer);
@@ -269,12 +268,12 @@ void LinkHighlight::startHighlightAnimationIfNeeded()
     if (extraDurationRequired)
         curve->add(WebFloatKeyframe(extraDurationRequired, startOpacity));
     // For layout tests we don't fade out.
-    curve->add(WebFloatKeyframe(fadeDuration + extraDurationRequired, WebKit::layoutTestMode() ? startOpacity : 0));
+    curve->add(WebFloatKeyframe(fadeDuration + extraDurationRequired, blink::layoutTestMode() ? startOpacity : 0));
 
-    m_animation = adoptPtr(compositorSupport->createAnimation(*curve, WebAnimation::TargetPropertyOpacity));
+    OwnPtr<WebAnimation> animation = adoptPtr(compositorSupport->createAnimation(*curve, WebAnimation::TargetPropertyOpacity));
 
     m_contentLayer->layer()->setDrawsContent(true);
-    m_contentLayer->layer()->addAnimation(m_animation.get());
+    m_contentLayer->layer()->addAnimation(animation.leakPtr());
 
     invalidate();
     m_owningWebViewImpl->scheduleAnimation();
@@ -288,11 +287,11 @@ void LinkHighlight::clearGraphicsLayerLinkHighlightPointer()
     }
 }
 
-void LinkHighlight::notifyAnimationStarted(double)
+void LinkHighlight::notifyAnimationStarted(double, double, blink::WebAnimation::TargetProperty)
 {
 }
 
-void LinkHighlight::notifyAnimationFinished(double)
+void LinkHighlight::notifyAnimationFinished(double, double, blink::WebAnimation::TargetProperty)
 {
     // Since WebViewImpl may hang on to us for a while, make sure we
     // release resources as soon as possible.

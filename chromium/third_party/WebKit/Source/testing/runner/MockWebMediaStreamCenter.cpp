@@ -39,7 +39,7 @@
 #include "public/platform/WebSourceInfo.h"
 #include "public/platform/WebVector.h"
 
-using namespace WebKit;
+using namespace blink;
 
 namespace WebTestRunner {
 
@@ -57,14 +57,14 @@ bool MockWebMediaStreamCenter::getMediaStreamTrackSources(const WebMediaStreamTr
     return true;
 }
 
-void MockWebMediaStreamCenter::didEnableMediaStreamTrack(const WebMediaStream&, const WebMediaStreamTrack& component)
+void MockWebMediaStreamCenter::didEnableMediaStreamTrack(const WebMediaStream&, const WebMediaStreamTrack& track)
 {
-    component.source().setReadyState(WebMediaStreamSource::ReadyStateLive);
+    track.source().setReadyState(WebMediaStreamSource::ReadyStateLive);
 }
 
-void MockWebMediaStreamCenter::didDisableMediaStreamTrack(const WebMediaStream&, const WebMediaStreamTrack& component)
+void MockWebMediaStreamCenter::didDisableMediaStreamTrack(const WebMediaStream&, const WebMediaStreamTrack& track)
 {
-    component.source().setReadyState(WebMediaStreamSource::ReadyStateMuted);
+    track.source().setReadyState(WebMediaStreamSource::ReadyStateMuted);
 }
 
 bool MockWebMediaStreamCenter::didAddMediaStreamTrack(const WebMediaStream&, const WebMediaStreamTrack&)
@@ -79,6 +79,19 @@ bool MockWebMediaStreamCenter::didRemoveMediaStreamTrack(const WebMediaStream&, 
 
 void MockWebMediaStreamCenter::didStopLocalMediaStream(const WebMediaStream& stream)
 {
+    WebVector<WebMediaStreamTrack> tracks;
+    stream.audioTracks(tracks);
+    for (size_t i = 0; i < tracks.size(); ++i)
+        tracks[i].source().setReadyState(WebMediaStreamSource::ReadyStateEnded);
+    stream.videoTracks(tracks);
+    for (size_t i = 0; i < tracks.size(); ++i)
+        tracks[i].source().setReadyState(WebMediaStreamSource::ReadyStateEnded);
+}
+
+bool MockWebMediaStreamCenter::didStopMediaStreamTrack(const blink::WebMediaStreamTrack& track)
+{
+    track.source().setReadyState(WebMediaStreamSource::ReadyStateEnded);
+    return true;
 }
 
 class MockWebAudioDestinationConsumer : public WebAudioDestinationConsumer {

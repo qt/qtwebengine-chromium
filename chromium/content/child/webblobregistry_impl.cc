@@ -18,10 +18,10 @@
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "webkit/common/blob/blob_data.h"
 
-using WebKit::WebBlobData;
-using WebKit::WebString;
-using WebKit::WebThreadSafeData;
-using WebKit::WebURL;
+using blink::WebBlobData;
+using blink::WebString;
+using blink::WebThreadSafeData;
+using blink::WebURL;
 
 namespace content {
 
@@ -40,7 +40,7 @@ WebBlobRegistryImpl::~WebBlobRegistryImpl() {
 }
 
 void WebBlobRegistryImpl::registerBlobData(
-    const WebKit::WebString& uuid, const WebKit::WebBlobData& data) {
+    const blink::WebString& uuid, const blink::WebBlobData& data) {
   const std::string uuid_str(uuid.utf8());
 
   sender_->Send(new BlobHostMsg_StartBuilding(uuid_str));
@@ -69,21 +69,21 @@ void WebBlobRegistryImpl::registerBlobData(
       case WebBlobData::Item::TypeBlob:
         if (data_item.length) {
           webkit_blob::BlobData::Item item;
-          item.SetToBlobUrlRange(
-              data_item.blobURL,
+          item.SetToBlobRange(
+              data_item.blobUUID.utf8(),
               static_cast<uint64>(data_item.offset),
               static_cast<uint64>(data_item.length));
           sender_->Send(
               new BlobHostMsg_AppendBlobDataItem(uuid_str, item));
         }
         break;
-      case WebBlobData::Item::TypeURL:
+      case WebBlobData::Item::TypeFileSystemURL:
         if (data_item.length) {
           // We only support filesystem URL as of now.
-          DCHECK(GURL(data_item.url).SchemeIsFileSystem());
+          DCHECK(GURL(data_item.fileSystemURL).SchemeIsFileSystem());
           webkit_blob::BlobData::Item item;
           item.SetToFileSystemUrlRange(
-              data_item.url,
+              data_item.fileSystemURL,
               static_cast<uint64>(data_item.offset),
               static_cast<uint64>(data_item.length),
               base::Time::FromDoubleT(data_item.expectedModificationTime));
@@ -147,33 +147,6 @@ void WebBlobRegistryImpl::SendDataForBlob(const std::string& uuid_str,
     }
   }
 }
-
-// DEPRECATED, almost. Until blink is updated, we implement these older methods
-// in terms of our newer blob storage system. We create a uuid for each 'data'
-// we see and construct a mapping from the private blob urls we're given to
-// that uuid. The mapping is maintained in the browser process.
-//
-// Chromium is setup to speak in terms of old-style private blob urls or
-// new-style uuid identifiers. Once blink has been migrated support for
-// the old-style will be deleted. Search for the term deprecated.
-
-void WebBlobRegistryImpl::registerBlobURL(
-    const WebURL& url, WebBlobData& data) {
-  std::string uuid = base::GenerateGUID();
-  registerBlobData(WebKit::WebString::fromUTF8(uuid), data);
-  sender_->Send(new BlobHostMsg_DeprecatedRegisterBlobURL(url, uuid));
-  sender_->Send(new BlobHostMsg_DecrementRefCount(uuid));
-}
-
-void WebBlobRegistryImpl::registerBlobURL(
-    const WebURL& url, const WebURL& src_url) {
-  sender_->Send(new BlobHostMsg_DeprecatedCloneBlobURL(url, src_url));
-}
-
-void WebBlobRegistryImpl::unregisterBlobURL(const WebURL& url) {
-  sender_->Send(new BlobHostMsg_DeprecatedRevokeBlobURL(url));
-}
-
 
 // ------ streams stuff -----
 

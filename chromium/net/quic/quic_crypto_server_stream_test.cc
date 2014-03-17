@@ -12,8 +12,8 @@
 #include "net/quic/crypto/crypto_framer.h"
 #include "net/quic/crypto/crypto_handshake.h"
 #include "net/quic/crypto/crypto_protocol.h"
-#include "net/quic/crypto/crypto_server_config.h"
 #include "net/quic/crypto/crypto_utils.h"
+#include "net/quic/crypto/quic_crypto_server_config.h"
 #include "net/quic/crypto/quic_decrypter.h"
 #include "net/quic/crypto/quic_encrypter.h"
 #include "net/quic/crypto/quic_random.h"
@@ -21,6 +21,7 @@
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_session.h"
 #include "net/quic/test_tools/crypto_test_utils.h"
+#include "net/quic/test_tools/delayed_verify_strike_register_client.h"
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -30,23 +31,33 @@ class QuicConnection;
 class ReliableQuicStream;
 }  // namespace net
 
+using std::pair;
 using testing::_;
 
 namespace net {
 namespace test {
+
+class QuicCryptoServerConfigPeer {
+ public:
+  static string GetPrimaryOrbit(const QuicCryptoServerConfig& config) {
+    base::AutoLock lock(config.configs_lock_);
+    CHECK(config.primary_config_ != NULL);
+    return string(reinterpret_cast<const char*>(config.primary_config_->orbit),
+                  kOrbitSize);
+  }
+};
+
 namespace {
 
-class QuicCryptoServerStreamTest : public ::testing::Test {
+class QuicCryptoServerStreamTest : public testing::TestWithParam<bool> {
  public:
   QuicCryptoServerStreamTest()
-      : guid_(1),
-        addr_(ParseIPLiteralToNumber("192.0.2.33", &ip_) ?
-              ip_ : IPAddressNumber(), 1),
-        connection_(new PacketSavingConnection(guid_, addr_, true)),
-        session_(connection_, QuicConfig(), true),
+      : connection_(new PacketSavingConnection(true)),
+        session_(connection_, DefaultQuicConfig()),
         crypto_config_(QuicCryptoServerConfig::TESTING,
                        QuicRandom::GetInstance()),
-        stream_(crypto_config_, &session_) {
+        stream_(crypto_config_, &session_),
+        strike_register_client_(NULL) {
     config_.SetDefaults();
     session_.config()->SetDefaults();
     session_.SetCryptoStream(&stream_);
@@ -55,10 +66,28 @@ class QuicCryptoServerStreamTest : public ::testing::Test {
     connection_->AdvanceTime(QuicTime::Delta::FromSeconds(100000));
     // TODO(rtenneti): Enable testing of ProofSource.
     // crypto_config_.SetProofSource(CryptoTestUtils::ProofSourceForTesting());
+    crypto_config_.set_strike_register_no_startup_period();
 
     CryptoTestUtils::SetupCryptoServerConfigForTest(
         connection_->clock(), connection_->random_generator(),
         session_.config(), &crypto_config_);
+
+    if (AsyncStrikeRegisterVerification()) {
+      string orbit =
+          QuicCryptoServerConfigPeer::GetPrimaryOrbit(crypto_config_);
+      strike_register_client_ = new DelayedVerifyStrikeRegisterClient(
+          10000,  // strike_register_max_entries
+          static_cast<uint32>(connection_->clock()->WallNow().ToUNIXSeconds()),
+          60,  // strike_register_window_secs
+          reinterpret_cast<const uint8 *>(orbit.data()),
+          StrikeRegister::NO_STARTUP_PERIOD_NEEDED);
+      strike_register_client_->StartDelayingVerification();
+      crypto_config_.SetStrikeRegisterClient(strike_register_client_);
+    }
+  }
+
+  bool AsyncStrikeRegisterVerification() {
+    return GetParam();
   }
 
   void ConstructHandshakeMessage() {
@@ -72,9 +101,6 @@ class QuicCryptoServerStreamTest : public ::testing::Test {
   }
 
  protected:
-  IPAddressNumber ip_;
-  QuicGuid guid_;
-  IPEndPoint addr_;
   PacketSavingConnection* connection_;
   TestSession session_;
   QuicConfig config_;
@@ -83,24 +109,17 @@ class QuicCryptoServerStreamTest : public ::testing::Test {
   CryptoHandshakeMessage message_;
   scoped_ptr<QuicData> message_data_;
   CryptoTestUtils::FakeClientOptions client_options_;
+  DelayedVerifyStrikeRegisterClient* strike_register_client_;
 };
 
-TEST_F(QuicCryptoServerStreamTest, NotInitiallyConected) {
-  if (!Aes128Gcm12Encrypter::IsSupported()) {
-    LOG(INFO) << "AES GCM not supported. Test skipped.";
-    return;
-  }
+INSTANTIATE_TEST_CASE_P(Tests, QuicCryptoServerStreamTest, testing::Bool());
 
+TEST_P(QuicCryptoServerStreamTest, NotInitiallyConected) {
   EXPECT_FALSE(stream_.encryption_established());
   EXPECT_FALSE(stream_.handshake_confirmed());
 }
 
-TEST_F(QuicCryptoServerStreamTest, ConnectedAfterCHLO) {
-  if (!Aes128Gcm12Encrypter::IsSupported()) {
-    LOG(INFO) << "AES GCM not supported. Test skipped.";
-    return;
-  }
-
+TEST_P(QuicCryptoServerStreamTest, ConnectedAfterCHLO) {
   // CompleteCryptoHandshake returns the number of client hellos sent. This
   // test should send:
   //   * One to get a source-address token and certificates.
@@ -110,27 +129,16 @@ TEST_F(QuicCryptoServerStreamTest, ConnectedAfterCHLO) {
   EXPECT_TRUE(stream_.handshake_confirmed());
 }
 
-TEST_F(QuicCryptoServerStreamTest, ZeroRTT) {
-  if (!Aes128Gcm12Encrypter::IsSupported()) {
-    LOG(INFO) << "AES GCM not supported. Test skipped.";
-    return;
-  }
-
-  QuicGuid guid(1);
-  IPAddressNumber ip;
-  ParseIPLiteralToNumber("127.0.0.1", &ip);
-  IPEndPoint addr(ip, 0);
-  PacketSavingConnection* client_conn =
-      new PacketSavingConnection(guid, addr, false);
-  PacketSavingConnection* server_conn =
-      new PacketSavingConnection(guid, addr, false);
+TEST_P(QuicCryptoServerStreamTest, ZeroRTT) {
+  PacketSavingConnection* client_conn = new PacketSavingConnection(false);
+  PacketSavingConnection* server_conn = new PacketSavingConnection(false);
   client_conn->AdvanceTime(QuicTime::Delta::FromSeconds(100000));
   server_conn->AdvanceTime(QuicTime::Delta::FromSeconds(100000));
 
   QuicConfig client_config;
   client_config.SetDefaults();
   scoped_ptr<TestSession> client_session(
-      new TestSession(client_conn, client_config, false));
+      new TestSession(client_conn, client_config));
   QuicCryptoClientConfig client_crypto_config;
   client_crypto_config.SetDefaults();
 
@@ -143,8 +151,7 @@ TEST_F(QuicCryptoServerStreamTest, ZeroRTT) {
   CHECK(client->CryptoConnect());
   CHECK_EQ(1u, client_conn->packets_.size());
 
-  scoped_ptr<TestSession> server_session(
-      new TestSession(server_conn, config_, true));
+  scoped_ptr<TestSession> server_session(new TestSession(server_conn, config_));
   scoped_ptr<QuicCryptoServerStream> server(
       new QuicCryptoServerStream(crypto_config_, server_session.get()));
   server_session->SetCryptoStream(server.get());
@@ -156,8 +163,8 @@ TEST_F(QuicCryptoServerStreamTest, ZeroRTT) {
   // Now do another handshake, hopefully in 0-RTT.
   LOG(INFO) << "Resetting for 0-RTT handshake attempt";
 
-  client_conn = new PacketSavingConnection(guid, addr, false);
-  server_conn = new PacketSavingConnection(guid, addr, false);
+  client_conn = new PacketSavingConnection(false);
+  server_conn = new PacketSavingConnection(false);
   // We need to advance time past the strike-server window so that it's
   // authoritative in this time span.
   client_conn->AdvanceTime(QuicTime::Delta::FromSeconds(102000));
@@ -166,8 +173,8 @@ TEST_F(QuicCryptoServerStreamTest, ZeroRTT) {
   // This causes the client's nonce to be different and thus stops the
   // strike-register from rejecting the repeated nonce.
   reinterpret_cast<MockRandom*>(client_conn->random_generator())->ChangeValue();
-  client_session.reset(new TestSession(client_conn, client_config, false));
-  server_session.reset(new TestSession(server_conn, config_, true));
+  client_session.reset(new TestSession(client_conn, client_config));
+  server_session.reset(new TestSession(server_conn, config_));
   client.reset(new QuicCryptoClientStream(
         "test.example.com", client_session.get(), &client_crypto_config));
   client_session->SetCryptoStream(client.get());
@@ -178,44 +185,58 @@ TEST_F(QuicCryptoServerStreamTest, ZeroRTT) {
 
   CHECK(client->CryptoConnect());
 
-  CryptoTestUtils::CommunicateHandshakeMessages(
-      client_conn, client.get(), server_conn, server.get());
+  if (AsyncStrikeRegisterVerification()) {
+    EXPECT_FALSE(client->handshake_confirmed());
+    EXPECT_FALSE(server->handshake_confirmed());
+
+    // Advance the handshake.  Expect that the server will be stuck
+    // waiting for client nonce verification to complete.
+    pair<size_t, size_t> messages_moved = CryptoTestUtils::AdvanceHandshake(
+        client_conn, client.get(), 0, server_conn, server.get(), 0);
+    EXPECT_EQ(1u, messages_moved.first);
+    EXPECT_EQ(0u, messages_moved.second);
+    EXPECT_EQ(1, strike_register_client_->PendingVerifications());
+    EXPECT_FALSE(client->handshake_confirmed());
+    EXPECT_FALSE(server->handshake_confirmed());
+
+    // The server handshake completes once the nonce verification completes.
+    strike_register_client_->RunPendingVerifications();
+    EXPECT_FALSE(client->handshake_confirmed());
+    EXPECT_TRUE(server->handshake_confirmed());
+
+    messages_moved = CryptoTestUtils::AdvanceHandshake(
+        client_conn, client.get(), messages_moved.first,
+        server_conn, server.get(), messages_moved.second);
+    EXPECT_EQ(1u, messages_moved.first);
+    EXPECT_EQ(1u, messages_moved.second);
+    EXPECT_TRUE(client->handshake_confirmed());
+    EXPECT_TRUE(server->handshake_confirmed());
+  } else {
+    CryptoTestUtils::CommunicateHandshakeMessages(
+        client_conn, client.get(), server_conn, server.get());
+  }
+
   EXPECT_EQ(1, client->num_sent_client_hellos());
 }
 
-TEST_F(QuicCryptoServerStreamTest, MessageAfterHandshake) {
-  if (!Aes128Gcm12Encrypter::IsSupported()) {
-    LOG(INFO) << "AES GCM not supported. Test skipped.";
-    return;
-  }
-
+TEST_P(QuicCryptoServerStreamTest, MessageAfterHandshake) {
   CompleteCryptoHandshake();
   EXPECT_CALL(*connection_, SendConnectionClose(
       QUIC_CRYPTO_MESSAGE_AFTER_HANDSHAKE_COMPLETE));
   message_.set_tag(kCHLO);
   ConstructHandshakeMessage();
-  stream_.ProcessData(message_data_->data(), message_data_->length());
+  stream_.ProcessRawData(message_data_->data(), message_data_->length());
 }
 
-TEST_F(QuicCryptoServerStreamTest, BadMessageType) {
-  if (!Aes128Gcm12Encrypter::IsSupported()) {
-    LOG(INFO) << "AES GCM not supported. Test skipped.";
-    return;
-  }
-
+TEST_P(QuicCryptoServerStreamTest, BadMessageType) {
   message_.set_tag(kSHLO);
   ConstructHandshakeMessage();
   EXPECT_CALL(*connection_, SendConnectionClose(
       QUIC_INVALID_CRYPTO_MESSAGE_TYPE));
-  stream_.ProcessData(message_data_->data(), message_data_->length());
+  stream_.ProcessRawData(message_data_->data(), message_data_->length());
 }
 
-TEST_F(QuicCryptoServerStreamTest, WithoutCertificates) {
-  if (!Aes128Gcm12Encrypter::IsSupported()) {
-    LOG(INFO) << "AES GCM not supported. Test skipped.";
-    return;
-  }
-
+TEST_P(QuicCryptoServerStreamTest, WithoutCertificates) {
   crypto_config_.SetProofSource(NULL);
   client_options_.dont_verify_certs = true;
 
@@ -226,12 +247,7 @@ TEST_F(QuicCryptoServerStreamTest, WithoutCertificates) {
   EXPECT_TRUE(stream_.handshake_confirmed());
 }
 
-TEST_F(QuicCryptoServerStreamTest, ChannelID) {
-  if (!Aes128Gcm12Encrypter::IsSupported()) {
-    LOG(INFO) << "AES GCM not supported. Test skipped.";
-    return;
-  }
-
+TEST_P(QuicCryptoServerStreamTest, ChannelID) {
   client_options_.channel_id_enabled = true;
   // TODO(rtenneti): Enable testing of ProofVerifier.
   // CompleteCryptoHandshake verifies

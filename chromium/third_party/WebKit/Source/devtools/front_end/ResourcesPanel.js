@@ -49,12 +49,12 @@ WebInspector.ResourcesPanel = function(database)
     WebInspector.settings.resourcesLastSelectedItem = WebInspector.settings.createSetting("resourcesLastSelectedItem", {});
 
     this.createSidebarViewWithTree();
-    this.sidebarElement.addStyleClass("outline-disclosure");
-    this.sidebarElement.addStyleClass("filter-all");
-    this.sidebarElement.addStyleClass("children");
-    this.sidebarElement.addStyleClass("small");
+    this.sidebarElement.classList.add("outline-disclosure");
+    this.sidebarElement.classList.add("filter-all");
+    this.sidebarElement.classList.add("children");
+    this.sidebarElement.classList.add("small");
 
-    this.sidebarTreeElement.removeStyleClass("sidebar-tree");
+    this.sidebarTreeElement.classList.remove("sidebar-tree");
 
     this.resourcesListTreeElement = new WebInspector.StorageCategoryTreeElement(this, WebInspector.UIString("Frames"), "Frames", ["frame-storage-tree-item"]);
     this.sidebarTree.appendChild(this.resourcesListTreeElement);
@@ -82,11 +82,11 @@ WebInspector.ResourcesPanel = function(database)
         this.sidebarTree.appendChild(this.fileSystemListTreeElement);
     }
 
-    this.storageViews = this.splitView.mainElement;
-    this.storageViews.addStyleClass("diff-container");
-
-    this.storageViewStatusBarItemsContainer = document.createElement("div");
-    this.storageViewStatusBarItemsContainer.className = "status-bar-items";
+    var mainElement = this.splitView.mainElement;
+    this.storageViews = mainElement.createChild("div", "resources-main");
+    var statusBarContainer = mainElement.createChild("div", "resources-status-bar");
+    this.storageViewStatusBarItemsContainer = statusBarContainer.createChild("div", "status-bar");
+    this.storageViews.classList.add("diff-container");
 
     /** @type {!Map.<!WebInspector.Database, !Object.<string, !WebInspector.DatabaseTableView>>} */
     this._databaseTableViews = new Map();
@@ -106,6 +106,10 @@ WebInspector.ResourcesPanel = function(database)
     this.sidebarElement.addEventListener("mousemove", this._onmousemove.bind(this), false);
     this.sidebarElement.addEventListener("mouseout", this._onmouseout.bind(this), false);
 
+    /**
+     * @return {!WebInspector.View}
+     * @this {WebInspector.ResourcesPanel}
+     */
     function viewGetter()
     {
         return this.visibleView;
@@ -124,9 +128,12 @@ WebInspector.ResourcesPanel = function(database)
 }
 
 WebInspector.ResourcesPanel.prototype = {
-    get statusBarItems()
+    /**
+     * @return {boolean}
+     */
+    canSearch: function()
     {
-        return [this.storageViewStatusBarItemsContainer];
+        return false;
     },
 
     wasShown: function()
@@ -216,6 +223,10 @@ WebInspector.ResourcesPanel.prototype = {
         WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameDetached, this._frameDetached, this);
         WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.ResourceAdded, this._resourceAdded, this);
 
+        /**
+         * @param {!WebInspector.ResourceTreeFrame} frame
+         * @this {WebInspector.ResourcesPanel}
+         */
         function populateFrame(frame)
         {
             this._frameAdded({data:frame});
@@ -299,16 +310,16 @@ WebInspector.ResourcesPanel.prototype = {
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _databaseAdded: function(event)
     {
-        var database = /** @type {WebInspector.Database} */ (event.data);
+        var database = /** @type {!WebInspector.Database} */ (event.data);
         this._addDatabase(database);
     },
 
     /**
-     * @param {WebInspector.Database} database
+     * @param {!WebInspector.Database} database
      */
     _addDatabase: function(database)
     {
@@ -333,16 +344,16 @@ WebInspector.ResourcesPanel.prototype = {
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _domStorageAdded: function(event)
     {
-        var domStorage = /** @type {WebInspector.DOMStorage} */ (event.data);
+        var domStorage = /** @type {!WebInspector.DOMStorage} */ (event.data);
         this._addDOMStorage(domStorage);
     },
 
     /**
-     * @param {WebInspector.DOMStorage} domStorage
+     * @param {!WebInspector.DOMStorage} domStorage
      */
     _addDOMStorage: function(domStorage)
     {
@@ -357,16 +368,16 @@ WebInspector.ResourcesPanel.prototype = {
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _domStorageRemoved: function(event)
     {
-        var domStorage = /** @type {WebInspector.DOMStorage} */ (event.data);
+        var domStorage = /** @type {!WebInspector.DOMStorage} */ (event.data);
         this._removeDOMStorage(domStorage);
     },
 
     /**
-     * @param {WebInspector.DOMStorage} domStorage
+     * @param {!WebInspector.DOMStorage} domStorage
      */
     _removeDOMStorage: function(domStorage)
     {
@@ -383,7 +394,7 @@ WebInspector.ResourcesPanel.prototype = {
     },
 
     /**
-     * @param {WebInspector.Database} database
+     * @param {!WebInspector.Database} database
      */
     selectDatabase: function(database)
     {
@@ -394,7 +405,7 @@ WebInspector.ResourcesPanel.prototype = {
     },
 
     /**
-     * @param {WebInspector.DOMStorage} domStorage
+     * @param {!WebInspector.DOMStorage} domStorage
      */
     selectDOMStorage: function(domStorage)
     {
@@ -404,19 +415,22 @@ WebInspector.ResourcesPanel.prototype = {
         }
     },
 
-    canShowAnchorLocation: function(anchor)
-    {
-        return !!WebInspector.resourceForURL(anchor.href);
-    },
-
+    /**
+     * @param {!Element} anchor
+     * @return {boolean}
+     */
     showAnchorLocation: function(anchor)
     {
         var resource = WebInspector.resourceForURL(anchor.href);
+        if (!resource)
+            return false;
         this.showResource(resource, anchor.lineNumber);
+        WebInspector.inspectorView.setCurrentPanel(this);
+        return true;
     },
 
     /**
-     * @param {WebInspector.Resource} resource
+     * @param {!WebInspector.Resource} resource
      * @param {number=} line
      * @param {number=} column
      */
@@ -441,8 +455,6 @@ WebInspector.ResourcesPanel.prototype = {
             this.visibleView.detach();
             return;
         }
-        if (view.searchCanceled)
-            view.searchCanceled();
         this._innerShowView(view);
     },
 
@@ -458,7 +470,7 @@ WebInspector.ResourcesPanel.prototype = {
     },
 
     /**
-     * @param {WebInspector.Database} database
+     * @param {!WebInspector.Database} database
      * @param {string=} tableName
      */
     _showDatabase: function(database, tableName)
@@ -491,7 +503,7 @@ WebInspector.ResourcesPanel.prototype = {
     },
 
     /**
-     * @param {WebInspector.View} view
+     * @param {!WebInspector.View} view
      */
     showIndexedDB: function(view)
     {
@@ -499,7 +511,7 @@ WebInspector.ResourcesPanel.prototype = {
     },
 
     /**
-     * @param {WebInspector.DOMStorage} domStorage
+     * @param {!WebInspector.DOMStorage} domStorage
      */
     _showDOMStorage: function(domStorage)
     {
@@ -548,7 +560,7 @@ WebInspector.ResourcesPanel.prototype = {
     },
 
     /**
-     *  @param {WebInspector.View} view
+     *  @param {!WebInspector.View} view
      */
     showFileSystem: function(view)
     {
@@ -702,178 +714,6 @@ WebInspector.ResourcesPanel.prototype = {
             this._applicationCacheViews[manifestURL].updateNetworkState(isNowOnline);
     },
 
-    sidebarResized: function(event)
-    {
-        var width = event.data;
-        this.storageViewStatusBarItemsContainer.style.left = width + "px";
-    },
-
-    /**
-     * @param {string} query
-     * @param {boolean} shouldJump
-     */
-    performSearch: function(query, shouldJump)
-    {
-        this._resetSearchResults();
-        var regex = WebInspector.SourceFrame.createSearchRegex(query);
-        var totalMatchesCount = 0;
-
-        /**
-         * @param {WebInspector.Resource} resource
-         * @param {number} matchesCount
-         */
-        function addMatchesToResource(resource, matchesCount)
-        {
-            this._findTreeElementForResource(resource).searchMatchesFound(matchesCount);
-            totalMatchesCount += matchesCount;
-        }
-
-        /**
-         * @param {?Protocol.Error} error
-         * @param {Array.<PageAgent.SearchResult>} result
-         */
-        function searchInResourcesCallback(error, result)
-        {
-            if (error)
-                return;
-
-            for (var i = 0; i < result.length; i++) {
-                var searchResult = result[i];
-                var frameTreeElement = this._treeElementForFrameId[searchResult.frameId];
-                if (!frameTreeElement)
-                    continue;
-                var resource = frameTreeElement.resourceByURL(searchResult.url);
-
-                // FIXME: When the same script is used in several frames and this script contains at least
-                // one search result then some search results can not be matched with a resource on panel.
-                // https://bugs.webkit.org/show_bug.cgi?id=66005
-                if (!resource)
-                    continue;
-
-                addMatchesToResource.call(this, resource, searchResult.matchesCount)
-            }
-            if (!--callbacksLeft)
-                searchFinished.call(this);
-        }
-
-        /**
-         * @param {WebInspector.Resource} resource
-         * @param {Array.<WebInspector.ContentProvider.SearchMatch>} result
-         */
-        function searchInContentCallback(resource, result)
-        {
-            addMatchesToResource.call(this, resource, result.length);
-            if (!--callbacksLeft)
-                searchFinished.call(this);
-        }
-
-        function searchFinished()
-        {
-            WebInspector.searchController.updateSearchMatchesCount(totalMatchesCount, this);
-            this._searchController = new WebInspector.ResourcesSearchController(this.resourcesListTreeElement, totalMatchesCount);
-
-            if (shouldJump && this.sidebarTree.selectedTreeElement && this.sidebarTree.selectedTreeElement.searchMatchesCount)
-                this.jumpToNextSearchResult();
-        }
-
-        var frames = WebInspector.resourceTreeModel.frames();
-        var callbacksLeft = 1 + frames.length;
-        for (var i = 0; i < frames.length; ++i) {
-            var mainResource = frames[i].mainResource;
-            mainResource.searchInContent(regex.source, !regex.ignoreCase, true, searchInContentCallback.bind(this, mainResource));
-        }
-        PageAgent.searchInResources(regex.source, !regex.ignoreCase, true, searchInResourcesCallback.bind(this));
-    },
-
-    _ensureViewSearchPerformed: function(callback)
-    {
-        function viewSearchPerformedCallback(searchId)
-        {
-            if (searchId !== this._lastViewSearchId)
-                return; // Search is obsolete.
-            this._viewSearchInProgress = false;
-            callback();
-        }
-
-        if (!this._viewSearchInProgress) {
-            if (!this.visibleView.hasSearchResults()) {
-                // We give id to each search, so that we can skip callbacks for obsolete searches.
-                this._lastViewSearchId = this._lastViewSearchId ? this._lastViewSearchId + 1 : 0;
-                this._viewSearchInProgress = true;
-                this.visibleView.performSearch(this.currentQuery, false, viewSearchPerformedCallback.bind(this, this._lastViewSearchId));
-            } else
-                callback();
-        }
-    },
-
-    _showSearchResult: function(searchResult)
-    {
-        this._lastSearchResultIndex = searchResult.index;
-        this._lastSearchResultTreeElement = searchResult.treeElement;
-
-        // At first show view for treeElement.
-        if (searchResult.treeElement !== this.sidebarTree.selectedTreeElement)
-            this.showResource(searchResult.treeElement.representedObject);
-
-        function callback(searchId)
-        {
-            if (this.sidebarTree.selectedTreeElement !== this._lastSearchResultTreeElement)
-                return; // User has selected another view while we were searching.
-            if (this._lastSearchResultIndex != -1)
-                this.visibleView.jumpToSearchResult(this._lastSearchResultIndex);
-            WebInspector.searchController.updateCurrentMatchIndex(searchResult.currentMatchIndex - 1, this);
-        }
-
-        // Then run SourceFrame search if needed and jump to search result index when done.
-        this._ensureViewSearchPerformed(callback.bind(this));
-    },
-
-    _resetSearchResults: function()
-    {
-        function callback(resourceTreeElement)
-        {
-            resourceTreeElement._resetSearchResults();
-        }
-
-        this._forAllResourceTreeElements(callback);
-        if (this.visibleView && this.visibleView.searchCanceled)
-            this.visibleView.searchCanceled();
-
-        this._lastSearchResultTreeElement = null;
-        this._lastSearchResultIndex = -1;
-        this._viewSearchInProgress = false;
-    },
-
-    searchCanceled: function()
-    {
-        function callback(resourceTreeElement)
-        {
-            resourceTreeElement._updateErrorsAndWarningsBubbles();
-        }
-
-        WebInspector.searchController.updateSearchMatchesCount(0, this);
-        this._resetSearchResults();
-        this._forAllResourceTreeElements(callback);
-    },
-
-    jumpToNextSearchResult: function()
-    {
-        if (!this.currentSearchMatches)
-            return;
-        var currentTreeElement = this.sidebarTree.selectedTreeElement;
-        var nextSearchResult = this._searchController.nextSearchResult(currentTreeElement);
-        this._showSearchResult(nextSearchResult);
-    },
-
-    jumpToPreviousSearchResult: function()
-    {
-        if (!this.currentSearchMatches)
-            return;
-        var currentTreeElement = this.sidebarTree.selectedTreeElement;
-        var previousSearchResult = this._searchController.previousSearchResult(currentTreeElement);
-        this._showSearchResult(previousSearchResult);
-    },
-
     _forAllResourceTreeElements: function(callback)
     {
         var stop = false;
@@ -963,7 +803,7 @@ WebInspector.BaseStorageTreeElement.prototype = {
         this.listItemElement.removeChildren();
         if (this._iconClasses) {
             for (var i = 0; i < this._iconClasses.length; ++i)
-                this.listItemElement.addStyleClass(this._iconClasses[i]);
+                this.listItemElement.classList.add(this._iconClasses[i]);
         }
 
         var selectionElement = document.createElement("div");
@@ -1027,15 +867,22 @@ WebInspector.BaseStorageTreeElement.prototype = {
         }
     },
 
+    /**
+     * @override
+     */
     onselect: function(selectedByUser)
     {
         if (!selectedByUser)
-            return;
+            return false;
         var itemURL = this.itemURL;
         if (itemURL)
             WebInspector.settings.resourcesLastSelectedItem.set(itemURL);
+        return false;
     },
 
+    /**
+     * @override
+     */
     onreveal: function()
     {
         if (this.listItemElement)
@@ -1064,11 +911,6 @@ WebInspector.BaseStorageTreeElement.prototype = {
         this._updateSubtitle();
     },
 
-    get searchMatchesCount()
-    {
-        return 0;
-    },
-
     __proto__: TreeElement.prototype
 }
 
@@ -1091,12 +933,19 @@ WebInspector.StorageCategoryTreeElement.prototype = {
         return "category://" + this._categoryName;
     },
 
+    /**
+     * @override
+     */
     onselect: function(selectedByUser)
     {
         WebInspector.BaseStorageTreeElement.prototype.onselect.call(this, selectedByUser);
         this._storagePanel.showCategoryView(this._categoryName);
+        return false;
     },
 
+    /**
+     * @override
+     */
     onattach: function()
     {
         WebInspector.BaseStorageTreeElement.prototype.onattach.call(this);
@@ -1104,11 +953,17 @@ WebInspector.StorageCategoryTreeElement.prototype = {
             this.expand();
     },
 
+    /**
+     * @override
+     */
     onexpand: function()
     {
         WebInspector.settings[this._expandedSettingKey].set(true);
     },
 
+    /**
+     * @override
+     */
     oncollapse: function()
     {
         WebInspector.settings[this._expandedSettingKey].set(false);
@@ -1148,22 +1003,26 @@ WebInspector.FrameTreeElement.prototype = {
         return "frame://" + encodeURI(this.displayName);
     },
 
+    /**
+     * @override
+     */
     onselect: function(selectedByUser)
     {
         WebInspector.BaseStorageTreeElement.prototype.onselect.call(this, selectedByUser);
         this._storagePanel.showCategoryView(this.displayName);
 
-        this.listItemElement.removeStyleClass("hovered");
+        this.listItemElement.classList.remove("hovered");
         DOMAgent.hideHighlight();
+        return false;
     },
 
     set hovered(hovered)
     {
         if (hovered) {
-            this.listItemElement.addStyleClass("hovered");
+            this.listItemElement.classList.add("hovered");
             DOMAgent.highlightFrame(this._frameId, WebInspector.Color.PageHighlight.Content.toProtocolRGBA(), WebInspector.Color.PageHighlight.ContentOutline.toProtocolRGBA());
         } else {
-            this.listItemElement.removeStyleClass("hovered");
+            this.listItemElement.classList.remove("hovered");
             DOMAgent.hideHighlight();
         }
     },
@@ -1256,17 +1115,28 @@ WebInspector.FrameResourceTreeElement.prototype = {
         return this._resource.url;
     },
 
+    /**
+     * @override
+     */
     onselect: function(selectedByUser)
     {
         WebInspector.BaseStorageTreeElement.prototype.onselect.call(this, selectedByUser);
         this._storagePanel._showResourceView(this._resource);
+        return false;
     },
 
+    /**
+     * @override
+     */
     ondblclick: function(event)
     {
         InspectorFrontendHost.openInNewTab(this._resource.url);
+        return false;
     },
 
+    /**
+     * @override
+     */
     onattach: function()
     {
         WebInspector.BaseStorageTreeElement.prototype.onattach.call(this);
@@ -1293,6 +1163,10 @@ WebInspector.FrameResourceTreeElement.prototype = {
         this._updateErrorsAndWarningsBubbles();
     },
 
+    /**
+     * @param {!MouseEvent} event
+     * @return {boolean}
+     */
     _ondragstart: function(event)
     {
         event.dataTransfer.setData("text/plain", this._resource.content);
@@ -1322,37 +1196,8 @@ WebInspector.FrameResourceTreeElement.prototype = {
     {
         if (this._bubbleElement) {
             this._bubbleElement.textContent = "";
-            this._bubbleElement.removeStyleClass("search-matches");
-            this._bubbleElement.removeStyleClass("warning");
-            this._bubbleElement.removeStyleClass("error");
-        }
-    },
-
-    _resetSearchResults: function()
-    {
-        this._resetBubble();
-        this._searchMatchesCount = 0;
-    },
-
-    get searchMatchesCount()
-    {
-        return this._searchMatchesCount;
-    },
-
-    searchMatchesFound: function(matchesCount)
-    {
-        this._resetSearchResults();
-
-        this._searchMatchesCount = matchesCount;
-        this._setBubbleText(matchesCount);
-        this._bubbleElement.addStyleClass("search-matches");
-
-        // Expand, do not scroll into view.
-        var currentAncestor = this.parent;
-        while (currentAncestor && !currentAncestor.root) {
-            if (!currentAncestor.expanded)
-                currentAncestor.expand();
-            currentAncestor = currentAncestor.parent;
+            this._bubbleElement.classList.remove("warning");
+            this._bubbleElement.classList.remove("error");
         }
     },
 
@@ -1367,10 +1212,10 @@ WebInspector.FrameResourceTreeElement.prototype = {
             this._setBubbleText(this._resource.warnings + this._resource.errors);
 
         if (this._resource.warnings)
-            this._bubbleElement.addStyleClass("warning");
+            this._bubbleElement.classList.add("warning");
 
         if (this._resource.errors)
-            this._bubbleElement.addStyleClass("error");
+            this._bubbleElement.classList.add("error");
     },
 
     _consoleMessagesCleared: function()
@@ -1393,7 +1238,9 @@ WebInspector.FrameResourceTreeElement.prototype = {
     sourceView: function()
     {
         if (!this._sourceView) {
-            this._sourceView = new WebInspector.ResourceSourceFrame(this._resource);
+            var sourceFrame = new WebInspector.ResourceSourceFrame(this._resource);
+            sourceFrame.setHighlighterType(this._resource.canonicalMimeType());
+            this._sourceView = sourceFrame;
             if (this._resource.messages) {
                 for (var i = 0; i < this._resource.messages.length; i++)
                     this._sourceView.addMessage(this._resource.messages[i]);
@@ -1408,7 +1255,7 @@ WebInspector.FrameResourceTreeElement.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.BaseStorageTreeElement}
- * @param {WebInspector.Database} database
+ * @param {!WebInspector.Database} database
  */
 WebInspector.DatabaseTreeElement = function(storagePanel, database)
 {
@@ -1422,12 +1269,19 @@ WebInspector.DatabaseTreeElement.prototype = {
         return "database://" + encodeURI(this._database.name);
     },
 
+    /**
+     * @override
+     */
     onselect: function(selectedByUser)
     {
         WebInspector.BaseStorageTreeElement.prototype.onselect.call(this, selectedByUser);
         this._storagePanel._showDatabase(this._database);
+        return false;
     },
 
+    /**
+     * @override
+     */
     onexpand: function()
     {
         this._updateChildren();
@@ -1437,6 +1291,10 @@ WebInspector.DatabaseTreeElement.prototype = {
     {
         this.removeChildren();
 
+        /**
+         * @param {!Array.<string>} tableNames
+         * @this {WebInspector.DatabaseTreeElement}
+         */
         function tableNamesCallback(tableNames)
         {
             var tableNamesLength = tableNames.length;
@@ -1466,10 +1324,14 @@ WebInspector.DatabaseTableTreeElement.prototype = {
         return "database://" + encodeURI(this._database.name) + "/" + encodeURI(this._tableName);
     },
 
+    /**
+     * @override
+     */
     onselect: function(selectedByUser)
     {
         WebInspector.BaseStorageTreeElement.prototype.onselect.call(this, selectedByUser);
         this._storagePanel._showDatabase(this._database, this._tableName);
+        return false;
     },
 
     __proto__: WebInspector.BaseStorageTreeElement.prototype
@@ -1478,7 +1340,7 @@ WebInspector.DatabaseTableTreeElement.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.StorageCategoryTreeElement}
- * @param {WebInspector.ResourcesPanel} storagePanel
+ * @param {!WebInspector.ResourcesPanel} storagePanel
  */
 WebInspector.IndexedDBTreeElement = function(storagePanel)
 {
@@ -1524,11 +1386,11 @@ WebInspector.IndexedDBTreeElement.prototype = {
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _indexedDBAdded: function(event)
     {
-        var databaseId = /** @type {WebInspector.IndexedDBModel.DatabaseId} */ (event.data);
+        var databaseId = /** @type {!WebInspector.IndexedDBModel.DatabaseId} */ (event.data);
 
         var idbDatabaseTreeElement = new WebInspector.IDBDatabaseTreeElement(this._storagePanel, this._indexedDBModel, databaseId);
         this._idbDatabaseTreeElements.push(idbDatabaseTreeElement);
@@ -1538,11 +1400,11 @@ WebInspector.IndexedDBTreeElement.prototype = {
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _indexedDBRemoved: function(event)
     {
-        var databaseId = /** @type {WebInspector.IndexedDBModel.DatabaseId} */ (event.data);
+        var databaseId = /** @type {!WebInspector.IndexedDBModel.DatabaseId} */ (event.data);
 
         var idbDatabaseTreeElement = this._idbDatabaseTreeElement(databaseId)
         if (!idbDatabaseTreeElement)
@@ -1554,11 +1416,11 @@ WebInspector.IndexedDBTreeElement.prototype = {
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _indexedDBLoaded: function(event)
     {
-        var database = /** @type {WebInspector.IndexedDBModel.Database} */ (event.data);
+        var database = /** @type {!WebInspector.IndexedDBModel.Database} */ (event.data);
 
         var idbDatabaseTreeElement = this._idbDatabaseTreeElement(database.databaseId)
         if (!idbDatabaseTreeElement)
@@ -1568,8 +1430,8 @@ WebInspector.IndexedDBTreeElement.prototype = {
     },
 
     /**
-     * @param {WebInspector.IndexedDBModel.DatabaseId} databaseId
-     * @return {WebInspector.IDBDatabaseTreeElement}
+     * @param {!WebInspector.IndexedDBModel.DatabaseId} databaseId
+     * @return {?WebInspector.IDBDatabaseTreeElement}
      */
     _idbDatabaseTreeElement: function(databaseId)
     {
@@ -1591,7 +1453,7 @@ WebInspector.IndexedDBTreeElement.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.StorageCategoryTreeElement}
- * @param {WebInspector.ResourcesPanel} storagePanel
+ * @param {!WebInspector.ResourcesPanel} storagePanel
  */
 WebInspector.FileSystemListTreeElement = function(storagePanel)
 {
@@ -1619,14 +1481,14 @@ WebInspector.FileSystemListTreeElement.prototype = {
 
     _fileSystemAdded: function(event)
     {
-        var fileSystem = /** @type {WebInspector.FileSystemModel.FileSystem} */ (event.data);
+        var fileSystem = /** @type {!WebInspector.FileSystemModel.FileSystem} */ (event.data);
         var fileSystemTreeElement = new WebInspector.FileSystemTreeElement(this._storagePanel, fileSystem);
         this.appendChild(fileSystemTreeElement);
     },
 
     _fileSystemRemoved: function(event)
     {
-        var fileSystem = /** @type {WebInspector.FileSystemModel.FileSystem} */ (event.data);
+        var fileSystem = /** @type {!WebInspector.FileSystemModel.FileSystem} */ (event.data);
         var fileSystemTreeElement = this._fileSystemTreeElementByName(fileSystem.name);
         if (!fileSystemTreeElement)
             return;
@@ -1637,7 +1499,7 @@ WebInspector.FileSystemListTreeElement.prototype = {
     _fileSystemTreeElementByName: function(fileSystemName)
     {
         for (var i = 0; i < this.children.length; ++i) {
-            var child = /** @type {WebInspector.FileSystemTreeElement} */ (this.children[i]);
+            var child = /** @type {!WebInspector.FileSystemTreeElement} */ (this.children[i]);
             if (child.fileSystemName === fileSystemName)
                 return this.children[i];
         }
@@ -1661,9 +1523,9 @@ WebInspector.FileSystemListTreeElement.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.BaseStorageTreeElement}
- * @param {WebInspector.ResourcesPanel} storagePanel
- * @param {WebInspector.IndexedDBModel} model
- * @param {WebInspector.IndexedDBModel.DatabaseId} databaseId
+ * @param {!WebInspector.ResourcesPanel} storagePanel
+ * @param {!WebInspector.IndexedDBModel} model
+ * @param {!WebInspector.IndexedDBModel.DatabaseId} databaseId
  */
 WebInspector.IDBDatabaseTreeElement = function(storagePanel, model, databaseId)
 {
@@ -1698,7 +1560,7 @@ WebInspector.IDBDatabaseTreeElement.prototype = {
     },
 
     /**
-     * @param {WebInspector.IndexedDBModel.Database} database
+     * @param {!WebInspector.IndexedDBModel.Database} database
      */
     update: function(database)
     {
@@ -1735,6 +1597,9 @@ WebInspector.IDBDatabaseTreeElement.prototype = {
         this.tooltip = WebInspector.UIString("Version") + ": " + this._database.version;
     },
 
+    /**
+     * @override
+     */
     onselect: function(selectedByUser)
     {
         WebInspector.BaseStorageTreeElement.prototype.onselect.call(this, selectedByUser);
@@ -1742,6 +1607,7 @@ WebInspector.IDBDatabaseTreeElement.prototype = {
             this._view = new WebInspector.IDBDatabaseView(this._database);
 
         this._storagePanel.showIndexedDB(this._view);
+        return false;
     },
 
     /**
@@ -1767,10 +1633,10 @@ WebInspector.IDBDatabaseTreeElement.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.BaseStorageTreeElement}
- * @param {WebInspector.ResourcesPanel} storagePanel
- * @param {WebInspector.IndexedDBModel} model
- * @param {WebInspector.IndexedDBModel.DatabaseId} databaseId
- * @param {WebInspector.IndexedDBModel.ObjectStore} objectStore
+ * @param {!WebInspector.ResourcesPanel} storagePanel
+ * @param {!WebInspector.IndexedDBModel} model
+ * @param {!WebInspector.IndexedDBModel.DatabaseId} databaseId
+ * @param {!WebInspector.IndexedDBModel.ObjectStore} objectStore
  */
 WebInspector.IDBObjectStoreTreeElement = function(storagePanel, model, databaseId, objectStore)
 {
@@ -1801,6 +1667,9 @@ WebInspector.IDBObjectStoreTreeElement.prototype = {
 
     _clearObjectStore: function()
     {
+        /**
+         * @this {WebInspector.IDBObjectStoreTreeElement}
+         */
         function callback() {
             this.update(this._objectStore);
         }
@@ -1808,7 +1677,7 @@ WebInspector.IDBObjectStoreTreeElement.prototype = {
     },
 
    /**
-     * @param {WebInspector.IndexedDBModel.ObjectStore} objectStore
+     * @param {!WebInspector.IndexedDBModel.ObjectStore} objectStore
      */
     update: function(objectStore)
     {
@@ -1857,6 +1726,9 @@ WebInspector.IDBObjectStoreTreeElement.prototype = {
         this.tooltip = tooltipString
     },
 
+    /**
+     * @override
+     */
     onselect: function(selectedByUser)
     {
         WebInspector.BaseStorageTreeElement.prototype.onselect.call(this, selectedByUser);
@@ -1864,6 +1736,7 @@ WebInspector.IDBObjectStoreTreeElement.prototype = {
             this._view = new WebInspector.IDBDataView(this._model, this._databaseId, this._objectStore, null);
 
         this._storagePanel.showIndexedDB(this._view);
+        return false;
     },
 
     /**
@@ -1891,11 +1764,11 @@ WebInspector.IDBObjectStoreTreeElement.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.BaseStorageTreeElement}
- * @param {WebInspector.ResourcesPanel} storagePanel
- * @param {WebInspector.IndexedDBModel} model
- * @param {WebInspector.IndexedDBModel.DatabaseId} databaseId
- * @param {WebInspector.IndexedDBModel.ObjectStore} objectStore
- * @param {WebInspector.IndexedDBModel.Index} index
+ * @param {!WebInspector.ResourcesPanel} storagePanel
+ * @param {!WebInspector.IndexedDBModel} model
+ * @param {!WebInspector.IndexedDBModel.DatabaseId} databaseId
+ * @param {!WebInspector.IndexedDBModel.ObjectStore} objectStore
+ * @param {!WebInspector.IndexedDBModel.Index} index
  */
 WebInspector.IDBIndexTreeElement = function(storagePanel, model, databaseId, objectStore, index)
 {
@@ -1913,7 +1786,7 @@ WebInspector.IDBIndexTreeElement.prototype = {
     },
 
     /**
-     * @param {WebInspector.IndexedDBModel.Index} index
+     * @param {!WebInspector.IndexedDBModel.Index} index
      */
     update: function(index)
     {
@@ -1937,6 +1810,9 @@ WebInspector.IDBIndexTreeElement.prototype = {
         this.tooltip = tooltipLines.join("\n");
     },
 
+    /**
+     * @override
+     */
     onselect: function(selectedByUser)
     {
         WebInspector.BaseStorageTreeElement.prototype.onselect.call(this, selectedByUser);
@@ -1944,6 +1820,7 @@ WebInspector.IDBIndexTreeElement.prototype = {
             this._view = new WebInspector.IDBDataView(this._model, this._databaseId, this._objectStore, this._index);
 
         this._storagePanel.showIndexedDB(this._view);
+        return false;
     },
 
     clear: function()
@@ -1971,10 +1848,14 @@ WebInspector.DOMStorageTreeElement.prototype = {
         return "storage://" + this._domStorage.securityOrigin + "/" + (this._domStorage.isLocalStorage ? "local" : "session");
     },
 
+    /**
+     * @override
+     */
     onselect: function(selectedByUser)
     {
         WebInspector.BaseStorageTreeElement.prototype.onselect.call(this, selectedByUser);
         this._storagePanel._showDOMStorage(this._domStorage);
+        return false;
     },
 
     __proto__: WebInspector.BaseStorageTreeElement.prototype
@@ -2003,7 +1884,7 @@ WebInspector.CookieTreeElement.prototype = {
     },
 
     /**
-     * @param {Event} event
+     * @param {!Event} event
      */
     _handleContextMenuEvent: function(event)
     {
@@ -2020,10 +1901,14 @@ WebInspector.CookieTreeElement.prototype = {
         this._storagePanel.clearCookies(this._cookieDomain);
     },
 
+    /**
+     * @override
+     */
     onselect: function(selectedByUser)
     {
         WebInspector.BaseStorageTreeElement.prototype.onselect.call(this, selectedByUser);
         this._storagePanel.showCookies(this, this._cookieDomain);
+        return false;
     },
 
     __proto__: WebInspector.BaseStorageTreeElement.prototype
@@ -2052,10 +1937,14 @@ WebInspector.ApplicationCacheManifestTreeElement.prototype = {
         return this._manifestURL;
     },
 
+    /**
+     * @override
+     */
     onselect: function(selectedByUser)
     {
         WebInspector.BaseStorageTreeElement.prototype.onselect.call(this, selectedByUser);
         this._storagePanel.showCategoryView(this._manifestURL);
+        return false;
     },
 
     __proto__: WebInspector.BaseStorageTreeElement.prototype
@@ -2105,10 +1994,14 @@ WebInspector.ApplicationCacheFrameTreeElement.prototype = {
         this._refreshTitles();
     },
 
+    /**
+     * @override
+     */
     onselect: function(selectedByUser)
     {
         WebInspector.BaseStorageTreeElement.prototype.onselect.call(this, selectedByUser);
         this._storagePanel.showApplicationCache(this._frameId);
+        return false;
     },
 
     __proto__: WebInspector.BaseStorageTreeElement.prototype
@@ -2117,8 +2010,8 @@ WebInspector.ApplicationCacheFrameTreeElement.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.BaseStorageTreeElement}
- * @param {WebInspector.ResourcesPanel} storagePanel
- * @param {WebInspector.FileSystemModel.FileSystem} fileSystem
+ * @param {!WebInspector.ResourcesPanel} storagePanel
+ * @param {!WebInspector.FileSystemModel.FileSystem} fileSystem
  */
 WebInspector.FileSystemTreeElement = function(storagePanel, fileSystem)
 {
@@ -2138,11 +2031,15 @@ WebInspector.FileSystemTreeElement.prototype = {
         return "filesystem://" + this._fileSystem.name;
     },
 
+    /**
+     * @override
+     */
     onselect: function(selectedByUser)
     {
         WebInspector.BaseStorageTreeElement.prototype.onselect.call(this, selectedByUser);
         this._fileSystemView = new WebInspector.FileSystemView(this._fileSystem);
         this._storagePanel.showFileSystem(this._fileSystemView);
+        return false;
     },
 
     clear: function()
@@ -2162,7 +2059,7 @@ WebInspector.StorageCategoryView = function()
 {
     WebInspector.View.call(this);
 
-    this.element.addStyleClass("storage-view");
+    this.element.classList.add("storage-view");
     this._emptyView = new WebInspector.EmptyView("");
     this._emptyView.show(this.element);
 }
@@ -2174,190 +2071,4 @@ WebInspector.StorageCategoryView.prototype = {
     },
 
     __proto__: WebInspector.View.prototype
-}
-
-/**
- * @constructor
- * @param {WebInspector.BaseStorageTreeElement} rootElement
- * @param {number} matchesCount
- */
-WebInspector.ResourcesSearchController = function(rootElement, matchesCount)
-{
-    this._root = rootElement;
-    this._matchesCount = matchesCount;
-    this._traverser = new WebInspector.SearchResultsTreeElementsTraverser(rootElement);
-    this._lastTreeElement = null;
-    this._lastIndex = -1;
-}
-
-WebInspector.ResourcesSearchController.prototype = {
-    /**
-     * @param {WebInspector.BaseStorageTreeElement} currentTreeElement
-     */
-    nextSearchResult: function(currentTreeElement)
-    {
-        if (!currentTreeElement)
-            return this._searchResult(this._traverser.first(), 0, 1);
-
-        if (!currentTreeElement.searchMatchesCount)
-            return this._searchResult(this._traverser.next(currentTreeElement), 0);
-
-        if (this._lastTreeElement !== currentTreeElement || this._lastIndex === -1)
-            return this._searchResult(currentTreeElement, 0);
-
-        if (this._lastIndex === currentTreeElement.searchMatchesCount - 1)
-            return this._searchResult(this._traverser.next(currentTreeElement), 0, this._currentMatchIndex % this._matchesCount + 1);
-
-        return this._searchResult(currentTreeElement, this._lastIndex + 1, this._currentMatchIndex + 1);
-    },
-
-    /**
-     * @param {WebInspector.BaseStorageTreeElement} currentTreeElement
-     */
-    previousSearchResult: function(currentTreeElement)
-    {
-        if (!currentTreeElement) {
-            var treeElement = this._traverser.last();
-            return this._searchResult(treeElement, treeElement.searchMatchesCount - 1, this._matchesCount);
-        }
-
-        if (currentTreeElement.searchMatchesCount && this._lastTreeElement === currentTreeElement) {
-            if (this._lastIndex > 0)
-                return this._searchResult(currentTreeElement, this._lastIndex - 1, this._currentMatchIndex - 1);
-            else {
-                var treeElement = this._traverser.previous(currentTreeElement);
-                var currentMatchIndex = this._currentMatchIndex - 1 ? this._currentMatchIndex - 1 : this._matchesCount;
-                return this._searchResult(treeElement, treeElement.searchMatchesCount - 1, currentMatchIndex);
-            }
-        }
-
-        var treeElement = this._traverser.previous(currentTreeElement)
-        return this._searchResult(treeElement, treeElement.searchMatchesCount - 1);
-    },
-
-    /**
-     * @param {WebInspector.BaseStorageTreeElement} treeElement
-     * @param {number} index
-     * @param {number=} currentMatchIndex
-     * @return {Object}
-     */
-    _searchResult: function(treeElement, index, currentMatchIndex)
-    {
-        this._lastTreeElement = treeElement;
-        this._lastIndex = index;
-        if (!currentMatchIndex)
-            currentMatchIndex = this._traverser.matchIndex(treeElement, index);
-        this._currentMatchIndex = currentMatchIndex;
-        return {treeElement: treeElement, index: index, currentMatchIndex: currentMatchIndex};
-    }
-}
-
-/**
- * @constructor
- * @param {WebInspector.BaseStorageTreeElement} rootElement
- */
-WebInspector.SearchResultsTreeElementsTraverser = function(rootElement)
-{
-    this._root = rootElement;
-}
-
-WebInspector.SearchResultsTreeElementsTraverser.prototype = {
-    /**
-     * @return {WebInspector.BaseStorageTreeElement}
-     */
-    first: function()
-    {
-        return this.next(this._root);
-    },
-
-    /**
-     * @return {WebInspector.BaseStorageTreeElement}
-     */
-    last: function()
-    {
-        return this.previous(this._root);
-    },
-
-    /**
-     * @param {WebInspector.BaseStorageTreeElement} startTreeElement
-     * @return {WebInspector.BaseStorageTreeElement}
-     */
-    next: function(startTreeElement)
-    {
-        var treeElement = startTreeElement;
-        do {
-            treeElement = this._traverseNext(treeElement) || this._root;
-        } while (treeElement != startTreeElement && !this._elementSearchMatchesCount(treeElement));
-        return treeElement;
-    },
-
-    /**
-     * @param {WebInspector.BaseStorageTreeElement} startTreeElement
-     * @return {WebInspector.BaseStorageTreeElement}
-     */
-    previous: function(startTreeElement)
-    {
-        var treeElement = startTreeElement;
-        do {
-            treeElement = this._traversePrevious(treeElement) || this._lastTreeElement();
-        } while (treeElement != startTreeElement && !this._elementSearchMatchesCount(treeElement));
-        return treeElement;
-    },
-
-    /**
-     * @param {WebInspector.BaseStorageTreeElement} startTreeElement
-     * @param {number} index
-     * @return {number}
-     */
-    matchIndex: function(startTreeElement, index)
-    {
-        var matchIndex = 1;
-        var treeElement = this._root;
-        while (treeElement != startTreeElement) {
-            matchIndex += this._elementSearchMatchesCount(treeElement);
-            treeElement = this._traverseNext(treeElement) || this._root;
-            if (treeElement === this._root)
-                return 0;
-        }
-        return matchIndex + index;
-    },
-
-    /**
-     * @param {WebInspector.BaseStorageTreeElement} treeElement
-     * @return {number}
-     */
-    _elementSearchMatchesCount: function(treeElement)
-    {
-        return treeElement.searchMatchesCount;
-    },
-
-    /**
-     * @param {WebInspector.BaseStorageTreeElement} treeElement
-     * @return {WebInspector.BaseStorageTreeElement}
-     */
-    _traverseNext: function(treeElement)
-    {
-        return /** @type {WebInspector.BaseStorageTreeElement} */ (treeElement.traverseNextTreeElement(false, this._root, true));
-    },
-
-    /**
-     * @param {WebInspector.BaseStorageTreeElement} treeElement
-     * @return {WebInspector.BaseStorageTreeElement}
-     */
-    _traversePrevious: function(treeElement)
-    {
-        return /** @type {WebInspector.BaseStorageTreeElement} */ (treeElement.traversePreviousTreeElement(false, true));
-    },
-
-    /**
-     * @return {WebInspector.BaseStorageTreeElement}
-     */
-    _lastTreeElement: function()
-    {
-        var treeElement = this._root;
-        var nextTreeElement;
-        while (nextTreeElement = this._traverseNext(treeElement))
-            treeElement = nextTreeElement;
-        return treeElement;
-    }
 }

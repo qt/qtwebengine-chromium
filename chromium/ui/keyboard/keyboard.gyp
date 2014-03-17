@@ -44,6 +44,8 @@
         '../../url/url.gyp:url_lib',
         '../aura/aura.gyp:aura',
         '../compositor/compositor.gyp:compositor',
+        '../events/events.gyp:events',
+        '../gfx/gfx.gyp:gfx',
         '../ui.gyp:ui',
         'keyboard_resources',
       ],
@@ -80,16 +82,17 @@
         '../../content/content.gyp:content',
         '../../skia/skia.gyp:skia',
         '../../testing/gtest.gyp:gtest',
+        '../../url/url.gyp:url_lib',
         '../aura/aura.gyp:aura',
         '../aura/aura.gyp:aura_test_support',
         '../compositor/compositor.gyp:compositor',
-        '../ui.gyp:run_ui_unittests',
+        '../gfx/gfx.gyp:gfx',
         '../ui.gyp:ui',
+        '../ui_unittests.gyp:run_ui_unittests',
         'keyboard',
       ],
       'sources': [
         'keyboard_controller_unittest.cc',
-        'keyboard_test_suite.cc',
       ],
       'conditions': [
         ['OS=="linux" and linux_use_tcmalloc==1', {
@@ -99,6 +102,11 @@
           'link_settings': {
             'ldflags': ['-rdynamic'],
           },
+        }],
+        ['OS=="win" and win_use_allocator_shim==1', {
+          'dependencies': [
+            '<(DEPTH)/base/allocator/allocator.gyp:allocator',
+          ],
         }],
       ],
     },

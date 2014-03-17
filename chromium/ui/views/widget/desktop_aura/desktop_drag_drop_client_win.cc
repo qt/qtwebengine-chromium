@@ -6,6 +6,7 @@
 
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/drag_source_win.h"
+#include "ui/base/dragdrop/drop_target_event.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_win.h"
 #include "ui/views/widget/desktop_aura/desktop_drop_target_win.h"
 #include "ui/views/widget/desktop_aura/desktop_root_window_host_win.h"
@@ -14,7 +15,7 @@
 namespace views {
 
 DesktopDragDropClientWin::DesktopDragDropClientWin(
-    aura::RootWindow* root_window,
+    aura::Window* root_window,
     HWND window)
     : drag_drop_in_progress_(false),
       drag_operation_(0) {
@@ -26,7 +27,7 @@ DesktopDragDropClientWin::~DesktopDragDropClientWin() {
 
 int DesktopDragDropClientWin::StartDragAndDrop(
     const ui::OSExchangeData& data,
-    aura::RootWindow* root_window,
+    aura::Window* root_window,
     aura::Window* source_window,
     const gfx::Point& root_location,
     int operation,

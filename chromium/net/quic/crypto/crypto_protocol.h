@@ -40,11 +40,12 @@ const QuicTag kP256 = TAG('P', '2', '5', '6');  // ECDH, Curve P-256
 const QuicTag kC255 = TAG('C', '2', '5', '5');  // ECDH, Curve25519
 
 // AEAD algorithms
-const QuicTag kNULL = TAG('N', 'U', 'L', 'L');  // null algorithm
+const QuicTag kNULL = TAG('N', 'U', 'L', 'N');  // null algorithm
 const QuicTag kAESG = TAG('A', 'E', 'S', 'G');  // AES128 + GCM-12
 
 // Congestion control feedback types
 const QuicTag kQBIC = TAG('Q', 'B', 'I', 'C');  // TCP cubic
+const QuicTag kPACE = TAG('P', 'A', 'C', 'E');  // Paced TCP cubic
 const QuicTag kINAR = TAG('I', 'N', 'A', 'R');  // Inter arrival
 
 // Proof types (i.e. certificate types)
@@ -57,7 +58,9 @@ const QuicTag kX59R = TAG('X', '5', '9', 'R');  // X.509 certificate, RSA keys
 const QuicTag kCHID = TAG('C', 'H', 'I', 'D');  // Channel ID.
 
 // Client hello tags
-const QuicTag kVERS = TAG('V', 'E', 'R', 'S');  // Version
+// TODO(rch): Remove once we remove QUIC_VERSION_12.
+const QuicTag kVERS = TAG('V', 'E', 'R', 'S');  // Version (obsolete)
+const QuicTag kVER  = TAG('V', 'E', 'R', '\0'); // Version (new)
 const QuicTag kNONC = TAG('N', 'O', 'N', 'C');  // The client's nonce
 const QuicTag kKEXS = TAG('K', 'E', 'X', 'S');  // Key exchange methods
 const QuicTag kAEAD = TAG('A', 'E', 'A', 'D');  // Authenticated
@@ -68,6 +71,9 @@ const QuicTag kICSL = TAG('I', 'C', 'S', 'L');  // Idle connection state
                                                 // lifetime
 const QuicTag kKATO = TAG('K', 'A', 'T', 'O');  // Keepalive timeout
 const QuicTag kMSPC = TAG('M', 'S', 'P', 'C');  // Max streams per connection.
+const QuicTag kIRTT = TAG('I', 'R', 'T', 'T');  // Estimated initial RTT in us.
+const QuicTag kSWND = TAG('S', 'W', 'N', 'D');  // Server's Initial congestion
+                                                // window.
 const QuicTag kSNI  = TAG('S', 'N', 'I', '\0'); // Server name
                                                 // indication
 const QuicTag kPUBS = TAG('P', 'U', 'B', 'S');  // Public key values
@@ -123,7 +129,17 @@ const char kProofSignatureLabel[] = "QUIC server config signature";
 // will have PAD tags added in order to ensure this minimum is met and client
 // hellos smaller than this will be an error. This minimum size reduces the
 // amplification factor of any mirror DoS attack.
-const size_t kClientHelloMinimumSize = 512;
+//
+// A client may pad an inchoate client hello to a size larger than
+// kClientHelloMinimumSize to make it more likely to receive a complete
+// rejection message.
+const size_t kClientHelloMinimumSize = 1024;
+
+// kClientHelloMinimumSizeOld is the previous value of kClientHelloMinimumSize.
+// To support old clients, the server only enforces this size.
+// TODO(wtc): Replace it with kClientHelloMinimumSize when we drop support for
+// QUIC_VERSION_12 clients.
+const size_t kClientHelloMinimumSizeOld = 512;
 
 }  // namespace net
 

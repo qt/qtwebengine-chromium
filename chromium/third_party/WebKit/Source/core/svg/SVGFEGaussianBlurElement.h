@@ -21,20 +21,20 @@
 #ifndef SVGFEGaussianBlurElement_h
 #define SVGFEGaussianBlurElement_h
 
-#include "core/platform/graphics/filters/FEGaussianBlur.h"
 #include "core/svg/SVGAnimatedNumber.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
+#include "platform/graphics/filters/FEGaussianBlur.h"
 
 namespace WebCore {
 
 class SVGFEGaussianBlurElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
-    static PassRefPtr<SVGFEGaussianBlurElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGFEGaussianBlurElement> create(Document&);
 
     void setStdDeviation(float stdDeviationX, float stdDeviationY);
 
 private:
-    SVGFEGaussianBlurElement(const QualifiedName&, Document&);
+    explicit SVGFEGaussianBlurElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;

@@ -10,6 +10,7 @@
 #include "media/base/audio_decoder_config.h"
 #include "media/base/buffers.h"
 #include "media/base/stream_parser_buffer.h"
+#include "media/base/text_track_config.h"
 #include "media/base/video_decoder_config.h"
 #include "media/mp2t/es_parser.h"
 #include "media/mp2t/es_parser_adts.h"
@@ -150,8 +151,9 @@ Mp2tStreamParser::BufferQueueWithConfig::BufferQueueWithConfig(
 Mp2tStreamParser::BufferQueueWithConfig::~BufferQueueWithConfig() {
 }
 
-Mp2tStreamParser::Mp2tStreamParser()
-  : selected_audio_pid_(-1),
+Mp2tStreamParser::Mp2tStreamParser(bool sbr_in_mimetype)
+  : sbr_in_mimetype_(sbr_in_mimetype),
+    selected_audio_pid_(-1),
     selected_video_pid_(-1),
     is_initialized_(false),
     segment_started_(false),
@@ -166,9 +168,8 @@ void Mp2tStreamParser::Init(
     const InitCB& init_cb,
     const NewConfigCB& config_cb,
     const NewBuffersCB& new_buffers_cb,
-    const NewTextBuffersCB& text_cb,
+    const NewTextBuffersCB& /* text_cb */ ,
     const NeedKeyCB& need_key_cb,
-    const AddTextTrackCB& add_text_track_cb,
     const NewMediaSegmentCB& new_segment_cb,
     const base::Closure& end_of_segment_cb,
     const LogCB& log_cb) {
@@ -346,7 +347,8 @@ void Mp2tStreamParser::RegisterPes(int pmt_pid,
                        pes_pid),
             base::Bind(&Mp2tStreamParser::OnEmitAudioBuffer,
                        base::Unretained(this),
-                       pes_pid)));
+                       pes_pid),
+            sbr_in_mimetype_));
     is_audio = true;
   } else {
     return;
@@ -391,7 +393,7 @@ void Mp2tStreamParser::UpdatePidFilter() {
     selected_audio_pid_ = lowest_audio_pid->first;
   }
   if (lowest_video_pid != pids_.end()) {
-    DVLOG(1) << "Enable video pid: " << lowest_audio_pid->first;
+    DVLOG(1) << "Enable video pid: " << lowest_video_pid->first;
     lowest_video_pid->second->Enable();
     selected_video_pid_ = lowest_video_pid->first;
   }
@@ -476,7 +478,8 @@ bool Mp2tStreamParser::FinishInitializationIfNeeded() {
 
   // Pass the config before invoking the initialization callback.
   RCHECK(config_cb_.Run(queue_with_config.audio_config,
-                        queue_with_config.video_config));
+                        queue_with_config.video_config,
+                        TextTrackConfigMap()));
   queue_with_config.is_config_sent = true;
 
   // For Mpeg2 TS, the duration is not known.
@@ -585,7 +588,8 @@ bool Mp2tStreamParser::EmitRemainingBuffers() {
     BufferQueueWithConfig& queue_with_config = buffer_queue_chain_.front();
     if (!queue_with_config.is_config_sent) {
       if (!config_cb_.Run(queue_with_config.audio_config,
-                          queue_with_config.video_config))
+                          queue_with_config.video_config,
+                          TextTrackConfigMap()))
         return false;
       queue_with_config.is_config_sent = true;
     }

@@ -28,7 +28,6 @@
 #include "config.h"
 #include "wtf/text/TextEncoding.h"
 
-#include "wtf/text/TextCodec.h"
 #include "wtf/text/TextEncodingRegistry.h"
 #include <unicode/unorm.h>
 #include "wtf/OwnPtr.h"
@@ -120,24 +119,6 @@ CString TextEncoding::normalizeAndEncode(const String& string, UnencodableHandli
     return newTextCodec(*this)->encode(source, length, handling);
 }
 
-const char* TextEncoding::domName() const
-{
-    if (noExtendedTextEncodingNameUsed())
-        return m_name;
-
-    // We treat EUC-KR as windows-949 (its superset), but need to expose
-    // the name 'EUC-KR' because the name 'windows-949' is not recognized by
-    // most Korean web servers even though they do use the encoding
-    // 'windows-949' with the name 'EUC-KR'.
-    // FIXME: This is not thread-safe. At the moment, this function is
-    // only accessed in a single thread, but eventually has to be made
-    // thread-safe along with usesVisualOrdering().
-    static const char* const a = atomicCanonicalTextEncodingName("windows-949");
-    if (m_name == a)
-        return "EUC-KR";
-    return m_name;
-}
-
 bool TextEncoding::usesVisualOrdering() const
 {
     if (noExtendedTextEncodingNameUsed())
@@ -145,11 +126,6 @@ bool TextEncoding::usesVisualOrdering() const
 
     static const char* const a = atomicCanonicalTextEncodingName("ISO-8859-8");
     return m_name == a;
-}
-
-bool TextEncoding::isJapanese() const
-{
-    return isJapaneseEncoding(m_name);
 }
 
 UChar TextEncoding::backslashAsCurrencySymbol() const

@@ -33,7 +33,9 @@
 #include "core/html/HTMLBaseElement.h"
 #include "core/html/HTMLBodyElement.h"
 #include "core/html/HTMLDivElement.h"
+#include "core/html/HTMLHeadElement.h"
 #include "core/html/HTMLHtmlElement.h"
+#include "core/html/HTMLSpanElement.h"
 #include "core/html/HTMLTableCellElement.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/html/HTMLTableRowElement.h"
@@ -65,7 +67,8 @@ void HTMLViewSourceDocument::createContainingTable()
 {
     RefPtr<HTMLHtmlElement> html = HTMLHtmlElement::create(*this);
     parserAppendChild(html);
-    html->lazyAttach();
+    RefPtr<HTMLHeadElement> head = HTMLHeadElement::create(*this);
+    html->parserAppendChild(head);
     RefPtr<HTMLBodyElement> body = HTMLBodyElement::create(*this);
     html->parserAppendChild(body);
 
@@ -96,8 +99,7 @@ void HTMLViewSourceDocument::addSource(const String& source, HTMLToken& token)
         processDoctypeToken(source, token);
         break;
     case HTMLToken::EndOfFile:
-        if (!m_tbody->hasChildNodes())
-            addLine(String());
+        processEndOfFileToken(source, token);
         break;
     case HTMLToken::StartTag:
     case HTMLToken::EndTag:
@@ -116,6 +118,13 @@ void HTMLViewSourceDocument::processDoctypeToken(const String& source, HTMLToken
 {
     m_current = addSpanWithClassName("webkit-html-doctype");
     addText(source, "webkit-html-doctype");
+    m_current = m_td;
+}
+
+void HTMLViewSourceDocument::processEndOfFileToken(const String& source, HTMLToken&)
+{
+    m_current = addSpanWithClassName("webkit-html-end-of-file");
+    addText(source, "webkit-html-end-of-file");
     m_current = m_td;
 }
 
@@ -142,7 +151,7 @@ void HTMLViewSourceDocument::processTagToken(const String& source, HTMLToken& to
         index = addRange(source, index, iter->nameRange.end - token.startIndex(), "webkit-html-attribute-name");
 
         if (tagName == baseTag && name == hrefAttr)
-            m_current = addBase(value);
+            addBase(value);
 
         index = addRange(source, index, iter->valueRange.start - token.startIndex(), "");
 
@@ -173,7 +182,7 @@ PassRefPtr<Element> HTMLViewSourceDocument::addSpanWithClassName(const AtomicStr
         return m_current;
     }
 
-    RefPtr<HTMLElement> span = HTMLElement::create(spanTag, *this);
+    RefPtr<HTMLSpanElement> span = HTMLSpanElement::create(*this);
     span->setAttribute(classAttr, className);
     m_current->parserAppendChild(span);
     return span.release();
@@ -188,7 +197,7 @@ void HTMLViewSourceDocument::addLine(const AtomicString& className)
     // Create a cell that will hold the line number (it is generated in the stylesheet using counters).
     RefPtr<HTMLTableCellElement> td = HTMLTableCellElement::create(tdTag, *this);
     td->setAttribute(classAttr, "webkit-line-number");
-    td->setAttribute(valueAttr, String::number(++m_lineNumber));
+    td->setIntegralAttribute(valueAttr, ++m_lineNumber);
     trow->parserAppendChild(td);
 
     // Create a second cell for the line contents
@@ -196,12 +205,6 @@ void HTMLViewSourceDocument::addLine(const AtomicString& className)
     td->setAttribute(classAttr, "webkit-line-content");
     trow->parserAppendChild(td);
     m_current = m_td = td;
-
-#ifdef DEBUG_LINE_NUMBERS
-    RefPtr<Text> lineNumberText = Text::create(*this, String::number(parser()->lineNumber() + 1) + " ");
-    td->addChild(lineNumberText);
-    lineNumberText->lazyAttach();
-#endif
 
     // Open up the needed spans.
     if (!className.isEmpty()) {
@@ -267,7 +270,7 @@ int HTMLViewSourceDocument::addRange(const String& source, int start, int end, c
 
 PassRefPtr<Element> HTMLViewSourceDocument::addBase(const AtomicString& href)
 {
-    RefPtr<HTMLBaseElement> base = HTMLBaseElement::create(baseTag, *this);
+    RefPtr<HTMLBaseElement> base = HTMLBaseElement::create(*this);
     base->setAttribute(hrefAttr, href);
     m_current->parserAppendChild(base);
     return base.release();

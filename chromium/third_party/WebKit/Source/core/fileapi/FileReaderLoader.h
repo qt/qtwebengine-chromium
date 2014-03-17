@@ -33,16 +33,19 @@
 
 #include "core/fileapi/FileError.h"
 #include "core/loader/ThreadableLoaderClient.h"
-#include "weborigin/KURL.h"
+#include "platform/weborigin/KURL.h"
+#include "wtf/ArrayBuffer.h"
+#include "wtf/ArrayBufferBuilder.h"
 #include "wtf/Forward.h"
+#include "wtf/OwnPtr.h"
 #include "wtf/text/TextEncoding.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class Blob;
+class BlobDataHandle;
 class FileReaderLoaderClient;
-class ScriptExecutionContext;
+class ExecutionContext;
 class Stream;
 class TextResourceDecoder;
 class ThreadableLoader;
@@ -62,8 +65,8 @@ public:
     FileReaderLoader(ReadType, FileReaderLoaderClient*);
     ~FileReaderLoader();
 
-    void start(ScriptExecutionContext*, const Blob&);
-    void start(ScriptExecutionContext*, const Stream&, unsigned readSize);
+    void start(ExecutionContext*, PassRefPtr<BlobDataHandle>);
+    void start(ExecutionContext*, const Stream&, unsigned readSize);
     void cancel();
 
     // ThreadableLoaderClient
@@ -74,25 +77,35 @@ public:
 
     String stringResult();
     PassRefPtr<ArrayBuffer> arrayBufferResult() const;
-    unsigned bytesLoaded() const { return m_bytesLoaded; }
-    unsigned totalBytes() const { return m_totalBytes; }
+
+    // Returns the total bytes received. Bytes ignored by m_rawData won't be
+    // counted.
+    //
+    // This value doesn't grow more than numeric_limits<unsigned> when
+    // m_readType is not set to ReadByClient.
+    long long bytesLoaded() const { return m_bytesLoaded; }
+
+    // Before didReceiveResponse() is called: Returns -1.
+    // After didReceiveResponse() is called:
+    // - If the size of the resource is known (from
+    //   m_response.expectedContentLength() or once didFinishLoading() is
+    //   called), returns it.
+    // - Otherwise, returns -1.
+    long long totalBytes() const { return m_totalBytes; }
+
     FileError::ErrorCode errorCode() const { return m_errorCode; }
 
     void setEncoding(const String&);
     void setDataType(const String& dataType) { m_dataType = dataType; }
 
 private:
-    // We have start() methods for Blob and Stream instead of exposing this
-    // method so that users don't misuse this by calling with non Blob/Stream
-    // URL.
-    void startForURL(ScriptExecutionContext*, const KURL&);
+    void startInternal(ExecutionContext*, const Stream*, PassRefPtr<BlobDataHandle>);
     void terminate();
     void cleanup();
+
     void failed(FileError::ErrorCode);
     void convertToText();
     void convertToDataURL();
-
-    bool isCompleted() const;
 
     static FileError::ErrorCode httpStatusCodeToErrorCode(int);
 
@@ -105,18 +118,22 @@ private:
     bool m_urlForReadingIsStream;
     RefPtr<ThreadableLoader> m_loader;
 
-    RefPtr<ArrayBuffer> m_rawData;
+    OwnPtr<ArrayBufferBuilder> m_rawData;
     bool m_isRawDataConverted;
 
     String m_stringResult;
-    RefPtr<Blob> m_blobResult;
 
     // The decoder used to decode the text data.
-    RefPtr<TextResourceDecoder> m_decoder;
+    OwnPtr<TextResourceDecoder> m_decoder;
 
-    bool m_variableLength;
-    unsigned m_bytesLoaded;
-    unsigned m_totalBytes;
+    bool m_finishedLoading;
+    long long m_bytesLoaded;
+    // If the total size of the resource is unknown, m_totalBytes is set to -1
+    // until completion of loading, and the buffer for receiving data is set to
+    // dynamically grow. Otherwise, m_totalBytes is set to the total size and
+    // the buffer for receiving data of m_totalBytes is allocated and never grow
+    // even when extra data is appeneded.
+    long long m_totalBytes;
 
     bool m_hasRange;
     unsigned m_rangeStart;

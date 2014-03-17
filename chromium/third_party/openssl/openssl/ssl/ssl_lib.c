@@ -2561,6 +2561,10 @@ int SSL_get_error(const SSL *s,int i)
 		{
 		return(SSL_ERROR_WANT_X509_LOOKUP);
 		}
+	if ((i < 0) && SSL_want_channel_id_lookup(s))
+		{
+		return(SSL_ERROR_WANT_CHANNEL_ID_LOOKUP);
+		}
 
 	if (i == 0)
 		{
@@ -2831,6 +2835,18 @@ void ssl_clear_cipher_ctx(SSL *s)
 		EVP_CIPHER_CTX_cleanup(s->enc_write_ctx);
 		OPENSSL_free(s->enc_write_ctx);
 		s->enc_write_ctx=NULL;
+		}
+	if (s->aead_read_ctx != NULL)
+		{
+		EVP_AEAD_CTX_cleanup(&s->aead_read_ctx->ctx);
+		OPENSSL_free(s->aead_read_ctx);
+		s->aead_read_ctx = NULL;
+		}
+	if (s->aead_write_ctx != NULL)
+		{
+		EVP_AEAD_CTX_cleanup(&s->aead_write_ctx->ctx);
+		OPENSSL_free(s->aead_write_ctx);
+		s->aead_write_ctx = NULL;
 		}
 #ifndef OPENSSL_NO_COMP
 	if (s->expand != NULL)

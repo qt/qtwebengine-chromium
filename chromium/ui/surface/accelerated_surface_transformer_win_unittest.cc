@@ -45,8 +45,8 @@ SkBitmap ToSkBitmap(IDirect3DSurface9* surface, bool is_single_channel) {
   gfx::Size size = d3d_utils::GetSize(surface);
   if (is_single_channel)
     size = gfx::Size(size.width() * 4, size.height());
-  result.setConfig(SkBitmap::kARGB_8888_Config, size.width(), size.height());
-  result.setIsOpaque(true);
+  result.setConfig(SkBitmap::kARGB_8888_Config, size.width(), size.height(),
+                   0, kOpaque_SkAlphaType);
   result.allocPixels();
   result.lockPixels();
   for (int y = 0; y < size.height(); ++y) {
@@ -75,7 +75,7 @@ bool WritePNGFile(const SkBitmap& bitmap, const base::FilePath& file_path) {
   if (gfx::PNGCodec::EncodeBGRASkBitmap(bitmap,
                                         discard_transparency,
                                         &png_data) &&
-      file_util::CreateDirectory(file_path.DirName())) {
+      base::CreateDirectory(file_path.DirName())) {
     char* data = reinterpret_cast<char*>(&png_data[0]);
     int size = static_cast<int>(png_data.size());
     return file_util::WriteFile(file_path, data, size) == size;

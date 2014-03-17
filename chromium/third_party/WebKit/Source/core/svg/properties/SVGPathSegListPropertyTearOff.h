@@ -41,6 +41,9 @@ public:
         return adoptRef(new SVGPathSegListPropertyTearOff(animatedProperty, role, pathSegRole, values, wrappers));
     }
 
+    SVGPathElement* contextElement() const;
+    SVGAnimatedProperty* animatedProperty() const { return m_animatedProperty; }
+
     int findItem(const ListItemType& item) const
     {
         ASSERT(m_values);
@@ -68,47 +71,47 @@ public:
     // SVGList API
     void clear(ExceptionState&);
 
-    PassListItemType initialize(PassListItemType passNewItem, ExceptionState& es)
+    PassListItemType initialize(PassListItemType passNewItem, ExceptionState& exceptionState)
     {
         // Not specified, but FF/Opera do it this way, and it's just sane.
         if (!passNewItem) {
-            es.throwTypeError();
+            exceptionState.throwUninformativeAndGenericTypeError();
             return 0;
         }
 
         clearContextAndRoles();
         ListItemType newItem = passNewItem;
-        return Base::initializeValues(newItem, es);
+        return Base::initializeValues(newItem, exceptionState);
     }
 
     PassListItemType getItem(unsigned index, ExceptionState&);
 
-    PassListItemType insertItemBefore(PassListItemType passNewItem, unsigned index, ExceptionState& es)
+    PassListItemType insertItemBefore(PassListItemType passNewItem, unsigned index, ExceptionState& exceptionState)
     {
         // Not specified, but FF/Opera do it this way, and it's just sane.
         if (!passNewItem) {
-            es.throwTypeError();
+            exceptionState.throwUninformativeAndGenericTypeError();
             return 0;
         }
 
         ListItemType newItem = passNewItem;
-        return Base::insertItemBeforeValues(newItem, index, es);
+        return Base::insertItemBeforeValues(newItem, index, exceptionState);
     }
 
     PassListItemType replaceItem(PassListItemType, unsigned index, ExceptionState&);
 
     PassListItemType removeItem(unsigned index, ExceptionState&);
 
-    PassListItemType appendItem(PassListItemType passNewItem, ExceptionState& es)
+    PassListItemType appendItem(PassListItemType passNewItem, ExceptionState& exceptionState)
     {
         // Not specified, but FF/Opera do it this way, and it's just sane.
         if (!passNewItem) {
-            es.throwTypeError();
+            exceptionState.throwUninformativeAndGenericTypeError();
             return 0;
         }
 
         ListItemType newItem = passNewItem;
-        return Base::appendItemValues(newItem, es);
+        return Base::appendItemValues(newItem, exceptionState);
     }
 
 private:
@@ -118,8 +121,6 @@ private:
         , m_pathSegRole(pathSegRole)
     {
     }
-
-    SVGPathElement* contextElement() const;
 
     void clearContextAndRoles();
 
@@ -154,7 +155,7 @@ private:
     }
 
 private:
-    RefPtr<AnimatedListPropertyTearOff> m_animatedProperty;
+    AnimatedListPropertyTearOff* m_animatedProperty;
     SVGPathSegRole m_pathSegRole;
 };
 

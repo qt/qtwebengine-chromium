@@ -33,26 +33,24 @@
 
 #include "V8CanvasRenderingContext2D.h"
 #include "V8DOMImplementation.h"
-#include "V8HTMLDocument.h"
 #include "V8Node.h"
-#include "V8SVGDocument.h"
 #include "V8Touch.h"
 #include "V8TouchList.h"
 #include "V8WebGLRenderingContext.h"
 #include "V8XPathNSResolver.h"
 #include "V8XPathResult.h"
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8DOMWrapper.h"
-#include "bindings/v8/V8WindowShell.h"
 #include "bindings/v8/custom/V8CustomXPathNSResolver.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/Node.h"
 #include "core/dom/TouchList.h"
 #include "core/html/canvas/CanvasRenderingContext.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/xml/DocumentXPathEvaluator.h"
 #include "core/xml/XPathNSResolver.h"
 #include "core/xml/XPathResult.h"
@@ -60,48 +58,33 @@
 
 namespace WebCore {
 
-void V8Document::evaluateMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8Document::evaluateMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    RefPtr<Document> document = V8Document::toNative(args.Holder());
-    ExceptionState es(args.GetIsolate());
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, expression, args[0]);
+    RefPtr<Document> document = V8Document::toNative(info.Holder());
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "evaluate", "Document", info.Holder(), info.GetIsolate());
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, expression, info[0]);
     RefPtr<Node> contextNode;
-    if (V8Node::HasInstance(args[1], args.GetIsolate(), worldType(args.GetIsolate())))
-        contextNode = V8Node::toNative(v8::Handle<v8::Object>::Cast(args[1]));
+    if (V8Node::hasInstance(info[1], info.GetIsolate(), worldType(info.GetIsolate())))
+        contextNode = V8Node::toNative(v8::Handle<v8::Object>::Cast(info[1]));
 
-    RefPtr<XPathNSResolver> resolver = toXPathNSResolver(args[2], args.GetIsolate());
-    if (!resolver && !args[2]->IsNull() && !args[2]->IsUndefined()) {
-        setDOMException(TypeMismatchError, args.GetIsolate());
+    const int resolverArgumentIndex = 2;
+    RefPtr<XPathNSResolver> resolver = toXPathNSResolver(info[resolverArgumentIndex], info.GetIsolate());
+    if (!resolver && !isUndefinedOrNull(info[resolverArgumentIndex])) {
+        exceptionState.throwTypeError(ExceptionMessages::incorrectArgumentType(resolverArgumentIndex + 1, "is not a resolver function."));
+        exceptionState.throwIfNeeded();
         return;
     }
 
-    int type = toInt32(args[3]);
+    int type = toInt32(info[3]);
     RefPtr<XPathResult> inResult;
-    if (V8XPathResult::HasInstance(args[4], args.GetIsolate(), worldType(args.GetIsolate())))
-        inResult = V8XPathResult::toNative(v8::Handle<v8::Object>::Cast(args[4]));
+    if (V8XPathResult::hasInstance(info[4], info.GetIsolate(), worldType(info.GetIsolate())))
+        inResult = V8XPathResult::toNative(v8::Handle<v8::Object>::Cast(info[4]));
 
-    V8TRYCATCH_VOID(RefPtr<XPathResult>, result, DocumentXPathEvaluator::evaluate(document.get(), expression, contextNode.get(), resolver.get(), type, inResult.get(), es));
-    if (es.throwIfNeeded())
+    V8TRYCATCH_VOID(RefPtr<XPathResult>, result, DocumentXPathEvaluator::evaluate(document.get(), expression, contextNode.get(), resolver.release(), type, inResult.get(), exceptionState));
+    if (exceptionState.throwIfNeeded())
         return;
 
-    v8SetReturnValueFast(args, result.release(), document.get());
-}
-
-v8::Handle<v8::Object> wrap(Document* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
-{
-    ASSERT(impl);
-    if (impl->isHTMLDocument())
-        return wrap(toHTMLDocument(impl), creationContext, isolate);
-    if (impl->isSVGDocument())
-        return wrap(toSVGDocument(impl), creationContext, isolate);
-    v8::Handle<v8::Object> wrapper = V8Document::createWrapper(impl, creationContext, isolate);
-    if (wrapper.IsEmpty())
-        return wrapper;
-    if (!isolatedWorldForEnteredContext()) {
-        if (Frame* frame = impl->frame())
-            frame->script()->windowShell(mainThreadNormalWorld())->updateDocumentWrapper(wrapper);
-    }
-    return wrapper;
+    v8SetReturnValueFast(info, result.release(), document.get());
 }
 
 } // namespace WebCore

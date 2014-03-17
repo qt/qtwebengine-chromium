@@ -21,10 +21,10 @@
 #ifndef SVGFEColorMatrixElement_h
 #define SVGFEColorMatrixElement_h
 
-#include "core/platform/graphics/filters/FEColorMatrix.h"
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGAnimatedNumberList.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
+#include "platform/graphics/filters/FEColorMatrix.h"
 
 namespace WebCore {
 
@@ -67,10 +67,10 @@ struct SVGPropertyTraits<ColorMatrixType> {
 
 class SVGFEColorMatrixElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
-    static PassRefPtr<SVGFEColorMatrixElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGFEColorMatrixElement> create(Document&);
 
 private:
-    SVGFEColorMatrixElement(const QualifiedName&, Document&);
+    explicit SVGFEColorMatrixElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;

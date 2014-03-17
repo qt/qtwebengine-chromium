@@ -40,12 +40,12 @@ namespace WebCore {
     V(attributeListener) \
     V(callback) \
     V(condition) \
+    V(customElementAttached) \
     V(customElementAttributeChanged) \
     V(customElementCreated) \
+    V(customElementDetached) \
     V(customElementDocument) \
-    V(customElementEnteredView) \
     V(customElementIsInterfacePrototypeObject) \
-    V(customElementLeftView) \
     V(customElementNamespaceURI) \
     V(customElementTagName) \
     V(customElementType) \
@@ -59,7 +59,8 @@ namespace WebCore {
     V(sleepFunction) \
     V(state) \
     V(toStringString) \
-    V(typedArrayHiddenCopyMethod)
+    V(typedArrayHiddenCopyMethod) \
+    V(thenableHiddenPromise)
 
 class V8HiddenPropertyName {
 public:

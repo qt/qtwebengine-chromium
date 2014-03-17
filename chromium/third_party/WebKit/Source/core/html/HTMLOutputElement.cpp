@@ -36,8 +36,8 @@
 
 namespace WebCore {
 
-inline HTMLOutputElement::HTMLOutputElement(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
-    : HTMLFormControlElement(tagName, document, form)
+inline HTMLOutputElement::HTMLOutputElement(Document& document, HTMLFormElement* form)
+    : HTMLFormControlElement(HTMLNames::outputTag, document, form)
     , m_isDefaultValueMode(true)
     , m_isSetTextContentInProgress(false)
     , m_defaultValue("")
@@ -46,9 +46,9 @@ inline HTMLOutputElement::HTMLOutputElement(const QualifiedName& tagName, Docume
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLOutputElement> HTMLOutputElement::create(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
+PassRefPtr<HTMLOutputElement> HTMLOutputElement::create(Document& document, HTMLFormElement* form)
 {
-    return adoptRef(new HTMLOutputElement(tagName, document, form));
+    return adoptRef(new HTMLOutputElement(document, form));
 }
 
 const AtomicString& HTMLOutputElement::formControlType() const
@@ -93,7 +93,7 @@ void HTMLOutputElement::childrenChanged(bool createdByParser, Node* beforeChange
         m_defaultValue = textContent();
 }
 
-void HTMLOutputElement::reset()
+void HTMLOutputElement::resetImpl()
 {
     // The reset algorithm for output elements is to set the element's
     // value mode flag to "default" and then to set the element's textContent
@@ -138,7 +138,7 @@ void HTMLOutputElement::setTextContentInternal(const String& value)
 {
     ASSERT(!m_isSetTextContentInProgress);
     m_isSetTextContentInProgress = true;
-    setTextContent(value, IGNORE_EXCEPTION);
+    setTextContent(value);
 }
 
 } // namespace

@@ -5,6 +5,7 @@
 #include "base/win/win_util.h"
 
 #include <aclapi.h>
+#include <lm.h>
 #include <shellapi.h>
 #include <shlobj.h>
 #include <shobjidl.h>  // Must be before propkey.
@@ -328,7 +329,7 @@ bool DismissVirtualKeyboard() {
 
 typedef HWND (*MetroRootWindow) ();
 
-// As for this writing, GetMonitorInfo function seem to return wrong values
+// As of this writing, GetMonitorInfo function seem to return wrong values
 // for rcWork.left and rcWork.top in case of split screen situation inside
 // metro mode. In order to get required values we query for core window screen
 // coordinates.
@@ -341,6 +342,11 @@ BOOL GetMonitorInfoWrapper(HMONITOR monitor, MONITORINFO* mi) {
     static MetroRootWindow root_window = NULL;
     if (!root_window) {
       HMODULE metro = base::win::GetMetroModule();
+      // There are apparently instances when current process is inside metro
+      // environment but metro driver dll is not loaded.
+      if (!metro) {
+        return ret;
+      }
       root_window = reinterpret_cast<MetroRootWindow>(
           ::GetProcAddress(metro, "GetRootWindow"));
     }
@@ -348,6 +354,16 @@ BOOL GetMonitorInfoWrapper(HMONITOR monitor, MONITORINFO* mi) {
   }
 #endif
   return ret;
+}
+
+bool IsEnrolledToDomain() {
+  LPWSTR domain;
+  NETSETUP_JOIN_STATUS join_status;
+  if(::NetGetJoinInformation(NULL, &domain, &join_status) != NERR_Success)
+    return false;
+  ::NetApiBufferFree(domain);
+
+  return join_status == ::NetSetupDomainName;
 }
 
 }  // namespace win

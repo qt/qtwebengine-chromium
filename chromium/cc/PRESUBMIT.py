@@ -12,7 +12,6 @@ import re
 import string
 
 CC_SOURCE_FILES=(r'^cc/.*\.(cc|h)$',)
-CC_PERF_TEST =(r'^.*_perftest.*\.(cc|h)$',)
 
 def CheckChangeLintsClean(input_api, output_api):
   input_api.cpplint._cpplint_state.ResetErrorCounts()  # reset global state
@@ -103,35 +102,6 @@ def CheckStdAbs(input_api, output_api,
         items=missing_std_prefix_files))
   return result
 
-def CheckSpamLogging(input_api,
-                     output_api,
-                     white_list=CC_SOURCE_FILES,
-                     black_list=None):
-  black_list = tuple(black_list or input_api.DEFAULT_BLACK_LIST)
-  source_file_filter = lambda x: input_api.FilterSourceFile(x,
-                                                            white_list,
-                                                            black_list)
-
-  log_info = []
-  printf = []
-
-  for f in input_api.AffectedSourceFiles(source_file_filter):
-    contents = input_api.ReadFile(f, 'rb')
-    if re.search(r"\bD?LOG\s*\(\s*INFO\s*\)", contents):
-      log_info.append(f.LocalPath())
-    if re.search(r"\bf?printf\(", contents):
-      printf.append(f.LocalPath())
-
-  if log_info:
-    return [output_api.PresubmitError(
-      'These files spam the console log with LOG(INFO):',
-      items=log_info)]
-  if printf:
-    return [output_api.PresubmitError(
-      'These files spam the console log with printf/fprintf:',
-      items=printf)]
-  return []
-
 def CheckPassByValue(input_api,
                      output_api,
                      white_list=CC_SOURCE_FILES,
@@ -182,18 +152,89 @@ def CheckTodos(input_api, output_api):
       items=errors)]
   return []
 
+def FindUnquotedQuote(contents, pos):
+  match = re.search(r"(?<!\\)(?P<quote>\")", contents[pos:])
+  return -1 if not match else match.start("quote") + pos
+
+def FindNamespaceInBlock(pos, namespace, contents, whitelist=[]):
+  open_brace = -1
+  close_brace = -1
+  quote = -1
+  name = -1
+  brace_count = 1
+  quote_count = 0
+  while pos < len(contents) and brace_count > 0:
+    if open_brace < pos: open_brace = contents.find("{", pos)
+    if close_brace < pos: close_brace = contents.find("}", pos)
+    if quote < pos: quote = FindUnquotedQuote(contents, pos)
+    if name < pos: name = contents.find(("%s::" % namespace), pos)
+
+    if name < 0:
+      return False # The namespace is not used at all.
+    if open_brace < 0:
+      open_brace = len(contents)
+    if close_brace < 0:
+      close_brace = len(contents)
+    if quote < 0:
+      quote = len(contents)
+
+    next = min(open_brace, min(close_brace, min(quote, name)))
+
+    if next == open_brace:
+      brace_count += 1
+    elif next == close_brace:
+      brace_count -= 1
+    elif next == quote:
+      quote_count = 0 if quote_count else 1
+    elif next == name and not quote_count:
+      in_whitelist = False
+      for w in whitelist:
+        if re.match(w, contents[next:]):
+          in_whitelist = True
+          break
+      if not in_whitelist:
+        return True
+    pos = next + 1
+  return False
+
+# Checks for the use of cc:: within the cc namespace, which is usually
+# redundant.
+def CheckNamespace(input_api, output_api):
+  errors = []
+
+  source_file_filter = lambda x: x
+  for f in input_api.AffectedSourceFiles(source_file_filter):
+    contents = input_api.ReadFile(f, 'rb')
+    match = re.search(r'namespace\s*cc\s*{', contents)
+    if match:
+      whitelist = [
+        r"cc::remove_if\b",
+        ]
+      if FindNamespaceInBlock(match.end(), 'cc', contents, whitelist=whitelist):
+        errors.append(f.LocalPath())
+
+  if errors:
+    return [output_api.PresubmitError(
+      'Do not use cc:: inside of the cc namespace.',
+      items=errors)]
+  return []
+
 
 def CheckChangeOnUpload(input_api, output_api):
   results = []
   results += CheckAsserts(input_api, output_api)
   results += CheckStdAbs(input_api, output_api)
-  results += CheckSpamLogging(input_api, output_api, black_list=CC_PERF_TEST)
   results += CheckPassByValue(input_api, output_api)
   results += CheckChangeLintsClean(input_api, output_api)
   results += CheckTodos(input_api, output_api)
+  results += CheckNamespace(input_api, output_api)
   return results
 
 def GetPreferredTrySlaves(project, change):
   return [
     'linux_layout_rel',
-    ]
+    'win_gpu',
+    'linux_gpu',
+    'mac_gpu',
+    'mac_gpu_retina',
+  ]

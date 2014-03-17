@@ -19,6 +19,7 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/browser_child_process_host_impl.h"
@@ -265,7 +266,7 @@ bool PluginProcessHost::Init(const WebPluginInfo& info) {
   ResourceMessageFilter* resource_message_filter = new ResourceMessageFilter(
       process_->GetData().id, PROCESS_TYPE_PLUGIN, NULL, NULL, NULL,
       get_contexts_callback);
-  process_->GetHost()->AddFilter(resource_message_filter);
+  process_->AddFilter(resource_message_filter);
   return true;
 }
 
@@ -273,10 +274,6 @@ void PluginProcessHost::ForceShutdown() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   Send(new PluginProcessMsg_NotifyRenderersOfPendingShutdown());
   process_->ForceShutdown();
-}
-
-void PluginProcessHost::AddFilter(IPC::ChannelProxy::MessageFilter* filter) {
-  process_->GetHost()->AddFilter(filter);
 }
 
 bool PluginProcessHost::OnMessageReceived(const IPC::Message& msg) {
@@ -408,20 +405,29 @@ void PluginProcessHost::OnChannelCreated(
   Client* client = sent_requests_.front();
 
   if (client) {
-    resource_context_map_[client->ID()] = client->GetResourceContext();
+    if (!resource_context_map_.count(client->ID())) {
+      ResourceContextEntry entry;
+      entry.ref_count = 0;
+      entry.resource_context = client->GetResourceContext();
+      resource_context_map_[client->ID()] = entry;
+    }
+    resource_context_map_[client->ID()].ref_count++;
     client->OnChannelOpened(channel_handle);
   }
   sent_requests_.pop_front();
 }
 
 void PluginProcessHost::OnChannelDestroyed(int renderer_id) {
-  resource_context_map_.erase(renderer_id);
+  resource_context_map_[renderer_id].ref_count--;
+  if (!resource_context_map_[renderer_id].ref_count)
+    resource_context_map_.erase(renderer_id);
 }
 
 void PluginProcessHost::GetContexts(const ResourceHostMsg_Request& request,
                                     ResourceContext** resource_context,
                                     net::URLRequestContext** request_context) {
-  *resource_context = resource_context_map_[request.origin_pid];
+  *resource_context =
+      resource_context_map_[request.origin_pid].resource_context;
   *request_context = (*resource_context)->GetRequestContext();
 }
 

@@ -57,7 +57,6 @@
         '<(DEPTH)/google_apis/google_apis.gyp:google_apis',
         '<(DEPTH)/ipc/ipc.gyp:ipc',
         '<(DEPTH)/net/net.gyp:net',
-        '<(DEPTH)/printing/printing.gyp:printing',
         '<(DEPTH)/url/url.gyp:url_lib',
         'service_resources',
       ],
@@ -67,6 +66,11 @@
             '<(DEPTH)/chrome/chrome.gyp:chrome_version_header',
             '<(DEPTH)/chrome/chrome.gyp:launcher_support',
             '<(DEPTH)/chrome/common_constants.gyp:common_constants',
+          ],
+        }],
+        ['enable_printing!=0', {
+          'dependencies': [
+            '<(DEPTH)/printing/printing.gyp:printing',
           ],
         }],
       ],
@@ -133,18 +137,16 @@
         'cloud_print_service_lib',
       ],
       'msvs_settings': {
+        'VCManifestTool': {
+          'AdditionalManifestFiles': [
+            'common-controls.manifest',
+          ],
+        },
         'VCLinkerTool': {
           'SubSystem': '2',         # Set /SUBSYSTEM:WINDOWS
           'UACExecutionLevel': '2', # /level='requireAdministrator'
           'AdditionalDependencies': [
               'secur32.lib',
-          ],
-          'AdditionalOptions': [  # Enable Vista+ look.
-            "\"/manifestdependency:type='win32' "
-                "name='Microsoft.Windows.Common-Controls' "
-                "version='6.0.0.0' "
-                "processorArchitecture='*' "
-                "publicKeyToken='6595b64144ccf1df' language='*'\"",
           ],
         },
       },

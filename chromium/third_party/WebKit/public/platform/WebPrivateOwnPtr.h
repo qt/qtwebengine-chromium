@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2010 Google Inc. All rights reserved.
+ * Copyright (C) 2013 Intel Corporation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,8 +28,13 @@
 #define WebPrivateOwnPtr_h
 
 #include "WebCommon.h"
+#include "WebNonCopyable.h"
 
-namespace WebKit {
+#if INSIDE_BLINK
+#include "wtf/PassOwnPtr.h"
+#endif
+
+namespace blink {
 
 // This class is an implementation detail of the WebKit API.  It exists
 // to help simplify the implementation of WebKit interfaces that merely
@@ -37,16 +43,20 @@ namespace WebKit {
 // Note: you must call reset(0) on the implementation side in order to delete
 // the WebCore pointer.
 template <typename T>
-class WebPrivateOwnPtr {
+class WebPrivateOwnPtr : public WebNonCopyable {
 public:
     WebPrivateOwnPtr() : m_ptr(0) {}
-    ~WebPrivateOwnPtr() { WEBKIT_ASSERT(!m_ptr); }
+    ~WebPrivateOwnPtr() { BLINK_ASSERT(!m_ptr); }
 
-#if INSIDE_WEBKIT
     explicit WebPrivateOwnPtr(T* ptr)
         : m_ptr(ptr)
     {
     }
+
+    T* get() const { return m_ptr; }
+
+#if INSIDE_BLINK
+    template<typename U> WebPrivateOwnPtr(const PassOwnPtr<U>&, EnsurePtrConvertibleArgDecl(U, T));
 
     void reset(T* ptr)
     {
@@ -54,22 +64,37 @@ public:
         m_ptr = ptr;
     }
 
-    T* get() const { return m_ptr; }
+    void reset(const PassOwnPtr<T>& o)
+    {
+        reset(o.leakPtr());
+    }
+
+    PassOwnPtr<T> release()
+    {
+        T* ptr = m_ptr;
+        m_ptr = 0;
+        return adoptPtr(ptr);
+    }
 
     T* operator->() const
     {
-        WEBKIT_ASSERT(m_ptr);
+        BLINK_ASSERT(m_ptr);
         return m_ptr;
     }
-#endif // INSIDE_WEBKIT
+#endif // INSIDE_BLINK
 
 private:
     T* m_ptr;
-
-    WebPrivateOwnPtr(const WebPrivateOwnPtr&);
-    void operator=(const WebPrivateOwnPtr&);
 };
 
-} // namespace WebKit
+#if INSIDE_BLINK
+template<typename T> template<typename U> inline WebPrivateOwnPtr<T>::WebPrivateOwnPtr(const PassOwnPtr<U>& o, EnsurePtrConvertibleArgDefn(U, T))
+    : m_ptr(o.leakPtr())
+{
+    COMPILE_ASSERT(!WTF::IsArray<T>::value, Pointers_to_array_must_never_be_converted);
+}
+#endif
+
+} // namespace blink
 
 #endif
