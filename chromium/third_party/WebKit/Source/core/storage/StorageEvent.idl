@@ -24,13 +24,13 @@
  */
 
 [
-    ConstructorTemplate=Event
+    EventConstructor,
 ] interface StorageEvent : Event {
     [InitializedByEventConstructor] readonly attribute DOMString key;
     [InitializedByEventConstructor, TreatReturnedNullStringAs=Null] readonly attribute DOMString oldValue;
     [InitializedByEventConstructor, TreatReturnedNullStringAs=Null] readonly attribute DOMString newValue;
     [InitializedByEventConstructor] readonly attribute DOMString url;
-    [InitializedByEventConstructor] readonly attribute Storage storageArea;
+    [InitializedByEventConstructor] readonly attribute Storage? storageArea;
 
     void initStorageEvent([Default=Undefined] optional DOMString typeArg,
                           [Default=Undefined] optional boolean canBubbleArg,

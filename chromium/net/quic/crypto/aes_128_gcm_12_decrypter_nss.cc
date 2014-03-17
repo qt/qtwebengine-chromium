@@ -104,7 +104,6 @@ CK_MECHANISM_TYPE GcmSupportChecker::aes_key_mechanism_ = CKM_AES_GCM;
 base::LazyInstance<GcmSupportChecker>::Leaky g_gcm_support_checker =
     LAZY_INSTANCE_INITIALIZER;
 
-const size_t kKeySize = 16;
 const size_t kNoncePrefixSize = 4;
 const size_t kAESNonceSize = 12;
 
@@ -143,7 +142,7 @@ SECStatus My_Decrypt(PK11SymKey* key,
   DCHECK_EQ(gcm_params->ulTagBits,
             static_cast<CK_ULONG>(Aes128Gcm12Decrypter::kAuthTagSize * 8));
   if (gcm_params->ulIvLen != 12u) {
-    DLOG(INFO) << "ulIvLen is not equal to 12";
+    DVLOG(1) << "ulIvLen is not equal to 12";
     PORT_SetError(SEC_ERROR_INPUT_LEN);
     return SECFailure;
   }
@@ -155,20 +154,20 @@ SECStatus My_Decrypt(PK11SymKey* key,
   crypto::ScopedPK11Context ctx(PK11_CreateContextBySymKey(
       CKM_AES_ECB, CKA_ENCRYPT, key, &my_param));
   if (!ctx) {
-    DLOG(INFO) << "PK11_CreateContextBySymKey failed";
+    DVLOG(1) << "PK11_CreateContextBySymKey failed";
     return SECFailure;
   }
   int output_len;
   if (PK11_CipherOp(ctx.get(), ghash_key, &output_len, sizeof(ghash_key),
                     ghash_key, sizeof(ghash_key)) != SECSuccess) {
-    DLOG(INFO) << "PK11_CipherOp failed";
+    DVLOG(1) << "PK11_CipherOp failed";
     return SECFailure;
   }
 
   PK11_Finalize(ctx.get());
 
   if (output_len != sizeof(ghash_key)) {
-    DLOG(INFO) << "Wrong output length";
+    DVLOG(1) << "Wrong output length";
     PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
     return SECFailure;
   }
@@ -189,7 +188,7 @@ SECStatus My_Decrypt(PK11SymKey* key,
   ctx.reset(PK11_CreateContextBySymKey(CKM_AES_CTR, CKA_ENCRYPT, key,
                                        &my_param));
   if (!ctx) {
-    DLOG(INFO) << "PK11_CreateContextBySymKey failed";
+    DVLOG(1) << "PK11_CreateContextBySymKey failed";
     return SECFailure;
   }
 
@@ -197,11 +196,11 @@ SECStatus My_Decrypt(PK11SymKey* key,
   unsigned char tag_mask[16] = {0};
   if (PK11_CipherOp(ctx.get(), tag_mask, &output_len, sizeof(tag_mask),
                     tag_mask, sizeof(tag_mask)) != SECSuccess) {
-    DLOG(INFO) << "PK11_CipherOp failed";
+    DVLOG(1) << "PK11_CipherOp failed";
     return SECFailure;
   }
   if (output_len != sizeof(tag_mask)) {
-    DLOG(INFO) << "Wrong output length";
+    DVLOG(1) << "Wrong output length";
     PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
     return SECFailure;
   }
@@ -217,7 +216,7 @@ SECStatus My_Decrypt(PK11SymKey* key,
   if (PK11_CipherOp(ctx.get(), out, &output_len, max_len,
           const_cast<unsigned char*>(enc),
           enc_len - Aes128Gcm12Decrypter::kAuthTagSize) != SECSuccess) {
-    DLOG(INFO) << "PK11_CipherOp failed";
+    DVLOG(1) << "PK11_CipherOp failed";
     return SECFailure;
   }
 
@@ -225,7 +224,7 @@ SECStatus My_Decrypt(PK11SymKey* key,
 
   if (static_cast<unsigned int>(output_len) !=
       enc_len - Aes128Gcm12Decrypter::kAuthTagSize) {
-    DLOG(INFO) << "Wrong output length";
+    DVLOG(1) << "Wrong output length";
     PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
     return SECFailure;
   }
@@ -315,7 +314,7 @@ bool Aes128Gcm12Decrypter::Decrypt(StringPiece nonce,
   PK11_FreeSlot(slot);
   slot = NULL;
   if (!aes_key) {
-    DLOG(INFO) << "PK11_ImportSymKey failed";
+    DVLOG(1) << "PK11_ImportSymKey failed";
     return false;
   }
 
@@ -334,18 +333,15 @@ bool Aes128Gcm12Decrypter::Decrypt(StringPiece nonce,
   param.len = sizeof(gcm_params);
 
   unsigned int output_len;
-  // If an incorrect authentication tag causes a decryption failure, the NSS
-  // error is SEC_ERROR_BAD_DATA (-8190).
   if (My_Decrypt(aes_key.get(), CKM_AES_GCM, &param,
                  output, &output_len, ciphertext.length(),
                  reinterpret_cast<const unsigned char*>(ciphertext.data()),
                  ciphertext.length()) != SECSuccess) {
-    DLOG(INFO) << "My_Decrypt failed: NSS error " << PORT_GetError();
     return false;
   }
 
   if (output_len != plaintext_size) {
-    DLOG(INFO) << "Wrong output length";
+    DVLOG(1) << "Wrong output length";
     return false;
   }
   *output_length = output_len;

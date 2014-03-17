@@ -40,31 +40,68 @@ input[type="text"]:focus {
     bottom: 0;
 }
 
+.hbox {
+    display: flex !important;
+    flex-direction: row;
+}
+
+.vbox {
+    display: flex !important;
+    flex-direction: column;
+}
+
 .inline-block {
     display: inline-block;
 }
 
 .hidden {
-    display: none;
+    display: none !important;
 }
 
-.nowrap {
+.nowrap,
+.nowrap-below,
+.nowrap-below div,
+.nowrap-below span {
     white-space: nowrap !important;
 }
 
-#toolbar {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 26px;
+.toolbar-background {
     background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(191, 191, 191)), to(rgb(151, 151, 151)));
-    padding-top: 1px;
-    padding-left: 5px;
+    padding: 1px 0 0 1px;
     border-bottom: 1px solid rgb(80, 80, 80);
-    -webkit-flex-direction: row;
     background-origin: padding-box;
     background-clip: padding-box;
+}
+
+.toolbar {
+    flex: 0 0 25px;
+    display: flex;
+    flex-direction: row;
+    position: relative;
+}
+
+.toolbar .tabbed-pane-header {
+    border: none;
+}
+
+.toolbar .tabbed-pane-header-contents {
+    margin: 0;
+}
+
+.toolbar .tabbed-pane-header-tab {
+    border-width: 0 2px 0 2px;
+    background: none;
+    padding-right: 3px;
+}
+
+.toolbar .tabbed-pane-header-tab.selected {
+    border-width: 0 2px 0 2px;
+    -webkit-border-image: url(Images/toolbarItemSelected.png) 0 2 0 2;
+}
+
+.toolbar button.status-bar-item {
+    border: none;
+    margin: 0 -2px;
 }
 
 button,
@@ -74,208 +111,93 @@ select {
   font-size: inherit;
 }
 
-body.inactive #toolbar {
+body.inactive .toolbar-background {
     background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(233, 233, 233)), to(rgb(207, 207, 207)));
     border-bottom: 1px solid rgb(64%, 64%, 64%);
 }
 
-body.dock-to-bottom #toolbar {
+body.dock-to-bottom .toolbar-background {
     padding-top: 0;
+}
+
+body.dock-to-bottom.platform-mac:not(.overlay-contents) .toolbar-background {
+    border-top-color: white;
+}
+
+body.dock-to-bottom:not(.overlay-contents) .toolbar-background {
     border-top: 1px solid rgb(100, 100, 100);
     cursor: default;
 }
 
-body.dock-to-bottom.platform-mac #toolbar {
-    border-top-color: white;
-}
-
-body.dock-to-bottom.inactive #toolbar {
+body.dock-to-bottom.inactive:not(.overlay-contents) .toolbar-background {
     border-top: 1px solid rgb(64%, 64%, 64%);
 }
 
-body.platform-windows #toolbar,
-body.platform-windows.inactive #toolbar {
+body.dock-to-bottom.overlay-contents .toolbar-background .tabbed-pane-header {
+    cursor: ns-resize;
+}
+
+body.dock-to-bottom.overlay-contents .toolbar-background .tabbed-pane-header .tabbed-pane-header-tabs {
+    cursor: default;
+}
+
+body.platform-windows .toolbar-background,
+body.platform-windows.inactive .toolbar-background {
     background-image: none;
 }
 
-body.undocked.platform-mac-leopard #toolbar {
+body.undocked.platform-mac-leopard .toolbar-background {
     background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(175, 175, 175)), to(rgb(151, 151, 151))) !important;
+    color: #333 !important;
 }
 
-body.undocked.platform-mac-leopard.inactive #toolbar {
+body.undocked.platform-mac-leopard.inactive .toolbar-background {
     background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(221, 221, 221)), to(rgb(207, 207, 207))) !important;
+    color: #555 !important;
 }
 
-body.undocked.platform-mac-snowleopard #toolbar {
+body.undocked.platform-mac-snowleopard .toolbar-background {
     background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(189, 189, 189)), to(rgb(167, 167, 167))) !important;
+    color: #333 !important;
 }
 
-body.undocked.platform-mac-snowleopard.inactive #toolbar {
+body.undocked.platform-mac-snowleopard.inactive .toolbar-background {
     background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(228, 228, 228)), to(rgb(216, 216, 216))) !important;
+    color: #555 !important;
 }
 
-body.undocked.platform-mac-mountain-lion #toolbar {
+body.undocked.platform-mac-mountain-lion .toolbar-background {
     background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(208, 208, 208)), to(rgb(200, 200, 200))) !important;
+    color: #333 !important;
 }
 
-body.undocked.platform-mac-mountain-lion.inactive #toolbar {
+body.undocked.platform-mac-mountain-lion.inactive .toolbar-background {
     background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(238, 238, 238)), to(rgb(224, 224, 224))) !important;
+    color: #555 !important;
 }
 
-.toolbar-item {
-    display: inline-block;
-    float: left;
-    margin: 0;
-    padding-right: 6px;
-    background-color: transparent;
-    border-style: none;
-    border-color: transparent;
-    color: inherit;
+.toolbar > .tabbed-pane-header {
+    flex: auto;
 }
 
-.toolbar-item {
-    height: 24px;
+.toolbar-controls-left {
+    flex: none;
+    opacity: 0.8;
+    padding-top: 1px;
 }
 
-.toolbar-item.toggleable.toggled-on {
-    border-width: 0 2px 0 2px;
-    padding-left: 4px;
-    padding-right: 4px;
-    -webkit-border-image: url(Images/toolbarItemSelected.png) 0 2 0 2;
+.toolbar-controls-right {
+    flex: none;
+    margin-right: 2px;
+    padding-top: 1px;
 }
 
-.toolbar-label {
-    line-height: 22px;
-    text-shadow: rgba(255, 255, 255, 0.5) 0 1px 0;
-    display: inline;
-}
-
-.toolbar-item.toggleable .close-button {
-    margin-left: 2px;
-    margin-right: -2px;
-    position: relative;
-    top: 2px;
-    opacity: 0.5;
-}
-
-.toolbar-item.toggleable .close-button:hover {
-    opacity: 1;
-}
-
-#toolbar-dropdown .toolbar-items-separator {
-    border-bottom: 1px solid #aaa;
-    width: 100%;
-    margin: 5px 0;
-}
-
-.toolbar-item.toggleable:active .toolbar-label {
-    text-shadow: none;
-}
-
-body.dock-to-bottom #search-toolbar-label {
-    display: none;
-}
-
-#toolbar-controls {
-    float: right;
-    display: -webkit-flex;
-    -webkit-align-items: center;
-    height: 100%;
-}
-
-#toolbar-dropdown-arrow {
-    font-size: 14px;
-    font-weight: bold;
-    border: 0;
-    background-color: transparent;
-    border-radius: 5px;
-    text-shadow: none;
-    cursor: default;
-    margin: 0;
-    /* A line height of 0 allows precise text positioning using padding. */
-    line-height: 0;
-    padding: 11px 6px 11px;
-}
-
-#toolbar-dropdown-arrow.dropdown-visible {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgba(251, 251, 251, 0.9)), to(rgba(231, 231, 231, 0.9)));
-}
-
-#toolbar-dropdown-arrow:hover {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgba(191, 191, 191, 0.7)), to(rgba(171, 171, 171, 0.5)));
-}
-
-#toolbar-dropdown-arrow:active {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgba(111, 111, 111, 0.8)), to(rgba(91, 91, 91, 0.8)));
-}
-
-#toolbar-dropdown {
-    position: absolute;
-    z-index: 1000;
-    box-shadow: 3px 3px 3px rgba(0, 0, 0, 0.4);
-    border: 1px solid rgb(128, 128, 128);
-    background-color: inherit;
-    background-image: inherit;
-}
-
-body.undocked.platform-mac-leopard #toolbar-dropdown,
-body.undocked.platform-mac-snowleopard #toolbar-dropdown {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(191, 191, 191)), to(rgb(151, 151, 151)));
-}
-
-#toolbar-dropdown .scrollable-content {
-    display: -webkit-flex;
-    -webkit-flex-direction: column;
-    -webkit-align-items: flex-start;
-    padding-right: 0;
-}
-
-#toolbar-dropdown .toolbar-item {
-    display: -webkit-flex;
-    -webkit-flex-direction: row;
-    -webkit-flex: none;
-    width: 100%;
-    border: 1px solid rgba(0, 0, 0, 0);
-}
-
-#toolbar-dropdown .toolbar-item.toggleable.toggled-on {
-    border: 1px solid rgba(100, 100, 120, 0.4);
-    -webkit-border-image: none;
-    background: -webkit-gradient(linear, left top, left bottom, from(rgba(128, 128, 128, 0.6)), to(rgba(128, 128, 128, 0.6)), color-stop(20%, rgba(158, 158, 158, 0.2)), color-stop(80%, rgba(158, 158, 158, 0.2)));
-}
-
-#toolbar-dropdown .toolbar-item.toggleable:hover {
-    background: -webkit-gradient(linear, left top, left bottom, from(rgba(128, 128, 128, 0.6)), to(rgba(128, 128, 128, 0.3)), color-stop(20%, rgba(158, 158, 158, 0.2)), color-stop(80%, rgba(158, 158, 158, 0.1)));
-}
-
-#toolbar-dropdown .toolbar-label {
-    line-height: 22px;
-    top: 0;
-}
-
-#toolbar-panels-menu {
-    border: 0;
-    border-radius: 5px;
-    cursor: default;
-    font-family: Arial, Helvetica, sans-serif !important;
-    font-weight: bold;
-    line-height: 16px;
-    height: 22px;
-    padding: 0 4px 0 4px;
-    margin: 1px 3px;
-}
-
-#toolbar-panels-menu:hover:not(.disabled) {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgba(191, 191, 191, 0.7)), to(rgba(171, 171, 171, 0.5)));
-}
-
-#toolbar-panels-menu.disabled {
-    opacity: 0.4;
-    text-shadow: white 1px 1px 0;
-}
-
-#toolbar-panels-menu:active:not(.disabled) {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgba(111, 111, 111, 0.8)), to(rgba(91, 91, 91, 0.8)));
+.toolbar-controls-right #error-warning-count,
+.toolbar-controls-right .console-status-bar-item,
+.toolbar-controls-right .settings-status-bar-item,
+.toolbar-controls-right .dock-status-bar-item
+{
+    opacity: 0.8;
 }
 
 .scrollable-content {
@@ -465,72 +387,30 @@ body.undocked.platform-mac-snowleopard #toolbar-dropdown {
     background-position: -160px -216px;
 }
 
-
-.close-left {
-    float: left;
-}
-
-body.undocked .toolbar-item.close-left, body.undocked .toolbar-item.close-right {
+body.undocked .toolbar-item .close-button {
     display: none;
 }
 
-body.platform-mac .toolbar-item.close-right {
+body.remote .toolbar-item .close-button {
     display: none;
 }
 
-body.remote .toolbar-item.close-left, body.remote .toolbar-item.close-right {
-    display: none;
-}
-
-body:not(.platform-mac) .toolbar-item.close-left {
-    display: none;
-}
-
-.toolbar-item.close-left,
-.toolbar-item.close-right {
-  display: -webkit-flex;
-  -webkit-align-items: center;
-  height: 100%;
-  cursor: default;
-}
-
-#root {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-}
-
-#main {
-    position: absolute;
-    z-index: 1;
-    top: 26px;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    overflow: hidden;
+.panel-status-bar {
+    border-top: none;
+    display: flex;
     background-color: white;
+    flex: 0 0 23px;
+    position: relative;
 }
 
-#main-panels {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 23px;
-    overflow: hidden;
+.panel-status-bar label {
+    margin: 2px 20px 0 0;
 }
 
-body.drawer-visible #main-panels {
-    bottom: 24px;
-}
-
-#main-status-bar {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
+.panel-status-bar label > input {
+    height: 13px;
+    width: 13px;
+    vertical-align: -2px;
 }
 
 .status-bar {
@@ -540,7 +420,6 @@ body.drawer-visible #main-panels {
     overflow: hidden;
     width: 100%;
     z-index: 12;
-    background-image: -webkit-linear-gradient(rgb(243,243,243), rgb(235,235,235));
     border-top: 1px solid rgb(202, 202, 202);
     display: -webkit-flex;
 }
@@ -553,7 +432,6 @@ body.drawer-visible #main-panels {
 
 .status-bar-item {
     display: inline-block;
-    pointer-events: auto;
     cursor: default;
     height: 22px;
     padding: 0;
@@ -562,44 +440,13 @@ body.drawer-visible #main-panels {
     vertical-align: top;
     border: 0 transparent none;
     background-color: transparent;
+    flex: none;
 }
 
 .status-bar-text {
     padding-left: 5px;
     padding-right: 15px;
     padding-top: 3px;
-}
-
-#floating-status-bar-container {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    display: none;
-    border-bottom: 1px solid rgb(202, 202, 202);
-    cursor: ns-resize;
-    height: 24px;
-}
-
-body.drawer-overlay #floating-status-bar-container {
-    box-shadow: 1px 1px 5px 2px rgba(128, 128, 128, 0.7);
-}
-
-body.drawer-visible #floating-status-bar-container {
-    display: -webkit-flex;
-}
-
-#floating-status-bar-resizer {
-    content: url(Images/statusbarResizerVertical.png);
-    margin-top: 7px;
-    pointer-events: none;
-    height: 8px;
-}
-
-#panel-status-bar {
-    -webkit-flex: 1 0;
-    display: -webkit-flex;
-    pointer-events: none;
 }
 
 #drawer-view-anchor {
@@ -624,7 +471,7 @@ body.drawer-visible #floating-status-bar-container {
 .glyph.shadow {
     top: 0;
     bottom: 0;
-    background-color: white !important;
+    background-color: white;
     z-index: 0;
 }
 
@@ -651,31 +498,30 @@ body.drawer-visible #floating-status-bar-container {
 button.status-bar-item {
     position: relative;
     width: 32px;
-    border-left: 1px solid rgb(202, 202, 202);
-    border-right: 1px solid rgb(202, 202, 202);
 }
 
 .status-bar button.status-bar-item .glyph {
     margin: 0 -1px;
 }
 
-.status-bar select.status-bar-item:active,
-.status-bar button.status-bar-item:active {
-    border-left: 1px solid rgb(120, 120, 120);
-    border-right: 1px solid rgb(120, 120, 120);
-}
-
 button.status-bar-item .glyph.shadow {
-    background-color: rgba(255, 255, 255, 0.33) !important;
+    background-color: rgba(255, 255, 255, 0.33);
 }
 
-button.status-bar-item.toggled-on .glyph {
-    background-color: rgb(66, 129, 235);
+button.status-bar-item.toggled-on .glyph:not(.shadow) {
+    background-color: rgb(66, 129, 235) !important;
+}
+
+button.status-bar-item:hover .glyph {
+    opacity: 1;
 }
 
 button.status-bar-item:disabled {
-    opacity: 0.5;
     background-position: 0 0 !important;
+}
+
+button.status-bar-item:disabled .glyph {
+    opacity: 0.5 !important;
 }
 
 button.status-bar-item.extension {
@@ -719,15 +565,14 @@ select.status-bar-item {
     line-height: 20px;
 }
 
-select.status-bar-item,
-select.status-bar-item:hover {
-    border-left: 1px solid rgb(202, 202, 202);
-    border-right: 1px solid rgb(202, 202, 202);
+.status-bar-item.checkbox {
+    margin: 2px 0 0 0;
 }
 
 .status-bar-item > .glyph {
     -webkit-mask-image: url(Images/statusbarButtonGlyphs.png);
     -webkit-mask-size: 320px 120px;
+    opacity: 0.8;
 }
 
 .console-filter > .glyph {
@@ -746,12 +591,10 @@ button.status-bar-item.dock-status-bar-item.toggled-undock .glyph {
 
 button.status-bar-item.dock-status-bar-item.toggled-bottom .glyph {
     -webkit-mask-position: -32px -24px;
-    background-color: rgba(0, 0, 0, 0.75);
 }
 
 button.status-bar-item.dock-status-bar-item.toggled-right .glyph {
     -webkit-mask-position: -256px -48px;
-    background-color: rgba(0, 0, 0, 0.75);
 }
 
 body.undocked .alternate-status-bar-buttons-bar {
@@ -769,13 +612,11 @@ body.undocked .alternate-status-bar-buttons-bar {
     height: 24px;
     margin-top: -1px;
     border: 1px solid rgb(202, 202, 202);
-    border-bottom: 1px solid transparent;
 }
 
 .alternate-status-bar-buttons-bar .status-bar-item.emulate-active {
     background-color: rgb(163,163,163);
     border: 1px solid rgb(120, 120, 120);
-    border-bottom: 1px solid transparent;
 }
 
 button.status-bar-item.settings-status-bar-item,
@@ -792,6 +633,7 @@ button.status-bar-item.right-sidebar-show-hide-button {
     width: 16px;
     margin: 4px 2px 2px 2px;
     border: none;
+    z-index: 10;
 }
 
 button.status-bar-item.left-sidebar-show-hide-button:active,
@@ -825,7 +667,6 @@ div.resizer-widget {
     right: 0;
     height: 24px;
     width: 16px;
-    cursor: ew-resize;
     background-image: url(Images/statusbarResizerHorizontal.png);
     background-repeat: no-repeat;
     background-position: center;
@@ -895,6 +736,7 @@ body.remote .dock-status-bar-item {
 }
 
 #error-warning-count {
+    display: inline-block;
     padding: 4px 6px 6px 0;
     font-size: 11px;
     height: 19px;
@@ -916,23 +758,12 @@ body.remote .dock-status-bar-item {
     margin-left: 6px;
 }
 
-#drawer {
+.drawer {
     display: none;
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 200px;
+    flex: 0 0 200px;
+    position: relative;
     background-color: white;
     z-index: 1;
-}
-
-#drawer-body {
-    position: absolute;
-    top: 0;
-    bottom: 24px;
-    left: 0;
-    right: 0;
 }
 
 #drawer-contents {
@@ -941,6 +772,30 @@ body.remote .dock-status-bar-item {
     bottom: 0;
     left: 0;
     right: 0;
+    display: flex;
+}
+
+#drawer-contents > .tabbed-pane > .tabbed-pane-header {
+    background-color: rgb(236, 236, 236);
+    border-top: 1px solid rgb(124, 124, 124);
+    border-bottom: 1px solid rgb(203, 203, 203);
+}
+
+body.inactive #drawer-contents .tabbed-pane-header {
+    border-top: 1px solid rgb(64%, 64%, 64%);
+}
+
+#drawer-contents .tabbed-pane-header .tabbed-pane-header-tab {
+    cursor: default;
+}
+
+.drawer-resizer {
+    position: absolute;
+    right: 0;
+    top: 8px;
+    content: url(Images/statusbarResizerVertical.png);
+    height: 8px;
+    pointer-events: none;
 }
 
 #drawer-footer {
@@ -950,9 +805,10 @@ body.remote .dock-status-bar-item {
     right: 0;
     font-size: 11px;
     height: 23px;
+    background-color: rgb(236, 236, 236);
 }
 
-body.drawer-visible #drawer {
+body.drawer-visible .drawer {
     display: block;
 }
 
@@ -980,32 +836,31 @@ body.platform-linux .source-code {
     font-family: dejavu sans mono, monospace;
 }
 
-#console-view {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    overflow-y: auto;
+.console-view {
+    background-color: white;
+}
+
+.console-view-wrapper {
+    background-color: rgb(236, 236, 236);
+}
+
+.console-status-bar {
+    flex: 0 0 23px;
+    overflow: hidden;
 }
 
 #console-messages {
-    position: absolute;
-    z-index: 0;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    flex: 1 1;
     padding: 2px 0;
-    overflow-y: overlay;
+    overflow-y: auto;
     word-wrap: break-word;
     -webkit-user-select: text;
+    border-top: 1px solid rgb(230, 230, 230);
 }
 
 #console-prompt {
     clear: right;
     position: relative;
-    border-top: 1px solid rgb(240, 240, 240);
     padding: 1px 22px 1px 0;
     margin-left: 24px;
     min-height: 16px;
@@ -1025,7 +880,7 @@ body.platform-linux .source-code {
 .console-user-command {
     clear: right;
     position: relative;
-    border-top: 1px solid rgb(240, 240, 240);
+    border-bottom: 1px solid rgb(240, 240, 240);
     padding: 1px 22px 1px 0;
     margin-left: 24px;
     min-height: 16px;
@@ -1073,6 +928,10 @@ body.platform-linux .source-code {
     top: 0;
 }
 
+.console-message .outline-disclosure .stacktrace-entry:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
 .console-message .bubble {
     display: inline-block;
     height: 14px;
@@ -1098,7 +957,8 @@ body.platform-linux .source-code {
 
 .repeated-message.console-error-level::before,
 .repeated-message.console-warning-level:before,
-.repeated-message.console-debug-level:before {
+.repeated-message.console-debug-level:before,
+.repeated-message.console-info-level:before {
     visibility: hidden;
 }
 
@@ -1182,7 +1042,8 @@ body.platform-linux .source-code {
 
 .console-error-level::before,
 .console-warning-level::before,
-.console-debug-level::before {
+.console-debug-level::before,
+.console-info-level::before {
     background-image: url(Images/statusbarButtonGlyphs.png);
     background-size: 320px 120px;
     width: 10px;
@@ -1192,7 +1053,8 @@ body.platform-linux .source-code {
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .console-error-level::before,
 .console-warning-level::before,
-.console-debug-level::before {
+.console-debug-level::before,
+.console-info-level::before {
     background-image: url(Images/statusbarButtonGlyphs2x.png);
 }
 } /* media */
@@ -1203,6 +1065,10 @@ body.platform-linux .source-code {
 
 .console-error-level::before {
     background-position: -213px -96px;
+}
+
+.console-info-level::before {
+    background-position: -213px -107px;
 }
 
 .console-user-command .console-message {
@@ -1389,10 +1255,20 @@ ol.watch-expressions > li.hovered {
     left: 0;
     right: 0;
     bottom: 0;
+    z-index: 0;
 }
 
 .panel.visible {
-    display: block;
+    display: flex;
+}
+
+.panel.extension-panel.visible {
+    display: flex !important;
+    flex-direction: column;
+}
+
+.extension-view {
+    flex: auto;
 }
 
 iframe.extension {
@@ -1497,11 +1373,6 @@ iframe.panel.extension {
     margin-left: -12px;
 }
 
-.webkit-html-tag.shadow,
-.webkit-html-fragment.shadow {
-    opacity: 0.6;
-}
-
 .outline-disclosure li.parent::before {
     float: left;
     width: 8px;
@@ -1546,9 +1417,14 @@ iframe.panel.extension {
 
 .placard {
     position: relative;
+    border-top: 1px solid transparent;
     padding: 3px 8px 4px 18px;
     min-height: 18px;
     white-space: nowrap;
+}
+
+.placard.grouped {
+    padding-left: 36px;
 }
 
 .placard:nth-of-type(2n) {
@@ -1867,7 +1743,7 @@ li.editing-sub-part .delete-button {
     display: none;
 }
 
-.tabbed-pane-content .watch-expressions li:first-child .delete-button {
+.sidebar-tabbed-pane .watch-expressions li:first-child .delete-button {
     right: 55px;
     top: 3px;
 }
@@ -2042,7 +1918,8 @@ button.enable-toggle-status-bar-item.toggled-on .glyph {
 .console-warning-level.repeated-message,
 .console-error-level.repeated-message,
 .console-log-level.repeated-message,
-.console-debug-level.repeated-message{
+.console-debug-level.repeated-message,
+.console-info-level.repeated-message {
     display: -webkit-flex;
 }
 
@@ -2061,7 +1938,6 @@ button.enable-toggle-status-bar-item.toggled-on .glyph {
     bottom: 0;
     width: 5px;
     z-index: 500;
-    cursor: ew-resize;
 }
 
 .sidebar-tree,
@@ -2248,21 +2124,18 @@ body.inactive li.selected .status .bubble {
 
 .sidebar-tree-item.selected {
     color: white;
-    border-top: 1px solid rgb(145, 160, 192);
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(162, 177, 207)), to(rgb(120, 138, 177)));
     text-shadow: rgba(0, 0, 0, 0.33) 1px 1px 0;
     background-origin: padding-box;
     background-clip: padding-box;
+    background-color: rgb(56, 121, 217);
 }
 
 :focus .sidebar-tree-item.selected {
-    border-top: 1px solid rgb(68, 128, 200);
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(92, 147, 213)), to(rgb(21, 83, 170)));
+    background-color: rgb(56, 121, 217);
 }
 
 body.inactive .sidebar-tree-item.selected {
-    border-top: 1px solid rgb(151, 151, 151);
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(180, 180, 180)), to(rgb(138, 138, 138)));
+    background-color: rgb(180,180,180);
 }
 
 .sidebar-tree-item .titles {
@@ -2321,25 +2194,6 @@ body.inactive .sidebar-tree-item.selected {
     background-color: rgb(216, 35, 35) !important;
 }
 
-.bubble.search-matches {
-    background-image: url(Images/searchSmallWhite.png);
-    background-repeat: no-repeat;
-    background-position: 3px 2px;
-    padding-left: 13px !important;
-}
-
-li.selected .bubble.search-matches {
-    background-image: url(Images/searchSmallBlue.png);
-}
-
-:focus li.selected .bubble.search-matches {
-    background-image: url(Images/searchSmallBrightBlue.png);
-}
-
-body.inactive li.selected .bubble.search-matches {
-    background-image: url(Images/searchSmallGray.png);
-}
-
 .storage-application-cache-status-icon,
 .storage-application-cache-connectivity-icon {
     margin: 5px 5px 0;
@@ -2361,7 +2215,7 @@ body.inactive li.selected .bubble.search-matches {
     position: absolute;
     top: 0;
     bottom: 0;
-    left: 200px;
+    left: 0;
     overflow: hidden;
     border-left: 1px solid rgb(184, 184, 184);
     margin-left: -1px;
@@ -2582,12 +2436,24 @@ body.platform-mac .soft-context-menu-item-mouse-over {
     right: 0;
 }
 
-.search-drawer-header input[type="search"].search-config-search {
-    font-size: 11px;
-    margin-left: 4px;
+.search-drawer-header {
+    flex: none;
+    padding: 4px;
+}
+
+.search-drawer-header input[type="text"].search-config-search {
+    -webkit-appearance: none;
+    padding: 0 2px;
+    margin: 0;
+    border: 1px solid rgb(163, 163, 163);
+    height: 20px;
+    border-radius: 2px;
     color: #303030;
-    position: relative;
-    height: 19px;
+}
+
+.search-drawer-header input[type="search"].search-config-search:focus {
+    border: 1px solid rgb(190, 190, 190);
+    outline: none;
 }
 
 body.platform-mac .search-drawer-header input[type="search"].search-config-search {
@@ -2611,38 +2477,21 @@ body.platform-mac .search-drawer-header input[type="checkbox"].search-config-che
     margin-bottom: 4px;
 }
 
-.drawer-header {
-    font-size: 11px;
-    border-right: 1px solid rgb(197, 197, 197);
-    line-height: 21px;
-    padding-left: 6px;
-    display: inline-block;
-}
-
-.drawer-header .close-button {
-    position: relative;
-    top: 3px;
-    margin: 0 3px;
-}
-
 #bottom-status-bar-container {
     -webkit-flex: 1 1 0;
     width: 0;
     overflow: hidden;
 }
 
-.search-status-bar-item {
-    display: inline-block;
-    cursor: pointer;
-    font-size: 11px;
-    height: 23px;
+.search-status-bar-summary {
+    background-color: rgb(236, 236, 236);
+    border-top: 1px solid #ccc;
+    padding-left: 5px;
+    flex: 0 0 19px;
 }
 
-.search-status-bar-message {
-    margin-left:5px;
-    margin-right:5px;
-    margin-top:5px;
-    float:left;
+.search-status-bar-summary .progress-bar-container {
+    margin-top: -4px;
 }
 
 .progress-bar-stop-button-item {
@@ -2656,21 +2505,9 @@ body.platform-mac .search-drawer-header input[type="checkbox"].search-config-che
     background-color: rgb(216, 0, 0) !important;
 }
 
-.search-results-status-bar-message {
-    margin-right: 10px;
-    cursor: default;
-    font-size: 11px;
-    float: right;
-    margin-top: 5px;
-}
-
 .search-view .search-results {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    right: 0;
     overflow-y: auto;
+    flex: auto;
 }
 
 #search-results-pane-file-based li {
@@ -2792,8 +2629,8 @@ body.platform-mac .search-drawer-header input[type="checkbox"].search-config-che
     -webkit-mask-position: -288px 0;
 }
 
-.record-cpu-profile-status-bar-item.toggled-on .glyph,
-.record-profile-status-bar-item.toggled-on .glyph {
+button.record-cpu-profile-status-bar-item.toggled-on .glyph:not(.shadow),
+button.record-profile-status-bar-item.toggled-on .glyph:not(.shadow) {
     -webkit-mask-position: -288px -24px;
     background-color: rgb(216, 0, 0) !important;
 }
@@ -2949,16 +2786,18 @@ body.platform-mac .search-drawer-header input[type="checkbox"].search-config-che
     max-width: 200px;
 }
 
-.inspector-footer {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
+.inspector-view {
+    overflow: hidden;
+}
+
+.inspector-footer.status-bar {
+    flex: 0 0 auto;
+    background-color: rgb(236, 236, 236);
     height: auto;
 }
 
 .progress-bar-container {
-    display: -webkit-flex;
+    display: inline-flex;
     margin: 0 8px;
     -webkit-flex: 1 0;
 }
@@ -2981,17 +2820,32 @@ body.platform-mac .progress-bar-container progress {
     margin-top: 1px;
 }
 
-.source-frame-cursor-position {
-    padding-left: 6px;
-    padding-top: 4px;
-    display: inline-block;
-    pointer-events: auto;
-    -webkit-user-select: text;
-    font-size: 11px;
-    cursor: text;
-    line-height: 14px;
-}
-
 .elements-tree-outline li.parent::before {
     top: 0 !important;
+}
+
+.elements-tree-outline li.shadow-root + ol {
+    margin-left: 5px;
+    padding-left: 5px;
+    border-left: 1px solid gray;
+}
+
+#drawer-editor-view {
+    flex: auto;
+}
+
+.toolbar-close-button-item {
+    display: inline-block;
+    float: right;
+    padding-right: 4px;
+    padding-top: 4px;
+    padding-left: 2px;
+}
+
+body.undocked .toolbar-close-button-item {
+    display: none;
+}
+
+body.dock-to-bottom.overlay-contents #inspector-split-view .split-view-resizer {
+    display: none;
 }

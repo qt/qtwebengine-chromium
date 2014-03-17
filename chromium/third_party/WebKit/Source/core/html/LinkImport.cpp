@@ -33,20 +33,21 @@
 
 #include "core/dom/Document.h"
 #include "core/fetch/CrossOriginAccessControl.h"
-#include "core/html/HTMLImportLoader.h"
+#include "core/html/HTMLImportChild.h"
 #include "core/html/HTMLImportsController.h"
 #include "core/html/HTMLLinkElement.h"
 
 
 namespace WebCore {
 
-PassRefPtr<LinkImport> LinkImport::create(HTMLLinkElement* owner)
+PassOwnPtr<LinkImport> LinkImport::create(HTMLLinkElement* owner)
 {
-    return adoptRef(new LinkImport(owner));
+    return adoptPtr(new LinkImport(owner));
 }
 
 LinkImport::LinkImport(HTMLLinkElement* owner)
     : LinkResource(owner)
+    , m_loader(0)
 {
 }
 
@@ -68,7 +69,7 @@ void LinkImport::process()
         return;
     if (!m_owner)
         return;
-    if (!m_owner->document().frame() && !m_owner->document().import())
+    if (!shouldLoadResource())
         return;
 
     if (!m_owner->document().import()) {
@@ -84,22 +85,19 @@ void LinkImport::process()
 
     HTMLImport* parent = m_owner->document().import();
     HTMLImportsController* controller = parent->controller();
-    m_loader = controller->createLoader(parent, builder.build(true));
+    m_loader = controller->load(parent, this, builder.build(true));
     if (!m_loader) {
         didFinish();
         return;
     }
-
-    m_loader->addClient(this);
 }
 
 void LinkImport::clear()
 {
     m_owner = 0;
-
     if (m_loader) {
-        m_loader->removeClient(this);
-        m_loader.clear();
+        m_loader->clearClient();
+        m_loader = 0;
     }
 }
 
@@ -113,6 +111,11 @@ void LinkImport::didFinish()
     if (!m_owner)
         return;
     m_owner->scheduleEvent();
+}
+
+void LinkImport::loaderWillBeDestroyed()
+{
+    clear();
 }
 
 bool LinkImport::hasLoaded() const

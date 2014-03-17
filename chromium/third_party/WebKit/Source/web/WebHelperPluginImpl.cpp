@@ -33,6 +33,7 @@
 
 #include "PageWidgetDelegate.h"
 #include "WebDocument.h"
+#include "WebFrameClient.h"
 #include "WebFrameImpl.h"
 #include "WebPlugin.h"
 #include "WebPluginContainerImpl.h"
@@ -44,13 +45,13 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/EmptyClients.h"
 #include "core/page/FocusController.h"
-#include "core/page/FrameView.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
+#include "core/frame/Settings.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 #define addLiteral(literal, writer)    writer->addData(literal, sizeof(literal) - 1)
 
@@ -104,11 +105,37 @@ private:
     WebHelperPluginImpl* m_widget;
 };
 
+// HelperPluginFrameClient acts as a filter to only forward messages onto the
+// main render frame that WebHelperPlugin actually needs. This prevents
+// having the WebHelperPlugin's frame accidentally signaling events on the
+// client that are meant only for WebFrames which are part of the main DOM.
+class HelperPluginFrameClient : public WebFrameClient {
+public:
+    HelperPluginFrameClient(WebFrameClient* hostWebFrameClient)
+        : m_hostWebFrameClient(hostWebFrameClient)
+    {
+    }
+
+    virtual ~HelperPluginFrameClient()
+    {
+    }
+
+    virtual WebPlugin* createPlugin(blink::WebFrame* frame, const WebPluginParams& params)
+    {
+        return m_hostWebFrameClient->createPlugin(frame, params);
+    }
+
+private:
+    WebFrameClient* m_hostWebFrameClient;
+};
+
+
 // WebHelperPluginImpl ----------------------------------------------------------------
 
 WebHelperPluginImpl::WebHelperPluginImpl(WebWidgetClient* client)
     : m_widgetClient(client)
     , m_webView(0)
+    , m_mainFrame(0)
 {
     ASSERT(client);
 }
@@ -130,7 +157,7 @@ void WebHelperPluginImpl::closeHelperPlugin()
 {
     if (m_page) {
         m_page->clearPageGroup();
-        m_page->mainFrame()->loader()->stopAllLoaders();
+        m_page->mainFrame()->loader().stopAllLoaders();
     }
 
     // We must destroy the page now in case the host page is being destroyed, in
@@ -143,13 +170,16 @@ void WebHelperPluginImpl::closeHelperPlugin()
         // closeWidgetSoon() will call this->close() later.
         m_widgetClient->closeWidgetSoon();
     }
+    m_mainFrame->close();
 }
 
 void WebHelperPluginImpl::initializeFrame(WebFrameClient* client)
 {
     ASSERT(m_page);
-    RefPtr<WebFrameImpl> frame = WebFrameImpl::create(client);
-    frame->initializeAsMainFrame(m_page.get());
+    ASSERT(!m_frameClient);
+    m_frameClient = adoptPtr(new HelperPluginFrameClient(client));
+    m_mainFrame = WebFrameImpl::create(m_frameClient.get());
+    m_mainFrame->initializeAsMainFrame(m_page.get());
 }
 
 // Returns a pointer to the WebPlugin by finding the single <object> tag in the page.
@@ -188,19 +218,16 @@ bool WebHelperPluginImpl::initializePage(const String& pluginType, const WebDocu
     ASSERT(!m_page->settings().isScriptEnabled());
     m_page->settings().setPluginsEnabled(true);
 
-    unsigned layoutMilestones = DidFirstLayout | DidFirstVisuallyNonEmptyLayout;
-    m_page->addLayoutMilestones(static_cast<LayoutMilestones>(layoutMilestones));
-
     m_webView->client()->initializeHelperPluginWebFrame(this);
 
     // The page's main frame was set in initializeFrame() as a result of the above call.
     Frame* frame = m_page->mainFrame();
     ASSERT(frame);
-    frame->loader()->forceSandboxFlags(SandboxAll & ~SandboxPlugins);
+    frame->loader().forceSandboxFlags(SandboxAll & ~SandboxPlugins);
     frame->setView(FrameView::create(frame));
     // No need to set a size or make it not transparent.
 
-    writeDocument(pluginType, hostDocument, frame->loader()->activeDocumentLoader());
+    writeDocument(pluginType, hostDocument, frame->loader().activeDocumentLoader());
 
     return true;
 }
@@ -211,7 +238,7 @@ void WebHelperPluginImpl::destroyPage()
         return;
 
     if (m_page->mainFrame())
-        m_page->mainFrame()->loader()->frameDetached();
+        m_page->mainFrame()->loader().frameDetached();
 
     m_page.clear();
 }
@@ -247,4 +274,4 @@ WebHelperPlugin* WebHelperPlugin::create(WebWidgetClient* client)
     return adoptRef(new WebHelperPluginImpl(client)).leakRef();
 }
 
-} // namespace WebKit
+} // namespace blink

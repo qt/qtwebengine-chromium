@@ -32,7 +32,7 @@
 #include "bindings/v8/ScriptHeapSnapshot.h"
 
 #include "bindings/v8/V8Binding.h"
-#include "core/platform/JSONValues.h"
+#include "platform/JSONValues.h"
 #include <v8.h>
 #include <v8-profiler.h>
 #include "wtf/PassRefPtr.h"
@@ -48,7 +48,7 @@ ScriptHeapSnapshot::~ScriptHeapSnapshot()
 String ScriptHeapSnapshot::title() const
 {
     v8::HandleScope scope(v8::Isolate::GetCurrent());
-    return toWebCoreString(m_snapshot->GetTitle());
+    return toCoreString(m_snapshot->GetTitle());
 }
 
 unsigned int ScriptHeapSnapshot::uid() const

@@ -34,79 +34,81 @@
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/GenericEventQueue.h"
+#include "core/events/GenericEventQueue.h"
 #include "core/html/TimeRanges.h"
-#include "core/platform/ContentType.h"
-#include "core/platform/Logging.h"
-#include "core/platform/MIMETypeRegistry.h"
-#include "core/platform/graphics/SourceBufferPrivate.h"
 #include "modules/mediasource/MediaSourceRegistry.h"
+#include "platform/ContentType.h"
+#include "platform/Logging.h"
+#include "platform/MIMETypeRegistry.h"
+#include "public/platform/WebSourceBuffer.h"
 #include "wtf/Uint8Array.h"
 #include "wtf/text/CString.h"
 
+using blink::WebSourceBuffer;
+
 namespace WebCore {
 
-PassRefPtr<MediaSource> MediaSource::create(ScriptExecutionContext* context)
+PassRefPtr<MediaSource> MediaSource::create(ExecutionContext* context)
 {
     RefPtr<MediaSource> mediaSource(adoptRef(new MediaSource(context)));
     mediaSource->suspendIfNeeded();
     return mediaSource.release();
 }
 
-MediaSource::MediaSource(ScriptExecutionContext* context)
+MediaSource::MediaSource(ExecutionContext* context)
     : MediaSourceBase(context)
 {
-    LOG(Media, "MediaSource::MediaSource %p", this);
+    WTF_LOG(Media, "MediaSource::MediaSource %p", this);
     ScriptWrappable::init(this);
-    m_sourceBuffers = SourceBufferList::create(scriptExecutionContext(), asyncEventQueue());
-    m_activeSourceBuffers = SourceBufferList::create(scriptExecutionContext(), asyncEventQueue());
+    m_sourceBuffers = SourceBufferList::create(executionContext(), asyncEventQueue());
+    m_activeSourceBuffers = SourceBufferList::create(executionContext(), asyncEventQueue());
 }
 
 MediaSource::~MediaSource()
 {
-    LOG(Media, "MediaSource::~MediaSource %p", this);
+    WTF_LOG(Media, "MediaSource::~MediaSource %p", this);
     ASSERT(isClosed());
 }
 
-SourceBuffer* MediaSource::addSourceBuffer(const String& type, ExceptionState& es)
+SourceBuffer* MediaSource::addSourceBuffer(const String& type, ExceptionState& exceptionState)
 {
-    LOG(Media, "MediaSource::addSourceBuffer(%s) %p", type.ascii().data(), this);
+    WTF_LOG(Media, "MediaSource::addSourceBuffer(%s) %p", type.ascii().data(), this);
 
     // 2.2 https://dvcs.w3.org/hg/html-media/raw-file/default/media-source/media-source.html#widl-MediaSource-addSourceBuffer-SourceBuffer-DOMString-type
     // 1. If type is null or an empty then throw an InvalidAccessError exception and
     // abort these steps.
     if (type.isNull() || type.isEmpty()) {
-        es.throwDOMException(InvalidAccessError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidAccessError);
         return 0;
     }
 
     // 2. If type contains a MIME type that is not supported ..., then throw a
     // NotSupportedError exception and abort these steps.
     if (!isTypeSupported(type)) {
-        es.throwDOMException(NotSupportedError);
+        exceptionState.throwUninformativeAndGenericDOMException(NotSupportedError);
         return 0;
     }
 
     // 4. If the readyState attribute is not in the "open" state then throw an
     // InvalidStateError exception and abort these steps.
     if (!isOpen()) {
-        es.throwDOMException(InvalidStateError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
         return 0;
     }
 
     // 5. Create a new SourceBuffer object and associated resources.
     ContentType contentType(type);
     Vector<String> codecs = contentType.codecs();
-    OwnPtr<SourceBufferPrivate> sourceBufferPrivate = createSourceBufferPrivate(contentType.type(), codecs, es);
+    OwnPtr<WebSourceBuffer> webSourceBuffer = createWebSourceBuffer(contentType.type(), codecs, exceptionState);
 
-    if (!sourceBufferPrivate) {
-        ASSERT(es.code() == NotSupportedError || es.code() == QuotaExceededError);
+    if (!webSourceBuffer) {
+        ASSERT(exceptionState.code() == NotSupportedError || exceptionState.code() == QuotaExceededError);
         // 2. If type contains a MIME type that is not supported ..., then throw a NotSupportedError exception and abort these steps.
         // 3. If the user agent can't handle any more SourceBuffer objects then throw a QuotaExceededError exception and abort these steps
         return 0;
     }
 
-    RefPtr<SourceBuffer> buffer = SourceBuffer::create(sourceBufferPrivate.release(), this, asyncEventQueue());
+    RefPtr<SourceBuffer> buffer = SourceBuffer::create(webSourceBuffer.release(), this, asyncEventQueue());
     // 6. Add the new object to sourceBuffers and fire a addsourcebuffer on that object.
     m_sourceBuffers->add(buffer);
     m_activeSourceBuffers->add(buffer);
@@ -114,23 +116,23 @@ SourceBuffer* MediaSource::addSourceBuffer(const String& type, ExceptionState& e
     return buffer.get();
 }
 
-void MediaSource::removeSourceBuffer(SourceBuffer* buffer, ExceptionState& es)
+void MediaSource::removeSourceBuffer(SourceBuffer* buffer, ExceptionState& exceptionState)
 {
-    LOG(Media, "MediaSource::removeSourceBuffer() %p", this);
+    WTF_LOG(Media, "MediaSource::removeSourceBuffer() %p", this);
     RefPtr<SourceBuffer> protect(buffer);
 
     // 2.2 https://dvcs.w3.org/hg/html-media/raw-file/default/media-source/media-source.html#widl-MediaSource-removeSourceBuffer-void-SourceBuffer-sourceBuffer
     // 1. If sourceBuffer is null then throw an InvalidAccessError exception and
     // abort these steps.
     if (!buffer) {
-        es.throwDOMException(InvalidAccessError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidAccessError);
         return;
     }
 
     // 2. If sourceBuffer specifies an object that is not in sourceBuffers then
     // throw a NotFoundError exception and abort these steps.
     if (!m_sourceBuffers->length() || !m_sourceBuffers->contains(buffer)) {
-        es.throwDOMException(NotFoundError);
+        exceptionState.throwUninformativeAndGenericDOMException(NotFoundError);
         return;
     }
 
@@ -154,12 +156,12 @@ void MediaSource::removeSourceBuffer(SourceBuffer* buffer, ExceptionState& es)
 void MediaSource::onReadyStateChange(const AtomicString& oldState, const AtomicString& newState)
 {
     if (isOpen()) {
-        scheduleEvent(eventNames().sourceopenEvent);
+        scheduleEvent(EventTypeNames::sourceopen);
         return;
     }
 
     if (oldState == openKeyword() && newState == endedKeyword()) {
-        scheduleEvent(eventNames().sourceendedEvent);
+        scheduleEvent(EventTypeNames::sourceended);
         return;
     }
 
@@ -172,7 +174,7 @@ void MediaSource::onReadyStateChange(const AtomicString& oldState, const AtomicS
         m_sourceBuffers->item(i)->removedFromMediaSource();
     m_sourceBuffers->clear();
 
-    scheduleEvent(eventNames().sourcecloseEvent);
+    scheduleEvent(EventTypeNames::sourceclose);
 }
 
 Vector<RefPtr<TimeRanges> > MediaSource::activeRanges() const
@@ -186,7 +188,7 @@ Vector<RefPtr<TimeRanges> > MediaSource::activeRanges() const
 
 bool MediaSource::isTypeSupported(const String& type)
 {
-    LOG(Media, "MediaSource::isTypeSupported(%s)", type.ascii().data());
+    WTF_LOG(Media, "MediaSource::isTypeSupported(%s)", type.ascii().data());
 
     // Section 2.2 isTypeSupported() method steps.
     // https://dvcs.w3.org/hg/html-media/raw-file/tip/media-source/media-source.html#widl-MediaSource-isTypeSupported-boolean-DOMString-type
@@ -210,7 +212,7 @@ bool MediaSource::isTypeSupported(const String& type)
 
 const AtomicString& MediaSource::interfaceName() const
 {
-    return eventNames().interfaceForMediaSource;
+    return EventTargetNames::MediaSource;
 }
 
 } // namespace WebCore

@@ -4,6 +4,7 @@
 
 #include "content/child/npapi/plugin_url_fetcher.h"
 
+#include "base/memory/scoped_ptr.h"
 #include "content/child/child_thread.h"
 #include "content/child/npapi/webplugin.h"
 #include "content/child/npapi/plugin_host.h"
@@ -31,15 +32,15 @@ namespace {
 // TODO(jam): this is similar to MultiPartResponseClient in webplugin_impl.cc,
 // we should remove that other class once we switch to loading from the plugin
 // process by default.
-class MultiPartResponseClient : public WebKit::WebURLLoaderClient {
+class MultiPartResponseClient : public blink::WebURLLoaderClient {
  public:
   explicit MultiPartResponseClient(PluginStreamUrl* plugin_stream)
       : byte_range_lower_bound_(0), plugin_stream_(plugin_stream) {}
 
-  // WebKit::WebURLLoaderClient implementation:
+  // blink::WebURLLoaderClient implementation:
   virtual void didReceiveResponse(
-      WebKit::WebURLLoader* loader,
-      const WebKit::WebURLResponse& response) OVERRIDE {
+      blink::WebURLLoader* loader,
+      const blink::WebURLResponse& response) OVERRIDE {
     int64 byte_range_upper_bound, instance_size;
     if (!webkit_glue::MultipartResponseDelegate::ReadContentRanges(
             response, &byte_range_lower_bound_, &byte_range_upper_bound,
@@ -47,15 +48,17 @@ class MultiPartResponseClient : public WebKit::WebURLLoaderClient {
       NOTREACHED();
     }
   }
-  virtual void didReceiveData(WebKit::WebURLLoader* loader,
+  virtual void didReceiveData(blink::WebURLLoader* loader,
                               const char* data,
                               int data_length,
                               int encoded_data_length) OVERRIDE {
     // TODO(ananta)
     // We should defer further loads on multipart resources on the same lines
     // as regular resources requested by plugins to prevent reentrancy.
-    plugin_stream_->DidReceiveData(data, data_length, byte_range_lower_bound_);
+    int64 data_offset = byte_range_lower_bound_;
     byte_range_lower_bound_ += data_length;
+    plugin_stream_->DidReceiveData(data, data_length, data_offset);
+    // DANGER: this instance may be deleted at this point.
   }
 
  private:
@@ -78,7 +81,8 @@ PluginURLFetcher::PluginURLFetcher(PluginStreamUrl* plugin_stream,
                                    bool is_plugin_src_load,
                                    int origin_pid,
                                    int render_view_id,
-                                   unsigned long resource_id)
+                                   unsigned long resource_id,
+                                   bool copy_stream_data)
     : plugin_stream_(plugin_stream),
       url_(url),
       first_party_for_cookies_(first_party_for_cookies),
@@ -87,7 +91,9 @@ PluginURLFetcher::PluginURLFetcher(PluginStreamUrl* plugin_stream,
       notify_redirects_(notify_redirects),
       is_plugin_src_load_(is_plugin_src_load),
       resource_id_(resource_id),
-      data_offset_(0) {
+      copy_stream_data_(copy_stream_data),
+      data_offset_(0),
+      pending_failure_notification_(false) {
   webkit_glue::ResourceLoaderBridge::RequestInfo request_info;
   request_info.method = method;
   request_info.url = url;
@@ -142,7 +148,7 @@ void PluginURLFetcher::Cancel() {
 
 void PluginURLFetcher::URLRedirectResponse(bool allow) {
   if (allow) {
-    bridge_->SetDefersLoading(true);
+    bridge_->SetDefersLoading(false);
   } else {
     bridge_->Cancel();
     plugin_stream_->DidFail(resource_id_);  // That will delete |this|.
@@ -210,7 +216,7 @@ void PluginURLFetcher::OnReceivedResponse(
   if (plugin_stream_->seekable()) {
     int response_code = info.headers->response_code();
     if (response_code == 206) {
-      WebKit::WebURLResponse response;
+      blink::WebURLResponse response;
       response.initialize();
       webkit_glue::WebURLLoaderImpl::PopulateURLResponse(url_, info, &response);
 
@@ -255,7 +261,8 @@ void PluginURLFetcher::OnReceivedResponse(
       last_modified = static_cast<uint32>(temp.ToDoubleT());
 
      // TODO(darin): Shouldn't we also report HTTP version numbers?
-    headers = base::StringPrintf("HTTP %d ", info.headers->response_code());
+    int response_code = info.headers->response_code();
+    headers = base::StringPrintf("HTTP %d ", response_code);
     headers += info.headers->GetStatusText();
     headers += "\n";
 
@@ -265,6 +272,16 @@ void PluginURLFetcher::OnReceivedResponse(
       // TODO(darin): Should we really exclude headers with an empty value?
       if (!name.empty() && !value.empty())
         headers += name + ": " + value + "\n";
+    }
+
+    // Bug http://b/issue?id=925559. The flash plugin would not handle the HTTP
+    // error codes in the stream header and as a result, was unaware of the fate
+    // of the HTTP requests issued via NPN_GetURLNotify. Webkit and FF destroy
+    // the stream and invoke the NPP_DestroyStream function on the plugin if the
+    // HTTPrequest fails.
+    if ((url_.SchemeIs("http") || url_.SchemeIs("https")) &&
+        (response_code < 100 || response_code >= 400)) {
+      pending_failure_notification_ = true;
     }
   }
 
@@ -285,8 +302,20 @@ void PluginURLFetcher::OnReceivedData(const char* data,
   if (multipart_delegate_) {
     multipart_delegate_->OnReceivedData(data, data_length, encoded_data_length);
   } else {
-    plugin_stream_->DidReceiveData(data, data_length, data_offset_);
+    int64 offset = data_offset_;
     data_offset_ += data_length;
+
+    if (copy_stream_data_) {
+      // QuickTime writes to this memory, and since we got it from
+      // ResourceDispatcher it's not mapped for write access in this process.
+      // http://crbug.com/308466.
+      scoped_ptr<char[]> data_copy(new char[data_length]);
+      memcpy(data_copy.get(), data, data_length);
+      plugin_stream_->DidReceiveData(data_copy.get(), data_length, offset);
+    } else {
+      plugin_stream_->DidReceiveData(data, data_length, offset);
+    }
+    // DANGER: this instance may be deleted at this point.
   }
 }
 

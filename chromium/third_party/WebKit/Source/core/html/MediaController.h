@@ -27,10 +27,10 @@
 #define MediaController_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/dom/Event.h"
-#include "core/dom/EventTarget.h"
+#include "core/events/Event.h"
+#include "core/events/EventTarget.h"
 #include "core/html/MediaControllerInterface.h"
-#include "core/platform/Timer.h"
+#include "platform/Timer.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
@@ -41,11 +41,12 @@ class Clock;
 class Event;
 class ExceptionState;
 class HTMLMediaElement;
-class ScriptExecutionContext;
+class ExecutionContext;
 
-class MediaController : public RefCounted<MediaController>, public ScriptWrappable, public MediaControllerInterface, public EventTarget {
+class MediaController : public RefCounted<MediaController>, public ScriptWrappable, public MediaControllerInterface, public EventTargetWithInlineData {
+    REFCOUNTED_EVENT_TARGET(MediaController);
 public:
-    static PassRefPtr<MediaController> create(ScriptExecutionContext*);
+    static PassRefPtr<MediaController> create(ExecutionContext*);
     virtual ~MediaController();
 
     void addMediaElement(HTMLMediaElement*);
@@ -103,12 +104,10 @@ public:
 
     bool isBlocked() const;
 
-    // EventTarget
-    using RefCounted<MediaController>::ref;
-    using RefCounted<MediaController>::deref;
+    void clearExecutionContext() { m_executionContext = 0; }
 
 private:
-    MediaController(ScriptExecutionContext*);
+    MediaController(ExecutionContext*);
     void reportControllerState();
     void updateReadyState();
     void updatePlaybackState();
@@ -123,13 +122,8 @@ private:
     void startTimeupdateTimer();
 
     // EventTarget
-    virtual void refEventTarget() { ref(); }
-    virtual void derefEventTarget() { deref(); }
-    virtual const AtomicString& interfaceName() const;
-    virtual ScriptExecutionContext* scriptExecutionContext() const { return m_scriptExecutionContext; };
-    virtual EventTargetData* eventTargetData() { return &m_eventTargetData; }
-    virtual EventTargetData* ensureEventTargetData() { return &m_eventTargetData; }
-    EventTargetData m_eventTargetData;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE { return m_executionContext; }
 
     friend class HTMLMediaElement;
     friend class MediaControllerEventListener;
@@ -146,8 +140,8 @@ private:
     mutable Timer<MediaController> m_clearPositionTimer;
     String m_mediaGroup;
     bool m_closedCaptionsVisible;
-    PassRefPtr<Clock> m_clock;
-    ScriptExecutionContext* m_scriptExecutionContext;
+    OwnPtr<Clock> m_clock;
+    ExecutionContext* m_executionContext;
     Timer<MediaController> m_timeupdateTimer;
     double m_previousTimeupdateTime;
 };

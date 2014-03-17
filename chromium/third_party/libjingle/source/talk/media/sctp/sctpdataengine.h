@@ -56,7 +56,7 @@ struct socket;
 namespace cricket {
 // The highest stream ID (Sid) that SCTP allows, and the number of streams we
 // tell SCTP we're going to use.
-const uint32 kMaxSctpSid = USHRT_MAX;
+const uint32 kMaxSctpSid = 1023;
 
 // A DataEngine that interacts with usrsctp.
 //
@@ -149,7 +149,8 @@ class SctpDataMediaChannel : public DataMediaChannel,
                         const talk_base::Buffer& payload,
                         SendDataResult* result = NULL);
   // A packet is received from the network interface. Posted to OnMessage.
-  virtual void OnPacketReceived(talk_base::Buffer* packet);
+  virtual void OnPacketReceived(talk_base::Buffer* packet,
+                                const talk_base::PacketTime& packet_time);
 
   // Exposed to allow Post call from c-callbacks.
   talk_base::Thread* worker_thread() const { return worker_thread_; }
@@ -168,13 +169,10 @@ class SctpDataMediaChannel : public DataMediaChannel,
       const std::vector<RtpHeaderExtension>& extensions) { return true; }
   virtual bool SetSendRtpHeaderExtensions(
       const std::vector<RtpHeaderExtension>& extensions) { return true; }
-  virtual bool SetSendCodecs(const std::vector<DataCodec>& codecs) {
-    return true;
-  }
-  virtual bool SetRecvCodecs(const std::vector<DataCodec>& codecs) {
-    return true;
-  }
-  virtual void OnRtcpReceived(talk_base::Buffer* packet) {}
+  virtual bool SetSendCodecs(const std::vector<DataCodec>& codecs);
+  virtual bool SetRecvCodecs(const std::vector<DataCodec>& codecs);
+  virtual void OnRtcpReceived(talk_base::Buffer* packet,
+                              const talk_base::PacketTime& packet_time) {}
   virtual void OnReadyToSend(bool ready) {}
 
   // Helper for debugging.
@@ -211,7 +209,8 @@ class SctpDataMediaChannel : public DataMediaChannel,
   talk_base::Thread* worker_thread_;
   // The local and remote SCTP port to use. These are passed along the wire
   // and the listener and connector must be using the same port. It is not
-  // related to the ports at the IP level.
+  // related to the ports at the IP level.  If set to -1, we default to
+  // kSctpDefaultPort.
   int local_port_;
   int remote_port_;
   struct socket* sock_;  // The socket created by usrsctp_socket(...).

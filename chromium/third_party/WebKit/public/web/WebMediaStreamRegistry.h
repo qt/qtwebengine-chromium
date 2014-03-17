@@ -33,16 +33,16 @@
 
 #include "../platform/WebString.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebMediaStream;
 class WebURL;
 
 class WebMediaStreamRegistry {
 public:
-    WEBKIT_EXPORT static WebMediaStream lookupMediaStreamDescriptor(const WebURL&);
+    BLINK_EXPORT static WebMediaStream lookupMediaStreamDescriptor(const WebURL&);
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebMediaStreamRegistry_h

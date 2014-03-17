@@ -28,26 +28,26 @@
 #include "core/page/CreateWindow.h"
 
 #include "core/dom/Document.h"
+#include "core/frame/Frame.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
-#include "core/page/Frame.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
+#include "core/frame/Settings.h"
 #include "core/page/WindowFeatures.h"
-#include "core/platform/network/ResourceRequest.h"
-#include "weborigin/KURL.h"
-#include "weborigin/SecurityOrigin.h"
-#include "weborigin/SecurityPolicy.h"
+#include "platform/network/ResourceRequest.h"
+#include "platform/weborigin/KURL.h"
+#include "platform/weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityPolicy.h"
 
 namespace WebCore {
 
-static Frame* createWindow(Frame* openerFrame, Frame* lookupFrame, const FrameLoadRequest& request, const WindowFeatures& features, bool& created)
+static Frame* createWindow(Frame* openerFrame, Frame* lookupFrame, const FrameLoadRequest& request, const WindowFeatures& features, NavigationPolicy policy, ShouldSendReferrer shouldSendReferrer, bool& created)
 {
     ASSERT(!features.dialog || request.frameName().isEmpty());
 
-    if (!request.frameName().isEmpty() && request.frameName() != "_blank") {
-        if (Frame* frame = lookupFrame->loader()->findFrameForNavigation(request.frameName(), openerFrame->document())) {
+    if (!request.frameName().isEmpty() && request.frameName() != "_blank" && policy == NavigationPolicyIgnore) {
+        if (Frame* frame = lookupFrame->loader().findFrameForNavigation(request.frameName(), openerFrame->document())) {
             if (request.frameName() != "_self") {
                 if (Page* page = frame->page())
                     page->chrome().focus();
@@ -66,23 +66,23 @@ static Frame* createWindow(Frame* openerFrame, Frame* lookupFrame, const FrameLo
 
     if (openerFrame->settings() && !openerFrame->settings()->supportsMultipleWindows()) {
         created = false;
-        return openerFrame->tree()->top();
+        return openerFrame->tree().top();
     }
 
     Page* oldPage = openerFrame->page();
     if (!oldPage)
         return 0;
 
-    Page* page = oldPage->chrome().client().createWindow(openerFrame, request, features);
+    Page* page = oldPage->chrome().client().createWindow(openerFrame, request, features, policy, shouldSendReferrer);
     if (!page)
         return 0;
 
     Frame* frame = page->mainFrame();
 
-    frame->loader()->forceSandboxFlags(openerFrame->document()->sandboxFlags());
+    frame->loader().forceSandboxFlags(openerFrame->document()->sandboxFlags());
 
     if (request.frameName() != "_blank")
-        frame->tree()->setName(request.frameName());
+        frame->tree().setName(request.frameName());
 
     page->chrome().setWindowFeatures(features);
 
@@ -106,7 +106,7 @@ static Frame* createWindow(Frame* openerFrame, Frame* lookupFrame, const FrameLo
     FloatRect newWindowRect = DOMWindow::adjustWindowRect(page, windowRect);
 
     page->chrome().setWindowRect(newWindowRect);
-    page->chrome().show();
+    page->chrome().show(policy);
 
     created = true;
     return frame;
@@ -125,20 +125,20 @@ Frame* createWindow(const String& urlString, const AtomicString& frameName, cons
     }
 
     // For whatever reason, Firefox uses the first frame to determine the outgoingReferrer. We replicate that behavior here.
-    String referrer = SecurityPolicy::generateReferrerHeader(firstFrame->document()->referrerPolicy(), completedURL, firstFrame->loader()->outgoingReferrer());
+    String referrer = SecurityPolicy::generateReferrerHeader(firstFrame->document()->referrerPolicy(), completedURL, firstFrame->document()->outgoingReferrer());
 
     ResourceRequest request(completedURL, referrer);
-    FrameLoader::addHTTPOriginIfNeeded(request, firstFrame->loader()->outgoingOrigin());
-    FrameLoadRequest frameRequest(activeWindow->document()->securityOrigin(), request, frameName);
+    FrameLoader::addHTTPOriginIfNeeded(request, firstFrame->document()->outgoingOrigin());
+    FrameLoadRequest frameRequest(activeWindow->document(), request, frameName);
 
     // We pass the opener frame for the lookupFrame in case the active frame is different from
     // the opener frame, and the name references a frame relative to the opener frame.
     bool created;
-    Frame* newFrame = createWindow(activeFrame, openerFrame, frameRequest, windowFeatures, created);
+    Frame* newFrame = createWindow(activeFrame, openerFrame, frameRequest, windowFeatures, NavigationPolicyIgnore, MaybeSendReferrer, created);
     if (!newFrame)
         return 0;
 
-    newFrame->loader()->setOpener(openerFrame);
+    newFrame->loader().setOpener(openerFrame);
     newFrame->page()->setOpenedByDOM();
 
     if (newFrame->domWindow()->isInsecureScriptAccess(activeWindow, completedURL))
@@ -148,12 +148,41 @@ Frame* createWindow(const String& urlString, const AtomicString& frameName, cons
         function(newFrame->domWindow(), functionContext);
 
     if (created) {
-        FrameLoadRequest request(activeWindow->document()->securityOrigin(), ResourceRequest(completedURL, referrer));
-        newFrame->loader()->load(request);
+        FrameLoadRequest request(activeWindow->document(), ResourceRequest(completedURL, referrer));
+        newFrame->loader().load(request);
     } else if (!urlString.isEmpty()) {
-        newFrame->navigationScheduler()->scheduleLocationChange(activeWindow->document()->securityOrigin(), completedURL.string(), referrer, false);
+        newFrame->navigationScheduler().scheduleLocationChange(activeWindow->document(), completedURL.string(), referrer, false);
     }
     return newFrame;
+}
+
+void createWindowForRequest(const FrameLoadRequest& request, Frame* openerFrame, NavigationPolicy policy, ShouldSendReferrer shouldSendReferrer)
+{
+    if (openerFrame->document()->pageDismissalEventBeingDispatched() != Document::NoDismissal)
+        return;
+
+    if (openerFrame->document() && openerFrame->document()->isSandboxed(SandboxPopups))
+        return;
+
+    if (!DOMWindow::allowPopUp(openerFrame))
+        return;
+
+    if (policy == NavigationPolicyCurrentTab)
+        policy = NavigationPolicyNewForegroundTab;
+
+    WindowFeatures features;
+    bool created;
+    Frame* newFrame = createWindow(openerFrame, openerFrame, request, features, policy, shouldSendReferrer, created);
+    if (!newFrame)
+        return;
+    newFrame->page()->setOpenedByDOM();
+    if (shouldSendReferrer == MaybeSendReferrer) {
+        newFrame->loader().setOpener(openerFrame);
+        newFrame->document()->setReferrerPolicy(openerFrame->document()->referrerPolicy());
+    }
+    FrameLoadRequest newRequest(0, request.resourceRequest());
+    newRequest.setFormState(request.formState());
+    newFrame->loader().load(newRequest);
 }
 
 } // namespace WebCore

@@ -11,15 +11,15 @@ Index: source/common/stringpiece.cpp
  const int32_t StringPiece::npos;
  #endif
 
-Index: public/common/unicode/pwin32.h
+Index: source/common/unicode/pwin32.h
 ===================================================================
---- public/common/unicode/pwin32.h      (revision 158118)
-+++ public/common/unicode/pwin32.h      (working copy)
+--- source/common/unicode/pwin32.h      (revision 158118)
++++ source/common/unicode/pwin32.h      (working copy)
 @@ -26,6 +26,10 @@
  #define U_WINDOWS
  #endif
 
-+#if _MSC_VER >= 1700
++#if _MSC_VER >= 1600
 +#include <stdint.h>
 +#endif
 +

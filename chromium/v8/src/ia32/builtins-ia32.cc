@@ -539,10 +539,12 @@ static void GenerateMakeCodeYoungAgainCommon(MacroAssembler* masm) {
   __ mov(eax, Operand(esp, 8 * kPointerSize));
   {
     FrameScope scope(masm, StackFrame::MANUAL);
-    __ PrepareCallCFunction(1, ebx);
+    __ PrepareCallCFunction(2, ebx);
+    __ mov(Operand(esp, 1 * kPointerSize),
+           Immediate(ExternalReference::isolate_address(masm->isolate())));
     __ mov(Operand(esp, 0), eax);
     __ CallCFunction(
-        ExternalReference::get_make_code_young_function(masm->isolate()), 1);
+        ExternalReference::get_make_code_young_function(masm->isolate()), 2);
   }
   __ popad();
   __ ret(0);
@@ -561,7 +563,46 @@ CODE_AGE_LIST(DEFINE_CODE_AGE_BUILTIN_GENERATOR)
 #undef DEFINE_CODE_AGE_BUILTIN_GENERATOR
 
 
-void Builtins::Generate_NotifyStubFailure(MacroAssembler* masm) {
+void Builtins::Generate_MarkCodeAsExecutedOnce(MacroAssembler* masm) {
+  // For now, as in GenerateMakeCodeYoungAgainCommon, we are relying on the fact
+  // that make_code_young doesn't do any garbage collection which allows us to
+  // save/restore the registers without worrying about which of them contain
+  // pointers.
+  __ pushad();
+  __ mov(eax, Operand(esp, 8 * kPointerSize));
+  __ sub(eax, Immediate(Assembler::kCallInstructionLength));
+  {  // NOLINT
+    FrameScope scope(masm, StackFrame::MANUAL);
+    __ PrepareCallCFunction(2, ebx);
+    __ mov(Operand(esp, 1 * kPointerSize),
+           Immediate(ExternalReference::isolate_address(masm->isolate())));
+    __ mov(Operand(esp, 0), eax);
+    __ CallCFunction(
+        ExternalReference::get_mark_code_as_executed_function(masm->isolate()),
+        2);
+  }
+  __ popad();
+
+  // Perform prologue operations usually performed by the young code stub.
+  __ pop(eax);   // Pop return address into scratch register.
+  __ push(ebp);  // Caller's frame pointer.
+  __ mov(ebp, esp);
+  __ push(esi);  // Callee's context.
+  __ push(edi);  // Callee's JS Function.
+  __ push(eax);  // Push return address after frame prologue.
+
+  // Jump to point after the code-age stub.
+  __ ret(0);
+}
+
+
+void Builtins::Generate_MarkCodeAsExecutedTwice(MacroAssembler* masm) {
+  GenerateMakeCodeYoungAgainCommon(masm);
+}
+
+
+static void Generate_NotifyStubFailureHelper(MacroAssembler* masm,
+                                             SaveFPRegsMode save_doubles) {
   // Enter an internal frame.
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
@@ -570,13 +611,28 @@ void Builtins::Generate_NotifyStubFailure(MacroAssembler* masm) {
     // stubs that tail call the runtime on deopts passing their parameters in
     // registers.
     __ pushad();
-    __ CallRuntime(Runtime::kNotifyStubFailure, 0);
+    __ CallRuntime(Runtime::kNotifyStubFailure, 0, save_doubles);
     __ popad();
     // Tear down internal frame.
   }
 
   __ pop(MemOperand(esp, 0));  // Ignore state offset
   __ ret(0);  // Return to IC Miss stub, continuation still on stack.
+}
+
+
+void Builtins::Generate_NotifyStubFailure(MacroAssembler* masm) {
+  Generate_NotifyStubFailureHelper(masm, kDontSaveFPRegs);
+}
+
+
+void Builtins::Generate_NotifyStubFailureSaveDoubles(MacroAssembler* masm) {
+  if (Serializer::enabled()) {
+    PlatformFeatureScope sse2(SSE2);
+    Generate_NotifyStubFailureHelper(masm, kSaveFPRegs);
+  } else {
+    Generate_NotifyStubFailureHelper(masm, kSaveFPRegs);
+  }
 }
 
 
@@ -625,25 +681,6 @@ void Builtins::Generate_NotifySoftDeoptimized(MacroAssembler* masm) {
 
 void Builtins::Generate_NotifyLazyDeoptimized(MacroAssembler* masm) {
   Generate_NotifyDeoptimizedHelper(masm, Deoptimizer::LAZY);
-}
-
-
-void Builtins::Generate_NotifyOSR(MacroAssembler* masm) {
-  // TODO(kasperl): Do we need to save/restore the XMM registers too?
-  // TODO(mvstanton): We should save these regs, do this in a future
-  // checkin.
-
-  // For now, we are relying on the fact that Runtime::NotifyOSR
-  // doesn't do any garbage collection which allows us to save/restore
-  // the registers without worrying about which of them contain
-  // pointers. This seems a bit fragile.
-  __ pushad();
-  {
-    FrameScope scope(masm, StackFrame::INTERNAL);
-    __ CallRuntime(Runtime::kNotifyOSR, 0);
-  }
-  __ popad();
-  __ ret(0);
 }
 
 
@@ -1063,13 +1100,11 @@ void Builtins::Generate_StringConstructCode(MacroAssembler* masm) {
 
   // Lookup the argument in the number to string cache.
   Label not_cached, argument_is_string;
-  NumberToStringStub::GenerateLookupNumberStringCache(
-      masm,
-      eax,  // Input.
-      ebx,  // Result.
-      ecx,  // Scratch 1.
-      edx,  // Scratch 2.
-      &not_cached);
+  __ LookupNumberStringCache(eax,  // Input.
+                             ebx,  // Result.
+                             ecx,  // Scratch 1.
+                             edx,  // Scratch 2.
+                             &not_cached);
   __ IncrementCounter(counters->string_ctor_cached_number(), 1);
   __ bind(&argument_is_string);
   // ----------- S t a t e -------------
@@ -1325,6 +1360,24 @@ void Builtins::Generate_OnStackReplacement(MacroAssembler* masm) {
   __ ret(0);
 }
 
+
+void Builtins::Generate_OsrAfterStackCheck(MacroAssembler* masm) {
+  // We check the stack limit as indicator that recompilation might be done.
+  Label ok;
+  ExternalReference stack_limit =
+      ExternalReference::address_of_stack_limit(masm->isolate());
+  __ cmp(esp, Operand::StaticVariable(stack_limit));
+  __ j(above_equal, &ok, Label::kNear);
+  {
+    FrameScope scope(masm, StackFrame::INTERNAL);
+    __ CallRuntime(Runtime::kStackGuard, 0);
+  }
+  __ jmp(masm->isolate()->builtins()->OnStackReplacement(),
+         RelocInfo::CODE_TARGET);
+
+  __ bind(&ok);
+  __ ret(0);
+}
 
 #undef __
 }

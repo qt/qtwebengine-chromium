@@ -28,8 +28,6 @@ class SingleThreadTaskRunner;
 
 namespace syncer {
 
-// TODO(akalin): Generalize the interface so it can use any Invalidator.
-// (http://crbug.com/140409).
 class SYNC_EXPORT_PRIVATE NonBlockingInvalidator
     : public Invalidator,
       // InvalidationHandler to "observe" our Core via WeakHandle.
@@ -39,7 +37,7 @@ class SYNC_EXPORT_PRIVATE NonBlockingInvalidator
   NonBlockingInvalidator(
       const notifier::NotifierOptions& notifier_options,
       const std::string& invalidator_client_id,
-      const InvalidationStateMap& initial_invalidation_state_map,
+      const UnackedInvalidationsMap& saved_invalidations,
       const std::string& invalidation_bootstrap_data,
       const WeakHandle<InvalidationStateTracker>&
           invalidation_state_tracker,
@@ -52,8 +50,6 @@ class SYNC_EXPORT_PRIVATE NonBlockingInvalidator
   virtual void UpdateRegisteredIds(InvalidationHandler* handler,
                                    const ObjectIdSet& ids) OVERRIDE;
   virtual void UnregisterHandler(InvalidationHandler* handler) OVERRIDE;
-  virtual void Acknowledge(const invalidation::ObjectId& id,
-                           const AckHandle& ack_handle) OVERRIDE;
   virtual InvalidatorState GetInvalidatorState() const OVERRIDE;
   virtual void UpdateCredentials(
       const std::string& email, const std::string& token) OVERRIDE;
@@ -66,8 +62,6 @@ class SYNC_EXPORT_PRIVATE NonBlockingInvalidator
  private:
   class Core;
 
-  base::WeakPtrFactory<NonBlockingInvalidator> weak_ptr_factory_;
-
   InvalidatorRegistrar registrar_;
 
   // The real guts of NonBlockingInvalidator, which allows this class to live
@@ -75,6 +69,8 @@ class SYNC_EXPORT_PRIVATE NonBlockingInvalidator
   scoped_refptr<Core> core_;
   scoped_refptr<base::SingleThreadTaskRunner> parent_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> network_task_runner_;
+
+  base::WeakPtrFactory<NonBlockingInvalidator> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(NonBlockingInvalidator);
 };

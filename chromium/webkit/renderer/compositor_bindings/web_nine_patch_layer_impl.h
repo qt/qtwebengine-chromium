@@ -14,14 +14,21 @@ namespace webkit {
 
 class WebLayerImpl;
 
-class WebNinePatchLayerImpl : public WebKit::WebNinePatchLayer {
+class WebNinePatchLayerImpl : public blink::WebNinePatchLayer {
  public:
   WEBKIT_COMPOSITOR_BINDINGS_EXPORT WebNinePatchLayerImpl();
   virtual ~WebNinePatchLayerImpl();
 
-  // WebKit::WebNinePatchLayer implementation.
-  virtual WebKit::WebLayer* layer();
-  virtual void setBitmap(SkBitmap, const WebKit::WebRect& aperture);
+  // blink::WebNinePatchLayer implementation.
+  virtual blink::WebLayer* layer();
+
+  // TODO(ccameron): Remove setBitmap(SkBitmap, blink::WebRect) in favor of
+  // setBitmap(), setAperture(), and setBorder();
+  virtual void setBitmap(SkBitmap bitmap, const blink::WebRect& aperture);
+  virtual void setBitmap(SkBitmap bitmap);
+  virtual void setAperture(const blink::WebRect& aperture);
+  virtual void setBorder(const blink::WebRect& border);
+  virtual void setFillCenter(bool fill_center);
 
  private:
   scoped_ptr<WebLayerImpl> layer_;

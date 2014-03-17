@@ -5,11 +5,14 @@
 #ifndef WEBKIT_BROWSER_FILEAPI_ASYNC_FILE_UTIL_H_
 #define WEBKIT_BROWSER_FILEAPI_ASYNC_FILE_UTIL_H_
 
+#include <vector>
+
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
 #include "base/files/file_util_proxy.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
+#include "webkit/browser/fileapi/file_system_operation.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
 #include "webkit/common/fileapi/directory_entry.h"
 
@@ -73,11 +76,13 @@ class AsyncFileUtil {
       void(base::PlatformFileError result,
            const base::PlatformFileInfo& file_info,
            const base::FilePath& platform_path,
-           const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref
-           )> CreateSnapshotFileCallback;
+           const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref)>
+      CreateSnapshotFileCallback;
 
 
   typedef base::Callback<void(int64 size)> CopyFileProgressCallback;
+
+  typedef FileSystemOperation::CopyOrMoveOption CopyOrMoveOption;
 
   // Creates an AsyncFileUtil instance which performs file operations on
   // local native file system. The created instance assumes
@@ -94,7 +99,7 @@ class AsyncFileUtil {
   // PLATFORM_FILE_ERROR_FILE_EXISTS if the |url| already exists.
   //
   // FileSystemOperationImpl::OpenFile calls this.
-  // This is used only by Pepper/NaCL File API.
+  // This is used only by Pepper/NaCl File API.
   //
   virtual void CreateOrOpen(
       scoped_ptr<FileSystemOperationContext> context,
@@ -180,7 +185,7 @@ class AsyncFileUtil {
   // create a file unlike 'touch' command on Linux.
   //
   // FileSystemOperationImpl::TouchFile calls this.
-  // This is used only by Pepper/NaCL File API.
+  // This is used only by Pepper/NaCl File API.
   //
   virtual void Touch(
       scoped_ptr<FileSystemOperationContext> context,
@@ -229,6 +234,7 @@ class AsyncFileUtil {
       scoped_ptr<FileSystemOperationContext> context,
       const FileSystemURL& src_url,
       const FileSystemURL& dest_url,
+      CopyOrMoveOption option,
       const CopyFileProgressCallback& progress_callback,
       const StatusCallback& callback) = 0;
 
@@ -251,6 +257,7 @@ class AsyncFileUtil {
       scoped_ptr<FileSystemOperationContext> context,
       const FileSystemURL& src_url,
       const FileSystemURL& dest_url,
+      CopyOrMoveOption option,
       const StatusCallback& callback) = 0;
 
   // Copies in a single file from a different filesystem.

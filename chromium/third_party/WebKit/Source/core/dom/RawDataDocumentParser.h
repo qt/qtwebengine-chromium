@@ -45,17 +45,14 @@ protected:
     }
 
 private:
-    virtual size_t flush() OVERRIDE
+    virtual void flush() OVERRIDE
     {
         // Make sure appendBytes is called at least once.
         appendBytes(0, 0);
-        return 0;
     }
 
     virtual void insert(const SegmentedString&)
     {
-        // <https://bugs.webkit.org/show_bug.cgi?id=25397>: JS code can always call document.write, we need to handle it.
-        ASSERT_NOT_REACHED();
     }
 
     virtual void append(PassRefPtr<StringImpl>)

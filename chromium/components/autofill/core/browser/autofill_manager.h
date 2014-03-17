@@ -102,9 +102,6 @@ class AutofillManager : public AutofillDownloadManager::Observer {
   void RemoveAutocompleteEntry(const base::string16& name,
                                const base::string16& value);
 
-  // Returns the present web_contents state.
-  content::WebContents* GetWebContents() const;
-
   // Returns the present form structures seen by Autofill manager.
   const std::vector<FormStructure*>& GetFormStructures();
 
@@ -153,10 +150,6 @@ class AutofillManager : public AutofillDownloadManager::Observer {
   void OnSetDataList(const std::vector<base::string16>& values,
                      const std::vector<base::string16>& labels);
 
-  // Requests an interactive autocomplete UI be shown.
-  void OnRequestAutocomplete(const FormData& form,
-                             const GURL& frame_url);
-
   // Try and upload |form|. This differs from OnFormSubmitted() in a few ways.
   //   - This function will only label the first <input type="password"> field
   //     as ACCOUNT_CREATION_PASSWORD. Other fields will stay unlabeled, as they
@@ -170,14 +163,14 @@ class AutofillManager : public AutofillDownloadManager::Observer {
   // Resets cache.
   virtual void Reset();
 
+  // Returns the value of the AutofillEnabled pref.
+  virtual bool IsAutofillEnabled() const;
+
  protected:
   // Test code should prefer to use this constructor.
   AutofillManager(AutofillDriver* driver,
                   autofill::AutofillManagerDelegate* delegate,
                   PersonalDataManager* personal_data);
-
-  // Returns the value of the AutofillEnabled pref.
-  virtual bool IsAutofillEnabled() const;
 
   // Uploads the form data to the Autofill server.
   virtual void UploadFormData(const FormStructure& submitted_form);
@@ -213,28 +206,13 @@ class AutofillManager : public AutofillDownloadManager::Observer {
     return external_delegate_;
   }
 
-  // Causes the dialog for request autocomplete feature to be shown.
-  virtual void ShowRequestAutocompleteDialog(
-      const FormData& form,
-      const GURL& source_url,
-      const base::Callback<void(const FormStructure*)>& callback);
-
-  // Tell the renderer the current interactive autocomplete finished.
-  virtual void ReturnAutocompleteResult(
-      WebKit::WebFormElement::AutocompleteResult result,
-      const FormData& form_data);
-
  private:
   // AutofillDownloadManager::Observer:
   virtual void OnLoadedServerPredictions(
       const std::string& response_xml) OVERRIDE;
 
-  // Passes return data for an OnRequestAutocomplete call back to the page.
-  void ReturnAutocompleteData(const FormStructure* result);
-
-  // Fills |host| with the RenderViewHost for this tab.
-  // Returns false if Autofill is disabled or if the host is unavailable.
-  bool GetHost(content::RenderViewHost** host) const WARN_UNUSED_RESULT;
+  // Returns false if Autofill is disabled or if no Autofill data is available.
+  bool RefreshDataModels() const;
 
   // Unpacks |unique_id| and fills |form_group| and |variant| with the
   // appropriate data source and variant index.  Returns false if the unpacked

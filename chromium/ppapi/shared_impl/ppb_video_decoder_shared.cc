@@ -96,15 +96,13 @@ void PPB_VideoDecoder_Shared::RunBitstreamBufferCallback(
 }
 
 void PPB_VideoDecoder_Shared::FlushCommandBuffer() {
-  if (gles2_impl_) {
-    // To call Flush() we have to tell Graphics3D that we hold the proxy lock.
-    thunk::EnterResource<thunk::PPB_Graphics3D_API, false> enter_g3d(
-        graphics_context_, false);
-    DCHECK(enter_g3d.succeeded());
-    PPB_Graphics3D_Shared* graphics3d =
-        static_cast<PPB_Graphics3D_Shared*>(enter_g3d.object());
-    PPB_Graphics3D_Shared::ScopedNoLocking dont_lock(graphics3d);
-    gles2_impl_->Flush();
+  // Ensure that graphics_context is still live before using gles2_impl_.
+  // Our "plugin reference" is not enough to keep graphics_context alive if
+  // DidDeleteInstance() has been called.
+  if (PpapiGlobals::Get()->GetResourceTracker()->GetResource(
+          graphics_context_)) {
+    if (gles2_impl_)
+      gles2_impl_->Flush();
   }
 }
 

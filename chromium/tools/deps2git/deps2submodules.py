@@ -60,8 +60,9 @@ def CollateDeps(deps_content):
 def WriteGitmodules(submods, gitless=False, rewrite_rules=None):
   """
   Take the output of CollateDeps, use it to write a .gitmodules file and
-  add submodules to the git index.
+  return a map of submodule name -> sha1 to be added to the git index.
   """
+  adds = {}
   if not rewrite_rules:
     rewrite_rules = []
   def _rewrite(url):
@@ -96,12 +97,11 @@ def WriteGitmodules(submods, gitless=False, rewrite_rules=None):
       sub = subprocess.Popen(['git', 'rev-list', 'origin/HEAD^!'],
                              cwd=submod, stdout=subprocess.PIPE)
       submod_sha1 = sub.communicate()[0].rstrip()
-    subprocess.check_call(['git', 'update-index', '--add',
-                           '--cacheinfo', '160000', submod_sha1, submod])
+    adds[submod] = submod_sha1
   fh.close()
-  if gitless:
-    return
-  subprocess.check_call(['git', 'add', '.gitmodules'])
+  if not gitless:
+    subprocess.check_call(['git', 'add', '.gitmodules'])
+  return adds
 
 
 def RemoveObsoleteSubmodules():
@@ -119,7 +119,7 @@ def RemoveObsoleteSubmodules():
     for line in grep_out.splitlines():
       [_, _, _, path] = line.split()
       cmd = ['git', 'config', '-f', '.gitmodules',
-             '--get-regexp', 'submodule\..*\.path', path]
+             '--get-regexp', 'submodule\..*\.path', '^%s$' % path]
       try:
         subprocess.check_call(cmd, stdout=nullpipe)
       except subprocess.CalledProcessError:
@@ -154,10 +154,13 @@ def main():
   if not os.path.exists(deps_file) and os.path.exists(hack_deps_file):
     deps_file = hack_deps_file
         
-  WriteGitmodules(SanitizeDeps(CollateDeps(GetDepsContent(deps_file))),
+  adds = WriteGitmodules(SanitizeDeps(CollateDeps(GetDepsContent(deps_file))),
                   rewrite_rules=rewrite_rules, gitless=options.gitless)
   if not options.gitless:
     RemoveObsoleteSubmodules()
+    for submod_path, submod_sha1 in adds.iteritems():
+      subprocess.check_call(['git', 'update-index', '--add',
+                             '--cacheinfo', '160000', submod_sha1, submod_path])
   return 0
 
 

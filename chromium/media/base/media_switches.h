@@ -16,19 +16,16 @@ MEDIA_EXPORT extern const char kAudioBufferSize[];
 
 MEDIA_EXPORT extern const char kEnableEac3Playback[];
 
-MEDIA_EXPORT extern const char kEnableOpusPlayback[];
+MEDIA_EXPORT extern const char kDisableOpusPlayback[];
 
 MEDIA_EXPORT extern const char kDisableVp8AlphaPlayback[];
 
 MEDIA_EXPORT extern const char kVideoThreads[];
 
-MEDIA_EXPORT extern const char kOverrideEncryptedMediaCanPlayType[];
-
 MEDIA_EXPORT extern const char kEnableMP3StreamParser[];
 
 #if defined(OS_ANDROID)
 MEDIA_EXPORT extern const char kDisableInfobarForProtectedMediaIdentifier[];
-MEDIA_EXPORT extern const char kEnableMediaDrm[];
 MEDIA_EXPORT extern const char kMediaDrmEnableNonCompositing[];
 #endif
 
@@ -43,6 +40,7 @@ MEDIA_EXPORT extern const char kAlsaOutputDevice[];
 
 #if defined(OS_MACOSX)
 MEDIA_EXPORT extern const char kDisableMainThreadAudio[];
+MEDIA_EXPORT extern const char kEnableAVFoundation[];
 #endif
 
 #if defined(OS_WIN)
@@ -56,6 +54,10 @@ MEDIA_EXPORT extern const char kWaveOutBuffers[];
 #if defined(USE_CRAS)
 MEDIA_EXPORT extern const char kUseCras[];
 #endif
+
+MEDIA_EXPORT extern const char kDisableSystemSoundsManager[];
+
+MEDIA_EXPORT extern const char kUseFileForFakeVideoCapture[];
 
 }  // namespace switches
 

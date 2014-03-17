@@ -35,16 +35,16 @@ namespace WebCore {
 static void domExceptionStackGetter(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     ASSERT(info.Data()->IsObject());
-    v8SetReturnValue(info, info.Data()->ToObject()->Get(v8::String::NewSymbol("stack")));
+    v8SetReturnValue(info, info.Data()->ToObject()->Get(v8AtomicString(info.GetIsolate(), "stack")));
 }
 
 static void domExceptionStackSetter(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void>& info)
 {
     ASSERT(info.Data()->IsObject());
-    info.Data()->ToObject()->Set(v8::String::NewSymbol("stack"), value);
+    info.Data()->ToObject()->Set(v8AtomicString(info.GetIsolate(), "stack"), value);
 }
 
-v8::Handle<v8::Value> V8ThrowException::createDOMException(int ec, const String& sanitizedMessage, const String& unsanitizedMessage, v8::Isolate* isolate)
+v8::Handle<v8::Value> V8ThrowException::createDOMException(int ec, const String& sanitizedMessage, const String& unsanitizedMessage, const v8::Handle<v8::Object>& creationContext, v8::Isolate* isolate)
 {
     if (ec <= 0 || v8::V8::IsExecutionTerminating())
         return v8Undefined();
@@ -56,24 +56,24 @@ v8::Handle<v8::Value> V8ThrowException::createDOMException(int ec, const String&
         return V8ThrowException::createTypeError(sanitizedMessage, isolate);
 
     RefPtr<DOMException> domException = DOMException::create(ec, sanitizedMessage, unsanitizedMessage);
-    v8::Handle<v8::Value> exception = toV8(domException, v8::Handle<v8::Object>(), isolate);
+    v8::Handle<v8::Value> exception = toV8(domException, creationContext, isolate);
 
     if (exception.IsEmpty())
         return v8Undefined();
 
     // Attach an Error object to the DOMException. This is then lazily used to get the stack value.
-    v8::Handle<v8::Value> error = v8::Exception::Error(v8String(domException->message(), isolate));
+    v8::Handle<v8::Value> error = v8::Exception::Error(v8String(isolate, domException->message()));
     ASSERT(!error.IsEmpty());
     ASSERT(exception->IsObject());
-    exception->ToObject()->SetAccessor(v8::String::NewSymbol("stack"), domExceptionStackGetter, domExceptionStackSetter, error);
+    exception->ToObject()->SetAccessor(v8AtomicString(isolate, "stack"), domExceptionStackGetter, domExceptionStackSetter, error);
 
     return exception;
 }
 
-v8::Handle<v8::Value> V8ThrowException::throwDOMException(int ec, const String& sanitizedMessage, const String& unsanitizedMessage, v8::Isolate* isolate)
+v8::Handle<v8::Value> V8ThrowException::throwDOMException(int ec, const String& sanitizedMessage, const String& unsanitizedMessage, const v8::Handle<v8::Object>& creationContext, v8::Isolate* isolate)
 {
     ASSERT(ec == SecurityError || unsanitizedMessage.isEmpty());
-    v8::Handle<v8::Value> exception = createDOMException(ec, sanitizedMessage, unsanitizedMessage, isolate);
+    v8::Handle<v8::Value> exception = createDOMException(ec, sanitizedMessage, unsanitizedMessage, creationContext, isolate);
     if (exception.IsEmpty())
         return v8Undefined();
 
@@ -84,15 +84,15 @@ v8::Handle<v8::Value> V8ThrowException::createError(V8ErrorType type, const Stri
 {
     switch (type) {
     case v8RangeError:
-        return v8::Exception::RangeError(v8String(message, isolate));
+        return v8::Exception::RangeError(v8String(isolate, message));
     case v8ReferenceError:
-        return v8::Exception::ReferenceError(v8String(message, isolate));
+        return v8::Exception::ReferenceError(v8String(isolate, message));
     case v8SyntaxError:
-        return v8::Exception::SyntaxError(v8String(message, isolate));
+        return v8::Exception::SyntaxError(v8String(isolate, message));
     case v8TypeError:
-        return v8::Exception::TypeError(v8String(message, isolate));
+        return v8::Exception::TypeError(v8String(isolate, message));
     case v8GeneralError:
-        return v8::Exception::Error(v8String(message, isolate));
+        return v8::Exception::Error(v8String(isolate, message));
     default:
         ASSERT_NOT_REACHED();
         return v8Undefined();
@@ -109,7 +109,7 @@ v8::Handle<v8::Value> V8ThrowException::throwError(V8ErrorType type, const Strin
 
 v8::Handle<v8::Value> V8ThrowException::createTypeError(const String& message, v8::Isolate* isolate)
 {
-    return v8::Exception::TypeError(v8String(message.isNull() ? "Type error" : message, isolate));
+    return v8::Exception::TypeError(v8String(isolate, message.isNull() ? "Type error" : message));
 }
 
 v8::Handle<v8::Value> V8ThrowException::throwTypeError(const String& message, v8::Isolate* isolate)
@@ -118,16 +118,10 @@ v8::Handle<v8::Value> V8ThrowException::throwTypeError(const String& message, v8
     return V8ThrowException::throwError(exception, isolate);
 }
 
-v8::Handle<v8::Value> V8ThrowException::throwNotEnoughArgumentsError(v8::Isolate* isolate)
-{
-    v8::Handle<v8::Value> exception = V8ThrowException::createTypeError("Not enough arguments", isolate);
-    return V8ThrowException::throwError(exception, isolate);
-}
-
 v8::Handle<v8::Value> V8ThrowException::throwError(v8::Handle<v8::Value> exception, v8::Isolate* isolate)
 {
     if (!v8::V8::IsExecutionTerminating())
-        v8::ThrowException(exception);
+        isolate->ThrowException(exception);
     return v8::Undefined(isolate);
 }
 

@@ -29,27 +29,31 @@
 #define DatabaseContext_h
 
 #include "core/dom/ActiveDOMObject.h"
-#include "modules/webdatabase/DatabaseDetails.h"
-#include "wtf/Assertions.h"
+#include "wtf/PassRefPtr.h"
 #include "wtf/ThreadSafeRefCounted.h"
 
 namespace WebCore {
 
 class Database;
-class DatabaseBackendContext;
+class DatabaseContext;
 class DatabaseTaskSynchronizer;
 class DatabaseThread;
-class ScriptExecutionContext;
+class ExecutionContext;
+class SecurityOrigin;
 
 class DatabaseContext : public ThreadSafeRefCounted<DatabaseContext>, public ActiveDOMObject {
 public:
+    friend class DatabaseManager;
+
+    static PassRefPtr<DatabaseContext> create(ExecutionContext*);
+
     virtual ~DatabaseContext();
 
     // For life-cycle management (inherited from ActiveDOMObject):
     virtual void contextDestroyed();
     virtual void stop();
 
-    PassRefPtr<DatabaseBackendContext> backend();
+    PassRefPtr<DatabaseContext> backend();
     DatabaseThread* databaseThread();
 
     void setHasOpenDatabases() { m_hasOpenDatabases = true; }
@@ -60,10 +64,12 @@ public:
 
     bool allowDatabaseAccess() const;
 
-protected:
-    explicit DatabaseContext(ScriptExecutionContext*);
+    SecurityOrigin* securityOrigin() const;
+    bool isContextThread() const;
 
 private:
+    explicit DatabaseContext(ExecutionContext*);
+
     void stopDatabases() { stopDatabases(0); }
 
     RefPtr<DatabaseThread> m_databaseThread;

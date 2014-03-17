@@ -20,10 +20,10 @@
 #ifndef SVGTextMetricsBuilder_h
 #define SVGTextMetricsBuilder_h
 
-#include "core/platform/graphics/TextRun.h"
-#include "core/platform/graphics/WidthIterator.h"
 #include "core/rendering/svg/SVGTextLayoutAttributes.h"
 #include "core/rendering/svg/SVGTextMetrics.h"
+#include "platform/fonts/WidthIterator.h"
+#include "platform/text/TextRun.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {

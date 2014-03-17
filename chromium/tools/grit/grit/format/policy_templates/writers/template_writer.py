@@ -87,6 +87,17 @@ class TemplateWriter(object):
     '''Checks if the given policy can be recommended.'''
     return policy.get('features', {}).get('can_be_recommended', False)
 
+  def IsPolicySupportedOnPlatform(self, policy, platform):
+    '''Checks if |policy| is supported on |platform|.
+
+    Args:
+      policy: The dictionary of the policy.
+      platform: The platform to check; one of 'win', 'mac', 'linux' or
+        'chrome_os'.
+    '''
+    is_supported = lambda x: platform in x['platforms']
+    return any(filter(is_supported, policy['supported_on']))
+
   def _GetPoliciesForWriter(self, group):
     '''Filters the list of policies in the passed group that are supported by
     the writer.

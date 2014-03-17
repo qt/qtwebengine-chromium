@@ -29,12 +29,12 @@
 #include "bindings/v8/ScriptEventListener.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
-#include "core/dom/EventNames.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/loader/FrameLoader.h"
 #include "core/page/FocusController.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
 #include "core/rendering/RenderPart.h"
 
@@ -94,7 +94,7 @@ void HTMLFrameElementBase::openURL(bool lockBackForwardList)
         return;
     if (!contentFrame() || scriptURL.isEmpty())
         return;
-    contentFrame()->script()->executeScriptIfJavaScriptURL(scriptURL);
+    contentFrame()->script().executeScriptIfJavaScriptURL(scriptURL);
 }
 
 void HTMLFrameElementBase::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -126,10 +126,10 @@ void HTMLFrameElementBase::parseAttribute(const QualifiedName& name, const Atomi
             m_scrolling = ScrollbarAlwaysOff;
         // FIXME: If we are already attached, this has no effect.
     } else if (name == onbeforeloadAttr)
-        setAttributeEventListener(eventNames().beforeloadEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::beforeload, createAttributeEventListener(this, name, value));
     else if (name == onbeforeunloadAttr) {
         // FIXME: should <frame> elements have beforeunload handlers?
-        setAttributeEventListener(eventNames().beforeunloadEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::beforeunload, createAttributeEventListener(this, name, value));
     } else
         HTMLFrameOwnerElement::parseAttribute(name, value);
 }
@@ -153,7 +153,7 @@ void HTMLFrameElementBase::didNotifySubtreeInsertionsToDocument()
     if (!document().frame())
         return;
 
-    if (!SubframeLoadingDisabler::canLoadFrame(this))
+    if (!SubframeLoadingDisabler::canLoadFrame(*this))
         return;
 
     setNameAndOpenURL();
@@ -202,7 +202,8 @@ void HTMLFrameElementBase::setFocus(bool received)
 
 bool HTMLFrameElementBase::isURLAttribute(const Attribute& attribute) const
 {
-    return attribute.name() == srcAttr || HTMLFrameOwnerElement::isURLAttribute(attribute);
+    return attribute.name() == longdescAttr || attribute.name() == srcAttr
+        || HTMLFrameOwnerElement::isURLAttribute(attribute);
 }
 
 bool HTMLFrameElementBase::isHTMLContentAttribute(const Attribute& attribute) const

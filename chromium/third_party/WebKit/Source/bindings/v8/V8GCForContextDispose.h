@@ -31,8 +31,8 @@
 #ifndef V8GCForContextDispose_h
 #define V8GCForContextDispose_h
 
-#include "core/platform/Timer.h"
 #include <v8.h>
+#include "platform/Timer.h"
 
 namespace WebCore {
 
@@ -41,7 +41,7 @@ public:
     void notifyContextDisposed(bool isMainFrame);
     void notifyIdleSooner(double maximumFireInterval);
 
-    static V8GCForContextDispose& instance();
+    static V8GCForContextDispose& instanceTemplate();
 
 private:
     V8GCForContextDispose(); // Use instance() instead.

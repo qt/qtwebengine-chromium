@@ -55,7 +55,7 @@ void SpeechRecognizerImplAndroid::StartRecognitionOnUIThread(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   JNIEnv* env = AttachCurrentThread();
   j_recognition_.Reset(Java_SpeechRecognition_createSpeechRecognition(env,
-      GetApplicationContext(), reinterpret_cast<jint>(this)));
+      GetApplicationContext(), reinterpret_cast<intptr_t>(this)));
   Java_SpeechRecognition_startRecognition(env, j_recognition_.obj(),
       ConvertUTF8ToJavaString(env, language).obj(), continuous,
       interim_results);
@@ -146,7 +146,7 @@ void SpeechRecognizerImplAndroid::OnAudioEnd(JNIEnv* env, jobject obj) {
 void SpeechRecognizerImplAndroid::OnRecognitionResults(JNIEnv* env, jobject obj,
     jobjectArray strings, jfloatArray floats, jboolean provisional) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  std::vector<string16> options;
+  std::vector<base::string16> options;
   AppendJavaStringArrayToStringVector(env, strings, &options);
   std::vector<float> scores(options.size(), 0.0);
   if (floats != NULL)

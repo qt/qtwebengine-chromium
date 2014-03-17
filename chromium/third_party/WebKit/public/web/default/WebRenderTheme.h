@@ -33,11 +33,11 @@
 
 #include "../../platform/WebCommon.h"
 
-namespace WebKit {
+namespace blink {
 
 // Set caret blink interval for text input areas.
-WEBKIT_EXPORT void setCaretBlinkInterval(double);
+BLINK_EXPORT void setCaretBlinkInterval(double);
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

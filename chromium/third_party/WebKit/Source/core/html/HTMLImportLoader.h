@@ -31,19 +31,23 @@
 #ifndef HTMLImportLoader_h
 #define HTMLImportLoader_h
 
-#include "core/fetch/RawResource.h"
-#include "core/fetch/ResourcePtr.h"
-#include "core/html/HTMLImport.h"
-#include "weborigin/KURL.h"
-#include "wtf/RefCounted.h"
+#include "core/html/HTMLImportResourceOwner.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
+class Document;
 class DocumentWriter;
+class HTMLImport;
 class HTMLImportLoaderClient;
 
-class HTMLImportLoader : public RefCounted<HTMLImportLoader>, public HTMLImport, public RawResourceClient {
+//
+// Owning imported Document lifetime. It also implements ResourceClient through HTMLImportResourceOwner
+// to feed fetched bytes to the DocumentWriter of the imported document.
+// HTMLImportLoader is owned by and shared between HTMLImportChild.
+//
+//
+class HTMLImportLoader : public RefCounted<HTMLImportLoader>, public HTMLImportResourceOwner {
 public:
     enum State {
         StateLoading,
@@ -52,28 +56,25 @@ public:
         StateReady
     };
 
-    HTMLImportLoader(HTMLImport*, const KURL&);
+    static PassRefPtr<HTMLImportLoader> create(HTMLImport*, ResourceFetcher*);
+
     virtual ~HTMLImportLoader();
 
+    Document* document() const { return m_importedDocument.get(); }
     Document* importedDocument() const;
-    const KURL& url() const { return m_url; }
-
-    void setResource(const ResourcePtr<RawResource>&);
     void addClient(HTMLImportLoaderClient*);
     void removeClient(HTMLImportLoaderClient*);
-    void importDestroyed();
+
     bool isDone() const { return m_state == StateReady || m_state == StateError; }
     bool isLoaded() const { return m_state == StateReady; }
+    bool isProcessing() const;
 
-    // HTMLImport
-    virtual HTMLImportRoot* root() OVERRIDE;
-    virtual HTMLImport* parent() const OVERRIDE;
-    virtual Document* document() const OVERRIDE;
-    virtual void wasDetachedFromDocument() OVERRIDE;
-    virtual void didFinishParsing() OVERRIDE;
-    virtual bool isProcessing() const OVERRIDE;
+    void startLoading(const ResourcePtr<RawResource>&);
+    void didFinishParsing();
+    bool isOwnedBy(const HTMLImport* import) const { return m_import == import; }
 
 private:
+    HTMLImportLoader(HTMLImport*, ResourceFetcher*);
 
     // RawResourceClient
     virtual void responseReceived(Resource*, const ResourceResponse&) OVERRIDE;
@@ -87,11 +88,10 @@ private:
     void setState(State);
     void didFinish();
 
-    HTMLImport* m_parent;
+    HTMLImport* m_import;
+    ResourceFetcher* m_fetcher;
     Vector<HTMLImportLoaderClient*> m_clients;
     State m_state;
-    KURL m_url;
-    ResourcePtr<RawResource> m_resource;
     RefPtr<Document> m_importedDocument;
     RefPtr<DocumentWriter> m_writer;
 };

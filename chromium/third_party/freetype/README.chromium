@@ -1,6 +1,6 @@
 Name: Freetype
 URL: https://android.googlesource.com/platform/external/freetype/
-Version: 8afe960626dbf326354b836fd4d63e05b6974195
+Version: 899c67b6cfcd2010784fbf08c5415af16c526e0c
 License: Custom license "inspired by the BSD, Artistic, and IJG (Independent
          JPEG Group) licenses"
 License File: NOTICE
@@ -22,7 +22,9 @@ Here is the detail steps
 $ git clone https://android.googlesource.com/platform/external/freetype/
 # Use the following command to checkout this version, or omit it to checkout
 # the latest version.
-$ git reset --hard 8afe960626dbf326354b836fd4d63e05b6974195
+$ git reset --hard <version-listed-above>
 
-2. Copy the related files from
+2. Copy all files from
    <android_tree>/external/freetype/
+
+3. Update freetype.gyp to reflect any changes made in Android.mk.

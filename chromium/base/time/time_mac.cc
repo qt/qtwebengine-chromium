@@ -6,6 +6,7 @@
 
 #include <CoreFoundation/CFDate.h>
 #include <CoreFoundation/CFTimeZone.h>
+#include <mach/mach.h>
 #include <mach/mach_time.h>
 #include <sys/sysctl.h>
 #include <sys/time.h>
@@ -15,6 +16,7 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/mac/scoped_cftyperef.h"
+#include "base/mac/scoped_mach_port.h"
 
 namespace {
 
@@ -64,6 +66,33 @@ uint64_t ComputeCurrentTicks() {
 #endif  // defined(OS_IOS)
 }
 
+uint64_t ComputeThreadTicks() {
+#if defined(OS_IOS)
+  NOTREACHED();
+  return 0;
+#else
+  base::mac::ScopedMachPort thread(mach_thread_self());
+  mach_msg_type_number_t thread_info_count = THREAD_BASIC_INFO_COUNT;
+  thread_basic_info_data_t thread_info_data;
+
+  if (thread == MACH_PORT_NULL) {
+    DLOG(ERROR) << "Failed to get mach_thread_self()";
+    return 0;
+  }
+
+  kern_return_t kr = thread_info(
+      thread,
+      THREAD_BASIC_INFO,
+      reinterpret_cast<thread_info_t>(&thread_info_data),
+      &thread_info_count);
+  DCHECK_EQ(KERN_SUCCESS, kr);
+
+  return (thread_info_data.user_time.seconds *
+              base::Time::kMicrosecondsPerSecond) +
+         thread_info_data.user_time.microseconds;
+#endif  // defined(OS_IOS)
+}
+
 }  // namespace
 
 namespace base {
@@ -85,8 +114,6 @@ namespace base {
 //   irb(main):011:0> Time.at(-11644473600).getutc()
 //   => Mon Jan 01 00:00:00 UTC 1601
 static const int64 kWindowsEpochDeltaSeconds = GG_INT64_C(11644473600);
-static const int64 kWindowsEpochDeltaMilliseconds =
-    kWindowsEpochDeltaSeconds * Time::kMillisecondsPerSecond;
 
 // static
 const int64 Time::kWindowsEpochDeltaMicroseconds =
@@ -192,9 +219,13 @@ TimeTicks TimeTicks::HighResNow() {
 }
 
 // static
+bool TimeTicks::IsHighResNowFastAndReliable() {
+  return true;
+}
+
+// static
 TimeTicks TimeTicks::ThreadNow() {
-  NOTREACHED();
-  return TimeTicks();
+  return TimeTicks(ComputeThreadTicks());
 }
 
 // static

@@ -14,7 +14,7 @@
       'variables': {
         'apk_name': 'AndroidWebView',
         'java_in_dir': 'test/shell',
-        'native_lib_target': 'libwebviewchromium',
+        'native_lib_target': 'libstandalonelibwebviewchromium',
         'resource_dir': 'test/shell/res',
         'additional_input_paths': [
           '<(PRODUCT_DIR)/android_webview_apk/assets/webviewchromium.pak',
@@ -51,7 +51,7 @@
       'type': 'none',
       'dependencies': [
         '../base/base.gyp:base_java_test_support',
-        '../content/content.gyp:content_java_test_support',
+        '../content/content_shell_and_tests.gyp:content_java_test_support',
         '../net/net.gyp:net_java_test_support',
         'android_webview_apk_java',
       ],
@@ -67,12 +67,12 @@
       'type': '<(gtest_target_type)',
       'dependencies': [
         '../base/base.gyp:test_support_base',
-        '../content/content.gyp:test_support_content',
+        '../content/content_shell_and_tests.gyp:test_support_content',
         '../net/net.gyp:net_test_support',
         '../testing/android/native_test.gyp:native_test_native_code',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
-        '../ui/ui.gyp:ui_jni_headers',
+        '../ui/ui.gyp:ui_base_jni_headers',
         'android_webview_common',
       ],
       'include_dirs': [
@@ -94,7 +94,7 @@
       'type': 'none',
       'dependencies': [
         '../base/base.gyp:base_java_test_support',
-        '../content/content.gyp:content_java_test_support',
+        '../content/content_shell_and_tests.gyp:content_java_test_support',
         'android_webview_java',
       ],
       'variables': {

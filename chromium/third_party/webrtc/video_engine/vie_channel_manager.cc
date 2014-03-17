@@ -89,7 +89,7 @@ int ViEChannelManager::CreateChannel(int* channel_id) {
   }
 
   // Create a new channel group and add this channel.
-  ChannelGroup* group = new ChannelGroup(module_process_thread_,
+  ChannelGroup* group = new ChannelGroup(engine_id_, module_process_thread_,
                                          config_);
   BitrateController* bitrate_controller = group->GetBitrateController();
   ViEEncoder* vie_encoder = new ViEEncoder(engine_id_, new_channel_id,
@@ -104,12 +104,12 @@ int ViEChannelManager::CreateChannel(int* channel_id) {
       group->GetRemoteBitrateEstimator();
   EncoderStateFeedback* encoder_state_feedback =
       group->GetEncoderStateFeedback();
-  RtcpRttObserver* rtcp_rtt_observer =
-      group->GetCallStats()->rtcp_rtt_observer();
+  RtcpRttStats* rtcp_rtt_stats =
+      group->GetCallStats()->rtcp_rtt_stats();
 
   if (!(vie_encoder->Init() &&
         CreateChannelObject(new_channel_id, vie_encoder, bandwidth_observer,
-                            remote_bitrate_estimator, rtcp_rtt_observer,
+                            remote_bitrate_estimator, rtcp_rtt_stats,
                             encoder_state_feedback->GetRtcpIntraFrameObserver(),
                             true))) {
     delete vie_encoder;
@@ -156,8 +156,8 @@ int ViEChannelManager::CreateChannel(int* channel_id,
       channel_group->GetRemoteBitrateEstimator();
   EncoderStateFeedback* encoder_state_feedback =
       channel_group->GetEncoderStateFeedback();
-    RtcpRttObserver* rtcp_rtt_observer =
-        channel_group->GetCallStats()->rtcp_rtt_observer();
+    RtcpRttStats* rtcp_rtt_stats =
+        channel_group->GetCallStats()->rtcp_rtt_stats();
 
   ViEEncoder* vie_encoder = NULL;
   if (sender) {
@@ -172,7 +172,7 @@ int ViEChannelManager::CreateChannel(int* channel_id,
             vie_encoder,
             bandwidth_observer,
             remote_bitrate_estimator,
-            rtcp_rtt_observer,
+            rtcp_rtt_stats,
             encoder_state_feedback->GetRtcpIntraFrameObserver(),
             sender))) {
       delete vie_encoder;
@@ -191,7 +191,7 @@ int ViEChannelManager::CreateChannel(int* channel_id,
         vie_encoder,
         bandwidth_observer,
         remote_bitrate_estimator,
-        rtcp_rtt_observer,
+        rtcp_rtt_stats,
         encoder_state_feedback->GetRtcpIntraFrameObserver(),
         sender)) {
       vie_encoder = NULL;
@@ -366,35 +366,6 @@ bool ViEChannelManager::SetRembStatus(int channel_id, bool sender,
   return group->SetChannelRembStatus(channel_id, sender, receiver, channel);
 }
 
-bool ViEChannelManager::SetReceiveAbsoluteSendTimeStatus(int channel_id,
-                                                         bool enable,
-                                                         int id) {
-  CriticalSectionScoped cs(channel_id_critsect_);
-  ViEChannel* channel = ViEChannelPtr(channel_id);
-  if (!channel) {
-    return false;
-  }
-  if (channel->SetReceiveAbsoluteSendTimeStatus(enable, id) != 0) {
-    return false;
-  }
-
-  // Enable absolute send time extension on the group if at least one of the
-  // channels use it.
-  ChannelGroup* group = FindGroup(channel_id);
-  assert(group);
-  bool any_enabled = false;
-  for (ChannelMap::const_iterator c_it = channel_map_.begin();
-       c_it != channel_map_.end(); ++c_it) {
-    if (group->HasChannel(c_it->first) &&
-        c_it->second->GetReceiveAbsoluteSendTimeStatus()) {
-      any_enabled = true;
-      break;
-    }
-  }
-  group->SetReceiveAbsoluteSendTimeStatus(any_enabled);
-  return true;
-}
-
 void ViEChannelManager::UpdateSsrcs(int channel_id,
                                     const std::list<unsigned int>& ssrcs) {
   CriticalSectionScoped cs(channel_id_critsect_);
@@ -421,7 +392,7 @@ bool ViEChannelManager::CreateChannelObject(
     ViEEncoder* vie_encoder,
     RtcpBandwidthObserver* bandwidth_observer,
     RemoteBitrateEstimator* remote_bitrate_estimator,
-    RtcpRttObserver* rtcp_rtt_observer,
+    RtcpRttStats* rtcp_rtt_stats,
     RtcpIntraFrameObserver* intra_frame_observer,
     bool sender) {
   PacedSender* paced_sender = vie_encoder->GetPacedSender();
@@ -436,7 +407,7 @@ bool ViEChannelManager::CreateChannelObject(
                                            intra_frame_observer,
                                            bandwidth_observer,
                                            remote_bitrate_estimator,
-                                           rtcp_rtt_observer,
+                                           rtcp_rtt_stats,
                                            paced_sender,
                                            send_rtp_rtcp_module,
                                            sender);

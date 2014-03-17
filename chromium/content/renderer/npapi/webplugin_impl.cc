@@ -24,6 +24,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/npapi/webplugin_delegate_proxy.h"
+#include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_process.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
@@ -33,6 +34,7 @@
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
 #include "third_party/WebKit/public/platform/WebCookieJar.h"
+#include "third_party/WebKit/public/platform/WebCursorInfo.h"
 #include "third_party/WebKit/public/platform/WebData.h"
 #include "third_party/WebKit/public/platform/WebHTTPBody.h"
 #include "third_party/WebKit/public/platform/WebHTTPHeaderVisitor.h"
@@ -42,7 +44,6 @@
 #include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
-#include "third_party/WebKit/public/web/WebCursorInfo.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
@@ -57,32 +58,32 @@
 #include "webkit/child/multipart_response_delegate.h"
 #include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
-using WebKit::WebCanvas;
-using WebKit::WebConsoleMessage;
-using WebKit::WebCookieJar;
-using WebKit::WebCString;
-using WebKit::WebCursorInfo;
-using WebKit::WebData;
-using WebKit::WebDataSource;
-using WebKit::WebFrame;
-using WebKit::WebHTTPBody;
-using WebKit::WebHTTPHeaderVisitor;
-using WebKit::WebInputEvent;
-using WebKit::WebKeyboardEvent;
-using WebKit::WebMouseEvent;
-using WebKit::WebPluginContainer;
-using WebKit::WebPluginParams;
-using WebKit::WebRect;
-using WebKit::WebString;
-using WebKit::WebURL;
-using WebKit::WebURLError;
-using WebKit::WebURLLoader;
-using WebKit::WebURLLoaderClient;
-using WebKit::WebURLLoaderOptions;
-using WebKit::WebURLRequest;
-using WebKit::WebURLResponse;
-using WebKit::WebVector;
-using WebKit::WebView;
+using blink::WebCanvas;
+using blink::WebConsoleMessage;
+using blink::WebCookieJar;
+using blink::WebCString;
+using blink::WebCursorInfo;
+using blink::WebData;
+using blink::WebDataSource;
+using blink::WebFrame;
+using blink::WebHTTPBody;
+using blink::WebHTTPHeaderVisitor;
+using blink::WebInputEvent;
+using blink::WebKeyboardEvent;
+using blink::WebMouseEvent;
+using blink::WebPluginContainer;
+using blink::WebPluginParams;
+using blink::WebRect;
+using blink::WebString;
+using blink::WebURL;
+using blink::WebURLError;
+using blink::WebURLLoader;
+using blink::WebURLLoaderClient;
+using blink::WebURLLoaderOptions;
+using blink::WebURLRequest;
+using blink::WebURLResponse;
+using blink::WebVector;
+using blink::WebView;
 using webkit_glue::MultipartResponseDelegate;
 
 namespace content {
@@ -212,14 +213,14 @@ void GetResponseInfo(const WebURLResponse& response,
 
 }  // namespace
 
-// WebKit::WebPlugin ----------------------------------------------------------
+// blink::WebPlugin ----------------------------------------------------------
 
 struct WebPluginImpl::ClientInfo {
   unsigned long id;
   WebPluginResourceClient* client;
-  WebKit::WebURLRequest request;
+  blink::WebURLRequest request;
   bool pending_failure_notification;
-  linked_ptr<WebKit::WebURLLoader> loader;
+  linked_ptr<blink::WebURLLoader> loader;
   bool notify_redirects;
   bool is_plugin_src_load;
   int64 data_offset;
@@ -249,9 +250,9 @@ bool WebPluginImpl::initialize(WebPluginContainer* container) {
   if (!ok) {
     plugin_delegate->PluginDestroyed();
 
-    WebKit::WebPlugin* replacement_plugin =
+    blink::WebPlugin* replacement_plugin =
         GetContentClient()->renderer()->CreatePluginReplacement(
-            render_view_.get(), file_path_);
+            render_frame_, file_path_);
     if (!replacement_plugin)
       return false;
 
@@ -286,7 +287,7 @@ NPP WebPluginImpl::pluginNPP() {
   return npp_;
 }
 
-bool WebPluginImpl::getFormValue(WebKit::WebString& value) {
+bool WebPluginImpl::getFormValue(blink::WebString& value) {
   if (!delegate_)
     return false;
   base::string16 form_value;
@@ -481,10 +482,12 @@ WebPluginImpl::WebPluginImpl(
     WebFrame* webframe,
     const WebPluginParams& params,
     const base::FilePath& file_path,
-    const base::WeakPtr<RenderViewImpl>& render_view)
+    const base::WeakPtr<RenderViewImpl>& render_view,
+    RenderFrameImpl* render_frame)
     : windowless_(false),
       window_(gfx::kNullPluginWindow),
       accepts_input_events_(false),
+      render_frame_(render_frame),
       render_view_(render_view),
       webframe_(webframe),
       delegate_(NULL),
@@ -648,7 +651,8 @@ WebPluginDelegate* WebPluginImpl::CreatePluginDelegate() {
 #endif
   }
 
-  return new WebPluginDelegateProxy(this, mime_type_, render_view_);
+  return new WebPluginDelegateProxy(
+      this, mime_type_, render_view_, render_frame_);
 }
 
 WebPluginImpl::RoutingStatus WebPluginImpl::RouteToFrame(
@@ -968,7 +972,8 @@ void WebPluginImpl::didReceiveResponse(WebURLLoader* loader,
                                                    &upper_bound,
                                                    &instance_size);
     } else if (response.httpStatusCode() == kHttpResponseSuccessStatusCode) {
-      RenderThreadImpl::current()->RecordUserMetrics("Plugin_200ForByteRange");
+      RenderThreadImpl::current()->RecordAction(
+          UserMetricsAction("Plugin_200ForByteRange"));
       // If the client issued a byte range request and the server responds with
       // HTTP 200 OK, it indicates that the server does not support byte range
       // requests.
@@ -1194,8 +1199,8 @@ void WebPluginImpl::HandleURLRequestInternal(const char* url,
   if (!delegate_)
     return;
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDirectNPAPIRequests)) {
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableDirectNPAPIRequests)) {
     // We got here either because the plugin called GetURL/PostURL, or because
     // we're fetching the data for an embed tag. If we're in multi-process mode,
     // we want to fetch the data in the plugin process as the renderer won't be
@@ -1487,7 +1492,7 @@ void WebPluginImpl::TearDownPluginInstance(
   weak_factory_.InvalidateWeakPtrs();
 }
 
-void WebPluginImpl::SetReferrer(WebKit::WebURLRequest* request,
+void WebPluginImpl::SetReferrer(blink::WebURLRequest* request,
                                 Referrer referrer_flag) {
   switch (referrer_flag) {
     case DOCUMENT_URL:

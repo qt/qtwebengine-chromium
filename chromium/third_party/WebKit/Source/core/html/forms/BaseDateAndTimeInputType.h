@@ -32,7 +32,7 @@
 #define BaseDateAndTimeInputType_h
 
 #include "core/html/forms/InputType.h"
-#include "core/platform/DateComponents.h"
+#include "platform/DateComponents.h"
 
 namespace WebCore {
 
@@ -41,7 +41,7 @@ class ExceptionState;
 // A super class of date, datetime, datetime-local, month, time, and week types.
 class BaseDateAndTimeInputType : public InputType {
 protected:
-    BaseDateAndTimeInputType(HTMLInputElement* element) : InputType(element) { }
+    BaseDateAndTimeInputType(HTMLInputElement& element) : InputType(element) { }
     virtual Decimal parseToNumber(const String&, const Decimal&) const OVERRIDE;
     virtual bool parseToDateComponents(const String&, DateComponents*) const OVERRIDE;
     virtual String sanitizeValue(const String&) const OVERRIDE;
@@ -52,7 +52,6 @@ protected:
 
 private:
     virtual bool parseToDateComponentsInternal(const String&, DateComponents*) const = 0;
-    virtual DateComponents::Type dateType() const = 0;
     virtual double valueAsDate() const OVERRIDE;
     virtual void setValueAsDate(double, ExceptionState&) const OVERRIDE;
     virtual double valueAsDouble() const OVERRIDE;
@@ -60,6 +59,8 @@ private:
     virtual bool typeMismatchFor(const String&) const OVERRIDE;
     virtual bool typeMismatch() const OVERRIDE;
     virtual bool valueMissing(const String&) const OVERRIDE;
+    virtual String rangeOverflowText(const Decimal& maximum) const OVERRIDE;
+    virtual String rangeUnderflowText(const Decimal& minimum) const OVERRIDE;
     virtual Decimal defaultValueForStepUp() const OVERRIDE;
     virtual bool isSteppable() const OVERRIDE;
     virtual String serializeWithMilliseconds(double) const;

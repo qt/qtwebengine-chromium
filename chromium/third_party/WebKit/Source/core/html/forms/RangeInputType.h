@@ -40,10 +40,10 @@ class SliderThumbElement;
 
 class RangeInputType : public InputType {
 public:
-    static PassRefPtr<InputType> create(HTMLInputElement*);
+    static PassRefPtr<InputType> create(HTMLInputElement&);
 
 private:
-    RangeInputType(HTMLInputElement*);
+    RangeInputType(HTMLInputElement&);
     virtual void countUsage() OVERRIDE;
     virtual bool isRangeControl() const OVERRIDE;
     virtual const AtomicString& formControlType() const OVERRIDE;
@@ -69,6 +69,7 @@ private:
     virtual bool shouldRespectListAttribute() OVERRIDE;
     SliderThumbElement* sliderThumbElement() const;
     Element* sliderTrackElement() const;
+    virtual void disabledAttributeChanged() OVERRIDE;
     virtual void listAttributeTargetChanged() OVERRIDE;
     void updateTickMarkValues();
     virtual Decimal findClosestTickMarkValue(const Decimal&) OVERRIDE;

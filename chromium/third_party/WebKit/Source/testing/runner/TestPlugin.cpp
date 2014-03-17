@@ -37,7 +37,7 @@
 #include "public/web/WebTouchPoint.h"
 #include "public/web/WebUserGestureIndicator.h"
 
-using namespace WebKit;
+using namespace blink;
 using namespace std;
 
 namespace WebTestRunner {
@@ -97,7 +97,7 @@ const char* pointState(WebTouchPoint::State state)
         return "Unknown";
     }
 
-    WEBKIT_ASSERT_NOT_REACHED();
+    BLINK_ASSERT_NOT_REACHED();
     return 0;
 }
 
@@ -172,7 +172,7 @@ TestPlugin::TestPlugin(WebFrame* frame, const WebPluginParams& params, WebTestDe
     static const WebString kAttributeCanProcessDrag = WebString::fromUTF8("can-process-drag");
     static const WebString kAttributePrintUserGestureStatus = WebString::fromUTF8("print-user-gesture-status");
 
-    WEBKIT_ASSERT(params.attributeNames.size() == params.attributeValues.size());
+    BLINK_ASSERT(params.attributeNames.size() == params.attributeValues.size());
     size_t size = params.attributeNames.size();
     for (size_t i = 0; i < size; ++i) {
         const WebString& attributeName = params.attributeNames[i];
@@ -216,7 +216,7 @@ bool TestPlugin::initialize(WebPluginContainer* container)
     if (!initScene())
         return false;
 
-    m_layer = auto_ptr<WebExternalTextureLayer>(Platform::current()->compositorSupport()->createExternalTextureLayer(this));
+    m_layer = WebScopedPtr<WebExternalTextureLayer>(Platform::current()->compositorSupport()->createExternalTextureLayer(this));
     m_container = container;
     m_container->setWebLayer(m_layer->layer());
     if (m_reRequestTouchEvents) {
@@ -254,7 +254,7 @@ void TestPlugin::updateGeometry(const WebRect& frameRect, const WebRect& clipRec
     if (m_rect.isEmpty())
         return;
 
-    m_context->reshape(m_rect.width, m_rect.height);
+    m_context->reshapeWithScaleFactor(m_rect.width, m_rect.height, 1.f);
     m_context->viewport(0, 0, m_rect.width, m_rect.height);
 
     m_context->bindTexture(GL_TEXTURE_2D, m_colorTexture);
@@ -276,7 +276,7 @@ void TestPlugin::updateGeometry(const WebRect& frameRect, const WebRect& clipRec
     m_mailboxChanged = true;
 }
 
-bool TestPlugin::prepareMailbox(WebKit::WebExternalTextureMailbox* mailbox, WebKit::WebExternalBitmap*)
+bool TestPlugin::prepareMailbox(blink::WebExternalTextureMailbox* mailbox, blink::WebExternalBitmap*)
 {
     if (!m_mailboxChanged)
         return false;
@@ -285,7 +285,7 @@ bool TestPlugin::prepareMailbox(WebKit::WebExternalTextureMailbox* mailbox, WebK
     return true;
 }
 
-void TestPlugin::mailboxReleased(const WebKit::WebExternalTextureMailbox&)
+void TestPlugin::mailboxReleased(const blink::WebExternalTextureMailbox&)
 {
 }
 
@@ -300,7 +300,7 @@ TestPlugin::Primitive TestPlugin::parsePrimitive(const WebString& string)
     else if (string == kPrimitiveTriangle)
         primitive = PrimitiveTriangle;
     else
-        WEBKIT_ASSERT_NOT_REACHED();
+        BLINK_ASSERT_NOT_REACHED();
     return primitive;
 }
 
@@ -319,7 +319,7 @@ void TestPlugin::parseColor(const WebString& string, unsigned color[3])
     else if (string == "blue")
         color[2] = 255;
     else
-        WEBKIT_ASSERT_NOT_REACHED();
+        BLINK_ASSERT_NOT_REACHED();
 }
 
 float TestPlugin::parseOpacity(const WebString& string)
@@ -412,7 +412,7 @@ bool TestPlugin::initProgram()
 
 bool TestPlugin::initPrimitive()
 {
-    WEBKIT_ASSERT(m_scene.primitive == PrimitiveTriangle);
+    BLINK_ASSERT(m_scene.primitive == PrimitiveTriangle);
 
     m_scene.vbo = m_context->createBuffer();
     if (!m_scene.vbo)
@@ -430,9 +430,9 @@ bool TestPlugin::initPrimitive()
 
 void TestPlugin::drawPrimitive()
 {
-    WEBKIT_ASSERT(m_scene.primitive == PrimitiveTriangle);
-    WEBKIT_ASSERT(m_scene.vbo);
-    WEBKIT_ASSERT(m_scene.program);
+    BLINK_ASSERT(m_scene.primitive == PrimitiveTriangle);
+    BLINK_ASSERT(m_scene.vbo);
+    BLINK_ASSERT(m_scene.program);
 
     m_context->useProgram(m_scene.program);
 
@@ -520,6 +520,7 @@ bool TestPlugin::handleInputEvent(const WebInputEvent& event, WebCursorInfo& inf
     case WebInputEvent::GestureTapUnconfirmed:
                                              eventName = "GestureTapUnconfirmed"; break;
     case WebInputEvent::GestureTapDown:      eventName = "GestureTapDown"; break;
+    case WebInputEvent::GestureShowPress:    eventName = "GestureShowPress"; break;
     case WebInputEvent::GestureTapCancel:    eventName = "GestureTapCancel"; break;
     case WebInputEvent::GestureDoubleTap:    eventName = "GestureDoubleTap"; break;
     case WebInputEvent::GestureTwoFingerTap: eventName = "GestureTwoFingerTap"; break;
@@ -560,7 +561,7 @@ bool TestPlugin::handleDragStatusUpdate(WebDragStatus dragStatus, const WebDragD
         dragStatusName = "DragDrop";
         break;
     case WebDragStatusUnknown:
-        WEBKIT_ASSERT_NOT_REACHED();
+        BLINK_ASSERT_NOT_REACHED();
     }
     m_delegate->printMessage(std::string("Plugin received event: ") + dragStatusName + "\n");
     return false;

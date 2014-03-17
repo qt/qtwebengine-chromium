@@ -21,13 +21,16 @@ class CustomButtonStateChangedDelegate;
 // A button with custom rendering. The common base class of ImageButton and
 // TextButton.
 // Note that this type of button is not focusable by default and will not be
-// part of the focus chain.  Call set_focusable(true) to make it part of the
+// part of the focus chain.  Call SetFocusable(true) to make it part of the
 // focus chain.
 class VIEWS_EXPORT CustomButton : public Button,
                                   public gfx::AnimationDelegate {
  public:
   // The menu button's class name.
   static const char kViewClassName[];
+
+  static const CustomButton* AsCustomButton(const views::View* view);
+  static CustomButton* AsCustomButton(views::View* view);
 
   virtual ~CustomButton();
 

@@ -36,13 +36,13 @@
 #include "core/css/CSSValueList.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/DocumentFragment.h"
-#include "core/dom/Event.h"
-#include "core/dom/UserTypingGestureIndicator.h"
+#include "core/events/Event.h"
 #include "core/editing/CreateLinkCommand.h"
 #include "core/editing/FormatBlockCommand.h"
 #include "core/editing/IndentOutdentCommand.h"
 #include "core/editing/InsertListCommand.h"
 #include "core/editing/ReplaceSelectionCommand.h"
+#include "core/editing/SpellChecker.h"
 #include "core/editing/TypingCommand.h"
 #include "core/editing/UnlinkCommand.h"
 #include "core/editing/markup.h"
@@ -52,15 +52,14 @@
 #include "core/page/Chrome.h"
 #include "core/page/EditorClient.h"
 #include "core/page/EventHandler.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/platform/KillRing.h"
+#include "core/frame/Settings.h"
 #include "core/platform/Pasteboard.h"
-#include "core/platform/Scrollbar.h"
-#include "core/platform/Sound.h"
 #include "core/rendering/RenderBox.h"
+#include "platform/KillRing.h"
+#include "platform/scroll/Scrollbar.h"
 #include "wtf/text/AtomicString.h"
 
 namespace WebCore {
@@ -201,9 +200,9 @@ static bool executeInsertNode(Frame& frame, PassRefPtr<Node> content)
 {
     ASSERT(frame.document());
     RefPtr<DocumentFragment> fragment = DocumentFragment::create(*frame.document());
-    TrackExceptionState es;
-    fragment->appendChild(content, es);
-    if (es.hadException())
+    TrackExceptionState exceptionState;
+    fragment->appendChild(content, exceptionState);
+    if (exceptionState.hadException())
         return false;
     return executeInsertFragment(frame, fragment.release());
 }
@@ -219,8 +218,6 @@ static bool expandSelectionToGranularity(Frame& frame, TextGranularity granulari
         return false;
     RefPtr<Range> oldRange = frame.selection().selection().toNormalizedRange();
     EAffinity affinity = frame.selection().affinity();
-    if (!frame.editor().client().shouldChangeSelectedRange(oldRange.get(), newRange.get(), affinity, false))
-        return false;
     frame.selection().setSelectedRange(newRange.get(), affinity, true);
     return true;
 }
@@ -296,14 +293,9 @@ static bool executeCreateLink(Frame& frame, Event*, EditorCommandSource, const S
     return true;
 }
 
-static bool executeCut(Frame& frame, Event*, EditorCommandSource source, const String&)
+static bool executeCut(Frame& frame, Event*, EditorCommandSource, const String&)
 {
-    if (source == CommandFromMenuOrKeyBinding) {
-        UserTypingGestureIndicator typingGestureIndicator(&frame);
-        frame.editor().cut();
-    } else {
-        frame.editor().cut();
-    }
+    frame.editor().cut();
     return true;
 }
 
@@ -322,7 +314,6 @@ static bool executeDelete(Frame& frame, Event*, EditorCommandSource source, cons
     switch (source) {
     case CommandFromMenuOrKeyBinding: {
         // Doesn't modify the text if the current selection isn't a range.
-        UserTypingGestureIndicator typingGestureIndicator(&frame);
         frame.editor().performDelete();
         return true;
     }
@@ -346,7 +337,7 @@ static bool executeDeleteBackward(Frame& frame, Event*, EditorCommandSource, con
 
 static bool executeDeleteBackwardByDecomposingPreviousCharacter(Frame& frame, Event*, EditorCommandSource, const String&)
 {
-    LOG_ERROR("DeleteBackwardByDecomposingPreviousCharacter is not implemented, doing DeleteBackward instead");
+    WTF_LOG_ERROR("DeleteBackwardByDecomposingPreviousCharacter is not implemented, doing DeleteBackward instead");
     frame.editor().deleteWithDirection(DirectionBackward, CharacterGranularity, false, true);
     return true;
 }
@@ -445,8 +436,8 @@ static bool executeFormatBlock(Frame& frame, Event*, EditorCommandSource, const 
     if (tagName[0] == '<' && tagName[tagName.length() - 1] == '>')
         tagName = tagName.substring(1, tagName.length() - 2);
 
-    String localName, prefix;
-    if (!Document::parseQualifiedName(tagName, prefix, localName, IGNORE_EXCEPTION))
+    AtomicString localName, prefix;
+    if (!Document::parseQualifiedName(AtomicString(tagName), prefix, localName, IGNORE_EXCEPTION))
         return false;
     QualifiedName qualifiedTagName(prefix, localName, xhtmlNamespaceURI);
 
@@ -477,7 +468,7 @@ static bool executeForwardDelete(Frame& frame, Event*, EditorCommandSource sourc
 
 static bool executeIgnoreSpelling(Frame& frame, Event*, EditorCommandSource, const String&)
 {
-    frame.editor().ignoreSpelling();
+    frame.spellChecker().ignoreSpelling();
     return true;
 }
 
@@ -490,7 +481,7 @@ static bool executeIndent(Frame& frame, Event*, EditorCommandSource, const Strin
 
 static bool executeInsertBacktab(Frame& frame, Event* event, EditorCommandSource, const String&)
 {
-    return targetFrame(frame, event)->eventHandler()->handleTextInputEvent("\t", event, TextEventInputBackTab);
+    return targetFrame(frame, event)->eventHandler().handleTextInputEvent("\t", event, TextEventInputBackTab);
 }
 
 static bool executeInsertHorizontalRule(Frame& frame, Event*, EditorCommandSource, const String& value)
@@ -498,7 +489,7 @@ static bool executeInsertHorizontalRule(Frame& frame, Event*, EditorCommandSourc
     ASSERT(frame.document());
     RefPtr<HTMLHRElement> rule = HTMLHRElement::create(*frame.document());
     if (!value.isEmpty())
-        rule->setIdAttribute(value);
+        rule->setIdAttribute(AtomicString(value));
     return executeInsertNode(frame, rule.release());
 }
 
@@ -521,7 +512,7 @@ static bool executeInsertLineBreak(Frame& frame, Event* event, EditorCommandSour
 {
     switch (source) {
     case CommandFromMenuOrKeyBinding:
-        return targetFrame(frame, event)->eventHandler()->handleTextInputEvent("\n", event, TextEventInputLineBreak);
+        return targetFrame(frame, event)->eventHandler().handleTextInputEvent("\n", event, TextEventInputLineBreak);
     case CommandFromDOM:
     case CommandFromDOMWithUserInterface:
         // Doesn't scroll to make the selection visible, or modify the kill ring.
@@ -538,7 +529,7 @@ static bool executeInsertLineBreak(Frame& frame, Event* event, EditorCommandSour
 static bool executeInsertNewline(Frame& frame, Event* event, EditorCommandSource, const String&)
 {
     Frame* targetFrame = WebCore::targetFrame(frame, event);
-    return targetFrame->eventHandler()->handleTextInputEvent("\n", event, targetFrame->editor().canEditRichly() ? TextEventInputKeyboard : TextEventInputLineBreak);
+    return targetFrame->eventHandler().handleTextInputEvent("\n", event, targetFrame->editor().canEditRichly() ? TextEventInputKeyboard : TextEventInputLineBreak);
 }
 
 static bool executeInsertNewlineInQuotedContent(Frame& frame, Event*, EditorCommandSource, const String&)
@@ -564,7 +555,7 @@ static bool executeInsertParagraph(Frame& frame, Event*, EditorCommandSource, co
 
 static bool executeInsertTab(Frame& frame, Event* event, EditorCommandSource, const String&)
 {
-    return targetFrame(frame, event)->eventHandler()->handleTextInputEvent("\t", event);
+    return targetFrame(frame, event)->eventHandler().handleTextInputEvent("\t", event);
 }
 
 static bool executeInsertText(Frame& frame, Event*, EditorCommandSource, const String& value)
@@ -936,23 +927,17 @@ static bool executeToggleOverwrite(Frame& frame, Event*, EditorCommandSource, co
     return true;
 }
 
-static bool executePaste(Frame& frame, Event*, EditorCommandSource source, const String&)
+static bool executePaste(Frame& frame, Event*, EditorCommandSource, const String&)
 {
-    if (source == CommandFromMenuOrKeyBinding) {
-        UserTypingGestureIndicator typingGestureIndicator(&frame);
-        frame.editor().paste();
-    } else {
-        frame.editor().paste();
-    }
+    frame.editor().paste();
     return true;
 }
 
 static bool executePasteGlobalSelection(Frame& frame, Event*, EditorCommandSource source, const String&)
 {
-    if (!frame.editor().client().supportsGlobalSelection())
+    if (!frame.editor().behavior().supportsGlobalSelection())
         return false;
     ASSERT_UNUSED(source, source == CommandFromMenuOrKeyBinding);
-    UserTypingGestureIndicator typingGestureIndicator(&frame);
 
     bool oldSelectionMode = Pasteboard::generalPasteboard()->isSelectionMode();
     Pasteboard::generalPasteboard()->setSelectionMode(true);
@@ -961,25 +946,9 @@ static bool executePasteGlobalSelection(Frame& frame, Event*, EditorCommandSourc
     return true;
 }
 
-static bool executePasteAndMatchStyle(Frame& frame, Event*, EditorCommandSource source, const String&)
+static bool executePasteAndMatchStyle(Frame& frame, Event*, EditorCommandSource, const String&)
 {
-    if (source == CommandFromMenuOrKeyBinding) {
-        UserTypingGestureIndicator typingGestureIndicator(&frame);
-        frame.editor().pasteAsPlainText();
-    } else {
-        frame.editor().pasteAsPlainText();
-    }
-    return true;
-}
-
-static bool executePasteAsPlainText(Frame& frame, Event*, EditorCommandSource source, const String&)
-{
-    if (source == CommandFromMenuOrKeyBinding) {
-        UserTypingGestureIndicator typingGestureIndicator(&frame);
-        frame.editor().pasteAsPlainText();
-    } else {
-        frame.editor().pasteAsPlainText();
-    }
+    frame.editor().pasteAsPlainText();
     return true;
 }
 
@@ -1006,32 +975,32 @@ static bool executeRemoveFormat(Frame& frame, Event*, EditorCommandSource, const
 
 static bool executeScrollPageBackward(Frame& frame, Event*, EditorCommandSource, const String&)
 {
-    return frame.eventHandler()->logicalScrollRecursively(ScrollBlockDirectionBackward, ScrollByPage);
+    return frame.eventHandler().scrollRecursively(ScrollBlockDirectionBackward, ScrollByPage);
 }
 
 static bool executeScrollPageForward(Frame& frame, Event*, EditorCommandSource, const String&)
 {
-    return frame.eventHandler()->logicalScrollRecursively(ScrollBlockDirectionForward, ScrollByPage);
+    return frame.eventHandler().scrollRecursively(ScrollBlockDirectionForward, ScrollByPage);
 }
 
 static bool executeScrollLineUp(Frame& frame, Event*, EditorCommandSource, const String&)
 {
-    return frame.eventHandler()->scrollRecursively(ScrollUp, ScrollByLine);
+    return frame.eventHandler().scrollRecursively(ScrollUp, ScrollByLine);
 }
 
 static bool executeScrollLineDown(Frame& frame, Event*, EditorCommandSource, const String&)
 {
-    return frame.eventHandler()->scrollRecursively(ScrollDown, ScrollByLine);
+    return frame.eventHandler().scrollRecursively(ScrollDown, ScrollByLine);
 }
 
 static bool executeScrollToBeginningOfDocument(Frame& frame, Event*, EditorCommandSource, const String&)
 {
-    return frame.eventHandler()->logicalScrollRecursively(ScrollBlockDirectionBackward, ScrollByDocument);
+    return frame.eventHandler().scrollRecursively(ScrollBlockDirectionBackward, ScrollByDocument);
 }
 
 static bool executeScrollToEndOfDocument(Frame& frame, Event*, EditorCommandSource, const String&)
 {
-    return frame.eventHandler()->logicalScrollRecursively(ScrollBlockDirectionForward, ScrollByDocument);
+    return frame.eventHandler().scrollRecursively(ScrollBlockDirectionForward, ScrollByDocument);
 }
 
 static bool executeSelectAll(Frame& frame, Event*, EditorCommandSource, const String&)
@@ -1059,10 +1028,8 @@ static bool executeSelectToMark(Frame& frame, Event*, EditorCommandSource, const
 {
     RefPtr<Range> mark = frame.editor().mark().toNormalizedRange();
     RefPtr<Range> selection = frame.editor().selectedRange();
-    if (!mark || !selection) {
-        systemBeep();
+    if (!mark || !selection)
         return false;
-    }
     frame.selection().setSelectedRange(unionDOMRanges(mark.get(), selection.get()).get(), DOWNSTREAM, true);
     return true;
 }
@@ -1110,10 +1077,8 @@ static bool executeSwapWithMark(Frame& frame, Event*, EditorCommandSource, const
 {
     const VisibleSelection& mark = frame.editor().mark();
     const VisibleSelection& selection = frame.selection().selection();
-    if (mark.isNone() || selection.isNone()) {
-        systemBeep();
+    if (mark.isNone() || selection.isNone())
         return false;
-    }
     frame.selection().setSelection(mark);
     frame.editor().setMark(selection);
     return true;
@@ -1167,15 +1132,15 @@ static bool executeUnselect(Frame& frame, Event*, EditorCommandSource, const Str
 
 static bool executeYank(Frame& frame, Event*, EditorCommandSource, const String&)
 {
-    frame.editor().insertTextWithoutSendingTextEvent(frame.editor().killRing()->yank(), false, 0);
-    frame.editor().killRing()->setToYankedState();
+    frame.editor().insertTextWithoutSendingTextEvent(frame.editor().killRing().yank(), false, 0);
+    frame.editor().killRing().setToYankedState();
     return true;
 }
 
 static bool executeYankAndSelect(Frame& frame, Event*, EditorCommandSource, const String&)
 {
-    frame.editor().insertTextWithoutSendingTextEvent(frame.editor().killRing()->yank(), true, 0);
-    frame.editor().killRing()->setToYankedState();
+    frame.editor().insertTextWithoutSendingTextEvent(frame.editor().killRing().yank(), true, 0);
+    frame.editor().killRing().setToYankedState();
     return true;
 }
 
@@ -1575,7 +1540,6 @@ static const CommandMap& createCommandMap()
         { "OverWrite", { executeToggleOverwrite, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "Paste", { executePaste, supportedPaste, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
         { "PasteAndMatchStyle", { executePasteAndMatchStyle, supportedPaste, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
-        { "PasteAsPlainText", { executePasteAsPlainText, supportedPaste, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
         { "PasteGlobalSelection", { executePasteGlobalSelection, supportedFromMenuOrKeyBinding, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
         { "Print", { executePrint, supported, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "Redo", { executeRedo, supported, enabledRedo, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
@@ -1676,12 +1640,12 @@ static const EditorInternalCommand* internalCommand(const String& commandName)
 
 Editor::Command Editor::command(const String& commandName)
 {
-    return Command(internalCommand(commandName), CommandFromMenuOrKeyBinding, m_frame);
+    return Command(internalCommand(commandName), CommandFromMenuOrKeyBinding, &m_frame);
 }
 
 Editor::Command Editor::command(const String& commandName, EditorCommandSource source)
 {
-    return Command(internalCommand(commandName), source, m_frame);
+    return Command(internalCommand(commandName), source, &m_frame);
 }
 
 bool Editor::commandIsSupportedFromMenuOrKeyBinding(const String& commandName)

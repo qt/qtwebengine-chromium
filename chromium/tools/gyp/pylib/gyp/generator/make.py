@@ -57,6 +57,7 @@ generator_wants_sorted_dependencies = False
 generator_additional_non_configuration_keys = []
 generator_additional_path_sections = []
 generator_extra_sources_for_rules = []
+generator_filelist_paths = None
 
 
 def CalculateVariables(default_variables, params):
@@ -102,6 +103,18 @@ def CalculateGeneratorInputInfo(params):
   if android_ndk_version:
     global generator_wants_sorted_dependencies
     generator_wants_sorted_dependencies = True
+
+  output_dir = params['options'].generator_output or \
+               params['options'].toplevel_dir
+  builddir_name = generator_flags.get('output_dir', 'out')
+  qualified_out_dir = os.path.normpath(os.path.join(
+    output_dir, builddir_name, 'gypfiles'))
+
+  global generator_filelist_paths
+  generator_filelist_paths = {
+    'toplevel': params['options'].toplevel_dir,
+    'qualified_out_dir': qualified_out_dir,
+  }
 
 
 def ensure_directory_exists(path):
@@ -198,6 +211,24 @@ quiet_cmd_solink_module = SOLINK_MODULE($(TOOLSET)) $@
 cmd_solink_module = $(LINK.$(TOOLSET)) -shared $(GYP_LDFLAGS) $(LDFLAGS.$(TOOLSET)) -Wl,-soname=$(@F) -o $@ -Wl,--start-group $(filter-out FORCE_DO_CMD, $^) -Wl,--end-group $(LIBS)
 quiet_cmd_solink_module_host = SOLINK_MODULE($(TOOLSET)) $@
 cmd_solink_module_host = $(LINK.$(TOOLSET)) -shared $(GYP_LDFLAGS) $(LDFLAGS.$(TOOLSET)) -Wl,-soname=$(@F) -o $@ $(filter-out FORCE_DO_CMD, $^) $(LIBS)
+"""
+
+
+LINK_COMMANDS_AIX = """\
+quiet_cmd_alink = AR($(TOOLSET)) $@
+cmd_alink = rm -f $@ && $(AR.$(TOOLSET)) crs $@ $(filter %.o,$^)
+
+quiet_cmd_alink_thin = AR($(TOOLSET)) $@
+cmd_alink_thin = rm -f $@ && $(AR.$(TOOLSET)) crs $@ $(filter %.o,$^)
+
+quiet_cmd_link = LINK($(TOOLSET)) $@
+cmd_link = $(LINK.$(TOOLSET)) $(GYP_LDFLAGS) $(LDFLAGS.$(TOOLSET)) -o $@ $(LD_INPUTS) $(LIBS)
+
+quiet_cmd_solink = SOLINK($(TOOLSET)) $@
+cmd_solink = $(LINK.$(TOOLSET)) -shared $(GYP_LDFLAGS) $(LDFLAGS.$(TOOLSET)) -o $@ $(LD_INPUTS) $(LIBS)
+
+quiet_cmd_solink_module = SOLINK_MODULE($(TOOLSET)) $@
+cmd_solink_module = $(LINK.$(TOOLSET)) -shared $(GYP_LDFLAGS) $(LDFLAGS.$(TOOLSET)) -o $@ $(filter-out FORCE_DO_CMD, $^) $(LIBS)
 """
 
 
@@ -477,14 +508,6 @@ cmd_mac_package_framework = ./gyp-mac-tool package-framework "$@" $(4)
 
 quiet_cmd_infoplist = INFOPLIST $@
 cmd_infoplist = $(CC.$(TOOLSET)) -E -P -Wno-trigraphs -x c $(INFOPLIST_DEFINES) "$<" -o "$@"
-"""
-
-SHARED_HEADER_SUN_COMMANDS = """
-# gyp-sun-tool is written next to the root Makefile by gyp.
-# Use $(4) for the command, since $(2) and $(3) are used as flag by do_cmd
-# already.
-quiet_cmd_sun_tool = SUNTOOL $(4) $<
-cmd_sun_tool = ./gyp-sun-tool $(4) $< "$@"
 """
 
 
@@ -1404,7 +1427,7 @@ $(obj).$(TOOLSET)/$(TARGET)/%%.o: $(obj)/%%%s FORCE_DO_CMD
 
           # TARGET_POSTBUILDS_$(BUILDTYPE) is added to postbuilds later on.
           gyp_to_build = gyp.common.InvertRelativePath(self.path)
-          target_postbuild = self.xcode_settings.GetTargetPostbuilds(
+          target_postbuild = self.xcode_settings.AddImplicitPostbuilds(
               configname,
               QuoteSpaces(os.path.normpath(os.path.join(gyp_to_build,
                                                         self.output))),
@@ -1986,14 +2009,19 @@ def GenerateOutput(target_list, target_dicts, data, params):
     })
   elif flavor == 'solaris':
     header_params.update({
-        'flock': './gyp-sun-tool flock',
+        'flock': './gyp-flock-tool flock',
         'flock_index': 2,
-        'extra_commands': SHARED_HEADER_SUN_COMMANDS,
     })
   elif flavor == 'freebsd':
     # Note: OpenBSD has sysutils/flock. lockf seems to be FreeBSD specific.
     header_params.update({
         'flock': 'lockf',
+    })
+  elif flavor == 'aix':
+    header_params.update({
+        'link_commands': LINK_COMMANDS_AIX,
+        'flock': './gyp-flock-tool flock',
+        'flock_index': 2,
     })
 
   header_params.update({

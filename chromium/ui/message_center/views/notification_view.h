@@ -18,26 +18,30 @@ namespace message_center {
 
 class BoundedLabel;
 class MessageCenter;
+class MessageCenterController;
+class NotificationView;
+class PaddedButton;
 
 // View that displays all current types of notification (web, basic, image, and
 // list). Future notification types may be handled by other classes, in which
 // case instances of those classes would be returned by the Create() factory
 // method below.
-class MESSAGE_CENTER_EXPORT NotificationView : public MessageView {
+class MESSAGE_CENTER_EXPORT NotificationView : public MessageView,
+                                               public MessageViewController {
  public:
   // Creates appropriate MessageViews for notifications. Those currently are
-  // always NotificationView or MessageSimpleView instances but in the future
+  // always NotificationView instances but in the future
   // may be instances of other classes, with the class depending on the
   // notification type. A notification is top level if it needs to be rendered
   // outside the browser window. No custom shadows are created for top level
   // notifications on Linux with Aura.
-  static MessageView* Create(const Notification& notification,
-                             MessageCenter* message_center,
-                             MessageCenterTray* tray,
-                             bool expanded,
-                             bool top_level);
+  // |controller| may be NULL, but has to be set before the view is shown.
+  static NotificationView* Create(MessageCenterController* controller,
+                                  const Notification& notification,
+                                  bool expanded,
+                                  bool top_level);
 
-  virtual ~NotificationView();
+    virtual ~NotificationView();
 
   // Overridden from views::View:
   virtual gfx::Size GetPreferredSize() OVERRIDE;
@@ -45,18 +49,28 @@ class MESSAGE_CENTER_EXPORT NotificationView : public MessageView {
   virtual void Layout() OVERRIDE;
   virtual void OnFocus() OVERRIDE;
   virtual void ScrollRectToVisible(const gfx::Rect& rect) OVERRIDE;
-  virtual views::View* GetEventHandlerForPoint(
-      const gfx::Point& point) OVERRIDE;
+  virtual views::View* GetEventHandlerForRect(const gfx::Rect& rect) OVERRIDE;
   virtual gfx::NativeCursor GetCursor(const ui::MouseEvent& event) OVERRIDE;
 
   // Overridden from MessageView:
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE;
 
+  // Overridden from MessageViewController:
+  virtual void ClickOnNotification(const std::string& notification_id) OVERRIDE;
+  virtual void RemoveNotification(const std::string& notification_id,
+                                  bool by_user) OVERRIDE;
+  virtual void DisableNotificationsFromThisSource(
+      const NotifierId& notifier_id) OVERRIDE;
+  virtual void ShowNotifierSettingsBubble() OVERRIDE;
+
+  void set_controller(MessageCenterController* controller) {
+    controller_ = controller;
+  }
+
  protected:
-  NotificationView(const Notification& notification,
-                   MessageCenter* message_center,
-                   MessageCenterTray* tray,
+  NotificationView(MessageCenterController* controller,
+                   const Notification& notification,
                    bool expanded);
 
  private:
@@ -65,6 +79,12 @@ class MESSAGE_CENTER_EXPORT NotificationView : public MessageView {
   int GetMessageLineLimit(int width);
   int GetMessageLines(int width, int limit);
   int GetMessageHeight(int width, int limit);
+
+  MessageCenterController* controller_;  // Weak, lives longer then views.
+
+  // Describes whether the view should display a hand pointer or not.
+  bool clickable_;
+  bool is_expanded_;
 
   // Weak references to NotificationView descendants owned by their parents.
   views::View* background_view_;
@@ -78,6 +98,7 @@ class MESSAGE_CENTER_EXPORT NotificationView : public MessageView {
   views::View* image_view_;
   views::ProgressBar* progress_bar_view_;
   std::vector<views::View*> action_buttons_;
+  PaddedButton* expand_button_;
 
   DISALLOW_COPY_AND_ASSIGN(NotificationView);
 };

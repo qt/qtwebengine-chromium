@@ -105,7 +105,7 @@ class UI_EXPORT ResourceBundle {
 
     // Retrieve a localized string. Return true if a string was provided or
     // false to attempt retrieval of the default string.
-    virtual bool GetLocalizedString(int message_id, string16* value) = 0;
+    virtual bool GetLocalizedString(int message_id, base::string16* value) = 0;
 
     // Returns a font or NULL to attempt retrieval of the default resource.
     virtual scoped_ptr<gfx::Font> GetFont(FontStyle style) = 0;
@@ -230,7 +230,7 @@ class UI_EXPORT ResourceBundle {
 
   // Get a localized string given a message id.  Returns an empty
   // string if the message_id is not found.
-  string16 GetLocalizedString(int message_id);
+  base::string16 GetLocalizedString(int message_id);
 
   // Returns the font list for the specified style.
   const gfx::FontList& GetFontList(FontStyle style);
@@ -255,9 +255,7 @@ class UI_EXPORT ResourceBundle {
 
   // Returns the maximum scale factor currently loaded.
   // Returns SCALE_FACTOR_100P if no resource is loaded.
-  ScaleFactor max_scale_factor() const {
-    return max_scale_factor_;
-  }
+  ScaleFactor GetMaxScaleFactor() const;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ResourceBundleTest, DelegateGetPathForLocalePack);
@@ -273,6 +271,9 @@ class UI_EXPORT ResourceBundle {
   // Ctor/dtor are private, since we're a singleton.
   explicit ResourceBundle(Delegate* delegate);
   ~ResourceBundle();
+
+  // Shared initialization.
+  static void InitSharedInstance(Delegate* delegate);
 
   // Free skia_images_.
   void FreeImages();

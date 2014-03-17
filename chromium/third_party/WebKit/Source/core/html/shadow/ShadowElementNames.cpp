@@ -59,6 +59,18 @@ const AtomicString& editingViewPort()
     return name;
 }
 
+const AtomicString& innerEditor()
+{
+    DEFINE_STATIC_LOCAL(AtomicString, name, ("inner-editor", AtomicString::ConstructFromLiteral));
+    return name;
+}
+
+const AtomicString& passwordGenerator()
+{
+    DEFINE_STATIC_LOCAL(AtomicString, name, ("password-generator", AtomicString::ConstructFromLiteral));
+    return name;
+}
+
 const AtomicString& pickerIndicator()
 {
     DEFINE_STATIC_LOCAL(AtomicString, name, ("picker", AtomicString::ConstructFromLiteral));
@@ -92,6 +104,12 @@ const AtomicString& sliderTrack()
 const AtomicString& speechButton()
 {
     DEFINE_STATIC_LOCAL(AtomicString, name, ("speech", AtomicString::ConstructFromLiteral));
+    return name;
+}
+
+const AtomicString& textFieldContainer()
+{
+    DEFINE_STATIC_LOCAL(AtomicString, name, ("text-field-container", AtomicString::ConstructFromLiteral));
     return name;
 }
 

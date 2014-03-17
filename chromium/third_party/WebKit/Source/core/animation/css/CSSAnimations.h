@@ -44,74 +44,168 @@
 
 namespace WebCore {
 
-class CSSAnimationDataList;
 class Element;
-class RenderObject;
+class StylePropertyShorthand;
 class StyleResolver;
+class StyleRuleKeyframes;
 
-// Applied to scopes where an animation update will be added as pending and should then be applied (eg. Element style recalc).
-class CSSAnimationUpdateScope FINAL {
-public:
-    CSSAnimationUpdateScope(Element*);
-    ~CSSAnimationUpdateScope();
-private:
-    Element* m_target;
-};
-
+// This class stores the CSS Animations/Transitions information we use during a style recalc.
+// This includes updates to animations/transitions as well as the CompositableValueMaps to be applied.
 class CSSAnimationUpdate FINAL {
 public:
-    void startAnimation(AtomicString& animationName, PassRefPtr<InertAnimation> animation)
+    void startAnimation(AtomicString& animationName, const HashSet<RefPtr<InertAnimation> >& animations)
     {
         NewAnimation newAnimation;
         newAnimation.name = animationName;
-        newAnimation.animation = animation;
+        newAnimation.animations = animations;
         m_newAnimations.append(newAnimation);
     }
     // Returns whether player has been cancelled and should be filtered during style application.
-    bool isCancelled(const Player* player) const { return m_cancelledAnimationPlayers.contains(player); }
-    void cancelAnimation(const AtomicString& name, const Player* player)
+    bool isCancelledAnimation(const Player* player) const { return m_cancelledAnimationPlayers.contains(player); }
+    void cancelAnimation(const AtomicString& name, const HashSet<RefPtr<Player> >& players)
     {
         m_cancelledAnimationNames.append(name);
-        m_cancelledAnimationPlayers.add(player);
+        for (HashSet<RefPtr<Player> >::const_iterator iter = players.begin(); iter != players.end(); ++iter)
+            m_cancelledAnimationPlayers.add(iter->get());
     }
+    void toggleAnimationPaused(const AtomicString& name)
+    {
+        m_animationsWithPauseToggled.append(name);
+    }
+
+    void startTransition(CSSPropertyID id, const AnimatableValue* from, const AnimatableValue* to, PassRefPtr<InertAnimation> animation)
+    {
+        NewTransition newTransition;
+        newTransition.id = id;
+        newTransition.from = from;
+        newTransition.to = to;
+        newTransition.animation = animation;
+        m_newTransitions.set(id, newTransition);
+    }
+    bool isCancelledTransition(CSSPropertyID id) const { return m_cancelledTransitions.contains(id); }
+    void cancelTransition(CSSPropertyID id) { m_cancelledTransitions.add(id); }
+
     struct NewAnimation {
         AtomicString name;
-        RefPtr<InertAnimation> animation;
+        HashSet<RefPtr<InertAnimation> > animations;
     };
     const Vector<NewAnimation>& newAnimations() const { return m_newAnimations; }
     const Vector<AtomicString>& cancelledAnimationNames() const { return m_cancelledAnimationNames; }
+    const HashSet<const Player*>& cancelledAnimationPlayers() const { return m_cancelledAnimationPlayers; }
+    const Vector<AtomicString>& animationsWithPauseToggled() const { return m_animationsWithPauseToggled; }
+
+    struct NewTransition {
+        CSSPropertyID id;
+        const AnimatableValue* from;
+        const AnimatableValue* to;
+        RefPtr<InertAnimation> animation;
+    };
+    typedef HashMap<CSSPropertyID, NewTransition> NewTransitionMap;
+    const NewTransitionMap& newTransitions() const { return m_newTransitions; }
+    const HashSet<CSSPropertyID>& cancelledTransitions() const { return m_cancelledTransitions; }
+
+    void adoptCompositableValuesForAnimations(AnimationEffect::CompositableValueMap& newMap) { newMap.swap(m_compositableValuesForAnimations); }
+    void adoptCompositableValuesForTransitions(AnimationEffect::CompositableValueMap& newMap) { newMap.swap(m_compositableValuesForTransitions); }
+    const AnimationEffect::CompositableValueMap& compositableValuesForAnimations() const { return m_compositableValuesForAnimations; }
+    const AnimationEffect::CompositableValueMap& compositableValuesForTransitions() const { return m_compositableValuesForTransitions; }
+    AnimationEffect::CompositableValueMap& compositableValuesForAnimations() { return m_compositableValuesForAnimations; }
+
+    bool isEmpty() const
+    {
+        return m_newAnimations.isEmpty()
+            && m_cancelledAnimationNames.isEmpty()
+            && m_cancelledAnimationPlayers.isEmpty()
+            && m_animationsWithPauseToggled.isEmpty()
+            && m_newTransitions.isEmpty()
+            && m_cancelledTransitions.isEmpty()
+            && m_compositableValuesForAnimations.isEmpty()
+            && m_compositableValuesForTransitions.isEmpty();
+    }
 private:
-    // Order is significant since it defines the order in which new animations will be started.
+    // Order is significant since it defines the order in which new animations
+    // will be started. Note that there may be multiple animations present
+    // with the same name, due to the way in which we split up animations with
+    // incomplete keyframes.
     Vector<NewAnimation> m_newAnimations;
     Vector<AtomicString> m_cancelledAnimationNames;
     HashSet<const Player*> m_cancelledAnimationPlayers;
+    Vector<AtomicString> m_animationsWithPauseToggled;
+
+    NewTransitionMap m_newTransitions;
+    HashSet<CSSPropertyID> m_cancelledTransitions;
+
+    AnimationEffect::CompositableValueMap m_compositableValuesForAnimations;
+    AnimationEffect::CompositableValueMap m_compositableValuesForTransitions;
 };
 
 class CSSAnimations FINAL {
 public:
+    // FIXME: This method is only used here and in the legacy animations
+    // implementation. It should be made private or file-scope when the legacy
+    // engine is removed.
+    static const StyleRuleKeyframes* matchScopedKeyframesRule(StyleResolver*, const Element*, const StringImpl*);
+
     static bool isAnimatableProperty(CSSPropertyID);
-    static bool needsUpdate(const Element*, const RenderStyle*);
-    static PassOwnPtr<CSSAnimationUpdate> calculateUpdate(const Element*, const RenderStyle*, const CSSAnimations*, const CSSAnimationDataList*, StyleResolver*);
+    static const StylePropertyShorthand& animatableProperties();
+    // FIXME: This should take a const ScopedStyleTree instead of a StyleResolver.
+    // We should also change the Element* to a const Element*
+    static PassOwnPtr<CSSAnimationUpdate> calculateUpdate(Element*, const RenderStyle&, StyleResolver*);
+
     void setPendingUpdate(PassOwnPtr<CSSAnimationUpdate> update) { m_pendingUpdate = update; }
     void maybeApplyPendingUpdate(Element*);
-    bool isEmpty() const { return m_animations.isEmpty() && !m_pendingUpdate; }
+    bool isEmpty() const { return m_animations.isEmpty() && m_transitions.isEmpty() && !m_pendingUpdate; }
     void cancel();
+
 private:
-    typedef HashMap<AtomicString, RefPtr<Player> > AnimationMap;
+    // Note that a single animation name may map to multiple players due to
+    // the way in which we split up animations with incomplete keyframes.
+    // FIXME: Once the Web Animations model supports groups, we could use a
+    // ParGroup to drive multiple animations from a single Player.
+    typedef HashMap<AtomicString, HashSet<RefPtr<Player> > > AnimationMap;
+    struct RunningTransition {
+        Animation* transition; // The TransitionTimeline keeps the Players alive
+        const AnimatableValue* from;
+        const AnimatableValue* to;
+    };
+    typedef HashMap<CSSPropertyID, RunningTransition > TransitionMap;
     AnimationMap m_animations;
+    TransitionMap m_transitions;
     OwnPtr<CSSAnimationUpdate> m_pendingUpdate;
-    class EventDelegate FINAL : public TimedItem::EventDelegate {
+
+    AnimationEffect::CompositableValueMap m_previousCompositableValuesForAnimations;
+
+    static void calculateAnimationUpdate(CSSAnimationUpdate*, Element*, const RenderStyle&, StyleResolver*);
+    static void calculateTransitionUpdate(CSSAnimationUpdate*, const Element*, const RenderStyle&);
+    static void calculateTransitionUpdateForProperty(CSSPropertyID, const CSSAnimationData*, const RenderStyle& oldStyle, const RenderStyle&, const TransitionMap* activeTransitions, CSSAnimationUpdate*);
+
+    static void calculateAnimationCompositableValues(CSSAnimationUpdate*, const Element*);
+    static void calculateTransitionCompositableValues(CSSAnimationUpdate*, const Element*);
+
+    class AnimationEventDelegate FINAL : public TimedItem::EventDelegate {
     public:
-        EventDelegate(Element* target, const AtomicString& name)
+        AnimationEventDelegate(Element* target, const AtomicString& name)
             : m_target(target)
             , m_name(name)
         {
         }
         virtual void onEventCondition(const TimedItem*, bool isFirstSample, TimedItem::Phase previousPhase, double previousIteration) OVERRIDE;
     private:
-        void maybeDispatch(Document::ListenerType, AtomicString& eventName, double elapsedTime);
+        void maybeDispatch(Document::ListenerType, const AtomicString& eventName, double elapsedTime);
         Element* m_target;
         const AtomicString m_name;
+    };
+
+    class TransitionEventDelegate FINAL : public TimedItem::EventDelegate {
+    public:
+        TransitionEventDelegate(Element* target, CSSPropertyID property)
+            : m_target(target)
+            , m_property(property)
+        {
+        }
+        virtual void onEventCondition(const TimedItem*, bool isFirstSample, TimedItem::Phase previousPhase, double previousIteration) OVERRIDE;
+    private:
+        Element* m_target;
+        const CSSPropertyID m_property;
     };
 };
 

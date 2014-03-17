@@ -8,7 +8,6 @@
 #include "ui/aura/aura_export.h"
 
 namespace aura {
-class RootWindow;
 class Window;
 
 namespace client {
@@ -22,17 +21,24 @@ class AURA_EXPORT CaptureClient {
   // Releases a capture from the |window|.
   virtual void ReleaseCapture(Window* window) = 0;
 
-  // Returns the current capture window.
+  // Returns the current capture window. This may only return a Window if the
+  // Window that has capture is a child of the Window the CaptureClient is
+  // installed on. GetGlobalCaptureWindow() can be used to locate the Window
+  // that has capture regardless of the Window the CaptureClient is installed
+  // on.
   virtual Window* GetCaptureWindow() = 0;
+
+  // See description of GetCaptureWindow() for details.
+  virtual Window* GetGlobalCaptureWindow() = 0;
 
  protected:
   virtual ~CaptureClient() {}
 };
 
-// Sets/Gets the capture client on the RootWindow.
-AURA_EXPORT void SetCaptureClient(RootWindow* root_window,
+// Sets/Gets the capture client on the root Window.
+AURA_EXPORT void SetCaptureClient(Window* root_window,
                                   CaptureClient* client);
-AURA_EXPORT CaptureClient* GetCaptureClient(RootWindow* root_window);
+AURA_EXPORT CaptureClient* GetCaptureClient(Window* root_window);
 
 // A utility function to get the current capture window. Returns NULL
 // if the window doesn't have a root window, or there is no capture window.

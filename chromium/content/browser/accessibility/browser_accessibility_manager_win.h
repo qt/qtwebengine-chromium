@@ -7,11 +7,14 @@
 
 #include <oleacc.h>
 
+#include "base/memory/scoped_ptr.h"
 #include "base/win/scoped_comptr.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 
 namespace content {
 class BrowserAccessibilityWin;
+
+class AccessibleHWND;
 
 // Manages a tree of BrowserAccessibilityWin objects.
 class CONTENT_EXPORT BrowserAccessibilityManagerWin
@@ -44,7 +47,7 @@ class CONTENT_EXPORT BrowserAccessibilityManagerWin
   virtual void AddNodeToMap(BrowserAccessibility* node);
   virtual void RemoveNode(BrowserAccessibility* node) OVERRIDE;
   virtual void NotifyAccessibilityEvent(
-      WebKit::WebAXEvent event_type, BrowserAccessibility* node) OVERRIDE;
+      blink::WebAXEvent event_type, BrowserAccessibility* node) OVERRIDE;
 
   // Track this object and post a VISIBLE_DATA_CHANGED notification when
   // its container scrolls.
@@ -54,6 +57,9 @@ class CONTENT_EXPORT BrowserAccessibilityManagerWin
   // Return a pointer to the object corresponding to the given windows-specific
   // unique id, does not make a new reference.
   BrowserAccessibilityWin* GetFromUniqueIdWin(LONG unique_id_win);
+
+  // Called when |accessible_hwnd_| is deleted by its parent.
+  void OnAccessibleHwndDeleted();
 
  private:
   // The closest ancestor HWND.
@@ -73,6 +79,11 @@ class CONTENT_EXPORT BrowserAccessibilityManagerWin
   // A mapping from the Windows-specific unique IDs (unique within the
   // browser process) to renderer ids within this page.
   base::hash_map<long, int32> unique_id_to_renderer_id_map_;
+
+  bool is_chrome_frame_;
+
+  // Owned by its parent; OnAccessibleHwndDeleted gets called upon deletion.
+  AccessibleHWND* accessible_hwnd_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserAccessibilityManagerWin);
 };

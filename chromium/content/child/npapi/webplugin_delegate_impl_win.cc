@@ -35,9 +35,9 @@
 #include "ui/gfx/win/hwnd_util.h"
 #include "webkit/common/cursors/webcursor.h"
 
-using WebKit::WebKeyboardEvent;
-using WebKit::WebInputEvent;
-using WebKit::WebMouseEvent;
+using blink::WebKeyboardEvent;
+using blink::WebInputEvent;
+using blink::WebMouseEvent;
 
 namespace content {
 
@@ -87,6 +87,11 @@ base::LazyInstance<base::win::IATPatchFunction> g_iat_patch_reg_enum_key_ex_w =
 // Helper object for patching the GetProcAddress API.
 base::LazyInstance<base::win::IATPatchFunction> g_iat_patch_get_proc_address =
     LAZY_INSTANCE_INITIALIZER;
+
+#if defined(USE_AURA)
+base::LazyInstance<base::win::IATPatchFunction> g_iat_patch_window_from_point =
+    LAZY_INSTANCE_INITIALIZER;
+#endif
 
 // http://crbug.com/16114
 // Enforces providing a valid device context in NPWindow, so that NPP_SetWindow
@@ -261,6 +266,9 @@ WebPluginDelegateImpl::WebPluginDelegateImpl(
     quirks_ |= PLUGIN_QUIRK_ALWAYS_NOTIFY_SUCCESS;
     quirks_ |= PLUGIN_QUIRK_HANDLE_MOUSE_CAPTURE;
     quirks_ |= PLUGIN_QUIRK_EMULATE_IME;
+#if defined(USE_AURA)
+    quirks_ |= PLUGIN_QUIRK_FAKE_WINDOW_FROM_POINT;
+#endif
   } else if (filename == kAcrobatReaderPlugin) {
     // Check for the version number above or equal 9.
     int major_version = GetPluginMajorVersion(plugin_info);
@@ -414,6 +422,14 @@ bool WebPluginDelegateImpl::PlatformInitialize() {
         GetProcAddressPatch);
   }
 
+#if defined(USE_AURA)
+  if (windowless_ && !g_iat_patch_window_from_point.Pointer()->is_patched() &&
+      (quirks_ & PLUGIN_QUIRK_FAKE_WINDOW_FROM_POINT)) {
+    g_iat_patch_window_from_point.Pointer()->Patch(
+        GetPluginPath().value().c_str(), "user32.dll", "WindowFromPoint",
+        WebPluginDelegateImpl::WindowFromPointPatch);
+  }
+#endif
   return true;
 }
 
@@ -433,6 +449,11 @@ void WebPluginDelegateImpl::PlatformDestroyInstance() {
 
   if (g_iat_patch_reg_enum_key_ex_w.Pointer()->is_patched())
     g_iat_patch_reg_enum_key_ex_w.Pointer()->Unpatch();
+
+#if defined(USE_AURA)
+  if (g_iat_patch_window_from_point.Pointer()->is_patched())
+    g_iat_patch_window_from_point.Pointer()->Unpatch();
+#endif
 
   if (mouse_hook_) {
     UnhookWindowsHookEx(mouse_hook_);
@@ -1001,7 +1022,13 @@ LRESULT CALLBACK WebPluginDelegateImpl::NativeWndProc(
     result = CallWindowProc(
         delegate->plugin_wnd_proc_, hwnd, message, wparam, lparam);
 
-    delegate->is_calling_wndproc = false;
+    // The plugin instance may have been destroyed in the CallWindowProc call
+    // above. This will also destroy the plugin window. Before attempting to
+    // access the WebPluginDelegateImpl instance we validate if the window is
+    // still valid.
+    if (::IsWindow(hwnd))
+      delegate->is_calling_wndproc = false;
+
     g_current_plugin_instance = last_plugin_instance;
 
     if (message == WM_NCDESTROY) {
@@ -1017,7 +1044,8 @@ LRESULT CALLBACK WebPluginDelegateImpl::NativeWndProc(
       ClearThrottleQueueForWindow(hwnd);
     }
   }
-  delegate->last_message_ = old_message;
+  if (::IsWindow(hwnd))
+    delegate->last_message_ = old_message;
   return result;
 }
 
@@ -1311,6 +1339,12 @@ bool WebPluginDelegateImpl::PlatformHandleInputEvent(
     ResetEvent(handle_event_pump_messages_event_);
   }
 
+  // If we didn't enter a modal loop, need to unhook the filter.
+  if (handle_event_message_filter_hook_) {
+    UnhookWindowsHookEx(handle_event_message_filter_hook_);
+    handle_event_message_filter_hook_ = NULL;
+  }
+
   if (::IsWindow(last_focus_window)) {
     // Restore the nestable tasks allowed state in the message loop and reset
     // the os modal loop state as the plugin returned from the TrackPopupMenu
@@ -1459,6 +1493,19 @@ FARPROC WINAPI WebPluginDelegateImpl::GetProcAddressPatch(HMODULE module,
     return imm_function;
   return ::GetProcAddress(module, name);
 }
+
+#if defined(USE_AURA)
+HWND WINAPI WebPluginDelegateImpl::WindowFromPointPatch(POINT point) {
+  HWND window = WindowFromPoint(point);
+  if (::ScreenToClient(window, &point)) {
+    HWND child = ChildWindowFromPoint(window, point);
+    if (::IsWindow(child) &&
+        ::GetProp(child, content::kPluginDummyParentProperty))
+      return child;
+  }
+  return window;
+}
+#endif
 
 void WebPluginDelegateImpl::HandleCaptureForMessage(HWND window,
                                                     UINT message) {

@@ -5,6 +5,8 @@
 #ifndef CONTENT_PUBLIC_BROWSER_RENDER_VIEW_HOST_H_
 #define CONTENT_PUBLIC_BROWSER_RENDER_VIEW_HOST_H_
 
+#include <list>
+
 #include "base/callback_forward.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/render_widget_host.h"
@@ -25,11 +27,15 @@ class FilePath;
 class Value;
 }
 
+namespace media {
+class AudioOutputController;
+}
+
 namespace ui {
 struct SelectedFileInfo;
 }
 
-namespace WebKit {
+namespace blink {
 struct WebFindOptions;
 struct WebMediaPlayerAction;
 struct WebPluginAction;
@@ -73,11 +79,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
                         bool empty_allowed,
                         GURL* url);
 
-  // Adds/removes a callback called on creation of each new RenderViewHost.
-  typedef base::Callback<void(RenderViewHost*)> CreatedCallback;
-  static void AddCreatedCallback(const CreatedCallback& callback);
-  static void RemoveCreatedCallback(const CreatedCallback& callback);
-
   virtual ~RenderViewHost() {}
 
   // Tell the render view to enable a set of javascript bindings. The argument
@@ -101,7 +102,7 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
       int callback_context) = 0;
   virtual void DesktopNotificationPostDisplay(int callback_context) = 0;
   virtual void DesktopNotificationPostError(int notification_id,
-                                    const string16& message) = 0;
+                                    const base::string16& message) = 0;
   virtual void DesktopNotificationPostClose(int notification_id,
                                             bool by_user) = 0;
   virtual void DesktopNotificationPostClick(int notification_id) = 0;
@@ -119,7 +120,7 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // either in a drop or by being cancelled.
   virtual void DragSourceEndedAt(
       int client_x, int client_y, int screen_x, int screen_y,
-      WebKit::WebDragOperation operation) = 0;
+      blink::WebDragOperation operation) = 0;
 
   // Notifies the renderer that a drag and drop operation is in progress, with
   // droppable items positioned over the renderer's view.
@@ -135,12 +136,12 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
       const DropData& drop_data,
       const gfx::Point& client_pt,
       const gfx::Point& screen_pt,
-      WebKit::WebDragOperationsMask operations_allowed,
+      blink::WebDragOperationsMask operations_allowed,
       int key_modifiers) = 0;
   virtual void DragTargetDragOver(
       const gfx::Point& client_pt,
       const gfx::Point& screen_pt,
-      WebKit::WebDragOperationsMask operations_allowed,
+      blink::WebDragOperationsMask operations_allowed,
       int key_modifiers) = 0;
   virtual void DragTargetDragLeave() = 0;
   virtual void DragTargetDrop(const gfx::Point& client_pt,
@@ -166,31 +167,31 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // located at the given point.
   virtual void ExecuteMediaPlayerActionAtLocation(
       const gfx::Point& location,
-      const WebKit::WebMediaPlayerAction& action) = 0;
+      const blink::WebMediaPlayerAction& action) = 0;
 
   // Runs some javascript within the context of a frame in the page.
-  virtual void ExecuteJavascriptInWebFrame(const string16& frame_xpath,
-                                           const string16& jscript) = 0;
+  virtual void ExecuteJavascriptInWebFrame(const base::string16& frame_xpath,
+                                           const base::string16& jscript) = 0;
 
   // Runs some javascript within the context of a frame in the page. The result
   // is sent back via the provided callback.
   typedef base::Callback<void(const base::Value*)> JavascriptResultCallback;
   virtual void ExecuteJavascriptInWebFrameCallbackResult(
-      const string16& frame_xpath,
-      const string16& jscript,
+      const base::string16& frame_xpath,
+      const base::string16& jscript,
       const JavascriptResultCallback& callback) = 0;
 
   // Tells the renderer to perform the given action on the plugin located at
   // the given point.
   virtual void ExecutePluginActionAtLocation(
-      const gfx::Point& location, const WebKit::WebPluginAction& action) = 0;
+      const gfx::Point& location, const blink::WebPluginAction& action) = 0;
 
   // Asks the renderer to exit fullscreen
   virtual void ExitFullscreen() = 0;
 
   // Finds text on a page.
-  virtual void Find(int request_id, const string16& search_text,
-                    const WebKit::WebFindOptions& options) = 0;
+  virtual void Find(int request_id, const base::string16& search_text,
+                    const blink::WebFindOptions& options) = 0;
 
   // Notifies the renderer that the user has closed the FindInPage window
   // (and what action to take regarding the selection).
@@ -222,7 +223,7 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
 
   // Requests the renderer to evaluate an xpath to a frame and insert css
   // into that frame's document.
-  virtual void InsertCSS(const string16& frame_xpath,
+  virtual void InsertCSS(const base::string16& frame_xpath,
                          const std::string& css) = 0;
 
   // Returns true if the RenderView is active and has not crashed. Virtual
@@ -252,9 +253,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   virtual void SetWebUIProperty(const std::string& name,
                                 const std::string& value) = 0;
 
-  // Set the zoom level for the current main frame
-  virtual void SetZoomLevel(double level) = 0;
-
   // Changes the zoom level for the current main frame.
   virtual void Zoom(PageZoom zoom) = 0;
 
@@ -273,6 +271,16 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // Informs the renderer process of a change in timezone.
   virtual void NotifyTimezoneChange() = 0;
 
+  // Retrieves the list of AudioOutputController objects associated
+  // with this object and passes it to the callback you specify, on
+  // the same thread on which you called the method.
+  typedef std::list<scoped_refptr<media::AudioOutputController> >
+      AudioOutputControllerList;
+  typedef base::Callback<void(const AudioOutputControllerList&)>
+      GetAudioOutputControllersCallback;
+  virtual void GetAudioOutputControllers(
+      const GetAudioOutputControllersCallback& callback) const = 0;
+
 #if defined(OS_ANDROID)
   // Selects and zooms to the find result nearest to the point (x,y)
   // defined in find-in-page coordinates.
@@ -280,6 +288,9 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
 
   // Asks the renderer to send the rects of the current find matches.
   virtual void RequestFindMatchRects(int current_version) = 0;
+
+  // Disables fullscreen media playback for encrypted video.
+  virtual void DisableFullscreenEncryptedMediaPlayback() = 0;
 #endif
 
  private:

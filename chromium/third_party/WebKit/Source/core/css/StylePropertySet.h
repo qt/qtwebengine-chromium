@@ -25,6 +25,7 @@
 #include "core/css/CSSParserMode.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSProperty.h"
+#include "core/css/CSSVariablesIterator.h"
 #include "core/css/PropertySetCSSStyleDeclaration.h"
 #include "wtf/ListHashSet.h"
 #include "wtf/Vector.h"
@@ -172,9 +173,17 @@ inline const StylePropertyMetadata* ImmutableStylePropertySet::metadataArray() c
     return reinterpret_cast<const StylePropertyMetadata*>(&reinterpret_cast<const char*>(&(this->m_storage))[m_arraySize * sizeof(CSSValue*)]);
 }
 
+DEFINE_TYPE_CASTS(ImmutableStylePropertySet, StylePropertySet, set, !set->isMutable(), !set.isMutable());
+
+inline ImmutableStylePropertySet* toImmutableStylePropertySet(const RefPtr<StylePropertySet>& set)
+{
+    return toImmutableStylePropertySet(set.get());
+}
+
 class MutableStylePropertySet : public StylePropertySet {
 public:
-    static PassRefPtr<MutableStylePropertySet> create(CSSParserMode = CSSQuirksMode);
+    ~MutableStylePropertySet() { }
+    static PassRefPtr<MutableStylePropertySet> create(CSSParserMode = HTMLQuirksMode);
     static PassRefPtr<MutableStylePropertySet> create(const CSSProperty* properties, unsigned count);
 
     unsigned propertyCount() const { return m_propertyVector.size(); }
@@ -204,6 +213,8 @@ public:
     bool removeVariable(const AtomicString& name);
     bool clearVariables();
 
+    PassRefPtr<CSSVariablesIterator> variablesIterator() { return VariablesIterator::create(this); }
+
     void mergeAndOverrideOnConflict(const StylePropertySet*);
 
     void clear();
@@ -215,6 +226,26 @@ public:
     Vector<CSSProperty, 4> m_propertyVector;
 
 private:
+    class VariablesIterator : public CSSVariablesIterator {
+    public:
+        virtual ~VariablesIterator() { }
+        static PassRefPtr<VariablesIterator> create(MutableStylePropertySet*);
+    private:
+        explicit VariablesIterator(MutableStylePropertySet* propertySet) : m_propertySet(propertySet) { }
+        void takeRemainingNames(Vector<AtomicString>& remainingNames) { m_remainingNames.swap(remainingNames); }
+        virtual void advance() OVERRIDE;
+        virtual bool atEnd() const OVERRIDE { return m_remainingNames.isEmpty(); }
+        virtual AtomicString name() const OVERRIDE { return m_remainingNames.last(); }
+        virtual String value() const OVERRIDE { return m_propertySet->variableValue(name()); }
+        virtual void addedVariable(const AtomicString& name) OVERRIDE;
+        virtual void removedVariable(const AtomicString& name) OVERRIDE;
+        virtual void clearedVariables() OVERRIDE;
+
+        RefPtr<MutableStylePropertySet> m_propertySet;
+        Vector<AtomicString> m_remainingNames;
+        Vector<AtomicString> m_newNames;
+    };
+
     explicit MutableStylePropertySet(CSSParserMode);
     explicit MutableStylePropertySet(const StylePropertySet&);
     MutableStylePropertySet(const CSSProperty* properties, unsigned count);
@@ -226,24 +257,31 @@ private:
     friend class StylePropertySet;
 };
 
+DEFINE_TYPE_CASTS(MutableStylePropertySet, StylePropertySet, set, set->isMutable(), set.isMutable());
+
+inline MutableStylePropertySet* toMutableStylePropertySet(const RefPtr<StylePropertySet>& set)
+{
+    return toMutableStylePropertySet(set.get());
+}
+
 inline const StylePropertyMetadata& StylePropertySet::PropertyReference::propertyMetadata() const
 {
     if (m_propertySet.isMutable())
-        return static_cast<const MutableStylePropertySet&>(m_propertySet).m_propertyVector.at(m_index).metadata();
-    return static_cast<const ImmutableStylePropertySet&>(m_propertySet).metadataArray()[m_index];
+        return toMutableStylePropertySet(m_propertySet).m_propertyVector.at(m_index).metadata();
+    return toImmutableStylePropertySet(m_propertySet).metadataArray()[m_index];
 }
 
 inline const CSSValue* StylePropertySet::PropertyReference::propertyValue() const
 {
     if (m_propertySet.isMutable())
-        return static_cast<const MutableStylePropertySet&>(m_propertySet).m_propertyVector.at(m_index).value();
-    return static_cast<const ImmutableStylePropertySet&>(m_propertySet).valueArray()[m_index];
+        return toMutableStylePropertySet(m_propertySet).m_propertyVector.at(m_index).value();
+    return toImmutableStylePropertySet(m_propertySet).valueArray()[m_index];
 }
 
 inline unsigned StylePropertySet::propertyCount() const
 {
     if (m_isMutable)
-        return static_cast<const MutableStylePropertySet*>(this)->m_propertyVector.size();
+        return toMutableStylePropertySet(this)->m_propertyVector.size();
     return m_arraySize;
 }
 
@@ -258,9 +296,9 @@ inline void StylePropertySet::deref()
         return;
 
     if (m_isMutable)
-        delete static_cast<MutableStylePropertySet*>(this);
+        delete toMutableStylePropertySet(this);
     else
-        delete static_cast<ImmutableStylePropertySet*>(this);
+        delete toImmutableStylePropertySet(this);
 }
 
 } // namespace WebCore

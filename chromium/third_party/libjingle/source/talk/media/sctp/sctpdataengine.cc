@@ -31,12 +31,14 @@
 #include <stdio.h>
 #include <vector>
 
+#include "talk/app/webrtc/datachannelinterface.h"
 #include "talk/base/buffer.h"
 #include "talk/base/helpers.h"
 #include "talk/base/logging.h"
 #include "talk/media/base/codec.h"
 #include "talk/media/base/constants.h"
 #include "talk/media/base/streamparams.h"
+#include "talk/media/sctp/sctputils.h"
 #include "usrsctplib/usrsctp.h"
 
 namespace cricket {
@@ -242,8 +244,8 @@ DataMediaChannel* SctpDataEngine::CreateChannel(
 
 SctpDataMediaChannel::SctpDataMediaChannel(talk_base::Thread* thread)
     : worker_thread_(thread),
-      local_port_(kSctpDefaultPort),
-      remote_port_(kSctpDefaultPort),
+      local_port_(-1),
+      remote_port_(-1),
       sock_(NULL),
       sending_(false),
       receiving_(false),
@@ -344,6 +346,12 @@ void SctpDataMediaChannel::CloseSctpSocket() {
 
 bool SctpDataMediaChannel::Connect() {
   LOG(LS_VERBOSE) << debug_name_ << "->Connect().";
+  if (remote_port_ < 0) {
+    remote_port_ = kSctpDefaultPort;
+  }
+  if (local_port_ < 0) {
+    local_port_ = kSctpDefaultPort;
+  }
 
   // If we already have a socket connection, just return.
   if (sock_) {
@@ -534,7 +542,8 @@ bool SctpDataMediaChannel::SendData(
 }
 
 // Called by network interface when a packet has been received.
-void SctpDataMediaChannel::OnPacketReceived(talk_base::Buffer* packet) {
+void SctpDataMediaChannel::OnPacketReceived(
+    talk_base::Buffer* packet, const talk_base::PacketTime& packet_time) {
   LOG(LS_VERBOSE) << debug_name_ << "->OnPacketReceived(...): " << " length="
                   << packet->length() << ", sending: " << sending_;
   // Only give receiving packets to usrsctp after if connected. This enables two
@@ -578,7 +587,23 @@ void SctpDataMediaChannel::OnDataFromSctpToChannel(
   StreamParams found_stream;
   if (!GetStreamBySsrc(streams_, params.ssrc, &found_stream)) {
     if (params.type == DMT_CONTROL) {
-      SignalDataReceived(params, buffer->data(), buffer->length());
+      std::string label;
+      webrtc::DataChannelInit config;
+      if (ParseDataChannelOpenMessage(*buffer, &label, &config)) {
+        config.id = params.ssrc;
+        // Do not send the OPEN message for this data channel.
+        config.negotiated = true;
+        SignalNewStreamReceived(label, config);
+
+        // Add the stream immediately.
+        cricket::StreamParams sparams =
+            cricket::StreamParams::CreateLegacy(params.ssrc);
+        AddSendStream(sparams);
+        AddRecvStream(sparams);
+      } else {
+        LOG(LS_ERROR) << debug_name_ << "->OnDataFromSctpToChannel(...): "
+                      << "Received malformed control message";
+      }
     } else {
       LOG(LS_WARNING) << debug_name_ << "->OnDataFromSctpToChannel(...): "
                       << "Received packet for unknown ssrc: " << params.ssrc;
@@ -677,6 +702,38 @@ void SctpDataMediaChannel::OnNotificationAssocChange(
   }
 }
 
+// Puts the specified |param| from the codec identified by |id| into |dest|
+// and returns true.  Or returns false if it wasn't there, leaving |dest|
+// untouched.
+static bool GetCodecIntParameter(const std::vector<DataCodec>& codecs,
+                                 int id, const std::string& name,
+                                 const std::string& param, int* dest) {
+  std::string value;
+  Codec match_pattern;
+  match_pattern.id = id;
+  match_pattern.name = name;
+  for (size_t i = 0; i < codecs.size(); ++i) {
+    if (codecs[i].Matches(match_pattern)) {
+      if (codecs[i].GetParam(param, &value)) {
+        *dest = talk_base::FromString<int>(value);
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool SctpDataMediaChannel::SetSendCodecs(const std::vector<DataCodec>& codecs) {
+  return GetCodecIntParameter(
+      codecs, kGoogleSctpDataCodecId, kGoogleSctpDataCodecName, kCodecParamPort,
+      &remote_port_);
+}
+
+bool SctpDataMediaChannel::SetRecvCodecs(const std::vector<DataCodec>& codecs) {
+  return GetCodecIntParameter(
+      codecs, kGoogleSctpDataCodecId, kGoogleSctpDataCodecName, kCodecParamPort,
+      &local_port_);
+}
 
 void SctpDataMediaChannel::OnPacketFromSctpToNetwork(
     talk_base::Buffer* buffer) {

@@ -19,11 +19,13 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <stdint.h>
+#include <stdlib.h>
+
 #include "libavutil/avstring.h"
 #include "libavutil/dict.h"
 #include "avformat.h"
 #include "internal.h"
-#include <stdlib.h>
 
 #define RPL_SIGNATURE "ARMovie\x0A"
 #define RPL_SIGNATURE_SIZE 8
@@ -168,9 +170,8 @@ static int rpl_read_header(AVFormatContext *s)
             vst->codec->codec_id = AV_CODEC_ID_ESCAPE130;
             break;
         default:
-            av_log(s, AV_LOG_WARNING,
-                   "RPL video format %i not supported yet!\n",
-                   vst->codec->codec_tag);
+            avpriv_report_missing_feature(s, "Video format %i",
+                                          vst->codec->codec_tag);
             vst->codec->codec_id = AV_CODEC_ID_NONE;
     }
 
@@ -220,11 +221,8 @@ static int rpl_read_header(AVFormatContext *s)
                 }
                 break;
         }
-        if (ast->codec->codec_id == AV_CODEC_ID_NONE) {
-            av_log(s, AV_LOG_WARNING,
-                   "RPL audio format %i not supported yet!\n",
-                   audio_format);
-        }
+        if (ast->codec->codec_id == AV_CODEC_ID_NONE)
+            avpriv_request_sample(s, "Audio format %i", audio_format);
         avpriv_set_pts_info(ast, 32, 1, ast->codec->bit_rate);
     } else {
         for (i = 0; i < 3; i++)

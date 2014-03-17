@@ -28,9 +28,9 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ContextLifecycleObserver.h"
-#include "core/dom/EventTarget.h"
-#include "core/platform/Timer.h"
-#include "core/platform/graphics/ContentDecryptionModuleSession.h"
+#include "core/events/EventTarget.h"
+#include "platform/Timer.h"
+#include "platform/drm/ContentDecryptionModuleSession.h"
 #include "wtf/Deque.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -51,10 +51,11 @@ class MediaKeys;
 // it may outlive any references to it as long as the MediaKeys object is alive.
 // The ContentDecryptionModuleSession has the same lifetime as this object.
 class MediaKeySession
-    : public RefCounted<MediaKeySession>, public ScriptWrappable, public EventTarget, public ContextLifecycleObserver
+    : public RefCounted<MediaKeySession>, public ScriptWrappable, public EventTargetWithInlineData, public ContextLifecycleObserver
     , private ContentDecryptionModuleSessionClient {
+    REFCOUNTED_EVENT_TARGET(MediaKeySession);
 public:
-    static PassRefPtr<MediaKeySession> create(ScriptExecutionContext*, ContentDecryptionModule*, MediaKeys*);
+    static PassRefPtr<MediaKeySession> create(ExecutionContext*, ContentDecryptionModule*, MediaKeys*);
     ~MediaKeySession();
 
     const String& keySystem() const { return m_keySystem; }
@@ -67,9 +68,6 @@ public:
     void update(Uint8Array* key, ExceptionState&);
     void close();
 
-    using RefCounted<MediaKeySession>::ref;
-    using RefCounted<MediaKeySession>::deref;
-
     void enqueueEvent(PassRefPtr<Event>);
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitkeyadded);
@@ -77,10 +75,10 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitkeymessage);
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ScriptExecutionContext* scriptExecutionContext() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE;
 
 private:
-    MediaKeySession(ScriptExecutionContext*, ContentDecryptionModule*, MediaKeys*);
+    MediaKeySession(ExecutionContext*, ContentDecryptionModule*, MediaKeys*);
     void keyRequestTimerFired(Timer<MediaKeySession>*);
     void addKeyTimerFired(Timer<MediaKeySession>*);
 
@@ -106,15 +104,6 @@ private:
 
     Deque<RefPtr<Uint8Array> > m_pendingKeys;
     Timer<MediaKeySession> m_addKeyTimer;
-
-private:
-    virtual void refEventTarget() OVERRIDE { ref(); }
-    virtual void derefEventTarget() OVERRIDE { deref(); }
-
-    virtual EventTargetData* eventTargetData() OVERRIDE { return &m_eventTargetData; }
-    virtual EventTargetData* ensureEventTargetData() OVERRIDE { return &m_eventTargetData; }
-
-    EventTargetData m_eventTargetData;
 };
 
 }

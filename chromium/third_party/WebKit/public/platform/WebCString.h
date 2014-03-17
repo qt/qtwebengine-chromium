@@ -34,10 +34,10 @@
 #include "WebCommon.h"
 #include "WebPrivatePtr.h"
 
-#if INSIDE_WEBKIT
+#if INSIDE_BLINK
 #include "wtf/Forward.h"
 #endif
-#if !INSIDE_WEBKIT || defined(UNIT_TEST)
+#if !INSIDE_BLINK || defined(UNIT_TEST)
 #include <string>
 #endif
 
@@ -46,7 +46,7 @@ class CString;
 class CStringBuffer;
 }
 
-namespace WebKit {
+namespace blink {
 
 class WebString;
 
@@ -91,7 +91,7 @@ public:
 
     BLINK_COMMON_EXPORT WebString utf16() const;
 
-#if INSIDE_WEBKIT
+#if INSIDE_BLINK
     BLINK_COMMON_EXPORT WebCString(const WTF::CString&);
     BLINK_COMMON_EXPORT WebCString& operator=(const WTF::CString&);
     BLINK_COMMON_EXPORT operator WTF::CString() const;
@@ -107,7 +107,7 @@ public:
         return *this;
     }
 #endif
-#if !INSIDE_WEBKIT || defined(UNIT_TEST)
+#if !INSIDE_BLINK || defined(UNIT_TEST)
     operator std::string() const
     {
         size_t len = length();
@@ -131,6 +131,6 @@ inline bool operator<(const WebCString& a, const WebCString& b)
     return a.compare(b) < 0;
 }
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

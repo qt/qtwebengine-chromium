@@ -356,11 +356,11 @@ class ProxyConfigServiceLinuxTest : public PlatformTest {
     PlatformTest::SetUp();
     // Set up a temporary KDE home directory.
     std::string prefix("ProxyConfigServiceLinuxTest_user_home");
-    file_util::CreateNewTempDirectory(prefix, &user_home_);
+    base::CreateNewTempDirectory(prefix, &user_home_);
     kde_home_ = user_home_.Append(FILE_PATH_LITERAL(".kde"));
     base::FilePath path = kde_home_.Append(FILE_PATH_LITERAL("share"));
     path = path.Append(FILE_PATH_LITERAL("config"));
-    file_util::CreateDirectory(path);
+    base::CreateDirectory(path);
     kioslaverc_ = path.Append(FILE_PATH_LITERAL("kioslaverc"));
     // Set up paths but do not create the directory for .kde4.
     kde4_home_ = user_home_.Append(FILE_PATH_LITERAL(".kde4"));
@@ -1548,7 +1548,7 @@ TEST_F(ProxyConfigServiceLinuxTest, KDEHomePicker) {
 
   // Now create .kde4 and put a kioslaverc in the config directory.
   // Note that its timestamp will be at least as new as the .kde one.
-  file_util::CreateDirectory(kde4_config_);
+  base::CreateDirectory(kde4_config_);
   file_util::WriteFile(kioslaverc4_, slaverc4.c_str(), slaverc4.length());
   CHECK(base::PathExists(kioslaverc4_));
 
@@ -1597,7 +1597,7 @@ TEST_F(ProxyConfigServiceLinuxTest, KDEHomePicker) {
 
   // Finally, make the .kde4 config directory older than the .kde directory
   // and make sure we then use .kde instead of .kde4 since it's newer.
-  file_util::SetLastModifiedTime(kde4_config_, base::Time());
+  base::TouchFile(kde4_config_, base::Time(), base::Time());
 
   { SCOPED_TRACE("KDE4, very old .kde4 directory present, use .kde");
     MockEnvironment* env = new MockEnvironment;

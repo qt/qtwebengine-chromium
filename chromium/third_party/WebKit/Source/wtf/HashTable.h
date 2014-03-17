@@ -24,8 +24,9 @@
 
 #include "wtf/Alignment.h"
 #include "wtf/Assertions.h"
-#include "wtf/FastMalloc.h"
 #include "wtf/HashTraits.h"
+#include "wtf/PartitionAlloc.h"
+#include "wtf/WTF.h"
 #include <string.h>
 
 #define DUMP_HASHTABLE_STATS 0
@@ -354,8 +355,8 @@ namespace WTF {
         iterator makeKnownGoodIterator(ValueType* pos) { return iterator(this, pos, m_table + m_tableSize, HashItemKnownGood); }
         const_iterator makeKnownGoodConstIterator(ValueType* pos) const { return const_iterator(this, pos, m_table + m_tableSize, HashItemKnownGood); }
 
-        static const int m_maxLoad = 2;
-        static const int m_minLoad = 6;
+        static const unsigned m_maxLoad = 2;
+        static const unsigned m_minLoad = 6;
 
         ValueType* m_table;
         unsigned m_tableSize;
@@ -859,13 +860,14 @@ namespace WTF {
     template<typename Key, typename Value, typename Extractor, typename HashFunctions, typename Traits, typename KeyTraits>
     Value* HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits>::allocateTable(unsigned size)
     {
-        // would use a template member function with explicit specializations here, but
-        // gcc doesn't appear to support that
-        if (Traits::emptyValueIsZero)
-            return static_cast<ValueType*>(fastZeroedMalloc(size * sizeof(ValueType)));
-        ValueType* result = static_cast<ValueType*>(fastMalloc(size * sizeof(ValueType)));
-        for (unsigned i = 0; i < size; i++)
-            initializeBucket(result[i]);
+        size_t allocSize = size * sizeof(ValueType);
+        ValueType* result = static_cast<ValueType*>(partitionAllocGeneric(WTF::Partitions::getBufferPartition(), allocSize));
+        if (Traits::emptyValueIsZero) {
+            memset(result, '\0', allocSize);
+        } else {
+            for (unsigned i = 0; i < size; i++)
+                initializeBucket(result[i]);
+        }
         return result;
     }
 
@@ -878,7 +880,7 @@ namespace WTF {
                     table[i].~ValueType();
             }
         }
-        fastFree(table);
+        partitionFreeGeneric(WTF::Partitions::getBufferPartition(), table);
     }
 
     template<typename Key, typename Value, typename Extractor, typename HashFunctions, typename Traits, typename KeyTraits>

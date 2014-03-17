@@ -13,6 +13,8 @@ per-file sandbox_mac*=jeremy@chromium.org
 per-file *.sb=set noparent
 per-file *.sb=jeremy@chromium.org
 
+per-file pepper*=ananta@chromium.org
+per-file pepper*=bauerb@chromium.org
 per-file plugin*=ananta@chromium.org
 per-file plugin*=bauerb@chromium.org
 
@@ -21,12 +23,18 @@ per-file plugin*=bauerb@chromium.org
 per-file *_messages*.h=set noparent
 per-file *_messages*.h=cdn@chromium.org
 per-file *_messages*.h=cevans@chromium.org
+per-file *_messages*.h=dcheng@chromium.org
 per-file *_messages*.h=jln@chromium.org
 per-file *_messages*.h=jschuh@chromium.org
-per-file *_messages*.h=palmer@chromium.org
 per-file *_messages*.h=tsepez@chromium.org
 per-file *_messages*.h=kenrb@chromium.org
+per-file *_messages*.h=nasko@chromium.org
 
 # Accessibility
 per-file accessibility_node_data.*=dmazzoni@chromium.org
 per-file accessibility_node_data.*=dtseng@chromium.org
+
+# WebSocket
+per-file websocket.*=ricea@chromium.org
+per-file websocket.*=tyoshino@chromium.org
+per-file websocket.*=yhirano@chromium.org

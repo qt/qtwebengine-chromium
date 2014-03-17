@@ -35,16 +35,15 @@ namespace WebCore {
 using namespace HTMLNames;
 
 
-inline HTMLLegendElement::HTMLLegendElement(const QualifiedName& tagName, Document& document)
-    : HTMLElement(tagName, document)
+inline HTMLLegendElement::HTMLLegendElement(Document& document)
+    : HTMLElement(legendTag, document)
 {
-    ASSERT(hasTagName(legendTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLLegendElement> HTMLLegendElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<HTMLLegendElement> HTMLLegendElement::create(Document& document)
 {
-    return adoptRef(new HTMLLegendElement(tagName, document));
+    return adoptRef(new HTMLLegendElement(document));
 }
 
 HTMLFormControlElement* HTMLLegendElement::associatedControl()
@@ -59,7 +58,7 @@ HTMLFormControlElement* HTMLLegendElement::associatedControl()
     // Find first form element inside the fieldset that is not a legend element.
     // FIXME: Should we consider tabindex?
     Element* element = fieldset;
-    while ((element = ElementTraversal::next(element, fieldset))) {
+    while ((element = ElementTraversal::next(*element, fieldset))) {
         if (element->isFormControlElement())
             return toHTMLFormControlElement(element);
     }
@@ -83,7 +82,7 @@ void HTMLLegendElement::accessKeyAction(bool sendMouseEvents)
         control->accessKeyAction(sendMouseEvents);
 }
 
-HTMLFormElement* HTMLLegendElement::virtualForm() const
+HTMLFormElement* HTMLLegendElement::form() const
 {
     // According to the specification, If the legend has a fieldset element as
     // its parent, then the form attribute must return the same value as the
@@ -92,7 +91,7 @@ HTMLFormElement* HTMLLegendElement::virtualForm() const
     if (!fieldset || !fieldset->hasTagName(fieldsetTag))
         return 0;
 
-    return toHTMLFieldSetElement(fieldset)->form();
+    return toHTMLFieldSetElement(fieldset)->formOwner();
 }
 
 } // namespace

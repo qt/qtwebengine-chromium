@@ -2,6 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#if defined _MSC_VER && _MSC_VER == 1800
+// TODO(scottmg): Internal errors on VS2013 RC in LTCG. This should be removed
+// after RTM. http://crbug.com/288948
+#pragma optimize("", off)
+#endif
+
 #include "base/files/important_file_writer.h"
 
 #include <stdio.h>
@@ -52,7 +58,7 @@ bool ImportantFileWriter::WriteFileAtomically(const FilePath& path,
   // as target file, so it can be moved in one step, and that the temp file
   // is securely created.
   FilePath tmp_file_path;
-  if (!file_util::CreateTemporaryFileInDir(path.DirName(), &tmp_file_path)) {
+  if (!base::CreateTemporaryFileInDir(path.DirName(), &tmp_file_path)) {
     LogFailure(path, FAILED_CREATING, "could not create temporary file");
     return false;
   }

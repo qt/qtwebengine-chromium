@@ -31,8 +31,7 @@ bool SyncAPIBridgedConnection::Init(const char* path,
   std::string sync_server;
   int sync_server_port = 0;
   bool use_ssl = false;
-  bool use_oauth2_token = false;
-  GetServerParams(&sync_server, &sync_server_port, &use_ssl, &use_oauth2_token);
+  GetServerParams(&sync_server, &sync_server_port, &use_ssl);
   std::string connection_url = MakeConnectionURL(sync_server, path, use_ssl);
 
   HttpPostProviderInterface* http = post_provider_;
@@ -40,10 +39,7 @@ bool SyncAPIBridgedConnection::Init(const char* path,
 
   if (!auth_token.empty()) {
     std::string headers;
-    if (use_oauth2_token)
-      headers = "Authorization: Bearer " + auth_token;
-    else
-      headers = "Authorization: GoogleLogin auth=" + auth_token;
+    headers = "Authorization: Bearer " + auth_token;
     http->SetExtraRequestHeaders(headers.c_str());
   }
 
@@ -74,9 +70,6 @@ bool SyncAPIBridgedConnection::Init(const char* path,
   else
     response->server_status = HttpResponse::SYNC_SERVER_ERROR;
 
-  response->update_client_auth_header =
-      http->GetResponseHeaderValue("Update-Client-Auth");
-
   // Write the content into our buffer.
   buffer_.assign(http->GetResponseContent(), http->GetResponseContentLength());
   return true;
@@ -91,13 +84,11 @@ SyncAPIServerConnectionManager::SyncAPIServerConnectionManager(
     const std::string& server,
     int port,
     bool use_ssl,
-    bool use_oauth2_token,
     HttpPostProviderFactory* factory,
     CancelationSignal* cancelation_signal)
     : ServerConnectionManager(server,
                               port,
                               use_ssl,
-                              use_oauth2_token,
                               cancelation_signal),
       post_provider_factory_(factory) {
   DCHECK(post_provider_factory_.get());

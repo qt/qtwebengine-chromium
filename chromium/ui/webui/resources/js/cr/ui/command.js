@@ -95,7 +95,7 @@ cr.define('cr.ui', function() {
         return;
       var doc = this.ownerDocument;
       if (doc.activeElement) {
-        var e = new cr.Event('command', true, false);
+        var e = new Event('command', {bubbles: true});
         e.command = this;
 
         (opt_element || doc.activeElement).dispatchEvent(e);
@@ -184,6 +184,17 @@ cr.define('cr.ui', function() {
    * @type {boolean}
    */
   cr.defineProperty(Command, 'checked', cr.PropertyKind.BOOL_ATTR);
+
+  /**
+   * The flag that prevents the shortcut text from being displayed on menu.
+   *
+   * If false, the keyboard shortcut text (eg. "Ctrl+X" for the cut command)
+   * is displayed in menu when the command is assosiated with a menu item.
+   * Otherwise, no text is displayed.
+   *
+   * @type {boolean}
+   */
+  cr.defineProperty(Command, 'hideShortcutText', cr.PropertyKind.BOOL_ATTR);
 
   /**
    * Dispatches a canExecute event on the target.
@@ -283,8 +294,7 @@ cr.define('cr.ui', function() {
    * @class
    */
   function CanExecuteEvent(command) {
-    var e = command.ownerDocument.createEvent('Event');
-    e.initEvent('canExecute', true, false);
+    var e = new Event('canExecute', {bubbles: true});
     e.__proto__ = CanExecuteEvent.prototype;
     e.command = command;
     return e;

@@ -50,7 +50,7 @@ from webkitpy.common.host_mock import MockHost
 
 from webkitpy.layout_tests import port
 from webkitpy.layout_tests import run_webkit_tests
-from webkitpy.layout_tests.models.test_run_results import INTERRUPTED_EXIT_STATUS
+from webkitpy.layout_tests.models import test_run_results
 from webkitpy.layout_tests.port import Port
 from webkitpy.layout_tests.port import test
 from webkitpy.test.skip import skip_if
@@ -283,6 +283,12 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
             self.assertRaises(BaseException, logging_run,
                 ['--child-processes', '2', '--skipped=ignore', 'failures/expected/exception.html', 'passes/text.html'], tests_included=True, shared_port=False)
 
+    def test_device_failure(self):
+        # Test that we handle a device going offline during a test properly.
+        details, regular_output, _ = logging_run(['failures/expected/device_failure.html'], tests_included=True)
+        self.assertEqual(details.exit_code, 0)
+        self.assertTrue('worker/0 has failed' in regular_output.getvalue())
+
     def test_full_results_html(self):
         host = MockHost()
         details, _, _ = logging_run(['--full-results-html'], host=host)
@@ -293,7 +299,7 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         # Note that this also tests running a test marked as SKIP if
         # you specify it explicitly.
         details, _, _ = logging_run(['failures/expected/keyboard.html', '--child-processes', '1'], tests_included=True)
-        self.assertEqual(details.exit_code, INTERRUPTED_EXIT_STATUS)
+        self.assertEqual(details.exit_code, test_run_results.INTERRUPTED_EXIT_STATUS)
 
         if self.should_test_processes:
             _, regular_output, _ = logging_run(['failures/expected/keyboard.html', 'passes/text.html', '--child-processes', '2', '--skipped=ignore'], tests_included=True, shared_port=False)
@@ -301,12 +307,12 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
 
     def test_no_tests_found(self):
         details, err, _ = logging_run(['resources'], tests_included=True)
-        self.assertEqual(details.exit_code, -1)
+        self.assertEqual(details.exit_code, test_run_results.NO_TESTS_EXIT_STATUS)
         self.assertContains(err, 'No tests to run.\n')
 
     def test_no_tests_found_2(self):
         details, err, _ = logging_run(['foo'], tests_included=True)
-        self.assertEqual(details.exit_code, -1)
+        self.assertEqual(details.exit_code, test_run_results.NO_TESTS_EXIT_STATUS)
         self.assertContains(err, 'No tests to run.\n')
 
     def test_natural_order(self):
@@ -463,7 +469,7 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         self.assertEqual(['passes/text.html'], tests_run)
         host.filesystem.remove(filename)
         details, err, user = logging_run(['--test-list=%s' % filename], tests_included=True, host=host)
-        self.assertEqual(details.exit_code, -1)
+        self.assertEqual(details.exit_code, test_run_results.NO_TESTS_EXIT_STATUS)
         self.assertNotEmpty(err)
 
     def test_test_list_with_prefix(self):
@@ -520,6 +526,25 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         self.assertTrue(json_string.find('"missing_text.html":{"expected":"PASS","is_missing_text":true,"actual":"MISSING","is_unexpected":true') != -1)
         self.assertTrue(json_string.find('"num_regressions":2') != -1)
         self.assertTrue(json_string.find('"num_flaky":0') != -1)
+
+    def test_different_failure_on_retry(self):
+        # This tests that if a test fails two different ways -- both unexpected
+        # -- we treat it as a failure rather than a flaky result.  We use the
+        # initial failure for simplicity and consistency w/ the flakiness
+        # dashboard, even if the second failure is worse.
+
+        details, err, _ = logging_run(['--retry-failures', 'failures/unexpected/text_then_crash.html'], tests_included=True)
+        self.assertEqual(details.exit_code, 1)
+        self.assertEqual(details.summarized_failing_results['tests']['failures']['unexpected']['text_then_crash.html']['actual'],
+                         'TEXT CRASH')
+
+        # If we get a test that fails two different ways -- but the second one is expected --
+        # we should treat it as a flaky result and report the initial unexpected failure type
+        # to the dashboard. However, the test should be considered passing.
+        details, err, _ = logging_run(['--retry-failures', 'failures/expected/crash_then_text.html'], tests_included=True)
+        self.assertEqual(details.exit_code, 0)
+        self.assertEqual(details.summarized_failing_results['tests']['failures']['expected']['crash_then_text.html']['actual'],
+                         'CRASH FAIL')
 
     def test_pixel_test_directories(self):
         host = MockHost()
@@ -623,7 +648,7 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
 
         host = MockHost()
         details, err, _ = logging_run(['--debug-rwt-logging', 'failures/unexpected'], tests_included=True, host=host)
-        self.assertEqual(details.exit_code, 17)  # FIXME: This should be a constant in test.py .
+        self.assertEqual(details.exit_code, test.UNEXPECTED_FAILURES - 7)  # FIXME: This should be a constant in test.py .
         self.assertTrue('Retrying' in err.getvalue())
 
     def test_retrying_default_value_test_list(self):
@@ -638,7 +663,7 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         filename = '/tmp/foo.txt'
         host.filesystem.write_text_file(filename, 'failures')
         details, err, _ = logging_run(['--debug-rwt-logging', '--test-list=%s' % filename], tests_included=True, host=host)
-        self.assertEqual(details.exit_code, 17)
+        self.assertEqual(details.exit_code, test.UNEXPECTED_FAILURES - 7)
         self.assertTrue('Retrying' in err.getvalue())
 
     def test_retrying_and_flaky_tests(self):
@@ -738,6 +763,10 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         # The list of references should be empty since the test crashed and we didn't run any references.
         self.assertEqual(test_results[0].references, [])
 
+    def test_reftest_with_virtual_reference(self):
+        _, err, _ = logging_run(['--details', 'virtual/passes/reftest.html'], tests_included=True)
+        self.assertTrue('ref: virtual/passes/reftest-expected.html' in err.getvalue())
+
     def test_additional_platform_directory(self):
         self.assertTrue(passing_run(['--additional-platform-directory', '/tmp/foo']))
         self.assertTrue(passing_run(['--additional-platform-directory', '/tmp/../foo']))
@@ -784,7 +813,7 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         stderr = StringIO.StringIO()
         res = run_webkit_tests.main(['--platform', 'foo'], stdout, stderr)
 
-        self.assertEqual(res, run_webkit_tests.EXCEPTIONAL_EXIT_STATUS)
+        self.assertEqual(res, test_run_results.UNEXPECTED_ERROR_EXIT_STATUS)
         self.assertEqual(stdout.getvalue(), '')
         self.assertTrue('unsupported platform' in stderr.getvalue())
 
@@ -796,7 +825,7 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
             port_name = 'mac-lion'
         out = StringIO.StringIO()
         err = StringIO.StringIO()
-        self.assertEqual(run_webkit_tests.main(['--platform', port_name, 'fast/harness/results.html'], out, err), -1)
+        self.assertEqual(run_webkit_tests.main(['--platform', port_name, 'fast/harness/results.html'], out, err), test_run_results.UNEXPECTED_ERROR_EXIT_STATUS)
 
     def test_verbose_in_child_processes(self):
         # When we actually run multiple processes, we may have to reconfigure logging in the
@@ -962,15 +991,6 @@ class PortTest(unittest.TestCase):
     def disabled_test_mac_lion(self):
         self.assert_mock_port_works('mac-lion')
 
-    def disabled_test_mac_lion_in_test_shell_mode(self):
-        self.assert_mock_port_works('mac-lion', args=['--additional-drt-flag=--test-shell'])
-
-    def disabled_test_qt_linux(self):
-        self.assert_mock_port_works('qt-linux')
-
-    def disabled_test_mac_lion(self):
-        self.assert_mock_port_works('mac-lion')
-
 
 class MainTest(unittest.TestCase):
     def test_exception_handling(self):
@@ -983,7 +1003,7 @@ class MainTest(unittest.TestCase):
         def successful_run(port, options, args, stderr):
 
             class FakeRunDetails(object):
-                exit_code = -1
+                exit_code = test_run_results.UNEXPECTED_ERROR_EXIT_STATUS
 
             return FakeRunDetails()
 
@@ -995,14 +1015,14 @@ class MainTest(unittest.TestCase):
         try:
             run_webkit_tests.run = interrupting_run
             res = run_webkit_tests.main([], stdout, stderr)
-            self.assertEqual(res, INTERRUPTED_EXIT_STATUS)
+            self.assertEqual(res, test_run_results.INTERRUPTED_EXIT_STATUS)
 
             run_webkit_tests.run = successful_run
             res = run_webkit_tests.main(['--platform', 'test'], stdout, stderr)
-            self.assertEqual(res, -1)
+            self.assertEqual(res, test_run_results.UNEXPECTED_ERROR_EXIT_STATUS)
 
             run_webkit_tests.run = exception_raising_run
             res = run_webkit_tests.main([], stdout, stderr)
-            self.assertEqual(res, run_webkit_tests.EXCEPTIONAL_EXIT_STATUS)
+            self.assertEqual(res, test_run_results.UNEXPECTED_ERROR_EXIT_STATUS)
         finally:
             run_webkit_tests.run = orig_run_fn

@@ -31,7 +31,7 @@
 #include "config.h"
 #include "modules/websockets/WebSocketDeflater.h"
 
-#include "core/platform/Logging.h"
+#include "platform/Logging.h"
 #include "wtf/FastMalloc.h"
 #include "wtf/HashMap.h"
 #include "wtf/StdLibExtras.h"
@@ -70,7 +70,7 @@ WebSocketDeflater::~WebSocketDeflater()
 {
     int result = deflateEnd(m_stream.get());
     if (result != Z_OK)
-        LOG(Network, "WebSocketDeflater %p Destructor deflateEnd() failed: %d is returned", this, result);
+        WTF_LOG(Network, "WebSocketDeflater %p Destructor deflateEnd() failed: %d is returned", this, result);
 }
 
 static void setStreamParameter(z_stream* stream, const char* inputData, size_t inputLength, char* outputData, size_t outputLength)
@@ -165,7 +165,7 @@ WebSocketInflater::~WebSocketInflater()
 {
     int result = inflateEnd(m_stream.get());
     if (result != Z_OK)
-        LOG(Network, "WebSocketInflater %p Destructor inflateEnd() failed: %d is returned", this, result);
+        WTF_LOG(Network, "WebSocketInflater %p Destructor inflateEnd() failed: %d is returned", this, result);
 }
 
 bool WebSocketInflater::addBytes(const char* data, size_t length)
@@ -201,7 +201,7 @@ bool WebSocketInflater::addBytes(const char* data, size_t length)
 
 bool WebSocketInflater::finish()
 {
-    static const char* strippedFields = "\0\0\xff\xff";
+    static const char strippedFields[] = "\0\0\xff\xff";
     static const size_t strippedLength = 4;
 
     // Appends 4 octests of 0x00 0x00 0xff 0xff

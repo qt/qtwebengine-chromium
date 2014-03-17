@@ -46,11 +46,13 @@ namespace cricket {
 class UDPPort : public Port {
  public:
   static UDPPort* Create(talk_base::Thread* thread,
+                         talk_base::PacketSocketFactory* factory,
                          talk_base::Network* network,
                          talk_base::AsyncPacketSocket* socket,
                          const std::string& username,
                          const std::string& password) {
-    UDPPort* port = new UDPPort(thread, network, socket, username, password);
+    UDPPort* port = new UDPPort(thread, factory, network, socket,
+                                username, password);
     if (!port->Init()) {
       delete port;
       port = NULL;
@@ -66,8 +68,8 @@ class UDPPort : public Port {
                          const std::string& username,
                          const std::string& password) {
     UDPPort* port = new UDPPort(thread, factory, network,
-                                 ip, min_port, max_port,
-                                 username, password);
+                                ip, min_port, max_port,
+                                username, password);
     if (!port->Init()) {
       delete port;
       port = NULL;
@@ -95,9 +97,10 @@ class UDPPort : public Port {
 
   virtual bool HandleIncomingPacket(
       talk_base::AsyncPacketSocket* socket, const char* data, size_t size,
-      const talk_base::SocketAddress& remote_addr) {
+      const talk_base::SocketAddress& remote_addr,
+      const talk_base::PacketTime& packet_time) {
     // All packets given to UDP port will be consumed.
-    OnReadPacket(socket, data, size, remote_addr);
+    OnReadPacket(socket, data, size, remote_addr, packet_time);
     return true;
   }
 
@@ -114,8 +117,8 @@ class UDPPort : public Port {
           int min_port, int max_port,
           const std::string& username, const std::string& password);
 
-  UDPPort(talk_base::Thread* thread, talk_base::Network* network,
-          talk_base::AsyncPacketSocket* socket,
+  UDPPort(talk_base::Thread* thread, talk_base::PacketSocketFactory* factory,
+          talk_base::Network* network, talk_base::AsyncPacketSocket* socket,
           const std::string& username, const std::string& password);
 
   bool Init();
@@ -129,7 +132,9 @@ class UDPPort : public Port {
                            const talk_base::SocketAddress& address);
   void OnReadPacket(talk_base::AsyncPacketSocket* socket,
                     const char* data, size_t size,
-                    const talk_base::SocketAddress& remote_addr);
+                    const talk_base::SocketAddress& remote_addr,
+                    const talk_base::PacketTime& packet_time);
+
   void OnReadyToSend(talk_base::AsyncPacketSocket* socket);
 
   // This method will send STUN binding request if STUN server address is set.
@@ -141,7 +146,7 @@ class UDPPort : public Port {
  private:
   // DNS resolution of the STUN server.
   void ResolveStunAddress();
-  void OnResolveResult(talk_base::SignalThread* thread);
+  void OnResolveResult(talk_base::AsyncResolverInterface* resolver);
 
   // Below methods handles binding request responses.
   void OnStunBindingRequestSucceeded(const talk_base::SocketAddress& stun_addr);
@@ -158,7 +163,7 @@ class UDPPort : public Port {
   StunRequestManager requests_;
   talk_base::AsyncPacketSocket* socket_;
   int error_;
-  talk_base::AsyncResolver* resolver_;
+  talk_base::AsyncResolverInterface* resolver_;
   bool ready_;
   int stun_keepalive_delay_;
 

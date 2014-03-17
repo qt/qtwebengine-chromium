@@ -33,9 +33,8 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ProgressEvent.h"
+#include "core/events/ProgressEvent.h"
 #include "core/fileapi/Blob.h"
-#include "core/fileapi/FileError.h"
 #include "public/platform/WebFileWriter.h"
 #include "public/platform/WebURL.h"
 #include "wtf/CurrentTime.h"
@@ -45,14 +44,14 @@ namespace WebCore {
 static const int kMaxRecursionDepth = 3;
 static const double progressNotificationIntervalMS = 50;
 
-PassRefPtr<FileWriter> FileWriter::create(ScriptExecutionContext* context)
+PassRefPtr<FileWriter> FileWriter::create(ExecutionContext* context)
 {
     RefPtr<FileWriter> fileWriter(adoptRef(new FileWriter(context)));
     fileWriter->suspendIfNeeded();
     return fileWriter.release();
 }
 
-FileWriter::FileWriter(ScriptExecutionContext* context)
+FileWriter::FileWriter(ExecutionContext* context)
     : ActiveDOMObject(context)
     , m_readyState(INIT)
     , m_operationInProgress(OperationNone)
@@ -76,13 +75,7 @@ FileWriter::~FileWriter()
 
 const AtomicString& FileWriter::interfaceName() const
 {
-    return eventNames().interfaceForFileWriter;
-}
-
-bool FileWriter::canSuspend() const
-{
-    // FIXME: It is not currently possible to suspend a FileWriter, so pages with FileWriter can not go into page cache.
-    return false;
+    return EventTargetNames::FileWriter;
 }
 
 void FileWriter::stop()
@@ -94,21 +87,21 @@ void FileWriter::stop()
     m_readyState = DONE;
 }
 
-void FileWriter::write(Blob* data, ExceptionState& es)
+void FileWriter::write(Blob* data, ExceptionState& exceptionState)
 {
     ASSERT(writer());
     ASSERT(data);
     ASSERT(m_truncateLength == -1);
     if (m_readyState == WRITING) {
-        setError(FileError::INVALID_STATE_ERR, es);
+        setError(FileError::INVALID_STATE_ERR, exceptionState);
         return;
     }
     if (!data) {
-        setError(FileError::TYPE_MISMATCH_ERR, es);
+        setError(FileError::TYPE_MISMATCH_ERR, exceptionState);
         return;
     }
     if (m_recursionDepth > kMaxRecursionDepth) {
-        setError(FileError::SECURITY_ERR, es);
+        setError(FileError::SECURITY_ERR, exceptionState);
         return;
     }
 
@@ -124,14 +117,14 @@ void FileWriter::write(Blob* data, ExceptionState& es)
     } else
         doOperation(OperationWrite);
 
-    fireEvent(eventNames().writestartEvent);
+    fireEvent(EventTypeNames::writestart);
 }
 
-void FileWriter::seek(long long position, ExceptionState& es)
+void FileWriter::seek(long long position, ExceptionState& exceptionState)
 {
     ASSERT(writer());
     if (m_readyState == WRITING) {
-        setError(FileError::INVALID_STATE_ERR, es);
+        setError(FileError::INVALID_STATE_ERR, exceptionState);
         return;
     }
 
@@ -140,16 +133,16 @@ void FileWriter::seek(long long position, ExceptionState& es)
     seekInternal(position);
 }
 
-void FileWriter::truncate(long long position, ExceptionState& es)
+void FileWriter::truncate(long long position, ExceptionState& exceptionState)
 {
     ASSERT(writer());
     ASSERT(m_truncateLength == -1);
     if (m_readyState == WRITING || position < 0) {
-        setError(FileError::INVALID_STATE_ERR, es);
+        setError(FileError::INVALID_STATE_ERR, exceptionState);
         return;
     }
     if (m_recursionDepth > kMaxRecursionDepth) {
-        setError(FileError::SECURITY_ERR, es);
+        setError(FileError::SECURITY_ERR, exceptionState);
         return;
     }
 
@@ -164,10 +157,10 @@ void FileWriter::truncate(long long position, ExceptionState& es)
         m_queuedOperation = OperationTruncate;
     } else
         doOperation(OperationTruncate);
-    fireEvent(eventNames().writestartEvent);
+    fireEvent(EventTypeNames::writestart);
 }
 
-void FileWriter::abort(ExceptionState& es)
+void FileWriter::abort(ExceptionState& exceptionState)
 {
     ASSERT(writer());
     if (m_readyState != WRITING)
@@ -205,7 +198,7 @@ void FileWriter::didWrite(long long bytes, bool complete)
     double now = currentTimeMS();
     if (complete || !m_lastProgressNotificationTimeMS || (now - m_lastProgressNotificationTimeMS > progressNotificationIntervalMS)) {
         m_lastProgressNotificationTimeMS = now;
-        fireEvent(eventNames().progressEvent);
+        fireEvent(EventTypeNames::progress);
     }
 
     if (complete) {
@@ -231,7 +224,7 @@ void FileWriter::didTruncate()
     unsetPendingActivity(this);
 }
 
-void FileWriter::didFail(WebKit::WebFileError code)
+void FileWriter::didFail(blink::WebFileError code)
 {
     ASSERT(m_operationInProgress != OperationNone);
     ASSERT(static_cast<FileError::ErrorCode>(code) != FileError::OK);
@@ -267,7 +260,7 @@ void FileWriter::doOperation(Operation operation)
         ASSERT(m_blobBeingWritten.get());
         ASSERT(m_readyState == WRITING);
         setPendingActivity(this);
-        writer()->write(position(), WebKit::WebURL(m_blobBeingWritten->url()));
+        writer()->write(position(), m_blobBeingWritten->uuid());
         break;
     case OperationTruncate:
         ASSERT(m_operationInProgress == OperationNone);
@@ -303,12 +296,12 @@ void FileWriter::signalCompletion(FileError::ErrorCode code)
     if (FileError::OK != code) {
         m_error = FileError::create(code);
         if (FileError::ABORT_ERR == code)
-            fireEvent(eventNames().abortEvent);
+            fireEvent(EventTypeNames::abort);
         else
-            fireEvent(eventNames().errorEvent);
+            fireEvent(EventTypeNames::error);
     } else
-        fireEvent(eventNames().writeEvent);
-    fireEvent(eventNames().writeendEvent);
+        fireEvent(EventTypeNames::write);
+    fireEvent(EventTypeNames::writeend);
 }
 
 void FileWriter::fireEvent(const AtomicString& type)
@@ -319,10 +312,10 @@ void FileWriter::fireEvent(const AtomicString& type)
     ASSERT(m_recursionDepth >= 0);
 }
 
-void FileWriter::setError(FileError::ErrorCode errorCode, ExceptionState& es)
+void FileWriter::setError(FileError::ErrorCode errorCode, ExceptionState& exceptionState)
 {
     ASSERT(errorCode);
-    FileError::throwDOMException(es, errorCode);
+    FileError::throwDOMException(exceptionState, errorCode);
     m_error = FileError::create(errorCode);
 }
 

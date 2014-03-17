@@ -32,14 +32,11 @@
 #define WebData_h
 
 #include "WebCommon.h"
+#include "WebPrivatePtr.h"
 
-#if WEBKIT_IMPLEMENTATION
 namespace WebCore { class SharedBuffer; }
-namespace WTF { template <typename T> class PassRefPtr; }
-namespace WTF { template <typename T> class RefPtr; }
-#endif
 
-namespace WebKit {
+namespace blink {
 
 class WebDataPrivate;
 
@@ -47,24 +44,24 @@ class WebDataPrivate;
 //
 // WARNING: It is not safe to pass a WebData across threads!!!
 //
-class WebData {
+class BLINK_PLATFORM_EXPORT WebData {
 public:
     ~WebData() { reset(); }
 
-    WebData() : m_private(0) { }
+    WebData() { }
 
-    WebData(const char* data, size_t size) : m_private(0)
+    WebData(const char* data, size_t size)
     {
         assign(data, size);
     }
 
     template <int N>
-    WebData(const char (&data)[N]) : m_private(0)
+    WebData(const char (&data)[N])
     {
         assign(data, N - 1);
     }
 
-    WebData(const WebData& d) : m_private(0) { assign(d); }
+    WebData(const WebData& d) { assign(d); }
 
     WebData& operator=(const WebData& d)
     {
@@ -72,24 +69,23 @@ public:
         return *this;
     }
 
-    WEBKIT_EXPORT void reset();
-    WEBKIT_EXPORT void assign(const WebData&);
-    WEBKIT_EXPORT void assign(const char* data, size_t size);
+    void reset();
+    void assign(const WebData&);
+    void assign(const char* data, size_t size);
 
-    WEBKIT_EXPORT size_t size() const;
-    WEBKIT_EXPORT const char* data() const;
+    size_t size() const;
+    const char* data() const;
 
     bool isEmpty() const { return !size(); }
-    bool isNull() const { return !m_private; }
+    bool isNull() const { return m_private.isNull(); }
 
-#if WEBKIT_IMPLEMENTATION
-    WebData(const WTF::PassRefPtr<WebCore::SharedBuffer>&);
-    WebData& operator=(const WTF::PassRefPtr<WebCore::SharedBuffer>&);
-    operator WTF::PassRefPtr<WebCore::SharedBuffer>() const;
-    operator WTF::RefPtr<WebCore::SharedBuffer>() const;
+#if INSIDE_BLINK
+    WebData(const PassRefPtr<WebCore::SharedBuffer>&);
+    WebData& operator=(const PassRefPtr<WebCore::SharedBuffer>&);
+    operator PassRefPtr<WebCore::SharedBuffer>() const;
 #else
     template <class C>
-    WebData(const C& c) : m_private(0)
+    WebData(const C& c)
     {
         assign(c.data(), c.size());
     }
@@ -103,10 +99,9 @@ public:
 #endif
 
 private:
-    void assign(WebDataPrivate*);
-    WebDataPrivate* m_private;
+    WebPrivatePtr<WebCore::SharedBuffer> m_private;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

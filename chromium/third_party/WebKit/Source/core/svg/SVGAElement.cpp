@@ -29,9 +29,10 @@
 #include "core/dom/Attr.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
-#include "core/dom/EventNames.h"
-#include "core/dom/KeyboardEvent.h"
-#include "core/dom/MouseEvent.h"
+#include "core/events/KeyboardEvent.h"
+#include "core/events/MouseEvent.h"
+#include "core/events/ThreadLocalEventNames.h"
+#include "core/frame/Frame.h"
 #include "core/html/HTMLAnchorElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
@@ -40,15 +41,14 @@
 #include "core/loader/FrameLoaderTypes.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
-#include "core/page/Frame.h"
 #include "core/page/Page.h"
-#include "core/platform/PlatformMouseEvent.h"
-#include "core/platform/network/ResourceRequest.h"
 #include "core/rendering/svg/RenderSVGInline.h"
 #include "core/rendering/svg/RenderSVGText.h"
 #include "core/rendering/svg/RenderSVGTransformableContainer.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/animation/SVGSMILElement.h"
+#include "platform/PlatformMouseEvent.h"
+#include "platform/network/ResourceRequest.h"
 
 namespace WebCore {
 
@@ -66,17 +66,16 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGAElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGAElement::SVGAElement(const QualifiedName& tagName, Document& document)
-    : SVGGraphicsElement(tagName, document)
+inline SVGAElement::SVGAElement(Document& document)
+    : SVGGraphicsElement(SVGNames::aTag, document)
 {
-    ASSERT(hasTagName(SVGNames::aTag));
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGAElement();
 }
 
-PassRefPtr<SVGAElement> SVGAElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGAElement> SVGAElement::create(Document& document)
 {
-    return adoptRef(new SVGAElement(tagName, document));
+    return adoptRef(new SVGAElement(document));
 }
 
 String SVGAElement::title() const
@@ -163,7 +162,7 @@ void SVGAElement::defaultEventHandler(Event* event)
 
             if (url[0] == '#') {
                 Element* targetElement = treeScope().getElementById(url.substring(1));
-                if (SVGSMILElement::isSMILElement(targetElement)) {
+                if (targetElement && isSVGSMILElement(*targetElement)) {
                     toSVGSMILElement(targetElement)->beginByLinkActivation();
                     event->setDefaultHandled();
                     return;
@@ -181,9 +180,9 @@ void SVGAElement::defaultEventHandler(Event* event)
             Frame* frame = document().frame();
             if (!frame)
                 return;
-            FrameLoadRequest frameRequest(document().securityOrigin(), ResourceRequest(document().completeURL(url)), target);
+            FrameLoadRequest frameRequest(&document(), ResourceRequest(document().completeURL(url)), target);
             frameRequest.setTriggeringEvent(event);
-            frame->loader()->load(frameRequest);
+            frame->loader().load(frameRequest);
             return;
         }
     }

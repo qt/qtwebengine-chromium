@@ -28,28 +28,29 @@
 
 #include "core/rendering/svg/RenderSVGText.h"
 
-#include "core/platform/FloatConversion.h"
-#include "core/platform/graphics/FloatQuad.h"
-#include "core/platform/graphics/FontCache.h"
-#include "core/platform/graphics/GraphicsContextStateSaver.h"
-#include "core/platform/graphics/SimpleFontData.h"
-#include "core/platform/graphics/transforms/TransformState.h"
 #include "core/rendering/HitTestRequest.h"
 #include "core/rendering/HitTestResult.h"
+#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/PointerEventsHitRules.h"
+#include "core/rendering/style/ShadowList.h"
 #include "core/rendering/svg/RenderSVGInlineText.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/RenderSVGRoot.h"
 #include "core/rendering/svg/SVGRenderSupport.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
 #include "core/rendering/svg/SVGRootInlineBox.h"
-#include "core/rendering/svg/SVGTextLayoutAttributesBuilder.h"
 #include "core/rendering/svg/SVGTextRunRenderingContext.h"
 #include "core/svg/SVGLengthList.h"
 #include "core/svg/SVGTextElement.h"
 #include "core/svg/SVGTransformList.h"
 #include "core/svg/SVGURIReference.h"
+#include "platform/FloatConversion.h"
+#include "platform/fonts/FontCache.h"
+#include "platform/fonts/SimpleFontData.h"
+#include "platform/geometry/FloatQuad.h"
+#include "platform/geometry/TransformState.h"
+#include "platform/graphics/GraphicsContextStateSaver.h"
 
 namespace WebCore {
 
@@ -230,9 +231,6 @@ static inline void checkLayoutAttributesConsistency(RenderSVGText* text, Vector<
     Vector<SVGTextLayoutAttributes*> newLayoutAttributes;
     collectLayoutAttributes(text, newLayoutAttributes);
     ASSERT(newLayoutAttributes == expectedLayoutAttributes);
-#else
-    UNUSED_PARAM(text);
-    UNUSED_PARAM(expectedLayoutAttributes);
 #endif
 }
 
@@ -346,6 +344,7 @@ static inline void updateFontInAllDescendants(RenderObject* start, SVGTextLayout
 void RenderSVGText::layout()
 {
     ASSERT(needsLayout());
+    LayoutRectRecorder recorder(*this);
     LayoutRepainter repainter(*this, SVGRenderSupport::checkForSVGRepaintDuringLayout(this));
 
     bool updateCachedBoundariesInParents = false;
@@ -441,11 +440,14 @@ bool RenderSVGText::nodeAtFloatPoint(const HitTestRequest& request, HitTestResul
     PointerEventsHitRules hitRules(PointerEventsHitRules::SVG_TEXT_HITTESTING, request, style()->pointerEvents());
     bool isVisible = (style()->visibility() == VISIBLE);
     if (isVisible || !hitRules.requireVisible) {
-        if ((hitRules.canHitStroke && (style()->svgStyle()->hasStroke() || !hitRules.requireStroke))
+        if ((hitRules.canHitBoundingBox && !objectBoundingBox().isEmpty())
+            || (hitRules.canHitStroke && (style()->svgStyle()->hasStroke() || !hitRules.requireStroke))
             || (hitRules.canHitFill && (style()->svgStyle()->hasFill() || !hitRules.requireFill))) {
             FloatPoint localPoint = localToParentTransform().inverse().mapPoint(pointInParent);
 
             if (!SVGRenderSupport::pointInClippingArea(this, localPoint))
+                return false;
+            if (hitRules.canHitBoundingBox && !objectBoundingBox().contains(localPoint))
                 return false;
 
             HitTestLocation hitTestLocation(LayoutPoint(flooredIntPoint(localPoint)));
@@ -518,7 +520,7 @@ FloatRect RenderSVGText::repaintRectInLocalCoordinates() const
     FloatRect repaintRect = strokeBoundingBox();
     SVGRenderSupport::intersectRepaintRectWithResources(this, repaintRect);
 
-    if (const ShadowData* textShadow = style()->textShadow())
+    if (const ShadowList* textShadow = style()->textShadow())
         textShadow->adjustRectForShadow(repaintRect);
 
     return repaintRect;

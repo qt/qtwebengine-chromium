@@ -12,9 +12,11 @@
 #include <sys/mman.h>
 
 #include "base/callback.h"
+#include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/posix/eintr_wrapper.h"
+#include "content/public/common/content_switches.h"
 #include "media/base/bitstream_buffer.h"
 
 #define NOTIFY_ERROR(x)                                            \
@@ -113,19 +115,19 @@ ExynosVideoEncodeAccelerator::~ExynosVideoEncodeAccelerator() {
   DCHECK(!device_poll_thread_.IsRunning());
 
   if (device_poll_interrupt_fd_ != -1) {
-    HANDLE_EINTR(close(device_poll_interrupt_fd_));
+    close(device_poll_interrupt_fd_);
     device_poll_interrupt_fd_ = -1;
   }
   if (gsc_fd_ != -1) {
     DestroyGscInputBuffers();
     DestroyGscOutputBuffers();
-    HANDLE_EINTR(close(gsc_fd_));
+    close(gsc_fd_);
     gsc_fd_ = -1;
   }
   if (mfc_fd_ != -1) {
     DestroyMfcInputBuffers();
     DestroyMfcOutputBuffers();
-    HANDLE_EINTR(close(mfc_fd_));
+    close(mfc_fd_);
     mfc_fd_ = -1;
   }
 }
@@ -154,9 +156,6 @@ void ExynosVideoEncodeAccelerator::Initialize(
   output_visible_size_ = converted_visible_size_;
 
   switch (input_format) {
-    case media::VideoFrame::RGB32:
-      input_format_fourcc_ = V4L2_PIX_FMT_RGB32;
-      break;
     case media::VideoFrame::I420:
       input_format_fourcc_ = V4L2_PIX_FMT_YUV420M;
       break;
@@ -168,6 +167,9 @@ void ExynosVideoEncodeAccelerator::Initialize(
   if (output_profile >= media::H264PROFILE_MIN &&
       output_profile <= media::H264PROFILE_MAX) {
     output_format_fourcc_ = V4L2_PIX_FMT_H264;
+  } else if (output_profile >= media::VP8PROFILE_MIN &&
+             output_profile <= media::VP8PROFILE_MAX) {
+    output_format_fourcc_ = V4L2_PIX_FMT_VP8;
   } else {
     NOTIFY_ERROR(kInvalidArgumentError);
     return;
@@ -250,6 +252,9 @@ void ExynosVideoEncodeAccelerator::Initialize(
   // a UseOutputBitstreamBuffer() callback.
 
   if (!SetMfcFormats())
+    return;
+
+  if (!InitMfcControls())
     return;
 
   // VIDIOC_REQBUFS on CAPTURE queue.
@@ -365,12 +370,25 @@ void ExynosVideoEncodeAccelerator::Destroy() {
 // static
 std::vector<media::VideoEncodeAccelerator::SupportedProfile>
 ExynosVideoEncodeAccelerator::GetSupportedProfiles() {
-  std::vector<SupportedProfile> profiles(1);
-  SupportedProfile& profile = profiles[0];
-  profile.profile = media::H264PROFILE_MAIN;
-  profile.max_resolution.SetSize(1920, 1088);
-  profile.max_framerate.numerator = 30;
-  profile.max_framerate.denominator = 1;
+  std::vector<SupportedProfile> profiles;
+
+  SupportedProfile profile;
+
+  const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
+  if (cmd_line->HasSwitch(switches::kEnableWebRtcHWVp8Encoding)) {
+    profile.profile = media::VP8PROFILE_MAIN;
+    profile.max_resolution.SetSize(1920, 1088);
+    profile.max_framerate.numerator = 30;
+    profile.max_framerate.denominator = 1;
+    profiles.push_back(profile);
+  } else {
+    profile.profile = media::H264PROFILE_MAIN;
+    profile.max_resolution.SetSize(1920, 1088);
+    profile.max_framerate.numerator = 30;
+    profile.max_framerate.denominator = 1;
+    profiles.push_back(profile);
+  }
+
   return profiles;
 }
 
@@ -721,21 +739,26 @@ void ExynosVideoEncodeAccelerator::DequeueMfc() {
       output_size = output_buffer_byte_size_;
     uint8* target_data =
         reinterpret_cast<uint8*>(output_record.buffer_ref->shm->memory());
-    if (stream_header_size_ == 0) {
-      // Assume that the first buffer dequeued is the stream header.
-      stream_header_size_ = output_size;
-      stream_header_.reset(new uint8[stream_header_size_]);
-      memcpy(stream_header_.get(), output_data, stream_header_size_);
-    }
-    if (key_frame &&
-        output_buffer_byte_size_ - stream_header_size_ >= output_size) {
-      // Insert stream header before every keyframe.
-      memcpy(target_data, stream_header_.get(), stream_header_size_);
-      memcpy(target_data + stream_header_size_, output_data, output_size);
-      output_size += stream_header_size_;
+    if (output_format_fourcc_ == V4L2_PIX_FMT_H264) {
+      if (stream_header_size_ == 0) {
+        // Assume that the first buffer dequeued is the stream header.
+        stream_header_size_ = output_size;
+        stream_header_.reset(new uint8[stream_header_size_]);
+        memcpy(stream_header_.get(), output_data, stream_header_size_);
+      }
+      if (key_frame &&
+          output_buffer_byte_size_ - stream_header_size_ >= output_size) {
+        // Insert stream header before every keyframe.
+        memcpy(target_data, stream_header_.get(), stream_header_size_);
+        memcpy(target_data + stream_header_size_, output_data, output_size);
+        output_size += stream_header_size_;
+      } else {
+        memcpy(target_data, output_data, output_size);
+      }
     } else {
       memcpy(target_data, output_data, output_size);
     }
+
     DVLOG(3) << "DequeueMfc(): returning "
                 "bitstream_buffer_id=" << output_record.buffer_ref->id
              << ", key_frame=" << key_frame;
@@ -773,14 +796,6 @@ bool ExynosVideoEncodeAccelerator::EnqueueGscInputRecord() {
   qbuf.memory   = V4L2_MEMORY_USERPTR;
   qbuf.m.planes = qbuf_planes;
   switch (input_format_fourcc_) {
-    case V4L2_PIX_FMT_RGB32: {
-      qbuf.m.planes[0].bytesused = input_allocated_size_.GetArea() * 4;
-      qbuf.m.planes[0].length    = input_allocated_size_.GetArea() * 4;
-      qbuf.m.planes[0].m.userptr = reinterpret_cast<unsigned long>(
-          frame->data(media::VideoFrame::kRGBPlane));
-      qbuf.length = 1;
-      break;
-    }
     case V4L2_PIX_FMT_YUV420M: {
       qbuf.m.planes[0].bytesused = input_allocated_size_.GetArea();
       qbuf.m.planes[0].length    = input_allocated_size_.GetArea();
@@ -1334,7 +1349,11 @@ bool ExynosVideoEncodeAccelerator::SetMfcFormats() {
   format.fmt.pix_mp.num_planes  = 1;
   IOCTL_OR_ERROR_RETURN_FALSE(mfc_fd_, VIDIOC_S_FMT, &format);
 
-  struct v4l2_ext_control ctrls[8];
+  return true;
+}
+
+bool ExynosVideoEncodeAccelerator::InitMfcControls() {
+  struct v4l2_ext_control ctrls[9];
   struct v4l2_ext_controls control;
   memset(&ctrls, 0, sizeof(ctrls));
   memset(&control, 0, sizeof(control));
@@ -1361,9 +1380,12 @@ bool ExynosVideoEncodeAccelerator::SetMfcFormats() {
   // Enable macroblock-level bitrate control.
   ctrls[6].id    = V4L2_CID_MPEG_VIDEO_MB_RC_ENABLE;
   ctrls[6].value = 1;
+  // Use H.264 level 4.0 to match the supported max resolution.
+  ctrls[7].id    = V4L2_CID_MPEG_VIDEO_H264_LEVEL;
+  ctrls[7].value = V4L2_MPEG_VIDEO_H264_LEVEL_4_0;
   // Disable periodic key frames.
-  ctrls[7].id    = V4L2_CID_MPEG_VIDEO_GOP_SIZE;
-  ctrls[7].value = 0;
+  ctrls[8].id    = V4L2_CID_MPEG_VIDEO_GOP_SIZE;
+  ctrls[8].value = 0;
   control.ctrl_class = V4L2_CTRL_CLASS_MPEG;
   control.count = arraysize(ctrls);
   control.controls = ctrls;
@@ -1490,7 +1512,7 @@ void ExynosVideoEncodeAccelerator::DestroyMfcInputBuffers() {
     MfcInputRecord& input_record = mfc_input_buffer_map_[buf];
 
     for (size_t plane = 0; plane < arraysize(input_record.fd); ++plane)
-      HANDLE_EINTR(close(mfc_input_buffer_map_[buf].fd[plane]));
+      close(mfc_input_buffer_map_[buf].fd[plane]);
   }
 
   struct v4l2_requestbuffers reqbufs;

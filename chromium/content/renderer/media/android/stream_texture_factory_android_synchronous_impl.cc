@@ -117,13 +117,18 @@ void StreamTextureProxyImpl::OnFrameAvailable() {
 }  // namespace
 
 StreamTextureFactorySynchronousImpl::StreamTextureFactorySynchronousImpl(
-    ContextProvider* context_provider,
+    const CreateContextProviderCallback& try_create_callback,
     int view_id)
-    : context_provider_(context_provider), view_id_(view_id) {}
+    : create_context_provider_callback_(try_create_callback),
+      context_provider_(create_context_provider_callback_.Run()),
+      view_id_(view_id) {}
 
 StreamTextureFactorySynchronousImpl::~StreamTextureFactorySynchronousImpl() {}
 
 StreamTextureProxy* StreamTextureFactorySynchronousImpl::CreateProxy() {
+  if (!context_provider_)
+    context_provider_ = create_context_provider_callback_.Run();
+
   if (!context_provider_)
     return NULL;
   return new StreamTextureProxyImpl(context_provider_);
@@ -149,7 +154,7 @@ unsigned StreamTextureFactorySynchronousImpl::CreateStreamTexture(
     gpu::Mailbox* texture_mailbox,
     unsigned* texture_mailbox_sync_point) {
   DCHECK(context_provider_);
-  WebKit::WebGraphicsContext3D* context = context_provider_->Context3d();
+  blink::WebGraphicsContext3D* context = context_provider_->Context3d();
   unsigned stream_id = 0;
   if (context->makeContextCurrent()) {
     *texture_id = context->createTexture();
@@ -168,7 +173,7 @@ unsigned StreamTextureFactorySynchronousImpl::CreateStreamTexture(
 void StreamTextureFactorySynchronousImpl::DestroyStreamTexture(
     unsigned texture_id) {
   DCHECK(context_provider_);
-  WebKit::WebGraphicsContext3D* context = context_provider_->Context3d();
+  blink::WebGraphicsContext3D* context = context_provider_->Context3d();
   if (context->makeContextCurrent()) {
     context->destroyStreamTextureCHROMIUM(texture_id);
     context->deleteTexture(texture_id);
@@ -179,5 +184,11 @@ void StreamTextureFactorySynchronousImpl::DestroyStreamTexture(
 void StreamTextureFactorySynchronousImpl::SetStreamTextureSize(
     int32 stream_id,
     const gfx::Size& size) {}
+
+blink::WebGraphicsContext3D*
+StreamTextureFactorySynchronousImpl::Context3d() {
+  DCHECK(context_provider_);
+  return context_provider_->Context3d();
+}
 
 }  // namespace content

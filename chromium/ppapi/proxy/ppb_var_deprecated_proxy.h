@@ -28,7 +28,7 @@ class PPB_Var_Deprecated_Proxy : public InterfaceProxy {
   explicit PPB_Var_Deprecated_Proxy(Dispatcher* dispatcher);
   virtual ~PPB_Var_Deprecated_Proxy();
 
-  static const Info* GetInfo();
+  static const PPB_Var_Deprecated* GetProxyInterface();
 
   // InterfaceProxy implementation.
   virtual bool OnMessageReceived(const IPC::Message& msg);
@@ -89,9 +89,10 @@ class PPB_Var_Deprecated_Proxy : public InterfaceProxy {
   void SetAllowPluginReentrancy();
 
   void DoReleaseObject(int64 object_id);
-  base::WeakPtrFactory<PPB_Var_Deprecated_Proxy> task_factory_;
 
   const PPB_Var_Deprecated* ppb_var_impl_;
+
+  base::WeakPtrFactory<PPB_Var_Deprecated_Proxy> task_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PPB_Var_Deprecated_Proxy);
 };

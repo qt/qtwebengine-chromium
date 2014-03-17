@@ -28,11 +28,12 @@ bool TouchscreenTapSuppressionController::ShouldDeferGestureTapDown(
   return false;
 }
 
-bool TouchscreenTapSuppressionController::ShouldSuppressGestureTap() {
+bool TouchscreenTapSuppressionController::ShouldDeferGestureShowPress(
+    const GestureEventWithLatencyInfo& /*event*/) {
   return false;
 }
 
-bool TouchscreenTapSuppressionController::ShouldSuppressGestureTapCancel() {
+bool TouchscreenTapSuppressionController::ShouldSuppressGestureTapEnd() {
   return false;
 }
 
@@ -46,8 +47,6 @@ int TouchscreenTapSuppressionController::MaxTapGapTimeInMs() {
 
 void TouchscreenTapSuppressionController::DropStashedTapDown() {}
 
-void TouchscreenTapSuppressionController::ForwardStashedTapDownForDeferral() {}
-
-void TouchscreenTapSuppressionController::ForwardStashedTapDownSkipDeferral() {}
+void TouchscreenTapSuppressionController::ForwardStashedTapDown() {}
 
 }  // namespace content

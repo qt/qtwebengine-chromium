@@ -24,7 +24,7 @@ class WebFileWriterImpl : public WebFileWriterBase,
   };
 
   WebFileWriterImpl(const GURL& path,
-                    WebKit::WebFileWriterClient* client,
+                    blink::WebFileWriterClient* client,
                     Type type,
                     base::MessageLoopProxy* main_thread_loop);
   virtual ~WebFileWriterImpl();
@@ -32,8 +32,6 @@ class WebFileWriterImpl : public WebFileWriterBase,
  protected:
   // WebFileWriterBase overrides
   virtual void DoTruncate(const GURL& path, int64 offset) OVERRIDE;
-  virtual void DoWriteDeprecated(
-      const GURL& path, const GURL& blob_url, int64 offset) OVERRIDE;
   virtual void DoWrite(const GURL& path, const std::string& blob_id,
                        int64 offset) OVERRIDE;
   virtual void DoCancel() OVERRIDE;

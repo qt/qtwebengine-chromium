@@ -29,7 +29,7 @@
 #include "../platform/WebCommon.h"
 #include "WebSpeechRecognitionHandle.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebSpeechGrammar;
 class WebSpeechRecognitionParams;
@@ -39,18 +39,18 @@ class WebSpeechRecognizerClient;
 class WebSpeechRecognizer {
 public:
     // Start speech recognition for the specified handle using the specified parameters. Notifications on progress, results, and errors will be sent via the client.
-    virtual void start(const WebSpeechRecognitionHandle&, const WebSpeechRecognitionParams&, WebSpeechRecognizerClient*) { WEBKIT_ASSERT_NOT_REACHED(); }
+    virtual void start(const WebSpeechRecognitionHandle&, const WebSpeechRecognitionParams&, WebSpeechRecognizerClient*) { BLINK_ASSERT_NOT_REACHED(); }
 
     // Stop speech recognition for the specified handle, returning any results for the audio recorded so far. Notifications and errors are sent via the client.
-    virtual void stop(const WebSpeechRecognitionHandle&, WebSpeechRecognizerClient*) { WEBKIT_ASSERT_NOT_REACHED(); }
+    virtual void stop(const WebSpeechRecognitionHandle&, WebSpeechRecognizerClient*) { BLINK_ASSERT_NOT_REACHED(); }
 
     // Abort speech recognition for the specified handle, discarding any recorded audio. Notifications and errors are sent via the client.
-    virtual void abort(const WebSpeechRecognitionHandle&, WebSpeechRecognizerClient*) { WEBKIT_ASSERT_NOT_REACHED(); }
+    virtual void abort(const WebSpeechRecognitionHandle&, WebSpeechRecognizerClient*) { BLINK_ASSERT_NOT_REACHED(); }
 
 protected:
     virtual ~WebSpeechRecognizer() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebSpeechRecognizer_h

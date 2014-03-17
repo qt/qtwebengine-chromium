@@ -26,8 +26,12 @@
 #ifndef Dictionary_h
 #define Dictionary_h
 
+#include "bindings/v8/ExceptionMessages.h"
+#include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScriptValue.h"
-#include "core/dom/EventListener.h"
+#include "bindings/v8/V8Binding.h"
+#include "bindings/v8/V8BindingMacros.h"
+#include "core/events/EventListener.h"
 #include "core/dom/MessagePort.h"
 #include <v8.h>
 #include "wtf/HashMap.h"
@@ -55,7 +59,7 @@ class VoidCallback;
 class Dictionary {
 public:
     Dictionary();
-    Dictionary(const v8::Local<v8::Value>& options, v8::Isolate*);
+    Dictionary(const v8::Handle<v8::Value>& options, v8::Isolate*);
     ~Dictionary();
 
     Dictionary& operator=(const Dictionary&);
@@ -92,25 +96,230 @@ public:
     bool get(const String&, Vector<String>&) const;
     bool get(const String&, ArrayValue&) const;
     bool get(const String&, RefPtr<DOMError>&) const;
-    bool get(const String&, RefPtr<VoidCallback>&) const;
+    bool get(const String&, OwnPtr<VoidCallback>&) const;
     bool get(const String&, v8::Local<v8::Value>&) const;
+
+    class ConversionContext {
+    public:
+        ConversionContext(const String& interfaceName, const String& methodName, ExceptionState& exceptionState)
+            : m_interfaceName(interfaceName)
+            , m_methodName(methodName)
+            , m_exceptionState(exceptionState)
+            , m_dirty(true)
+        {
+            resetPerPropertyContext();
+        }
+
+        const String& interfaceName() const { return m_interfaceName; }
+        const String& methodName() const { return m_methodName; }
+        bool forConstructor() const { return m_methodName.isEmpty(); }
+        ExceptionState& exceptionState() const { return m_exceptionState; }
+
+        bool isNullable() const { return m_isNullable; }
+        String typeName() const { return m_propertyTypeName; }
+
+        ConversionContext& setConversionType(const String&, bool);
+
+        void throwTypeError(const String& detail);
+
+        void resetPerPropertyContext();
+
+    private:
+        const String m_interfaceName;
+        const String m_methodName;
+        ExceptionState& m_exceptionState;
+        bool m_dirty;
+
+        bool m_isNullable;
+        String m_propertyTypeName;
+    };
+
+    class ConversionContextScope {
+    public:
+        ConversionContextScope(ConversionContext& context)
+            : m_context(context) { }
+        ~ConversionContextScope()
+        {
+            m_context.resetPerPropertyContext();
+        }
+    private:
+        ConversionContext& m_context;
+    };
+
+    bool convert(ConversionContext&, const String&, bool&) const;
+    bool convert(ConversionContext&, const String&, double&) const;
+    bool convert(ConversionContext&, const String&, String&) const;
+    bool convert(ConversionContext&, const String&, ScriptValue&) const;
+
+    template<typename IntegralType>
+    bool convert(ConversionContext &, const String&, IntegralType&) const;
+    bool convert(ConversionContext &, const String&, MessagePortArray&) const;
+    bool convert(ConversionContext &, const String&, HashSet<AtomicString>&) const;
+    bool convert(ConversionContext &, const String&, Dictionary&) const;
+    bool convert(ConversionContext &, const String&, Vector<String>&) const;
+    bool convert(ConversionContext &, const String&, ArrayValue&) const;
+    template<typename T>
+    bool convert(ConversionContext &, const String&, RefPtr<T>&) const;
 
     bool getOwnPropertiesAsStringHashMap(HashMap<String, String>&) const;
     bool getOwnPropertyNames(Vector<String>&) const;
 
     bool getWithUndefinedOrNullCheck(const String&, String&) const;
 
+    bool hasProperty(const String&) const;
+
+    // Only allow inline allocation.
+    void* operator new(size_t, NotNullTag, void* location) { return location; }
+
 private:
+    // Disallow new allocation.
+    void* operator new(size_t);
+
     bool getKey(const String& key, v8::Local<v8::Value>&) const;
 
-    // This object can only be used safely when stack allocated because of v8::Local.
-    static void* operator new(size_t);
-    static void* operator new[](size_t);
-    static void operator delete(void *);
-
-    v8::Local<v8::Value> m_options;
+    v8::Handle<v8::Value> m_options;
     v8::Isolate* m_isolate;
 };
+
+template<>
+struct NativeValueTraits<Dictionary> {
+    static inline Dictionary nativeValue(const v8::Handle<v8::Value>& value, v8::Isolate* isolate)
+    {
+        return Dictionary(value, isolate);
+    }
+};
+
+template <typename T>
+struct IntegralTypeTraits {
+};
+
+template <>
+struct IntegralTypeTraits<uint8_t> {
+    static inline uint8_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+    {
+        return toUInt8(value, configuration, ok);
+    }
+    static const String typeName() { return "UInt8"; }
+};
+
+template <>
+struct IntegralTypeTraits<int8_t> {
+    static inline int8_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+    {
+        return toInt8(value, configuration, ok);
+    }
+    static const String typeName() { return "Int8"; }
+};
+
+template <>
+struct IntegralTypeTraits<unsigned short> {
+    static inline uint16_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+    {
+        return toUInt16(value, configuration, ok);
+    }
+    static const String typeName() { return "UInt16"; }
+};
+
+template <>
+struct IntegralTypeTraits<short> {
+    static inline int16_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+    {
+        return toInt16(value, configuration, ok);
+    }
+    static const String typeName() { return "Int16"; }
+};
+
+template <>
+struct IntegralTypeTraits<unsigned> {
+    static inline uint32_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+    {
+        return toUInt32(value, configuration, ok);
+    }
+    static const String typeName() { return "UInt32"; }
+};
+
+template <>
+struct IntegralTypeTraits<unsigned long> {
+    static inline uint32_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+    {
+        return toUInt32(value, configuration, ok);
+    }
+    static const String typeName() { return "UInt32"; }
+};
+
+template <>
+struct IntegralTypeTraits<int> {
+    static inline int32_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+    {
+        return toInt32(value, configuration, ok);
+    }
+    static const String typeName() { return "Int32"; }
+};
+
+template <>
+struct IntegralTypeTraits<long> {
+    static inline int32_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+    {
+        return toInt32(value, configuration, ok);
+    }
+    static const String typeName() { return "Int32"; }
+};
+
+template <>
+struct IntegralTypeTraits<unsigned long long> {
+    static inline unsigned long long toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+    {
+        return toUInt64(value, configuration, ok);
+    }
+    static const String typeName() { return "UInt64"; }
+};
+
+template <>
+struct IntegralTypeTraits<long long> {
+    static inline long long toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+    {
+        return toInt64(value, configuration, ok);
+    }
+    static const String typeName() { return "Int64"; }
+};
+
+template<typename T> bool Dictionary::convert(ConversionContext& context, const String& key, T& value) const
+{
+    ConversionContextScope scope(context);
+
+    v8::Local<v8::Value> v8Value;
+    if (!getKey(key, v8Value))
+        return true;
+
+    bool ok = false;
+    value = IntegralTypeTraits<T>::toIntegral(v8Value, NormalConversion, ok);
+    if (ok)
+        return true;
+
+    V8TRYCATCH_RETURN(v8::Local<v8::Number>, v8Number, v8Value->ToNumber(), false);
+    ASSERT(v8Number.IsEmpty());
+    context.throwTypeError(ExceptionMessages::incorrectPropertyType(key, "does not have type " + IntegralTypeTraits<T>::typeName() + "."));
+    return false;
+}
+
+template<typename T> bool Dictionary::convert(ConversionContext& context, const String& key, RefPtr<T>& value) const
+{
+    ConversionContextScope scope(context);
+
+    if (!get(key, value))
+        return true;
+
+    if (value)
+        return true;
+
+    v8::Local<v8::Value> v8Value;
+    getKey(key, v8Value);
+    if (context.isNullable() && WebCore::isUndefinedOrNull(v8Value))
+        return true;
+
+    context.throwTypeError(ExceptionMessages::incorrectPropertyType(key, "does not have a " + context.typeName() + " type."));
+    return false;
+}
 
 }
 

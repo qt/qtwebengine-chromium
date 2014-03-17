@@ -30,11 +30,14 @@ APP_LIST_EXPORT extern const SkColor kResultURLTextColor;
 APP_LIST_EXPORT extern const SkColor kGridTitleColor;
 APP_LIST_EXPORT extern const SkColor kGridTitleHoverColor;
 
+APP_LIST_EXPORT extern const SkColor kFolderBubbleColor;
+
 APP_LIST_EXPORT extern const int kPageTransitionDurationInMs;
 APP_LIST_EXPORT extern const int kOverscrollPageTransitionDurationMs;
 
 APP_LIST_EXPORT extern const int kPreferredCols;
 APP_LIST_EXPORT extern const int kPreferredRows;
+APP_LIST_EXPORT extern const int kPreferredIconDimension;
 
 APP_LIST_EXPORT extern const ui::ResourceBundle::FontStyle kItemTextFontStyle;
 

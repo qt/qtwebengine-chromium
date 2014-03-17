@@ -42,54 +42,19 @@
 
 namespace WebCore {
 
-class V8WrapperInstantiationScope {
-public:
-    V8WrapperInstantiationScope(v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
-        : m_didEnterContext(false)
-        , m_context(v8::Context::GetCurrent())
-    {
-        // FIXME: Remove all empty creationContexts from caller sites.
-        // If a creationContext is empty, we will end up creating a new object
-        // in the context currently entered. This is wrong.
-        if (creationContext.IsEmpty())
-            return;
-        v8::Handle<v8::Context> contextForWrapper = creationContext->CreationContext();
-        // For performance, we enter the context only if the currently running context
-        // is different from the context that we are about to enter.
-        if (contextForWrapper == m_context)
-            return;
-        m_context = v8::Local<v8::Context>::New(isolate, contextForWrapper);
-        m_didEnterContext = true;
-        m_context->Enter();
-    }
-
-    ~V8WrapperInstantiationScope()
-    {
-        if (!m_didEnterContext)
-            return;
-        m_context->Exit();
-    }
-
-    v8::Handle<v8::Context> context() const { return m_context; }
-
-private:
-    bool m_didEnterContext;
-    v8::Handle<v8::Context> m_context;
-};
-
 static v8::Local<v8::Object> wrapInShadowTemplate(v8::Local<v8::Object> wrapper, Node* impl, v8::Isolate* isolate)
 {
     // This is only for getting a unique pointer which we can pass to privateTemplate.
-    static const char* shadowTemplateUniqueKey = "wrapInShadowTemplate";
+    static int shadowTemplateUniqueKey;
     WrapperWorldType currentWorldType = worldType(isolate);
     V8PerIsolateData* data = V8PerIsolateData::from(isolate);
     v8::Handle<v8::FunctionTemplate> shadowTemplate = data->privateTemplateIfExists(currentWorldType, &shadowTemplateUniqueKey);
     if (shadowTemplate.IsEmpty()) {
-        shadowTemplate = v8::FunctionTemplate::New();
+        shadowTemplate = v8::FunctionTemplate::New(isolate);
         if (shadowTemplate.IsEmpty())
             return v8::Local<v8::Object>();
-        shadowTemplate->SetClassName(v8::String::NewSymbol("HTMLDocument"));
-        shadowTemplate->Inherit(V8HTMLDocument::GetTemplate(isolate, currentWorldType));
+        shadowTemplate->SetClassName(v8AtomicString(isolate, "HTMLDocument"));
+        shadowTemplate->Inherit(V8HTMLDocument::domTemplate(isolate, currentWorldType));
         shadowTemplate->InstanceTemplate()->SetInternalFieldCount(V8HTMLDocument::internalFieldCount);
         data->setPrivateTemplate(currentWorldType, &shadowTemplateUniqueKey, shadowTemplate);
     }
@@ -102,18 +67,18 @@ static v8::Local<v8::Object> wrapInShadowTemplate(v8::Local<v8::Object> wrapper,
     if (shadow.IsEmpty())
         return v8::Local<v8::Object>();
     shadow->SetPrototype(wrapper);
-    V8DOMWrapper::setNativeInfo(wrapper, &V8HTMLDocument::info, impl);
+    V8DOMWrapper::setNativeInfo(wrapper, &V8HTMLDocument::wrapperTypeInfo, impl);
     return shadow;
 }
 
-v8::Local<v8::Object> V8DOMWrapper::createWrapper(v8::Handle<v8::Object> creationContext, WrapperTypeInfo* type, void* impl, v8::Isolate* isolate)
+v8::Local<v8::Object> V8DOMWrapper::createWrapper(v8::Handle<v8::Object> creationContext, const WrapperTypeInfo* type, void* impl, v8::Isolate* isolate)
 {
     V8WrapperInstantiationScope scope(creationContext, isolate);
 
     V8PerContextData* perContextData = V8PerContextData::from(scope.context());
-    v8::Local<v8::Object> wrapper = perContextData ? perContextData->createWrapperFromCache(type) : V8ObjectConstructor::newInstance(type->getTemplate(isolate, worldTypeInMainThread(isolate))->GetFunction());
+    v8::Local<v8::Object> wrapper = perContextData ? perContextData->createWrapperFromCache(type) : V8ObjectConstructor::newInstance(type->domTemplate(isolate, worldTypeInMainThread(isolate))->GetFunction());
 
-    if (type == &V8HTMLDocument::info && !wrapper.IsEmpty())
+    if (type == &V8HTMLDocument::wrapperTypeInfo && !wrapper.IsEmpty())
         wrapper = wrapInShadowTemplate(wrapper, static_cast<Node*>(impl), isolate);
 
     return wrapper;
@@ -138,7 +103,9 @@ bool V8DOMWrapper::maybeDOMWrapper(v8::Handle<v8::Value> value)
     v8::HandleScope scope(v8::Isolate::GetCurrent());
     ASSERT(object->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex));
 
-    return true;
+    const WrapperTypeInfo* typeInfo = static_cast<const WrapperTypeInfo*>(object->GetAlignedPointerFromInternalField(v8DOMWrapperTypeIndex));
+
+    return typeInfo->ginEmbedder == gin::kEmbedderBlink;
 }
 #endif
 
@@ -153,11 +120,13 @@ bool V8DOMWrapper::isDOMWrapper(v8::Handle<v8::Value> value)
     ASSERT(wrapper->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex));
     ASSERT(wrapper->GetAlignedPointerFromInternalField(v8DOMWrapperTypeIndex));
 
+    const WrapperTypeInfo* typeInfo = static_cast<const WrapperTypeInfo*>(wrapper->GetAlignedPointerFromInternalField(v8DOMWrapperTypeIndex));
+
     // FIXME: Add class id checks.
-    return true;
+    return typeInfo->ginEmbedder == gin::kEmbedderBlink;
 }
 
-bool V8DOMWrapper::isWrapperOfType(v8::Handle<v8::Value> value, WrapperTypeInfo* type)
+bool V8DOMWrapper::isWrapperOfType(v8::Handle<v8::Value> value, const WrapperTypeInfo* type)
 {
     if (!hasInternalField(value))
         return false;
@@ -166,8 +135,8 @@ bool V8DOMWrapper::isWrapperOfType(v8::Handle<v8::Value> value, WrapperTypeInfo*
     ASSERT(wrapper->InternalFieldCount() >= v8DefaultWrapperInternalFieldCount);
     ASSERT(wrapper->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex));
 
-    WrapperTypeInfo* typeInfo = static_cast<WrapperTypeInfo*>(wrapper->GetAlignedPointerFromInternalField(v8DOMWrapperTypeIndex));
-    return typeInfo == type;
+    const WrapperTypeInfo* typeInfo = static_cast<const WrapperTypeInfo*>(wrapper->GetAlignedPointerFromInternalField(v8DOMWrapperTypeIndex));
+    return typeInfo->ginEmbedder == gin::kEmbedderBlink && typeInfo == type;
 }
 
 }  // namespace WebCore

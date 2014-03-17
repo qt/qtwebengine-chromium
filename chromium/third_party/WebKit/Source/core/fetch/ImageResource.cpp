@@ -24,16 +24,17 @@
 #include "config.h"
 #include "core/fetch/ImageResource.h"
 
+#include "RuntimeEnabledFeatures.h"
 #include "core/fetch/ImageResourceClient.h"
 #include "core/fetch/MemoryCache.h"
 #include "core/fetch/ResourceClient.h"
 #include "core/fetch/ResourceClientWalker.h"
 #include "core/fetch/ResourceFetcher.h"
-#include "core/page/FrameView.h"
-#include "core/platform/SharedBuffer.h"
-#include "core/platform/graphics/BitmapImage.h"
+#include "core/frame/FrameView.h"
 #include "core/rendering/RenderObject.h"
 #include "core/svg/graphics/SVGImage.h"
+#include "platform/SharedBuffer.h"
+#include "platform/graphics/BitmapImage.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/Vector.h"
@@ -44,8 +45,10 @@ namespace WebCore {
 
 ImageResource::ImageResource(const ResourceRequest& resourceRequest)
     : Resource(resourceRequest, Image)
+    , m_devicePixelRatioHeaderValue(1.0)
     , m_image(0)
     , m_loadingMultipartContent(false)
+    , m_hasDevicePixelRatioHeaderValue(false)
 {
     setStatus(Unknown);
     setCustomAcceptHeader();
@@ -110,7 +113,7 @@ void ImageResource::switchClientsToRevalidatedResource()
         for (ContainerSizeRequests::iterator it = m_pendingContainerSizeRequests.begin(); it != m_pendingContainerSizeRequests.end(); ++it)
             switchContainerSizeRequests.set(it->key, it->value);
         Resource::switchClientsToRevalidatedResource();
-        ImageResource* revalidatedImageResource = static_cast<ImageResource*>(resourceToRevalidate());
+        ImageResource* revalidatedImageResource = toImageResource(resourceToRevalidate());
         for (ContainerSizeRequests::iterator it = switchContainerSizeRequests.begin(); it != switchContainerSizeRequests.end(); ++it)
             revalidatedImageResource->setContainerSizeForRenderer(it->key, it->value.first, it->value.second);
         return;
@@ -130,12 +133,12 @@ void ImageResource::allClientsRemoved()
 pair<WebCore::Image*, float> ImageResource::brokenImage(float deviceScaleFactor)
 {
     if (deviceScaleFactor >= 2) {
-        DEFINE_STATIC_LOCAL(RefPtr<WebCore::Image>, brokenImageHiRes, (WebCore::Image::loadPlatformResource("missingImage@2x")));
-        return std::make_pair(brokenImageHiRes.get(), 2);
+        DEFINE_STATIC_REF(WebCore::Image, brokenImageHiRes, (WebCore::Image::loadPlatformResource("missingImage@2x")));
+        return std::make_pair(brokenImageHiRes, 2);
     }
 
-    DEFINE_STATIC_LOCAL(RefPtr<WebCore::Image>, brokenImageLoRes, (WebCore::Image::loadPlatformResource("missingImage")));
-    return std::make_pair(brokenImageLoRes.get(), 1);
+    DEFINE_STATIC_REF(WebCore::Image, brokenImageLoRes, (WebCore::Image::loadPlatformResource("missingImage")));
+    return std::make_pair(brokenImageLoRes, 1);
 }
 
 bool ImageResource::willPaintBrokenImage() const
@@ -235,7 +238,7 @@ LayoutSize ImageResource::imageSizeForRenderer(const RenderObject* renderer, flo
     LayoutSize imageSize;
 
     if (m_image->isBitmapImage() && (renderer && renderer->shouldRespectImageOrientation() == RespectImageOrientation))
-        imageSize = static_cast<BitmapImage*>(m_image.get())->sizeRespectingOrientation();
+        imageSize = toBitmapImage(m_image.get())->sizeRespectingOrientation();
     else if (m_image->isSVGImage() && sizeType == NormalSize)
         imageSize = m_svgImageCache->imageSizeForRenderer(renderer);
     else
@@ -323,6 +326,8 @@ void ImageResource::appendData(const char* data, int length)
 
 void ImageResource::updateImage(bool allDataReceived)
 {
+    TRACE_EVENT0("webkit", "ImageResource::updateImage");
+
     if (m_data)
         createImage();
 
@@ -375,6 +380,13 @@ void ImageResource::responseReceived(const ResourceResponse& response)
         finishOnePart();
     else if (response.isMultipart())
         m_loadingMultipartContent = true;
+    if (RuntimeEnabledFeatures::clientHintsDprEnabled()) {
+        m_devicePixelRatioHeaderValue = response.httpHeaderField("DPR").toFloat(&m_hasDevicePixelRatioHeaderValue);
+        if (!m_hasDevicePixelRatioHeaderValue || m_devicePixelRatioHeaderValue <= 0.0) {
+            m_devicePixelRatioHeaderValue = 1.0;
+            m_hasDevicePixelRatioHeaderValue = false;
+        }
+    }
     Resource::responseReceived(response);
 }
 
@@ -446,6 +458,15 @@ bool ImageResource::currentFrameKnownToBeOpaque(const RenderObject* renderer)
     if (image->isBitmapImage())
         image->nativeImageForCurrentFrame(); // force decode
     return image->currentFrameKnownToBeOpaque();
+}
+
+bool ImageResource::isAccessAllowed(SecurityOrigin* securityOrigin)
+{
+    if (!image()->currentFrameHasSingleSecurityOrigin())
+        return false;
+    if (passesAccessControlCheck(securityOrigin))
+        return true;
+    return !securityOrigin->taintsCanvas(response().url());
 }
 
 } // namespace WebCore

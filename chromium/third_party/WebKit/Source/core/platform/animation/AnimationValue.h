@@ -28,8 +28,8 @@
 #define AnimationValue_h
 
 #include "core/platform/animation/TimingFunction.h"
-#include "core/platform/graphics/filters/FilterOperations.h"
-#include "core/platform/graphics/transforms/TransformOperations.h"
+#include "platform/graphics/filters/FilterOperations.h"
+#include "platform/transforms/TransformOperations.h"
 
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"

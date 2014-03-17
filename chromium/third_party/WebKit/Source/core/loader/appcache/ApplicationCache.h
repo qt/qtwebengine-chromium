@@ -27,10 +27,10 @@
 #define ApplicationCache_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/dom/EventNames.h"
-#include "core/dom/EventTarget.h"
+#include "core/events/EventTarget.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
-#include "core/page/DOMWindowProperty.h"
+#include "core/frame/DOMWindowProperty.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -41,7 +41,8 @@ class ExceptionState;
 class Frame;
 class KURL;
 
-class ApplicationCache : public ScriptWrappable, public RefCounted<ApplicationCache>, public EventTarget, public DOMWindowProperty {
+class ApplicationCache : public ScriptWrappable, public RefCounted<ApplicationCache>, public EventTargetWithInlineData, public DOMWindowProperty {
+    REFCOUNTED_EVENT_TARGET(ApplicationCache);
 public:
     static PassRefPtr<ApplicationCache> create(Frame* frame) { return adoptRef(new ApplicationCache(frame)); }
     ~ApplicationCache() { ASSERT(!m_frame); }
@@ -52,11 +53,6 @@ public:
     void update(ExceptionState&);
     void swapCache(ExceptionState&);
     void abort();
-
-    // EventTarget impl
-
-    using RefCounted<ApplicationCache>::ref;
-    using RefCounted<ApplicationCache>::deref;
 
     // Explicitly named attribute event listener helpers
 
@@ -69,22 +65,15 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(cached);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(obsolete);
 
-    virtual const AtomicString& interfaceName() const;
-    virtual ScriptExecutionContext* scriptExecutionContext() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE;
 
     static const AtomicString& toEventType(ApplicationCacheHost::EventID);
 
 private:
     explicit ApplicationCache(Frame*);
 
-    virtual void refEventTarget() { ref(); }
-    virtual void derefEventTarget() { deref(); }
-    virtual EventTargetData* eventTargetData();
-    virtual EventTargetData* ensureEventTargetData();
-
     ApplicationCacheHost* applicationCacheHost() const;
-
-    EventTargetData m_eventTargetData;
 };
 
 } // namespace WebCore

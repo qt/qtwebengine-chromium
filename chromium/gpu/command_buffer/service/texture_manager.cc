@@ -80,6 +80,7 @@ TextureManager::~TextureManager() {
   DCHECK_EQ(0, num_unrenderable_textures_);
   DCHECK_EQ(0, num_unsafe_textures_);
   DCHECK_EQ(0, num_uncleared_mips_);
+  DCHECK_EQ(0, num_images_);
 }
 
 void TextureManager::Destroy(bool have_context) {
@@ -118,6 +119,7 @@ Texture::Texture(GLuint service_id)
       framebuffer_attachment_count_(0),
       stream_texture_(false),
       immutable_(false),
+      has_images_(false),
       estimated_size_(0),
       can_render_condition_(CAN_RENDER_ALWAYS) {
 }
@@ -198,11 +200,7 @@ Texture::CanRenderCondition Texture::GetCanRenderCondition() const {
   if (target_ == 0)
     return CAN_RENDER_ALWAYS;
 
-  if (target_ == GL_TEXTURE_EXTERNAL_OES) {
-    if (!IsStreamTexture()) {
-      return CAN_RENDER_NEVER;
-    }
-  } else {
+  if (target_ != GL_TEXTURE_EXTERNAL_OES) {
     if (level_infos_.empty()) {
       return CAN_RENDER_NEVER;
     }
@@ -294,7 +292,8 @@ bool Texture::MarkMipmapsGenerated(
     GLsizei depth = info1.depth;
     GLenum target = target_ == GL_TEXTURE_2D ? GL_TEXTURE_2D :
                                FaceIndexToGLTarget(ii);
-    int num_mips = TextureManager::ComputeMipMapCount(width, height, depth);
+    int num_mips =
+        TextureManager::ComputeMipMapCount(target_, width, height, depth);
     for (int level = 1; level < num_mips; ++level) {
       width = std::max(1, width >> 1);
       height = std::max(1, height >> 1);
@@ -390,7 +389,7 @@ void Texture::UpdateCleared() {
 
   const Texture::LevelInfo& first_face = level_infos_[0][0];
   int levels_needed = TextureManager::ComputeMipMapCount(
-      first_face.width, first_face.height, first_face.depth);
+      target_, first_face.width, first_face.height, first_face.depth);
   bool cleared = true;
   for (size_t ii = 0; ii < level_infos_.size(); ++ii) {
     for (GLint jj = 0; jj < levels_needed; ++jj) {
@@ -432,6 +431,29 @@ void Texture::UpdateCanRenderCondition() {
     (*it)->manager()->UpdateCanRenderCondition(can_render_condition_,
                                                can_render_condition);
   can_render_condition_ = can_render_condition;
+}
+
+void Texture::UpdateHasImages() {
+  if (level_infos_.empty())
+    return;
+
+  bool has_images = false;
+  for (size_t ii = 0; ii < level_infos_.size(); ++ii) {
+    for (size_t jj = 0; jj < level_infos_[ii].size(); ++jj) {
+      const Texture::LevelInfo& info = level_infos_[ii][jj];
+      if (info.image.get() != NULL) {
+        has_images = true;
+        break;
+      }
+    }
+  }
+
+  if (has_images_ == has_images)
+    return;
+  has_images_ = has_images;
+  int delta = has_images ? +1 : -1;
+  for (RefSet::iterator it = refs_.begin(); it != refs_.end(); ++it)
+    (*it)->manager()->UpdateNumImages(delta);
 }
 
 void Texture::IncAllFramebufferStateChangeCount() {
@@ -482,6 +504,7 @@ void Texture::SetLevelInfo(
   Update(feature_info);
   UpdateCleared();
   UpdateCanRenderCondition();
+  UpdateHasImages();
   if (IsAttachedToFramebuffer()) {
     // TODO(gman): If textures tracked which framebuffers they were attached to
     // we could just mark those framebuffers as not complete.
@@ -643,7 +666,7 @@ void Texture::Update(const FeatureInfo* feature_info) {
   // Update texture_complete and cube_complete status.
   const Texture::LevelInfo& first_face = level_infos_[0][0];
   int levels_needed = TextureManager::ComputeMipMapCount(
-      first_face.width, first_face.height, first_face.depth);
+      target_, first_face.width, first_face.height, first_face.depth);
   texture_complete_ =
       max_level_set_ >= (levels_needed - 1) && max_level_set_ >= 0;
   cube_complete_ = (level_infos_.size() == 6) &&
@@ -708,7 +731,7 @@ bool Texture::ClearRenderableLevels(GLES2Decoder* decoder) {
 
   const Texture::LevelInfo& first_face = level_infos_[0][0];
   int levels_needed = TextureManager::ComputeMipMapCount(
-      first_face.width, first_face.height, first_face.depth);
+      target_, first_face.width, first_face.height, first_face.depth);
 
   for (size_t ii = 0; ii < level_infos_.size(); ++ii) {
     for (GLint jj = 0; jj < levels_needed; ++jj) {
@@ -783,10 +806,10 @@ void Texture::SetLevelImage(
   DCHECK_EQ(info.level, level);
   info.image = image;
   UpdateCanRenderCondition();
+  UpdateHasImages();
 }
 
-gfx::GLImage* Texture::GetLevelImage(
-  GLint target, GLint level) const {
+gfx::GLImage* Texture::GetLevelImage(GLint target, GLint level) const {
   size_t face_index = GLTargetToFaceIndex(target);
   if (level >= 0 && face_index < level_infos_.size() &&
       static_cast<size_t>(level) < level_infos_[face_index].size()) {
@@ -824,13 +847,12 @@ TextureRef::~TextureRef() {
   manager_ = NULL;
 }
 
-TextureManager::TextureManager(
-    MemoryTracker* memory_tracker,
-    FeatureInfo* feature_info,
-    GLint max_texture_size,
-    GLint max_cube_map_texture_size)
-    : memory_tracker_managed_(
-          new MemoryTypeTracker(memory_tracker, MemoryTracker::kManaged)),
+TextureManager::TextureManager(MemoryTracker* memory_tracker,
+                               FeatureInfo* feature_info,
+                               GLint max_texture_size,
+                               GLint max_cube_map_texture_size)
+    : memory_tracker_managed_(new MemoryTypeTracker(memory_tracker,
+                                                    MemoryTracker::kManaged)),
       memory_tracker_unmanaged_(
           new MemoryTypeTracker(memory_tracker, MemoryTracker::kUnmanaged)),
       feature_info_(feature_info),
@@ -838,15 +860,18 @@ TextureManager::TextureManager(
       stream_texture_manager_(NULL),
       max_texture_size_(max_texture_size),
       max_cube_map_texture_size_(max_cube_map_texture_size),
-      max_levels_(ComputeMipMapCount(max_texture_size,
+      max_levels_(ComputeMipMapCount(GL_TEXTURE_2D,
+                                     max_texture_size,
                                      max_texture_size,
                                      max_texture_size)),
-      max_cube_map_levels_(ComputeMipMapCount(max_cube_map_texture_size,
+      max_cube_map_levels_(ComputeMipMapCount(GL_TEXTURE_CUBE_MAP,
+                                              max_cube_map_texture_size,
                                               max_cube_map_texture_size,
                                               max_cube_map_texture_size)),
       num_unrenderable_textures_(0),
       num_unsafe_textures_(0),
       num_uncleared_mips_(0),
+      num_images_(0),
       texture_count_(0),
       have_context_(true) {
   for (int ii = 0; ii < kNumDefaultTextures; ++ii) {
@@ -1132,6 +1157,8 @@ void TextureManager::StartTracking(TextureRef* ref) {
     ++num_unsafe_textures_;
   if (!texture->CanRender(feature_info_.get()))
     ++num_unrenderable_textures_;
+  if (texture->HasImages())
+    ++num_images_;
 }
 
 void TextureManager::StopTracking(TextureRef* ref) {
@@ -1146,6 +1173,10 @@ void TextureManager::StopTracking(TextureRef* ref) {
   }
 
   --texture_count_;
+  if (texture->HasImages()) {
+    DCHECK_NE(0, num_images_);
+    --num_images_;
+  }
   if (!texture->CanRender(feature_info_.get())) {
     DCHECK_NE(0, num_unrenderable_textures_);
     --num_unrenderable_textures_;
@@ -1184,9 +1215,17 @@ Texture* TextureManager::GetTextureForServiceId(GLuint service_id) const {
   return NULL;
 }
 
-GLsizei TextureManager::ComputeMipMapCount(
-    GLsizei width, GLsizei height, GLsizei depth) {
-  return 1 + base::bits::Log2Floor(std::max(std::max(width, height), depth));
+GLsizei TextureManager::ComputeMipMapCount(GLenum target,
+                                           GLsizei width,
+                                           GLsizei height,
+                                           GLsizei depth) {
+  switch (target) {
+    case GL_TEXTURE_EXTERNAL_OES:
+      return 1;
+    default:
+      return 1 +
+             base::bits::Log2Floor(std::max(std::max(width, height), depth));
+  }
 }
 
 void TextureManager::SetLevelImage(
@@ -1231,10 +1270,14 @@ void TextureManager::UpdateCanRenderCondition(
     ++num_unrenderable_textures_;
 }
 
+void TextureManager::UpdateNumImages(int delta) {
+  num_images_ += delta;
+  DCHECK_GE(num_images_, 0);
+}
+
 void TextureManager::IncFramebufferStateChangeCount() {
   if (framebuffer_manager_)
     framebuffer_manager_->IncFramebufferStateChangeCount();
-
 }
 
 bool TextureManager::ValidateTextureParameters(
@@ -1429,7 +1472,7 @@ void TextureManager::DoTexImage2D(
     framebuffer_state->clear_state_dirty = true;
   }
 
-  if (!texture_state->teximage2d_faster_than_texsubimage2d &&
+  if (texture_state->texsubimage2d_faster_than_teximage2d &&
       level_is_same && args.pixels) {
     {
       ScopedTextureUploadTimer timer(texture_state);

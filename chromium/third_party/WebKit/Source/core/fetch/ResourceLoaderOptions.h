@@ -32,6 +32,7 @@
 #define ResourceLoaderOptions_h
 
 #include "core/fetch/FetchInitiatorInfo.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
@@ -63,12 +64,6 @@ enum SecurityCheckPolicy {
 enum ContentSecurityPolicyCheck {
     CheckContentSecurityPolicy,
     DoNotCheckContentSecurityPolicy
-};
-
-enum RequestOriginPolicy {
-    UseDefaultOriginRestrictionsForType,
-    RestrictToSameOrigin,
-    PotentiallyCrossOriginEnabled // Indicates "potentially CORS-enabled fetch" in HTML standard.
 };
 
 enum RequestInitiatorContext {
@@ -112,7 +107,6 @@ struct ResourceLoaderOptions {
         , crossOriginCredentialPolicy(DoNotAskClientForCrossOriginCredentials)
         , securityCheck(DoSecurityCheck)
         , contentSecurityPolicyOption(CheckContentSecurityPolicy)
-        , requestOriginPolicy(UseDefaultOriginRestrictionsForType)
         , requestInitiatorContext(DocumentContext)
         , mixedContentBlockingTreatment(TreatAsDefaultForType)
         , synchronousPolicy(RequestAsynchronously)
@@ -128,7 +122,6 @@ struct ResourceLoaderOptions {
         ClientCrossOriginCredentialPolicy crossOriginCredentialPolicy,
         SecurityCheckPolicy securityCheck,
         ContentSecurityPolicyCheck contentSecurityPolicyOption,
-        RequestOriginPolicy requestOriginPolicy,
         RequestInitiatorContext requestInitiatorContext)
         : sendLoadCallbacks(sendLoadCallbacks)
         , sniffContent(sniffContent)
@@ -138,7 +131,6 @@ struct ResourceLoaderOptions {
         , crossOriginCredentialPolicy(crossOriginCredentialPolicy)
         , securityCheck(securityCheck)
         , contentSecurityPolicyOption(contentSecurityPolicyOption)
-        , requestOriginPolicy(requestOriginPolicy)
         , requestInitiatorContext(requestInitiatorContext)
         , mixedContentBlockingTreatment(TreatAsDefaultForType)
         , synchronousPolicy(RequestAsynchronously)
@@ -154,10 +146,10 @@ struct ResourceLoaderOptions {
     SecurityCheckPolicy securityCheck;
     ContentSecurityPolicyCheck contentSecurityPolicyOption;
     FetchInitiatorInfo initiatorInfo;
-    RequestOriginPolicy requestOriginPolicy;
     RequestInitiatorContext requestInitiatorContext;
     MixedContentBlockingTreatment mixedContentBlockingTreatment;
     SynchronousPolicy synchronousPolicy;
+    RefPtr<SecurityOrigin> securityOrigin;
 };
 
 } // namespace WebCore

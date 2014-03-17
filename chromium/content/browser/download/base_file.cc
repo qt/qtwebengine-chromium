@@ -82,8 +82,8 @@ DownloadInterruptReason BaseFile::Initialize(
     // |initial_directory| can still be empty if ContentBrowserClient returned
     // an empty path for the downloads directory.
     if ((initial_directory.empty() ||
-         !file_util::CreateTemporaryFileInDir(initial_directory, &temp_file)) &&
-        !file_util::CreateTemporaryFile(&temp_file)) {
+         !base::CreateTemporaryFileInDir(initial_directory, &temp_file)) &&
+        !base::CreateTemporaryFile(&temp_file)) {
       return LogInterruptReason("Unable to create", 0,
                                 DOWNLOAD_INTERRUPT_REASON_FILE_FAILED);
     }
@@ -165,7 +165,7 @@ DownloadInterruptReason BaseFile::Rename(const base::FilePath& new_path) {
       net::NetLog::TYPE_DOWNLOAD_FILE_RENAMED,
       base::Bind(&FileRenamedNetLogCallback, &full_path_, &new_path));
   Close();
-  file_util::CreateDirectory(new_path.DirName());
+  base::CreateDirectory(new_path.DirName());
 
   // A simple rename wouldn't work here since we want the file to have
   // permissions / security descriptors that makes sense in the new directory.

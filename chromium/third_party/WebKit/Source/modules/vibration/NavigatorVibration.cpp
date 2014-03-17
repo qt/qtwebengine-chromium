@@ -20,9 +20,8 @@
 #include "config.h"
 #include "modules/vibration/NavigatorVibration.h"
 
-#include "core/page/Frame.h"
-#include "core/page/Navigator.h"
-#include "core/page/Page.h"
+#include "core/frame/Navigator.h"
+#include "core/frame/Frame.h"
 #include "core/page/PageVisibilityState.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebVibration.h"
@@ -48,30 +47,30 @@ NavigatorVibration::~NavigatorVibration()
 
 bool NavigatorVibration::vibrate(const VibrationPattern& pattern)
 {
-    size_t length = pattern.size();
+    VibrationPattern sanitized = pattern;
+    size_t length = sanitized.size();
 
-    // If the pattern is too long then abort.
-    if (length > kVibrationPatternLengthMax)
-        return false;
-
-    // If any pattern entry is too long then abort.
-    for (size_t i = 0; i < length; ++i) {
-        if (pattern[i] > WebKit::kVibrationDurationMax)
-            return false;
+    // If the pattern is too long then truncate it.
+    if (length > kVibrationPatternLengthMax) {
+        sanitized.shrink(kVibrationPatternLengthMax);
+        length = kVibrationPatternLengthMax;
     }
 
-    // Cancelling clears the pattern so do this before setting the new pattern.
+    // If any pattern entry is too long then truncate it.
+    for (size_t i = 0; i < length; ++i) {
+        if (sanitized[i] > blink::kVibrationDurationMax)
+            sanitized[i] = blink::kVibrationDurationMax;
+    }
+
+    // If the last item in the pattern is a pause then discard it.
+    if (length && !(length % 2))
+        sanitized.removeLast();
+
+    // Cancelling clears the stored pattern so do it before setting the new one.
     if (m_isVibrating)
         cancelVibration();
 
-    // If the last item in the pattern is a pause then discard it.
-    if (length && !(length % 2)) {
-        VibrationPattern tempPattern = pattern;
-        tempPattern.removeLast();
-        m_pattern = tempPattern;
-    } else {
-        m_pattern = pattern;
-    }
+    m_pattern = sanitized;
 
     if (m_timerStart.isActive())
         m_timerStart.stop();
@@ -85,6 +84,7 @@ bool NavigatorVibration::vibrate(const VibrationPattern& pattern)
     }
 
     m_timerStart.startOneShot(0);
+    m_isVibrating = true;
     return true;
 }
 
@@ -92,7 +92,7 @@ void NavigatorVibration::cancelVibration()
 {
     m_pattern.clear();
     if (m_isVibrating) {
-        WebKit::Platform::current()->cancelVibration();
+        blink::Platform::current()->cancelVibration();
         m_isVibrating = false;
         m_timerStop.stop();
     }
@@ -104,7 +104,7 @@ void NavigatorVibration::timerStartFired(Timer<NavigatorVibration>* timer)
 
     if (m_pattern.size()) {
         m_isVibrating = true;
-        WebKit::Platform::current()->vibrate(m_pattern[0]);
+        blink::Platform::current()->vibrate(m_pattern[0]);
         m_timerStop.startOneShot(m_pattern[0] / 1000.0);
         m_pattern.remove(0);
     }
@@ -114,7 +114,8 @@ void NavigatorVibration::timerStopFired(Timer<NavigatorVibration>* timer)
 {
     ASSERT_UNUSED(timer, timer == &m_timerStop);
 
-    m_isVibrating = false;
+    if (m_pattern.isEmpty())
+        m_isVibrating = false;
 
     if (m_pattern.size()) {
         m_timerStart.startOneShot(m_pattern[0] / 1000.0);

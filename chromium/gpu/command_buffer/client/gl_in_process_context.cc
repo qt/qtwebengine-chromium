@@ -62,10 +62,6 @@ class GLInProcessContextImpl
 
   // GLInProcessContext implementation:
   virtual void SetContextLostCallback(const base::Closure& callback) OVERRIDE;
-  virtual void SignalSyncPoint(unsigned sync_point,
-                               const base::Closure& callback) OVERRIDE;
-  virtual void SignalQuery(unsigned query, const base::Closure& callback)
-      OVERRIDE;
   virtual gles2::GLES2Implementation* GetImplementation() OVERRIDE;
 
 #if defined(OS_ANDROID)
@@ -75,8 +71,6 @@ class GLInProcessContextImpl
 
  private:
   void Destroy();
-  void PollQueryCallbacks();
-  void CallQueryCallback(size_t index);
   void OnContextLost();
   void OnSignalSyncPoint(const base::Closure& callback);
 
@@ -84,9 +78,6 @@ class GLInProcessContextImpl
   scoped_ptr<TransferBuffer> transfer_buffer_;
   scoped_ptr<gles2::GLES2Implementation> gles2_implementation_;
   scoped_ptr<InProcessCommandBuffer> command_buffer_;
-
-  typedef std::pair<unsigned, base::Closure> QueryCallback;
-  std::vector<QueryCallback> query_callbacks_;
 
   unsigned int share_group_id_;
   bool context_lost_;
@@ -100,11 +91,6 @@ base::LazyInstance<base::Lock> g_all_shared_contexts_lock =
 base::LazyInstance<std::set<GLInProcessContextImpl*> > g_all_shared_contexts =
     LAZY_INSTANCE_INITIALIZER;
 
-size_t SharedContextCount() {
-  base::AutoLock lock(g_all_shared_contexts_lock.Get());
-  return g_all_shared_contexts.Get().size();
-}
-
 GLInProcessContextImpl::GLInProcessContextImpl()
     : share_group_id_(0), context_lost_(false) {}
 
@@ -114,14 +100,6 @@ GLInProcessContextImpl::~GLInProcessContextImpl() {
     g_all_shared_contexts.Get().erase(this);
   }
   Destroy();
-}
-
-void GLInProcessContextImpl::SignalSyncPoint(unsigned sync_point,
-                                             const base::Closure& callback) {
-  DCHECK(!callback.is_null());
-  base::Closure wrapped_callback = base::Bind(
-      &GLInProcessContextImpl::OnSignalSyncPoint, AsWeakPtr(), callback);
-  command_buffer_->SignalSyncPoint(sync_point, wrapped_callback);
 }
 
 gles2::GLES2Implementation* GLInProcessContextImpl::GetImplementation() {
@@ -140,12 +118,6 @@ void GLInProcessContextImpl::OnContextLost() {
   }
 }
 
-void GLInProcessContextImpl::OnSignalSyncPoint(const base::Closure& callback) {
-  // TODO: Should it always trigger callbacks?
-  if (!context_lost_)
-    callback.Run();
-}
-
 bool GLInProcessContextImpl::Initialize(
     scoped_refptr<gfx::GLSurface> surface,
     bool is_offscreen,
@@ -156,6 +128,9 @@ bool GLInProcessContextImpl::Initialize(
     gfx::GpuPreference gpu_preference) {
   DCHECK(size.width() >= 0 && size.height() >= 0);
 
+  // Changes to these values should also be copied to
+  // gpu/command_buffer/client/gl_in_process_context.cc and to
+  // content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h
   const int32 ALPHA_SIZE     = 0x3021;
   const int32 BLUE_SIZE      = 0x3022;
   const int32 GREEN_SIZE     = 0x3023;
@@ -165,6 +140,9 @@ bool GLInProcessContextImpl::Initialize(
   const int32 SAMPLES        = 0x3031;
   const int32 SAMPLE_BUFFERS = 0x3032;
   const int32 NONE           = 0x3038;
+
+  // Chromium-specific attributes
+  const int32 FAIL_IF_MAJOR_PERF_CAVEAT = 0x10002;
 
   std::vector<int32> attrib_vector;
   if (attribs.alpha_size >= 0) {
@@ -198,6 +176,10 @@ bool GLInProcessContextImpl::Initialize(
   if (attribs.sample_buffers >= 0) {
     attrib_vector.push_back(SAMPLE_BUFFERS);
     attrib_vector.push_back(attribs.sample_buffers);
+  }
+  if (attribs.fail_if_major_perf_caveat > 0) {
+    attrib_vector.push_back(FAIL_IF_MAJOR_PERF_CAVEAT);
+    attrib_vector.push_back(attribs.fail_if_major_perf_caveat);
   }
   attrib_vector.push_back(NONE);
 
@@ -235,14 +217,14 @@ bool GLInProcessContextImpl::Initialize(
                                    gpu_preference,
                                    wrapped_callback,
                                    share_group_id_)) {
-    LOG(INFO) << "Failed to initialize InProcessCommmandBuffer";
+    LOG(ERROR) << "Failed to initialize InProcessCommmandBuffer";
     return false;
   }
 
   // Create the GLES2 helper, which writes the command buffer protocol.
   gles2_helper_.reset(new gles2::GLES2CmdHelper(command_buffer_.get()));
   if (!gles2_helper_->Initialize(kCommandBufferSize)) {
-    LOG(INFO) << "Failed to initialize GLES2CmdHelper";
+    LOG(ERROR) << "Failed to initialize GLES2CmdHelper";
     Destroy();
     return false;
   }
@@ -250,12 +232,16 @@ bool GLInProcessContextImpl::Initialize(
   // Create a transfer buffer.
   transfer_buffer_.reset(new TransferBuffer(gles2_helper_.get()));
 
+  bool bind_generates_resources = false;
+  bool free_everything_when_invisible = false;
+
   // Create the object exposing the OpenGL API.
   gles2_implementation_.reset(new gles2::GLES2Implementation(
       gles2_helper_.get(),
       share_group,
       transfer_buffer_.get(),
-      false,
+      bind_generates_resources,
+      free_everything_when_invisible,
       command_buffer_.get()));
 
   if (share_resources) {
@@ -275,10 +261,6 @@ bool GLInProcessContextImpl::Initialize(
 }
 
 void GLInProcessContextImpl::Destroy() {
-  while (!query_callbacks_.empty()) {
-    CallQueryCallback(0);
-  }
-
   if (gles2_implementation_) {
     // First flush the context to ensure that any pending frees of resources
     // are completed. Otherwise, if this context is part of a share group,
@@ -293,50 +275,6 @@ void GLInProcessContextImpl::Destroy() {
   transfer_buffer_.reset();
   gles2_helper_.reset();
   command_buffer_.reset();
-}
-
-void GLInProcessContextImpl::CallQueryCallback(size_t index) {
-  DCHECK_LT(index, query_callbacks_.size());
-  QueryCallback query_callback = query_callbacks_[index];
-  query_callbacks_[index] = query_callbacks_.back();
-  query_callbacks_.pop_back();
-  query_callback.second.Run();
-}
-
-// TODO(sievers): Move this to the service side
-void GLInProcessContextImpl::PollQueryCallbacks() {
-  for (size_t i = 0; i < query_callbacks_.size();) {
-    unsigned query = query_callbacks_[i].first;
-    GLuint param = 0;
-    gles2::GLES2Implementation* gl = GetImplementation();
-    if (gl->IsQueryEXT(query)) {
-      gl->GetQueryObjectuivEXT(query, GL_QUERY_RESULT_AVAILABLE_EXT, &param);
-    } else {
-      param = 1;
-    }
-    if (param) {
-      CallQueryCallback(i);
-    } else {
-      i++;
-    }
-  }
-  if (!query_callbacks_.empty()) {
-    base::MessageLoop::current()->PostDelayedTask(
-        FROM_HERE,
-        base::Bind(&GLInProcessContextImpl::PollQueryCallbacks,
-                   this->AsWeakPtr()),
-        base::TimeDelta::FromMilliseconds(5));
-  }
-}
-
-void GLInProcessContextImpl::SignalQuery(
-    unsigned query,
-    const base::Closure& callback) {
-  query_callbacks_.push_back(std::make_pair(query, callback));
-  // If size > 1, there is already a poll callback pending.
-  if (query_callbacks_.size() == 1) {
-    PollQueryCallbacks();
-  }
 }
 
 #if defined(OS_ANDROID)

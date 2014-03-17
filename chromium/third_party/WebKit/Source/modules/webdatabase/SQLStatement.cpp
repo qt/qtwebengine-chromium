@@ -28,10 +28,9 @@
 #include "config.h"
 #include "modules/webdatabase/SQLStatement.h"
 
-#include "core/platform/Logging.h"
-#include "core/platform/sql/SQLValue.h"
-#include "core/platform/sql/SQLiteDatabase.h"
-#include "core/platform/sql/SQLiteStatement.h"
+#include "platform/Logging.h"
+#include "modules/webdatabase/sqlite/SQLiteDatabase.h"
+#include "modules/webdatabase/sqlite/SQLiteStatement.h"
 #include "modules/webdatabase/AbstractDatabaseServer.h"
 #include "modules/webdatabase/AbstractSQLStatementBackend.h"
 #include "modules/webdatabase/Database.h"
@@ -44,15 +43,15 @@
 namespace WebCore {
 
 PassOwnPtr<SQLStatement> SQLStatement::create(Database* database,
-    PassRefPtr<SQLStatementCallback> callback, PassRefPtr<SQLStatementErrorCallback> errorCallback)
+    PassOwnPtr<SQLStatementCallback> callback, PassOwnPtr<SQLStatementErrorCallback> errorCallback)
 {
     return adoptPtr(new SQLStatement(database, callback, errorCallback));
 }
 
-SQLStatement::SQLStatement(Database* database, PassRefPtr<SQLStatementCallback> callback,
-    PassRefPtr<SQLStatementErrorCallback> errorCallback)
-    : m_statementCallbackWrapper(callback, database->scriptExecutionContext())
-    , m_statementErrorCallbackWrapper(errorCallback, database->scriptExecutionContext())
+SQLStatement::SQLStatement(Database* database, PassOwnPtr<SQLStatementCallback> callback,
+    PassOwnPtr<SQLStatementErrorCallback> errorCallback)
+    : m_statementCallbackWrapper(callback, database->executionContext())
+    , m_statementErrorCallbackWrapper(errorCallback, database->executionContext())
 {
 }
 
@@ -78,8 +77,8 @@ bool SQLStatement::performCallback(SQLTransaction* transaction)
 
     bool callbackError = false;
 
-    RefPtr<SQLStatementCallback> callback = m_statementCallbackWrapper.unwrap();
-    RefPtr<SQLStatementErrorCallback> errorCallback = m_statementErrorCallbackWrapper.unwrap();
+    OwnPtr<SQLStatementCallback> callback = m_statementCallbackWrapper.unwrap();
+    OwnPtr<SQLStatementErrorCallback> errorCallback = m_statementErrorCallbackWrapper.unwrap();
     RefPtr<SQLError> error = m_backend->sqlError();
 
     // Call the appropriate statement callback and track if it resulted in an error,

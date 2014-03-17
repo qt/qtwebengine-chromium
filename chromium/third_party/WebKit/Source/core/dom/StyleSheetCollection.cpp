@@ -29,19 +29,50 @@
 
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/StyleInvalidationAnalysis.h"
+#include "core/css/StyleRuleImport.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/css/resolver/StyleResolver.h"
-#include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/StyleEngine.h"
 #include "core/html/HTMLStyleElement.h"
-#include "core/page/Settings.h"
+#include "core/frame/Settings.h"
 
 namespace WebCore {
+
+StyleSheetCollectionBase::StyleSheetCollectionBase()
+{
+}
+
+StyleSheetCollectionBase::~StyleSheetCollectionBase()
+{
+}
+
+void StyleSheetCollectionBase::swap(StyleSheetCollectionBase& other)
+{
+    m_styleSheetsForStyleSheetList.swap(other.m_styleSheetsForStyleSheetList);
+    m_activeAuthorStyleSheets.swap(other.m_activeAuthorStyleSheets);
+}
+
+void StyleSheetCollectionBase::appendActiveStyleSheets(const Vector<RefPtr<CSSStyleSheet> >& sheets)
+{
+    m_activeAuthorStyleSheets.append(sheets);
+}
+
+void StyleSheetCollectionBase::appendActiveStyleSheet(CSSStyleSheet* sheet)
+{
+    m_activeAuthorStyleSheets.append(sheet);
+}
+
+void StyleSheetCollectionBase::appendSheetForList(StyleSheet* sheet)
+{
+    m_styleSheetsForStyleSheetList.append(sheet);
+}
+
 
 StyleSheetCollection::StyleSheetCollection(TreeScope& treeScope)
     : m_treeScope(treeScope)
     , m_hadActiveLoadingStylesheet(false)
+    , m_usesRemUnits(false)
 {
 }
 
@@ -77,26 +108,25 @@ void StyleSheetCollection::removeStyleSheetCandidateNode(Node* node, ContainerNo
 
 StyleSheetCollection::StyleResolverUpdateType StyleSheetCollection::compareStyleSheets(const Vector<RefPtr<CSSStyleSheet> >& oldStyleSheets, const Vector<RefPtr<CSSStyleSheet> >& newStylesheets, Vector<StyleSheetContents*>& addedSheets)
 {
-    // Find out which stylesheets are new.
-    unsigned newStylesheetCount = newStylesheets.size();
-    unsigned oldStylesheetCount = oldStyleSheets.size();
-    if (newStylesheetCount < oldStylesheetCount)
+    unsigned newStyleSheetCount = newStylesheets.size();
+    unsigned oldStyleSheetCount = oldStyleSheets.size();
+    ASSERT(newStyleSheetCount >= oldStyleSheetCount);
+
+    if (!newStyleSheetCount)
         return Reconstruct;
 
     unsigned newIndex = 0;
-    for (unsigned oldIndex = 0; oldIndex < oldStylesheetCount; ++oldIndex) {
-        if (newIndex >= newStylesheetCount)
-            return Reconstruct;
+    for (unsigned oldIndex = 0; oldIndex < oldStyleSheetCount; ++oldIndex) {
         while (oldStyleSheets[oldIndex] != newStylesheets[newIndex]) {
             addedSheets.append(newStylesheets[newIndex]->contents());
-            ++newIndex;
-            if (newIndex == newStylesheetCount)
+            if (++newIndex == newStyleSheetCount)
                 return Reconstruct;
         }
-        ++newIndex;
+        if (++newIndex == newStyleSheetCount)
+            return Reconstruct;
     }
     bool hasInsertions = !addedSheets.isEmpty();
-    while (newIndex < newStylesheetCount) {
+    while (newIndex < newStyleSheetCount) {
         addedSheets.append(newStylesheets[newIndex]->contents());
         ++newIndex;
     }
@@ -122,22 +152,67 @@ bool StyleSheetCollection::activeLoadingStyleSheetLoaded(const Vector<RefPtr<CSS
     return false;
 }
 
-void StyleSheetCollection::analyzeStyleSheetChange(StyleResolverUpdateMode updateMode, const Vector<RefPtr<CSSStyleSheet> >& oldStyleSheets, const Vector<RefPtr<CSSStyleSheet> >& newStyleSheets, StyleResolverUpdateType& styleResolverUpdateType, bool& requiresFullStyleRecalc)
+static bool styleSheetContentsHasFontFaceRule(Vector<StyleSheetContents*> sheets)
 {
-    styleResolverUpdateType = Reconstruct;
-    requiresFullStyleRecalc = true;
+    for (unsigned i = 0; i < sheets.size(); ++i) {
+        ASSERT(sheets[i]);
+        if (sheets[i]->hasFontFaceRule())
+            return true;
+    }
+    return false;
+}
 
-    if (activeLoadingStyleSheetLoaded(newStyleSheets))
+static bool cssStyleSheetHasFontFaceRule(const Vector<RefPtr<CSSStyleSheet> > sheets)
+{
+    for (unsigned i = 0; i < sheets.size(); ++i) {
+        ASSERT(sheets[i]);
+        if (sheets[i]->contents()->hasFontFaceRule())
+            return true;
+    }
+    return false;
+}
+
+void StyleSheetCollection::analyzeStyleSheetChange(StyleResolverUpdateMode updateMode, const StyleSheetCollectionBase& newCollection, StyleSheetChange& change)
+{
+    if (activeLoadingStyleSheetLoaded(newCollection.activeAuthorStyleSheets()))
         return;
 
     if (updateMode != AnalyzedStyleUpdate)
         return;
-    if (!document()->styleResolverIfExists())
-        return;
 
     // Find out which stylesheets are new.
     Vector<StyleSheetContents*> addedSheets;
-    styleResolverUpdateType = compareStyleSheets(oldStyleSheets, newStyleSheets, addedSheets);
+    if (m_activeAuthorStyleSheets.size() <= newCollection.activeAuthorStyleSheets().size()) {
+        change.styleResolverUpdateType = compareStyleSheets(m_activeAuthorStyleSheets, newCollection.activeAuthorStyleSheets(), addedSheets);
+    } else {
+        StyleResolverUpdateType updateType = compareStyleSheets(newCollection.activeAuthorStyleSheets(), m_activeAuthorStyleSheets, addedSheets);
+        if (updateType != Additive) {
+            change.styleResolverUpdateType = updateType;
+        } else {
+            if (styleSheetContentsHasFontFaceRule(addedSheets)) {
+                change.styleResolverUpdateType = ResetStyleResolverAndFontSelector;
+                return;
+            }
+            // FIXME: since currently all stylesheets are re-added after reseting styleresolver,
+            // fontSelector should be always reset. After creating RuleSet for each StyleSheetContents,
+            // we can avoid appending all stylesheetcontents in reset case.
+            // So we can remove "styleSheetContentsHasFontFaceRule(newSheets)".
+            if (cssStyleSheetHasFontFaceRule(newCollection.activeAuthorStyleSheets()))
+                change.styleResolverUpdateType = ResetStyleResolverAndFontSelector;
+            else
+                change.styleResolverUpdateType = Reset;
+        }
+    }
+
+    // FIXME: If styleResolverUpdateType is Reconstruct, we should return early here since
+    // we need to recalc the whole document. It's wrong to use StyleInvalidationAnalysis since
+    // it only looks at the addedSheets.
+
+    // No point in doing the analysis work if we're just going to recalc the whole document anyways.
+    // This needs to be done after the compareStyleSheets calls above to ensure we don't throw away
+    // the StyleResolver if we don't need to.
+    if (document()->hasPendingForcedStyleRecalc())
+        return;
 
     // If we are already parsing the body and so may have significant amount of elements, put some effort into trying to avoid style recalcs.
     if (!document()->body() || document()->hasNodesWithPlaceholderStyle())
@@ -145,8 +220,18 @@ void StyleSheetCollection::analyzeStyleSheetChange(StyleResolverUpdateMode updat
     StyleInvalidationAnalysis invalidationAnalysis(addedSheets);
     if (invalidationAnalysis.dirtiesAllStyle())
         return;
-    invalidationAnalysis.invalidateStyle(document());
-    requiresFullStyleRecalc = false;
+    invalidationAnalysis.invalidateStyle(*document());
+    change.requiresFullStyleRecalc = false;
+    return;
+}
+
+void StyleSheetCollection::clearMediaQueryRuleSetStyleSheets()
+{
+    for (size_t i = 0; i < m_activeAuthorStyleSheets.size(); ++i) {
+        StyleSheetContents* contents = m_activeAuthorStyleSheets[i]->contents();
+        if (contents->hasMediaQueries())
+            contents->clearRuleSet();
+    }
 }
 
 void StyleSheetCollection::resetAllRuleSetsInTreeScope(StyleResolver* styleResolver)

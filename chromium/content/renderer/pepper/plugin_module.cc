@@ -30,6 +30,7 @@
 #include "content/renderer/pepper/ppb_video_decoder_impl.h"
 #include "content/renderer/pepper/renderer_ppapi_host_impl.h"
 #include "content/renderer/render_view_impl.h"
+#include "ppapi/c/dev/ppb_alarms_dev.h"
 #include "ppapi/c/dev/ppb_audio_input_dev.h"
 #include "ppapi/c/dev/ppb_buffer_dev.h"
 #include "ppapi/c/dev/ppb_char_set_dev.h"
@@ -46,18 +47,17 @@
 #include "ppapi/c/dev/ppb_printing_dev.h"
 #include "ppapi/c/dev/ppb_resource_array_dev.h"
 #include "ppapi/c/dev/ppb_scrollbar_dev.h"
-#include "ppapi/c/dev/ppb_testing_dev.h"
 #include "ppapi/c/dev/ppb_text_input_dev.h"
 #include "ppapi/c/dev/ppb_trace_event_dev.h"
 #include "ppapi/c/dev/ppb_truetype_font_dev.h"
 #include "ppapi/c/dev/ppb_url_util_dev.h"
 #include "ppapi/c/dev/ppb_var_deprecated.h"
+#include "ppapi/c/dev/ppb_var_resource_dev.h"
 #include "ppapi/c/dev/ppb_video_capture_dev.h"
 #include "ppapi/c/dev/ppb_video_decoder_dev.h"
 #include "ppapi/c/dev/ppb_view_dev.h"
 #include "ppapi/c/dev/ppb_widget_dev.h"
 #include "ppapi/c/dev/ppb_zoom_dev.h"
-#include "ppapi/c/extensions/dev/ppb_ext_alarms_dev.h"
 #include "ppapi/c/extensions/dev/ppb_ext_socket_dev.h"
 #include "ppapi/c/pp_module.h"
 #include "ppapi/c/pp_resource.h"
@@ -111,11 +111,14 @@
 #include "ppapi/c/private/ppb_flash_print.h"
 #include "ppapi/c/private/ppb_host_resolver_private.h"
 #include "ppapi/c/private/ppb_instance_private.h"
+#include "ppapi/c/private/ppb_isolated_file_system_private.h"
+#include "ppapi/c/private/ppb_output_protection_private.h"
 #include "ppapi/c/private/ppb_pdf.h"
 #include "ppapi/c/private/ppb_proxy_private.h"
 #include "ppapi/c/private/ppb_talk_private.h"
 #include "ppapi/c/private/ppb_tcp_server_socket_private.h"
 #include "ppapi/c/private/ppb_tcp_socket_private.h"
+#include "ppapi/c/private/ppb_testing_private.h"
 #include "ppapi/c/private/ppb_udp_socket_private.h"
 #include "ppapi/c/private/ppb_uma_private.h"
 #include "ppapi/c/private/ppb_video_destination_private.h"
@@ -125,7 +128,6 @@
 #include "ppapi/c/trusted/ppb_browser_font_trusted.h"
 #include "ppapi/c/trusted/ppb_char_set_trusted.h"
 #include "ppapi/c/trusted/ppb_file_chooser_trusted.h"
-#include "ppapi/c/trusted/ppb_file_io_trusted.h"
 #include "ppapi/c/trusted/ppb_url_loader_trusted.h"
 #include "ppapi/shared_impl/callback_tracker.h"
 #include "ppapi/shared_impl/ppapi_preferences.h"
@@ -284,7 +286,7 @@ void SetMinimumArrayBufferSizeForShmem(PP_Instance /*instance*/,
   // Does nothing. Not needed in-process.
 }
 
-const PPB_Testing_Dev testing_interface = {
+const PPB_Testing_Private testing_interface = {
   &ReadImageData,
   &RunMessageLoop,
   &QuitMessageLoop,
@@ -334,10 +336,8 @@ const void* InternalGetInterface(const char* name) {
   // in production code.
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnablePepperTesting)) {
-    if (strcmp(name, PPB_TESTING_DEV_INTERFACE) == 0 ||
-        strcmp(name, PPB_TESTING_DEV_INTERFACE_0_9) == 0) {
+    if (strcmp(name, PPB_TESTING_PRIVATE_INTERFACE) == 0)
       return &testing_interface;
-    }
   }
   return NULL;
 }
@@ -382,7 +382,7 @@ bool LoadEntryPointsFromLibrary(
   return true;
 }
 
-void CreateHostForInProcessModule(RenderViewImpl* render_view,
+void CreateHostForInProcessModule(RenderFrameImpl* render_frame,
                                   PluginModule* module,
                                   const WebPluginInfo& webplugin_info) {
   // First time an in-process plugin was used, make a host for it.
@@ -394,9 +394,8 @@ void CreateHostForInProcessModule(RenderViewImpl* render_view,
       PepperPluginRegistry::GetInstance()->GetInfoForPlugin(
           webplugin_info)->permissions);
   RendererPpapiHostImpl* host_impl =
-      RendererPpapiHostImpl::CreateOnModuleForInProcess(
-          module, perms);
-  render_view->PepperPluginCreated(host_impl);
+      RendererPpapiHostImpl::CreateOnModuleForInProcess(module, perms);
+  render_frame->PepperPluginCreated(host_impl);
 }
 
 }  // namespace
@@ -551,11 +550,11 @@ bool PluginModule::SupportsInterface(const char* name) {
 }
 
 PepperPluginInstanceImpl* PluginModule::CreateInstance(
-    RenderViewImpl* render_view,
-    WebKit::WebPluginContainer* container,
+    RenderFrameImpl* render_frame,
+    blink::WebPluginContainer* container,
     const GURL& plugin_url) {
   PepperPluginInstanceImpl* instance = PepperPluginInstanceImpl::Create(
-      render_view, this, container, plugin_url);
+      render_frame, this, container, plugin_url);
   if (!instance) {
     LOG(WARNING) << "Plugin doesn't support instance interface, failing.";
     return NULL;
@@ -630,7 +629,7 @@ PepperBroker* PluginModule::GetBroker() {
 }
 
 RendererPpapiHostImpl* PluginModule::CreateOutOfProcessModule(
-    RenderViewImpl* render_view,
+    RenderFrameImpl* render_frame,
     const base::FilePath& path,
     ppapi::PpapiPermissions permissions,
     const IPC::ChannelHandle& channel_handle,
@@ -638,7 +637,7 @@ RendererPpapiHostImpl* PluginModule::CreateOutOfProcessModule(
     int plugin_child_id,
     bool is_external) {
   scoped_refptr<PepperHungPluginFilter> hung_filter(new PepperHungPluginFilter(
-      path, render_view->GetRoutingID(), plugin_child_id));
+      path, render_frame->GetRoutingID(), plugin_child_id));
   scoped_ptr<HostDispatcherWrapper> dispatcher(
       new HostDispatcherWrapper(this,
                                 peer_pid,
@@ -648,14 +647,14 @@ RendererPpapiHostImpl* PluginModule::CreateOutOfProcessModule(
   if (!dispatcher->Init(
           channel_handle,
           &GetInterface,
-          ppapi::Preferences(render_view->webkit_preferences()),
+          ppapi::Preferences(render_frame->render_view()->webkit_preferences()),
           hung_filter.get()))
     return NULL;
 
   RendererPpapiHostImpl* host_impl =
       RendererPpapiHostImpl::CreateOnModuleForOutOfProcess(
           this, dispatcher->dispatcher(), permissions);
-  render_view->PepperPluginCreated(host_impl);
+  render_frame->PepperPluginCreated(host_impl);
 
   InitAsProxied(dispatcher.release());
   return host_impl;
@@ -680,7 +679,7 @@ bool PluginModule::InitializeModule(
 }
 
 scoped_refptr<PluginModule> PluginModule::Create(
-    RenderViewImpl* render_view,
+    RenderFrameImpl* render_frame,
     const WebPluginInfo& webplugin_info,
     bool* pepper_plugin_was_registered) {
   *pepper_plugin_was_registered = true;
@@ -694,7 +693,7 @@ scoped_refptr<PluginModule> PluginModule::Create(
       // If the module exists and no embedder state was associated with it,
       // then the module was one of the ones preloaded and is an in-process
       // plugin. We need to associate our host state with it.
-      CreateHostForInProcessModule(render_view, module.get(), webplugin_info);
+      CreateHostForInProcessModule(render_frame, module.get(), webplugin_info);
     }
     return module;
   }
@@ -719,7 +718,7 @@ scoped_refptr<PluginModule> PluginModule::Create(
   IPC::ChannelHandle channel_handle;
   base::ProcessId peer_pid;
   int plugin_child_id = 0;
-  render_view->Send(new ViewHostMsg_OpenChannelToPepperPlugin(
+  render_frame->Send(new ViewHostMsg_OpenChannelToPepperPlugin(
       path, &channel_handle, &peer_pid, &plugin_child_id));
   if (channel_handle.name.empty()) {
     // Couldn't be initialized.
@@ -731,7 +730,7 @@ scoped_refptr<PluginModule> PluginModule::Create(
   module = new PluginModule(info->name, path, permissions);
   PepperPluginRegistry::GetInstance()->AddLiveModule(path, module.get());
 
-  if (!module->CreateOutOfProcessModule(render_view,
+  if (!module->CreateOutOfProcessModule(render_frame,
                                         path,
                                         permissions,
                                         channel_handle,

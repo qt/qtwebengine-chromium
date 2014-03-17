@@ -25,16 +25,18 @@
 #ifndef WebLayerScrollClient_h
 #define WebLayerScrollClient_h
 
-namespace WebKit {
+#include "WebCommon.h"
+
+namespace blink {
 
 // A client that is notified of scrolling on a WebLayer.
-class WebLayerScrollClient {
+class BLINK_PLATFORM_EXPORT WebLayerScrollClient {
 public:
     virtual void didScroll() = 0;
 protected:
     virtual ~WebLayerScrollClient() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebLayerScrollClient_h

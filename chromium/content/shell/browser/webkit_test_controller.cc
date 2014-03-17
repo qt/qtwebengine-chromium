@@ -13,6 +13,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "content/public/browser/devtools_manager.h"
+#include "content/public/browser/dom_storage_context.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -21,12 +22,14 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/content_switches.h"
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_browser_context.h"
 #include "content/shell/browser/shell_content_browser_client.h"
+#include "content/shell/browser/shell_devtools_frontend.h"
 #include "content/shell/common/shell_messages.h"
 #include "content/shell/common/shell_switches.h"
 #include "content/shell/common/webkit_test_helpers.h"
@@ -105,9 +108,7 @@ void WebKitTestResultPrinter::PrintImageFooter() {
     return;
   if (!capture_text_only_) {
     *output_ << "#EOF\n";
-    *error_ << "#EOF\n";
     output_->flush();
-    error_->flush();
   }
   state_ = AFTER_TEST;
 }
@@ -138,9 +139,7 @@ void WebKitTestResultPrinter::PrintAudioFooter() {
     return;
   if (!capture_text_only_) {
     *output_ << "#EOF\n";
-    *error_ << "#EOF\n";
     output_->flush();
-    error_->flush();
   }
   state_ = IN_IMAGE_BLOCK;
 }
@@ -171,13 +170,21 @@ void WebKitTestResultPrinter::PrintEncodedBinaryData(
   *output_ << "Content-Transfer-Encoding: base64\n";
 
   std::string data_base64;
-  const bool success = base::Base64Encode(
+  base::Base64Encode(
       base::StringPiece(reinterpret_cast<const char*>(&data[0]), data.size()),
       &data_base64);
-  DCHECK(success);
 
   *output_ << "Content-Length: " << data_base64.length() << "\n";
   output_->write(data_base64.c_str(), data_base64.length());
+}
+
+void WebKitTestResultPrinter::CloseStderr() {
+  if (state_ != AFTER_TEST)
+    return;
+  if (!capture_text_only_) {
+    *error_ << "#EOF\n";
+    error_->flush();
+  }
 }
 
 
@@ -251,7 +258,7 @@ bool WebKitTestController::PrepareForLayoutTest(
 #if (defined(OS_WIN) && !defined(USE_AURA)) || \
     defined(TOOLKIT_GTK) || defined(OS_MACOSX)
     // Shell::SizeTo is not implemented on all platforms.
-    main_window_->SizeTo(initial_size_.width(), initial_size_.height());
+    main_window_->SizeTo(initial_size_);
 #endif
     main_window_->web_contents()->GetRenderViewHost()->GetView()
         ->SetSize(initial_size_);
@@ -279,6 +286,7 @@ bool WebKitTestController::ResetAfterLayoutTest() {
   DCHECK(CalledOnValidThread());
   printer_->PrintTextFooter();
   printer_->PrintImageFooter();
+  printer_->CloseStderr();
   send_configuration_to_next_host_ = false;
   test_phase_ = BETWEEN_TESTS;
   is_compositing_test_ = false;
@@ -559,6 +567,12 @@ void WebKitTestController::OnOverridePreferences(const WebPreferences& prefs) {
 }
 
 void WebKitTestController::OnShowDevTools() {
+  ShellBrowserContext* browser_context =
+      ShellContentBrowserClient::Get()->browser_context();
+  StoragePartition* storage_partition =
+      BrowserContext::GetStoragePartition(browser_context, NULL);
+  storage_partition->GetDOMStorageContext()->DeleteLocalStorage(
+      content::GetDevToolsPathAsURL().GetOrigin());
   main_window_->ShowDevTools();
 }
 

@@ -25,11 +25,6 @@ class VIEWS_EXPORT FocusableBorder : public Border {
   // Sets the insets of the border.
   void SetInsets(int top, int left, int bottom, int right);
 
-  // Sets the focus state.
-  void set_has_focus(bool has_focus) {
-    has_focus_ = has_focus;
-  }
-
   // Sets the color of this border.
   void SetColor(SkColor color);
   // Reverts the color of this border to the system default.
@@ -38,9 +33,9 @@ class VIEWS_EXPORT FocusableBorder : public Border {
   // Overridden from Border:
   virtual void Paint(const View& view, gfx::Canvas* canvas) OVERRIDE;
   virtual gfx::Insets GetInsets() const OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
 
  private:
-  bool has_focus_;
   gfx::Insets insets_;
 
   // The color to paint the border when |use_default_color_| is false.

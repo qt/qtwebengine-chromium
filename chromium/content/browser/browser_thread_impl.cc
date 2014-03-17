@@ -167,7 +167,7 @@ MSVC_POP_WARNING()
 MSVC_ENABLE_OPTIMIZE();
 
 void BrowserThreadImpl::Run(base::MessageLoop* message_loop) {
-  BrowserThread::ID thread_id;
+  BrowserThread::ID thread_id = ID_COUNT;
   if (!GetCurrentThreadIdentifier(&thread_id))
     return Thread::Run(message_loop);
 
@@ -248,7 +248,7 @@ bool BrowserThreadImpl::PostTaskHelper(
   // Note: since the array is so small, ok to loop instead of creating a map,
   // which would require a lock because std::map isn't thread safe, defeating
   // the whole purpose of this optimization.
-  BrowserThread::ID current_thread;
+  BrowserThread::ID current_thread = ID_COUNT;
   bool target_thread_outlives_current =
       GetCurrentThreadIdentifier(&current_thread) &&
       current_thread >= identifier;
@@ -316,6 +316,7 @@ bool BrowserThread::PostBlockingPoolTask(
   return g_globals.Get().blocking_pool->PostWorkerTask(from_here, task);
 }
 
+// static
 bool BrowserThread::PostBlockingPoolTaskAndReply(
     const tracked_objects::Location& from_here,
     const base::Closure& task,

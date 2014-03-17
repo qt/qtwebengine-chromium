@@ -35,11 +35,11 @@
 #include "core/dom/Element.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLFrameOwnerElement.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
-#include "core/platform/Widget.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/RenderObject.h"
+#include "platform/Widget.h"
 #include "wtf/HashSet.h"
 
 // This file provides a utility function to support rendering certain elements above plugins.

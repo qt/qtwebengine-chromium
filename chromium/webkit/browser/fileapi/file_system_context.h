@@ -17,6 +17,7 @@
 #include "base/sequenced_task_runner_helpers.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/open_file_system_mode.h"
+#include "webkit/browser/fileapi/plugin_private_file_system_backend.h"
 #include "webkit/browser/fileapi/sandbox_file_system_backend_delegate.h"
 #include "webkit/browser/fileapi/task_runner_bound_observer_list.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
@@ -58,6 +59,7 @@ class FileSystemQuotaUtil;
 class FileSystemURL;
 class IsolatedFileSystemBackend;
 class MountPoints;
+class QuotaReservation;
 class SandboxFileSystemBackend;
 
 struct DefaultContextDeleter;
@@ -103,7 +105,17 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
       const base::FilePath& partition_path,
       const FileSystemOptions& options);
 
+  // TODO(nhiroki): Rename *OnFileThread methods since these are no longer on
+  // FILE thread.
   bool DeleteDataForOriginOnFileThread(const GURL& origin_url);
+
+  // Creates a new QuotaReservation for the given |origin_url| and |type|.
+  // Returns NULL if |type| does not support quota or reservation fails.
+  // This should be run on |default_file_task_runner_| and the returned value
+  // should be destroyed on the runner.
+  scoped_refptr<QuotaReservation> CreateQuotaReservationOnFileTaskRunner(
+      const GURL& origin_url,
+      FileSystemType type);
 
   quota::QuotaManagerProxy* quota_manager_proxy() const {
     return quota_manager_proxy_.get();
@@ -151,9 +163,10 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
   ExternalFileSystemBackend* external_backend() const;
 
   // Used for OpenFileSystem.
-  typedef base::Callback<void(base::PlatformFileError result,
+  typedef base::Callback<void(const GURL& root,
                               const std::string& name,
-                              const GURL& root)> OpenFileSystemCallback;
+                              base::PlatformFileError result)>
+      OpenFileSystemCallback;
 
   // Used for ResolveURL.
   typedef base::Callback<void(base::PlatformFileError result,
@@ -161,9 +174,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
                               const base::FilePath& file_path,
                               bool is_directory)> ResolveURLCallback;
 
-  // Used for DeleteFileSystem.
-  typedef base::Callback<void(base::PlatformFileError result)>
-      DeleteFileSystemCallback;
+  // Used for DeleteFileSystem and OpenPluginPrivateFileSystem.
+  typedef base::Callback<void(base::PlatformFileError result)> StatusCallback;
 
   // Opens the filesystem for the given |origin_url| and |type|, and dispatches
   // |callback| on completion.
@@ -188,7 +200,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
   void DeleteFileSystem(
       const GURL& origin_url,
       FileSystemType type,
-      const DeleteFileSystemCallback& callback);
+      const StatusCallback& callback);
 
   // Creates new FileStreamReader instance to read a file pointed by the given
   // filesystem URL |url| starting from |offset|. |expected_modification_time|
@@ -232,7 +244,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
                                            FileSystemType type,
                                            const base::FilePath& path) const;
 
-#if defined(OS_CHROMEOS) && defined(GOOGLE_CHROME_BUILD)
+#if defined(OS_CHROMEOS)
   // Used only on ChromeOS for now.
   void EnableTemporaryFileSystemInIncognito();
 #endif
@@ -245,6 +257,16 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
   // (E.g. this returns false if the context is created for incognito mode)
   bool CanServeURLRequest(const FileSystemURL& url) const;
 
+  // This must be used to open 'plugin private' filesystem.
+  // See "plugin_private_file_system_backend.h" for more details.
+  void OpenPluginPrivateFileSystem(
+      const GURL& origin_url,
+      FileSystemType type,
+      const std::string& filesystem_id,
+      const std::string& plugin_id,
+      OpenFileSystemMode mode,
+      const StatusCallback& callback);
+
  private:
   typedef std::map<FileSystemType, FileSystemBackend*>
       FileSystemBackendMap;
@@ -254,6 +276,9 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
 
   // For sandbox_backend().
   friend class SandboxFileSystemTestHelper;
+
+  // For plugin_private_backend().
+  friend class PluginPrivateFileSystemBackendTest;
 
   // Deleters.
   friend struct DefaultContextDeleter;
@@ -300,6 +325,11 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
     return sandbox_backend_.get();
   }
 
+  // Used only by test code.
+  PluginPrivateFileSystemBackend* plugin_private_backend() const {
+    return plugin_private_backend_.get();
+  }
+
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
   scoped_refptr<base::SequencedTaskRunner> default_file_task_runner_;
 
@@ -312,6 +342,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
   scoped_ptr<IsolatedFileSystemBackend> isolated_backend_;
 
   // Additional file system backends.
+  scoped_ptr<PluginPrivateFileSystemBackend> plugin_private_backend_;
   ScopedVector<FileSystemBackend> additional_backends_;
 
   // Registered file system backends.

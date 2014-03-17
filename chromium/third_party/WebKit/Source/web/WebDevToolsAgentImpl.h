@@ -52,9 +52,8 @@ class Node;
 class PlatformKeyboardEvent;
 }
 
-namespace WebKit {
+namespace blink {
 
-class DeviceMetricsSupport;
 class WebDevToolsAgentClient;
 class WebFrame;
 class WebFrameImpl;
@@ -77,8 +76,6 @@ public:
 
     // WebDevToolsAgentPrivate implementation.
     virtual void didCreateScriptContext(WebFrameImpl*, int worldId);
-    virtual void mainFrameViewCreated(WebFrameImpl*);
-    virtual bool metricsOverridden();
     virtual void webViewResized(const WebSize&);
     virtual bool handleInputEvent(WebCore::Page*, const WebInputEvent&);
 
@@ -87,7 +84,7 @@ public:
     virtual void reattach(const WebString& savedState);
     virtual void detach();
     virtual void didNavigate();
-    virtual void didBeginFrame();
+    virtual void didBeginFrame(int frameId);
     virtual void didCancelFrame();
     virtual void willComposite();
     virtual void didComposite();
@@ -96,6 +93,9 @@ public:
     virtual void evaluateInWebInspector(long callId, const WebString& script);
     virtual void setProcessId(long);
     virtual void setLayerTreeId(int);
+    // FIXME: remove it once the client side stops firing these.
+    virtual void processGPUEvent(double timestamp, int phase, bool foreign) OVERRIDE;
+    virtual void processGPUEvent(const GPUEvent&) OVERRIDE;
 
     // InspectorClient implementation.
     virtual void highlight();
@@ -106,17 +106,16 @@ public:
     virtual void clearBrowserCache();
     virtual void clearBrowserCookies();
 
-    virtual void overrideDeviceMetrics(int width, int height, float fontScaleFactor, bool fitWindow);
-    virtual void autoZoomPageToFitWidth();
+    virtual void overrideDeviceMetrics(int width, int height, float deviceScaleFactor, bool emulateViewport, bool fitWindow);
 
     virtual void getAllocatedObjects(HashSet<const void*>&);
     virtual void dumpUncountedAllocatedObjects(const HashMap<const void*, size_t>&);
     virtual void setTraceEventCallback(TraceEventCallback);
+    virtual void startGPUEventsRecording() OVERRIDE;
+    virtual void stopGPUEventsRecording() OVERRIDE;
 
     virtual void dispatchKeyEvent(const WebCore::PlatformKeyboardEvent&);
     virtual void dispatchMouseEvent(const WebCore::PlatformMouseEvent&);
-
-    int hostId() { return m_hostId; }
 
     // WebPageOverlay
     virtual void paintPageOverlay(WebCanvas*);
@@ -126,6 +125,9 @@ private:
     virtual void willProcessTask();
     virtual void didProcessTask();
 
+    void enableViewportEmulation();
+    void disableViewportEmulation();
+
     WebCore::InspectorController* inspectorController();
     WebCore::Frame* mainFrame();
 
@@ -133,9 +135,13 @@ private:
     WebDevToolsAgentClient* m_client;
     WebViewImpl* m_webViewImpl;
     bool m_attached;
-    OwnPtr<DeviceMetricsSupport> m_metricsSupport;
+    bool m_generatingEvent;
+    bool m_deviceMetricsEnabled;
+    bool m_emulateViewportEnabled;
+    bool m_originalViewportEnabled;
+    bool m_isOverlayScrollbarsEnabled;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

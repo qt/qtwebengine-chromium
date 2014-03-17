@@ -38,7 +38,7 @@ namespace WebCore {
 
 class HTMLOutputElement FINAL : public HTMLFormControlElement {
 public:
-    static PassRefPtr<HTMLOutputElement> create(const QualifiedName&, Document&, HTMLFormElement*);
+    static PassRefPtr<HTMLOutputElement> create(Document&, HTMLFormElement*);
 
     virtual bool willValidate() const { return false; }
 
@@ -52,7 +52,7 @@ public:
     virtual bool canContainRangeEndPoint() const { return false; }
 
 private:
-    HTMLOutputElement(const QualifiedName&, Document&, HTMLFormElement*);
+    HTMLOutputElement(Document&, HTMLFormElement*);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual const AtomicString& formControlType() const;
@@ -60,7 +60,7 @@ private:
     virtual bool supportLabels() const OVERRIDE { return true; }
     virtual bool supportsFocus() const;
     virtual void childrenChanged(bool createdByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
-    virtual void reset();
+    virtual void resetImpl() OVERRIDE;
 
     void setTextContentInternal(const String&);
 

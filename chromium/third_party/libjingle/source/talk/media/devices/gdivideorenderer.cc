@@ -69,6 +69,10 @@ class GdiVideoRenderer::VideoWindow : public talk_base::Win32Window {
    public:
     explicit WindowThread(VideoWindow* window) : window_(window) {}
 
+    virtual ~WindowThread() {
+      Stop();
+    }
+
     // Override virtual method of talk_base::Thread. Context: worker Thread.
     virtual void Run() {
       // Initialize the window
@@ -94,7 +98,7 @@ class GdiVideoRenderer::VideoWindow : public talk_base::Win32Window {
   void OnRenderFrame(const VideoFrame* frame);
 
   BITMAPINFO bmi_;
-  talk_base::scoped_array<uint8> image_;
+  talk_base::scoped_ptr<uint8[]> image_;
   talk_base::scoped_ptr<WindowThread> window_thread_;
   // The initial position of the window.
   int initial_x_;

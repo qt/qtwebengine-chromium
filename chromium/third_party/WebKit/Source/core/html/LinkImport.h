@@ -31,24 +31,25 @@
 #ifndef LinkImport_h
 #define LinkImport_h
 
-#include "core/html/HTMLImportLoaderClient.h"
+#include "core/html/HTMLImportChildClient.h"
 #include "core/html/LinkResource.h"
 #include "wtf/FastAllocBase.h"
+#include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
 
 namespace WebCore {
 
 class Document;
-class HTMLImportLoader;
+class HTMLImportChild;
 
 //
 // A LinkResource subclasss used for @rel=import.
 //
-class LinkImport : public LinkResource, public HTMLImportLoaderClient {
+class LinkImport : public LinkResource, public HTMLImportChildClient {
     WTF_MAKE_FAST_ALLOCATED;
 public:
 
-    static PassRefPtr<LinkImport> create(HTMLLinkElement* owner);
+    static PassOwnPtr<LinkImport> create(HTMLLinkElement* owner);
 
     explicit LinkImport(HTMLLinkElement* owner);
     virtual ~LinkImport();
@@ -59,15 +60,16 @@ public:
     virtual void ownerRemoved() OVERRIDE;
     virtual bool hasLoaded() const OVERRIDE;
 
-    // HTMLImportLoaderClient
+    // HTMLImportChildClient
     virtual void didFinish() OVERRIDE;
+    virtual void loaderWillBeDestroyed() OVERRIDE;
 
     Document* importedDocument() const;
 
 private:
     void clear();
 
-    RefPtr<HTMLImportLoader> m_loader;
+    HTMLImportChild* m_loader;
 };
 
 } // namespace WebCore

@@ -12,10 +12,13 @@
 #include "content/common/gpu/gpu_channel.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "ipc/ipc_message_macros.h"
+#include "media/base/limits.h"
 #include "media/base/video_frame.h"
 
 #if defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
 #include "content/common/gpu/media/exynos_video_encode_accelerator.h"
+#elif defined(OS_ANDROID) && defined(ENABLE_WEBRTC)
+#include "content/common/gpu/media/android_video_encode_accelerator.h"
 #endif
 
 namespace content {
@@ -25,7 +28,7 @@ GpuVideoEncodeAccelerator::GpuVideoEncodeAccelerator(GpuChannel* gpu_channel,
     : weak_this_factory_(this),
       channel_(gpu_channel),
       route_id_(route_id),
-      input_format_(media::VideoFrame::INVALID),
+      input_format_(media::VideoFrame::UNKNOWN),
       output_buffer_size_(0) {}
 
 GpuVideoEncodeAccelerator::~GpuVideoEncodeAccelerator() {
@@ -87,6 +90,8 @@ GpuVideoEncodeAccelerator::GetSupportedProfiles() {
 
 #if defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
   profiles = ExynosVideoEncodeAccelerator::GetSupportedProfiles();
+#elif defined(OS_ANDROID) && defined(ENABLE_WEBRTC)
+  profiles = AndroidVideoEncodeAccelerator::GetSupportedProfiles();
 #endif
 
   // TODO(sheu): return platform-specific profiles.
@@ -94,8 +99,11 @@ GpuVideoEncodeAccelerator::GetSupportedProfiles() {
 }
 
 void GpuVideoEncodeAccelerator::CreateEncoder() {
+  DCHECK(!encoder_);
 #if defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
   encoder_.reset(new ExynosVideoEncodeAccelerator(this));
+#elif defined(OS_ANDROID) && defined(ENABLE_WEBRTC)
+  encoder_.reset(new AndroidVideoEncodeAccelerator(this));
 #endif
 }
 
@@ -111,9 +119,12 @@ void GpuVideoEncodeAccelerator::OnInitialize(
            << ", initial_bitrate=" << initial_bitrate;
   DCHECK(!encoder_);
 
-  if (input_visible_size.width() > kint32max / input_visible_size.height()) {
+  if (input_visible_size.width() > media::limits::kMaxDimension ||
+      input_visible_size.height() > media::limits::kMaxDimension ||
+      input_visible_size.GetArea() > media::limits::kMaxCanvas) {
     DLOG(ERROR) << "GpuVideoEncodeAccelerator::OnInitialize(): "
-                   "input_visible_size too large";
+                   "input_visible_size " << input_visible_size.ToString()
+                << " too large";
     NotifyError(media::VideoEncodeAccelerator::kPlatformFailureError);
     return;
   }
@@ -156,13 +167,14 @@ void GpuVideoEncodeAccelerator::OnEncode(int32 frame_id,
     return;
   }
 
+  uint8* shm_memory = reinterpret_cast<uint8*>(shm->memory());
   scoped_refptr<media::VideoFrame> frame =
-      media::VideoFrame::WrapExternalSharedMemory(
+      media::VideoFrame::WrapExternalPackedMemory(
           input_format_,
           input_coded_size_,
           gfx::Rect(input_visible_size_),
           input_visible_size_,
-          reinterpret_cast<uint8*>(shm->memory()),
+          shm_memory,
           buffer_size,
           buffer_handle,
           base::TimeDelta(),

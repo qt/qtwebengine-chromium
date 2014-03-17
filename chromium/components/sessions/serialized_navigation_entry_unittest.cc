@@ -31,9 +31,9 @@ const int kIndex = 3;
 const int kUniqueID = 50;
 const content::Referrer kReferrer =
     content::Referrer(GURL("http://www.referrer.com"),
-                      WebKit::WebReferrerPolicyAlways);
+                      blink::WebReferrerPolicyAlways);
 const GURL kVirtualURL("http://www.virtual-url.com");
-const string16 kTitle = ASCIIToUTF16("title");
+const base::string16 kTitle = ASCIIToUTF16("title");
 const content::PageState kPageState =
     content::PageState::CreateFromEncodedData("page state");
 const content::PageTransition kTransitionType =
@@ -46,7 +46,7 @@ const int64 kPostID = 100;
 const GURL kOriginalRequestURL("http://www.original-request.com");
 const bool kIsOverridingUserAgent = true;
 const base::Time kTimestamp = syncer::ProtoTimeToTime(100);
-const string16 kSearchTerms = ASCIIToUTF16("my search terms");
+const base::string16 kSearchTerms = ASCIIToUTF16("my search terms");
 const GURL kFaviconURL("http://virtual-url.com/favicon.ico");
 const int kHttpStatusCode = 404;
 
@@ -99,7 +99,7 @@ TEST(SerializedNavigationEntryTest, DefaultInitializer) {
   EXPECT_EQ(-1, navigation.index());
   EXPECT_EQ(0, navigation.unique_id());
   EXPECT_EQ(GURL(), navigation.referrer().url);
-  EXPECT_EQ(WebKit::WebReferrerPolicyDefault, navigation.referrer().policy);
+  EXPECT_EQ(blink::WebReferrerPolicyDefault, navigation.referrer().policy);
   EXPECT_EQ(GURL(), navigation.virtual_url());
   EXPECT_TRUE(navigation.title().empty());
   EXPECT_FALSE(navigation.page_state().IsValid());
@@ -153,7 +153,7 @@ TEST(SerializedNavigationEntryTest, FromSyncData) {
   EXPECT_EQ(kIndex, navigation.index());
   EXPECT_EQ(kUniqueID, navigation.unique_id());
   EXPECT_EQ(kReferrer.url, navigation.referrer().url);
-  EXPECT_EQ(WebKit::WebReferrerPolicyDefault, navigation.referrer().policy);
+  EXPECT_EQ(blink::WebReferrerPolicyDefault, navigation.referrer().policy);
   EXPECT_EQ(kVirtualURL, navigation.virtual_url());
   EXPECT_EQ(kTitle, navigation.title());
   EXPECT_EQ(kPageState, navigation.page_state());
@@ -230,7 +230,7 @@ TEST(SerializedNavigationEntryTest, ToNavigationEntry) {
             new_navigation_entry->GetOriginalRequestURL());
   EXPECT_EQ(kIsOverridingUserAgent,
             new_navigation_entry->GetIsOverridingUserAgent());
-  string16 search_terms;
+  base::string16 search_terms;
   new_navigation_entry->GetExtraData(kSearchTermsKey, &search_terms);
   EXPECT_EQ(kSearchTerms, search_terms);
   EXPECT_EQ(kHttpStatusCode, new_navigation_entry->GetHttpStatusCode());

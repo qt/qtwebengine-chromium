@@ -26,21 +26,22 @@
 #include "config.h"
 #include "modules/speech/SpeechSynthesis.h"
 
-#include "core/platform/PlatformSpeechSynthesisVoice.h"
-#include "core/platform/PlatformSpeechSynthesizer.h"
+#include "bindings/v8/ExceptionState.h"
+#include "core/dom/ExecutionContext.h"
 #include "modules/speech/SpeechSynthesisEvent.h"
-#include "modules/speech/SpeechSynthesisUtterance.h"
+#include "platform/speech/PlatformSpeechSynthesisVoice.h"
 #include "wtf/CurrentTime.h"
 
 namespace WebCore {
 
-PassRefPtr<SpeechSynthesis> SpeechSynthesis::create()
+PassRefPtr<SpeechSynthesis> SpeechSynthesis::create(ExecutionContext* context)
 {
-    return adoptRef(new SpeechSynthesis());
+    return adoptRef(new SpeechSynthesis(context));
 }
 
-SpeechSynthesis::SpeechSynthesis()
-    : m_platformSpeechSynthesizer(PlatformSpeechSynthesizer::create(this))
+SpeechSynthesis::SpeechSynthesis(ExecutionContext* context)
+    : ContextLifecycleObserver(context)
+    , m_platformSpeechSynthesizer(PlatformSpeechSynthesizer::create(this))
     , m_currentSpeechUtterance(0)
     , m_isPaused(false)
 {
@@ -52,9 +53,16 @@ void SpeechSynthesis::setPlatformSynthesizer(PassOwnPtr<PlatformSpeechSynthesize
     m_platformSpeechSynthesizer = synthesizer;
 }
 
+ExecutionContext* SpeechSynthesis::executionContext() const
+{
+    return ContextLifecycleObserver::executionContext();
+}
+
 void SpeechSynthesis::voicesDidChange()
 {
     m_voiceList.clear();
+    if (!executionContext()->activeDOMObjectsAreStopped())
+        dispatchEvent(Event::create(EventTypeNames::voiceschanged));
 }
 
 const Vector<RefPtr<SpeechSynthesisVoice> >& SpeechSynthesis::getVoices()
@@ -99,8 +107,13 @@ void SpeechSynthesis::startSpeakingImmediately(SpeechSynthesisUtterance* utteran
     m_platformSpeechSynthesizer->speak(utterance->platformUtterance());
 }
 
-void SpeechSynthesis::speak(SpeechSynthesisUtterance* utterance)
+void SpeechSynthesis::speak(SpeechSynthesisUtterance* utterance, ExceptionState& exceptionState)
 {
+    if (!utterance) {
+        exceptionState.throwTypeError("Invalid utterance argument");
+        return;
+    }
+
     m_utteranceQueue.append(utterance);
 
     // If the queue was empty, speak this immediately and add it to the queue.
@@ -136,7 +149,8 @@ void SpeechSynthesis::resume()
 
 void SpeechSynthesis::fireEvent(const AtomicString& type, SpeechSynthesisUtterance* utterance, unsigned long charIndex, const String& name)
 {
-    utterance->dispatchEvent(SpeechSynthesisEvent::create(type, charIndex, (currentTime() - utterance->startTime()), name));
+    if (!executionContext()->activeDOMObjectsAreStopped())
+        utterance->dispatchEvent(SpeechSynthesisEvent::create(type, charIndex, (currentTime() - utterance->startTime()), name));
 }
 
 void SpeechSynthesis::handleSpeakingCompleted(SpeechSynthesisUtterance* utterance, bool errorOccurred)
@@ -145,7 +159,7 @@ void SpeechSynthesis::handleSpeakingCompleted(SpeechSynthesisUtterance* utteranc
     ASSERT(m_currentSpeechUtterance);
     m_currentSpeechUtterance = 0;
 
-    fireEvent(errorOccurred ? eventNames().errorEvent : eventNames().endEvent, utterance, 0, String());
+    fireEvent(errorOccurred ? EventTypeNames::error : EventTypeNames::end, utterance, 0, String());
 
     if (m_utteranceQueue.size()) {
         RefPtr<SpeechSynthesisUtterance> firstUtterance = m_utteranceQueue.first();
@@ -166,10 +180,10 @@ void SpeechSynthesis::boundaryEventOccurred(PassRefPtr<PlatformSpeechSynthesisUt
 
     switch (boundary) {
     case SpeechWordBoundary:
-        fireEvent(eventNames().boundaryEvent, static_cast<SpeechSynthesisUtterance*>(utterance->client()), charIndex, wordBoundaryString);
+        fireEvent(EventTypeNames::boundary, static_cast<SpeechSynthesisUtterance*>(utterance->client()), charIndex, wordBoundaryString);
         break;
     case SpeechSentenceBoundary:
-        fireEvent(eventNames().boundaryEvent, static_cast<SpeechSynthesisUtterance*>(utterance->client()), charIndex, sentenceBoundaryString);
+        fireEvent(EventTypeNames::boundary, static_cast<SpeechSynthesisUtterance*>(utterance->client()), charIndex, sentenceBoundaryString);
         break;
     default:
         ASSERT_NOT_REACHED();
@@ -179,21 +193,21 @@ void SpeechSynthesis::boundaryEventOccurred(PassRefPtr<PlatformSpeechSynthesisUt
 void SpeechSynthesis::didStartSpeaking(PassRefPtr<PlatformSpeechSynthesisUtterance> utterance)
 {
     if (utterance->client())
-        fireEvent(eventNames().startEvent, static_cast<SpeechSynthesisUtterance*>(utterance->client()), 0, String());
+        fireEvent(EventTypeNames::start, static_cast<SpeechSynthesisUtterance*>(utterance->client()), 0, String());
 }
 
 void SpeechSynthesis::didPauseSpeaking(PassRefPtr<PlatformSpeechSynthesisUtterance> utterance)
 {
     m_isPaused = true;
     if (utterance->client())
-        fireEvent(eventNames().pauseEvent, static_cast<SpeechSynthesisUtterance*>(utterance->client()), 0, String());
+        fireEvent(EventTypeNames::pause, static_cast<SpeechSynthesisUtterance*>(utterance->client()), 0, String());
 }
 
 void SpeechSynthesis::didResumeSpeaking(PassRefPtr<PlatformSpeechSynthesisUtterance> utterance)
 {
     m_isPaused = false;
     if (utterance->client())
-        fireEvent(eventNames().resumeEvent, static_cast<SpeechSynthesisUtterance*>(utterance->client()), 0, String());
+        fireEvent(EventTypeNames::resume, static_cast<SpeechSynthesisUtterance*>(utterance->client()), 0, String());
 }
 
 void SpeechSynthesis::didFinishSpeaking(PassRefPtr<PlatformSpeechSynthesisUtterance> utterance)
@@ -206,6 +220,11 @@ void SpeechSynthesis::speakingErrorOccurred(PassRefPtr<PlatformSpeechSynthesisUt
 {
     if (utterance->client())
         handleSpeakingCompleted(static_cast<SpeechSynthesisUtterance*>(utterance->client()), true);
+}
+
+const AtomicString& SpeechSynthesis::interfaceName() const
+{
+    return EventTargetNames::SpeechSynthesisUtterance;
 }
 
 } // namespace WebCore

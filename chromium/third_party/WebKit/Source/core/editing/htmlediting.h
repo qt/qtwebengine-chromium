@@ -28,7 +28,7 @@
 
 #include "core/dom/Position.h"
 #include "core/editing/EditingBoundary.h"
-#include "core/platform/text/TextDirection.h"
+#include "platform/text/TextDirection.h"
 #include "wtf/Forward.h"
 #include "wtf/unicode/CharacterNames.h"
 
@@ -101,7 +101,8 @@ bool isSpecialElement(const Node*);
 bool isTabSpanNode(const Node*);
 bool isTabSpanTextNode(const Node*);
 bool isMailBlockquote(const Node*);
-bool isTableElement(Node*);
+bool isRenderedTable(const Node*);
+bool isTableElement(const Node*);
 bool isTableCell(const Node*);
 bool isEmptyTableCell(const Node*);
 bool isTableStructureNode(const Node*);

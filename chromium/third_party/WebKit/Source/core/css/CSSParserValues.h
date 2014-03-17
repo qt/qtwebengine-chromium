@@ -131,6 +131,12 @@ struct CSSParserString {
     bool m_is8Bit;
 };
 
+template <>
+inline const LChar* CSSParserString::characters<LChar>() const { return characters8(); }
+
+template <>
+inline const UChar* CSSParserString::characters<UChar>() const { return characters16(); }
+
 struct CSSParserFunction;
 
 struct CSSParserValue {
@@ -141,16 +147,19 @@ struct CSSParserValue {
         int iValue;
         CSSParserString string;
         CSSParserFunction* function;
+        CSSParserValueList* valueList;
     };
     enum {
-        Operator = 0x100000,
-        Function = 0x100001,
-        Q_EMS    = 0x100002
+        Operator  = 0x100000,
+        Function  = 0x100001,
+        ValueList = 0x100002,
+        Q_EMS     = 0x100003,
     };
     int unit;
 
     inline void setFromNumber(double value, int unit = CSSPrimitiveValue::CSS_NUMBER);
     inline void setFromFunction(CSSParserFunction*);
+    inline void setFromValueList(PassOwnPtr<CSSParserValueList>);
 
     PassRefPtr<CSSValue> createCSSValue();
 };
@@ -215,7 +224,6 @@ public:
     void setForPage() { m_selector->setForPage(); }
     void setRelationIsAffectedByPseudoContent() { m_selector->setRelationIsAffectedByPseudoContent(); }
     bool relationIsAffectedByPseudoContent() const { return m_selector->relationIsAffectedByPseudoContent(); }
-    void setMatchUserAgentOnly() { m_selector->setMatchUserAgentOnly(); }
 
     void adoptSelectorVector(Vector<OwnPtr<CSSParserSelector> >& selectorVector);
 
@@ -263,6 +271,13 @@ inline void CSSParserValue::setFromFunction(CSSParserFunction* function)
     id = CSSValueInvalid;
     this->function = function;
     unit = Function;
+}
+
+inline void CSSParserValue::setFromValueList(PassOwnPtr<CSSParserValueList> valueList)
+{
+    id = CSSValueInvalid;
+    this->valueList = valueList.leakPtr();
+    unit = ValueList;
 }
 
 }

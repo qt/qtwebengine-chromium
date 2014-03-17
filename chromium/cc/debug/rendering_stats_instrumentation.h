@@ -19,11 +19,11 @@ class CC_EXPORT RenderingStatsInstrumentation {
   virtual ~RenderingStatsInstrumentation();
 
   // Return current main thread rendering stats.
-  MainThreadRenderingStats GetMainThreadRenderingStats() {
+  const MainThreadRenderingStats& main_thread_rendering_stats() {
     return main_stats_;
   }
   // Return current impl thread rendering stats.
-  ImplThreadRenderingStats GetImplThreadRenderingStats() {
+  const ImplThreadRenderingStats& impl_thread_rendering_stats() {
     return impl_stats_;
   }
   // Return the accumulated, combined rendering stats.
@@ -35,15 +35,6 @@ class CC_EXPORT RenderingStatsInstrumentation {
   // Add current impl thread rendering stats to accumulator and
   // clear current stats.
   void AccumulateAndClearImplThreadStats();
-
-  // Issue trace event for current main thread rendering stats.
-  void IssueTraceEventForMainThreadStats() {
-    main_stats_.IssueTraceEvent();
-  }
-  // Issue trace event for current impl thread rendering stats.
-  void IssueTraceEventForImplThreadStats() {
-    impl_stats_.IssueTraceEvent();
-  }
 
   // Read and write access to the record_rendering_stats_ flag is not locked to
   // improve performance. The flag is commonly turned off and hardly changes
@@ -57,35 +48,17 @@ class CC_EXPORT RenderingStatsInstrumentation {
   base::TimeTicks StartRecording() const;
   base::TimeDelta EndRecording(base::TimeTicks start_time) const;
 
-  void IncrementAnimationFrameCount();
-  void IncrementScreenFrameCount(int64 count, bool main_thread);
-  void IncrementDroppedFrameCount(int64 count);
-
-  void AddCommit(base::TimeDelta duration);
+  void IncrementFrameCount(int64 count, bool main_thread);
   void AddPaint(base::TimeDelta duration, int64 pixels);
   void AddRecord(base::TimeDelta duration, int64 pixels);
-  void AddRaster(base::TimeDelta total_duraction,
-                 base::TimeDelta best_duration,
-                 int64 pixels,
-                 bool is_in_pending_tree_now_bin);
-
-  void IncrementImplThreadScrolls();
-  void IncrementMainThreadScrolls();
-
-  void AddLayersDrawn(int64 amount);
-  void AddMissingTiles(int64 amount);
-
-  void AddDeferredImageDecode(base::TimeDelta duration);
-  void AddImageGathering(base::TimeDelta duration);
-
-  void IncrementDeferredImageCacheHitCount();
-
-  void AddAnalysisResult(base::TimeDelta duration, bool is_solid_color);
+  void AddRaster(base::TimeDelta duration, int64 pixels);
+  void AddAnalysis(base::TimeDelta duration, int64 pixels);
 
  protected:
   RenderingStatsInstrumentation();
 
  private:
+  // TODO(ernstm): rename to *_thread_rendering_stats_*
   MainThreadRenderingStats main_stats_;
   MainThreadRenderingStats main_stats_accu_;
   ImplThreadRenderingStats impl_stats_;

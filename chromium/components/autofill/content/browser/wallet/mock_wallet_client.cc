@@ -8,10 +8,22 @@ namespace autofill {
 namespace wallet {
 
 MockWalletClient::MockWalletClient(net::URLRequestContextGetter* context,
-                                   wallet::WalletClientDelegate* delegate)
-    : wallet::WalletClient(context, delegate) {}
+                                   wallet::WalletClientDelegate* delegate,
+                                   const GURL& source_url)
+    : wallet::WalletClient(context, delegate, source_url) {}
 
 MockWalletClient::~MockWalletClient() {}
+
+void MockWalletClient::SaveToWallet(
+    scoped_ptr<Instrument> instrument,
+    scoped_ptr<Address> address,
+    const WalletItems::MaskedInstrument* reference_instrument,
+    const Address* reference_address) {
+  SaveToWalletMock(instrument.get(),
+                   address.get(),
+                   reference_instrument,
+                   reference_address);
+}
 
 }  // namespace wallet
 }  // namespace autofill

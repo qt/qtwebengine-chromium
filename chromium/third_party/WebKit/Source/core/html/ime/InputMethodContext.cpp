@@ -31,9 +31,10 @@
 #include "config.h"
 #include "core/html/ime/InputMethodContext.h"
 
+#include "core/dom/Text.h"
 #include "core/editing/InputMethodController.h"
 #include "core/html/ime/Composition.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 
 namespace WebCore {
 
@@ -43,8 +44,7 @@ PassOwnPtr<InputMethodContext> InputMethodContext::create(HTMLElement* element)
 }
 
 InputMethodContext::InputMethodContext(HTMLElement* element)
-    : m_composition(0)
-    , m_element(element)
+    : m_element(element)
 {
     ScriptWrappable::init(this);
 }
@@ -53,10 +53,10 @@ InputMethodContext::~InputMethodContext()
 {
 }
 
-Composition* InputMethodContext::composition() const
+Composition* InputMethodContext::composition()
 {
-    // FIXME: Implement this. This should lazily update the composition object
-    // here.
+    if (!m_composition)
+        m_composition = Composition::create(this);
     return m_composition.get();
 }
 
@@ -71,27 +71,126 @@ HTMLElement* InputMethodContext::target() const
     return m_element;
 }
 
+unsigned InputMethodContext::compositionStartOffset()
+{
+    if (hasFocus())
+        return inputMethodController().compositionStart();
+    return 0;
+}
+
+unsigned InputMethodContext::compositionEndOffset()
+{
+    if (hasFocus())
+        return inputMethodController().compositionEnd();
+    return 0;
+}
+
 void InputMethodContext::confirmComposition()
+{
+    if (hasFocus())
+        inputMethodController().confirmCompositionAndResetState();
+}
+
+bool InputMethodContext::hasFocus() const
 {
     Frame* frame = m_element->document().frame();
     if (!frame)
-        return;
+        return false;
 
     const Element* element = frame->document()->focusedElement();
-    if (!element || !element->isHTMLElement() || m_element != toHTMLElement(element))
-        return;
-
-    frame->inputMethodController().confirmCompositionAndResetState();
+    return element && element->isHTMLElement() && m_element == toHTMLElement(element);
 }
 
-void InputMethodContext::setCaretRectangle(Node* anchor, int x, int y, int w, int h)
+String InputMethodContext::compositionText() const
 {
-    // FIXME: Implement this.
+    if (!hasFocus())
+        return emptyString();
+
+    Text* text = inputMethodController().compositionNode();
+    return text ? text->wholeText() : emptyString();
 }
 
-void InputMethodContext::setExclusionRectangle(Node* anchor, int x, int y, int w, int h)
+CompositionUnderline InputMethodContext::selectedSegment() const
 {
-    // FIXME: Implement this.
+    CompositionUnderline underline;
+    if (!hasFocus())
+        return underline;
+
+    const InputMethodController& controller = inputMethodController();
+    if (!controller.hasComposition())
+        return underline;
+
+    Vector<CompositionUnderline> underlines = controller.customCompositionUnderlines();
+    for (size_t i = 0; i < underlines.size(); ++i) {
+        if (underlines[i].thick)
+            return underlines[i];
+    }
+
+    // When no underline information is available while composition exists,
+    // build a CompositionUnderline whose element is the whole composition.
+    underline.endOffset = controller.compositionEnd() - controller.compositionStart();
+    return underline;
+
+}
+
+int InputMethodContext::selectionStart() const
+{
+    return selectedSegment().startOffset;
+}
+
+int InputMethodContext::selectionEnd() const
+{
+    return selectedSegment().endOffset;
+}
+
+const Vector<unsigned>& InputMethodContext::segments()
+{
+    m_segments.clear();
+    if (!hasFocus())
+        return m_segments;
+    const InputMethodController& controller = inputMethodController();
+    if (!controller.hasComposition())
+        return m_segments;
+
+    Vector<CompositionUnderline> underlines = controller.customCompositionUnderlines();
+    if (!underlines.size()) {
+        m_segments.append(0);
+    } else {
+        for (size_t i = 0; i < underlines.size(); ++i)
+            m_segments.append(underlines[i].startOffset);
+    }
+
+    return m_segments;
+}
+
+InputMethodController& InputMethodContext::inputMethodController() const
+{
+    return m_element->document().frame()->inputMethodController();
+}
+
+const AtomicString& InputMethodContext::interfaceName() const
+{
+    return EventTargetNames::InputMethodContext;
+}
+
+ExecutionContext* InputMethodContext::executionContext() const
+{
+    return &m_element->document();
+}
+
+void InputMethodContext::dispatchCandidateWindowShowEvent()
+{
+    dispatchEvent(Event::create(EventTypeNames::candidatewindowshow));
+}
+
+void InputMethodContext::dispatchCandidateWindowUpdateEvent()
+{
+    dispatchEvent(Event::create(EventTypeNames::candidatewindowupdate));
+}
+
+void InputMethodContext::dispatchCandidateWindowHideEvent()
+{
+    dispatchEvent(Event::create(EventTypeNames::candidatewindowhide));
 }
 
 } // namespace WebCore

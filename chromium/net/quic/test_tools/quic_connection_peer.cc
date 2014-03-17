@@ -5,11 +5,14 @@
 #include "net/quic/test_tools/quic_connection_peer.h"
 
 #include "base/stl_util.h"
-#include "net/quic/congestion_control/quic_congestion_manager.h"
 #include "net/quic/congestion_control/receive_algorithm_interface.h"
 #include "net/quic/congestion_control/send_algorithm_interface.h"
 #include "net/quic/quic_connection.h"
+#include "net/quic/quic_packet_writer.h"
+#include "net/quic/quic_received_packet_manager.h"
 #include "net/quic/test_tools/quic_framer_peer.h"
+#include "net/quic/test_tools/quic_sent_packet_manager_peer.h"
+#include "net/quic/test_tools/quic_test_writer.h"
 
 namespace net {
 namespace test {
@@ -23,14 +26,15 @@ void QuicConnectionPeer::SendAck(QuicConnection* connection) {
 void QuicConnectionPeer::SetReceiveAlgorithm(
     QuicConnection* connection,
     ReceiveAlgorithmInterface* receive_algorithm) {
-  connection->congestion_manager_.receive_algorithm_.reset(receive_algorithm);
+  connection->received_packet_manager_.receive_algorithm_.reset(
+      receive_algorithm);
 }
 
 // static
 void QuicConnectionPeer::SetSendAlgorithm(
     QuicConnection* connection,
     SendAlgorithmInterface* send_algorithm) {
-  connection->congestion_manager_.send_algorithm_.reset(send_algorithm);
+  connection->sent_packet_manager_.send_algorithm_.reset(send_algorithm);
 }
 
 // static
@@ -50,14 +54,10 @@ QuicPacketCreator* QuicConnectionPeer::GetPacketCreator(
   return &connection->packet_creator_;
 }
 
-bool QuicConnectionPeer::GetReceivedTruncatedAck(QuicConnection* connection) {
-    return connection->received_truncated_ack_;
-}
-
 // static
-size_t QuicConnectionPeer::GetNumRetransmissionTimeouts(
+QuicReceivedPacketManager* QuicConnectionPeer::GetReceivedPacketManager(
     QuicConnection* connection) {
-  return connection->retransmission_timeouts_.size();
+  return &connection->received_packet_manager_;
 }
 
 // static
@@ -70,18 +70,21 @@ QuicTime::Delta QuicConnectionPeer::GetNetworkTimeout(
 bool QuicConnectionPeer::IsSavedForRetransmission(
     QuicConnection* connection,
     QuicPacketSequenceNumber sequence_number) {
-  return connection->sent_packet_manager_.IsUnacked(sequence_number);
+  return connection->sent_packet_manager_.IsUnacked(sequence_number) &&
+      connection->sent_packet_manager_.HasRetransmittableFrames(
+          sequence_number);
 }
 
 // static
-size_t QuicConnectionPeer::GetRetransmissionCount(
+bool QuicConnectionPeer::IsRetransmission(
     QuicConnection* connection,
     QuicPacketSequenceNumber sequence_number) {
-  return connection->sent_packet_manager_.GetRetransmissionCount(
-      sequence_number);
+  return QuicSentPacketManagerPeer::IsRetransmission(
+      &connection->sent_packet_manager_, sequence_number);
 }
 
 // static
+// TODO(ianswett): Create a GetSentEntropyHash which accepts an AckFrame.
 QuicPacketEntropyHash QuicConnectionPeer::GetSentEntropyHash(
     QuicConnection* connection,
     QuicPacketSequenceNumber sequence_number) {
@@ -104,6 +107,17 @@ QuicPacketEntropyHash QuicConnectionPeer::ReceivedEntropyHash(
     QuicPacketSequenceNumber sequence_number) {
   return connection->received_packet_manager_.EntropyHash(
       sequence_number);
+}
+
+// static
+bool QuicConnectionPeer::IsWriteBlocked(QuicConnection* connection) {
+  return connection->write_blocked_;
+}
+
+// static
+void QuicConnectionPeer::SetIsWriteBlocked(QuicConnection* connection,
+                                           bool write_blocked) {
+  connection->write_blocked_ = write_blocked;
 }
 
 // static
@@ -137,16 +151,9 @@ void QuicConnectionPeer::SwapCrypters(QuicConnection* connection,
 }
 
 // static
-void QuicConnectionPeer:: SetMaxPacketsPerRetransmissionAlarm(
-    QuicConnection* connection,
-    int max_packets) {
-  connection->max_packets_per_retransmission_alarm_ = max_packets;
-}
-
-// static
 QuicConnectionHelperInterface* QuicConnectionPeer::GetHelper(
     QuicConnection* connection) {
-  return connection->helper_.get();
+  return connection->helper_;
 }
 
 // static
@@ -177,8 +184,25 @@ QuicAlarm* QuicConnectionPeer::GetSendAlarm(QuicConnection* connection) {
 }
 
 // static
+QuicAlarm* QuicConnectionPeer::GetResumeWritesAlarm(
+    QuicConnection* connection) {
+  return connection->resume_writes_alarm_.get();
+}
+
+// static
 QuicAlarm* QuicConnectionPeer::GetTimeoutAlarm(QuicConnection* connection) {
   return connection->timeout_alarm_.get();
+}
+
+// static
+QuicPacketWriter* QuicConnectionPeer::GetWriter(QuicConnection* connection) {
+  return connection->writer_;
+}
+
+// static
+void QuicConnectionPeer::SetWriter(QuicConnection* connection,
+                                   QuicTestWriter* writer) {
+  connection->writer_ = writer;
 }
 
 }  // namespace test

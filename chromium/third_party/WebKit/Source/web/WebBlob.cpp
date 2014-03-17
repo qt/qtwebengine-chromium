@@ -34,24 +34,24 @@
 #include "V8Blob.h"
 #include "bindings/v8/V8Binding.h"
 #include "core/fileapi/Blob.h"
-#include "core/platform/network/BlobData.h"
+#include "platform/blob/BlobData.h"
 #include "wtf/PassOwnPtr.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 WebBlob WebBlob::createFromFile(const WebString& path, long long size)
 {
     OwnPtr<BlobData> blobData = BlobData::create();
     blobData->appendFile(path);
-    RefPtr<Blob> blob = Blob::create(blobData.release(), size);
+    RefPtr<Blob> blob = Blob::create(BlobDataHandle::create(blobData.release(), size));
     return WebBlob(blob);
 }
 
 WebBlob WebBlob::fromV8Value(v8::Handle<v8::Value> value)
 {
-    if (V8Blob::HasInstanceInAnyWorld(value, v8::Isolate::GetCurrent())) {
+    if (V8Blob::hasInstanceInAnyWorld(value, v8::Isolate::GetCurrent())) {
         v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(value);
         Blob* blob = V8Blob::toNative(object);
         ASSERT(blob);
@@ -70,11 +70,11 @@ void WebBlob::assign(const WebBlob& other)
     m_private = other.m_private;
 }
 
-WebURL WebBlob::url()
+WebString WebBlob::uuid()
 {
     if (!m_private.get())
-        return WebURL();
-    return m_private->url();
+        return WebString();
+    return m_private->uuid();
 }
 
 v8::Handle<v8::Value>  WebBlob::toV8Value()
@@ -100,4 +100,4 @@ WebBlob::operator WTF::PassRefPtr<WebCore::Blob>() const
     return m_private.get();
 }
 
-} // namespace WebKit
+} // namespace blink

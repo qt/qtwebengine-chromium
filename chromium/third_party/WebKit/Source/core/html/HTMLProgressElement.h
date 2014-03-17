@@ -34,7 +34,7 @@ public:
     static const double IndeterminatePosition;
     static const double InvalidPosition;
 
-    static PassRefPtr<HTMLProgressElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<HTMLProgressElement> create(Document&);
 
     double value() const;
     void setValue(double, ExceptionState&);
@@ -47,7 +47,7 @@ public:
     virtual bool canContainRangeEndPoint() const { return false; }
 
 private:
-    HTMLProgressElement(const QualifiedName&, Document&);
+    explicit HTMLProgressElement(Document&);
     virtual ~HTMLProgressElement();
 
     virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
@@ -62,7 +62,7 @@ private:
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
 
     void didElementStateChange();
-    virtual void didAddUserAgentShadowRoot(ShadowRoot*) OVERRIDE;
+    virtual void didAddUserAgentShadowRoot(ShadowRoot&) OVERRIDE;
     bool isDeterminate() const;
 
     ProgressValueElement* m_value;
@@ -74,11 +74,7 @@ inline bool isHTMLProgressElement(Node* node)
     return node->hasTagName(HTMLNames::progressTag);
 }
 
-inline HTMLProgressElement* toHTMLProgressElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLProgressElement(node));
-    return static_cast<HTMLProgressElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLProgressElement, hasTagName(HTMLNames::progressTag));
 
 } // namespace
 

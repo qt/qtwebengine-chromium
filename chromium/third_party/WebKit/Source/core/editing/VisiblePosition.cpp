@@ -36,9 +36,9 @@
 #include "core/editing/htmlediting.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLHtmlElement.h"
-#include "core/platform/graphics/FloatQuad.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/RootInlineBox.h"
+#include "platform/geometry/FloatQuad.h"
 #include "wtf/text/CString.h"
 
 #ifndef NDEBUG
@@ -749,9 +749,9 @@ bool setStart(Range *r, const VisiblePosition &visiblePosition)
     if (!r)
         return false;
     Position p = visiblePosition.deepEquivalent().parentAnchoredEquivalent();
-    TrackExceptionState es;
-    r->setStart(p.containerNode(), p.offsetInContainerNode(), es);
-    return !es.hadException();
+    TrackExceptionState exceptionState;
+    r->setStart(p.containerNode(), p.offsetInContainerNode(), exceptionState);
+    return !exceptionState.hadException();
 }
 
 bool setEnd(Range *r, const VisiblePosition &visiblePosition)
@@ -759,9 +759,9 @@ bool setEnd(Range *r, const VisiblePosition &visiblePosition)
     if (!r)
         return false;
     Position p = visiblePosition.deepEquivalent().parentAnchoredEquivalent();
-    TrackExceptionState es;
-    r->setEnd(p.containerNode(), p.offsetInContainerNode(), es);
-    return !es.hadException();
+    TrackExceptionState exceptionState;
+    r->setEnd(p.containerNode(), p.offsetInContainerNode(), exceptionState);
+    return !exceptionState.hadException();
 }
 
 Element* enclosingBlockFlowElement(const VisiblePosition &visiblePosition)

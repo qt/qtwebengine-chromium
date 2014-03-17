@@ -22,10 +22,14 @@
 #define MAX_FULL_PEL_VAL ((1 << (MAX_MVSEARCH_STEPS)) - 1)
 // Maximum size of the first step in full pel units
 #define MAX_FIRST_STEP (1 << (MAX_MVSEARCH_STEPS-1))
+// Allowed motion vector pixel distance outside image border
+// for Block_16x16
+#define BORDER_MV_PIXELS_B16 (16 + VP9_INTERP_EXTEND)
+
 
 void vp9_clamp_mv_min_max(MACROBLOCK *x, MV *mv);
-int vp9_mv_bit_cost(int_mv *mv, int_mv *ref, int *mvjcost,
-                           int *mvcost[2], int weight);
+int vp9_mv_bit_cost(const MV *mv, const MV *ref,
+                    const int *mvjcost, int *mvcost[2], int weight);
 void vp9_init_dsmotion_compensation(MACROBLOCK *x, int stride);
 void vp9_init3smotion_compensation(MACROBLOCK *x,  int stride);
 
@@ -40,37 +44,37 @@ int vp9_full_pixel_diamond(struct VP9_COMP *cpi, MACROBLOCK *x,
                            int_mv *ref_mv, int_mv *dst_mv);
 
 int vp9_hex_search(MACROBLOCK *x,
-                   int_mv *ref_mv,
+                   MV *ref_mv,
                    int search_param,
                    int error_per_bit,
                    int do_init_search,
                    const vp9_variance_fn_ptr_t *vf,
                    int use_mvcost,
-                   int_mv *center_mv,
-                   int_mv *best_mv);
+                   const MV *center_mv,
+                   MV *best_mv);
 int vp9_bigdia_search(MACROBLOCK *x,
-                      int_mv *ref_mv,
+                      MV *ref_mv,
                       int search_param,
                       int error_per_bit,
                       int do_init_search,
                       const vp9_variance_fn_ptr_t *vf,
                       int use_mvcost,
-                      int_mv *center_mv,
-                      int_mv *best_mv);
+                      const MV *center_mv,
+                      MV *best_mv);
 int vp9_square_search(MACROBLOCK *x,
-                      int_mv *ref_mv,
+                      MV *ref_mv,
                       int search_param,
                       int error_per_bit,
                       int do_init_search,
                       const vp9_variance_fn_ptr_t *vf,
                       int use_mvcost,
-                      int_mv *center_mv,
-                      int_mv *best_mv);
+                      const MV *center_mv,
+                      MV *best_mv);
 
 typedef int (fractional_mv_step_fp) (
     MACROBLOCK *x,
-    int_mv *bestmv,
-    int_mv *ref_mv,
+    MV *bestmv, const MV *ref_mv,
+    int allow_hp,
     int error_per_bit,
     const vp9_variance_fn_ptr_t *vfp,
     int forced_stop,  // 0 - full, 1 - qtr only, 2 - half only
@@ -84,7 +88,8 @@ extern fractional_mv_step_fp vp9_find_best_sub_pixel_tree;
 
 typedef int (fractional_mv_step_comp_fp) (
     MACROBLOCK *x,
-    int_mv *bestmv, int_mv *ref_mv,
+    MV *bestmv, const MV *ref_mv,
+    int allow_hp,
     int error_per_bit,
     const vp9_variance_fn_ptr_t *vfp,
     int forced_stop,  // 0 - full, 1 - qtr only, 2 - half only

@@ -27,36 +27,34 @@
 #define InbandTextTrack_h
 
 #include "core/html/track/TextTrack.h"
-#include "core/platform/graphics/InbandTextTrackPrivateClient.h"
+#include "public/platform/WebInbandTextTrackClient.h"
 #include "wtf/RefPtr.h"
+
+namespace blink {
+class WebInbandTextTrack;
+class WebString;
+}
 
 namespace WebCore {
 
 class Document;
-class InbandTextTrackPrivate;
 class MediaPlayer;
 class TextTrackCue;
 
-class InbandTextTrack : public TextTrack, public InbandTextTrackPrivateClient {
+class InbandTextTrack : public TextTrack, public blink::WebInbandTextTrackClient {
 public:
-    static PassRefPtr<InbandTextTrack> create(ScriptExecutionContext*, TextTrackClient*, PassRefPtr<InbandTextTrackPrivate>);
+    static PassRefPtr<InbandTextTrack> create(Document&, TextTrackClient*, blink::WebInbandTextTrack*);
     virtual ~InbandTextTrack();
 
-    virtual bool isClosedCaptions() const OVERRIDE;
-    virtual bool containsOnlyForcedSubtitles() const OVERRIDE;
-    virtual bool isMainProgramContent() const OVERRIDE;
-    virtual bool isEasyToRead() const OVERRIDE;
-    virtual void setMode(const AtomicString&) OVERRIDE;
     size_t inbandTrackIndex();
     void trackRemoved();
 
 private:
-    InbandTextTrack(ScriptExecutionContext*, TextTrackClient*, PassRefPtr<InbandTextTrackPrivate>);
+    InbandTextTrack(Document&, TextTrackClient*, blink::WebInbandTextTrack*);
 
-    virtual void addGenericCue(InbandTextTrackPrivate*, GenericCueData*) OVERRIDE;
-    virtual void addWebVTTCue(InbandTextTrackPrivate*, double, double, const String&, const String&, const String&) OVERRIDE;
+    virtual void addWebVTTCue(double, double, const blink::WebString&, const blink::WebString&, const blink::WebString&) OVERRIDE;
 
-    RefPtr<InbandTextTrackPrivate> m_private;
+    blink::WebInbandTextTrack* m_webTrack;
 };
 
 } // namespace WebCore

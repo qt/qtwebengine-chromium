@@ -33,20 +33,27 @@
 namespace WebCore {
 
 class DOMRequestState;
+class IDBAny;
 class IDBKey;
 class IDBKeyPath;
 class IDBKeyRange;
 class SerializedScriptValue;
 class SharedBuffer;
 
-bool injectIDBKeyIntoScriptValue(DOMRequestState*, PassRefPtr<IDBKey>, ScriptValue&, const IDBKeyPath&);
+// Exposed for unit testing:
+bool injectV8KeyIntoV8Value(v8::Handle<v8::Value> key, v8::Handle<v8::Value>, const IDBKeyPath&, v8::Isolate*);
+
+// For use by Source/modules/indexeddb:
 PassRefPtr<IDBKey> createIDBKeyFromScriptValueAndKeyPath(DOMRequestState*, const ScriptValue&, const IDBKeyPath&);
 bool canInjectIDBKeyIntoScriptValue(DOMRequestState*, const ScriptValue&, const IDBKeyPath&);
-ScriptValue deserializeIDBValue(DOMRequestState*, PassRefPtr<SerializedScriptValue>);
-ScriptValue deserializeIDBValueBuffer(DOMRequestState*, PassRefPtr<SharedBuffer>);
+ScriptValue idbAnyToScriptValue(DOMRequestState*, PassRefPtr<IDBAny>);
 ScriptValue idbKeyToScriptValue(DOMRequestState*, PassRefPtr<IDBKey>);
 PassRefPtr<IDBKey> scriptValueToIDBKey(DOMRequestState*, const ScriptValue&);
 PassRefPtr<IDBKeyRange> scriptValueToIDBKeyRange(DOMRequestState*, const ScriptValue&);
+
+#ifndef NDEBUG
+void assertPrimaryKeyValidOrInjectable(DOMRequestState*, PassRefPtr<SharedBuffer>, PassRefPtr<IDBKey>, const IDBKeyPath&);
+#endif
 
 } // namespace WebCore
 

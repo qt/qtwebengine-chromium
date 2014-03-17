@@ -29,6 +29,8 @@ namespace WebCore {
 
 class SVGPropertyTearOffBase : public SVGProperty {
 public:
+    virtual void setValueForMatrixIfNeeded(SVGTransform*) { }
+
     virtual void detachWrapper() = 0;
 };
 
@@ -60,6 +62,9 @@ public:
             detachChildren();
             delete m_value;
         }
+
+        updateChildrenTearOffs(&value);
+
         m_valueIsCopy = false;
         m_value = &value;
     }
@@ -76,7 +81,8 @@ public:
     {
         if (!m_animatedProperty || m_valueIsCopy)
             return 0;
-        return m_contextElement.get();
+        ASSERT(m_contextElement);
+        return m_contextElement;
     }
 
     void addChild(WeakPtr<SVGPropertyTearOffBase> child)
@@ -156,7 +162,22 @@ protected:
         m_childTearOffs.clear();
     }
 
-    RefPtr<SVGElement> m_contextElement;
+    // Update m_value of children tear-offs.
+    // Currently only SVGTransform has child tear-offs.
+    void updateChildrenTearOffs(SVGTransform* transform)
+    {
+        for (Vector<WeakPtr<SVGPropertyTearOffBase> >::iterator iter = m_childTearOffs.begin(); iter != m_childTearOffs.end(); iter++) {
+            if (iter->get())
+                iter->get()->setValueForMatrixIfNeeded(transform);
+        }
+    }
+
+    void updateChildrenTearOffs(void*)
+    {
+        // Tear-offs for other types do not have child tear-offs.
+    }
+
+    SVGElement* m_contextElement;
     SVGAnimatedProperty* m_animatedProperty;
     SVGPropertyRole m_role;
     PropertyType* m_value;

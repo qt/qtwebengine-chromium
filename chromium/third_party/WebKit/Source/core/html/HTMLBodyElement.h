@@ -33,42 +33,20 @@ class Document;
 class HTMLBodyElement FINAL : public HTMLElement {
 public:
     static PassRefPtr<HTMLBodyElement> create(Document&);
-    static PassRefPtr<HTMLBodyElement> create(const QualifiedName&, Document&);
     virtual ~HTMLBodyElement();
 
-    String aLink() const;
-    void setALink(const String&);
-    String bgColor() const;
-    void setBgColor(const String&);
-    String link() const;
-    void setLink(const String&);
-    String text() const;
-    void setText(const String&);
-    String vLink() const;
-    void setVLink(const String&);
-
-    // Declared virtual in Element
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(blur);
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(error);
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(focus);
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(load);
-
-    DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(beforeunload);
-    DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(hashchange);
-    DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(message);
-    DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(offline);
-    DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(online);
-    DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(popstate);
-    DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(resize);
-    DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(storage);
-    DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(unload);
+    DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(scroll);
 
 #if ENABLE(ORIENTATION_EVENTS)
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(orientationchange);
 #endif
 
 private:
-    HTMLBodyElement(const QualifiedName&, Document&);
+    explicit HTMLBodyElement(Document&);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
@@ -92,11 +70,7 @@ private:
     virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
 };
 
-inline HTMLBodyElement* toHTMLBodyElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::bodyTag));
-    return static_cast<HTMLBodyElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLBodyElement, hasTagName(HTMLNames::bodyTag));
 
 } //namespace
 

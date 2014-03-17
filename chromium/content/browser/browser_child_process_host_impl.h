@@ -21,6 +21,7 @@ namespace content {
 
 class BrowserChildProcessHostIterator;
 class BrowserChildProcessObserver;
+class BrowserMessageFilter;
 
 // Plugins/workers and other child processes that live on the IO thread use this
 // class. RenderProcessHostImpl is the main exception that doesn't use this
@@ -53,7 +54,7 @@ class CONTENT_EXPORT BrowserChildProcessHostImpl
   virtual ChildProcessHost* GetHost() const OVERRIDE;
   virtual base::TerminationStatus GetTerminationStatus(
       bool known_dead, int* exit_code) OVERRIDE;
-  virtual void SetName(const string16& name) OVERRIDE;
+  virtual void SetName(const base::string16& name) OVERRIDE;
   virtual void SetHandle(base::ProcessHandle handle) OVERRIDE;
 
   // Returns the handle of the child process. This can be called only after
@@ -69,6 +70,9 @@ class CONTENT_EXPORT BrowserChildProcessHostImpl
   // Controls whether the child process should be terminated on browser
   // shutdown. Default is to always terminate.
   void SetTerminateChildOnShutdown(bool terminate_on_shutdown);
+
+  // Adds an IPC message filter.
+  void AddFilter(BrowserMessageFilter* filter);
 
   // Called when an instance of a particular child is created in a page.
   static void NotifyProcessInstanceCreated(const ChildProcessData& data);

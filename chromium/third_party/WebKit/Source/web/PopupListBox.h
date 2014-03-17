@@ -32,8 +32,8 @@
 #define PopupListBox_h
 
 #include "core/dom/Element.h"
-#include "core/platform/chromium/FramelessScrollView.h"
-#include "core/platform/text/TextDirection.h"
+#include "platform/scroll/FramelessScrollView.h"
+#include "platform/text/TextDirection.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -128,6 +128,7 @@ public:
 
     // ScrollView
     virtual HostWindow* hostWindow() const OVERRIDE;
+    virtual bool shouldPlaceVerticalScrollbarOnLeft() const OVERRIDE;
 
     // PopupListBox methods
 

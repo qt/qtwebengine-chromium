@@ -22,28 +22,12 @@
 #include "config.h"
 #include "core/rendering/style/ShadowData.h"
 
-#include "core/platform/graphics/LayoutRect.h"
-
-using namespace std;
+#include "platform/animation/AnimationUtilities.h"
 
 namespace WebCore {
 
-ShadowData::ShadowData(const ShadowData& o)
-    : m_location(o.m_location)
-    , m_blur(o.m_blur)
-    , m_spread(o.m_spread)
-    , m_color(o.m_color)
-    , m_style(o.m_style)
-    , m_next(o.m_next ? adoptPtr(new ShadowData(*o.m_next)) : nullptr)
-{
-}
-
 bool ShadowData::operator==(const ShadowData& o) const
 {
-    if ((m_next && !o.m_next) || (!m_next && o.m_next)
-        || (m_next && o.m_next && *m_next != *o.m_next))
-        return false;
-
     return m_location == o.m_location
         && m_blur == o.m_blur
         && m_spread == o.m_spread
@@ -51,45 +35,16 @@ bool ShadowData::operator==(const ShadowData& o) const
         && m_color == o.m_color;
 }
 
-static inline void calculateShadowExtent(const ShadowData* shadow, int additionalOutlineSize, int& shadowLeft, int& shadowRight, int& shadowTop, int& shadowBottom)
+ShadowData ShadowData::blend(const ShadowData& from, double progress) const
 {
-    do {
-        int blurAndSpread = shadow->blur() + shadow->spread() + additionalOutlineSize;
-        if (shadow->style() == Normal) {
-            shadowLeft = min(shadow->x() - blurAndSpread, shadowLeft);
-            shadowRight = max(shadow->x() + blurAndSpread, shadowRight);
-            shadowTop = min(shadow->y() - blurAndSpread, shadowTop);
-            shadowBottom = max(shadow->y() + blurAndSpread, shadowBottom);
-        }
+    if (style() != from.style())
+        return *this;
 
-        shadow = shadow->next();
-    } while (shadow);
-}
-
-void ShadowData::adjustRectForShadow(LayoutRect& rect, int additionalOutlineSize) const
-{
-    int shadowLeft = 0;
-    int shadowRight = 0;
-    int shadowTop = 0;
-    int shadowBottom = 0;
-    calculateShadowExtent(this, additionalOutlineSize, shadowLeft, shadowRight, shadowTop, shadowBottom);
-
-    rect.move(shadowLeft, shadowTop);
-    rect.setWidth(rect.width() - shadowLeft + shadowRight);
-    rect.setHeight(rect.height() - shadowTop + shadowBottom);
-}
-
-void ShadowData::adjustRectForShadow(FloatRect& rect, int additionalOutlineSize) const
-{
-    int shadowLeft = 0;
-    int shadowRight = 0;
-    int shadowTop = 0;
-    int shadowBottom = 0;
-    calculateShadowExtent(this, additionalOutlineSize, shadowLeft, shadowRight, shadowTop, shadowBottom);
-
-    rect.move(shadowLeft, shadowTop);
-    rect.setWidth(rect.width() - shadowLeft + shadowRight);
-    rect.setHeight(rect.height() - shadowTop + shadowBottom);
+    return ShadowData(WebCore::blend(from.location(), location(), progress),
+        clampTo<int>(WebCore::blend(from.blur(), blur(), progress), 0),
+        WebCore::blend(from.spread(), spread(), progress),
+        style(),
+        WebCore::blend(from.color(), color(), progress));
 }
 
 } // namespace WebCore

@@ -22,8 +22,11 @@
 #ifndef RuleSet_h
 #define RuleSet_h
 
+#include "core/css/CSSKeyframesRule.h"
+#include "core/css/MediaQueryEvaluator.h"
 #include "core/css/RuleFeature.h"
 #include "core/css/StyleRule.h"
+#include "core/css/resolver/MediaQueryResult.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/LinkedStack.h"
@@ -44,11 +47,22 @@ enum PropertyWhitelistType {
 };
 
 class CSSSelector;
-class ContainerNode;
 class MediaQueryEvaluator;
-class StyleResolver;
 class StyleRuleRegion;
 class StyleSheetContents;
+
+struct MinimalRuleData {
+    MinimalRuleData(StyleRule* rule, unsigned selectorIndex, AddRuleFlags flags)
+    : m_rule(rule)
+    , m_selectorIndex(selectorIndex)
+    , m_flags(flags)
+    {
+    }
+
+    StyleRule* m_rule;
+    unsigned m_selectorIndex;
+    AddRuleFlags m_flags;
+};
 
 class RuleData {
     WTF_MAKE_FAST_ALLOCATED;
@@ -108,7 +122,7 @@ class RuleSet {
 public:
     static PassOwnPtr<RuleSet> create() { return adoptPtr(new RuleSet); }
 
-    void addRulesFromSheet(StyleSheetContents*, const MediaQueryEvaluator&, StyleResolver* = 0, const ContainerNode* = 0);
+    void addRulesFromSheet(StyleSheetContents*, const MediaQueryEvaluator&, AddRuleFlags = RuleHasNoSpecialState);
     void addStyleRule(StyleRule*, AddRuleFlags);
     void addRule(StyleRule*, unsigned selectorIndex, AddRuleFlags);
 
@@ -124,6 +138,11 @@ public:
     const Vector<RuleData>* universalRules() const { ASSERT(!m_pendingRules); return &m_universalRules; }
     const Vector<StyleRulePage*>& pageRules() const { ASSERT(!m_pendingRules); return m_pageRules; }
     const Vector<StyleRuleViewport*>& viewportRules() const { ASSERT(!m_pendingRules); return m_viewportRules; }
+    const Vector<StyleRuleFontFace*>& fontFaceRules() const { return m_fontFaceRules; }
+    const Vector<StyleRuleKeyframes*>& keyframesRules() const { return m_keyframesRules; }
+    const Vector<MinimalRuleData>& treeBoundaryCrossingRules() const { return m_treeBoundaryCrossingRules; }
+    const Vector<MinimalRuleData>& shadowDistributedRules() const { return m_shadowDistributedRules; }
+    const MediaQueryResultList& viewportDependentMediaQueryResults() const { return m_viewportDependentMediaQueryResults; }
 
     unsigned ruleCount() const { return m_ruleCount; }
 
@@ -156,9 +175,11 @@ private:
     void addToRuleSet(StringImpl* key, PendingRuleMap&, const RuleData&);
     void addPageRule(StyleRulePage*);
     void addViewportRule(StyleRuleViewport*);
+    void addFontFaceRule(StyleRuleFontFace*);
+    void addKeyframesRule(StyleRuleKeyframes*);
     void addRegionRule(StyleRuleRegion*, bool hasDocumentSecurityOrigin);
 
-    void addChildRules(const Vector<RefPtr<StyleRuleBase> >&, const MediaQueryEvaluator& medium, StyleResolver*, const ContainerNode* scope, bool hasDocumentSecurityOrigin, AddRuleFlags);
+    void addChildRules(const Vector<RefPtr<StyleRuleBase> >&, const MediaQueryEvaluator& medium, AddRuleFlags);
     bool findBestRuleSetAndAdd(const CSSSelector*, RuleData&);
 
     void compactRules();
@@ -189,6 +210,12 @@ private:
     RuleFeatureSet m_features;
     Vector<StyleRulePage*> m_pageRules;
     Vector<StyleRuleViewport*> m_viewportRules;
+    Vector<StyleRuleFontFace*> m_fontFaceRules;
+    Vector<StyleRuleKeyframes*> m_keyframesRules;
+    Vector<MinimalRuleData> m_treeBoundaryCrossingRules;
+    Vector<MinimalRuleData> m_shadowDistributedRules;
+
+    MediaQueryResultList m_viewportDependentMediaQueryResults;
 
     unsigned m_ruleCount;
     OwnPtr<PendingRuleMaps> m_pendingRules;

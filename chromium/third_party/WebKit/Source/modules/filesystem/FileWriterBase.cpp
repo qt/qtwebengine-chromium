@@ -32,7 +32,7 @@
 
 #include "modules/filesystem/FileWriterBase.h"
 
-#include "core/dom/ProgressEvent.h"
+#include "core/events/ProgressEvent.h"
 #include "core/fileapi/Blob.h"
 #include "core/fileapi/FileError.h"
 #include "public/platform/WebFileWriter.h"
@@ -43,7 +43,7 @@ FileWriterBase::~FileWriterBase()
 {
 }
 
-void FileWriterBase::initialize(PassOwnPtr<WebKit::WebFileWriter> writer, long long length)
+void FileWriterBase::initialize(PassOwnPtr<blink::WebFileWriter> writer, long long length)
 {
     ASSERT(!m_writer);
     ASSERT(length >= 0);

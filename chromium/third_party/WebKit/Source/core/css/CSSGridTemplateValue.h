@@ -42,7 +42,7 @@ public:
     static PassRefPtr<CSSGridTemplateValue> create(const NamedGridAreaMap& gridAreaMap, size_t rowCount, size_t columnCount) { return adoptRef(new CSSGridTemplateValue(gridAreaMap, rowCount, columnCount)); }
     ~CSSGridTemplateValue() { }
 
-    String customCssText() const;
+    String customCSSText() const;
 
     const NamedGridAreaMap& gridAreaMap() const { return m_gridAreaMap; }
     size_t rowCount() const { return m_rowCount; }
@@ -56,20 +56,7 @@ private:
     size_t m_columnCount;
 };
 
-inline CSSGridTemplateValue* toCSSGridTemplateValue(CSSValue* value)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(value->isGridTemplateValue());
-    return static_cast<CSSGridTemplateValue*>(value);
-}
-
-inline const CSSGridTemplateValue* toCSSGridTemplateValue(const CSSValue* value)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(value->isGridTemplateValue());
-    return static_cast<const CSSGridTemplateValue*>(value);
-}
-
-// Catch unneeded cast.
-void toCSSGridTemplateValue(const CSSGridTemplateValue*);
+DEFINE_CSS_VALUE_TYPE_CASTS(CSSGridTemplateValue, isGridTemplateValue());
 
 } // namespace WebCore
 

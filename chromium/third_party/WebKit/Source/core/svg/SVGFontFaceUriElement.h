@@ -32,14 +32,14 @@ class CSSFontFaceSrcValue;
 
 class SVGFontFaceUriElement FINAL : public SVGElement, public FontResourceClient {
 public:
-    static PassRefPtr<SVGFontFaceUriElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGFontFaceUriElement> create(Document&);
 
     virtual ~SVGFontFaceUriElement();
 
     PassRefPtr<CSSFontFaceSrcValue> srcValue() const;
 
 private:
-    SVGFontFaceUriElement(const QualifiedName&, Document&);
+    explicit SVGFontFaceUriElement(Document&);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
@@ -52,11 +52,7 @@ private:
     ResourcePtr<FontResource> m_resource;
 };
 
-inline SVGFontFaceUriElement* toSVGFontFaceUriElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::font_face_uriTag));
-    return static_cast<SVGFontFaceUriElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(SVGFontFaceUriElement, hasTagName(SVGNames::font_face_uriTag));
 
 } // namespace WebCore
 

@@ -41,6 +41,7 @@ void AppendToPythonPath(const base::FilePath& dir) {
 
 namespace {
 
+#if defined(OS_MACOSX) || defined(OS_CHROMEOS)
 // Search for |to_try|, rolling up the directory tree from
 // |start_dir|.  If found, return true and put the path to |to_try| in
 // |out_dir|.  If not, return false and leave |out_dir| untouched.
@@ -59,6 +60,7 @@ bool TryRelativeToDir(const base::FilePath& start_dir,
   *out_dir = dir;
   return true;
 }
+#endif  // defined(OS_MACOSX) || defined(OS_CHROMEOS)
 
 }  // namespace
 
@@ -107,8 +109,14 @@ bool GetPyProtoPath(base::FilePath* dir) {
 bool GetPythonCommand(CommandLine* python_cmd) {
   DCHECK(python_cmd);
 
+#if defined(OS_WIN)
+  // This permits finding the proper python in path even if it is a .bat file.
+  python_cmd->SetProgram(base::FilePath(FILE_PATH_LITERAL("cmd.exe")));
+  python_cmd->AppendArg("/c");
+  python_cmd->AppendArg("python");
+#else
   python_cmd->SetProgram(base::FilePath(FILE_PATH_LITERAL("python")));
-
+#endif  // defined(OS_WIN)
   // Launch python in unbuffered mode, so that python output doesn't mix with
   // gtest output in buildbot log files. See http://crbug.com/147368.
   python_cmd->AppendArg("-u");

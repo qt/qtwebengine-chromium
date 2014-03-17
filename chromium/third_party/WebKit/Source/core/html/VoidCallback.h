@@ -26,14 +26,12 @@
 #ifndef VoidCallback_h
 #define VoidCallback_h
 
-#include "wtf/RefCounted.h"
-
 namespace WebCore {
 
-class VoidCallback : public RefCounted<VoidCallback> {
+class VoidCallback {
 public:
     virtual ~VoidCallback() { }
-    virtual bool handleEvent() = 0;
+    virtual void handleEvent() = 0;
 };
 
 } // namespace WebCore

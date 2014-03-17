@@ -25,7 +25,10 @@ class CC_EXPORT Resource {
   ResourceFormat format() const { return format_; }
   size_t bytes() const;
 
-  static size_t MemorySizeBytes(gfx::Size size, ResourceFormat format);
+  inline static size_t MemorySizeBytes(gfx::Size size, ResourceFormat format) {
+    DCHECK_EQ(0u, (BitsPerPixel(format) * size.width() * size.height()) % 8);
+    return (BitsPerPixel(format) * size.width() * size.height()) / 8;
+  }
 
  protected:
   void set_id(ResourceProvider::ResourceId id) { id_ = id; }

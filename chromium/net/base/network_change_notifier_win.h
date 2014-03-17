@@ -57,6 +57,12 @@ class NET_EXPORT_PRIVATE NetworkChangeNotifierWin
   // Must only be called on the thread |this| was created on.
   virtual void OnObjectSignaled(HANDLE object) OVERRIDE;
 
+  // Does the actual work to determine the current connection type.
+  // It is not thread safe, see crbug.com/324913.
+  ConnectionType RecomputeCurrentConnectionType() const;
+
+  void SetCurrentConnectionType(ConnectionType connection_type);
+
   // Notifies IP address change observers of a change immediately, and notifies
   // network state change observers on a delay.  Must only be called on the
   // thread |this| was created on.
@@ -94,6 +100,9 @@ class NET_EXPORT_PRIVATE NetworkChangeNotifierWin
 
   // Thread on which we can run DnsConfigService.
   scoped_ptr<DnsConfigServiceThread> dns_config_service_thread_;
+
+  mutable base::Lock last_computed_connection_type_lock_;
+  ConnectionType last_computed_connection_type_;
 
   // Result of IsOffline() when NotifyObserversOfConnectionTypeChange()
   // was last called.

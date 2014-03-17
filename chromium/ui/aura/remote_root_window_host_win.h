@@ -10,16 +10,19 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/strings/string16.h"
-#include "ui/aura/root_window_host.h"
+#include "ui/aura/window_tree_host.h"
+#include "ui/base/ime/remote_input_method_delegate_win.h"
 #include "ui/events/event.h"
 #include "ui/events/event_constants.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/metro_viewer/ime_types.h"
 
 namespace base {
 class FilePath;
 }
 
 namespace ui {
+class RemoteInputMethodPrivateWin;
 class ViewProp;
 }
 
@@ -81,10 +84,23 @@ AURA_EXPORT void HandleSelectFolder(const base::string16& title,
                                     const SelectFolderCompletion& on_success,
                                     const FileSelectionCanceled& on_failure);
 
+// Handles the activate desktop command for Metro Chrome Ash.   The |ash_exit|
+// parameter indicates whether the Ash process would be shutdown after
+// activating the desktop.
+AURA_EXPORT void HandleActivateDesktop(
+    const base::FilePath& shortcut,
+    bool ash_exit);
+
+// Handles the metro exit command.  Notifies the metro viewer to shutdown
+// gracefully.
+AURA_EXPORT void HandleMetroExit();
+
 // RootWindowHost implementaton that receives events from a different
 // process. In the case of Windows this is the Windows 8 (aka Metro)
 // frontend process, which forwards input events to this class.
-class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
+class AURA_EXPORT RemoteRootWindowHostWin
+    : public RootWindowHost,
+      public ui::internal::RemoteInputMethodDelegateWin {
  public:
   // Returns the only RemoteRootWindowHostWin, if this is the first time
   // this function is called, it will call Create() wiht empty bounds.
@@ -103,6 +119,13 @@ class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
 
   void HandleOpenURLOnDesktop(const base::FilePath& shortcut,
                               const base::string16& url);
+
+  // The |ash_exit| parameter indicates whether the Ash process would be
+  // shutdown after activating the desktop.
+  void HandleActivateDesktop(const base::FilePath& shortcut, bool ash_exit);
+
+  // Notify the metro viewer that it should shut itself down.
+  void HandleMetroExit();
 
   void HandleOpenFile(const base::string16& title,
                       const base::FilePath& default_path,
@@ -128,8 +151,14 @@ class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
                           const SelectFolderCompletion& on_success,
                           const FileSelectionCanceled& on_failure);
 
+  void HandleWindowSizeChanged(uint32 width, uint32 height);
+
   // Returns the active ASH root window.
   Window* GetAshWindow();
+
+  // Returns true if the remote window is the foreground window according to the
+  // OS.
+  bool IsForegroundWindow();
 
  private:
   explicit RemoteRootWindowHostWin(const gfx::Rect& bounds);
@@ -154,7 +183,7 @@ class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
               uint32 repeat_count,
               uint32 scan_code,
               uint32 flags);
-  void OnVisibilityChanged(bool visible);
+  void OnWindowActivated();
   void OnTouchDown(int32 x, int32 y, uint64 timestamp, uint32 pointer_id);
   void OnTouchUp(int32 x, int32 y, uint64 timestamp, uint32 pointer_id);
   void OnTouchMoved(int32 x, int32 y, uint64 timestamp, uint32 pointer_id);
@@ -166,10 +195,19 @@ class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
                            const std::vector<base::FilePath>& files);
   void OnSelectFolderDone(bool success, const base::FilePath& folder);
   void OnSetCursorPosAck();
-  void OnWindowSizeChanged(uint32 width, uint32 height);
+
+  // For Input Method support:
+  ui::RemoteInputMethodPrivateWin* GetRemoteInputMethodPrivate();
+  void OnImeCandidatePopupChanged(bool visible);
+  void OnImeCompositionChanged(
+      const string16& text,
+      int32 selection_start,
+      int32 selection_end,
+      const std::vector<metro_viewer::UnderlineInfo>& underlines);
+  void OnImeTextCommitted(const string16& text);
+  void OnImeInputSourceChanged(uint16 language_id, bool is_ime);
 
   // RootWindowHost overrides:
-  virtual void SetDelegate(RootWindowHostDelegate* delegate) OVERRIDE;
   virtual RootWindow* GetRootWindow() OVERRIDE;
   virtual gfx::AcceleratedWidget GetAcceleratedWidget() OVERRIDE;
   virtual void Show() OVERRIDE;
@@ -188,10 +226,15 @@ class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
   virtual void UnConfineCursor() OVERRIDE;
   virtual void OnCursorVisibilityChanged(bool show) OVERRIDE;
   virtual void MoveCursorTo(const gfx::Point& location) OVERRIDE;
-  virtual void SetFocusWhenShown(bool focus_when_shown) OVERRIDE;
   virtual void PostNativeEvent(const base::NativeEvent& native_event) OVERRIDE;
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
   virtual void PrepareForShutdown() OVERRIDE;
+
+  // ui::internal::RemoteInputMethodDelegateWin overrides:
+  virtual void CancelComposition() OVERRIDE;
+  virtual void OnTextInputClientUpdated(
+      const std::vector<int32>& input_scopes,
+      const std::vector<gfx::Rect>& composition_character_bounds) OVERRIDE;
 
   // Helper function to dispatch a keyboard message to the desired target.
   // The default target is the RootWindowHostDelegate. For nested message loop
@@ -205,8 +248,23 @@ class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
                                uint32 flags,
                                bool is_character);
 
+  // Sets the event flags. |flags| is a bitmask of EventFlags. If there is a
+  // change the system virtual key state is updated as well. This way if chrome
+  // queries for key state it matches that of event being dispatched.
+  void SetEventFlags(uint32 flags);
+
+  uint32 mouse_event_flags() const {
+    return event_flags_ & (ui::EF_LEFT_MOUSE_BUTTON |
+                           ui::EF_MIDDLE_MOUSE_BUTTON |
+                           ui::EF_RIGHT_MOUSE_BUTTON);
+  }
+
+  uint32 key_event_flags() const {
+    return event_flags_ & (ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN |
+                           ui::EF_ALT_DOWN | ui::EF_CAPS_LOCK_DOWN);
+  }
+
   HWND remote_window_;
-  RootWindowHostDelegate* delegate_;
   IPC::Sender* host_;
   scoped_ptr<ui::ViewProp> prop_;
 
@@ -224,6 +282,13 @@ class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
 
   // Tracking last click event for synthetically generated mouse events.
   scoped_ptr<ui::MouseEvent> last_mouse_click_event_;
+
+  // State of the keyboard/mouse at the time of the last input event. See
+  // description of SetEventFlags().
+  uint32 event_flags_;
+
+  // Current size of this root window.
+  gfx::Size window_size_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoteRootWindowHostWin);
 };

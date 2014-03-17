@@ -16,22 +16,14 @@
         ],
       },
     }],
-    ['OS=="linux"', {
-      'variables': {
-        'command': [
-          '../testing/xvfb.py',
-          '<(PRODUCT_DIR)',
-          '../tools/swarm_client/googletest/run_test_cases.py',
-          '<(PRODUCT_DIR)/net_unittests<(EXECUTABLE_SUFFIX)',
-        ],
-        'isolate_dependency_tracked': [
-          '../testing/xvfb.py',
-          '<(PRODUCT_DIR)/xdisplaycheck<(EXECUTABLE_SUFFIX)',
-        ],
-      },
-    }],
     ['OS=="linux" or OS=="mac" or OS=="win"', {
       'variables': {
+        'command': [
+          '../testing/test_env.py',
+          '<(PRODUCT_DIR)/net_unittests<(EXECUTABLE_SUFFIX)',
+          '--brave-new-test-launcher',
+          '--test-launcher-bot-mode',
+        ],
         'isolate_dependency_tracked': [
           '../testing/test_env.py',
           '<(PRODUCT_DIR)/net_unittests<(EXECUTABLE_SUFFIX)',
@@ -40,18 +32,9 @@
           '../third_party/pyftpdlib/',
           '../third_party/pywebsocket/',
           '../third_party/tlslite/',
-          '../tools/swarm_client/',
+          '../tools/swarming_client/',
           '<(PRODUCT_DIR)/pyproto/',
           'tools/testserver/',
-        ],
-      },
-    }],
-    ['OS=="mac" or OS=="win"', {
-      'variables': {
-        'command': [
-          '../testing/test_env.py',
-          '../tools/swarm_client/googletest/run_test_cases.py',
-          '<(PRODUCT_DIR)/net_unittests<(EXECUTABLE_SUFFIX)',
         ],
       },
     }],
@@ -59,9 +42,6 @@
       'variables': {
         'isolate_dependency_tracked': [
           '<(PRODUCT_DIR)/icudt.dll',
-        ],
-        'isolate_dependency_untracked': [
-          '../third_party/python_26/',
         ],
       },
     }],

@@ -244,7 +244,7 @@ bool DatabaseCheckHelper::ScanDatabase() {
 
         // Ensure the backing file exists as a normal file.
         base::PlatformFileInfo platform_file_info;
-        if (!file_util::GetFileInfo(
+        if (!base::GetFileInfo(
                 path_.Append(file_info.data_path), &platform_file_info) ||
             platform_file_info.is_directory ||
             platform_file_info.is_symbolic_link) {
@@ -536,8 +536,10 @@ base::PlatformFileError SandboxDirectoryDatabase::AddFileInfo(
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
   }
 
-  if (!VerifyIsDirectory(info.parent_id))
+  if (!IsDirectory(info.parent_id)) {
+    LOG(ERROR) << "New parent directory is a file!";
     return base::PLATFORM_FILE_ERROR_NOT_A_DIRECTORY;
+  }
 
   // This would be a fine place to limit the number of files in a directory, if
   // we decide to add that restriction.
@@ -586,7 +588,7 @@ bool SandboxDirectoryDatabase::UpdateFileInfo(
   if (!GetFileInfo(file_id, &old_info))
     return false;
   if (old_info.parent_id != new_info.parent_id &&
-      !VerifyIsDirectory(new_info.parent_id))
+      !IsDirectory(new_info.parent_id))
     return false;
   if (old_info.parent_id != new_info.parent_id ||
       old_info.name != new_info.name) {
@@ -751,7 +753,7 @@ bool SandboxDirectoryDatabase::Init(RecoveryOption recovery_option) {
       LOG(WARNING) << "Clearing SandboxDirectoryDatabase.";
       if (!base::DeleteFile(filesystem_data_directory_, true))
         return false;
-      if (!file_util::CreateDirectory(filesystem_data_directory_))
+      if (!base::CreateDirectory(filesystem_data_directory_))
         return false;
       return Init(FAIL_ON_CORRUPTION);
   }
@@ -772,6 +774,17 @@ bool SandboxDirectoryDatabase::RepairDatabase(const std::string& db_path) {
     return true;
   db_.reset();
   return false;
+}
+
+bool SandboxDirectoryDatabase::IsDirectory(FileId file_id) {
+  FileInfo info;
+  if (!file_id)
+    return true;  // The root is a directory.
+  if (!GetFileInfo(file_id, &info))
+    return false;
+  if (!info.is_directory())
+    return false;
+  return true;
 }
 
 bool SandboxDirectoryDatabase::IsFileSystemConsistent() {
@@ -853,19 +866,6 @@ bool SandboxDirectoryDatabase::GetLastFileId(FileId* file_id) {
   if (!StoreDefaultValues())
     return false;
   *file_id = 0;
-  return true;
-}
-
-bool SandboxDirectoryDatabase::VerifyIsDirectory(FileId file_id) {
-  FileInfo info;
-  if (!file_id)
-    return true;  // The root is a directory.
-  if (!GetFileInfo(file_id, &info))
-    return false;
-  if (!info.is_directory()) {
-    LOG(ERROR) << "New parent directory is a file!";
-    return false;
-  }
   return true;
 }
 

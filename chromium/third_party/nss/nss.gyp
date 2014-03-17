@@ -543,6 +543,11 @@
         'nss/lib/freebl/build_config_mac.h',
         'nss/lib/freebl/camellia.c',
         'nss/lib/freebl/camellia.h',
+        'nss/lib/freebl/chacha20/chacha20.c',
+        'nss/lib/freebl/chacha20/chacha20.h',
+        'nss/lib/freebl/chacha20/chacha20_vec.c',
+        'nss/lib/freebl/chacha20poly1305.c',
+        'nss/lib/freebl/chacha20poly1305.h',
         'nss/lib/freebl/ctr.c',
         'nss/lib/freebl/ctr.h',
         'nss/lib/freebl/cts.c',
@@ -600,6 +605,9 @@
         'nss/lib/freebl/mpi/mp_gf2m.c',
         'nss/lib/freebl/mpi/mp_gf2m.h',
         'nss/lib/freebl/mpi/primes.c',
+        'nss/lib/freebl/poly1305/poly1305-donna-x64-sse2-incremental-source.c',
+        'nss/lib/freebl/poly1305/poly1305.c',
+        'nss/lib/freebl/poly1305/poly1305.h',
         'nss/lib/freebl/pqg.c',
         'nss/lib/freebl/pqg.h',
         'nss/lib/freebl/rawhash.c',
@@ -1068,6 +1076,17 @@
           'sources!': [
             'nss/lib/freebl/mpi/mpi_amd64.c',
           ],
+        }],
+        ['target_arch=="x64" and OS!="win"', {
+          'sources!': [
+            'nss/lib/freebl/chacha20/chacha20.c',
+            'nss/lib/freebl/poly1305/poly1305.c',
+	    ],
+        }, { # else: target_arch!="x64" or OS=="win"
+          'sources!': [
+            'nss/lib/freebl/chacha20/chacha20_vec.c',
+            'nss/lib/freebl/poly1305/poly1305-donna-x64-sse2-incremental-source.c',
+	    ],
         }],
         ['OS=="mac" or OS=="ios"', {
           'defines': [

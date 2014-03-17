@@ -59,6 +59,10 @@ class AudioProcessingImpl : public AudioProcessing {
   virtual int Initialize() OVERRIDE;
   virtual int InitializeLocked();
   virtual void SetExtraOptions(const Config& config) OVERRIDE;
+  virtual int EnableExperimentalNs(bool enable) OVERRIDE;
+  virtual bool experimental_ns_enabled() const OVERRIDE {
+    return false;
+  }
   virtual int set_sample_rate_hz(int rate) OVERRIDE;
   virtual int sample_rate_hz() const OVERRIDE;
   virtual int set_num_channels(int input_channels,
@@ -75,6 +79,7 @@ class AudioProcessingImpl : public AudioProcessing {
   virtual int delay_offset_ms() const OVERRIDE;
   virtual int StartDebugRecording(
       const char filename[kMaxFilenameSize]) OVERRIDE;
+  virtual int StartDebugRecording(FILE* handle) OVERRIDE;
   virtual int StopDebugRecording() OVERRIDE;
   virtual EchoCancellation* echo_cancellation() const OVERRIDE;
   virtual EchoControlMobile* echo_control_mobile() const OVERRIDE;

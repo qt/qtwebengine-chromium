@@ -5,6 +5,8 @@
 #ifndef CC_OUTPUT_OUTPUT_SURFACE_H_
 #define CC_OUTPUT_OUTPUT_SURFACE_H_
 
+#include <deque>
+
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -13,6 +15,7 @@
 #include "cc/output/context_provider.h"
 #include "cc/output/software_output_device.h"
 #include "cc/scheduler/frame_rate_controller.h"
+#include "cc/scheduler/rolling_time_delta_history.h"
 
 namespace base { class SingleThreadTaskRunner; }
 
@@ -46,10 +49,10 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
 
   explicit OutputSurface(scoped_refptr<ContextProvider> context_provider);
 
-  explicit OutputSurface(scoped_ptr<cc::SoftwareOutputDevice> software_device);
+  explicit OutputSurface(scoped_ptr<SoftwareOutputDevice> software_device);
 
   OutputSurface(scoped_refptr<ContextProvider> context_provider,
-                scoped_ptr<cc::SoftwareOutputDevice> software_device);
+                scoped_ptr<SoftwareOutputDevice> software_device);
 
   virtual ~OutputSurface();
 
@@ -65,7 +68,7 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
     int max_frames_pending;
     bool deferred_gl_initialization;
     bool draw_and_swap_full_viewport_every_frame;
-    // This doesn't handle the <webview> case, but once BeginFrame is
+    // This doesn't handle the <webview> case, but once BeginImplFrame is
     // supported natively, we shouldn't need adjust_deadline_for_parent.
     bool adjust_deadline_for_parent;
     // Whether this output surface renders to the default OpenGL zero
@@ -101,7 +104,7 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
   // thread.
   virtual bool BindToClient(OutputSurfaceClient* client);
 
-  void InitializeBeginFrameEmulation(
+  void InitializeBeginImplFrameEmulation(
       base::SingleThreadTaskRunner* task_runner,
       bool throttle_frame_production,
       base::TimeDelta interval);
@@ -125,18 +128,22 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
   // processing should be stopped, or lowered in priority.
   virtual void UpdateSmoothnessTakesPriority(bool prefer_smoothness) {}
 
-  // Requests a BeginFrame notification from the output surface. The
+  // Requests a BeginImplFrame notification from the output surface. The
   // notification will be delivered by calling
-  // OutputSurfaceClient::BeginFrame until the callback is disabled.
-  virtual void SetNeedsBeginFrame(bool enable);
+  // OutputSurfaceClient::BeginImplFrame until the callback is disabled.
+  virtual void SetNeedsBeginImplFrame(bool enable);
 
   bool HasClient() { return !!client_; }
+
+  // Returns an estimate of the current GPU latency. When only a software
+  // device is present, returns 0.
+  base::TimeDelta GpuLatencyEstimate();
 
  protected:
   // Synchronously initialize context3d and enter hardware mode.
   // This can only supported in threaded compositing mode.
   // |offscreen_context_provider| should match what is returned by
-  // LayerTreeClient::OffscreenContextProviderForCompositorThread.
+  // LayerTreeClient::OffscreenContextProvider().
   bool InitializeAndSetContext3d(
       scoped_refptr<ContextProvider> context_provider,
       scoped_refptr<ContextProvider> offscreen_context_provider);
@@ -144,17 +151,14 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
 
   void PostSwapBuffersComplete();
 
-  struct cc::OutputSurface::Capabilities capabilities_;
+  struct OutputSurface::Capabilities capabilities_;
   scoped_refptr<ContextProvider> context_provider_;
-  scoped_ptr<cc::SoftwareOutputDevice> software_device_;
-  bool has_gl_discard_backbuffer_;
-  bool has_swap_buffers_complete_callback_;
+  scoped_ptr<SoftwareOutputDevice> software_device_;
   gfx::Size surface_size_;
   float device_scale_factor_;
-  base::WeakPtrFactory<OutputSurface> weak_ptr_factory_;
 
   // The FrameRateController is deprecated.
-  // Platforms should move to native BeginFrames instead.
+  // Platforms should move to native BeginImplFrames instead.
   void OnVSyncParametersChanged(base::TimeTicks timebase,
                                 base::TimeDelta interval);
   virtual void FrameRateControllerTick(bool throttled,
@@ -162,17 +166,17 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
   scoped_ptr<FrameRateController> frame_rate_controller_;
   int max_frames_pending_;
   int pending_swap_buffers_;
-  bool needs_begin_frame_;
-  bool client_ready_for_begin_frame_;
+  bool needs_begin_impl_frame_;
+  bool client_ready_for_begin_impl_frame_;
 
-  // This stores a BeginFrame that we couldn't process immediately, but might
-  // process retroactively in the near future.
-  BeginFrameArgs skipped_begin_frame_args_;
+  // This stores a BeginImplFrame that we couldn't process immediately,
+  // but might process retroactively in the near future.
+  BeginFrameArgs skipped_begin_impl_frame_args_;
 
   // Forwarded to OutputSurfaceClient but threaded through OutputSurface
   // first so OutputSurface has a chance to update the FrameRateController
   void SetNeedsRedrawRect(gfx::Rect damage_rect);
-  void BeginFrame(const BeginFrameArgs& args);
+  void BeginImplFrame(const BeginFrameArgs& args);
   void DidSwapBuffers();
   void OnSwapBuffersComplete();
   void ReclaimResources(const CompositorFrameAck* ack);
@@ -184,24 +188,29 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
                                   bool valid_for_tile_management);
 
   // virtual for testing.
-  virtual base::TimeTicks RetroactiveBeginFrameDeadline();
-  virtual void PostCheckForRetroactiveBeginFrame();
-  void CheckForRetroactiveBeginFrame();
+  virtual base::TimeTicks RetroactiveBeginImplFrameDeadline();
+  virtual void PostCheckForRetroactiveBeginImplFrame();
+  void CheckForRetroactiveBeginImplFrame();
 
  private:
   OutputSurfaceClient* client_;
-  friend class OutputSurfaceCallbacks;
 
   void SetUpContext3d();
   void ResetContext3d();
-  void SetMemoryPolicy(const ManagedMemoryPolicy& policy,
-                       bool discard_backbuffer_when_not_visible);
+  void SetMemoryPolicy(const ManagedMemoryPolicy& policy);
+  void UpdateAndMeasureGpuLatency();
 
-  // check_for_retroactive_begin_frame_pending_ is used to avoid posting
-  // redundant checks for a retroactive BeginFrame.
-  bool check_for_retroactive_begin_frame_pending_;
+  // check_for_retroactive_begin_impl_frame_pending_ is used to avoid posting
+  // redundant checks for a retroactive BeginImplFrame.
+  bool check_for_retroactive_begin_impl_frame_pending_;
 
   bool external_stencil_test_enabled_;
+
+  base::WeakPtrFactory<OutputSurface> weak_ptr_factory_;
+
+  std::deque<unsigned> available_gpu_latency_query_ids_;
+  std::deque<unsigned> pending_gpu_latency_query_ids_;
+  RollingTimeDeltaHistory gpu_latency_history_;
 
   DISALLOW_COPY_AND_ASSIGN(OutputSurface);
 };

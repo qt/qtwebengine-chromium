@@ -70,6 +70,8 @@ public:
     }
 
     void setGpu(GrGpu* gpu);
+
+    void adjustPathStencilParams(GrStencilSettings* settings);
 private:
     /**
      * Informs the helper function adjustStencilParams() about how the stencil
@@ -101,28 +103,30 @@ private:
     GrClipMaskCache fAACache;       // cache for the AA path
 
     // Draws the clip into the stencil buffer
-    bool createStencilClipMask(GrReducedClip::InitialState initialState,
+    bool createStencilClipMask(int32_t elementsGenID,
+                               GrReducedClip::InitialState initialState,
                                const GrReducedClip::ElementList& elements,
                                const SkIRect& clipSpaceIBounds,
                                const SkIPoint& clipSpaceToStencilOffset);
     // Creates an alpha mask of the clip. The mask is a rasterization of elements through the
     // rect specified by clipSpaceIBounds.
-    GrTexture* createAlphaClipMask(int32_t clipStackGenID,
+    GrTexture* createAlphaClipMask(int32_t elementsGenID,
                                    GrReducedClip::InitialState initialState,
                                    const GrReducedClip::ElementList& elements,
                                    const SkIRect& clipSpaceIBounds);
     // Similar to createAlphaClipMask but it rasterizes in SW and uploads to the result texture.
-    GrTexture* createSoftwareClipMask(int32_t clipStackGenID,
+    GrTexture* createSoftwareClipMask(int32_t elementsGenID,
                                       GrReducedClip::InitialState initialState,
                                       const GrReducedClip::ElementList& elements,
                                       const SkIRect& clipSpaceIBounds);
 
     // Gets a texture to use for the clip mask. If true is returned then a cached mask was found
     // that already contains the rasterization of the clip stack, otherwise an uninitialized texture
-    // is returned.
-    bool getMaskTexture(int32_t clipStackGenID,
+    // is returned. 'willUpload' is set when the alpha mask needs to be uploaded from the CPU.
+    bool getMaskTexture(int32_t elementsGenID,
                         const SkIRect& clipSpaceIBounds,
-                        GrTexture** result);
+                        GrTexture** result,
+                        bool willUpload);
 
     bool useSWOnlyPath(const GrReducedClip::ElementList& elements);
 

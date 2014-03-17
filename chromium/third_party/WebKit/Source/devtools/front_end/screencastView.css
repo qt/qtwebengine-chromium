@@ -30,10 +30,9 @@
 
 .screencast-navigation {
     -webkit-flex-direction: row;
-    background-color: #eee;
-    border-bottom: 1px solid #ccc;
     display: -webkit-flex;
-    padding-left: 2px;
+    height: 25px;
+    position: relative;
 }
 
 .screencast-navigation button {
@@ -47,8 +46,7 @@
     background-repeat: no-repeat;
     border: 1px solid transparent;
     height: 23px;
-    margin: 3px 1px 2px 1px;
-    padding: 2px;
+    padding: 3px 2px 1px;
     width: 23px;
 }
 
@@ -78,9 +76,9 @@
 
 .screencast-navigation input {
     -webkit-flex: 1;
-    border: 1px solid #ccc;
+    border: 1px solid #aaa;
     border-radius: 2px;
-    margin: 3px;
+    margin: 1px;
     padding-left: 5px;
 }
 
@@ -89,11 +87,24 @@
     outline: none !important;
 }
 
+.screencast-navigation .progress {
+    background-color: rgb(66, 129, 235);
+    height: 3px;
+    left: 0;
+    position: absolute;
+    top: 100%;  /* Align with the bottom edge of the parent. */
+    width: 0;
+    z-index: 2;  /* Above .screencast-glasspane. */
+}
+
 .screencast-viewport {
-    margin: 10px;
     border: 20px solid #333;
     border-radius: 20px;
-    position: relative;
+    position: absolute;
+    top: 36px;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
 }
 
 .screencast canvas {
@@ -136,6 +147,6 @@
   left: 0;
   position: absolute;
   right: 0;
-  top: 29px;
+  top: 25px;  /* Align with the botton edge of .screencast .navigation. */
   font-size: 30px;
 }

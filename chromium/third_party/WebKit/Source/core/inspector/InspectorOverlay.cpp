@@ -42,17 +42,17 @@
 #include "core/loader/EmptyClients.h"
 #include "core/page/Chrome.h"
 #include "core/page/EventHandler.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/platform/JSONValues.h"
-#include "core/platform/PlatformMouseEvent.h"
-#include "core/platform/graphics/GraphicsContextStateSaver.h"
+#include "core/frame/Settings.h"
 #include "core/rendering/RenderBoxModelObject.h"
 #include "core/rendering/RenderInline.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/style/RenderStyleConstants.h"
+#include "platform/JSONValues.h"
+#include "platform/PlatformMouseEvent.h"
+#include "platform/graphics/GraphicsContextStateSaver.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
@@ -248,12 +248,11 @@ InspectorOverlay::InspectorOverlay(Page* page, InspectorClient* client)
     : m_page(page)
     , m_client(client)
     , m_inspectModeEnabled(false)
+    , m_overlayHost(InspectorOverlayHost::create())
     , m_drawViewSize(false)
     , m_drawViewSizeWithGrid(false)
     , m_timer(this, &InspectorOverlay::onTimer)
-    , m_overlayHost(InspectorOverlayHost::create())
-    , m_overrides(0)
-    , m_overridesTopOffset(0)
+    , m_activeProfilerCount(0)
 {
 }
 
@@ -281,7 +280,7 @@ bool InspectorOverlay::handleGestureEvent(const PlatformGestureEvent& event)
     if (isEmpty())
         return false;
 
-    return overlayPage()->mainFrame()->eventHandler()->handleGestureEvent(event);
+    return overlayPage()->mainFrame()->eventHandler().handleGestureEvent(event);
 }
 
 bool InspectorOverlay::handleMouseEvent(const PlatformMouseEvent& event)
@@ -289,17 +288,17 @@ bool InspectorOverlay::handleMouseEvent(const PlatformMouseEvent& event)
     if (isEmpty())
         return false;
 
-    EventHandler* eventHandler = overlayPage()->mainFrame()->eventHandler();
+    EventHandler& eventHandler = overlayPage()->mainFrame()->eventHandler();
     bool result;
     switch (event.type()) {
     case PlatformEvent::MouseMoved:
-        result = eventHandler->handleMouseMoveEvent(event);
+        result = eventHandler.handleMouseMoveEvent(event);
         break;
     case PlatformEvent::MousePressed:
-        result = eventHandler->handleMousePressEvent(event);
+        result = eventHandler.handleMousePressEvent(event);
         break;
     case PlatformEvent::MouseReleased:
-        result = eventHandler->handleMouseReleaseEvent(event);
+        result = eventHandler.handleMouseReleaseEvent(event);
         break;
     default:
         return false;
@@ -314,7 +313,15 @@ bool InspectorOverlay::handleTouchEvent(const PlatformTouchEvent& event)
     if (isEmpty())
         return false;
 
-    return overlayPage()->mainFrame()->eventHandler()->handleTouchEvent(event);
+    return overlayPage()->mainFrame()->eventHandler().handleTouchEvent(event);
+}
+
+bool InspectorOverlay::handleKeyboardEvent(const PlatformKeyboardEvent& event)
+{
+    if (isEmpty())
+        return false;
+
+    return overlayPage()->mainFrame()->eventHandler().keyEvent(event);
 }
 
 void InspectorOverlay::drawOutline(GraphicsContext* context, const LayoutRect& rect, const Color& color)
@@ -351,25 +358,6 @@ void InspectorOverlay::setInspectModeEnabled(bool enabled)
 {
     m_inspectModeEnabled = enabled;
     update();
-}
-
-void InspectorOverlay::setOverride(OverrideType type, bool enabled)
-{
-    bool currentEnabled = m_overrides & type;
-    if (currentEnabled == enabled)
-        return;
-    if (enabled)
-        m_overrides |= type;
-    else
-        m_overrides &= ~type;
-    update();
-}
-
-void InspectorOverlay::setOverridesTopOffset(int offset)
-{
-    m_overridesTopOffset = offset;
-    if (m_overrides)
-        update();
 }
 
 void InspectorOverlay::hideHighlight()
@@ -410,7 +398,9 @@ Node* InspectorOverlay::highlightedNode() const
 
 bool InspectorOverlay::isEmpty()
 {
-    bool hasAlwaysVisibleElements = m_highlightNode || m_eventTargetNode || m_highlightQuad || m_overrides || !m_size.isEmpty() || m_drawViewSize;
+    if (m_activeProfilerCount)
+        return true;
+    bool hasAlwaysVisibleElements = m_highlightNode || m_eventTargetNode || m_highlightQuad || !m_size.isEmpty() || m_drawViewSize;
     bool hasInvisibleInInspectModeElements = !m_pausedInDebuggerMessage.isNull();
     return !(hasAlwaysVisibleElements || (hasInvisibleInInspectModeElements && !m_inspectModeEnabled));
 }
@@ -427,6 +417,8 @@ void InspectorOverlay::update()
         return;
     IntRect viewRect = view->visibleContentRect();
     FrameView* overlayView = overlayPage()->mainFrame()->view();
+
+    // Include scrollbars to avoid masking them by the gutter.
     IntSize frameViewFullSize = view->visibleContentRect(ScrollableArea::IncludeScrollbars).size();
     IntSize size = m_size.isEmpty() ? frameViewFullSize : m_size;
     size.scale(m_page->pageScaleFactor());
@@ -435,14 +427,11 @@ void InspectorOverlay::update()
     // Clear canvas and paint things.
     reset(size, m_size.isEmpty() ? IntSize() : frameViewFullSize, viewRect.x(), viewRect.y());
 
-    // Include scrollbars to avoid masking them by the gutter.
-    drawGutter();
     drawNodeHighlight();
     drawQuadHighlight();
     if (!m_inspectModeEnabled)
         drawPausedInDebuggerMessage();
     drawViewSize();
-    drawOverridesMessage();
 
     // Position DOM elements.
     overlayPage()->mainFrame()->document()->recalcStyle(Force);
@@ -463,8 +452,6 @@ void InspectorOverlay::hide()
     m_size = IntSize();
     m_drawViewSize = false;
     m_drawViewSizeWithGrid = false;
-    m_overrides = 0;
-    m_overridesTopOffset = 0;
     update();
 }
 
@@ -511,11 +498,6 @@ static PassRefPtr<JSONObject> buildObjectForSize(const IntSize& size)
     return result.release();
 }
 
-void InspectorOverlay::drawGutter()
-{
-    evaluateInOverlay("drawGutter", "");
-}
-
 void InspectorOverlay::drawNodeHighlight()
 {
     if (!m_highlightNode)
@@ -558,9 +540,9 @@ void InspectorOverlay::drawNodeHighlight()
         }
         if (pseudoElement) {
             if (pseudoElement->pseudoId() == BEFORE)
-                classNames.append(":before");
+                classNames.append("::before");
             else if (pseudoElement->pseudoId() == AFTER)
-                classNames.append(":after");
+                classNames.append("::after");
         }
         if (!classNames.isEmpty())
             elementInfo->setString("className", classNames.toString());
@@ -599,15 +581,6 @@ void InspectorOverlay::drawViewSize()
         evaluateInOverlay("drawViewSize", m_drawViewSizeWithGrid ? "true" : "false");
 }
 
-void InspectorOverlay::drawOverridesMessage()
-{
-    RefPtr<JSONObject> data = JSONObject::create();
-    if (!m_drawViewSize)
-        data->setNumber("overrides", m_overrides);
-    data->setNumber("topOffset", m_overridesTopOffset);
-    evaluateInOverlay("drawOverridesMessage", data.release());
-}
-
 Page* InspectorOverlay::overlayPage()
 {
     if (m_overlayPage)
@@ -620,17 +593,16 @@ Page* InspectorOverlay::overlayPage()
     m_overlayChromeClient = adoptPtr(new InspectorOverlayChromeClient(m_page->chrome().client(), this));
     pageClients.chromeClient = m_overlayChromeClient.get();
     m_overlayPage = adoptPtr(new Page(pageClients));
-    m_overlayPage->setGroupType(Page::InspectorPageGroup);
 
     Settings& settings = m_page->settings();
     Settings& overlaySettings = m_overlayPage->settings();
 
-    overlaySettings.setStandardFontFamily(settings.standardFontFamily());
-    overlaySettings.setSerifFontFamily(settings.serifFontFamily());
-    overlaySettings.setSansSerifFontFamily(settings.sansSerifFontFamily());
-    overlaySettings.setCursiveFontFamily(settings.cursiveFontFamily());
-    overlaySettings.setFantasyFontFamily(settings.fantasyFontFamily());
-    overlaySettings.setPictographFontFamily(settings.pictographFontFamily());
+    overlaySettings.genericFontFamilySettings().setStandard(settings.genericFontFamilySettings().standard());
+    overlaySettings.genericFontFamilySettings().setSerif(settings.genericFontFamilySettings().serif());
+    overlaySettings.genericFontFamilySettings().setSansSerif(settings.genericFontFamilySettings().sansSerif());
+    overlaySettings.genericFontFamilySettings().setCursive(settings.genericFontFamilySettings().cursive());
+    overlaySettings.genericFontFamilySettings().setFantasy(settings.genericFontFamilySettings().fantasy());
+    overlaySettings.genericFontFamilySettings().setPictograph(settings.genericFontFamilySettings().pictograph());
     overlaySettings.setMinimumFontSize(settings.minimumFontSize());
     overlaySettings.setMinimumLogicalFontSize(settings.minimumLogicalFontSize());
     overlaySettings.setMediaEnabled(false);
@@ -638,23 +610,23 @@ Page* InspectorOverlay::overlayPage()
     overlaySettings.setPluginsEnabled(false);
     overlaySettings.setLoadsImagesAutomatically(true);
 
-    RefPtr<Frame> frame = Frame::create(m_overlayPage.get(), 0, dummyFrameLoaderClient);
+    RefPtr<Frame> frame = Frame::create(FrameInit::create(0, m_overlayPage.get(), dummyFrameLoaderClient));
     frame->setView(FrameView::create(frame.get()));
     frame->init();
-    FrameLoader* loader = frame->loader();
+    FrameLoader& loader = frame->loader();
     frame->view()->setCanHaveScrollbars(false);
     frame->view()->setTransparent(true);
-    ASSERT(loader->activeDocumentLoader());
-    DocumentWriter* writer = loader->activeDocumentLoader()->beginWriting("text/html", "UTF-8");
+    ASSERT(loader.activeDocumentLoader());
+    DocumentWriter* writer = loader.activeDocumentLoader()->beginWriting("text/html", "UTF-8");
     writer->addData(reinterpret_cast<const char*>(InspectorOverlayPage_html), sizeof(InspectorOverlayPage_html));
-    loader->activeDocumentLoader()->endWriting(writer);
+    loader.activeDocumentLoader()->endWriting(writer);
     v8::Isolate* isolate = toIsolate(frame.get());
     v8::HandleScope handleScope(isolate);
-    v8::Handle<v8::Context> frameContext = frame->script()->currentWorldContext();
+    v8::Handle<v8::Context> frameContext = frame->script().currentWorldContext();
     v8::Context::Scope contextScope(frameContext);
     v8::Handle<v8::Value> overlayHostObj = toV8(m_overlayHost.get(), v8::Handle<v8::Object>(), isolate);
     v8::Handle<v8::Object> global = frameContext->Global();
-    global->Set(v8::String::New("InspectorOverlayHost"), overlayHostObj);
+    global->Set(v8::String::NewFromUtf8(isolate, "InspectorOverlayHost"), overlayHostObj);
 
 #if OS(WIN)
     evaluateInOverlay("setPlatform", "windows");
@@ -685,7 +657,7 @@ void InspectorOverlay::evaluateInOverlay(const String& method, const String& arg
     RefPtr<JSONArray> command = JSONArray::create();
     command->pushString(method);
     command->pushString(argument);
-    overlayPage()->mainFrame()->script()->executeScriptInMainWorld(ScriptSourceCode("dispatch(" + command->toJSONString() + ")"));
+    overlayPage()->mainFrame()->script().executeScriptInMainWorld("dispatch(" + command->toJSONString() + ")", ScriptController::ExecuteScriptWhenScriptsDisabled);
 }
 
 void InspectorOverlay::evaluateInOverlay(const String& method, PassRefPtr<JSONValue> argument)
@@ -693,7 +665,7 @@ void InspectorOverlay::evaluateInOverlay(const String& method, PassRefPtr<JSONVa
     RefPtr<JSONArray> command = JSONArray::create();
     command->pushString(method);
     command->pushValue(argument);
-    overlayPage()->mainFrame()->script()->executeScriptInMainWorld(ScriptSourceCode("dispatch(" + command->toJSONString() + ")"));
+    overlayPage()->mainFrame()->script().executeScriptInMainWorld("dispatch(" + command->toJSONString() + ")", ScriptController::ExecuteScriptWhenScriptsDisabled);
 }
 
 void InspectorOverlay::onTimer(Timer<InspectorOverlay>*)
@@ -712,6 +684,12 @@ void InspectorOverlay::freePage()
     m_overlayPage.clear();
     m_overlayChromeClient.clear();
     m_timer.stop();
+}
+
+void InspectorOverlay::startedRecordingProfile()
+{
+    if (!m_activeProfilerCount++)
+        freePage();
 }
 
 } // namespace WebCore

@@ -38,8 +38,10 @@
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
+#include "ui/base/android/window_android.h"
 #include "ui/gfx/android/device_display_info.h"
 #include "ui/gfx/android/java_bitmap.h"
+#include "ui/gfx/frame_time.h"
 #include "webkit/common/gpu/context_provider_in_process.h"
 #include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 
@@ -90,8 +92,6 @@ class OutputSurfaceWithoutParent : public cc::OutputSurface {
 };
 
 static bool g_initialized = false;
-static base::Thread* g_impl_thread = NULL;
-static bool g_use_direct_gl = false;
 
 } // anonymous namespace
 
@@ -104,8 +104,9 @@ static base::LazyInstance<SurfaceMap>
 static base::LazyInstance<base::Lock> g_surface_map_lock;
 
 // static
-Compositor* Compositor::Create(CompositorClient* client) {
-  return client ? new CompositorImpl(client) : NULL;
+Compositor* Compositor::Create(CompositorClient* client,
+                               gfx::NativeWindow root_window) {
+  return client ? new CompositorImpl(client, root_window) : NULL;
 }
 
 // static
@@ -115,30 +116,8 @@ void Compositor::Initialize() {
 }
 
 // static
-void Compositor::InitializeWithFlags(uint32 flags) {
-  g_use_direct_gl = flags & DIRECT_CONTEXT_ON_DRAW_THREAD;
-  if (flags & ENABLE_COMPOSITOR_THREAD) {
-    TRACE_EVENT_INSTANT0("test_gpu", "ThreadedCompositingInitialization",
-                         TRACE_EVENT_SCOPE_THREAD);
-    g_impl_thread = new base::Thread("Browser Compositor");
-    g_impl_thread->Start();
-  }
-  Compositor::Initialize();
-}
-
-// static
 bool CompositorImpl::IsInitialized() {
   return g_initialized;
-}
-
-// static
-bool CompositorImpl::IsThreadingEnabled() {
-  return g_impl_thread;
-}
-
-// static
-bool CompositorImpl::UsesDirectGL() {
-  return g_use_direct_gl;
 }
 
 // static
@@ -152,31 +131,30 @@ jobject CompositorImpl::GetSurface(int surface_id) {
   return jsurface;
 }
 
-CompositorImpl::CompositorImpl(CompositorClient* client)
+CompositorImpl::CompositorImpl(CompositorClient* client,
+                               gfx::NativeWindow root_window)
     : root_layer_(cc::Layer::Create()),
       has_transparent_background_(false),
       window_(NULL),
       surface_id_(0),
       client_(client),
-      weak_factory_(this) {
+      root_window_(root_window) {
   DCHECK(client);
+  DCHECK(root_window);
   ImageTransportFactoryAndroid::AddObserver(this);
+  root_window->AttachCompositor();
 }
 
 CompositorImpl::~CompositorImpl() {
+  root_window_->DetachCompositor();
   ImageTransportFactoryAndroid::RemoveObserver(this);
   // Clean-up any surface references.
   SetSurface(NULL);
 }
 
-void CompositorImpl::SetNeedsRedraw() {
-  if (host_)
-    host_->SetNeedsRedraw();
-}
-
 void CompositorImpl::Composite() {
   if (host_)
-    host_->Composite(base::TimeTicks::Now());
+    host_->Composite(gfx::FrameTime::Now());
 }
 
 void CompositorImpl::SetRootLayer(scoped_refptr<cc::Layer> root_layer) {
@@ -248,16 +226,7 @@ void CompositorImpl::SetVisible(bool visible) {
     settings.use_memory_management = false;
     settings.highp_threshold_min = 2048;
 
-    // Do not clear the framebuffer when rendering into external GL contexts
-    // like Android View System's.
-    if (UsesDirectGL())
-      settings.should_clear_root_render_pass = false;
-
-    scoped_refptr<base::SingleThreadTaskRunner> impl_thread_task_runner =
-        g_impl_thread ? g_impl_thread->message_loop()->message_loop_proxy()
-                      : NULL;
-
-    host_ = cc::LayerTreeHost::Create(this, settings, impl_thread_task_runner);
+    host_ = cc::LayerTreeHost::CreateSingleThreaded(this, this, NULL, settings);
     host_->SetRootLayer(root_layer_);
 
     host_->SetVisible(true);
@@ -285,12 +254,6 @@ void CompositorImpl::SetWindowBounds(const gfx::Size& size) {
   root_layer_->SetBounds(size);
 }
 
-void CompositorImpl::SetHasTransparentBackground(bool flag) {
-  has_transparent_background_ = flag;
-  if (host_)
-    host_->set_has_transparent_background(flag);
-}
-
 bool CompositorImpl::CompositeAndReadback(void *pixels, const gfx::Rect& rect) {
   if (host_)
     return host_->CompositeAndReadback(pixels, rect);
@@ -315,15 +278,15 @@ void CompositorImpl::DeleteUIResource(cc::UIResourceId resource_id) {
     ui_resource_map_.erase(it);
 }
 
-WebKit::WebGLId CompositorImpl::GenerateTexture(gfx::JavaBitmap& bitmap) {
+blink::WebGLId CompositorImpl::GenerateTexture(gfx::JavaBitmap& bitmap) {
   unsigned int texture_id = BuildBasicTexture();
-  WebKit::WebGraphicsContext3D* context =
+  blink::WebGraphicsContext3D* context =
       ImageTransportFactoryAndroid::GetInstance()->GetContext3D();
   if (texture_id == 0 || context->isContextLost() ||
       !context->makeContextCurrent())
     return 0;
-  WebKit::WebGLId format = GetGLFormatForBitmap(bitmap);
-  WebKit::WebGLId type = GetGLTypeForBitmap(bitmap);
+  blink::WebGLId format = GetGLFormatForBitmap(bitmap);
+  blink::WebGLId type = GetGLTypeForBitmap(bitmap);
 
   context->texImage2D(GL_TEXTURE_2D,
                       0,
@@ -338,11 +301,11 @@ WebKit::WebGLId CompositorImpl::GenerateTexture(gfx::JavaBitmap& bitmap) {
   return texture_id;
 }
 
-WebKit::WebGLId CompositorImpl::GenerateCompressedTexture(gfx::Size& size,
+blink::WebGLId CompositorImpl::GenerateCompressedTexture(gfx::Size& size,
                                                           int data_size,
                                                           void* data) {
   unsigned int texture_id = BuildBasicTexture();
-  WebKit::WebGraphicsContext3D* context =
+  blink::WebGraphicsContext3D* context =
         ImageTransportFactoryAndroid::GetInstance()->GetContext3D();
   if (texture_id == 0 || context->isContextLost() ||
       !context->makeContextCurrent())
@@ -359,8 +322,8 @@ WebKit::WebGLId CompositorImpl::GenerateCompressedTexture(gfx::Size& size,
   return texture_id;
 }
 
-void CompositorImpl::DeleteTexture(WebKit::WebGLId texture_id) {
-  WebKit::WebGraphicsContext3D* context =
+void CompositorImpl::DeleteTexture(blink::WebGLId texture_id) {
+  blink::WebGraphicsContext3D* context =
       ImageTransportFactoryAndroid::GetInstance()->GetContext3D();
   if (context->isContextLost() || !context->makeContextCurrent())
     return;
@@ -368,12 +331,12 @@ void CompositorImpl::DeleteTexture(WebKit::WebGLId texture_id) {
   context->shallowFlushCHROMIUM();
 }
 
-bool CompositorImpl::CopyTextureToBitmap(WebKit::WebGLId texture_id,
+bool CompositorImpl::CopyTextureToBitmap(blink::WebGLId texture_id,
                                          gfx::JavaBitmap& bitmap) {
   return CopyTextureToBitmap(texture_id, gfx::Rect(bitmap.size()), bitmap);
 }
 
-bool CompositorImpl::CopyTextureToBitmap(WebKit::WebGLId texture_id,
+bool CompositorImpl::CopyTextureToBitmap(blink::WebGLId texture_id,
                                          const gfx::Rect& sub_rect,
                                          gfx::JavaBitmap& bitmap) {
   // The sub_rect should match the bitmap size.
@@ -389,68 +352,52 @@ bool CompositorImpl::CopyTextureToBitmap(WebKit::WebGLId texture_id,
 
 static scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
 CreateGpuProcessViewContext(
-    const WebKit::WebGraphicsContext3D::Attributes attributes,
-    int surface_id,
-    base::WeakPtr<CompositorImpl> compositor_impl) {
-  GpuChannelHostFactory* factory = BrowserGpuChannelHostFactory::instance();
+    const blink::WebGraphicsContext3D::Attributes attributes,
+    int surface_id) {
+  BrowserGpuChannelHostFactory* factory =
+      BrowserGpuChannelHostFactory::instance();
+  CauseForGpuLaunch cause =
+      CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE;
+  scoped_refptr<GpuChannelHost> gpu_channel_host(
+      factory->EstablishGpuChannelSync(cause));
+  if (!gpu_channel_host)
+    return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
+
   GURL url("chrome://gpu/Compositor::createContext3D");
-  scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context(
-      new WebGraphicsContext3DCommandBufferImpl(surface_id,
-                                                url,
-                                                factory,
-                                                compositor_impl));
   static const size_t kBytesPerPixel = 4;
   gfx::DeviceDisplayInfo display_info;
   size_t full_screen_texture_size_in_bytes =
       display_info.GetDisplayHeight() *
       display_info.GetDisplayWidth() *
       kBytesPerPixel;
-  if (!context->Initialize(
-          attributes,
-          false,
-          CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE,
-          64 * 1024,  // command buffer size
-          64 * 1024,  // start transfer buffer size
-          64 * 1024,  // min transfer buffer size
-          std::min(3 * full_screen_texture_size_in_bytes,
-                   kDefaultMaxTransferBufferSize),
-          2 * 1024 * 1024  // mapped memory limit
-  )) {
-    LOG(ERROR) << "Failed to create 3D context for compositor.";
-    return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
-  }
-  return context.Pass();
+  WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits limits;
+  limits.command_buffer_size = 64 * 1024;
+  limits.start_transfer_buffer_size = 64 * 1024;
+  limits.min_transfer_buffer_size = 64 * 1024;
+  limits.max_transfer_buffer_size = std::min(
+      3 * full_screen_texture_size_in_bytes, kDefaultMaxTransferBufferSize);
+  limits.mapped_memory_reclaim_limit = 2 * 1024 * 1024;
+  return make_scoped_ptr(
+      new WebGraphicsContext3DCommandBufferImpl(surface_id,
+                                                url,
+                                                gpu_channel_host.get(),
+                                                attributes,
+                                                false,
+                                                limits));
 }
 
 scoped_ptr<cc::OutputSurface> CompositorImpl::CreateOutputSurface(
     bool fallback) {
-  WebKit::WebGraphicsContext3D::Attributes attrs;
+  blink::WebGraphicsContext3D::Attributes attrs;
   attrs.shareResources = true;
   attrs.noAutomaticFlushes = true;
-
-  if (g_use_direct_gl) {
-    using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
-    scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl> context3d =
-        WebGraphicsContext3DInProcessCommandBufferImpl::CreateViewContext(
-            attrs, window_);
-    scoped_refptr<webkit::gpu::ContextProviderInProcess> context_provider =
-        webkit::gpu::ContextProviderInProcess::Create(context3d.Pass(),
-                                                      "BrowserCompositor");
-
-    scoped_ptr<cc::OutputSurface> output_surface;
-    if (!window_)
-      output_surface.reset(new DirectOutputSurface(context_provider));
-    else
-      output_surface.reset(new cc::OutputSurface(context_provider));
-    return output_surface.Pass();
-  }
 
   DCHECK(window_);
   DCHECK(surface_id_);
 
   scoped_refptr<ContextProviderCommandBuffer> context_provider =
-      ContextProviderCommandBuffer::Create(CreateGpuProcessViewContext(
-          attrs, surface_id_, weak_factory_.GetWeakPtr()), "BrowserCompositor");
+      ContextProviderCommandBuffer::Create(
+          CreateGpuProcessViewContext(attrs, surface_id_), "BrowserCompositor");
   if (!context_provider.get()) {
     LOG(ERROR) << "Failed to create 3D context for compositor.";
     return scoped_ptr<cc::OutputSurface>();
@@ -464,6 +411,14 @@ void CompositorImpl::OnLostResources() {
   client_->DidLoseResources();
 }
 
+scoped_refptr<cc::ContextProvider> CompositorImpl::OffscreenContextProvider() {
+  // There is no support for offscreen contexts, or compositor filters that
+  // would require them in this compositor instance. If they are needed,
+  // then implement a context provider that provides contexts from
+  // ImageTransportSurfaceAndroid.
+  return NULL;
+}
+
 void CompositorImpl::DidCompleteSwapBuffers() {
   client_->OnSwapBuffersCompleted();
 }
@@ -472,46 +427,26 @@ void CompositorImpl::ScheduleComposite() {
   client_->ScheduleComposite();
 }
 
-scoped_refptr<cc::ContextProvider>
-CompositorImpl::OffscreenContextProviderForMainThread() {
-  // There is no support for offscreen contexts, or compositor filters that
-  // would require them in this compositor instance. If they are needed,
-  // then implement a context provider that provides contexts from
-  // ImageTransportSurfaceAndroid.
-  return NULL;
+void CompositorImpl::ScheduleAnimation() {
+  ScheduleComposite();
 }
 
-scoped_refptr<cc::ContextProvider>
-CompositorImpl::OffscreenContextProviderForCompositorThread() {
-  // There is no support for offscreen contexts, or compositor filters that
-  // would require them in this compositor instance. If they are needed,
-  // then implement a context provider that provides contexts from
-  // ImageTransportSurfaceAndroid.
-  return NULL;
-}
-
-void CompositorImpl::OnViewContextSwapBuffersPosted() {
-  TRACE_EVENT0("compositor", "CompositorImpl::OnViewContextSwapBuffersPosted");
+void CompositorImpl::DidPostSwapBuffers() {
+  TRACE_EVENT0("compositor", "CompositorImpl::DidPostSwapBuffers");
   client_->OnSwapBuffersPosted();
 }
 
-void CompositorImpl::OnViewContextSwapBuffersComplete() {
-  TRACE_EVENT0("compositor",
-               "CompositorImpl::OnViewContextSwapBuffersComplete");
+void CompositorImpl::DidAbortSwapBuffers() {
+  TRACE_EVENT0("compositor", "CompositorImpl::DidAbortSwapBuffers");
   client_->OnSwapBuffersCompleted();
 }
 
-void CompositorImpl::OnViewContextSwapBuffersAborted() {
-  TRACE_EVENT0("compositor", "CompositorImpl::OnViewContextSwapBuffersAborted");
-  client_->OnSwapBuffersCompleted();
-}
-
-WebKit::WebGLId CompositorImpl::BuildBasicTexture() {
-  WebKit::WebGraphicsContext3D* context =
+blink::WebGLId CompositorImpl::BuildBasicTexture() {
+  blink::WebGraphicsContext3D* context =
             ImageTransportFactoryAndroid::GetInstance()->GetContext3D();
   if (context->isContextLost() || !context->makeContextCurrent())
     return 0;
-  WebKit::WebGLId texture_id = context->createTexture();
+  blink::WebGLId texture_id = context->createTexture();
   context->bindTexture(GL_TEXTURE_2D, texture_id);
   context->texParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
   context->texParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -520,7 +455,7 @@ WebKit::WebGLId CompositorImpl::BuildBasicTexture() {
   return texture_id;
 }
 
-WebKit::WGC3Denum CompositorImpl::GetGLFormatForBitmap(
+blink::WGC3Denum CompositorImpl::GetGLFormatForBitmap(
     gfx::JavaBitmap& bitmap) {
   switch (bitmap.format()) {
     case ANDROID_BITMAP_FORMAT_A_8:
@@ -538,7 +473,7 @@ WebKit::WGC3Denum CompositorImpl::GetGLFormatForBitmap(
   }
 }
 
-WebKit::WGC3Denum CompositorImpl::GetGLTypeForBitmap(gfx::JavaBitmap& bitmap) {
+blink::WGC3Denum CompositorImpl::GetGLTypeForBitmap(gfx::JavaBitmap& bitmap) {
   switch (bitmap.format()) {
     case ANDROID_BITMAP_FORMAT_A_8:
       return GL_UNSIGNED_BYTE;
@@ -553,6 +488,10 @@ WebKit::WGC3Denum CompositorImpl::GetGLTypeForBitmap(gfx::JavaBitmap& bitmap) {
     default:
       return GL_UNSIGNED_SHORT_5_6_5;
   }
+}
+
+void CompositorImpl::DidCommit() {
+  root_window_->OnCompositingDidCommit();
 }
 
 } // namespace content

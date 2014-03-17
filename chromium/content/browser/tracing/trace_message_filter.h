@@ -20,9 +20,6 @@ class TraceMessageFilter : public BrowserMessageFilter {
  public:
   TraceMessageFilter();
 
-  // BrowserMessageFilter override.
-  virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE;
-
   // BrowserMessageFilter implementation.
   virtual void OnChannelClosing() OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message,
@@ -31,6 +28,10 @@ class TraceMessageFilter : public BrowserMessageFilter {
   void SendBeginTracing(const std::string& category_filter_str,
                         base::debug::TraceLog::Options options);
   void SendEndTracing();
+  void SendEnableMonitoring(const std::string& category_filter_str,
+                            base::debug::TraceLog::Options options);
+  void SendDisableMonitoring();
+  void SendCaptureMonitoringSnapshot();
   void SendGetTraceBufferPercentFull();
   void SendSetWatchEvent(const std::string& category_name,
                          const std::string& event_name);
@@ -43,15 +44,19 @@ class TraceMessageFilter : public BrowserMessageFilter {
   // Message handlers.
   void OnChildSupportsTracing();
   void OnEndTracingAck(const std::vector<std::string>& known_categories);
-  void OnTraceNotification(int notification);
+  void OnCaptureMonitoringSnapshotAcked();
+  void OnWatchEventMatched();
   void OnTraceBufferPercentFullReply(float percent_full);
   void OnTraceDataCollected(const std::string& data);
+  void OnMonitoringTraceDataCollected(const std::string& data);
 
   // ChildTraceMessageFilter exists:
   bool has_child_;
 
   // Awaiting ack for previously sent SendEndTracing
   bool is_awaiting_end_ack_;
+  // Awaiting ack for previously sent SendCaptureMonitoringSnapshot
+  bool is_awaiting_capture_monitoring_snapshot_ack_;
   // Awaiting ack for previously sent SendGetTraceBufferPercentFull
   bool is_awaiting_buffer_percent_full_ack_;
 

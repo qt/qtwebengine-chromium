@@ -23,18 +23,16 @@
 #include "config.h"
 #include "core/svg/SVGStyleElement.h"
 
-#include "SVGNames.h"
 #include "core/css/CSSStyleSheet.h"
 #include "wtf/StdLibExtras.h"
 
 namespace WebCore {
 
-inline SVGStyleElement::SVGStyleElement(const QualifiedName& tagName, Document& document, bool createdByParser)
-    : SVGElement(tagName, document)
+inline SVGStyleElement::SVGStyleElement(Document& document, bool createdByParser)
+    : SVGElement(SVGNames::styleTag, document)
     , StyleElement(&document, createdByParser)
     , m_svgLoadEventTimer(this, &SVGElement::svgLoadEventTimerFired)
 {
-    ASSERT(hasTagName(SVGNames::styleTag));
     ScriptWrappable::init(this);
 }
 
@@ -43,9 +41,9 @@ SVGStyleElement::~SVGStyleElement()
     StyleElement::clearDocumentData(document(), this);
 }
 
-PassRefPtr<SVGStyleElement> SVGStyleElement::create(const QualifiedName& tagName, Document& document, bool createdByParser)
+PassRefPtr<SVGStyleElement> SVGStyleElement::create(Document& document, bool createdByParser)
 {
-    return adoptRef(new SVGStyleElement(tagName, document, createdByParser));
+    return adoptRef(new SVGStyleElement(document, createdByParser));
 }
 
 bool SVGStyleElement::disabled() const

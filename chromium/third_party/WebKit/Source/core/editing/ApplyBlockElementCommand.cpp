@@ -117,8 +117,9 @@ void ApplyBlockElementCommand::formatSelection(const VisiblePosition& startOfSel
 
     RefPtr<Element> blockquoteForNextIndent;
     VisiblePosition endOfCurrentParagraph = endOfParagraph(startOfSelection);
-    VisiblePosition endAfterSelection = endOfParagraph(endOfParagraph(endOfSelection).next());
-    m_endOfLastParagraph = endOfParagraph(endOfSelection).deepEquivalent();
+    VisiblePosition endOfLastParagraph = endOfParagraph(endOfSelection);
+    VisiblePosition endAfterSelection = endOfParagraph(endOfLastParagraph.next());
+    m_endOfLastParagraph = endOfLastParagraph.deepEquivalent();
 
     bool atEnd = false;
     Position end;
@@ -129,7 +130,6 @@ void ApplyBlockElementCommand::formatSelection(const VisiblePosition& startOfSel
         rangeForParagraphSplittingTextNodesIfNeeded(endOfCurrentParagraph, start, end);
         endOfCurrentParagraph = end;
 
-        Position afterEnd = end.next();
         Node* enclosingCell = enclosingNodeOfType(start, &isTableCell);
         VisiblePosition endOfNextParagraph = endOfNextParagrahSplittingTextNodesIfNeeded(endOfCurrentParagraph, start, end);
 
@@ -146,11 +146,9 @@ void ApplyBlockElementCommand::formatSelection(const VisiblePosition& startOfSel
         if (endAfterSelection.isNotNull() && !endAfterSelection.deepEquivalent().inDocument())
             break;
         // Sanity check: Make sure our moveParagraph calls didn't remove endOfNextParagraph.deepEquivalent().deprecatedNode()
-        // If somehow we did, return to prevent crashes.
-        if (endOfNextParagraph.isNotNull() && !endOfNextParagraph.deepEquivalent().inDocument()) {
-            ASSERT_NOT_REACHED();
+        // If somehow, e.g. mutation event handler, we did, return to prevent crashes.
+        if (endOfNextParagraph.isNotNull() && !endOfNextParagraph.deepEquivalent().inDocument())
             return;
-        }
         endOfCurrentParagraph = endOfNextParagraph;
     }
 }
@@ -162,9 +160,9 @@ static bool isNewLineAtPosition(const Position& position)
     if (!textNode || !textNode->isTextNode() || offset < 0 || offset >= textNode->maxCharacterOffset())
         return false;
 
-    TrackExceptionState es;
-    String textAtPosition = toText(textNode)->substringData(offset, 1, es);
-    if (es.hadException())
+    TrackExceptionState exceptionState;
+    String textAtPosition = toText(textNode)->substringData(offset, 1, exceptionState);
+    if (exceptionState.hadException())
         return false;
 
     return textAtPosition[0] == '\n';

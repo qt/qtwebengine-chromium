@@ -25,6 +25,8 @@
 #include "ui/gl/gl_surface_stub.h"
 #include "ui/gl/gl_mock.h"
 
+class CommandLine;
+
 namespace gpu {
 namespace gles2 {
 
@@ -162,6 +164,17 @@ class GLES2DecoderTestBase : public testing::Test {
       bool request_stencil,
       bool bind_generates_resource);
 
+  void InitDecoderWithCommandLine(
+      const char* extensions,
+      bool has_alpha,
+      bool has_depth,
+      bool has_stencil,
+      bool request_alpha,
+      bool request_depth,
+      bool request_stencil,
+      bool bind_generates_resource,
+      const CommandLine* command_line);
+
   const ContextGroup& group() const {
     return *group_.get();
   }
@@ -183,12 +196,6 @@ class GLES2DecoderTestBase : public testing::Test {
       GLuint client_id, GLuint service_id,
       GLuint vertex_shader_client_id, GLuint vertex_shader_service_id,
       GLuint fragment_shader_client_id, GLuint fragment_shader_service_id);
-
-  void SetupExpectationsForClearingUniforms(
-      UniformInfo* uniforms, size_t num_uniforms) {
-    TestHelper::SetupExpectationsForClearingUniforms(
-        gl_.get(), uniforms, num_uniforms);
-  }
 
   void SetupInitCapabilitiesExpectations();
   void SetupInitStateExpectations();
@@ -237,11 +244,6 @@ class GLES2DecoderTestBase : public testing::Test {
       GLsizei width, GLsizei height, GLint border,
       GLsizei size, uint32 bucket_id);
   void DoTexImage2D(
-      GLenum target, GLint level, GLenum internal_format,
-      GLsizei width, GLsizei height, GLint border,
-      GLenum format, GLenum type,
-      uint32 shared_memory_id, uint32 shared_memory_offset);
-  void DoTexImage2DSameSize(
       GLenum target, GLint level, GLenum internal_format,
       GLsizei width, GLsizei height, GLint border,
       GLenum format, GLenum type,

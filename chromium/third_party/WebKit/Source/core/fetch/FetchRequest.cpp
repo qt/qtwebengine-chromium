@@ -26,9 +26,7 @@
 #include "config.h"
 #include "core/fetch/FetchRequest.h"
 
-#include "core/dom/Element.h"
 #include "core/fetch/CrossOriginAccessControl.h"
-#include "core/fetch/FetchInitiatorInfo.h"
 #include "core/fetch/ResourceFetcher.h"
 
 namespace WebCore {
@@ -40,6 +38,7 @@ FetchRequest::FetchRequest(const ResourceRequest& resourceRequest, const AtomicS
     , m_priority(priority)
     , m_forPreload(false)
     , m_defer(NoDefer)
+    , m_originRestriction(UseDefaultOriginRestrictionForType)
 {
     m_options.initiatorInfo.name = initiator;
 }
@@ -50,6 +49,7 @@ FetchRequest::FetchRequest(const ResourceRequest& resourceRequest, const AtomicS
     , m_priority(ResourceLoadPriorityUnresolved)
     , m_forPreload(false)
     , m_defer(NoDefer)
+    , m_originRestriction(UseDefaultOriginRestrictionForType)
 {
     m_options.initiatorInfo.name = initiator;
 }
@@ -60,6 +60,7 @@ FetchRequest::FetchRequest(const ResourceRequest& resourceRequest, const FetchIn
     , m_priority(ResourceLoadPriorityUnresolved)
     , m_forPreload(false)
     , m_defer(NoDefer)
+    , m_originRestriction(UseDefaultOriginRestrictionForType)
 {
     m_options.initiatorInfo = initiator;
 }
@@ -68,11 +69,9 @@ FetchRequest::~FetchRequest()
 {
 }
 
-void FetchRequest::setPotentiallyCrossOriginEnabled(SecurityOrigin* origin, StoredCredentials allowCredentials)
+void FetchRequest::setCrossOriginAccessControl(SecurityOrigin* origin, StoredCredentials allowCredentials)
 {
     updateRequestForAccessControl(m_resourceRequest, origin, allowCredentials);
-    ASSERT(m_options.requestOriginPolicy == UseDefaultOriginRestrictionsForType); // Allows only tightening from the default value.
-    m_options.requestOriginPolicy = PotentiallyCrossOriginEnabled;
 }
 
 } // namespace WebCore

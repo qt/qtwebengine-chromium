@@ -61,7 +61,7 @@ class Node;
 class Page;
 class PagePopupController;
 class Range;
-class ScriptExecutionContext;
+class ExecutionContext;
 class SerializedScriptValue;
 class ShadowRoot;
 class TypeConversions;
@@ -85,6 +85,10 @@ public:
 
     void crash();
 
+    void setStyleResolverStatsEnabled(bool);
+    String styleResolverStatsReport(ExceptionState&) const;
+    String styleResolverStatsTotalsReport(ExceptionState&) const;
+
     size_t numberOfScopedHTMLStyleChildren(const Node*, ExceptionState&) const;
     PassRefPtr<CSSComputedStyleDeclaration> computedStyleIncludingVisitedInfo(Node*, ExceptionState&) const;
 
@@ -98,14 +102,11 @@ public:
     bool hasShadowInsertionPoint(const Node*, ExceptionState&) const;
     bool hasContentElement(const Node*, ExceptionState&) const;
     size_t countElementShadow(const Node*, ExceptionState&) const;
-    Element* includerFor(Node*, ExceptionState&);
     String shadowPseudoId(Element*, ExceptionState&);
     void setShadowPseudoId(Element*, const String&, ExceptionState&);
 
     // CSS Animation / Transition testing.
     unsigned numberOfActiveAnimations() const;
-    void suspendAnimations(Document*, ExceptionState&) const;
-    void resumeAnimations(Document*, ExceptionState&) const;
     void pauseAnimations(double pauseTime, ExceptionState&);
 
     PassRefPtr<Element> createContentElement(ExceptionState&);
@@ -118,8 +119,6 @@ public:
     bool hasSelectorForPseudoClassInShadow(Element* host, const String& pseudoClass, ExceptionState&);
     unsigned short compareTreeScopePosition(const Node*, const Node*, ExceptionState&) const;
 
-    bool attached(Node*, ExceptionState&);
-
     // FIXME: Rename these functions if walker is prefered.
     Node* nextSiblingByWalker(Node*, ExceptionState&);
     Node* firstChildByWalker(Node*, ExceptionState&);
@@ -127,10 +126,12 @@ public:
     Node* nextNodeByWalker(Node*, ExceptionState&);
     Node* previousNodeByWalker(Node*, ExceptionState&);
 
+    unsigned updateStyleAndReturnAffectedElementCount(ExceptionState&) const;
+
     String visiblePlaceholder(Element*);
     void selectColorInColorChooser(Element*, const String& colorValue);
-    Vector<String> formControlStateOfPreviousHistoryItem(ExceptionState&);
-    void setFormControlStateOfPreviousHistoryItem(const Vector<String>&, ExceptionState&);
+    Vector<String> formControlStateOfHistoryItem(ExceptionState&);
+    void setFormControlStateOfHistoryItem(const Vector<String>&, ExceptionState&);
     void setEnableMockPagePopup(bool, ExceptionState&);
     PassRefPtr<PagePopupController> pagePopupController();
 
@@ -189,7 +190,7 @@ public:
     PassRefPtr<NodeList> nodesFromRect(Document*, int x, int y, unsigned topPadding, unsigned rightPadding,
         unsigned bottomPadding, unsigned leftPadding, bool ignoreClipping, bool allowShadowContent, bool allowChildFrameContent, ExceptionState&) const;
 
-    void emitInspectorDidBeginFrame();
+    void emitInspectorDidBeginFrame(int frameId = 0);
     void emitInspectorDidCancelFrame();
 
     bool hasSpellingMarker(Document*, int from, int length, ExceptionState&);
@@ -222,10 +223,13 @@ public:
 
     bool scrollsWithRespectTo(Element*, Element*, ExceptionState&);
     bool isUnclippedDescendant(Element*, ExceptionState&);
+    bool needsCompositedScrolling(Element*, ExceptionState&);
 
     void setNeedsCompositedScrolling(Element*, unsigned value, ExceptionState&);
 
     String repaintRectsAsText(Document*, ExceptionState&) const;
+    PassRefPtr<ClientRectList> repaintRects(Element*, ExceptionState&) const;
+
     String scrollingStateTreeAsText(Document*, ExceptionState&) const;
     String mainThreadScrollingReasons(Document*, ExceptionState&) const;
     PassRefPtr<ClientRectList> nonFastScrollableRects(Document*, ExceptionState&) const;
@@ -235,11 +239,9 @@ public:
 
     void allowRoundingHacks() const;
 
-    void insertAuthorCSS(Document*, const String&) const;
-    void insertUserCSS(Document*, const String&) const;
-
     unsigned numberOfLiveNodes() const;
     unsigned numberOfLiveDocuments() const;
+    String dumpRefCountedInstanceCounts() const;
     Vector<String> consoleMessageArgumentCounts(Document*) const;
     PassRefPtr<DOMWindow> openDummyInspectorFrontend(const String& url);
     void closeDummyInspectorFrontend();
@@ -275,6 +277,11 @@ public:
 
     void startTrackingRepaints(Document*, ExceptionState&);
     void stopTrackingRepaints(Document*, ExceptionState&);
+    void updateLayoutIgnorePendingStylesheetsAndRunPostLayoutTasks(ExceptionState&);
+    void updateLayoutIgnorePendingStylesheetsAndRunPostLayoutTasks(Node*, ExceptionState&);
+
+    PassRefPtr<ClientRectList> draggableRegions(Document*, ExceptionState&);
+    PassRefPtr<ClientRectList> nonDraggableRegions(Document*, ExceptionState&);
 
     PassRefPtr<ArrayBuffer> serializeObject(PassRefPtr<SerializedScriptValue>) const;
     PassRefPtr<SerializedScriptValue> deserializeBuffer(PassRefPtr<ArrayBuffer>) const;
@@ -285,8 +292,6 @@ public:
 
     void forceReload(bool endToEnd);
 
-    void enableMockSpeechSynthesizer();
-
     String getImageSourceURL(Element*, ExceptionState&);
 
     bool isSelectPopupVisible(Node*);
@@ -296,11 +301,16 @@ public:
 
     bool loseSharedGraphicsContext3D();
 
+    void forceCompositingUpdate(Document*, ExceptionState&);
+
+    void setZoomFactor(float);
+
 private:
     explicit Internals(Document*);
     Document* contextDocument() const;
     Frame* frame() const;
     Vector<String> iconURLs(Document*, int iconTypesMask) const;
+    PassRefPtr<ClientRectList> annotatedRegions(Document*, bool draggable, ExceptionState&);
 
     DocumentMarker* markerAt(Node*, const String& markerType, unsigned index, ExceptionState&);
     RefPtr<DOMWindow> m_frontendWindow;

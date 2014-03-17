@@ -7,71 +7,71 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/stl_util.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
 
 namespace content {
 
-VideoCaptureBufferPool::VideoCaptureBufferPool(size_t size, int count)
-    : size_(size),
-      count_(count) {
+const int VideoCaptureBufferPool::kInvalidId = -1;
+
+VideoCaptureBufferPool::VideoCaptureBufferPool(int count)
+    : count_(count),
+      next_buffer_id_(0) {
 }
 
 VideoCaptureBufferPool::~VideoCaptureBufferPool() {
-}
-
-bool VideoCaptureBufferPool::Allocate() {
-  base::AutoLock lock(lock_);
-  DCHECK(!IsAllocated());
-  buffers_.resize(count_);
-  for (int buffer_id = 0; buffer_id < count(); ++buffer_id) {
-    Buffer* buffer = new Buffer();
-    buffers_[buffer_id] = buffer;
-    if (!buffer->shared_memory.CreateAndMapAnonymous(GetMemorySize()))
-      return false;
-  }
-  return true;
+  STLDeleteValues(&buffers_);
 }
 
 base::SharedMemoryHandle VideoCaptureBufferPool::ShareToProcess(
     int buffer_id,
-    base::ProcessHandle process_handle) {
+    base::ProcessHandle process_handle,
+    size_t* memory_size) {
   base::AutoLock lock(lock_);
-  DCHECK(IsAllocated());
-  DCHECK(buffer_id >= 0);
-  DCHECK(buffer_id < count_);
-  Buffer* buffer = buffers_[buffer_id];
+
+  Buffer* buffer = GetBuffer(buffer_id);
+  if (!buffer) {
+    NOTREACHED() << "Invalid buffer_id.";
+    return base::SharedMemory::NULLHandle();
+  }
   base::SharedMemoryHandle remote_handle;
   buffer->shared_memory.ShareToProcess(process_handle, &remote_handle);
+  *memory_size = buffer->shared_memory.requested_size();
   return remote_handle;
 }
 
-base::SharedMemoryHandle VideoCaptureBufferPool::GetHandle(int buffer_id) {
+bool VideoCaptureBufferPool::GetBufferInfo(int buffer_id,
+                                           void** memory,
+                                           size_t* size) {
   base::AutoLock lock(lock_);
-  DCHECK(IsAllocated());
-  DCHECK(buffer_id >= 0);
-  DCHECK(buffer_id < count_);
-  return buffers_[buffer_id]->shared_memory.handle();
+
+  Buffer* buffer = GetBuffer(buffer_id);
+  if (!buffer) {
+    NOTREACHED() << "Invalid buffer_id.";
+    return false;
+  }
+
+  DCHECK(buffer->held_by_producer);
+  *memory = buffer->shared_memory.memory();
+  *size = buffer->shared_memory.mapped_size();
+  return true;
 }
 
-void* VideoCaptureBufferPool::GetMemory(int buffer_id) {
+int VideoCaptureBufferPool::ReserveForProducer(size_t size,
+                                               int* buffer_id_to_drop) {
   base::AutoLock lock(lock_);
-  DCHECK(IsAllocated());
-  DCHECK(buffer_id >= 0);
-  DCHECK(buffer_id < count_);
-  return buffers_[buffer_id]->shared_memory.memory();
-}
-
-int VideoCaptureBufferPool::ReserveForProducer() {
-  base::AutoLock lock(lock_);
-  return ReserveForProducerInternal();
+  return ReserveForProducerInternal(size, buffer_id_to_drop);
 }
 
 void VideoCaptureBufferPool::RelinquishProducerReservation(int buffer_id) {
   base::AutoLock lock(lock_);
-  DCHECK(buffer_id >= 0);
-  DCHECK(buffer_id < count());
-  Buffer* buffer = buffers_[buffer_id];
+  Buffer* buffer = GetBuffer(buffer_id);
+  if (!buffer) {
+    NOTREACHED() << "Invalid buffer_id.";
+    return;
+  }
   DCHECK(buffer->held_by_producer);
   buffer->held_by_producer = false;
 }
@@ -80,134 +80,91 @@ void VideoCaptureBufferPool::HoldForConsumers(
     int buffer_id,
     int num_clients) {
   base::AutoLock lock(lock_);
-  DCHECK(buffer_id >= 0);
-  DCHECK(buffer_id < count());
-  DCHECK(IsAllocated());
-  Buffer* buffer = buffers_[buffer_id];
+  Buffer* buffer = GetBuffer(buffer_id);
+  if (!buffer) {
+    NOTREACHED() << "Invalid buffer_id.";
+    return;
+  }
   DCHECK(buffer->held_by_producer);
   DCHECK(!buffer->consumer_hold_count);
 
   buffer->consumer_hold_count = num_clients;
   // Note: |held_by_producer| will stay true until
   // RelinquishProducerReservation() (usually called by destructor of the object
-  // wrapping this buffer, e.g. a media::VideoFrame
+  // wrapping this buffer, e.g. a media::VideoFrame).
 }
 
 void VideoCaptureBufferPool::RelinquishConsumerHold(int buffer_id,
                                                     int num_clients) {
   base::AutoLock lock(lock_);
-  DCHECK(buffer_id >= 0);
-  DCHECK(buffer_id < count());
-  DCHECK_GT(num_clients, 0);
-  DCHECK(IsAllocated());
-  Buffer* buffer = buffers_[buffer_id];
+  Buffer* buffer = GetBuffer(buffer_id);
+  if (!buffer) {
+    NOTREACHED() << "Invalid buffer_id.";
+    return;
+  }
   DCHECK_GE(buffer->consumer_hold_count, num_clients);
 
   buffer->consumer_hold_count -= num_clients;
 }
 
-// State query functions.
-size_t VideoCaptureBufferPool::GetMemorySize() const {
-  // No need to take |lock_| currently.
-  return size_;
-}
-
-int VideoCaptureBufferPool::RecognizeReservedBuffer(
-    base::SharedMemoryHandle maybe_belongs_to_pool) {
-  base::AutoLock lock(lock_);
-  for (int buffer_id = 0; buffer_id < count(); ++buffer_id) {
-    Buffer* buffer = buffers_[buffer_id];
-    if (buffer->shared_memory.handle() == maybe_belongs_to_pool) {
-      DCHECK(buffer->held_by_producer);
-      return buffer_id;
-    }
-  }
-  return -1;  // Buffer is not from our pool.
-}
-
-scoped_refptr<media::VideoFrame> VideoCaptureBufferPool::ReserveI420VideoFrame(
-    const gfx::Size& size,
-    int rotation) {
-  if (GetMemorySize() !=
-      media::VideoFrame::AllocationSize(media::VideoFrame::I420, size)) {
-    DCHECK_EQ(GetMemorySize(),
-              media::VideoFrame::AllocationSize(media::VideoFrame::I420, size));
-    return NULL;
-  }
-
-  base::AutoLock lock(lock_);
-
-  int buffer_id = ReserveForProducerInternal();
-  if (buffer_id < 0)
-    return NULL;
-
-  base::Closure disposal_handler = base::Bind(
-      &VideoCaptureBufferPool::RelinquishProducerReservation,
-      this,
-      buffer_id);
-
-  Buffer* buffer = buffers_[buffer_id];
-  // Wrap the buffer in a VideoFrame container.
-  scoped_refptr<media::VideoFrame> frame =
-      media::VideoFrame::WrapExternalSharedMemory(
-          media::VideoFrame::I420,
-          size,
-          gfx::Rect(size),
-          size,
-          static_cast<uint8*>(buffer->shared_memory.memory()),
-          GetMemorySize(),
-          buffer->shared_memory.handle(),
-          base::TimeDelta(),
-          disposal_handler);
-
-  if (buffer->rotation != rotation) {
-    // TODO(nick): Generalize the |rotation| mechanism.
-    media::FillYUV(frame.get(), 0, 128, 128);
-    buffer->rotation = rotation;
-  }
-
-  return frame;
-}
-
-bool VideoCaptureBufferPool::IsAnyBufferHeldForConsumers() {
-  base::AutoLock lock(lock_);
-  for (int buffer_id = 0; buffer_id < count(); ++buffer_id) {
-    Buffer* buffer = buffers_[buffer_id];
-    if (buffer->consumer_hold_count > 0)
-      return true;
-  }
-  return false;
-}
-
 VideoCaptureBufferPool::Buffer::Buffer()
-    : rotation(0),
-      held_by_producer(false),
-      consumer_hold_count(0) {}
+    : held_by_producer(false), consumer_hold_count(0) {}
 
-int VideoCaptureBufferPool::ReserveForProducerInternal() {
+int VideoCaptureBufferPool::ReserveForProducerInternal(size_t size,
+                                                       int* buffer_id_to_drop) {
   lock_.AssertAcquired();
-  DCHECK(IsAllocated());
 
-  int buffer_id = -1;
-  for (int candidate_id = 0; candidate_id < count(); ++candidate_id) {
-    Buffer* candidate = buffers_[candidate_id];
-    if (!candidate->consumer_hold_count && !candidate->held_by_producer) {
-      buffer_id = candidate_id;
-      break;
+  // Look for a buffer that's allocated, big enough, and not in use. Track the
+  // largest one that's not big enough, in case we have to reallocate a buffer.
+  *buffer_id_to_drop = kInvalidId;
+  size_t realloc_size = 0;
+  BufferMap::iterator realloc = buffers_.end();
+  for (BufferMap::iterator it = buffers_.begin(); it != buffers_.end(); ++it) {
+    Buffer* buffer = it->second;
+    if (!buffer->consumer_hold_count && !buffer->held_by_producer) {
+      if (buffer->shared_memory.requested_size() >= size) {
+        // Existing buffer is big enough. Reuse it.
+        buffer->held_by_producer = true;
+        return it->first;
+      }
+      if (buffer->shared_memory.requested_size() > realloc_size) {
+        realloc_size = buffer->shared_memory.requested_size();
+        realloc = it;
+      }
     }
   }
-  if (buffer_id == -1)
-    return -1;
 
-  Buffer* buffer = buffers_[buffer_id];
-  CHECK_GE(buffer->shared_memory.requested_size(), size_);
+  // Preferentially grow the pool by creating a new buffer. If we're at maximum
+  // size, then reallocate by deleting an existing one instead.
+  if (buffers_.size() == static_cast<size_t>(count_)) {
+    if (realloc == buffers_.end()) {
+      // We're out of space, and can't find an unused buffer to reallocate.
+      return kInvalidId;
+    }
+    *buffer_id_to_drop = realloc->first;
+    delete realloc->second;
+    buffers_.erase(realloc);
+  }
+
+  // Create the new buffer.
+  int buffer_id = next_buffer_id_++;
+  scoped_ptr<Buffer> buffer(new Buffer());
+  if (size) {
+    // |size| can be 0 for buffers that do not require memory backing.
+    if (!buffer->shared_memory.CreateAndMapAnonymous(size))
+      return kInvalidId;
+  }
   buffer->held_by_producer = true;
+  buffers_[buffer_id] = buffer.release();
   return buffer_id;
 }
 
-bool VideoCaptureBufferPool::IsAllocated() const {
-  lock_.AssertAcquired();
-  return !buffers_.empty();
+VideoCaptureBufferPool::Buffer* VideoCaptureBufferPool::GetBuffer(
+    int buffer_id) {
+  BufferMap::iterator it = buffers_.find(buffer_id);
+  if (it == buffers_.end())
+    return NULL;
+  return it->second;
 }
 
 }  // namespace content

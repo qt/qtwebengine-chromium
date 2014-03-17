@@ -22,14 +22,12 @@ static void lower_mv_precision(MV *mv, int allow_hp) {
 }
 
 
-void vp9_find_best_ref_mvs(MACROBLOCKD *xd,
-                           int_mv *mvlist,
-                           int_mv *nearest,
-                           int_mv *near) {
+void vp9_find_best_ref_mvs(MACROBLOCKD *xd, int allow_hp,
+                           int_mv *mvlist, int_mv *nearest, int_mv *near) {
   int i;
   // Make sure all the candidates are properly clamped etc
   for (i = 0; i < MAX_MV_REF_CANDIDATES; ++i) {
-    lower_mv_precision(&mvlist[i].as_mv, xd->allow_high_precision_mv);
+    lower_mv_precision(&mvlist[i].as_mv, allow_hp);
     clamp_mv2(&mvlist[i].as_mv, xd);
   }
   *nearest = mvlist[0];
@@ -37,27 +35,28 @@ void vp9_find_best_ref_mvs(MACROBLOCKD *xd,
 }
 
 void vp9_append_sub8x8_mvs_for_idx(VP9_COMMON *cm, MACROBLOCKD *xd,
+                                   const TileInfo *const tile,
                                    int_mv *dst_nearest,
                                    int_mv *dst_near,
                                    int block_idx, int ref_idx,
                                    int mi_row, int mi_col) {
   int_mv dst_list[MAX_MV_REF_CANDIDATES];
   int_mv mv_list[MAX_MV_REF_CANDIDATES];
-  MODE_INFO *const mi = xd->this_mi;
+  MODE_INFO *const mi = xd->mi_8x8[0];
 
   assert(ref_idx == 0 || ref_idx == 1);
   assert(MAX_MV_REF_CANDIDATES == 2);  // makes code here slightly easier
 
-  vp9_find_mv_refs_idx(cm, xd, mi, xd->last_mi,
+  vp9_find_mv_refs_idx(cm, xd, tile, mi, xd->last_mi,
                        mi->mbmi.ref_frame[ref_idx],
                        mv_list, block_idx, mi_row, mi_col);
 
   dst_list[1].as_int = 0;
   if (block_idx == 0) {
-    memcpy(dst_list, mv_list, MAX_MV_REF_CANDIDATES * sizeof(int_mv));
+    vpx_memcpy(dst_list, mv_list, MAX_MV_REF_CANDIDATES * sizeof(int_mv));
   } else if (block_idx == 1 || block_idx == 2) {
     int dst = 0, n;
-    union b_mode_info *bmi = mi->bmi;
+    b_mode_info *bmi = mi->bmi;
 
     dst_list[dst++].as_int = bmi[0].as_mv[ref_idx].as_int;
     for (n = 0; dst < MAX_MV_REF_CANDIDATES &&
@@ -66,7 +65,7 @@ void vp9_append_sub8x8_mvs_for_idx(VP9_COMMON *cm, MACROBLOCKD *xd,
         dst_list[dst++].as_int = mv_list[n].as_int;
   } else {
     int dst = 0, n;
-    union b_mode_info *bmi = mi->bmi;
+    b_mode_info *bmi = mi->bmi;
 
     assert(block_idx == 3);
     dst_list[dst++].as_int = bmi[2].as_mv[ref_idx].as_int;

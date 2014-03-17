@@ -37,10 +37,8 @@ class CC_EXPORT OcclusionTrackerBase {
   ~OcclusionTrackerBase();
 
   // Called at the beginning of each step in the LayerIterator's front-to-back
-  // traversal. If |prevent_occlusion| is true, the layer will be considered
-  // unoccluded.
-  void EnterLayer(const LayerIteratorPosition<LayerType>& layer_iterator,
-                  bool prevent_occlusion);
+  // traversal.
+  void EnterLayer(const LayerIteratorPosition<LayerType>& layer_iterator);
   // Called at the end of each step in the LayerIterator's front-to-back
   // traversal.
   void LeaveLayer(const LayerIteratorPosition<LayerType>& layer_iterator);
@@ -48,29 +46,21 @@ class CC_EXPORT OcclusionTrackerBase {
   // Returns true if the given rect in content space for a layer is fully
   // occluded in either screen space or the layer's target surface.
   // |render_target| is the contributing layer's render target, and
-  // |draw_transform|, |transformsToTargetKnown| and |clippedRectInTarget| are
-  // relative to that.
+  // |draw_transform| and |impl_draw_transform_is_unknown| are relative to that.
   bool Occluded(const LayerType* render_target,
                 gfx::Rect content_rect,
                 const gfx::Transform& draw_transform,
-                bool impl_draw_transform_is_unknown,
-                bool is_clipped,
-                gfx::Rect clip_rect_in_target,
-                bool* has_occlusion_from_outside_target_surface) const;
+                bool impl_draw_transform_is_unknown) const;
 
   // Gives an unoccluded sub-rect of |content_rect| in the content space of a
   // layer. Used when considering occlusion for a layer that paints/draws
   // something. |render_target| is the contributing layer's render target, and
-  // |draw_transform|, |transformsToTargetKnown| and |clippedRectInTarget| are
-  // relative to that.
+  // |draw_transform| and |impl_draw_transform_is_unknown| are relative to that.
   gfx::Rect UnoccludedContentRect(
       const LayerType* render_target,
       gfx::Rect content_rect,
       const gfx::Transform& draw_transform,
-      bool impl_draw_transform_is_unknown,
-      bool is_clipped,
-      gfx::Rect clip_rect_in_target,
-      bool* has_occlusion_from_outside_target_surface) const;
+      bool impl_draw_transform_is_unknown) const;
 
   // Gives an unoccluded sub-rect of |content_rect| in the content space of the
   // render_target owned by the layer. Used when considering occlusion for a
@@ -78,8 +68,7 @@ class CC_EXPORT OcclusionTrackerBase {
   gfx::Rect UnoccludedContributingSurfaceContentRect(
       const LayerType* layer,
       bool for_replica,
-      gfx::Rect content_rect,
-      bool* has_occlusion_from_outside_target_surface) const;
+      gfx::Rect content_rect) const;
 
   // Report operations for recording overdraw metrics.
   OverdrawMetrics* overdraw_metrics() const {
@@ -155,7 +144,6 @@ class CC_EXPORT OcclusionTrackerBase {
   gfx::Rect screen_space_clip_rect_;
   scoped_ptr<class OverdrawMetrics> overdraw_metrics_;
   gfx::Size minimum_tracking_size_;
-  bool prevent_occlusion_;
 
   // This is used for visualizing the occlusion tracking process.
   std::vector<gfx::Rect>* occluding_screen_space_rects_;

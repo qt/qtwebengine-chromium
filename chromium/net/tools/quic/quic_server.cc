@@ -28,7 +28,6 @@
 #endif
 
 const int kEpollFlags = EPOLLIN | EPOLLOUT | EPOLLET;
-const int kNumPacketsPerReadCall = 5;  // Arbitrary
 static const char kSourceAddressTokenSecret[] = "secret";
 
 namespace net {
@@ -40,20 +39,26 @@ QuicServer::QuicServer()
       packets_dropped_(0),
       overflow_supported_(false),
       use_recvmmsg_(false),
-      crypto_config_(kSourceAddressTokenSecret, QuicRandom::GetInstance()) {
+      crypto_config_(kSourceAddressTokenSecret, QuicRandom::GetInstance()),
+      supported_versions_(QuicSupportedVersions()) {
   // Use hardcoded crypto parameters for now.
   config_.SetDefaults();
+  config_.set_initial_round_trip_time_us(kMaxInitialRoundTripTimeUs, 0);
+  config_.set_server_initial_congestion_window(kMaxInitialWindow,
+                                               kDefaultInitialWindow);
   Initialize();
 }
 
-QuicServer::QuicServer(const QuicConfig& config)
+QuicServer::QuicServer(const QuicConfig& config,
+                       const QuicVersionVector& supported_versions)
     : port_(0),
       fd_(-1),
       packets_dropped_(0),
       overflow_supported_(false),
       use_recvmmsg_(false),
       config_(config),
-      crypto_config_(kSourceAddressTokenSecret, QuicRandom::GetInstance()) {
+      crypto_config_(kSourceAddressTokenSecret, QuicRandom::GetInstance()),
+      supported_versions_(supported_versions) {
   Initialize();
 }
 
@@ -142,8 +147,9 @@ bool QuicServer::Listen(const IPEndPoint& address) {
   }
 
   epoll_server_.RegisterFD(fd_, this, kEpollFlags);
-  dispatcher_.reset(new QuicDispatcher(config_, crypto_config_, fd_,
-                                       &epoll_server_));
+  dispatcher_.reset(new QuicDispatcher(config_, crypto_config_,
+                                       supported_versions_,
+                                       fd_, &epoll_server_));
 
   return true;
 }
@@ -194,7 +200,10 @@ void QuicServer::MaybeDispatchPacket(QuicDispatcher* dispatcher,
     return;
   }
 
-  dispatcher->ProcessPacket(server_address, client_address, guid, packet);
+  bool has_version_flag = QuicFramer::HasVersionFlag(packet);
+
+  dispatcher->ProcessPacket(
+      server_address, client_address, guid, has_version_flag, packet);
 }
 
 bool QuicServer::ReadAndDispatchSinglePacket(int fd,

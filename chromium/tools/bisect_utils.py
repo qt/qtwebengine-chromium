@@ -7,6 +7,7 @@ outputting annotations on the buildbot waterfall. These are intended to be
 used by the bisection scripts."""
 
 import errno
+import imp
 import os
 import shutil
 import stat
@@ -87,6 +88,41 @@ def OutputAnnotationStepClosed():
   print '@@@STEP_CLOSED@@@'
   print
   sys.stdout.flush()
+
+
+def OutputAnnotationStepLink(label, url):
+  """Outputs appropriate annotation to print a link.
+
+  Args:
+    label: The name to print.
+    url: The url to print.
+  """
+  print
+  print '@@@STEP_LINK@%s@%s@@@' % (label, url)
+  print
+  sys.stdout.flush()
+
+
+def LoadExtraSrc(path_to_file):
+  """Attempts to load an extra source file. If this is successful, uses the
+  new module to override some global values, such as gclient spec data.
+
+  Returns:
+    The loaded src module, or None."""
+  try:
+    global GCLIENT_SPEC_DATA
+    global GCLIENT_SPEC_ANDROID
+    extra_src = imp.load_source('data', path_to_file)
+    GCLIENT_SPEC_DATA = extra_src.GetGClientSpec()
+    GCLIENT_SPEC_ANDROID = extra_src.GetGClientSpecExtraParams()
+    return extra_src
+  except ImportError, e:
+    return None
+
+
+def IsTelemetryCommand(command):
+  """Attempts to discern whether or not a given command is running telemetry."""
+  return ('tools/perf/run_' in command or 'tools\\perf\\run_' in command)
 
 
 def CreateAndChangeToSourceDirectory(working_directory):
@@ -191,7 +227,7 @@ def RunGClientAndCreateConfig(opts, custom_deps=None, cwd=None):
   spec = 'solutions =' + str(spec)
   spec = ''.join([l for l in spec.splitlines()])
 
-  if opts.target_platform == 'android':
+  if 'android' in opts.target_platform:
     spec += GCLIENT_SPEC_ANDROID
 
   return_code = RunGClient(
@@ -270,6 +306,17 @@ def RemoveThirdPartyLibjingleDirectory():
   return True
 
 
+def _CleanupPreviousGitRuns():
+  """Performs necessary cleanup between runs."""
+  # If a previous run of git crashed, bot was reset, etc... we
+  # might end up with leftover index.lock files.
+  for (path, dir, files) in os.walk(os.getcwd()):
+    for cur_file in files:
+      if cur_file.endswith('index.lock'):
+        path_to_file = os.path.join(path, cur_file)
+        os.remove(path_to_file)
+
+
 def RunGClientAndSync(cwd=None):
   """Runs gclient and does a normal sync.
 
@@ -316,6 +363,8 @@ def SetupGitDepot(opts, custom_deps):
       os.chdir(cwd)
 
     if passed_deps_check:
+      _CleanupPreviousGitRuns()
+
       RunGClient(['revert'])
       if not RunGClientAndSync():
         passed = True
@@ -375,12 +424,12 @@ def CopyAndSaveOriginalEnvironmentVars():
   ORIGINAL_ENV = os.environ.copy()
 
 
-def SetupAndroidBuildEnvironment(opts):
+def SetupAndroidBuildEnvironment(opts, path_to_src=None):
   """Sets up the android build environment.
 
   Args:
     opts: The options parsed from the command line through parse_args().
-    path_to_file: Path to the bisect script's directory.
+    path_to_src: Path to the src checkout.
 
   Returns:
     True if successful.
@@ -398,12 +447,13 @@ def SetupAndroidBuildEnvironment(opts):
   proc = subprocess.Popen(['bash', '-c', 'source %s && env' % path_to_file],
                            stdout=subprocess.PIPE,
                            stderr=subprocess.PIPE,
-                           cwd='src')
+                           cwd=path_to_src)
   (out, _) = proc.communicate()
 
   for line in out.splitlines():
     (k, _, v) = line.partition('=')
     os.environ[k] = v
+
   return not proc.returncode
 
 
@@ -412,12 +462,11 @@ def SetupPlatformBuildEnvironment(opts):
 
   Args:
     opts: The options parsed from the command line through parse_args().
-    path_to_file: Path to the bisect script's directory.
 
   Returns:
     True if successful.
   """
-  if opts.target_platform == 'android':
+  if 'android' in opts.target_platform:
     CopyAndSaveOriginalEnvironmentVars()
     return SetupAndroidBuildEnvironment(opts)
   elif opts.target_platform == 'cros':
@@ -446,18 +495,9 @@ def CreateBisectDirectoryAndSetupDepot(opts, custom_deps):
   Args:
     opts: The options parsed from the command line through parse_args().
     custom_deps: A dictionary of additional dependencies to add to .gclient.
-
-  Returns:
-    Returns 0 on success, otherwise 1.
   """
   if not CreateAndChangeToSourceDirectory(opts.working_directory):
-    print 'Error: Could not create bisect directory.'
-    print
-    return 1
+    raise RuntimeError('Could not create bisect directory.')
 
   if not SetupGitDepot(opts, custom_deps):
-    print 'Error: Failed to grab source.'
-    print
-    return 1
-
-  return 0
+    raise RuntimeError('Failed to grab source.')

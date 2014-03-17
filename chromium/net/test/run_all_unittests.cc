@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/metrics/statistics_recorder.h"
-#include "base/test/unit_test_launcher.h"
+#include "base/test/launcher/unit_test_launcher.h"
 #include "build/build_config.h"
 #include "crypto/nss_util.h"
 #include "net/socket/client_socket_pool_base.h"
@@ -13,6 +13,7 @@
 
 #if defined(OS_ANDROID)
 #include "base/android/jni_android.h"
+#include "base/test/test_file_util.h"
 #include "net/android/net_jni_registrar.h"
 #endif
 
@@ -31,6 +32,7 @@ int main(int argc, char** argv) {
   // Register JNI bindings for android. Doing it early as the test suite setup
   // may initiate a call to Java.
   net::android::RegisterJni(base::android::AttachCurrentThread());
+  file_util::RegisterContentUriTestUtils(base::android::AttachCurrentThread());
 #endif
 
   NetTestSuite test_suite(argc, argv);

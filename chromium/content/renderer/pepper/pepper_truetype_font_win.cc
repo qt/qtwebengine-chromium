@@ -223,11 +223,15 @@ int32_t PepperTrueTypeFontWin::GetTable(uint32_t table_tag,
   DWORD safe_length = std::min(table_size - safe_offset,
                                static_cast<DWORD>(max_data_length));
   data->resize(safe_length);
-  table_size = GetFontData(hdc, table_tag, safe_offset,
-                           reinterpret_cast<uint8_t*>(&(*data)[0]),
-                           safe_length);
-  if (table_size == GDI_ERROR)
-    return PP_ERROR_FAILED;
+  if (safe_length == 0) {
+    table_size = 0;
+  } else {
+    table_size = GetFontData(hdc, table_tag, safe_offset,
+                             reinterpret_cast<uint8_t*>(&(*data)[0]),
+                             safe_length);
+    if (table_size == GDI_ERROR)
+      return PP_ERROR_FAILED;
+  }
   return static_cast<int32_t>(table_size);
 }
 

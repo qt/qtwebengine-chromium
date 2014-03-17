@@ -23,11 +23,11 @@
  */
 
 [
-    NoInterfaceObject,
     Conditional=WEB_AUDIO,
     Constructor(unsigned long numberOfChannels, unsigned long numberOfFrames, float sampleRate),
-    ConstructorRaisesException,
-    ConstructorCallWith=ScriptExecutionContext
+    ConstructorCallWith=ExecutionContext,
+    RaisesException=Constructor,
+    NoInterfaceObject,
 ] interface OfflineAudioContext : AudioContext {
 
 };

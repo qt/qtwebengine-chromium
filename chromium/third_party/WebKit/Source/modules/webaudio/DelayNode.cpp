@@ -28,6 +28,7 @@
 
 #include "modules/webaudio/DelayNode.h"
 
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 
@@ -35,12 +36,16 @@ namespace WebCore {
 
 const double maximumAllowedDelayTime = 180;
 
-DelayNode::DelayNode(AudioContext* context, float sampleRate, double maxDelayTime, ExceptionState& es)
+DelayNode::DelayNode(AudioContext* context, float sampleRate, double maxDelayTime, ExceptionState& exceptionState)
     : AudioBasicProcessorNode(context, sampleRate)
 {
     ScriptWrappable::init(this);
     if (maxDelayTime <= 0 || maxDelayTime >= maximumAllowedDelayTime) {
-        es.throwDOMException(NotSupportedError);
+        exceptionState.throwDOMException(
+            NotSupportedError,
+            "max delay time (" + String::number(maxDelayTime)
+            + ") must be between 0 and " + String::number(maximumAllowedDelayTime)
+            + ", exclusive.");
         return;
     }
     m_processor = adoptPtr(new DelayProcessor(context, sampleRate, 1, maxDelayTime));

@@ -35,6 +35,7 @@
 #include "InspectorTypeBuilder.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "core/rendering/RenderLayer.h"
+#include "platform/Timer.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
@@ -45,6 +46,8 @@ class InspectorDOMAgent;
 class InstrumentingAgents;
 class Page;
 class RenderLayerCompositor;
+
+struct LayerSnapshot;
 
 typedef String ErrorString;
 
@@ -60,30 +63,39 @@ public:
     virtual void clearFrontend();
     virtual void restore();
 
+    // Called from InspectorInstrumentation
     void layerTreeDidChange();
+    void didPaint(RenderObject*, const GraphicsLayer*, GraphicsContext*, const LayoutRect&);
 
     // Called from the front-end.
     virtual void enable(ErrorString*);
     virtual void disable(ErrorString*);
-    virtual void getLayers(ErrorString*, const int* nodeId, RefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> >&);
     virtual void compositingReasons(ErrorString*, const String& layerId, RefPtr<TypeBuilder::Array<String> >&);
+    virtual void makeSnapshot(ErrorString*, const String& layerId, String* snapshotId);
+    virtual void releaseSnapshot(ErrorString*, const String& snapshotId);
+    virtual void replaySnapshot(ErrorString*, const String& snapshotId, const int* fromStep, const int* toStep, String* dataURL);
+    virtual void profileSnapshot(ErrorString*, const String& snapshotId, const int* minRepeatCount, const double* minDuration, RefPtr<TypeBuilder::Array<TypeBuilder::Array<double> > >&);
 
 private:
-    typedef HashMap<int, int> LayerIdToNodeIdMap;
+    static unsigned s_lastSnapshotId;
 
     InspectorLayerTreeAgent(InstrumentingAgents*, InspectorCompositeState*, InspectorDOMAgent*, Page*);
 
     RenderLayerCompositor* renderLayerCompositor();
     GraphicsLayer* layerById(ErrorString*, const String& layerId);
-    int idForNode(ErrorString*, Node*);
+    const LayerSnapshot* snapshotById(ErrorString*, const String& snapshotId);
+    PassRefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> > buildLayerTree();
 
-    void buildLayerIdToNodeIdMap(ErrorString*, RenderLayer*, LayerIdToNodeIdMap&);
+    typedef HashMap<int, int> LayerIdToNodeIdMap;
+    void buildLayerIdToNodeIdMap(RenderLayer*, LayerIdToNodeIdMap&);
+    int idForNode(Node*);
 
     InspectorFrontend::LayerTree* m_frontend;
     Page* m_page;
     InspectorDOMAgent* m_domAgent;
 
-    HashMap<const RenderLayer*, String> m_documentLayerToIdMap;
+    typedef HashMap<String, LayerSnapshot> SnapshotById;
+    SnapshotById m_snapshotById;
 };
 
 } // namespace WebCore

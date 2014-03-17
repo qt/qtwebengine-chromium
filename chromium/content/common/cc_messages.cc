@@ -44,6 +44,9 @@ void ParamTraits<cc::FilterOperation>::Write(
       WriteParam(m, p.amount());
       WriteParam(m, p.zoom_inset());
       break;
+    case cc::FilterOperation::REFERENCE:
+      WriteParam(m, p.image_filter());
+      break;
   }
 }
 
@@ -109,6 +112,16 @@ bool ParamTraits<cc::FilterOperation>::Read(
         success = true;
       }
       break;
+    case cc::FilterOperation::REFERENCE: {
+      skia::RefPtr<SkImageFilter> filter;
+      if (!ReadParam(m, iter, &filter)) {
+        success = false;
+        break;
+      }
+      r->set_image_filter(filter);
+      success = true;
+      break;
+    }
   }
   return success;
 }
@@ -150,6 +163,9 @@ void ParamTraits<cc::FilterOperation>::Log(
       LogParam(p.amount(), l);
       l->append(", ");
       LogParam(p.zoom_inset(), l);
+      break;
+    case cc::FilterOperation::REFERENCE:
+      LogParam(p.image_filter(), l);
       break;
   }
   l->append(")");
@@ -193,8 +209,9 @@ void ParamTraits<skia::RefPtr<SkImageFilter> >::Write(
     Message* m, const param_type& p) {
   SkImageFilter* filter = p.get();
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (filter && command_line.HasSwitch(switches::kAllowFiltersOverIPC)) {
-    skia::RefPtr<SkData> data = skia::AdoptRef(SkSerializeFlattenable(filter));
+  if (filter && !command_line.HasSwitch(switches::kDisableFiltersOverIPC)) {
+    skia::RefPtr<SkData> data =
+        skia::AdoptRef(SkValidatingSerializeFlattenable(filter));
     m->WriteData(static_cast<const char*>(data->data()), data->size());
   } else {
     m->WriteData(0, 0);
@@ -208,8 +225,10 @@ bool ParamTraits<skia::RefPtr<SkImageFilter> >::Read(
   if (!m->ReadData(iter, &data, &length))
     return false;
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if ((length > 0) && command_line.HasSwitch(switches::kAllowFiltersOverIPC)) {
-    SkFlattenable* flattenable = SkDeserializeFlattenable(data, length);
+  if ((length > 0) &&
+      !command_line.HasSwitch(switches::kDisableFiltersOverIPC)) {
+    SkFlattenable* flattenable = SkValidatingDeserializeFlattenable(
+        data, length, SkImageFilter::GetFlattenableType());
     *r = skia::AdoptRef(static_cast<SkImageFilter*>(flattenable));
   } else {
     r->clear();
@@ -226,106 +245,41 @@ void ParamTraits<skia::RefPtr<SkImageFilter> >::Log(
 
 void ParamTraits<gfx::Transform>::Write(
     Message* m, const param_type& p) {
-  WriteParam(m, p.matrix().getDouble(0, 0));
-  WriteParam(m, p.matrix().getDouble(1, 0));
-  WriteParam(m, p.matrix().getDouble(2, 0));
-  WriteParam(m, p.matrix().getDouble(3, 0));
-  WriteParam(m, p.matrix().getDouble(0, 1));
-  WriteParam(m, p.matrix().getDouble(1, 1));
-  WriteParam(m, p.matrix().getDouble(2, 1));
-  WriteParam(m, p.matrix().getDouble(3, 1));
-  WriteParam(m, p.matrix().getDouble(0, 2));
-  WriteParam(m, p.matrix().getDouble(1, 2));
-  WriteParam(m, p.matrix().getDouble(2, 2));
-  WriteParam(m, p.matrix().getDouble(3, 2));
-  WriteParam(m, p.matrix().getDouble(0, 3));
-  WriteParam(m, p.matrix().getDouble(1, 3));
-  WriteParam(m, p.matrix().getDouble(2, 3));
-  WriteParam(m, p.matrix().getDouble(3, 3));
+#ifdef SK_MSCALAR_IS_FLOAT
+  float column_major_data[16];
+  p.matrix().asColMajorf(column_major_data);
+#else
+  double column_major_data[16];
+  p.matrix().asColMajord(column_major_data);
+#endif
+  m->WriteBytes(&column_major_data, sizeof(SkMScalar) * 16);
 }
 
 bool ParamTraits<gfx::Transform>::Read(
     const Message* m, PickleIterator* iter, param_type* r) {
-  // Note: In this function, "m12" means 1st row, 2nd column of the matrix.
-  // This is consistent with Skia's row-column notation, but backwards from
-  // WebCore's column-row notation.
-  double m11, m12, m13, m14, m21, m22, m23, m24, m31, m32, m33, m34,
-         m41, m42, m43, m44;
-
-  bool success =
-      ReadParam(m, iter, &m11) &&
-      ReadParam(m, iter, &m21) &&
-      ReadParam(m, iter, &m31) &&
-      ReadParam(m, iter, &m41) &&
-      ReadParam(m, iter, &m12) &&
-      ReadParam(m, iter, &m22) &&
-      ReadParam(m, iter, &m32) &&
-      ReadParam(m, iter, &m42) &&
-      ReadParam(m, iter, &m13) &&
-      ReadParam(m, iter, &m23) &&
-      ReadParam(m, iter, &m33) &&
-      ReadParam(m, iter, &m43) &&
-      ReadParam(m, iter, &m14) &&
-      ReadParam(m, iter, &m24) &&
-      ReadParam(m, iter, &m34) &&
-      ReadParam(m, iter, &m44);
-
-  if (success) {
-    r->matrix().setDouble(0, 0, m11);
-    r->matrix().setDouble(1, 0, m21);
-    r->matrix().setDouble(2, 0, m31);
-    r->matrix().setDouble(3, 0, m41);
-    r->matrix().setDouble(0, 1, m12);
-    r->matrix().setDouble(1, 1, m22);
-    r->matrix().setDouble(2, 1, m32);
-    r->matrix().setDouble(3, 1, m42);
-    r->matrix().setDouble(0, 2, m13);
-    r->matrix().setDouble(1, 2, m23);
-    r->matrix().setDouble(2, 2, m33);
-    r->matrix().setDouble(3, 2, m43);
-    r->matrix().setDouble(0, 3, m14);
-    r->matrix().setDouble(1, 3, m24);
-    r->matrix().setDouble(2, 3, m34);
-    r->matrix().setDouble(3, 3, m44);
-  }
-
-  return success;
+  const char* column_major_data;
+  if (!m->ReadBytes(iter, &column_major_data, sizeof(SkMScalar) * 16))
+    return false;
+  r->matrix().setColMajor(
+      reinterpret_cast<const SkMScalar*>(column_major_data));
+  return true;
 }
 
 void ParamTraits<gfx::Transform>::Log(
     const param_type& p, std::string* l) {
+#ifdef SK_MSCALAR_IS_FLOAT
+  float row_major_data[16];
+  p.matrix().asRowMajorf(row_major_data);
+#else
+  double row_major_data[16];
+  p.matrix().asRowMajord(row_major_data);
+#endif
   l->append("(");
-  LogParam(p.matrix().getDouble(0, 0), l);
-  l->append(", ");
-  LogParam(p.matrix().getDouble(1, 0), l);
-  l->append(", ");
-  LogParam(p.matrix().getDouble(2, 0), l);
-  l->append(", ");
-  LogParam(p.matrix().getDouble(3, 0), l);
-  l->append(", ");
-  LogParam(p.matrix().getDouble(0, 1), l);
-  l->append(", ");
-  LogParam(p.matrix().getDouble(1, 1), l);
-  l->append(", ");
-  LogParam(p.matrix().getDouble(2, 1), l);
-  l->append(", ");
-  LogParam(p.matrix().getDouble(3, 1), l);
-  l->append(", ");
-  LogParam(p.matrix().getDouble(0, 2), l);
-  l->append(", ");
-  LogParam(p.matrix().getDouble(1, 2), l);
-  l->append(", ");
-  LogParam(p.matrix().getDouble(2, 2), l);
-  l->append(", ");
-  LogParam(p.matrix().getDouble(3, 2), l);
-  l->append(", ");
-  LogParam(p.matrix().getDouble(0, 3), l);
-  l->append(", ");
-  LogParam(p.matrix().getDouble(1, 3), l);
-  l->append(", ");
-  LogParam(p.matrix().getDouble(2, 3), l);
-  l->append(", ");
-  LogParam(p.matrix().getDouble(3, 3), l);
+  for (int i = 0; i < 16; ++i) {
+    if (i > 0)
+      l->append(", ");
+    LogParam(row_major_data[i], l);
+  }
   l->append(") ");
 }
 
@@ -336,16 +290,20 @@ void ParamTraits<cc::RenderPass>::Write(
   WriteParam(m, p.damage_rect);
   WriteParam(m, p.transform_to_root_target);
   WriteParam(m, p.has_transparent_background);
-  WriteParam(m, p.has_occlusion_from_outside_target_surface);
   WriteParam(m, p.shared_quad_state_list.size());
   WriteParam(m, p.quad_list.size());
 
-  for (size_t i = 0; i < p.shared_quad_state_list.size(); ++i)
-    WriteParam(m, *p.shared_quad_state_list[i]);
-
   size_t shared_quad_state_index = 0;
+  size_t last_shared_quad_state_index = kuint32max;
   for (size_t i = 0; i < p.quad_list.size(); ++i) {
     const cc::DrawQuad* quad = p.quad_list[i];
+    DCHECK(quad->rect.Contains(quad->visible_rect))
+        << quad->material << " rect: " << quad->rect.ToString()
+        << " visible_rect: " << quad->visible_rect.ToString();
+    DCHECK(quad->opaque_rect.IsEmpty() ||
+           quad->rect.Contains(quad->opaque_rect))
+        << quad->material << " rect: " << quad->rect.ToString()
+        << " opaque_rect: " << quad->opaque_rect.ToString();
 
     switch (quad->material) {
       case cc::DrawQuad::CHECKERBOARD:
@@ -407,9 +365,25 @@ void ParamTraits<cc::RenderPass>::Write(
       continue;
     }
 
-    DCHECK_LT(shared_quad_state_index, p.shared_quad_state_list.size());
     WriteParam(m, shared_quad_state_index);
+    if (shared_quad_state_index != last_shared_quad_state_index) {
+      WriteParam(m, *sqs_list[shared_quad_state_index]);
+      last_shared_quad_state_index = shared_quad_state_index;
+    }
   }
+}
+
+static size_t ReserveSizeForRenderPassWrite(const cc::RenderPass& p) {
+  size_t to_reserve = sizeof(cc::RenderPass);
+
+  to_reserve += p.shared_quad_state_list.size() * sizeof(cc::SharedQuadState);
+
+  // The shared_quad_state_index for each quad.
+  to_reserve += p.quad_list.size() * sizeof(size_t);
+
+  // The largest quad type, verified by a unit test.
+  to_reserve += p.quad_list.size() * sizeof(cc::RenderPassDrawQuad);
+  return to_reserve;
 }
 
 template<typename QuadType>
@@ -428,7 +402,6 @@ bool ParamTraits<cc::RenderPass>::Read(
   gfx::RectF damage_rect;
   gfx::Transform transform_to_root_target;
   bool has_transparent_background;
-  bool has_occlusion_from_outside_target_surface;
   size_t shared_quad_state_list_size;
   size_t quad_list_size;
 
@@ -437,7 +410,6 @@ bool ParamTraits<cc::RenderPass>::Read(
       !ReadParam(m, iter, &damage_rect) ||
       !ReadParam(m, iter, &transform_to_root_target) ||
       !ReadParam(m, iter, &has_transparent_background) ||
-      !ReadParam(m, iter, &has_occlusion_from_outside_target_surface) ||
       !ReadParam(m, iter, &shared_quad_state_list_size) ||
       !ReadParam(m, iter, &quad_list_size))
     return false;
@@ -446,17 +418,9 @@ bool ParamTraits<cc::RenderPass>::Read(
             output_rect,
             damage_rect,
             transform_to_root_target,
-            has_transparent_background,
-            has_occlusion_from_outside_target_surface);
+            has_transparent_background);
 
-  for (size_t i = 0; i < shared_quad_state_list_size; ++i) {
-    scoped_ptr<cc::SharedQuadState> state(cc::SharedQuadState::Create());
-    if (!ReadParam(m, iter, state.get()))
-      return false;
-    p->shared_quad_state_list.push_back(state.Pass());
-  }
-
-  size_t last_shared_quad_state_index = 0;
+  size_t last_shared_quad_state_index = kuint32max;
   for (size_t i = 0; i < quad_list_size; ++i) {
     cc::DrawQuad::Material material;
     PickleIterator temp_iter = *iter;
@@ -500,19 +464,40 @@ bool ParamTraits<cc::RenderPass>::Read(
     }
     if (!draw_quad)
       return false;
+    if (!draw_quad->rect.Contains(draw_quad->visible_rect)) {
+      LOG(ERROR) << "Quad with invalid visible rect " << draw_quad->material
+                 << " rect: " << draw_quad->rect.ToString()
+                 << " visible_rect: " << draw_quad->visible_rect.ToString();
+      return false;
+    }
+    if (!draw_quad->opaque_rect.IsEmpty() &&
+        !draw_quad->rect.Contains(draw_quad->opaque_rect)) {
+      LOG(ERROR) << "Quad with invalid opaque rect " << draw_quad->material
+                 << " rect: " << draw_quad->rect.ToString()
+                 << " opaque_rect: " << draw_quad->opaque_rect.ToString();
+      return false;
+    }
 
     size_t shared_quad_state_index;
-    if (!ReadParam(m, iter, &shared_quad_state_index) ||
-        shared_quad_state_index >= p->shared_quad_state_list.size())
+    if (!ReadParam(m, iter, &shared_quad_state_index))
+      return false;
+    if (shared_quad_state_index >= shared_quad_state_list_size)
       return false;
     // SharedQuadState indexes should be in ascending order.
-    if (shared_quad_state_index < last_shared_quad_state_index)
+    if (last_shared_quad_state_index != kuint32max &&
+        shared_quad_state_index < last_shared_quad_state_index)
       return false;
-    last_shared_quad_state_index = shared_quad_state_index;
 
-    draw_quad->shared_quad_state =
-        p->shared_quad_state_list[shared_quad_state_index];
+    // If the quad has a new shared quad state, read it in.
+    if (last_shared_quad_state_index != shared_quad_state_index) {
+      scoped_ptr<cc::SharedQuadState> state(cc::SharedQuadState::Create());
+      if (!ReadParam(m, iter, state.get()))
+        return false;
+      p->shared_quad_state_list.push_back(state.Pass());
+      last_shared_quad_state_index = shared_quad_state_index;
+    }
 
+    draw_quad->shared_quad_state = p->shared_quad_state_list.back();
     p->quad_list.push_back(draw_quad.Pass());
   }
 
@@ -531,8 +516,6 @@ void ParamTraits<cc::RenderPass>::Log(
   LogParam(p.transform_to_root_target, l);
   l->append(", ");
   LogParam(p.has_transparent_background, l);
-  l->append(", ");
-  LogParam(p.has_occlusion_from_outside_target_surface, l);
   l->append(", ");
 
   l->append("[");
@@ -714,6 +697,15 @@ void ParamTraits<cc::CompositorFrameAck>::Log(const param_type& p,
 
 void ParamTraits<cc::DelegatedFrameData>::Write(Message* m,
                                                 const param_type& p) {
+  DCHECK_NE(0u, p.render_pass_list.size());
+
+  size_t to_reserve = p.resource_list.size() * sizeof(cc::TransferableResource);
+  for (size_t i = 0; i < p.render_pass_list.size(); ++i) {
+    const cc::RenderPass* pass = p.render_pass_list[i];
+    to_reserve += ReserveSizeForRenderPassWrite(*pass);
+  }
+  m->Reserve(to_reserve);
+
   WriteParam(m, p.resource_list);
   WriteParam(m, p.render_pass_list.size());
   for (size_t i = 0; i < p.render_pass_list.size(); ++i)
@@ -728,7 +720,7 @@ bool ParamTraits<cc::DelegatedFrameData>::Read(const Message* m,
   size_t num_render_passes;
   if (!ReadParam(m, iter, &p->resource_list) ||
       !ReadParam(m, iter, &num_render_passes) ||
-      num_render_passes > kMaxRenderPasses)
+      num_render_passes > kMaxRenderPasses || num_render_passes == 0)
     return false;
   for (size_t i = 0; i < num_render_passes; ++i) {
     scoped_ptr<cc::RenderPass> render_pass = cc::RenderPass::Create();

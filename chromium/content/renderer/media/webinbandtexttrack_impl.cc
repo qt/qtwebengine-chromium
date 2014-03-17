@@ -10,14 +10,15 @@ namespace content {
 
 WebInbandTextTrackImpl::WebInbandTextTrackImpl(
     Kind kind,
-    const WebKit::WebString& label,
-    const WebKit::WebString& language,
+    const blink::WebString& label,
+    const blink::WebString& language,
+    const blink::WebString& id,
     int index)
     : client_(NULL),
-      mode_(ModeDisabled),
       kind_(kind),
       label_(label),
       language_(language),
+      id_(id),
       index_(index) {
 }
 
@@ -26,47 +27,28 @@ WebInbandTextTrackImpl::~WebInbandTextTrackImpl() {
 }
 
 void WebInbandTextTrackImpl::setClient(
-    WebKit::WebInbandTextTrackClient* client) {
+    blink::WebInbandTextTrackClient* client) {
   client_ = client;
 }
 
-WebKit::WebInbandTextTrackClient* WebInbandTextTrackImpl::client() {
+blink::WebInbandTextTrackClient* WebInbandTextTrackImpl::client() {
   return client_;
-}
-
-void WebInbandTextTrackImpl::setMode(Mode mode) {
-  mode_ = mode;
-}
-
-WebInbandTextTrackImpl::Mode WebInbandTextTrackImpl::mode() const {
-  return mode_;
 }
 
 WebInbandTextTrackImpl::Kind WebInbandTextTrackImpl::kind() const {
   return kind_;
 }
 
-bool WebInbandTextTrackImpl::isClosedCaptions() const {
-  switch (kind_) {
-  case KindCaptions:
-  case KindSubtitles:
-    return true;
-
-  default:
-    return false;
-  }
-}
-
-WebKit::WebString WebInbandTextTrackImpl::label() const {
+blink::WebString WebInbandTextTrackImpl::label() const {
   return label_;
 }
 
-WebKit::WebString WebInbandTextTrackImpl::language() const {
+blink::WebString WebInbandTextTrackImpl::language() const {
   return language_;
 }
 
-bool WebInbandTextTrackImpl::isDefault() const {
-  return false;
+blink::WebString WebInbandTextTrackImpl::id() const {
+  return id_;
 }
 
 int WebInbandTextTrackImpl::textTrackIndex() const {

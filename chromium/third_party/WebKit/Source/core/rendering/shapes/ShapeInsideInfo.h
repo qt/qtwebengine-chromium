@@ -66,21 +66,8 @@ public:
 
     static bool isEnabledFor(const RenderBlock* renderer);
 
-    bool computeSegmentsForLine(LayoutSize lineOffset, LayoutUnit lineHeight)
-    {
-        bool result = computeSegmentsForLine(lineOffset.height(), lineHeight);
-        for (size_t i = 0; i < m_segments.size(); i++) {
-            m_segments[i].logicalLeft -= lineOffset.width();
-            m_segments[i].logicalRight -= lineOffset.width();
-        }
-        return result;
-    }
-
-    virtual bool computeSegmentsForLine(LayoutUnit lineTop, LayoutUnit lineHeight) OVERRIDE
-    {
-        m_segmentRanges.clear();
-        return ShapeInfo<RenderBlock>::computeSegmentsForLine(lineTop, lineHeight);
-    }
+    bool updateSegmentsForLine(LayoutSize lineOffset, LayoutUnit lineHeight);
+    bool updateSegmentsForLine(LayoutUnit lineTop, LayoutUnit lineHeight);
 
     bool hasSegments() const
     {
@@ -100,15 +87,16 @@ public:
         ASSERT(m_segmentRanges.size() < m_segments.size());
         return &m_segments[m_segmentRanges.size()];
     }
+    void clearSegments() { m_segments.clear(); }
     bool adjustLogicalLineTop(float minSegmentWidth);
+    LayoutUnit computeFirstFitPositionForFloat(const LayoutSize) const;
 
     void setNeedsLayout(bool value) { m_needsLayout = value; }
     bool needsLayout() { return m_needsLayout; }
 
     virtual bool lineOverlapsShapeBounds() const OVERRIDE
     {
-        // The <= test is to handle the case of a zero height line or a zero height shape.
-        return logicalLineTop() < shapeLogicalBottom() && shapeLogicalTop() <= logicalLineBottom();
+        return computedShape()->lineOverlapsShapePaddingBounds(m_shapeLineTop, m_lineHeight);
     }
 
 protected:
@@ -127,6 +115,7 @@ private:
 
     SegmentRangeList m_segmentRanges;
     bool m_needsLayout;
+    SegmentList m_segments;
 };
 
 }

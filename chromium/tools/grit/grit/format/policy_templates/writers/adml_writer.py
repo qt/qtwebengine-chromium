@@ -108,6 +108,9 @@ class ADMLWriter(xml_formatted_writer.XMLFormattedWriter):
       listbox_elem.appendChild(self._doc.createTextNode(policy_label))
     elif policy_type == 'group':
       pass
+    elif policy_type == 'external':
+      # This type can only be set through cloud policy.
+      pass
     else:
       raise Exception('Unknown policy type %s.' % policy_type)
 

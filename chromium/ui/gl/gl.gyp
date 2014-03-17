@@ -18,7 +18,7 @@
         '<(DEPTH)/gpu/command_buffer/command_buffer.gyp:gles2_utils',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/mesa/mesa.gyp:mesa_headers',
-        '<(DEPTH)/ui/ui.gyp:ui',
+        '<(DEPTH)/ui/gfx/gfx.gyp:gfx',
       ],
       'variables': {
         'gl_binding_output_dir': '<(SHARED_INTERMEDIATE_DIR)/ui/gl',
@@ -114,8 +114,8 @@
         'scoped_binders.h',
         'scoped_make_current.cc',
         'scoped_make_current.h',
-        'vsync_provider.cc',
-        'vsync_provider.h',
+        'sync_control_vsync_provider.cc',
+        'sync_control_vsync_provider.h',
         '<(gl_binding_output_dir)/gl_bindings_autogen_gl.cc',
         '<(gl_binding_output_dir)/gl_bindings_autogen_gl.h',
         '<(gl_binding_output_dir)/gl_bindings_autogen_mock.cc',
@@ -234,27 +234,40 @@
             '<(gl_binding_output_dir)/gl_bindings_autogen_wgl.cc',
             '<(gl_binding_output_dir)/gl_bindings_autogen_wgl.h',
           ],
+          'msvs_settings': {
+            'VCLinkerTool': {
+              'DelayLoadDLLs': [
+                'dwmapi.dll',
+              ],
+              'AdditionalDependencies': [
+                'dwmapi.lib',
+              ],
+            },
+          },
+          'link_settings': {
+            'libraries': [
+              '-ldwmapi.lib',
+            ],
+          },
         }],
         ['OS=="mac"', {
           'sources': [
             'gl_context_cgl.cc',
             'gl_context_cgl.h',
+            'gl_image_io_surface.cc',
+            'gl_image_io_surface.h',
             'gl_surface_cgl.cc',
             'gl_surface_cgl.h',
+            'gl_context_nsview.mm',
+            'gl_context_nsview.h',
+            'gl_surface_nsview.mm',
+            'gl_surface_nsview.h',
           ],
           'link_settings': {
             'libraries': [
               '$(SDKROOT)/System/Library/Frameworks/OpenGL.framework',
             ],
           },
-        }],
-        ['OS=="mac" and use_aura == 1', {
-          'sources': [
-            'gl_context_nsview.mm',
-            'gl_context_nsview.h',
-            'gl_surface_nsview.mm',
-            'gl_surface_nsview.h',
-          ],
         }],
         ['OS=="android"', {
           'dependencies': [
@@ -280,6 +293,11 @@
         }],
         ['OS!="android"', {
           'sources/': [ ['exclude', '^android/'] ],
+        }],
+        ['use_ozone==1', {
+          'dependencies': [
+            '../ozone/ozone.gyp:ozone',
+          ],
         }],
       ],
     },
@@ -319,6 +337,7 @@
           'variables': {
             'jni_gen_package': 'ui/gl',
             'input_java_class': 'android/view/Surface.class',
+            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../../build/jar_file_jni_generator.gypi' ],
         },
@@ -329,11 +348,12 @@
             'surface_jni_headers',
           ],
           'sources': [
-            '../android/java/src/org/chromium/ui/gfx/SurfaceTexturePlatformWrapper.java',
-            '../android/java/src/org/chromium/ui/gfx/SurfaceTextureListener.java',
+            '../android/java/src/org/chromium/ui/gl/SurfaceTexturePlatformWrapper.java',
+            '../android/java/src/org/chromium/ui/gl/SurfaceTextureListener.java',
           ],
           'variables': {
             'jni_gen_package': 'ui/gl',
+            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../../build/jni_generator.gypi' ],
         },

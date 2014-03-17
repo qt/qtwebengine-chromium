@@ -14,8 +14,10 @@ base.requireStylesheet('cc.layer_tree_quad_stack_view');
 base.require('base.color');
 base.require('base.properties');
 base.require('base.raf');
-base.require('cc.constants');
+base.require('base.quad');
+base.require('base.range');
 base.require('cc.picture');
+base.require('cc.render_pass');
 base.require('cc.tile');
 base.require('cc.debug_colors');
 base.require('ui.quad_stack_view');
@@ -29,6 +31,7 @@ base.exportTo('cc', function() {
   TILE_HEATMAP_TYPE.SCHEDULED_PRIORITY = 1;
   TILE_HEATMAP_TYPE.DISTANCE_TO_VISIBLE = 2;
   TILE_HEATMAP_TYPE.TIME_TO_VISIBLE = 3;
+  TILE_HEATMAP_TYPE.USING_GPU_MEMORY = 4;
 
   function createTileRectsSelectorBaseOptions() {
     return [{label: 'None', value: 'none'},
@@ -44,6 +47,7 @@ base.exportTo('cc', function() {
     __proto__: HTMLDivElement.prototype,
 
     decorate: function() {
+      this.isRenderPassQuads_ = false;
       this.pictureAsImageData_ = {}; // Maps picture.guid to PictureAsImageData.
       this.messages_ = [];
       this.controls_ = document.createElement('top-controls');
@@ -85,14 +89,16 @@ base.exportTo('cc', function() {
            {label: 'Distance to Visible',
             value: TILE_HEATMAP_TYPE.DISTANCE_TO_VISIBLE},
            {label: 'Time to Visible',
-            value: TILE_HEATMAP_TYPE.TIME_TO_VISIBLE}
+            value: TILE_HEATMAP_TYPE.TIME_TO_VISIBLE},
+           {label: 'Is using GPU memory',
+            value: TILE_HEATMAP_TYPE.USING_GPU_MEMORY}
           ]);
       this.controls_.appendChild(tileHeatmapSelector);
 
       var showOtherLayersCheckbox = ui.createCheckBox(
           this, 'showOtherLayers',
           'layerView.showOtherLayers', true,
-          'Other layers');
+          'Other layers/passes');
       showOtherLayersCheckbox.title =
           'When checked, show all layers, selected or not.';
       this.controls_.appendChild(showOtherLayersCheckbox);
@@ -105,6 +111,14 @@ base.exportTo('cc', function() {
           'When checked, compositing invalidations are highlighted in red';
       this.controls_.appendChild(showInvalidationsCheckbox);
 
+      var showUnrecordedRegionCheckbox = ui.createCheckBox(
+          this, 'showUnrecordedRegion',
+          'layerView.showUnrecordedRegion', true,
+          'Unrecorded area');
+      showUnrecordedRegionCheckbox.title =
+          'When checked, unrecorded areas are highlighted in yellow';
+      this.controls_.appendChild(showUnrecordedRegionCheckbox);
+
       var showBottlenecksCheckbox = ui.createCheckBox(
           this, 'showBottlenecks',
           'layerView.showBottlenecks', true,
@@ -112,6 +126,14 @@ base.exportTo('cc', function() {
       showBottlenecksCheckbox.title =
           'When checked, scroll bottlenecks are highlighted';
       this.controls_.appendChild(showBottlenecksCheckbox);
+
+      var showLayoutRectsCheckbox = ui.createCheckBox(
+          this, 'showLayoutRects',
+          'layerView.showLayoutRects', false,
+          'Layout rects');
+      showLayoutRectsCheckbox.title =
+          'When checked, shows rects for regions where layout happened';
+      this.controls_.appendChild(showLayoutRectsCheckbox);
 
       var showContentsCheckbox = ui.createCheckBox(
           this, 'showContents',
@@ -126,6 +148,14 @@ base.exportTo('cc', function() {
       return this.layerTreeImpl_;
     },
 
+    set whichTree(whichTree) {
+      this.whichTree_ = whichTree;
+    },
+
+    set isRenderPassQuads(newValue) {
+      this.isRenderPassQuads_ = newValue;
+    },
+
     set layerTreeImpl(layerTreeImpl) {
       // FIXME(pdr): We may want to clear pictureAsImageData_ here to save
       //             memory at the cost of performance. Note that
@@ -134,8 +164,6 @@ base.exportTo('cc', function() {
       //             layerTreeImpls.
       this.layerTreeImpl_ = layerTreeImpl;
       this.selection = undefined;
-      this.updateTilesSelector_();
-      this.updateContents_();
     },
 
     get showOtherLayers() {
@@ -165,12 +193,30 @@ base.exportTo('cc', function() {
       this.updateContents_();
     },
 
+    get showUnrecordedRegion() {
+      return this.showUnrecordedRegion_;
+    },
+
+    set showUnrecordedRegion(show) {
+      this.showUnrecordedRegion_ = show;
+      this.updateContents_();
+    },
+
     get showBottlenecks() {
       return this.showBottlenecks_;
     },
 
     set showBottlenecks(show) {
       this.showBottlenecks_ = show;
+      this.updateContents_();
+    },
+
+    get showLayoutRects() {
+      return this.showLayoutRects_;
+    },
+
+    set showLayoutRects(show) {
+      this.showLayoutRects_ = show;
       this.updateContents_();
     },
 
@@ -204,6 +250,11 @@ base.exportTo('cc', function() {
 
     set selection(selection) {
       base.setPropertyAndDispatchChange(this, 'selection', selection);
+      this.updateContents_();
+    },
+
+    regenerateContent: function() {
+      this.updateTilesSelector_();
       this.updateContents_();
     },
 
@@ -253,21 +304,27 @@ base.exportTo('cc', function() {
           0, 0,
           lthi.deviceViewportSize.width, lthi.deviceViewportSize.height);
       this.quadStackView_.deviceRect = worldViewportRect;
-      this.quadStackView_.quads = this.generateQuads();
+      if (this.isRenderPassQuads_)
+        this.quadStackView_.quads = this.generateRenderPassQuads();
+      else
+        this.quadStackView_.quads = this.generateLayerQuads();
+
       this.updateInfoBar_(status.messages);
     },
 
     updateTilesSelector_: function() {
       var data = createTileRectsSelectorBaseOptions();
 
-      // First get all of the scales information from LTHI.
-      var lthi = this.layerTreeImpl_.layerTreeHostImpl;
-      var scaleNames = lthi.getContentsScaleNames();
-      for (var scale in scaleNames) {
-        data.push({
-          label: 'Scale ' + scale + ' (' + scaleNames[scale] + ')',
-          value: scale
-        });
+      if (this.layerTreeImpl_) {
+        // First get all of the scales information from LTHI.
+        var lthi = this.layerTreeImpl_.layerTreeHostImpl;
+        var scaleNames = lthi.getContentsScaleNames();
+        for (var scale in scaleNames) {
+          data.push({
+            label: 'Scale ' + scale + ' (' + scaleNames[scale] + ')',
+            value: scale
+          });
+        }
       }
 
       // Then create a new selector and replace the old one.
@@ -294,7 +351,7 @@ base.exportTo('cc', function() {
         var hasUnresolvedPictureRef = false;
         for (var i = 0; i < layers.length; i++) {
           var layer = layers[i];
-          for (var ir = layer.pictures.length - 1; ir >= 0; ir--) {
+          for (var ir = 0; ir < layer.pictures.length; ++ir) {
             var picture = layer.pictures[ir];
 
             if (picture.idRef) {
@@ -356,11 +413,27 @@ base.exportTo('cc', function() {
       return status;
     },
 
+    get selectedRenderPass() {
+      if (this.selection)
+        return this.selection.renderPass_;
+    },
+
     get selectedLayer() {
       if (this.selection) {
         var selectedLayerId = this.selection.associatedLayerId;
         return this.layerTreeImpl_.findLayerWithId(selectedLayerId);
       }
+    },
+
+    get renderPasses() {
+      var renderPasses =
+          this.layerTreeImpl.layerTreeHostImpl.args.frame.renderPasses;
+      if (!this.showOtherLayers) {
+        var selectedRenderPass = this.selectedRenderPass;
+        if (selectedRenderPass)
+          renderPasses = [selectedRenderPass];
+      }
+      return renderPasses;
     },
 
     get layers() {
@@ -375,7 +448,7 @@ base.exportTo('cc', function() {
 
     appendImageQuads_: function(quads, layer, layerQuad) {
       // Generate image quads for the layer
-      for (var ir = layer.pictures.length - 1; ir >= 0; ir--) {
+      for (var ir = 0; ir < layer.pictures.length; ++ir) {
         var picture = layer.pictures[ir];
         if (!picture.layerRect)
           continue;
@@ -407,6 +480,21 @@ base.exportTo('cc', function() {
         iq.stackingGroupId = layerQuad.stackingGroupId;
         iq.selectionToSetIfClicked = new cc.LayerRectSelection(
             layer, 'Invalidation rect', rect, rect);
+        quads.push(iq);
+      }
+    },
+
+    appendUnrecordedRegionQuads_: function(quads, layer, layerQuad) {
+      // Generate the unrecorded region quads.
+      for (var ir = 0; ir < layer.unrecordedRegion.rects.length; ir++) {
+        var rect = layer.unrecordedRegion.rects[ir];
+        var unitRect = rect.asUVRectInside(layer.bounds);
+        var iq = layerQuad.projectUnitRect(unitRect);
+        iq.backgroundColor = 'rgba(240, 230, 140, 0.3)';
+        iq.borderColor = 'rgba(240, 230, 140, 1)';
+        iq.stackingGroupId = layerQuad.stackingGroupId;
+        iq.selectionToSetIfClicked = new cc.LayerRectSelection(
+            layer, 'Unrecorded area', rect, rect);
         quads.push(iq);
       }
     },
@@ -450,7 +538,11 @@ base.exportTo('cc', function() {
           tiles.push(tile);
       }
 
-      var heatmapColors = this.computeHeatmapColors_(tiles, heatmapType);
+      var lthi = this.layerTreeImpl_.layerTreeHostImpl;
+      var minMax =
+          this.getMinMaxForHeatmap_(lthi.tiles, heatmapType);
+      var heatmapColors =
+          this.computeHeatmapColors_(tiles, minMax, heatmapType);
       var heatIndex = 0;
 
       for (var ct = 0; ct < layer.tileCoverageRects.length; ++ct) {
@@ -485,29 +577,73 @@ base.exportTo('cc', function() {
       }
     },
 
-    getValueForHeatmap_: function(tile, heatmapType) {
-      if (heatmapType == TILE_HEATMAP_TYPE.SCHEDULED_PRIORITY)
-        return tile.scheduledPriority;
-      else if (heatmapType == TILE_HEATMAP_TYPE.DISTANCE_TO_VISIBLE)
-        return tile.distanceToVisible;
-      else if (heatmapType == TILE_HEATMAP_TYPE.TIME_TO_VISIBLE)
-        return tile.timeToVisible;
-    },
-
-    computeHeatmapColors_: function(tiles, heatmapType) {
-      var maxValue = 0;
-      for (var i = 0; i < tiles.length; ++i) {
-        var tile = tiles[i];
-        var value = this.getValueForHeatmap_(tile, heatmapType);
-        if (value !== undefined)
-          maxValue = Math.max(value, maxValue);
+    appendLayoutRectQuads_: function(quads, layer, layerQuad) {
+      if (!layer.layoutRects) {
+        return;
       }
 
-      if (maxValue == 0)
-        maxValue = 1;
+      for (var ct = 0; ct < layer.layoutRects.length; ++ct) {
+        var rect = layer.layoutRects[ct].geometryRect;
+        rect = rect.scale(1.0 / layer.geometryContentsScale);
+
+        var unitRect = rect.asUVRectInside(layer.bounds);
+        var quad = layerQuad.projectUnitRect(unitRect);
+
+        quad.backgroundColor = 'rgba(0, 0, 0, 0)';
+        quad.stackingGroupId = layerQuad.stackingGroupId;
+
+        quad.borderColor = 'rgba(0, 0, 200, 0.7)';
+        quad.borderWidth = 2;
+        var label;
+        label = 'Layout rect';
+        quad.selectionToSetIfClicked = new cc.LayerRectSelection(
+            layer, label, rect);
+
+        quads.push(quad);
+      }
+    },
+
+    getValueForHeatmap_: function(tile, heatmapType) {
+      if (heatmapType == TILE_HEATMAP_TYPE.SCHEDULED_PRIORITY) {
+        return tile.scheduledPriority == 0 ?
+            undefined :
+            tile.scheduledPriority;
+      } else if (heatmapType == TILE_HEATMAP_TYPE.DISTANCE_TO_VISIBLE) {
+        return tile.distanceToVisible;
+      } else if (heatmapType == TILE_HEATMAP_TYPE.TIME_TO_VISIBLE) {
+        return Math.min(5, tile.timeToVisible);
+      } else if (heatmapType == TILE_HEATMAP_TYPE.USING_GPU_MEMORY) {
+        if (tile.isSolidColor)
+          return 0.5;
+        return tile.isUsingGpuMemory ? 0 : 1;
+      }
+    },
+
+    getMinMaxForHeatmap_: function(tiles, heatmapType) {
+      var range = new base.Range();
+      if (heatmapType == TILE_HEATMAP_TYPE.USING_GPU_MEMORY) {
+        range.addValue(0);
+        range.addValue(1);
+        return range;
+      }
+
+      for (var i = 0; i < tiles.length; ++i) {
+        var value = this.getValueForHeatmap_(tiles[i], heatmapType);
+        if (value == undefined)
+          continue;
+        range.addValue(value);
+      }
+      if (range.range == 0)
+        range.addValue(1);
+      return range;
+    },
+
+    computeHeatmapColors_: function(tiles, minMax, heatmapType) {
+      var min = minMax.min;
+      var max = minMax.max;
 
       var color = function(value) {
-        var hue = 120 * (1 - value / maxValue);
+        var hue = 120 * (1 - (value - min) / (max - min));
         if (hue < 0)
           hue = 0;
         return 'hsla(' + hue + ', 100%, 50%, 0.5)';
@@ -545,8 +681,10 @@ base.exportTo('cc', function() {
         tiles.push(tile);
       }
 
+      var minMax =
+          this.getMinMaxForHeatmap_(lthi.tiles, heatmapType);
       var heatmapColors =
-          this.computeHeatmapColors_(tiles, heatmapType);
+          this.computeHeatmapColors_(tiles, minMax, heatmapType);
 
       for (var i = 0; i < tiles.length; ++i) {
         var tile = tiles[i];
@@ -590,7 +728,29 @@ base.exportTo('cc', function() {
       quads.push(quadForDrawing);
     },
 
-    generateQuads: function() {
+    generateRenderPassQuads: function() {
+      if (!this.layerTreeImpl.layerTreeHostImpl.args.frame)
+        return [];
+      var renderPasses = this.renderPasses;
+      if (!renderPasses)
+        return [];
+
+      var quads = [];
+      for (var i = 0; i < renderPasses.length; ++i) {
+        var quadList = renderPasses[i].quadList;
+        for (var j = 0; j < quadList.length; ++j) {
+          var drawQuad = quadList[j];
+          var quad = drawQuad.rectAsTargetSpaceQuad.clone();
+          quad.borderColor = 'rgb(170, 204, 238)';
+          quad.borderWidth = 2;
+          quad.stackingGroupId = i;
+          quads.push(quad);
+        }
+      }
+      return quads;
+    },
+
+    generateLayerQuads: function() {
       this.updateContentsPending_ = false;
 
       // Generate the quads for the view.
@@ -598,8 +758,10 @@ base.exportTo('cc', function() {
       var quads = [];
       var nextStackingGroupId = 0;
       var alreadyVisitedLayerIds = {};
-      for (var i = 0; i < layers.length; i++) {
-        var layer = layers[i];
+
+      for (var i = 1; i <= layers.length; i++) {
+        // Generate quads back-to-front.
+        var layer = layers[layers.length - i];
         alreadyVisitedLayerIds[layer.layerId] = true;
         if (layer.objectInstance.name == 'cc::NinePatchLayerImpl')
           continue;
@@ -618,9 +780,13 @@ base.exportTo('cc', function() {
 
         if (this.showInvalidations)
           this.appendInvalidationQuads_(quads, layer, layerQuad);
+        if (this.showUnrecordedRegion)
+          this.appendUnrecordedRegionQuads_(quads, layer, layerQuad);
         if (this.showBottlenecks)
           this.appendBottleneckQuads_(quads, layer, layerQuad,
                                       layerQuad.stackingGroupId);
+        if (this.showLayoutRects)
+          this.appendLayoutRectQuads_(quads, layer, layerQuad);
 
         if (this.howToShowTiles === 'coverage') {
           this.appendTileCoverageRectQuads_(

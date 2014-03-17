@@ -95,6 +95,9 @@ void HeapObject::HeapObjectPrint(FILE* out) {
     case FIXED_DOUBLE_ARRAY_TYPE:
       FixedDoubleArray::cast(this)->FixedDoubleArrayPrint(out);
       break;
+    case CONSTANT_POOL_ARRAY_TYPE:
+      ConstantPoolArray::cast(this)->ConstantPoolArrayPrint(out);
+      break;
     case FIXED_ARRAY_TYPE:
       FixedArray::cast(this)->FixedArrayPrint(out);
       break;
@@ -520,6 +523,7 @@ void Symbol::SymbolPrint(FILE* out) {
   PrintF(out, " - hash: %d\n", Hash());
   PrintF(out, " - name: ");
   name()->ShortPrint();
+  PrintF(out, " - private: %d\n", is_private());
   PrintF(out, "\n");
 }
 
@@ -551,6 +555,11 @@ void Map::MapPrint(FILE* out) {
   }
   if (is_access_check_needed()) {
     PrintF(out, " - access_check_needed\n");
+  }
+  if (is_frozen()) {
+    PrintF(out, " - frozen\n");
+  } else if (!is_extensible()) {
+    PrintF(out, " - sealed\n");
   }
   PrintF(out, " - back pointer: ");
   GetBackPointer()->ShortPrint(out);
@@ -624,6 +633,23 @@ void FixedDoubleArray::FixedDoubleArrayPrint(FILE* out) {
       PrintF(out, "\n  [%d]: <the hole>", i);
     } else {
       PrintF(out, "\n  [%d]: %g", i, get_scalar(i));
+    }
+  }
+  PrintF(out, "\n");
+}
+
+
+void ConstantPoolArray::ConstantPoolArrayPrint(FILE* out) {
+  HeapObject::PrintHeader(out, "ConstantPoolArray");
+  PrintF(out, " - length: %d", length());
+  for (int i = 0; i < length(); i++) {
+    if (i < first_ptr_index()) {
+      PrintF(out, "\n  [%d]: double: %g", i, get_int64_entry_as_double(i));
+    } else if (i < first_int32_index()) {
+      PrintF(out, "\n  [%d]: pointer: %p", i,
+             reinterpret_cast<void*>(get_ptr_entry(i)));
+    } else {
+      PrintF(out, "\n  [%d]: int32: %d", i, get_int32_entry(i));
     }
   }
   PrintF(out, "\n");
@@ -810,7 +836,7 @@ void JSTypedArray::JSTypedArrayPrint(FILE* out) {
   byte_length()->ShortPrint(out);
   PrintF(out, "\n - length = ");
   length()->ShortPrint(out);
-  PrintF("\n");
+  PrintF(out, "\n");
   PrintElements(out);
 }
 
@@ -824,7 +850,7 @@ void JSDataView::JSDataViewPrint(FILE* out) {
   byte_offset()->ShortPrint(out);
   PrintF(out, "\n - byte_length = ");
   byte_length()->ShortPrint(out);
-  PrintF("\n");
+  PrintF(out, "\n");
 }
 
 
@@ -841,8 +867,13 @@ void JSFunction::JSFunctionPrint(FILE* out) {
   shared()->name()->Print(out);
   PrintF(out, "\n - context = ");
   context()->ShortPrint(out);
-  PrintF(out, "\n - literals = ");
-  literals()->ShortPrint(out);
+  if (shared()->bound()) {
+    PrintF(out, "\n - bindings = ");
+    function_bindings()->ShortPrint(out);
+  } else {
+    PrintF(out, "\n - literals = ");
+    literals()->ShortPrint(out);
+  }
   PrintF(out, "\n - code = ");
   code()->ShortPrint(out);
   PrintF(out, "\n");
@@ -1100,20 +1131,23 @@ void AllocationSite::AllocationSitePrint(FILE* out) {
   HeapObject::PrintHeader(out, "AllocationSite");
   PrintF(out, " - weak_next: ");
   weak_next()->ShortPrint(out);
-  PrintF(out, "\n");
-
-  PrintF(out, " - transition_info: ");
-  if (transition_info()->IsCell()) {
-    Cell* cell = Cell::cast(transition_info());
-    Object* cell_contents = cell->value();
-    if (cell_contents->IsSmi()) {
-      ElementsKind kind = static_cast<ElementsKind>(
-          Smi::cast(cell_contents)->value());
-      PrintF(out, "Array allocation with ElementsKind ");
-      PrintElementsKind(out, kind);
-      PrintF(out, "\n");
-      return;
-    }
+  PrintF(out, "\n - dependent code: ");
+  dependent_code()->ShortPrint(out);
+  PrintF(out, "\n - nested site: ");
+  nested_site()->ShortPrint(out);
+  PrintF(out, "\n - memento found count: ");
+  memento_found_count()->ShortPrint(out);
+  PrintF(out, "\n - memento create count: ");
+  memento_create_count()->ShortPrint(out);
+  PrintF(out, "\n - pretenure decision: ");
+  pretenure_decision()->ShortPrint(out);
+  PrintF(out, "\n - transition_info: ");
+  if (transition_info()->IsSmi()) {
+    ElementsKind kind = GetElementsKind();
+    PrintF(out, "Array allocation with ElementsKind ");
+    PrintElementsKind(out, kind);
+    PrintF(out, "\n");
+    return;
   } else if (transition_info()->IsJSArray()) {
     PrintF(out, "Array literal ");
     transition_info()->ShortPrint(out);

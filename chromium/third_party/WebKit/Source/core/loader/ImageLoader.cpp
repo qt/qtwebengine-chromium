@@ -25,36 +25,35 @@
 #include "HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
-#include "core/dom/Event.h"
-#include "core/dom/EventSender.h"
+#include "core/events/Event.h"
+#include "core/events/EventSender.h"
 #include "core/fetch/CrossOriginAccessControl.h"
 #include "core/fetch/FetchRequest.h"
-#include "core/fetch/ImageResource.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/html/HTMLObjectElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderVideo.h"
 #include "core/rendering/svg/RenderSVGImage.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
 static ImageEventSender& beforeLoadEventSender()
 {
-    DEFINE_STATIC_LOCAL(ImageEventSender, sender, (eventNames().beforeloadEvent));
+    DEFINE_STATIC_LOCAL(ImageEventSender, sender, (EventTypeNames::beforeload));
     return sender;
 }
 
 static ImageEventSender& loadEventSender()
 {
-    DEFINE_STATIC_LOCAL(ImageEventSender, sender, (eventNames().loadEvent));
+    DEFINE_STATIC_LOCAL(ImageEventSender, sender, (EventTypeNames::load));
     return sender;
 }
 
 static ImageEventSender& errorEventSender()
 {
-    DEFINE_STATIC_LOCAL(ImageEventSender, sender, (eventNames().errorEvent));
+    DEFINE_STATIC_LOCAL(ImageEventSender, sender, (EventTypeNames::error));
     return sender;
 }
 
@@ -141,10 +140,10 @@ void ImageLoader::setImageWithoutConsideringPendingLoadEvent(ImageResource* newI
 
 void ImageLoader::updateFromElement()
 {
-    // If we're not making renderers for the page, then don't load images.  We don't want to slow
-    // down the raw HTML parsing case by loading images we don't intend to display.
+    // Don't load images for inactive documents. We don't want to slow down the
+    // raw HTML parsing case by loading images we don't intend to display.
     Document& document = m_element->document();
-    if (!document.renderer())
+    if (!document.isActive())
         return;
 
     AtomicString attr = m_element->imageSourceURL();
@@ -158,7 +157,7 @@ void ImageLoader::updateFromElement()
     if (!attr.isNull() && !stripLeadingAndTrailingHTMLSpaces(attr).isEmpty()) {
         FetchRequest request(ResourceRequest(document.completeURL(sourceURI(attr))), element()->localName());
 
-        String crossOriginMode = m_element->fastGetAttribute(HTMLNames::crossoriginAttr);
+        AtomicString crossOriginMode = m_element->fastGetAttribute(HTMLNames::crossoriginAttr);
         if (!crossOriginMode.isNull()) {
             StoredCredentials allowCredentials = equalIgnoringCase(crossOriginMode, "use-credentials") ? AllowStoredCredentials : DoNotAllowStoredCredentials;
             updateRequestForAccessControl(request.mutableResourceRequest(), document.securityOrigin(), allowCredentials);
@@ -363,11 +362,11 @@ void ImageLoader::dispatchPendingEvent(ImageEventSender* eventSender)
 {
     ASSERT(eventSender == &beforeLoadEventSender() || eventSender == &loadEventSender() || eventSender == &errorEventSender());
     const AtomicString& eventType = eventSender->eventType();
-    if (eventType == eventNames().beforeloadEvent)
+    if (eventType == EventTypeNames::beforeload)
         dispatchPendingBeforeLoadEvent();
-    if (eventType == eventNames().loadEvent)
+    if (eventType == EventTypeNames::load)
         dispatchPendingLoadEvent();
-    if (eventType == eventNames().errorEvent)
+    if (eventType == EventTypeNames::error)
         dispatchPendingErrorEvent();
 }
 
@@ -377,7 +376,7 @@ void ImageLoader::dispatchPendingBeforeLoadEvent()
         return;
     if (!m_image)
         return;
-    if (!m_element->document().attached())
+    if (!m_element->document().frame())
         return;
     m_hasPendingBeforeLoadEvent = false;
     if (m_element->dispatchBeforeLoadEvent(m_image->url().string())) {
@@ -407,7 +406,7 @@ void ImageLoader::dispatchPendingLoadEvent()
     if (!m_image)
         return;
     m_hasPendingLoadEvent = false;
-    if (element()->document().attached())
+    if (element()->document().frame())
         dispatchLoadEvent();
 
     // Only consider updating the protection ref-count of the Element immediately before returning
@@ -420,8 +419,8 @@ void ImageLoader::dispatchPendingErrorEvent()
     if (!m_hasPendingErrorEvent)
         return;
     m_hasPendingErrorEvent = false;
-    if (element()->document().attached())
-        element()->dispatchEvent(Event::create(eventNames().errorEvent));
+    if (element()->document().frame())
+        element()->dispatchEvent(Event::create(EventTypeNames::error));
 
     // Only consider updating the protection ref-count of the Element immediately before returning
     // from this function as doing so might result in the destruction of this ImageLoader.

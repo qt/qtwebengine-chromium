@@ -99,6 +99,7 @@ public:
         , fLine(l)
         , fIntersections(i)
         , fAllowNear(true) {
+        i->setMax(2);
     }
 
     void allowNear(bool allow) {
@@ -140,14 +141,18 @@ public:
         if (fAllowNear) {
             addNearEndPoints();
         }
-        double rootVals[2];
-        int roots = intersectRay(rootVals);
-        for (int index = 0; index < roots; ++index) {
-            double quadT = rootVals[index];
-            double lineT = findLineT(quadT);
-            SkDPoint pt;
-            if (pinTs(&quadT, &lineT, &pt, kPointUninitialized)) {
-                fIntersections->insert(quadT, lineT, pt);
+        if (fIntersections->used() == 2) {
+            // FIXME : need sharable code that turns spans into coincident if middle point is on
+        } else {
+            double rootVals[2];
+            int roots = intersectRay(rootVals);
+            for (int index = 0; index < roots; ++index) {
+                double quadT = rootVals[index];
+                double lineT = findLineT(quadT);
+                SkDPoint pt;
+                if (pinTs(&quadT, &lineT, &pt, kPointUninitialized)) {
+                    fIntersections->insert(quadT, lineT, pt);
+                }
             }
         }
         return fIntersections->used();
@@ -299,15 +304,10 @@ protected:
         SkDPoint xy = fQuad.ptAtT(t);
         double dx = fLine[1].fX - fLine[0].fX;
         double dy = fLine[1].fY - fLine[0].fY;
-        double dxT = (xy.fX - fLine[0].fX) / dx;
-        double dyT = (xy.fY - fLine[0].fY) / dy;
-        if (!between(FLT_EPSILON, dxT, 1 - FLT_EPSILON) && between(0, dyT, 1)) {
-            return dyT;
+        if (fabs(dx) > fabs(dy)) {
+            return (xy.fX - fLine[0].fX) / dx;
         }
-        if (!between(FLT_EPSILON, dyT, 1 - FLT_EPSILON) && between(0, dxT, 1)) {
-            return dxT;
-        }
-        return fabs(dx) > fabs(dy) ? dxT : dyT;
+        return (xy.fY - fLine[0].fY) / dy;
     }
 
     bool pinTs(double* quadT, double* lineT, SkDPoint* pt, PinTPoint ptSet) {

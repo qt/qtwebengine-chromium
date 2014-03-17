@@ -55,7 +55,7 @@ class AudioInputDeviceManagerTest : public testing::Test {
     message_loop_.reset(new base::MessageLoop(base::MessageLoop::TYPE_IO));
     io_thread_.reset(new BrowserThreadImpl(BrowserThread::IO,
                                            message_loop_.get()));
-    audio_manager_.reset(media::AudioManager::Create());
+    audio_manager_.reset(media::AudioManager::CreateForTesting());
     manager_ = new AudioInputDeviceManager(audio_manager_.get());
     audio_input_listener_.reset(new MockAudioInputDeviceManagerListener());
     manager_->Register(audio_input_listener_.get(),
@@ -177,8 +177,7 @@ TEST_F(AudioInputDeviceManagerTest, OpenNotExistingDevice) {
   int sample_rate(0);
   int channel_config(0);
   StreamDeviceInfo dummy_device(
-      stream_type, device_name, device_id, sample_rate, channel_config, 2048,
-      false);
+      stream_type, device_name, device_id, sample_rate, channel_config, 2048);
 
   int session_id = manager_->Open(dummy_device);
   EXPECT_CALL(*audio_input_listener_,

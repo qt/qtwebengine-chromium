@@ -38,12 +38,11 @@ class Transform;
 // source and destination colors are combined. Unless otherwise specified,
 // the variant that does not take a SkXfermode::Mode uses a transfer mode
 // of kSrcOver_Mode.
-class UI_EXPORT Canvas {
+class GFX_EXPORT Canvas {
  public:
   enum TruncateFadeMode {
     TruncateFadeTail,
     TruncateFadeHead,
-    TruncateFadeHeadAndTail,
   };
 
   // Specifies the alignment for text rendered with the DrawStringInt method.
@@ -90,34 +89,34 @@ class UI_EXPORT Canvas {
     NO_SUBPIXEL_RENDERING = 1 << 10,
   };
 
-  // Creates an empty canvas with scale factor of 1x.
+  // Creates an empty canvas with image_scale of 1x.
   Canvas();
 
-  // Creates canvas with provided DIP |size| and |scale_factor|.
+  // Creates canvas with provided DIP |size| and |image_scale|.
   // If this canvas is not opaque, it's explicitly cleared to transparent before
   // being returned.
-  Canvas(const Size& size, ui::ScaleFactor scale_factor, bool is_opaque);
+  Canvas(const Size& size, float image_scale, bool is_opaque);
 
-  // Constructs a canvas with the size and the scale factor of the
-  // provided |image_rep|, and draws the |image_rep| into it.
+  // Constructs a canvas with the size and the image_scale of the provided
+  // |image_rep|, and draws the |image_rep| into it.
   Canvas(const ImageSkiaRep& image_rep, bool is_opaque);
 
   virtual ~Canvas();
 
-  // Creates a Canvas backed by an |sk_canvas| with |scale_factor|.
-  // |sk_canvas| is assumed to be already scaled based on |scale_factor|
+  // Creates a Canvas backed by an |sk_canvas| with |image_scale_|.
+  // |sk_canvas| is assumed to be already scaled based on |image_scale|
   // so no additional scaling is applied.
   static Canvas* CreateCanvasWithoutScaling(SkCanvas* sk_canvas,
-                                            ui::ScaleFactor scale_factor);
+                                            float image_scale);
 
-  // Recreates the backing platform canvas with DIP |size| and |scale_factor|.
+  // Recreates the backing platform canvas with DIP |size| and |image_scale_|.
   // If the canvas is not opaque, it is explicitly cleared.
   // This method is public so that canvas_skia_paint can recreate the platform
   // canvas after having initialized the canvas.
-  // TODO(pkotwicz): Push the scale factor into skia::PlatformCanvas such that
+  // TODO(pkotwicz): Push the image_scale into skia::PlatformCanvas such that
   // this method can be private.
   void RecreateBackingCanvas(const Size& size,
-                             ui::ScaleFactor scale_factor,
+                             float image_scale,
                              bool is_opaque);
 
   // Compute the size required to draw some text with the provided fonts.
@@ -139,12 +138,29 @@ class UI_EXPORT Canvas {
                             int line_height,
                             int flags);
 
+  // This is same as SizeStringInt except that fractional size is returned.
+  // See comment in GetStringWidthF for its usage.
+  static void SizeStringFloat(const base::string16& text,
+                              const FontList& font_list,
+                              float* width,
+                              float* height,
+                              int line_height,
+                              int flags);
+
   // Returns the number of horizontal pixels needed to display the specified
   // |text| with |font_list|.
   static int GetStringWidth(const base::string16& text,
                             const FontList& font_list);
   // Obsolete version.  Use the above version which takes FontList.
   static int GetStringWidth(const base::string16& text, const Font& font);
+
+  // This is same as GetStringWidth except that fractional width is returned.
+  // Use this method for the scenario that multiple string widths need to be
+  // summed up. This is because GetStringWidth returns the ceiled width and
+  // adding multiple ceiled widths could cause more precision loss for certain
+  // platform like Mac where the fractioal width is used.
+  static float GetStringWidthF(const base::string16& text,
+                               const FontList& font_list);
 
   // Returns the default text alignment to be used when drawing text on a
   // Canvas based on the directionality of the system locale language.
@@ -393,6 +409,10 @@ class UI_EXPORT Canvas {
   // Draws a dotted gray rectangle used for focus purposes.
   void DrawFocusRect(const Rect& rect);
 
+  // Draws a |rect| in the specified region with the specified |color| with a
+  // with of one logical pixel which might be more device pixels.
+  void DrawSolidFocusRect(const Rect& rect, SkColor color);
+
   // Tiles the image in the specified region.
   // Parameters are specified relative to current canvas scale not in pixels.
   // Thus, |x| is 2 pixels if canvas scale = 2 & |x| = 1.
@@ -429,38 +449,33 @@ class UI_EXPORT Canvas {
   // Apply transformation on the canvas.
   void Transform(const Transform& transform);
 
-  // Draws the given string with the beginning and/or the end using a fade
-  // gradient. When truncating the head
-  // |desired_characters_to_truncate_from_head| specifies the maximum number of
-  // characters that can be truncated.
+  // Draws the given string with the beginning or the end using a fade gradient.
   void DrawFadeTruncatingStringRect(
       const base::string16& text,
       TruncateFadeMode truncate_mode,
-      size_t desired_characters_to_truncate_from_head,
       const FontList& font_list,
       SkColor color,
       const Rect& display_rect);
-  // Obsolete version.  Use the above version which takes FontList.
-  void DrawFadeTruncatingString(
+  void DrawFadeTruncatingStringRectWithFlags(
       const base::string16& text,
       TruncateFadeMode truncate_mode,
-      size_t desired_characters_to_truncate_from_head,
-      const Font& font,
+      const FontList& font_list,
       SkColor color,
-      const Rect& display_rect);
+      const Rect& display_rect,
+      int flags);
 
   skia::PlatformCanvas* platform_canvas() const { return owned_canvas_.get(); }
   SkCanvas* sk_canvas() const { return canvas_; }
-  ui::ScaleFactor scale_factor() const { return scale_factor_; }
+  float image_scale() const { return image_scale_; }
 
  private:
-  Canvas(SkCanvas* canvas, ui::ScaleFactor scale_factor);
+  Canvas(SkCanvas* canvas, float image_scale);
 
   // Test whether the provided rectangle intersects the current clip rect.
   bool IntersectsClipRectInt(int x, int y, int w, int h);
   bool IntersectsClipRect(const Rect& rect);
 
-  // Returns the image rep which best matches the canvas |scale_factor_|.
+  // Returns the image rep which best matches the canvas |image_scale_|.
   // Returns a null image rep if |image| contains no image reps.
   // Builds mip map for returned image rep if necessary.
   //
@@ -473,8 +488,8 @@ class UI_EXPORT Canvas {
 
   // The device scale factor at which drawing on this canvas occurs.
   // An additional scale can be applied via Canvas::Scale(). However,
-  // Canvas::Scale() does not affect |scale_factor_|.
-  ui::ScaleFactor scale_factor_;
+  // Canvas::Scale() does not affect |image_scale_|.
+  float image_scale_;
 
   skia::RefPtr<skia::PlatformCanvas> owned_canvas_;
   SkCanvas* canvas_;

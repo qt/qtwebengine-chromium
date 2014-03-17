@@ -30,17 +30,20 @@
 
 /**
  * @constructor
+ * @extends {WebInspector.Object}
  */
 WebInspector.OverridesSupport = function()
 {
-    this._overridesActive = WebInspector.settings.enableOverridesOnStartup.get();
-    this._updateAllOverrides();
+    WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.MainFrameNavigated, this._deviceMetricsChanged.bind(this), this);
+    this._deviceMetricsOverrideEnabled = false;
+    this._emulateViewportEnabled = false;
 
     WebInspector.settings.overrideUserAgent.addChangeListener(this._userAgentChanged, this);
     WebInspector.settings.userAgent.addChangeListener(this._userAgentChanged, this);
 
     WebInspector.settings.overrideDeviceMetrics.addChangeListener(this._deviceMetricsChanged, this);
     WebInspector.settings.deviceMetrics.addChangeListener(this._deviceMetricsChanged, this);
+    WebInspector.settings.emulateViewport.addChangeListener(this._deviceMetricsChanged, this);
     WebInspector.settings.deviceFitWindow.addChangeListener(this._deviceMetricsChanged, this);
 
     WebInspector.settings.overrideGeolocation.addChangeListener(this._geolocationPositionChanged, this);
@@ -55,36 +58,51 @@ WebInspector.OverridesSupport = function()
     WebInspector.settings.emulatedCSSMedia.addChangeListener(this._cssMediaChanged, this);
 }
 
+WebInspector.OverridesSupport.Events = {
+    OverridesWarningUpdated: "OverridesWarningUpdated",
+}
+
 /**
  * @constructor
  * @param {number} width
  * @param {number} height
- * @param {number} fontScaleFactor
+ * @param {number} deviceScaleFactor
+ * @param {boolean} textAutosizing
  */
-WebInspector.OverridesSupport.DeviceMetrics = function(width, height, fontScaleFactor)
+WebInspector.OverridesSupport.DeviceMetrics = function(width, height, deviceScaleFactor, textAutosizing)
 {
     this.width = width;
     this.height = height;
-    this.fontScaleFactor = fontScaleFactor;
+    this.deviceScaleFactor = deviceScaleFactor;
+    this.textAutosizing = textAutosizing;
 }
 
 /**
- * @return {WebInspector.OverridesSupport.DeviceMetrics}
+ * @return {!WebInspector.OverridesSupport.DeviceMetrics}
  */
 WebInspector.OverridesSupport.DeviceMetrics.parseSetting = function(value)
 {
+    var width = 0;
+    var height = 0;
+    var deviceScaleFactor = 1;
+    var textAutosizing = true;
     if (value) {
         var splitMetrics = value.split("x");
-        if (splitMetrics.length === 3)
-            return new WebInspector.OverridesSupport.DeviceMetrics(parseInt(splitMetrics[0], 10), parseInt(splitMetrics[1], 10), parseFloat(splitMetrics[2]));
+        if (splitMetrics.length >= 3) {
+            width = parseInt(splitMetrics[0], 10);
+            height = parseInt(splitMetrics[1], 10);
+            deviceScaleFactor = parseFloat(splitMetrics[2]);
+            if (splitMetrics.length == 4)
+                textAutosizing = splitMetrics[3] == 1;
+        }
     }
-    return new WebInspector.OverridesSupport.DeviceMetrics(0, 0, 1);
+    return new WebInspector.OverridesSupport.DeviceMetrics(width, height, deviceScaleFactor, textAutosizing);
 }
 
 /**
  * @return {?WebInspector.OverridesSupport.DeviceMetrics}
  */
-WebInspector.OverridesSupport.DeviceMetrics.parseUserInput = function(widthString, heightString, fontScaleFactorString)
+WebInspector.OverridesSupport.DeviceMetrics.parseUserInput = function(widthString, heightString, deviceScaleFactorString, textAutosizing)
 {
     function isUserInputValid(value, isInteger)
     {
@@ -98,16 +116,16 @@ WebInspector.OverridesSupport.DeviceMetrics.parseUserInput = function(widthStrin
 
     var isWidthValid = isUserInputValid(widthString, true);
     var isHeightValid = isUserInputValid(heightString, true);
-    var isFontScaleFactorValid = isUserInputValid(fontScaleFactorString, false);
+    var isDeviceScaleFactorValid = isUserInputValid(deviceScaleFactorString, false);
 
-    if (!isWidthValid && !isHeightValid && !isFontScaleFactorValid)
+    if (!isWidthValid && !isHeightValid && !isDeviceScaleFactorValid)
         return null;
 
     var width = isWidthValid ? parseInt(widthString || "0", 10) : -1;
     var height = isHeightValid ? parseInt(heightString || "0", 10) : -1;
-    var fontScaleFactor = isFontScaleFactorValid ? parseFloat(fontScaleFactorString) : -1;
+    var deviceScaleFactor = isDeviceScaleFactorValid ? parseFloat(deviceScaleFactorString) : -1;
 
-    return new WebInspector.OverridesSupport.DeviceMetrics(width, height, fontScaleFactor);
+    return new WebInspector.OverridesSupport.DeviceMetrics(width, height, deviceScaleFactor, textAutosizing);
 }
 
 WebInspector.OverridesSupport.DeviceMetrics.prototype = {
@@ -116,7 +134,7 @@ WebInspector.OverridesSupport.DeviceMetrics.prototype = {
      */
     isValid: function()
     {
-        return this.isWidthValid() && this.isHeightValid() && this.isFontScaleFactorValid();
+        return this.isWidthValid() && this.isHeightValid() && this.isDeviceScaleFactorValid();
     },
 
     /**
@@ -138,9 +156,9 @@ WebInspector.OverridesSupport.DeviceMetrics.prototype = {
     /**
      * @return {boolean}
      */
-    isFontScaleFactorValid: function()
+    isDeviceScaleFactorValid: function()
     {
-        return this.fontScaleFactor > 0;
+        return this.deviceScaleFactor > 0;
     },
 
     /**
@@ -151,7 +169,7 @@ WebInspector.OverridesSupport.DeviceMetrics.prototype = {
         if (!this.isValid())
             return "";
 
-        return this.width && this.height ? this.width + "x" + this.height + "x" + this.fontScaleFactor : "";
+        return this.width && this.height ? this.width + "x" + this.height + "x" + this.deviceScaleFactor + "x" + (this.textAutosizing ? "1" : "0") : "";
     },
 
     /**
@@ -173,9 +191,44 @@ WebInspector.OverridesSupport.DeviceMetrics.prototype = {
     /**
      * @return {string}
      */
-    fontScaleFactorToInput: function()
+    deviceScaleFactorToInput: function()
     {
-        return this.isFontScaleFactorValid() && this.fontScaleFactor ? String(this.fontScaleFactor) : "";
+        return this.isDeviceScaleFactorValid() && this.deviceScaleFactor ? String(this.deviceScaleFactor) : "";
+    },
+
+    /**
+     * Compute the font scale factor.
+     *
+     * Chromium on Android uses a device scale adjustment for fonts used in text autosizing for
+     * improved legibility. This function computes this adjusted value for text autosizing.
+     *
+     * For a description of the Android device scale adjustment algorithm, see:
+     *     chrome/browser/chrome_content_browser_client.cc, GetFontScaleMultiplier(...)
+     *
+     * @return {number} font scale factor.
+     */
+    fontScaleFactor: function()
+    {
+        if (this.isValid()) {
+            var minWidth = Math.min(this.width, this.height) / this.deviceScaleFactor;
+
+            var kMinFSM = 1.05;
+            var kWidthForMinFSM = 320;
+            var kMaxFSM = 1.3;
+            var kWidthForMaxFSM = 800;
+
+            if (minWidth <= kWidthForMinFSM)
+                return kMinFSM;
+            if (minWidth >= kWidthForMaxFSM)
+                return kMaxFSM;
+
+            // The font scale multiplier varies linearly between kMinFSM and kMaxFSM.
+            var ratio = (minWidth - kWidthForMinFSM) / (kWidthForMaxFSM - kWidthForMinFSM);
+
+            return ratio * (kMaxFSM - kMinFSM) + kMinFSM;
+        }
+
+        return 1;
     }
 }
 
@@ -202,7 +255,7 @@ WebInspector.OverridesSupport.GeolocationPosition.prototype = {
 }
 
 /**
- * @return {WebInspector.OverridesSupport.GeolocationPosition}
+ * @return {!WebInspector.OverridesSupport.GeolocationPosition}
  */
 WebInspector.OverridesSupport.GeolocationPosition.parseSetting = function(value)
 {
@@ -273,7 +326,7 @@ WebInspector.OverridesSupport.DeviceOrientation.prototype = {
 }
 
 /**
- * @return {WebInspector.OverridesSupport.DeviceOrientation}
+ * @return {!WebInspector.OverridesSupport.DeviceOrientation}
  */
 WebInspector.OverridesSupport.DeviceOrientation.parseSetting = function(value)
 {
@@ -319,40 +372,101 @@ WebInspector.OverridesSupport.DeviceOrientation.clearDeviceOrientationOverride =
 }
 
 WebInspector.OverridesSupport.prototype = {
-    setOverridesActive: function(enabled)
+    /**
+     * @param {string} deviceMetrics
+     * @param {string} userAgent
+     */
+    emulateDevice: function(deviceMetrics, userAgent)
     {
-        if (this._overridesActive === enabled)
-            return;
-        this._overridesActive = enabled;
-
-        this._updateAllOverrides();
+        this._deviceMetricsChangedListenerMuted = true;
+        WebInspector.settings.deviceMetrics.set(deviceMetrics);
+        WebInspector.settings.userAgent.set(userAgent);
+        WebInspector.settings.overrideDeviceMetrics.set(true);
+        WebInspector.settings.overrideUserAgent.set(true);
+        WebInspector.settings.emulateTouchEvents.set(true);
+        WebInspector.settings.emulateViewport.set(true);
+        delete this._deviceMetricsChangedListenerMuted;
+        this._deviceMetricsChanged();
     },
 
-    _updateAllOverrides: function()
+    reset: function()
     {
+        this._deviceMetricsChangedListenerMuted = true;
+        WebInspector.settings.overrideDeviceMetrics.set(false);
+        WebInspector.settings.overrideUserAgent.set(false);
+        WebInspector.settings.emulateTouchEvents.set(false);
+        WebInspector.settings.overrideDeviceOrientation.set(false);
+        WebInspector.settings.overrideGeolocation.set(false);
+        WebInspector.settings.overrideCSSMedia.set(false);
+        WebInspector.settings.emulateViewport.set(false);
+        WebInspector.settings.deviceMetrics.set("");
+        delete this._deviceMetricsChangedListenerMuted;
+        this._deviceMetricsChanged();
+    },
+
+    applyInitialOverrides: function()
+    {
+        this._deviceMetricsChangedListenerMuted = true;
         this._userAgentChanged();
         this._deviceMetricsChanged();
         this._deviceOrientationChanged();
         this._geolocationPositionChanged();
         this._emulateTouchEventsChanged();
         this._cssMediaChanged();
+        delete this._deviceMetricsChangedListenerMuted;
+        this._deviceMetricsChanged();
     },
 
     _userAgentChanged: function()
     {
-        NetworkAgent.setUserAgentOverride(this._overridesActive && WebInspector.settings.overrideUserAgent.get() ? WebInspector.settings.userAgent.get() : "");
+        if (WebInspector.isInspectingDevice())
+            return;
+        NetworkAgent.setUserAgentOverride(WebInspector.settings.overrideUserAgent.get() ? WebInspector.settings.userAgent.get() : "");
     },
 
     _deviceMetricsChanged: function()
     {
-        var metrics = WebInspector.OverridesSupport.DeviceMetrics.parseSetting(this._overridesActive && WebInspector.settings.overrideDeviceMetrics.get() ? WebInspector.settings.deviceMetrics.get() : "");
-        if (metrics.isValid())
-            PageAgent.setDeviceMetricsOverride(metrics.width, metrics.height, metrics.fontScaleFactor, WebInspector.settings.deviceFitWindow.get());
+        if (this._deviceMetricsChangedListenerMuted)
+            return;
+        var metrics = WebInspector.OverridesSupport.DeviceMetrics.parseSetting(WebInspector.settings.overrideDeviceMetrics.get() ? WebInspector.settings.deviceMetrics.get() : "");
+        if (!metrics.isValid())
+            return;
+
+        var dipWidth = Math.round(metrics.width / metrics.deviceScaleFactor);
+        var dipHeight = Math.round(metrics.height / metrics.deviceScaleFactor);
+
+        // Disable override without checks.
+        if (dipWidth && dipHeight && WebInspector.isInspectingDevice()) {
+            this._updateWarningMessage(WebInspector.UIString("Screen emulation on the device is not available."));
+            return;
+        }
+
+        PageAgent.setDeviceMetricsOverride(dipWidth, dipHeight, metrics.deviceScaleFactor, WebInspector.settings.emulateViewport.get(), WebInspector.settings.deviceFitWindow.get(), metrics.textAutosizing, metrics.fontScaleFactor(), apiCallback.bind(this));
+
+        /**
+         * @param {?Protocol.Error} error
+         * @this {WebInspector.OverridesSupport}
+         */
+        function apiCallback(error)
+        {
+            if (error) {
+                this._updateWarningMessage(WebInspector.UIString("Screen emulation is not available on this page."));
+                return;
+            }
+
+            var metricsOverrideEnabled = !!(dipWidth && dipHeight);
+            var viewportEnabled =  WebInspector.settings.emulateViewport.get();
+            this._updateWarningMessage(this._deviceMetricsOverrideEnabled !== metricsOverrideEnabled || (metricsOverrideEnabled && this._emulateViewportEnabled != viewportEnabled) ?
+                WebInspector.UIString("You might need to reload the page for proper user agent spoofing and viewport rendering.") : "");
+            this._deviceMetricsOverrideEnabled = metricsOverrideEnabled;
+            this._emulateViewportEnabled = viewportEnabled;
+        }
+        this._revealOverridesTabIfNeeded();
     },
 
     _geolocationPositionChanged: function()
     {
-        if (!this._overridesActive || !WebInspector.settings.overrideGeolocation.get()) {
+        if (!WebInspector.settings.overrideGeolocation.get()) {
             PageAgent.clearGeolocationOverride();
             return;
         }
@@ -361,32 +475,77 @@ WebInspector.OverridesSupport.prototype = {
             PageAgent.setGeolocationOverride();
         else
             PageAgent.setGeolocationOverride(geolocation.latitude, geolocation.longitude, 150);
+        this._revealOverridesTabIfNeeded();
     },
 
     _deviceOrientationChanged: function()
     {
-        if (!this._overridesActive || !WebInspector.settings.overrideDeviceOrientation.get()) {
+        if (!WebInspector.settings.overrideDeviceOrientation.get()) {
             PageAgent.clearDeviceOrientationOverride();
             return;
         }
+        if (WebInspector.isInspectingDevice())
+            return;
+
         var deviceOrientation = WebInspector.OverridesSupport.DeviceOrientation.parseSetting(WebInspector.settings.deviceOrientationOverride.get());
         PageAgent.setDeviceOrientationOverride(deviceOrientation.alpha, deviceOrientation.beta, deviceOrientation.gamma);
+        this._revealOverridesTabIfNeeded();
     },
 
     _emulateTouchEventsChanged: function()
     {
-        WebInspector.domAgent.emulateTouchEventObjects(this._overridesActive && WebInspector.settings.emulateTouchEvents.get());
+        if (WebInspector.isInspectingDevice() && WebInspector.settings.emulateTouchEvents.get())
+            return;
+
+        WebInspector.domAgent.emulateTouchEventObjects(WebInspector.settings.emulateTouchEvents.get());
+        this._revealOverridesTabIfNeeded();
     },
 
     _cssMediaChanged: function()
     {
-        PageAgent.setEmulatedMedia(this._overridesActive && WebInspector.settings.overrideCSSMedia.get() ? WebInspector.settings.emulatedCSSMedia.get() : "");
+        PageAgent.setEmulatedMedia(WebInspector.settings.overrideCSSMedia.get() ? WebInspector.settings.emulatedCSSMedia.get() : "");
         WebInspector.cssModel.mediaQueryResultChanged();
-    }
+        this._revealOverridesTabIfNeeded();
+    },
+
+    _anyOverrideIsEnabled: function()
+    {
+        return WebInspector.settings.overrideUserAgent.get() || WebInspector.settings.overrideDeviceMetrics.get() ||
+            WebInspector.settings.overrideGeolocation.get() || WebInspector.settings.overrideDeviceOrientation.get() ||
+            WebInspector.settings.emulateTouchEvents.get() || WebInspector.settings.overrideCSSMedia.get();
+    },
+
+    _revealOverridesTabIfNeeded: function()
+    {
+        if (this._anyOverrideIsEnabled()) {
+            if (!WebInspector.settings.showEmulationViewInDrawer.get())
+                WebInspector.settings.showEmulationViewInDrawer.set(true);
+            WebInspector.inspectorView.showViewInDrawer("emulation");
+        }
+    },
+
+    /**
+     * @param {string} warningMessage
+     */
+    _updateWarningMessage: function(warningMessage)
+    {
+        this._warningMessage = warningMessage;
+        this.dispatchEventToListeners(WebInspector.OverridesSupport.Events.OverridesWarningUpdated);
+    },
+
+    /**
+     * @return {string}
+     */
+    warningMessage: function()
+    {
+        return this._warningMessage || "";
+    },
+
+    __proto__: WebInspector.Object.prototype
 }
 
 
 /**
- * @type {WebInspector.OverridesSupport}
+ * @type {!WebInspector.OverridesSupport}
  */
 WebInspector.overridesSupport;

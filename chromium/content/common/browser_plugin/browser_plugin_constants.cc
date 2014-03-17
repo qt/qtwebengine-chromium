@@ -31,6 +31,7 @@ const char kEventInternalInstanceIDAllocated[] = "instanceid-allocated";
 const char kEventInternalTrackedObjectGone[] = "trackedobjectgone";
 
 // Attributes.
+const char kAttributeAllowTransparency[] = "allowtransparency";
 const char kAttributeApi[] = "api";
 const char kAttributeAutoSize[] = "autosize";
 const char kAttributeContentWindow[] = "contentWindow";
@@ -41,9 +42,6 @@ const char kAttributeMinWidth[] = "minwidth";
 const char kAttributeName[] = "name";
 const char kAttributePartition[] = "partition";
 const char kAttributeSrc[] = "src";
-
-// Events.
-const char kEventSizeChanged[] = "sizechanged";
 
 // Parameters/properties on events.
 const char kDefaultPromptText[] = "defaultPromptText";

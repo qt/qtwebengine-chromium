@@ -42,17 +42,25 @@ static const int kDecodeThreads = 2;
 static const int kMaxDecodeThreads = 16;
 
 // Returns the number of threads.
-static int GetThreadCount() {
-  // TODO(scherkus): De-duplicate this function and the one used by
-  // FFmpegVideoDecoder.
-
+static int GetThreadCount(const VideoDecoderConfig& config) {
   // Refer to http://crbug.com/93932 for tsan suppressions on decoding.
   int decode_threads = kDecodeThreads;
 
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
   std::string threads(cmd_line->GetSwitchValueASCII(switches::kVideoThreads));
-  if (threads.empty() || !base::StringToInt(threads, &decode_threads))
+  if (threads.empty() || !base::StringToInt(threads, &decode_threads)) {
+    if (config.codec() == kCodecVP9) {
+      // For VP9 decode when using the default thread count, increase the number
+      // of decode threads to equal the maximum number of tiles possible for
+      // higher resolution streams.
+      if (config.coded_size().width() >= 2048)
+        decode_threads = 8;
+      else if (config.coded_size().width() >= 1024)
+        decode_threads = 4;
+    }
+
     return decode_threads;
+  }
 
   decode_threads = std::max(decode_threads, 0);
   decode_threads = std::min(decode_threads, kMaxDecodeThreads);
@@ -100,7 +108,7 @@ static vpx_codec_ctx* InitializeVpxContext(vpx_codec_ctx* context,
   vpx_codec_dec_cfg_t vpx_config = {0};
   vpx_config.w = config.coded_size().width();
   vpx_config.h = config.coded_size().height();
-  vpx_config.threads = GetThreadCount();
+  vpx_config.threads = GetThreadCount(config);
 
   vpx_codec_err_t status = vpx_codec_dec_init(context,
                                               config.codec() == kCodecVP9 ?
@@ -172,7 +180,7 @@ void VpxVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
 
   // Return empty frames if decoding has finished.
   if (state_ == kDecodeFinished) {
-    base::ResetAndReturn(&decode_cb_).Run(kOk, VideoFrame::CreateEmptyFrame());
+    base::ResetAndReturn(&decode_cb_).Run(kOk, VideoFrame::CreateEOSFrame());
     return;
   }
 
@@ -224,7 +232,7 @@ void VpxVideoDecoder::DecodeBuffer(const scoped_refptr<DecoderBuffer>& buffer) {
   // Transition to kDecodeFinished on the first end of stream buffer.
   if (state_ == kNormal && buffer->end_of_stream()) {
     state_ = kDecodeFinished;
-    base::ResetAndReturn(&decode_cb_).Run(kOk, VideoFrame::CreateEmptyFrame());
+    base::ResetAndReturn(&decode_cb_).Run(kOk, VideoFrame::CreateEOSFrame());
     return;
   }
 
@@ -329,14 +337,12 @@ void VpxVideoDecoder::CopyVpxImageTo(const vpx_image* vpx_image,
                                      const struct vpx_image* vpx_image_alpha,
                                      scoped_refptr<VideoFrame>* video_frame) {
   CHECK(vpx_image);
-  CHECK_EQ(vpx_image->d_w % 2, 0U);
-  CHECK_EQ(vpx_image->d_h % 2, 0U);
   CHECK(vpx_image->fmt == VPX_IMG_FMT_I420 ||
         vpx_image->fmt == VPX_IMG_FMT_YV12);
 
   gfx::Size size(vpx_image->d_w, vpx_image->d_h);
 
-  *video_frame = VideoFrame::CreateFrame(
+  *video_frame = frame_pool_.CreateFrame(
       vpx_codec_alpha_ ? VideoFrame::YV12A : VideoFrame::YV12,
       size,
       gfx::Rect(size),
@@ -349,11 +355,11 @@ void VpxVideoDecoder::CopyVpxImageTo(const vpx_image* vpx_image,
              video_frame->get());
   CopyUPlane(vpx_image->planes[VPX_PLANE_U],
              vpx_image->stride[VPX_PLANE_U],
-             vpx_image->d_h / 2,
+             (vpx_image->d_h + 1) / 2,
              video_frame->get());
   CopyVPlane(vpx_image->planes[VPX_PLANE_V],
              vpx_image->stride[VPX_PLANE_V],
-             vpx_image->d_h / 2,
+             (vpx_image->d_h + 1) / 2,
              video_frame->get());
   if (!vpx_codec_alpha_)
     return;

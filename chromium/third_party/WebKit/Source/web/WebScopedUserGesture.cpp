@@ -32,9 +32,9 @@
 #include "WebScopedUserGesture.h"
 
 #include "WebUserGestureToken.h"
-#include "core/dom/UserGestureIndicator.h"
+#include "platform/UserGestureIndicator.h"
 
-namespace WebKit {
+namespace blink {
 
 void WebScopedUserGesture::initialize()
 {
@@ -52,4 +52,4 @@ void WebScopedUserGesture::reset()
     m_indicator.reset(0);
 }
 
-} // namespace WebKit
+} // namespace blink

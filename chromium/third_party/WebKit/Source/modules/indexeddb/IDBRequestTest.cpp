@@ -28,49 +28,78 @@
 
 #include "core/dom/DOMError.h"
 #include "core/dom/Document.h"
-#include "modules/indexeddb/IDBCursorBackendInterface.h"
-#include "modules/indexeddb/IDBDatabaseBackendInterface.h"
-#include "modules/indexeddb/IDBDatabaseCallbacksImpl.h"
+#include "core/events/EventQueue.h"
+#include "modules/indexeddb/IDBDatabaseCallbacks.h"
 #include "modules/indexeddb/IDBKeyRange.h"
 #include "modules/indexeddb/IDBOpenDBRequest.h"
-
+#include "platform/SharedBuffer.h"
+#include "public/platform/WebIDBDatabase.h"
+#include "wtf/PassOwnPtr.h"
 #include <gtest/gtest.h>
 
 using namespace WebCore;
 
 namespace {
 
+class NullEventQueue : public EventQueue {
+public:
+    NullEventQueue() { }
+    virtual ~NullEventQueue() { }
+    virtual bool enqueueEvent(PassRefPtr<Event>) OVERRIDE { return true; }
+    virtual bool cancelEvent(Event*) OVERRIDE { return true; }
+    virtual void close() OVERRIDE { }
+};
+
+class NullExecutionContext : public ExecutionContext, public RefCounted<NullExecutionContext> {
+public:
+    using RefCounted<NullExecutionContext>::ref;
+    using RefCounted<NullExecutionContext>::deref;
+
+    virtual void refExecutionContext() OVERRIDE { ref(); }
+    virtual void derefExecutionContext() OVERRIDE { deref(); }
+    virtual EventQueue* eventQueue() const OVERRIDE { return m_queue.get(); }
+
+    NullExecutionContext();
+private:
+    OwnPtr<EventQueue> m_queue;
+};
+
+NullExecutionContext::NullExecutionContext()
+    : m_queue(adoptPtr(new NullEventQueue()))
+{
+}
+
 class IDBRequestTest : public testing::Test {
 public:
     IDBRequestTest()
         : m_handleScope(v8::Isolate::GetCurrent())
         , m_scope(v8::Context::New(v8::Isolate::GetCurrent()))
-        , m_document(Document::create())
+        , m_context(adoptRef(new NullExecutionContext()))
     {
     }
 
-    ScriptExecutionContext* scriptExecutionContext()
+    ExecutionContext* executionContext()
     {
-        return m_document.get();
+        return m_context.get();
     }
 
 private:
     v8::HandleScope m_handleScope;
     v8::Context::Scope m_scope;
-    RefPtr<Document> m_document;
+    RefPtr<ExecutionContext> m_context;
 };
 
 TEST_F(IDBRequestTest, EventsAfterStopping)
 {
     IDBTransaction* transaction = 0;
-    RefPtr<IDBRequest> request = IDBRequest::create(scriptExecutionContext(), IDBAny::createInvalid(), transaction);
+    RefPtr<IDBRequest> request = IDBRequest::create(executionContext(), IDBAny::createUndefined(), transaction);
     EXPECT_EQ(request->readyState(), "pending");
-    scriptExecutionContext()->stopActiveDOMObjects();
+    executionContext()->stopActiveDOMObjects();
 
     // Ensure none of the following raise assertions in stopped state:
     request->onError(DOMError::create(AbortError, "Description goes here."));
     request->onSuccess(Vector<String>());
-    request->onSuccess(PassRefPtr<IDBCursorBackendInterface>(), IDBKey::createInvalid(), IDBKey::createInvalid(), 0);
+    request->onSuccess(nullptr, IDBKey::createInvalid(), IDBKey::createInvalid(), 0);
     request->onSuccess(IDBKey::createInvalid());
     request->onSuccess(PassRefPtr<SharedBuffer>(0));
     request->onSuccess(PassRefPtr<SharedBuffer>(0), IDBKey::createInvalid(), IDBKeyPath());
@@ -82,7 +111,7 @@ TEST_F(IDBRequestTest, EventsAfterStopping)
 TEST_F(IDBRequestTest, AbortErrorAfterAbort)
 {
     IDBTransaction* transaction = 0;
-    RefPtr<IDBRequest> request = IDBRequest::create(scriptExecutionContext(), IDBAny::createInvalid(), transaction);
+    RefPtr<IDBRequest> request = IDBRequest::create(executionContext(), IDBAny::createUndefined(), transaction);
     EXPECT_EQ(request->readyState(), "pending");
 
     // Simulate the IDBTransaction having received onAbort from back end and aborting the request:
@@ -93,42 +122,25 @@ TEST_F(IDBRequestTest, AbortErrorAfterAbort)
     request->onError(DOMError::create(AbortError, "Description goes here."));
 }
 
-class MockIDBDatabaseBackendInterface : public IDBDatabaseBackendInterface {
+class MockWebIDBDatabase : public blink::WebIDBDatabase {
 public:
-    static PassRefPtr<MockIDBDatabaseBackendInterface> create()
+    static PassOwnPtr<MockWebIDBDatabase> create()
     {
-        return adoptRef(new MockIDBDatabaseBackendInterface());
+        return adoptPtr(new MockWebIDBDatabase());
     }
-    virtual ~MockIDBDatabaseBackendInterface()
+    virtual ~MockWebIDBDatabase()
     {
         EXPECT_TRUE(m_closeCalled);
     }
 
-    virtual void createObjectStore(int64_t transactionId, int64_t objectStoreId, const String& name, const IDBKeyPath&, bool autoIncrement) OVERRIDE { }
-    virtual void deleteObjectStore(int64_t transactionId, int64_t objectStoreId) OVERRIDE { }
-    virtual void createTransaction(int64_t transactionId, PassRefPtr<IDBDatabaseCallbacks>, const Vector<int64_t>& objectStoreIds, unsigned short mode) OVERRIDE { }
-    virtual void close(PassRefPtr<IDBDatabaseCallbacks>) OVERRIDE
+    virtual void close() OVERRIDE
     {
         m_closeCalled = true;
     }
-
-    virtual void commit(int64_t transactionId) OVERRIDE { }
-    virtual void abort(int64_t transactionId) OVERRIDE { }
-
-    virtual void createIndex(int64_t transactionId, int64_t objectStoreId, int64_t indexId, const String& name, const IDBKeyPath&, bool unique, bool multiEntry) OVERRIDE { }
-    virtual void deleteIndex(int64_t transactionId, int64_t objectStoreId, int64_t indexId) OVERRIDE { }
-
-    virtual void get(int64_t transactionId, int64_t objectStoreId, int64_t indexId, PassRefPtr<IDBKeyRange>, bool keyOnly, PassRefPtr<IDBCallbacks>) OVERRIDE { }
-    virtual void put(int64_t transactionId, int64_t objectStoreId, PassRefPtr<SharedBuffer> value, PassRefPtr<IDBKey>, PutMode, PassRefPtr<IDBCallbacks>, const Vector<int64_t>& indexIds, const Vector<IndexKeys>&) OVERRIDE { }
-    virtual void setIndexKeys(int64_t transactionId, int64_t objectStoreId, PassRefPtr<IDBKey>, const Vector<int64_t>& indexIds, const Vector<IndexKeys>&) OVERRIDE { }
-    virtual void setIndexesReady(int64_t transactionId, int64_t objectStoreId, const Vector<int64_t>& indexIds) OVERRIDE { }
-    virtual void openCursor(int64_t transactionId, int64_t objectStoreId, int64_t indexId, PassRefPtr<IDBKeyRange>, IndexedDB::CursorDirection, bool keyOnly, TaskType, PassRefPtr<IDBCallbacks>) OVERRIDE { }
-    virtual void count(int64_t transactionId, int64_t objectStoreId, int64_t indexId, PassRefPtr<IDBKeyRange>, PassRefPtr<IDBCallbacks>) OVERRIDE { }
-    virtual void deleteRange(int64_t transactionId, int64_t objectStoreId, PassRefPtr<IDBKeyRange>, PassRefPtr<IDBCallbacks>) OVERRIDE { }
-    virtual void clear(int64_t transactionId, int64_t objectStoreId, PassRefPtr<IDBCallbacks>) OVERRIDE { }
+    virtual void abort(long long transactionId) OVERRIDE { }
 
 private:
-    MockIDBDatabaseBackendInterface()
+    MockWebIDBDatabase()
         : m_closeCalled(false)
     {
     }
@@ -142,24 +154,24 @@ TEST_F(IDBRequestTest, ConnectionsAfterStopping)
     const int64_t version = 1;
     const int64_t oldVersion = 0;
     const IDBDatabaseMetadata metadata;
-    RefPtr<IDBDatabaseCallbacksImpl> callbacks = IDBDatabaseCallbacksImpl::create();
+    RefPtr<IDBDatabaseCallbacks> callbacks = IDBDatabaseCallbacks::create();
 
     {
-        RefPtr<MockIDBDatabaseBackendInterface> interface = MockIDBDatabaseBackendInterface::create();
-        RefPtr<IDBOpenDBRequest> request = IDBOpenDBRequest::create(scriptExecutionContext(), callbacks, transactionId, version);
+        OwnPtr<MockWebIDBDatabase> backend = MockWebIDBDatabase::create();
+        RefPtr<IDBOpenDBRequest> request = IDBOpenDBRequest::create(executionContext(), callbacks, transactionId, version);
         EXPECT_EQ(request->readyState(), "pending");
 
-        scriptExecutionContext()->stopActiveDOMObjects();
-        request->onUpgradeNeeded(oldVersion, interface, metadata, WebKit::WebIDBCallbacks::DataLossNone);
+        executionContext()->stopActiveDOMObjects();
+        request->onUpgradeNeeded(oldVersion, backend.release(), metadata, blink::WebIDBDataLossNone, String());
     }
 
     {
-        RefPtr<MockIDBDatabaseBackendInterface> interface = MockIDBDatabaseBackendInterface::create();
-        RefPtr<IDBOpenDBRequest> request = IDBOpenDBRequest::create(scriptExecutionContext(), callbacks, transactionId, version);
+        OwnPtr<MockWebIDBDatabase> backend = MockWebIDBDatabase::create();
+        RefPtr<IDBOpenDBRequest> request = IDBOpenDBRequest::create(executionContext(), callbacks, transactionId, version);
         EXPECT_EQ(request->readyState(), "pending");
 
-        scriptExecutionContext()->stopActiveDOMObjects();
-        request->onSuccess(interface, metadata);
+        executionContext()->stopActiveDOMObjects();
+        request->onSuccess(backend.release(), metadata);
     }
 }
 

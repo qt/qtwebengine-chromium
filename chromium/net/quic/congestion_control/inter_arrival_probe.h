@@ -17,11 +17,13 @@ namespace net {
 
 class NET_EXPORT_PRIVATE InterArrivalProbe {
  public:
-  InterArrivalProbe();
+  explicit InterArrivalProbe(QuicByteCount max_segment_size);
   ~InterArrivalProbe();
 
+  void set_max_segment_size(QuicByteCount max_segment_size);
+
   // Call every time a packet is sent to the network.
-  void OnSentPacket(QuicByteCount bytes);
+  void OnPacketSent(QuicByteCount bytes);
 
   // Call once for each sent packet that we receive an acknowledgement from
   // the peer for.
@@ -45,6 +47,7 @@ class NET_EXPORT_PRIVATE InterArrivalProbe {
   bool GetEstimate(QuicBandwidth* available_channel_estimate);
 
  private:
+  QuicByteCount max_segment_size_;
   scoped_ptr<AvailableChannelEstimator> available_channel_estimator_;
   QuicPacketSequenceNumber first_sequence_number_;
   bool estimate_available_;

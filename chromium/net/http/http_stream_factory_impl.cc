@@ -82,22 +82,22 @@ HttpStreamRequest* HttpStreamFactoryImpl::RequestStream(
                                net_log);
 }
 
-HttpStreamRequest* HttpStreamFactoryImpl::RequestWebSocketStream(
+HttpStreamRequest* HttpStreamFactoryImpl::RequestWebSocketHandshakeStream(
     const HttpRequestInfo& request_info,
     RequestPriority priority,
     const SSLConfig& server_ssl_config,
     const SSLConfig& proxy_ssl_config,
     HttpStreamRequest::Delegate* delegate,
-    WebSocketStreamBase::Factory* factory,
+    WebSocketHandshakeStreamBase::CreateHelper* create_helper,
     const BoundNetLog& net_log) {
   DCHECK(for_websockets_);
-  DCHECK(factory);
+  DCHECK(create_helper);
   return RequestStreamInternal(request_info,
                                priority,
                                server_ssl_config,
                                proxy_ssl_config,
                                delegate,
-                               factory,
+                               create_helper,
                                net_log);
 }
 
@@ -107,12 +107,13 @@ HttpStreamRequest* HttpStreamFactoryImpl::RequestStreamInternal(
     const SSLConfig& server_ssl_config,
     const SSLConfig& proxy_ssl_config,
     HttpStreamRequest::Delegate* delegate,
-    WebSocketStreamBase::Factory* websocket_stream_factory,
+    WebSocketHandshakeStreamBase::CreateHelper*
+        websocket_handshake_stream_create_helper,
     const BoundNetLog& net_log) {
   Request* request = new Request(request_info.url,
                                  this,
                                  delegate,
-                                 websocket_stream_factory,
+                                 websocket_handshake_stream_create_helper,
                                  net_log);
 
   GURL alternate_url;
@@ -207,11 +208,10 @@ PortAlternateProtocolPair HttpStreamFactoryImpl::GetAlternateProtocolRequestFor(
   if (alternate.protocol == ALTERNATE_PROTOCOL_BROKEN)
     return kNoAlternateProtocol;
 
-  DCHECK_LE(NPN_SPDY_1, alternate.protocol);
-  DCHECK_GT(NUM_ALTERNATE_PROTOCOLS, alternate.protocol);
-
-  if (alternate.protocol < NPN_SPDY_2)
+  if (!IsAlternateProtocolValid(alternate.protocol)) {
+    NOTREACHED();
     return kNoAlternateProtocol;
+  }
 
   // Some shared unix systems may have user home directories (like
   // http://foo.com/~mike) which allow users to emit headers.  This is a bad
@@ -290,15 +290,15 @@ void HttpStreamFactoryImpl::OnNewSpdySessionReady(
                       using_spdy,
                       net_log);
     if (for_websockets_) {
-      WebSocketStreamBase::Factory* factory =
-          request->websocket_stream_factory();
-      DCHECK(factory);
+      WebSocketHandshakeStreamBase::CreateHelper* create_helper =
+          request->websocket_handshake_stream_create_helper();
+      DCHECK(create_helper);
       bool use_relative_url = direct || request->url().SchemeIs("wss");
-      request->OnWebSocketStreamReady(
+      request->OnWebSocketHandshakeStreamReady(
           NULL,
           used_ssl_config,
           used_proxy_info,
-          factory->CreateSpdyStream(spdy_session, use_relative_url));
+          create_helper->CreateSpdyStream(spdy_session, use_relative_url));
     } else {
       bool use_relative_url = direct || request->url().SchemeIs("https");
       request->OnStreamReady(

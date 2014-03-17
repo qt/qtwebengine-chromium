@@ -313,7 +313,7 @@ cr.define('cr.ui', function() {
       this.selectionModel = new ListSelectionModel(length);
 
       this.addEventListener('dblclick', this.handleDoubleClick_);
-      this.addEventListener('mousedown', this.handlePointerDownUp_);
+      this.addEventListener('mousedown', handleMouseDown);
       this.addEventListener('mouseup', this.handlePointerDownUp_);
       this.addEventListener('keydown', this.handleKeyDown);
       this.addEventListener('focus', this.handleElementFocus_, true);
@@ -512,18 +512,8 @@ cr.define('cr.ui', function() {
      * @private
      */
     handleElementBlur_: function(e) {
-      // When the blur event happens we do not know who is getting focus so we
-      // delay this a bit until we know if the new focus node is outside the
-      // list.
-      // We need 51 msec delay because InlineEditableList sets focus after
-      // 50 msec.
-      var list = this;
-      var doc = e.target.ownerDocument;
-      window.setTimeout(function() {
-        var activeElement = doc.activeElement;
-        if (!list.contains(activeElement))
-          list.hasElementFocus = false;
-      }, 51);
+      if (!this.contains(e.relatedTarget))
+        this.hasElementFocus = false;
     },
 
     /**
@@ -563,7 +553,7 @@ cr.define('cr.ui', function() {
     /**
      * Callback from the selection model. We dispatch {@code change} events
      * when the selection changes.
-     * @param {!cr.Event} e Event with change info.
+     * @param {!Event} e Event with change info.
      * @private
      */
     handleOnChange_: function(ce) {
@@ -721,6 +711,11 @@ cr.define('cr.ui', function() {
       var top = this.getItemTop(index);
       var clientHeight = this.clientHeight;
 
+      var cs = getComputedStyle(this);
+      var paddingY = parseInt(cs.paddingTop, 10) +
+                     parseInt(cs.paddingBottom, 10);
+      var availableHeight = clientHeight - paddingY;
+
       var self = this;
       // Function to adjust the tops of viewport and row.
       function scrollToAdjustTop() {
@@ -729,27 +724,20 @@ cr.define('cr.ui', function() {
       };
       // Function to adjust the bottoms of viewport and row.
       function scrollToAdjustBottom() {
-          var cs = getComputedStyle(self);
-          var paddingY = parseInt(cs.paddingTop, 10) +
-                         parseInt(cs.paddingBottom, 10);
-
-          if (top + itemHeight > scrollTop + clientHeight - paddingY) {
-            self.scrollTop = top + itemHeight - clientHeight + paddingY;
-            return true;
-          }
-          return false;
+          self.scrollTop = top + itemHeight - availableHeight;
+          return true;
       };
 
       // Check if the entire of given indexed row can be shown in the viewport.
-      if (itemHeight <= clientHeight) {
+      if (itemHeight <= availableHeight) {
         if (top < scrollTop)
           return scrollToAdjustTop();
-        if (scrollTop + clientHeight < top + itemHeight)
+        if (scrollTop + availableHeight < top + itemHeight)
           return scrollToAdjustBottom();
       } else {
         if (scrollTop < top)
           return scrollToAdjustTop();
-        if (top + itemHeight < scrollTop + clientHeight)
+        if (top + itemHeight < scrollTop + availableHeight)
           return scrollToAdjustBottom();
       }
       return false;
@@ -1286,6 +1274,51 @@ cr.define('cr.ui', function() {
    * that point even though it doesn't actually have the page focus.
    */
   cr.defineProperty(List, 'hasElementFocus', cr.PropertyKind.BOOL_ATTR);
+
+  /**
+   * Mousedown event handler.
+   * @this {List}
+   * @param {MouseEvent} e The mouse event object.
+   */
+  function handleMouseDown(e) {
+    var listItem = this.getListItemAncestor(e.target);
+    var wasSelected = listItem && listItem.selected;
+    this.handlePointerDownUp_(e);
+
+    if (e.defaultPrevented || e.button != 0)
+      return;
+
+    // The following hack is required only if the listItem gets selected.
+    if (!listItem || wasSelected || !listItem.selected)
+      return;
+
+    // If non-focusable area in a list item is clicked and the item still
+    // contains the focused element, the item did a special focus handling
+    // [1] and we should not focus on the list.
+    //
+    // [1] For example, clicking non-focusable area gives focus on the first
+    // form control in the item.
+    if (!containsFocusableElement(e.target, listItem) &&
+        listItem.contains(listItem.ownerDocument.activeElement)) {
+      e.preventDefault();
+    }
+  }
+
+  /**
+   * Check if |start| or its ancestor under |root| is focusable.
+   * This is a helper for handleMouseDown.
+   * @param {!Element} start An element which we start to check.
+   * @param {!Element} root An element which we finish to check.
+   * @return {boolean} True if we found a focusable element.
+   */
+  function containsFocusableElement(start, root) {
+    for (var element = start; element && element != root;
+        element = element.parentElement) {
+      if (element.tabIndex >= 0 && !element.disabled)
+        return true;
+    }
+    return false;
+  }
 
   return {
     List: List

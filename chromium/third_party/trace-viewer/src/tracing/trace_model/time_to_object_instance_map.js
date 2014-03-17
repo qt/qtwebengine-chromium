@@ -144,6 +144,7 @@ base.exportTo('tracing.trace_model', function() {
       lastInstance = this.createObjectInstanceFunction_(
           this.parent, this.id, category, name, ts);
       this.instances.push(lastInstance);
+      lastInstance.wasDeleted(ts);
       return lastInstance;
     },
 
@@ -161,6 +162,23 @@ base.exportTo('tracing.trace_model', function() {
         return undefined;
       }
       return this.instances[i];
+    },
+
+    logToConsole: function() {
+      for (var i = 0; i < this.instances.length; i++) {
+        var instance = this.instances[i];
+        var cEF = '';
+        var dEF = '';
+        if (instance.creationTsWasExplicit)
+          cEF = '(explicitC)';
+        if (instance.deletionTsWasExplicit)
+          dEF = '(explicit)';
+        console.log(instance.creationTs, cEF,
+                    instance.deletionTs, dEF,
+                    instance.category,
+                    instance.name,
+                    instance.snapshots.length + ' snapshots');
+      }
     }
   };
 

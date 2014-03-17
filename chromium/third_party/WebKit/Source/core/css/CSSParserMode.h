@@ -31,60 +31,95 @@
 #ifndef CSSParserMode_h
 #define CSSParserMode_h
 
-#include "weborigin/KURL.h"
+#include "platform/weborigin/KURL.h"
 
 namespace WebCore {
 
 class Document;
 
+// Must not grow beyond 3 bytes, due to packing in StylePropertySet.
 enum CSSParserMode {
-    CSSQuirksMode,
-    CSSStrictMode,
-    // SVG should always be in strict mode. For SVG attributes, the rules differ to strict sometimes.
+    HTMLStandardMode,
+    HTMLQuirksMode,
+    // HTML attributes are parsed in quirks mode but also allows internal properties and values.
+    HTMLAttributeMode,
+    // SVG attributes are parsed in quirks mode but rules differ slightly.
     SVGAttributeMode,
-    // CSS attribute are parsed in quirks mode. They also allow internal only properties and values.
-    CSSAttributeMode,
-    // User agent style sheet should always be in strict mode. Enables internal
-    // only properties and values.
-    UASheetMode,
-    // Parsing @viewport descriptors. Always strict. Set as mode on StylePropertySet
-    // to make sure CSSOM modifications use CSSParser::parseViewportProperty.
-    ViewportMode
+    // @viewport rules are parsed in standards mode but CSSOM modifications (via StylePropertySet)
+    // must call parseViewportProperties so needs a special mode.
+    CSSViewportRuleMode,
+    // User agent stylesheets are parsed in standards mode but also allows internal properties and values.
+    UASheetMode
 };
 
-inline CSSParserMode strictToCSSParserMode(bool inStrictMode)
+inline bool isQuirksModeBehavior(CSSParserMode mode)
 {
-    return inStrictMode ? CSSStrictMode : CSSQuirksMode;
+    return mode == HTMLQuirksMode; // || mode == HTMLAttributeMode;
 }
 
-inline bool isStrictParserMode(CSSParserMode cssParserMode)
+inline bool isUASheetBehavior(CSSParserMode mode)
 {
-    return cssParserMode != CSSQuirksMode;
+    return mode == UASheetMode;
 }
 
-struct CSSParserContext {
+inline bool isInternalPropertyAndValueParsingEnabledForMode(CSSParserMode mode)
+{
+    return mode == HTMLAttributeMode || mode == UASheetMode;
+}
+
+inline bool isUnitLessLengthParsingEnabledForMode(CSSParserMode mode)
+{
+    return mode == HTMLQuirksMode || mode == HTMLAttributeMode || mode == SVGAttributeMode;
+}
+
+inline bool isCSSViewportParsingEnabledForMode(CSSParserMode mode)
+{
+    return mode == CSSViewportRuleMode;
+}
+
+inline bool isSVGNumberParsingEnabledForMode(CSSParserMode mode)
+{
+    return mode == SVGAttributeMode;
+}
+
+inline bool isUseCounterEnabledForMode(CSSParserMode mode)
+{
+    // We don't count the UA style sheet in our statistics.
+    return mode != UASheetMode;
+}
+
+class CSSParserContext {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    CSSParserContext(CSSParserMode, const KURL& baseURL = KURL());
+    CSSParserContext(CSSParserMode);
     CSSParserContext(const Document&, const KURL& baseURL = KURL(), const String& charset = emptyString());
 
-    KURL baseURL;
-    String charset;
-    CSSParserMode mode;
-    bool isHTMLDocument;
-    bool isCSSCustomFilterEnabled;
-    bool isCSSStickyPositionEnabled;
-    bool isCSSCompositingEnabled;
-    bool isCSSTouchActionEnabled;
-    bool needsSiteSpecificQuirks;
+    bool operator==(const CSSParserContext&) const;
+    bool operator!=(const CSSParserContext& other) const { return !(*this == other); }
+
+    CSSParserMode mode() const { return m_mode; }
+    const KURL& baseURL() const { return m_baseURL; }
+    const String& charset() const { return m_charset; }
+    bool isHTMLDocument() const { return m_isHTMLDocument; }
+
     // This quirk is to maintain compatibility with Android apps built on
     // the Android SDK prior to and including version 18. Presumably, this
     // can be removed any time after 2015. See http://crbug.com/277157.
-    bool useLegacyBackgroundSizeShorthandBehavior;
-};
+    bool useLegacyBackgroundSizeShorthandBehavior() const { return m_useLegacyBackgroundSizeShorthandBehavior; }
 
-bool operator==(const CSSParserContext&, const CSSParserContext&);
-inline bool operator!=(const CSSParserContext& a, const CSSParserContext& b) { return !(a == b); }
+    // FIXME: These setters shouldn't exist, however the current lifetime of CSSParserContext
+    // is not well understood and thus we sometimes need to override these fields.
+    void setMode(CSSParserMode mode) { m_mode = mode; }
+    void setBaseURL(const KURL& baseURL) { m_baseURL = baseURL; }
+    void setCharset(const String& charset) { m_charset = charset; }
+
+private:
+    KURL m_baseURL;
+    String m_charset;
+    CSSParserMode m_mode;
+    bool m_isHTMLDocument;
+    bool m_useLegacyBackgroundSizeShorthandBehavior;
+};
 
 const CSSParserContext& strictCSSParserContext();
 

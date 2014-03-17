@@ -23,7 +23,7 @@
 #include "core/svg/SVGFECompositeElement.h"
 
 #include "SVGNames.h"
-#include "core/platform/graphics/filters/FilterEffect.h"
+#include "platform/graphics/filters/FilterEffect.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
@@ -49,18 +49,17 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGFECompositeElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGFilterPrimitiveStandardAttributes)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGFECompositeElement::SVGFECompositeElement(const QualifiedName& tagName, Document& document)
-    : SVGFilterPrimitiveStandardAttributes(tagName, document)
+inline SVGFECompositeElement::SVGFECompositeElement(Document& document)
+    : SVGFilterPrimitiveStandardAttributes(SVGNames::feCompositeTag, document)
     , m_svgOperator(FECOMPOSITE_OPERATOR_OVER)
 {
-    ASSERT(hasTagName(SVGNames::feCompositeTag));
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGFECompositeElement();
 }
 
-PassRefPtr<SVGFECompositeElement> SVGFECompositeElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGFECompositeElement> SVGFECompositeElement::create(Document& document)
 {
-    return adoptRef(new SVGFECompositeElement(tagName, document));
+    return adoptRef(new SVGFECompositeElement(document));
 }
 
 bool SVGFECompositeElement::isSupportedAttribute(const QualifiedName& attrName)

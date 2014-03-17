@@ -14,6 +14,7 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/gfx/box_f.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/point3_f.h"
 #include "ui/gfx/quad_f.h"
@@ -90,22 +91,22 @@ bool MatricesAreNearlyEqual(const Transform& lhs,
 
 void InitializeTestMatrix(Transform* transform) {
   SkMatrix44& matrix = transform->matrix();
-  matrix.setDouble(0, 0, 10.0);
-  matrix.setDouble(1, 0, 11.0);
-  matrix.setDouble(2, 0, 12.0);
-  matrix.setDouble(3, 0, 13.0);
-  matrix.setDouble(0, 1, 14.0);
-  matrix.setDouble(1, 1, 15.0);
-  matrix.setDouble(2, 1, 16.0);
-  matrix.setDouble(3, 1, 17.0);
-  matrix.setDouble(0, 2, 18.0);
-  matrix.setDouble(1, 2, 19.0);
-  matrix.setDouble(2, 2, 20.0);
-  matrix.setDouble(3, 2, 21.0);
-  matrix.setDouble(0, 3, 22.0);
-  matrix.setDouble(1, 3, 23.0);
-  matrix.setDouble(2, 3, 24.0);
-  matrix.setDouble(3, 3, 25.0);
+  matrix.set(0, 0, 10.f);
+  matrix.set(1, 0, 11.f);
+  matrix.set(2, 0, 12.f);
+  matrix.set(3, 0, 13.f);
+  matrix.set(0, 1, 14.f);
+  matrix.set(1, 1, 15.f);
+  matrix.set(2, 1, 16.f);
+  matrix.set(3, 1, 17.f);
+  matrix.set(0, 2, 18.f);
+  matrix.set(1, 2, 19.f);
+  matrix.set(2, 2, 20.f);
+  matrix.set(3, 2, 21.f);
+  matrix.set(0, 3, 22.f);
+  matrix.set(1, 3, 23.f);
+  matrix.set(2, 3, 24.f);
+  matrix.set(3, 3, 25.f);
 
   // Sanity check
   EXPECT_ROW1_EQ(10.0f, 14.0f, 18.0f, 22.0f, (*transform));
@@ -116,28 +117,55 @@ void InitializeTestMatrix(Transform* transform) {
 
 void InitializeTestMatrix2(Transform* transform) {
   SkMatrix44& matrix = transform->matrix();
-  matrix.setDouble(0, 0, 30.0);
-  matrix.setDouble(1, 0, 31.0);
-  matrix.setDouble(2, 0, 32.0);
-  matrix.setDouble(3, 0, 33.0);
-  matrix.setDouble(0, 1, 34.0);
-  matrix.setDouble(1, 1, 35.0);
-  matrix.setDouble(2, 1, 36.0);
-  matrix.setDouble(3, 1, 37.0);
-  matrix.setDouble(0, 2, 38.0);
-  matrix.setDouble(1, 2, 39.0);
-  matrix.setDouble(2, 2, 40.0);
-  matrix.setDouble(3, 2, 41.0);
-  matrix.setDouble(0, 3, 42.0);
-  matrix.setDouble(1, 3, 43.0);
-  matrix.setDouble(2, 3, 44.0);
-  matrix.setDouble(3, 3, 45.0);
+  matrix.set(0, 0, 30.f);
+  matrix.set(1, 0, 31.f);
+  matrix.set(2, 0, 32.f);
+  matrix.set(3, 0, 33.f);
+  matrix.set(0, 1, 34.f);
+  matrix.set(1, 1, 35.f);
+  matrix.set(2, 1, 36.f);
+  matrix.set(3, 1, 37.f);
+  matrix.set(0, 2, 38.f);
+  matrix.set(1, 2, 39.f);
+  matrix.set(2, 2, 40.f);
+  matrix.set(3, 2, 41.f);
+  matrix.set(0, 3, 42.f);
+  matrix.set(1, 3, 43.f);
+  matrix.set(2, 3, 44.f);
+  matrix.set(3, 3, 45.f);
 
   // Sanity check
   EXPECT_ROW1_EQ(30.0f, 34.0f, 38.0f, 42.0f, (*transform));
   EXPECT_ROW2_EQ(31.0f, 35.0f, 39.0f, 43.0f, (*transform));
   EXPECT_ROW3_EQ(32.0f, 36.0f, 40.0f, 44.0f, (*transform));
   EXPECT_ROW4_EQ(33.0f, 37.0f, 41.0f, 45.0f, (*transform));
+}
+
+const SkMScalar kApproxZero =
+    SkFloatToMScalar(std::numeric_limits<float>::epsilon());
+const SkMScalar kApproxOne = 1 - kApproxZero;
+
+void InitializeApproxIdentityMatrix(Transform* transform) {
+  SkMatrix44& matrix = transform->matrix();
+  matrix.set(0, 0, kApproxOne);
+  matrix.set(0, 1, kApproxZero);
+  matrix.set(0, 2, kApproxZero);
+  matrix.set(0, 3, kApproxZero);
+
+  matrix.set(1, 0, kApproxZero);
+  matrix.set(1, 1, kApproxOne);
+  matrix.set(1, 2, kApproxZero);
+  matrix.set(1, 3, kApproxZero);
+
+  matrix.set(2, 0, kApproxZero);
+  matrix.set(2, 1, kApproxZero);
+  matrix.set(2, 2, kApproxOne);
+  matrix.set(2, 3, kApproxZero);
+
+  matrix.set(3, 0, kApproxZero);
+  matrix.set(3, 1, kApproxZero);
+  matrix.set(3, 2, kApproxZero);
+  matrix.set(3, 3, kApproxOne);
 }
 
 #ifdef SK_MSCALAR_IS_DOUBLE
@@ -654,6 +682,23 @@ TEST(XFormTest, SetRotate2D) {
   }
 }
 
+TEST(XFormTest, TransformPointWithExtremePerspective) {
+  Point3F point(1.f, 1.f, 1.f);
+  Transform perspective;
+  perspective.ApplyPerspectiveDepth(1.f);
+  Point3F transformed = point;
+  perspective.TransformPoint(&transformed);
+  EXPECT_EQ(point.ToString(), transformed.ToString());
+
+  transformed = point;
+  perspective.MakeIdentity();
+  perspective.ApplyPerspectiveDepth(1.1f);
+  perspective.TransformPoint(&transformed);
+  EXPECT_FLOAT_EQ(11.f, transformed.x());
+  EXPECT_FLOAT_EQ(11.f, transformed.y());
+  EXPECT_FLOAT_EQ(11.f, transformed.z());
+}
+
 TEST(XFormTest, BlendTranslate) {
   Transform from;
   for (int i = -5; i < 15; ++i) {
@@ -738,14 +783,21 @@ TEST(XFormTest, CanBlend180DegreeRotation) {
   for (size_t index = 0; index < ARRAYSIZE_UNSAFE(axes); ++index) {
     for (int i = -5; i < 15; ++i) {
       Transform to;
-      to.RotateAbout(axes[index], 180);
+      to.RotateAbout(axes[index], 180.0);
       double t = i / 9.0;
       EXPECT_TRUE(to.Blend(from, t));
 
-      Transform expected;
-      expected.RotateAbout(axes[index], 180 * t);
+      // A 180 degree rotation is exactly opposite on the sphere, therefore
+      // either great circle arc to it is equivalent (and numerical precision
+      // will determine which is closer).  Test both directions.
+      Transform expected1;
+      expected1.RotateAbout(axes[index], 180.0 * t);
+      Transform expected2;
+      expected2.RotateAbout(axes[index], -180.0 * t);
 
-      EXPECT_TRUE(MatricesAreNearlyEqual(expected, to));
+      EXPECT_TRUE(MatricesAreNearlyEqual(expected1, to) ||
+                  MatricesAreNearlyEqual(expected2, to))
+          << "axis: " << index << ", i: " << i;
     }
   }
 }
@@ -757,9 +809,9 @@ TEST(XFormTest, BlendScale) {
     to.Scale3d(5, 4, 3);
     double t = i / 9.0;
     EXPECT_TRUE(to.Blend(from, t));
-    EXPECT_FLOAT_EQ(t * 4 + 1, to.matrix().get(0, 0));
-    EXPECT_FLOAT_EQ(t * 3 + 1, to.matrix().get(1, 1));
-    EXPECT_FLOAT_EQ(t * 2 + 1, to.matrix().get(2, 2));
+    EXPECT_FLOAT_EQ(t * 4 + 1, to.matrix().get(0, 0)) << "i: " << i;
+    EXPECT_FLOAT_EQ(t * 3 + 1, to.matrix().get(1, 1)) << "i: " << i;
+    EXPECT_FLOAT_EQ(t * 2 + 1, to.matrix().get(2, 2)) << "i: " << i;
   }
 }
 
@@ -767,12 +819,12 @@ TEST(XFormTest, BlendSkew) {
   Transform from;
   for (int i = 0; i < 2; ++i) {
     Transform to;
-    to.SkewX(20);
-    to.SkewY(10);
+    to.SkewX(10);
+    to.SkewY(5);
     double t = i;
     Transform expected;
-    expected.SkewX(t * 20);
-    expected.SkewY(t * 10);
+    expected.SkewX(t * 10);
+    expected.SkewY(t * 5);
     EXPECT_TRUE(to.Blend(from, t));
     EXPECT_TRUE(MatricesAreNearlyEqual(expected, to));
   }
@@ -1201,7 +1253,7 @@ TEST(XFormTest, VerifyBlendForCompositeTransform) {
   // We short circuit if blend is >= 1, so to check the numerics, we will
   // check that we get close to what we expect when we're nearly done
   // interpolating.
-  to.Blend(from, .99999);
+  to.Blend(from, .99999f);
 
   // Recomposing the matrix results in a normalized matrix, so to verify we
   // need to normalize the expectedEndOfAnimation before comparing elements.
@@ -1259,14 +1311,17 @@ TEST(XFormTest, FactorTRS) {
     EXPECT_TRUE(success);
     EXPECT_FLOAT_EQ(decomp.translate[0], degrees * 2);
     EXPECT_FLOAT_EQ(decomp.translate[1], -degrees * 3);
-    double rotation = std::acos(decomp.quaternion[3]) * 360.0 / M_PI;
+    double rotation =
+        std::acos(SkMScalarToDouble(decomp.quaternion[3])) * 360.0 / M_PI;
     while (rotation < 0.0)
       rotation += 360.0;
     while (rotation > 360.0)
       rotation -= 360.0;
-    EXPECT_FLOAT_EQ(rotation, degrees);
-    EXPECT_FLOAT_EQ(decomp.scale[0], degrees + 1);
-    EXPECT_FLOAT_EQ(decomp.scale[1], 2 * degrees + 1);
+
+    const float epsilon = 0.00015f;
+    EXPECT_NEAR(rotation, degrees, epsilon);
+    EXPECT_NEAR(decomp.scale[0], degrees + 1, epsilon);
+    EXPECT_NEAR(decomp.scale[1], 2 * degrees + 1, epsilon);
   }
 }
 
@@ -1282,15 +1337,15 @@ TEST(XFormTest, IntegerTranslation) {
   EXPECT_TRUE(transform.IsIdentityOrIntegerTranslation());
 
   transform.MakeIdentity();
-  transform.Translate3d(4.5, 0, 0);
+  transform.Translate3d(4.5f, 0, 0);
   EXPECT_FALSE(transform.IsIdentityOrIntegerTranslation());
 
   transform.MakeIdentity();
-  transform.Translate3d(0, -6.7, 0);
+  transform.Translate3d(0, -6.7f, 0);
   EXPECT_FALSE(transform.IsIdentityOrIntegerTranslation());
 
   transform.MakeIdentity();
-  transform.Translate3d(0, 0, 8.9);
+  transform.Translate3d(0, 0, 8.9f);
   EXPECT_FALSE(transform.IsIdentityOrIntegerTranslation());
 }
 
@@ -1329,10 +1384,10 @@ TEST(XFormTest, verifyMatrixInversion) {
     // Try to invert a matrix that is not invertible.
     // The inverse() function should reset the output matrix to identity.
     gfx::Transform uninvertible;
-    uninvertible.matrix().setDouble(0, 0, 0.0);
-    uninvertible.matrix().setDouble(1, 1, 0.0);
-    uninvertible.matrix().setDouble(2, 2, 0.0);
-    uninvertible.matrix().setDouble(3, 3, 0.0);
+    uninvertible.matrix().set(0, 0, 0.f);
+    uninvertible.matrix().set(1, 1, 0.f);
+    uninvertible.matrix().set(2, 2, 0.f);
+    uninvertible.matrix().set(3, 3, 0.f);
     EXPECT_FALSE(uninvertible.IsInvertible());
 
     gfx::Transform inverse_of_uninvertible;
@@ -1495,67 +1550,67 @@ TEST(XFormTest, verifyEqualsBooleanOperator) {
   // return false.
   Transform D;
   D = A;
-  D.matrix().setDouble(0, 0, 0.0);
+  D.matrix().set(0, 0, 0.f);
   EXPECT_FALSE(A == D);
 
   D = A;
-  D.matrix().setDouble(1, 0, 0.0);
+  D.matrix().set(1, 0, 0.f);
   EXPECT_FALSE(A == D);
 
   D = A;
-  D.matrix().setDouble(2, 0, 0.0);
+  D.matrix().set(2, 0, 0.f);
   EXPECT_FALSE(A == D);
 
   D = A;
-  D.matrix().setDouble(3, 0, 0.0);
+  D.matrix().set(3, 0, 0.f);
   EXPECT_FALSE(A == D);
 
   D = A;
-  D.matrix().setDouble(0, 1, 0.0);
+  D.matrix().set(0, 1, 0.f);
   EXPECT_FALSE(A == D);
 
   D = A;
-  D.matrix().setDouble(1, 1, 0.0);
+  D.matrix().set(1, 1, 0.f);
   EXPECT_FALSE(A == D);
 
   D = A;
-  D.matrix().setDouble(2, 1, 0.0);
+  D.matrix().set(2, 1, 0.f);
   EXPECT_FALSE(A == D);
 
   D = A;
-  D.matrix().setDouble(3, 1, 0.0);
+  D.matrix().set(3, 1, 0.f);
   EXPECT_FALSE(A == D);
 
   D = A;
-  D.matrix().setDouble(0, 2, 0.0);
+  D.matrix().set(0, 2, 0.f);
   EXPECT_FALSE(A == D);
 
   D = A;
-  D.matrix().setDouble(1, 2, 0.0);
+  D.matrix().set(1, 2, 0.f);
   EXPECT_FALSE(A == D);
 
   D = A;
-  D.matrix().setDouble(2, 2, 0.0);
+  D.matrix().set(2, 2, 0.f);
   EXPECT_FALSE(A == D);
 
   D = A;
-  D.matrix().setDouble(3, 2, 0.0);
+  D.matrix().set(3, 2, 0.f);
   EXPECT_FALSE(A == D);
 
   D = A;
-  D.matrix().setDouble(0, 3, 0.0);
+  D.matrix().set(0, 3, 0.f);
   EXPECT_FALSE(A == D);
 
   D = A;
-  D.matrix().setDouble(1, 3, 0.0);
+  D.matrix().set(1, 3, 0.f);
   EXPECT_FALSE(A == D);
 
   D = A;
-  D.matrix().setDouble(2, 3, 0.0);
+  D.matrix().set(2, 3, 0.f);
   EXPECT_FALSE(A == D);
 
   D = A;
-  D.matrix().setDouble(3, 3, 0.0);
+  D.matrix().set(3, 3, 0.f);
   EXPECT_FALSE(A == D);
 }
 
@@ -1945,23 +2000,23 @@ TEST(XFormTest, verifyHasPerspective) {
   EXPECT_FALSE(A.HasPerspective());
 
   A.MakeIdentity();
-  A.matrix().setDouble(3, 0, -1.0);
+  A.matrix().set(3, 0, -1.f);
   EXPECT_TRUE(A.HasPerspective());
 
   A.MakeIdentity();
-  A.matrix().setDouble(3, 1, -1.0);
+  A.matrix().set(3, 1, -1.f);
   EXPECT_TRUE(A.HasPerspective());
 
   A.MakeIdentity();
-  A.matrix().setDouble(3, 2, -0.3);
+  A.matrix().set(3, 2, -0.3f);
   EXPECT_TRUE(A.HasPerspective());
 
   A.MakeIdentity();
-  A.matrix().setDouble(3, 3, 0.5);
+  A.matrix().set(3, 3, 0.5f);
   EXPECT_TRUE(A.HasPerspective());
 
   A.MakeIdentity();
-  A.matrix().setDouble(3, 3, 0.0);
+  A.matrix().set(3, 3, 0.f);
   EXPECT_TRUE(A.HasPerspective());
 }
 
@@ -2002,14 +2057,14 @@ TEST(XFormTest, verifyIsInvertible) {
   // to zero (i.e. camera positioned at the origin), is not invertible.
   A.MakeIdentity();
   A.ApplyPerspectiveDepth(1.0);
-  A.matrix().setDouble(3, 3, 0.0);
+  A.matrix().set(3, 3, 0.f);
   EXPECT_FALSE(A.IsInvertible());
 
   // Adding more to a non-invertible matrix will not make it invertible in the
   // general case.
   A.MakeIdentity();
   A.ApplyPerspectiveDepth(1.0);
-  A.matrix().setDouble(3, 3, 0.0);
+  A.matrix().set(3, 3, 0.f);
   A.Scale3d(6.0, 7.0, 8.0);
   A.RotateAboutXAxis(10.0);
   A.RotateAboutYAxis(20.0);
@@ -2019,10 +2074,10 @@ TEST(XFormTest, verifyIsInvertible) {
 
   // A degenerate matrix of all zeros is not invertible.
   A.MakeIdentity();
-  A.matrix().setDouble(0, 0, 0.0);
-  A.matrix().setDouble(1, 1, 0.0);
-  A.matrix().setDouble(2, 2, 0.0);
-  A.matrix().setDouble(3, 3, 0.0);
+  A.matrix().set(0, 0, 0.f);
+  A.matrix().set(1, 1, 0.f);
+  A.matrix().set(2, 2, 0.f);
+  A.matrix().set(3, 3, 0.f);
   EXPECT_FALSE(A.IsInvertible());
 }
 
@@ -2038,67 +2093,67 @@ TEST(XFormTest, verifyIsIdentity) {
   // Modifying any one individual element should cause the matrix to no longer
   // be identity.
   A.MakeIdentity();
-  A.matrix().setDouble(0, 0, 2.0);
+  A.matrix().set(0, 0, 2.f);
   EXPECT_FALSE(A.IsIdentity());
 
   A.MakeIdentity();
-  A.matrix().setDouble(1, 0, 2.0);
+  A.matrix().set(1, 0, 2.f);
   EXPECT_FALSE(A.IsIdentity());
 
   A.MakeIdentity();
-  A.matrix().setDouble(2, 0, 2.0);
+  A.matrix().set(2, 0, 2.f);
   EXPECT_FALSE(A.IsIdentity());
 
   A.MakeIdentity();
-  A.matrix().setDouble(3, 0, 2.0);
+  A.matrix().set(3, 0, 2.f);
   EXPECT_FALSE(A.IsIdentity());
 
   A.MakeIdentity();
-  A.matrix().setDouble(0, 1, 2.0);
+  A.matrix().set(0, 1, 2.f);
   EXPECT_FALSE(A.IsIdentity());
 
   A.MakeIdentity();
-  A.matrix().setDouble(1, 1, 2.0);
+  A.matrix().set(1, 1, 2.f);
   EXPECT_FALSE(A.IsIdentity());
 
   A.MakeIdentity();
-  A.matrix().setDouble(2, 1, 2.0);
+  A.matrix().set(2, 1, 2.f);
   EXPECT_FALSE(A.IsIdentity());
 
   A.MakeIdentity();
-  A.matrix().setDouble(3, 1, 2.0);
+  A.matrix().set(3, 1, 2.f);
   EXPECT_FALSE(A.IsIdentity());
 
   A.MakeIdentity();
-  A.matrix().setDouble(0, 2, 2.0);
+  A.matrix().set(0, 2, 2.f);
   EXPECT_FALSE(A.IsIdentity());
 
   A.MakeIdentity();
-  A.matrix().setDouble(1, 2, 2.0);
+  A.matrix().set(1, 2, 2.f);
   EXPECT_FALSE(A.IsIdentity());
 
   A.MakeIdentity();
-  A.matrix().setDouble(2, 2, 2.0);
+  A.matrix().set(2, 2, 2.f);
   EXPECT_FALSE(A.IsIdentity());
 
   A.MakeIdentity();
-  A.matrix().setDouble(3, 2, 2.0);
+  A.matrix().set(3, 2, 2.f);
   EXPECT_FALSE(A.IsIdentity());
 
   A.MakeIdentity();
-  A.matrix().setDouble(0, 3, 2.0);
+  A.matrix().set(0, 3, 2.f);
   EXPECT_FALSE(A.IsIdentity());
 
   A.MakeIdentity();
-  A.matrix().setDouble(1, 3, 2.0);
+  A.matrix().set(1, 3, 2.f);
   EXPECT_FALSE(A.IsIdentity());
 
   A.MakeIdentity();
-  A.matrix().setDouble(2, 3, 2.0);
+  A.matrix().set(2, 3, 2.f);
   EXPECT_FALSE(A.IsIdentity());
 
   A.MakeIdentity();
-  A.matrix().setDouble(3, 3, 2.0);
+  A.matrix().set(3, 3, 2.f);
   EXPECT_FALSE(A.IsIdentity());
 }
 
@@ -2116,71 +2171,121 @@ TEST(XFormTest, verifyIsIdentityOrTranslation) {
   // (2, 3) are the translation components, so modifying them should still
   // return true.
   A.MakeIdentity();
-  A.matrix().setDouble(0, 0, 2.0);
+  A.matrix().set(0, 0, 2.f);
   EXPECT_FALSE(A.IsIdentityOrTranslation());
 
   A.MakeIdentity();
-  A.matrix().setDouble(1, 0, 2.0);
+  A.matrix().set(1, 0, 2.f);
   EXPECT_FALSE(A.IsIdentityOrTranslation());
 
   A.MakeIdentity();
-  A.matrix().setDouble(2, 0, 2.0);
+  A.matrix().set(2, 0, 2.f);
   EXPECT_FALSE(A.IsIdentityOrTranslation());
 
   A.MakeIdentity();
-  A.matrix().setDouble(3, 0, 2.0);
+  A.matrix().set(3, 0, 2.f);
   EXPECT_FALSE(A.IsIdentityOrTranslation());
 
   A.MakeIdentity();
-  A.matrix().setDouble(0, 1, 2.0);
+  A.matrix().set(0, 1, 2.f);
   EXPECT_FALSE(A.IsIdentityOrTranslation());
 
   A.MakeIdentity();
-  A.matrix().setDouble(1, 1, 2.0);
+  A.matrix().set(1, 1, 2.f);
   EXPECT_FALSE(A.IsIdentityOrTranslation());
 
   A.MakeIdentity();
-  A.matrix().setDouble(2, 1, 2.0);
+  A.matrix().set(2, 1, 2.f);
   EXPECT_FALSE(A.IsIdentityOrTranslation());
 
   A.MakeIdentity();
-  A.matrix().setDouble(3, 1, 2.0);
+  A.matrix().set(3, 1, 2.f);
   EXPECT_FALSE(A.IsIdentityOrTranslation());
 
   A.MakeIdentity();
-  A.matrix().setDouble(0, 2, 2.0);
+  A.matrix().set(0, 2, 2.f);
   EXPECT_FALSE(A.IsIdentityOrTranslation());
 
   A.MakeIdentity();
-  A.matrix().setDouble(1, 2, 2.0);
+  A.matrix().set(1, 2, 2.f);
   EXPECT_FALSE(A.IsIdentityOrTranslation());
 
   A.MakeIdentity();
-  A.matrix().setDouble(2, 2, 2.0);
+  A.matrix().set(2, 2, 2.f);
   EXPECT_FALSE(A.IsIdentityOrTranslation());
 
   A.MakeIdentity();
-  A.matrix().setDouble(3, 2, 2.0);
+  A.matrix().set(3, 2, 2.f);
   EXPECT_FALSE(A.IsIdentityOrTranslation());
 
   // Note carefully - expecting true here.
   A.MakeIdentity();
-  A.matrix().setDouble(0, 3, 2.0);
+  A.matrix().set(0, 3, 2.f);
   EXPECT_TRUE(A.IsIdentityOrTranslation());
 
   // Note carefully - expecting true here.
   A.MakeIdentity();
-  A.matrix().setDouble(1, 3, 2.0);
+  A.matrix().set(1, 3, 2.f);
   EXPECT_TRUE(A.IsIdentityOrTranslation());
 
   // Note carefully - expecting true here.
   A.MakeIdentity();
-  A.matrix().setDouble(2, 3, 2.0);
+  A.matrix().set(2, 3, 2.f);
   EXPECT_TRUE(A.IsIdentityOrTranslation());
 
   A.MakeIdentity();
-  A.matrix().setDouble(3, 3, 2.0);
+  A.matrix().set(3, 3, 2.f);
   EXPECT_FALSE(A.IsIdentityOrTranslation());
+}
+
+TEST(XFormTest, verifyIsApproximatelyIdentityOrTranslation) {
+  Transform A;
+  SkMatrix44& matrix = A.matrix();
+
+  // Exact pure translation.
+  A.MakeIdentity();
+
+  // Set translate values to values other than 0 or 1.
+  matrix.set(0, 3, 3.4f);
+  matrix.set(1, 3, 4.4f);
+  matrix.set(2, 3, 5.6f);
+
+  EXPECT_TRUE(A.IsApproximatelyIdentityOrTranslation(0));
+  EXPECT_TRUE(A.IsApproximatelyIdentityOrTranslation(kApproxZero));
+
+  // Approximately pure translation.
+  InitializeApproxIdentityMatrix(&A);
+
+  // Some values must be exact.
+  matrix.set(3, 0, 0);
+  matrix.set(3, 1, 0);
+  matrix.set(3, 2, 0);
+  matrix.set(3, 3, 1);
+
+  // Set translate values to values other than 0 or 1.
+  matrix.set(0, 3, 3.4f);
+  matrix.set(1, 3, 4.4f);
+  matrix.set(2, 3, 5.6f);
+
+  EXPECT_FALSE(A.IsApproximatelyIdentityOrTranslation(0));
+  EXPECT_TRUE(A.IsApproximatelyIdentityOrTranslation(kApproxZero));
+
+  // Not approximately pure translation.
+  InitializeApproxIdentityMatrix(&A);
+
+  // Some values must be exact.
+  matrix.set(3, 0, 0);
+  matrix.set(3, 1, 0);
+  matrix.set(3, 2, 0);
+  matrix.set(3, 3, 1);
+
+  // Set some values (not translate values) to values other than 0 or 1.
+  matrix.set(0, 1, 3.4f);
+  matrix.set(3, 2, 4.4f);
+  matrix.set(2, 0, 5.6f);
+
+  EXPECT_FALSE(A.IsApproximatelyIdentityOrTranslation(0));
+  EXPECT_FALSE(A.IsApproximatelyIdentityOrTranslation(kApproxZero));
 }
 
 TEST(XFormTest, verifyIsScaleOrTranslation) {
@@ -2199,72 +2304,72 @@ TEST(XFormTest, verifyIsScaleOrTranslation) {
 
   // Note carefully - expecting true here.
   A.MakeIdentity();
-  A.matrix().setDouble(0, 0, 2.0);
+  A.matrix().set(0, 0, 2.f);
   EXPECT_TRUE(A.IsScaleOrTranslation());
 
   A.MakeIdentity();
-  A.matrix().setDouble(1, 0, 2.0);
+  A.matrix().set(1, 0, 2.f);
   EXPECT_FALSE(A.IsScaleOrTranslation());
 
   A.MakeIdentity();
-  A.matrix().setDouble(2, 0, 2.0);
+  A.matrix().set(2, 0, 2.f);
   EXPECT_FALSE(A.IsScaleOrTranslation());
 
   A.MakeIdentity();
-  A.matrix().setDouble(3, 0, 2.0);
+  A.matrix().set(3, 0, 2.f);
   EXPECT_FALSE(A.IsScaleOrTranslation());
 
   A.MakeIdentity();
-  A.matrix().setDouble(0, 1, 2.0);
+  A.matrix().set(0, 1, 2.f);
   EXPECT_FALSE(A.IsScaleOrTranslation());
 
   // Note carefully - expecting true here.
   A.MakeIdentity();
-  A.matrix().setDouble(1, 1, 2.0);
+  A.matrix().set(1, 1, 2.f);
   EXPECT_TRUE(A.IsScaleOrTranslation());
 
   A.MakeIdentity();
-  A.matrix().setDouble(2, 1, 2.0);
+  A.matrix().set(2, 1, 2.f);
   EXPECT_FALSE(A.IsScaleOrTranslation());
 
   A.MakeIdentity();
-  A.matrix().setDouble(3, 1, 2.0);
+  A.matrix().set(3, 1, 2.f);
   EXPECT_FALSE(A.IsScaleOrTranslation());
 
   A.MakeIdentity();
-  A.matrix().setDouble(0, 2, 2.0);
+  A.matrix().set(0, 2, 2.f);
   EXPECT_FALSE(A.IsScaleOrTranslation());
 
   A.MakeIdentity();
-  A.matrix().setDouble(1, 2, 2.0);
-  EXPECT_FALSE(A.IsScaleOrTranslation());
-
-  // Note carefully - expecting true here.
-  A.MakeIdentity();
-  A.matrix().setDouble(2, 2, 2.0);
-  EXPECT_TRUE(A.IsScaleOrTranslation());
-
-  A.MakeIdentity();
-  A.matrix().setDouble(3, 2, 2.0);
+  A.matrix().set(1, 2, 2.f);
   EXPECT_FALSE(A.IsScaleOrTranslation());
 
   // Note carefully - expecting true here.
   A.MakeIdentity();
-  A.matrix().setDouble(0, 3, 2.0);
+  A.matrix().set(2, 2, 2.f);
+  EXPECT_TRUE(A.IsScaleOrTranslation());
+
+  A.MakeIdentity();
+  A.matrix().set(3, 2, 2.f);
+  EXPECT_FALSE(A.IsScaleOrTranslation());
+
+  // Note carefully - expecting true here.
+  A.MakeIdentity();
+  A.matrix().set(0, 3, 2.f);
   EXPECT_TRUE(A.IsScaleOrTranslation());
 
   // Note carefully - expecting true here.
   A.MakeIdentity();
-  A.matrix().setDouble(1, 3, 2.0);
+  A.matrix().set(1, 3, 2.f);
   EXPECT_TRUE(A.IsScaleOrTranslation());
 
   // Note carefully - expecting true here.
   A.MakeIdentity();
-  A.matrix().setDouble(2, 3, 2.0);
+  A.matrix().set(2, 3, 2.f);
   EXPECT_TRUE(A.IsScaleOrTranslation());
 
   A.MakeIdentity();
-  A.matrix().setDouble(3, 3, 2.0);
+  A.matrix().set(3, 3, 2.f);
   EXPECT_FALSE(A.IsScaleOrTranslation());
 }
 
@@ -2307,52 +2412,52 @@ static bool EmpiricallyPreserves2dAxisAlignment(const Transform& transform) {
 
 TEST(XFormTest, Preserves2dAxisAlignment) {
   static const struct TestCase {
-    double a; // row 1, column 1
-    double b; // row 1, column 2
-    double c; // row 2, column 1
-    double d; // row 2, column 2
+    SkMScalar a; // row 1, column 1
+    SkMScalar b; // row 1, column 2
+    SkMScalar c; // row 2, column 1
+    SkMScalar d; // row 2, column 2
     bool expected;
   } test_cases[] = {
-    { 3.0, 0.0,
-      0.0, 4.0, true }, // basic case
-    { 0.0, 4.0,
-      3.0, 0.0, true }, // rotate by 90
-    { 0.0, 0.0,
-      0.0, 4.0, true }, // degenerate x
-    { 3.0, 0.0,
-      0.0, 0.0, true }, // degenerate y
-    { 0.0, 0.0,
-      3.0, 0.0, true }, // degenerate x + rotate by 90
-    { 0.0, 4.0,
-      0.0, 0.0, true }, // degenerate y + rotate by 90
-    { 3.0, 4.0,
-      0.0, 0.0, false },
-    { 0.0, 0.0,
-      3.0, 4.0, false },
-    { 0.0, 3.0,
-      0.0, 4.0, false },
-    { 3.0, 0.0,
-      4.0, 0.0, false },
-    { 3.0, 4.0,
-      5.0, 0.0, false },
-    { 3.0, 4.0,
-      0.0, 5.0, false },
-    { 3.0, 0.0,
-      4.0, 5.0, false },
-    { 0.0, 3.0,
-      4.0, 5.0, false },
-    { 2.0, 3.0,
-      4.0, 5.0, false },
+    { 3.f, 0.f,
+      0.f, 4.f, true }, // basic case
+    { 0.f, 4.f,
+      3.f, 0.f, true }, // rotate by 90
+    { 0.f, 0.f,
+      0.f, 4.f, true }, // degenerate x
+    { 3.f, 0.f,
+      0.f, 0.f, true }, // degenerate y
+    { 0.f, 0.f,
+      3.f, 0.f, true }, // degenerate x + rotate by 90
+    { 0.f, 4.f,
+      0.f, 0.f, true }, // degenerate y + rotate by 90
+    { 3.f, 4.f,
+      0.f, 0.f, false },
+    { 0.f, 0.f,
+      3.f, 4.f, false },
+    { 0.f, 3.f,
+      0.f, 4.f, false },
+    { 3.f, 0.f,
+      4.f, 0.f, false },
+    { 3.f, 4.f,
+      5.f, 0.f, false },
+    { 3.f, 4.f,
+      0.f, 5.f, false },
+    { 3.f, 0.f,
+      4.f, 5.f, false },
+    { 0.f, 3.f,
+      4.f, 5.f, false },
+    { 2.f, 3.f,
+      4.f, 5.f, false },
   };
 
   Transform transform;
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
     const TestCase& value = test_cases[i];
     transform.MakeIdentity();
-    transform.matrix().setDouble(0, 0, value.a);
-    transform.matrix().setDouble(0, 1, value.b);
-    transform.matrix().setDouble(1, 0, value.c);
-    transform.matrix().setDouble(1, 1, value.d);
+    transform.matrix().set(0, 0, value.a);
+    transform.matrix().set(0, 1, value.b);
+    transform.matrix().set(1, 0, value.c);
+    transform.matrix().set(1, 1, value.d);
 
     if (value.expected) {
       EXPECT_TRUE(EmpiricallyPreserves2dAxisAlignment(transform));
@@ -2368,19 +2473,19 @@ TEST(XFormTest, Preserves2dAxisAlignment) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
     const TestCase& value = test_cases[i];
     transform.MakeIdentity();
-    transform.matrix().setDouble(0, 0, value.a);
-    transform.matrix().setDouble(0, 1, value.b);
-    transform.matrix().setDouble(1, 0, value.c);
-    transform.matrix().setDouble(1, 1, value.d);
+    transform.matrix().set(0, 0, value.a);
+    transform.matrix().set(0, 1, value.b);
+    transform.matrix().set(1, 0, value.c);
+    transform.matrix().set(1, 1, value.d);
 
-    transform.matrix().setDouble(0, 2, 1.0);
-    transform.matrix().setDouble(0, 3, 2.0);
-    transform.matrix().setDouble(1, 2, 3.0);
-    transform.matrix().setDouble(1, 3, 4.0);
-    transform.matrix().setDouble(2, 0, 5.0);
-    transform.matrix().setDouble(2, 1, 6.0);
-    transform.matrix().setDouble(2, 2, 7.0);
-    transform.matrix().setDouble(2, 3, 8.0);
+    transform.matrix().set(0, 2, 1.f);
+    transform.matrix().set(0, 3, 2.f);
+    transform.matrix().set(1, 2, 3.f);
+    transform.matrix().set(1, 3, 4.f);
+    transform.matrix().set(2, 0, 5.f);
+    transform.matrix().set(2, 1, 6.f);
+    transform.matrix().set(2, 2, 7.f);
+    transform.matrix().set(2, 3, 8.f);
 
     if (value.expected) {
       EXPECT_TRUE(EmpiricallyPreserves2dAxisAlignment(transform));
@@ -2396,23 +2501,23 @@ TEST(XFormTest, Preserves2dAxisAlignment) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
     const TestCase& value = test_cases[i];
     transform.MakeIdentity();
-    transform.matrix().setDouble(0, 0, value.a);
-    transform.matrix().setDouble(0, 1, value.b);
-    transform.matrix().setDouble(1, 0, value.c);
-    transform.matrix().setDouble(1, 1, value.d);
+    transform.matrix().set(0, 0, value.a);
+    transform.matrix().set(0, 1, value.b);
+    transform.matrix().set(1, 0, value.c);
+    transform.matrix().set(1, 1, value.d);
 
-    transform.matrix().setDouble(0, 2, 1.0);
-    transform.matrix().setDouble(0, 3, 2.0);
-    transform.matrix().setDouble(1, 2, 3.0);
-    transform.matrix().setDouble(1, 3, 4.0);
-    transform.matrix().setDouble(2, 0, 5.0);
-    transform.matrix().setDouble(2, 1, 6.0);
-    transform.matrix().setDouble(2, 2, 7.0);
-    transform.matrix().setDouble(2, 3, 8.0);
-    transform.matrix().setDouble(3, 0, 9.0);
-    transform.matrix().setDouble(3, 1, 10.0);
-    transform.matrix().setDouble(3, 2, 11.0);
-    transform.matrix().setDouble(3, 3, 12.0);
+    transform.matrix().set(0, 2, 1.f);
+    transform.matrix().set(0, 3, 2.f);
+    transform.matrix().set(1, 2, 3.f);
+    transform.matrix().set(1, 3, 4.f);
+    transform.matrix().set(2, 0, 5.f);
+    transform.matrix().set(2, 1, 6.f);
+    transform.matrix().set(2, 2, 7.f);
+    transform.matrix().set(2, 3, 8.f);
+    transform.matrix().set(3, 0, 9.f);
+    transform.matrix().set(3, 1, 10.f);
+    transform.matrix().set(3, 2, 11.f);
+    transform.matrix().set(3, 3, 12.f);
 
     EXPECT_FALSE(EmpiricallyPreserves2dAxisAlignment(transform));
     EXPECT_FALSE(transform.Preserves2dAxisAlignment());
@@ -2502,6 +2607,50 @@ TEST(XFormTest, To2dTranslation) {
   transform.MakeIdentity();
   transform.Translate(translation.x(), translation.y());
   EXPECT_EQ(translation.ToString(), transform.To2dTranslation().ToString());
+}
+
+TEST(XFormTest, TransformRect) {
+  Transform translation;
+  translation.Translate(3.f, 7.f);
+  RectF rect(1.f, 2.f, 3.f, 4.f);
+  RectF expected(4.f, 9.f, 3.f, 4.f);
+  translation.TransformRect(&rect);
+  EXPECT_EQ(expected.ToString(), rect.ToString());
+}
+
+TEST(XFormTest, TransformRectReverse) {
+  Transform translation;
+  translation.Translate(3.f, 7.f);
+  RectF rect(1.f, 2.f, 3.f, 4.f);
+  RectF expected(-2.f, -5.f, 3.f, 4.f);
+  EXPECT_TRUE(translation.TransformRectReverse(&rect));
+  EXPECT_EQ(expected.ToString(), rect.ToString());
+
+  Transform singular;
+  singular.Scale3d(0.f, 0.f, 0.f);
+  EXPECT_FALSE(singular.TransformRectReverse(&rect));
+}
+
+TEST(XFormTest, TransformBox) {
+  Transform translation;
+  translation.Translate3d(3.f, 7.f, 6.f);
+  BoxF box(1.f, 2.f, 3.f, 4.f, 5.f, 6.f);
+  BoxF expected(4.f, 9.f, 9.f, 4.f, 5.f, 6.f);
+  translation.TransformBox(&box);
+  EXPECT_EQ(expected.ToString(), box.ToString());
+}
+
+TEST(XFormTest, TransformBoxReverse) {
+  Transform translation;
+  translation.Translate3d(3.f, 7.f, 6.f);
+  BoxF box(1.f, 2.f, 3.f, 4.f, 5.f, 6.f);
+  BoxF expected(-2.f, -5.f, -3.f, 4.f, 5.f, 6.f);
+  EXPECT_TRUE(translation.TransformBoxReverse(&box));
+  EXPECT_EQ(expected.ToString(), box.ToString());
+
+  Transform singular;
+  singular.Scale3d(0.f, 0.f, 0.f);
+  EXPECT_FALSE(singular.TransformBoxReverse(&box));
 }
 
 }  // namespace

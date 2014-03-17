@@ -32,13 +32,16 @@
 #include "config.h"
 #include "core/html/track/TextTrack.h"
 
+#include "RuntimeEnabledFeatures.h"
+#include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/track/TextTrackCueList.h"
 #include "core/html/track/TextTrackList.h"
-#include "core/html/track/TextTrackRegion.h"
-#include "core/html/track/TextTrackRegionList.h"
+#include "core/html/track/vtt/VTTRegion.h"
+#include "core/html/track/vtt/VTTRegionList.h"
 
 namespace WebCore {
 
@@ -92,16 +95,16 @@ const AtomicString& TextTrack::showingKeyword()
     return ended;
 }
 
-TextTrack::TextTrack(ScriptExecutionContext* context, TextTrackClient* client, const AtomicString& kind, const AtomicString& label, const AtomicString& language, TextTrackType type)
-    : TrackBase(context, TrackBase::TextTrack)
+TextTrack::TextTrack(Document& document, TextTrackClient* client, const AtomicString& kind, const AtomicString& label, const AtomicString& language, const AtomicString& id, TextTrackType type)
+    : TrackBase(TrackBase::TextTrack)
     , m_cues(0)
-#if ENABLE(WEBVTT_REGIONS)
     , m_regions(0)
-#endif
+    , m_document(&document)
     , m_mediaElement(0)
     , m_label(label)
     , m_language(language)
-    , m_mode(disabledKeyword().string())
+    , m_id(id)
+    , m_mode(disabledKeyword())
     , m_client(client)
     , m_trackType(type)
     , m_readinessState(NotLoaded)
@@ -123,12 +126,10 @@ TextTrack::~TextTrack()
             m_cues->item(i)->setTrack(0);
     }
 
-#if ENABLE(WEBVTT_REGIONS)
     if (m_regions) {
         for (size_t i = 0; i < m_regions->length(); ++i)
             m_regions->item(i)->setTrack(0);
     }
-#endif
     clearClient();
 }
 
@@ -163,11 +164,10 @@ void TextTrack::setKind(const AtomicString& kind)
 
 void TextTrack::setMode(const AtomicString& mode)
 {
+    ASSERT(mode == disabledKeyword() || mode == hiddenKeyword() || mode == showingKeyword());
+
     // On setting, if the new value isn't equal to what the attribute would currently
     // return, the new value must be processed as follows ...
-    if (mode != disabledKeyword() && mode != hiddenKeyword() && mode != showingKeyword())
-        return;
-
     if (m_mode == mode)
         return;
 
@@ -254,7 +254,7 @@ void TextTrack::addCue(PassRefPtr<TextTrackCue> prpCue)
         m_client->textTrackAddCue(this, cue.get());
 }
 
-void TextTrack::removeCue(TextTrackCue* cue, ExceptionState& es)
+void TextTrack::removeCue(TextTrackCue* cue, ExceptionState& exceptionState)
 {
     if (!cue)
         return;
@@ -266,13 +266,13 @@ void TextTrack::removeCue(TextTrackCue* cue, ExceptionState& es)
     // 1. If the given cue is not currently listed in the method's TextTrack
     // object's text track's text track list of cues, then throw a NotFoundError exception.
     if (cue->track() != this) {
-        es.throwDOMException(NotFoundError);
+        exceptionState.throwDOMException(NotFoundError, "The specified cue is not listed in the TextTrack's list of cues.");
         return;
     }
 
     // 2. Remove cue from the method's TextTrack object's text track's text track list of cues.
     if (!m_cues || !m_cues->remove(cue)) {
-        es.throwDOMException(InvalidStateError);
+        exceptionState.throwDOMException(InvalidStateError, "Failed to remove the specified cue.");
         return;
     }
 
@@ -281,41 +281,34 @@ void TextTrack::removeCue(TextTrackCue* cue, ExceptionState& es)
         m_client->textTrackRemoveCue(this, cue);
 }
 
-#if ENABLE(WEBVTT_REGIONS)
-TextTrackRegionList* TextTrack::regionList()
-{
-    return ensureTextTrackRegionList();
-}
-
-TextTrackRegionList* TextTrack::ensureTextTrackRegionList()
+VTTRegionList* TextTrack::ensureVTTRegionList()
 {
     if (!m_regions)
-        m_regions = TextTrackRegionList::create();
+        m_regions = VTTRegionList::create();
 
     return m_regions.get();
 }
 
-TextTrackRegionList* TextTrack::regions()
+VTTRegionList* TextTrack::regions()
 {
     // If the text track mode of the text track that the TextTrack object
     // represents is not the text track disabled mode, then the regions
-    // attribute must return a live TextTrackRegionList object that represents
+    // attribute must return a live VTTRegionList object that represents
     // the text track list of regions of the text track. Otherwise, it must
     // return null. When an object is returned, the same object must be returned
     // each time.
-    if (m_mode != disabledKeyword())
-        return ensureTextTrackRegionList();
-
+    if (RuntimeEnabledFeatures::webVTTRegionsEnabled() && m_mode != disabledKeyword())
+        return ensureVTTRegionList();
     return 0;
 }
 
-void TextTrack::addRegion(PassRefPtr<TextTrackRegion> prpRegion)
+void TextTrack::addRegion(PassRefPtr<VTTRegion> prpRegion)
 {
     if (!prpRegion)
         return;
 
-    RefPtr<TextTrackRegion> region = prpRegion;
-    TextTrackRegionList* regionList = ensureTextTrackRegionList();
+    RefPtr<VTTRegion> region = prpRegion;
+    VTTRegionList* regionList = ensureVTTRegionList();
 
     // 1. If the given region is in a text track list of regions, then remove
     // region from that text track list of regions.
@@ -327,7 +320,7 @@ void TextTrack::addRegion(PassRefPtr<TextTrackRegion> prpRegion)
     // a region with the same identifier as region replace the values of that
     // region's width, height, anchor point, viewport anchor point and scroll
     // attributes with those of region.
-    TextTrackRegion* existingRegion = regionList->getRegionById(region->id());
+    VTTRegion* existingRegion = regionList->getRegionById(region->id());
     if (existingRegion) {
         existingRegion->updateParametersFromRegion(region.get());
         return;
@@ -339,7 +332,7 @@ void TextTrack::addRegion(PassRefPtr<TextTrackRegion> prpRegion)
     regionList->add(region);
 }
 
-void TextTrack::removeRegion(TextTrackRegion* region, ExceptionState &es)
+void TextTrack::removeRegion(VTTRegion* region, ExceptionState &exceptionState)
 {
     if (!region)
         return;
@@ -347,18 +340,17 @@ void TextTrack::removeRegion(TextTrackRegion* region, ExceptionState &es)
     // 1. If the given region is not currently listed in the method's TextTrack
     // object's text track list of regions, then throw a NotFoundError exception.
     if (region->track() != this) {
-        es.throwDOMException(NotFoundError);
+        exceptionState.throwDOMException(NotFoundError, "The specified region is not listed in the TextTrack's list of regions.");
         return;
     }
 
     if (!m_regions || !m_regions->remove(region)) {
-        es.throwDOMException(InvalidStateError);
+        exceptionState.throwDOMException(InvalidStateError, "Failed to remove the specified region.");
         return;
     }
 
     region->setTrack(0);
 }
-#endif
 
 void TextTrack::cueWillChange(TextTrackCue* cue)
 {
@@ -427,71 +419,14 @@ int TextTrack::trackIndexRelativeToRenderedTracks()
     return m_renderedTrackIndex;
 }
 
-bool TextTrack::hasCue(TextTrackCue* cue)
+const AtomicString& TextTrack::interfaceName() const
 {
-    if (cue->startTime() < 0 || cue->endTime() < 0)
-        return false;
-
-    if (!m_cues || !m_cues->length())
-        return false;
-
-    size_t searchStart = 0;
-    size_t searchEnd = m_cues->length();
-
-    while (1) {
-        ASSERT(searchStart <= m_cues->length());
-        ASSERT(searchEnd <= m_cues->length());
-
-        TextTrackCue* existingCue;
-
-        // Cues in the TextTrackCueList are maintained in start time order.
-        if (searchStart == searchEnd) {
-            if (!searchStart)
-                return false;
-
-            // If there is more than one cue with the same start time, back up to first one so we
-            // consider all of them.
-            while (searchStart >= 2 && cue->startTime() == m_cues->item(searchStart - 2)->startTime())
-                --searchStart;
-
-            bool firstCompare = true;
-            while (1) {
-                if (!firstCompare)
-                    ++searchStart;
-                firstCompare = false;
-                if (searchStart > m_cues->length())
-                    return false;
-
-                existingCue = m_cues->item(searchStart - 1);
-                if (!existingCue || cue->startTime() > existingCue->startTime())
-                    return false;
-
-                if (*existingCue != *cue)
-                    continue;
-
-                return true;
-            }
-        }
-
-        size_t index = (searchStart + searchEnd) / 2;
-        existingCue = m_cues->item(index);
-        if (cue->startTime() < existingCue->startTime() || (cue->startTime() == existingCue->startTime() && cue->endTime() > existingCue->endTime()))
-            searchEnd = index;
-        else
-            searchStart = index + 1;
-    }
-
-    ASSERT_NOT_REACHED();
-    return false;
+    return EventTargetNames::TextTrack;
 }
 
-bool TextTrack::isMainProgramContent() const
+ExecutionContext* TextTrack::executionContext() const
 {
-    // "Main program" content is intrinsic to the presentation of the media file, regardless of locale. Content such as
-    // directors commentary is not "main program" because it is not essential for the presentation. HTML5 doesn't have
-    // a way to express this in a machine-reable form, it is typically done with the track label, so we assume that caption
-    // tracks are main content and all other track types are not.
-    return m_kind == captionsKeyword();
+    return m_document;
 }
 
 } // namespace WebCore

@@ -59,9 +59,8 @@ static int kfboost_qadjust(int qindex) {
 
 int vp9_bits_per_mb(FRAME_TYPE frame_type, int qindex,
                     double correction_factor) {
-
   const double q = vp9_convert_qindex_to_q(qindex);
-  int enumerator = frame_type == KEY_FRAME ? 4000000 : 2500000;
+  int enumerator = frame_type == KEY_FRAME ? 3300000 : 2250000;
 
   // q based adjustment to baseline enumerator
   enumerator += (int)(enumerator * q) >> 12;
@@ -76,24 +75,11 @@ void vp9_save_coding_context(VP9_COMP *cpi) {
   // restored with a call to vp9_restore_coding_context. These functions are
   // intended for use in a re-code loop in vp9_compress_frame where the
   // quantizer value is adjusted between loop iterations.
-
-  cc->nmvc = cm->fc.nmvc;
   vp9_copy(cc->nmvjointcost,  cpi->mb.nmvjointcost);
   vp9_copy(cc->nmvcosts,  cpi->mb.nmvcosts);
   vp9_copy(cc->nmvcosts_hp,  cpi->mb.nmvcosts_hp);
 
-  vp9_copy(cc->inter_mode_probs, cm->fc.inter_mode_probs);
-
-  vp9_copy(cc->y_mode_prob, cm->fc.y_mode_prob);
-  vp9_copy(cc->uv_mode_prob, cm->fc.uv_mode_prob);
-  vp9_copy(cc->partition_prob, cm->fc.partition_prob);
-
   vp9_copy(cc->segment_pred_probs, cm->seg.pred_probs);
-
-  vp9_copy(cc->intra_inter_prob, cm->fc.intra_inter_prob);
-  vp9_copy(cc->comp_inter_prob, cm->fc.comp_inter_prob);
-  vp9_copy(cc->single_ref_prob, cm->fc.single_ref_prob);
-  vp9_copy(cc->comp_ref_prob, cm->fc.comp_ref_prob);
 
   vpx_memcpy(cpi->coding_context.last_frame_seg_map_copy,
              cm->last_frame_seg_map, (cm->mi_rows * cm->mi_cols));
@@ -101,10 +87,7 @@ void vp9_save_coding_context(VP9_COMP *cpi) {
   vp9_copy(cc->last_ref_lf_deltas, cm->lf.last_ref_deltas);
   vp9_copy(cc->last_mode_lf_deltas, cm->lf.last_mode_deltas);
 
-  vp9_copy(cc->coef_probs, cm->fc.coef_probs);
-  vp9_copy(cc->switchable_interp_prob, cm->fc.switchable_interp_prob);
-  cc->tx_probs = cm->fc.tx_probs;
-  vp9_copy(cc->mbskip_probs, cm->fc.mbskip_probs);
+  cc->fc = cm->fc;
 }
 
 void vp9_restore_coding_context(VP9_COMP *cpi) {
@@ -113,24 +96,11 @@ void vp9_restore_coding_context(VP9_COMP *cpi) {
 
   // Restore key state variables to the snapshot state stored in the
   // previous call to vp9_save_coding_context.
-
-  cm->fc.nmvc = cc->nmvc;
   vp9_copy(cpi->mb.nmvjointcost, cc->nmvjointcost);
   vp9_copy(cpi->mb.nmvcosts, cc->nmvcosts);
   vp9_copy(cpi->mb.nmvcosts_hp, cc->nmvcosts_hp);
 
-  vp9_copy(cm->fc.inter_mode_probs, cc->inter_mode_probs);
-
-  vp9_copy(cm->fc.y_mode_prob, cc->y_mode_prob);
-  vp9_copy(cm->fc.uv_mode_prob, cc->uv_mode_prob);
-  vp9_copy(cm->fc.partition_prob, cc->partition_prob);
-
   vp9_copy(cm->seg.pred_probs, cc->segment_pred_probs);
-
-  vp9_copy(cm->fc.intra_inter_prob, cc->intra_inter_prob);
-  vp9_copy(cm->fc.comp_inter_prob, cc->comp_inter_prob);
-  vp9_copy(cm->fc.single_ref_prob, cc->single_ref_prob);
-  vp9_copy(cm->fc.comp_ref_prob, cc->comp_ref_prob);
 
   vpx_memcpy(cm->last_frame_seg_map,
              cpi->coding_context.last_frame_seg_map_copy,
@@ -139,10 +109,7 @@ void vp9_restore_coding_context(VP9_COMP *cpi) {
   vp9_copy(cm->lf.last_ref_deltas, cc->last_ref_lf_deltas);
   vp9_copy(cm->lf.last_mode_deltas, cc->last_mode_lf_deltas);
 
-  vp9_copy(cm->fc.coef_probs, cc->coef_probs);
-  vp9_copy(cm->fc.switchable_interp_prob, cc->switchable_interp_prob);
-  cm->fc.tx_probs = cc->tx_probs;
-  vp9_copy(cm->fc.mbskip_probs, cc->mbskip_probs);
+  cm->fc = cc->fc;
 }
 
 void vp9_setup_key_frame(VP9_COMP *cpi) {
@@ -224,11 +191,12 @@ static void calc_pframe_target_size(VP9_COMP *cpi) {
     cpi->this_frame_target = cpi->per_frame_bandwidth;
   }
 
-  // Sanity check that the total sum of adjustments is not above the maximum allowed
-  // That is that having allowed for KF and GF penalties we have not pushed the
-  // current interframe target to low. If the adjustment we apply here is not capable of recovering
-  // all the extra bits we have spent in the KF or GF then the remainder will have to be recovered over
-  // a longer time span via other buffer / rate control mechanisms.
+  // Check that the total sum of adjustments is not above the maximum allowed.
+  // That is, having allowed for the KF and GF penalties, we have not pushed
+  // the current inter-frame target too low. If the adjustment we apply here is
+  // not capable of recovering all the extra bits we have spent in the KF or GF,
+  // then the remainder will have to be recovered over a longer time span via
+  // other buffer / rate control mechanisms.
   if (cpi->this_frame_target < min_frame_target)
     cpi->this_frame_target = min_frame_target;
 
@@ -297,12 +265,12 @@ void vp9_update_rate_correction_factors(VP9_COMP *cpi, int damp_var) {
                                                  rate_correction_factor);
 
   // Work out a size correction factor.
-  // if ( cpi->this_frame_target > 0 )
-  //  correction_factor = (100 * cpi->projected_frame_size) / cpi->this_frame_target;
   if (projected_size_based_on_q > 0)
-    correction_factor = (100 * cpi->projected_frame_size) / projected_size_based_on_q;
+    correction_factor =
+        (100 * cpi->projected_frame_size) / projected_size_based_on_q;
 
-  // More heavily damped adjustment used if we have been oscillating either side of target
+  // More heavily damped adjustment used if we have been oscillating either side
+  // of target.
   switch (damp_var) {
     case 0:
       adjustment_limit = 0.75;
@@ -319,27 +287,29 @@ void vp9_update_rate_correction_factors(VP9_COMP *cpi, int damp_var) {
   // if ( (correction_factor > 102) && (Q < cpi->active_worst_quality) )
   if (correction_factor > 102) {
     // We are not already at the worst allowable quality
-    correction_factor = (int)(100.5 + ((correction_factor - 100) * adjustment_limit));
-    rate_correction_factor = ((rate_correction_factor * correction_factor) / 100);
+    correction_factor =
+        (int)(100 + ((correction_factor - 100) * adjustment_limit));
+    rate_correction_factor =
+        ((rate_correction_factor * correction_factor) / 100);
 
     // Keep rate_correction_factor within limits
     if (rate_correction_factor > MAX_BPB_FACTOR)
       rate_correction_factor = MAX_BPB_FACTOR;
-  }
-  // else if ( (correction_factor < 99) && (Q > cpi->active_best_quality) )
-  else if (correction_factor < 99) {
+  } else if (correction_factor < 99) {
     // We are not already at the best allowable quality
-    correction_factor = (int)(100.5 - ((100 - correction_factor) * adjustment_limit));
-    rate_correction_factor = ((rate_correction_factor * correction_factor) / 100);
+    correction_factor =
+        (int)(100 - ((100 - correction_factor) * adjustment_limit));
+    rate_correction_factor =
+        ((rate_correction_factor * correction_factor) / 100);
 
     // Keep rate_correction_factor within limits
     if (rate_correction_factor < MIN_BPB_FACTOR)
       rate_correction_factor = MIN_BPB_FACTOR;
   }
 
-  if (cpi->common.frame_type == KEY_FRAME)
+  if (cpi->common.frame_type == KEY_FRAME) {
     cpi->key_frame_rate_correction_factor = rate_correction_factor;
-  else {
+  } else {
     if (cpi->refresh_alt_ref_frame || cpi->refresh_golden_frame)
       cpi->gf_rate_correction_factor = rate_correction_factor;
     else
@@ -358,20 +328,24 @@ int vp9_regulate_q(VP9_COMP *cpi, int target_bits_per_frame) {
   double correction_factor;
 
   // Select the appropriate correction factor based upon type of frame.
-  if (cpi->common.frame_type == KEY_FRAME)
+  if (cpi->common.frame_type == KEY_FRAME) {
     correction_factor = cpi->key_frame_rate_correction_factor;
-  else {
+  } else {
     if (cpi->refresh_alt_ref_frame || cpi->refresh_golden_frame)
       correction_factor = cpi->gf_rate_correction_factor;
     else
       correction_factor = cpi->rate_correction_factor;
   }
 
-  // Calculate required scaling factor based on target frame size and size of frame produced using previous Q
+  // Calculate required scaling factor based on target frame size and size of
+  // frame produced using previous Q.
   if (target_bits_per_frame >= (INT_MAX >> BPER_MB_NORMBITS))
-    target_bits_per_mb = (target_bits_per_frame / cpi->common.MBs) << BPER_MB_NORMBITS;       // Case where we would overflow int
+    target_bits_per_mb =
+        (target_bits_per_frame / cpi->common.MBs)
+        << BPER_MB_NORMBITS;  // Case where we would overflow int
   else
-    target_bits_per_mb = (target_bits_per_frame << BPER_MB_NORMBITS) / cpi->common.MBs;
+    target_bits_per_mb =
+        (target_bits_per_frame << BPER_MB_NORMBITS) / cpi->common.MBs;
 
   i = cpi->active_best_quality;
 
@@ -437,7 +411,6 @@ static int estimate_keyframe_frequency(VP9_COMP *cpi) {
     }
 
     av_key_frame_frequency /= total_weight;
-
   }
   return av_key_frame_frequency;
 }

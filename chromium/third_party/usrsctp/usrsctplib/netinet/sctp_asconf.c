@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_asconf.c 253493 2013-07-20 13:14:59Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp_asconf.c 257803 2013-11-07 17:08:09Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -155,7 +155,10 @@ sctp_process_asconf_add_ip(struct sockaddr *src, struct sctp_asconf_paramhdr *ap
 	struct mbuf *m_reply = NULL;
 	struct sockaddr_storage sa_store;
 	struct sctp_paramhdr *ph;
-	uint16_t param_type, param_length, aparam_length;
+	uint16_t param_type, aparam_length;
+#if defined(INET) || defined(INET6)
+	uint16_t param_length;
+#endif
 	struct sockaddr *sa;
 	int zero_address = 0;
 	int bad_address = 0;
@@ -171,8 +174,9 @@ sctp_process_asconf_add_ip(struct sockaddr *src, struct sctp_asconf_paramhdr *ap
 	aparam_length = ntohs(aph->ph.param_length);
 	ph = (struct sctp_paramhdr *)(aph + 1);
 	param_type = ntohs(ph->param_type);
+#if defined(INET) || defined(INET6)
 	param_length = ntohs(ph->param_length);
-
+#endif
 	sa = (struct sockaddr *)&sa_store;
 	switch (param_type) {
 #ifdef INET
@@ -305,7 +309,10 @@ sctp_process_asconf_delete_ip(struct sockaddr *src,
 	struct mbuf *m_reply = NULL;
 	struct sockaddr_storage sa_store;
 	struct sctp_paramhdr *ph;
-	uint16_t param_type, param_length, aparam_length;
+	uint16_t param_type, aparam_length;
+#if defined(INET) || defined(INET6)
+	uint16_t param_length;
+#endif
 	struct sockaddr *sa;
 	int zero_address = 0;
 	int result;
@@ -321,8 +328,9 @@ sctp_process_asconf_delete_ip(struct sockaddr *src,
 	aparam_length = ntohs(aph->ph.param_length);
 	ph = (struct sctp_paramhdr *)(aph + 1);
 	param_type = ntohs(ph->param_type);
+#if defined(INET) || defined(INET6)
 	param_length = ntohs(ph->param_length);
-
+#endif
 	sa = (struct sockaddr *)&sa_store;
 	switch (param_type) {
 #ifdef INET
@@ -437,7 +445,10 @@ sctp_process_asconf_set_primary(struct sockaddr *src,
 	struct mbuf *m_reply = NULL;
 	struct sockaddr_storage sa_store;
 	struct sctp_paramhdr *ph;
-	uint16_t param_type, param_length, aparam_length;
+	uint16_t param_type, aparam_length;
+#if defined(INET) || defined(INET6)
+	uint16_t param_length;
+#endif
 	struct sockaddr *sa;
 	int zero_address = 0;
 #ifdef INET
@@ -452,8 +463,9 @@ sctp_process_asconf_set_primary(struct sockaddr *src,
 	aparam_length = ntohs(aph->ph.param_length);
 	ph = (struct sctp_paramhdr *)(aph + 1);
 	param_type = ntohs(ph->param_type);
+#if defined(INET) || defined(INET6)
 	param_length = ntohs(ph->param_length);
-
+#endif
 	sa = (struct sockaddr *)&sa_store;
 	switch (param_type) {
 #ifdef INET
@@ -873,10 +885,12 @@ sctp_asconf_addr_match(struct sctp_asconf_addr *aa, struct sockaddr *sa)
 static uint32_t
 sctp_addr_match(struct sctp_paramhdr *ph, struct sockaddr *sa)
 {
+#if defined(INET) || defined(INET6)
 	uint16_t param_type, param_length;
 
 	param_type = ntohs(ph->param_type);
 	param_length = ntohs(ph->param_length);
+#endif
 	switch (sa->sa_family) {
 #ifdef INET6
 	case AF_INET6:
@@ -887,7 +901,7 @@ sctp_addr_match(struct sctp_paramhdr *ph, struct sockaddr *sa)
 
 		v6addr = (struct sctp_ipv6addr_param *)ph;
 		if ((param_type == SCTP_IPV6_ADDRESS) &&
-		    param_length == sizeof(struct sctp_ipv6addr_param) &&
+		    (param_length == sizeof(struct sctp_ipv6addr_param)) &&
 		    (memcmp(&v6addr->addr, &sin6->sin6_addr,
 		    sizeof(struct in6_addr)) == 0)) {
 			return (1);
@@ -903,7 +917,7 @@ sctp_addr_match(struct sctp_paramhdr *ph, struct sockaddr *sa)
 
 		v4addr = (struct sctp_ipv4addr_param *)ph;
 		if ((param_type == SCTP_IPV4_ADDRESS) &&
-		    param_length == sizeof(struct sctp_ipv4addr_param) &&
+		    (param_length == sizeof(struct sctp_ipv4addr_param)) &&
 		    (memcmp(&v4addr->addr, &sin->sin_addr,
 		    sizeof(struct in_addr)) == 0)) {
 			return (1);
@@ -2606,7 +2620,8 @@ sctp_compose_asconf(struct sctp_tcb *stcb, int *retlen, int addr_locked)
 		/* get the parameter length */
 		p_length = SCTP_SIZE32(aa->ap.aph.ph.param_length);
 		/* will it fit in current chunk? */
-		if (SCTP_BUF_LEN(m_asconf) + p_length > stcb->asoc.smallest_mtu) {
+		if ((SCTP_BUF_LEN(m_asconf) + p_length > stcb->asoc.smallest_mtu) ||
+		    (SCTP_BUF_LEN(m_asconf) + p_length > MCLBYTES)) {
 			/* won't fit, so we're done with this chunk */
 			break;
 		}
@@ -2727,7 +2742,7 @@ sctp_compose_asconf(struct sctp_tcb *stcb, int *retlen, int addr_locked)
 	/* chain it all together */
 	SCTP_BUF_NEXT(m_asconf_chk) = m_asconf;
 	*retlen = SCTP_BUF_LEN(m_asconf_chk) + SCTP_BUF_LEN(m_asconf);
-	acp->ch.chunk_length = ntohs(*retlen);
+	acp->ch.chunk_length = htons(*retlen);
 
 	return (m_asconf_chk);
 }

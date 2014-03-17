@@ -6,6 +6,8 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
+#include "base/strings/string_number_conversions.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
@@ -83,6 +85,8 @@ static AudioCodec CodecIDToAudioCodec(AVCodecID codec_id) {
       return kCodecAMR_WB;
     case AV_CODEC_ID_GSM_MS:
       return kCodecGSM_MS;
+    case AV_CODEC_ID_PCM_ALAW:
+      return kCodecPCM_ALAW;
     case AV_CODEC_ID_PCM_MULAW:
       return kCodecPCM_MULAW;
     case AV_CODEC_ID_OPUS:
@@ -128,6 +132,8 @@ static AVCodecID AudioCodecToCodecID(AudioCodec audio_codec,
       return AV_CODEC_ID_AMR_WB;
     case kCodecGSM_MS:
       return AV_CODEC_ID_GSM_MS;
+    case kCodecPCM_ALAW:
+      return AV_CODEC_ID_PCM_ALAW;
     case kCodecPCM_MULAW:
       return AV_CODEC_ID_PCM_MULAW;
     case kCodecOpus:
@@ -280,8 +286,21 @@ static void AVCodecContextToAudioDecoderConfig(
 
   if (codec == kCodecOpus) {
     // |codec_context->sample_fmt| is not set by FFmpeg because Opus decoding is
-    // not enabled in FFmpeg, so we need to manually set the sample format.
-    sample_format = kSampleFormatS16;
+    // not enabled in FFmpeg.  It doesn't matter what value is set here, so long
+    // as it's valid, the true sample format is selected inside the decoder.
+    sample_format = kSampleFormatF32;
+  }
+
+  base::TimeDelta seek_preroll;
+  if (codec_context->seek_preroll > 0) {
+    seek_preroll = base::TimeDelta::FromMicroseconds(
+        codec_context->seek_preroll * 1000000.0 / codec_context->sample_rate);
+  }
+
+  base::TimeDelta codec_delay;
+  if (codec_context->delay > 0) {
+    codec_delay = base::TimeDelta::FromMicroseconds(
+        codec_context->delay * 1000000.0 / codec_context->sample_rate);
   }
 
   config->Initialize(codec,
@@ -292,8 +311,8 @@ static void AVCodecContextToAudioDecoderConfig(
                      codec_context->extradata_size,
                      is_encrypted,
                      record_stats,
-                     base::TimeDelta(),
-                     base::TimeDelta());
+                     seek_preroll,
+                     codec_delay);
   if (codec != kCodecOpus) {
     DCHECK_EQ(av_get_bytes_per_sample(codec_context->sample_fmt) * 8,
               config->bits_per_channel());
@@ -368,6 +387,12 @@ void AVStreamToVideoDecoderConfig(
 
   gfx::Size natural_size = GetNaturalSize(
       visible_rect.size(), aspect_ratio.num, aspect_ratio.den);
+
+  if (record_stats) {
+    UMA_HISTOGRAM_ENUMERATION("Media.VideoColorRange",
+                              stream->codec->color_range,
+                              AVCOL_RANGE_NB);
+  }
 
   VideoFrame::Format format = PixelFormatToVideoFormat(stream->codec->pix_fmt);
   if (codec == kCodecVP9) {
@@ -489,18 +514,16 @@ VideoFrame::Format PixelFormatToVideoFormat(PixelFormat pixel_format) {
   switch (pixel_format) {
     case PIX_FMT_YUV422P:
       return VideoFrame::YV16;
-    // TODO(scherkus): We should be paying attention to the color range of each
-    // format and scaling as appropriate when rendering. Regular YUV has a range
-    // of 16-239 where as YUVJ has a range of 0-255.
     case PIX_FMT_YUV420P:
-    case PIX_FMT_YUVJ420P:
       return VideoFrame::YV12;
+    case PIX_FMT_YUVJ420P:
+      return VideoFrame::YV12J;
     case PIX_FMT_YUVA420P:
       return VideoFrame::YV12A;
     default:
       DVLOG(1) << "Unsupported PixelFormat: " << pixel_format;
   }
-  return VideoFrame::INVALID;
+  return VideoFrame::UNKNOWN;
 }
 
 PixelFormat VideoFormatToPixelFormat(VideoFrame::Format video_format) {
@@ -509,6 +532,8 @@ PixelFormat VideoFormatToPixelFormat(VideoFrame::Format video_format) {
       return PIX_FMT_YUV422P;
     case VideoFrame::YV12:
       return PIX_FMT_YUV420P;
+    case VideoFrame::YV12J:
+      return PIX_FMT_YUVJ420P;
     case VideoFrame::YV12A:
       return PIX_FMT_YUVA420P;
     default:

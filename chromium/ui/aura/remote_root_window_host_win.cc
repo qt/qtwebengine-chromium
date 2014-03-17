@@ -11,10 +11,15 @@
 #include "base/message_loop/message_loop.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_sender.h"
-#include "ui/aura/client/capture_client.h"
+#include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/root_window.h"
+#include "ui/aura/window_property.h"
 #include "ui/base/cursor/cursor_loader_win.h"
+#include "ui/base/ime/composition_text.h"
+#include "ui/base/ime/input_method.h"
+#include "ui/base/ime/remote_input_method_win.h"
+#include "ui/base/ime/text_input_client.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_code_conversion_win.h"
 #include "ui/base/view_prop.h"
@@ -46,8 +51,32 @@ void SetVirtualKeyStates(uint32 flags) {
   SetKeyState(keyboard_state, !!(flags & ui::EF_CONTROL_DOWN), VK_CONTROL);
   SetKeyState(keyboard_state, !!(flags & ui::EF_ALT_DOWN), VK_MENU);
   SetKeyState(keyboard_state, !!(flags & ui::EF_CAPS_LOCK_DOWN), VK_CAPITAL);
+  SetKeyState(keyboard_state, !!(flags & ui::EF_LEFT_MOUSE_BUTTON), VK_LBUTTON);
+  SetKeyState(keyboard_state, !!(flags & ui::EF_RIGHT_MOUSE_BUTTON),
+              VK_RBUTTON);
+  SetKeyState(keyboard_state, !!(flags & ui::EF_MIDDLE_MOUSE_BUTTON),
+              VK_MBUTTON);
 
   ::SetKeyboardState(keyboard_state);
+}
+
+void FillCompositionText(
+    const string16& text,
+    int32 selection_start,
+    int32 selection_end,
+    const std::vector<metro_viewer::UnderlineInfo>& underlines,
+    ui::CompositionText* composition_text) {
+  composition_text->Clear();
+  composition_text->text = text;
+  composition_text->selection.set_start(selection_start);
+  composition_text->selection.set_end(selection_end);
+  composition_text->underlines.resize(underlines.size());
+  for (size_t i = 0; i < underlines.size(); ++i) {
+    composition_text->underlines[i].start_offset = underlines[i].start_offset;
+    composition_text->underlines[i].end_offset = underlines[i].end_offset;
+    composition_text->underlines[i].color = SK_ColorBLACK;
+    composition_text->underlines[i].thick = underlines[i].thick;
+  }
 }
 
 }  // namespace
@@ -105,6 +134,18 @@ void HandleSelectFolder(const base::string16& title,
                                                                 on_failure);
 }
 
+void HandleActivateDesktop(const base::FilePath& shortcut,
+                           bool ash_exit) {
+  DCHECK(aura::RemoteRootWindowHostWin::Instance());
+  aura::RemoteRootWindowHostWin::Instance()->HandleActivateDesktop(shortcut,
+                                                                   ash_exit);
+}
+
+void HandleMetroExit() {
+  DCHECK(aura::RemoteRootWindowHostWin::Instance());
+  aura::RemoteRootWindowHostWin::Instance()->HandleMetroExit();
+}
+
 RemoteRootWindowHostWin* g_instance = NULL;
 
 RemoteRootWindowHostWin* RemoteRootWindowHostWin::Instance() {
@@ -121,9 +162,10 @@ RemoteRootWindowHostWin* RemoteRootWindowHostWin::Create(
 
 RemoteRootWindowHostWin::RemoteRootWindowHostWin(const gfx::Rect& bounds)
     : remote_window_(NULL),
-      delegate_(NULL),
       host_(NULL),
-      ignore_mouse_moves_until_set_cursor_ack_(false) {
+      ignore_mouse_moves_until_set_cursor_ack_(false),
+      event_flags_(0),
+      window_size_(aura::RootWindowHost::GetNativeScreenSize()) {
   prop_.reset(new ui::ViewProp(NULL, kRootWindowHostWinKey, this));
 }
 
@@ -138,7 +180,14 @@ void RemoteRootWindowHostWin::Connected(IPC::Sender* host, HWND remote_window) {
 }
 
 void RemoteRootWindowHostWin::Disconnected() {
-  CHECK(host_ != NULL);
+  // Don't CHECK here, Disconnected is called on a channel error which can
+  // happen before we're successfully Connected.
+  if (!host_)
+    return;
+  ui::RemoteInputMethodPrivateWin* remote_input_method_private =
+      GetRemoteInputMethodPrivate();
+  if (remote_input_method_private)
+    remote_input_method_private->SetRemoteDelegate(NULL);
   host_ = NULL;
   remote_window_ = NULL;
 }
@@ -151,8 +200,8 @@ bool RemoteRootWindowHostWin::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(MetroViewerHostMsg_KeyDown, OnKeyDown)
     IPC_MESSAGE_HANDLER(MetroViewerHostMsg_KeyUp, OnKeyUp)
     IPC_MESSAGE_HANDLER(MetroViewerHostMsg_Character, OnChar)
-    IPC_MESSAGE_HANDLER(MetroViewerHostMsg_VisibilityChanged,
-                        OnVisibilityChanged)
+    IPC_MESSAGE_HANDLER(MetroViewerHostMsg_WindowActivated,
+                        OnWindowActivated)
     IPC_MESSAGE_HANDLER(MetroViewerHostMsg_TouchDown,
                         OnTouchDown)
     IPC_MESSAGE_HANDLER(MetroViewerHostMsg_TouchUp,
@@ -169,8 +218,14 @@ bool RemoteRootWindowHostWin::OnMessageReceived(const IPC::Message& message) {
                         OnSelectFolderDone)
     IPC_MESSAGE_HANDLER(MetroViewerHostMsg_SetCursorPosAck,
                         OnSetCursorPosAck)
-    IPC_MESSAGE_HANDLER(MetroViewerHostMsg_WindowSizeChanged,
-                        OnWindowSizeChanged)
+    IPC_MESSAGE_HANDLER(MetroViewerHostMsg_ImeCandidatePopupChanged,
+                        OnImeCandidatePopupChanged)
+    IPC_MESSAGE_HANDLER(MetroViewerHostMsg_ImeCompositionChanged,
+                        OnImeCompositionChanged)
+    IPC_MESSAGE_HANDLER(MetroViewerHostMsg_ImeTextCommitted,
+                        OnImeTextCommitted)
+    IPC_MESSAGE_HANDLER(MetroViewerHostMsg_ImeInputSourceChanged,
+                        OnImeInputSourceChanged)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -182,6 +237,20 @@ void RemoteRootWindowHostWin::HandleOpenURLOnDesktop(
   if (!host_)
     return;
   host_->Send(new MetroViewerHostMsg_OpenURLOnDesktop(shortcut, url));
+}
+
+void RemoteRootWindowHostWin::HandleActivateDesktop(
+    const base::FilePath& shortcut,
+    bool ash_exit) {
+  if (!host_)
+    return;
+  host_->Send(new MetroViewerHostMsg_ActivateDesktop(shortcut, ash_exit));
+}
+
+void RemoteRootWindowHostWin::HandleMetroExit() {
+  if (!host_)
+    return;
+  host_->Send(new MetroViewerHostMsg_MetroExit());
 }
 
 void RemoteRootWindowHostWin::HandleOpenFile(
@@ -270,12 +339,17 @@ void RemoteRootWindowHostWin::HandleSelectFolder(
   host_->Send(new MetroViewerHostMsg_DisplaySelectFolder(title));
 }
 
-Window* RemoteRootWindowHostWin::GetAshWindow() {
-  return GetRootWindow();
+void RemoteRootWindowHostWin::HandleWindowSizeChanged(uint32 width,
+                                                      uint32 height) {
+  SetBounds(gfx::Rect(0, 0, width, height));
 }
 
-void RemoteRootWindowHostWin::SetDelegate(RootWindowHostDelegate* delegate) {
-  delegate_ = delegate;
+bool RemoteRootWindowHostWin::IsForegroundWindow() {
+  return ::GetForegroundWindow() == remote_window_;
+}
+
+Window* RemoteRootWindowHostWin::GetAshWindow() {
+  return GetRootWindow()->window();
 }
 
 RootWindow* RemoteRootWindowHostWin::GetRootWindow() {
@@ -290,6 +364,10 @@ gfx::AcceleratedWidget RemoteRootWindowHostWin::GetAcceleratedWidget() {
 }
 
 void RemoteRootWindowHostWin::Show() {
+  ui::RemoteInputMethodPrivateWin* remote_input_method_private =
+      GetRemoteInputMethodPrivate();
+  if (remote_input_method_private)
+    remote_input_method_private->SetRemoteDelegate(this);
 }
 
 void RemoteRootWindowHostWin::Hide() {
@@ -300,11 +378,11 @@ void RemoteRootWindowHostWin::ToggleFullScreen() {
 }
 
 gfx::Rect RemoteRootWindowHostWin::GetBounds() const {
-  gfx::Rect r(gfx::Point(0, 0), aura::RootWindowHost::GetNativeScreenSize());
-  return r;
+  return gfx::Rect(window_size_);
 }
 
 void RemoteRootWindowHostWin::SetBounds(const gfx::Rect& bounds) {
+  window_size_ = bounds.size();
   delegate_->OnHostResized(bounds.size());
 }
 
@@ -334,7 +412,7 @@ void RemoteRootWindowHostWin::ReleaseCapture() {
 
 bool RemoteRootWindowHostWin::QueryMouseLocation(gfx::Point* location_return) {
   aura::client::CursorClient* cursor_client =
-      aura::client::GetCursorClient(GetRootWindow());
+      aura::client::GetCursorClient(GetRootWindow()->window());
   if (cursor_client && !cursor_client->IsMouseEventsEnabled()) {
     *location_return = gfx::Point(0, 0);
     return false;
@@ -382,10 +460,6 @@ void RemoteRootWindowHostWin::MoveCursorTo(const gfx::Point& location) {
   host_->Send(new MetroViewerHostMsg_SetCursorPos(location.x(), location.y()));
 }
 
-void RemoteRootWindowHostWin::SetFocusWhenShown(bool focus_when_shown) {
-  NOTIMPLEMENTED();
-}
-
 void RemoteRootWindowHostWin::PostNativeEvent(
     const base::NativeEvent& native_event) {
 }
@@ -398,6 +472,27 @@ void RemoteRootWindowHostWin::OnDeviceScaleFactorChanged(
 void RemoteRootWindowHostWin::PrepareForShutdown() {
 }
 
+void RemoteRootWindowHostWin::CancelComposition() {
+  host_->Send(new MetroViewerHostMsg_ImeCancelComposition);
+}
+
+void RemoteRootWindowHostWin::OnTextInputClientUpdated(
+    const std::vector<int32>& input_scopes,
+    const std::vector<gfx::Rect>& composition_character_bounds) {
+  std::vector<metro_viewer::CharacterBounds> character_bounds;
+  for (size_t i = 0; i < composition_character_bounds.size(); ++i) {
+    const gfx::Rect& rect = composition_character_bounds[i];
+    metro_viewer::CharacterBounds bounds;
+    bounds.left = rect.x();
+    bounds.top = rect.y();
+    bounds.right = rect.right();
+    bounds.bottom = rect.bottom();
+    character_bounds.push_back(bounds);
+  }
+  host_->Send(new MetroViewerHostMsg_ImeTextInputClientUpdated(
+      input_scopes, character_bounds));
+}
+
 void RemoteRootWindowHostWin::OnMouseMoved(int32 x, int32 y, int32 flags) {
   if (ignore_mouse_moves_until_set_cursor_ack_)
     return;
@@ -408,10 +503,15 @@ void RemoteRootWindowHostWin::OnMouseMoved(int32 x, int32 y, int32 flags) {
 }
 
 void RemoteRootWindowHostWin::OnMouseButton(
-    int32 x, int32 y, int32 extra, ui::EventType type, ui::EventFlags flags) {
+    int32 x,
+    int32 y,
+    int32 extra,
+    ui::EventType type,
+    ui::EventFlags flags) {
   gfx::Point location(x, y);
   ui::MouseEvent mouse_event(type, location, location, flags);
 
+  SetEventFlags(flags | key_event_flags());
   if (type == ui::ET_MOUSEWHEEL) {
     ui::MouseWheelEvent wheel_event(mouse_event, 0, extra);
     delegate_->OnHostMouseEvent(&wheel_event);
@@ -460,9 +560,8 @@ void RemoteRootWindowHostWin::OnChar(uint32 key_code,
                           scan_code, flags, true);
 }
 
-void RemoteRootWindowHostWin::OnVisibilityChanged(bool visible) {
-  if (visible)
-    delegate_->OnHostActivated();
+void RemoteRootWindowHostWin::OnWindowActivated() {
+  delegate_->OnHostActivated();
 }
 
 void RemoteRootWindowHostWin::OnTouchDown(int32 x,
@@ -547,8 +646,51 @@ void RemoteRootWindowHostWin::OnSetCursorPosAck() {
   ignore_mouse_moves_until_set_cursor_ack_ = false;
 }
 
-void RemoteRootWindowHostWin::OnWindowSizeChanged(uint32 width, uint32 height) {
-  SetBounds(gfx::Rect(0, 0, width, height));
+ui::RemoteInputMethodPrivateWin*
+RemoteRootWindowHostWin::GetRemoteInputMethodPrivate() {
+  ui::InputMethod* input_method = GetAshWindow()->GetProperty(
+      aura::client::kRootWindowInputMethodKey);
+  return ui::RemoteInputMethodPrivateWin::Get(input_method);
+}
+
+void RemoteRootWindowHostWin::OnImeCandidatePopupChanged(bool visible) {
+  ui::RemoteInputMethodPrivateWin* remote_input_method_private =
+      GetRemoteInputMethodPrivate();
+  if (!remote_input_method_private)
+    return;
+  remote_input_method_private->OnCandidatePopupChanged(visible);
+}
+
+void RemoteRootWindowHostWin::OnImeCompositionChanged(
+    const string16& text,
+    int32 selection_start,
+    int32 selection_end,
+    const std::vector<metro_viewer::UnderlineInfo>& underlines) {
+  ui::RemoteInputMethodPrivateWin* remote_input_method_private =
+      GetRemoteInputMethodPrivate();
+  if (!remote_input_method_private)
+    return;
+  ui::CompositionText composition_text;
+  FillCompositionText(
+      text, selection_start, selection_end, underlines, &composition_text);
+  remote_input_method_private->OnCompositionChanged(composition_text);
+}
+
+void RemoteRootWindowHostWin::OnImeTextCommitted(const string16& text) {
+  ui::RemoteInputMethodPrivateWin* remote_input_method_private =
+      GetRemoteInputMethodPrivate();
+  if (!remote_input_method_private)
+    return;
+  remote_input_method_private->OnTextCommitted(text);
+}
+
+void RemoteRootWindowHostWin::OnImeInputSourceChanged(uint16 language_id,
+                                                      bool is_ime) {
+  ui::RemoteInputMethodPrivateWin* remote_input_method_private =
+      GetRemoteInputMethodPrivate();
+  if (!remote_input_method_private)
+    return;
+  remote_input_method_private->OnInputSourceChanged(language_id, is_ime);
 }
 
 void RemoteRootWindowHostWin::DispatchKeyboardMessage(ui::EventType type,
@@ -557,11 +699,16 @@ void RemoteRootWindowHostWin::DispatchKeyboardMessage(ui::EventType type,
                                                       uint32 scan_code,
                                                       uint32 flags,
                                                       bool is_character) {
+  SetEventFlags(flags | mouse_event_flags());
   if (base::MessageLoop::current()->IsNested()) {
-    SetVirtualKeyStates(flags);
-
-    uint32 message = is_character ? WM_CHAR :
-        (type == ui::ET_KEY_PRESSED ? WM_KEYDOWN : WM_KEYUP);
+    int index = (flags & ui::EF_ALT_DOWN) ? 1 : 0;
+    const int char_message[] = {WM_CHAR, WM_SYSCHAR};
+    const int keydown_message[] = {WM_KEYDOWN, WM_SYSKEYDOWN};
+    const int keyup_message[] = {WM_KEYUP, WM_SYSKEYUP};
+    uint32 message = is_character
+                         ? char_message[index]
+                         : (type == ui::ET_KEY_PRESSED ? keydown_message[index]
+                                                       : keyup_message[index]);
     ::PostThreadMessage(::GetCurrentThreadId(),
                         message,
                         vkey,
@@ -573,6 +720,13 @@ void RemoteRootWindowHostWin::DispatchKeyboardMessage(ui::EventType type,
                        is_character);
     delegate_->OnHostKeyEvent(&event);
   }
+}
+
+void RemoteRootWindowHostWin::SetEventFlags(uint32 flags) {
+  if (flags == event_flags_)
+    return;
+  event_flags_ = flags;
+  SetVirtualKeyStates(event_flags_);
 }
 
 }  // namespace aura

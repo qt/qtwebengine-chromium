@@ -5,12 +5,13 @@
 #ifndef WEBKIT_CHILD_WEB_DISCARDABLE_MEMORY_IMPL_H_
 #define WEBKIT_CHILD_WEB_DISCARDABLE_MEMORY_IMPL_H_
 
+#include "base/basictypes.h"
 #include "base/memory/discardable_memory.h"
 #include "base/memory/scoped_ptr.h"
 #include "third_party/WebKit/public/platform/WebDiscardableMemory.h"
 #include "webkit/child/webkit_child_export.h"
 
-namespace WebKit {
+namespace blink {
 class WebDiscardableMemory;
 }
 
@@ -19,23 +20,22 @@ namespace webkit_glue {
 // Implementation of WebDiscardableMemory that is responsible for allocating
 // discardable memory.
 class WEBKIT_CHILD_EXPORT WebDiscardableMemoryImpl
-    : NON_EXPORTED_BASE(public WebKit::WebDiscardableMemory) {
+    : NON_EXPORTED_BASE(public blink::WebDiscardableMemory) {
  public:
-  WebDiscardableMemoryImpl();
   virtual ~WebDiscardableMemoryImpl();
 
-  // WebKit::WebDiscardableMemory implementation.
+  static scoped_ptr<WebDiscardableMemoryImpl> CreateLockedMemory(size_t size);
+
+  // blink::WebDiscardableMemory:
   virtual bool lock();
   virtual void unlock();
   virtual void* data();
 
-  // Initialize the WebDiscardableMemoryImpl object and lock the memory.
-  // Returns true on success. No memory is allocated if this call returns
-  // false. This call should only be called once.
-  bool InitializeAndLock(size_t size);
-
  private:
+  WebDiscardableMemoryImpl(scoped_ptr<base::DiscardableMemory> memory);
+
   scoped_ptr<base::DiscardableMemory> discardable_;
+
   DISALLOW_COPY_AND_ASSIGN(WebDiscardableMemoryImpl);
 };
 

@@ -33,13 +33,14 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/EventNames.h"
-#include "core/dom/EventTarget.h"
-#include "core/platform/Timer.h"
+#include "core/events/EventListener.h"
+#include "core/events/EventTarget.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "modules/websockets/WebSocketChannel.h"
 #include "modules/websockets/WebSocketChannelClient.h"
-#include "weborigin/KURL.h"
+#include "platform/Timer.h"
+#include "platform/weborigin/KURL.h"
+#include "wtf/Deque.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/RefCounted.h"
@@ -50,13 +51,16 @@ namespace WebCore {
 class Blob;
 class ExceptionState;
 
-class WebSocket : public RefCounted<WebSocket>, public ScriptWrappable, public EventTarget, public ActiveDOMObject, public WebSocketChannelClient {
+class WebSocket : public RefCounted<WebSocket>, public ScriptWrappable, public EventTargetWithInlineData, public ActiveDOMObject, public WebSocketChannelClient {
+    REFCOUNTED_EVENT_TARGET(WebSocket);
 public:
     static const char* subProtocolSeperator();
-    static PassRefPtr<WebSocket> create(ScriptExecutionContext*);
-    static PassRefPtr<WebSocket> create(ScriptExecutionContext*, const String& url, ExceptionState&);
-    static PassRefPtr<WebSocket> create(ScriptExecutionContext*, const String& url, const String& protocol, ExceptionState&);
-    static PassRefPtr<WebSocket> create(ScriptExecutionContext*, const String& url, const Vector<String>& protocols, ExceptionState&);
+    // WebSocket instances must be used with a wrapper since this class's
+    // lifetime management is designed assuming the V8 holds a ref on it while
+    // hasPendingActivity() returns true.
+    static PassRefPtr<WebSocket> create(ExecutionContext*, const String& url, ExceptionState&);
+    static PassRefPtr<WebSocket> create(ExecutionContext*, const String& url, const String& protocol, ExceptionState&);
+    static PassRefPtr<WebSocket> create(ExecutionContext*, const String& url, const Vector<String>& protocols, ExceptionState&);
     virtual ~WebSocket();
 
     enum State {
@@ -101,17 +105,16 @@ public:
 
     // EventTarget functions.
     virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ScriptExecutionContext* scriptExecutionContext() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE;
 
     // ActiveDOMObject functions.
     virtual void contextDestroyed() OVERRIDE;
-    virtual bool canSuspend() const OVERRIDE;
-    virtual void suspend(ReasonForSuspension) OVERRIDE;
+    // Prevent this instance from being collected while it's not in CLOSED
+    // state.
+    virtual bool hasPendingActivity() const OVERRIDE;
+    virtual void suspend() OVERRIDE;
     virtual void resume() OVERRIDE;
     virtual void stop() OVERRIDE;
-
-    using RefCounted<WebSocket>::ref;
-    using RefCounted<WebSocket>::deref;
 
     // WebSocketChannelClient functions.
     virtual void didConnect() OVERRIDE;
@@ -123,21 +126,49 @@ public:
     virtual void didClose(unsigned long unhandledBufferedAmount, ClosingHandshakeCompletionStatus, unsigned short code, const String& reason) OVERRIDE;
 
 private:
-    explicit WebSocket(ScriptExecutionContext*);
+    class EventQueue : public RefCounted<EventQueue> {
+    public:
+        static PassRefPtr<EventQueue> create(EventTarget* target) { return adoptRef(new EventQueue(target)); }
+        virtual ~EventQueue();
+
+        // Dispatches the event if this queue is active.
+        // Queues the event if this queue is suspended.
+        // Does nothing otherwise.
+        void dispatch(PassRefPtr<Event> /* event */);
+
+        void suspend();
+        void resume();
+        void stop();
+
+    private:
+        enum State {
+            Active,
+            Suspended,
+            Stopped,
+        };
+
+        explicit EventQueue(EventTarget*);
+
+        // Dispatches queued events if this queue is active.
+        // Does nothing otherwise.
+        void dispatchQueuedEvents();
+        void resumeTimerFired(Timer<EventQueue>*);
+
+        State m_state;
+        EventTarget* m_target;
+        Deque<RefPtr<Event> > m_events;
+        Timer<EventQueue> m_resumeTimer;
+    };
+
+    explicit WebSocket(ExecutionContext*);
+
+    // Adds a console message with JSMessageSource and ErrorMessageLevel.
+    void logError(const String& message);
 
     // Handle the JavaScript close method call. close() methods on this class
     // are just for determining if the optional code argument is supplied or
     // not.
     void closeInternal(int, const String&, ExceptionState&);
-
-    // Calls unsetPendingActivity(). Used for m_timerForDeferredDropProtection
-    // to drop the reference for protection asynchronously.
-    void dropProtection(Timer<WebSocket>*);
-
-    virtual void refEventTarget() { ref(); }
-    virtual void derefEventTarget() { deref(); }
-    virtual EventTargetData* eventTargetData();
-    virtual EventTargetData* ensureEventTargetData();
 
     size_t getFramingOverhead(size_t payloadSize);
 
@@ -158,19 +189,13 @@ private:
 
     State m_state;
     KURL m_url;
-    EventTargetData m_eventTargetData;
     unsigned long m_bufferedAmount;
     unsigned long m_bufferedAmountAfterClose;
     BinaryType m_binaryType;
     String m_subprotocol;
     String m_extensions;
 
-    // stop() needs to call some methods that may lead to invocation of handlers
-    // including a dispatchEvent() call. This flag is set at the beginning of
-    // stop() to prevent dispatchEvent() from being called in such handlers.
-    bool m_stopped;
-
-    Timer<WebSocket> m_timerForDeferredDropProtection;
+    RefPtr<EventQueue> m_eventQueue;
 };
 
 } // namespace WebCore

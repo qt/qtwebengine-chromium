@@ -9,6 +9,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/metrics/histogram.h"
 #include "base/synchronization/waitable_event.h"
 #include "content/renderer/media/renderer_gpu_video_accelerator_factories.h"
 #include "media/base/bitstream_buffer.h"
@@ -395,7 +396,7 @@ void RTCVideoEncoder::Impl::EncodeOneFrame() {
   const int index = input_buffers_free_.back();
   base::SharedMemory* input_buffer = input_buffers_[index];
   scoped_refptr<media::VideoFrame> frame =
-      media::VideoFrame::WrapExternalSharedMemory(
+      media::VideoFrame::WrapExternalPackedMemory(
           media::VideoFrame::I420,
           input_frame_coded_size_,
           gfx::Rect(input_visible_size_),
@@ -474,9 +475,9 @@ RTCVideoEncoder::RTCVideoEncoder(
     : video_codec_type_(type),
       video_codec_profile_(profile),
       gpu_factories_(gpu_factories),
-      weak_this_factory_(this),
       encoded_image_callback_(NULL),
-      impl_status_(WEBRTC_VIDEO_CODEC_UNINITIALIZED) {
+      impl_status_(WEBRTC_VIDEO_CODEC_UNINITIALIZED),
+      weak_this_factory_(this) {
   DVLOG(1) << "RTCVideoEncoder(): profile=" << profile;
 }
 
@@ -512,6 +513,7 @@ int32_t RTCVideoEncoder::InitEncode(const webrtc::VideoCodec* codec_settings,
 
   // webrtc::VideoEncoder expects this call to be synchronous.
   initialization_waiter.Wait();
+  RecordInitEncodeUMA(initialization_retval);
   return initialization_retval;
 }
 
@@ -612,6 +614,11 @@ void RTCVideoEncoder::ReturnEncodedImage(scoped_ptr<webrtc::EncodedImage> image,
   webrtc::CodecSpecificInfo info;
   memset(&info, 0, sizeof(info));
   info.codecType = video_codec_type_;
+  if (video_codec_type_ == webrtc::kVideoCodecVP8) {
+    info.codecSpecific.VP8.pictureId = -1;
+    info.codecSpecific.VP8.tl0PicIdx = -1;
+    info.codecSpecific.VP8.keyIdx = -1;
+  }
 
   // Generate a header describing a single fragment.
   webrtc::RTPFragmentationHeader header;
@@ -645,6 +652,16 @@ void RTCVideoEncoder::NotifyError(int32_t error) {
   gpu_factories_->GetMessageLoop()->PostTask(
       FROM_HERE, base::Bind(&RTCVideoEncoder::Impl::Destroy, impl_));
   impl_ = NULL;
+}
+
+void RTCVideoEncoder::RecordInitEncodeUMA(int32_t init_retval) {
+  UMA_HISTOGRAM_BOOLEAN("Media.RTCVideoEncoderInitEncodeSuccess",
+                        init_retval == WEBRTC_VIDEO_CODEC_OK);
+  if (init_retval == WEBRTC_VIDEO_CODEC_OK) {
+    UMA_HISTOGRAM_ENUMERATION("Media.RTCVideoEncoderProfile",
+                              video_codec_profile_,
+                              media::VIDEO_CODEC_PROFILE_MAX);
+  }
 }
 
 }  // namespace content

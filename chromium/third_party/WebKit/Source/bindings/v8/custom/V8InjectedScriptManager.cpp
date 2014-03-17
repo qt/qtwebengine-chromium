@@ -34,36 +34,43 @@
 #include "V8InjectedScriptHost.h"
 #include "V8Window.h"
 #include "bindings/v8/BindingSecurity.h"
+#include "bindings/v8/ScopedPersistent.h"
 #include "bindings/v8/ScriptDebugServer.h"
 #include "bindings/v8/ScriptObject.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8ObjectConstructor.h"
 #include "bindings/v8/V8ScriptRunner.h"
 #include "core/inspector/InjectedScriptHost.h"
-#include "core/page/DOMWindow.h"
+#include "core/frame/DOMWindow.h"
 #include "wtf/RefPtr.h"
 
 namespace WebCore {
 
+struct InjectedScriptManager::CallbackData {
+    ScopedPersistent<v8::Object> handle;
+    RefPtr<InjectedScriptHost> host;
+};
+
 static v8::Local<v8::Object> createInjectedScriptHostV8Wrapper(InjectedScriptHost* host, v8::Isolate* isolate)
 {
-    v8::Local<v8::Function> function = V8InjectedScriptHost::GetTemplate(isolate, MainWorld)->GetFunction();
+    v8::Local<v8::Function> function = V8InjectedScriptHost::domTemplate(isolate, MainWorld)->GetFunction();
     if (function.IsEmpty()) {
         // Return if allocation failed.
         return v8::Local<v8::Object>();
     }
-    v8::Local<v8::Object> instance = V8ObjectConstructor::newInstance(function);
-    if (instance.IsEmpty()) {
+    v8::Local<v8::Object> instanceTemplate = V8ObjectConstructor::newInstance(function);
+    if (instanceTemplate.IsEmpty()) {
         // Avoid setting the wrapper if allocation failed.
         return v8::Local<v8::Object>();
     }
-    V8DOMWrapper::setNativeInfo(instance, &V8InjectedScriptHost::info, host);
+    V8DOMWrapper::setNativeInfo(instanceTemplate, &V8InjectedScriptHost::wrapperTypeInfo, host);
     // Create a weak reference to the v8 wrapper of InspectorBackend to deref
     // InspectorBackend when the wrapper is garbage collected.
-    host->ref();
-    v8::Persistent<v8::Object> weakHandle(isolate, instance);
-    weakHandle.MakeWeak(host, &InjectedScriptManager::makeWeakCallback);
-    return instance;
+    InjectedScriptManager::CallbackData* data = new InjectedScriptManager::CallbackData;
+    data->host = host;
+    data->handle.set(isolate, instanceTemplate);
+    data->handle.setWeak(data, &InjectedScriptManager::setWeakCallback);
+    return instanceTemplate;
 }
 
 ScriptObject InjectedScriptManager::createInjectedScript(const String& scriptSource, ScriptState* inspectedScriptState, int id)
@@ -87,13 +94,13 @@ ScriptObject InjectedScriptManager::createInjectedScript(const String& scriptSou
     // inspector's stuff) the function is called a few lines below with InjectedScriptHost wrapper,
     // injected script id and explicit reference to the inspected global object. The function is expected
     // to create and configure InjectedScript instance that is going to be used by the inspector.
-    v8::Local<v8::Value> value = V8ScriptRunner::compileAndRunInternalScript(v8String(scriptSource, isolate), isolate);
+    v8::Local<v8::Value> value = V8ScriptRunner::compileAndRunInternalScript(v8String(isolate, scriptSource), isolate);
     ASSERT(!value.IsEmpty());
     ASSERT(value->IsFunction());
 
     v8::Local<v8::Object> windowGlobal = inspectedContext->Global();
-    v8::Handle<v8::Value> args[] = { scriptHostWrapper, windowGlobal, v8::Number::New(inspectedContext->GetIsolate(), id) };
-    v8::Local<v8::Value> injectedScriptValue = V8ScriptRunner::callInternalFunction(v8::Local<v8::Function>::Cast(value), windowGlobal, WTF_ARRAY_LENGTH(args), args, inspectedContext->GetIsolate());
+    v8::Handle<v8::Value> info[] = { scriptHostWrapper, windowGlobal, v8::Number::New(inspectedContext->GetIsolate(), id) };
+    v8::Local<v8::Value> injectedScriptValue = V8ScriptRunner::callInternalFunction(v8::Local<v8::Function>::Cast(value), windowGlobal, WTF_ARRAY_LENGTH(info), info, inspectedContext->GetIsolate());
     return ScriptObject(inspectedScriptState, v8::Handle<v8::Object>::Cast(injectedScriptValue));
 }
 
@@ -104,9 +111,9 @@ bool InjectedScriptManager::canAccessInspectedWindow(ScriptState* scriptState)
     v8::Local<v8::Object> global = context->Global();
     if (global.IsEmpty())
         return false;
-    v8::Handle<v8::Object> holder = global->FindInstanceInPrototypeChain(V8Window::GetTemplate(context->GetIsolate(), MainWorld));
+    v8::Handle<v8::Object> holder = global->FindInstanceInPrototypeChain(V8Window::domTemplate(context->GetIsolate(), MainWorld));
     if (holder.IsEmpty())
-        holder = global->FindInstanceInPrototypeChain(V8Window::GetTemplate(context->GetIsolate(), IsolatedWorld));
+        holder = global->FindInstanceInPrototypeChain(V8Window::domTemplate(context->GetIsolate(), IsolatedWorld));
     if (holder.IsEmpty())
         return false;
     Frame* frame = V8Window::toNative(holder)->frame();
@@ -115,10 +122,11 @@ bool InjectedScriptManager::canAccessInspectedWindow(ScriptState* scriptState)
     return BindingSecurity::shouldAllowAccessToFrame(frame, DoNotReportSecurityError);
 }
 
-void InjectedScriptManager::makeWeakCallback(v8::Isolate* isolate, v8::Persistent<v8::Object>* object, InjectedScriptHost* host)
+void InjectedScriptManager::setWeakCallback(const v8::WeakCallbackData<v8::Object, InjectedScriptManager::CallbackData>& data)
 {
-    host->deref();
-    object->Dispose();
+    data.GetParameter()->handle.clear();
+    data.GetParameter()->host.clear();
+    delete data.GetParameter();
 }
 
 } // namespace WebCore

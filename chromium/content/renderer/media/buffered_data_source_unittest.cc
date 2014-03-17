@@ -6,14 +6,14 @@
 #include "base/message_loop/message_loop.h"
 #include "content/renderer/media/buffered_data_source.h"
 #include "content/renderer/media/test_response_generator.h"
+#include "content/test/mock_webframeclient.h"
+#include "content/test/mock_weburlloader.h"
 #include "media/base/media_log.h"
 #include "media/base/mock_data_source_host.h"
 #include "media/base/mock_filters.h"
 #include "media/base/test_helpers.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/public/web/WebView.h"
-#include "webkit/mocks/mock_webframeclient.h"
-#include "webkit/mocks/mock_weburlloader.h"
 
 using ::testing::_;
 using ::testing::Assign;
@@ -22,14 +22,11 @@ using ::testing::InSequence;
 using ::testing::NiceMock;
 using ::testing::StrictMock;
 
-using WebKit::WebFrame;
-using WebKit::WebString;
-using WebKit::WebURLLoader;
-using WebKit::WebURLResponse;
-using WebKit::WebView;
-
-using webkit_glue::MockWebFrameClient;
-using webkit_glue::MockWebURLLoader;
+using blink::WebFrame;
+using blink::WebString;
+using blink::WebURLLoader;
+using blink::WebURLResponse;
+using blink::WebView;
 
 namespace content {
 
@@ -554,10 +551,10 @@ TEST_F(BufferedDataSourceTest, SetBitrate) {
   Stop();
 }
 
-TEST_F(BufferedDataSourceTest, SetPlaybackRate) {
+TEST_F(BufferedDataSourceTest, MediaPlaybackRateChanged) {
   InitializeWith206Response();
 
-  data_source_->SetPlaybackRate(2.0f);
+  data_source_->MediaPlaybackRateChanged(2.0f);
   message_loop_.RunUntilIdle();
   EXPECT_EQ(2.0f, data_source_playback_rate());
   EXPECT_EQ(2.0f, loader_playback_rate());

@@ -11,38 +11,36 @@
 
 #include "media/cast/framer/frame_id_map.h"
 #include "media/cast/rtcp/rtcp.h"
-#include "media/cast/rtp_common/rtp_defines.h"
+#include "media/cast/rtp_receiver/rtp_receiver_defines.h"
 
 namespace media {
 namespace cast {
 
 class RtpPayloadFeedback;
 
-typedef std::map<uint8, base::TimeTicks> TimeLastNackMap;
+typedef std::map<uint32, base::TimeTicks> TimeLastNackMap;
 
 class CastMessageBuilder {
  public:
-  CastMessageBuilder(RtpPayloadFeedback* incoming_payload_feedback,
+  CastMessageBuilder(base::TickClock* clock,
+                     RtpPayloadFeedback* incoming_payload_feedback,
                      FrameIdMap* frame_id_map,
                      uint32 media_ssrc,
                      bool decoder_faster_than_max_frame_rate,
                      int max_unacked_frames);
   ~CastMessageBuilder();
 
-  void CompleteFrameReceived(uint8 frame_id, bool is_key_frame);
+  void CompleteFrameReceived(uint32 frame_id, bool is_key_frame);
   bool TimeToSendNextCastMessage(base::TimeTicks* time_to_send);
   void UpdateCastMessage();
   void Reset();
-
-  void set_clock(base::TickClock* clock) {
-    clock_ = clock;
-  }
 
  private:
   bool UpdateAckMessage();
   void BuildPacketList();
   bool UpdateCastMessageInternal(RtcpCastMessage* message);
 
+  base::TickClock* const clock_;  // Not owned by this class.
   RtpPayloadFeedback* const cast_feedback_;
 
   // CastMessageBuilder has only const access to the frame id mapper.
@@ -59,10 +57,7 @@ class CastMessageBuilder {
 
   bool slowing_down_ack_;
   bool acked_last_frame_;
-  uint8 last_acked_frame_id_;
-
-  scoped_ptr<base::TickClock> default_tick_clock_;
-  base::TickClock* clock_;
+  uint32 last_acked_frame_id_;
 
   DISALLOW_COPY_AND_ASSIGN(CastMessageBuilder);
 };

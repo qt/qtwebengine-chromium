@@ -4,6 +4,7 @@
 
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/layout.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/test/views_test_base.h"
 
@@ -130,6 +131,36 @@ TEST_F(ImageButtonTest, ImagePositionWithBorder) {
             button.ComputeImagePaintPosition(image).ToString());
   button.set_border(views::Border::CreateEmptyBorder(10, 10, 0, 0));
   EXPECT_EQ(gfx::Point(20, 15).ToString(),
+            button.ComputeImagePaintPosition(image).ToString());
+}
+
+TEST_F(ImageButtonTest, LeftAlignedMirrored) {
+  ImageButton button(NULL);
+  gfx::ImageSkia image = CreateTestImage(20, 30);
+  button.SetImage(CustomButton::STATE_NORMAL, &image);
+  button.SetBounds(0, 0, 50, 30);
+  button.SetImageAlignment(ImageButton::ALIGN_LEFT,
+                           ImageButton::ALIGN_BOTTOM);
+  button.SetDrawImageMirrored(true);
+
+  // Because the coordinates are flipped, we should expect this to draw as if
+  // it were ALIGN_RIGHT.
+  EXPECT_EQ(gfx::Point(30, 0).ToString(),
+            button.ComputeImagePaintPosition(image).ToString());
+}
+
+TEST_F(ImageButtonTest, RightAlignedMirrored) {
+  ImageButton button(NULL);
+  gfx::ImageSkia image = CreateTestImage(20, 30);
+  button.SetImage(CustomButton::STATE_NORMAL, &image);
+  button.SetBounds(0, 0, 50, 30);
+  button.SetImageAlignment(ImageButton::ALIGN_RIGHT,
+                           ImageButton::ALIGN_BOTTOM);
+  button.SetDrawImageMirrored(true);
+
+  // Because the coordinates are flipped, we should expect this to draw as if
+  // it were ALIGN_LEFT.
+  EXPECT_EQ(gfx::Point(0, 0).ToString(),
             button.ComputeImagePaintPosition(image).ToString());
 }
 

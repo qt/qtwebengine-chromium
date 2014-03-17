@@ -229,7 +229,7 @@ void LPointerMap::PrintTo(StringStream* stream) {
     if (i != 0) stream->Add(";");
     pointer_operands_[i]->PrintTo(stream);
   }
-  stream->Add("} @%d", position());
+  stream->Add("}");
 }
 
 
@@ -237,7 +237,8 @@ int StackSlotOffset(int index) {
   if (index >= 0) {
     // Local or spill slot. Skip the frame pointer, function, and
     // context in the fixed part of the frame.
-    return -(index + 3) * kPointerSize;
+    return -(index + 1) * kPointerSize -
+        StandardFrameConstants::kFixedFrameSizeFromFp;
   } else {
     // Incoming parameter. Skip the return address.
     return -(index + 1) * kPointerSize + kFPOnStackSize + kPCOnStackSize;
@@ -342,7 +343,8 @@ int LChunk::GetParameterStackSlot(int index) const {
   // shift all parameter indexes down by the number of parameters, and
   // make sure they end up negative so they are distinguishable from
   // spill slots.
-  int result = index - info()->scope()->num_parameters() - 1;
+  int result = index - info()->num_parameters() - 1;
+
   ASSERT(result < 0);
   return result;
 }
@@ -458,6 +460,14 @@ void LChunk::set_allocated_double_registers(BitVector* allocated_registers) {
     }
     iterator.Advance();
   }
+}
+
+
+LInstruction* LChunkBuilder::CheckElideControlInstruction(
+    HControlInstruction* instr) {
+  HBasicBlock* successor;
+  if (!instr->KnownSuccessorBlock(&successor)) return NULL;
+  return new(zone()) LGoto(successor);
 }
 
 

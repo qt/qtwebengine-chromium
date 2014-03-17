@@ -94,7 +94,6 @@ typedef HANDLE userland_thread_t;
 #define u_short    unsigned __int16
 #define ssize_t    __int64
 #define size_t     __int32
-#define in_addr_t  unsigned __int32
 #define n_time     unsigned __int32
 #define sa_family_t unsigned __int8
 #define IFNAMSIZ   64
@@ -396,7 +395,7 @@ struct udphdr {
 #else /* !defined(Userspace_os_Windows) */
 #include <sys/cdefs.h> /* needed? added from old __FreeBSD__ */
 #include <sys/socket.h>
-#if defined(__Userspace_os_FreeBSD) || defined(__Userspace_os_OpenBSD)
+#if defined(__Userspace_os_FreeBSD) || defined(__Userspace_os_OpenBSD) || defined(__Userspace_os_Linux)
 #include <pthread.h>
 #endif
 typedef pthread_mutex_t userland_mutex_t;
@@ -476,7 +475,9 @@ struct sx {int dummy;};
 /* for getifaddrs */
 #include <sys/types.h>
 #if !defined(__Userspace_os_Windows)
+#if defined(INET) || defined(INET6)
 #include <ifaddrs.h>
+#endif
 
 /* for ioctl */
 #include <sys/ioctl.h>
@@ -1120,14 +1121,17 @@ sctp_get_mbuf_for_msg(unsigned int space_needed, int want_header, int how, int a
 #endif
 
 #if defined(__Userspace_os_Linux)
+#if !defined(TAILQ_FOREACH_SAFE)
 #define TAILQ_FOREACH_SAFE(var, head, field, tvar)             \
          for ((var) = ((head)->tqh_first);                     \
               (var) && ((tvar) = TAILQ_NEXT((var), field), 1); \
               (var) = (tvar))
-
+#endif
+#if !defined(LIST_FOREACH_SAFE)
 #define LIST_FOREACH_SAFE(var, head, field, tvar)              \
          for ((var) = ((head)->lh_first);                      \
               (var) && ((tvar) = LIST_NEXT((var), field), 1);  \
               (var) = (tvar))
+#endif
 #endif
 #endif

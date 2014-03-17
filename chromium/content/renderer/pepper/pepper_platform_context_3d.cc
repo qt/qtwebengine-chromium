@@ -11,12 +11,9 @@
 #include "content/renderer/render_thread_impl.h"
 #include "gpu/command_buffer/client/gles2_cmd_helper.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
-#include "gpu/ipc/command_buffer_proxy.h"
 #include "ppapi/c/pp_graphics_3d.h"
 #include "ui/gl/gpu_preference.h"
 #include "url/gurl.h"
-
-#ifdef ENABLE_GPU
 
 namespace content {
 
@@ -110,6 +107,7 @@ bool PlatformContext3D::Init(const int32* attrib_list,
   if (!command_buffer_->ProduceFrontBuffer(names[0]))
     return false;
   mailbox_ = names[0];
+  sync_point_ = command_buffer_->InsertSyncPoint();
 
   command_buffer_->SetChannelErrorCallback(
       base::Bind(&PlatformContext3D::OnContextLost,
@@ -121,8 +119,15 @@ bool PlatformContext3D::Init(const int32* attrib_list,
   return true;
 }
 
-void PlatformContext3D::GetBackingMailbox(gpu::Mailbox* mailbox) {
+void PlatformContext3D::GetBackingMailbox(gpu::Mailbox* mailbox,
+                                          uint32* sync_point) {
   *mailbox = mailbox_;
+  *sync_point = sync_point_;
+}
+
+void PlatformContext3D::InsertSyncPointForBackingMailbox() {
+  DCHECK(command_buffer_);
+  sync_point_ = command_buffer_->InsertSyncPoint();
 }
 
 bool PlatformContext3D::IsOpaque() {
@@ -131,6 +136,10 @@ bool PlatformContext3D::IsOpaque() {
 }
 
 gpu::CommandBuffer* PlatformContext3D::GetCommandBuffer() {
+  return command_buffer_;
+}
+
+gpu::GpuControl* PlatformContext3D::GetGpuControl() {
   return command_buffer_;
 }
 
@@ -148,8 +157,8 @@ void PlatformContext3D::SetOnConsoleMessageCallback(
   console_message_callback_ = task;
 }
 
-bool PlatformContext3D::Echo(const base::Closure& task) {
-  return command_buffer_->Echo(task);
+void PlatformContext3D::Echo(const base::Closure& task) {
+  command_buffer_->Echo(task);
 }
 
 void PlatformContext3D::OnContextLost() {
@@ -167,5 +176,3 @@ void PlatformContext3D::OnConsoleMessage(const std::string& msg, int id) {
 }
 
 }  // namespace content
-
-#endif  // ENABLE_GPU

@@ -11,10 +11,13 @@
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
+#include "ppapi/c/dev/ppb_graphics_2d_dev.h"
 #include "ppapi/c/ppb_graphics_2d.h"
 #include "ppapi/host/host_message_context.h"
 #include "ppapi/host/resource_host.h"
 #include "third_party/WebKit/public/platform/WebCanvas.h"
+#include "ui/gfx/point.h"
+#include "ui/gfx/size.h"
 
 namespace cc {
 class SingleReleaseCallback;
@@ -22,8 +25,11 @@ class TextureMailbox;
 }
 
 namespace gfx {
-class Point;
 class Rect;
+}
+
+namespace ppapi {
+struct ViewData;
 }
 
 namespace content {
@@ -36,11 +42,13 @@ class CONTENT_EXPORT PepperGraphics2DHost
     : public ppapi::host::ResourceHost,
       public base::SupportsWeakPtr<PepperGraphics2DHost> {
  public:
-  static PepperGraphics2DHost* Create(RendererPpapiHost* host,
-                                      PP_Instance instance,
-                                      PP_Resource resource,
-                                      const PP_Size& size,
-                                      PP_Bool is_always_opaque);
+  static PepperGraphics2DHost* Create(
+      RendererPpapiHost* host,
+      PP_Instance instance,
+      PP_Resource resource,
+      const PP_Size& size,
+      PP_Bool is_always_opaque,
+      scoped_refptr<PPB_ImageData_Impl> backing_store);
 
   virtual ~PepperGraphics2DHost();
 
@@ -58,7 +66,7 @@ class CONTENT_EXPORT PepperGraphics2DHost
   // is already bound to a different instance, and nothing will happen.
   bool BindToInstance(PepperPluginInstanceImpl* new_instance);
   // Paints the current backing store to the web page.
-  void Paint(WebKit::WebCanvas* canvas,
+  void Paint(blink::WebCanvas* canvas,
              const gfx::Rect& plugin_rect,
              const gfx::Rect& paint_rect);
 
@@ -69,21 +77,32 @@ class CONTENT_EXPORT PepperGraphics2DHost
 
   // Notifications about the view's progress painting.  See PluginInstance.
   // These messages are used to send Flush callbacks to the plugin.
-  void ViewWillInitiatePaint();
   void ViewInitiatedPaint();
   void ViewFlushedPaint();
+
+  void DidChangeView(const ppapi::ViewData& view_data);
 
   void SetScale(float scale);
   float GetScale() const;
   bool IsAlwaysOpaque() const;
   PPB_ImageData_Impl* ImageData();
+  gfx::Size Size() const;
+
+  // The amount to resize the backing store by when painting to the canvas.
+  // This is used to stretch the backing store when resizing the plugin element.
+  gfx::PointF GetResizeScale() const;
+  // The offset of the backing store into the plugin element.
+  gfx::Point plugin_offset() const { return plugin_offset_; }
 
  private:
   PepperGraphics2DHost(RendererPpapiHost* host,
                        PP_Instance instance,
                        PP_Resource resource);
 
-  bool Init(int width, int height, bool is_always_opaque);
+  bool Init(int width,
+            int height,
+            bool is_always_opaque,
+            scoped_refptr<PPB_ImageData_Impl> backing_store);
 
   int32_t OnHostMsgPaintImageData(ppapi::host::HostMessageContext* context,
                                   const ppapi::HostResource& image_data,
@@ -96,16 +115,22 @@ class CONTENT_EXPORT PepperGraphics2DHost
                           const PP_Point& amount);
   int32_t OnHostMsgReplaceContents(ppapi::host::HostMessageContext* context,
                                    const ppapi::HostResource& image_data);
-  int32_t OnHostMsgFlush(ppapi::host::HostMessageContext* context);
+  int32_t OnHostMsgFlush(ppapi::host::HostMessageContext* context,
+                         const ppapi::ViewData& view_data);
   int32_t OnHostMsgSetScale(ppapi::host::HostMessageContext* context,
                             float scale);
+  int32_t OnHostMsgSetOffset(ppapi::host::HostMessageContext* context,
+                             const PP_Point& offset);
+  int32_t OnHostMsgSetResizeMode(ppapi::host::HostMessageContext* context,
+                                 PP_Graphics2D_Dev_ResizeMode resize_mode);
   int32_t OnHostMsgReadImageData(ppapi::host::HostMessageContext* context,
                                  PP_Resource image,
                                  const PP_Point& top_left);
 
   // If |old_image_data| is not NULL, a previous used ImageData object will be
   // reused.  This is used by ReplaceContents.
-  int32_t Flush(PP_Resource* old_image_data);
+  int32_t Flush(PP_Resource* old_image_data,
+                const gfx::Size& flushed_plugin_size);
 
   // Called internally to execute the different queued commands. The
   // parameters to these functions will have already been validated. The last
@@ -143,7 +168,6 @@ class CONTENT_EXPORT PepperGraphics2DHost
                                      gfx::Rect* op_rect,
                                      gfx::Point* delta);
 
-
   RendererPpapiHost* renderer_ppapi_host_;
 
   scoped_refptr<PPB_ImageData_Impl> image_data_;
@@ -173,13 +197,27 @@ class CONTENT_EXPORT PepperGraphics2DHost
   // DIP
   float scale_;
 
-  base::WeakPtrFactory<PepperGraphics2DHost> weak_ptr_factory_;
-
   ppapi::host::ReplyMessageContext flush_reply_context_;
 
   bool is_running_in_process_;
 
   bool texture_mailbox_modified_;
+  bool is_using_texture_layer_;
+
+  // The offset into the plugin area at which to draw the contents of the
+  // graphics context.
+  gfx::Point plugin_offset_;
+
+  // The size of the plugin element from the plugin's perspective at the last
+  // time Flush() was called. Because the plugin runs in a separate process and
+  // the size of the plugin element in the renderer is updated asynchronously,
+  // it may believe that the plugin element is a different size to what it
+  // actually is.
+  gfx::Size flushed_plugin_size_;
+  // The current size of the plugin element.
+  gfx::Size current_plugin_size_;
+
+  PP_Graphics2D_Dev_ResizeMode resize_mode_;
 
   friend class PepperGraphics2DHostTest;
   DISALLOW_COPY_AND_ASSIGN(PepperGraphics2DHost);

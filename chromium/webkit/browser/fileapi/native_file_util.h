@@ -30,6 +30,14 @@ namespace fileapi {
 // inherit from FileSystemFileUtil.
 class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE NativeFileUtil {
  public:
+  enum CopyOrMoveMode {
+    COPY_NOSYNC,
+    COPY_SYNC,
+    MOVE
+  };
+  static CopyOrMoveMode CopyOrMoveModeForDestination(
+      const FileSystemURL& dest_url, bool copy);
+
   static base::PlatformFileError CreateOrOpen(
       const base::FilePath& path,
       int file_flags,
@@ -53,9 +61,11 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE NativeFileUtil {
                                           int64 length);
   static bool PathExists(const base::FilePath& path);
   static bool DirectoryExists(const base::FilePath& path);
-  static base::PlatformFileError CopyOrMoveFile(const base::FilePath& src_path,
-                                                const base::FilePath& dest_path,
-                                                bool copy);
+  static base::PlatformFileError CopyOrMoveFile(
+      const base::FilePath& src_path,
+      const base::FilePath& dest_path,
+      FileSystemOperation::CopyOrMoveOption option,
+      CopyOrMoveMode mode);
   static base::PlatformFileError DeleteFile(const base::FilePath& path);
   static base::PlatformFileError DeleteDirectory(const base::FilePath& path);
 

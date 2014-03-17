@@ -10,30 +10,31 @@
 
 #include "base/pickle.h"
 #include "base/strings/utf_string_conversions.h"
+#include "net/base/escape.h"
 #include "ui/gfx/size.h"
 
 namespace ui {
 
 ScopedClipboardWriter::ScopedClipboardWriter(Clipboard* clipboard,
-                                             Clipboard::Buffer buffer)
+                                             ClipboardType type)
     : clipboard_(clipboard),
-      buffer_(buffer) {
+      type_(type) {
 }
 
 ScopedClipboardWriter::~ScopedClipboardWriter() {
   if (!objects_.empty() && clipboard_)
-    clipboard_->WriteObjects(buffer_, objects_);
+    clipboard_->WriteObjects(type_, objects_);
 }
 
-void ScopedClipboardWriter::WriteText(const string16& text) {
+void ScopedClipboardWriter::WriteText(const base::string16& text) {
   WriteTextOrURL(text, false);
 }
 
-void ScopedClipboardWriter::WriteURL(const string16& text) {
+void ScopedClipboardWriter::WriteURL(const base::string16& text) {
   WriteTextOrURL(text, true);
 }
 
-void ScopedClipboardWriter::WriteHTML(const string16& markup,
+void ScopedClipboardWriter::WriteHTML(const base::string16& markup,
                                       const std::string& source_url) {
   std::string utf8_markup = UTF16ToUTF8(markup);
 
@@ -56,7 +57,7 @@ void ScopedClipboardWriter::WriteRTF(const std::string& rtf_data) {
   objects_[Clipboard::CBF_RTF] = parameters;
 }
 
-void ScopedClipboardWriter::WriteBookmark(const string16& bookmark_title,
+void ScopedClipboardWriter::WriteBookmark(const base::string16& bookmark_title,
                                           const std::string& url) {
   if (bookmark_title.empty() || url.empty())
     return;
@@ -70,41 +71,22 @@ void ScopedClipboardWriter::WriteBookmark(const string16& bookmark_title,
   objects_[Clipboard::CBF_BOOKMARK] = parameters;
 }
 
-void ScopedClipboardWriter::WriteHyperlink(const string16& anchor_text,
+void ScopedClipboardWriter::WriteHyperlink(const base::string16& anchor_text,
                                            const std::string& url) {
   if (anchor_text.empty() || url.empty())
     return;
 
   // Construct the hyperlink.
   std::string html("<a href=\"");
-  html.append(url);
+  html.append(net::EscapeForHTML(url));
   html.append("\">");
-  html.append(UTF16ToUTF8(anchor_text));
+  html.append(net::EscapeForHTML(UTF16ToUTF8(anchor_text)));
   html.append("</a>");
   WriteHTML(UTF8ToUTF16(html), std::string());
 }
 
 void ScopedClipboardWriter::WriteWebSmartPaste() {
   objects_[Clipboard::CBF_WEBKIT] = Clipboard::ObjectMapParams();
-}
-
-void ScopedClipboardWriter::WriteBitmapFromPixels(const void* pixels,
-                                                  const gfx::Size& size) {
-  Clipboard::ObjectMapParam pixels_parameter, size_parameter;
-  const char* pixels_data = static_cast<const char*>(pixels);
-  size_t pixels_length = 4 * size.width() * size.height();
-  for (size_t i = 0; i < pixels_length; i++)
-    pixels_parameter.push_back(pixels_data[i]);
-
-  const char* size_data = reinterpret_cast<const char*>(&size);
-  size_t size_length = sizeof(gfx::Size);
-  for (size_t i = 0; i < size_length; i++)
-    size_parameter.push_back(size_data[i]);
-
-  Clipboard::ObjectMapParams parameters;
-  parameters.push_back(pixels_parameter);
-  parameters.push_back(size_parameter);
-  objects_[Clipboard::CBF_BITMAP] = parameters;
 }
 
 void ScopedClipboardWriter::WritePickledData(
@@ -129,7 +111,8 @@ void ScopedClipboardWriter::Reset() {
   objects_.clear();
 }
 
-void ScopedClipboardWriter::WriteTextOrURL(const string16& text, bool is_url) {
+void ScopedClipboardWriter::WriteTextOrURL(const base::string16& text,
+                                           bool is_url) {
   std::string utf8_text = UTF16ToUTF8(text);
 
   Clipboard::ObjectMapParams parameters;

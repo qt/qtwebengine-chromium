@@ -35,7 +35,8 @@
 #include "bindings/v8/ScopedPersistent.h"
 #include "bindings/v8/V8PerContextData.h"
 #include "bindings/v8/WrapperTypeInfo.h"
-#include "weborigin/SecurityOrigin.h"
+#include "gin/public/context_holder.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
@@ -56,7 +57,7 @@ class V8WindowShell {
 public:
     static PassOwnPtr<V8WindowShell> create(Frame*, PassRefPtr<DOMWrapperWorld>, v8::Isolate*);
 
-    v8::Local<v8::Context> context() const { return m_context.newLocal(m_isolate); }
+    v8::Local<v8::Context> context() const { return m_contextHolder ? m_contextHolder->context() : v8::Local<v8::Context>(); }
 
     // Update document object of the frame.
     void updateDocument();
@@ -68,7 +69,7 @@ public:
     // (e.g., after setting docoument.domain).
     void updateSecurityOrigin();
 
-    bool isContextInitialized() { return !m_context.isEmpty(); }
+    bool isContextInitialized() { return m_contextHolder; }
     bool isGlobalInitialized() { return !m_global.isEmpty(); }
 
     bool initializeIfNeeded();
@@ -82,7 +83,11 @@ public:
 private:
     V8WindowShell(Frame*, PassRefPtr<DOMWrapperWorld>, v8::Isolate*);
 
-    void disposeContext();
+    enum GlobalDetachmentBehavior {
+        DoNotDetachGlobal,
+        DetachGlobal
+    };
+    void disposeContext(GlobalDetachmentBehavior);
 
     void setSecurityToken();
 
@@ -104,7 +109,7 @@ private:
 
     OwnPtr<V8PerContextData> m_perContextData;
 
-    ScopedPersistent<v8::Context> m_context;
+    OwnPtr<gin::ContextHolder> m_contextHolder;
     ScopedPersistent<v8::Object> m_global;
     ScopedPersistent<v8::Object> m_document;
 };

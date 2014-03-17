@@ -5,7 +5,7 @@
 // HttpStreamBase is an interface for reading and writing data to an
 // HTTP-like stream that keeps the client agnostic of the actual underlying
 // transport layer.  This provides an abstraction for HttpStream and
-// WebSocketStream.
+// WebSocketHandshakeStreamBase.
 
 #ifndef NET_HTTP_HTTP_STREAM_BASE_H_
 #define NET_HTTP_HTTP_STREAM_BASE_H_
@@ -109,6 +109,9 @@ class NET_EXPORT_PRIVATE HttpStreamBase {
   // Checks whether the current state of the underlying connection
   // allows it to be reused.
   virtual bool IsConnectionReusable() const = 0;
+
+  // Get the total number of bytes received from network for this stream.
+  virtual int64 GetTotalReceivedBytes() const = 0;
 
   // Populates the connection establishment part of |load_timing_info|, and
   // socket ID.  |load_timing_info| must have all null times when called.

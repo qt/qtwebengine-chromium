@@ -28,7 +28,8 @@
 #ifndef SQLCallbackWrapper_h
 #define SQLCallbackWrapper_h
 
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
+#include "core/dom/ExecutionContextTask.h"
 #include "wtf/ThreadingPrimitives.h"
 
 namespace WebCore {
@@ -41,11 +42,11 @@ namespace WebCore {
 // - by unwrapping and then dereferencing normally - on context thread only
 template<typename T> class SQLCallbackWrapper {
 public:
-    SQLCallbackWrapper(PassRefPtr<T> callback, ScriptExecutionContext* scriptExecutionContext)
+    SQLCallbackWrapper(PassOwnPtr<T> callback, ExecutionContext* executionContext)
         : m_callback(callback)
-        , m_scriptExecutionContext(m_callback ? scriptExecutionContext : 0)
+        , m_executionContext(m_callback ? executionContext : 0)
     {
-        ASSERT(!m_callback || (m_scriptExecutionContext.get() && m_scriptExecutionContext->isContextThread()));
+        ASSERT(!m_callback || (m_executionContext.get() && m_executionContext->isContextThread()));
     }
 
     ~SQLCallbackWrapper()
@@ -55,30 +56,30 @@ public:
 
     void clear()
     {
-        ScriptExecutionContext* context;
-        T* callback;
+        ExecutionContext* context;
+        OwnPtr<T> callback;
         {
             MutexLocker locker(m_mutex);
             if (!m_callback) {
-                ASSERT(!m_scriptExecutionContext);
+                ASSERT(!m_executionContext);
                 return;
             }
-            if (m_scriptExecutionContext->isContextThread()) {
-                m_callback = 0;
-                m_scriptExecutionContext = 0;
+            if (m_executionContext->isContextThread()) {
+                m_callback.clear();
+                m_executionContext.clear();
                 return;
             }
-            context = m_scriptExecutionContext.release().leakRef();
-            callback = m_callback.release().leakRef();
+            context = m_executionContext.release().leakRef();
+            callback = m_callback.release();
         }
-        context->postTask(SafeReleaseTask::create(callback));
+        context->postTask(SafeReleaseTask::create(callback.release()));
     }
 
-    PassRefPtr<T> unwrap()
+    PassOwnPtr<T> unwrap()
     {
         MutexLocker locker(m_mutex);
-        ASSERT(!m_callback || m_scriptExecutionContext->isContextThread());
-        m_scriptExecutionContext = 0;
+        ASSERT(!m_callback || m_executionContext->isContextThread());
+        m_executionContext.clear();
         return m_callback.release();
     }
 
@@ -86,34 +87,34 @@ public:
     bool hasCallback() const { return m_callback; }
 
 private:
-    class SafeReleaseTask : public ScriptExecutionContext::Task {
+    class SafeReleaseTask : public ExecutionContextTask {
     public:
-        static PassOwnPtr<SafeReleaseTask> create(T* callbackToRelease)
+        static PassOwnPtr<SafeReleaseTask> create(PassOwnPtr<T> callbackToRelease)
         {
             return adoptPtr(new SafeReleaseTask(callbackToRelease));
         }
 
-        virtual void performTask(ScriptExecutionContext* context)
+        virtual void performTask(ExecutionContext* context)
         {
             ASSERT(m_callbackToRelease && context && context->isContextThread());
-            m_callbackToRelease->deref();
+            m_callbackToRelease.clear();
             context->deref();
         }
 
         virtual bool isCleanupTask() const { return true; }
 
     private:
-        explicit SafeReleaseTask(T* callbackToRelease)
+        explicit SafeReleaseTask(PassOwnPtr<T> callbackToRelease)
             : m_callbackToRelease(callbackToRelease)
         {
         }
 
-        T* m_callbackToRelease;
+        OwnPtr<T> m_callbackToRelease;
     };
 
     Mutex m_mutex;
-    RefPtr<T> m_callback;
-    RefPtr<ScriptExecutionContext> m_scriptExecutionContext;
+    OwnPtr<T> m_callback;
+    RefPtr<ExecutionContext> m_executionContext;
 };
 
 } // namespace WebCore

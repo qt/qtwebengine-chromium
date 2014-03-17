@@ -82,7 +82,8 @@ int CacheCreator::Run() {
   // TODO(gavinp,pasko): Turn Simple Cache on for more cache types as
   // appropriate.
   if (backend_type_ == net::CACHE_BACKEND_SIMPLE &&
-      (type_ == net::DISK_CACHE || type_ == net::APP_CACHE)) {
+      (type_ == net::DISK_CACHE || type_ == net::APP_CACHE ||
+       type_ == net::MEDIA_CACHE)) {
     disk_cache::SimpleBackendImpl* simple_cache =
         new disk_cache::SimpleBackendImpl(path_, max_bytes_, type_,
                                           thread_.get(), net_log_);
@@ -113,6 +114,7 @@ void CacheCreator::DoCallback(int result) {
 #endif
   } else {
     LOG(ERROR) << "Unable to create cache";
+    created_cache_.reset();
   }
   callback_.Run(result);
   delete this;

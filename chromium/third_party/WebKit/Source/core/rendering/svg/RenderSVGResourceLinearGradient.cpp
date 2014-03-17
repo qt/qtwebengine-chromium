@@ -22,12 +22,11 @@
 
 #include "core/rendering/svg/RenderSVGResourceLinearGradient.h"
 
-#include "core/svg/LinearGradientAttributes.h"
 #include "core/svg/SVGLinearGradientElement.h"
 
 namespace WebCore {
 
-RenderSVGResourceType RenderSVGResourceLinearGradient::s_resourceType = LinearGradientResourceType;
+const RenderSVGResourceType RenderSVGResourceLinearGradient::s_resourceType = LinearGradientResourceType;
 
 RenderSVGResourceLinearGradient::RenderSVGResourceLinearGradient(SVGLinearGradientElement* node)
     : RenderSVGResourceGradient(node)

@@ -83,172 +83,20 @@ class StubCache {
   Handle<Code> FindIC(Handle<Name> name,
                       Handle<Map> stub_holder_map,
                       Code::Kind kind,
-                      Code::StubType type,
-                      Code::ExtraICState extra_state = Code::kNoExtraICState);
+                      ExtraICState extra_state = kNoExtraICState,
+                      InlineCacheHolderFlag cache_holder = OWN_MAP);
 
-  Handle<Code> FindIC(Handle<Name> name,
-                      Handle<JSObject> stub_holder,
-                      Code::Kind kind,
-                      Code::StubType type,
-                      Code::ExtraICState extra_state = Code::kNoExtraICState);
+  Handle<Code> FindHandler(Handle<Name> name,
+                           Handle<Map> map,
+                           Code::Kind kind,
+                           InlineCacheHolderFlag cache_holder = OWN_MAP);
 
-  Handle<Code> FindLoadHandler(Handle<Name> name,
-                               Handle<JSObject> receiver,
-                               Handle<JSObject> stub_holder,
-                               Code::Kind kind,
-                               Code::StubType type);
+  Handle<Code> ComputeMonomorphicIC(Handle<Name> name,
+                                    Handle<Type> type,
+                                    Handle<Code> handler,
+                                    ExtraICState extra_ic_state);
 
-  Handle<Code> FindStoreHandler(Handle<Name> name,
-                                Handle<JSObject> receiver,
-                                Code::Kind kind,
-                                Code::StubType type,
-                                StrictModeFlag strict_mode);
-
-  Handle<Code> ComputeMonomorphicLoadIC(Handle<HeapObject> receiver,
-                                        Handle<Code> handler,
-                                        Handle<Name> name);
-
-  Handle<Code> ComputeMonomorphicKeyedLoadIC(Handle<HeapObject> receiver,
-                                             Handle<Code> handler,
-                                             Handle<Name> name);
-
-  Handle<Code> ComputeMonomorphicStoreIC(Handle<HeapObject> receiver,
-                                         Handle<Code> handler,
-                                         Handle<Name> name,
-                                         StrictModeFlag strict_mode);
-
-  Handle<Code> ComputeMonomorphicKeyedStoreIC(Handle<HeapObject> receiver,
-                                              Handle<Code> handler,
-                                              Handle<Name> name,
-                                              StrictModeFlag strict_mode);
-
-  // Computes the right stub matching. Inserts the result in the
-  // cache before returning.  This might compile a stub if needed.
-  Handle<Code> ComputeLoadNonexistent(Handle<Name> name,
-                                      Handle<JSObject> object);
-
-  Handle<Code> ComputeLoadField(Handle<Name> name,
-                                Handle<JSObject> object,
-                                Handle<JSObject> holder,
-                                PropertyIndex field_index,
-                                Representation representation);
-
-  Handle<Code> ComputeLoadCallback(Handle<Name> name,
-                                   Handle<JSObject> object,
-                                   Handle<JSObject> holder,
-                                   Handle<ExecutableAccessorInfo> callback);
-
-  Handle<Code> ComputeLoadCallback(Handle<Name> name,
-                                   Handle<JSObject> object,
-                                   Handle<JSObject> holder,
-                                   const CallOptimization& call_optimization);
-
-  Handle<Code> ComputeLoadViaGetter(Handle<Name> name,
-                                    Handle<JSObject> object,
-                                    Handle<JSObject> holder,
-                                    Handle<JSFunction> getter);
-
-  Handle<Code> ComputeLoadConstant(Handle<Name> name,
-                                   Handle<JSObject> object,
-                                   Handle<JSObject> holder,
-                                   Handle<Object> value);
-
-  Handle<Code> ComputeLoadInterceptor(Handle<Name> name,
-                                      Handle<JSObject> object,
-                                      Handle<JSObject> holder);
-
-  Handle<Code> ComputeLoadNormal(Handle<Name> name,
-                                 Handle<JSObject> object);
-
-  Handle<Code> ComputeLoadGlobal(Handle<Name> name,
-                                 Handle<JSObject> object,
-                                 Handle<GlobalObject> holder,
-                                 Handle<PropertyCell> cell,
-                                 bool is_dont_delete);
-
-  // ---
-
-  Handle<Code> ComputeKeyedLoadField(Handle<Name> name,
-                                     Handle<JSObject> object,
-                                     Handle<JSObject> holder,
-                                     PropertyIndex field_index,
-                                     Representation representation);
-
-  Handle<Code> ComputeKeyedLoadCallback(
-      Handle<Name> name,
-      Handle<JSObject> object,
-      Handle<JSObject> holder,
-      Handle<ExecutableAccessorInfo> callback);
-
-  Handle<Code> ComputeKeyedLoadCallback(
-      Handle<Name> name,
-      Handle<JSObject> object,
-      Handle<JSObject> holder,
-      const CallOptimization& call_optimization);
-
-  Handle<Code> ComputeKeyedLoadConstant(Handle<Name> name,
-                                        Handle<JSObject> object,
-                                        Handle<JSObject> holder,
-                                        Handle<Object> value);
-
-  Handle<Code> ComputeKeyedLoadInterceptor(Handle<Name> name,
-                                           Handle<JSObject> object,
-                                           Handle<JSObject> holder);
-
-  // ---
-
-  Handle<Code> ComputeStoreField(Handle<Name> name,
-                                 Handle<JSObject> object,
-                                 LookupResult* lookup,
-                                 StrictModeFlag strict_mode);
-
-  Handle<Code> ComputeStoreTransition(Handle<Name> name,
-                                      Handle<JSObject> object,
-                                      LookupResult* lookup,
-                                      Handle<Map> transition,
-                                      StrictModeFlag strict_mode);
-
-  Handle<Code> ComputeStoreNormal(StrictModeFlag strict_mode);
-
-  Handle<Code> ComputeStoreGlobal(Handle<Name> name,
-                                  Handle<GlobalObject> object,
-                                  Handle<PropertyCell> cell,
-                                  Handle<Object> value,
-                                  StrictModeFlag strict_mode);
-
-  Handle<Code> ComputeStoreCallback(Handle<Name> name,
-                                    Handle<JSObject> object,
-                                    Handle<JSObject> holder,
-                                    Handle<ExecutableAccessorInfo> callback,
-                                    StrictModeFlag strict_mode);
-
-  Handle<Code> ComputeStoreCallback(Handle<Name> name,
-                                    Handle<JSObject> object,
-                                    Handle<JSObject> holder,
-                                    const CallOptimization& call_optimation,
-                                    StrictModeFlag strict_mode);
-
-  Handle<Code> ComputeStoreViaSetter(Handle<Name> name,
-                                     Handle<JSObject> object,
-                                     Handle<JSObject> holder,
-                                     Handle<JSFunction> setter,
-                                     StrictModeFlag strict_mode);
-
-  Handle<Code> ComputeStoreInterceptor(Handle<Name> name,
-                                       Handle<JSObject> object,
-                                       StrictModeFlag strict_mode);
-
-  // ---
-
-  Handle<Code> ComputeKeyedStoreField(Handle<Name> name,
-                                      Handle<JSObject> object,
-                                      LookupResult* lookup,
-                                      StrictModeFlag strict_mode);
-  Handle<Code> ComputeKeyedStoreTransition(Handle<Name> name,
-                                           Handle<JSObject> object,
-                                           LookupResult* lookup,
-                                           Handle<Map> transition,
-                                           StrictModeFlag strict_mode);
+  Handle<Code> ComputeLoadNonexistent(Handle<Name> name, Handle<Type> type);
 
   Handle<Code> ComputeKeyedLoadElement(Handle<Map> receiver_map);
 
@@ -256,11 +104,9 @@ class StubCache {
                                         StrictModeFlag strict_mode,
                                         KeyedAccessStoreMode store_mode);
 
-  // ---
-
   Handle<Code> ComputeCallField(int argc,
                                 Code::Kind,
-                                Code::ExtraICState extra_state,
+                                ExtraICState extra_state,
                                 Handle<Name> name,
                                 Handle<Object> object,
                                 Handle<JSObject> holder,
@@ -268,7 +114,7 @@ class StubCache {
 
   Handle<Code> ComputeCallConstant(int argc,
                                    Code::Kind,
-                                   Code::ExtraICState extra_state,
+                                   ExtraICState extra_state,
                                    Handle<Name> name,
                                    Handle<Object> object,
                                    Handle<JSObject> holder,
@@ -276,14 +122,14 @@ class StubCache {
 
   Handle<Code> ComputeCallInterceptor(int argc,
                                       Code::Kind,
-                                      Code::ExtraICState extra_state,
+                                      ExtraICState extra_state,
                                       Handle<Name> name,
                                       Handle<Object> object,
                                       Handle<JSObject> holder);
 
   Handle<Code> ComputeCallGlobal(int argc,
                                  Code::Kind,
-                                 Code::ExtraICState extra_state,
+                                 ExtraICState extra_state,
                                  Handle<Name> name,
                                  Handle<JSObject> object,
                                  Handle<GlobalObject> holder,
@@ -298,21 +144,21 @@ class StubCache {
 
   Handle<Code> ComputeCallPreMonomorphic(int argc,
                                          Code::Kind kind,
-                                         Code::ExtraICState extra_state);
+                                         ExtraICState extra_state);
 
   Handle<Code> ComputeCallNormal(int argc,
                                  Code::Kind kind,
-                                 Code::ExtraICState state);
+                                 ExtraICState state);
 
   Handle<Code> ComputeCallArguments(int argc);
 
   Handle<Code> ComputeCallMegamorphic(int argc,
                                       Code::Kind kind,
-                                      Code::ExtraICState state);
+                                      ExtraICState state);
 
   Handle<Code> ComputeCallMiss(int argc,
                                Code::Kind kind,
-                               Code::ExtraICState state);
+                               ExtraICState state);
 
   // ---
 
@@ -326,16 +172,11 @@ class StubCache {
                                               KeyedAccessStoreMode store_mode,
                                               StrictModeFlag strict_mode);
 
-  Handle<Code> ComputePolymorphicLoadIC(MapHandleList* receiver_maps,
-                                        CodeHandleList* handlers,
-                                        int number_of_valid_maps,
-                                        Handle<Name> name);
-
-  Handle<Code> ComputePolymorphicStoreIC(MapHandleList* receiver_maps,
-                                         CodeHandleList* handlers,
-                                         int number_of_valid_maps,
-                                         Handle<Name> name,
-                                         StrictModeFlag strict_mode);
+  Handle<Code> ComputePolymorphicIC(TypeHandleList* types,
+                                    CodeHandleList* handlers,
+                                    int number_of_valid_maps,
+                                    Handle<Name> name,
+                                    ExtraICState extra_ic_state);
 
   // Finds the Code object stored in the Heap::non_monomorphic_cache().
   Code* FindCallInitialize(int argc, RelocInfo::Mode mode, Code::Kind kind);
@@ -523,8 +364,10 @@ enum IcCheckType { ELEMENT, PROPERTY };
 // The stub compilers compile stubs for the stub cache.
 class StubCompiler BASE_EMBEDDED {
  public:
-  explicit StubCompiler(Isolate* isolate)
-      : isolate_(isolate), masm_(isolate, NULL, 256), failure_(NULL) { }
+  explicit StubCompiler(Isolate* isolate,
+                        ExtraICState extra_ic_state = kNoExtraICState)
+      : isolate_(isolate), extra_ic_state_(extra_ic_state),
+        masm_(isolate, NULL, 256), failure_(NULL) { }
 
   // Functions to compile either CallIC or KeyedCallIC.  The specific kind
   // is extracted from the code flags.
@@ -584,8 +427,7 @@ class StubCompiler BASE_EMBEDDED {
                                        Register receiver,
                                        Register scratch1,
                                        Register scratch2,
-                                       Label* miss_label,
-                                       bool support_wrappers);
+                                       Label* miss_label);
 
   static void GenerateLoadFunctionPrototype(MacroAssembler* masm,
                                             Register receiver,
@@ -601,15 +443,6 @@ class StubCompiler BASE_EMBEDDED {
                                         Handle<Name> name,
                                         Register scratch,
                                         Label* miss);
-
-  // Calls GenerateCheckPropertyCell for each global object in the prototype
-  // chain from object to (but not including) holder.
-  static void GenerateCheckPropertyCells(MacroAssembler* masm,
-                                         Handle<JSObject> object,
-                                         Handle<JSObject> holder,
-                                         Handle<Name> name,
-                                         Register scratch,
-                                         Label* miss);
 
   static void TailCallBuiltin(MacroAssembler* masm, Builtins::Name name);
 
@@ -628,7 +461,7 @@ class StubCompiler BASE_EMBEDDED {
   // The function can optionally (when save_at_depth !=
   // kInvalidProtoDepth) save the object at the given depth by moving
   // it to [esp + kPointerSize].
-  Register CheckPrototypes(Handle<JSObject> object,
+  Register CheckPrototypes(Handle<Type> type,
                            Register object_reg,
                            Handle<JSObject> holder,
                            Register holder_reg,
@@ -637,11 +470,11 @@ class StubCompiler BASE_EMBEDDED {
                            Handle<Name> name,
                            Label* miss,
                            PrototypeCheckType check = CHECK_ALL_MAPS) {
-    return CheckPrototypes(object, object_reg, holder, holder_reg, scratch1,
+    return CheckPrototypes(type, object_reg, holder, holder_reg, scratch1,
                            scratch2, name, kInvalidProtoDepth, miss, check);
   }
 
-  Register CheckPrototypes(Handle<JSObject> object,
+  Register CheckPrototypes(Handle<Type> type,
                            Register object_reg,
                            Handle<JSObject> holder,
                            Register holder_reg,
@@ -652,10 +485,13 @@ class StubCompiler BASE_EMBEDDED {
                            Label* miss,
                            PrototypeCheckType check = CHECK_ALL_MAPS);
 
+  void GenerateBooleanCheck(Register object, Label* miss);
 
  protected:
   Handle<Code> GetCodeWithFlags(Code::Flags flags, const char* name);
   Handle<Code> GetCodeWithFlags(Code::Flags flags, Handle<Name> name);
+
+  ExtraICState extra_state() { return extra_ic_state_; }
 
   MacroAssembler* masm() { return &masm_; }
   void set_failure(Failure* failure) { failure_ = failure; }
@@ -672,6 +508,7 @@ class StubCompiler BASE_EMBEDDED {
 
  private:
   Isolate* isolate_;
+  const ExtraICState extra_ic_state_;
   MacroAssembler masm_;
   Failure* failure_;
 };
@@ -682,15 +519,22 @@ enum FrontendCheckType { PERFORM_INITIAL_CHECKS, SKIP_INITIAL_CHECKS };
 
 class BaseLoadStoreStubCompiler: public StubCompiler {
  public:
-  BaseLoadStoreStubCompiler(Isolate* isolate, Register* registers)
-      : StubCompiler(isolate), registers_(registers) { }
+  BaseLoadStoreStubCompiler(Isolate* isolate,
+                            Code::Kind kind,
+                            ExtraICState extra_ic_state = kNoExtraICState,
+                            InlineCacheHolderFlag cache_holder = OWN_MAP)
+      : StubCompiler(isolate, extra_ic_state),
+        kind_(kind),
+        cache_holder_(cache_holder) {
+    InitializeRegisters();
+  }
   virtual ~BaseLoadStoreStubCompiler() { }
 
-  Handle<Code> CompileMonomorphicIC(Handle<Map> receiver_map,
+  Handle<Code> CompileMonomorphicIC(Handle<Type> type,
                                     Handle<Code> handler,
                                     Handle<Name> name);
 
-  Handle<Code> CompilePolymorphicIC(MapHandleList* receiver_maps,
+  Handle<Code> CompilePolymorphicIC(TypeHandleList* types,
                                     CodeHandleList* handlers,
                                     Handle<Name> name,
                                     Code::StubType type,
@@ -712,94 +556,136 @@ class BaseLoadStoreStubCompiler: public StubCompiler {
   }
 
  protected:
-  virtual Register HandlerFrontendHeader(Handle<JSObject> object,
+  virtual Register HandlerFrontendHeader(Handle<Type> type,
                                          Register object_reg,
                                          Handle<JSObject> holder,
                                          Handle<Name> name,
                                          Label* miss) = 0;
 
-  virtual void HandlerFrontendFooter(Handle<Name> name,
-                                     Label* success,
-                                     Label* miss) = 0;
+  virtual void HandlerFrontendFooter(Handle<Name> name, Label* miss) = 0;
 
-  Register HandlerFrontend(Handle<JSObject> object,
+  Register HandlerFrontend(Handle<Type> type,
                            Register object_reg,
                            Handle<JSObject> holder,
-                           Handle<Name> name,
-                           Label* success);
+                           Handle<Name> name);
+
+  Handle<Code> GetCode(Code::Kind kind,
+                       Code::StubType type,
+                       Handle<Name> name);
 
   Handle<Code> GetICCode(Code::Kind kind,
                          Code::StubType type,
                          Handle<Name> name,
                          InlineCacheState state = MONOMORPHIC);
+  Code::Kind kind() { return kind_; }
 
-  virtual Code::ExtraICState extra_state() { return Code::kNoExtraICState; }
-  virtual Logger::LogEventsAndTags log_kind(Handle<Code> code) = 0;
-  virtual void JitEvent(Handle<Name> name, Handle<Code> code) = 0;
-  virtual Code::Kind kind() = 0;
+  Logger::LogEventsAndTags log_kind(Handle<Code> code) {
+    if (!code->is_inline_cache_stub()) return Logger::STUB_TAG;
+    if (kind_ == Code::LOAD_IC) {
+      return code->ic_state() == MONOMORPHIC
+          ? Logger::LOAD_IC_TAG : Logger::LOAD_POLYMORPHIC_IC_TAG;
+    } else if (kind_ == Code::KEYED_LOAD_IC) {
+      return code->ic_state() == MONOMORPHIC
+          ? Logger::KEYED_LOAD_IC_TAG : Logger::KEYED_LOAD_POLYMORPHIC_IC_TAG;
+    } else if (kind_ == Code::STORE_IC) {
+      return code->ic_state() == MONOMORPHIC
+          ? Logger::STORE_IC_TAG : Logger::STORE_POLYMORPHIC_IC_TAG;
+    } else {
+      return code->ic_state() == MONOMORPHIC
+          ? Logger::KEYED_STORE_IC_TAG : Logger::KEYED_STORE_POLYMORPHIC_IC_TAG;
+    }
+  }
+  void JitEvent(Handle<Name> name, Handle<Code> code);
+
   virtual Register receiver() = 0;
   virtual Register name() = 0;
   virtual Register scratch1() = 0;
   virtual Register scratch2() = 0;
   virtual Register scratch3() = 0;
 
+  void InitializeRegisters();
+
+  bool IncludesNumberType(TypeHandleList* types);
+
+  Code::Kind kind_;
+  InlineCacheHolderFlag cache_holder_;
   Register* registers_;
 };
 
 
-class BaseLoadStubCompiler: public BaseLoadStoreStubCompiler {
+class LoadStubCompiler: public BaseLoadStoreStubCompiler {
  public:
-  BaseLoadStubCompiler(Isolate* isolate, Register* registers)
-      : BaseLoadStoreStubCompiler(isolate, registers) { }
-  virtual ~BaseLoadStubCompiler() { }
+  LoadStubCompiler(Isolate* isolate,
+                   ExtraICState extra_ic_state = kNoExtraICState,
+                   InlineCacheHolderFlag cache_holder = OWN_MAP,
+                   Code::Kind kind = Code::LOAD_IC)
+      : BaseLoadStoreStubCompiler(isolate, kind, extra_ic_state,
+                                  cache_holder) { }
+  virtual ~LoadStubCompiler() { }
 
-  Handle<Code> CompileLoadField(Handle<JSObject> object,
+  Handle<Code> CompileLoadField(Handle<Type> type,
                                 Handle<JSObject> holder,
                                 Handle<Name> name,
                                 PropertyIndex index,
                                 Representation representation);
 
-  Handle<Code> CompileLoadCallback(Handle<JSObject> object,
+  Handle<Code> CompileLoadCallback(Handle<Type> type,
                                    Handle<JSObject> holder,
                                    Handle<Name> name,
                                    Handle<ExecutableAccessorInfo> callback);
 
-  Handle<Code> CompileLoadCallback(Handle<JSObject> object,
+  Handle<Code> CompileLoadCallback(Handle<Type> type,
                                    Handle<JSObject> holder,
                                    Handle<Name> name,
                                    const CallOptimization& call_optimization);
 
-  Handle<Code> CompileLoadConstant(Handle<JSObject> object,
+  Handle<Code> CompileLoadConstant(Handle<Type> type,
                                    Handle<JSObject> holder,
                                    Handle<Name> name,
                                    Handle<Object> value);
 
-  Handle<Code> CompileLoadInterceptor(Handle<JSObject> object,
+  Handle<Code> CompileLoadInterceptor(Handle<Type> type,
                                       Handle<JSObject> holder,
                                       Handle<Name> name);
 
+  Handle<Code> CompileLoadViaGetter(Handle<Type> type,
+                                    Handle<JSObject> holder,
+                                    Handle<Name> name,
+                                    Handle<JSFunction> getter);
+
+  static void GenerateLoadViaGetter(MacroAssembler* masm,
+                                    Register receiver,
+                                    Handle<JSFunction> getter);
+
+  Handle<Code> CompileLoadNonexistent(Handle<Type> type,
+                                      Handle<JSObject> last,
+                                      Handle<Name> name);
+
+  Handle<Code> CompileLoadGlobal(Handle<Type> type,
+                                 Handle<GlobalObject> holder,
+                                 Handle<PropertyCell> cell,
+                                 Handle<Name> name,
+                                 bool is_dont_delete);
+
+  static Register* registers();
+
  protected:
-  virtual Register HandlerFrontendHeader(Handle<JSObject> object,
+  virtual Register HandlerFrontendHeader(Handle<Type> type,
                                          Register object_reg,
                                          Handle<JSObject> holder,
                                          Handle<Name> name,
                                          Label* miss);
 
-  virtual void HandlerFrontendFooter(Handle<Name> name,
-                                     Label* success,
-                                     Label* miss);
+  virtual void HandlerFrontendFooter(Handle<Name> name, Label* miss);
 
-  Register CallbackHandlerFrontend(Handle<JSObject> object,
+  Register CallbackHandlerFrontend(Handle<Type> type,
                                    Register object_reg,
                                    Handle<JSObject> holder,
                                    Handle<Name> name,
-                                   Label* success,
                                    Handle<Object> callback);
-  void NonexistentHandlerFrontend(Handle<JSObject> object,
+  void NonexistentHandlerFrontend(Handle<Type> type,
                                   Handle<JSObject> last,
-                                  Handle<Name> name,
-                                  Label* success,
-                                  Handle<JSGlobalObject> global);
+                                  Handle<Name> name);
 
   void GenerateLoadField(Register reg,
                          Handle<JSObject> holder,
@@ -810,7 +696,7 @@ class BaseLoadStubCompiler: public BaseLoadStoreStubCompiler {
                             Handle<ExecutableAccessorInfo> callback);
   void GenerateLoadCallback(const CallOptimization& call_optimization);
   void GenerateLoadInterceptor(Register holder_reg,
-                               Handle<JSObject> object,
+                               Handle<Object> object,
                                Handle<JSObject> holder,
                                LookupResult* lookup,
                                Handle<Name> name);
@@ -818,10 +704,6 @@ class BaseLoadStubCompiler: public BaseLoadStoreStubCompiler {
                                    Handle<JSObject> interceptor_holder,
                                    Handle<Name> name,
                                    LookupResult* lookup);
-
-  Handle<Code> GetCode(Code::Kind kind,
-                       Code::StubType type,
-                       Handle<Name> name);
 
   virtual Register receiver() { return registers_[0]; }
   virtual Register name()     { return registers_[1]; }
@@ -832,46 +714,13 @@ class BaseLoadStubCompiler: public BaseLoadStoreStubCompiler {
 };
 
 
-class LoadStubCompiler: public BaseLoadStubCompiler {
+class KeyedLoadStubCompiler: public LoadStubCompiler {
  public:
-  explicit LoadStubCompiler(Isolate* isolate)
-      : BaseLoadStubCompiler(isolate, registers()) { }
-
-  Handle<Code> CompileLoadNonexistent(Handle<JSObject> object,
-                                      Handle<JSObject> last,
-                                      Handle<Name> name,
-                                      Handle<JSGlobalObject> global);
-
-  static void GenerateLoadViaGetter(MacroAssembler* masm,
-                                    Handle<JSFunction> getter);
-
-  Handle<Code> CompileLoadViaGetter(Handle<JSObject> object,
-                                    Handle<JSObject> holder,
-                                    Handle<Name> name,
-                                    Handle<JSFunction> getter);
-
-  Handle<Code> CompileLoadGlobal(Handle<JSObject> object,
-                                 Handle<GlobalObject> holder,
-                                 Handle<PropertyCell> cell,
-                                 Handle<Name> name,
-                                 bool is_dont_delete);
-
- private:
-  static Register* registers();
-  virtual Code::Kind kind() { return Code::LOAD_IC; }
-  virtual Logger::LogEventsAndTags log_kind(Handle<Code> code) {
-    if (!code->is_inline_cache_stub()) return Logger::STUB_TAG;
-    return code->ic_state() == MONOMORPHIC
-        ? Logger::LOAD_IC_TAG : Logger::LOAD_POLYMORPHIC_IC_TAG;
-  }
-  virtual void JitEvent(Handle<Name> name, Handle<Code> code);
-};
-
-
-class KeyedLoadStubCompiler: public BaseLoadStubCompiler {
- public:
-  explicit KeyedLoadStubCompiler(Isolate* isolate)
-      : BaseLoadStubCompiler(isolate, registers()) { }
+  KeyedLoadStubCompiler(Isolate* isolate,
+                        ExtraICState extra_ic_state = kNoExtraICState,
+                        InlineCacheHolderFlag cache_holder = OWN_MAP)
+      : LoadStubCompiler(isolate, extra_ic_state, cache_holder,
+                         Code::KEYED_LOAD_IC) { }
 
   Handle<Code> CompileLoadElement(Handle<Map> receiver_map);
 
@@ -880,30 +729,25 @@ class KeyedLoadStubCompiler: public BaseLoadStubCompiler {
 
   static void GenerateLoadDictionaryElement(MacroAssembler* masm);
 
- private:
+ protected:
   static Register* registers();
-  virtual Code::Kind kind() { return Code::KEYED_LOAD_IC; }
-  virtual Logger::LogEventsAndTags log_kind(Handle<Code> code) {
-    if (!code->is_inline_cache_stub()) return Logger::STUB_TAG;
-    return code->ic_state() == MONOMORPHIC
-        ? Logger::KEYED_LOAD_IC_TAG : Logger::KEYED_LOAD_POLYMORPHIC_IC_TAG;
-  }
-  virtual void JitEvent(Handle<Name> name, Handle<Code> code);
+
+ private:
   virtual void GenerateNameCheck(Handle<Name> name,
                                  Register name_reg,
                                  Label* miss);
+  friend class BaseLoadStoreStubCompiler;
 };
 
 
-class BaseStoreStubCompiler: public BaseLoadStoreStubCompiler {
+class StoreStubCompiler: public BaseLoadStoreStubCompiler {
  public:
-  BaseStoreStubCompiler(Isolate* isolate,
-                        StrictModeFlag strict_mode,
-                        Register* registers)
-      : BaseLoadStoreStubCompiler(isolate, registers),
-        strict_mode_(strict_mode) { }
+  StoreStubCompiler(Isolate* isolate,
+                    ExtraICState extra_ic_state,
+                    Code::Kind kind = Code::STORE_IC)
+      : BaseLoadStoreStubCompiler(isolate, kind, extra_ic_state) {}
 
-  virtual ~BaseStoreStubCompiler() { }
+  virtual ~StoreStubCompiler() { }
 
   Handle<Code> CompileStoreTransition(Handle<JSObject> object,
                                       LookupResult* lookup,
@@ -944,63 +788,6 @@ class BaseStoreStubCompiler: public BaseLoadStoreStubCompiler {
                           Register scratch2,
                           Label* miss_label);
 
-  static Builtins::Name MissBuiltin(Code::Kind kind) {
-    switch (kind) {
-      case Code::LOAD_IC: return Builtins::kLoadIC_Miss;
-      case Code::STORE_IC: return Builtins::kStoreIC_Miss;
-      case Code::KEYED_LOAD_IC: return Builtins::kKeyedLoadIC_Miss;
-      case Code::KEYED_STORE_IC: return Builtins::kKeyedStoreIC_Miss;
-      default: UNREACHABLE();
-    }
-    return Builtins::kLoadIC_Miss;
-  }
-  static Builtins::Name SlowBuiltin(Code::Kind kind) {
-    switch (kind) {
-      case Code::STORE_IC: return Builtins::kStoreIC_Slow;
-      case Code::KEYED_STORE_IC: return Builtins::kKeyedStoreIC_Slow;
-      default: UNREACHABLE();
-    }
-    return Builtins::kStoreIC_Slow;
-  }
-
- protected:
-  virtual Register HandlerFrontendHeader(Handle<JSObject> object,
-                                         Register object_reg,
-                                         Handle<JSObject> holder,
-                                         Handle<Name> name,
-                                         Label* miss);
-
-  virtual void HandlerFrontendFooter(Handle<Name> name,
-                                     Label* success,
-                                     Label* miss);
-  Handle<Code> GetCode(Code::Kind kind,
-                       Code::StubType type,
-                       Handle<Name> name);
-
-  void GenerateRestoreName(MacroAssembler* masm,
-                           Label* label,
-                           Handle<Name> name);
-
-  virtual Register receiver() { return registers_[0]; }
-  virtual Register name()     { return registers_[1]; }
-  Register value()    { return registers_[2]; }
-  virtual Register scratch1() { return registers_[3]; }
-  virtual Register scratch2() { return registers_[4]; }
-  virtual Register scratch3() { return registers_[5]; }
-  StrictModeFlag strict_mode() { return strict_mode_; }
-  virtual Code::ExtraICState extra_state() { return strict_mode_; }
-
- private:
-  StrictModeFlag strict_mode_;
-};
-
-
-class StoreStubCompiler: public BaseStoreStubCompiler {
- public:
-  StoreStubCompiler(Isolate* isolate, StrictModeFlag strict_mode)
-      : BaseStoreStubCompiler(isolate, strict_mode, registers()) { }
-
-
   Handle<Code> CompileStoreCallback(Handle<JSObject> object,
                                     Handle<JSObject> holder,
                                     Handle<Name> name,
@@ -1022,25 +809,47 @@ class StoreStubCompiler: public BaseStoreStubCompiler {
   Handle<Code> CompileStoreInterceptor(Handle<JSObject> object,
                                        Handle<Name> name);
 
- private:
-  static Register* registers();
-  virtual Code::Kind kind() { return Code::STORE_IC; }
-  virtual Logger::LogEventsAndTags log_kind(Handle<Code> code) {
-    if (!code->is_inline_cache_stub()) return Logger::STUB_TAG;
-    return code->ic_state() == MONOMORPHIC
-        ? Logger::STORE_IC_TAG : Logger::STORE_POLYMORPHIC_IC_TAG;
+  static Builtins::Name SlowBuiltin(Code::Kind kind) {
+    switch (kind) {
+      case Code::STORE_IC: return Builtins::kStoreIC_Slow;
+      case Code::KEYED_STORE_IC: return Builtins::kKeyedStoreIC_Slow;
+      default: UNREACHABLE();
+    }
+    return Builtins::kStoreIC_Slow;
   }
-  virtual void JitEvent(Handle<Name> name, Handle<Code> code);
+
+ protected:
+  virtual Register HandlerFrontendHeader(Handle<Type> type,
+                                         Register object_reg,
+                                         Handle<JSObject> holder,
+                                         Handle<Name> name,
+                                         Label* miss);
+
+  virtual void HandlerFrontendFooter(Handle<Name> name, Label* miss);
+  void GenerateRestoreName(MacroAssembler* masm,
+                           Label* label,
+                           Handle<Name> name);
+
+  virtual Register receiver() { return registers_[0]; }
+  virtual Register name()     { return registers_[1]; }
+  Register value()    { return registers_[2]; }
+  virtual Register scratch1() { return registers_[3]; }
+  virtual Register scratch2() { return registers_[4]; }
+  virtual Register scratch3() { return registers_[5]; }
+
+ protected:
+  static Register* registers();
+
+ private:
+  friend class BaseLoadStoreStubCompiler;
 };
 
 
-class KeyedStoreStubCompiler: public BaseStoreStubCompiler {
+class KeyedStoreStubCompiler: public StoreStubCompiler {
  public:
   KeyedStoreStubCompiler(Isolate* isolate,
-                         StrictModeFlag strict_mode,
-                         KeyedAccessStoreMode store_mode)
-      : BaseStoreStubCompiler(isolate, strict_mode, registers()),
-        store_mode_(store_mode) { }
+                         ExtraICState extra_ic_state)
+      : StoreStubCompiler(isolate, extra_ic_state, Code::KEYED_STORE_IC) {}
 
   Handle<Code> CompileStoreElement(Handle<Map> receiver_map);
 
@@ -1053,8 +862,10 @@ class KeyedStoreStubCompiler: public BaseStoreStubCompiler {
   static void GenerateStoreDictionaryElement(MacroAssembler* masm);
 
  protected:
-  virtual Code::ExtraICState extra_state() {
-    return Code::ComputeExtraICState(store_mode_, strict_mode());
+  static Register* registers();
+
+  KeyedAccessStoreMode store_mode() {
+    return KeyedStoreIC::GetKeyedAccessStoreMode(extra_state());
   }
 
  private:
@@ -1062,18 +873,10 @@ class KeyedStoreStubCompiler: public BaseStoreStubCompiler {
     return registers()[3];
   }
 
-  static Register* registers();
-  virtual Code::Kind kind() { return Code::KEYED_STORE_IC; }
-  virtual Logger::LogEventsAndTags log_kind(Handle<Code> code) {
-    if (!code->is_inline_cache_stub()) return Logger::STUB_TAG;
-    return code->ic_state() == MONOMORPHIC
-        ? Logger::KEYED_STORE_IC_TAG : Logger::KEYED_STORE_POLYMORPHIC_IC_TAG;
-  }
-  virtual void JitEvent(Handle<Name> name, Handle<Code> code);
   virtual void GenerateNameCheck(Handle<Name> name,
                                  Register name_reg,
                                  Label* miss);
-  KeyedAccessStoreMode store_mode_;
+  friend class BaseLoadStoreStubCompiler;
 };
 
 
@@ -1099,21 +902,37 @@ class CallStubCompiler: public StubCompiler {
   CallStubCompiler(Isolate* isolate,
                    int argc,
                    Code::Kind kind,
-                   Code::ExtraICState extra_state,
-                   InlineCacheHolderFlag cache_holder);
+                   ExtraICState extra_state,
+                   InlineCacheHolderFlag cache_holder = OWN_MAP);
 
   Handle<Code> CompileCallField(Handle<JSObject> object,
                                 Handle<JSObject> holder,
                                 PropertyIndex index,
                                 Handle<Name> name);
 
-  void CompileHandlerFrontend(Handle<Object> object,
-                              Handle<JSObject> holder,
-                              Handle<Name> name,
-                              CheckType check,
-                              Label* success);
+  // Patch the global proxy over the global object if the global object is the
+  // receiver.
+  void PatchGlobalProxy(Handle<Object> object);
 
-  void CompileHandlerBackend(Handle<JSFunction> function);
+  // Returns the register containing the holder of |name|.
+  Register HandlerFrontendHeader(Handle<Object> object,
+                                 Handle<JSObject> holder,
+                                 Handle<Name> name,
+                                 CheckType check,
+                                 Label* miss);
+  void HandlerFrontendFooter(Label* miss);
+
+  void GenerateJumpFunctionIgnoreReceiver(Handle<JSFunction> function);
+  void GenerateJumpFunction(Handle<Object> object,
+                            Handle<JSFunction> function);
+  void GenerateJumpFunction(Handle<Object> object,
+                            Register function,
+                            Label* miss);
+  // Use to call |actual_closure|, a closure with the same shared function info
+  // as |function|.
+  void GenerateJumpFunction(Handle<Object> object,
+                            Register actual_closure,
+                            Handle<JSFunction> function);
 
   Handle<Code> CompileCallConstant(Handle<Object> object,
                                    Handle<JSObject> holder,
@@ -1162,6 +981,8 @@ class CallStubCompiler: public StubCompiler {
                                   Handle<JSFunction> function,
                                   Handle<String> name);
 
+  CallKind call_kind();
+
   Handle<Code> GetCode(Code::StubType type, Handle<Name> name);
   Handle<Code> GetCode(Handle<JSFunction> function);
 
@@ -1169,23 +990,19 @@ class CallStubCompiler: public StubCompiler {
 
   void GenerateNameCheck(Handle<Name> name, Label* miss);
 
-  void GenerateGlobalReceiverCheck(Handle<JSObject> object,
-                                   Handle<JSObject> holder,
-                                   Handle<Name> name,
-                                   Label* miss);
-
   // Generates code to load the function from the cell checking that
   // it still contains the same function.
   void GenerateLoadFunctionFromCell(Handle<Cell> cell,
                                     Handle<JSFunction> function,
                                     Label* miss);
 
+  void GenerateFunctionCheck(Register function, Register scratch, Label* miss);
+
   // Generates a jump to CallIC miss stub.
   void GenerateMissBranch();
 
   const ParameterCount arguments_;
   const Code::Kind kind_;
-  const Code::ExtraICState extra_state_;
   const InlineCacheHolderFlag cache_holder_;
 };
 
@@ -1228,7 +1045,7 @@ class CallOptimization BASE_EMBEDDED {
   bool IsCompatibleReceiver(Object* receiver) {
     ASSERT(is_simple_api_call());
     if (expected_receiver_type_.is_null()) return true;
-    return receiver->IsInstanceOf(*expected_receiver_type_);
+    return expected_receiver_type_->IsTemplateFor(receiver);
   }
 
  private:

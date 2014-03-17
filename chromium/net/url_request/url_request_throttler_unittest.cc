@@ -14,6 +14,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "net/base/load_flags.h"
+#include "net/base/request_priority.h"
 #include "net/base/test_completion_callback.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_test_util.h"
@@ -172,8 +173,8 @@ struct GurlAndString {
 
 class URLRequestThrottlerEntryTest : public testing::Test {
  protected:
-  URLRequestThrottlerEntryTest() : request_(GURL(), NULL, &context_, NULL) {
-  }
+  URLRequestThrottlerEntryTest()
+      : request_(GURL(), DEFAULT_PRIORITY, NULL, &context_) {}
 
   virtual void SetUp();
   virtual void TearDown();
@@ -202,7 +203,7 @@ const char* kHistogramNames[] = {
 };
 
 void URLRequestThrottlerEntryTest::SetUp() {
-  request_.set_load_flags(0);
+  request_.SetLoadFlags(0);
 
   now_ = TimeTicks::Now();
   entry_ = new MockURLRequestThrottlerEntry(&manager_);
@@ -251,13 +252,25 @@ std::ostream& operator<<(std::ostream& out, const base::TimeTicks& time) {
   return out << time.ToInternalValue();
 }
 
+TEST_F(URLRequestThrottlerEntryTest, CanThrottleRequest) {
+  TestNetworkDelegate d;
+  context_.set_network_delegate(&d);
+  entry_->set_exponential_backoff_release_time(
+      entry_->fake_time_now_ + TimeDelta::FromMilliseconds(1));
+
+  d.set_can_throttle_requests(false);
+  EXPECT_FALSE(entry_->ShouldRejectRequest(request_));
+  d.set_can_throttle_requests(true);
+  EXPECT_TRUE(entry_->ShouldRejectRequest(request_));
+}
+
 TEST_F(URLRequestThrottlerEntryTest, InterfaceDuringExponentialBackoff) {
   entry_->set_exponential_backoff_release_time(
       entry_->fake_time_now_ + TimeDelta::FromMilliseconds(1));
   EXPECT_TRUE(entry_->ShouldRejectRequest(request_));
 
   // Also end-to-end test the load flags exceptions.
-  request_.set_load_flags(LOAD_MAYBE_USER_GESTURE);
+  request_.SetLoadFlags(LOAD_MAYBE_USER_GESTURE);
   EXPECT_FALSE(entry_->ShouldRejectRequest(request_));
 
   CalculateHistogramDeltas();
@@ -391,11 +404,10 @@ TEST_F(URLRequestThrottlerEntryTest, ExplicitUserRequest) {
 class URLRequestThrottlerManagerTest : public testing::Test {
  protected:
   URLRequestThrottlerManagerTest()
-      : request_(GURL(), NULL, &context_, NULL) {
-  }
+      : request_(GURL(), DEFAULT_PRIORITY, NULL, &context_) {}
 
   virtual void SetUp() {
-    request_.set_load_flags(0);
+    request_.SetLoadFlags(0);
   }
 
   // context_ must be declared before request_.

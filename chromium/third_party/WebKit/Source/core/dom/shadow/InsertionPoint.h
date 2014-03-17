@@ -33,6 +33,7 @@
 
 #include "core/css/CSSSelectorList.h"
 #include "core/dom/shadow/ContentDistribution.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLElement.h"
 #include "wtf/Forward.h"
 
@@ -46,6 +47,10 @@ public:
     void setDistribution(ContentDistribution&);
     void clearDistribution() { m_distribution.clear(); }
     bool isActive() const;
+    bool canBeActive() const;
+
+    bool isShadowInsertionPoint() const;
+    bool isContentInsertionPoint() const;
 
     PassRefPtr<NodeList> getDistributedNodes();
 
@@ -76,63 +81,41 @@ protected:
     virtual void willRecalcStyle(StyleRecalcChange) OVERRIDE;
 
 private:
-
     ContentDistribution m_distribution;
     bool m_registeredWithShadowRoot;
 };
 
-inline InsertionPoint* toInsertionPoint(Node* node)
+typedef Vector<RefPtr<InsertionPoint> > DestinationInsertionPoints;
+
+DEFINE_NODE_TYPE_CASTS(InsertionPoint, isInsertionPoint());
+
+inline bool isActiveInsertionPoint(const Node& node)
 {
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isInsertionPoint());
-    return static_cast<InsertionPoint*>(node);
+    return node.isInsertionPoint() && toInsertionPoint(node).isActive();
 }
 
-inline const InsertionPoint* toInsertionPoint(const Node* node)
+inline bool isActiveShadowInsertionPoint(const Node& node)
 {
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isInsertionPoint());
-    return static_cast<const InsertionPoint*>(node);
+    return node.isInsertionPoint() && toInsertionPoint(node).isShadowInsertionPoint();
 }
 
-inline bool isActiveInsertionPoint(const Node* node)
+inline ElementShadow* shadowWhereNodeCanBeDistributed(const Node& node)
 {
-    return node->isInsertionPoint() && toInsertionPoint(node)->isActive();
-}
-
-inline Node* parentNodeForDistribution(const Node* node)
-{
-    ASSERT(node);
-
-    if (Node* parent = node->parentNode()) {
-        if (parent->isInsertionPoint() && toInsertionPoint(parent)->shouldUseFallbackElements())
-            return parent->parentNode();
-        return parent;
-    }
-
+    Node* parent = node.parentNode();
+    if (!parent)
+        return 0;
+    if (parent->isShadowRoot() && !toShadowRoot(parent)->isYoungest())
+        return node.shadowHost()->shadow();
+    if (isActiveInsertionPoint(*parent))
+        return node.shadowHost()->shadow();
+    if (parent->isElementNode())
+        return toElement(parent)->shadow();
     return 0;
 }
 
-inline Element* parentElementForDistribution(const Node* node)
-{
-    if (Node* parent = parentNodeForDistribution(node)) {
-        if (parent->isElementNode())
-            return toElement(parent);
-    }
+const InsertionPoint* resolveReprojection(const Node*);
 
-    return 0;
-}
-
-inline ElementShadow* shadowOfParentForDistribution(const Node* node)
-{
-    ASSERT(node);
-    if (Element* parent = parentElementForDistribution(node))
-        return parent->shadow();
-
-    return 0;
-}
-
-InsertionPoint* resolveReprojection(const Node*);
-
-void collectInsertionPointsWhereNodeIsDistributed(const Node*, Vector<InsertionPoint*, 8>& results);
+void collectDestinationInsertionPoints(const Node&, Vector<InsertionPoint*, 8>& results);
 
 } // namespace WebCore
 

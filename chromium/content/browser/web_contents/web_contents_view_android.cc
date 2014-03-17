@@ -6,11 +6,11 @@
 
 #include "base/logging.h"
 #include "content/browser/android/content_view_core_impl.h"
+#include "content/browser/frame_host/interstitial_page_impl.h"
 #include "content/browser/media/android/browser_media_player_manager.h"
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
-#include "content/browser/web_contents/interstitial_page_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/web_contents_delegate.h"
 
@@ -54,13 +54,13 @@ void WebContentsViewAndroid::SetContentViewCore(
   }
 }
 
-#if defined(GOOGLE_TV)
+#if defined(VIDEO_HOLE)
 void WebContentsViewAndroid::NotifyExternalSurface(
     int player_id, bool is_request, const gfx::RectF& rect) {
   if (content_view_core_)
     content_view_core_->NotifyExternalSurface(player_id, is_request, rect);
 }
-#endif
+#endif  // defined(VIDEO_HOLE)
 
 gfx::NativeView WebContentsViewAndroid::GetNativeView() const {
   return content_view_core_ ? content_view_core_->GetViewAndroid() : NULL;
@@ -80,7 +80,7 @@ void WebContentsViewAndroid::GetContainerBounds(gfx::Rect* out) const {
     *out = rwhv->GetViewBounds();
 }
 
-void WebContentsViewAndroid::SetPageTitle(const string16& title) {
+void WebContentsViewAndroid::SetPageTitle(const base::string16& title) {
   if (content_view_core_)
     content_view_core_->SetTitle(title);
 }
@@ -199,14 +199,14 @@ void WebContentsViewAndroid::ShowPopupMenu(
 
 void WebContentsViewAndroid::StartDragging(
     const DropData& drop_data,
-    WebKit::WebDragOperationsMask allowed_ops,
+    blink::WebDragOperationsMask allowed_ops,
     const gfx::ImageSkia& image,
     const gfx::Vector2d& image_offset,
     const DragEventSourceInfo& event_info) {
   NOTIMPLEMENTED();
 }
 
-void WebContentsViewAndroid::UpdateDragCursor(WebKit::WebDragOperation op) {
+void WebContentsViewAndroid::UpdateDragCursor(blink::WebDragOperation op) {
   NOTIMPLEMENTED();
 }
 

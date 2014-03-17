@@ -54,12 +54,11 @@ class SendCallbackHelper;
 //
 class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
  public:
-  struct MessageFilterTraits;
 
   // A class that receives messages on the thread where the IPC channel is
   // running.  It can choose to prevent the default action for an IPC message.
   class IPC_EXPORT MessageFilter
-      : public base::RefCountedThreadSafe<MessageFilter, MessageFilterTraits> {
+      : public base::RefCountedThreadSafe<MessageFilter> {
    public:
     MessageFilter();
 
@@ -89,33 +88,11 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
     // the message be handled in the default way.
     virtual bool OnMessageReceived(const Message& message);
 
-    // Called when the message filter is about to be deleted.  This gives
-    // derived classes the option of controlling which thread they're deleted
-    // on etc.
-    virtual void OnDestruct() const;
-
    protected:
     virtual ~MessageFilter();
 
    private:
-    friend class base::RefCountedThreadSafe<MessageFilter,
-                                            MessageFilterTraits>;
-  };
-
-  struct MessageFilterTraits {
-    static void Destruct(const MessageFilter* filter) {
-      filter->OnDestruct();
-    }
-  };
-
-
-  // Interface for a filter to be imposed on outgoing messages which can
-  // re-write the message.  Used mainly for testing.
-  class OutgoingMessageFilter {
-   public:
-    // Returns a re-written message, freeing the original, or simply the
-    // original unchanged if no rewrite indicated.
-    virtual Message *Rewrite(Message *message) = 0;
+    friend class base::RefCountedThreadSafe<MessageFilter>;
   };
 
   // Initializes a channel proxy.  The channel_handle and mode parameters are
@@ -165,10 +142,6 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
   // the IO thread.
   void AddFilter(MessageFilter* filter);
   void RemoveFilter(MessageFilter* filter);
-
-  void set_outgoing_message_filter(OutgoingMessageFilter* filter) {
-    outgoing_message_filter_ = filter;
-  }
 
   // Called to clear the pointer to the IPC task runner when it's going away.
   void ClearIPCTaskRunner();
@@ -270,10 +243,6 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
 
   Context* context() { return context_.get(); }
 
-  OutgoingMessageFilter* outgoing_message_filter() {
-    return outgoing_message_filter_;
-  }
-
  private:
   friend class SendCallbackHelper;
 
@@ -281,8 +250,6 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
   // can safely be destroyed while the background thread continues to do stuff
   // that involves this data.
   scoped_refptr<Context> context_;
-
-  OutgoingMessageFilter* outgoing_message_filter_;
 
   // Whether the channel has been initialized.
   bool did_init_;

@@ -34,8 +34,8 @@
 #include "V8History.h"
 #include "bindings/v8/SerializedScriptValue.h"
 #include "bindings/v8/V8HiddenPropertyName.h"
-#include "core/dom/PopStateEvent.h"
-#include "core/page/History.h"
+#include "core/events/PopStateEvent.h"
+#include "core/frame/History.h"
 
 namespace WebCore {
 
@@ -46,7 +46,7 @@ static v8::Handle<v8::Value> cacheState(v8::Handle<v8::Object> popStateEvent, v8
     return state;
 }
 
-void V8PopStateEvent::stateAttributeGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
+void V8PopStateEvent::stateAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     v8::Handle<v8::Value> result = info.Holder()->GetHiddenValue(V8HiddenPropertyName::state(info.GetIsolate()));
 

@@ -50,15 +50,12 @@ class CONTENT_EXPORT WebContentsViewAura
 
  private:
   class WindowObserver;
-#if defined(OS_WIN)
-  class ChildWindowObserver;
-#endif
 
   virtual ~WebContentsViewAura();
 
   void SizeChangedCommon(const gfx::Size& size);
 
-  void EndDrag(WebKit::WebDragOperationsMask ops);
+  void EndDrag(blink::WebDragOperationsMask ops);
 
   // Creates and sets up the overlay window that will be displayed during the
   // overscroll gesture.
@@ -121,7 +118,7 @@ class CONTENT_EXPORT WebContentsViewAura
       RenderWidgetHost* render_widget_host) OVERRIDE;
   virtual RenderWidgetHostView* CreateViewForPopupWidget(
       RenderWidgetHost* render_widget_host) OVERRIDE;
-  virtual void SetPageTitle(const string16& title) OVERRIDE;
+  virtual void SetPageTitle(const base::string16& title) OVERRIDE;
   virtual void RenderViewCreated(RenderViewHost* host) OVERRIDE;
   virtual void RenderViewSwappedIn(RenderViewHost* host) OVERRIDE;
   virtual void SetOverscrollControllerEnabled(bool enabled) OVERRIDE;
@@ -136,15 +133,16 @@ class CONTENT_EXPORT WebContentsViewAura
                              bool right_aligned,
                              bool allow_multiple_selection) OVERRIDE;
   virtual void StartDragging(const DropData& drop_data,
-                             WebKit::WebDragOperationsMask operations,
+                             blink::WebDragOperationsMask operations,
                              const gfx::ImageSkia& image,
                              const gfx::Vector2d& image_offset,
                              const DragEventSourceInfo& event_info) OVERRIDE;
-  virtual void UpdateDragCursor(WebKit::WebDragOperation operation) OVERRIDE;
+  virtual void UpdateDragCursor(blink::WebDragOperation operation) OVERRIDE;
   virtual void GotFocus() OVERRIDE;
   virtual void TakeFocus(bool reverse) OVERRIDE;
 
   // Overridden from OverscrollControllerDelegate:
+  virtual gfx::Rect GetVisibleBounds() const OVERRIDE;
   virtual void OnOverscrollUpdate(float delta_x, float delta_y) OVERRIDE;
   virtual void OnOverscrollComplete(OverscrollMode overscroll_mode) OVERRIDE;
   virtual void OnOverscrollModeChange(OverscrollMode old_mode,
@@ -192,16 +190,13 @@ class CONTENT_EXPORT WebContentsViewAura
   scoped_ptr<aura::Window> overscroll_window_;
 
   scoped_ptr<WindowObserver> window_observer_;
-#if defined(OS_WIN)
-  scoped_ptr<ChildWindowObserver> child_window_observer_;
-#endif
 
   // The WebContentsImpl whose contents we display.
   WebContentsImpl* web_contents_;
 
   scoped_ptr<WebContentsViewDelegate> delegate_;
 
-  WebKit::WebDragOperationsMask current_drag_op_;
+  blink::WebDragOperationsMask current_drag_op_;
 
   scoped_ptr<DropData> current_drop_data_;
 

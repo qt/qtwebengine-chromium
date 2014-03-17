@@ -31,21 +31,60 @@
 {
     'includes': [
         '../bindings/bindings.gypi',
+        '../build/features.gypi',
+        '../build/scripts/scripts.gypi',
         '../core/core.gypi',
-        '../core/features.gypi',
         '../modules/modules.gypi',
         '../web/web.gypi',
         '../wtf/wtf.gypi',
     ],
     'targets': [
         {
+            'target_name': 'webkit_unit_tests_resources',
+            'type': 'none',
+            'dependencies': [
+                '<(DEPTH)/net/net.gyp:net_resources',
+                '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
+                '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
+                '<(DEPTH)/webkit/webkit_resources.gyp:webkit_strings',
+            ],
+            'actions': [{
+                'action_name': 'repack_webkit_unit_tests_resources',
+                'variables': {
+                    'repack_path': '<(DEPTH)/tools/grit/grit/format/repack.py',
+                    'pak_inputs': [
+                        '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.pak',
+                        '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_100_percent.pak',
+                        '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.pak',
+                        '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_strings_en-US.pak',
+                        '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources_100_percent.pak',
+                ]},
+                'inputs': [
+                    '<(repack_path)',
+                    '<@(pak_inputs)',
+                ],
+                'outputs': [
+                    '<(PRODUCT_DIR)/webkit_unit_tests_resources.pak',
+                ],
+                'action': ['python', '<(repack_path)', '<@(_outputs)', '<@(pak_inputs)'],
+            }],
+            'conditions': [
+                ['OS=="mac"', {
+                    'all_dependent_settings': {
+                        'mac_bundle_resources': [
+                            '<(PRODUCT_DIR)/webkit_unit_tests_resources.pak',
+                        ],
+                    },
+                }],
+            ]
+        },
+        {
             'target_name': 'webkit_unit_tests',
             'type': 'executable',
             'variables': { 'enable_wexit_time_destructors': 1, },
-            'msvs_guid': '7CEFE800-8403-418A-AD6A-2D52C6FC3EAD',
             'dependencies': [
                 '../../public/blink.gyp:blink',
-                '../testing/testing.gyp:DumpRenderTree_resources',
+                '../wtf/wtf_tests.gyp:wtf_unittest_helpers',
                 '<(DEPTH)/base/base.gyp:base',
                 '<(DEPTH)/base/base.gyp:base_i18n',
                 '<(DEPTH)/base/base.gyp:test_support_base',
@@ -55,7 +94,8 @@
                 '<(DEPTH)/third_party/zlib/zlib.gyp:zlib',
                 '<(DEPTH)/url/url.gyp:url_lib',
                 '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
-                '<(DEPTH)/content/content.gyp:content_webkit_unit_test_support',
+                '<(DEPTH)/content/content_shell_and_tests.gyp:content_webkit_unit_test_support',
+                'webkit_unit_tests_resources',
             ],
             'sources': [
                 '../web/tests/RunAllTests.cpp',
@@ -68,15 +108,15 @@
             'conditions': [
                 ['component=="shared_library"', {
                     'defines': [
-                        'WEBKIT_DLL_UNITTEST',
+                        'BLINK_DLL_UNITTEST',
                     ],
                 }, {
                     'dependencies': [
                         '../core/core.gyp:webcore',
                     ],
                     'defines': [
-                        'WEBKIT_IMPLEMENTATION=1',
-                        'INSIDE_WEBKIT',
+                        'BLINK_IMPLEMENTATION=1',
+                        'INSIDE_BLINK',
                     ],
                     'sources': [
                         '<@(bindings_unittest_files)',
@@ -106,6 +146,13 @@
                             },
                         },
                     },
+                    'conditions': [
+                        ['win_use_allocator_shim==1', {
+                            'dependencies': [
+                                '<(DEPTH)/base/allocator/allocator.gyp:allocator',
+                            ],
+                        }],
+                    ],
                 }],
                 ['OS=="android" and gtest_target_type == "shared_library"', {
                     'type': 'shared_library',
@@ -151,14 +198,6 @@
                 },
                 'includes': [ '../../../../build/apk_test.gypi' ],
             }],
-        }],
-        ['clang==1', {
-            'target_defaults': {
-                'cflags': ['-Wunused-parameter'],
-                'xcode_settings': {
-                    'WARNING_CFLAGS': ['-Wunused-parameter'],
-                },
-            },
         }],
     ],
 }

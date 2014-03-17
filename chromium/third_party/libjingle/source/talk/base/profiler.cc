@@ -71,8 +71,7 @@ void ProfilerEvent::Start() {
   ++start_count_;
 }
 
-void ProfilerEvent::Stop() {
-  uint64 stop_time = TimeNanos();
+void ProfilerEvent::Stop(uint64 stop_time) {
   --start_count_;
   ASSERT(start_count_ >= 0);
   if (start_count_ == 0) {
@@ -94,6 +93,10 @@ void ProfilerEvent::Stop() {
   }
 }
 
+void ProfilerEvent::Stop() {
+  Stop(TimeNanos());
+}
+
 double ProfilerEvent::standard_deviation() const {
     if (event_count_ <= 1) return 0.0;
     return sqrt(sum_of_squared_differences_ / (event_count_ - 1.0));
@@ -105,11 +108,29 @@ Profiler* Profiler::Instance() {
 }
 
 void Profiler::StartEvent(const std::string& event_name) {
-  events_[event_name].Start();
+  lock_.LockShared();
+  EventMap::iterator it = events_.find(event_name);
+  bool needs_insert = (it == events_.end());
+  lock_.UnlockShared();
+
+  if (needs_insert) {
+    // Need an exclusive lock to modify the map.
+    ExclusiveScope scope(&lock_);
+    it = events_.insert(
+        EventMap::value_type(event_name, ProfilerEvent())).first;
+  }
+
+  it->second.Start();
 }
 
 void Profiler::StopEvent(const std::string& event_name) {
-  events_[event_name].Stop();
+  // Get the time ASAP, then wait for the lock.
+  uint64 stop_time = TimeNanos();
+  SharedScope scope(&lock_);
+  EventMap::iterator it = events_.find(event_name);
+  if (it != events_.end()) {
+    it->second.Stop(stop_time);
+  }
 }
 
 void Profiler::ReportToLog(const char* file, int line,
@@ -118,6 +139,9 @@ void Profiler::ReportToLog(const char* file, int line,
   if (!LogMessage::Loggable(severity_to_use)) {
     return;
   }
+
+  SharedScope scope(&lock_);
+
   { // Output first line.
     LogMessage msg(file, line, severity_to_use);
     msg.stream() << "=== Profile report ";
@@ -126,16 +150,11 @@ void Profiler::ReportToLog(const char* file, int line,
     }
     msg.stream() << "===";
   }
-  typedef std::map<std::string, ProfilerEvent>::const_iterator iterator;
-  for (iterator it = events_.begin(); it != events_.end(); ++it) {
+  for (EventMap::const_iterator it = events_.begin();
+       it != events_.end(); ++it) {
     if (event_prefix.empty() || it->first.find(event_prefix) == 0) {
       LogMessage(file, line, severity_to_use).stream()
-          << it->first << " count=" << it->second.event_count()
-          << " total=" << FormattedTime(it->second.total_time())
-          << " mean=" << FormattedTime(it->second.mean())
-          << " min=" << FormattedTime(it->second.minimum())
-          << " max=" << FormattedTime(it->second.maximum())
-          << " sd=" << it->second.standard_deviation();
+          << it->first << " " << it->second;
     }
   }
   LogMessage(file, line, severity_to_use).stream()
@@ -148,15 +167,17 @@ void Profiler::ReportAllToLog(const char* file, int line,
 }
 
 const ProfilerEvent* Profiler::GetEvent(const std::string& event_name) const {
-  std::map<std::string, ProfilerEvent>::const_iterator it =
+  SharedScope scope(&lock_);
+  EventMap::const_iterator it =
       events_.find(event_name);
   return (it == events_.end()) ? NULL : &it->second;
 }
 
 bool Profiler::Clear() {
+  ExclusiveScope scope(&lock_);
   bool result = true;
   // Clear all events that aren't started.
-  std::map<std::string, ProfilerEvent>::iterator it = events_.begin();
+  EventMap::iterator it = events_.begin();
   while (it != events_.end()) {
     if (it->second.is_started()) {
       ++it;  // Can't clear started events.
@@ -166,6 +187,17 @@ bool Profiler::Clear() {
     }
   }
   return result;
+}
+
+std::ostream& operator<<(std::ostream& stream,
+                         const ProfilerEvent& profiler_event) {
+  stream << "count=" << profiler_event.event_count()
+         << " total=" << FormattedTime(profiler_event.total_time())
+         << " mean=" << FormattedTime(profiler_event.mean())
+         << " min=" << FormattedTime(profiler_event.minimum())
+         << " max=" << FormattedTime(profiler_event.maximum())
+         << " sd=" << profiler_event.standard_deviation();
+  return stream;
 }
 
 }  // namespace talk_base

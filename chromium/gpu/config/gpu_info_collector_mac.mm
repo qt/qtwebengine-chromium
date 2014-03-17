@@ -190,7 +190,7 @@ bool CollectBasicGraphicsInfo(GPUInfo* gpu_info) {
   int32 model_major = 0, model_minor = 0;
   base::mac::ParseModelIdentifier(base::mac::GetModelIdentifier(),
                                   &model_name, &model_major, &model_minor);
-  ReplaceChars(model_name, " ", "_", &gpu_info->machine_model);
+  base::ReplaceChars(model_name, " ", "_", &gpu_info->machine_model);
   gpu_info->machine_model += " " + base::IntToString(model_major) +
                              "." + base::IntToString(model_minor);
 
@@ -215,6 +215,12 @@ bool CollectDriverInfoGL(GPUInfo* gpu_info) {
 void MergeGPUInfo(GPUInfo* basic_gpu_info,
                   const GPUInfo& context_gpu_info) {
   MergeGPUInfoGL(basic_gpu_info, context_gpu_info);
+}
+
+bool DetermineActiveGPU(GPUInfo* gpu_info) {
+  DCHECK(gpu_info);
+  // On mac, during info collection, we've already detected the active gpu.
+  return true;
 }
 
 }  // namespace gpu

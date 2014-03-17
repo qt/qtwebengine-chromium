@@ -37,11 +37,11 @@
 #include "bindings/v8/V8GCController.h"
 #include "bindings/v8/V8ScriptRunner.h"
 #include "core/dom/Document.h"
-#include "core/dom/ScriptExecutionContext.h"
-#include "core/page/Frame.h"
-#include "core/platform/chromium/TraceEvent.h"
+#include "core/dom/ExecutionContext.h"
+#include "core/frame/Frame.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerThread.h"
+#include "platform/TraceEvent.h"
 
 namespace WebCore {
 
@@ -51,9 +51,9 @@ ScheduledAction::ScheduledAction(v8::Handle<v8::Context> context, v8::Handle<v8:
     , m_code(String(), KURL(), TextPosition::belowRangePosition())
     , m_isolate(isolate)
 {
-    m_args.reserveCapacity(argc);
+    m_info.reserveCapacity(argc);
     for (int i = 0; i < argc; ++i)
-        m_args.append(UnsafePersistent<v8::Value>(m_isolate, argv[i]));
+        m_info.append(UnsafePersistent<v8::Value>(m_isolate, argv[i]));
 }
 
 ScheduledAction::ScheduledAction(v8::Handle<v8::Context> context, const String& code, const KURL& url, v8::Isolate* isolate)
@@ -65,17 +65,17 @@ ScheduledAction::ScheduledAction(v8::Handle<v8::Context> context, const String& 
 
 ScheduledAction::~ScheduledAction()
 {
-    for (size_t i = 0; i < m_args.size(); ++i)
-        m_args[i].dispose();
+    for (size_t i = 0; i < m_info.size(); ++i)
+        m_info[i].dispose();
 }
 
-void ScheduledAction::execute(ScriptExecutionContext* context)
+void ScheduledAction::execute(ExecutionContext* context)
 {
     if (context->isDocument()) {
         Frame* frame = toDocument(context)->frame();
         if (!frame)
             return;
-        if (!frame->script()->canExecuteScripts(AboutToExecuteScript))
+        if (!frame->script().canExecuteScripts(AboutToExecuteScript))
             return;
         execute(frame);
     } else {
@@ -90,16 +90,17 @@ void ScheduledAction::execute(Frame* frame)
     v8::Handle<v8::Context> context = m_context.newLocal(m_isolate);
     if (context.IsEmpty())
         return;
-    v8::Context::Scope scope(context);
 
     TRACE_EVENT0("v8", "ScheduledAction::execute");
 
     if (!m_function.isEmpty()) {
-        Vector<v8::Handle<v8::Value> > args;
-        createLocalHandlesForArgs(&args);
-        frame->script()->callFunction(m_function.newLocal(m_isolate), context->Global(), args.size(), args.data());
-    } else
-        frame->script()->compileAndRunScript(m_code);
+        v8::Context::Scope scope(context);
+        Vector<v8::Handle<v8::Value> > info;
+        createLocalHandlesForArgs(&info);
+        frame->script().callFunction(m_function.newLocal(m_isolate), context->Global(), info.size(), info.data());
+    } else {
+        frame->script().executeScriptAndReturnValue(context, ScriptSourceCode(m_code));
+    }
 
     // The frame might be invalid at this point because JavaScript could have released it.
 }
@@ -112,18 +113,18 @@ void ScheduledAction::execute(WorkerGlobalScope* worker)
     ASSERT(!context.IsEmpty());
     v8::Context::Scope scope(context);
     if (!m_function.isEmpty()) {
-        Vector<v8::Handle<v8::Value> > args;
-        createLocalHandlesForArgs(&args);
-        V8ScriptRunner::callFunction(m_function.newLocal(m_isolate), worker, context->Global(), args.size(), args.data(), m_isolate);
+        Vector<v8::Handle<v8::Value> > info;
+        createLocalHandlesForArgs(&info);
+        V8ScriptRunner::callFunction(m_function.newLocal(m_isolate), worker, context->Global(), info.size(), info.data(), m_isolate);
     } else
         worker->script()->evaluate(m_code);
 }
 
 void ScheduledAction::createLocalHandlesForArgs(Vector<v8::Handle<v8::Value> >* handles)
 {
-    handles->reserveCapacity(m_args.size());
-    for (size_t i = 0; i < m_args.size(); ++i)
-        handles->append(m_args[i].newLocal(m_isolate));
+    handles->reserveCapacity(m_info.size());
+    for (size_t i = 0; i < m_info.size(); ++i)
+        handles->append(m_info[i].newLocal(m_isolate));
 }
 
 } // namespace WebCore

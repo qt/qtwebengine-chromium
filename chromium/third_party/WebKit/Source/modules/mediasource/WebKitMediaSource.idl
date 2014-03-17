@@ -29,11 +29,11 @@
  */
 
 [
-    NoInterfaceObject,
-    EnabledAtRuntime=WebKitMediaSource,
     ActiveDOMObject,
     Constructor,
-    ConstructorCallWith=ScriptExecutionContext
+    ConstructorCallWith=ExecutionContext,
+    NoInterfaceObject,
+    RuntimeEnabled=WebKitMediaSource,
 ] interface WebKitMediaSource : EventTarget {
     // All the source buffers created by this object.
     readonly attribute WebKitSourceBufferList sourceBuffers;
@@ -41,7 +41,7 @@
     // Subset of sourceBuffers that provide data for the selected/enabled tracks.
     readonly attribute WebKitSourceBufferList activeSourceBuffers;
 
-    [SetterRaisesException] attribute double duration;
+    [RaisesException=Setter] attribute double duration;
 
     [RaisesException] WebKitSourceBuffer addSourceBuffer(DOMString type);
     [RaisesException] void removeSourceBuffer(WebKitSourceBuffer buffer);
@@ -52,4 +52,3 @@
 
     static boolean isTypeSupported (DOMString type);
 };
-

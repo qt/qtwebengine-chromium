@@ -8,7 +8,6 @@ GYP_FILE = "trace_viewer.gyp"
 FILE_GROUPS = ["tracing_html_files",
     "tracing_css_files",
     "tracing_js_files",
-    "tracing_template_files",
     "tracing_img_files"]
 
 def GypCheck():
@@ -26,6 +25,8 @@ def GypCheck():
     for name in filenames:
       if not name.endswith(("_test.js", "_test_data.js", "tests.html")):
         known_files.append(os.path.join(dirpath, name))
+    if '.svn' in dirnames:
+      dirnames.remove('.svn')
 
   u = set(gyp_files).union(set(known_files))
   i = set(gyp_files).intersection(set(known_files))

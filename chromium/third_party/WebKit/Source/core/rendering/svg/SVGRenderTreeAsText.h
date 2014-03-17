@@ -26,7 +26,7 @@
 #ifndef SVGRenderTreeAsText_h
 #define SVGRenderTreeAsText_h
 
-#include "core/platform/text/TextStream.h"
+#include "platform/text/TextStream.h"
 
 namespace WebCore {
 
@@ -59,7 +59,6 @@ void writeResources(TextStream&, const RenderObject&, int indent);
 // helper operators defined used in various classes to dump the render tree.
 TextStream& operator<<(TextStream&, const AffineTransform&);
 TextStream& operator<<(TextStream&, const Color&);
-TextStream& operator<<(TextStream&, const FloatRect&);
 
 // helper operators specific to dumping the render tree. these are used in various classes to dump the render tree
 // these could be defined in separate namespace to avoid matching these generic signatures unintentionally.

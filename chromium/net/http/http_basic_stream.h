@@ -12,13 +12,13 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "net/http/http_basic_state.h"
 #include "net/http/http_stream.h"
 
 namespace net {
 
 class BoundNetLog;
 class ClientSocketHandle;
-class GrowableIOBuffer;
 class HttpResponseInfo;
 struct HttpRequestInfo;
 class HttpRequestHeaders;
@@ -27,13 +27,9 @@ class IOBuffer;
 
 class HttpBasicStream : public HttpStream {
  public:
-  // Constructs a new HttpBasicStream.  If |parser| is NULL, then
-  // InitializeStream should be called to initialize it correctly.  If
-  // |parser| is non-null, then InitializeStream should not be called,
-  // as the stream is already initialized.
-  HttpBasicStream(ClientSocketHandle* connection,
-                  HttpStreamParser* parser,
-                  bool using_proxy);
+  // Constructs a new HttpBasicStream. InitializeStream must be called to
+  // initialize it correctly.
+  HttpBasicStream(ClientSocketHandle* connection, bool using_proxy);
   virtual ~HttpBasicStream();
 
   // HttpStream methods:
@@ -52,7 +48,8 @@ class HttpBasicStream : public HttpStream {
 
   virtual const HttpResponseInfo* GetResponseInfo() const OVERRIDE;
 
-  virtual int ReadResponseBody(IOBuffer* buf, int buf_len,
+  virtual int ReadResponseBody(IOBuffer* buf,
+                               int buf_len,
                                const CompletionCallback& callback) OVERRIDE;
 
   virtual void Close(bool not_reusable) OVERRIDE;
@@ -69,6 +66,8 @@ class HttpBasicStream : public HttpStream {
 
   virtual bool IsConnectionReusable() const OVERRIDE;
 
+  virtual int64 GetTotalReceivedBytes() const OVERRIDE;
+
   virtual bool GetLoadTimingInfo(
       LoadTimingInfo* load_timing_info) const OVERRIDE;
 
@@ -84,17 +83,9 @@ class HttpBasicStream : public HttpStream {
   virtual void SetPriority(RequestPriority priority) OVERRIDE;
 
  private:
-  scoped_refptr<GrowableIOBuffer> read_buf_;
+  HttpStreamParser* parser() const { return state_.parser(); }
 
-  scoped_ptr<HttpStreamParser> parser_;
-
-  scoped_ptr<ClientSocketHandle> connection_;
-
-  bool using_proxy_;
-
-  std::string request_line_;
-
-  const HttpRequestInfo* request_info_;
+  HttpBasicState state_;
 
   DISALLOW_COPY_AND_ASSIGN(HttpBasicStream);
 };

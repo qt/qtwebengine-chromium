@@ -27,8 +27,7 @@
 #include "core/css/MediaQuery.h"
 #include "core/css/MediaQueryExp.h"
 #include "core/dom/Document.h"
-#include "core/dom/ExceptionCode.h"
-#include "core/page/DOMWindow.h"
+#include "core/frame/DOMWindow.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
@@ -74,7 +73,7 @@ PassRefPtr<MediaQuerySet> MediaQuerySet::create(const String& mediaString)
     if (mediaString.isEmpty())
         return MediaQuerySet::create();
 
-    CSSParser parser(CSSStrictMode);
+    CSSParser parser(HTMLStandardMode);
     return parser.parseMediaQueryList(mediaString);
 }
 
@@ -196,26 +195,26 @@ String MediaList::item(unsigned index) const
     return String();
 }
 
-void MediaList::deleteMedium(const String& medium, ExceptionState& es)
+void MediaList::deleteMedium(const String& medium, ExceptionState& exceptionState)
 {
     CSSStyleSheet::RuleMutationScope mutationScope(m_parentRule);
 
     bool success = m_mediaQueries->remove(medium);
     if (!success) {
-        es.throwDOMException(NotFoundError);
+        exceptionState.throwUninformativeAndGenericDOMException(NotFoundError);
         return;
     }
     if (m_parentStyleSheet)
         m_parentStyleSheet->didMutate();
 }
 
-void MediaList::appendMedium(const String& medium, ExceptionState& es)
+void MediaList::appendMedium(const String& medium, ExceptionState& exceptionState)
 {
     CSSStyleSheet::RuleMutationScope mutationScope(m_parentRule);
 
     bool success = m_mediaQueries->add(medium);
     if (!success) {
-        es.throwDOMException(InvalidCharacterError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidCharacterError);
         return;
     }
 

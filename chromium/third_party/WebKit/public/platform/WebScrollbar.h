@@ -29,7 +29,7 @@
 #include "WebRect.h"
 #include "WebSize.h"
 #include "WebVector.h"
-#if WEBKIT_IMPLEMENTATION
+#if INSIDE_BLINK
 #include "wtf/PassOwnPtr.h"
 #endif
 
@@ -37,10 +37,10 @@ namespace WebCore {
 class Scrollbar;
 }
 
-namespace WebKit {
+namespace blink {
 
 // A const accessor interface for a WebKit scrollbar
-class WebScrollbar {
+class BLINK_PLATFORM_EXPORT WebScrollbar {
 public:
     enum Orientation {
         Horizontal,
@@ -111,6 +111,6 @@ public:
     virtual void setIsAlphaLocked(bool) { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

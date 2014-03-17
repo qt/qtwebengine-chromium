@@ -8,7 +8,7 @@
 #include "content/browser/device_orientation/data_fetcher_shared_memory_base.h"
 
 #if !defined(OS_ANDROID)
-#include "content/common/device_motion_hardware_buffer.h"
+#include "content/common/device_orientation/device_motion_hardware_buffer.h"
 #include "content/common/device_orientation/device_orientation_hardware_buffer.h"
 #endif
 
@@ -38,7 +38,7 @@ class CONTENT_EXPORT DataFetcherSharedMemory
 #endif
 #if defined(OS_MACOSX)
   virtual void Fetch(unsigned consumer_bitmask) OVERRIDE;
-  virtual bool IsPolling() const OVERRIDE;
+  virtual FetcherType GetType() const OVERRIDE;
 
   scoped_ptr<SuddenMotionSensor> sudden_motion_sensor_;
 #elif defined(OS_WIN)
@@ -46,8 +46,7 @@ class CONTENT_EXPORT DataFetcherSharedMemory
   class SensorEventSinkMotion;
   class SensorEventSinkOrientation;
 
-  virtual bool IsPolling() const OVERRIDE;
-  virtual base::TimeDelta GetPollDelay() const OVERRIDE;
+  virtual FetcherType GetType() const OVERRIDE;
 
   bool RegisterForSensor(REFSENSOR_TYPE_ID sensor_type, ISensor** sensor,
       scoped_refptr<SensorEventSink> event_sink);

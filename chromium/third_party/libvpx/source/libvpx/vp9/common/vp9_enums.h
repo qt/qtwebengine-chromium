@@ -50,7 +50,7 @@ typedef enum PARTITION_TYPE {
 } PARTITION_TYPE;
 
 #define PARTITION_PLOFFSET   4  // number of probability models per block size
-#define NUM_PARTITION_CONTEXTS (4 * PARTITION_PLOFFSET)
+#define PARTITION_CONTEXTS (4 * PARTITION_PLOFFSET)
 
 typedef enum {
   TX_4X4 = 0,                      // 4x4 dct transform
@@ -75,5 +75,16 @@ typedef enum {
   DCT_ADST  = 2,                      // DCT  in vertical, ADST in horizontal
   ADST_ADST = 3                       // ADST in both directions
 } TX_TYPE;
+
+typedef enum {
+  UNKNOWN    = 0,
+  BT_601     = 1,  // YUV
+  BT_709     = 2,  // YUV
+  SMPTE_170  = 3,  // YUV
+  SMPTE_240  = 4,  // YUV
+  RESERVED_1 = 5,
+  RESERVED_2 = 6,
+  SRGB       = 7   // RGB
+} COLOR_SPACE;
 
 #endif  // VP9_COMMON_VP9_ENUMS_H_

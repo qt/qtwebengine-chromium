@@ -319,15 +319,22 @@ int avio_put_str16le(AVIOContext *s, const char *str)
 {
     const uint8_t *q = str;
     int ret = 0;
+    int err = 0;
 
     while (*q) {
         uint32_t ch;
         uint16_t tmp;
 
-        GET_UTF8(ch, *q++, break;)
+        GET_UTF8(ch, *q++, goto invalid;)
         PUT_UTF16(ch, tmp, avio_wl16(s, tmp); ret += 2;)
+        continue;
+invalid:
+        av_log(s, AV_LOG_ERROR, "Invaid UTF8 sequence in avio_put_str16le\n");
+        err = AVERROR(EINVAL);
     }
     avio_wl16(s, 0);
+    if (err)
+        return err;
     ret += 2;
     return ret;
 }
@@ -949,9 +956,12 @@ static int dyn_buf_write(void *opaque, uint8_t *buf, int buf_size)
     }
 
     if (new_allocated_size > d->allocated_size) {
-        d->buffer = av_realloc_f(d->buffer, 1, new_allocated_size);
-        if(d->buffer == NULL)
-             return AVERROR(ENOMEM);
+        int err;
+        if ((err = av_reallocp(&d->buffer, new_allocated_size)) < 0) {
+            d->allocated_size = 0;
+            d->size = 0;
+            return err;
+        }
         d->allocated_size = new_allocated_size;
     }
     memcpy(d->buffer + d->pos, buf, buf_size);
@@ -1031,6 +1041,11 @@ int avio_close_dyn_buf(AVIOContext *s, uint8_t **pbuffer)
     static const char padbuf[FF_INPUT_BUFFER_PADDING_SIZE] = {0};
     int padding = 0;
 
+    if (!s) {
+        *pbuffer = NULL;
+        return 0;
+    }
+
     /* don't attempt to pad fixed-size packet buffers */
     if (!s->max_packet_size) {
         avio_write(s, padbuf, sizeof(padbuf));
@@ -1044,4 +1059,37 @@ int avio_close_dyn_buf(AVIOContext *s, uint8_t **pbuffer)
     av_free(d);
     av_free(s);
     return size - padding;
+}
+
+static int null_buf_write(void *opaque, uint8_t *buf, int buf_size)
+{
+    DynBuffer *d = opaque;
+
+    d->pos += buf_size;
+    if (d->pos > d->size)
+        d->size = d->pos;
+    return buf_size;
+}
+
+int ffio_open_null_buf(AVIOContext **s)
+{
+    int ret = url_open_dyn_buf_internal(s, 0);
+    if (ret >= 0) {
+        AVIOContext *pb = *s;
+        pb->write_packet = null_buf_write;
+    }
+    return ret;
+}
+
+int ffio_close_null_buf(AVIOContext *s)
+{
+    DynBuffer *d = s->opaque;
+    int size;
+
+    avio_flush(s);
+
+    size = d->size;
+    av_free(d);
+    av_free(s);
+    return size;
 }

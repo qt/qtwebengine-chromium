@@ -41,7 +41,7 @@ template <class T> class Handle;
 
 namespace WTF { class ArrayBuffer; }
 
-namespace WebKit {
+namespace blink {
 
 class WebArrayBuffer {
 public:
@@ -55,19 +55,19 @@ public:
         return *this;
     }
 
-    WEBKIT_EXPORT static WebArrayBuffer create(unsigned numElements, unsigned elementByteSize);
+    BLINK_EXPORT static WebArrayBuffer create(unsigned numElements, unsigned elementByteSize);
 
-    WEBKIT_EXPORT void reset();
-    WEBKIT_EXPORT void assign(const WebArrayBuffer&);
+    BLINK_EXPORT void reset();
+    BLINK_EXPORT void assign(const WebArrayBuffer&);
 
     bool isNull() const { return m_private.isNull(); }
-    WEBKIT_EXPORT void* data() const;
-    WEBKIT_EXPORT unsigned byteLength() const;
+    BLINK_EXPORT void* data() const;
+    BLINK_EXPORT unsigned byteLength() const;
 
-    WEBKIT_EXPORT v8::Handle<v8::Value> toV8Value();
-    WEBKIT_EXPORT static WebArrayBuffer* createFromV8Value(v8::Handle<v8::Value>);
+    BLINK_EXPORT v8::Handle<v8::Value> toV8Value();
+    BLINK_EXPORT static WebArrayBuffer* createFromV8Value(v8::Handle<v8::Value>);
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
     WebArrayBuffer(const WTF::PassRefPtr<WTF::ArrayBuffer>&);
     WebArrayBuffer& operator=(const PassRefPtr<WTF::ArrayBuffer>&);
     operator WTF::PassRefPtr<WTF::ArrayBuffer>() const;
@@ -77,6 +77,6 @@ protected:
     WebPrivatePtr<WTF::ArrayBuffer> m_private;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebArrayBuffer_h

@@ -6,6 +6,7 @@
 #include "content/child/child_thread.h"
 #include "content/child/socket_stream_dispatcher.h"
 #include "content/child/webkitplatformsupport_impl.h"
+#include "content/child/websocket_bridge.h"
 #include "content/public/common/content_client.h"
 
 namespace content {
@@ -16,7 +17,7 @@ WebKitPlatformSupportImpl::WebKitPlatformSupportImpl() {
 WebKitPlatformSupportImpl::~WebKitPlatformSupportImpl() {
 }
 
-string16 WebKitPlatformSupportImpl::GetLocalizedString(int message_id) {
+base::string16 WebKitPlatformSupportImpl::GetLocalizedString(int message_id) {
   return GetContentClient()->GetLocalizedString(message_id);
 }
 
@@ -33,12 +34,16 @@ WebKitPlatformSupportImpl::CreateResourceLoader(
 }
 
 webkit_glue::WebSocketStreamHandleBridge*
-WebKitPlatformSupportImpl::CreateWebSocketBridge(
-    WebKit::WebSocketStreamHandle* handle,
+WebKitPlatformSupportImpl::CreateWebSocketStreamBridge(
+    blink::WebSocketStreamHandle* handle,
     webkit_glue::WebSocketStreamHandleDelegate* delegate) {
   SocketStreamDispatcher* dispatcher =
       ChildThread::current()->socket_stream_dispatcher();
   return dispatcher->CreateBridge(handle, delegate);
+}
+
+blink::WebSocketHandle* WebKitPlatformSupportImpl::createWebSocketHandle() {
+  return new WebSocketBridge;
 }
 
 }  // namespace content

@@ -10,8 +10,15 @@
 namespace keyboard {
 namespace switches {
 
+// Enables the swipe selection feature on the virtual keyboard.
+KEYBOARD_EXPORT extern const char kEnableSwipeSelection[];
+
 // Enables the virtual keyboard.
 KEYBOARD_EXPORT extern const char kEnableVirtualKeyboard[];
+
+// Enables the keyboard usability experiment. This is an experimental mode for
+// testing the usability of various experimental keyboard layouts.
+KEYBOARD_EXPORT extern const char kKeyboardUsabilityExperiment[];
 
 }  // namespace switches
 }  // namespace keyboard

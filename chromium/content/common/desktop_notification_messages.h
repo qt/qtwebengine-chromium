@@ -12,8 +12,6 @@
 
 IPC_STRUCT_TRAITS_BEGIN(content::ShowDesktopNotificationHostMsgParams)
   IPC_STRUCT_TRAITS_MEMBER(origin)
-  IPC_STRUCT_TRAITS_MEMBER(is_html)
-  IPC_STRUCT_TRAITS_MEMBER(contents_url)
   IPC_STRUCT_TRAITS_MEMBER(icon_url)
   IPC_STRUCT_TRAITS_MEMBER(title)
   IPC_STRUCT_TRAITS_MEMBER(body)
@@ -33,7 +31,7 @@ IPC_MESSAGE_ROUTED1(DesktopNotificationMsg_PostDisplay,
 // trying to display a notification.
 IPC_MESSAGE_ROUTED2(DesktopNotificationMsg_PostError,
                     int /* notification_id */,
-                    string16 /* message */)
+                    base::string16 /* message */)
 
 // Informs the renderer that the one if its notifications has closed.
 IPC_MESSAGE_ROUTED2(DesktopNotificationMsg_PostClose,

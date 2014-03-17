@@ -51,18 +51,15 @@ protected:
 
 private:
     explicit AnimatableVisibility(EVisibility visibility)
-        : AnimatableValue(TypeVisibility)
-        , m_visibility(visibility)
+        : m_visibility(visibility)
     {
     }
+    virtual AnimatableType type() const OVERRIDE { return TypeVisibility; }
+    virtual bool equalTo(const AnimatableValue*) const OVERRIDE;
     const EVisibility m_visibility;
 };
 
-inline const AnimatableVisibility* toAnimatableVisibility(const AnimatableValue* value)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(value && value->isVisibility());
-    return static_cast<const AnimatableVisibility*>(value);
-}
+DEFINE_ANIMATABLE_VALUE_TYPE_CASTS(AnimatableVisibility, isVisibility());
 
 } // namespace WebCore
 

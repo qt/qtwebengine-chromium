@@ -47,25 +47,29 @@
 #include "TestCommon.h"
 #include "TestInterfaces.h"
 #include "public/platform/WebDragData.h"
-#include "public/platform/WebPoint.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebVector.h"
 #include "public/testing/WebTestDelegate.h"
 #include "public/testing/WebTestProxy.h"
 #include "public/web/WebContextMenuData.h"
-#include "public/web/WebDragOperation.h"
 #include "public/web/WebTouchPoint.h"
 #include "public/web/WebView.h"
 #include <deque>
 
 #ifdef WIN32
 #include "public/web/win/WebInputEventFactory.h"
+#elif __APPLE__
+#include "public/web/mac/WebInputEventFactory.h"
+#elif defined(ANDROID)
+#include "public/web/android/WebInputEventFactory.h"
+#elif defined(TOOLKIT_GTK)
+#include "public/web/gtk/WebInputEventFactory.h"
 #endif
 
 // FIXME: layout before each event?
 
 using namespace std;
-using namespace WebKit;
+using namespace blink;
 
 namespace WebTestRunner {
 
@@ -150,10 +154,8 @@ void initMouseEvent(WebInputEvent::Type t, WebMouseEvent::Button b, const WebPoi
     e->clickCount = clickCount;
 }
 
-// Returns true if the specified key is the system key.
-bool applyKeyModifier(const string& modifierName, WebInputEvent* event)
+void applyKeyModifier(const string& modifierName, WebInputEvent* event)
 {
-    bool isSystemKey = false;
     const char* characters = modifierName.c_str();
     if (!strcmp(characters, "ctrlKey")
 #ifndef __APPLE__
@@ -165,39 +167,27 @@ bool applyKeyModifier(const string& modifierName, WebInputEvent* event)
         event->modifiers |= WebInputEvent::ShiftKey;
     else if (!strcmp(characters, "altKey")) {
         event->modifiers |= WebInputEvent::AltKey;
-#ifndef __APPLE__
-        // On Windows all keys with Alt modifier will be marked as system key.
-        // We keep the same behavior on Linux and everywhere non-Mac, see:
-        // WebKit/chromium/src/gtk/WebInputEventFactory.cpp
-        // If we want to change this behavior on Linux, this piece of code must be
-        // kept in sync with the related code in above file.
-        isSystemKey = true;
-#endif
 #ifdef __APPLE__
     } else if (!strcmp(characters, "metaKey") || !strcmp(characters, "addSelectionKey")) {
         event->modifiers |= WebInputEvent::MetaKey;
-        // On Mac only command key presses are marked as system key.
-        // See the related code in: WebKit/chromium/src/mac/WebInputEventFactory.cpp
-        // It must be kept in sync with the related code in above file.
-        isSystemKey = true;
 #else
     } else if (!strcmp(characters, "metaKey")) {
         event->modifiers |= WebInputEvent::MetaKey;
 #endif
+    } else if (!strcmp(characters, "autoRepeat")) {
+        event->modifiers |= WebInputEvent::IsAutoRepeat;
     }
-    return isSystemKey;
 }
 
-bool applyKeyModifiers(const CppVariant* argument, WebInputEvent* event)
+void applyKeyModifiers(const CppVariant* argument, WebInputEvent* event)
 {
-    bool isSystemKey = false;
     if (argument->isObject()) {
         vector<string> modifiers = argument->toStringVector();
         for (vector<string>::const_iterator i = modifiers.begin(); i != modifiers.end(); ++i)
-            isSystemKey |= applyKeyModifier(*i, event);
-    } else if (argument->isString())
-        isSystemKey = applyKeyModifier(argument->toString(), event);
-    return isSystemKey;
+            applyKeyModifier(*i, event);
+    } else if (argument->isString()) {
+        applyKeyModifier(argument->toString(), event);
+    }
 }
 
 // Get the edit command corresponding to a keyboard event.
@@ -253,8 +243,8 @@ enum KeyLocationCode {
 }
 
 EventSender::EventSender(TestInterfaces* interfaces)
-    : m_delegate(0)
-    , m_testInterfaces(interfaces)
+    : m_testInterfaces(interfaces)
+    , m_delegate(0)
 {
     // Initialize the map that associates methods of this class with the names
     // they will use when called by JavaScript. The actual binding of those
@@ -302,6 +292,7 @@ EventSender::EventSender(TestInterfaces* interfaces)
     bindMethod("gestureScrollUpdateWithoutPropagation", &EventSender::gestureScrollUpdateWithoutPropagation);
     bindMethod("gestureTap", &EventSender::gestureTap);
     bindMethod("gestureTapDown", &EventSender::gestureTapDown);
+    bindMethod("gestureShowPress", &EventSender::gestureShowPress);
     bindMethod("gestureTapCancel", &EventSender::gestureTapCancel);
     bindMethod("gestureLongPress", &EventSender::gestureLongPress);
     bindMethod("gestureLongTap", &EventSender::gestureLongTap);
@@ -333,16 +324,18 @@ EventSender::~EventSender()
 
 void EventSender::setContextMenuData(const WebContextMenuData& contextMenuData)
 {
-    m_lastContextMenuData = auto_ptr<WebContextMenuData>(new WebContextMenuData(contextMenuData));
+    m_lastContextMenuData = WebScopedPtr<WebContextMenuData>(new WebContextMenuData(contextMenuData));
 }
 
 void EventSender::reset()
 {
     // The test should have finished a drag and the mouse button state.
-    WEBKIT_ASSERT(currentDragData.isNull());
+    BLINK_ASSERT(currentDragData.isNull());
     currentDragData.reset();
-    currentDragEffect = WebKit::WebDragOperationNone;
-    currentDragEffectsAllowed = WebKit::WebDragOperationNone;
+    currentDragEffect = blink::WebDragOperationNone;
+    currentDragEffectsAllowed = blink::WebDragOperationNone;
+    if (webview() && pressedButton != WebMouseEvent::ButtonNone)
+        webview()->mouseCaptureLost();
     pressedButton = WebMouseEvent::ButtonNone;
     dragMode.set(true);
     forceLayoutOnEvents.set(true);
@@ -366,6 +359,7 @@ void EventSender::reset()
     touchPoints.clear();
     m_taskList.revokeAll();
     m_currentGestureLocation = WebPoint(0, 0);
+    mouseEventQueue.clear();
 }
 
 void EventSender::doDragDrop(const WebDragData& dragData, WebDragOperationsMask mask)
@@ -437,7 +431,7 @@ void EventSender::mouseDown(const CppArgumentList& arguments, CppVariant* result
         webview()->layout();
 
     int buttonNumber = getButtonNumberFromSingleArg(arguments);
-    WEBKIT_ASSERT(buttonNumber != -1);
+    BLINK_ASSERT(buttonNumber != -1);
 
     WebMouseEvent::Button buttonType = getButtonTypeFromButtonNumber(buttonNumber);
 
@@ -460,7 +454,7 @@ void EventSender::mouseUp(const CppArgumentList& arguments, CppVariant* result)
         webview()->layout();
 
     int buttonNumber = getButtonNumberFromSingleArg(arguments);
-    WEBKIT_ASSERT(buttonNumber != -1);
+    BLINK_ASSERT(buttonNumber != -1);
 
     WebMouseEvent::Button buttonType = getButtonTypeFromButtonNumber(buttonNumber);
 
@@ -496,7 +490,7 @@ void EventSender::doMouseUp(const WebMouseEvent& e)
     finishDragAndDrop(e, webview()->dragTargetDragOver(clientPoint, screenPoint, currentDragEffectsAllowed, 0));
 }
 
-void EventSender::finishDragAndDrop(const WebMouseEvent& e, WebKit::WebDragOperation dragEffect)
+void EventSender::finishDragAndDrop(const WebMouseEvent& e, blink::WebDragOperation dragEffect)
 {
     WebPoint clientPoint(e.x, e.y);
     WebPoint screenPoint(e.globalX, e.globalY);
@@ -623,7 +617,7 @@ void EventSender::keyDown(const CppArgumentList& arguments, CppVariant* result)
         }
         if (!code) {
             WebString webCodeStr = WebString::fromUTF8(codeStr.data(), codeStr.size());
-            WEBKIT_ASSERT(webCodeStr.length() == 1);
+            BLINK_ASSERT(webCodeStr.length() == 1);
             text = code = webCodeStr.at(0);
             needsShiftKeyModifier = needsShiftModifier(code);
             if ((code & 0xFF) >= 'a' && (code & 0xFF) <= 'z')
@@ -656,8 +650,12 @@ void EventSender::keyDown(const CppArgumentList& arguments, CppVariant* result)
     }
     eventDown.setKeyIdentifierFromWindowsKeyCode();
 
-    if (arguments.size() >= 2 && (arguments[1].isObject() || arguments[1].isString()))
-        eventDown.isSystemKey = applyKeyModifiers(&(arguments[1]), &eventDown);
+    if (arguments.size() >= 2 && (arguments[1].isObject() || arguments[1].isString())) {
+        applyKeyModifiers(&(arguments[1]), &eventDown);
+#if WIN32 || __APPLE__ || defined(ANDROID) || defined(TOOLKIT_GTK)
+        eventDown.isSystemKey = WebInputEventFactory::isSystemKeyEvent(eventDown);
+#endif
+    }
 
     if (needsShiftKeyModifier)
         eventDown.modifiers |= WebInputEvent::ShiftKey;
@@ -691,7 +689,7 @@ void EventSender::keyDown(const CppArgumentList& arguments, CppVariant* result)
     if (code == VKEY_ESCAPE && !currentDragData.isNull()) {
         WebMouseEvent event;
         initMouseEvent(WebInputEvent::MouseDown, pressedButton, lastMousePos, &event, getCurrentEventTimeSec(m_delegate));
-        finishDragAndDrop(event, WebKit::WebDragOperationNone);
+        finishDragAndDrop(event, blink::WebDragOperationNone);
     }
 
     m_delegate->clearEditCommand();
@@ -726,7 +724,7 @@ void EventSender::dispatchMessage(const CppArgumentList& arguments, CppVariant* 
         unsigned long lparam = static_cast<unsigned long>(arguments[2].toDouble());
         webview()->handleInputEvent(WebInputEventFactory::keyboardEvent(0, msg, arguments[1].toInt32(), lparam));
     } else
-        WEBKIT_ASSERT_NOT_REACHED();
+        BLINK_ASSERT_NOT_REACHED();
 #endif
 }
 
@@ -843,7 +841,7 @@ void EventSender::replaySavedEvents()
             break;
         }
         default:
-            WEBKIT_ASSERT_NOT_REACHED();
+            BLINK_ASSERT_NOT_REACHED();
         }
     }
 
@@ -974,7 +972,7 @@ void EventSender::beginDragWithFiles(const CppArgumentList& arguments, CppVarian
         absoluteFilenames[i] = item.filenameData;
     }
     currentDragData.setFilesystemId(m_delegate->registerIsolatedFileSystem(absoluteFilenames));
-    currentDragEffectsAllowed = WebKit::WebDragOperationCopy;
+    currentDragEffectsAllowed = blink::WebDragOperationCopy;
 
     // Provide a drag source.
     webview()->dragTargetDragEnter(currentDragData, lastMousePos, lastMousePos, currentDragEffectsAllowed, 0);
@@ -997,6 +995,16 @@ void EventSender::addTouchPoint(const CppArgumentList& arguments, CppVariant* re
     touchPoint.position = WebPoint(arguments[0].toInt32(), arguments[1].toInt32());
     touchPoint.screenPosition = touchPoint.position;
 
+    if (arguments.size() > 2) {
+        int radiusX = arguments[2].toInt32();
+        int radiusY = radiusX;
+        if (arguments.size() > 3)
+            radiusY = arguments[3].toInt32();
+
+        touchPoint.radiusX = radiusX;
+        touchPoint.radiusY = radiusY;
+    }
+
     int lowestId = 0;
     for (size_t i = 0; i < touchPoints.size(); i++) {
         if (touchPoints[i].id == lowestId)
@@ -1017,7 +1025,7 @@ void EventSender::releaseTouchPoint(const CppArgumentList& arguments, CppVariant
     result->setNull();
 
     const unsigned index = arguments[0].toInt32();
-    WEBKIT_ASSERT(index < touchPoints.size());
+    BLINK_ASSERT(index < touchPoints.size());
 
     WebTouchPoint* touchPoint = &touchPoints[index];
     touchPoint->state = WebTouchPoint::StateReleased;
@@ -1049,7 +1057,7 @@ void EventSender::updateTouchPoint(const CppArgumentList& arguments, CppVariant*
     result->setNull();
 
     const unsigned index = arguments[0].toInt32();
-    WEBKIT_ASSERT(index < touchPoints.size());
+    BLINK_ASSERT(index < touchPoints.size());
 
     WebPoint position(arguments[1].toInt32(), arguments[2].toInt32());
     WebTouchPoint* touchPoint = &touchPoints[index];
@@ -1063,7 +1071,7 @@ void EventSender::cancelTouchPoint(const CppArgumentList& arguments, CppVariant*
     result->setNull();
 
     const unsigned index = arguments[0].toInt32();
-    WEBKIT_ASSERT(index < touchPoints.size());
+    BLINK_ASSERT(index < touchPoints.size());
 
     WebTouchPoint* touchPoint = &touchPoints[index];
     touchPoint->state = WebTouchPoint::StateCancelled;
@@ -1071,7 +1079,7 @@ void EventSender::cancelTouchPoint(const CppArgumentList& arguments, CppVariant*
 
 void EventSender::sendCurrentTouchEvent(const WebInputEvent::Type type)
 {
-    WEBKIT_ASSERT(static_cast<unsigned>(WebTouchEvent::touchesLengthCap) > touchPoints.size());
+    BLINK_ASSERT(static_cast<unsigned>(WebTouchEvent::touchesLengthCap) > touchPoints.size());
     if (shouldForceLayoutOnEvents())
         webview()->layout();
 
@@ -1240,6 +1248,12 @@ void EventSender::gestureTapDown(const CppArgumentList& arguments, CppVariant* r
     gestureEvent(WebInputEvent::GestureTapDown, arguments);
 }
 
+void EventSender::gestureShowPress(const CppArgumentList& arguments, CppVariant* result)
+{
+    result->setNull();
+    gestureEvent(WebInputEvent::GestureShowPress, arguments);
+}
+
 void EventSender::gestureTapCancel(const CppArgumentList& arguments, CppVariant* result)
 {
     result->setNull();
@@ -1301,6 +1315,7 @@ void EventSender::gestureEvent(WebInputEvent::Type type, const CppArgumentList& 
         event.y = m_currentGestureLocation.y;
         break;
     case WebInputEvent::GestureScrollEnd:
+    case WebInputEvent::GestureFlingStart:
         event.x = m_currentGestureLocation.x;
         event.y = m_currentGestureLocation.y;
         break;
@@ -1326,6 +1341,14 @@ void EventSender::gestureEvent(WebInputEvent::Type type, const CppArgumentList& 
         if (arguments.size() >= 4) {
             event.data.tapDown.width = static_cast<float>(arguments[2].toDouble());
             event.data.tapDown.height = static_cast<float>(arguments[3].toDouble());
+        }
+        break;
+    case WebInputEvent::GestureShowPress:
+        event.x = point.x;
+        event.y = point.y;
+        if (arguments.size() >= 4) {
+            event.data.showPress.width = static_cast<float>(arguments[2].toDouble());
+            event.data.showPress.height = static_cast<float>(arguments[3].toDouble());
         }
         break;
     case WebInputEvent::GestureTapCancel:
@@ -1357,7 +1380,7 @@ void EventSender::gestureEvent(WebInputEvent::Type type, const CppArgumentList& 
         }
         break;
     default:
-        WEBKIT_ASSERT_NOT_REACHED();
+        BLINK_ASSERT_NOT_REACHED();
     }
 
     event.globalX = event.x;
@@ -1373,7 +1396,7 @@ void EventSender::gestureEvent(WebInputEvent::Type type, const CppArgumentList& 
     if (type == WebInputEvent::GestureLongPress && !currentDragData.isNull()) {
         WebMouseEvent mouseEvent;
         initMouseEvent(WebInputEvent::MouseDown, pressedButton, point, &mouseEvent, getCurrentEventTimeSec(m_delegate));
-        finishDragAndDrop(mouseEvent, WebKit::WebDragOperationNone);
+        finishDragAndDrop(mouseEvent, blink::WebDragOperationNone);
     }
 }
 

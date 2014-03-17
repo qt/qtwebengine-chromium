@@ -25,7 +25,7 @@ float g_device_scale_factor_for_testing = 0.0;
 void AppendDataToHttpBody(ExplodedHttpBody* http_body, const char* data,
                           int data_length) {
   ExplodedHttpBodyElement element;
-  element.type = WebKit::WebHTTPBody::Element::TypeData;
+  element.type = blink::WebHTTPBody::Element::TypeData;
   element.data.assign(data, data_length);
   http_body->elements.push_back(element);
 }
@@ -36,7 +36,7 @@ void AppendFileRangeToHttpBody(ExplodedHttpBody* http_body,
                                int file_length,
                                double file_modification_time) {
   ExplodedHttpBodyElement element;
-  element.type = WebKit::WebHTTPBody::Element::TypeFile;
+  element.type = blink::WebHTTPBody::Element::TypeFile;
   element.file_path = file_path;
   element.file_start = file_start;
   element.file_length = file_length;
@@ -50,7 +50,7 @@ void AppendURLRangeToHttpBody(ExplodedHttpBody* http_body,
                               int file_length,
                               double file_modification_time) {
   ExplodedHttpBodyElement element;
-  element.type = WebKit::WebHTTPBody::Element::TypeFileSystemURL;
+  element.type = blink::WebHTTPBody::Element::TypeFileSystemURL;
   element.filesystem_url = url;
   element.file_start = file_start;
   element.file_length = file_length;
@@ -58,11 +58,11 @@ void AppendURLRangeToHttpBody(ExplodedHttpBody* http_body,
   http_body->elements.push_back(element);
 }
 
-void DeprecatedAppendBlobToHttpBody(ExplodedHttpBody* http_body,
-                                    const GURL& url) {
+void AppendBlobToHttpBody(ExplodedHttpBody* http_body,
+                          const std::string& uuid) {
   ExplodedHttpBodyElement element;
-  element.type = WebKit::WebHTTPBody::Element::TypeBlob;
-  element.deprecated_blob_url = url;
+  element.type = blink::WebHTTPBody::Element::TypeBlob;
+  element.blob_uuid = uuid;
   http_body->elements.push_back(element);
 }
 
@@ -72,7 +72,7 @@ void AppendReferencedFilesFromHttpBody(
     const std::vector<ExplodedHttpBodyElement>& elements,
     std::vector<base::NullableString16>* referenced_files) {
   for (size_t i = 0; i < elements.size(); ++i) {
-    if (elements[i].type == WebKit::WebHTTPBody::Element::TypeFile)
+    if (elements[i].type == blink::WebHTTPBody::Element::TypeFile)
       referenced_files->push_back(elements[i].file_path);
   }
 }
@@ -185,12 +185,15 @@ struct SerializeObject {
 // 12: Adds support for contains_passwords in HTTP body
 // 13: Adds support for URL (FileSystem URL)
 // 14: Adds list of referenced files, version written only for first item.
+// 15: Removes a bunch of values we defined but never used.
+// 16: Switched from blob urls to blob uuids.
+// 17: Add a target frame id number.
 //
 // NOTE: If the version is -1, then the pickle contains only a URL string.
 // See ReadPageState.
 //
 const int kMinVersion = 11;
-const int kCurrentVersion = 14;
+const int kCurrentVersion = 17;
 
 // A bunch of convenience functions to read/write to SerializeObjects.  The
 // de-serializers assume the input data will be in the correct format and fall
@@ -257,6 +260,10 @@ double ReadReal(SerializeObject* obj) {
   return value;
 }
 
+void ConsumeReal(SerializeObject* obj) {
+  double unused ALLOW_UNUSED = ReadReal(obj);
+}
+
 void WriteBoolean(bool data, SerializeObject* obj) {
   obj->pickle.WriteInt(data ? 1 : 0);
 }
@@ -269,6 +276,10 @@ bool ReadBoolean(SerializeObject* obj) {
   return false;
 }
 
+void ConsumeBoolean(SerializeObject* obj) {
+  bool unused ALLOW_UNUSED = ReadBoolean(obj);
+}
+
 void WriteGURL(const GURL& url, SerializeObject* obj) {
   obj->pickle.WriteString(url.possibly_invalid_spec());
 }
@@ -279,6 +290,18 @@ GURL ReadGURL(SerializeObject* obj) {
     return GURL(spec);
   obj->parse_error = true;
   return GURL();
+}
+
+void WriteStdString(const std::string& s, SerializeObject* obj) {
+  obj->pickle.WriteString(s);
+}
+
+std::string ReadStdString(SerializeObject* obj) {
+  std::string s;
+  if (obj->pickle.ReadString(&obj->iter, &s))
+    return s;
+  obj->parse_error = true;
+  return std::string();
 }
 
 // WriteString pickles the NullableString16 as <int length><char16* data>.
@@ -388,23 +411,23 @@ void WriteHttpBody(const ExplodedHttpBody& http_body, SerializeObject* obj) {
   for (size_t i = 0; i < http_body.elements.size(); ++i) {
     const ExplodedHttpBodyElement& element = http_body.elements[i];
     WriteInteger(element.type, obj);
-    if (element.type == WebKit::WebHTTPBody::Element::TypeData) {
+    if (element.type == blink::WebHTTPBody::Element::TypeData) {
       WriteData(element.data.data(), static_cast<int>(element.data.size()),
                 obj);
-    } else if (element.type == WebKit::WebHTTPBody::Element::TypeFile) {
+    } else if (element.type == blink::WebHTTPBody::Element::TypeFile) {
       WriteString(element.file_path, obj);
       WriteInteger64(element.file_start, obj);
       WriteInteger64(element.file_length, obj);
       WriteReal(element.file_modification_time, obj);
     } else if (element.type ==
-               WebKit::WebHTTPBody::Element::TypeFileSystemURL) {
+               blink::WebHTTPBody::Element::TypeFileSystemURL) {
       WriteGURL(element.filesystem_url, obj);
       WriteInteger64(element.file_start, obj);
       WriteInteger64(element.file_length, obj);
       WriteReal(element.file_modification_time, obj);
     } else {
-      DCHECK(element.type == WebKit::WebHTTPBody::Element::TypeBlob);
-      WriteGURL(element.deprecated_blob_url, obj);
+      DCHECK(element.type == blink::WebHTTPBody::Element::TypeBlob);
+      WriteStdString(element.blob_uuid, obj);
     }
   }
   WriteInteger64(http_body.identifier, obj);
@@ -421,7 +444,7 @@ void ReadHttpBody(SerializeObject* obj, ExplodedHttpBody* http_body) {
 
   for (int i = 0; i < num_elements; ++i) {
     int type = ReadInteger(obj);
-    if (type == WebKit::WebHTTPBody::Element::TypeData) {
+    if (type == blink::WebHTTPBody::Element::TypeData) {
       const void* data;
       int length = -1;
       ReadData(obj, &data, &length);
@@ -429,23 +452,27 @@ void ReadHttpBody(SerializeObject* obj, ExplodedHttpBody* http_body) {
         AppendDataToHttpBody(http_body, static_cast<const char*>(data),
                              length);
       }
-    } else if (type == WebKit::WebHTTPBody::Element::TypeFile) {
+    } else if (type == blink::WebHTTPBody::Element::TypeFile) {
       base::NullableString16 file_path = ReadString(obj);
       int64 file_start = ReadInteger64(obj);
       int64 file_length = ReadInteger64(obj);
       double file_modification_time = ReadReal(obj);
       AppendFileRangeToHttpBody(http_body, file_path, file_start, file_length,
                                 file_modification_time);
-    } else if (type == WebKit::WebHTTPBody::Element::TypeFileSystemURL) {
+    } else if (type == blink::WebHTTPBody::Element::TypeFileSystemURL) {
       GURL url = ReadGURL(obj);
       int64 file_start = ReadInteger64(obj);
       int64 file_length = ReadInteger64(obj);
       double file_modification_time = ReadReal(obj);
       AppendURLRangeToHttpBody(http_body, url, file_start, file_length,
                                file_modification_time);
-    } else if (type == WebKit::WebHTTPBody::Element::TypeBlob) {
-      GURL blob_url = ReadGURL(obj);
-      DeprecatedAppendBlobToHttpBody(http_body, blob_url);
+    } else if (type == blink::WebHTTPBody::Element::TypeBlob) {
+      if (obj->version >= 16) {
+        std::string blob_uuid = ReadStdString(obj);
+        AppendBlobToHttpBody(http_body, blob_uuid);
+      } else {
+        ReadGURL(obj); // Skip the obsolete blob url value.
+      }
     }
   }
   http_body->identifier = ReadInteger64(obj);
@@ -467,14 +494,8 @@ void WriteFrameState(
   WriteString(state.url_string, obj);
   WriteString(state.original_url_string, obj);
   WriteString(state.target, obj);
-  WriteString(state.parent, obj);
-  WriteString(state.title, obj);
-  WriteString(state.alternate_title, obj);
-  WriteReal(state.visited_time, obj);
   WriteInteger(state.scroll_offset.x(), obj);
   WriteInteger(state.scroll_offset.y(), obj);
-  WriteBoolean(state.is_target_item, obj);
-  WriteInteger(state.visit_count, obj);
   WriteString(state.referrer, obj);
 
   WriteStringVector(state.document_state, obj);
@@ -482,6 +503,7 @@ void WriteFrameState(
   WriteReal(state.page_scale_factor, obj);
   WriteInteger64(state.item_sequence_number, obj);
   WriteInteger64(state.document_sequence_number, obj);
+  WriteInteger64(state.target_frame_id, obj);
 
   bool has_state_object = !state.state_object.is_null();
   WriteBoolean(has_state_object, obj);
@@ -510,17 +532,21 @@ void ReadFrameState(SerializeObject* obj, bool is_top,
   state->url_string = ReadString(obj);
   state->original_url_string = ReadString(obj);
   state->target = ReadString(obj);
-  state->parent = ReadString(obj);
-  state->title = ReadString(obj);
-  state->alternate_title = ReadString(obj);
-  state->visited_time = ReadReal(obj);
+  if (obj->version < 15) {
+    ConsumeString(obj);  // Skip obsolete parent field.
+    ConsumeString(obj);  // Skip obsolete title field.
+    ConsumeString(obj);  // Skip obsolete alternate title field.
+    ConsumeReal(obj);    // Skip obsolete visited time field.
+  }
 
   int x = ReadInteger(obj);
   int y = ReadInteger(obj);
   state->scroll_offset = gfx::Point(x, y);
 
-  state->is_target_item = ReadBoolean(obj);
-  state->visit_count = ReadInteger(obj);
+  if (obj->version < 15) {
+    ConsumeBoolean(obj);  // Skip obsolete target item flag.
+    ConsumeInteger(obj);  // Skip obsolete visit count field.
+  }
   state->referrer = ReadString(obj);
 
   ReadStringVector(obj, &state->document_state);
@@ -528,6 +554,8 @@ void ReadFrameState(SerializeObject* obj, bool is_top,
   state->page_scale_factor = ReadReal(obj);
   state->item_sequence_number = ReadInteger64(obj);
   state->document_sequence_number = ReadInteger64(obj);
+  if (obj->version >= 17)
+    state->target_frame_id = ReadInteger64(obj);
 
   bool has_state_object = ReadBoolean(obj);
   if (has_state_object)
@@ -615,7 +643,7 @@ void ReadPageState(SerializeObject* obj, ExplodedPageState* state) {
 }  // namespace
 
 ExplodedHttpBodyElement::ExplodedHttpBodyElement()
-    : type(WebKit::WebHTTPBody::Element::TypeData),
+    : type(blink::WebHTTPBody::Element::TypeData),
       file_start(0),
       file_length(-1),
       file_modification_time(std::numeric_limits<double>::quiet_NaN()) {
@@ -636,10 +664,8 @@ ExplodedHttpBody::~ExplodedHttpBody() {
 ExplodedFrameState::ExplodedFrameState()
     : item_sequence_number(0),
       document_sequence_number(0),
-      visit_count(0),
-      visited_time(0.0),
-      page_scale_factor(0.0),
-      is_target_item(false) {
+      target_frame_id(0),
+      page_scale_factor(0.0) {
 }
 
 ExplodedFrameState::~ExplodedFrameState() {

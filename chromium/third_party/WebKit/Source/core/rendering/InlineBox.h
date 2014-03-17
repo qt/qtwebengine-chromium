@@ -21,8 +21,8 @@
 #ifndef InlineBox_h
 #define InlineBox_h
 
-#include "core/platform/text/TextDirection.h"
 #include "core/rendering/RenderBoxModelObject.h"
+#include "platform/text/TextDirection.h"
 
 namespace WebCore {
 
@@ -101,7 +101,6 @@ public:
     void* operator new(size_t);
     void operator delete(void*);
 
-public:
 #ifndef NDEBUG
     void showTreeForThis() const;
     void showLineTreeForThis() const;
@@ -198,8 +197,8 @@ public:
 
     const FloatPoint& topLeft() const { return m_topLeft; }
 
-    float width() const { return isHorizontal() ? logicalWidth() : logicalHeight(); }
-    float height() const { return isHorizontal() ? logicalHeight() : logicalWidth(); }
+    float width() const { return isHorizontal() ? logicalWidth() : hasVirtualLogicalHeight() ? virtualLogicalHeight() : logicalHeight(); }
+    float height() const { return isHorizontal() ? hasVirtualLogicalHeight() ? virtualLogicalHeight() : logicalHeight() : logicalWidth(); }
     FloatSize size() const { return FloatSize(width(), height()); }
     float right() const { return left() + width(); }
     float bottom() const { return top() + height(); }
@@ -295,18 +294,6 @@ public:
     bool dirOverride() const { return m_bitfields.dirOverride(); }
     void setDirOverride(bool dirOverride) { m_bitfields.setDirOverride(dirOverride); }
 
-private:
-    InlineBox* m_next; // The next element on the same line as us.
-    InlineBox* m_prev; // The previous element on the same line as us.
-
-    InlineFlowBox* m_parent; // The box that contains us.
-
-public:
-    RenderObject* m_renderer;
-
-    FloatPoint m_topLeft;
-    float m_logicalWidth;
-
 #define ADD_BOOLEAN_BITFIELD(name, Name) \
     private:\
     unsigned m_##name : 1;\
@@ -386,7 +373,10 @@ public:
 #undef ADD_BOOLEAN_BITFIELD
 
 private:
-    InlineBoxBitfields m_bitfields;
+    InlineBox* m_next; // The next element on the same line as us.
+    InlineBox* m_prev; // The previous element on the same line as us.
+
+    InlineFlowBox* m_parent; // The box that contains us.
 
 protected:
     // For RootInlineBox
@@ -408,8 +398,15 @@ protected:
     // For InlineFlowBox and InlineTextBox
     bool extracted() const { return m_bitfields.extracted(); }
 
-#ifndef NDEBUG
+    RenderObject* m_renderer;
+
+    FloatPoint m_topLeft;
+    float m_logicalWidth;
+
 private:
+    InlineBoxBitfields m_bitfields;
+
+#ifndef NDEBUG
     bool m_hasBadParent;
 #endif
 };
@@ -426,6 +423,9 @@ inline void InlineBox::setHasBadParent()
     m_hasBadParent = true;
 }
 #endif
+
+#define DEFINE_INLINE_BOX_TYPE_CASTS(typeName) \
+    DEFINE_TYPE_CASTS(typeName, InlineBox, box, box->is##typeName(), box.is##typeName())
 
 } // namespace WebCore
 

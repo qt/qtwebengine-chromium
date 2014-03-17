@@ -26,7 +26,7 @@
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/time/time.h"
 #include "net/base/net_errors.h"
-#include "net/disk_cache/backend_impl.h"
+#include "net/disk_cache/cache_util.h"
 #include "net/disk_cache/simple/simple_entry_format.h"
 #include "net/disk_cache/simple/simple_entry_impl.h"
 #include "net/disk_cache/simple/simple_histogram_macros.h"
@@ -44,7 +44,7 @@ using base::SequencedWorkerPool;
 using base::SingleThreadTaskRunner;
 using base::Time;
 using base::DirectoryExists;
-using file_util::CreateDirectory;
+using base::CreateDirectory;
 
 namespace disk_cache {
 
@@ -55,9 +55,6 @@ namespace {
 const int kDefaultMaxWorkerThreads = 50;
 
 const char kThreadNamePrefix[] = "SimpleCache";
-
-// Cache size when all other size heuristics failed.
-const uint64 kDefaultCacheSize = 80 * 1024 * 1024;
 
 // Maximum fraction of the cache that one entry can consume.
 const int kMaxFileRatio = 8;
@@ -123,21 +120,11 @@ void MaybeHistogramFdLimit(net::CacheType cache_type) {
   g_fd_limit_histogram_has_been_populated = true;
 }
 
-// Must run on IO Thread.
-void DeleteBackendImpl(disk_cache::Backend** backend,
-                       const net::CompletionCallback& callback,
-                       int result) {
-  DCHECK(*backend);
-  delete *backend;
-  *backend = NULL;
-  callback.Run(result);
-}
-
 // Detects if the files in the cache directory match the current disk cache
 // backend type and version. If the directory contains no cache, occupies it
 // with the fresh structure.
 bool FileStructureConsistent(const base::FilePath& path) {
-  if (!base::PathExists(path) && !file_util::CreateDirectory(path)) {
+  if (!base::PathExists(path) && !base::CreateDirectory(path)) {
     LOG(ERROR) << "Failed to create directory: " << path.LossyDisplayName();
     return false;
   }
@@ -193,23 +180,6 @@ void RunOperationAndCallback(
   const int operation_result = operation.Run(operation_callback);
   if (operation_result != net::ERR_IO_PENDING)
     operation_callback.Run(operation_result);
-}
-
-// A short bindable thunk that Dooms an entry if it successfully opens.
-void DoomOpenedEntry(scoped_ptr<Entry*> in_entry,
-                     const net::CompletionCallback& doom_callback,
-                     int open_result) {
-  DCHECK_NE(open_result, net::ERR_IO_PENDING);
-  if (open_result == net::OK) {
-    DCHECK(in_entry);
-    SimpleEntryImpl* simple_entry = static_cast<SimpleEntryImpl*>(*in_entry);
-    const int doom_result = simple_entry->DoomEntry(doom_callback);
-    simple_entry->Close();
-    if (doom_result != net::ERR_IO_PENDING)
-      doom_callback.Run(doom_result);
-  } else {
-    doom_callback.Run(open_result);
-  }
 }
 
 void RecordIndexLoad(net::CacheType cache_type,
@@ -285,13 +255,15 @@ void SimpleBackendImpl::OnDeactivated(const SimpleEntryImpl* entry) {
 }
 
 void SimpleBackendImpl::OnDoomStart(uint64 entry_hash) {
-  DCHECK_EQ(0u, entries_pending_doom_.count(entry_hash));
+  // TODO(ttuttle): Revert to DCHECK once http://crbug.com/317138 is fixed.
+  CHECK_EQ(0u, entries_pending_doom_.count(entry_hash));
   entries_pending_doom_.insert(
       std::make_pair(entry_hash, std::vector<Closure>()));
 }
 
 void SimpleBackendImpl::OnDoomComplete(uint64 entry_hash) {
-  DCHECK_EQ(1u, entries_pending_doom_.count(entry_hash));
+  // TODO(ttuttle): Revert to DCHECK once http://crbug.com/317138 is fixed.
+  CHECK_EQ(1u, entries_pending_doom_.count(entry_hash));
   base::hash_map<uint64, std::vector<Closure> >::iterator it =
       entries_pending_doom_.find(entry_hash);
   std::vector<Closure> to_run_closures;
@@ -317,8 +289,9 @@ void SimpleBackendImpl::DoomEntries(std::vector<uint64>* entry_hashes,
   //    SimpleSynchronousEntry::DoomEntrySet and delete the files en masse.
   for (int i = mass_doom_entry_hashes->size() - 1; i >= 0; --i) {
     const uint64 entry_hash = (*mass_doom_entry_hashes)[i];
-    DCHECK(active_entries_.count(entry_hash) == 0 ||
-           entries_pending_doom_.count(entry_hash) == 0)
+    // TODO(ttuttle): Revert to DCHECK once http://crbug.com/317138 is fixed.
+    CHECK(active_entries_.count(entry_hash) == 0 ||
+          entries_pending_doom_.count(entry_hash) == 0)
         << "The entry 0x" << std::hex << entry_hash
         << " is both active and pending doom.";
     if (!active_entries_.count(entry_hash) &&
@@ -339,7 +312,8 @@ void SimpleBackendImpl::DoomEntries(std::vector<uint64>* entry_hashes,
            it = to_doom_individually_hashes.begin(),
            end = to_doom_individually_hashes.end(); it != end; ++it) {
     const int doom_result = DoomEntryFromHash(*it, barrier_callback);
-    DCHECK_EQ(net::ERR_IO_PENDING, doom_result);
+    // TODO(ttuttle): Revert to DCHECK once http://crbug.com/317138 is fixed.
+    CHECK_EQ(net::ERR_IO_PENDING, doom_result);
     index_->Remove(*it);
   }
 
@@ -525,12 +499,7 @@ SimpleBackendImpl::DiskStatResult SimpleBackendImpl::InitCacheStructureOnDisk(
     DCHECK(mtime_result);
     if (!result.max_size) {
       int64 available = base::SysInfo::AmountOfFreeDiskSpace(path);
-      if (available < 0)
-        result.max_size = kDefaultCacheSize;
-      else
-        // TODO(pasko): Move PreferedCacheSize() to cache_util.h. Also fix the
-        // spelling.
-        result.max_size = disk_cache::PreferedCacheSize(available);
+      result.max_size = disk_cache::PreferredCacheSize(available);
     }
     DCHECK(result.max_size);
   }

@@ -27,6 +27,7 @@
 #define InputMethodController_h
 
 #include "core/editing/CompositionUnderline.h"
+#include "core/editing/PlainTextRange.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
@@ -37,34 +38,30 @@ class Frame;
 class Range;
 class Text;
 
-// FIXME: We should move PlainTextOffsets to own file for using InputMethodController
-// and TextIterator and unify PlainTextRange defined in AccessibilityObject.h.
-class PlainTextOffsets {
-public:
-    PlainTextOffsets();
-    PlainTextOffsets(int start, int length);
-    size_t end() const { return m_end; }
-    size_t start() const { return m_start; }
-    bool isNull() const { return m_start == kNotFound; }
-private:
-    size_t m_start;
-    size_t m_end;
-};
-
 class InputMethodController {
+    WTF_MAKE_NONCOPYABLE(InputMethodController);
 public:
-    static PassOwnPtr<InputMethodController> create(Frame*);
+    enum ConfirmCompositionBehavior {
+        DoNotKeepSelection,
+        KeepSelection,
+    };
+
+    static PassOwnPtr<InputMethodController> create(Frame&);
     ~InputMethodController();
 
     // international text input composition
-    bool hasComposition() const { return m_compositionNode; }
+    bool hasComposition() const;
     void setComposition(const String&, const Vector<CompositionUnderline>&, unsigned selectionStart, unsigned selectionEnd);
     void setCompositionFromExistingText(const Vector<CompositionUnderline>&, unsigned compositionStart, unsigned compositionEnd);
-    // Inserts the text that is being composed as a regular text.
-    // This method does nothing if composition node is not present.
-    void confirmComposition();
-    // Inserts the given text string in the place of the existing composition, or replaces the selection if composition is not present.
-    void confirmComposition(const String& text);
+    // Inserts the text that is being composed as a regular text and returns true
+    // if composition exists.
+    bool confirmComposition();
+    // Inserts the given text string in the place of the existing composition
+    // and returns true.
+    bool confirmComposition(const String& text);
+    // Inserts the text that is being composed or specified non-empty text and
+    // returns true.
+    bool confirmCompositionOrInsertText(const String& text, ConfirmCompositionBehavior);
     void confirmCompositionAndResetState();
     // Deletes the existing composition text.
     void cancelComposition();
@@ -80,6 +77,11 @@ public:
 
     void clear();
 
+    PlainTextRange getSelectionOffsets() const;
+    // Returns true if setting selection to specified offsets, otherwise false.
+    bool setEditableSelectionOffsets(const PlainTextRange&);
+    void extendSelectionAndDelete(int before, int after);
+
 private:
     class SelectionOffsetsScope {
         WTF_MAKE_NONCOPYABLE(SelectionOffsetsScope);
@@ -88,29 +90,27 @@ private:
         ~SelectionOffsetsScope();
     private:
         InputMethodController* m_inputMethodController;
-        PlainTextOffsets m_offsets;
+        const PlainTextRange m_offsets;
     };
     friend class SelectionOffsetsScope;
 
-    Frame* m_frame;
+    Frame& m_frame;
     RefPtr<Text> m_compositionNode;
-    // FIXME: We should use PlainTextOffsets m_compositionRange instead of
-    // m_compositionStart/m_compositionEnd.
+    // We don't use PlainTextRange which is immutable, for composition range.
     unsigned m_compositionStart;
     unsigned m_compositionEnd;
     // startOffset and endOffset of CompositionUnderline are based on
     // m_compositionNode.
     Vector<CompositionUnderline> m_customCompositionUnderlines;
 
-    explicit InputMethodController(Frame*);
+    explicit InputMethodController(Frame&);
     Editor& editor() const;
-    EditorClient& editorClient() const;
     bool insertTextForConfirmedComposition(const String& text);
     void selectComposition() const;
     enum FinishCompositionMode { ConfirmComposition, CancelComposition };
-    void finishComposition(const String&, FinishCompositionMode);
-    PlainTextOffsets getSelectionOffsets() const;
-    bool setSelectionOffsets(const PlainTextOffsets&);
+    // Returns true if composition exists.
+    bool finishComposition(const String&, FinishCompositionMode);
+    bool setSelectionOffsets(const PlainTextRange&);
 };
 
 } // namespace WebCore

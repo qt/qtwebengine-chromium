@@ -21,10 +21,10 @@
 #ifndef SVGFECompositeElement_h
 #define SVGFECompositeElement_h
 
-#include "core/platform/graphics/filters/FEComposite.h"
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGAnimatedNumber.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
+#include "platform/graphics/filters/FEComposite.h"
 
 namespace WebCore {
 
@@ -75,10 +75,10 @@ struct SVGPropertyTraits<CompositeOperationType> {
 
 class SVGFECompositeElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
-    static PassRefPtr<SVGFECompositeElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGFECompositeElement> create(Document&);
 
 private:
-    SVGFECompositeElement(const QualifiedName&, Document&);
+    explicit SVGFECompositeElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;

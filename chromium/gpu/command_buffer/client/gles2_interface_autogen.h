@@ -217,9 +217,12 @@ virtual void VertexAttribPointer(
     GLuint indx, GLint size, GLenum type, GLboolean normalized, GLsizei stride,
     const void* ptr) = 0;
 virtual void Viewport(GLint x, GLint y, GLsizei width, GLsizei height) = 0;
-virtual void BlitFramebufferEXT(
+virtual void BlitFramebufferCHROMIUM(
     GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0,
     GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter) = 0;
+virtual void RenderbufferStorageMultisampleCHROMIUM(
+    GLenum target, GLsizei samples, GLenum internalformat, GLsizei width,
+    GLsizei height) = 0;
 virtual void RenderbufferStorageMultisampleEXT(
     GLenum target, GLsizei samples, GLenum internalformat, GLsizei width,
     GLsizei height) = 0;
@@ -319,5 +322,6 @@ virtual void LoseContextCHROMIUM(GLenum current, GLenum other) = 0;
 virtual GLuint InsertSyncPointCHROMIUM() = 0;
 virtual void WaitSyncPointCHROMIUM(GLuint sync_point) = 0;
 virtual void DrawBuffersEXT(GLsizei count, const GLenum* bufs) = 0;
+virtual void DiscardBackbufferCHROMIUM() = 0;
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_INTERFACE_AUTOGEN_H_
 

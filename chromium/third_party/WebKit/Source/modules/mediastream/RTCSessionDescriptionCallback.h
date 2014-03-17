@@ -31,16 +31,14 @@
 #ifndef RTCSessionDescriptionCallback_h
 #define RTCSessionDescriptionCallback_h
 
-#include "wtf/RefCounted.h"
-
 namespace WebCore {
 
 class RTCSessionDescription;
 
-class RTCSessionDescriptionCallback : public RefCounted<RTCSessionDescriptionCallback> {
+class RTCSessionDescriptionCallback {
 public:
     virtual ~RTCSessionDescriptionCallback() { }
-    virtual bool handleEvent(RTCSessionDescription*) = 0;
+    virtual void handleEvent(RTCSessionDescription*) = 0;
 };
 
 } // namespace WebCore

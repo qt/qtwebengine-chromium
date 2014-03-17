@@ -4,30 +4,22 @@
 
 #include "content/renderer/media/rtc_video_renderer.h"
 
-#include "base/bind.h"
 #include "base/debug/trace_event.h"
-#include "base/location.h"
-#include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "content/renderer/media/native_handle_impl.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
-#include "third_party/libjingle/source/talk/media/base/videoframe.h"
-
-using media::CopyYPlane;
-using media::CopyUPlane;
-using media::CopyVPlane;
 
 namespace content {
 
 RTCVideoRenderer::RTCVideoRenderer(
-    webrtc::VideoTrackInterface* video_track,
+    const blink::WebMediaStreamTrack& video_track,
     const base::Closure& error_cb,
     const RepaintCB& repaint_cb)
     : error_cb_(error_cb),
       repaint_cb_(repaint_cb),
       message_loop_proxy_(base::MessageLoopProxy::current()),
-      state_(kStopped),
+      state_(STOPPED),
+      first_frame_rendered_(false),
       video_track_(video_track) {
 }
 
@@ -36,113 +28,82 @@ RTCVideoRenderer::~RTCVideoRenderer() {
 
 void RTCVideoRenderer::Start() {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
-  DCHECK_EQ(state_, kStopped);
+  DCHECK_EQ(state_, STOPPED);
+  DCHECK(!first_frame_rendered_);
 
-  if (video_track_.get()) {
-    video_track_->AddRenderer(this);
-    video_track_->RegisterObserver(this);
+  AddToVideoTrack(this, video_track_);
+  state_ = STARTED;
+
+  if (video_track_.source().readyState() ==
+          blink::WebMediaStreamSource::ReadyStateEnded ||
+      !video_track_.isEnabled()) {
+    MaybeRenderSignalingFrame();
   }
-  state_ = kStarted;
-  MaybeRenderSignalingFrame();
 }
 
 void RTCVideoRenderer::Stop() {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
-  if (video_track_.get()) {
-    state_ = kStopped;
-    video_track_->RemoveRenderer(this);
-    video_track_->UnregisterObserver(this);
-    video_track_ = NULL;
-  }
+  DCHECK(state_ == STARTED || state_ == PAUSED);
+  RemoveFromVideoTrack(this, video_track_);
+  state_ = STOPPED;
+  first_frame_rendered_ = false;
 }
 
 void RTCVideoRenderer::Play() {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
-  if (video_track_.get() && state_ == kPaused) {
-    state_ = kStarted;
+  if (state_ == PAUSED) {
+    state_ = STARTED;
   }
 }
 
 void RTCVideoRenderer::Pause() {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
-  if (video_track_.get() && state_ == kStarted) {
-    state_ = kPaused;
+  if (state_ == STARTED) {
+    state_ = PAUSED;
   }
 }
 
-void RTCVideoRenderer::SetSize(int width, int height) {
-}
-
-void RTCVideoRenderer::RenderFrame(const cricket::VideoFrame* frame) {
-  base::TimeDelta timestamp = base::TimeDelta::FromMilliseconds(
-      frame->GetTimeStamp() / talk_base::kNumNanosecsPerMillisec);
-
-  TRACE_EVENT_INSTANT2("rtc_video_renderer",
-                       "RenderFrame",
-                       TRACE_EVENT_SCOPE_THREAD,
-                       "elapsed time",
-                       frame->GetElapsedTime(),
-                       "timestamp_ms",
-                       timestamp.InMilliseconds());
-
-  scoped_refptr<media::VideoFrame> video_frame;
-  if (frame->GetNativeHandle() != NULL) {
-    NativeHandleImpl* handle =
-        static_cast<NativeHandleImpl*>(frame->GetNativeHandle());
-    video_frame = static_cast<media::VideoFrame*>(handle->GetHandle());
-    video_frame->SetTimestamp(timestamp);
-  } else {
-    gfx::Size size(frame->GetWidth(), frame->GetHeight());
-    video_frame = media::VideoFrame::CreateFrame(
-        media::VideoFrame::YV12, size, gfx::Rect(size), size, timestamp);
-
-    // Aspect ratio unsupported; DCHECK when there are non-square pixels.
-    DCHECK_EQ(frame->GetPixelWidth(), 1u);
-    DCHECK_EQ(frame->GetPixelHeight(), 1u);
-
-    int y_rows = frame->GetHeight();
-    int uv_rows = frame->GetHeight() / 2;  // YV12 format.
-    CopyYPlane(
-        frame->GetYPlane(), frame->GetYPitch(), y_rows, video_frame.get());
-    CopyUPlane(
-        frame->GetUPlane(), frame->GetUPitch(), uv_rows, video_frame.get());
-    CopyVPlane(
-        frame->GetVPlane(), frame->GetVPitch(), uv_rows, video_frame.get());
-  }
-
-  message_loop_proxy_->PostTask(
-      FROM_HERE, base::Bind(&RTCVideoRenderer::DoRenderFrameOnMainThread,
-                            this, video_frame));
-}
-
-void RTCVideoRenderer::OnChanged() {
+void RTCVideoRenderer::OnReadyStateChanged(
+    blink::WebMediaStreamSource::ReadyState state) {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
-  MaybeRenderSignalingFrame();
+  if (state == blink::WebMediaStreamSource::ReadyStateEnded)
+    MaybeRenderSignalingFrame();
 }
 
-void RTCVideoRenderer::MaybeRenderSignalingFrame() {
-  // Render a small black frame if the track transition to ended.
-  // This is necessary to make sure audio can play if the video tag src is
-  // a MediaStream video track that has been rejected or ended.
-  if (video_track_->state() == webrtc::MediaStreamTrackInterface::kEnded) {
-    const int kMinFrameSize = 2;
-    const gfx::Size size(kMinFrameSize, kMinFrameSize);
-    scoped_refptr<media::VideoFrame> video_frame =
-        media::VideoFrame::CreateBlackFrame(size);
-    DoRenderFrameOnMainThread(video_frame);
-  }
-}
-
-void RTCVideoRenderer::DoRenderFrameOnMainThread(
-    scoped_refptr<media::VideoFrame> video_frame) {
+void RTCVideoRenderer::OnEnabledChanged(bool enabled) {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
+  if (!enabled)
+    MaybeRenderSignalingFrame();
+}
 
-  if (state_ != kStarted) {
+void RTCVideoRenderer::OnVideoFrame(
+    const scoped_refptr<media::VideoFrame>& frame) {
+  DCHECK(message_loop_proxy_->BelongsToCurrentThread());
+  if (state_ != STARTED) {
     return;
   }
 
-  TRACE_EVENT0("video", "DoRenderFrameOnMainThread");
-  repaint_cb_.Run(video_frame);
+  TRACE_EVENT_INSTANT1("rtc_video_renderer",
+                       "OnVideoFrame",
+                       TRACE_EVENT_SCOPE_THREAD,
+                       "timestamp",
+                       frame->GetTimestamp().InMilliseconds());
+  repaint_cb_.Run(frame);
+  first_frame_rendered_ = true;
+}
+
+void RTCVideoRenderer::MaybeRenderSignalingFrame() {
+  // Render a small black frame if no frame has been rendered.
+  // This is necessary to make sure audio can play if the video tag src is
+  // a MediaStream video track that has been rejected, ended or disabled.
+  if (first_frame_rendered_)
+    return;
+
+  const int kMinFrameSize = 2;
+  const gfx::Size size(kMinFrameSize, kMinFrameSize);
+  scoped_refptr<media::VideoFrame> video_frame =
+      media::VideoFrame::CreateBlackFrame(size);
+  OnVideoFrame(video_frame);
 }
 
 }  // namespace content

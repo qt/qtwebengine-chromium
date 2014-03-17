@@ -26,6 +26,10 @@
 #include "base/third_party/icu/icu_utf.h"
 #include "build/build_config.h"
 
+// Remove when this entire file is in the base namespace.
+using base::char16;
+using base::string16;
+
 namespace {
 
 // Force the singleton used by Empty[W]String[16] to be a unique type. This
@@ -99,9 +103,6 @@ bool IsWprintfFormatPortable(const wchar_t* format) {
 
   return true;
 }
-
-}  // namespace base
-
 
 const std::string& EmptyString() {
   return EmptyStrings::GetInstance()->s;
@@ -193,19 +194,11 @@ TrimPositions TrimStringT(const STR& input,
       ((last_good_char == last_char) ? TRIM_NONE : TRIM_TRAILING));
 }
 
-bool TrimString(const std::wstring& input,
-                const wchar_t trim_chars[],
-                std::wstring* output) {
-  return TrimStringT(input, trim_chars, TRIM_ALL, output) != TRIM_NONE;
-}
-
-#if !defined(WCHAR_T_IS_UTF16)
 bool TrimString(const string16& input,
                 const char16 trim_chars[],
                 string16* output) {
   return TrimStringT(input, trim_chars, TRIM_ALL, output) != TRIM_NONE;
 }
-#endif
 
 bool TrimString(const std::string& input,
                 const char trim_chars[],
@@ -235,8 +228,8 @@ void TruncateUTF8ToByteSize(const std::string& input,
     int32 prev = char_index;
     uint32 code_point = 0;
     CBU8_NEXT(data, char_index, truncation_length, code_point);
-    if (!base::IsValidCharacter(code_point) ||
-        !base::IsValidCodepoint(code_point)) {
+    if (!IsValidCharacter(code_point) ||
+        !IsValidCodepoint(code_point)) {
       char_index = prev - 1;
     } else {
       break;
@@ -249,16 +242,18 @@ void TruncateUTF8ToByteSize(const std::string& input,
     output->clear();
 }
 
-TrimPositions TrimWhitespace(const string16& input,
+}  // namespace base
+
+TrimPositions TrimWhitespace(const base::string16& input,
                              TrimPositions positions,
-                             string16* output) {
-  return TrimStringT(input, kWhitespaceUTF16, positions, output);
+                             base::string16* output) {
+  return base::TrimStringT(input, base::kWhitespaceUTF16, positions, output);
 }
 
 TrimPositions TrimWhitespaceASCII(const std::string& input,
                                   TrimPositions positions,
                                   std::string* output) {
-  return TrimStringT(input, kWhitespaceASCII, positions, output);
+  return base::TrimStringT(input, base::kWhitespaceASCII, positions, output);
 }
 
 // This function is only for backward-compatibility.
@@ -311,17 +306,10 @@ STR CollapseWhitespaceT(const STR& text,
   return result;
 }
 
-std::wstring CollapseWhitespace(const std::wstring& text,
-                                bool trim_sequences_with_line_breaks) {
-  return CollapseWhitespaceT(text, trim_sequences_with_line_breaks);
-}
-
-#if !defined(WCHAR_T_IS_UTF16)
 string16 CollapseWhitespace(const string16& text,
                             bool trim_sequences_with_line_breaks) {
   return CollapseWhitespaceT(text, trim_sequences_with_line_breaks);
 }
-#endif
 
 std::string CollapseWhitespaceASCII(const std::string& text,
                                     bool trim_sequences_with_line_breaks) {
@@ -336,8 +324,8 @@ bool ContainsOnlyWhitespaceASCII(const std::string& str) {
   return true;
 }
 
-bool ContainsOnlyWhitespace(const string16& str) {
-  return str.find_first_not_of(kWhitespaceUTF16) == string16::npos;
+bool ContainsOnlyWhitespace(const base::string16& str) {
+  return str.find_first_not_of(base::kWhitespaceUTF16) == string16::npos;
 }
 
 template<typename STR>
@@ -350,21 +338,18 @@ static bool ContainsOnlyCharsT(const STR& input, const STR& characters) {
   return true;
 }
 
-bool ContainsOnlyChars(const std::wstring& input,
-                       const std::wstring& characters) {
-  return ContainsOnlyCharsT(input, characters);
-}
-
-#if !defined(WCHAR_T_IS_UTF16)
 bool ContainsOnlyChars(const string16& input, const string16& characters) {
   return ContainsOnlyCharsT(input, characters);
 }
-#endif
 
 bool ContainsOnlyChars(const std::string& input,
                        const std::string& characters) {
   return ContainsOnlyCharsT(input, characters);
 }
+
+#if !defined(WCHAR_T_IS_UTF16)
+bool IsStringASCII(const std::wstring& str);
+#endif
 
 std::string WideToASCII(const std::wstring& wide) {
   DCHECK(IsStringASCII(wide)) << wide;
@@ -374,20 +359,6 @@ std::string WideToASCII(const std::wstring& wide) {
 std::string UTF16ToASCII(const string16& utf16) {
   DCHECK(IsStringASCII(utf16)) << utf16;
   return std::string(utf16.begin(), utf16.end());
-}
-
-// Latin1 is just the low range of Unicode, so we can copy directly to convert.
-bool WideToLatin1(const std::wstring& wide, std::string* latin1) {
-  std::string output;
-  output.resize(wide.size());
-  latin1->clear();
-  for (size_t i = 0; i < wide.size(); i++) {
-    if (wide[i] > 255)
-      return false;
-    output[i] = static_cast<char>(wide[i]);
-  }
-  latin1->swap(output);
-  return true;
 }
 
 template<class STR>
@@ -400,15 +371,15 @@ static bool DoIsStringASCII(const STR& str) {
   return true;
 }
 
+#if !defined(WCHAR_T_IS_UTF16)
 bool IsStringASCII(const std::wstring& str) {
   return DoIsStringASCII(str);
 }
+#endif
 
-#if !defined(WCHAR_T_IS_UTF16)
 bool IsStringASCII(const string16& str) {
   return DoIsStringASCII(str);
 }
-#endif
 
 bool IsStringASCII(const base::StringPiece& str) {
   return DoIsStringASCII(str);
@@ -444,15 +415,9 @@ bool LowerCaseEqualsASCII(const std::string& a, const char* b) {
   return DoLowerCaseEqualsASCII(a.begin(), a.end(), b);
 }
 
-bool LowerCaseEqualsASCII(const std::wstring& a, const char* b) {
-  return DoLowerCaseEqualsASCII(a.begin(), a.end(), b);
-}
-
-#if !defined(WCHAR_T_IS_UTF16)
 bool LowerCaseEqualsASCII(const string16& a, const char* b) {
   return DoLowerCaseEqualsASCII(a.begin(), a.end(), b);
 }
-#endif
 
 bool LowerCaseEqualsASCII(std::string::const_iterator a_begin,
                           std::string::const_iterator a_end,
@@ -460,19 +425,11 @@ bool LowerCaseEqualsASCII(std::string::const_iterator a_begin,
   return DoLowerCaseEqualsASCII(a_begin, a_end, b);
 }
 
-bool LowerCaseEqualsASCII(std::wstring::const_iterator a_begin,
-                          std::wstring::const_iterator a_end,
-                          const char* b) {
-  return DoLowerCaseEqualsASCII(a_begin, a_end, b);
-}
-
-#if !defined(WCHAR_T_IS_UTF16)
 bool LowerCaseEqualsASCII(string16::const_iterator a_begin,
                           string16::const_iterator a_end,
                           const char* b) {
   return DoLowerCaseEqualsASCII(a_begin, a_end, b);
 }
-#endif
 
 // TODO(port): Resolve wchar_t/iterator issues that require OS_ANDROID here.
 #if !defined(OS_ANDROID)
@@ -482,19 +439,11 @@ bool LowerCaseEqualsASCII(const char* a_begin,
   return DoLowerCaseEqualsASCII(a_begin, a_end, b);
 }
 
-bool LowerCaseEqualsASCII(const wchar_t* a_begin,
-                          const wchar_t* a_end,
-                          const char* b) {
-  return DoLowerCaseEqualsASCII(a_begin, a_end, b);
-}
-
-#if !defined(WCHAR_T_IS_UTF16)
 bool LowerCaseEqualsASCII(const char16* a_begin,
                           const char16* a_end,
                           const char* b) {
   return DoLowerCaseEqualsASCII(a_begin, a_end, b);
 }
-#endif
 
 #endif  // !defined(OS_ANDROID)
 
@@ -525,17 +474,10 @@ bool StartsWithT(const STR& str, const STR& search, bool case_sensitive) {
   }
 }
 
-bool StartsWith(const std::wstring& str, const std::wstring& search,
-                bool case_sensitive) {
-  return StartsWithT(str, search, case_sensitive);
-}
-
-#if !defined(WCHAR_T_IS_UTF16)
 bool StartsWith(const string16& str, const string16& search,
                 bool case_sensitive) {
   return StartsWithT(str, search, case_sensitive);
 }
-#endif
 
 template <typename STR>
 bool EndsWithT(const STR& str, const STR& search, bool case_sensitive) {
@@ -557,17 +499,10 @@ bool EndsWith(const std::string& str, const std::string& search,
   return EndsWithT(str, search, case_sensitive);
 }
 
-bool EndsWith(const std::wstring& str, const std::wstring& search,
-              bool case_sensitive) {
-  return EndsWithT(str, search, case_sensitive);
-}
-
-#if !defined(WCHAR_T_IS_UTF16)
 bool EndsWith(const string16& str, const string16& search,
               bool case_sensitive) {
   return EndsWithT(str, search, case_sensitive);
 }
-#endif
 
 static const char* const kByteStringsUnlocalized[] = {
   " B",
@@ -674,19 +609,11 @@ static size_t TokenizeT(const STR& str,
   return tokens->size();
 }
 
-size_t Tokenize(const std::wstring& str,
-                const std::wstring& delimiters,
-                std::vector<std::wstring>* tokens) {
-  return TokenizeT(str, delimiters, tokens);
-}
-
-#if !defined(WCHAR_T_IS_UTF16)
 size_t Tokenize(const string16& str,
                 const string16& delimiters,
                 std::vector<string16>* tokens) {
   return TokenizeT(str, delimiters, tokens);
 }
-#endif
 
 size_t Tokenize(const std::string& str,
                 const std::string& delimiters,
@@ -817,10 +744,9 @@ string16 ReplaceStringPlaceholders(const string16& format_string,
   subst.push_back(a);
   string16 result = ReplaceStringPlaceholders(format_string, subst, &offsets);
 
-  DCHECK(offsets.size() == 1);
-  if (offset) {
+  DCHECK_EQ(1U, offsets.size());
+  if (offset)
     *offset = offsets[0];
-  }
   return result;
 }
 

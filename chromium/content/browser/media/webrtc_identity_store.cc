@@ -31,28 +31,24 @@ struct WebRTCIdentityRequestResult {
   std::string private_key;
 };
 
-// Generates a new identity using |common_name| and returns the result in
-// |result|.
+// Generates a new identity using |common_name| which expires after
+// |validity_period| and returns the result in |result|.
 static void GenerateIdentityWorker(const std::string& common_name,
+                                   base::TimeDelta validity_period,
                                    WebRTCIdentityRequestResult* result) {
   result->error = net::OK;
   int serial_number = base::RandInt(0, std::numeric_limits<int>::max());
 
-  scoped_ptr<crypto::RSAPrivateKey> key(crypto::RSAPrivateKey::Create(1024));
-  if (!key.get()) {
-    DLOG(ERROR) << "Unable to create key pair for client";
-    result->error = net::ERR_KEY_GENERATION_FAILED;
-    return;
-  }
-
+  scoped_ptr<crypto::RSAPrivateKey> key;
   base::Time now = base::Time::Now();
-  bool success =
-      net::x509_util::CreateSelfSignedCert(key.get(),
-                                          "CN=" + common_name,
-                                          serial_number,
-                                          now,
-                                          now + base::TimeDelta::FromDays(30),
-                                          &result->certificate);
+  bool success = net::x509_util::CreateKeyAndSelfSignedCert(
+      "CN=" + common_name,
+      serial_number,
+      now,
+      now + validity_period,
+      &key,
+      &result->certificate);
+
   if (!success) {
     DLOG(ERROR) << "Unable to create x509 cert for client";
     result->error = net::ERR_SELF_SIGNED_CERT_GENERATION_FAILED;
@@ -176,8 +172,10 @@ class WebRTCIdentityRequestHandle {
 
 WebRTCIdentityStore::WebRTCIdentityStore(const base::FilePath& path,
                                          quota::SpecialStoragePolicy* policy)
-    : task_runner_(base::WorkerPool::GetTaskRunner(true)),
-      backend_(new WebRTCIdentityStoreBackend(path, policy)) {}
+    : validity_period_(base::TimeDelta::FromDays(30)),
+      task_runner_(base::WorkerPool::GetTaskRunner(true)),
+      backend_(new WebRTCIdentityStoreBackend(path, policy, validity_period_)) {
+  }
 
 WebRTCIdentityStore::~WebRTCIdentityStore() { backend_->Close(); }
 
@@ -226,6 +224,13 @@ void WebRTCIdentityStore::DeleteBetween(base::Time delete_begin,
   backend_->DeleteBetween(delete_begin, delete_end, callback);
 }
 
+void WebRTCIdentityStore::SetValidityPeriodForTesting(
+    base::TimeDelta validity_period) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  validity_period_ = validity_period;
+  backend_->SetValidityPeriodForTesting(validity_period);
+}
+
 void WebRTCIdentityStore::SetTaskRunnerForTesting(
     const scoped_refptr<base::TaskRunner>& task_runner) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -247,12 +252,15 @@ void WebRTCIdentityStore::BackendFindCallback(WebRTCIdentityRequest* request,
   WebRTCIdentityRequestResult* result =
       new WebRTCIdentityRequestResult(0, "", "");
   if (!task_runner_->PostTaskAndReply(
-          FROM_HERE,
-          base::Bind(&GenerateIdentityWorker, request->common_name_, result),
-          base::Bind(&WebRTCIdentityStore::GenerateIdentityCallback,
-                     this,
-                     request,
-                     base::Owned(result)))) {
+           FROM_HERE,
+           base::Bind(&GenerateIdentityWorker,
+                      request->common_name_,
+                      validity_period_,
+                      result),
+           base::Bind(&WebRTCIdentityStore::GenerateIdentityCallback,
+                      this,
+                      request,
+                      base::Owned(result)))) {
     // Completes the request with error if failed to post the task.
     WebRTCIdentityRequestResult result(net::ERR_UNEXPECTED, "", "");
     PostRequestResult(request, result);

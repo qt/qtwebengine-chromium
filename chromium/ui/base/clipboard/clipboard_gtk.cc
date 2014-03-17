@@ -217,7 +217,7 @@ Clipboard::~Clipboard() {
   gtk_clipboard_store(clipboard_);
 }
 
-void Clipboard::WriteObjects(Buffer buffer, const ObjectMap& objects) {
+void Clipboard::WriteObjects(ClipboardType type, const ObjectMap& objects) {
   DCHECK(CalledOnValidThread());
   clipboard_data_ = new TargetMap();
 
@@ -225,20 +225,20 @@ void Clipboard::WriteObjects(Buffer buffer, const ObjectMap& objects) {
        iter != objects.end(); ++iter) {
     DispatchObject(static_cast<ObjectType>(iter->first), iter->second);
   }
-  SetGtkClipboard(buffer);
+  SetGtkClipboard(type);
 
-  if (buffer == BUFFER_STANDARD) {
+  if (type == CLIPBOARD_TYPE_COPY_PASTE) {
     ObjectMap::const_iterator text_iter = objects.find(CBF_TEXT);
     if (text_iter != objects.end()) {
       // Copy text and SourceTag to the selection clipboard.
       ObjectMap::const_iterator next_iter = text_iter;
-      WriteObjects(BUFFER_SELECTION, ObjectMap(text_iter, ++next_iter));
+      WriteObjects(CLIPBOARD_TYPE_SELECTION, ObjectMap(text_iter, ++next_iter));
     }
   }
 }
 
 // Take ownership of the GTK clipboard and inform it of the targets we support.
-void Clipboard::SetGtkClipboard(Buffer buffer) {
+void Clipboard::SetGtkClipboard(ClipboardType type) {
   scoped_ptr<GtkTargetEntry[]> targets(
       new GtkTargetEntry[clipboard_data_->size()]);
 
@@ -250,7 +250,7 @@ void Clipboard::SetGtkClipboard(Buffer buffer) {
     targets[i].info = 0;
   }
 
-  GtkClipboard *clipboard = LookupBackingClipboard(buffer);
+  GtkClipboard *clipboard = LookupBackingClipboard(type);
 
   if (gtk_clipboard_set_with_data(clipboard, targets.get(),
                                   clipboard_data_->size(),
@@ -305,14 +305,7 @@ void Clipboard::WriteWebSmartPaste() {
   InsertMapping(kMimeTypeWebkitSmartPaste, NULL, 0);
 }
 
-void Clipboard::WriteBitmap(const char* pixel_data, const char* size_data) {
-  const gfx::Size* size = reinterpret_cast<const gfx::Size*>(size_data);
-
-  // Adopt the pixels into a SkBitmap. Note that the pixel order in memory is
-  // actually BGRA.
-  SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, size->width(), size->height());
-  bitmap.setPixels(const_cast<char*>(pixel_data));
+void Clipboard::WriteBitmap(const SkBitmap& bitmap) {
   GdkPixbuf* pixbuf = gfx::GdkPixbufFromSkBitmap(bitmap);
 
   // We store the GdkPixbuf*, and the size_t half of the pair is meaningless.
@@ -324,8 +317,8 @@ void Clipboard::WriteBitmap(const char* pixel_data, const char* size_data) {
 void Clipboard::WriteBookmark(const char* title_data, size_t title_len,
                               const char* url_data, size_t url_len) {
   // Write as a mozilla url (UTF16: URL, newline, title).
-  string16 url = UTF8ToUTF16(std::string(url_data, url_len) + "\n");
-  string16 title = UTF8ToUTF16(std::string(title_data, title_len));
+  base::string16 url = UTF8ToUTF16(std::string(url_data, url_len) + "\n");
+  base::string16 title = UTF8ToUTF16(std::string(title_data, title_len));
   if (title.length() >= std::numeric_limits<size_t>::max() / 4 ||
       url.length() >= std::numeric_limits<size_t>::max() / 4)
     return;
@@ -354,9 +347,9 @@ void Clipboard::WriteData(const FormatType& format,
 // a bug with the gtk clipboard. It caches the available targets
 // and does not always refresh the cache when it is appropriate.
 bool Clipboard::IsFormatAvailable(const Clipboard::FormatType& format,
-                                  Clipboard::Buffer buffer) const {
+                                  ClipboardType type) const {
   DCHECK(CalledOnValidThread());
-  GtkClipboard* clipboard = LookupBackingClipboard(buffer);
+  GtkClipboard* clipboard = LookupBackingClipboard(type);
   if (clipboard == NULL)
     return false;
 
@@ -405,16 +398,16 @@ bool Clipboard::IsFormatAvailable(const Clipboard::FormatType& format,
   return retval;
 }
 
-void Clipboard::Clear(Clipboard::Buffer buffer) {
+void Clipboard::Clear(ClipboardType type) {
   DCHECK(CalledOnValidThread());
-  GtkClipboard* clipboard = LookupBackingClipboard(buffer);
+  GtkClipboard* clipboard = LookupBackingClipboard(type);
   if (clipboard == NULL)
     return;
   gtk_clipboard_clear(clipboard);
 }
 
-void Clipboard::ReadAvailableTypes(Clipboard::Buffer buffer,
-                                   std::vector<string16>* types,
+void Clipboard::ReadAvailableTypes(ClipboardType type,
+                                   std::vector<base::string16>* types,
                                    bool* contains_filenames) const {
   DCHECK(CalledOnValidThread());
   if (!types || !contains_filenames) {
@@ -423,17 +416,17 @@ void Clipboard::ReadAvailableTypes(Clipboard::Buffer buffer,
   }
 
   types->clear();
-  if (IsFormatAvailable(GetPlainTextFormatType(), buffer))
+  if (IsFormatAvailable(GetPlainTextFormatType(), type))
     types->push_back(UTF8ToUTF16(kMimeTypeText));
-  if (IsFormatAvailable(GetHtmlFormatType(), buffer))
+  if (IsFormatAvailable(GetHtmlFormatType(), type))
     types->push_back(UTF8ToUTF16(kMimeTypeHTML));
-  if (IsFormatAvailable(GetRtfFormatType(), buffer))
+  if (IsFormatAvailable(GetRtfFormatType(), type))
     types->push_back(UTF8ToUTF16(kMimeTypeRTF));
-  if (IsFormatAvailable(GetBitmapFormatType(), buffer))
+  if (IsFormatAvailable(GetBitmapFormatType(), type))
     types->push_back(UTF8ToUTF16(kMimeTypePNG));
   *contains_filenames = false;
 
-  GtkClipboard* clipboard = LookupBackingClipboard(buffer);
+  GtkClipboard* clipboard = LookupBackingClipboard(type);
   if (!clipboard)
     return;
 
@@ -448,9 +441,9 @@ void Clipboard::ReadAvailableTypes(Clipboard::Buffer buffer,
 }
 
 
-void Clipboard::ReadText(Clipboard::Buffer buffer, string16* result) const {
+void Clipboard::ReadText(ClipboardType type, base::string16* result) const {
   DCHECK(CalledOnValidThread());
-  GtkClipboard* clipboard = LookupBackingClipboard(buffer);
+  GtkClipboard* clipboard = LookupBackingClipboard(type);
   if (clipboard == NULL)
     return;
 
@@ -465,10 +458,10 @@ void Clipboard::ReadText(Clipboard::Buffer buffer, string16* result) const {
   g_free(text);
 }
 
-void Clipboard::ReadAsciiText(Clipboard::Buffer buffer,
+void Clipboard::ReadAsciiText(ClipboardType type,
                               std::string* result) const {
   DCHECK(CalledOnValidThread());
-  GtkClipboard* clipboard = LookupBackingClipboard(buffer);
+  GtkClipboard* clipboard = LookupBackingClipboard(type);
   if (clipboard == NULL)
     return;
 
@@ -484,8 +477,10 @@ void Clipboard::ReadAsciiText(Clipboard::Buffer buffer,
 
 // TODO(estade): handle different charsets.
 // TODO(port): set *src_url.
-void Clipboard::ReadHTML(Clipboard::Buffer buffer, string16* markup,
-                         std::string* src_url, uint32* fragment_start,
+void Clipboard::ReadHTML(ClipboardType type,
+                         base::string16* markup,
+                         std::string* src_url,
+                         uint32* fragment_start,
                          uint32* fragment_end) const {
   DCHECK(CalledOnValidThread());
   markup->clear();
@@ -494,7 +489,7 @@ void Clipboard::ReadHTML(Clipboard::Buffer buffer, string16* markup,
   *fragment_start = 0;
   *fragment_end = 0;
 
-  GtkClipboard* clipboard = LookupBackingClipboard(buffer);
+  GtkClipboard* clipboard = LookupBackingClipboard(type);
   if (clipboard == NULL)
     return;
   GtkSelectionData* data = gtk_clipboard_wait_for_contents(clipboard,
@@ -527,12 +522,12 @@ void Clipboard::ReadHTML(Clipboard::Buffer buffer, string16* markup,
   gtk_selection_data_free(data);
 }
 
-void Clipboard::ReadRTF(Buffer buffer, std::string* result) const {
+void Clipboard::ReadRTF(ClipboardType type, std::string* result) const {
   DCHECK(CalledOnValidThread());
   ReadData(GetRtfFormatType(), result);
 }
 
-SkBitmap Clipboard::ReadImage(Buffer buffer) const {
+SkBitmap Clipboard::ReadImage(ClipboardType type) const {
   DCHECK(CalledOnValidThread());
   ScopedGObject<GdkPixbuf>::Type pixbuf(
       gtk_clipboard_wait_for_image(clipboard_));
@@ -541,8 +536,7 @@ SkBitmap Clipboard::ReadImage(Buffer buffer) const {
 
   gfx::Canvas canvas(gfx::Size(gdk_pixbuf_get_width(pixbuf.get()),
                                gdk_pixbuf_get_height(pixbuf.get())),
-                     ui::SCALE_FACTOR_100P,
-                     false);
+                     1.0f, false);
   {
     skia::ScopedPlatformPaint scoped_platform_paint(canvas.sk_canvas());
     cairo_t* context = scoped_platform_paint.GetPlatformSurface();
@@ -552,11 +546,11 @@ SkBitmap Clipboard::ReadImage(Buffer buffer) const {
   return canvas.ExtractImageRep().sk_bitmap();
 }
 
-void Clipboard::ReadCustomData(Buffer buffer,
-                               const string16& type,
-                               string16* result) const {
+void Clipboard::ReadCustomData(ClipboardType clipboard_type,
+                               const base::string16& type,
+                               base::string16* result) const {
   DCHECK(CalledOnValidThread());
-  GtkClipboard* clipboard = LookupBackingClipboard(buffer);
+  GtkClipboard* clipboard = LookupBackingClipboard(clipboard_type);
   if (!clipboard)
     return;
 
@@ -570,7 +564,7 @@ void Clipboard::ReadCustomData(Buffer buffer,
   gtk_selection_data_free(data);
 }
 
-void Clipboard::ReadBookmark(string16* title, std::string* url) const {
+void Clipboard::ReadBookmark(base::string16* title, std::string* url) const {
   // TODO(estade): implement this.
   NOTIMPLEMENTED();
 }
@@ -588,9 +582,9 @@ void Clipboard::ReadData(const FormatType& format, std::string* result) const {
   gtk_selection_data_free(data);
 }
 
-uint64 Clipboard::GetSequenceNumber(Buffer buffer) {
+uint64 Clipboard::GetSequenceNumber(ClipboardType type) {
   DCHECK(CalledOnValidThread());
-  if (buffer == BUFFER_STANDARD)
+  if (type == CLIPBOARD_TYPE_COPY_PASTE)
     return SelectionChangeObserver::GetInstance()->clipboard_sequence_number();
   else
     return SelectionChangeObserver::GetInstance()->primary_sequence_number();
@@ -667,11 +661,11 @@ void Clipboard::InsertMapping(const char* key,
   (*clipboard_data_)[key] = std::make_pair(data, data_len);
 }
 
-GtkClipboard* Clipboard::LookupBackingClipboard(Buffer clipboard) const {
-  switch (clipboard) {
-    case BUFFER_STANDARD:
+GtkClipboard* Clipboard::LookupBackingClipboard(ClipboardType type) const {
+  switch (type) {
+    case CLIPBOARD_TYPE_COPY_PASTE:
       return clipboard_;
-    case BUFFER_SELECTION:
+    case CLIPBOARD_TYPE_SELECTION:
       return primary_selection_;
     default:
       NOTREACHED();

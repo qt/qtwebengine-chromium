@@ -26,7 +26,7 @@
 #include "config.h"
 #include "modules/mediastream/RTCDTMFToneChangeEvent.h"
 
-#include "core/dom/EventNames.h"
+#include "core/events/ThreadLocalEventNames.h"
 
 namespace WebCore {
 
@@ -42,7 +42,7 @@ PassRefPtr<RTCDTMFToneChangeEvent> RTCDTMFToneChangeEvent::create(const String& 
 
 PassRefPtr<RTCDTMFToneChangeEvent> RTCDTMFToneChangeEvent::create(const AtomicString& type, const RTCDTMFToneChangeEventInit& initializer)
 {
-    ASSERT(type == eventNames().tonechangeEvent);
+    ASSERT(type == EventTypeNames::tonechange);
     return adoptRef(new RTCDTMFToneChangeEvent(initializer));
 }
 
@@ -52,14 +52,14 @@ RTCDTMFToneChangeEvent::RTCDTMFToneChangeEvent()
 }
 
 RTCDTMFToneChangeEvent::RTCDTMFToneChangeEvent(const String& tone)
-    : Event(eventNames().tonechangeEvent, false, false)
+    : Event(EventTypeNames::tonechange, false, false)
     , m_tone(tone)
 {
     ScriptWrappable::init(this);
 }
 
 RTCDTMFToneChangeEvent::RTCDTMFToneChangeEvent(const RTCDTMFToneChangeEventInit& initializer)
-    : Event(eventNames().tonechangeEvent, initializer)
+    : Event(EventTypeNames::tonechange, initializer)
     , m_tone(initializer.tone)
 {
     ScriptWrappable::init(this);
@@ -76,7 +76,7 @@ const String& RTCDTMFToneChangeEvent::tone() const
 
 const AtomicString& RTCDTMFToneChangeEvent::interfaceName() const
 {
-    return eventNames().interfaceForRTCDTMFToneChangeEvent;
+    return EventNames::RTCDTMFToneChangeEvent;
 }
 
 } // namespace WebCore

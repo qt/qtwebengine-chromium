@@ -30,10 +30,10 @@
  */
 
 [
-    GlobalContext=Window&WorkerGlobalScope,
     ActiveDOMObject,
     Constructor,
-    ConstructorCallWith=ScriptExecutionContext
+    ConstructorCallWith=ExecutionContext,
+    GlobalContext=Window&WorkerGlobalScope,
 ] interface FileReader : EventTarget {
     // ready states
     const unsigned short EMPTY = 0;
@@ -50,7 +50,7 @@
     void abort();
 
     // file data
-    [Custom] readonly attribute any result;
+    [Custom=Getter] readonly attribute object result;
 
     readonly attribute FileError error;
 

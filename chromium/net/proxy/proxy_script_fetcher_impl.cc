@@ -13,6 +13,7 @@
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
+#include "net/base/request_priority.h"
 #include "net/cert/cert_status_flags.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request_context.h"
@@ -133,7 +134,8 @@ int ProxyScriptFetcherImpl::Fetch(
     return OK;
   }
 
-  cur_request_.reset(url_request_context_->CreateRequest(url, this));
+  cur_request_ =
+      url_request_context_->CreateRequest(url, DEFAULT_PRIORITY, this);
   cur_request_->set_method("GET");
 
   // Make sure that the PAC script is downloaded using a direct connection,
@@ -145,8 +147,8 @@ int ProxyScriptFetcherImpl::Fetch(
   // checking in order to avoid a circular dependency when attempting to fetch
   // the OCSP response or CRL. We could make the revocation check go direct but
   // the proxy might be the only way to the outside world.
-  cur_request_->set_load_flags(LOAD_BYPASS_PROXY | LOAD_DISABLE_CACHE |
-                               LOAD_DISABLE_CERT_REVOCATION_CHECKING);
+  cur_request_->SetLoadFlags(LOAD_BYPASS_PROXY | LOAD_DISABLE_CACHE |
+                             LOAD_DISABLE_CERT_REVOCATION_CHECKING);
 
   // Save the caller's info for notification on completion.
   callback_ = callback;

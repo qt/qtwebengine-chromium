@@ -8,6 +8,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "cc/base/ref_counted_managed.h"
 #include "cc/resources/managed_tile_state.h"
 #include "cc/resources/raster_mode.h"
 #include "cc/resources/tile_priority.h"
@@ -18,19 +19,14 @@ namespace cc {
 
 class PicturePileImpl;
 
-class CC_EXPORT Tile : public base::RefCounted<Tile> {
+class CC_EXPORT Tile : public RefCountedManaged<Tile> {
  public:
-  typedef uint64 Id;
+  enum TileRasterFlags {
+    USE_LCD_TEXT = 1 << 0,
+    USE_GPU_RASTERIZATION = 1 << 1
+  };
 
-  Tile(TileManager* tile_manager,
-       PicturePileImpl* picture_pile,
-       gfx::Size tile_size,
-       gfx::Rect content_rect,
-       gfx::Rect opaque_rect,
-       float contents_scale,
-       int layer_id,
-       int source_frame_number,
-       bool can_use_lcd_text);
+  typedef uint64 Id;
 
   Id id() const {
     return id_;
@@ -62,11 +58,25 @@ class CC_EXPORT Tile : public base::RefCounted<Tile> {
   }
 
   void set_can_use_lcd_text(bool can_use_lcd_text) {
-    can_use_lcd_text_ = can_use_lcd_text;
+    if (can_use_lcd_text)
+      flags_ |= USE_LCD_TEXT;
+    else
+      flags_ &= ~USE_LCD_TEXT;
   }
 
   bool can_use_lcd_text() const {
-    return can_use_lcd_text_;
+    return !!(flags_ & USE_LCD_TEXT);
+  }
+
+  void set_use_gpu_rasterization(bool use_gpu_rasterization) {
+    if (use_gpu_rasterization)
+      flags_ |= USE_GPU_RASTERIZATION;
+    else
+      flags_ &= ~USE_GPU_RASTERIZATION;
+  }
+
+  bool use_gpu_rasterization() const {
+    return !!(flags_ & USE_GPU_RASTERIZATION);
   }
 
   scoped_ptr<base::Value> AsValue() const;
@@ -116,17 +126,26 @@ class CC_EXPORT Tile : public base::RefCounted<Tile> {
   gfx::Size size() const { return tile_size_.size(); }
 
  private:
-  // Methods called by by tile manager.
   friend class TileManager;
   friend class PrioritizedTileSet;
   friend class FakeTileManager;
   friend class BinComparator;
+  friend class FakePictureLayerImpl;
+
+  // Methods called by by tile manager.
+  Tile(TileManager* tile_manager,
+       PicturePileImpl* picture_pile,
+       gfx::Size tile_size,
+       gfx::Rect content_rect,
+       gfx::Rect opaque_rect,
+       float contents_scale,
+       int layer_id,
+       int source_frame_number,
+       int flags);
+  ~Tile();
+
   ManagedTileState& managed_state() { return managed_state_; }
   const ManagedTileState& managed_state() const { return managed_state_; }
-
-  // Normal private methods.
-  friend class base::RefCounted<Tile>;
-  ~Tile();
 
   TileManager* tile_manager_;
   scoped_refptr<PicturePileImpl> picture_pile_;
@@ -139,7 +158,7 @@ class CC_EXPORT Tile : public base::RefCounted<Tile> {
   ManagedTileState managed_state_;
   int layer_id_;
   int source_frame_number_;
-  bool can_use_lcd_text_;
+  int flags_;
 
   Id id_;
   static Id s_next_id_;

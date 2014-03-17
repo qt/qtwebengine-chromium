@@ -28,24 +28,21 @@
 #include "core/page/ContextMenuController.h"
 
 #include "core/dom/Document.h"
-#include "core/dom/Event.h"
-#include "core/dom/MouseEvent.h"
+#include "core/events/Event.h"
+#include "core/events/MouseEvent.h"
 #include "core/dom/Node.h"
 #include "core/page/ContextMenuClient.h"
 #include "core/page/ContextMenuProvider.h"
 #include "core/page/EventHandler.h"
-#include "core/page/Frame.h"
-#include "core/platform/ContextMenu.h"
-#include "core/platform/ContextMenuItem.h"
-#include "core/rendering/HitTestResult.h"
+#include "core/frame/Frame.h"
+#include "platform/ContextMenu.h"
+#include "platform/ContextMenuItem.h"
 
 namespace WebCore {
 
-ContextMenuController::ContextMenuController(Page* page, ContextMenuClient* client)
-    : m_page(page)
-    , m_client(client)
+ContextMenuController::ContextMenuController(Page*, ContextMenuClient* client)
+    : m_client(client)
 {
-    ASSERT_ARG(page, page);
     ASSERT_ARG(client, client);
 }
 
@@ -72,7 +69,7 @@ void ContextMenuController::documentDetached(Document* document)
 {
     if (Node* innerNode = m_hitTestResult.innerNode()) {
         // Invalidate the context menu info if its target document is detached.
-        if (&innerNode->document() == document)
+        if (innerNode->document() == document)
             clearContextMenu();
     }
 }
@@ -111,7 +108,7 @@ PassOwnPtr<ContextMenu> ContextMenuController::createContextMenu(Event* event)
     HitTestResult result(mouseEvent->absoluteLocation());
 
     if (Frame* frame = event->target()->toNode()->document().frame())
-        result = frame->eventHandler()->hitTestResultAtPoint(mouseEvent->absoluteLocation(), HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::DisallowShadowContent);
+        result = frame->eventHandler().hitTestResultAtPoint(mouseEvent->absoluteLocation(), HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent);
 
     if (!result.innerNonSharedNode())
         return nullptr;

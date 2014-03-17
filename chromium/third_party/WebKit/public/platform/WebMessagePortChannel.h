@@ -34,7 +34,7 @@
 #include "WebCommon.h"
 #include "WebVector.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebMessagePortChannelClient;
 class WebString;
@@ -57,6 +57,23 @@ protected:
     ~WebMessagePortChannel() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
-#endif
+#if INSIDE_BLINK
+
+namespace WTF {
+
+template<typename T> struct OwnedPtrDeleter;
+template<> struct OwnedPtrDeleter<blink::WebMessagePortChannel> {
+    static void deletePtr(blink::WebMessagePortChannel* channel)
+    {
+        if (channel)
+            channel->destroy();
+    }
+};
+
+} // namespace WTF
+
+#endif // INSIDE_BLINK
+
+#endif // WebMessagePortChannel_h

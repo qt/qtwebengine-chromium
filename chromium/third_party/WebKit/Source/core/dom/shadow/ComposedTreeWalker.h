@@ -77,7 +77,7 @@ private:
 #ifndef NDEBUG
         ASSERT(m_node);
         ASSERT(!m_node->isShadowRoot());
-        ASSERT(!isActiveInsertionPoint(m_node));
+        ASSERT(!isActiveInsertionPoint(*m_node));
 #endif
     }
 
@@ -106,11 +106,8 @@ private:
     static Node* traverseDistributedNodes(const Node*, const InsertionPoint*, TraversalDirection);
 
     static Node* traverseBackToYoungerShadowRoot(const Node*, TraversalDirection);
-    static Node* escapeFallbackContentElement(const Node*, TraversalDirection);
 
-    Node* traverseNodeEscapingFallbackContents(const Node*, ParentTraversalDetails* = 0) const;
-    Node* traverseParentInCurrentTree(const Node*, ParentTraversalDetails* = 0) const;
-    Node* traverseParentBackToYoungerShadowRootOrHost(const ShadowRoot*, ParentTraversalDetails* = 0) const;
+    Node* traverseParentOrHost(const Node*, ParentTraversalDetails* = 0) const;
 
     const Node* m_node;
 };
@@ -118,7 +115,6 @@ private:
 inline ComposedTreeWalker::ComposedTreeWalker(const Node* node, StartPolicy startPolicy)
     : m_node(node)
 {
-    UNUSED_PARAM(startPolicy);
 #ifndef NDEBUG
     if (m_node && startPolicy == CannotStartFromShadowBoundary)
         assertPrecondition();

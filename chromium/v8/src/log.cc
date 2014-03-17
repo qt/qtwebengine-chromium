@@ -212,7 +212,7 @@ void CodeEventLogger::CodeCreateEvent(Logger::LogEventsAndTags tag,
                                       Code* code,
                                       SharedFunctionInfo* shared,
                                       CompilationInfo* info,
-                                      Name* source, int line) {
+                                      Name* source, int line, int column) {
   name_buffer_->Init(tag);
   name_buffer_->AppendBytes(ComputeMarker(code));
   name_buffer_->AppendString(shared->DebugName());
@@ -243,6 +243,231 @@ void CodeEventLogger::RegExpCodeCreateEvent(Code* code, String* source) {
   name_buffer_->Init(Logger::REG_EXP_TAG);
   name_buffer_->AppendString(source);
   LogRecordedBuffer(code, NULL, name_buffer_->get(), name_buffer_->size());
+}
+
+
+// Linux perf tool logging support
+class PerfBasicLogger : public CodeEventLogger {
+ public:
+  PerfBasicLogger();
+  virtual ~PerfBasicLogger();
+
+  virtual void CodeMoveEvent(Address from, Address to) { }
+  virtual void CodeDeleteEvent(Address from) { }
+
+ private:
+  virtual void LogRecordedBuffer(Code* code,
+                                 SharedFunctionInfo* shared,
+                                 const char* name,
+                                 int length);
+
+  // Extension added to V8 log file name to get the low-level log name.
+  static const char kFilenameFormatString[];
+  static const int kFilenameBufferPadding;
+
+  // File buffer size of the low-level log. We don't use the default to
+  // minimize the associated overhead.
+  static const int kLogBufferSize = 2 * MB;
+
+  FILE* perf_output_handle_;
+};
+
+const char PerfBasicLogger::kFilenameFormatString[] = "/tmp/perf-%d.map";
+// Extra space for the PID in the filename
+const int PerfBasicLogger::kFilenameBufferPadding = 16;
+
+PerfBasicLogger::PerfBasicLogger()
+    : perf_output_handle_(NULL) {
+  // Open the perf JIT dump file.
+  int bufferSize = sizeof(kFilenameFormatString) + kFilenameBufferPadding;
+  ScopedVector<char> perf_dump_name(bufferSize);
+  int size = OS::SNPrintF(
+      perf_dump_name,
+      kFilenameFormatString,
+      OS::GetCurrentProcessId());
+  CHECK_NE(size, -1);
+  perf_output_handle_ = OS::FOpen(perf_dump_name.start(), OS::LogFileOpenMode);
+  CHECK_NE(perf_output_handle_, NULL);
+  setvbuf(perf_output_handle_, NULL, _IOFBF, kLogBufferSize);
+}
+
+
+PerfBasicLogger::~PerfBasicLogger() {
+  fclose(perf_output_handle_);
+  perf_output_handle_ = NULL;
+}
+
+
+void PerfBasicLogger::LogRecordedBuffer(Code* code,
+                                       SharedFunctionInfo*,
+                                       const char* name,
+                                       int length) {
+  ASSERT(code->instruction_start() == code->address() + Code::kHeaderSize);
+
+  OS::FPrint(perf_output_handle_, "%llx %x %.*s\n",
+      reinterpret_cast<uint64_t>(code->instruction_start()),
+      code->instruction_size(),
+      length, name);
+}
+
+
+// Linux perf tool logging support
+class PerfJitLogger : public CodeEventLogger {
+ public:
+  PerfJitLogger();
+  virtual ~PerfJitLogger();
+
+  virtual void CodeMoveEvent(Address from, Address to) { }
+  virtual void CodeDeleteEvent(Address from) { }
+
+ private:
+  virtual void LogRecordedBuffer(Code* code,
+                                 SharedFunctionInfo* shared,
+                                 const char* name,
+                                 int length);
+
+  // Extension added to V8 log file name to get the low-level log name.
+  static const char kFilenameFormatString[];
+  static const int kFilenameBufferPadding;
+
+  // File buffer size of the low-level log. We don't use the default to
+  // minimize the associated overhead.
+  static const int kLogBufferSize = 2 * MB;
+
+  void LogWriteBytes(const char* bytes, int size);
+  void LogWriteHeader();
+
+  static const uint32_t kJitHeaderMagic = 0x4F74496A;
+  static const uint32_t kJitHeaderVersion = 0x2;
+  static const uint32_t kElfMachIA32 = 3;
+  static const uint32_t kElfMachX64 = 62;
+  static const uint32_t kElfMachARM = 40;
+  static const uint32_t kElfMachMIPS = 10;
+
+  struct jitheader {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t total_size;
+    uint32_t elf_mach;
+    uint32_t pad1;
+    uint32_t pid;
+    uint64_t timestamp;
+  };
+
+  enum jit_record_type {
+    JIT_CODE_LOAD = 0
+    // JIT_CODE_UNLOAD = 1,
+    // JIT_CODE_CLOSE = 2,
+    // JIT_CODE_DEBUG_INFO = 3,
+    // JIT_CODE_PAGE_MAP = 4,
+    // JIT_CODE_MAX = 5
+  };
+
+  struct jr_code_load {
+    uint32_t id;
+    uint32_t total_size;
+    uint64_t timestamp;
+    uint64_t vma;
+    uint64_t code_addr;
+    uint32_t code_size;
+    uint32_t align;
+  };
+
+  uint32_t GetElfMach() {
+#if V8_TARGET_ARCH_IA32
+    return kElfMachIA32;
+#elif V8_TARGET_ARCH_X64
+    return kElfMachX64;
+#elif V8_TARGET_ARCH_ARM
+    return kElfMachARM;
+#elif V8_TARGET_ARCH_MIPS
+    return kElfMachMIPS;
+#else
+    UNIMPLEMENTED();
+    return 0;
+#endif
+  }
+
+  FILE* perf_output_handle_;
+};
+
+const char PerfJitLogger::kFilenameFormatString[] = "/tmp/jit-%d.dump";
+
+// Extra padding for the PID in the filename
+const int PerfJitLogger::kFilenameBufferPadding = 16;
+
+PerfJitLogger::PerfJitLogger()
+    : perf_output_handle_(NULL) {
+  // Open the perf JIT dump file.
+  int bufferSize = sizeof(kFilenameFormatString) + kFilenameBufferPadding;
+  ScopedVector<char> perf_dump_name(bufferSize);
+  int size = OS::SNPrintF(
+      perf_dump_name,
+      kFilenameFormatString,
+      OS::GetCurrentProcessId());
+  CHECK_NE(size, -1);
+  perf_output_handle_ = OS::FOpen(perf_dump_name.start(), OS::LogFileOpenMode);
+  CHECK_NE(perf_output_handle_, NULL);
+  setvbuf(perf_output_handle_, NULL, _IOFBF, kLogBufferSize);
+
+  LogWriteHeader();
+}
+
+
+PerfJitLogger::~PerfJitLogger() {
+  fclose(perf_output_handle_);
+  perf_output_handle_ = NULL;
+}
+
+
+void PerfJitLogger::LogRecordedBuffer(Code* code,
+                                      SharedFunctionInfo*,
+                                      const char* name,
+                                      int length) {
+  ASSERT(code->instruction_start() == code->address() + Code::kHeaderSize);
+  ASSERT(perf_output_handle_ != NULL);
+
+  const char* code_name = name;
+  uint8_t* code_pointer = reinterpret_cast<uint8_t*>(code->instruction_start());
+  uint32_t code_size = code->instruction_size();
+
+  static const char string_terminator[] = "\0";
+
+  jr_code_load code_load;
+  code_load.id = JIT_CODE_LOAD;
+  code_load.total_size = sizeof(code_load) + length + 1 + code_size;
+  code_load.timestamp =
+      static_cast<uint64_t>(OS::TimeCurrentMillis() * 1000.0);
+  code_load.vma = 0x0;  //  Our addresses are absolute.
+  code_load.code_addr = reinterpret_cast<uint64_t>(code->instruction_start());
+  code_load.code_size = code_size;
+  code_load.align = 0;
+
+  LogWriteBytes(reinterpret_cast<const char*>(&code_load), sizeof(code_load));
+  LogWriteBytes(code_name, length);
+  LogWriteBytes(string_terminator, 1);
+  LogWriteBytes(reinterpret_cast<const char*>(code_pointer), code_size);
+}
+
+
+void PerfJitLogger::LogWriteBytes(const char* bytes, int size) {
+  size_t rv = fwrite(bytes, 1, size, perf_output_handle_);
+  ASSERT(static_cast<size_t>(size) == rv);
+  USE(rv);
+}
+
+
+void PerfJitLogger::LogWriteHeader() {
+  ASSERT(perf_output_handle_ != NULL);
+  jitheader header;
+  header.magic = kJitHeaderMagic;
+  header.version = kJitHeaderVersion;
+  header.total_size = sizeof(jitheader);
+  header.pad1 = 0xdeadbeef;
+  header.elf_mach = GetElfMach();
+  header.pid = OS::GetCurrentProcessId();
+  header.timestamp = static_cast<uint64_t>(OS::TimeCurrentMillis() * 1000.0);
+  LogWriteBytes(reinterpret_cast<const char*>(&header), sizeof(header));
 }
 
 
@@ -711,6 +936,8 @@ Logger::Logger(Isolate* isolate)
     log_events_(NULL),
     is_logging_(false),
     log_(new Log(this)),
+    perf_basic_logger_(NULL),
+    perf_jit_logger_(NULL),
     ll_logger_(NULL),
     jit_logger_(NULL),
     listeners_(5),
@@ -1232,10 +1459,11 @@ void Logger::CodeCreateEvent(LogEventsAndTags tag,
                              SharedFunctionInfo* shared,
                              CompilationInfo* info,
                              Name* source, int line, int column) {
-  PROFILER_LOG(CodeCreateEvent(tag, code, shared, info, source, line));
+  PROFILER_LOG(CodeCreateEvent(tag, code, shared, info, source, line, column));
 
   if (!is_logging_code_events()) return;
-  CALL_LISTENERS(CodeCreateEvent(tag, code, shared, info, source, line));
+  CALL_LISTENERS(CodeCreateEvent(tag, code, shared, info, source, line,
+                                 column));
 
   if (!FLAG_log_code || !log_->IsEnabled()) return;
   Log::MessageBuilder msg(log_);
@@ -1610,7 +1838,7 @@ void Logger::LogCodeObject(Object* object) {
     case Code::FUNCTION:
     case Code::OPTIMIZED_FUNCTION:
       return;  // We log this later using LogCompiledFunctions.
-    case Code::BINARY_OP_IC:   // fall through
+    case Code::BINARY_OP_IC:
     case Code::COMPARE_IC:  // fall through
     case Code::COMPARE_NIL_IC:   // fall through
     case Code::TO_BOOLEAN_IC:  // fall through
@@ -1628,6 +1856,10 @@ void Logger::LogCodeObject(Object* object) {
     case Code::BUILTIN:
       description = "A builtin from the snapshot";
       tag = Logger::BUILTIN_TAG;
+      break;
+    case Code::HANDLER:
+      description = "An IC handler from the snapshot";
+      tag = Logger::HANDLER_TAG;
       break;
     case Code::KEYED_LOAD_IC:
       description = "A keyed load IC from the snapshot";
@@ -1765,15 +1997,14 @@ void Logger::LogAccessorCallbacks() {
 
 
 static void AddIsolateIdIfNeeded(Isolate* isolate, StringStream* stream) {
-  if (isolate->IsDefaultIsolate()) return;
+  if (isolate->IsDefaultIsolate() || !FLAG_logfile_per_isolate) return;
   stream->Add("isolate-%p-", isolate);
 }
 
 
 static SmartArrayPointer<const char> PrepareLogFileName(
     Isolate* isolate, const char* file_name) {
-  if (strchr(file_name, '%') != NULL ||
-      !isolate->IsDefaultIsolate()) {
+  if (strchr(file_name, '%') != NULL || !isolate->IsDefaultIsolate()) {
     // If there's a '%' in the log file name we have to expand
     // placeholders.
     HeapStringAllocator allocator;
@@ -1834,6 +2065,17 @@ bool Logger::SetUp(Isolate* isolate) {
   SmartArrayPointer<const char> log_file_name =
       PrepareLogFileName(isolate, FLAG_logfile);
   log_->Initialize(*log_file_name);
+
+
+  if (FLAG_perf_basic_prof) {
+    perf_basic_logger_ = new PerfBasicLogger();
+    addCodeEventListener(perf_basic_logger_);
+  }
+
+  if (FLAG_perf_jit_prof) {
+    perf_jit_logger_ = new PerfJitLogger();
+    addCodeEventListener(perf_jit_logger_);
+  }
 
   if (FLAG_ll_prof) {
     ll_logger_ = new LowLevelLogger(*log_file_name);
@@ -1896,6 +2138,18 @@ FILE* Logger::TearDown() {
 
   delete ticker_;
   ticker_ = NULL;
+
+  if (perf_basic_logger_) {
+    removeCodeEventListener(perf_basic_logger_);
+    delete perf_basic_logger_;
+    perf_basic_logger_ = NULL;
+  }
+
+  if (perf_jit_logger_) {
+    removeCodeEventListener(perf_jit_logger_);
+    delete perf_jit_logger_;
+    perf_jit_logger_ = NULL;
+  }
 
   if (ll_logger_) {
     removeCodeEventListener(ll_logger_);

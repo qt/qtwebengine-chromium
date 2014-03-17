@@ -304,6 +304,7 @@ gen_config_files win/ia32 "--target=x86-win32-vs7 --enable-realtime-only ${all_p
 gen_config_files win/x64 "--target=x86_64-win64-vs9 --enable-realtime-only ${all_platforms}"
 gen_config_files mac/ia32 "--target=x86-darwin9-gcc --enable-pic --enable-realtime-only ${all_platforms}"
 gen_config_files mac/x64 "--target=x86_64-darwin9-gcc --enable-pic --enable-realtime-only ${all_platforms}"
+gen_config_files nacl "--target=generic-gnu --enable-pic --enable-realtime-only ${all_platforms}"
 
 echo "Remove temporary directory."
 cd $BASE_DIR
@@ -319,6 +320,7 @@ lint_config win/ia32
 lint_config win/x64
 lint_config mac/ia32
 lint_config mac/x64
+lint_config nacl
 
 echo "Create temporary directory."
 TEMP_DIR="$LIBVPX_SRC_DIR.temp"
@@ -336,6 +338,7 @@ gen_rtcd_header win/ia32 x86
 gen_rtcd_header win/x64 x86_64
 gen_rtcd_header mac/ia32 x86
 gen_rtcd_header mac/x64 x86_64
+gen_rtcd_header nacl nacl
 
 echo "Prepare Makefile."
 ./configure --target=generic-gnu > /dev/null
@@ -379,6 +382,12 @@ config=$(print_config_basic linux/mipsel)
 make_clean
 make libvpx_srcs.txt target=libs $config > /dev/null
 convert_srcs_to_gypi libvpx_srcs.txt libvpx_srcs_mips
+
+echo "Generate NaCl source list."
+config=$(print_config_basic nacl)
+make_clean
+make libvpx_srcs.txt target=libs $config > /dev/null
+convert_srcs_to_gypi libvpx_srcs.txt libvpx_srcs_nacl
 
 echo "Remove temporary directory."
 cd $BASE_DIR

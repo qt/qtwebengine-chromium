@@ -30,8 +30,8 @@
 
 /**
  * @constructor
- * @param {WebInspector.SimpleWorkspaceProvider} networkWorkspaceProvider
- * @param {WebInspector.Workspace} workspace
+ * @param {!WebInspector.SimpleWorkspaceProvider} networkWorkspaceProvider
+ * @param {!WebInspector.Workspace} workspace
  */
 WebInspector.NetworkUISourceCodeProvider = function(networkWorkspaceProvider, workspace)
 {
@@ -48,6 +48,10 @@ WebInspector.NetworkUISourceCodeProvider = function(networkWorkspaceProvider, wo
 WebInspector.NetworkUISourceCodeProvider.prototype = {
     _populate: function()
     {
+        /**
+         * @param {!WebInspector.ResourceTreeFrame} frame
+         * @this {WebInspector.NetworkUISourceCodeProvider}
+         */
         function populateFrame(frame)
         {
             for (var i = 0; i < frame.childFrames.length; ++i)
@@ -62,28 +66,28 @@ WebInspector.NetworkUISourceCodeProvider.prototype = {
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _parsedScriptSource: function(event)
     {
-        var script = /** @type {WebInspector.Script} */ (event.data);
+        var script = /** @type {!WebInspector.Script} */ (event.data);
         if (!script.sourceURL || script.isInlineScript() || script.isSnippet())
             return;
         // Filter out embedder injected content scripts.
         if (script.isContentScript && !script.hasSourceURL) {
             var parsedURL = new WebInspector.ParsedURL(script.sourceURL);
-            if (!parsedURL.host)
+            if (!parsedURL.isValid)
                 return;
         }
         this._addFile(script.sourceURL, script, script.isContentScript);
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _styleSheetAdded: function(event)
     {
-        var header = /** @type {WebInspector.CSSStyleSheetHeader} */ (event.data);
+        var header = /** @type {!WebInspector.CSSStyleSheetHeader} */ (event.data);
         if ((!header.hasSourceURL || header.isInline) && header.origin !== "inspector")
             return;
 
@@ -91,16 +95,16 @@ WebInspector.NetworkUISourceCodeProvider.prototype = {
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event|{data: !WebInspector.Resource}} event
      */
     _resourceAdded: function(event)
     {
-        var resource = /** @type {WebInspector.Resource} */ (event.data);
+        var resource = /** @type {!WebInspector.Resource} */ (event.data);
         this._addFile(resource.url, resource);
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _mainFrameNavigated: function(event)
     {
@@ -109,7 +113,7 @@ WebInspector.NetworkUISourceCodeProvider.prototype = {
 
     /**
      * @param {string} url
-     * @param {WebInspector.ContentProvider} contentProvider
+     * @param {!WebInspector.ContentProvider} contentProvider
      * @param {boolean=} isContentScript
      */
     _addFile: function(url, contentProvider, isContentScript)
@@ -122,11 +126,9 @@ WebInspector.NetworkUISourceCodeProvider.prototype = {
             return;
         if (this._processedURLs[url])
             return;
-        var mimeType = type.canonicalMimeType();
-        var overridingContentProvider = new WebInspector.ContentProviderOverridingMimeType(contentProvider, mimeType);
         this._processedURLs[url] = true;
         var isEditable = type !== WebInspector.resourceTypes.Document;
-        this._networkWorkspaceProvider.addFileForURL(url, overridingContentProvider, isEditable, isContentScript);
+        this._networkWorkspaceProvider.addFileForURL(url, contentProvider, isEditable, isContentScript);
     },
 
     _reset: function()
@@ -138,6 +140,6 @@ WebInspector.NetworkUISourceCodeProvider.prototype = {
 }
 
 /**
- * @type {?WebInspector.SimpleWorkspaceProvider}
+ * @type {!WebInspector.SimpleWorkspaceProvider}
  */
-WebInspector.networkWorkspaceProvider = null;
+WebInspector.networkWorkspaceProvider;

@@ -147,6 +147,24 @@ class BaseTestServer {
     // If not TLS_INTOLERANT_NONE, the server will abort any handshake that
     // negotiates an intolerant TLS version in order to test version fallback.
     TLSIntolerantLevel tls_intolerant;
+
+    // fallback_scsv_enabled, if true, causes the server to process the
+    // TLS_FALLBACK_SCSV cipher suite. This cipher suite is sent by Chrome
+    // when performing TLS version fallback in response to an SSL handshake
+    // failure. If this option is enabled then the server will reject fallback
+    // connections.
+    bool fallback_scsv_enabled;
+
+    // Temporary glue for testing: validation of SCTs is application-controlled
+    // and can be appropriately mocked out, so sending fake data here does not
+    // affect handshaking behaviour.
+    // TODO(ekasper): replace with valid SCT files for test certs.
+    // (Fake) SignedCertificateTimestampList (as a raw binary string) to send in
+    // a TLS extension.
+    std::string signed_cert_timestamps_tls_ext;
+
+    // Whether to staple the OCSP response.
+    bool staple_ocsp_response;
   };
 
   // Pass as the 'host' parameter during construction to server on 127.0.0.1
@@ -156,7 +174,7 @@ class BaseTestServer {
   BaseTestServer(Type type,  const std::string& host);
 
   // Initialize a TestServer with a specific set of SSLOptions for HTTPS or WSS.
-  explicit BaseTestServer(Type type, const SSLOptions& ssl_options);
+  BaseTestServer(Type type, const SSLOptions& ssl_options);
 
   // Returns the host port pair used by current Python based test server only
   // if the server is started.
@@ -260,4 +278,3 @@ class BaseTestServer {
 }  // namespace net
 
 #endif  // NET_TEST_SPAWNED_TEST_SERVER_BASE_TEST_SERVER_H_
-

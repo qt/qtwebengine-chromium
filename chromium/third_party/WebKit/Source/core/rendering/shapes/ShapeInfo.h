@@ -30,11 +30,11 @@
 #ifndef ShapeInfo_h
 #define ShapeInfo_h
 
-#include "core/platform/LayoutUnit.h"
-#include "core/platform/graphics/FloatRect.h"
 #include "core/rendering/shapes/Shape.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/ShapeValue.h"
+#include "platform/LayoutUnit.h"
+#include "platform/geometry/FloatRect.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/Vector.h"
 
@@ -70,19 +70,36 @@ public:
 
     void setShapeSize(LayoutUnit logicalWidth, LayoutUnit logicalHeight)
     {
+        if (shapeValue()->type() == ShapeValue::Box) {
+            switch (shapeValue()->layoutBox()) {
+            case MarginBox:
+                logicalHeight += m_renderer->marginLogicalHeight();
+                logicalWidth += m_renderer->marginLogicalWidth();
+                break;
+            case BorderBox:
+                break;
+            case PaddingBox:
+                logicalHeight -= m_renderer->borderLogicalHeight();
+                logicalWidth -= m_renderer->borderLogicalWidth();
+                break;
+            case ContentBox:
+                logicalHeight -= m_renderer->borderAndPaddingLogicalHeight();
+                logicalWidth -= m_renderer->borderAndPaddingLogicalWidth();
+                break;
+            }
+        } else if (m_renderer->style()->boxSizing() == CONTENT_BOX) {
+            logicalHeight -= m_renderer->borderAndPaddingLogicalHeight();
+            logicalWidth -= m_renderer->borderAndPaddingLogicalWidth();
+        }
+
         LayoutSize newLogicalSize(logicalWidth, logicalHeight);
-
-        if (m_renderer->style()->boxSizing() == CONTENT_BOX)
-            newLogicalSize -= LayoutSize(m_renderer->borderAndPaddingLogicalWidth(), m_renderer->borderAndPaddingLogicalHeight());
-
         if (m_shapeLogicalSize == newLogicalSize)
             return;
         dirtyShapeSize();
         m_shapeLogicalSize = newLogicalSize;
     }
 
-    virtual bool computeSegmentsForLine(LayoutUnit lineTop, LayoutUnit lineHeight);
-    void clearSegments() { m_segments.clear(); }
+    SegmentList computeSegmentsForLine(LayoutUnit lineTop, LayoutUnit lineHeight) const;
 
     LayoutUnit shapeLogicalTop() const { return computedShapeLogicalBoundingBox().y() + logicalTopOffset(); }
     LayoutUnit shapeLogicalBottom() const { return computedShapeLogicalBoundingBox().maxY() + logicalTopOffset(); }
@@ -101,21 +118,53 @@ public:
     void dirtyShapeSize() { m_shape.clear(); }
     bool shapeSizeDirty() { return !m_shape.get(); }
     const RenderType* owner() const { return m_renderer; }
+    LayoutSize shapeSize() const { return m_shapeLogicalSize; }
 
 protected:
     ShapeInfo(const RenderType* renderer): m_renderer(renderer) { }
 
     const Shape* computedShape() const;
+
     virtual LayoutRect computedShapeLogicalBoundingBox() const = 0;
     virtual ShapeValue* shapeValue() const = 0;
     virtual void getIntervals(LayoutUnit, LayoutUnit, SegmentList&) const = 0;
 
-    LayoutUnit logicalTopOffset() const { return m_renderer->style()->boxSizing() == CONTENT_BOX ? m_renderer->borderAndPaddingBefore() : LayoutUnit(); }
-    LayoutUnit logicalLeftOffset() const { return (m_renderer->style()->boxSizing() == CONTENT_BOX && !m_renderer->isRenderRegion()) ? m_renderer->borderAndPaddingStart() : LayoutUnit(); }
+    LayoutUnit logicalTopOffset() const
+    {
+        if (shapeValue()->type() == ShapeValue::Box) {
+            switch (shapeValue()->layoutBox()) {
+            case MarginBox:
+                return -m_renderer->marginBefore();
+            case BorderBox:
+                return LayoutUnit();
+            case PaddingBox:
+                return m_renderer->borderBefore();
+            case ContentBox:
+                return m_renderer->borderAndPaddingBefore();
+            }
+        }
+        return m_renderer->style()->boxSizing() == CONTENT_BOX ? m_renderer->borderAndPaddingBefore() : LayoutUnit();
+    }
+
+    LayoutUnit logicalLeftOffset() const
+    {
+        if (shapeValue()->type() == ShapeValue::Box) {
+            switch (shapeValue()->layoutBox()) {
+            case MarginBox:
+                return -m_renderer->marginStart();
+            case BorderBox:
+                return LayoutUnit();
+            case PaddingBox:
+                return m_renderer->borderStart();
+            case ContentBox:
+                return m_renderer->borderAndPaddingStart();
+            }
+        }
+        return (m_renderer->style()->boxSizing() == CONTENT_BOX && !m_renderer->isRenderRegion()) ? m_renderer->borderAndPaddingStart() : LayoutUnit();
+    }
 
     LayoutUnit m_shapeLineTop;
     LayoutUnit m_lineHeight;
-    SegmentList m_segments;
 
     const RenderType* m_renderer;
 
@@ -123,5 +172,8 @@ private:
     mutable OwnPtr<Shape> m_shape;
     LayoutSize m_shapeLogicalSize;
 };
+
+bool checkShapeImageOrigin(Document&, ImageResource&);
+
 }
 #endif

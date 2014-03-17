@@ -30,30 +30,26 @@
 #ifndef LineWidth_h
 #define LineWidth_h
 
-#include "core/rendering/RenderBlock.h"
-#include "core/rendering/RenderRubyRun.h"
+#include "platform/LayoutUnit.h"
 
 namespace WebCore {
 
+class FloatingObject;
+class RenderBlock;
+class RenderObject;
+class RenderRubyRun;
+class RenderBlockFlow;
+
+struct LineSegment;
+
 enum IndentTextOrNot { DoNotIndentText, IndentText };
-
-inline LayoutUnit logicalHeightForLine(const RenderBlock* block, bool isFirstLine, LayoutUnit replacedHeight = 0)
-{
-    if (!block->document().inNoQuirksMode() && replacedHeight)
-        return replacedHeight;
-
-    if (!(block->style(isFirstLine)->lineBoxContain() & LineBoxContainBlock))
-        return 0;
-
-    return std::max<LayoutUnit>(replacedHeight, block->lineHeight(isFirstLine, block->isHorizontalWritingMode() ? HorizontalLine : VerticalLine, PositionOfInteriorLineBoxes));
-}
 
 class LineWidth {
 public:
-    LineWidth(RenderBlock&, bool isFirstLine, IndentTextOrNot shouldIndentText);
+    LineWidth(RenderBlockFlow&, bool isFirstLine, IndentTextOrNot shouldIndentText);
 
-    bool fitsOnLine() const { return currentWidth() <= m_availableWidth; }
-    bool fitsOnLine(float extra) const { return currentWidth() + extra <= m_availableWidth; }
+    bool fitsOnLine() const { return currentWidth() <= (m_availableWidth + LayoutUnit::epsilon()); }
+    bool fitsOnLine(float extra) const { return currentWidth() + extra <= (m_availableWidth + LayoutUnit::epsilon()); }
 
     float currentWidth() const { return m_committedWidth + m_uncommittedWidth; }
     // FIXME: We should eventually replace these three functions by ones that work on a higher abstraction.
@@ -68,12 +64,14 @@ public:
     void applyOverhang(RenderRubyRun*, RenderObject* startRenderer, RenderObject* endRenderer);
     void fitBelowFloats();
 
+    void updateCurrentShapeSegment();
+
     bool shouldIndentText() const { return m_shouldIndentText == IndentText; }
 
 private:
     void computeAvailableWidthFromLeftAndRight();
 
-    RenderBlock& m_block;
+    RenderBlockFlow& m_block;
     float m_uncommittedWidth;
     float m_committedWidth;
     float m_overhangWidth; // The amount by which |m_availableWidth| has been inflated to account for possible contraction due to ruby overhang.

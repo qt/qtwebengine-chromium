@@ -32,7 +32,6 @@
 #include "core/inspector/InspectorResourceAgent.h"
 
 #include "FetchInitiatorTypeNames.h"
-#include "InspectorFrontend.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "bindings/v8/ScriptCallStackFactory.h"
 #include "core/dom/Document.h"
@@ -42,6 +41,7 @@
 #include "core/fetch/Resource.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ResourceLoader.h"
+#include "core/frame/Frame.h"
 #include "core/inspector/IdentifiersFactory.h"
 #include "core/inspector/InspectorClient.h"
 #include "core/inspector/InspectorOverlay.h"
@@ -55,18 +55,17 @@
 #include "core/loader/FrameLoader.h"
 #include "core/loader/ThreadableLoader.h"
 #include "core/loader/ThreadableLoaderClient.h"
-#include "core/page/Frame.h"
 #include "core/page/Page.h"
-#include "core/platform/JSONValues.h"
-#include "core/platform/network/HTTPHeaderMap.h"
-#include "core/platform/network/ResourceError.h"
-#include "core/platform/network/ResourceRequest.h"
-#include "core/platform/network/ResourceResponse.h"
 #include "core/xml/XMLHttpRequest.h"
 #include "modules/websockets/WebSocketFrame.h"
-#include "modules/websockets/WebSocketHandshakeRequest.h"
-#include "modules/websockets/WebSocketHandshakeResponse.h"
-#include "weborigin/KURL.h"
+#include "platform/JSONValues.h"
+#include "platform/network/HTTPHeaderMap.h"
+#include "platform/network/ResourceError.h"
+#include "platform/network/ResourceRequest.h"
+#include "platform/network/ResourceResponse.h"
+#include "platform/network/WebSocketHandshakeRequest.h"
+#include "platform/network/WebSocketHandshakeResponse.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/RefPtr.h"
 
@@ -165,7 +164,7 @@ private:
 
     RefPtr<LoadResourceForFrontendCallback> m_callback;
     RefPtr<ThreadableLoader> m_loader;
-    RefPtr<TextResourceDecoder> m_decoder;
+    OwnPtr<TextResourceDecoder> m_decoder;
     ScriptString m_responseText;
     int m_statusCode;
     HTTPHeaderMap m_responseHeaders;
@@ -287,7 +286,8 @@ InspectorResourceAgent::~InspectorResourceAgent()
 
 void InspectorResourceAgent::willSendRequest(unsigned long identifier, DocumentLoader* loader, ResourceRequest& request, const ResourceResponse& redirectResponse, const FetchInitiatorInfo& initiatorInfo)
 {
-    if (initiatorInfo.name == FetchInitiatorTypeNames::inspector)
+    // Ignore the request initiated internally.
+    if (initiatorInfo.name == FetchInitiatorTypeNames::internal)
         return;
     String requestId = IdentifiersFactory::requestId(identifier);
     m_resourcesData->resourceCreated(requestId, m_pageAgent->loaderId(loader));
@@ -329,7 +329,7 @@ void InspectorResourceAgent::markResourceAsCached(unsigned long identifier)
     m_frontend->requestServedFromCache(IdentifiersFactory::requestId(identifier));
 }
 
-void InspectorResourceAgent::didReceiveResourceResponse(unsigned long identifier, DocumentLoader* loader, const ResourceResponse& response, ResourceLoader* resourceLoader)
+void InspectorResourceAgent::didReceiveResourceResponse(Frame*, unsigned long identifier, DocumentLoader* loader, const ResourceResponse& response, ResourceLoader* resourceLoader)
 {
     if (!loader)
         return;
@@ -353,11 +353,11 @@ void InspectorResourceAgent::didReceiveResourceResponse(unsigned long identifier
     }
 
     InspectorPageAgent::ResourceType type = cachedResource ? InspectorPageAgent::cachedResourceType(*cachedResource) : InspectorPageAgent::OtherResource;
-    if (m_resourcesData->resourceType(requestId) == InspectorPageAgent::XHRResource)
-        type = InspectorPageAgent::XHRResource;
-    else if (m_resourcesData->resourceType(requestId) == InspectorPageAgent::ScriptResource)
+    // Workaround for worker scripts that use RawResources for loading.
+    if (m_resourcesData->resourceType(requestId) == InspectorPageAgent::ScriptResource)
         type = InspectorPageAgent::ScriptResource;
-    else if (equalIgnoringFragmentIdentifier(response.url(), loader->url()) && !loader->isCommitted())
+    // Workaround for background: url() in inline style.
+    if (equalIgnoringFragmentIdentifier(response.url(), loader->url()) && !loader->isCommitted())
         type = InspectorPageAgent::DocumentResource;
 
     m_resourcesData->responseReceived(requestId, m_pageAgent->frameId(loader->frame()), response);
@@ -401,10 +401,10 @@ void InspectorResourceAgent::didFinishLoading(unsigned long identifier, Document
     m_frontend->loadingFinished(requestId, finishTime);
 }
 
-void InspectorResourceAgent::didReceiveCORSRedirectResponse(unsigned long identifier, DocumentLoader* loader, const ResourceResponse& response, ResourceLoader* resourceLoader)
+void InspectorResourceAgent::didReceiveCORSRedirectResponse(Frame* frame, unsigned long identifier, DocumentLoader* loader, const ResourceResponse& response, ResourceLoader* resourceLoader)
 {
     // Update the response and finish loading
-    didReceiveResourceResponse(identifier, loader, response, resourceLoader);
+    didReceiveResourceResponse(frame, identifier, loader, response, resourceLoader);
     didFinishLoading(identifier, loader, 0);
 }
 
@@ -439,7 +439,7 @@ void InspectorResourceAgent::documentThreadableLoaderStartedLoadingForClient(uns
     m_resourcesData->setXHRReplayData(requestId, xhrReplayData);
 }
 
-void InspectorResourceAgent::willLoadXHR(ThreadableLoaderClient* client, const String& method, const KURL& url, bool async, PassRefPtr<FormData> formData, const HTTPHeaderMap& headers, bool includeCredentials)
+void InspectorResourceAgent::willLoadXHR(XMLHttpRequest*, ThreadableLoaderClient* client, const AtomicString& method, const KURL& url, bool async, PassRefPtr<FormData> formData, const HTTPHeaderMap& headers, bool includeCredentials)
 {
     RefPtr<XHRReplayData> xhrReplayData = XHRReplayData::create(method, urlWithoutFragment(url), async, formData, includeCredentials);
     HTTPHeaderMap::const_iterator end = headers.end();
@@ -448,19 +448,14 @@ void InspectorResourceAgent::willLoadXHR(ThreadableLoaderClient* client, const S
     m_pendingXHRReplayData.set(client, xhrReplayData);
 }
 
-void InspectorResourceAgent::didFailXHRLoading(ThreadableLoaderClient* client)
+void InspectorResourceAgent::didFailXHRLoading(XMLHttpRequest*, ThreadableLoaderClient* client)
 {
     m_pendingXHRReplayData.remove(client);
 }
 
-void InspectorResourceAgent::didFinishXHRLoading(ThreadableLoaderClient* client, unsigned long identifier, ScriptString sourceString, const String&, const String&, unsigned)
+void InspectorResourceAgent::didFinishXHRLoading(XMLHttpRequest*, ThreadableLoaderClient* client, unsigned long identifier, ScriptString sourceString, const String&, const String&, unsigned)
 {
     m_pendingXHRReplayData.remove(client);
-}
-
-void InspectorResourceAgent::didReceiveXHRResponse(unsigned long identifier)
-{
-    m_resourcesData->setResourceType(IdentifiersFactory::requestId(identifier), InspectorPageAgent::XHRResource);
 }
 
 void InspectorResourceAgent::willDestroyResource(Resource* cachedResource)
@@ -610,7 +605,6 @@ void InspectorResourceAgent::disable(ErrorString*)
 void InspectorResourceAgent::setUserAgentOverride(ErrorString*, const String& userAgent)
 {
     m_state->setString(ResourceAgentState::userAgentOverride, userAgent);
-    m_overlay->setOverride(InspectorOverlay::UserAgentOverride, !userAgent.isEmpty());
 }
 
 void InspectorResourceAgent::setExtraHTTPHeaders(ErrorString*, const RefPtr<JSONObject>& headers)
@@ -786,11 +780,10 @@ bool InspectorResourceAgent::fetchResourceContent(Frame* frame, const KURL& url,
     return false;
 }
 
-InspectorResourceAgent::InspectorResourceAgent(InstrumentingAgents* instrumentingAgents, InspectorPageAgent* pageAgent, InspectorClient* client, InspectorCompositeState* state, InspectorOverlay* overlay)
+InspectorResourceAgent::InspectorResourceAgent(InstrumentingAgents* instrumentingAgents, InspectorPageAgent* pageAgent, InspectorClient* client, InspectorCompositeState* state)
     : InspectorBaseAgent<InspectorResourceAgent>("Network", instrumentingAgents, state)
     , m_pageAgent(pageAgent)
     , m_client(client)
-    , m_overlay(overlay)
     , m_frontend(0)
     , m_resourcesData(adoptPtr(new NetworkResourcesData()))
     , m_isRecalculatingStyle(false)

@@ -9,6 +9,7 @@
 
 #include "base/android/jni_helper.h"
 #include "base/basictypes.h"
+#include "base/process/kill.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/frame_navigate_params.h"
@@ -31,20 +32,23 @@ class WebContentsObserverAndroid : public WebContentsObserver {
   void Destroy(JNIEnv* env, jobject obj);
 
  private:
+  virtual void RenderProcessGone(
+      base::TerminationStatus termination_status) OVERRIDE;
   virtual void DidStartLoading(RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidStopLoading(RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidFailProvisionalLoad(
       int64 frame_id,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& validated_url,
       int error_code,
-      const string16& error_description,
+      const base::string16& error_description,
       RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidFailLoad(int64 frame_id,
                            const GURL& validated_url,
                            bool is_main_frame,
                            int error_code,
-                           const string16& error_description,
+                           const base::string16& error_description,
                            RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidNavigateMainFrame(const LoadCommittedDetails& details,
                                     const FrameNavigateParams& params) OVERRIDE;
@@ -60,6 +64,7 @@ class WebContentsObserverAndroid : public WebContentsObserver {
       RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidCommitProvisionalLoadForFrame(
       int64 frame_id,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& url,
       PageTransition transition_type,
@@ -68,6 +73,8 @@ class WebContentsObserverAndroid : public WebContentsObserver {
                              const GURL& validated_url,
                              bool is_main_frame,
                              RenderViewHost* render_view_host) OVERRIDE;
+  virtual void NavigationEntryCommitted(
+      const LoadCommittedDetails& load_details) OVERRIDE;
   virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
   virtual void DidChangeVisibleSSLState() OVERRIDE;
   virtual void DidAttachInterstitialPage() OVERRIDE;
@@ -76,7 +83,7 @@ class WebContentsObserverAndroid : public WebContentsObserver {
   void DidFailLoadInternal(bool is_provisional_load,
                            bool is_main_frame,
                            int error_code,
-                           const string16& description,
+                           const base::string16& description,
                            const GURL& url);
 
   JavaObjectWeakGlobalRef weak_java_observer_;

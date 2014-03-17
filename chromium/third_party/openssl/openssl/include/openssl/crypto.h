@@ -414,6 +414,14 @@ void CRYPTO_cleanup_all_ex_data(void);
 
 int CRYPTO_get_new_lockid(char *name);
 
+/* CRYPTO_set_NEON_capable enables any NEON (ARM vector) dependent code. This
+ * code should be called before any non-init functions. */
+void CRYPTO_set_NEON_capable(int on);
+
+/* CRYPTO_is_NEON_capable returns the last value given to
+ * CRYPTO_set_NEON_capable, or else zero if it has never been called. */
+int CRYPTO_is_NEON_capable();
+
 int CRYPTO_num_locks(void); /* return CRYPTO_NUM_LOCKS (shared libs!) */
 void CRYPTO_lock(int mode, int type,const char *file,int line);
 void CRYPTO_set_locking_callback(void (*func)(int mode,int type,

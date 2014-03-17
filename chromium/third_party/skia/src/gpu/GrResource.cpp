@@ -10,14 +10,12 @@
 #include "GrResource.h"
 #include "GrGpu.h"
 
-SK_DEFINE_INST_COUNT(GrResource)
-
 GrResource::GrResource(GrGpu* gpu, bool isWrapped) {
     fGpu              = gpu;
     fCacheEntry       = NULL;
     fDeferredRefCount = 0;
     if (isWrapped) {
-        fFlags = kWrapped_Flag;
+        fFlags = kWrapped_FlagBit;
     } else {
         fFlags = 0;
     }

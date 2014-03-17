@@ -21,6 +21,7 @@
 #include "SkGlyph.h"
 #include "SkHRESULT.h"
 #include "SkMaskGamma.h"
+#include "SkOnce.h"
 #include "SkOTTable_head.h"
 #include "SkOTTable_hhea.h"
 #include "SkOTTable_OS_2.h"
@@ -36,8 +37,6 @@
 
 #include <dwrite.h>
 
-SK_DECLARE_STATIC_MUTEX(gFTMutex);
-
 static bool isLCD(const SkScalerContext::Rec& rec) {
     return SkMask::kLCD16_Format == rec.fMaskFormat ||
            SkMask::kLCD32_Format == rec.fMaskFormat;
@@ -46,6 +45,7 @@ static bool isLCD(const SkScalerContext::Rec& rec) {
 /** Prefer to use this type to prevent template proliferation. */
 typedef SkAutoSTMalloc<16, WCHAR> SkSMallocWCHAR;
 
+/** Converts a utf8 string to a WCHAR string. */
 static HRESULT cstring_to_wchar(const char* skname, SkSMallocWCHAR* name) {
     int wlen = MultiByteToWideChar(CP_UTF8, 0, skname, -1, NULL, 0);
     if (0 == wlen) {
@@ -60,6 +60,7 @@ static HRESULT cstring_to_wchar(const char* skname, SkSMallocWCHAR* name) {
     return S_OK;
 }
 
+/** Converts a WCHAR string to a utf8 string. */
 static HRESULT wchar_to_skstring(WCHAR* name, SkString* skname) {
     int len = WideCharToMultiByte(CP_UTF8, 0, name, -1, NULL, 0, NULL, NULL);
     if (0 == len) {
@@ -72,6 +73,35 @@ static HRESULT wchar_to_skstring(WCHAR* name, SkString* skname) {
         HRM(HRESULT_FROM_WIN32(GetLastError()), "Could not convert utf-8 to wchar.");
     }
     return S_OK;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static void create_dwrite_factory(IDWriteFactory** factory) {
+    typedef decltype(DWriteCreateFactory)* DWriteCreateFactoryProc;
+    DWriteCreateFactoryProc dWriteCreateFactoryProc = reinterpret_cast<DWriteCreateFactoryProc>(
+        GetProcAddress(LoadLibraryW(L"dwrite.dll"), "DWriteCreateFactory"));
+
+    if (!dWriteCreateFactoryProc) {
+        HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
+        if (!IS_ERROR(hr)) {
+            hr = ERROR_PROC_NOT_FOUND;
+        }
+        HRVM(hr, "Could not get DWriteCreateFactory proc.");
+    }
+
+    HRVM(dWriteCreateFactoryProc(DWRITE_FACTORY_TYPE_SHARED,
+                                 __uuidof(IDWriteFactory),
+                                 reinterpret_cast<IUnknown**>(factory)),
+         "Could not create DirectWrite factory.");
+}
+
+static IDWriteFactory* get_dwrite_factory() {
+    static IDWriteFactory* gDWriteFactory = NULL;
+    SK_DECLARE_STATIC_ONCE(once);
+    SkOnce(&once, create_dwrite_factory, &gDWriteFactory);
+
+    return gDWriteFactory;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -113,6 +143,21 @@ protected:
                                                unsigned styleBits) SK_OVERRIDE;
 
 private:
+    HRESULT getByFamilyName(const WCHAR familyName[], IDWriteFontFamily** fontFamily);
+    HRESULT getDefaultFontFamily(IDWriteFontFamily** fontFamily);
+
+    SkMutex fTFCacheMutex;
+    void Add(SkTypeface* face, SkTypeface::Style requestedStyle, bool strong) {
+        SkAutoMutexAcquire ama(fTFCacheMutex);
+        fTFCache.add(face, requestedStyle, strong);
+    }
+
+    SkTypeface* FindByProcAndRef(SkTypefaceCache::FindProc proc, void* ctx) {
+        SkAutoMutexAcquire ama(fTFCacheMutex);
+        SkTypeface* typeface = fTFCache.findByProcAndRef(proc, ctx);
+        return typeface;
+    }
+
     friend class SkFontStyleSet_DirectWrite;
     SkTScopedComPtr<IDWriteFontCollection> fFontCollection;
     SkSMallocWCHAR fLocaleName;
@@ -160,40 +205,9 @@ private:
     SkTDArray<uint8_t> fBits;
 };
 
-static HRESULT get_dwrite_factory(IDWriteFactory** factory) {
-    static IDWriteFactory* gDWriteFactory = NULL;
-
-    if (gDWriteFactory != NULL) {
-        *factory = gDWriteFactory;
-        return S_OK;
-    }
-
-    typedef decltype(DWriteCreateFactory)* DWriteCreateFactoryProc;
-    DWriteCreateFactoryProc dWriteCreateFactoryProc =
-        reinterpret_cast<DWriteCreateFactoryProc>(
-            GetProcAddress(LoadLibraryW(L"dwrite.dll"), "DWriteCreateFactory")
-        )
-    ;
-    if (!dWriteCreateFactoryProc) {
-        HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
-        if (!IS_ERROR(hr)) {
-            hr = ERROR_PROC_NOT_FOUND;
-        }
-        return hr;
-    }
-
-    HRM(dWriteCreateFactoryProc(DWRITE_FACTORY_TYPE_SHARED,
-                                __uuidof(IDWriteFactory),
-                                reinterpret_cast<IUnknown**>(&gDWriteFactory)),
-        "Could not create DirectWrite factory.");
-
-    *factory = gDWriteFactory;
-    return S_OK;
-}
-
 const void* DWriteOffscreen::draw(const SkGlyph& glyph, bool isBW) {
-    IDWriteFactory* factory;
-    HRNM(get_dwrite_factory(&factory), "Could not get factory.");
+    IDWriteFactory* factory = get_dwrite_factory();
+    SkASSERT(factory != NULL);
 
     if (fWidth < glyph.fWidth || fHeight < glyph.fHeight) {
         fWidth = SkMax32(fWidth, glyph.fWidth);
@@ -540,8 +554,8 @@ public:
     ~DWriteFontTypeface() {
         if (fDWriteFontCollectionLoader.get() == NULL) return;
 
-        IDWriteFactory* factory;
-        HRVM(get_dwrite_factory(&factory), "Could not get factory.");
+        IDWriteFactory* factory = get_dwrite_factory();
+        SkASSERT(factory != NULL);
         HRV(factory->UnregisterFontCollectionLoader(fDWriteFontCollectionLoader.get()));
         HRV(factory->UnregisterFontFileLoader(fDWriteFontFileLoader.get()));
     }
@@ -554,13 +568,14 @@ protected:
                                 SkAdvancedTypefaceMetrics::PerGlyphInfo,
                                 const uint32_t*, uint32_t) const SK_OVERRIDE;
     virtual void onGetFontDescriptor(SkFontDescriptor*, bool*) const SK_OVERRIDE;
+    virtual int onCharsToGlyphs(const void* chars, Encoding encoding,
+                                uint16_t glyphs[], int glyphCount) const SK_OVERRIDE;
     virtual int onCountGlyphs() const SK_OVERRIDE;
     virtual int onGetUPEM() const SK_OVERRIDE;
     virtual SkTypeface::LocalizedStrings* onCreateFamilyNameIterator() const SK_OVERRIDE;
     virtual int onGetTableTags(SkFontTableTag tags[]) const SK_OVERRIDE;
     virtual size_t onGetTableData(SkFontTableTag, size_t offset,
                                   size_t length, void* data) const SK_OVERRIDE;
-    virtual SkTypeface* onRefMatchingStyle(Style) const SK_OVERRIDE;
 };
 
 class SkScalerContext_DW : public SkScalerContext {
@@ -584,73 +599,6 @@ private:
     SkAutoTUnref<DWriteFontTypeface> fTypeface;
     int fGlyphCount;
 };
-
-#define SK_DWRITE_DEFAULT_FONT_NAMED 1
-#define SK_DWRITE_DEFAULT_FONT_MESSAGE 2
-#define SK_DWRITE_DEFAULT_FONT_THEME 3
-#define SK_DWRITE_DEFAULT_FONT_SHELLDLG 4
-#define SK_DWRITE_DEFAULT_FONT_GDI 5
-#define SK_DWRITE_DEFAULT_FONT_STRATEGY SK_DWRITE_DEFAULT_FONT_MESSAGE
-
-static HRESULT get_default_font(IDWriteFont** font) {
-    IDWriteFactory* factory;
-    HRM(get_dwrite_factory(&factory), "Could not get factory.");
-
-#if SK_DWRITE_DEFAULT_FONT_STRATEGY == SK_DWRITE_DEFAULT_FONT_NAMED
-    SkTScopedComPtr<IDWriteFontCollection> sysFonts;
-    HRM(factory->GetSystemFontCollection(&sysFonts, false),
-        "Could not get system font collection.");
-
-    UINT32 index;
-    BOOL exists;
-    //hr = sysFonts->FindFamilyName(L"Georgia", &index, &exists);
-    HRM(sysFonts->FindFamilyName(L"Microsoft Sans Serif", &index, &exists),
-        "Could not access family names.");
-
-    if (!exists) {
-        SkDEBUGF(("The hard coded font family does not exist."));
-        return E_UNEXPECTED;
-    }
-
-    SkTScopedComPtr<IDWriteFontFamily> fontFamily;
-    HRM(sysFonts->GetFontFamily(index, &fontFamily),
-        "Could not load the requested font family.");
-
-    HRM(fontFamily->GetFont(0, font), "Could not get first font from family.");
-
-#elif SK_DWRITE_DEFAULT_FONT_STRATEGY == SK_DWRITE_DEFAULT_FONT_MESSAGE
-    SkTScopedComPtr<IDWriteGdiInterop> gdi;
-    HRM(factory->GetGdiInterop(&gdi), "Could not get GDI interop.");
-
-    NONCLIENTMETRICSW metrics;
-    metrics.cbSize = sizeof(metrics);
-    if (0 == SystemParametersInfoW(SPI_GETNONCLIENTMETRICS,
-                                   sizeof(metrics),
-                                   &metrics,
-                                   0)) {
-        return E_UNEXPECTED;
-    }
-    HRM(gdi->CreateFontFromLOGFONT(&metrics.lfMessageFont, font),
-        "Could not create DWrite font from LOGFONT.");
-
-#elif SK_DWRITE_DEFAULT_FONT_STRATEGY == SK_DWRITE_DEFAULT_FONT_THEME
-    //Theme body font?
-
-#elif SK_DWRITE_DEFAULT_FONT_STRATEGY == SK_DWRITE_DEFAULT_FONT_SHELLDLG
-    //"MS Shell Dlg" or "MS Shell Dlg 2"?
-
-#elif SK_DWRITE_DEFAULT_FONT_STRATEGY == SK_DWRITE_DEFAULT_FONT_GDI
-    //Never works.
-    SkTScopedComPtr<IDWriteGdiInterop> gdi;
-    HRM(factory->GetGdiInterop(&gdi), "Could not get GDI interop.");
-
-    static LOGFONTW gDefaultFont = {};
-    gDefaultFont.lfFaceName
-    HRM(gdi->CreateFontFromLOGFONT(&gDefaultFont, font),
-        "Could not create DWrite font from LOGFONT.";
-#endif
-    return S_OK;
-}
 
 static bool are_same(IUnknown* a, IUnknown* b) {
     SkTScopedComPtr<IUnknown> iunkA;
@@ -765,20 +713,11 @@ static bool FindByDWriteFont(SkTypeface* face, SkTypeface::Style requestedStyle,
            wcscmp(dwFaceFontNameChar.get(), dwFontNameChar.get()) == 0;
 }
 
-void SkDWriteFontFromTypeface(const SkTypeface* face, IDWriteFont** font) {
-    if (NULL == face) {
-        HRVM(get_default_font(font), "Could not get default font.");
-    } else {
-        *font = SkRefComPtr(static_cast<const DWriteFontTypeface*>(face)->fDWriteFont.get());
-    }
-}
-
 SkScalerContext_DW::SkScalerContext_DW(DWriteFontTypeface* typeface,
                                                  const SkDescriptor* desc)
         : SkScalerContext(typeface, desc)
         , fTypeface(SkRef(typeface))
         , fGlyphCount(-1) {
-    SkAutoMutexAcquire ac(gFTMutex);
 
     fXform.m11 = SkScalarToFloat(fRec.fPost2x2[0][0]);
     fXform.m12 = SkScalarToFloat(fRec.fPost2x2[1][0]);
@@ -868,8 +807,8 @@ void SkScalerContext_DW::generateMetrics(SkGlyph* glyph) {
     run.isSideways = FALSE;
     run.glyphOffsets = &offset;
 
-    IDWriteFactory* factory;
-    HRVM(get_dwrite_factory(&factory), "Could not get factory.");
+    IDWriteFactory* factory = get_dwrite_factory();
+    SkASSERT(factory != NULL);
 
     const bool isBW = SkMask::kBW_Format == fRec.fMaskFormat;
     DWRITE_RENDERING_MODE renderingMode;
@@ -1034,8 +973,6 @@ static void rgb_to_lcd32(const uint8_t* SK_RESTRICT src, const SkGlyph& glyph,
 }
 
 void SkScalerContext_DW::generateImage(const SkGlyph& glyph) {
-    SkAutoMutexAcquire ac(gFTMutex);
-
     const bool isBW = SkMask::kBW_Format == fRec.fMaskFormat;
     const bool isAA = !isLCD(fRec);
 
@@ -1073,8 +1010,6 @@ void SkScalerContext_DW::generateImage(const SkGlyph& glyph) {
 }
 
 void SkScalerContext_DW::generatePath(const SkGlyph& glyph, SkPath* path) {
-    SkAutoMutexAcquire ac(gFTMutex);
-
     SkASSERT(&glyph && path);
 
     path->reset();
@@ -1117,6 +1052,80 @@ void DWriteFontTypeface::onGetFontDescriptor(SkFontDescriptor* desc,
 
     desc->setFamilyName(utf8FamilyName.c_str());
     *isLocalStream = SkToBool(fDWriteFontFileLoader.get());
+}
+
+static SkUnichar next_utf8(const void** chars) {
+    return SkUTF8_NextUnichar((const char**)chars);
+}
+
+static SkUnichar next_utf16(const void** chars) {
+    return SkUTF16_NextUnichar((const uint16_t**)chars);
+}
+
+static SkUnichar next_utf32(const void** chars) {
+    const SkUnichar** uniChars = (const SkUnichar**)chars;
+    SkUnichar uni = **uniChars;
+    *uniChars += 1;
+    return uni;
+}
+
+typedef SkUnichar (*EncodingProc)(const void**);
+
+static EncodingProc find_encoding_proc(SkTypeface::Encoding enc) {
+    static const EncodingProc gProcs[] = {
+        next_utf8, next_utf16, next_utf32
+    };
+    SkASSERT((size_t)enc < SK_ARRAY_COUNT(gProcs));
+    return gProcs[enc];
+}
+
+int DWriteFontTypeface::onCharsToGlyphs(const void* chars, Encoding encoding,
+                                        uint16_t glyphs[], int glyphCount) const
+{
+    if (NULL == glyphs) {
+        EncodingProc next_ucs4_proc = find_encoding_proc(encoding);
+        for (int i = 0; i < glyphCount; ++i) {
+            const SkUnichar c = next_ucs4_proc(&chars);
+            BOOL exists;
+            fDWriteFont->HasCharacter(c, &exists);
+            if (!exists) {
+                return i;
+            }
+        }
+        return glyphCount;
+    }
+
+    switch (encoding) {
+    case SkTypeface::kUTF8_Encoding:
+    case SkTypeface::kUTF16_Encoding: {
+        static const int scratchCount = 256;
+        UINT32 scratch[scratchCount];
+        EncodingProc next_ucs4_proc = find_encoding_proc(encoding);
+        for (int baseGlyph = 0; baseGlyph < glyphCount; baseGlyph += scratchCount) {
+            int glyphsLeft = glyphCount - baseGlyph;
+            int limit = SkTMin(glyphsLeft, scratchCount);
+            for (int i = 0; i < limit; ++i) {
+                scratch[i] = next_ucs4_proc(&chars);
+            }
+            fDWriteFontFace->GetGlyphIndices(scratch, limit, &glyphs[baseGlyph]);
+        }
+        break;
+    }
+    case SkTypeface::kUTF32_Encoding: {
+        const UINT32* utf32 = reinterpret_cast<const UINT32*>(chars);
+        fDWriteFontFace->GetGlyphIndices(utf32, glyphCount, glyphs);
+        break;
+    }
+    default:
+        SK_CRASH();
+    }
+
+    for (int i = 0; i < glyphCount; ++i) {
+        if (0 == glyphs[i]) {
+            return i;
+        }
+    }
+    return glyphCount;
 }
 
 int DWriteFontTypeface::onCountGlyphs() const {
@@ -1264,8 +1273,10 @@ private:
 };
 
 static SkTypeface* create_from_stream(SkStream* stream, int ttcIndex) {
-    IDWriteFactory* factory;
-    HRN(get_dwrite_factory(&factory));
+    IDWriteFactory* factory = get_dwrite_factory();
+    if (NULL == factory) {
+        return NULL;
+    }
 
     SkTScopedComPtr<StreamFontFileLoader> fontFileLoader;
     HRN(StreamFontFileLoader::Create(stream, &fontFileLoader));
@@ -1344,27 +1355,6 @@ SkScalerContext* DWriteFontTypeface::onCreateScalerContext(const SkDescriptor* d
     return SkNEW_ARGS(SkScalerContext_DW, (const_cast<DWriteFontTypeface*>(this), desc));
 }
 
-static HRESULT get_by_family_name(const char familyName[], IDWriteFontFamily** fontFamily) {
-    IDWriteFactory* factory;
-    HR(get_dwrite_factory(&factory));
-
-    SkTScopedComPtr<IDWriteFontCollection> sysFontCollection;
-    HR(factory->GetSystemFontCollection(&sysFontCollection, FALSE));
-
-    SkSMallocWCHAR wideFamilyName;
-    HR(cstring_to_wchar(familyName, &wideFamilyName));
-
-    UINT32 index;
-    BOOL exists;
-    HR(sysFontCollection->FindFamilyName(wideFamilyName.get(), &index, &exists));
-
-    if (exists) {
-        HR(sysFontCollection->GetFontFamily(index, fontFamily));
-        return S_OK;
-    }
-    return S_FALSE;
-}
-
 void DWriteFontTypeface::onFilterRec(SkScalerContext::Rec* rec) const {
     if (rec->fFlags & SkScalerContext::kLCD_BGROrder_Flag ||
         rec->fFlags & SkScalerContext::kLCD_Vertical_Flag)
@@ -1386,15 +1376,15 @@ void DWriteFontTypeface::onFilterRec(SkScalerContext::Rec* rec) const {
     rec->setHinting(h);
 
 #if SK_FONT_HOST_USE_SYSTEM_SETTINGS
-    IDWriteFactory* factory;
-    if (SUCCEEDED(get_dwrite_factory(&factory))) {
+    IDWriteFactory* factory = get_dwrite_factory();
+    if (factory != NULL) {
         SkTScopedComPtr<IDWriteRenderingParams> defaultRenderingParams;
         if (SUCCEEDED(factory->CreateRenderingParams(&defaultRenderingParams))) {
             float gamma = defaultRenderingParams->GetGamma();
-            rec->setDeviceGamma(SkFloatToScalar(gamma));
-            rec->setPaintGamma(SkFloatToScalar(gamma));
+            rec->setDeviceGamma(gamma);
+            rec->setPaintGamma(gamma);
 
-            rec->setContrast(SkFloatToScalar(defaultRenderingParams->GetEnhancedContrast()));
+            rec->setContrast(defaultRenderingParams->GetEnhancedContrast());
         }
     }
 #endif
@@ -1448,7 +1438,7 @@ static void populate_glyph_to_unicode(IDWriteFontFace* fontFace,
     }
 
     glyphToUnicode->setCount(maxGlyph+1);
-    for (size_t j = 0; j < maxGlyph+1u; ++j) {
+    for (USHORT j = 0; j < maxGlyph+1u; ++j) {
         (*glyphToUnicode)[j] = 0;
     }
 
@@ -1637,49 +1627,6 @@ SkAdvancedTypefaceMetrics* DWriteFontTypeface::onGetAdvancedTypefaceMetrics(
     return info;
 }
 
-static SkTypeface* create_typeface(const SkTypeface* familyFace,
-                                   const char familyName[],
-                                   unsigned style,
-                                   SkFontMgr_DirectWrite* fontMgr) {
-    HRESULT hr;
-    SkTScopedComPtr<IDWriteFontFamily> fontFamily;
-    if (familyFace) {
-        const DWriteFontTypeface* face = static_cast<const DWriteFontTypeface*>(familyFace);
-        *(&fontFamily) = SkRefComPtr(face->fDWriteFontFamily.get());
-
-    } else if (familyName) {
-        hr = get_by_family_name(familyName, &fontFamily);
-    }
-
-    if (NULL == fontFamily.get()) {
-        //No good family found, go with default.
-        SkTScopedComPtr<IDWriteFont> font;
-        hr = get_default_font(&font);
-        hr = font->GetFontFamily(&fontFamily);
-    }
-
-    SkTScopedComPtr<IDWriteFont> font;
-    DWRITE_FONT_WEIGHT weight = (style & SkTypeface::kBold)
-                                 ? DWRITE_FONT_WEIGHT_BOLD
-                                 : DWRITE_FONT_WEIGHT_NORMAL;
-    DWRITE_FONT_STRETCH stretch = DWRITE_FONT_STRETCH_UNDEFINED;
-    DWRITE_FONT_STYLE italic = (style & SkTypeface::kItalic)
-                                ? DWRITE_FONT_STYLE_ITALIC
-                                : DWRITE_FONT_STYLE_NORMAL;
-    hr = fontFamily->GetFirstMatchingFont(weight, stretch, italic, &font);
-
-    SkTScopedComPtr<IDWriteFontFace> fontFace;
-    hr = font->CreateFontFace(&fontFace);
-
-    return fontMgr->createTypefaceFromDWriteFont(fontFace.get(), font.get(), fontFamily.get());
-}
-
-SkTypeface* DWriteFontTypeface::onRefMatchingStyle(Style style) const {
-    SkFontMgr_DirectWrite* fontMgr = NULL;
-    // todo: should each typeface have a ref to its fontmgr/cache?
-    return create_typeface(this, NULL, style, fontMgr);
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 
 static void get_locale_string(IDWriteLocalizedStrings* names, const WCHAR* preferedLocale,
@@ -1710,12 +1657,12 @@ SkTypeface* SkFontMgr_DirectWrite::createTypefaceFromDWriteFont(
                                            IDWriteFontFamily* fontFamily,
                                            StreamFontFileLoader* fontFileLoader,
                                            IDWriteFontCollectionLoader* fontCollectionLoader) {
-    SkTypeface* face = fTFCache.findByProcAndRef(FindByDWriteFont, font);
+    SkTypeface* face = FindByProcAndRef(FindByDWriteFont, font);
     if (NULL == face) {
         face = DWriteFontTypeface::Create(fontFace, font, fontFamily,
                                           fontFileLoader, fontCollectionLoader);
         if (face) {
-            fTFCache.add(face, get_style(font), fontCollectionLoader != NULL);
+            Add(face, get_style(font), fontCollectionLoader != NULL);
         }
     }
     return face;
@@ -1786,9 +1733,64 @@ SkTypeface* SkFontMgr_DirectWrite::onCreateFromFile(const char path[], int ttcIn
     return this->createFromStream(stream, ttcIndex);
 }
 
+HRESULT SkFontMgr_DirectWrite::getByFamilyName(const WCHAR wideFamilyName[],
+                                               IDWriteFontFamily** fontFamily) {
+    UINT32 index;
+    BOOL exists;
+    HR(fFontCollection->FindFamilyName(wideFamilyName, &index, &exists));
+
+    if (exists) {
+        HR(fFontCollection->GetFontFamily(index, fontFamily));
+        return S_OK;
+    }
+    return S_FALSE;
+}
+
+HRESULT SkFontMgr_DirectWrite::getDefaultFontFamily(IDWriteFontFamily** fontFamily) {
+    NONCLIENTMETRICSW metrics;
+    metrics.cbSize = sizeof(metrics);
+    if (0 == SystemParametersInfoW(SPI_GETNONCLIENTMETRICS,
+                                   sizeof(metrics),
+                                   &metrics,
+                                   0)) {
+        return E_UNEXPECTED;
+    }
+    HRM(this->getByFamilyName(metrics.lfMessageFont.lfFaceName, fontFamily),
+        "Could not create DWrite font family from LOGFONT.");
+
+    return S_OK;
+}
+
 SkTypeface* SkFontMgr_DirectWrite::onLegacyCreateTypeface(const char familyName[],
                                                           unsigned styleBits) {
-    return create_typeface(NULL, familyName, styleBits, this);
+    SkTScopedComPtr<IDWriteFontFamily> fontFamily;
+    if (familyName) {
+        SkSMallocWCHAR wideFamilyName;
+        if (SUCCEEDED(cstring_to_wchar(familyName, &wideFamilyName))) {
+            this->getByFamilyName(wideFamilyName, &fontFamily);
+        }
+    }
+
+    if (NULL == fontFamily.get()) {
+        // No family with given name, try default.
+        HRNM(this->getDefaultFontFamily(&fontFamily), "Could not get default font family.");
+    }
+
+    SkTScopedComPtr<IDWriteFont> font;
+    DWRITE_FONT_WEIGHT weight = (styleBits & SkTypeface::kBold)
+                              ? DWRITE_FONT_WEIGHT_BOLD
+                              : DWRITE_FONT_WEIGHT_NORMAL;
+    DWRITE_FONT_STRETCH stretch = DWRITE_FONT_STRETCH_UNDEFINED;
+    DWRITE_FONT_STYLE italic = (styleBits & SkTypeface::kItalic)
+                             ? DWRITE_FONT_STYLE_ITALIC
+                             : DWRITE_FONT_STYLE_NORMAL;
+    HRNM(fontFamily->GetFirstMatchingFont(weight, stretch, italic, &font),
+         "Could not get matching font.");
+
+    SkTScopedComPtr<IDWriteFontFace> fontFace;
+    HRNM(font->CreateFontFace(&fontFace), "Could not create font face.");
+
+    return this->createTypefaceFromDWriteFont(fontFace.get(), font.get(), fontFamily.get());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1865,25 +1867,6 @@ SkTypeface* SkFontStyleSet_DirectWrite::matchStyle(const SkFontStyle& pattern) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#ifndef SK_FONTHOST_USES_FONTMGR
-
-SkTypeface* SkFontHost::CreateTypeface(const SkTypeface* familyFace,
-                                       const char familyName[],
-                                       SkTypeface::Style style) {
-    return create_typeface(familyFace, familyName, style, NULL);
-}
-
-SkTypeface* SkFontHost::CreateTypefaceFromFile(const char path[]) {
-    printf("SkFontHost::CreateTypefaceFromFile unimplemented");
-    return NULL;
-}
-
-SkTypeface* SkFontHost::CreateTypefaceFromStream(SkStream* stream) {
-    return create_from_stream(stream, 0);
-}
-
-#endif
-
 typedef decltype(GetUserDefaultLocaleName)* GetUserDefaultLocaleNameProc;
 static HRESULT GetGetUserDefaultLocaleNameProc(GetUserDefaultLocaleNameProc* proc) {
     *proc = reinterpret_cast<GetUserDefaultLocaleNameProc>(
@@ -1900,8 +1883,10 @@ static HRESULT GetGetUserDefaultLocaleNameProc(GetUserDefaultLocaleNameProc* pro
 }
 
 SkFontMgr* SkFontMgr_New_DirectWrite() {
-    IDWriteFactory* factory;
-    HRNM(get_dwrite_factory(&factory), "Could not get factory.");
+    IDWriteFactory* factory = get_dwrite_factory();
+    if (NULL == factory) {
+        return NULL;
+    }
 
     SkTScopedComPtr<IDWriteFontCollection> sysFontCollection;
     HRNM(factory->GetSystemFontCollection(&sysFontCollection, FALSE),

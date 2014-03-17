@@ -12,10 +12,12 @@
 
 #include <windows.h>
 
+#include "webrtc/modules/desktop_capture/desktop_capture_options.h"
 #include "webrtc/modules/desktop_capture/desktop_frame.h"
 #include "webrtc/modules/desktop_capture/desktop_frame_win.h"
 #include "webrtc/modules/desktop_capture/desktop_region.h"
 #include "webrtc/modules/desktop_capture/differ.h"
+#include "webrtc/modules/desktop_capture/mouse_cursor.h"
 #include "webrtc/modules/desktop_capture/mouse_cursor_shape.h"
 #include "webrtc/modules/desktop_capture/screen_capture_frame_queue.h"
 #include "webrtc/modules/desktop_capture/screen_capturer_helper.h"
@@ -43,7 +45,7 @@ const wchar_t kDwmapiLibraryName[] = L"dwmapi.dll";
 // ScreenCapturerWin is double-buffered as required by ScreenCapturer.
 class ScreenCapturerWin : public ScreenCapturer {
  public:
-  ScreenCapturerWin(bool disable_aero);
+  ScreenCapturerWin(const DesktopCaptureOptions& options);
   virtual ~ScreenCapturerWin();
 
   // Overridden from ScreenCapturer:
@@ -98,7 +100,7 @@ class ScreenCapturerWin : public ScreenCapturer {
   DISALLOW_COPY_AND_ASSIGN(ScreenCapturerWin);
 };
 
-ScreenCapturerWin::ScreenCapturerWin(bool disable_aero)
+ScreenCapturerWin::ScreenCapturerWin(const DesktopCaptureOptions& options)
     : callback_(NULL),
       mouse_shape_observer_(NULL),
       desktop_dc_(NULL),
@@ -106,7 +108,7 @@ ScreenCapturerWin::ScreenCapturerWin(bool disable_aero)
       dwmapi_library_(NULL),
       composition_func_(NULL),
       set_thread_execution_state_failed_(false) {
-  if (disable_aero) {
+  if (options.disable_effects()) {
     // Load dwmapi.dll dynamically since it is not available on XP.
     if (!dwmapi_library_)
       dwmapi_library_ = LoadLibrary(kDwmapiLibraryName);
@@ -327,10 +329,21 @@ void ScreenCapturerWin::CaptureCursor() {
   }
 
   // Note that |cursor_info.hCursor| does not need to be freed.
-  scoped_ptr<MouseCursorShape> cursor(
-      CreateMouseCursorShapeFromCursor(desktop_dc_, cursor_info.hCursor));
-  if (!cursor.get())
+  scoped_ptr<MouseCursor> cursor_image(
+      CreateMouseCursorFromHCursor(desktop_dc_, cursor_info.hCursor));
+  if (!cursor_image.get())
     return;
+
+  scoped_ptr<MouseCursorShape> cursor(new MouseCursorShape);
+  cursor->hotspot = cursor_image->hotspot();
+  cursor->size = cursor_image->image().size();
+  uint8_t* current_row = cursor_image->image().data();
+  for (int y = 0; y < cursor_image->image().size().height(); ++y) {
+    cursor->data.append(current_row,
+                        current_row + cursor_image->image().size().width() *
+                                        DesktopFrame::kBytesPerPixel);
+    current_row += cursor_image->image().stride();
+  }
 
   // Compare the current cursor with the last one we sent to the client. If
   // they're the same, then don't bother sending the cursor again.
@@ -353,13 +366,8 @@ void ScreenCapturerWin::CaptureCursor() {
 }  // namespace
 
 // static
-ScreenCapturer* ScreenCapturer::Create() {
-  return CreateWithDisableAero(true);
-}
-
-// static
-ScreenCapturer* ScreenCapturer::CreateWithDisableAero(bool disable_aero) {
-  return new ScreenCapturerWin(disable_aero);
+ScreenCapturer* ScreenCapturer::Create(const DesktopCaptureOptions& options) {
+  return new ScreenCapturerWin(options);
 }
 
 }  // namespace webrtc

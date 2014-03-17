@@ -12,18 +12,41 @@ namespace content {
 namespace {
 
 class ContextProviderCommandBufferBrowserTest : public ContentBrowserTest {
+ public:
+  virtual void SetUpOnMainThread() OVERRIDE {
+    if (!BrowserGpuChannelHostFactory::CanUseForTesting())
+      return;
+
+    if (!GetFactory())
+      BrowserGpuChannelHostFactory::Initialize(true);
+
+    CHECK(GetFactory());
+    ContentBrowserTest::SetUpOnMainThread();
+  }
+
  protected:
+  BrowserGpuChannelHostFactory* GetFactory() {
+    return BrowserGpuChannelHostFactory::instance();
+  }
+
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> CreateContext3d() {
+    scoped_refptr<GpuChannelHost> gpu_channel_host(
+        GetFactory()->EstablishGpuChannelSync(
+            CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE));
     scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context(
         WebGraphicsContext3DCommandBufferImpl::CreateOffscreenContext(
-            BrowserGpuChannelHostFactory::instance(),
-            WebKit::WebGraphicsContext3D::Attributes(),
-            GURL("chrome://gpu/ContextProviderCommandBufferTest")));
+            gpu_channel_host.get(),
+            blink::WebGraphicsContext3D::Attributes(),
+            GURL("chrome://gpu/ContextProviderCommandBufferTest"),
+            WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits()));
     return context.Pass();
   }
 };
 
 IN_PROC_BROWSER_TEST_F(ContextProviderCommandBufferBrowserTest, LeakOnDestroy) {
+  if (!BrowserGpuChannelHostFactory::CanUseForTesting())
+    return;
+
   scoped_refptr<ContextProviderCommandBuffer> provider =
       ContextProviderCommandBuffer::Create(CreateContext3d(), "TestContext");
   provider->set_leak_on_destroy();

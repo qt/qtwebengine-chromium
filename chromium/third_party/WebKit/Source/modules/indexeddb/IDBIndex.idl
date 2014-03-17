@@ -27,14 +27,14 @@
 ] interface IDBIndex {
     readonly attribute DOMString name;
     readonly attribute IDBObjectStore objectStore;
-    [ImplementedAs=keyPathAny] readonly attribute IDBAny keyPath;
+    [CallWith=ExecutionContext] readonly attribute any keyPath;
     readonly attribute boolean unique;
     readonly attribute boolean multiEntry;
 
-    [CallWith=ScriptExecutionContext, RaisesException] IDBRequest openCursor([Default=Undefined] optional any key, [Default=NullString] optional DOMString direction);
-    [CallWith=ScriptExecutionContext, RaisesException] IDBRequest openKeyCursor([Default=Undefined] optional any key, [Default=NullString] optional DOMString direction);
+    [CallWith=ExecutionContext, RaisesException] IDBRequest openCursor([Default=Undefined] optional any range, [Default=NullString] optional DOMString direction);
+    [CallWith=ExecutionContext, RaisesException] IDBRequest openKeyCursor([Default=Undefined] optional any range, [Default=NullString] optional DOMString direction);
 
-    [CallWith=ScriptExecutionContext, RaisesException] IDBRequest get(any key);
-    [CallWith=ScriptExecutionContext, RaisesException] IDBRequest getKey(any key);
-    [CallWith=ScriptExecutionContext, RaisesException] IDBRequest count([Default=Undefined] optional any key);
+    [CallWith=ExecutionContext, RaisesException] IDBRequest get(any key);
+    [CallWith=ExecutionContext, RaisesException] IDBRequest getKey(any key);
+    [CallWith=ExecutionContext, RaisesException] IDBRequest count([Default=Undefined] optional any key);
 };

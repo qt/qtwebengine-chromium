@@ -230,7 +230,8 @@ bool RtpDataMediaChannel::RemoveRecvStream(uint32 ssrc) {
   return true;
 }
 
-void RtpDataMediaChannel::OnPacketReceived(talk_base::Buffer* packet) {
+void RtpDataMediaChannel::OnPacketReceived(
+    talk_base::Buffer* packet, const talk_base::PacketTime& packet_time) {
   RtpHeader header;
   if (!GetRtpHeader(packet->data(), packet->length(), &header)) {
     // Don't want to log for every corrupt packet.
@@ -259,10 +260,12 @@ void RtpDataMediaChannel::OnPacketReceived(talk_base::Buffer* packet) {
 
   DataCodec codec;
   if (!FindCodecById(recv_codecs_, header.payload_type, &codec)) {
-    LOG(LS_WARNING) << "Not receiving packet "
-                    << header.ssrc << ":" << header.seq_num
-                    << " (" << data_len << ")"
-                    << " because unknown payload id: " << header.payload_type;
+    // For bundling, this will be logged for every message.
+    // So disable this logging.
+    // LOG(LS_WARNING) << "Not receiving packet "
+    //                << header.ssrc << ":" << header.seq_num
+    //                << " (" << data_len << ")"
+    //                << " because unknown payload id: " << header.payload_type;
     return;
   }
 
@@ -342,10 +345,6 @@ bool RtpDataMediaChannel::SendData(
                     << "; already sent " << send_limiter_->used_in_period()
                     << "/" << send_limiter_->max_per_period();
     return false;
-  } else {
-    LOG(LS_VERBOSE) << "Sending data packet of len=" << packet_len
-                    << "; already sent " << send_limiter_->used_in_period()
-                    << "/" << send_limiter_->max_per_period();
   }
 
   RtpHeader header;
@@ -363,12 +362,12 @@ bool RtpDataMediaChannel::SendData(
   packet.AppendData(&kReservedSpace, sizeof(kReservedSpace));
   packet.AppendData(payload.data(), payload.length());
 
-  // Uncomment this for easy debugging.
-  // LOG(LS_INFO) << "Sent packet: "
-  //              << " stream=" << found_stream.id
-  //              << ", seqnum=" << header.seq_num
-  //              << ", timestamp=" << header.timestamp
-  //              << ", len=" << data_len;
+  LOG(LS_VERBOSE) << "Sent RTP data packet: "
+                  << " stream=" << found_stream.id
+                  << " ssrc=" << header.ssrc
+                  << ", seqnum=" << header.seq_num
+                  << ", timestamp=" << header.timestamp
+                  << ", len=" << payload.length();
 
   MediaChannel::SendPacket(&packet);
   send_limiter_->Use(packet_len, now);

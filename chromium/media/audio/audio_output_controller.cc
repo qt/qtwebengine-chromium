@@ -8,11 +8,10 @@
 #include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "base/task_runner_util.h"
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
-#include "media/audio/audio_util.h"
-#include "media/audio/shared_memory_util.h"
 #include "media/base/scoped_histogram_timer.h"
 
 using base::Time;
@@ -58,7 +57,7 @@ AudioOutputController::AudioOutputController(
           params.sample_rate(),
           TimeDelta::FromMilliseconds(kPowerMeasurementTimeConstantMillis)),
 #endif
-      number_polling_attempts_left_(0) {
+      on_more_io_data_called_(0) {
   DCHECK(audio_manager);
   DCHECK(handler_);
   DCHECK(sync_reader_);
@@ -112,9 +111,28 @@ void AudioOutputController::SetVolume(double volume) {
       &AudioOutputController::DoSetVolume, this, volume));
 }
 
+void AudioOutputController::GetOutputDeviceId(
+    base::Callback<void(const std::string&)> callback) const {
+  base::PostTaskAndReplyWithResult(
+      message_loop_.get(),
+      FROM_HERE,
+      base::Bind(&AudioOutputController::DoGetOutputDeviceId, this),
+      callback);
+}
+
+void AudioOutputController::SwitchOutputDevice(
+    const std::string& output_device_id, const base::Closure& callback) {
+  message_loop_->PostTaskAndReply(
+      FROM_HERE,
+      base::Bind(&AudioOutputController::DoSwitchOutputDevice, this,
+                 output_device_id),
+      callback);
+}
+
 void AudioOutputController::DoCreate(bool is_for_device_change) {
   DCHECK(message_loop_->BelongsToCurrentThread());
   SCOPED_UMA_HISTOGRAM_TIMER("Media.AudioOutputController.CreateTime");
+  TRACE_EVENT0("audio", "AudioOutputController::DoCreate");
 
   // Close() can be called before DoCreate() is executed.
   if (state_ == kClosed)
@@ -159,6 +177,7 @@ void AudioOutputController::DoCreate(bool is_for_device_change) {
 void AudioOutputController::DoPlay() {
   DCHECK(message_loop_->BelongsToCurrentThread());
   SCOPED_UMA_HISTOGRAM_TIMER("Media.AudioOutputController.PlayTime");
+  TRACE_EVENT0("audio", "AudioOutputController::DoPlay");
 
   // We can start from created or paused state.
   if (state_ != kCreated && state_ != kPaused)
@@ -179,9 +198,25 @@ void AudioOutputController::DoPlay() {
   power_poll_callback_.callback().Run();
 #endif
 
-  // We start the AudioOutputStream lazily.
+  on_more_io_data_called_ = 0;
   AllowEntryToOnMoreIOData();
   stream_->Start(this);
+
+  // For UMA tracking purposes, start the wedge detection timer.  This allows us
+  // to record statistics about the number of wedged playbacks in the field.
+  //
+  // WedgeCheck() will look to see if |on_more_io_data_called_| is true after
+  // the timeout expires.  Care must be taken to ensure the wedge check delay is
+  // large enough that the value isn't queried while OnMoreDataIO() is setting
+  // it.
+  //
+  // Timer self-manages its lifetime and WedgeCheck() will only record the UMA
+  // statistic if state is still kPlaying.  Additional Start() calls will
+  // invalidate the previous timer.
+  wedge_timer_.reset(new base::OneShotTimer<AudioOutputController>());
+  wedge_timer_->Start(
+      FROM_HERE, TimeDelta::FromSeconds(5), this,
+      &AudioOutputController::WedgeCheck);
 
   handler_->OnPlaying();
 }
@@ -202,6 +237,7 @@ void AudioOutputController::StopStream() {
   DCHECK(message_loop_->BelongsToCurrentThread());
 
   if (state_ == kPlaying) {
+    wedge_timer_.reset();
     stream_->Stop();
     DisallowEntryToOnMoreIOData();
 
@@ -216,14 +252,17 @@ void AudioOutputController::StopStream() {
 void AudioOutputController::DoPause() {
   DCHECK(message_loop_->BelongsToCurrentThread());
   SCOPED_UMA_HISTOGRAM_TIMER("Media.AudioOutputController.PauseTime");
+  TRACE_EVENT0("audio", "AudioOutputController::DoPause");
 
   StopStream();
 
   if (state_ != kPaused)
     return;
 
-  // Send a special pause mark to the low-latency audio thread.
-  sync_reader_->UpdatePendingBytes(kPauseMark);
+  // Let the renderer know we've stopped.  Necessary to let PPAPI clients know
+  // audio has been shutdown.  TODO(dalecurtis): This stinks.  PPAPI should have
+  // a better way to know when it should exit PPB_Audio_Shared::Run().
+  sync_reader_->UpdatePendingBytes(-1);
 
 #if defined(AUDIO_POWER_MONITORING)
   // Paused means silence follows.
@@ -236,6 +275,7 @@ void AudioOutputController::DoPause() {
 void AudioOutputController::DoClose() {
   DCHECK(message_loop_->BelongsToCurrentThread());
   SCOPED_UMA_HISTOGRAM_TIMER("Media.AudioOutputController.CloseTime");
+  TRACE_EVENT0("audio", "AudioOutputController::DoClose");
 
   if (state_ != kClosed) {
     DoStopCloseAndClearStream();
@@ -262,6 +302,31 @@ void AudioOutputController::DoSetVolume(double volume) {
   }
 }
 
+std::string AudioOutputController::DoGetOutputDeviceId() const {
+  DCHECK(message_loop_->BelongsToCurrentThread());
+  return output_device_id_;
+}
+
+void AudioOutputController::DoSwitchOutputDevice(
+    const std::string& output_device_id) {
+  DCHECK(message_loop_->BelongsToCurrentThread());
+
+  if (state_ == kClosed)
+    return;
+
+  if (output_device_id == output_device_id_)
+    return;
+
+  output_device_id_ = output_device_id;
+
+  // If output is currently diverted, we must not call OnDeviceChange
+  // since it would break the diverted setup. Once diversion is
+  // finished using StopDiverting() the output will switch to the new
+  // device ID.
+  if (stream_ != diverting_to_stream_)
+    OnDeviceChange();
+}
+
 void AudioOutputController::DoReportError() {
   DCHECK(message_loop_->BelongsToCurrentThread());
   if (state_ != kClosed)
@@ -279,26 +344,16 @@ int AudioOutputController::OnMoreIOData(AudioBus* source,
   DisallowEntryToOnMoreIOData();
   TRACE_EVENT0("audio", "AudioOutputController::OnMoreIOData");
 
-  // The OS level audio APIs on Linux and Windows all have problems requesting
-  // data on a fixed interval.  Sometimes they will issue calls back to back
-  // which can cause glitching, so wait until the renderer is ready.
-  //
-  // We also need to wait when diverting since the virtual stream will call this
-  // multiple times without waiting.
-  //
-  // NEVER wait on OSX unless a virtual stream is connected, otherwise we can
-  // end up hanging the entire OS.
-  //
-  // See many bugs for context behind this decision: http://crbug.com/170498,
-  // http://crbug.com/171651, http://crbug.com/174985, and more.
-#if defined(OS_WIN) || defined(OS_LINUX)
-    const bool kShouldBlock = true;
-#else
-    const bool kShouldBlock = diverting_to_stream_ != NULL;
-#endif
+  // Indicate that we haven't wedged (at least not indefinitely, WedgeCheck()
+  // may have already fired if OnMoreIOData() took an abnormal amount of time).
+  // Since this thread is the only writer of |on_more_io_data_called_| once the
+  // thread starts, its safe to compare and then increment.
+  if (base::AtomicRefCountIsZero(&on_more_io_data_called_))
+    base::AtomicRefCountInc(&on_more_io_data_called_);
 
-  const int frames = sync_reader_->Read(kShouldBlock, source, dest);
-  DCHECK_LE(0, frames);
+  sync_reader_->Read(source, dest);
+
+  const int frames = dest->frames();
   sync_reader_->UpdatePendingBytes(
       buffers_state.total_bytes() + frames * params_.GetBytesPerFrame());
 
@@ -339,6 +394,7 @@ void AudioOutputController::DoStopCloseAndClearStream() {
 void AudioOutputController::OnDeviceChange() {
   DCHECK(message_loop_->BelongsToCurrentThread());
   SCOPED_UMA_HISTOGRAM_TIMER("Media.AudioOutputController.DeviceChangeTime");
+  TRACE_EVENT0("audio", "AudioOutputController::OnDeviceChange");
 
   // TODO(dalecurtis): Notify the renderer side that a device change has
   // occurred.  Currently querying the hardware information here will lead to
@@ -415,6 +471,23 @@ void AudioOutputController::AllowEntryToOnMoreIOData() {
 void AudioOutputController::DisallowEntryToOnMoreIOData() {
   const bool is_zero = !base::AtomicRefCountDec(&num_allowed_io_);
   DCHECK(is_zero);
+}
+
+void AudioOutputController::WedgeCheck() {
+  DCHECK(message_loop_->BelongsToCurrentThread());
+
+  // If we should be playing and we haven't, that's a wedge.
+  if (state_ == kPlaying) {
+    const bool playback_success =
+        base::AtomicRefCountIsOne(&on_more_io_data_called_);
+
+    UMA_HISTOGRAM_BOOLEAN(
+        "Media.AudioOutputControllerPlaybackStartupSuccess", playback_success);
+
+    // Let the AudioManager try and fix it.
+    if (!playback_success)
+      audio_manager_->FixWedgedAudio();
+  }
 }
 
 }  // namespace media

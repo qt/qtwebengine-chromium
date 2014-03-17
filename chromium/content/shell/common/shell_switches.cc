@@ -18,6 +18,9 @@ const char kContentBrowserTest[] = "browser-test";
 // Makes Content Shell use the given path for its data directory.
 const char kContentShellDataPath[] = "data-path";
 
+// The directory breakpad should store minidumps in.
+const char kCrashDumpsDir[] = "crash-dumps-dir";
+
 // Request pages to be dumped as text once they finished loading.
 const char kDumpRenderTree[] = "dump-render-tree";
 
@@ -30,9 +33,6 @@ const char kEncodeBinary[] = "encode-binary";
 // Exposes the window.internals object to JavaScript for interactive development
 // and debugging of layout tests that rely on it.
 const char kExposeInternalsForTesting[]     = "expose-internals-for-testing";
-
-// Save results when layout-as-browser tests fail.
-const char kOutputLayoutTestDifferences[] = "output-layout-test-differences";
 
 // This makes us disable some web-platform runtime features so that we test
 // content_shell as if it was a stable release. It is only followed when

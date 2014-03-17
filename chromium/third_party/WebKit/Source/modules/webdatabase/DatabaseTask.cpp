@@ -28,9 +28,10 @@
 #include "config.h"
 #include "modules/webdatabase/DatabaseTask.h"
 
-#include "core/platform/Logging.h"
+#include "platform/Logging.h"
 #include "modules/webdatabase/Database.h"
-#include "modules/webdatabase/DatabaseBackend.h"
+#include "modules/webdatabase/DatabaseContext.h"
+#include "modules/webdatabase/DatabaseThread.h"
 
 namespace WebCore {
 
@@ -74,14 +75,22 @@ DatabaseTask::~DatabaseTask()
 #endif
 }
 
-void DatabaseTask::performTask()
+void DatabaseTask::run()
 {
     // Database tasks are meant to be used only once, so make sure this one hasn't been performed before.
 #if !LOG_DISABLED
     ASSERT(!m_complete);
 #endif
 
-    LOG(StorageAPI, "Performing %s %p\n", debugTaskName(), this);
+    if (!m_synchronizer && !m_database->databaseContext()->databaseThread()->isDatabaseOpen(m_database.get())) {
+        taskCancelled();
+#if !LOG_DISABLED
+        m_complete = true;
+#endif
+        return;
+    }
+
+    WTF_LOG(StorageAPI, "Performing %s %p\n", debugTaskName(), this);
 
     m_database->resetAuthorizer();
     doPerformTask();
@@ -148,11 +157,19 @@ const char* DatabaseBackend::DatabaseCloseTask::debugTaskName() const
 DatabaseBackend::DatabaseTransactionTask::DatabaseTransactionTask(PassRefPtr<SQLTransactionBackend> transaction)
     : DatabaseTask(Database::from(transaction->database()), 0)
     , m_transaction(transaction)
-    , m_didPerformTask(false)
 {
 }
 
 DatabaseBackend::DatabaseTransactionTask::~DatabaseTransactionTask()
+{
+}
+
+void DatabaseBackend::DatabaseTransactionTask::doPerformTask()
+{
+    m_transaction->performNextStep();
+}
+
+void DatabaseBackend::DatabaseTransactionTask::taskCancelled()
 {
     // If the task is being destructed without the transaction ever being run,
     // then we must either have an error or an interruption. Give the
@@ -162,14 +179,7 @@ DatabaseBackend::DatabaseTransactionTask::~DatabaseTransactionTask()
     // Transaction phase 2 cleanup. See comment on "What happens if a
     // transaction is interrupted?" at the top of SQLTransactionBackend.cpp.
 
-    if (!m_didPerformTask)
-        m_transaction->notifyDatabaseThreadIsShuttingDown();
-}
-
-void DatabaseBackend::DatabaseTransactionTask::doPerformTask()
-{
-    m_transaction->performNextStep();
-    m_didPerformTask = true;
+    m_transaction->notifyDatabaseThreadIsShuttingDown();
 }
 
 #if !LOG_DISABLED

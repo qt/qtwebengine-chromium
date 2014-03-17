@@ -24,7 +24,7 @@ template<typename Class,
          typename InsetsClass,
          typename VectorClass,
          typename Type>
-class UI_EXPORT RectBase {
+class GFX_EXPORT RectBase {
  public:
   Type x() const { return origin_.x(); }
   void set_x(Type x) { origin_.set_x(x); }
@@ -142,6 +142,16 @@ class UI_EXPORT RectBase {
   // Returns true if this rectangle shares an entire edge (i.e., same width or
   // same height) with the given rectangle, and the rectangles do not overlap.
   bool SharesEdgeWith(const Class& rect) const;
+
+  // Returns the manhattan distance from the rect to the point. If the point is
+  // inside the rect, returns 0.
+  Type ManhattanDistanceToPoint(const PointClass& point) const;
+
+  // Returns the manhattan distance between the contents of this rect and the
+  // contents of the given rect. That is, if the intersection of the two rects
+  // is non-empty then the function returns 0. If the rects share a side, it
+  // returns the smallest non-zero value appropriate for Type.
+  Type ManhattanInternalDistance(const Class& rect) const;
 
  protected:
   RectBase(const PointClass& origin, const SizeClass& size)

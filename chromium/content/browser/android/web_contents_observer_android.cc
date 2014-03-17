@@ -22,7 +22,6 @@ using base::android::AttachCurrentThread;
 using base::android::ScopedJavaLocalRef;
 using base::android::ConvertUTF8ToJavaString;
 using base::android::ConvertUTF16ToJavaString;
-using base::android::HasClass;
 
 namespace content {
 
@@ -37,12 +36,12 @@ WebContentsObserverAndroid::WebContentsObserverAndroid(
 WebContentsObserverAndroid::~WebContentsObserverAndroid() {
 }
 
-jint Init(JNIEnv* env, jobject obj, jint native_content_view_core) {
+jlong Init(JNIEnv* env, jobject obj, jlong native_content_view_core) {
   ContentViewCore* content_view_core =
       reinterpret_cast<ContentViewCore*>(native_content_view_core);
   WebContentsObserverAndroid* native_observer = new WebContentsObserverAndroid(
       env, obj, content_view_core->GetWebContents());
-  return reinterpret_cast<jint>(native_observer);
+  return reinterpret_cast<intptr_t>(native_observer);
 }
 
 void WebContentsObserverAndroid::Destroy(JNIEnv* env, jobject obj) {
@@ -59,6 +58,18 @@ void WebContentsObserverAndroid::WebContentsDestroyed(
     // The java side will destroy |this|
     Java_WebContentsObserverAndroid_detachFromWebContents(env, obj.obj());
   }
+}
+
+void WebContentsObserverAndroid::RenderProcessGone(
+    base::TerminationStatus termination_status) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
+  if (obj.is_null())
+    return;
+  jboolean was_oom_protected =
+      termination_status == base::TERMINATION_STATUS_OOM_PROTECTED;
+  Java_WebContentsObserverAndroid_renderProcessGone(
+      env, obj.obj(), was_oom_protected);
 }
 
 void WebContentsObserverAndroid::DidStartLoading(
@@ -79,29 +90,19 @@ void WebContentsObserverAndroid::DidStopLoading(
   ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
   if (obj.is_null())
     return;
-
-  std::string url_string;
-  NavigationEntry* entry =
-    web_contents()->GetController().GetLastCommittedEntry();
-  // Not that GetBaseURLForDataURL is only used by the Android WebView
-  if (entry && !entry->GetBaseURLForDataURL().is_empty()) {
-    url_string = entry->GetBaseURLForDataURL().possibly_invalid_spec();
-  } else {
-    url_string = web_contents()->GetLastCommittedURL().spec();
-  }
-
-  ScopedJavaLocalRef<jstring> jstring_url(
-      ConvertUTF8ToJavaString(env, url_string));
+  ScopedJavaLocalRef<jstring> jstring_url(ConvertUTF8ToJavaString(
+      env, web_contents()->GetLastCommittedURL().spec()));
   Java_WebContentsObserverAndroid_didStopLoading(
       env, obj.obj(), jstring_url.obj());
 }
 
 void WebContentsObserverAndroid::DidFailProvisionalLoad(
     int64 frame_id,
+    const base::string16& frame_unique_name,
     bool is_main_frame,
     const GURL& validated_url,
     int error_code,
-    const string16& error_description,
+    const base::string16& error_description,
     RenderViewHost* render_view_host) {
   DidFailLoadInternal(
         true, is_main_frame, error_code, error_description, validated_url);
@@ -112,7 +113,7 @@ void WebContentsObserverAndroid::DidFailLoad(
     const GURL& validated_url,
     bool is_main_frame,
     int error_code,
-    const string16& error_description,
+    const base::string16& error_description,
     RenderViewHost* render_view_host) {
   DidFailLoadInternal(
         false, is_main_frame, error_code, error_description, validated_url);
@@ -129,9 +130,16 @@ void WebContentsObserverAndroid::DidNavigateMainFrame(
       ConvertUTF8ToJavaString(env, params.url.spec()));
   ScopedJavaLocalRef<jstring> jstring_base_url(
       ConvertUTF8ToJavaString(env, params.base_url.spec()));
-  Java_WebContentsObserverAndroid_didNavigateMainFrame(
+  // See http://crbug.com/251330 for why it's determined this way.
+  bool in_page_navigation =
+      details.type == NAVIGATION_TYPE_IN_PAGE || details.is_in_page;
+  // TODO(mkosiba): delete once downstream rolls.
+  Java_WebContentsObserverAndroid_didNavigateMainFrameV_JLS_JLS_Z(
       env, obj.obj(), jstring_url.obj(), jstring_base_url.obj(),
       details.is_navigation_to_different_page());
+  Java_WebContentsObserverAndroid_didNavigateMainFrameV_JLS_JLS_Z_Z(
+      env, obj.obj(), jstring_url.obj(), jstring_base_url.obj(),
+      details.is_navigation_to_different_page(), in_page_navigation);
 }
 
 void WebContentsObserverAndroid::DidNavigateAnyFrame(
@@ -174,6 +182,7 @@ void WebContentsObserverAndroid::DidStartProvisionalLoadForFrame(
 
 void WebContentsObserverAndroid::DidCommitProvisionalLoadForFrame(
       int64 frame_id,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& url,
       PageTransition transition_type,
@@ -198,10 +207,27 @@ void WebContentsObserverAndroid::DidFinishLoad(
   ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
   if (obj.is_null())
     return;
+
+  std::string url_string = validated_url.spec();
+  NavigationEntry* entry =
+    web_contents()->GetController().GetLastCommittedEntry();
+  // Note that GetBaseURLForDataURL is only used by the Android WebView.
+  if (entry && !entry->GetBaseURLForDataURL().is_empty())
+    url_string = entry->GetBaseURLForDataURL().possibly_invalid_spec();
+
   ScopedJavaLocalRef<jstring> jstring_url(
-      ConvertUTF8ToJavaString(env, validated_url.spec()));
+      ConvertUTF8ToJavaString(env, url_string));
   Java_WebContentsObserverAndroid_didFinishLoad(
       env, obj.obj(), frame_id, jstring_url.obj(), is_main_frame);
+}
+
+void WebContentsObserverAndroid::NavigationEntryCommitted(
+    const LoadCommittedDetails& load_details) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
+  if (obj.is_null())
+    return;
+  Java_WebContentsObserverAndroid_navigationEntryCommitted(env, obj.obj());
 }
 
 void WebContentsObserverAndroid::DidChangeVisibleSSLState() {
@@ -232,7 +258,7 @@ void WebContentsObserverAndroid::DidFailLoadInternal(
     bool is_provisional_load,
     bool is_main_frame,
     int error_code,
-    const string16& description,
+    const base::string16& description,
     const GURL& url) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
@@ -252,10 +278,6 @@ void WebContentsObserverAndroid::DidFailLoadInternal(
 }
 
 bool RegisterWebContentsObserverAndroid(JNIEnv* env) {
-  if (!HasClass(env, kWebContentsObserverAndroidClassPath)) {
-    DLOG(ERROR) << "Unable to find class WebContentsObserverAndroid!";
-    return false;
-  }
   return RegisterNativesImpl(env);
 }
 }  // namespace content

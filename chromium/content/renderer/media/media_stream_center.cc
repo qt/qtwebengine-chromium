@@ -16,7 +16,8 @@
 #include "content/public/renderer/render_thread.h"
 #include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/media_stream_extra_data.h"
-#include "content/renderer/media/media_stream_impl.h"
+#include "content/renderer/media/media_stream_source_extra_data.h"
+#include "content/renderer/media/media_stream_track_extra_data.h"
 #include "content/renderer/render_view_impl.h"
 #include "third_party/WebKit/public/platform/WebMediaStream.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamCenterClient.h"
@@ -28,43 +29,19 @@
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/libjingle/source/talk/app/webrtc/jsep.h"
 
-using WebKit::WebFrame;
-using WebKit::WebView;
+using blink::WebFrame;
+using blink::WebView;
 
 namespace content {
 
-static webrtc::MediaStreamInterface* GetNativeMediaStream(
-    const WebKit::WebMediaStream& stream) {
-  MediaStreamExtraData* extra_data =
-      static_cast<MediaStreamExtraData*>(stream.extraData());
-  return extra_data->stream().get();
-}
-
-static webrtc::MediaStreamTrackInterface* GetNativeMediaStreamTrack(
-      const WebKit::WebMediaStream& stream,
-      const WebKit::WebMediaStreamTrack& component) {
-  std::string track_id = UTF16ToUTF8(component.id());
-  webrtc::MediaStreamInterface* native_stream = GetNativeMediaStream(stream);
-  if (native_stream) {
-    if (component.source().type() == WebKit::WebMediaStreamSource::TypeAudio) {
-      return native_stream->FindAudioTrack(track_id);
-    }
-    if (component.source().type() == WebKit::WebMediaStreamSource::TypeVideo) {
-      return native_stream->FindVideoTrack(track_id);
-    }
-  }
-  NOTREACHED();
-  return NULL;
-}
-
-MediaStreamCenter::MediaStreamCenter(WebKit::WebMediaStreamCenterClient* client,
+MediaStreamCenter::MediaStreamCenter(blink::WebMediaStreamCenterClient* client,
                                      MediaStreamDependencyFactory* factory)
     : rtc_factory_(factory), next_request_id_(0) {}
 
 MediaStreamCenter::~MediaStreamCenter() {}
 
 bool MediaStreamCenter::getMediaStreamTrackSources(
-    const WebKit::WebMediaStreamTrackSourcesRequest& request) {
+    const blink::WebMediaStreamTrackSourcesRequest& request) {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableDeviceEnumeration)) {
     int request_id = next_request_id_++;
@@ -76,47 +53,83 @@ bool MediaStreamCenter::getMediaStreamTrackSources(
   return false;
 }
 
+void MediaStreamCenter::didCreateMediaStreamTrack(
+    const blink::WebMediaStreamTrack& track) {
+  if (!rtc_factory_)
+    return;
+  rtc_factory_->CreateNativeMediaStreamTrack(track);
+}
+
 void MediaStreamCenter::didEnableMediaStreamTrack(
-    const WebKit::WebMediaStream& stream,
-    const WebKit::WebMediaStreamTrack& component) {
-  webrtc::MediaStreamTrackInterface* track =
-      GetNativeMediaStreamTrack(stream, component);
-  if (track)
-    track->set_enabled(true);
+    const blink::WebMediaStreamTrack& track) {
+  webrtc::MediaStreamTrackInterface* native_track =
+      MediaStreamDependencyFactory::GetNativeMediaStreamTrack(track);
+  if (native_track)
+    native_track->set_enabled(true);
 }
 
 void MediaStreamCenter::didDisableMediaStreamTrack(
-    const WebKit::WebMediaStream& stream,
-    const WebKit::WebMediaStreamTrack& component) {
-  webrtc::MediaStreamTrackInterface* track =
-      GetNativeMediaStreamTrack(stream, component);
-  if (track)
-    track->set_enabled(false);
+    const blink::WebMediaStreamTrack& track) {
+  webrtc::MediaStreamTrackInterface* native_track =
+      MediaStreamDependencyFactory::GetNativeMediaStreamTrack(track);
+  if (native_track)
+    native_track->set_enabled(false);
+}
+
+bool MediaStreamCenter::didStopMediaStreamTrack(
+    const blink::WebMediaStreamTrack& track) {
+  DVLOG(1) << "MediaStreamCenter::didStopMediaStreamTrack";
+  blink::WebMediaStreamSource source = track.source();
+  MediaStreamSourceExtraData* extra_data =
+      static_cast<MediaStreamSourceExtraData*>(source.extraData());
+  if (!extra_data) {
+    DVLOG(1) << "didStopMediaStreamTrack called on a remote track.";
+    return false;
+  }
+
+  extra_data->OnLocalSourceStop();
+  return true;
 }
 
 void MediaStreamCenter::didStopLocalMediaStream(
-    const WebKit::WebMediaStream& stream) {
+    const blink::WebMediaStream& stream) {
   DVLOG(1) << "MediaStreamCenter::didStopLocalMediaStream";
   MediaStreamExtraData* extra_data =
-       static_cast<MediaStreamExtraData*>(stream.extraData());
+      static_cast<MediaStreamExtraData*>(stream.extraData());
   if (!extra_data) {
     NOTREACHED();
     return;
   }
 
+  // TODO(perkj): MediaStream::Stop is being deprecated. But for the moment we
+  // need to support the old behavior and the new. Since we only create one
+  // source object per actual device- we need to fake stopping a
+  // MediaStreamTrack by disabling it if the same device is used as source by
+  // multiple tracks. Note that disabling a track here, don't affect the
+  // enabled property in JS.
+  blink::WebVector<blink::WebMediaStreamTrack> audio_tracks;
+  stream.audioTracks(audio_tracks);
+  for (size_t i = 0; i < audio_tracks.size(); ++i)
+    didDisableMediaStreamTrack(audio_tracks[i]);
+
+  blink::WebVector<blink::WebMediaStreamTrack> video_tracks;
+  stream.videoTracks(video_tracks);
+  for (size_t i = 0; i < video_tracks.size(); ++i)
+    didDisableMediaStreamTrack(video_tracks[i]);
+
   extra_data->OnLocalStreamStop();
 }
 
 void MediaStreamCenter::didCreateMediaStream(
-    WebKit::WebMediaStream& stream) {
+    blink::WebMediaStream& stream) {
   if (!rtc_factory_)
     return;
   rtc_factory_->CreateNativeLocalMediaStream(&stream);
 }
 
 bool MediaStreamCenter::didAddMediaStreamTrack(
-    const WebKit::WebMediaStream& stream,
-    const WebKit::WebMediaStreamTrack& track) {
+    const blink::WebMediaStream& stream,
+    const blink::WebMediaStreamTrack& track) {
   if (!rtc_factory_)
     return false;
 
@@ -124,8 +137,8 @@ bool MediaStreamCenter::didAddMediaStreamTrack(
 }
 
 bool MediaStreamCenter::didRemoveMediaStreamTrack(
-    const WebKit::WebMediaStream& stream,
-    const WebKit::WebMediaStreamTrack& track) {
+    const blink::WebMediaStream& stream,
+    const blink::WebMediaStreamTrack& track) {
   if (!rtc_factory_)
     return false;
 
@@ -148,29 +161,29 @@ void MediaStreamCenter::OnGetSourcesComplete(
   RequestMap::iterator request_it = requests_.find(request_id);
   DCHECK(request_it != requests_.end());
 
-  WebKit::WebVector<WebKit::WebSourceInfo> sourceInfos(devices.size());
+  blink::WebVector<blink::WebSourceInfo> sourceInfos(devices.size());
   for (size_t i = 0; i < devices.size(); ++i) {
     const MediaStreamDevice& device = devices[i].device;
     DCHECK(device.type == MEDIA_DEVICE_AUDIO_CAPTURE ||
            device.type == MEDIA_DEVICE_VIDEO_CAPTURE);
-    WebKit::WebSourceInfo::VideoFacingMode video_facing;
+    blink::WebSourceInfo::VideoFacingMode video_facing;
     switch (device.video_facing) {
       case MEDIA_VIDEO_FACING_USER:
-        video_facing = WebKit::WebSourceInfo::VideoFacingModeUser;
+        video_facing = blink::WebSourceInfo::VideoFacingModeUser;
         break;
       case MEDIA_VIDEO_FACING_ENVIRONMENT:
-        video_facing = WebKit::WebSourceInfo::VideoFacingModeEnvironment;
+        video_facing = blink::WebSourceInfo::VideoFacingModeEnvironment;
         break;
       default:
-        video_facing = WebKit::WebSourceInfo::VideoFacingModeNone;
+        video_facing = blink::WebSourceInfo::VideoFacingModeNone;
     }
 
     sourceInfos[i]
-        .initialize(WebKit::WebString::fromUTF8(device.id),
+        .initialize(blink::WebString::fromUTF8(device.id),
                     device.type == MEDIA_DEVICE_AUDIO_CAPTURE
-                        ? WebKit::WebSourceInfo::SourceKindAudio
-                        : WebKit::WebSourceInfo::SourceKindVideo,
-                    WebKit::WebString::fromUTF8(device.name),
+                        ? blink::WebSourceInfo::SourceKindAudio
+                        : blink::WebSourceInfo::SourceKindVideo,
+                    blink::WebString::fromUTF8(device.name),
                     video_facing);
   }
   request_it->second.requestSucceeded(sourceInfos);

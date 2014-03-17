@@ -38,69 +38,63 @@
 #include "core/dom/Document.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "modules/notifications/NotificationClient.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
-PassRefPtr<NotificationCenter> NotificationCenter::create(ScriptExecutionContext* context, NotificationClient* client)
+PassRefPtr<NotificationCenter> NotificationCenter::create(ExecutionContext* context, NotificationClient* client)
 {
     RefPtr<NotificationCenter> notificationCenter(adoptRef(new NotificationCenter(context, client)));
     notificationCenter->suspendIfNeeded();
     return notificationCenter.release();
 }
 
-NotificationCenter::NotificationCenter(ScriptExecutionContext* context, NotificationClient* client)
+NotificationCenter::NotificationCenter(ExecutionContext* context, NotificationClient* client)
     : ActiveDOMObject(context)
     , m_client(client)
 {
     ScriptWrappable::init(this);
 }
 
-#if ENABLE(LEGACY_NOTIFICATIONS)
 int NotificationCenter::checkPermission()
 {
-    if (!client() || !scriptExecutionContext())
+    if (!client() || !executionContext())
         return NotificationClient::PermissionDenied;
 
-    switch (scriptExecutionContext()->securityOrigin()->canShowNotifications()) {
+    switch (executionContext()->securityOrigin()->canShowNotifications()) {
     case SecurityOrigin::AlwaysAllow:
         return NotificationClient::PermissionAllowed;
     case SecurityOrigin::AlwaysDeny:
         return NotificationClient::PermissionDenied;
     case SecurityOrigin::Ask:
-        return m_client->checkPermission(scriptExecutionContext());
+        return m_client->checkPermission(executionContext());
     }
 
     ASSERT_NOT_REACHED();
-    return m_client->checkPermission(scriptExecutionContext());
+    return m_client->checkPermission(executionContext());
 }
 
-void NotificationCenter::requestPermission(PassRefPtr<VoidCallback> callback)
+void NotificationCenter::requestPermission(PassOwnPtr<VoidCallback> callback)
 {
-    if (!client() || !scriptExecutionContext())
+    if (!client() || !executionContext())
         return;
 
-    switch (scriptExecutionContext()->securityOrigin()->canShowNotifications()) {
+    switch (executionContext()->securityOrigin()->canShowNotifications()) {
     case SecurityOrigin::AlwaysAllow:
     case SecurityOrigin::AlwaysDeny: {
         m_callbacks.add(NotificationRequestCallback::createAndStartTimer(this, callback));
         return;
     }
     case SecurityOrigin::Ask:
-        return m_client->requestPermission(scriptExecutionContext(), callback);
+        return m_client->requestPermission(executionContext(), callback);
     }
 
     ASSERT_NOT_REACHED();
-    m_client->requestPermission(scriptExecutionContext(), callback);
+    m_client->requestPermission(executionContext(), callback);
 }
-#endif
 
 void NotificationCenter::stop()
 {
-    if (!m_client)
-        return;
-    m_client->cancelRequestsForPermission(scriptExecutionContext());
-    m_client->clearNotifications(scriptExecutionContext());
     m_client = 0;
 }
 
@@ -109,14 +103,14 @@ void NotificationCenter::requestTimedOut(NotificationCenter::NotificationRequest
     m_callbacks.remove(request);
 }
 
-PassRefPtr<NotificationCenter::NotificationRequestCallback> NotificationCenter::NotificationRequestCallback::createAndStartTimer(NotificationCenter* center, PassRefPtr<VoidCallback> callback)
+PassRefPtr<NotificationCenter::NotificationRequestCallback> NotificationCenter::NotificationRequestCallback::createAndStartTimer(NotificationCenter* center, PassOwnPtr<VoidCallback> callback)
 {
     RefPtr<NotificationCenter::NotificationRequestCallback> requestCallback = adoptRef(new NotificationCenter::NotificationRequestCallback(center, callback));
     requestCallback->startTimer();
     return requestCallback.release();
 }
 
-NotificationCenter::NotificationRequestCallback::NotificationRequestCallback(NotificationCenter* center, PassRefPtr<VoidCallback> callback)
+NotificationCenter::NotificationRequestCallback::NotificationRequestCallback(NotificationCenter* center, PassOwnPtr<VoidCallback> callback)
     : m_notificationCenter(center)
     , m_timer(this, &NotificationCenter::NotificationRequestCallback::timerFired)
     , m_callback(callback)

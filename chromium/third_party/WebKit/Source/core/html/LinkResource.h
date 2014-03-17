@@ -32,15 +32,15 @@
 #define LinkResource_h
 
 #include "core/fetch/FetchRequest.h"
-#include "weborigin/KURL.h"
-#include "wtf/RefCounted.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
 class HTMLLinkElement;
 
-class LinkResource : public RefCounted<LinkResource> {
+class LinkResource {
+    WTF_MAKE_NONCOPYABLE(LinkResource); WTF_MAKE_FAST_ALLOCATED;
 public:
     enum Type {
         Style,
@@ -49,6 +49,9 @@ public:
 
     explicit LinkResource(HTMLLinkElement*);
     virtual ~LinkResource();
+
+    bool shouldLoadResource() const;
+    Frame* loadingFrame() const;
 
     virtual Type type() const = 0;
     virtual void process() = 0;
@@ -65,13 +68,13 @@ public:
 
     bool isValid() const { return !m_url.isEmpty() && m_url.isValid(); }
     const KURL& url() const { return m_url; }
-    const String& charset() const { return m_charset; }
+    const AtomicString& charset() const { return m_charset; }
     FetchRequest build(bool blocking) const;
 
 private:
     HTMLLinkElement* m_owner;
     KURL m_url;
-    String m_charset;
+    AtomicString m_charset;
 };
 
 } // namespace WebCore

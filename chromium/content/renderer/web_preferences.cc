@@ -16,18 +16,18 @@
 #include "third_party/icu/source/common/unicode/uscript.h"
 #include "webkit/common/webpreferences.h"
 
-using WebKit::WebNetworkStateNotifier;
-using WebKit::WebRuntimeFeatures;
-using WebKit::WebSettings;
-using WebKit::WebString;
-using WebKit::WebURL;
-using WebKit::WebView;
+using blink::WebNetworkStateNotifier;
+using blink::WebRuntimeFeatures;
+using blink::WebSettings;
+using blink::WebString;
+using blink::WebURL;
+using blink::WebView;
 
 namespace content {
 
 namespace {
 
-typedef void (*SetFontFamilyWrapper)(WebKit::WebSettings*,
+typedef void (*SetFontFamilyWrapper)(blink::WebSettings*,
                                      const base::string16&,
                                      UScriptCode);
 
@@ -146,14 +146,10 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setUsesEncodingDetector(prefs.uses_universal_detector);
   settings->setTextAreasAreResizable(prefs.text_areas_are_resizable);
   settings->setAllowScriptsToCloseWindows(prefs.allow_scripts_to_close_windows);
-  if (prefs.user_style_sheet_enabled)
-    settings->setUserStyleSheetLocation(prefs.user_style_sheet_location);
-  else
-    settings->setUserStyleSheetLocation(WebURL());
-  settings->setAuthorAndUserStylesEnabled(prefs.author_and_user_styles_enabled);
   settings->setDownloadableBinaryFontsEnabled(prefs.remote_fonts_enabled);
   settings->setJavaScriptCanAccessClipboard(
       prefs.javascript_can_access_clipboard);
+  WebRuntimeFeatures::enableXSLT(prefs.xslt_enabled);
   settings->setXSSAuditorEnabled(prefs.xss_auditor_enabled);
   settings->setDNSPrefetchingEnabled(prefs.dns_prefetching_enabled);
   settings->setLocalStorageEnabled(prefs.local_storage_enabled);
@@ -216,6 +212,8 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   // Uses the mock theme engine for scrollbars.
   settings->setMockScrollbarsEnabled(prefs.mock_scrollbars_enabled);
 
+  settings->setLayerSquashingEnabled(prefs.layer_squashing_enabled);
+
   settings->setThreadedHTMLParser(prefs.threaded_html_parser);
 
   // Display visualization of what has changed on the screen using an
@@ -235,6 +233,11 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   // Disable antialiasing for 2d canvas if requested on the command line.
   settings->setAntialiased2dCanvasEnabled(
       !prefs.antialiased_2d_canvas_disabled);
+
+  // Set MSAA sample count for 2d canvas if requested on the command line (or
+  // default value if not).
+  settings->setAccelerated2dCanvasMSAASampleCount(
+      prefs.accelerated_2d_canvas_msaa_sample_count);
 
   // Enable gpu-accelerated filters if requested on the command line.
   settings->setAcceleratedFiltersEnabled(prefs.accelerated_filters_enabled);
@@ -285,15 +288,16 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
       prefs.allow_running_insecure_content);
   settings->setPasswordEchoEnabled(prefs.password_echo_enabled);
   settings->setShouldPrintBackgrounds(prefs.should_print_backgrounds);
+  settings->setShouldClearDocumentBackground(
+      prefs.should_clear_document_background);
   settings->setEnableScrollAnimator(prefs.enable_scroll_animator);
   settings->setVisualWordMovementEnabled(prefs.visual_word_movement_enabled);
 
-  settings->setCSSStickyPositionEnabled(prefs.css_sticky_position_enabled);
-  settings->setExperimentalCSSCustomFilterEnabled(prefs.css_shaders_enabled);
   settings->setRegionBasedColumnsEnabled(prefs.region_based_columns_enabled);
 
   WebRuntimeFeatures::enableLazyLayout(prefs.lazy_layout_enabled);
   WebRuntimeFeatures::enableTouch(prefs.touch_enabled);
+  settings->setMaxTouchPoints(prefs.pointer_events_max_touch_points);
   settings->setDeviceSupportsTouch(prefs.device_supports_touch);
   settings->setDeviceSupportsMouse(prefs.device_supports_mouse);
   settings->setEnableTouchAdjustment(prefs.touch_adjustment_enabled);
@@ -313,8 +317,10 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setSupportsMultipleWindows(prefs.supports_multiple_windows);
 
   settings->setViewportEnabled(prefs.viewport_enabled);
-  settings->setInitializeAtMinimumPageScale(
-      prefs.initialize_at_minimum_page_scale);
+  settings->setLoadWithOverviewMode(prefs.initialize_at_minimum_page_scale);
+  settings->setViewportMetaEnabled(prefs.viewport_meta_enabled);
+  settings->setMainFrameResizesAreOrientationChanges(
+      prefs.main_frame_resizes_are_orientation_changes);
 
   settings->setSmartInsertDeleteEnabled(prefs.smart_insert_delete_enabled);
 
@@ -325,7 +331,8 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
 #if defined(OS_ANDROID)
   settings->setAllowCustomScrollbarInMainFrame(false);
   settings->setTextAutosizingEnabled(prefs.text_autosizing_enabled);
-  settings->setTextAutosizingFontScaleFactor(prefs.font_scale_factor);
+  settings->setAccessibilityFontScaleFactor(prefs.font_scale_factor);
+  settings->setDeviceScaleAdjustment(prefs.device_scale_adjustment);
   web_view->setIgnoreViewportTagScaleLimits(prefs.force_enable_zoom);
   settings->setAutoZoomFocusedNodeToLegibleScale(true);
   settings->setDoubleTapToZoomEnabled(prefs.double_tap_to_zoom_enabled);
@@ -343,8 +350,20 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setUseWideViewport(prefs.use_wide_viewport);
   settings->setViewportMetaLayoutSizeQuirk(
       prefs.viewport_meta_layout_size_quirk);
+  settings->setViewportMetaMergeContentQuirk(
+      prefs.viewport_meta_merge_content_quirk);
+  settings->setViewportMetaNonUserScalableQuirk(
+      prefs.viewport_meta_non_user_scalable_quirk);
   settings->setViewportMetaZeroValuesQuirk(
       prefs.viewport_meta_zero_values_quirk);
+  settings->setClobberUserAgentInitialScaleQuirk(
+      prefs.clobber_user_agent_initial_scale_quirk);
+  settings->setIgnoreMainFrameOverflowHiddenQuirk(
+      prefs.ignore_main_frame_overflow_hidden_quirk);
+  settings->setReportScreenSizeInPhysicalPixelsQuirk(
+      prefs.report_screen_size_in_physical_pixels_quirk);
+  settings->setMainFrameClipsContent(false);
+  settings->setShrinksStandaloneImagesToFit(false);
 #endif
 
   WebNetworkStateNotifier::setOnLine(prefs.is_online);
@@ -356,6 +375,7 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setPinchOverlayScrollbarThickness(
       prefs.pinch_overlay_scrollbar_thickness);
   settings->setUseSolidColorScrollbars(prefs.use_solid_color_scrollbars);
+  settings->setCompositorTouchHitTesting(prefs.compositor_touch_hit_testing);
 }
 
 }  // namespace content

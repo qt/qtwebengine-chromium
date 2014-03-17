@@ -18,16 +18,18 @@
  * Boston, MA 02110-1301, USA.
  */
 
-[
-    CustomToV8
-] interface HTMLDocument : Document {
-    [Custom, CustomElementCallbacks=Enable] void open();
+interface HTMLDocument : Document {
+    [Custom, CustomElementCallbacks] void open();
     void close();
-    [Custom, PerWorldBindings, ActivityLog=AccessForIsolatedWorlds, CustomElementCallbacks=Enable] void write([Default=Undefined] optional DOMString text);
-    [Custom, PerWorldBindings, ActivityLog=AccessForIsolatedWorlds, CustomElementCallbacks=Enable] void writeln([Default=Undefined] optional DOMString text);
+
+    // We support multiple DOMString arguments to match FF / IE, e.g.:
+    // document.write("a", "b", "c") --> document.write("abc")
+    // document.write() --> document.write("")
+    [CallWith=ActiveWindow, PerWorldBindings, ActivityLogging=ForIsolatedWorlds, CustomElementCallbacks] void write(DOMString... text);
+    [CallWith=ActiveWindow, PerWorldBindings, ActivityLogging=ForIsolatedWorlds, CustomElementCallbacks] void writeln(DOMString... text);
 
     readonly attribute HTMLCollection embeds;
-    readonly attribute HTMLCollection plugins;
+    [ImplementedAs=embeds] readonly attribute HTMLCollection plugins;
     readonly attribute HTMLCollection scripts;
 
     // Extensions
@@ -39,18 +41,18 @@
     [DeprecateAs=CaptureEvents] void captureEvents();
     [DeprecateAs=ReleaseEvents] void releaseEvents();
 
-    [TreatNullAs=NullString, CustomElementCallbacks=Enable] attribute DOMString dir;
-    [TreatNullAs=NullString, CustomElementCallbacks=Enable] attribute DOMString designMode;
+    [TreatNullAs=NullString, CustomElementCallbacks] attribute DOMString dir;
+    [TreatNullAs=NullString, CustomElementCallbacks] attribute DOMString designMode;
     readonly attribute DOMString compatMode;
 
     readonly attribute Element activeElement;
     boolean hasFocus();
 
     // Deprecated attributes
-    [TreatNullAs=NullString, CustomElementCallbacks=Enable] attribute DOMString bgColor;
-    [TreatNullAs=NullString, CustomElementCallbacks=Enable] attribute DOMString fgColor;
-    [TreatNullAs=NullString, CustomElementCallbacks=Enable] attribute DOMString alinkColor;
-    [TreatNullAs=NullString, CustomElementCallbacks=Enable] attribute DOMString linkColor;
-    [TreatNullAs=NullString, CustomElementCallbacks=Enable] attribute DOMString vlinkColor;
+    [TreatNullAs=NullString, CustomElementCallbacks] attribute DOMString bgColor;
+    [TreatNullAs=NullString, CustomElementCallbacks] attribute DOMString fgColor;
+    [TreatNullAs=NullString, CustomElementCallbacks] attribute DOMString alinkColor;
+    [TreatNullAs=NullString, CustomElementCallbacks] attribute DOMString linkColor;
+    [TreatNullAs=NullString, CustomElementCallbacks] attribute DOMString vlinkColor;
 };
 

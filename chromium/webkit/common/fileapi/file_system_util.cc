@@ -11,6 +11,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "net/base/net_errors.h"
 #include "url/gurl.h"
 #include "webkit/common/database/database_identifier.h"
 
@@ -152,24 +153,24 @@ GURL GetFileSystemRootURI(const GURL& origin_url, FileSystemType type) {
 
   std::string url = "filesystem:" + origin_url.GetWithEmptyPath().spec();
   switch (type) {
-  case kFileSystemTypeTemporary:
-    url += (kTemporaryDir + 1);  // We don't want the leading slash.
-    return GURL(url + "/");
-  case kFileSystemTypePersistent:
-    url += (kPersistentDir + 1);  // We don't want the leading slash.
-    return GURL(url + "/");
-  case kFileSystemTypeExternal:
-    url += (kExternalDir + 1);  // We don't want the leading slash.
-    return GURL(url + "/");
-  case kFileSystemTypeIsolated:
-    url += (kIsolatedDir + 1);  // We don't want the leading slash.
-    return GURL(url + "/");
-  case kFileSystemTypeTest:
-    url += (kTestDir + 1);  // We don't want the leading slash.
-    return GURL(url + "/");
-  // Internal types are always pointed via isolated or external URLs.
-  default:
-    NOTREACHED();
+    case kFileSystemTypeTemporary:
+      url += (kTemporaryDir + 1);  // We don't want the leading slash.
+      return GURL(url + "/");
+    case kFileSystemTypePersistent:
+      url += (kPersistentDir + 1);  // We don't want the leading slash.
+      return GURL(url + "/");
+    case kFileSystemTypeExternal:
+      url += (kExternalDir + 1);  // We don't want the leading slash.
+      return GURL(url + "/");
+    case kFileSystemTypeIsolated:
+      url += (kIsolatedDir + 1);  // We don't want the leading slash.
+      return GURL(url + "/");
+    case kFileSystemTypeTest:
+      url += (kTestDir + 1);  // We don't want the leading slash.
+      return GURL(url + "/");
+      // Internal types are always pointed via isolated or external URLs.
+    default:
+      NOTREACHED();
   }
   NOTREACHED();
   return GURL();
@@ -192,6 +193,7 @@ FileSystemType QuotaStorageTypeToFileSystemType(
       return kFileSystemTypePersistent;
     case quota::kStorageTypeSyncable:
       return kFileSystemTypeSyncable;
+    case quota::kStorageTypeQuotaNotManaged:
     case quota::kStorageTypeUnknown:
       return kFileSystemTypeUnknown;
   }
@@ -207,6 +209,8 @@ quota::StorageType FileSystemTypeToQuotaStorageType(FileSystemType type) {
     case kFileSystemTypeSyncable:
     case kFileSystemTypeSyncableForInternalSync:
       return quota::kStorageTypeSyncable;
+    case kFileSystemTypePluginPrivate:
+      return quota::kStorageTypeQuotaNotManaged;
     default:
       return quota::kStorageTypeUnknown;
   }
@@ -238,6 +242,8 @@ std::string GetFileSystemTypeString(FileSystemType type) {
       return "Picasa";
     case kFileSystemTypeItunes:
       return "Itunes";
+    case kFileSystemTypeIphoto:
+      return "Iphoto";
     case kFileSystemTypeDrive:
       return "Drive";
     case kFileSystemTypeSyncable:
@@ -247,6 +253,8 @@ std::string GetFileSystemTypeString(FileSystemType type) {
       return "NativeForPlatformApp";
     case kFileSystemTypeForTransientFile:
       return "TransientFile";
+    case kFileSystemTypePluginPrivate:
+      return "PluginPrivate";
     case kFileSystemInternalTypeEnumStart:
     case kFileSystemInternalTypeEnumEnd:
       NOTREACHED();
@@ -274,54 +282,53 @@ base::FilePath StringToFilePath(const std::string& file_path_string) {
 #endif
 }
 
-WebKit::WebFileError PlatformFileErrorToWebFileError(
+blink::WebFileError PlatformFileErrorToWebFileError(
     base::PlatformFileError error_code) {
   switch (error_code) {
     case base::PLATFORM_FILE_ERROR_NOT_FOUND:
-      return WebKit::WebFileErrorNotFound;
+      return blink::WebFileErrorNotFound;
     case base::PLATFORM_FILE_ERROR_INVALID_OPERATION:
     case base::PLATFORM_FILE_ERROR_EXISTS:
     case base::PLATFORM_FILE_ERROR_NOT_EMPTY:
-      return WebKit::WebFileErrorInvalidModification;
+      return blink::WebFileErrorInvalidModification;
     case base::PLATFORM_FILE_ERROR_NOT_A_DIRECTORY:
     case base::PLATFORM_FILE_ERROR_NOT_A_FILE:
-      return WebKit::WebFileErrorTypeMismatch;
+      return blink::WebFileErrorTypeMismatch;
     case base::PLATFORM_FILE_ERROR_ACCESS_DENIED:
-      return WebKit::WebFileErrorNoModificationAllowed;
+      return blink::WebFileErrorNoModificationAllowed;
     case base::PLATFORM_FILE_ERROR_FAILED:
-      return WebKit::WebFileErrorInvalidState;
+      return blink::WebFileErrorInvalidState;
     case base::PLATFORM_FILE_ERROR_ABORT:
-      return WebKit::WebFileErrorAbort;
+      return blink::WebFileErrorAbort;
     case base::PLATFORM_FILE_ERROR_SECURITY:
-      return WebKit::WebFileErrorSecurity;
+      return blink::WebFileErrorSecurity;
     case base::PLATFORM_FILE_ERROR_NO_SPACE:
-      return WebKit::WebFileErrorQuotaExceeded;
+      return blink::WebFileErrorQuotaExceeded;
     case base::PLATFORM_FILE_ERROR_INVALID_URL:
-      return WebKit::WebFileErrorEncoding;
+      return blink::WebFileErrorEncoding;
     default:
-      return WebKit::WebFileErrorInvalidModification;
+      return blink::WebFileErrorInvalidModification;
   }
 }
 
 bool GetFileSystemPublicType(
     const std::string type_string,
-    WebKit::WebFileSystemType* type
-) {
+    blink::WebFileSystemType* type) {
   DCHECK(type);
   if (type_string == "Temporary") {
-    *type = WebKit::WebFileSystemTypeTemporary;
+    *type = blink::WebFileSystemTypeTemporary;
     return true;
   }
   if (type_string == "Persistent") {
-    *type = WebKit::WebFileSystemTypePersistent;
+    *type = blink::WebFileSystemTypePersistent;
     return true;
   }
   if (type_string == "Isolated") {
-    *type = WebKit::WebFileSystemTypeIsolated;
+    *type = blink::WebFileSystemTypeIsolated;
     return true;
   }
   if (type_string == "External") {
-    *type = WebKit::WebFileSystemTypeExternal;
+    *type = blink::WebFileSystemTypeExternal;
     return true;
   }
   NOTREACHED();
@@ -330,8 +337,8 @@ bool GetFileSystemPublicType(
 
 std::string GetIsolatedFileSystemName(const GURL& origin_url,
                                       const std::string& filesystem_id) {
-  std::string name(fileapi::GetFileSystemName(origin_url,
-      fileapi::kFileSystemTypeIsolated));
+  std::string name(fileapi::GetFileSystemName(
+      origin_url, fileapi::kFileSystemTypeIsolated));
   name.append("_");
   name.append(filesystem_id);
   return name;
@@ -365,6 +372,14 @@ bool CrackIsolatedFileSystemName(const std::string& filesystem_name,
   return true;
 }
 
+bool ValidateIsolatedFileSystemId(const std::string& filesystem_id) {
+  const size_t kExpectedFileSystemIdSize = 32;
+  if (filesystem_id.size() != kExpectedFileSystemIdSize)
+    return false;
+  const std::string kExpectedChars("ABCDEF0123456789");
+  return ContainsOnlyChars(filesystem_id, kExpectedChars);
+}
+
 std::string GetIsolatedFileSystemRootURIString(
     const GURL& origin_url,
     const std::string& filesystem_id,
@@ -395,5 +410,46 @@ std::string GetExternalFileSystemRootURIString(
   root.append("/");
   return root;
 }
+
+base::PlatformFileError NetErrorToPlatformFileError(int error) {
+  switch (error) {
+    case net::OK:
+      return base::PLATFORM_FILE_OK;
+    case net::ERR_ADDRESS_IN_USE:
+      return base::PLATFORM_FILE_ERROR_IN_USE;
+    case net::ERR_FILE_EXISTS:
+      return base::PLATFORM_FILE_ERROR_EXISTS;
+    case net::ERR_FILE_NOT_FOUND:
+      return base::PLATFORM_FILE_ERROR_NOT_FOUND;
+    case net::ERR_ACCESS_DENIED:
+      return base::PLATFORM_FILE_ERROR_ACCESS_DENIED;
+    case net::ERR_TOO_MANY_SOCKET_STREAMS:
+      return base::PLATFORM_FILE_ERROR_TOO_MANY_OPENED;
+    case net::ERR_OUT_OF_MEMORY:
+      return base::PLATFORM_FILE_ERROR_NO_MEMORY;
+    case net::ERR_FILE_NO_SPACE:
+      return base::PLATFORM_FILE_ERROR_NO_SPACE;
+    case net::ERR_INVALID_ARGUMENT:
+    case net::ERR_INVALID_HANDLE:
+      return base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
+    case net::ERR_ABORTED:
+    case net::ERR_CONNECTION_ABORTED:
+      return base::PLATFORM_FILE_ERROR_ABORT;
+    case net::ERR_ADDRESS_INVALID:
+    case net::ERR_INVALID_URL:
+      return base::PLATFORM_FILE_ERROR_INVALID_URL;
+    default:
+      return base::PLATFORM_FILE_ERROR_FAILED;
+  }
+}
+
+#if defined(OS_CHROMEOS)
+FileSystemInfo GetFileSystemInfoForChromeOS(const GURL& origin_url) {
+  FileSystemType mount_type = fileapi::kFileSystemTypeExternal;
+  return FileSystemInfo(fileapi::GetFileSystemName(origin_url, mount_type),
+                        fileapi::GetFileSystemRootURI(origin_url, mount_type),
+                        mount_type);
+}
+#endif
 
 }  // namespace fileapi

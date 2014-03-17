@@ -81,9 +81,9 @@ class BaseTool(object):
     self._parser.add_option("-t", "--timeout",
                       dest="timeout", metavar="TIMEOUT", default=10000,
                       help="timeout in seconds for the run (default 10000)")
-    self._parser.add_option("", "--build_dir",
+    self._parser.add_option("", "--build-dir",
                             help="the location of the compiler output")
-    self._parser.add_option("", "--source_dir",
+    self._parser.add_option("", "--source-dir",
                             help="path to top of source tree for this build"
                                  "(used to normalize source paths in baseline)")
     self._parser.add_option("", "--gtest_filter", default="",
@@ -729,7 +729,7 @@ class ThreadSanitizerPosix(ThreadSanitizerBase, ValgrindTool):
 
   def CreateAnalyzer(self):
     use_gdb = common.IsMac()
-    return tsan_analyze.TsanAnalyzer(self._source_dir, use_gdb)
+    return tsan_analyze.TsanAnalyzer(use_gdb)
 
   def Analyze(self, check_sanity=False):
     ret = self.GetAnalyzeResults(check_sanity)
@@ -782,7 +782,7 @@ class ThreadSanitizerWindows(ThreadSanitizerBase, PinTool):
 
   def Analyze(self, check_sanity=False):
     filenames = glob.glob(self.log_dir + "/tsan.*")
-    analyzer = tsan_analyze.TsanAnalyzer(self._source_dir)
+    analyzer = tsan_analyze.TsanAnalyzer()
     ret = analyzer.Report(filenames, None, check_sanity)
     if ret != 0:
       logging.info(self.INFO_MESSAGE)
@@ -1041,7 +1041,7 @@ class ThreadSanitizerRV1Analyzer(tsan_analyze.TsanAnalyzer):
   TMP_FILE = "rvlog.tmp"
 
   def __init__(self, source_dir, use_gdb):
-    super(ThreadSanitizerRV1Analyzer, self).__init__(source_dir, use_gdb)
+    super(ThreadSanitizerRV1Analyzer, self).__init__(use_gdb)
     self.out = open(self.TMP_FILE, "w")
 
   def Report(self, files, testcase, check_sanity=False):

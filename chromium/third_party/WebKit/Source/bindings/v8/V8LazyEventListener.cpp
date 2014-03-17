@@ -45,8 +45,8 @@
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/page/ContentSecurityPolicy.h"
-#include "core/page/Frame.h"
+#include "core/frame/ContentSecurityPolicy.h"
+#include "core/frame/Frame.h"
 
 #include "wtf/StdLibExtras.h"
 
@@ -74,7 +74,7 @@ v8::Handle<v8::Object> toObjectWrapper(T* domObject, v8::Isolate* isolate)
     return v8::Local<v8::Object>::New(isolate, value.As<v8::Object>());
 }
 
-v8::Local<v8::Value> V8LazyEventListener::callListenerFunction(ScriptExecutionContext* context, v8::Handle<v8::Value> jsEvent, Event* event)
+v8::Local<v8::Value> V8LazyEventListener::callListenerFunction(ExecutionContext* context, v8::Handle<v8::Value> jsEvent, Event* event)
 {
     v8::Local<v8::Object> listenerObject = getListenerObject(context);
     if (listenerObject.IsEmpty())
@@ -96,19 +96,19 @@ v8::Local<v8::Value> V8LazyEventListener::callListenerFunction(ScriptExecutionCo
     if (!frame)
         return v8::Local<v8::Value>();
 
-    if (!frame->script()->canExecuteScripts(AboutToExecuteScript))
+    if (!frame->script().canExecuteScripts(AboutToExecuteScript))
         return v8::Local<v8::Value>();
 
     v8::Handle<v8::Value> parameters[1] = { jsEvent };
-    return frame->script()->callFunction(handlerFunction, receiver, WTF_ARRAY_LENGTH(parameters), parameters);
+    return frame->script().callFunction(handlerFunction, receiver, WTF_ARRAY_LENGTH(parameters), parameters);
 }
 
-static void V8LazyEventListenerToString(const v8::FunctionCallbackInfo<v8::Value>& args)
+static void V8LazyEventListenerToString(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    v8SetReturnValue(args, args.Holder()->GetHiddenValue(V8HiddenPropertyName::toStringString(args.GetIsolate())));
+    v8SetReturnValue(info, info.Holder()->GetHiddenValue(V8HiddenPropertyName::toStringString(info.GetIsolate())));
 }
 
-void V8LazyEventListener::prepareListenerObject(ScriptExecutionContext* context)
+void V8LazyEventListener::prepareListenerObject(ExecutionContext* context)
 {
     if (context->isDocument() && !toDocument(context)->allowInlineEventHandlers(m_node, this, m_sourceURL, m_position.m_line)) {
         clearListenerObject();
@@ -136,7 +136,7 @@ void V8LazyEventListener::prepareListenerObject(ScriptExecutionContext* context)
     // FIXME: Remove the following 'with' hack.
     //
     // Nodes other than the document object, when executing inline event
-    // handlers push document, form, and the target node on the scope chain.
+    // handlers push document, form owner, and the target node on the scope chain.
     // We do this by using 'with' statement.
     // See chrome/fast/forms/form-action.html
     //     chrome/fast/forms/selected-index-value.html
@@ -159,7 +159,7 @@ void V8LazyEventListener::prepareListenerObject(ScriptExecutionContext* context)
             "};"
         "}}}})";
 
-    v8::Handle<v8::String> codeExternalString = v8String(code, isolate);
+    v8::Handle<v8::String> codeExternalString = v8String(isolate, code);
 
     v8::Local<v8::Value> result = V8ScriptRunner::compileAndRunInternalScript(codeExternalString, isolate, m_sourceURL, m_position, 0);
     if (result.IsEmpty())
@@ -171,7 +171,7 @@ void V8LazyEventListener::prepareListenerObject(ScriptExecutionContext* context)
 
     HTMLFormElement* formElement = 0;
     if (m_node && m_node->isHTMLElement())
-        formElement = toHTMLElement(m_node)->form();
+        formElement = toHTMLElement(m_node)->formOwner();
 
     v8::Handle<v8::Object> nodeWrapper = toObjectWrapper<Node>(m_node, isolate);
     v8::Handle<v8::Object> formWrapper = toObjectWrapper<HTMLFormElement>(formElement, isolate);
@@ -205,17 +205,17 @@ void V8LazyEventListener::prepareListenerObject(ScriptExecutionContext* context)
     v8::Handle<v8::FunctionTemplate> toStringTemplate =
         V8PerIsolateData::current()->lazyEventListenerToStringTemplate();
     if (toStringTemplate.IsEmpty())
-        toStringTemplate = v8::FunctionTemplate::New(V8LazyEventListenerToString);
+        toStringTemplate = v8::FunctionTemplate::New(isolate, V8LazyEventListenerToString);
     v8::Local<v8::Function> toStringFunction;
     if (!toStringTemplate.IsEmpty())
         toStringFunction = toStringTemplate->GetFunction();
     if (!toStringFunction.IsEmpty()) {
         String toStringString = "function " + m_functionName + "(" + m_eventParameterName + ") {\n  " + m_code + "\n}";
-        wrappedFunction->SetHiddenValue(V8HiddenPropertyName::toStringString(isolate), v8String(toStringString, isolate));
-        wrappedFunction->Set(v8::String::NewSymbol("toString"), toStringFunction);
+        wrappedFunction->SetHiddenValue(V8HiddenPropertyName::toStringString(isolate), v8String(isolate, toStringString));
+        wrappedFunction->Set(v8AtomicString(isolate, "toString"), toStringFunction);
     }
 
-    wrappedFunction->SetName(v8String(m_functionName, isolate));
+    wrappedFunction->SetName(v8String(isolate, m_functionName));
 
     // FIXME: Remove the following comment-outs.
     // See https://bugs.webkit.org/show_bug.cgi?id=85152 for more details.

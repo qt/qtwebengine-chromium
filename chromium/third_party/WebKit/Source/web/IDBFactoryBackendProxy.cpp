@@ -29,148 +29,43 @@
 #include "config.h"
 #include "IDBFactoryBackendProxy.h"
 
-#include "public/platform/WebIDBDatabase.h"
-#include "public/platform/WebIDBDatabaseError.h"
-#include "public/platform/WebIDBFactory.h"
-#include "public/platform/WebVector.h"
-#include "IDBDatabaseBackendProxy.h"
 #include "WebFrameImpl.h"
-#include "WebIDBCallbacksImpl.h"
-#include "WebIDBDatabaseCallbacksImpl.h"
 #include "WebKit.h"
 #include "WebPermissionClient.h"
 #include "WebSecurityOrigin.h"
 #include "WebViewImpl.h"
-#include "WebWorkerBase.h"
-#include "WebWorkerClientImpl.h"
-#include "WorkerAllowMainThreadBridgeBase.h"
+#include "WorkerPermissionClient.h"
 #include "bindings/v8/WorkerScriptController.h"
-#include "core/dom/CrossThreadTask.h"
-#include "core/dom/DOMError.h"
-#include "core/dom/ExceptionCode.h"
-#include "core/dom/ScriptExecutionContext.h"
 #include "core/workers/WorkerGlobalScope.h"
-#include "core/workers/WorkerLoaderProxy.h"
-#include "core/workers/WorkerThread.h"
-#include "modules/indexeddb/IDBDatabaseCallbacks.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 PassRefPtr<IDBFactoryBackendInterface> IDBFactoryBackendProxy::create()
 {
     return adoptRef(new IDBFactoryBackendProxy());
 }
 
-IDBFactoryBackendProxy::IDBFactoryBackendProxy()
+bool IDBFactoryBackendProxy::allowIndexedDB(ExecutionContext* context, const String& name)
 {
-    m_webIDBFactory = WebKit::Platform::current()->idbFactory();
-}
-
-IDBFactoryBackendProxy::~IDBFactoryBackendProxy()
-{
-}
-
-static const char allowIndexedDBMode[] = "allowIndexedDBMode";
-
-class AllowIndexedDBMainThreadBridge : public WorkerAllowMainThreadBridgeBase {
-public:
-    static PassRefPtr<AllowIndexedDBMainThreadBridge> create(WorkerGlobalScope* workerGlobalScope, WebWorkerBase* webWorkerBase, const String& mode, const String& name)
-    {
-        return adoptRef(new AllowIndexedDBMainThreadBridge(workerGlobalScope, webWorkerBase, mode, name));
-    }
-
-private:
-    class AllowIDBParams : public AllowParams
-    {
-    public:
-        AllowIDBParams(const String& mode, const String& name)
-            : AllowParams(mode)
-            , m_name(name.isolatedCopy())
-        {
-        }
-        String m_name;
-    };
-
-    AllowIndexedDBMainThreadBridge(WorkerGlobalScope* workerGlobalScope, WebWorkerBase* webWorkerBase, const String& mode, const String& name)
-        : WorkerAllowMainThreadBridgeBase(workerGlobalScope, webWorkerBase)
-    {
-        postTaskToMainThread(adoptPtr(new AllowIDBParams(mode, name)));
-    }
-
-    virtual bool allowOnMainThread(WebCommonWorkerClient* commonClient, AllowParams* params)
-    {
-        ASSERT(isMainThread());
-        AllowIDBParams* allowIDBParams = static_cast<AllowIDBParams*>(params);
-        return commonClient->allowIndexedDB(allowIDBParams->m_name);
-    }
-};
-
-bool IDBFactoryBackendProxy::allowIndexedDB(ScriptExecutionContext* context, const String& name, const WebSecurityOrigin& origin, PassRefPtr<IDBCallbacks> callbacks)
-{
-    bool allowed;
     ASSERT_WITH_SECURITY_IMPLICATION(context->isDocument() || context->isWorkerGlobalScope());
+
     if (context->isDocument()) {
+        WebSecurityOrigin origin(context->securityOrigin());
         Document* document = toDocument(context);
         WebFrameImpl* webFrame = WebFrameImpl::fromFrame(document->frame());
+        if (webFrame->permissionClient())
+            return webFrame->permissionClient()->allowIndexedDB(webFrame, name, origin);
         WebViewImpl* webView = webFrame->viewImpl();
         // FIXME: webView->permissionClient() returns 0 in test_shell and content_shell http://crbug.com/137269
-        allowed = !webView->permissionClient() || webView->permissionClient()->allowIndexedDB(webFrame, name, origin);
-    } else {
-        WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
-        WebWorkerBase* webWorkerBase = static_cast<WebWorkerBase*>(workerGlobalScope->thread()->workerLoaderProxy().toWebWorkerBase());
-        WorkerRunLoop& runLoop = workerGlobalScope->thread()->runLoop();
-
-        String mode = allowIndexedDBMode;
-        mode.append(String::number(runLoop.createUniqueId()));
-        RefPtr<AllowIndexedDBMainThreadBridge> bridge = AllowIndexedDBMainThreadBridge::create(workerGlobalScope, webWorkerBase, mode, name);
-
-        // Either the bridge returns, or the queue gets terminated.
-        if (runLoop.runInMode(workerGlobalScope, mode) == MessageQueueTerminated) {
-            bridge->cancel();
-            return false;
-        }
-        allowed = bridge->result();
+        return !webView->permissionClient() || webView->permissionClient()->allowIndexedDB(webFrame, name, origin);
     }
 
-    if (!allowed)
-        callbacks->onError(WebIDBDatabaseError(UnknownError, "The user denied permission to access the database."));
-
-    return allowed;
+    WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
+    return WorkerPermissionClient::from(workerGlobalScope)->allowIndexedDB(name);
 }
 
-void IDBFactoryBackendProxy::getDatabaseNames(PassRefPtr<IDBCallbacks> prpCallbacks, const String& databaseIdentifier, ScriptExecutionContext* context)
-{
-    RefPtr<IDBCallbacks> callbacks(prpCallbacks);
-    WebSecurityOrigin origin(context->securityOrigin());
-    if (!allowIndexedDB(context, "Database Listing", origin, callbacks))
-        return;
-
-    m_webIDBFactory->getDatabaseNames(new WebIDBCallbacksImpl(callbacks), databaseIdentifier);
-}
-
-void IDBFactoryBackendProxy::open(const String& name, int64_t version, int64_t transactionId, PassRefPtr<IDBCallbacks> prpCallbacks, PassRefPtr<IDBDatabaseCallbacks> prpDatabaseCallbacks, const String& databaseIdentifier, ScriptExecutionContext* context)
-{
-    RefPtr<IDBCallbacks> callbacks(prpCallbacks);
-    RefPtr<IDBDatabaseCallbacks> databaseCallbacks(prpDatabaseCallbacks);
-    WebSecurityOrigin origin(context->securityOrigin());
-    if (!allowIndexedDB(context, name, origin, callbacks))
-        return;
-
-    m_webIDBFactory->open(name, version, transactionId, new WebIDBCallbacksImpl(callbacks), new WebIDBDatabaseCallbacksImpl(databaseCallbacks), databaseIdentifier);
-}
-
-void IDBFactoryBackendProxy::deleteDatabase(const String& name, PassRefPtr<IDBCallbacks> prpCallbacks, const String& databaseIdentifier, ScriptExecutionContext* context)
-{
-    RefPtr<IDBCallbacks> callbacks(prpCallbacks);
-    WebSecurityOrigin origin(context->securityOrigin());
-    if (!allowIndexedDB(context, name, origin, callbacks))
-        return;
-
-    m_webIDBFactory->deleteDatabase(name, new WebIDBCallbacksImpl(callbacks), databaseIdentifier);
-}
-
-} // namespace WebKit
+} // namespace blink

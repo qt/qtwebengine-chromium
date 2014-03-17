@@ -57,8 +57,11 @@ class ImageWorkerPoolTaskImpl : public internal::WorkerPoolTask {
 }  // namespace
 
 ImageRasterWorkerPool::ImageRasterWorkerPool(
-    ResourceProvider* resource_provider, size_t num_threads)
+    ResourceProvider* resource_provider,
+    size_t num_threads,
+    GLenum texture_target)
     : RasterWorkerPool(resource_provider, num_threads),
+      texture_target_(texture_target),
       raster_tasks_pending_(false),
       raster_tasks_required_for_activation_pending_(false) {
 }
@@ -149,14 +152,17 @@ void ImageRasterWorkerPool::ScheduleTasks(RasterTask::Queue* queue) {
   set_raster_required_for_activation_finished_task(
       new_raster_required_for_activation_finished_task);
 
-  TRACE_EVENT_ASYNC_STEP1(
+  TRACE_EVENT_ASYNC_STEP_INTO1(
       "cc", "ScheduledTasks", this, "rasterizing",
       "state", TracedValue::FromValue(StateAsValue().release()));
 }
 
+GLenum ImageRasterWorkerPool::GetResourceTarget() const {
+  return texture_target_;
+}
+
 ResourceFormat ImageRasterWorkerPool::GetResourceFormat() const {
-  // Only format supported by CHROMIUM_map_image
-  return RGBA_8888;
+  return resource_provider()->best_texture_format();
 }
 
 void ImageRasterWorkerPool::OnRasterTasksFinished() {
@@ -169,7 +175,7 @@ void ImageRasterWorkerPool::OnRasterTasksFinished() {
 void ImageRasterWorkerPool::OnRasterTasksRequiredForActivationFinished() {
   DCHECK(raster_tasks_required_for_activation_pending_);
   raster_tasks_required_for_activation_pending_ = false;
-  TRACE_EVENT_ASYNC_STEP1(
+  TRACE_EVENT_ASYNC_STEP_INTO1(
       "cc", "ScheduledTasks", this, "rasterizing",
       "state", TracedValue::FromValue(StateAsValue().release()));
   client()->DidFinishRunningTasksRequiredForActivation();

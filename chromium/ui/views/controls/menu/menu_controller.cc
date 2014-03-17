@@ -37,6 +37,7 @@
 #include "ui/views/view_constants.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/root_view.h"
+#include "ui/views/widget/tooltip_manager.h"
 #include "ui/views/widget/widget.h"
 
 #if defined(USE_AURA)
@@ -45,6 +46,7 @@
 #endif
 
 #if defined(OS_WIN)
+#include "ui/views/win/hwnd_message_handler.h"
 #include "ui/views/win/hwnd_util.h"
 #endif
 
@@ -102,18 +104,17 @@ bool TitleMatchesMnemonic(MenuItemView* menu, char16 key) {
 }  // namespace
 
 // Returns the first descendant of |view| that is hot tracked.
-static View* GetFirstHotTrackedView(View* view) {
+static CustomButton* GetFirstHotTrackedView(View* view) {
   if (!view)
     return NULL;
-
-  if (!strcmp(view->GetClassName(), CustomButton::kViewClassName)) {
-    CustomButton* button = static_cast<CustomButton*>(view);
+  CustomButton* button = CustomButton::AsCustomButton(view);
+  if (button) {
     if (button->IsHotTracked())
       return button;
   }
 
   for (int i = 0; i < view->child_count(); ++i) {
-    View* hot_view = GetFirstHotTrackedView(view->child_at(i));
+    CustomButton* hot_view = GetFirstHotTrackedView(view->child_at(i));
     if (hot_view)
       return hot_view;
   }
@@ -384,6 +385,27 @@ MenuItemView* MenuController::Run(Widget* parent,
   // Close any open menus.
   SetSelection(NULL, SELECTION_UPDATE_IMMEDIATELY | SELECTION_EXIT);
 
+#if defined(OS_WIN) && defined(USE_AURA)
+  // On Windows, if we select the menu item by touch and if the window at the
+  // location is another window on the same thread, that window gets a
+  // WM_MOUSEACTIVATE message and ends up activating itself, which is not
+  // correct. We workaround this by setting a property on the window at the
+  // current cursor location. We check for this property in our
+  // WM_MOUSEACTIVATE handler and don't activate the window if the property is
+  // set.
+  if (item_selected_by_touch_) {
+    item_selected_by_touch_ = false;
+    POINT cursor_pos;
+    ::GetCursorPos(&cursor_pos);
+     HWND window = ::WindowFromPoint(cursor_pos);
+     if (::GetWindowThreadProcessId(window, NULL) ==
+                                    ::GetCurrentThreadId()) {
+       ::SetProp(window, views::kIgnoreTouchMouseActivateForWindow,
+                 reinterpret_cast<HANDLE>(true));
+     }
+  }
+#endif
+
   if (nested_menu) {
     DCHECK(!menu_stack_.empty());
     // We're running from within a menu, restore the previous state.
@@ -425,7 +447,6 @@ MenuItemView* MenuController::Run(Widget* parent,
     menu_button_->SetState(CustomButton::STATE_NORMAL);
     menu_button_->SchedulePaint();
   }
-
   return result;
 }
 
@@ -575,7 +596,7 @@ void MenuController::OnMouseEntered(SubmenuView* source,
   // do anything here.
 }
 
-#if defined(OS_LINUX)
+#if defined(USE_AURA)
 bool MenuController::OnMouseWheel(SubmenuView* source,
                                   const ui::MouseWheelEvent& event) {
   MenuPart part = GetMenuPart(source, event.location());
@@ -600,6 +621,7 @@ void MenuController::OnGestureEvent(SubmenuView* source,
       if (part.menu->GetDelegate()->IsTriggerableEvent(
           part.menu, *event)) {
         Accept(part.menu, event->flags());
+        item_selected_by_touch_ = true;
       }
       event->StopPropagation();
     } else if (part.type == MenuPart::MENU_ITEM) {
@@ -807,12 +829,9 @@ void MenuController::SetSelection(MenuItemView* menu_item,
 
   bool pending_item_changed = pending_state_.item != menu_item;
   if (pending_item_changed && pending_state_.item) {
-    View* current_hot_view = GetFirstHotTrackedView(pending_state_.item);
-    if (current_hot_view && !strcmp(current_hot_view->GetClassName(),
-                                    CustomButton::kViewClassName)) {
-      CustomButton* button = static_cast<CustomButton*>(current_hot_view);
+    CustomButton* button = GetFirstHotTrackedView(pending_state_.item);
+    if (button)
       button->SetHotTracked(false);
-    }
   }
 
   // Notify the old path it isn't selected.
@@ -954,7 +973,7 @@ void MenuController::StartDrag(SubmenuView* source,
   // the selected item, so need to map to screen first then to item.
   gfx::Point press_loc(location);
   View::ConvertPointToScreen(source->GetScrollViewContainer(), &press_loc);
-  View::ConvertPointToTarget(NULL, item, &press_loc);
+  View::ConvertPointFromScreen(item, &press_loc);
   gfx::Point widget_loc(press_loc);
   View::ConvertPointToWidget(item, &widget_loc);
   scoped_ptr<gfx::Canvas> canvas(GetCanvasForDragImage(
@@ -1104,6 +1123,10 @@ bool MenuController::OnKeyDown(ui::KeyboardCode key_code) {
         return false;
       break;
 
+    case ui::VKEY_F4:
+      if (!accept_on_f4_)
+        break;
+      // Fallthrough to accept on F4, so combobox menus match Windows behavior.
     case ui::VKEY_RETURN:
       if (pending_state_.item) {
         if (pending_state_.item->HasSubmenu()) {
@@ -1167,7 +1190,9 @@ MenuController::MenuController(ui::NativeTheme* theme,
       message_loop_depth_(0),
       menu_config_(theme),
       closing_event_time_(base::TimeDelta()),
-      menu_start_time_(base::TimeTicks()) {
+      menu_start_time_(base::TimeTicks()),
+      accept_on_f4_(false),
+      item_selected_by_touch_(false) {
   active_instance_ = this;
 }
 
@@ -1183,16 +1208,14 @@ MenuController::~MenuController() {
 
 MenuController::SendAcceleratorResultType
     MenuController::SendAcceleratorToHotTrackedView() {
-  View* hot_view = GetFirstHotTrackedView(pending_state_.item);
+  CustomButton* hot_view = GetFirstHotTrackedView(pending_state_.item);
   if (!hot_view)
     return ACCELERATOR_NOT_PROCESSED;
 
   ui::Accelerator accelerator(ui::VKEY_RETURN, ui::EF_NONE);
   hot_view->AcceleratorPressed(accelerator);
-  if (!strcmp(hot_view->GetClassName(), CustomButton::kViewClassName)) {
-    CustomButton* button = static_cast<CustomButton*>(hot_view);
-    button->SetHotTracked(true);
-  }
+  CustomButton* button = static_cast<CustomButton*>(hot_view);
+  button->SetHotTracked(true);
   return (exit_type_ == EXIT_NONE) ?
       ACCELERATOR_PROCESSED : ACCELERATOR_PROCESSED_EXIT;
 }
@@ -1422,7 +1445,7 @@ bool MenuController::GetMenuPartByScreenCoordinateImpl(
   // Is the mouse over the scroll buttons?
   gfx::Point scroll_view_loc = screen_loc;
   View* scroll_view_container = menu->GetScrollViewContainer();
-  View::ConvertPointToTarget(NULL, scroll_view_container, &scroll_view_loc);
+  View::ConvertPointFromScreen(scroll_view_container, &scroll_view_loc);
   if (scroll_view_loc.x() < 0 ||
       scroll_view_loc.x() >= scroll_view_container->width() ||
       scroll_view_loc.y() < 0 ||
@@ -1439,7 +1462,7 @@ bool MenuController::GetMenuPartByScreenCoordinateImpl(
   // Not over the scroll button. Check the actual menu.
   if (DoesSubmenuContainLocation(menu, screen_loc)) {
     gfx::Point menu_loc = screen_loc;
-    View::ConvertPointToTarget(NULL, menu, &menu_loc);
+    View::ConvertPointFromScreen(menu, &menu_loc);
     part->menu = GetMenuItemAt(menu, menu_loc.x(), menu_loc.y());
     part->type = MenuPart::MENU_ITEM;
     part->submenu = menu;
@@ -1457,7 +1480,7 @@ bool MenuController::GetMenuPartByScreenCoordinateImpl(
 bool MenuController::DoesSubmenuContainLocation(SubmenuView* submenu,
                                                 const gfx::Point& screen_loc) {
   gfx::Point view_loc = screen_loc;
-  View::ConvertPointToTarget(NULL, submenu, &view_loc);
+  View::ConvertPointFromScreen(submenu, &view_loc);
   gfx::Rect vis_rect = submenu->GetVisibleBounds();
   return vis_rect.Contains(view_loc.x(), view_loc.y());
 }
@@ -1573,10 +1596,17 @@ void MenuController::OpenMenuImpl(MenuItemView* item, bool show) {
   state_.open_leading.push_back(resulting_direction);
   bool do_capture = (!did_capture_ && blocking_run_);
   showing_submenu_ = true;
-  if (show)
+  if (show) {
+    // Menus are the only place using kGroupingPropertyKey, so any value (other
+    // than 0) is fine.
+    const int kGroupingId = 1001;
     item->GetSubmenu()->ShowAt(owner_, bounds, do_capture);
-  else
+    item->GetSubmenu()->GetWidget()->SetNativeWindowProperty(
+        TooltipManager::kGroupingPropertyKey,
+        reinterpret_cast<void*>(kGroupingId));
+  } else {
     item->GetSubmenu()->Reposition(bounds);
+  }
   showing_submenu_ = false;
 }
 
@@ -1931,23 +1961,19 @@ void MenuController::IncrementSelection(int delta) {
   }
 
   if (item->has_children()) {
-    View* hot_view = GetFirstHotTrackedView(item);
-    if (hot_view &&
-        !strcmp(hot_view->GetClassName(), CustomButton::kViewClassName)) {
-      CustomButton* button = static_cast<CustomButton*>(hot_view);
+    CustomButton* button = GetFirstHotTrackedView(item);
+    if (button) {
       button->SetHotTracked(false);
       View* to_make_hot = GetNextFocusableView(item, button, delta == 1);
-      if (to_make_hot &&
-          !strcmp(to_make_hot->GetClassName(), CustomButton::kViewClassName)) {
-        CustomButton* button_hot = static_cast<CustomButton*>(to_make_hot);
+      CustomButton* button_hot = CustomButton::AsCustomButton(to_make_hot);
+      if (button_hot) {
         button_hot->SetHotTracked(true);
         return;
       }
     } else {
       View* to_make_hot = GetInitialFocusableView(item, delta == 1);
-      if (to_make_hot &&
-          !strcmp(to_make_hot->GetClassName(), CustomButton::kViewClassName)) {
-        CustomButton* button_hot = static_cast<CustomButton*>(to_make_hot);
+      CustomButton* button_hot = CustomButton::AsCustomButton(to_make_hot);
+      if (button_hot) {
         button_hot->SetHotTracked(true);
         return;
       }
@@ -1966,11 +1992,9 @@ void MenuController::IncrementSelection(int delta) {
             break;
           SetSelection(to_select, SELECTION_DEFAULT);
           View* to_make_hot = GetInitialFocusableView(to_select, delta == 1);
-          if (to_make_hot && !strcmp(to_make_hot->GetClassName(),
-                                     CustomButton::kViewClassName)) {
-            CustomButton* button_hot = static_cast<CustomButton*>(to_make_hot);
+          CustomButton* button_hot = CustomButton::AsCustomButton(to_make_hot);
+          if (button_hot)
             button_hot->SetHotTracked(true);
-          }
           break;
         }
       }
@@ -2190,7 +2214,7 @@ void MenuController::UpdateActiveMouseView(SubmenuView* event_source,
     // more complex hierarchies it'll need to change.
     View::ConvertPointToScreen(event_source->GetScrollViewContainer(),
                                &target_menu_loc);
-    View::ConvertPointToTarget(NULL, target_menu, &target_menu_loc);
+    View::ConvertPointFromScreen(target_menu, &target_menu_loc);
     target = target_menu->GetEventHandlerForPoint(target_menu_loc);
     if (target == target_menu || !target->enabled())
       target = NULL;
@@ -2235,7 +2259,7 @@ void MenuController::SendMouseReleaseToActiveView(SubmenuView* event_source,
   gfx::Point target_loc(event.location());
   View::ConvertPointToScreen(event_source->GetScrollViewContainer(),
                              &target_loc);
-  View::ConvertPointToTarget(NULL, active_mouse_view, &target_loc);
+  View::ConvertPointFromScreen(active_mouse_view, &target_loc);
   ui::MouseEvent release_event(ui::ET_MOUSE_RELEASED, target_loc, target_loc,
                                event.flags());
   // Reset active mouse view before sending mouse released. That way if it calls

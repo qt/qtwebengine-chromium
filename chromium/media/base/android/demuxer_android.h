@@ -16,36 +16,29 @@ class DemuxerAndroidClient;
 struct DemuxerConfigs;
 struct DemuxerData;
 
-// Defines a demuxer with ID-based asynchronous operations.
-//
-// TODO(scherkus): Remove |demuxer_client_id| and Add/RemoveDemuxerClient().
-// It's required in the interim as the Android Media Source implementation uses
-// the MediaPlayerAndroid interface and associated IPC messages.
+// Defines a demuxer with asynchronous operations.
 class MEDIA_EXPORT DemuxerAndroid {
  public:
-  // Associates |client| with the demuxer using |demuxer_client_id| as the
-  // identifier. Must be called prior to calling any other methods.
-  virtual void AddDemuxerClient(int demuxer_client_id,
-                                DemuxerAndroidClient* client) = 0;
+  virtual ~DemuxerAndroid() {}
 
-  // Removes the association created by AddClient(). Must be called when the
-  // client no longer wants to receive updates.
-  virtual void RemoveDemuxerClient(int demuxer_client_id) = 0;
+  // Initializes this demuxer with |client| as the callback handler.
+  // Must be called prior to calling any other methods.
+  virtual void Initialize(DemuxerAndroidClient* client) = 0;
 
   // Called to request the current audio/video decoder configurations.
-  virtual void RequestDemuxerConfigs(int demuxer_client_id) = 0;
+  virtual void RequestDemuxerConfigs() = 0;
 
-  // Called to request additiona data from the demuxer.
-  virtual void RequestDemuxerData(int demuxer_client_id,
-                                  media::DemuxerStream::Type type) = 0;
+  // Called to request additional data from the demuxer.
+  virtual void RequestDemuxerData(media::DemuxerStream::Type type) = 0;
 
   // Called to request the demuxer to seek to a particular media time.
-  virtual void RequestDemuxerSeek(int demuxer_client_id,
-                                  base::TimeDelta time_to_seek,
-                                  unsigned seek_request_id) = 0;
-
- protected:
-  virtual ~DemuxerAndroid() {}
+  // |is_browser_seek| is true if the renderer is not previously expecting this
+  // seek and must coordinate with other regular seeks. Browser seek existence
+  // should be hidden as much as possible from the renderer player and web apps.
+  // TODO(wolenetz): Instead of doing browser seek, replay cached data since
+  // last keyframe. See http://crbug.com/304234.
+  virtual void RequestDemuxerSeek(const base::TimeDelta& time_to_seek,
+                                  bool is_browser_seek) = 0;
 };
 
 // Defines the client callback interface.
@@ -63,7 +56,13 @@ class MEDIA_EXPORT DemuxerAndroidClient {
   virtual void OnDemuxerDataAvailable(const DemuxerData& params) = 0;
 
   // Called in response to RequestDemuxerSeek().
-  virtual void OnDemuxerSeeked(unsigned seek_request_id) = 0;
+  // If this is in response to a request with |is_browser_seek| set to true,
+  // then |actual_browser_seek_time| may differ from the requested
+  // |time_to_seek|, and reflects the actual time seeked to by the demuxer.
+  // For regular demuxer seeks, |actual_browser_seek_time| is kNoTimestamp() and
+  // should be ignored by browser player.
+  virtual void OnDemuxerSeekDone(
+      const base::TimeDelta& actual_browser_seek_time) = 0;
 
   // Called whenever the demuxer has detected a duration change.
   virtual void OnDemuxerDurationChanged(base::TimeDelta duration) = 0;

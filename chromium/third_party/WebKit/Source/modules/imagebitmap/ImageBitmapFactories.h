@@ -36,8 +36,9 @@
 #include "bindings/v8/ScriptState.h"
 #include "core/fileapi/FileReaderLoader.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
-#include "core/platform/Supplementable.h"
-#include "core/platform/graphics/IntRect.h"
+#include "core/workers/WorkerSupplementable.h"
+#include "platform/Supplementable.h"
+#include "platform/geometry/IntRect.h"
 #include "wtf/Forward.h"
 #include "wtf/HashSet.h"
 
@@ -52,9 +53,9 @@ class HTMLImageElement;
 class HTMLVideoElement;
 class ImageBitmap;
 class ImageData;
-class ScriptExecutionContext;
+class ExecutionContext;
 
-class ImageBitmapFactories : public Supplement<DOMWindow>, public Supplement<ScriptExecutionContext> {
+class ImageBitmapFactories : public Supplement<DOMWindow>, public WorkerSupplement {
 
 class ImageBitmapLoader;
 
@@ -86,7 +87,7 @@ private:
             return adoptRef(new ImageBitmapLoader(factory, resolver, cropRect));
         }
 
-        void loadBlobAsync(ScriptExecutionContext*, Blob*);
+        void loadBlobAsync(ExecutionContext*, Blob*);
 
         ~ImageBitmapLoader() { }
 

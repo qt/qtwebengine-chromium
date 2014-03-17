@@ -10,6 +10,7 @@
 #include "base/callback_helpers.h"
 #include "base/cpu.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "base/task_runner_util.h"
 #include "media/base/bind_to_loop.h"
@@ -91,7 +92,7 @@ void GpuVideoDecoder::Reset(const base::Closure& closure)  {
   }
 
   if (!pending_decode_cb_.is_null())
-    EnqueueFrameAndTriggerFrameDelivery(VideoFrame::CreateEmptyFrame());
+    EnqueueFrameAndTriggerFrameDelivery(VideoFrame::CreateEOSFrame());
 
   DCHECK(pending_reset_cb_.is_null());
   pending_reset_cb_ = BindToCurrentLoop(closure);
@@ -104,7 +105,7 @@ void GpuVideoDecoder::Stop(const base::Closure& closure) {
   if (vda_)
     DestroyVDA();
   if (!pending_decode_cb_.is_null())
-    EnqueueFrameAndTriggerFrameDelivery(VideoFrame::CreateEmptyFrame());
+    EnqueueFrameAndTriggerFrameDelivery(VideoFrame::CreateEOSFrame());
   if (!pending_reset_cb_.is_null())
     base::ResetAndReturn(&pending_reset_cb_).Run();
   BindToCurrentLoop(closure).Run();
@@ -126,6 +127,17 @@ static bool IsCodedSizeSupported(const gfx::Size& coded_size) {
   return os_large_video_support && hw_large_video_support;
 }
 
+// Report |status| to UMA and run |cb| with it.  This is super-specific to the
+// UMA stat reported because the UMA_HISTOGRAM_ENUMERATION API requires a
+// callsite to always be called with the same stat name (can't parameterize it).
+static void ReportGpuVideoDecoderInitializeStatusToUMAAndRunCB(
+    const PipelineStatusCB& cb,
+    PipelineStatus status) {
+  UMA_HISTOGRAM_ENUMERATION(
+      "Media.GpuVideoDecoderInitializeStatus", status, PIPELINE_STATUS_MAX);
+  cb.Run(status);
+}
+
 void GpuVideoDecoder::Initialize(const VideoDecoderConfig& config,
                                  const PipelineStatusCB& orig_status_cb) {
   DVLOG(3) << "Initialize()";
@@ -135,9 +147,9 @@ void GpuVideoDecoder::Initialize(const VideoDecoderConfig& config,
 
   weak_this_ = weak_factory_.GetWeakPtr();
 
-  PipelineStatusCB status_cb = CreateUMAReportingPipelineCB(
-      "Media.GpuVideoDecoderInitializeStatus",
-      BindToCurrentLoop(orig_status_cb));
+  PipelineStatusCB status_cb =
+      base::Bind(&ReportGpuVideoDecoderInitializeStatusToUMAAndRunCB,
+                 BindToCurrentLoop(orig_status_cb));
 
   bool previously_initialized = config_.IsValidConfig();
 #if !defined(OS_CHROMEOS) && !defined(OS_WIN)
@@ -188,20 +200,14 @@ void GpuVideoDecoder::Initialize(const VideoDecoderConfig& config,
   status_cb.Run(PIPELINE_OK);
 }
 
-void GpuVideoDecoder::DestroyTextures() {
-  std::map<int32, PictureBuffer>::iterator it;
-
-  for (it = assigned_picture_buffers_.begin();
-       it != assigned_picture_buffers_.end(); ++it) {
+void GpuVideoDecoder::DestroyPictureBuffers(PictureBufferMap* buffers) {
+  DCHECK(gvd_loop_proxy_->BelongsToCurrentThread());
+  for (PictureBufferMap::iterator it = buffers->begin(); it != buffers->end();
+       ++it) {
     factories_->DeleteTexture(it->second.texture_id());
   }
-  assigned_picture_buffers_.clear();
 
-  for (it = dismissed_picture_buffers_.begin();
-       it != dismissed_picture_buffers_.end(); ++it) {
-    factories_->DeleteTexture(it->second.texture_id());
-  }
-  dismissed_picture_buffers_.clear();
+  buffers->clear();
 }
 
 void GpuVideoDecoder::DestroyVDA() {
@@ -210,7 +216,9 @@ void GpuVideoDecoder::DestroyVDA() {
   if (vda_)
     vda_.release()->Destroy();
 
-  DestroyTextures();
+  DestroyPictureBuffers(&assigned_picture_buffers_);
+  // Not destroying PictureBuffers in |dismissed_picture_buffers_| yet, since
+  // their textures may still be in use by the user of this GpuVideoDecoder.
 }
 
 void GpuVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
@@ -335,7 +343,9 @@ bool GpuVideoDecoder::NeedsBitstreamConversion() const {
 
 bool GpuVideoDecoder::CanReadWithoutStalling() const {
   DCHECK(gvd_loop_proxy_->BelongsToCurrentThread());
-  return available_pictures_ > 0 || !ready_video_frames_.empty();
+  return
+      next_picture_buffer_id_ == 0 ||  // Decode() will ProvidePictureBuffers().
+      available_pictures_ > 0 || !ready_video_frames_.empty();
 }
 
 void GpuVideoDecoder::NotifyInitializeDone() {
@@ -386,8 +396,7 @@ void GpuVideoDecoder::DismissPictureBuffer(int32 id) {
   DVLOG(3) << "DismissPictureBuffer(" << id << ")";
   DCHECK(gvd_loop_proxy_->BelongsToCurrentThread());
 
-  std::map<int32, PictureBuffer>::iterator it =
-      assigned_picture_buffers_.find(id);
+  PictureBufferMap::iterator it = assigned_picture_buffers_.find(id);
   if (it == assigned_picture_buffers_.end()) {
     NOTREACHED() << "Missing picture buffer: " << id;
     return;
@@ -416,7 +425,7 @@ void GpuVideoDecoder::PictureReady(const media::Picture& picture) {
   DVLOG(3) << "PictureReady()";
   DCHECK(gvd_loop_proxy_->BelongsToCurrentThread());
 
-  std::map<int32, PictureBuffer>::iterator it =
+  PictureBufferMap::iterator it =
       assigned_picture_buffers_.find(picture.picture_buffer_id());
   if (it == assigned_picture_buffers_.end()) {
     NOTREACHED() << "Missing picture buffer: " << picture.picture_buffer_id();
@@ -434,12 +443,12 @@ void GpuVideoDecoder::PictureReady(const media::Picture& picture) {
   DCHECK(decoder_texture_target_);
 
   scoped_refptr<VideoFrame> frame(VideoFrame::WrapNativeTexture(
-      new VideoFrame::MailboxHolder(
+      make_scoped_ptr(new VideoFrame::MailboxHolder(
           pb.texture_mailbox(),
           0,  // sync_point
           BindToCurrentLoop(base::Bind(&GpuVideoDecoder::ReusePictureBuffer,
                                        weak_this_,
-                                       picture.picture_buffer_id()))),
+                                       picture.picture_buffer_id())))),
       decoder_texture_target_,
       pb.size(),
       visible_rect,
@@ -448,7 +457,6 @@ void GpuVideoDecoder::PictureReady(const media::Picture& picture) {
       base::Bind(&GpuVideoAcceleratorFactories::ReadPixels,
                  factories_,
                  pb.texture_id(),
-                 decoder_texture_target_,
                  gfx::Size(visible_rect.width(), visible_rect.height())),
       base::Closure()));
   CHECK_GT(available_pictures_, 0);
@@ -495,7 +503,7 @@ void GpuVideoDecoder::ReusePictureBuffer(int64 picture_buffer_id,
   size_t num_erased = picture_buffers_at_display_.erase(picture_buffer_id);
   DCHECK(num_erased);
 
-  std::map<int32, PictureBuffer>::iterator it =
+  PictureBufferMap::iterator it =
       assigned_picture_buffers_.find(picture_buffer_id);
 
   if (it == assigned_picture_buffers_.end()) {
@@ -556,6 +564,7 @@ void GpuVideoDecoder::NotifyEndOfBitstreamBuffer(int32 id) {
 }
 
 GpuVideoDecoder::~GpuVideoDecoder() {
+  DCHECK(gvd_loop_proxy_->BelongsToCurrentThread());
   DCHECK(!vda_.get());  // Stop should have been already called.
   DCHECK(pending_decode_cb_.is_null());
   for (size_t i = 0; i < available_shm_segments_.size(); ++i) {
@@ -570,7 +579,8 @@ GpuVideoDecoder::~GpuVideoDecoder() {
   }
   bitstream_buffers_in_decoder_.clear();
 
-  DestroyTextures();
+  DestroyPictureBuffers(&assigned_picture_buffers_);
+  DestroyPictureBuffers(&dismissed_picture_buffers_);
 }
 
 void GpuVideoDecoder::NotifyFlushDone() {
@@ -578,7 +588,7 @@ void GpuVideoDecoder::NotifyFlushDone() {
   DCHECK(gvd_loop_proxy_->BelongsToCurrentThread());
   DCHECK_EQ(state_, kDrainingDecoder);
   state_ = kDecoderDrained;
-  EnqueueFrameAndTriggerFrameDelivery(VideoFrame::CreateEmptyFrame());
+  EnqueueFrameAndTriggerFrameDelivery(VideoFrame::CreateEOSFrame());
 }
 
 void GpuVideoDecoder::NotifyResetDone() {
@@ -594,7 +604,7 @@ void GpuVideoDecoder::NotifyResetDone() {
     base::ResetAndReturn(&pending_reset_cb_).Run();
 
   if (!pending_decode_cb_.is_null())
-    EnqueueFrameAndTriggerFrameDelivery(VideoFrame::CreateEmptyFrame());
+    EnqueueFrameAndTriggerFrameDelivery(VideoFrame::CreateEOSFrame());
 }
 
 void GpuVideoDecoder::NotifyError(media::VideoDecodeAccelerator::Error error) {

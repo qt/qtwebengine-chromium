@@ -27,6 +27,7 @@
 #include "HTMLNames.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/html/HTMLOListElement.h"
+#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderListMarker.h"
 #include "core/rendering/RenderView.h"
 #include "wtf/StdLibExtras.h"
@@ -55,6 +56,10 @@ void RenderListItem::styleDidChange(StyleDifference diff, const RenderStyle* old
     if (style()->listStyleType() != NoneListStyle
         || (style()->listStyleImage() && !style()->listStyleImage()->errorOccurred())) {
         RefPtr<RenderStyle> newStyle = RenderStyle::create();
+        // Markers update their own margin style. By copying the existing style we can
+        // avoid an unnecessary layout in setStyle below.
+        if (m_marker)
+            newStyle->copyNonInheritedFrom(m_marker->style());
         // The marker always inherits from the list item, regardless of where it might end
         // up (e.g., in some deeply nested line box). See CSS3 spec.
         newStyle->inheritFrom(style());
@@ -78,7 +83,7 @@ void RenderListItem::willBeDestroyed()
 
 void RenderListItem::insertedIntoTree()
 {
-    RenderBlock::insertedIntoTree();
+    RenderBlockFlow::insertedIntoTree();
 
     updateListMarkerNumbers();
 }
@@ -121,12 +126,13 @@ static RenderListItem* nextListItem(const Node* listNode, const RenderListItem* 
         return 0;
 
     const Node* current = item ? item->node() : listNode;
-    current = ElementTraversal::nextIncludingPseudo(current, listNode);
+    ASSERT(current);
+    current = ElementTraversal::nextIncludingPseudo(*current, listNode);
 
     while (current) {
         if (isList(current)) {
             // We've found a nested, independent list: nothing to do here.
-            current = ElementTraversal::nextIncludingPseudoSkippingChildren(current, listNode);
+            current = ElementTraversal::nextIncludingPseudoSkippingChildren(*current, listNode);
             continue;
         }
 
@@ -135,7 +141,7 @@ static RenderListItem* nextListItem(const Node* listNode, const RenderListItem* 
             return toRenderListItem(renderer);
 
         // FIXME: Can this be optimized to skip the children of the elements without a renderer?
-        current = ElementTraversal::nextIncludingPseudo(current, listNode);
+        current = ElementTraversal::nextIncludingPseudo(*current, listNode);
     }
 
     return 0;
@@ -145,7 +151,8 @@ static RenderListItem* nextListItem(const Node* listNode, const RenderListItem* 
 static RenderListItem* previousListItem(const Node* listNode, const RenderListItem* item)
 {
     Node* current = item->node();
-    for (current = ElementTraversal::previousIncludingPseudo(current, listNode); current; current = ElementTraversal::previousIncludingPseudo(current, listNode)) {
+    ASSERT(current);
+    for (current = ElementTraversal::previousIncludingPseudo(*current, listNode); current; current = ElementTraversal::previousIncludingPseudo(*current, listNode)) {
         RenderObject* renderer = current->renderer();
         if (!renderer || (renderer && !renderer->isListItem()))
             continue;
@@ -158,7 +165,7 @@ static RenderListItem* previousListItem(const Node* listNode, const RenderListIt
         // be a list item itself. We need to examine it, so we do this to counteract
         // the previousIncludingPseudo() that will be done by the loop.
         if (otherList)
-            current = ElementTraversal::nextIncludingPseudo(otherList);
+            current = ElementTraversal::nextIncludingPseudo(*otherList);
     }
     return 0;
 }
@@ -215,7 +222,7 @@ bool RenderListItem::isEmpty() const
     return lastChild() == m_marker;
 }
 
-static RenderObject* getParentOfFirstLineBox(RenderBlock* curr, RenderObject* marker)
+static RenderObject* getParentOfFirstLineBox(RenderBlockFlow* curr, RenderObject* marker)
 {
     RenderObject* firstChild = curr->firstChild();
     if (!firstChild)
@@ -232,14 +239,14 @@ static RenderObject* getParentOfFirstLineBox(RenderBlock* curr, RenderObject* ma
         if (currChild->isFloating() || currChild->isOutOfFlowPositioned())
             continue;
 
-        if (currChild->isTable() || !currChild->isRenderBlock() || (currChild->isBox() && toRenderBox(currChild)->isWritingModeRoot()))
+        if (!currChild->isRenderBlockFlow() || (currChild->isBox() && toRenderBox(currChild)->isWritingModeRoot()))
             break;
 
         if (curr->isListItem() && inQuirksMode && currChild->node() &&
             (currChild->node()->hasTagName(ulTag)|| currChild->node()->hasTagName(olTag)))
             break;
 
-        RenderObject* lineBox = getParentOfFirstLineBox(toRenderBlock(currChild), marker);
+        RenderObject* lineBox = getParentOfFirstLineBox(toRenderBlockFlow(currChild), marker);
         if (lineBox)
             return lineBox;
     }
@@ -309,6 +316,7 @@ void RenderListItem::layout()
 {
     ASSERT(needsLayout());
 
+    LayoutRectRecorder recorder(*this);
     updateMarkerLocation();
     RenderBlockFlow::layout();
 }

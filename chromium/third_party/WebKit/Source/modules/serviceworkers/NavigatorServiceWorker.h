@@ -32,32 +32,42 @@
 #define NavigatorServiceWorker_h
 
 #include "bindings/v8/ScriptPromise.h"
-#include "core/page/Navigator.h"
-#include "core/platform/Supplementable.h"
+#include "core/frame/Navigator.h"
+#include "platform/Supplementable.h"
+
+namespace blink {
+class WebServiceWorkerProvider;
+class WebServiceWorkerProviderClient;
+}
 
 namespace WebCore {
 
 class ExceptionState;
 class Navigator;
 
-class NavigatorServiceWorker : public Supplement<Navigator> {
+class NavigatorServiceWorker : public Supplement<Navigator>, DOMWindowProperty {
 public:
     virtual ~NavigatorServiceWorker();
     static NavigatorServiceWorker* from(Navigator*);
     static NavigatorServiceWorker* toNavigatorServiceWorker(Navigator* navigator) { return static_cast<NavigatorServiceWorker*>(Supplement<Navigator>::from(navigator, supplementName())); }
 
-    static ScriptPromise registerServiceWorker(ScriptExecutionContext*, Navigator*, const String& pattern, const String& src, ExceptionState&);
-    static ScriptPromise unregisterServiceWorker(ScriptExecutionContext*, Navigator*, const String& pattern, ExceptionState&);
+    static ScriptPromise registerServiceWorker(ExecutionContext*, Navigator*, const String& pattern, const String& src, ExceptionState&);
+    static ScriptPromise unregisterServiceWorker(ExecutionContext*, Navigator*, const String& pattern, ExceptionState&);
 
 private:
-    ScriptPromise registerServiceWorker(ScriptExecutionContext*, const String& pattern, const String& src, ExceptionState&);
-    ScriptPromise unregisterServiceWorker(ScriptExecutionContext*, const String& pattern, ExceptionState&);
+    ScriptPromise registerServiceWorker(ExecutionContext*, const String& pattern, const String& src, ExceptionState&);
+    ScriptPromise unregisterServiceWorker(ExecutionContext*, const String& pattern, ExceptionState&);
 
     explicit NavigatorServiceWorker(Navigator*);
+
+    virtual void willDetachGlobalObjectFromFrame() OVERRIDE;
+
+    blink::WebServiceWorkerProvider* ensureProvider();
 
     static const char* supplementName();
 
     Navigator* m_navigator;
+    OwnPtr<blink::WebServiceWorkerProvider> m_provider;
 };
 
 } // namespace WebCore

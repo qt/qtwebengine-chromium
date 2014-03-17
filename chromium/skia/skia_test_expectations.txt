@@ -48,24 +48,13 @@
 #
 # START OVERRIDES HERE
 
-# The Skia roll to r11121 altered this layout test
-crbug.com/286312 virtual/gpu/fast/canvas/canvas-composite-transformclip.html [ ImageOnlyFailure ]
+# the Skia roll to 12018 again altered the way roundrects are drawn
+crbug.com/314499 fast/canvas/image-object-in-canvas.html [ ImageOnlyFailure ]
 
-# Skia CL r11158 improved GPU-base gradient rendering (and changed three baseline images)
-crbug.com/288674 css3/filters/effect-reference-zoom-hw.html [ ImageOnlyFailure ]
-crbug.com/288674 virtual/gpu/fast/canvas/canvas-text-alignment.html [ ImageOnlyFailure ]
-crbug.com/288674 virtual/gpu/fast/canvas/fillrect_gradient.html [ ImageOnlyFailure ]
-# This image difference is related to the recent oval rendering changes
-crbug.com/288674 virtual/gpu/fast/canvas/canvas-composite.html [ ImageOnlyFailure ]
-
-# Skia CL r11249 altered some of the parameters to the spot light filter
-crbug.com/292656 css3/filters/effect-reference-colorspace-hw.html [ ImageOnlyFailure ]
-crbug.com/292656 css3/filters/effect-reference-hw.html [ ImageOnlyFailure ]
-crbug.com/292656 css3/filters/effect-reference-subregion-hw.html [ ImageOnlyFailure ]
-
-# Skia r11365 slightly changed how the GPU draws lines
-crbug.com/295579 virtual/gpu/fast/canvas/canvas-text-baseline.html [ ImageOnlyFailure ]
-crbug.com/295579 virtual/gpu/fast/canvas/canvas-transforms-during-path.html [ ImageOnlyFailure ]
-crbug.com/295579 virtual/gpu/fast/canvas/quadraticCurveTo.xml [ ImageOnlyFailure ]
+# the Skia roll to r12494 altered convex path rendering on the GPU
+crbug.com/326138 virtual/gpu/fast/canvas/canvas-composite-transformclip.html [ ImageOnlyFailure ]
+crbug.com/326138 virtual/gpu/fast/canvas/canvas-composite.html [ ImageOnlyFailure ]
+crbug.com/326138 virtual/gpu/fast/canvas/image-object-in-canvas.html [ ImageOnlyFailure ]
+crbug.com/326138 virtual/gpu/fast/canvas/quadraticCurveTo.xml [ ImageOnlyFailure ]
 
 # END OVERRIDES HERE (this line ensures that the file is newline-terminated)

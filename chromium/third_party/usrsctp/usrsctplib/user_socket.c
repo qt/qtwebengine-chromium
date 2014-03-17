@@ -161,7 +161,6 @@ sbwait(struct sockbuf *sb)
 static struct socket *
 soalloc(void)
 {
-#if defined(__Userspace__)
 	struct socket *so;
 
 	/*
@@ -176,9 +175,10 @@ soalloc(void)
 
 	so = (struct socket *)malloc(sizeof(struct socket));
 
-	if (so == NULL)
+	if (so == NULL) {
 		return (NULL);
-	bzero(so, sizeof(struct socket));
+	}
+	memset(so, 0, sizeof(struct socket));
 
 	/* __Userspace__ Initializing the socket locks here */
 	SOCKBUF_LOCK_INIT(&so->so_snd, "so_snd");
@@ -191,96 +191,25 @@ soalloc(void)
 	   What about gencnt and numopensockets?*/
 	TAILQ_INIT(&so->so_aiojobq);
 	return (so);
-#else
-	/* Putting the kernel version for reference. The #else
-	   should be removed once the __Userspace__
-	   version is tested.
-	 */
-	struct socket *so;
-
-	so = uma_zalloc(socket_zone, M_NOWAIT | M_ZERO);
-	if (so == NULL)
-		return (NULL);
-#ifdef MAC
-	if (mac_init_socket(so, M_NOWAIT) != 0) {
-		uma_zfree(socket_zone, so);
-		return (NULL);
-	}
-#endif
-	SOCKBUF_LOCK_INIT(&so->so_snd, "so_snd");
-	SOCKBUF_LOCK_INIT(&so->so_rcv, "so_rcv");
-	sx_init(&so->so_snd.sb_sx, "so_snd_sx");
-	sx_init(&so->so_rcv.sb_sx, "so_rcv_sx");
-	TAILQ_INIT(&so->so_aiojobq);
-	mtx_lock(&so_global_mtx);
-	so->so_gencnt = ++so_gencnt;
-	++numopensockets;
-	mtx_unlock(&so_global_mtx);
-	return (so);
-#endif
 }
 
-#if defined(__Userspace__)
-/*
- * Free the storage associated with a socket at the socket layer.
- */
 static void
 sodealloc(struct socket *so)
 {
 
 	KASSERT(so->so_count == 0, ("sodealloc(): so_count %d", so->so_count));
 	KASSERT(so->so_pcb == NULL, ("sodealloc(): so_pcb != NULL"));
-
-	SOCKBUF_LOCK_DESTROY(&so->so_snd);
-	SOCKBUF_LOCK_DESTROY(&so->so_rcv);
 
 	SOCKBUF_COND_DESTROY(&so->so_snd);
 	SOCKBUF_COND_DESTROY(&so->so_rcv);
 
-        SOCK_COND_DESTROY(so);
+	SOCK_COND_DESTROY(so);
+
+	SOCKBUF_LOCK_DESTROY(&so->so_snd);
+	SOCKBUF_LOCK_DESTROY(&so->so_rcv);
 
 	free(so);
 }
-
-#else /* kernel version for reference. */
-/*
- * Free the storage associated with a socket at the socket layer, tear down
- * locks, labels, etc.  All protocol state is assumed already to have been
- * torn down (and possibly never set up) by the caller.
- */
-static void
-sodealloc(struct socket *so)
-{
-
-	KASSERT(so->so_count == 0, ("sodealloc(): so_count %d", so->so_count));
-	KASSERT(so->so_pcb == NULL, ("sodealloc(): so_pcb != NULL"));
-
-	mtx_lock(&so_global_mtx);
-	so->so_gencnt = ++so_gencnt;
-	--numopensockets;	/* Could be below, but faster here. */
-	mtx_unlock(&so_global_mtx);
-	if (so->so_rcv.sb_hiwat)
-		(void)chgsbsize(so->so_cred->cr_uidinfo,
-		    &so->so_rcv.sb_hiwat, 0, RLIM_INFINITY);
-	if (so->so_snd.sb_hiwat)
-		(void)chgsbsize(so->so_cred->cr_uidinfo,
-		    &so->so_snd.sb_hiwat, 0, RLIM_INFINITY);
-#ifdef INET
-	/* remove acccept filter if one is present. */
-	if (so->so_accf != NULL)
-		do_setopt_accept_filter(so, NULL);
-#endif
-#ifdef MAC
-	mac_destroy_socket(so);
-#endif
-	crfree(so->so_cred);
-	sx_destroy(&so->so_snd.sb_sx);
-	sx_destroy(&so->so_rcv.sb_sx);
-	SOCKBUF_LOCK_DESTROY(&so->so_snd);
-	SOCKBUF_LOCK_DESTROY(&so->so_rcv);
-	uma_zfree(socket_zone, so);
-}
-#endif
 
 /* Taken from  /src/sys/kern/uipc_socket.c
  * and modified for __Userspace__
@@ -351,17 +280,21 @@ soabort(so)
 	struct socket *so;
 {
 	int error;
+#if defined(INET6)
 	struct sctp_inpcb *inp;
-
-	inp = (struct sctp_inpcb *)so->so_pcb;
+#endif
 
 #if defined(INET6)
-	if (inp->sctp_flags & SCTP_PCB_FLAGS_BOUND_V6)
+	inp = (struct sctp_inpcb *)so->so_pcb;
+	if (inp->sctp_flags & SCTP_PCB_FLAGS_BOUND_V6) {
 		error = sctp6_abort(so);
+	} else {
 #if defined(INET)
-	else
 		error = sctp_abort(so);
+#else
+		error = EAFNOSUPPORT;
 #endif
+	}
 #elif defined(INET)
 	error = sctp_abort(so);
 #else
@@ -1429,7 +1362,6 @@ u_long sb_max_adj =
 
 static	u_long sb_efficiency = 8;	/* parameter for sbreserve() */
 
-#if defined (__Userspace__)
 /*
  * Allot mbufs to a sockbuf.  Attempt to scale mbmax so that mbcnt doesn't
  * become limiting if buffering efficiency is near the normal case.
@@ -1439,48 +1371,22 @@ sbreserve_locked(struct sockbuf *sb, u_long cc, struct socket *so)
 {
 	SOCKBUF_LOCK_ASSERT(sb);
 	sb->sb_mbmax = (u_int)min(cc * sb_efficiency, sb_max);
+	sb->sb_hiwat = cc;
 	if (sb->sb_lowat > (int)sb->sb_hiwat)
 		sb->sb_lowat = (int)sb->sb_hiwat;
 	return (1);
 }
-#else /* kernel version for reference */
-/*
- * Allot mbufs to a sockbuf.  Attempt to scale mbmax so that mbcnt doesn't
- * become limiting if buffering efficiency is near the normal case.
- */
-int
-sbreserve_locked(struct sockbuf *sb, u_long cc, struct socket *so,
-    struct thread *td)
+
+static int
+sbreserve(struct sockbuf *sb, u_long cc, struct socket *so)
 {
-	rlim_t sbsize_limit;
+	int error;
 
-	SOCKBUF_LOCK_ASSERT(sb);
-
-	/*
-	 * td will only be NULL when we're in an interrupt (e.g. in
-	 * tcp_input()).
-	 *
-	 * XXXRW: This comment needs updating, as might the code.
-	 */
-	if (cc > sb_max_adj)
-		return (0);
-	if (td != NULL) {
-		PROC_LOCK(td->td_proc);
-		sbsize_limit = lim_cur(td->td_proc, RLIMIT_SBSIZE);
-		PROC_UNLOCK(td->td_proc);
-	} else
-		sbsize_limit = RLIM_INFINITY;
-	if (!chgsbsize(so->so_cred->cr_uidinfo, &sb->sb_hiwat, cc,
-	    sbsize_limit))
-		return (0);
-	sb->sb_mbmax = min(cc * sb_efficiency, sb_max);
-	if (sb->sb_lowat > sb->sb_hiwat)
-		sb->sb_lowat = sb->sb_hiwat;
-	return (1);
+	SOCKBUF_LOCK(sb);
+	error = sbreserve_locked(sb, cc, so);
+	SOCKBUF_UNLOCK(sb);
+	return (error);
 }
-#endif
-
-
 
 #if defined(__Userspace__)
 int
@@ -2199,6 +2105,7 @@ usrsctp_finish(void)
 			SCTP_INP_INFO_RUNLOCK();
 			return (-1);
 		}
+		SCTP_INP_INFO_RUNLOCK();
 	} else {
 		return (-1);
 	}
@@ -2228,6 +2135,38 @@ usrsctp_setsockopt(struct socket *so, int level, int option_name,
 	case SOL_SOCKET:
 	{
 		switch (option_name) {
+		case SO_RCVBUF:
+			if (option_len < (socklen_t)sizeof(int)) {
+				errno = EINVAL;
+				return (-1);
+			} else {
+				int *buf_size;
+
+				buf_size = (int *)option_value;
+				if (*buf_size < 1) {
+					errno = EINVAL;
+					return (-1);
+				}
+				sbreserve(&so->so_rcv, (u_long)*buf_size, so);
+				return (0);
+			}
+			break;
+		case SO_SNDBUF:
+			if (option_len < (socklen_t)sizeof(int)) {
+				errno = EINVAL;
+				return (-1);
+			} else {
+				int *buf_size;
+
+				buf_size = (int *)option_value;
+				if (*buf_size < 1) {
+					errno = EINVAL;
+					return (-1);
+				}
+				sbreserve(&so->so_snd, (u_long)*buf_size, so);
+				return (0);
+			}
+			break;
 		case SO_LINGER:
 			if (option_len < (socklen_t)sizeof(struct linger)) {
 				errno = EINVAL;
@@ -2289,6 +2228,32 @@ usrsctp_getsockopt(struct socket *so, int level, int option_name,
 	switch (level) {
 	case SOL_SOCKET:
 		switch (option_name) {
+		case SO_RCVBUF:
+			if (*option_len < (socklen_t)sizeof(int)) {
+				errno = EINVAL;
+				return (-1);
+			} else {
+				int *buf_size;
+
+				buf_size = (int *)option_value;
+				*buf_size = so->so_rcv.sb_hiwat;;
+				*option_len = (socklen_t)sizeof(int);
+				return (0);
+			}
+			break;
+		case SO_SNDBUF:
+			if (*option_len < (socklen_t)sizeof(int)) {
+				errno = EINVAL;
+				return (-1);
+			} else {
+				int *buf_size;
+
+				buf_size = (int *)option_value;
+				*buf_size = so->so_snd.sb_hiwat;
+				*option_len = (socklen_t)sizeof(int);
+				return (0);
+			}
+			break;
 		case SO_LINGER:
 			if (*option_len < (socklen_t)sizeof(struct linger)) {
 				errno = EINVAL;
@@ -2488,6 +2453,7 @@ usrsctp_connectx(struct socket *so,
                  const struct sockaddr *addrs, int addrcnt,
                  sctp_assoc_t *id)
 {
+#if defined(INET) || defined(INET6)
 	char buf[SCTP_STACK_BUF_SIZE];
 	int i, ret, cnt, *aa;
 	char *cpto;
@@ -2564,6 +2530,10 @@ usrsctp_connectx(struct socket *so,
 		*id = *p_id;
 	}
 	return (ret);
+#else
+	errno = EINVAL;
+	return (-1);
+#endif
 }
 
 int
@@ -3197,6 +3167,9 @@ usrsctp_conninput(void *addr, const void *buffer, size_t length, uint8_t ecn_bit
 #endif
 	                             ecn_bits,
 	                             SCTP_DEFAULT_VRFID, 0);
+	if (m) {
+		sctp_m_freem(m);
+	}
 	return;
 }
 
@@ -3212,7 +3185,9 @@ USRSCTP_SYSCTL_SET_DEF(sctp_auto_asconf)
 USRSCTP_SYSCTL_SET_DEF(sctp_multiple_asconfs)
 USRSCTP_SYSCTL_SET_DEF(sctp_ecn_enable)
 USRSCTP_SYSCTL_SET_DEF(sctp_strict_sacks)
+#if !defined(SCTP_WITH_NO_CSUM)
 USRSCTP_SYSCTL_SET_DEF(sctp_no_csum_on_loopback)
+#endif
 USRSCTP_SYSCTL_SET_DEF(sctp_peer_chunk_oh)
 USRSCTP_SYSCTL_SET_DEF(sctp_max_burst_default)
 USRSCTP_SYSCTL_SET_DEF(sctp_max_chunks_on_queue)
@@ -3288,7 +3263,9 @@ USRSCTP_SYSCTL_GET_DEF(sctp_auto_asconf)
 USRSCTP_SYSCTL_GET_DEF(sctp_multiple_asconfs)
 USRSCTP_SYSCTL_GET_DEF(sctp_ecn_enable)
 USRSCTP_SYSCTL_GET_DEF(sctp_strict_sacks)
+#if !defined(SCTP_WITH_NO_CSUM)
 USRSCTP_SYSCTL_GET_DEF(sctp_no_csum_on_loopback)
+#endif
 USRSCTP_SYSCTL_GET_DEF(sctp_peer_chunk_oh)
 USRSCTP_SYSCTL_GET_DEF(sctp_max_burst_default)
 USRSCTP_SYSCTL_GET_DEF(sctp_max_chunks_on_queue)

@@ -31,12 +31,11 @@
 #ifndef WebTestInterfaces_h
 #define WebTestInterfaces_h
 
+#include "WebScopedPtr.h"
 #include "WebTestCommon.h"
-#include <memory>
 
-namespace WebKit {
+namespace blink {
 class WebAudioDevice;
-class WebCrypto;
 class WebFrame;
 class WebMediaStreamCenter;
 class WebMediaStreamCenterClient;
@@ -61,31 +60,29 @@ public:
     WebTestInterfaces();
     ~WebTestInterfaces();
 
-    void setWebView(WebKit::WebView*, WebTestProxyBase*);
+    void setWebView(blink::WebView*, WebTestProxyBase*);
     void setDelegate(WebTestDelegate*);
-    void bindTo(WebKit::WebFrame*);
+    void bindTo(blink::WebFrame*);
     void resetAll();
     void setTestIsRunning(bool);
-    void configureForTestWithURL(const WebKit::WebURL&, bool generatePixels);
+    void configureForTestWithURL(const blink::WebURL&, bool generatePixels);
 
     WebTestRunner* testRunner();
-    WebKit::WebThemeEngine* themeEngine();
+    blink::WebThemeEngine* themeEngine();
 
-    WebKit::WebMediaStreamCenter* createMediaStreamCenter(WebKit::WebMediaStreamCenterClient*);
-    WebKit::WebRTCPeerConnectionHandler* createWebRTCPeerConnectionHandler(WebKit::WebRTCPeerConnectionHandlerClient*);
+    blink::WebMediaStreamCenter* createMediaStreamCenter(blink::WebMediaStreamCenterClient*);
+    blink::WebRTCPeerConnectionHandler* createWebRTCPeerConnectionHandler(blink::WebRTCPeerConnectionHandlerClient*);
 
-    WebKit::WebMIDIAccessor* createMIDIAccessor(WebKit::WebMIDIAccessorClient*);
+    blink::WebMIDIAccessor* createMIDIAccessor(blink::WebMIDIAccessorClient*);
 
-    WebKit::WebAudioDevice* createAudioDevice(double sampleRate);
-
-    WebKit::WebCrypto* crypto();
+    blink::WebAudioDevice* createAudioDevice(double sampleRate);
 
 #if WEBTESTRUNNER_IMPLEMENTATION
     TestInterfaces* testInterfaces();
 #endif
 
 private:
-    std::auto_ptr<TestInterfaces> m_interfaces;
+    WebScopedPtr<TestInterfaces> m_interfaces;
 };
 
 }

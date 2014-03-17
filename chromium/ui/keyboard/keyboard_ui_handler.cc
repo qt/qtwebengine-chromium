@@ -54,7 +54,7 @@ void KeyboardUIHandler::HandleInsertTextMessage(const base::ListValue* args) {
     return;
   }
 
-  aura::RootWindow* root_window =
+  aura::Window* root_window =
       web_ui()->GetWebContents()->GetView()->GetNativeView()->GetRootWindow();
   if (!root_window) {
     LOG(ERROR) << "insertText failed: no root window";
@@ -75,7 +75,7 @@ void KeyboardUIHandler::HandleGetInputContextMessage(
   base::DictionaryValue results;
   results.SetInteger("requestId", request_id);
 
-  aura::RootWindow* root_window =
+  aura::Window* root_window =
       web_ui()->GetWebContents()->GetView()->GetNativeView()->GetRootWindow();
   if (!root_window) {
     LOG(ERROR) << "getInputContext failed: no root window";
@@ -102,29 +102,32 @@ void KeyboardUIHandler::HandleSendKeyEventMessage(
   std::string type;
   int char_value;
   int key_code;
-  bool shift_modifier;
+  std::string key_name;
+  int modifiers;
 
   if (!args->GetDictionary(0, &params) ||
       !params->GetString("type", &type) ||
       !params->GetInteger("charValue", &char_value) ||
       !params->GetInteger("keyCode", &key_code) ||
-      !params->GetBoolean("shiftKey", &shift_modifier)) {
+      !params->GetString("keyName", &key_name) ||
+      !params->GetInteger("modifiers", &modifiers)) {
     LOG(ERROR) << "SendKeyEvent failed: bad argument";
     return;
   }
 
-  aura::RootWindow* root_window =
-      web_ui()->GetWebContents()->GetView()->GetNativeView()->GetRootWindow();
-  if (!root_window) {
-    LOG(ERROR) << "sendKeyEvent failed: no root window";
+  aura::WindowEventDispatcher* dispatcher =
+      web_ui()->GetWebContents()->GetView()->GetNativeView()->GetDispatcher();
+  if (!dispatcher) {
+    LOG(ERROR) << "sendKeyEvent failed: no dispatcher";
     return;
   }
 
   if (!keyboard::SendKeyEvent(type,
                               char_value,
                               key_code,
-                              shift_modifier,
-                              root_window)) {
+                              key_name,
+                              modifiers,
+                              dispatcher)) {
     LOG(ERROR) << "sendKeyEvent failed";
   }
 }

@@ -35,22 +35,18 @@ class ExceptionState;
 class HTMLTableRowElement FINAL : public HTMLTablePartElement {
 public:
     static PassRefPtr<HTMLTableRowElement> create(Document&);
-    static PassRefPtr<HTMLTableRowElement> create(const QualifiedName&, Document&);
 
     int rowIndex() const;
-    void setRowIndex(int);
 
     int sectionRowIndex() const;
-    void setSectionRowIndex(int);
 
     PassRefPtr<HTMLElement> insertCell(int index, ExceptionState&);
     void deleteCell(int index, ExceptionState&);
 
     PassRefPtr<HTMLCollection> cells();
-    void setCells(HTMLCollection *, ExceptionState&);
 
 private:
-    HTMLTableRowElement(const QualifiedName&, Document&);
+    explicit HTMLTableRowElement(Document&);
 };
 
 inline bool isHTMLTableRowElement(const Node* node)
@@ -58,11 +54,7 @@ inline bool isHTMLTableRowElement(const Node* node)
     return node->hasTagName(HTMLNames::trTag);
 }
 
-inline HTMLTableRowElement* toHTMLTableRowElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLTableRowElement(node));
-    return static_cast<HTMLTableRowElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLTableRowElement, hasTagName(HTMLNames::trTag));
 
 } // namespace
 

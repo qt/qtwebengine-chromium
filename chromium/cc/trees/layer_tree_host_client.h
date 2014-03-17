@@ -19,10 +19,10 @@ class OutputSurface;
 
 class LayerTreeHostClient {
  public:
-  virtual void WillBeginFrame() = 0;
+  virtual void WillBeginMainFrame(int frame_id) = 0;
   // Marks finishing compositing-related tasks on the main thread. In threaded
   // mode, this corresponds to DidCommit().
-  virtual void DidBeginFrame() = 0;
+  virtual void DidBeginMainFrame() = 0;
   virtual void Animate(double frame_begin_time) = 0;
   virtual void Layout() = 0;
   virtual void ApplyScrollAndScale(gfx::Vector2d scroll_delta,
@@ -36,15 +36,16 @@ class LayerTreeHostClient {
   virtual void DidCommitAndDrawFrame() = 0;
   virtual void DidCompleteSwapBuffers() = 0;
 
-  // Used only in the single-threaded path.
-  virtual void ScheduleComposite() = 0;
+  // If the client provides an OutputSurface bound to a 3d context for direct
+  // rendering, this must return a provider that provides contexts usable from
+  // the same thread as the OutputSurface's context.
+  virtual scoped_refptr<ContextProvider> OffscreenContextProvider() = 0;
 
-  // These must always return a valid ContextProvider. But the provider does not
-  // need to be capable of creating contexts.
-  virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProviderForMainThread() = 0;
-  virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProviderForCompositorThread() = 0;
+  // Requests that the client insert a rate limiting token in the shared main
+  // thread context's command stream that will block if the context gets too far
+  // ahead of the compositor's command stream. Only needed if the tree contains
+  // a TextureLayer that calls SetRateLimitContext(true).
+  virtual void RateLimitSharedMainThreadContext() {}
 
   // This hook is for testing.
   virtual void DidFailToInitializeOutputSurface() {}

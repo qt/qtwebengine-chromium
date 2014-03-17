@@ -6,17 +6,16 @@
 #define COMPONENTS_POLICY_CORE_COMMON_SCHEMA_H_
 
 #include <string>
-#include <vector>
 
 #include "base/basictypes.h"
-#include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_vector.h"
+#include "base/memory/ref_counted.h"
 #include "base/values.h"
 #include "components/policy/policy_export.h"
 
 namespace policy {
 namespace internal {
 
+struct POLICY_EXPORT SchemaData;
 struct POLICY_EXPORT SchemaNode;
 struct POLICY_EXPORT PropertyNode;
 struct POLICY_EXPORT PropertiesNode;
@@ -27,24 +26,45 @@ struct POLICY_EXPORT PropertiesNode;
 // types of inner elements, for structured types.
 // Objects of this class refer to external, immutable data and are cheap to
 // copy.
-// Use the SchemaOwner class to parse a schema and get Schema objects.
 class POLICY_EXPORT Schema {
  public:
-  explicit Schema(const internal::SchemaNode* schema);
+  // Used internally to store shared data.
+  class InternalStorage;
+
+  // Builds an empty, invalid schema.
+  Schema();
+
+  // Makes a copy of |schema| that shares the same internal storage.
   Schema(const Schema& schema);
+
+  ~Schema();
 
   Schema& operator=(const Schema& schema);
 
+  // Returns a Schema that references static data. This can be used by
+  // the embedder to pass structures generated at compile time, which can then
+  // be quickly loaded at runtime.
+  static Schema Wrap(const internal::SchemaData* data);
+
+  // Parses the JSON schema in |schema| and returns a Schema that owns
+  // the internal representation. If |schema| is invalid then an invalid Schema
+  // is returned and |error| contains a reason for the failure.
+  static Schema Parse(const std::string& schema, std::string* error);
+
   // Returns true if this Schema is valid. Schemas returned by the methods below
   // may be invalid, and in those cases the other methods must not be used.
-  bool valid() const { return schema_ != NULL; }
+  bool valid() const { return node_ != NULL; }
 
   base::Value::Type type() const;
+
+  // Returns true if |value| conforms to this Schema.
+  bool Validate(const base::Value& value) const;
 
   // Used to iterate over the known properties of TYPE_DICTIONARY schemas.
   class POLICY_EXPORT Iterator {
    public:
-    explicit Iterator(const internal::PropertiesNode* properties);
+    Iterator(const scoped_refptr<const InternalStorage>& storage,
+             const internal::PropertiesNode* node);
     Iterator(const Iterator& iterator);
     ~Iterator();
 
@@ -63,6 +83,7 @@ class POLICY_EXPORT Schema {
     Schema schema() const;
 
    private:
+    scoped_refptr<const InternalStorage> storage_;
     const internal::PropertyNode* it_;
     const internal::PropertyNode* end_;
   };
@@ -92,57 +113,13 @@ class POLICY_EXPORT Schema {
   Schema GetItems() const;
 
  private:
-  const internal::SchemaNode* schema_;
-};
+  // Builds a schema pointing to the inner structure of |storage|,
+  // rooted at |node|.
+  Schema(const scoped_refptr<const InternalStorage>& storage,
+         const internal::SchemaNode* node);
 
-// Owns schemas for policies of a given component.
-class POLICY_EXPORT SchemaOwner {
- public:
-  ~SchemaOwner();
-
-  // The returned Schema is valid only during the lifetime of the SchemaOwner
-  // that created it. It may be obtained multiple times.
-  Schema schema() const { return Schema(root_); }
-
-  // Returns a SchemaOwner that references static data. This can be used by
-  // the embedder to pass structures generated at compile time, which can then
-  // be quickly loaded at runtime.
-  // Note: PropertiesNodes must have their PropertyNodes sorted by key.
-  static scoped_ptr<SchemaOwner> Wrap(const internal::SchemaNode* schema);
-
-  // Parses the JSON schema in |schema| and returns a SchemaOwner that owns
-  // the internal representation. If |schema| is invalid then NULL is returned
-  // and |error| contains a reason for the failure.
-  static scoped_ptr<SchemaOwner> Parse(const std::string& schema,
-                                       std::string* error);
-
- private:
-  explicit SchemaOwner(const internal::SchemaNode* root);
-
-  // Parses the JSON schema in |schema| and returns the root SchemaNode if
-  // successful, otherwise returns NULL. Any intermediate objects built by
-  // this method are appended to the ScopedVectors.
-  const internal::SchemaNode* Parse(const base::DictionaryValue& schema,
-                                    std::string* error);
-
-  // Helper for Parse().
-  const internal::SchemaNode* ParseDictionary(
-      const base::DictionaryValue& schema,
-      std::string* error);
-
-  // Helper for Parse().
-  const internal::SchemaNode* ParseList(const base::DictionaryValue& schema,
-                                        std::string* error);
-
-  const internal::SchemaNode* root_;
-  ScopedVector<internal::SchemaNode> schema_nodes_;
-  // Note: |property_nodes_| contains PropertyNode[] elements and must be
-  // cleared manually to properly use delete[].
-  std::vector<internal::PropertyNode*> property_nodes_;
-  ScopedVector<internal::PropertiesNode> properties_nodes_;
-  ScopedVector<std::string> keys_;
-
-  DISALLOW_COPY_AND_ASSIGN(SchemaOwner);
+  scoped_refptr<const InternalStorage> storage_;
+  const internal::SchemaNode* node_;
 };
 
 }  // namespace policy

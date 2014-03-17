@@ -20,10 +20,9 @@
 #include "core/plugins/DOMMimeType.h"
 
 #include "core/loader/FrameLoader.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
 #include "core/plugins/DOMPlugin.h"
-#include "core/plugins/PluginData.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
@@ -65,7 +64,10 @@ const String &DOMMimeType::description() const
 
 PassRefPtr<DOMPlugin> DOMMimeType::enabledPlugin() const
 {
-    if (!m_frame || !m_frame->page() || !m_frame->page()->mainFrame()->loader()->allowPlugins(NotAboutToInstantiatePlugin))
+    // FIXME: allowPlugins is just a client call. We should not need
+    // to bounce through the page or mainframe or loader to get there.
+    // Something like: m_frame->host()->client()->allowPlugins().
+    if (!m_frame || !m_frame->page() || !m_frame->page()->mainFrame()->loader().allowPlugins(NotAboutToInstantiatePlugin))
         return 0;
 
     return DOMPlugin::create(m_pluginData.get(), m_frame, m_pluginData->mimePluginIndices()[m_index]);

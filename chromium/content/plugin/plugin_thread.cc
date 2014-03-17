@@ -28,7 +28,6 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/plugin/content_plugin_client.h"
 #include "ipc/ipc_channel_handle.h"
-#include "webkit/glue/webkit_glue.h"
 
 #if defined(TOOLKIT_GTK)
 #include "ui/gfx/gtk_util.h"
@@ -124,7 +123,7 @@ PluginThread::PluginThread()
   }
 
   GetContentClient()->plugin()->PluginProcessStarted(
-      plugin.get() ? plugin->plugin_info().name : string16());
+      plugin.get() ? plugin->plugin_info().name : base::string16());
 
   // Certain plugins, such as flash, steal the unhandled exception filter
   // thus we never get crash reports when they fault. This call fixes it.

@@ -162,11 +162,11 @@ static std::string ComputeFoundation(
   return talk_base::ToString<uint32>(talk_base::ComputeCrc32(ost.str()));
 }
 
-Port::Port(talk_base::Thread* thread, talk_base::Network* network,
-           const talk_base::IPAddress& ip,
+Port::Port(talk_base::Thread* thread, talk_base::PacketSocketFactory* factory,
+           talk_base::Network* network, const talk_base::IPAddress& ip,
            const std::string& username_fragment, const std::string& password)
     : thread_(thread),
-      factory_(NULL),
+      factory_(factory),
       send_retransmit_count_attribute_(false),
       network_(network),
       ip_(ip),
@@ -924,7 +924,8 @@ void Connection::OnSendStunPacket(const void* data, size_t size,
   }
 }
 
-void Connection::OnReadPacket(const char* data, size_t size) {
+void Connection::OnReadPacket(
+  const char* data, size_t size, const talk_base::PacketTime& packet_time) {
   talk_base::scoped_ptr<IceMessage> msg;
   std::string remote_ufrag;
   const talk_base::SocketAddress& addr(remote_candidate_.address());
@@ -938,7 +939,7 @@ void Connection::OnReadPacket(const char* data, size_t size) {
 
       last_data_received_ = talk_base::Time();
       recv_rate_tracker_.Update(size);
-      SignalReadPacket(this, data, size);
+      SignalReadPacket(this, data, size, packet_time);
 
       // If timed out sending writability checks, start up again
       if (!pruned_ && (write_state_ == STATE_WRITE_TIMEOUT)) {

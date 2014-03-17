@@ -37,7 +37,7 @@
 #include "core/editing/htmlediting.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTableElement.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/rendering/RenderTableCell.h"
 
 namespace WebCore {
@@ -292,7 +292,7 @@ void DeleteSelectionCommand::saveTypingStyleState()
         return;
 
     // Figure out the typing style in effect before the delete is done.
-    m_typingStyle = EditingStyle::create(m_selectionToDelete.start());
+    m_typingStyle = EditingStyle::create(m_selectionToDelete.start(), EditingStyle::EditingPropertiesInEffect);
     m_typingStyle->removeStyleAddedByNode(enclosingAnchorElement(m_selectionToDelete.start()));
 
     // If we're deleting into a Mail blockquote, save the style at end() instead of start()
@@ -337,7 +337,7 @@ static Position firstEditablePositionInNode(Node* node)
     ASSERT(node);
     Node* next = node;
     while (next && !next->rendererIsEditable())
-        next = NodeTraversal::next(next, node);
+        next = NodeTraversal::next(*next, node);
     return next ? firstPositionInOrBeforeNode(next) : Position();
 }
 
@@ -429,9 +429,9 @@ void DeleteSelectionCommand::makeStylingElementsDirectChildrenOfEditableRootToPr
     RefPtr<Range> range = m_selectionToDelete.toNormalizedRange();
     RefPtr<Node> node = range->firstNode();
     while (node && node != range->pastLastNode()) {
-        RefPtr<Node> nextNode = NodeTraversal::next(node.get());
-        if ((node->hasTagName(styleTag) && !(toElement(node.get())->hasAttribute(scopedAttr))) || node->hasTagName(linkTag)) {
-            nextNode = NodeTraversal::nextSkippingChildren(node.get());
+        RefPtr<Node> nextNode = NodeTraversal::next(*node);
+        if ((node->hasTagName(styleTag) && !(toElement(node)->hasAttribute(scopedAttr))) || node->hasTagName(linkTag)) {
+            nextNode = NodeTraversal::nextSkippingChildren(*node);
             RefPtr<ContainerNode> rootEditableElement = node->rootEditableElement();
             if (rootEditableElement.get()) {
                 removeNode(node);
@@ -449,13 +449,14 @@ void DeleteSelectionCommand::handleGeneralDelete()
 
     int startOffset = m_upstreamStart.deprecatedEditingOffset();
     Node* startNode = m_upstreamStart.deprecatedNode();
+    ASSERT(startNode);
 
     makeStylingElementsDirectChildrenOfEditableRootToPreventStyleLoss();
 
     // Never remove the start block unless it's a table, in which case we won't merge content in.
     if (startNode->isSameNode(m_startBlock.get()) && !startOffset && canHaveChildrenForEditing(startNode) && !isHTMLTableElement(startNode)) {
         startOffset = 0;
-        startNode = NodeTraversal::next(startNode);
+        startNode = NodeTraversal::next(*startNode);
         if (!startNode)
             return;
     }
@@ -467,7 +468,7 @@ void DeleteSelectionCommand::handleGeneralDelete()
     }
 
     if (startOffset >= lastOffsetForEditing(startNode)) {
-        startNode = NodeTraversal::nextSkippingChildren(startNode);
+        startNode = NodeTraversal::nextSkippingChildren(*startNode);
         startOffset = 0;
     }
 
@@ -499,9 +500,9 @@ void DeleteSelectionCommand::handleGeneralDelete()
         if (startOffset > 0) {
             if (startNode->isTextNode()) {
                 // in a text node that needs to be trimmed
-                Text* text = toText(node.get());
+                Text* text = toText(node);
                 deleteTextFromNode(text, startOffset, text->length() - startOffset);
-                node = NodeTraversal::next(node.get());
+                node = NodeTraversal::next(*node);
             } else {
                 node = startNode->childNode(startOffset);
             }
@@ -516,19 +517,20 @@ void DeleteSelectionCommand::handleGeneralDelete()
                 // NodeTraversal::nextSkippingChildren just blew past the end position, so stop deleting
                 node = 0;
             } else if (!m_downstreamEnd.deprecatedNode()->isDescendantOf(node.get())) {
-                RefPtr<Node> nextNode = NodeTraversal::nextSkippingChildren(node.get());
+                RefPtr<Node> nextNode = NodeTraversal::nextSkippingChildren(*node);
                 // if we just removed a node from the end container, update end position so the
                 // check above will work
                 updatePositionForNodeRemoval(m_downstreamEnd, node.get());
                 removeNode(node.get());
                 node = nextNode.get();
             } else {
-                Node* n = node->lastDescendant();
-                if (m_downstreamEnd.deprecatedNode() == n && m_downstreamEnd.deprecatedEditingOffset() >= caretMaxOffset(n)) {
+                Node& n = node->lastDescendant();
+                if (m_downstreamEnd.deprecatedNode() == n && m_downstreamEnd.deprecatedEditingOffset() >= caretMaxOffset(&n)) {
                     removeNode(node.get());
                     node = 0;
-                } else
-                    node = NodeTraversal::next(node.get());
+                } else {
+                    node = NodeTraversal::next(*node);
+                }
             }
         }
 

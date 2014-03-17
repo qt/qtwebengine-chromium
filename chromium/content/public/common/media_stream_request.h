@@ -26,9 +26,6 @@ enum MediaStreamType {
   MEDIA_DEVICE_VIDEO_CAPTURE,
 
   // Mirroring of a browser tab.
-  //
-  // TODO(serygeu): Remove these values and use MEDIA_DESKTOP_VIDEO_CAPTURE and
-  // MEDIA_DESKTOP_AUDIO_CAPTURE.
   MEDIA_TAB_AUDIO_CAPTURE,
   MEDIA_TAB_VIDEO_CAPTURE,
 
@@ -38,7 +35,7 @@ enum MediaStreamType {
   // Capture system audio (post-mix loopback stream).
   //
   // TODO(sergeyu): Replace with MEDIA_DESKTOP_AUDIO_CAPTURE.
-  MEDIA_SYSTEM_AUDIO_CAPTURE,
+  MEDIA_LOOPBACK_AUDIO_CAPTURE,
 
   NUM_MEDIA_TYPES
 };
@@ -87,6 +84,8 @@ struct CONTENT_EXPORT MediaStreamDevice {
 
   ~MediaStreamDevice();
 
+  bool IsEqual(const MediaStreamDevice& second) const;
+
   // The device's type.
   MediaStreamType type;
 
@@ -107,14 +106,15 @@ struct CONTENT_EXPORT MediaStreamDevice {
   // in media::AudioParameters.
   struct AudioDeviceParameters {
     AudioDeviceParameters()
-        : sample_rate(), channel_layout(), frames_per_buffer() {
+        : sample_rate(), channel_layout(), frames_per_buffer(), effects() {
     }
 
     AudioDeviceParameters(int sample_rate, int channel_layout,
-                          int frames_per_buffer)
+        int frames_per_buffer)
         : sample_rate(sample_rate),
           channel_layout(channel_layout),
-          frames_per_buffer(frames_per_buffer) {
+          frames_per_buffer(frames_per_buffer),
+          effects() {
     }
 
     // Preferred sample rate in samples per second for the device.
@@ -130,6 +130,9 @@ struct CONTENT_EXPORT MediaStreamDevice {
     // expected browser side settings and avoid unnecessary buffering.
     // See media::AudioParameters for more.
     int frames_per_buffer;
+
+    // See media::AudioParameters::PlatformEffectsMask.
+    int effects;
   };
 
   // These below two member variables are valid only when the type of device is
@@ -150,9 +153,6 @@ typedef std::vector<MediaStreamDevice> MediaStreamDevices;
 typedef std::map<MediaStreamType, MediaStreamDevices> MediaStreamDeviceMap;
 
 // Represents a request for media streams (audio/video).
-// It looks like the last 4 parameters should use StreamOptions instead, but
-// StreamOption depends on media_stream_request.h because it needs
-// MediaStreamDevice.
 // TODO(vrk): Decouple MediaStreamDevice from this header file so that
 // media_stream_options.h no longer depends on this file.
 // TODO(vrk,justinlin,wjia): Figure out a way to share this code cleanly between
@@ -164,7 +164,6 @@ struct CONTENT_EXPORT MediaStreamRequest {
       int render_process_id,
       int render_view_id,
       int page_request_id,
-      const std::string& tab_capture_device_id,
       const GURL& security_origin,
       MediaStreamRequestType request_type,
       const std::string& requested_audio_device_id,
@@ -174,10 +173,14 @@ struct CONTENT_EXPORT MediaStreamRequest {
 
   ~MediaStreamRequest();
 
-  // The render process id generating this request.
+  // This is the render process id for the renderer associated with generating
+  // frames for a MediaStream. Any indicators associated with a capture will be
+  // displayed for this renderer.
   int render_process_id;
 
-  // The render view id generating this request.
+  // This is the render view id for the renderer associated with generating
+  // frames for a MediaStream. Any indicators associated with a capture will be
+  // displayed for this renderer.
   int render_view_id;
 
   // The unique id combined with render_process_id and render_view_id for

@@ -56,6 +56,7 @@
         'test-circular-queue.cc',
         'test-compiler.cc',
         'test-condition-variable.cc',
+        'test-constantpool.cc',
         'test-conversions.cc',
         'test-cpu.cc',
         'test-cpu-profiler.cc',
@@ -90,10 +91,10 @@
         'test-platform.cc',
         'test-platform-tls.cc',
         'test-profile-generator.cc',
-        'test-random.cc',
         'test-random-number-generator.cc',
         'test-regexp.cc',
         'test-reloc-info.cc',
+        'test-representation.cc',
         'test-semaphore.cc',
         'test-serialize.cc',
         'test-socket.cc',
@@ -121,6 +122,7 @@
             'test-code-stubs-ia32.cc',
             'test-cpu-ia32.cc',
             'test-disasm-ia32.cc',
+            'test-macro-assembler-ia32.cc',
             'test-log-stack-tracer.cc'
           ],
         }],
@@ -139,13 +141,15 @@
             'test-assembler-arm.cc',
             'test-code-stubs.cc',
             'test-code-stubs-arm.cc',
-            'test-disasm-arm.cc'
+            'test-disasm-arm.cc',
+            'test-macro-assembler-arm.cc'
           ],
         }],
         ['v8_target_arch=="mipsel"', {
           'sources': [
             'test-assembler-mips.cc',
             'test-disasm-mips.cc',
+            'test-macro-assembler-mips.cc'
           ],
         }],
         [ 'OS=="linux"', {

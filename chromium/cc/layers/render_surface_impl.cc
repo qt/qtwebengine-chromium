@@ -28,13 +28,13 @@ namespace cc {
 RenderSurfaceImpl::RenderSurfaceImpl(LayerImpl* owning_layer)
     : owning_layer_(owning_layer),
       surface_property_changed_(false),
-      draw_opacity_(1),
       draw_opacity_is_animating_(false),
       target_surface_transforms_are_animating_(false),
       screen_space_transforms_are_animating_(false),
       is_clipped_(false),
       contributes_to_drawn_surface_(false),
-      nearest_ancestor_that_moves_pixels_(NULL),
+      draw_opacity_(1),
+      nearest_occlusion_immune_ancestor_(NULL),
       target_render_surface_layer_index_history_(0),
       current_layer_index_history_(0) {
   damage_tracker_ = DamageTracker::Create();
@@ -133,7 +133,7 @@ void RenderSurfaceImpl::AppendRenderPasses(RenderPassSink* pass_sink) {
     delegated_renderer_layer->AppendContributingRenderPasses(pass_sink);
   }
 
-  scoped_ptr<RenderPass> pass = RenderPass::Create();
+  scoped_ptr<RenderPass> pass = RenderPass::Create(layer_list_.size());
   pass->SetNew(RenderPassId(),
                content_rect_,
                damage_tracker_->current_damage_rect(),
@@ -156,7 +156,8 @@ void RenderSurfaceImpl::AppendQuads(QuadSink* quad_sink,
                             content_rect_,
                             clip_rect_,
                             is_clipped_,
-                            draw_opacity_);
+                            draw_opacity_,
+                            owning_layer_->blend_mode());
 
   if (owning_layer_->ShowDebugBorders()) {
     SkColor color = for_replica ?
@@ -228,7 +229,6 @@ void RenderSurfaceImpl::AppendQuads(QuadSink* quad_sink,
                contents_changed_since_last_frame,
                mask_uv_rect,
                owning_layer_->filters(),
-               owning_layer_->filter(),
                owning_layer_->background_filters());
   quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
 }

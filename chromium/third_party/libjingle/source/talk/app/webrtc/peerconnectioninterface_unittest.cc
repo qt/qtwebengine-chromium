@@ -37,6 +37,7 @@
 #include "talk/app/webrtc/videosource.h"
 #include "talk/base/gunit.h"
 #include "talk/base/scoped_ptr.h"
+#include "talk/base/ssladapter.h"
 #include "talk/base/sslstreamadapter.h"
 #include "talk/base/stringutils.h"
 #include "talk/base/thread.h"
@@ -227,10 +228,15 @@ class MockPeerConnectionObserver : public PeerConnectionObserver {
 class PeerConnectionInterfaceTest : public testing::Test {
  protected:
   virtual void SetUp() {
+    talk_base::InitializeSSL(NULL);
     pc_factory_ = webrtc::CreatePeerConnectionFactory(
         talk_base::Thread::Current(), talk_base::Thread::Current(), NULL, NULL,
         NULL);
     ASSERT_TRUE(pc_factory_.get() != NULL);
+  }
+
+  virtual void TearDown() {
+    talk_base::CleanupSSL();
   }
 
   void CreatePeerConnection() {
@@ -981,31 +987,6 @@ TEST_F(PeerConnectionInterfaceTest,
   EXPECT_TRUE(channel == NULL);
 }
 
-// The test verifies that the first id not used by existing data channels is
-// assigned to a new data channel if no id is specified.
-TEST_F(PeerConnectionInterfaceTest, AssignSctpDataChannelId) {
-  FakeConstraints constraints;
-  constraints.SetAllowDtlsSctpDataChannels();
-  CreatePeerConnection(&constraints);
-
-  webrtc::DataChannelInit config;
-
-  scoped_refptr<DataChannelInterface> channel =
-      pc_->CreateDataChannel("1", &config);
-  EXPECT_TRUE(channel != NULL);
-  EXPECT_EQ(1, channel->id());
-
-  config.id = 4;
-  channel = pc_->CreateDataChannel("4", &config);
-  EXPECT_TRUE(channel != NULL);
-  EXPECT_EQ(config.id, channel->id());
-
-  config.id = -1;
-  channel = pc_->CreateDataChannel("2", &config);
-  EXPECT_TRUE(channel != NULL);
-  EXPECT_EQ(2, channel->id());
-}
-
 // The test verifies that creating a SCTP data channel with an id already in use
 // or out of range should fail.
 TEST_F(PeerConnectionInterfaceTest,
@@ -1015,13 +996,13 @@ TEST_F(PeerConnectionInterfaceTest,
   CreatePeerConnection(&constraints);
 
   webrtc::DataChannelInit config;
+  scoped_refptr<DataChannelInterface> channel;
 
-  scoped_refptr<DataChannelInterface> channel =
-      pc_->CreateDataChannel("1", &config);
+  config.id = 1;
+  channel = pc_->CreateDataChannel("1", &config);
   EXPECT_TRUE(channel != NULL);
   EXPECT_EQ(1, channel->id());
 
-  config.id = 1;
   channel = pc_->CreateDataChannel("x", &config);
   EXPECT_TRUE(channel == NULL);
 
@@ -1119,11 +1100,12 @@ TEST_F(PeerConnectionInterfaceTest, ReceiveFireFoxOffer) {
       cricket::GetFirstVideoContent(pc_->local_description()->description());
   ASSERT_TRUE(content != NULL);
   EXPECT_FALSE(content->rejected);
-
+#ifdef HAVE_SCTP
   content =
       cricket::GetFirstDataContent(pc_->local_description()->description());
   ASSERT_TRUE(content != NULL);
   EXPECT_TRUE(content->rejected);
+#endif
 }
 
 // Test that we can create an audio only offer and receive an answer with a

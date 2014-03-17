@@ -20,7 +20,7 @@ namespace gfx {
 // system. For platforms that support DIP (density independent pixel),
 // |bounds()| and |work_area| will return values in DIP coordinate
 // system, not in backing pixels.
-class UI_EXPORT Display {
+class GFX_EXPORT Display {
  public:
   // Screen Rotation in clock-wise degrees.
   enum Rotation {
@@ -28,6 +28,13 @@ class UI_EXPORT Display {
     ROTATE_90,
     ROTATE_180,
     ROTATE_270,
+  };
+
+  // Touch support for the display.
+  enum TouchSupport {
+    TOUCH_SUPPORT_UNKNOWN,
+    TOUCH_SUPPORT_AVAILABLE,
+    TOUCH_SUPPORT_UNAVAILABLE,
   };
 
   // Creates a display with kInvalidDisplayID as default.
@@ -66,6 +73,9 @@ class UI_EXPORT Display {
 
   Rotation rotation() const { return rotation_; }
   void set_rotation(Rotation rotation) { rotation_ = rotation; }
+
+  TouchSupport touch_support() const { return touch_support_; }
+  void set_touch_support(TouchSupport support) { touch_support_ = support; }
 
   // Utility functions that just return the size of display and
   // work area.
@@ -113,6 +123,7 @@ class UI_EXPORT Display {
   Rect work_area_;
   float device_scale_factor_;
   Rotation rotation_;
+  TouchSupport touch_support_;
 };
 
 }  // namespace gfx

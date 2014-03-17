@@ -21,11 +21,11 @@
 #include "webkit/child/websocketstreamhandle_bridge.h"
 #include "webkit/child/websocketstreamhandle_delegate.h"
 
-using WebKit::WebData;
-using WebKit::WebSocketStreamError;
-using WebKit::WebSocketStreamHandle;
-using WebKit::WebSocketStreamHandleClient;
-using WebKit::WebURL;
+using blink::WebData;
+using blink::WebSocketStreamError;
+using blink::WebSocketStreamHandle;
+using blink::WebSocketStreamHandleClient;
+using blink::WebURL;
 
 namespace webkit_glue {
 
@@ -86,7 +86,7 @@ void WebSocketStreamHandleImpl::Context::Connect(
     WebKitPlatformSupportImpl* platform) {
   VLOG(1) << "Connect url=" << url;
   DCHECK(!bridge_.get());
-  bridge_ = platform->CreateWebSocketBridge(handle_, this);
+  bridge_ = platform->CreateWebSocketStreamBridge(handle_, this);
   AddRef();  // Will be released by DidClose().
   bridge_->Connect(url);
 }

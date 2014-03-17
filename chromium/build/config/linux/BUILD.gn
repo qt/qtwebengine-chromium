@@ -1,0 +1,61 @@
+# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("pkg_config.gni")
+
+# Sets up the dynamic library search path to include our "lib" directory.
+config("executable_ldconfig") {
+  ldflags = [
+    # Want to pass "\$". Need to escape both '\' and '$'. GN will re-escape as
+    # required for ninja.
+    "-Wl,-rpath=\\\$ORIGIN/lib/",
+
+    "-Wl,-rpath-link=lib/",
+  ]
+}
+
+config("fontconfig") {
+  libs = [ "fontconfig" ]
+}
+
+pkg_config("freetype2") {
+  packages = [ "freetype2" ]
+}
+
+pkg_config("glib") {
+  packages = [ "glib-2.0", "gmodule-2.0", "gobject-2.0", "gthread-2.0" ]
+}
+
+pkg_config("gtk") {
+  # Gtk requires gmodule, but it does not list it as a dependency in some
+  # misconfigured systems.
+  packages = [ "gmodule-2.0", "gtk+-2.0", "gthread-2.0" ]
+  defines = [ "TOOLKIT_GTK" ]
+}
+
+pkg_config("pangocairo") {
+  packages = [ "pangocairo" ]
+}
+
+pkg_config("udev") {
+  packages = [ "libudev" ]
+}
+
+config("x11") {
+  # Don't bother running pkg-config for these X related libraries since it just
+  # returns the same libs, and forking pkg-config is slow.
+  defines = [ "USE_X11" ]
+  libs = [
+    "X11",
+    "Xcomposite",
+    "Xcursor",
+    "Xdamage",
+    "Xext",
+    "Xfixes",
+    "Xi",
+    "Xrender",
+    "Xss",
+    "Xtst",
+  ]
+}

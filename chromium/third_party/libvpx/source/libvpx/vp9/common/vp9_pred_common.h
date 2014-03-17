@@ -14,17 +14,25 @@
 #include "vp9/common/vp9_blockd.h"
 #include "vp9/common/vp9_onyxc_int.h"
 
+static INLINE const MODE_INFO *get_above_mi(const MACROBLOCKD *const xd) {
+  return xd->up_available ? xd->mi_8x8[-xd->mode_info_stride] : NULL;
+}
+
+static INLINE const MODE_INFO *get_left_mi(const MACROBLOCKD *const xd) {
+  return xd->left_available ? xd->mi_8x8[-1] : NULL;
+}
+
 int vp9_get_segment_id(VP9_COMMON *cm, const uint8_t *segment_ids,
                        BLOCK_SIZE bsize, int mi_row, int mi_col);
 
-
 static INLINE int vp9_get_pred_context_seg_id(const MACROBLOCKD *xd) {
-  const MODE_INFO * const above_mi = xd->mi_8x8[-xd->mode_info_stride];
-  const MODE_INFO * const left_mi = xd->mi_8x8[-1];
-  const int above_sip = above_mi ? above_mi->mbmi.seg_id_predicted : 0;
-  const int left_sip = left_mi ? left_mi->mbmi.seg_id_predicted : 0;
+  const MODE_INFO *const above_mi = get_above_mi(xd);
+  const MODE_INFO *const left_mi = get_left_mi(xd);
+  const int above_sip = (above_mi != NULL) ?
+                        above_mi->mbmi.seg_id_predicted : 0;
+  const int left_sip = (left_mi != NULL) ? left_mi->mbmi.seg_id_predicted : 0;
 
-  return above_sip + (xd->left_available ? left_sip : 0);
+  return above_sip + left_sip;
 }
 
 static INLINE vp9_prob vp9_get_pred_prob_seg_id(struct segmentation *seg,
@@ -35,12 +43,13 @@ static INLINE vp9_prob vp9_get_pred_prob_seg_id(struct segmentation *seg,
 void vp9_set_pred_flag_seg_id(MACROBLOCKD *xd, uint8_t pred_flag);
 
 static INLINE int vp9_get_pred_context_mbskip(const MACROBLOCKD *xd) {
-  const MODE_INFO * const above_mi = xd->mi_8x8[-xd->mode_info_stride];
-  const MODE_INFO * const left_mi = xd->mi_8x8[-1];
-  const int above_skip_coeff = above_mi ? above_mi->mbmi.skip_coeff : 0;
-  const int left_skip_coeff = left_mi ? left_mi->mbmi.skip_coeff : 0;
+  const MODE_INFO *const above_mi = get_above_mi(xd);
+  const MODE_INFO *const left_mi = get_left_mi(xd);
+  const int above_skip_coeff = (above_mi != NULL) ?
+                               above_mi->mbmi.skip_coeff : 0;
+  const int left_skip_coeff = (left_mi != NULL) ? left_mi->mbmi.skip_coeff : 0;
 
-  return above_skip_coeff + (xd->left_available ? left_skip_coeff : 0);
+  return above_skip_coeff + left_skip_coeff;
 }
 
 static INLINE vp9_prob vp9_get_pred_prob_mbskip(const VP9_COMMON *cm,
@@ -49,11 +58,8 @@ static INLINE vp9_prob vp9_get_pred_prob_mbskip(const VP9_COMMON *cm,
 }
 
 static INLINE unsigned char vp9_get_pred_flag_mbskip(const MACROBLOCKD *xd) {
-  return xd->this_mi->mbmi.skip_coeff;
+  return xd->mi_8x8[0]->mbmi.skip_coeff;
 }
-
-void vp9_set_pred_flag_mbskip(MACROBLOCKD *xd, BLOCK_SIZE bsize,
-                              uint8_t pred_flag);
 
 unsigned char vp9_get_pred_context_switchable_interp(const MACROBLOCKD *xd);
 
@@ -69,8 +75,9 @@ unsigned char vp9_get_pred_context_comp_inter_inter(const VP9_COMMON *cm,
                                                     const MACROBLOCKD *xd);
 
 
-static INLINE vp9_prob vp9_get_pred_prob_comp_inter_inter(const VP9_COMMON *cm,
-                                                          const MACROBLOCKD *xd) {
+static INLINE
+vp9_prob vp9_get_pred_prob_comp_inter_inter(const VP9_COMMON *cm,
+                                            const MACROBLOCKD *xd) {
   const int pred_context = vp9_get_pred_context_comp_inter_inter(cm, xd);
   return cm->fc.comp_inter_prob[pred_context];
 }
@@ -120,14 +127,14 @@ static const vp9_prob *get_tx_probs2(const MACROBLOCKD *xd,
   return get_tx_probs(bsize, context, tx_probs);
 }
 
-static void update_tx_counts(BLOCK_SIZE bsize, uint8_t context,
-                             TX_SIZE tx_size, struct tx_counts *tx_counts) {
-  if (bsize >= BLOCK_32X32)
-    tx_counts->p32x32[context][tx_size]++;
-  else if (bsize >= BLOCK_16X16)
-    tx_counts->p16x16[context][tx_size]++;
+static unsigned int *get_tx_counts(BLOCK_SIZE bsize, uint8_t context,
+                                   struct tx_counts *tx_counts) {
+  if (bsize < BLOCK_16X16)
+    return tx_counts->p8x8[context];
+  else if (bsize < BLOCK_32X32)
+    return tx_counts->p16x16[context];
   else
-    tx_counts->p8x8[context][tx_size]++;
+    return tx_counts->p32x32[context];
 }
 
 #endif  // VP9_COMMON_VP9_PRED_COMMON_H_

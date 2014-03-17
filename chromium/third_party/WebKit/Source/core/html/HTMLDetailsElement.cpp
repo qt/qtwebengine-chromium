@@ -27,25 +27,24 @@
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLSummaryElement.h"
 #include "core/html/shadow/HTMLContentElement.h"
-#include "core/platform/LocalizedStrings.h"
 #include "core/rendering/RenderBlockFlow.h"
+#include "platform/text/PlatformLocale.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-PassRefPtr<HTMLDetailsElement> HTMLDetailsElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<HTMLDetailsElement> HTMLDetailsElement::create(Document& document)
 {
-    RefPtr<HTMLDetailsElement> details = adoptRef(new HTMLDetailsElement(tagName, document));
+    RefPtr<HTMLDetailsElement> details = adoptRef(new HTMLDetailsElement(document));
     details->ensureUserAgentShadowRoot();
     return details.release();
 }
 
-HTMLDetailsElement::HTMLDetailsElement(const QualifiedName& tagName, Document& document)
-    : HTMLElement(tagName, document)
+HTMLDetailsElement::HTMLDetailsElement(Document& document)
+    : HTMLElement(detailsTag, document)
     , m_isOpen(false)
 {
-    ASSERT(hasTagName(detailsTag));
     ScriptWrappable::init(this);
 }
 
@@ -54,19 +53,19 @@ RenderObject* HTMLDetailsElement::createRenderer(RenderStyle*)
     return new RenderBlockFlow(this);
 }
 
-void HTMLDetailsElement::didAddUserAgentShadowRoot(ShadowRoot* root)
+void HTMLDetailsElement::didAddUserAgentShadowRoot(ShadowRoot& root)
 {
-    DEFINE_STATIC_LOCAL(AtomicString, summarySelector, ("summary:first-of-type", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(const AtomicString, summarySelector, ("summary:first-of-type", AtomicString::ConstructFromLiteral));
 
-    RefPtr<HTMLSummaryElement> defaultSummary = HTMLSummaryElement::create(summaryTag, document());
-    defaultSummary->appendChild(Text::create(document(), defaultDetailsSummaryText()));
+    RefPtr<HTMLSummaryElement> defaultSummary = HTMLSummaryElement::create(document());
+    defaultSummary->appendChild(Text::create(document(), locale().queryString(blink::WebLocalizedString::DetailsLabel)));
 
     RefPtr<HTMLContentElement> content = HTMLContentElement::create(document());
     content->setAttribute(selectAttr, summarySelector);
     content->appendChild(defaultSummary);
 
-    root->appendChild(content);
-    root->appendChild(HTMLContentElement::create(document()));
+    root.appendChild(content);
+    root.appendChild(HTMLContentElement::create(document()));
 }
 
 Element* HTMLDetailsElement::findMainSummary() const
@@ -99,7 +98,7 @@ bool HTMLDetailsElement::childShouldCreateRenderer(const Node& child) const
         return HTMLElement::childShouldCreateRenderer(child);
     if (!child.hasTagName(summaryTag))
         return false;
-    return &child == findMainSummary() && HTMLElement::childShouldCreateRenderer(child);
+    return child == findMainSummary() && HTMLElement::childShouldCreateRenderer(child);
 }
 
 void HTMLDetailsElement::toggleOpen()

@@ -9,12 +9,10 @@
 
 namespace net {
 
-static const int kDefaultAssociatedStreamId = 0;
-static const bool kDefaultCompressed = false;
-static const char* const kDefaultDataPointer = NULL;
-static const uint32 kDefaultDataLength = 0;
-static const char** const kDefaultExtraHeaders = NULL;
-static const int kDefaultExtraHeaderCount = 0;
+const int kDefaultAssociatedStreamId = 0;
+const bool kDefaultCompressed = false;
+const char* const kDefaultDataPointer = NULL;
+const uint32 kDefaultDataLength = 0;
 
 SpdyWebSocketTestUtil::SpdyWebSocketTestUtil(
     NextProto protocol) : spdy_util_(protocol) {}
@@ -74,7 +72,7 @@ SpdyFrame* SpdyWebSocketTestUtil::ConstructSpdyWebSocketHandshakeRequestFrame(
     SYN_STREAM,
     stream_id,
     kDefaultAssociatedStreamId,
-    ConvertRequestPriorityToSpdyPriority(request_priority, 2),
+    ConvertRequestPriorityToSpdyPriority(request_priority, SPDY2),
     kSpdyCredentialSlotUnused,
     CONTROL_FLAG_NONE,
     kDefaultCompressed,
@@ -99,7 +97,7 @@ SpdyFrame* SpdyWebSocketTestUtil::ConstructSpdyWebSocketHandshakeResponseFrame(
     SYN_REPLY,
     stream_id,
     kDefaultAssociatedStreamId,
-    ConvertRequestPriorityToSpdyPriority(request_priority, 2),
+    ConvertRequestPriorityToSpdyPriority(request_priority, SPDY2),
     kSpdyCredentialSlotUnused,
     CONTROL_FLAG_NONE,
     kDefaultCompressed,

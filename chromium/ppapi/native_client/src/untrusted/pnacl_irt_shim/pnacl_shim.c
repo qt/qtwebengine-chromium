@@ -7,12 +7,14 @@
 #include "ppapi/generators/pnacl_shim.h"
 
 #include "ppapi/c/ppb.h"
+#include "ppapi/c/dev/ppb_alarms_dev.h"
 #include "ppapi/c/dev/ppb_audio_input_dev.h"
 #include "ppapi/c/dev/ppb_buffer_dev.h"
 #include "ppapi/c/dev/ppb_crypto_dev.h"
 #include "ppapi/c/dev/ppb_cursor_control_dev.h"
 #include "ppapi/c/dev/ppb_device_ref_dev.h"
 #include "ppapi/c/dev/ppb_file_chooser_dev.h"
+#include "ppapi/c/dev/ppb_file_io_dev.h"
 #include "ppapi/c/dev/ppb_find_dev.h"
 #include "ppapi/c/dev/ppb_font_dev.h"
 #include "ppapi/c/dev/ppb_graphics_2d_dev.h"
@@ -22,11 +24,11 @@
 #include "ppapi/c/dev/ppb_printing_dev.h"
 #include "ppapi/c/dev/ppb_resource_array_dev.h"
 #include "ppapi/c/dev/ppb_scrollbar_dev.h"
-#include "ppapi/c/dev/ppb_testing_dev.h"
 #include "ppapi/c/dev/ppb_text_input_dev.h"
 #include "ppapi/c/dev/ppb_trace_event_dev.h"
 #include "ppapi/c/dev/ppb_truetype_font_dev.h"
 #include "ppapi/c/dev/ppb_url_util_dev.h"
+#include "ppapi/c/dev/ppb_var_resource_dev.h"
 #include "ppapi/c/dev/ppb_video_capture_dev.h"
 #include "ppapi/c/dev/ppb_video_decoder_dev.h"
 #include "ppapi/c/dev/ppb_view_dev.h"
@@ -41,8 +43,6 @@
 #include "ppapi/c/dev/ppp_video_decoder_dev.h"
 #include "ppapi/c/dev/ppp_widget_dev.h"
 #include "ppapi/c/dev/ppp_zoom_dev.h"
-#include "ppapi/c/extensions/dev/ppb_ext_alarms_dev.h"
-#include "ppapi/c/extensions/dev/ppb_ext_events_dev.h"
 #include "ppapi/c/extensions/dev/ppb_ext_socket_dev.h"
 #include "ppapi/c/ppb_audio.h"
 #include "ppapi/c/ppb_audio_config.h"
@@ -99,6 +99,7 @@
 #include "ppapi/c/private/ppb_flash_print.h"
 #include "ppapi/c/private/ppb_host_resolver_private.h"
 #include "ppapi/c/private/ppb_instance_private.h"
+#include "ppapi/c/private/ppb_isolated_file_system_private.h"
 #include "ppapi/c/private/ppb_nacl_private.h"
 #include "ppapi/c/private/ppb_net_address_private.h"
 #include "ppapi/c/private/ppb_output_protection_private.h"
@@ -106,6 +107,7 @@
 #include "ppapi/c/private/ppb_talk_private.h"
 #include "ppapi/c/private/ppb_tcp_server_socket_private.h"
 #include "ppapi/c/private/ppb_tcp_socket_private.h"
+#include "ppapi/c/private/ppb_testing_private.h"
 #include "ppapi/c/private/ppb_udp_socket_private.h"
 #include "ppapi/c/private/ppb_uma_private.h"
 #include "ppapi/c/private/ppb_video_destination_private.h"
@@ -118,7 +120,6 @@
 #include "ppapi/c/trusted/ppb_browser_font_trusted.h"
 #include "ppapi/c/trusted/ppb_char_set_trusted.h"
 #include "ppapi/c/trusted/ppb_file_chooser_trusted.h"
-#include "ppapi/c/trusted/ppb_file_io_trusted.h"
 #include "ppapi/c/trusted/ppb_url_loader_trusted.h"
 
 /* Use local strcmp to avoid dependency on libc. */
@@ -173,28 +174,28 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_VarArrayBuffer_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_VarDictionary_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_WebSocket_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPP_Messaging_1_0;
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Alarms_Dev_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_AudioInput_Dev_0_2;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_AudioInput_Dev_0_3;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_AudioInput_Dev_0_4;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_DeviceRef_Dev_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_FileChooser_Dev_0_5;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_FileChooser_Dev_0_6;
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_FileIO_Dev_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Font_Dev_0_6;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_IMEInputEvent_Dev_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_IMEInputEvent_Dev_0_2;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_KeyboardInputEvent_Dev_0_2;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Printing_Dev_0_7;
-static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Testing_Dev_0_9;
-static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Testing_Dev_0_91;
-static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Testing_Dev_0_92;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_TrueTypeFont_Dev_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_URLUtil_Dev_0_6;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_URLUtil_Dev_0_7;
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_VarResource_Dev_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_VideoCapture_Dev_0_2;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_VideoCapture_Dev_0_3;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_VideoDecoder_Dev_0_16;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPP_Selection_Dev_0_3;
-static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_7;
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_9;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Ext_CrxFileSystem_Private_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_FileIO_Private_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_FileRefPrivate_0_1;
@@ -206,15 +207,17 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Flash_Clipboard_4_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Flash_Clipboard_5_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Flash_DeviceID_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Flash_DRM_1_0;
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Flash_DRM_1_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Flash_Menu_0_2;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_HostResolver_Private_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Instance_Private_0_1;
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_IsolatedFileSystem_Private_0_2;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_NaCl_Private_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_NetAddress_Private_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_NetAddress_Private_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_NetAddress_Private_1_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_OutputProtection_Private_0_1;
-static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_PlatformVerification_Private_0_1;
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_PlatformVerification_Private_0_2;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Talk_Private_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Talk_Private_2_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_TCPServerSocket_Private_0_1;
@@ -222,6 +225,7 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_TCPServerSocket_Private_0
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_TCPSocket_Private_0_3;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_TCPSocket_Private_0_4;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_TCPSocket_Private_0_5;
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Testing_Private_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_UDPSocket_Private_0_2;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_UDPSocket_Private_0_3;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_UDPSocket_Private_0_4;
@@ -229,10 +233,8 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_UMA_Private_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_VideoDestination_Private_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_VideoSource_Private_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_X509Certificate_Private_0_1;
-static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_7;
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_9;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPP_Instance_Private_0_1;
-static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Ext_Alarms_Dev_0_1;
-static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Ext_Events_Dev_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2;
 /* END Declarations for all Wrapper Infos. */
@@ -1617,9 +1619,41 @@ static void Pnacl_M14_PPP_Messaging_HandleMessage(PP_Instance instance, struct P
 
 /* Not generating wrapper methods for PPB_FileChooserTrusted_0_6 */
 
-/* Not generating wrapper methods for PPB_FileIOTrusted_0_4 */
-
 /* Not generating wrapper methods for PPB_URLLoaderTrusted_0_3 */
+
+/* Begin wrapper methods for PPB_Alarms_Dev_0_1 */
+
+static void Pnacl_M33_PPB_Alarms_Dev_Create(PP_Instance instance, struct PP_Var* name, const struct PP_Alarms_AlarmCreateInfo_Dev* alarm_info) {
+  const struct PPB_Alarms_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Alarms_Dev_0_1.real_iface;
+  iface->Create(instance, *name, alarm_info);
+}
+
+static int32_t Pnacl_M33_PPB_Alarms_Dev_Get(PP_Instance instance, struct PP_Var* name, struct PP_Alarms_Alarm_Dev* alarm, struct PP_CompletionCallback* callback) {
+  const struct PPB_Alarms_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Alarms_Dev_0_1.real_iface;
+  return iface->Get(instance, *name, alarm, *callback);
+}
+
+static int32_t Pnacl_M33_PPB_Alarms_Dev_GetAll(PP_Instance instance, struct PP_Alarms_Alarm_Array_Dev* alarms, struct PP_ArrayOutput* array_allocator, struct PP_CompletionCallback* callback) {
+  const struct PPB_Alarms_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Alarms_Dev_0_1.real_iface;
+  return iface->GetAll(instance, alarms, *array_allocator, *callback);
+}
+
+static void Pnacl_M33_PPB_Alarms_Dev_Clear(PP_Instance instance, struct PP_Var* name) {
+  const struct PPB_Alarms_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Alarms_Dev_0_1.real_iface;
+  iface->Clear(instance, *name);
+}
+
+static void Pnacl_M33_PPB_Alarms_Dev_ClearAll(PP_Instance instance) {
+  const struct PPB_Alarms_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Alarms_Dev_0_1.real_iface;
+  iface->ClearAll(instance);
+}
+
+static uint32_t Pnacl_M33_PPB_Alarms_Dev_AddOnAlarmListener(PP_Instance instance, PP_Alarms_OnAlarm_Dev callback, void* user_data) {
+  const struct PPB_Alarms_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Alarms_Dev_0_1.real_iface;
+  return iface->AddOnAlarmListener(instance, callback, user_data);
+}
+
+/* End wrapper methods for PPB_Alarms_Dev_0_1 */
 
 /* Begin wrapper methods for PPB_AudioInput_Dev_0_2 */
 
@@ -1831,6 +1865,25 @@ static int32_t Pnacl_M19_PPB_FileChooser_Dev_Show(PP_Resource chooser, struct PP
 
 /* End wrapper methods for PPB_FileChooser_Dev_0_6 */
 
+/* Begin wrapper methods for PPB_FileIO_Dev_0_1 */
+
+static int32_t Pnacl_M31_PPB_FileIO_Dev_Map(PP_Resource file_io, int64_t length, uint32_t map_protection, uint32_t map_flags, int64_t offset, void** address, struct PP_CompletionCallback* callback) {
+  const struct PPB_FileIO_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_FileIO_Dev_0_1.real_iface;
+  return iface->Map(file_io, length, map_protection, map_flags, offset, address, *callback);
+}
+
+static void Pnacl_M31_PPB_FileIO_Dev_Unmap(PP_Resource file_io, void* address, int64_t length) {
+  const struct PPB_FileIO_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_FileIO_Dev_0_1.real_iface;
+  iface->Unmap(file_io, address, length);
+}
+
+static int64_t Pnacl_M31_PPB_FileIO_Dev_GetMapPageSize(PP_Resource file_io) {
+  const struct PPB_FileIO_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_FileIO_Dev_0_1.real_iface;
+  return iface->GetMapPageSize(file_io);
+}
+
+/* End wrapper methods for PPB_FileIO_Dev_0_1 */
+
 /* Not generating wrapper methods for PPB_Find_Dev_0_3 */
 
 /* Begin wrapper methods for PPB_Font_Dev_0_6 */
@@ -1878,6 +1931,8 @@ static int32_t Pnacl_M14_PPB_Font_Dev_PixelOffsetForCharacter(PP_Resource font, 
 /* End wrapper methods for PPB_Font_Dev_0_6 */
 
 /* Not generating wrapper methods for PPB_Graphics2D_Dev_0_1 */
+
+/* Not generating wrapper methods for PPB_Graphics2D_Dev_0_2 */
 
 /* Begin wrapper methods for PPB_IMEInputEvent_Dev_0_1 */
 
@@ -1990,142 +2045,6 @@ static int32_t Pnacl_M23_PPB_Printing_Dev_GetDefaultPrintSettings(PP_Resource re
 /* Not generating wrapper methods for PPB_ResourceArray_Dev_0_1 */
 
 /* Not generating wrapper methods for PPB_Scrollbar_Dev_0_5 */
-
-/* Not generating wrapper methods for PPB_Testing_Dev_0_7 */
-
-/* Not generating wrapper methods for PPB_Testing_Dev_0_8 */
-
-/* Begin wrapper methods for PPB_Testing_Dev_0_9 */
-
-static PP_Bool Pnacl_M17_PPB_Testing_Dev_ReadImageData(PP_Resource device_context_2d, PP_Resource image, const struct PP_Point* top_left) {
-  const struct PPB_Testing_Dev_0_9 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_9.real_iface;
-  return iface->ReadImageData(device_context_2d, image, top_left);
-}
-
-static void Pnacl_M17_PPB_Testing_Dev_RunMessageLoop(PP_Instance instance) {
-  const struct PPB_Testing_Dev_0_9 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_9.real_iface;
-  iface->RunMessageLoop(instance);
-}
-
-static void Pnacl_M17_PPB_Testing_Dev_QuitMessageLoop(PP_Instance instance) {
-  const struct PPB_Testing_Dev_0_9 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_9.real_iface;
-  iface->QuitMessageLoop(instance);
-}
-
-static uint32_t Pnacl_M17_PPB_Testing_Dev_GetLiveObjectsForInstance(PP_Instance instance) {
-  const struct PPB_Testing_Dev_0_9 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_9.real_iface;
-  return iface->GetLiveObjectsForInstance(instance);
-}
-
-static PP_Bool Pnacl_M17_PPB_Testing_Dev_IsOutOfProcess(void) {
-  const struct PPB_Testing_Dev_0_9 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_9.real_iface;
-  return iface->IsOutOfProcess();
-}
-
-static void Pnacl_M17_PPB_Testing_Dev_SimulateInputEvent(PP_Instance instance, PP_Resource input_event) {
-  const struct PPB_Testing_Dev_0_9 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_9.real_iface;
-  iface->SimulateInputEvent(instance, input_event);
-}
-
-static void Pnacl_M17_PPB_Testing_Dev_GetDocumentURL(struct PP_Var* _struct_result, PP_Instance instance, struct PP_URLComponents_Dev* components) {
-  const struct PPB_Testing_Dev_0_9 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_9.real_iface;
-  *_struct_result = iface->GetDocumentURL(instance, components);
-}
-
-/* End wrapper methods for PPB_Testing_Dev_0_9 */
-
-/* Begin wrapper methods for PPB_Testing_Dev_0_91 */
-
-static PP_Bool Pnacl_M18_PPB_Testing_Dev_ReadImageData(PP_Resource device_context_2d, PP_Resource image, const struct PP_Point* top_left) {
-  const struct PPB_Testing_Dev_0_91 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_91.real_iface;
-  return iface->ReadImageData(device_context_2d, image, top_left);
-}
-
-static void Pnacl_M18_PPB_Testing_Dev_RunMessageLoop(PP_Instance instance) {
-  const struct PPB_Testing_Dev_0_91 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_91.real_iface;
-  iface->RunMessageLoop(instance);
-}
-
-static void Pnacl_M18_PPB_Testing_Dev_QuitMessageLoop(PP_Instance instance) {
-  const struct PPB_Testing_Dev_0_91 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_91.real_iface;
-  iface->QuitMessageLoop(instance);
-}
-
-static uint32_t Pnacl_M18_PPB_Testing_Dev_GetLiveObjectsForInstance(PP_Instance instance) {
-  const struct PPB_Testing_Dev_0_91 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_91.real_iface;
-  return iface->GetLiveObjectsForInstance(instance);
-}
-
-static PP_Bool Pnacl_M18_PPB_Testing_Dev_IsOutOfProcess(void) {
-  const struct PPB_Testing_Dev_0_91 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_91.real_iface;
-  return iface->IsOutOfProcess();
-}
-
-static void Pnacl_M18_PPB_Testing_Dev_SimulateInputEvent(PP_Instance instance, PP_Resource input_event) {
-  const struct PPB_Testing_Dev_0_91 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_91.real_iface;
-  iface->SimulateInputEvent(instance, input_event);
-}
-
-static void Pnacl_M18_PPB_Testing_Dev_GetDocumentURL(struct PP_Var* _struct_result, PP_Instance instance, struct PP_URLComponents_Dev* components) {
-  const struct PPB_Testing_Dev_0_91 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_91.real_iface;
-  *_struct_result = iface->GetDocumentURL(instance, components);
-}
-
-static uint32_t Pnacl_M18_PPB_Testing_Dev_GetLiveVars(struct PP_Var live_vars[], uint32_t array_size) {
-  const struct PPB_Testing_Dev_0_91 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_91.real_iface;
-  return iface->GetLiveVars(live_vars, array_size);
-}
-
-/* End wrapper methods for PPB_Testing_Dev_0_91 */
-
-/* Begin wrapper methods for PPB_Testing_Dev_0_92 */
-
-static PP_Bool Pnacl_M28_PPB_Testing_Dev_ReadImageData(PP_Resource device_context_2d, PP_Resource image, const struct PP_Point* top_left) {
-  const struct PPB_Testing_Dev_0_92 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_92.real_iface;
-  return iface->ReadImageData(device_context_2d, image, top_left);
-}
-
-static void Pnacl_M28_PPB_Testing_Dev_RunMessageLoop(PP_Instance instance) {
-  const struct PPB_Testing_Dev_0_92 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_92.real_iface;
-  iface->RunMessageLoop(instance);
-}
-
-static void Pnacl_M28_PPB_Testing_Dev_QuitMessageLoop(PP_Instance instance) {
-  const struct PPB_Testing_Dev_0_92 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_92.real_iface;
-  iface->QuitMessageLoop(instance);
-}
-
-static uint32_t Pnacl_M28_PPB_Testing_Dev_GetLiveObjectsForInstance(PP_Instance instance) {
-  const struct PPB_Testing_Dev_0_92 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_92.real_iface;
-  return iface->GetLiveObjectsForInstance(instance);
-}
-
-static PP_Bool Pnacl_M28_PPB_Testing_Dev_IsOutOfProcess(void) {
-  const struct PPB_Testing_Dev_0_92 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_92.real_iface;
-  return iface->IsOutOfProcess();
-}
-
-static void Pnacl_M28_PPB_Testing_Dev_SimulateInputEvent(PP_Instance instance, PP_Resource input_event) {
-  const struct PPB_Testing_Dev_0_92 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_92.real_iface;
-  iface->SimulateInputEvent(instance, input_event);
-}
-
-static void Pnacl_M28_PPB_Testing_Dev_GetDocumentURL(struct PP_Var* _struct_result, PP_Instance instance, struct PP_URLComponents_Dev* components) {
-  const struct PPB_Testing_Dev_0_92 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_92.real_iface;
-  *_struct_result = iface->GetDocumentURL(instance, components);
-}
-
-static uint32_t Pnacl_M28_PPB_Testing_Dev_GetLiveVars(struct PP_Var live_vars[], uint32_t array_size) {
-  const struct PPB_Testing_Dev_0_92 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_92.real_iface;
-  return iface->GetLiveVars(live_vars, array_size);
-}
-
-static void Pnacl_M28_PPB_Testing_Dev_SetMinimumArrayBufferSizeForShmem(PP_Instance instance, uint32_t threshold) {
-  const struct PPB_Testing_Dev_0_92 *iface = Pnacl_WrapperInfo_PPB_Testing_Dev_0_92.real_iface;
-  iface->SetMinimumArrayBufferSizeForShmem(instance, threshold);
-}
-
-/* End wrapper methods for PPB_Testing_Dev_0_92 */
 
 /* Not generating wrapper methods for PPB_TextInput_Dev_0_1 */
 
@@ -2266,6 +2185,20 @@ static void Pnacl_M31_PPB_URLUtil_Dev_GetPluginReferrerURL(struct PP_Var* _struc
 }
 
 /* End wrapper methods for PPB_URLUtil_Dev_0_7 */
+
+/* Begin wrapper methods for PPB_VarResource_Dev_0_1 */
+
+static PP_Resource Pnacl_M32_PPB_VarResource_Dev_VarToResource(struct PP_Var* var) {
+  const struct PPB_VarResource_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_VarResource_Dev_0_1.real_iface;
+  return iface->VarToResource(*var);
+}
+
+static void Pnacl_M32_PPB_VarResource_Dev_VarFromResource(struct PP_Var* _struct_result, PP_Resource resource) {
+  const struct PPB_VarResource_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_VarResource_Dev_0_1.real_iface;
+  *_struct_result = iface->VarFromResource(resource);
+}
+
+/* End wrapper methods for PPB_VarResource_Dev_0_1 */
 
 /* Begin wrapper methods for PPB_VideoCapture_Dev_0_2 */
 
@@ -2437,64 +2370,70 @@ static struct PP_Var Pnacl_M13_PPP_Selection_Dev_GetSelectedText(PP_Instance ins
 
 /* Not generating wrapper methods for PPP_VideoCapture_Dev_0_1 */
 
-/* Not generating wrapper methods for PPP_VideoDecoder_Dev_0_9 */
-
-/* Not generating wrapper methods for PPP_VideoDecoder_Dev_0_10 */
-
 /* Not generating wrapper methods for PPP_VideoDecoder_Dev_0_11 */
 
 /* Not generating wrapper methods for PPP_Widget_Dev_0_2 */
 
 /* Not generating wrapper methods for PPP_Zoom_Dev_0_3 */
 
-/* Begin wrapper methods for PPB_ContentDecryptor_Private_0_7 */
+/* Begin wrapper methods for PPB_ContentDecryptor_Private_0_9 */
 
-static void Pnacl_M31_PPB_ContentDecryptor_Private_KeyAdded(PP_Instance instance, struct PP_Var* key_system, struct PP_Var* session_id) {
-  const struct PPB_ContentDecryptor_Private_0_7 *iface = Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_7.real_iface;
-  iface->KeyAdded(instance, *key_system, *session_id);
+static void Pnacl_M33_PPB_ContentDecryptor_Private_SessionCreated(PP_Instance instance, uint32_t session_id, struct PP_Var* web_session_id) {
+  const struct PPB_ContentDecryptor_Private_0_9 *iface = Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_9.real_iface;
+  iface->SessionCreated(instance, session_id, *web_session_id);
 }
 
-static void Pnacl_M31_PPB_ContentDecryptor_Private_KeyMessage(PP_Instance instance, struct PP_Var* key_system, struct PP_Var* session_id, struct PP_Var* message, struct PP_Var* default_url) {
-  const struct PPB_ContentDecryptor_Private_0_7 *iface = Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_7.real_iface;
-  iface->KeyMessage(instance, *key_system, *session_id, *message, *default_url);
+static void Pnacl_M33_PPB_ContentDecryptor_Private_SessionMessage(PP_Instance instance, uint32_t session_id, struct PP_Var* message, struct PP_Var* destination_url) {
+  const struct PPB_ContentDecryptor_Private_0_9 *iface = Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_9.real_iface;
+  iface->SessionMessage(instance, session_id, *message, *destination_url);
 }
 
-static void Pnacl_M31_PPB_ContentDecryptor_Private_KeyError(PP_Instance instance, struct PP_Var* key_system, struct PP_Var* session_id, int32_t media_error, int32_t system_code) {
-  const struct PPB_ContentDecryptor_Private_0_7 *iface = Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_7.real_iface;
-  iface->KeyError(instance, *key_system, *session_id, media_error, system_code);
+static void Pnacl_M33_PPB_ContentDecryptor_Private_SessionReady(PP_Instance instance, uint32_t session_id) {
+  const struct PPB_ContentDecryptor_Private_0_9 *iface = Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_9.real_iface;
+  iface->SessionReady(instance, session_id);
 }
 
-static void Pnacl_M31_PPB_ContentDecryptor_Private_DeliverBlock(PP_Instance instance, PP_Resource decrypted_block, const struct PP_DecryptedBlockInfo* decrypted_block_info) {
-  const struct PPB_ContentDecryptor_Private_0_7 *iface = Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_7.real_iface;
+static void Pnacl_M33_PPB_ContentDecryptor_Private_SessionClosed(PP_Instance instance, uint32_t session_id) {
+  const struct PPB_ContentDecryptor_Private_0_9 *iface = Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_9.real_iface;
+  iface->SessionClosed(instance, session_id);
+}
+
+static void Pnacl_M33_PPB_ContentDecryptor_Private_SessionError(PP_Instance instance, uint32_t session_id, int32_t media_error, int32_t system_code) {
+  const struct PPB_ContentDecryptor_Private_0_9 *iface = Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_9.real_iface;
+  iface->SessionError(instance, session_id, media_error, system_code);
+}
+
+static void Pnacl_M33_PPB_ContentDecryptor_Private_DeliverBlock(PP_Instance instance, PP_Resource decrypted_block, const struct PP_DecryptedBlockInfo* decrypted_block_info) {
+  const struct PPB_ContentDecryptor_Private_0_9 *iface = Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_9.real_iface;
   iface->DeliverBlock(instance, decrypted_block, decrypted_block_info);
 }
 
-static void Pnacl_M31_PPB_ContentDecryptor_Private_DecoderInitializeDone(PP_Instance instance, PP_DecryptorStreamType decoder_type, uint32_t request_id, PP_Bool success) {
-  const struct PPB_ContentDecryptor_Private_0_7 *iface = Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_7.real_iface;
+static void Pnacl_M33_PPB_ContentDecryptor_Private_DecoderInitializeDone(PP_Instance instance, PP_DecryptorStreamType decoder_type, uint32_t request_id, PP_Bool success) {
+  const struct PPB_ContentDecryptor_Private_0_9 *iface = Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_9.real_iface;
   iface->DecoderInitializeDone(instance, decoder_type, request_id, success);
 }
 
-static void Pnacl_M31_PPB_ContentDecryptor_Private_DecoderDeinitializeDone(PP_Instance instance, PP_DecryptorStreamType decoder_type, uint32_t request_id) {
-  const struct PPB_ContentDecryptor_Private_0_7 *iface = Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_7.real_iface;
+static void Pnacl_M33_PPB_ContentDecryptor_Private_DecoderDeinitializeDone(PP_Instance instance, PP_DecryptorStreamType decoder_type, uint32_t request_id) {
+  const struct PPB_ContentDecryptor_Private_0_9 *iface = Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_9.real_iface;
   iface->DecoderDeinitializeDone(instance, decoder_type, request_id);
 }
 
-static void Pnacl_M31_PPB_ContentDecryptor_Private_DecoderResetDone(PP_Instance instance, PP_DecryptorStreamType decoder_type, uint32_t request_id) {
-  const struct PPB_ContentDecryptor_Private_0_7 *iface = Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_7.real_iface;
+static void Pnacl_M33_PPB_ContentDecryptor_Private_DecoderResetDone(PP_Instance instance, PP_DecryptorStreamType decoder_type, uint32_t request_id) {
+  const struct PPB_ContentDecryptor_Private_0_9 *iface = Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_9.real_iface;
   iface->DecoderResetDone(instance, decoder_type, request_id);
 }
 
-static void Pnacl_M31_PPB_ContentDecryptor_Private_DeliverFrame(PP_Instance instance, PP_Resource decrypted_frame, const struct PP_DecryptedFrameInfo* decrypted_frame_info) {
-  const struct PPB_ContentDecryptor_Private_0_7 *iface = Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_7.real_iface;
+static void Pnacl_M33_PPB_ContentDecryptor_Private_DeliverFrame(PP_Instance instance, PP_Resource decrypted_frame, const struct PP_DecryptedFrameInfo* decrypted_frame_info) {
+  const struct PPB_ContentDecryptor_Private_0_9 *iface = Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_9.real_iface;
   iface->DeliverFrame(instance, decrypted_frame, decrypted_frame_info);
 }
 
-static void Pnacl_M31_PPB_ContentDecryptor_Private_DeliverSamples(PP_Instance instance, PP_Resource audio_frames, const struct PP_DecryptedBlockInfo* decrypted_block_info) {
-  const struct PPB_ContentDecryptor_Private_0_7 *iface = Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_7.real_iface;
-  iface->DeliverSamples(instance, audio_frames, decrypted_block_info);
+static void Pnacl_M33_PPB_ContentDecryptor_Private_DeliverSamples(PP_Instance instance, PP_Resource audio_frames, const struct PP_DecryptedSampleInfo* decrypted_sample_info) {
+  const struct PPB_ContentDecryptor_Private_0_9 *iface = Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_9.real_iface;
+  iface->DeliverSamples(instance, audio_frames, decrypted_sample_info);
 }
 
-/* End wrapper methods for PPB_ContentDecryptor_Private_0_7 */
+/* End wrapper methods for PPB_ContentDecryptor_Private_0_9 */
 
 /* Begin wrapper methods for PPB_Ext_CrxFileSystem_Private_0_1 */
 
@@ -2920,6 +2859,35 @@ static int32_t Pnacl_M29_PPB_Flash_DRM_GetVoucherFile(PP_Resource drm, PP_Resour
 
 /* End wrapper methods for PPB_Flash_DRM_1_0 */
 
+/* Begin wrapper methods for PPB_Flash_DRM_1_1 */
+
+static PP_Resource Pnacl_M33_PPB_Flash_DRM_Create(PP_Instance instance) {
+  const struct PPB_Flash_DRM_1_1 *iface = Pnacl_WrapperInfo_PPB_Flash_DRM_1_1.real_iface;
+  return iface->Create(instance);
+}
+
+static int32_t Pnacl_M33_PPB_Flash_DRM_GetDeviceID(PP_Resource drm, struct PP_Var* id, struct PP_CompletionCallback* callback) {
+  const struct PPB_Flash_DRM_1_1 *iface = Pnacl_WrapperInfo_PPB_Flash_DRM_1_1.real_iface;
+  return iface->GetDeviceID(drm, id, *callback);
+}
+
+static PP_Bool Pnacl_M33_PPB_Flash_DRM_GetHmonitor(PP_Resource drm, int64_t* hmonitor) {
+  const struct PPB_Flash_DRM_1_1 *iface = Pnacl_WrapperInfo_PPB_Flash_DRM_1_1.real_iface;
+  return iface->GetHmonitor(drm, hmonitor);
+}
+
+static int32_t Pnacl_M33_PPB_Flash_DRM_GetVoucherFile(PP_Resource drm, PP_Resource* file_ref, struct PP_CompletionCallback* callback) {
+  const struct PPB_Flash_DRM_1_1 *iface = Pnacl_WrapperInfo_PPB_Flash_DRM_1_1.real_iface;
+  return iface->GetVoucherFile(drm, file_ref, *callback);
+}
+
+static int32_t Pnacl_M33_PPB_Flash_DRM_MonitorIsExternal(PP_Resource drm, PP_Bool* is_external, struct PP_CompletionCallback* callback) {
+  const struct PPB_Flash_DRM_1_1 *iface = Pnacl_WrapperInfo_PPB_Flash_DRM_1_1.real_iface;
+  return iface->MonitorIsExternal(drm, is_external, *callback);
+}
+
+/* End wrapper methods for PPB_Flash_DRM_1_1 */
+
 /* Not generating wrapper methods for PPB_Flash_FontFile_0_1 */
 
 /* Not generating wrapper methods for PPB_FlashFullscreen_0_1 */
@@ -3002,6 +2970,15 @@ static void Pnacl_M13_PPB_Instance_Private_ExecuteScript(struct PP_Var* _struct_
 
 /* End wrapper methods for PPB_Instance_Private_0_1 */
 
+/* Begin wrapper methods for PPB_IsolatedFileSystem_Private_0_2 */
+
+static int32_t Pnacl_M33_PPB_IsolatedFileSystem_Private_Open(PP_Instance instance, PP_IsolatedFileSystemType_Private type, PP_Resource* file_system, struct PP_CompletionCallback* callback) {
+  const struct PPB_IsolatedFileSystem_Private_0_2 *iface = Pnacl_WrapperInfo_PPB_IsolatedFileSystem_Private_0_2.real_iface;
+  return iface->Open(instance, type, file_system, *callback);
+}
+
+/* End wrapper methods for PPB_IsolatedFileSystem_Private_0_2 */
+
 /* Begin wrapper methods for PPB_NaCl_Private_1_0 */
 
 static PP_ExternalPluginResult Pnacl_M25_PPB_NaCl_Private_LaunchSelLdr(PP_Instance instance, const char* alleged_url, PP_Bool uses_irt, PP_Bool uses_ppapi, PP_Bool enable_ppapi_dev, PP_Bool enable_dyncode_syscalls, PP_Bool enable_exception_handling, PP_Bool enable_crash_throttling, void* imc_handle, struct PP_Var* error_message) {
@@ -3029,11 +3006,6 @@ static int32_t Pnacl_M25_PPB_NaCl_Private_BrokerDuplicateHandle(PP_FileHandle so
   return iface->BrokerDuplicateHandle(source_handle, process_id, target_handle, desired_access, options);
 }
 
-static int32_t Pnacl_M25_PPB_NaCl_Private_EnsurePnaclInstalled(PP_Instance instance, struct PP_CompletionCallback* callback) {
-  const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
-  return iface->EnsurePnaclInstalled(instance, *callback);
-}
-
 static PP_FileHandle Pnacl_M25_PPB_NaCl_Private_GetReadonlyPnaclFd(const char* filename) {
   const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
   return iface->GetReadonlyPnaclFd(filename);
@@ -3054,16 +3026,6 @@ static void Pnacl_M25_PPB_NaCl_Private_ReportTranslationFinished(PP_Instance ins
   iface->ReportTranslationFinished(instance, success);
 }
 
-static PP_Bool Pnacl_M25_PPB_NaCl_Private_IsOffTheRecord(void) {
-  const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
-  return iface->IsOffTheRecord();
-}
-
-static PP_Bool Pnacl_M25_PPB_NaCl_Private_IsPnaclEnabled(void) {
-  const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
-  return iface->IsPnaclEnabled();
-}
-
 static PP_ExternalPluginResult Pnacl_M25_PPB_NaCl_Private_ReportNaClError(PP_Instance instance, PP_NaClError message_id) {
   const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
   return iface->ReportNaClError(instance, message_id);
@@ -3072,6 +3034,16 @@ static PP_ExternalPluginResult Pnacl_M25_PPB_NaCl_Private_ReportNaClError(PP_Ins
 static PP_FileHandle Pnacl_M25_PPB_NaCl_Private_OpenNaClExecutable(PP_Instance instance, const char* file_url, uint64_t* file_token_lo, uint64_t* file_token_hi) {
   const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
   return iface->OpenNaClExecutable(instance, file_url, file_token_lo, file_token_hi);
+}
+
+static void Pnacl_M25_PPB_NaCl_Private_DispatchEvent(PP_Instance instance, PP_NaClEventType event_type, struct PP_Var* resource_url, PP_Bool length_is_computable, uint64_t loaded_bytes, uint64_t total_bytes) {
+  const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
+  iface->DispatchEvent(instance, event_type, *resource_url, length_is_computable, loaded_bytes, total_bytes);
+}
+
+static void Pnacl_M25_PPB_NaCl_Private_SetReadOnlyProperty(PP_Instance instance, struct PP_Var* key, struct PP_Var* value) {
+  const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
+  iface->SetReadOnlyProperty(instance, *key, *value);
 }
 
 /* End wrapper methods for PPB_NaCl_Private_1_0 */
@@ -3232,29 +3204,24 @@ static int32_t Pnacl_M31_PPB_OutputProtection_Private_EnableProtection(PP_Resour
 
 /* End wrapper methods for PPB_OutputProtection_Private_0_1 */
 
-/* Begin wrapper methods for PPB_PlatformVerification_Private_0_1 */
+/* Begin wrapper methods for PPB_PlatformVerification_Private_0_2 */
 
-static PP_Resource Pnacl_M31_PPB_PlatformVerification_Private_Create(PP_Instance instance) {
-  const struct PPB_PlatformVerification_Private_0_1 *iface = Pnacl_WrapperInfo_PPB_PlatformVerification_Private_0_1.real_iface;
+static PP_Resource Pnacl_M32_PPB_PlatformVerification_Private_Create(PP_Instance instance) {
+  const struct PPB_PlatformVerification_Private_0_2 *iface = Pnacl_WrapperInfo_PPB_PlatformVerification_Private_0_2.real_iface;
   return iface->Create(instance);
 }
 
-static PP_Bool Pnacl_M31_PPB_PlatformVerification_Private_IsPlatformVerification(PP_Resource resource) {
-  const struct PPB_PlatformVerification_Private_0_1 *iface = Pnacl_WrapperInfo_PPB_PlatformVerification_Private_0_1.real_iface;
+static PP_Bool Pnacl_M32_PPB_PlatformVerification_Private_IsPlatformVerification(PP_Resource resource) {
+  const struct PPB_PlatformVerification_Private_0_2 *iface = Pnacl_WrapperInfo_PPB_PlatformVerification_Private_0_2.real_iface;
   return iface->IsPlatformVerification(resource);
 }
 
-static int32_t Pnacl_M31_PPB_PlatformVerification_Private_CanChallengePlatform(PP_Resource instance, PP_Bool* can_challenge_platform, struct PP_CompletionCallback* callback) {
-  const struct PPB_PlatformVerification_Private_0_1 *iface = Pnacl_WrapperInfo_PPB_PlatformVerification_Private_0_1.real_iface;
-  return iface->CanChallengePlatform(instance, can_challenge_platform, *callback);
-}
-
-static int32_t Pnacl_M31_PPB_PlatformVerification_Private_ChallengePlatform(PP_Resource instance, struct PP_Var* service_id, struct PP_Var* challenge, struct PP_Var* signed_data, struct PP_Var* signed_data_signature, struct PP_Var* platform_key_certificate, struct PP_CompletionCallback* callback) {
-  const struct PPB_PlatformVerification_Private_0_1 *iface = Pnacl_WrapperInfo_PPB_PlatformVerification_Private_0_1.real_iface;
+static int32_t Pnacl_M32_PPB_PlatformVerification_Private_ChallengePlatform(PP_Resource instance, struct PP_Var* service_id, struct PP_Var* challenge, struct PP_Var* signed_data, struct PP_Var* signed_data_signature, struct PP_Var* platform_key_certificate, struct PP_CompletionCallback* callback) {
+  const struct PPB_PlatformVerification_Private_0_2 *iface = Pnacl_WrapperInfo_PPB_PlatformVerification_Private_0_2.real_iface;
   return iface->ChallengePlatform(instance, *service_id, *challenge, signed_data, signed_data_signature, platform_key_certificate, *callback);
 }
 
-/* End wrapper methods for PPB_PlatformVerification_Private_0_1 */
+/* End wrapper methods for PPB_PlatformVerification_Private_0_2 */
 
 /* Begin wrapper methods for PPB_Talk_Private_1_0 */
 
@@ -3544,6 +3511,55 @@ static int32_t Pnacl_M27_PPB_TCPSocket_Private_SetOption(PP_Resource tcp_socket,
 
 /* End wrapper methods for PPB_TCPSocket_Private_0_5 */
 
+/* Begin wrapper methods for PPB_Testing_Private_1_0 */
+
+static PP_Bool Pnacl_M33_PPB_Testing_Private_ReadImageData(PP_Resource device_context_2d, PP_Resource image, const struct PP_Point* top_left) {
+  const struct PPB_Testing_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_Testing_Private_1_0.real_iface;
+  return iface->ReadImageData(device_context_2d, image, top_left);
+}
+
+static void Pnacl_M33_PPB_Testing_Private_RunMessageLoop(PP_Instance instance) {
+  const struct PPB_Testing_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_Testing_Private_1_0.real_iface;
+  iface->RunMessageLoop(instance);
+}
+
+static void Pnacl_M33_PPB_Testing_Private_QuitMessageLoop(PP_Instance instance) {
+  const struct PPB_Testing_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_Testing_Private_1_0.real_iface;
+  iface->QuitMessageLoop(instance);
+}
+
+static uint32_t Pnacl_M33_PPB_Testing_Private_GetLiveObjectsForInstance(PP_Instance instance) {
+  const struct PPB_Testing_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_Testing_Private_1_0.real_iface;
+  return iface->GetLiveObjectsForInstance(instance);
+}
+
+static PP_Bool Pnacl_M33_PPB_Testing_Private_IsOutOfProcess(void) {
+  const struct PPB_Testing_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_Testing_Private_1_0.real_iface;
+  return iface->IsOutOfProcess();
+}
+
+static void Pnacl_M33_PPB_Testing_Private_SimulateInputEvent(PP_Instance instance, PP_Resource input_event) {
+  const struct PPB_Testing_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_Testing_Private_1_0.real_iface;
+  iface->SimulateInputEvent(instance, input_event);
+}
+
+static void Pnacl_M33_PPB_Testing_Private_GetDocumentURL(struct PP_Var* _struct_result, PP_Instance instance, struct PP_URLComponents_Dev* components) {
+  const struct PPB_Testing_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_Testing_Private_1_0.real_iface;
+  *_struct_result = iface->GetDocumentURL(instance, components);
+}
+
+static uint32_t Pnacl_M33_PPB_Testing_Private_GetLiveVars(struct PP_Var live_vars[], uint32_t array_size) {
+  const struct PPB_Testing_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_Testing_Private_1_0.real_iface;
+  return iface->GetLiveVars(live_vars, array_size);
+}
+
+static void Pnacl_M33_PPB_Testing_Private_SetMinimumArrayBufferSizeForShmem(PP_Instance instance, uint32_t threshold) {
+  const struct PPB_Testing_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_Testing_Private_1_0.real_iface;
+  iface->SetMinimumArrayBufferSizeForShmem(instance, threshold);
+}
+
+/* End wrapper methods for PPB_Testing_Private_1_0 */
+
 /* Begin wrapper methods for PPB_UDPSocket_Private_0_2 */
 
 static PP_Resource Pnacl_M17_PPB_UDPSocket_Private_Create(PP_Instance instance_id) {
@@ -3777,79 +3793,79 @@ static void Pnacl_M19_PPB_X509Certificate_Private_GetField(struct PP_Var* _struc
 
 /* End wrapper methods for PPB_X509Certificate_Private_0_1 */
 
-/* Begin wrapper methods for PPP_ContentDecryptor_Private_0_7 */
+/* Begin wrapper methods for PPP_ContentDecryptor_Private_0_9 */
 
-static void Pnacl_M31_PPP_ContentDecryptor_Private_Initialize(PP_Instance instance, struct PP_Var key_system, PP_Bool can_challenge_platform) {
-  const struct PPP_ContentDecryptor_Private_0_7 *iface = Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_7.real_iface;
-  void (*temp_fp)(PP_Instance instance, struct PP_Var* key_system, PP_Bool can_challenge_platform) =
-    ((void (*)(PP_Instance instance, struct PP_Var* key_system, PP_Bool can_challenge_platform))iface->Initialize);
-  temp_fp(instance, &key_system, can_challenge_platform);
+static void Pnacl_M33_PPP_ContentDecryptor_Private_Initialize(PP_Instance instance, struct PP_Var key_system) {
+  const struct PPP_ContentDecryptor_Private_0_9 *iface = Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_9.real_iface;
+  void (*temp_fp)(PP_Instance instance, struct PP_Var* key_system) =
+    ((void (*)(PP_Instance instance, struct PP_Var* key_system))iface->Initialize);
+  temp_fp(instance, &key_system);
 }
 
-static void Pnacl_M31_PPP_ContentDecryptor_Private_GenerateKeyRequest(PP_Instance instance, struct PP_Var type, struct PP_Var init_data) {
-  const struct PPP_ContentDecryptor_Private_0_7 *iface = Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_7.real_iface;
-  void (*temp_fp)(PP_Instance instance, struct PP_Var* type, struct PP_Var* init_data) =
-    ((void (*)(PP_Instance instance, struct PP_Var* type, struct PP_Var* init_data))iface->GenerateKeyRequest);
-  temp_fp(instance, &type, &init_data);
+static void Pnacl_M33_PPP_ContentDecryptor_Private_CreateSession(PP_Instance instance, uint32_t session_id, struct PP_Var type, struct PP_Var init_data) {
+  const struct PPP_ContentDecryptor_Private_0_9 *iface = Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_9.real_iface;
+  void (*temp_fp)(PP_Instance instance, uint32_t session_id, struct PP_Var* type, struct PP_Var* init_data) =
+    ((void (*)(PP_Instance instance, uint32_t session_id, struct PP_Var* type, struct PP_Var* init_data))iface->CreateSession);
+  temp_fp(instance, session_id, &type, &init_data);
 }
 
-static void Pnacl_M31_PPP_ContentDecryptor_Private_AddKey(PP_Instance instance, struct PP_Var session_id, struct PP_Var key, struct PP_Var init_data) {
-  const struct PPP_ContentDecryptor_Private_0_7 *iface = Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_7.real_iface;
-  void (*temp_fp)(PP_Instance instance, struct PP_Var* session_id, struct PP_Var* key, struct PP_Var* init_data) =
-    ((void (*)(PP_Instance instance, struct PP_Var* session_id, struct PP_Var* key, struct PP_Var* init_data))iface->AddKey);
-  temp_fp(instance, &session_id, &key, &init_data);
+static void Pnacl_M33_PPP_ContentDecryptor_Private_UpdateSession(PP_Instance instance, uint32_t session_id, struct PP_Var response) {
+  const struct PPP_ContentDecryptor_Private_0_9 *iface = Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_9.real_iface;
+  void (*temp_fp)(PP_Instance instance, uint32_t session_id, struct PP_Var* response) =
+    ((void (*)(PP_Instance instance, uint32_t session_id, struct PP_Var* response))iface->UpdateSession);
+  temp_fp(instance, session_id, &response);
 }
 
-static void Pnacl_M31_PPP_ContentDecryptor_Private_CancelKeyRequest(PP_Instance instance, struct PP_Var session_id) {
-  const struct PPP_ContentDecryptor_Private_0_7 *iface = Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_7.real_iface;
-  void (*temp_fp)(PP_Instance instance, struct PP_Var* session_id) =
-    ((void (*)(PP_Instance instance, struct PP_Var* session_id))iface->CancelKeyRequest);
-  temp_fp(instance, &session_id);
+static void Pnacl_M33_PPP_ContentDecryptor_Private_ReleaseSession(PP_Instance instance, uint32_t session_id) {
+  const struct PPP_ContentDecryptor_Private_0_9 *iface = Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_9.real_iface;
+  void (*temp_fp)(PP_Instance instance, uint32_t session_id) =
+    ((void (*)(PP_Instance instance, uint32_t session_id))iface->ReleaseSession);
+  temp_fp(instance, session_id);
 }
 
-static void Pnacl_M31_PPP_ContentDecryptor_Private_Decrypt(PP_Instance instance, PP_Resource encrypted_block, const struct PP_EncryptedBlockInfo* encrypted_block_info) {
-  const struct PPP_ContentDecryptor_Private_0_7 *iface = Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_7.real_iface;
+static void Pnacl_M33_PPP_ContentDecryptor_Private_Decrypt(PP_Instance instance, PP_Resource encrypted_block, const struct PP_EncryptedBlockInfo* encrypted_block_info) {
+  const struct PPP_ContentDecryptor_Private_0_9 *iface = Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_9.real_iface;
   void (*temp_fp)(PP_Instance instance, PP_Resource encrypted_block, const struct PP_EncryptedBlockInfo* encrypted_block_info) =
     ((void (*)(PP_Instance instance, PP_Resource encrypted_block, const struct PP_EncryptedBlockInfo* encrypted_block_info))iface->Decrypt);
   temp_fp(instance, encrypted_block, encrypted_block_info);
 }
 
-static void Pnacl_M31_PPP_ContentDecryptor_Private_InitializeAudioDecoder(PP_Instance instance, const struct PP_AudioDecoderConfig* decoder_config, PP_Resource codec_extra_data) {
-  const struct PPP_ContentDecryptor_Private_0_7 *iface = Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_7.real_iface;
+static void Pnacl_M33_PPP_ContentDecryptor_Private_InitializeAudioDecoder(PP_Instance instance, const struct PP_AudioDecoderConfig* decoder_config, PP_Resource codec_extra_data) {
+  const struct PPP_ContentDecryptor_Private_0_9 *iface = Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_9.real_iface;
   void (*temp_fp)(PP_Instance instance, const struct PP_AudioDecoderConfig* decoder_config, PP_Resource codec_extra_data) =
     ((void (*)(PP_Instance instance, const struct PP_AudioDecoderConfig* decoder_config, PP_Resource codec_extra_data))iface->InitializeAudioDecoder);
   temp_fp(instance, decoder_config, codec_extra_data);
 }
 
-static void Pnacl_M31_PPP_ContentDecryptor_Private_InitializeVideoDecoder(PP_Instance instance, const struct PP_VideoDecoderConfig* decoder_config, PP_Resource codec_extra_data) {
-  const struct PPP_ContentDecryptor_Private_0_7 *iface = Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_7.real_iface;
+static void Pnacl_M33_PPP_ContentDecryptor_Private_InitializeVideoDecoder(PP_Instance instance, const struct PP_VideoDecoderConfig* decoder_config, PP_Resource codec_extra_data) {
+  const struct PPP_ContentDecryptor_Private_0_9 *iface = Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_9.real_iface;
   void (*temp_fp)(PP_Instance instance, const struct PP_VideoDecoderConfig* decoder_config, PP_Resource codec_extra_data) =
     ((void (*)(PP_Instance instance, const struct PP_VideoDecoderConfig* decoder_config, PP_Resource codec_extra_data))iface->InitializeVideoDecoder);
   temp_fp(instance, decoder_config, codec_extra_data);
 }
 
-static void Pnacl_M31_PPP_ContentDecryptor_Private_DeinitializeDecoder(PP_Instance instance, PP_DecryptorStreamType decoder_type, uint32_t request_id) {
-  const struct PPP_ContentDecryptor_Private_0_7 *iface = Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_7.real_iface;
+static void Pnacl_M33_PPP_ContentDecryptor_Private_DeinitializeDecoder(PP_Instance instance, PP_DecryptorStreamType decoder_type, uint32_t request_id) {
+  const struct PPP_ContentDecryptor_Private_0_9 *iface = Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_9.real_iface;
   void (*temp_fp)(PP_Instance instance, PP_DecryptorStreamType decoder_type, uint32_t request_id) =
     ((void (*)(PP_Instance instance, PP_DecryptorStreamType decoder_type, uint32_t request_id))iface->DeinitializeDecoder);
   temp_fp(instance, decoder_type, request_id);
 }
 
-static void Pnacl_M31_PPP_ContentDecryptor_Private_ResetDecoder(PP_Instance instance, PP_DecryptorStreamType decoder_type, uint32_t request_id) {
-  const struct PPP_ContentDecryptor_Private_0_7 *iface = Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_7.real_iface;
+static void Pnacl_M33_PPP_ContentDecryptor_Private_ResetDecoder(PP_Instance instance, PP_DecryptorStreamType decoder_type, uint32_t request_id) {
+  const struct PPP_ContentDecryptor_Private_0_9 *iface = Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_9.real_iface;
   void (*temp_fp)(PP_Instance instance, PP_DecryptorStreamType decoder_type, uint32_t request_id) =
     ((void (*)(PP_Instance instance, PP_DecryptorStreamType decoder_type, uint32_t request_id))iface->ResetDecoder);
   temp_fp(instance, decoder_type, request_id);
 }
 
-static void Pnacl_M31_PPP_ContentDecryptor_Private_DecryptAndDecode(PP_Instance instance, PP_DecryptorStreamType decoder_type, PP_Resource encrypted_buffer, const struct PP_EncryptedBlockInfo* encrypted_block_info) {
-  const struct PPP_ContentDecryptor_Private_0_7 *iface = Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_7.real_iface;
+static void Pnacl_M33_PPP_ContentDecryptor_Private_DecryptAndDecode(PP_Instance instance, PP_DecryptorStreamType decoder_type, PP_Resource encrypted_buffer, const struct PP_EncryptedBlockInfo* encrypted_block_info) {
+  const struct PPP_ContentDecryptor_Private_0_9 *iface = Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_9.real_iface;
   void (*temp_fp)(PP_Instance instance, PP_DecryptorStreamType decoder_type, PP_Resource encrypted_buffer, const struct PP_EncryptedBlockInfo* encrypted_block_info) =
     ((void (*)(PP_Instance instance, PP_DecryptorStreamType decoder_type, PP_Resource encrypted_buffer, const struct PP_EncryptedBlockInfo* encrypted_block_info))iface->DecryptAndDecode);
   temp_fp(instance, decoder_type, encrypted_buffer, encrypted_block_info);
 }
 
-/* End wrapper methods for PPP_ContentDecryptor_Private_0_7 */
+/* End wrapper methods for PPP_ContentDecryptor_Private_0_9 */
 
 /* Not generating wrapper methods for PPP_Flash_BrowserOperations_1_0 */
 
@@ -3869,49 +3885,6 @@ static struct PP_Var Pnacl_M18_PPP_Instance_Private_GetInstanceObject(PP_Instanc
 }
 
 /* End wrapper methods for PPP_Instance_Private_0_1 */
-
-/* Begin wrapper methods for PPB_Ext_Alarms_Dev_0_1 */
-
-static void Pnacl_M27_PPB_Ext_Alarms_Dev_Create(PP_Instance instance, struct PP_Var* name, PP_Ext_Alarms_AlarmCreateInfo_Dev alarm_info) {
-  const struct PPB_Ext_Alarms_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Ext_Alarms_Dev_0_1.real_iface;
-  iface->Create(instance, *name, alarm_info);
-}
-
-static int32_t Pnacl_M27_PPB_Ext_Alarms_Dev_Get(PP_Instance instance, struct PP_Var* name, PP_Ext_Alarms_Alarm_Dev* alarm, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Alarms_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Ext_Alarms_Dev_0_1.real_iface;
-  return iface->Get(instance, *name, alarm, *callback);
-}
-
-static int32_t Pnacl_M27_PPB_Ext_Alarms_Dev_GetAll(PP_Instance instance, PP_Ext_Alarms_Alarm_Dev_Array* alarms, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Alarms_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Ext_Alarms_Dev_0_1.real_iface;
-  return iface->GetAll(instance, alarms, *callback);
-}
-
-static void Pnacl_M27_PPB_Ext_Alarms_Dev_Clear(PP_Instance instance, struct PP_Var* name) {
-  const struct PPB_Ext_Alarms_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Ext_Alarms_Dev_0_1.real_iface;
-  iface->Clear(instance, *name);
-}
-
-static void Pnacl_M27_PPB_Ext_Alarms_Dev_ClearAll(PP_Instance instance) {
-  const struct PPB_Ext_Alarms_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Ext_Alarms_Dev_0_1.real_iface;
-  iface->ClearAll(instance);
-}
-
-/* End wrapper methods for PPB_Ext_Alarms_Dev_0_1 */
-
-/* Begin wrapper methods for PPB_Ext_Events_Dev_0_1 */
-
-static uint32_t Pnacl_M27_PPB_Ext_Events_Dev_AddListener(PP_Instance instance, struct PP_Ext_EventListener* listener) {
-  const struct PPB_Ext_Events_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Ext_Events_Dev_0_1.real_iface;
-  return iface->AddListener(instance, *listener);
-}
-
-static void Pnacl_M27_PPB_Ext_Events_Dev_RemoveListener(PP_Instance instance, uint32_t listener_id) {
-  const struct PPB_Ext_Events_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Ext_Events_Dev_0_1.real_iface;
-  iface->RemoveListener(instance, listener_id);
-}
-
-/* End wrapper methods for PPB_Ext_Events_Dev_0_1 */
 
 /* Begin wrapper methods for PPB_Ext_Socket_Dev_0_1 */
 
@@ -4492,9 +4465,16 @@ struct PPP_Messaging_1_0 Pnacl_Wrappers_PPP_Messaging_1_0 = {
 
 /* Not generating wrapper interface for PPB_FileChooserTrusted_0_6 */
 
-/* Not generating wrapper interface for PPB_FileIOTrusted_0_4 */
-
 /* Not generating wrapper interface for PPB_URLLoaderTrusted_0_3 */
+
+struct PPB_Alarms_Dev_0_1 Pnacl_Wrappers_PPB_Alarms_Dev_0_1 = {
+    .Create = (void (*)(PP_Instance instance, struct PP_Var name, const struct PP_Alarms_AlarmCreateInfo_Dev* alarm_info))&Pnacl_M33_PPB_Alarms_Dev_Create,
+    .Get = (int32_t (*)(PP_Instance instance, struct PP_Var name, struct PP_Alarms_Alarm_Dev* alarm, struct PP_CompletionCallback callback))&Pnacl_M33_PPB_Alarms_Dev_Get,
+    .GetAll = (int32_t (*)(PP_Instance instance, struct PP_Alarms_Alarm_Array_Dev* alarms, struct PP_ArrayOutput array_allocator, struct PP_CompletionCallback callback))&Pnacl_M33_PPB_Alarms_Dev_GetAll,
+    .Clear = (void (*)(PP_Instance instance, struct PP_Var name))&Pnacl_M33_PPB_Alarms_Dev_Clear,
+    .ClearAll = (void (*)(PP_Instance instance))&Pnacl_M33_PPB_Alarms_Dev_ClearAll,
+    .AddOnAlarmListener = (uint32_t (*)(PP_Instance instance, PP_Alarms_OnAlarm_Dev callback, void* user_data))&Pnacl_M33_PPB_Alarms_Dev_AddOnAlarmListener
+};
 
 struct PPB_AudioInput_Dev_0_2 Pnacl_Wrappers_PPB_AudioInput_Dev_0_2 = {
     .Create = (PP_Resource (*)(PP_Instance instance))&Pnacl_M19_PPB_AudioInput_Dev_Create,
@@ -4556,6 +4536,12 @@ struct PPB_FileChooser_Dev_0_6 Pnacl_Wrappers_PPB_FileChooser_Dev_0_6 = {
     .Show = (int32_t (*)(PP_Resource chooser, struct PP_ArrayOutput output, struct PP_CompletionCallback callback))&Pnacl_M19_PPB_FileChooser_Dev_Show
 };
 
+struct PPB_FileIO_Dev_0_1 Pnacl_Wrappers_PPB_FileIO_Dev_0_1 = {
+    .Map = (int32_t (*)(PP_Resource file_io, int64_t length, uint32_t map_protection, uint32_t map_flags, int64_t offset, void** address, struct PP_CompletionCallback callback))&Pnacl_M31_PPB_FileIO_Dev_Map,
+    .Unmap = (void (*)(PP_Resource file_io, void* address, int64_t length))&Pnacl_M31_PPB_FileIO_Dev_Unmap,
+    .GetMapPageSize = (int64_t (*)(PP_Resource file_io))&Pnacl_M31_PPB_FileIO_Dev_GetMapPageSize
+};
+
 /* Not generating wrapper interface for PPB_Find_Dev_0_3 */
 
 struct PPB_Font_Dev_0_6 Pnacl_Wrappers_PPB_Font_Dev_0_6 = {
@@ -4570,6 +4556,8 @@ struct PPB_Font_Dev_0_6 Pnacl_Wrappers_PPB_Font_Dev_0_6 = {
 };
 
 /* Not generating wrapper interface for PPB_Graphics2D_Dev_0_1 */
+
+/* Not generating wrapper interface for PPB_Graphics2D_Dev_0_2 */
 
 struct PPB_IMEInputEvent_Dev_0_1 Pnacl_Wrappers_PPB_IMEInputEvent_Dev_0_1 = {
     .IsIMEInputEvent = (PP_Bool (*)(PP_Resource resource))&Pnacl_M16_PPB_IMEInputEvent_Dev_IsIMEInputEvent,
@@ -4606,43 +4594,6 @@ struct PPB_Printing_Dev_0_7 Pnacl_Wrappers_PPB_Printing_Dev_0_7 = {
 /* Not generating wrapper interface for PPB_ResourceArray_Dev_0_1 */
 
 /* Not generating wrapper interface for PPB_Scrollbar_Dev_0_5 */
-
-/* Not generating wrapper interface for PPB_Testing_Dev_0_7 */
-
-/* Not generating wrapper interface for PPB_Testing_Dev_0_8 */
-
-struct PPB_Testing_Dev_0_9 Pnacl_Wrappers_PPB_Testing_Dev_0_9 = {
-    .ReadImageData = (PP_Bool (*)(PP_Resource device_context_2d, PP_Resource image, const struct PP_Point* top_left))&Pnacl_M17_PPB_Testing_Dev_ReadImageData,
-    .RunMessageLoop = (void (*)(PP_Instance instance))&Pnacl_M17_PPB_Testing_Dev_RunMessageLoop,
-    .QuitMessageLoop = (void (*)(PP_Instance instance))&Pnacl_M17_PPB_Testing_Dev_QuitMessageLoop,
-    .GetLiveObjectsForInstance = (uint32_t (*)(PP_Instance instance))&Pnacl_M17_PPB_Testing_Dev_GetLiveObjectsForInstance,
-    .IsOutOfProcess = (PP_Bool (*)(void))&Pnacl_M17_PPB_Testing_Dev_IsOutOfProcess,
-    .SimulateInputEvent = (void (*)(PP_Instance instance, PP_Resource input_event))&Pnacl_M17_PPB_Testing_Dev_SimulateInputEvent,
-    .GetDocumentURL = (struct PP_Var (*)(PP_Instance instance, struct PP_URLComponents_Dev* components))&Pnacl_M17_PPB_Testing_Dev_GetDocumentURL
-};
-
-struct PPB_Testing_Dev_0_91 Pnacl_Wrappers_PPB_Testing_Dev_0_91 = {
-    .ReadImageData = (PP_Bool (*)(PP_Resource device_context_2d, PP_Resource image, const struct PP_Point* top_left))&Pnacl_M18_PPB_Testing_Dev_ReadImageData,
-    .RunMessageLoop = (void (*)(PP_Instance instance))&Pnacl_M18_PPB_Testing_Dev_RunMessageLoop,
-    .QuitMessageLoop = (void (*)(PP_Instance instance))&Pnacl_M18_PPB_Testing_Dev_QuitMessageLoop,
-    .GetLiveObjectsForInstance = (uint32_t (*)(PP_Instance instance))&Pnacl_M18_PPB_Testing_Dev_GetLiveObjectsForInstance,
-    .IsOutOfProcess = (PP_Bool (*)(void))&Pnacl_M18_PPB_Testing_Dev_IsOutOfProcess,
-    .SimulateInputEvent = (void (*)(PP_Instance instance, PP_Resource input_event))&Pnacl_M18_PPB_Testing_Dev_SimulateInputEvent,
-    .GetDocumentURL = (struct PP_Var (*)(PP_Instance instance, struct PP_URLComponents_Dev* components))&Pnacl_M18_PPB_Testing_Dev_GetDocumentURL,
-    .GetLiveVars = (uint32_t (*)(struct PP_Var live_vars[], uint32_t array_size))&Pnacl_M18_PPB_Testing_Dev_GetLiveVars
-};
-
-struct PPB_Testing_Dev_0_92 Pnacl_Wrappers_PPB_Testing_Dev_0_92 = {
-    .ReadImageData = (PP_Bool (*)(PP_Resource device_context_2d, PP_Resource image, const struct PP_Point* top_left))&Pnacl_M28_PPB_Testing_Dev_ReadImageData,
-    .RunMessageLoop = (void (*)(PP_Instance instance))&Pnacl_M28_PPB_Testing_Dev_RunMessageLoop,
-    .QuitMessageLoop = (void (*)(PP_Instance instance))&Pnacl_M28_PPB_Testing_Dev_QuitMessageLoop,
-    .GetLiveObjectsForInstance = (uint32_t (*)(PP_Instance instance))&Pnacl_M28_PPB_Testing_Dev_GetLiveObjectsForInstance,
-    .IsOutOfProcess = (PP_Bool (*)(void))&Pnacl_M28_PPB_Testing_Dev_IsOutOfProcess,
-    .SimulateInputEvent = (void (*)(PP_Instance instance, PP_Resource input_event))&Pnacl_M28_PPB_Testing_Dev_SimulateInputEvent,
-    .GetDocumentURL = (struct PP_Var (*)(PP_Instance instance, struct PP_URLComponents_Dev* components))&Pnacl_M28_PPB_Testing_Dev_GetDocumentURL,
-    .GetLiveVars = (uint32_t (*)(struct PP_Var live_vars[], uint32_t array_size))&Pnacl_M28_PPB_Testing_Dev_GetLiveVars,
-    .SetMinimumArrayBufferSizeForShmem = (void (*)(PP_Instance instance, uint32_t threshold))&Pnacl_M28_PPB_Testing_Dev_SetMinimumArrayBufferSizeForShmem
-};
 
 /* Not generating wrapper interface for PPB_TextInput_Dev_0_1 */
 
@@ -4683,6 +4634,11 @@ struct PPB_URLUtil_Dev_0_7 Pnacl_Wrappers_PPB_URLUtil_Dev_0_7 = {
     .GetDocumentURL = (struct PP_Var (*)(PP_Instance instance, struct PP_URLComponents_Dev* components))&Pnacl_M31_PPB_URLUtil_Dev_GetDocumentURL,
     .GetPluginInstanceURL = (struct PP_Var (*)(PP_Instance instance, struct PP_URLComponents_Dev* components))&Pnacl_M31_PPB_URLUtil_Dev_GetPluginInstanceURL,
     .GetPluginReferrerURL = (struct PP_Var (*)(PP_Instance instance, struct PP_URLComponents_Dev* components))&Pnacl_M31_PPB_URLUtil_Dev_GetPluginReferrerURL
+};
+
+struct PPB_VarResource_Dev_0_1 Pnacl_Wrappers_PPB_VarResource_Dev_0_1 = {
+    .VarToResource = (PP_Resource (*)(struct PP_Var var))&Pnacl_M32_PPB_VarResource_Dev_VarToResource,
+    .VarFromResource = (struct PP_Var (*)(PP_Resource resource))&Pnacl_M32_PPB_VarResource_Dev_VarFromResource
 };
 
 struct PPB_VideoCapture_Dev_0_2 Pnacl_Wrappers_PPB_VideoCapture_Dev_0_2 = {
@@ -4743,26 +4699,24 @@ struct PPP_Selection_Dev_0_3 Pnacl_Wrappers_PPP_Selection_Dev_0_3 = {
 
 /* Not generating wrapper interface for PPP_VideoCapture_Dev_0_1 */
 
-/* Not generating wrapper interface for PPP_VideoDecoder_Dev_0_9 */
-
-/* Not generating wrapper interface for PPP_VideoDecoder_Dev_0_10 */
-
 /* Not generating wrapper interface for PPP_VideoDecoder_Dev_0_11 */
 
 /* Not generating wrapper interface for PPP_Widget_Dev_0_2 */
 
 /* Not generating wrapper interface for PPP_Zoom_Dev_0_3 */
 
-struct PPB_ContentDecryptor_Private_0_7 Pnacl_Wrappers_PPB_ContentDecryptor_Private_0_7 = {
-    .KeyAdded = (void (*)(PP_Instance instance, struct PP_Var key_system, struct PP_Var session_id))&Pnacl_M31_PPB_ContentDecryptor_Private_KeyAdded,
-    .KeyMessage = (void (*)(PP_Instance instance, struct PP_Var key_system, struct PP_Var session_id, struct PP_Var message, struct PP_Var default_url))&Pnacl_M31_PPB_ContentDecryptor_Private_KeyMessage,
-    .KeyError = (void (*)(PP_Instance instance, struct PP_Var key_system, struct PP_Var session_id, int32_t media_error, int32_t system_code))&Pnacl_M31_PPB_ContentDecryptor_Private_KeyError,
-    .DeliverBlock = (void (*)(PP_Instance instance, PP_Resource decrypted_block, const struct PP_DecryptedBlockInfo* decrypted_block_info))&Pnacl_M31_PPB_ContentDecryptor_Private_DeliverBlock,
-    .DecoderInitializeDone = (void (*)(PP_Instance instance, PP_DecryptorStreamType decoder_type, uint32_t request_id, PP_Bool success))&Pnacl_M31_PPB_ContentDecryptor_Private_DecoderInitializeDone,
-    .DecoderDeinitializeDone = (void (*)(PP_Instance instance, PP_DecryptorStreamType decoder_type, uint32_t request_id))&Pnacl_M31_PPB_ContentDecryptor_Private_DecoderDeinitializeDone,
-    .DecoderResetDone = (void (*)(PP_Instance instance, PP_DecryptorStreamType decoder_type, uint32_t request_id))&Pnacl_M31_PPB_ContentDecryptor_Private_DecoderResetDone,
-    .DeliverFrame = (void (*)(PP_Instance instance, PP_Resource decrypted_frame, const struct PP_DecryptedFrameInfo* decrypted_frame_info))&Pnacl_M31_PPB_ContentDecryptor_Private_DeliverFrame,
-    .DeliverSamples = (void (*)(PP_Instance instance, PP_Resource audio_frames, const struct PP_DecryptedBlockInfo* decrypted_block_info))&Pnacl_M31_PPB_ContentDecryptor_Private_DeliverSamples
+struct PPB_ContentDecryptor_Private_0_9 Pnacl_Wrappers_PPB_ContentDecryptor_Private_0_9 = {
+    .SessionCreated = (void (*)(PP_Instance instance, uint32_t session_id, struct PP_Var web_session_id))&Pnacl_M33_PPB_ContentDecryptor_Private_SessionCreated,
+    .SessionMessage = (void (*)(PP_Instance instance, uint32_t session_id, struct PP_Var message, struct PP_Var destination_url))&Pnacl_M33_PPB_ContentDecryptor_Private_SessionMessage,
+    .SessionReady = (void (*)(PP_Instance instance, uint32_t session_id))&Pnacl_M33_PPB_ContentDecryptor_Private_SessionReady,
+    .SessionClosed = (void (*)(PP_Instance instance, uint32_t session_id))&Pnacl_M33_PPB_ContentDecryptor_Private_SessionClosed,
+    .SessionError = (void (*)(PP_Instance instance, uint32_t session_id, int32_t media_error, int32_t system_code))&Pnacl_M33_PPB_ContentDecryptor_Private_SessionError,
+    .DeliverBlock = (void (*)(PP_Instance instance, PP_Resource decrypted_block, const struct PP_DecryptedBlockInfo* decrypted_block_info))&Pnacl_M33_PPB_ContentDecryptor_Private_DeliverBlock,
+    .DecoderInitializeDone = (void (*)(PP_Instance instance, PP_DecryptorStreamType decoder_type, uint32_t request_id, PP_Bool success))&Pnacl_M33_PPB_ContentDecryptor_Private_DecoderInitializeDone,
+    .DecoderDeinitializeDone = (void (*)(PP_Instance instance, PP_DecryptorStreamType decoder_type, uint32_t request_id))&Pnacl_M33_PPB_ContentDecryptor_Private_DecoderDeinitializeDone,
+    .DecoderResetDone = (void (*)(PP_Instance instance, PP_DecryptorStreamType decoder_type, uint32_t request_id))&Pnacl_M33_PPB_ContentDecryptor_Private_DecoderResetDone,
+    .DeliverFrame = (void (*)(PP_Instance instance, PP_Resource decrypted_frame, const struct PP_DecryptedFrameInfo* decrypted_frame_info))&Pnacl_M33_PPB_ContentDecryptor_Private_DeliverFrame,
+    .DeliverSamples = (void (*)(PP_Instance instance, PP_Resource audio_frames, const struct PP_DecryptedSampleInfo* decrypted_sample_info))&Pnacl_M33_PPB_ContentDecryptor_Private_DeliverSamples
 };
 
 struct PPB_Ext_CrxFileSystem_Private_0_1 Pnacl_Wrappers_PPB_Ext_CrxFileSystem_Private_0_1 = {
@@ -4874,6 +4828,14 @@ struct PPB_Flash_DRM_1_0 Pnacl_Wrappers_PPB_Flash_DRM_1_0 = {
     .GetVoucherFile = (int32_t (*)(PP_Resource drm, PP_Resource* file_ref, struct PP_CompletionCallback callback))&Pnacl_M29_PPB_Flash_DRM_GetVoucherFile
 };
 
+struct PPB_Flash_DRM_1_1 Pnacl_Wrappers_PPB_Flash_DRM_1_1 = {
+    .Create = (PP_Resource (*)(PP_Instance instance))&Pnacl_M33_PPB_Flash_DRM_Create,
+    .GetDeviceID = (int32_t (*)(PP_Resource drm, struct PP_Var* id, struct PP_CompletionCallback callback))&Pnacl_M33_PPB_Flash_DRM_GetDeviceID,
+    .GetHmonitor = (PP_Bool (*)(PP_Resource drm, int64_t* hmonitor))&Pnacl_M33_PPB_Flash_DRM_GetHmonitor,
+    .GetVoucherFile = (int32_t (*)(PP_Resource drm, PP_Resource* file_ref, struct PP_CompletionCallback callback))&Pnacl_M33_PPB_Flash_DRM_GetVoucherFile,
+    .MonitorIsExternal = (int32_t (*)(PP_Resource drm, PP_Bool* is_external, struct PP_CompletionCallback callback))&Pnacl_M33_PPB_Flash_DRM_MonitorIsExternal
+};
+
 /* Not generating wrapper interface for PPB_Flash_FontFile_0_1 */
 
 /* Not generating wrapper interface for PPB_FlashFullscreen_0_1 */
@@ -4905,21 +4867,24 @@ struct PPB_Instance_Private_0_1 Pnacl_Wrappers_PPB_Instance_Private_0_1 = {
     .ExecuteScript = (struct PP_Var (*)(PP_Instance instance, struct PP_Var script, struct PP_Var* exception))&Pnacl_M13_PPB_Instance_Private_ExecuteScript
 };
 
+struct PPB_IsolatedFileSystem_Private_0_2 Pnacl_Wrappers_PPB_IsolatedFileSystem_Private_0_2 = {
+    .Open = (int32_t (*)(PP_Instance instance, PP_IsolatedFileSystemType_Private type, PP_Resource* file_system, struct PP_CompletionCallback callback))&Pnacl_M33_PPB_IsolatedFileSystem_Private_Open
+};
+
 struct PPB_NaCl_Private_1_0 Pnacl_Wrappers_PPB_NaCl_Private_1_0 = {
     .LaunchSelLdr = (PP_ExternalPluginResult (*)(PP_Instance instance, const char* alleged_url, PP_Bool uses_irt, PP_Bool uses_ppapi, PP_Bool enable_ppapi_dev, PP_Bool enable_dyncode_syscalls, PP_Bool enable_exception_handling, PP_Bool enable_crash_throttling, void* imc_handle, struct PP_Var* error_message))&Pnacl_M25_PPB_NaCl_Private_LaunchSelLdr,
     .StartPpapiProxy = (PP_ExternalPluginResult (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_StartPpapiProxy,
     .UrandomFD = (int32_t (*)(void))&Pnacl_M25_PPB_NaCl_Private_UrandomFD,
     .Are3DInterfacesDisabled = (PP_Bool (*)(void))&Pnacl_M25_PPB_NaCl_Private_Are3DInterfacesDisabled,
     .BrokerDuplicateHandle = (int32_t (*)(PP_FileHandle source_handle, uint32_t process_id, PP_FileHandle* target_handle, uint32_t desired_access, uint32_t options))&Pnacl_M25_PPB_NaCl_Private_BrokerDuplicateHandle,
-    .EnsurePnaclInstalled = (int32_t (*)(PP_Instance instance, struct PP_CompletionCallback callback))&Pnacl_M25_PPB_NaCl_Private_EnsurePnaclInstalled,
     .GetReadonlyPnaclFd = (PP_FileHandle (*)(const char* filename))&Pnacl_M25_PPB_NaCl_Private_GetReadonlyPnaclFd,
     .CreateTemporaryFile = (PP_FileHandle (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_CreateTemporaryFile,
     .GetNexeFd = (int32_t (*)(PP_Instance instance, const char* pexe_url, uint32_t abi_version, uint32_t opt_level, const char* last_modified, const char* etag, PP_Bool has_no_store_header, PP_Bool* is_hit, PP_FileHandle* nexe_handle, struct PP_CompletionCallback callback))&Pnacl_M25_PPB_NaCl_Private_GetNexeFd,
     .ReportTranslationFinished = (void (*)(PP_Instance instance, PP_Bool success))&Pnacl_M25_PPB_NaCl_Private_ReportTranslationFinished,
-    .IsOffTheRecord = (PP_Bool (*)(void))&Pnacl_M25_PPB_NaCl_Private_IsOffTheRecord,
-    .IsPnaclEnabled = (PP_Bool (*)(void))&Pnacl_M25_PPB_NaCl_Private_IsPnaclEnabled,
     .ReportNaClError = (PP_ExternalPluginResult (*)(PP_Instance instance, PP_NaClError message_id))&Pnacl_M25_PPB_NaCl_Private_ReportNaClError,
-    .OpenNaClExecutable = (PP_FileHandle (*)(PP_Instance instance, const char* file_url, uint64_t* file_token_lo, uint64_t* file_token_hi))&Pnacl_M25_PPB_NaCl_Private_OpenNaClExecutable
+    .OpenNaClExecutable = (PP_FileHandle (*)(PP_Instance instance, const char* file_url, uint64_t* file_token_lo, uint64_t* file_token_hi))&Pnacl_M25_PPB_NaCl_Private_OpenNaClExecutable,
+    .DispatchEvent = (void (*)(PP_Instance instance, PP_NaClEventType event_type, struct PP_Var resource_url, PP_Bool length_is_computable, uint64_t loaded_bytes, uint64_t total_bytes))&Pnacl_M25_PPB_NaCl_Private_DispatchEvent,
+    .SetReadOnlyProperty = (void (*)(PP_Instance instance, struct PP_Var key, struct PP_Var value))&Pnacl_M25_PPB_NaCl_Private_SetReadOnlyProperty
 };
 
 struct PPB_NetAddress_Private_0_1 Pnacl_Wrappers_PPB_NetAddress_Private_0_1 = {
@@ -4962,11 +4927,10 @@ struct PPB_OutputProtection_Private_0_1 Pnacl_Wrappers_PPB_OutputProtection_Priv
     .EnableProtection = (int32_t (*)(PP_Resource resource, uint32_t desired_protection_mask, struct PP_CompletionCallback callback))&Pnacl_M31_PPB_OutputProtection_Private_EnableProtection
 };
 
-struct PPB_PlatformVerification_Private_0_1 Pnacl_Wrappers_PPB_PlatformVerification_Private_0_1 = {
-    .Create = (PP_Resource (*)(PP_Instance instance))&Pnacl_M31_PPB_PlatformVerification_Private_Create,
-    .IsPlatformVerification = (PP_Bool (*)(PP_Resource resource))&Pnacl_M31_PPB_PlatformVerification_Private_IsPlatformVerification,
-    .CanChallengePlatform = (int32_t (*)(PP_Resource instance, PP_Bool* can_challenge_platform, struct PP_CompletionCallback callback))&Pnacl_M31_PPB_PlatformVerification_Private_CanChallengePlatform,
-    .ChallengePlatform = (int32_t (*)(PP_Resource instance, struct PP_Var service_id, struct PP_Var challenge, struct PP_Var* signed_data, struct PP_Var* signed_data_signature, struct PP_Var* platform_key_certificate, struct PP_CompletionCallback callback))&Pnacl_M31_PPB_PlatformVerification_Private_ChallengePlatform
+struct PPB_PlatformVerification_Private_0_2 Pnacl_Wrappers_PPB_PlatformVerification_Private_0_2 = {
+    .Create = (PP_Resource (*)(PP_Instance instance))&Pnacl_M32_PPB_PlatformVerification_Private_Create,
+    .IsPlatformVerification = (PP_Bool (*)(PP_Resource resource))&Pnacl_M32_PPB_PlatformVerification_Private_IsPlatformVerification,
+    .ChallengePlatform = (int32_t (*)(PP_Resource instance, struct PP_Var service_id, struct PP_Var challenge, struct PP_Var* signed_data, struct PP_Var* signed_data_signature, struct PP_Var* platform_key_certificate, struct PP_CompletionCallback callback))&Pnacl_M32_PPB_PlatformVerification_Private_ChallengePlatform
 };
 
 struct PPB_Talk_Private_1_0 Pnacl_Wrappers_PPB_Talk_Private_1_0 = {
@@ -5042,6 +5006,18 @@ struct PPB_TCPSocket_Private_0_5 Pnacl_Wrappers_PPB_TCPSocket_Private_0_5 = {
     .SetOption = (int32_t (*)(PP_Resource tcp_socket, PP_TCPSocketOption_Private name, struct PP_Var value, struct PP_CompletionCallback callback))&Pnacl_M27_PPB_TCPSocket_Private_SetOption
 };
 
+struct PPB_Testing_Private_1_0 Pnacl_Wrappers_PPB_Testing_Private_1_0 = {
+    .ReadImageData = (PP_Bool (*)(PP_Resource device_context_2d, PP_Resource image, const struct PP_Point* top_left))&Pnacl_M33_PPB_Testing_Private_ReadImageData,
+    .RunMessageLoop = (void (*)(PP_Instance instance))&Pnacl_M33_PPB_Testing_Private_RunMessageLoop,
+    .QuitMessageLoop = (void (*)(PP_Instance instance))&Pnacl_M33_PPB_Testing_Private_QuitMessageLoop,
+    .GetLiveObjectsForInstance = (uint32_t (*)(PP_Instance instance))&Pnacl_M33_PPB_Testing_Private_GetLiveObjectsForInstance,
+    .IsOutOfProcess = (PP_Bool (*)(void))&Pnacl_M33_PPB_Testing_Private_IsOutOfProcess,
+    .SimulateInputEvent = (void (*)(PP_Instance instance, PP_Resource input_event))&Pnacl_M33_PPB_Testing_Private_SimulateInputEvent,
+    .GetDocumentURL = (struct PP_Var (*)(PP_Instance instance, struct PP_URLComponents_Dev* components))&Pnacl_M33_PPB_Testing_Private_GetDocumentURL,
+    .GetLiveVars = (uint32_t (*)(struct PP_Var live_vars[], uint32_t array_size))&Pnacl_M33_PPB_Testing_Private_GetLiveVars,
+    .SetMinimumArrayBufferSizeForShmem = (void (*)(PP_Instance instance, uint32_t threshold))&Pnacl_M33_PPB_Testing_Private_SetMinimumArrayBufferSizeForShmem
+};
+
 struct PPB_UDPSocket_Private_0_2 Pnacl_Wrappers_PPB_UDPSocket_Private_0_2 = {
     .Create = (PP_Resource (*)(PP_Instance instance_id))&Pnacl_M17_PPB_UDPSocket_Private_Create,
     .IsUDPSocket = (PP_Bool (*)(PP_Resource resource_id))&Pnacl_M17_PPB_UDPSocket_Private_IsUDPSocket,
@@ -5104,17 +5080,17 @@ struct PPB_X509Certificate_Private_0_1 Pnacl_Wrappers_PPB_X509Certificate_Privat
     .GetField = (struct PP_Var (*)(PP_Resource resource, PP_X509Certificate_Private_Field field))&Pnacl_M19_PPB_X509Certificate_Private_GetField
 };
 
-struct PPP_ContentDecryptor_Private_0_7 Pnacl_Wrappers_PPP_ContentDecryptor_Private_0_7 = {
-    .Initialize = &Pnacl_M31_PPP_ContentDecryptor_Private_Initialize,
-    .GenerateKeyRequest = &Pnacl_M31_PPP_ContentDecryptor_Private_GenerateKeyRequest,
-    .AddKey = &Pnacl_M31_PPP_ContentDecryptor_Private_AddKey,
-    .CancelKeyRequest = &Pnacl_M31_PPP_ContentDecryptor_Private_CancelKeyRequest,
-    .Decrypt = &Pnacl_M31_PPP_ContentDecryptor_Private_Decrypt,
-    .InitializeAudioDecoder = &Pnacl_M31_PPP_ContentDecryptor_Private_InitializeAudioDecoder,
-    .InitializeVideoDecoder = &Pnacl_M31_PPP_ContentDecryptor_Private_InitializeVideoDecoder,
-    .DeinitializeDecoder = &Pnacl_M31_PPP_ContentDecryptor_Private_DeinitializeDecoder,
-    .ResetDecoder = &Pnacl_M31_PPP_ContentDecryptor_Private_ResetDecoder,
-    .DecryptAndDecode = &Pnacl_M31_PPP_ContentDecryptor_Private_DecryptAndDecode
+struct PPP_ContentDecryptor_Private_0_9 Pnacl_Wrappers_PPP_ContentDecryptor_Private_0_9 = {
+    .Initialize = &Pnacl_M33_PPP_ContentDecryptor_Private_Initialize,
+    .CreateSession = &Pnacl_M33_PPP_ContentDecryptor_Private_CreateSession,
+    .UpdateSession = &Pnacl_M33_PPP_ContentDecryptor_Private_UpdateSession,
+    .ReleaseSession = &Pnacl_M33_PPP_ContentDecryptor_Private_ReleaseSession,
+    .Decrypt = &Pnacl_M33_PPP_ContentDecryptor_Private_Decrypt,
+    .InitializeAudioDecoder = &Pnacl_M33_PPP_ContentDecryptor_Private_InitializeAudioDecoder,
+    .InitializeVideoDecoder = &Pnacl_M33_PPP_ContentDecryptor_Private_InitializeVideoDecoder,
+    .DeinitializeDecoder = &Pnacl_M33_PPP_ContentDecryptor_Private_DeinitializeDecoder,
+    .ResetDecoder = &Pnacl_M33_PPP_ContentDecryptor_Private_ResetDecoder,
+    .DecryptAndDecode = &Pnacl_M33_PPP_ContentDecryptor_Private_DecryptAndDecode
 };
 
 /* Not generating wrapper interface for PPP_Flash_BrowserOperations_1_0 */
@@ -5125,19 +5101,6 @@ struct PPP_ContentDecryptor_Private_0_7 Pnacl_Wrappers_PPP_ContentDecryptor_Priv
 
 struct PPP_Instance_Private_0_1 Pnacl_Wrappers_PPP_Instance_Private_0_1 = {
     .GetInstanceObject = &Pnacl_M18_PPP_Instance_Private_GetInstanceObject
-};
-
-struct PPB_Ext_Alarms_Dev_0_1 Pnacl_Wrappers_PPB_Ext_Alarms_Dev_0_1 = {
-    .Create = (void (*)(PP_Instance instance, struct PP_Var name, PP_Ext_Alarms_AlarmCreateInfo_Dev alarm_info))&Pnacl_M27_PPB_Ext_Alarms_Dev_Create,
-    .Get = (int32_t (*)(PP_Instance instance, struct PP_Var name, PP_Ext_Alarms_Alarm_Dev* alarm, struct PP_CompletionCallback callback))&Pnacl_M27_PPB_Ext_Alarms_Dev_Get,
-    .GetAll = (int32_t (*)(PP_Instance instance, PP_Ext_Alarms_Alarm_Dev_Array* alarms, struct PP_CompletionCallback callback))&Pnacl_M27_PPB_Ext_Alarms_Dev_GetAll,
-    .Clear = (void (*)(PP_Instance instance, struct PP_Var name))&Pnacl_M27_PPB_Ext_Alarms_Dev_Clear,
-    .ClearAll = (void (*)(PP_Instance instance))&Pnacl_M27_PPB_Ext_Alarms_Dev_ClearAll
-};
-
-struct PPB_Ext_Events_Dev_0_1 Pnacl_Wrappers_PPB_Ext_Events_Dev_0_1 = {
-    .AddListener = (uint32_t (*)(PP_Instance instance, struct PP_Ext_EventListener listener))&Pnacl_M27_PPB_Ext_Events_Dev_AddListener,
-    .RemoveListener = (void (*)(PP_Instance instance, uint32_t listener_id))&Pnacl_M27_PPB_Ext_Events_Dev_RemoveListener
 };
 
 struct PPB_Ext_Socket_Dev_0_1 Pnacl_Wrappers_PPB_Ext_Socket_Dev_0_1 = {
@@ -5409,6 +5372,12 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPP_Messaging_1_0 = {
   .real_iface = NULL
 };
 
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Alarms_Dev_0_1 = {
+  .iface_macro = PPB_ALARMS_DEV_INTERFACE_0_1,
+  .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_Alarms_Dev_0_1,
+  .real_iface = NULL
+};
+
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_AudioInput_Dev_0_2 = {
   .iface_macro = PPB_AUDIO_INPUT_DEV_INTERFACE_0_2,
   .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_AudioInput_Dev_0_2,
@@ -5445,6 +5414,12 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_FileChooser_Dev_0_6 = {
   .real_iface = NULL
 };
 
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_FileIO_Dev_0_1 = {
+  .iface_macro = PPB_FILEIO_DEV_INTERFACE_0_1,
+  .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_FileIO_Dev_0_1,
+  .real_iface = NULL
+};
+
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Font_Dev_0_6 = {
   .iface_macro = PPB_FONT_DEV_INTERFACE_0_6,
   .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_Font_Dev_0_6,
@@ -5475,24 +5450,6 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Printing_Dev_0_7 = {
   .real_iface = NULL
 };
 
-static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Testing_Dev_0_9 = {
-  .iface_macro = PPB_TESTING_DEV_INTERFACE_0_9,
-  .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_Testing_Dev_0_9,
-  .real_iface = NULL
-};
-
-static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Testing_Dev_0_91 = {
-  .iface_macro = PPB_TESTING_DEV_INTERFACE_0_91,
-  .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_Testing_Dev_0_91,
-  .real_iface = NULL
-};
-
-static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Testing_Dev_0_92 = {
-  .iface_macro = PPB_TESTING_DEV_INTERFACE_0_92,
-  .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_Testing_Dev_0_92,
-  .real_iface = NULL
-};
-
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_TrueTypeFont_Dev_0_1 = {
   .iface_macro = PPB_TRUETYPEFONT_DEV_INTERFACE_0_1,
   .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_TrueTypeFont_Dev_0_1,
@@ -5508,6 +5465,12 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_URLUtil_Dev_0_6 = {
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_URLUtil_Dev_0_7 = {
   .iface_macro = PPB_URLUTIL_DEV_INTERFACE_0_7,
   .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_URLUtil_Dev_0_7,
+  .real_iface = NULL
+};
+
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_VarResource_Dev_0_1 = {
+  .iface_macro = PPB_VAR_RESOURCE_DEV_INTERFACE_0_1,
+  .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_VarResource_Dev_0_1,
   .real_iface = NULL
 };
 
@@ -5535,9 +5498,9 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPP_Selection_Dev_0_3 = {
   .real_iface = NULL
 };
 
-static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_7 = {
-  .iface_macro = PPB_CONTENTDECRYPTOR_PRIVATE_INTERFACE_0_7,
-  .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_ContentDecryptor_Private_0_7,
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_9 = {
+  .iface_macro = PPB_CONTENTDECRYPTOR_PRIVATE_INTERFACE_0_9,
+  .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_ContentDecryptor_Private_0_9,
   .real_iface = NULL
 };
 
@@ -5607,6 +5570,12 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Flash_DRM_1_0 = {
   .real_iface = NULL
 };
 
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Flash_DRM_1_1 = {
+  .iface_macro = PPB_FLASH_DRM_INTERFACE_1_1,
+  .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_Flash_DRM_1_1,
+  .real_iface = NULL
+};
+
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Flash_Menu_0_2 = {
   .iface_macro = PPB_FLASH_MENU_INTERFACE_0_2,
   .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_Flash_Menu_0_2,
@@ -5622,6 +5591,12 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_HostResolver_Private_0_1 
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Instance_Private_0_1 = {
   .iface_macro = PPB_INSTANCE_PRIVATE_INTERFACE_0_1,
   .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_Instance_Private_0_1,
+  .real_iface = NULL
+};
+
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_IsolatedFileSystem_Private_0_2 = {
+  .iface_macro = PPB_ISOLATEDFILESYSTEM_PRIVATE_INTERFACE_0_2,
+  .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_IsolatedFileSystem_Private_0_2,
   .real_iface = NULL
 };
 
@@ -5655,9 +5630,9 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_OutputProtection_Private_
   .real_iface = NULL
 };
 
-static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_PlatformVerification_Private_0_1 = {
-  .iface_macro = PPB_PLATFORMVERIFICATION_PRIVATE_INTERFACE_0_1,
-  .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_PlatformVerification_Private_0_1,
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_PlatformVerification_Private_0_2 = {
+  .iface_macro = PPB_PLATFORMVERIFICATION_PRIVATE_INTERFACE_0_2,
+  .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_PlatformVerification_Private_0_2,
   .real_iface = NULL
 };
 
@@ -5703,6 +5678,12 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_TCPSocket_Private_0_5 = {
   .real_iface = NULL
 };
 
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Testing_Private_1_0 = {
+  .iface_macro = PPB_TESTING_PRIVATE_INTERFACE_1_0,
+  .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_Testing_Private_1_0,
+  .real_iface = NULL
+};
+
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_UDPSocket_Private_0_2 = {
   .iface_macro = PPB_UDPSOCKET_PRIVATE_INTERFACE_0_2,
   .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_UDPSocket_Private_0_2,
@@ -5745,27 +5726,15 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_X509Certificate_Private_0
   .real_iface = NULL
 };
 
-static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_7 = {
-  .iface_macro = PPP_CONTENTDECRYPTOR_PRIVATE_INTERFACE_0_7,
-  .wrapped_iface = (void *) &Pnacl_Wrappers_PPP_ContentDecryptor_Private_0_7,
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_9 = {
+  .iface_macro = PPP_CONTENTDECRYPTOR_PRIVATE_INTERFACE_0_9,
+  .wrapped_iface = (void *) &Pnacl_Wrappers_PPP_ContentDecryptor_Private_0_9,
   .real_iface = NULL
 };
 
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPP_Instance_Private_0_1 = {
   .iface_macro = PPP_INSTANCE_PRIVATE_INTERFACE_0_1,
   .wrapped_iface = (void *) &Pnacl_Wrappers_PPP_Instance_Private_0_1,
-  .real_iface = NULL
-};
-
-static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Ext_Alarms_Dev_0_1 = {
-  .iface_macro = PPB_EXT_ALARMS_DEV_INTERFACE_0_1,
-  .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_Ext_Alarms_Dev_0_1,
-  .real_iface = NULL
-};
-
-static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Ext_Events_Dev_0_1 = {
-  .iface_macro = PPB_EXT_EVENTS_DEV_INTERFACE_0_1,
-  .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_Ext_Events_Dev_0_1,
   .real_iface = NULL
 };
 
@@ -5819,27 +5788,27 @@ static struct __PnaclWrapperInfo *s_ppb_wrappers[] = {
   &Pnacl_WrapperInfo_PPB_VarArrayBuffer_1_0,
   &Pnacl_WrapperInfo_PPB_VarDictionary_1_0,
   &Pnacl_WrapperInfo_PPB_WebSocket_1_0,
+  &Pnacl_WrapperInfo_PPB_Alarms_Dev_0_1,
   &Pnacl_WrapperInfo_PPB_AudioInput_Dev_0_2,
   &Pnacl_WrapperInfo_PPB_AudioInput_Dev_0_3,
   &Pnacl_WrapperInfo_PPB_AudioInput_Dev_0_4,
   &Pnacl_WrapperInfo_PPB_DeviceRef_Dev_0_1,
   &Pnacl_WrapperInfo_PPB_FileChooser_Dev_0_5,
   &Pnacl_WrapperInfo_PPB_FileChooser_Dev_0_6,
+  &Pnacl_WrapperInfo_PPB_FileIO_Dev_0_1,
   &Pnacl_WrapperInfo_PPB_Font_Dev_0_6,
   &Pnacl_WrapperInfo_PPB_IMEInputEvent_Dev_0_1,
   &Pnacl_WrapperInfo_PPB_IMEInputEvent_Dev_0_2,
   &Pnacl_WrapperInfo_PPB_KeyboardInputEvent_Dev_0_2,
   &Pnacl_WrapperInfo_PPB_Printing_Dev_0_7,
-  &Pnacl_WrapperInfo_PPB_Testing_Dev_0_9,
-  &Pnacl_WrapperInfo_PPB_Testing_Dev_0_91,
-  &Pnacl_WrapperInfo_PPB_Testing_Dev_0_92,
   &Pnacl_WrapperInfo_PPB_TrueTypeFont_Dev_0_1,
   &Pnacl_WrapperInfo_PPB_URLUtil_Dev_0_6,
   &Pnacl_WrapperInfo_PPB_URLUtil_Dev_0_7,
+  &Pnacl_WrapperInfo_PPB_VarResource_Dev_0_1,
   &Pnacl_WrapperInfo_PPB_VideoCapture_Dev_0_2,
   &Pnacl_WrapperInfo_PPB_VideoCapture_Dev_0_3,
   &Pnacl_WrapperInfo_PPB_VideoDecoder_Dev_0_16,
-  &Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_7,
+  &Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_9,
   &Pnacl_WrapperInfo_PPB_Ext_CrxFileSystem_Private_0_1,
   &Pnacl_WrapperInfo_PPB_FileIO_Private_0_1,
   &Pnacl_WrapperInfo_PPB_FileRefPrivate_0_1,
@@ -5851,15 +5820,17 @@ static struct __PnaclWrapperInfo *s_ppb_wrappers[] = {
   &Pnacl_WrapperInfo_PPB_Flash_Clipboard_5_0,
   &Pnacl_WrapperInfo_PPB_Flash_DeviceID_1_0,
   &Pnacl_WrapperInfo_PPB_Flash_DRM_1_0,
+  &Pnacl_WrapperInfo_PPB_Flash_DRM_1_1,
   &Pnacl_WrapperInfo_PPB_Flash_Menu_0_2,
   &Pnacl_WrapperInfo_PPB_HostResolver_Private_0_1,
   &Pnacl_WrapperInfo_PPB_Instance_Private_0_1,
+  &Pnacl_WrapperInfo_PPB_IsolatedFileSystem_Private_0_2,
   &Pnacl_WrapperInfo_PPB_NaCl_Private_1_0,
   &Pnacl_WrapperInfo_PPB_NetAddress_Private_0_1,
   &Pnacl_WrapperInfo_PPB_NetAddress_Private_1_0,
   &Pnacl_WrapperInfo_PPB_NetAddress_Private_1_1,
   &Pnacl_WrapperInfo_PPB_OutputProtection_Private_0_1,
-  &Pnacl_WrapperInfo_PPB_PlatformVerification_Private_0_1,
+  &Pnacl_WrapperInfo_PPB_PlatformVerification_Private_0_2,
   &Pnacl_WrapperInfo_PPB_Talk_Private_1_0,
   &Pnacl_WrapperInfo_PPB_Talk_Private_2_0,
   &Pnacl_WrapperInfo_PPB_TCPServerSocket_Private_0_1,
@@ -5867,6 +5838,7 @@ static struct __PnaclWrapperInfo *s_ppb_wrappers[] = {
   &Pnacl_WrapperInfo_PPB_TCPSocket_Private_0_3,
   &Pnacl_WrapperInfo_PPB_TCPSocket_Private_0_4,
   &Pnacl_WrapperInfo_PPB_TCPSocket_Private_0_5,
+  &Pnacl_WrapperInfo_PPB_Testing_Private_1_0,
   &Pnacl_WrapperInfo_PPB_UDPSocket_Private_0_2,
   &Pnacl_WrapperInfo_PPB_UDPSocket_Private_0_3,
   &Pnacl_WrapperInfo_PPB_UDPSocket_Private_0_4,
@@ -5874,8 +5846,6 @@ static struct __PnaclWrapperInfo *s_ppb_wrappers[] = {
   &Pnacl_WrapperInfo_PPB_VideoDestination_Private_0_1,
   &Pnacl_WrapperInfo_PPB_VideoSource_Private_0_1,
   &Pnacl_WrapperInfo_PPB_X509Certificate_Private_0_1,
-  &Pnacl_WrapperInfo_PPB_Ext_Alarms_Dev_0_1,
-  &Pnacl_WrapperInfo_PPB_Ext_Events_Dev_0_1,
   &Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_1,
   &Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2,
   NULL
@@ -5884,7 +5854,7 @@ static struct __PnaclWrapperInfo *s_ppb_wrappers[] = {
 static struct __PnaclWrapperInfo *s_ppp_wrappers[] = {
   &Pnacl_WrapperInfo_PPP_Messaging_1_0,
   &Pnacl_WrapperInfo_PPP_Selection_Dev_0_3,
-  &Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_7,
+  &Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_9,
   &Pnacl_WrapperInfo_PPP_Instance_Private_0_1,
   NULL
 };

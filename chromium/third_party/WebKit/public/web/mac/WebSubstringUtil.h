@@ -33,7 +33,7 @@
 
 #include "../../platform/WebCommon.h"
 
-namespace WebKit {
+namespace blink {
 class WebFrame;
 }
 
@@ -43,17 +43,17 @@ class WebFrame;
 class NSAttributedString;
 #endif
 
-namespace WebKit {
+namespace blink {
 
 class WebSubstringUtil {
 public:
     // Returns an autoreleased NSAttributedString that is a substring of the
     // Frame at the given range, or nil on error.
-    WEBKIT_EXPORT static NSAttributedString* attributedSubstringInRange(WebFrame*,
+    BLINK_EXPORT static NSAttributedString* attributedSubstringInRange(WebFrame*,
         size_t location,
         size_t length);
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

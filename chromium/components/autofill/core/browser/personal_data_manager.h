@@ -13,21 +13,19 @@
 #include "base/memory/scoped_vector.h"
 #include "base/observer_list.h"
 #include "base/strings/string16.h"
+#include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/browser/autofill_profile.h"
 #include "components/autofill/core/browser/credit_card.h"
 #include "components/autofill/core/browser/field_types.h"
+#include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service_observer.h"
 #include "components/webdata/common/web_data_service_consumer.h"
 
+class PrefService;
 class RemoveAutofillTester;
-
-namespace content {
-class BrowserContext;
-}
 
 namespace autofill {
 class AutofillInteractiveTest;
-class AutofillMetrics;
 class AutofillTest;
 class FormStructure;
 class PersonalDataManagerObserver;
@@ -55,7 +53,12 @@ class PersonalDataManager : public WebDataServiceConsumer,
   virtual ~PersonalDataManager();
 
   // Kicks off asynchronous loading of profiles and credit cards.
-  void Init(content::BrowserContext* context);
+  // |pref_service| must outlive this instance.  |is_off_the_record| informs
+  // this instance whether the user is currently operating in an off-the-record
+  // context.
+  void Init(scoped_refptr<AutofillWebDataService> database,
+            PrefService* pref_service,
+            bool is_off_the_record);
 
   // WebDataServiceConsumer:
   virtual void OnWebDataServiceRequestDone(
@@ -77,7 +80,7 @@ class PersonalDataManager : public WebDataServiceConsumer,
   // can prompt the user whether to save this data.
   // Returns |true| if sufficient address or credit card data was found.
   bool ImportFormData(const FormStructure& form,
-                      const CreditCard** credit_card);
+                      scoped_ptr<CreditCard>* credit_card);
 
   // Saves |imported_profile| to the WebDB if it exists. Returns the guid of
   // the new or updated profile, or the empty string if no profile was saved.
@@ -126,7 +129,7 @@ class PersonalDataManager : public WebDataServiceConsumer,
   // lifetime is until the web database is updated with new profile and credit
   // card information, respectively.  |GetProfiles()| returns both web and
   // auxiliary profiles.  |web_profiles()| returns only web profiles.
-  virtual const std::vector<AutofillProfile*>& GetProfiles();
+  virtual const std::vector<AutofillProfile*>& GetProfiles() const;
   virtual const std::vector<AutofillProfile*>& web_profiles() const;
   virtual const std::vector<CreditCard*>& GetCreditCards() const;
 
@@ -138,7 +141,7 @@ class PersonalDataManager : public WebDataServiceConsumer,
       const AutofillType& type,
       const base::string16& field_contents,
       bool field_is_autofilled,
-      std::vector<ServerFieldType> other_field_types,
+      const std::vector<ServerFieldType>& other_field_types,
       std::vector<base::string16>* values,
       std::vector<base::string16>* labels,
       std::vector<base::string16>* icons,
@@ -181,6 +184,11 @@ class PersonalDataManager : public WebDataServiceConsumer,
       const std::string& app_locale,
       std::vector<AutofillProfile>* merged_profiles);
 
+  // Returns our best guess for the country a user is likely to use when
+  // inputting a new address. The value is calculated once and cached, so it
+  // will only update when Chrome is restarted.
+  virtual const std::string& GetDefaultCountryCodeForNewAddress() const;
+
  protected:
   // Only PersonalDataManagerFactory and certain tests can create instances of
   // PersonalDataManager.
@@ -221,7 +229,7 @@ class PersonalDataManager : public WebDataServiceConsumer,
   virtual void LoadProfiles();
 
   // Loads the auxiliary profiles.  Currently Mac and Android only.
-  virtual void LoadAuxiliaryProfiles();
+  virtual void LoadAuxiliaryProfiles() const;
 
   // Loads the saved credit cards from the web database.
   virtual void LoadCreditCards();
@@ -248,12 +256,22 @@ class PersonalDataManager : public WebDataServiceConsumer,
   virtual bool IsAutofillEnabled() const;
 
   // For tests.
-  const AutofillMetrics* metric_logger() const;
-  void set_metric_logger(const AutofillMetrics* metric_logger);
-  void set_browser_context(content::BrowserContext* context);
+  const AutofillMetrics* metric_logger() const { return metric_logger_.get(); }
 
-  // The browser context this PersonalDataManager is in.
-  content::BrowserContext* browser_context_;
+  void set_database(scoped_refptr<AutofillWebDataService> database) {
+    database_ = database;
+  }
+
+  void set_metric_logger(const AutofillMetrics* metric_logger) {
+    metric_logger_.reset(metric_logger);
+  }
+
+  void set_pref_service(PrefService* pref_service) {
+    pref_service_ = pref_service;
+  }
+
+  // The backing database that this PersonalDataManager uses.
+  scoped_refptr<AutofillWebDataService> database_;
 
   // True if personal data has been loaded from the web database.
   bool is_data_loaded_;
@@ -282,10 +300,24 @@ class PersonalDataManager : public WebDataServiceConsumer,
   ObserverList<PersonalDataManagerObserver> observers_;
 
  private:
-  std::string app_locale_;
+  // Finds the country code that occurs most frequently among all profiles.
+  // Prefers verified profiles over unverified ones.
+  std::string MostCommonCountryCodeFromProfiles() const;
+
+  const std::string app_locale_;
+
+  // The default country code for new addresses.
+  mutable std::string default_country_code_;
 
   // For logging UMA metrics. Overridden by metrics tests.
   scoped_ptr<const AutofillMetrics> metric_logger_;
+
+  // The PrefService that this instance uses. Must outlive this instance.
+  PrefService* pref_service_;
+
+  // Whether the user is currently operating in an off-the-record context.
+  // Default value is false.
+  bool is_off_the_record_;
 
   // Whether we have already logged the number of profiles this session.
   mutable bool has_logged_profile_count_;

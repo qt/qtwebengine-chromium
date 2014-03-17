@@ -29,10 +29,10 @@
  */
 
 [
-    Constructor(Dictionary dictionary),
-    ConstructorRaisesException
+    Constructor(optional Dictionary descriptionInitDict),
+    RaisesException=Constructor
 ] interface RTCSessionDescription {
-    [SetterRaisesException] attribute DOMString type;
-    [SetterRaisesException] attribute DOMString sdp;
+    [RaisesException=Setter, TreatReturnedNullStringAs=Null, TreatNullAs=NullString] attribute DOMString type;
+    [TreatReturnedNullStringAs=Null, TreatNullAs=NullString] attribute DOMString sdp;
 };
 

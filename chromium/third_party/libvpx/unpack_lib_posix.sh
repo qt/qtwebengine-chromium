@@ -13,6 +13,9 @@
 # f - List of files to extract.
 #
 
+# Avoid things like -n messing up the grepping below.
+unset GREP_OPTIONS
+
 while getopts "d:a:f:" flag
 do
   if [ "$flag" = "d" ]; then
@@ -58,6 +61,7 @@ function extract_object {
     # Only echo this if debugging.
     # echo "Extract $filename from archive to $out_dir/$1."
     $ar p $lib_file $filename > $out_dir/$1
+    [ -s $out_dir/$1 ] || exit 1
     break
   done
 }

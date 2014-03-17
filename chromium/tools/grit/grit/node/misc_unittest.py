@@ -46,6 +46,12 @@ class GritNodeUnittest(unittest.TestCase):
     self.assertEqual({},
         id_dict.get('out/Release/obj/gen/devtools/devtools.grd', None))
 
+    src_dir, id_dict = misc._ReadFirstIdsFromFile(
+        test_resource_ids,
+        {
+          'SHARED_INTERMEDIATE_DIR': '/outside/src_dir',
+        })
+    self.assertEqual({}, id_dict.get('devtools.grd', None))
 
 class IfNodeUnittest(unittest.TestCase):
   def testIffyness(self):

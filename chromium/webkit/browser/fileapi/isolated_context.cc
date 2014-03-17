@@ -26,8 +26,8 @@ base::FilePath::StringType GetRegisterNameForPath(const base::FilePath& path) {
 #if defined(FILE_PATH_USES_DRIVE_LETTERS)
   base::FilePath::StringType name;
   for (size_t i = 0;
-        i < path.value().size() && !base::FilePath::IsSeparator(path.value()[i]);
-        ++i) {
+       i < path.value().size() && !base::FilePath::IsSeparator(path.value()[i]);
+       ++i) {
     if (path.value()[i] == L':') {
       name.append(L"_drive");
       break;
@@ -78,8 +78,10 @@ bool IsolatedContext::FileInfoSet::AddPath(
       fileset_.insert(MountPointInfo(utf8name, normalized_path)).second;
   if (!inserted) {
     int suffix = 1;
-    std::string basepart = base::FilePath(name).RemoveExtension().AsUTF8Unsafe();
-    std::string ext = base::FilePath(base::FilePath(name).Extension()).AsUTF8Unsafe();
+    std::string basepart =
+        base::FilePath(name).RemoveExtension().AsUTF8Unsafe();
+    std::string ext =
+        base::FilePath(base::FilePath(name).Extension()).AsUTF8Unsafe();
     while (!inserted) {
       utf8name = base::StringPrintf("%s (%d)", basepart.c_str(), suffix++);
       if (!ext.empty())
@@ -286,16 +288,21 @@ bool IsolatedContext::GetRegisteredPath(
   return true;
 }
 
-bool IsolatedContext::CrackVirtualPath(const base::FilePath& virtual_path,
-                                       std::string* id_or_name,
-                                       FileSystemType* type,
-                                       base::FilePath* path) const {
+bool IsolatedContext::CrackVirtualPath(
+    const base::FilePath& virtual_path,
+    std::string* id_or_name,
+    FileSystemType* type,
+    base::FilePath* path,
+    FileSystemMountOption* mount_option) const {
   DCHECK(id_or_name);
   DCHECK(path);
 
   // This should not contain any '..' references.
   if (virtual_path.ReferencesParent())
     return false;
+
+  // Set the default mount option.
+  *mount_option = FileSystemMountOption();
 
   // The virtual_path should comprise <id_or_name> and <relative_path> parts.
   std::vector<base::FilePath::StringType> components;
@@ -426,13 +433,16 @@ FileSystemURL IsolatedContext::CrackFileSystemURL(
   std::string mount_name;
   FileSystemType cracked_type;
   base::FilePath cracked_path;
-  if (!CrackVirtualPath(url.path(), &mount_name, &cracked_type, &cracked_path))
+  FileSystemMountOption cracked_mount_option;
+  if (!CrackVirtualPath(url.path(), &mount_name, &cracked_type,
+                        &cracked_path, &cracked_mount_option)) {
     return FileSystemURL();
+  }
 
   return FileSystemURL(
       url.origin(), url.mount_type(), url.virtual_path(),
       !url.filesystem_id().empty() ? url.filesystem_id() : mount_name,
-      cracked_type, cracked_path, mount_name);
+      cracked_type, cracked_path, mount_name, cracked_mount_option);
 }
 
 bool IsolatedContext::UnregisterFileSystem(const std::string& filesystem_id) {

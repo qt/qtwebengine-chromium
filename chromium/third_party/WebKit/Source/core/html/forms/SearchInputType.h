@@ -32,7 +32,7 @@
 #define SearchInputType_h
 
 #include "core/html/forms/BaseTextInputType.h"
-#include "core/platform/Timer.h"
+#include "platform/Timer.h"
 
 namespace WebCore {
 
@@ -41,12 +41,12 @@ class SearchFieldDecorationElement;
 
 class SearchInputType : public BaseTextInputType {
 public:
-    static PassRefPtr<InputType> create(HTMLInputElement*);
+    static PassRefPtr<InputType> create(HTMLInputElement&);
 
     void stopSearchEventTimer();
 
 private:
-    SearchInputType(HTMLInputElement*);
+    SearchInputType(HTMLInputElement&);
     virtual void countUsage() OVERRIDE;
     virtual RenderObject* createRenderer(RenderStyle*) const OVERRIDE;
     virtual const AtomicString& formControlType() const OVERRIDE;
@@ -57,7 +57,7 @@ private:
     virtual void handleKeydownEvent(KeyboardEvent*) OVERRIDE;
     virtual void didSetValueByUserEdit(ValueChangeState) OVERRIDE;
     virtual bool supportsInputModeAttribute() const OVERRIDE;
-    virtual void updateInnerTextValue() OVERRIDE;
+    virtual void updateView() OVERRIDE;
 
     void searchEventTimerFired(Timer<SearchInputType>*);
     bool searchEventsShouldBeDispatched() const;

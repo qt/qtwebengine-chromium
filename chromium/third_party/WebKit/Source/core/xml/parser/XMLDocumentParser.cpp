@@ -26,8 +26,13 @@
 #include "config.h"
 #include "core/xml/parser/XMLDocumentParser.h"
 
+#include <libxml/catalog.h>
+#include <libxml/parser.h>
+#include <libxml/parserInternals.h>
+#include <libxslt/xslt.h>
 #include "FetchInitiatorTypeNames.h"
 #include "HTMLNames.h"
+#include "RuntimeEnabledFeatures.h"
 #include "XMLNSNames.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
@@ -44,33 +49,26 @@
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ScriptResource.h"
 #include "core/fetch/TextResourceDecoder.h"
+#include "core/frame/Frame.h"
 #include "core/html/HTMLHtmlElement.h"
 #include "core/html/HTMLTemplateElement.h"
 #include "core/html/parser/HTMLEntityParser.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/ImageLoader.h"
-#include "core/page/Frame.h"
-#include "core/page/UseCounter.h"
-#include "core/platform/SharedBuffer.h"
-#include "core/platform/network/ResourceError.h"
-#include "core/platform/network/ResourceRequest.h"
-#include "core/platform/network/ResourceResponse.h"
-#include "core/xml/XMLErrors.h"
+#include "core/frame/UseCounter.h"
 #include "core/xml/XMLTreeViewer.h"
 #include "core/xml/parser/XMLDocumentParserScope.h"
 #include "core/xml/parser/XMLParserInput.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/SharedBuffer.h"
+#include "platform/network/ResourceError.h"
+#include "platform/network/ResourceRequest.h"
+#include "platform/network/ResourceResponse.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/StringExtras.h"
 #include "wtf/TemporaryChange.h"
 #include "wtf/Threading.h"
-#include "wtf/UnusedParam.h"
 #include "wtf/Vector.h"
-#include "wtf/text/CString.h"
 #include "wtf/unicode/UTF8.h"
-#include <libxml/catalog.h>
-#include <libxml/parser.h>
-#include <libxml/parserInternals.h>
-#include <libxslt/xslt.h>
 
 using namespace std;
 
@@ -109,7 +107,7 @@ static inline bool hasNoStyleInformation(Document* document)
     if (!document->frame() || !document->frame()->page())
         return false;
 
-    if (document->frame()->tree()->parent())
+    if (document->frame()->tree().parent())
         return false; // This document is not in a top frame
 
     return true;
@@ -361,7 +359,7 @@ void XMLDocumentParser::append(PassRefPtr<StringImpl> inputSource)
     if (isStopped())
         return;
 
-    if (document()->frame() && document()->frame()->script()->canExecuteScripts(NotAboutToExecuteScript))
+    if (document()->frame() && document()->frame()->script().canExecuteScripts(NotAboutToExecuteScript))
         ImageLoader::dispatchPendingBeforeLoadEvents();
 }
 
@@ -473,8 +471,8 @@ void XMLDocumentParser::notifyFinished(Resource* unusedResource)
     if (errorOccurred)
         scriptLoader->dispatchErrorEvent();
     else if (!wasCanceled) {
-        scriptLoader->executeScript(sourceCode);
-        scriptLoader->dispatchLoadEvent();
+        if (scriptLoader->executePotentiallyCrossOriginScript(sourceCode))
+            scriptLoader->dispatchLoadEvent();
     }
 
     m_scriptElement = 0;
@@ -784,7 +782,7 @@ XMLDocumentParser::XMLDocumentParser(Document* document, FrameView* frameView)
     , m_parsingFragment(false)
 {
     // This is XML being used as a document resource.
-    UseCounter::count(document, UseCounter::XMLDocument);
+    UseCounter::count(*document, UseCounter::XMLDocument);
 }
 
 XMLDocumentParser::XMLDocumentParser(DocumentFragment* fragment, Element* parentElement, ParserContentPolicy parserContentPolicy)
@@ -884,7 +882,7 @@ void XMLDocumentParser::doWrite(const String& parseString)
     }
 
     // FIXME: Why is this here?  And why is it after we process the passed source?
-    if (document()->decoder() && document()->decoder()->sawError()) {
+    if (document()->sawDecodingError()) {
         // If the decoder saw an error, report it as fatal (stops parsing)
         TextPosition position(OrdinalNumber::fromOneBasedInt(context->context()->input->line), OrdinalNumber::fromOneBasedInt(context->context()->input->col));
         handleError(XMLErrors::fatal, "Encoding error", position);
@@ -897,7 +895,7 @@ struct _xmlSAX2Namespace {
 };
 typedef struct _xmlSAX2Namespace xmlSAX2Namespace;
 
-static inline void handleNamespaceAttributes(Vector<Attribute>& prefixedAttributes, const xmlChar** libxmlNamespaces, int nbNamespaces, ExceptionState& es)
+static inline void handleNamespaceAttributes(Vector<Attribute>& prefixedAttributes, const xmlChar** libxmlNamespaces, int nbNamespaces, ExceptionState& exceptionState)
 {
     xmlSAX2Namespace* namespaces = reinterpret_cast<xmlSAX2Namespace*>(libxmlNamespaces);
     for (int i = 0; i < nbNamespaces; i++) {
@@ -907,7 +905,7 @@ static inline void handleNamespaceAttributes(Vector<Attribute>& prefixedAttribut
             namespaceQName = "xmlns:" + toString(namespaces[i].prefix);
 
         QualifiedName parsedName = anyName;
-        if (!Element::parseAttributeName(parsedName, XMLNSNames::xmlnsNamespaceURI, namespaceQName, es))
+        if (!Element::parseAttributeName(parsedName, XMLNSNames::xmlnsNamespaceURI, namespaceQName, exceptionState))
             return;
 
         prefixedAttributes.append(Attribute(parsedName, namespaceURI));
@@ -923,7 +921,7 @@ struct _xmlSAX2Attributes {
 };
 typedef struct _xmlSAX2Attributes xmlSAX2Attributes;
 
-static inline void handleElementAttributes(Vector<Attribute>& prefixedAttributes, const xmlChar** libxmlAttributes, int nbAttributes, ExceptionState& es)
+static inline void handleElementAttributes(Vector<Attribute>& prefixedAttributes, const xmlChar** libxmlAttributes, int nbAttributes, ExceptionState& exceptionState)
 {
     xmlSAX2Attributes* attributes = reinterpret_cast<xmlSAX2Attributes*>(libxmlAttributes);
     for (int i = 0; i < nbAttributes; i++) {
@@ -934,7 +932,7 @@ static inline void handleElementAttributes(Vector<Attribute>& prefixedAttributes
         AtomicString attrQName = attrPrefix.isEmpty() ? toAtomicString(attributes[i].localname) : attrPrefix + ":" + toString(attributes[i].localname);
 
         QualifiedName parsedName = anyName;
-        if (!Element::parseAttributeName(parsedName, attrURI, attrQName, es))
+        if (!Element::parseAttributeName(parsedName, attrURI, attrQName, exceptionState))
             return;
 
         prefixedAttributes.append(Attribute(parsedName, attrValue));
@@ -974,17 +972,17 @@ void XMLDocumentParser::startElementNs(const AtomicString& localName, const Atom
     }
 
     Vector<Attribute> prefixedAttributes;
-    TrackExceptionState es;
-    handleNamespaceAttributes(prefixedAttributes, libxmlNamespaces, nbNamespaces, es);
-    if (es.hadException()) {
+    TrackExceptionState exceptionState;
+    handleNamespaceAttributes(prefixedAttributes, libxmlNamespaces, nbNamespaces, exceptionState);
+    if (exceptionState.hadException()) {
         setAttributes(newElement.get(), prefixedAttributes, parserContentPolicy());
         stopParsing();
         return;
     }
 
-    handleElementAttributes(prefixedAttributes, libxmlAttributes, nbAttributes, es);
+    handleElementAttributes(prefixedAttributes, libxmlAttributes, nbAttributes, exceptionState);
     setAttributes(newElement.get(), prefixedAttributes, parserContentPolicy());
-    if (es.hadException()) {
+    if (exceptionState.hadException()) {
         stopParsing();
         return;
     }
@@ -997,17 +995,16 @@ void XMLDocumentParser::startElementNs(const AtomicString& localName, const Atom
 
     m_currentNode->parserAppendChild(newElement.get());
 
-    const ContainerNode* currentNode = m_currentNode;
     if (newElement->hasTagName(HTMLNames::templateTag))
         pushCurrentNode(toHTMLTemplateElement(newElement.get())->content());
     else
         pushCurrentNode(newElement.get());
 
     if (isHTMLHtmlElement(newElement.get()))
-        toHTMLHtmlElement(newElement.get())->insertedByParser();
+        toHTMLHtmlElement(newElement)->insertedByParser();
 
     if (!m_parsingFragment && isFirstElement && document()->frame())
-        document()->frame()->loader()->dispatchDocumentElementAvailable();
+        document()->frame()->loader().dispatchDocumentElementAvailable();
 }
 
 void XMLDocumentParser::endElementNs()
@@ -1029,7 +1026,7 @@ void XMLDocumentParser::endElementNs()
     RefPtr<ContainerNode> n = m_currentNode;
     n->finishParsingChildren();
 
-    if (!scriptingContentIsAllowed(parserContentPolicy()) && n->isElementNode() && toScriptLoaderIfPossible(toElement(n.get()))) {
+    if (!scriptingContentIsAllowed(parserContentPolicy()) && n->isElementNode() && toScriptLoaderIfPossible(toElement(n))) {
         popCurrentNode();
         n->remove(IGNORE_EXCEPTION);
         return;
@@ -1040,7 +1037,7 @@ void XMLDocumentParser::endElementNs()
         return;
     }
 
-    Element* element = toElement(n.get());
+    Element* element = toElement(n);
 
     // The element's parent may have already been removed from document.
     // Parsing continues in this case, but scripts aren't executed.
@@ -1142,9 +1139,9 @@ void XMLDocumentParser::processingInstruction(const String& target, const String
     exitText();
 
     // ### handle exceptions
-    TrackExceptionState es;
-    RefPtr<ProcessingInstruction> pi = m_currentNode->document().createProcessingInstruction(target, data, es);
-    if (es.hadException())
+    TrackExceptionState exceptionState;
+    RefPtr<ProcessingInstruction> pi = m_currentNode->document().createProcessingInstruction(target, data, exceptionState);
+    if (exceptionState.hadException())
         return;
 
     pi->setCreatedByParser(true);
@@ -1155,6 +1152,10 @@ void XMLDocumentParser::processingInstruction(const String& target, const String
 
     if (pi->isCSS())
         m_sawCSS = true;
+
+    if (!RuntimeEnabledFeatures::xsltEnabled())
+        return;
+
     m_sawXSLTransform = !m_sawFirstElement && pi->isXSL();
     if (m_sawXSLTransform && !document()->transformSourceDocument()) {
         // This behavior is very tricky. We call stopParsing() here because we want to stop processing the document

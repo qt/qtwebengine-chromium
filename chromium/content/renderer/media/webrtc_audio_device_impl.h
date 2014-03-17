@@ -202,7 +202,7 @@ class WebRtcAudioRendererSource {
   virtual ~WebRtcAudioRendererSource() {}
 };
 
-class WebRtcAudioCapturerSink {
+class PeerConnectionAudioSink {
  public:
   // Callback to deliver the captured interleaved data.
   // |channels| contains a vector of WebRtc VoE channels.
@@ -216,29 +216,31 @@ class WebRtcAudioCapturerSink {
   // audio processing.
   // The return value is the new microphone volume, in the range of |0, 255].
   // When the volume does not need to be updated, it returns 0.
-  virtual int CaptureData(const std::vector<int>& channels,
-                          const int16* audio_data,
-                          int sample_rate,
-                          int number_of_channels,
-                          int number_of_frames,
-                          int audio_delay_milliseconds,
-                          int current_volume,
-                          bool need_audio_processing,
-                          bool key_pressed) = 0;
+  virtual int OnData(const int16* audio_data,
+                     int sample_rate,
+                     int number_of_channels,
+                     int number_of_frames,
+                     const std::vector<int>& channels,
+                     int audio_delay_milliseconds,
+                     int current_volume,
+                     bool need_audio_processing,
+                     bool key_pressed) = 0;
 
   // Set the format for the capture audio parameters.
-  virtual void SetCaptureFormat(const media::AudioParameters& params) = 0;
+  // This is called when the capture format has changed, and it must be called
+  // on the same thread as calling CaptureData().
+  virtual void OnSetFormat(const media::AudioParameters& params) = 0;
 
  protected:
-  virtual ~WebRtcAudioCapturerSink() {}
+ virtual ~PeerConnectionAudioSink() {}
 };
 
 // Note that this class inherits from webrtc::AudioDeviceModule but due to
 // the high number of non-implemented methods, we move the cruft over to the
 // WebRtcAudioDeviceNotImpl.
 class CONTENT_EXPORT WebRtcAudioDeviceImpl
-    : NON_EXPORTED_BASE(public WebRtcAudioDeviceNotImpl),
-      NON_EXPORTED_BASE(public WebRtcAudioCapturerSink),
+    : NON_EXPORTED_BASE(public PeerConnectionAudioSink),
+      NON_EXPORTED_BASE(public WebRtcAudioDeviceNotImpl),
       NON_EXPORTED_BASE(public WebRtcAudioRendererSource) {
  public:
   // The maximum volume value WebRtc uses.
@@ -277,11 +279,6 @@ class CONTENT_EXPORT WebRtcAudioDeviceImpl
   virtual int32_t StartRecording() OVERRIDE;
   virtual int32_t StopRecording() OVERRIDE;
   virtual bool Recording() const OVERRIDE;
-
-  // Called on the main render thread and libJingle worker thread.
-  virtual int32_t SetAGC(bool enable) OVERRIDE;
-
-  virtual bool AGC() const OVERRIDE;
 
   // Called on the AudioInputDevice worker thread.
   virtual int32_t SetMicrophoneVolume(uint32_t volume) OVERRIDE;
@@ -330,21 +327,21 @@ class CONTENT_EXPORT WebRtcAudioDeviceImpl
   // Make destructor private to ensure that we can only be deleted by Release().
   virtual ~WebRtcAudioDeviceImpl();
 
-  // WebRtcAudioCapturerSink implementation.
+  // PeerConnectionAudioSink implementation.
 
   // Called on the AudioInputDevice worker thread.
-  virtual int CaptureData(const std::vector<int>& channels,
-                          const int16* audio_data,
-                          int sample_rate,
-                          int number_of_channels,
-                          int number_of_frames,
-                          int audio_delay_milliseconds,
-                          int current_volume,
-                          bool need_audio_processing,
-                          bool key_pressed) OVERRIDE;
+  virtual int OnData(const int16* audio_data,
+                     int sample_rate,
+                     int number_of_channels,
+                     int number_of_frames,
+                     const std::vector<int>& channels,
+                     int audio_delay_milliseconds,
+                     int current_volume,
+                     bool need_audio_processing,
+                     bool key_pressed) OVERRIDE;
 
-  // Called on the main render thread.
-  virtual void SetCaptureFormat(const media::AudioParameters& params) OVERRIDE;
+  // Called on the AudioInputDevice worker thread.
+  virtual void OnSetFormat(const media::AudioParameters& params) OVERRIDE;
 
   // WebRtcAudioRendererSource implementation.
 
@@ -391,9 +388,6 @@ class CONTENT_EXPORT WebRtcAudioDeviceImpl
   bool initialized_;
   bool playing_;
   bool recording_;
-
-  // Local copy of the current Automatic Gain Control state.
-  bool agc_is_enabled_;
 
   // Used for histograms of total recording and playout times.
   base::Time start_capture_time_;

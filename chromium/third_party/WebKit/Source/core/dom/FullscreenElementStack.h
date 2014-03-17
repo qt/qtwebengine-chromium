@@ -30,9 +30,9 @@
 
 #include "core/dom/DocumentLifecycleObserver.h"
 #include "core/dom/Element.h"
-#include "core/platform/Supplementable.h"
-#include "core/platform/Timer.h"
-#include "core/platform/graphics/LayoutRect.h"
+#include "platform/Supplementable.h"
+#include "platform/Timer.h"
+#include "platform/geometry/LayoutRect.h"
 #include "wtf/Deque.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
@@ -44,10 +44,10 @@ class Element;
 class Node;
 class RenderFullScreen;
 class RenderStyle;
-class ScriptExecutionContext;
+class ExecutionContext;
 
 class FullscreenElementStack
-    : public Supplement<ScriptExecutionContext>
+    : public DocumentSupplement
     , public DocumentLifecycleObserver {
 public:
     virtual ~FullscreenElementStack();

@@ -29,13 +29,13 @@
 #include "../platform/WebCommon.h"
 #include "../platform/WebPrivatePtr.h"
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
 #include "wtf/PassRefPtr.h"
 #endif
 
 namespace WebCore { class GeolocationError; }
 
-namespace WebKit {
+namespace blink {
 
 class WebString;
 
@@ -50,11 +50,11 @@ public:
     WebGeolocationError(const WebGeolocationError& other) { assign(other); }
     ~WebGeolocationError() { reset(); }
 
-    WEBKIT_EXPORT void assign(Error code, const WebString& message);
-    WEBKIT_EXPORT void assign(const WebGeolocationError&);
-    WEBKIT_EXPORT void reset();
+    BLINK_EXPORT void assign(Error code, const WebString& message);
+    BLINK_EXPORT void assign(const WebGeolocationError&);
+    BLINK_EXPORT void reset();
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
     WebGeolocationError(WTF::PassRefPtr<WebCore::GeolocationError>);
     WebGeolocationError& operator=(WTF::PassRefPtr<WebCore::GeolocationError>);
     operator WTF::PassRefPtr<WebCore::GeolocationError>() const;
@@ -64,6 +64,6 @@ private:
     WebPrivatePtr<WebCore::GeolocationError> m_private;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebGeolocationError_h

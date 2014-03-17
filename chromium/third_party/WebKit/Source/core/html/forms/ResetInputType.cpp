@@ -32,23 +32,23 @@
 #include "config.h"
 #include "core/html/forms/ResetInputType.h"
 
-#include "core/dom/Event.h"
+#include "InputTypeNames.h"
+#include "core/events/Event.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/html/forms/InputTypeNames.h"
-#include "core/platform/LocalizedStrings.h"
+#include "platform/text/PlatformLocale.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
-PassRefPtr<InputType> ResetInputType::create(HTMLInputElement* element)
+PassRefPtr<InputType> ResetInputType::create(HTMLInputElement& element)
 {
     return adoptRef(new ResetInputType(element));
 }
 
 const AtomicString& ResetInputType::formControlType() const
 {
-    return InputTypeNames::reset();
+    return InputTypeNames::reset;
 }
 
 bool ResetInputType::supportsValidation() const
@@ -58,15 +58,15 @@ bool ResetInputType::supportsValidation() const
 
 void ResetInputType::handleDOMActivateEvent(Event* event)
 {
-    if (element()->isDisabledFormControl() || !element()->form())
+    if (element().isDisabledFormControl() || !element().form())
         return;
-    element()->form()->reset();
+    element().form()->reset();
     event->setDefaultHandled();
 }
 
 String ResetInputType::defaultValue() const
 {
-    return resetButtonDefaultLabel();
+    return locale().queryString(blink::WebLocalizedString::ResetButtonDefaultLabel);
 }
 
 bool ResetInputType::isTextButton() const

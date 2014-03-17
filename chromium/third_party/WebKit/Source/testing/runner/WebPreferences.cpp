@@ -30,7 +30,7 @@
 
 #include "public/testing/WebPreferences.h"
 
-using namespace WebKit;
+using namespace blink;
 
 namespace WebTestRunner {
 
@@ -43,7 +43,6 @@ void WebPreferences::reset()
     allowDisplayOfInsecureContent = true;
     allowFileAccessFromFileURLs = true;
     allowRunningOfInsecureContent = true;
-    authorAndUserStylesEnabled = true;
     defaultTextEncodingName = WebString::fromUTF8("ISO-8859-1");
     experimentalWebGLEnabled = false;
     experimentalCSSRegionsEnabled = true;
@@ -56,7 +55,6 @@ void WebPreferences::reset()
     loadsImagesAutomatically = true;
     offlineWebApplicationCacheEnabled = true;
     pluginsEnabled = true;
-    userStyleSheetLocation = WebURL();
     caretBrowsingEnabled = false;
 
     // Allow those layout tests running as local files, i.e. under

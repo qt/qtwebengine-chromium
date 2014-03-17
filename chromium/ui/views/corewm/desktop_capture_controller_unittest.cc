@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
+#include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/events/event.h"
 #include "ui/views/test/views_test_base.h"
@@ -16,12 +17,12 @@
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget.h"
 
+// NOTE: these tests do native capture, so they have to be in
+// interactive_ui_tests.
+
 namespace views {
 
 typedef ViewsTestBase DesktopCaptureControllerTest;
-
-// NOTE: these tests do native capture, so they have to be in
-// interactive_ui_tests.
 
 // This class provides functionality to verify whether the View instance
 // received the gesture event.
@@ -48,11 +49,44 @@ class DesktopViewInputTest : public View {
   DISALLOW_COPY_AND_ASSIGN(DesktopViewInputTest);
 };
 
+views::Widget* CreateWidget() {
+  views::Widget* widget = new views::Widget;
+  views::Widget::InitParams params;
+  params.type = views::Widget::InitParams::TYPE_WINDOW_FRAMELESS;
+  params.accept_events = true;
+  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.native_widget = new DesktopNativeWidgetAura(widget);
+  params.bounds = gfx::Rect(0, 0, 200, 100);
+  widget->Init(params);
+  widget->Show();
+  return widget;
+}
+
+// Verifies mouse handlers are reset when a window gains capture. Specifically
+// creates two widgets, does a mouse press in one, sets capture in the other and
+// verifies state is reset in the first.
+TEST_F(DesktopCaptureControllerTest, ResetMouseHandlers) {
+  scoped_ptr<Widget> w1(CreateWidget());
+  scoped_ptr<Widget> w2(CreateWidget());
+  aura::test::EventGenerator generator1(w1->GetNativeView()->GetRootWindow());
+  generator1.MoveMouseToCenterOf(w1->GetNativeView());
+  generator1.PressLeftButton();
+  EXPECT_FALSE(w1->HasCapture());
+  aura::RootWindow* w1_root = w1->GetNativeView()->GetDispatcher();
+  EXPECT_TRUE(w1_root->mouse_pressed_handler() != NULL);
+  EXPECT_TRUE(w1_root->mouse_moved_handler() != NULL);
+  w2->SetCapture(w2->GetRootView());
+  EXPECT_TRUE(w2->HasCapture());
+  EXPECT_TRUE(w1_root->mouse_pressed_handler() == NULL);
+  EXPECT_TRUE(w1_root->mouse_moved_handler() == NULL);
+}
+
 // Tests aura::Window capture and whether gesture events are sent to the window
 // which has capture.
 // The test case creates two visible widgets and sets capture to the underlying
 // aura::Windows one by one. It then sends a gesture event and validates whether
 // the window which had capture receives the gesture.
+// TODO(sky): move this test, it should be part of ScopedCaptureClient tests.
 TEST_F(DesktopCaptureControllerTest, CaptureWindowInputEventTest) {
   scoped_ptr<aura::client::ScreenPositionClient> desktop_position_client1;
   scoped_ptr<aura::client::ScreenPositionClient> desktop_position_client2;
@@ -131,46 +165,6 @@ TEST_F(DesktopCaptureControllerTest, CaptureWindowInputEventTest) {
   widget1->CloseNow();
   widget2->CloseNow();
   RunPendingMessages();
-}
-
-// crbug.com/295342
-#if defined(OS_WIN)
-#define MAYBE_TransferOnCapture DISABLED_TransferOnCapture
-#else
-#define MAYBE_TransferOnCapture TransferOnCapture
-#endif
-// Verifies aura::RootWindow is correctly notified on capture changes.
-TEST_F(DesktopCaptureControllerTest, MAYBE_TransferOnCapture) {
-  Widget widget1;
-  Widget::InitParams params1 =
-      CreateParams(views::Widget::InitParams::TYPE_WINDOW);
-  params1.native_widget = new DesktopNativeWidgetAura(&widget1);
-  params1.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-  widget1.Init(params1);
-  widget1.Show();
-
-  Widget widget2;
-  Widget::InitParams params2 =
-      CreateParams(views::Widget::InitParams::TYPE_WINDOW);
-  params2.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-  params2.native_widget = new DesktopNativeWidgetAura(&widget2);
-  widget2.Init(params2);
-  widget2.Show();
-
-  // Set capture to |widget2|, then |widget1| and lastly release capture.
-  aura::Env::GetInstance()->set_mouse_button_flags(1);
-  widget2.SetCapture(widget2.GetRootView());
-  widget1.SetCapture(widget1.GetRootView());
-  widget1.ReleaseCapture();
-  // Widget1's RootWindow should still have a non-NULL |mouse_moved_handler_|
-  // (since it contains the view that had capture). OTOH Widget2 doesn't contain
-  // the Window that had capture and so its |mouse_moved_handler_| should be
-  // NULL.
-  EXPECT_NE(static_cast<aura::Window*>(NULL),
-            widget1.GetNativeView()->GetRootWindow()->mouse_moved_handler());
-  EXPECT_EQ(static_cast<aura::Window*>(NULL),
-            widget2.GetNativeView()->GetRootWindow()->mouse_moved_handler());
-  aura::Env::GetInstance()->set_mouse_button_flags(0);
 }
 
 }  // namespace views

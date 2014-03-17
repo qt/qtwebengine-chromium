@@ -10,15 +10,15 @@
 
 #include "jni/TouchPoint_jni.h"
 
-using WebKit::WebTouchEvent;
-using WebKit::WebTouchPoint;
+using blink::WebTouchEvent;
+using blink::WebTouchPoint;
 
 namespace {
 
 void MaybeAddTouchPoint(JNIEnv* env,
                         jobject pt,
                         float dpi_scale,
-                        WebKit::WebTouchEvent& event) {
+                        blink::WebTouchEvent& event) {
   WebTouchPoint::State state = static_cast<WebTouchPoint::State>(
       Java_TouchPoint_getState(env, pt));
   if (state == WebTouchPoint::StateUndefined)
@@ -32,7 +32,7 @@ void MaybeAddTouchPoint(JNIEnv* env,
 
   // Record the current number of points in the WebTouchEvent
   const int idx = event.touchesLength;
-  DCHECK_LT(idx, WebKit::WebTouchEvent::touchesLengthCap);
+  DCHECK_LT(idx, blink::WebTouchEvent::touchesLengthCap);
 
   WebTouchPoint wtp;
   wtp.id = Java_TouchPoint_getId(env, pt);
@@ -43,20 +43,28 @@ void MaybeAddTouchPoint(JNIEnv* env,
   wtp.screenPosition = wtp.position;
   wtp.force = Java_TouchPoint_getPressure(env, pt);
 
-  // TODO(djsollen): WebKit stores touch point size as a pair of radii, which
-  // are integers.  We receive touch point size from Android as a float
-  // between 0 and 1 and interpret 'size' as an elliptical area.  We convert
-  // size to a radius and then scale up to avoid truncating away all of the
-  // data. W3C spec is for the radii to be in units of screen pixels. Need to
-  // change.
-  const static double PI = 3.1415926;
-  const static double SCALE_FACTOR = 1024.0;
-  const int radius = static_cast<int>(
-      (sqrt(Java_TouchPoint_getSize(env, pt)) / PI) * SCALE_FACTOR);
-  wtp.radiusX = radius / dpi_scale;
-  wtp.radiusY = radius / dpi_scale;
-  // Since our radii are equal, a rotation angle doesn't mean anything.
-  wtp.rotationAngle = 0.0;
+  const int radiusMajor = static_cast<int>(
+      Java_TouchPoint_getTouchMajor(env, pt) * 0.5f / dpi_scale);
+  const int radiusMinor = static_cast<int>(
+      Java_TouchPoint_getTouchMinor(env, pt) * 0.5f / dpi_scale);
+  const float majorAngleInRadiansClockwiseFromVertical =
+      Java_TouchPoint_getOrientation(env, pt);
+  const float majorAngleInDegreesClockwiseFromVertical =
+      std::isnan(majorAngleInRadiansClockwiseFromVertical)
+          ? 0.f : (majorAngleInRadiansClockwiseFromVertical * 180.f) / M_PI;
+  // Android provides a major axis orientation clockwise with respect to the
+  // vertical of [-90, 90], while the W3C specifies a range of [0, 90].
+  if (majorAngleInDegreesClockwiseFromVertical >= 0) {
+    wtp.radiusX = radiusMinor;
+    wtp.radiusY = radiusMajor;
+    wtp.rotationAngle = majorAngleInDegreesClockwiseFromVertical;
+  } else {
+    wtp.radiusX = radiusMajor;
+    wtp.radiusY = radiusMinor;
+    wtp.rotationAngle = majorAngleInDegreesClockwiseFromVertical + 90.f;
+  }
+  DCHECK_GE(wtp.rotationAngle, 0.f);
+  DCHECK_LE(wtp.rotationAngle, 90.f);
 
   // Add the newly created WebTouchPoint to the event
   event.touches[idx] = wtp;
@@ -72,7 +80,7 @@ void TouchPoint::BuildWebTouchEvent(JNIEnv* env,
                                     jlong time_ms,
                                     float dpi_scale,
                                     jobjectArray pts,
-                                    WebKit::WebTouchEvent& event) {
+                                    blink::WebTouchEvent& event) {
   event.type = static_cast<WebTouchEvent::Type>(type);
   event.timeStampSeconds =
       static_cast<double>(time_ms) / base::Time::kMillisecondsPerSecond;
@@ -91,16 +99,16 @@ void TouchPoint::BuildWebTouchEvent(JNIEnv* env,
 static void RegisterConstants(JNIEnv* env) {
    Java_TouchPoint_initializeConstants(
        env,
-       WebKit::WebTouchEvent::TouchStart,
-       WebKit::WebTouchEvent::TouchMove,
-       WebKit::WebTouchEvent::TouchEnd,
-       WebKit::WebTouchEvent::TouchCancel,
-       WebKit::WebTouchPoint::StateUndefined,
-       WebKit::WebTouchPoint::StateReleased,
-       WebKit::WebTouchPoint::StatePressed,
-       WebKit::WebTouchPoint::StateMoved,
-       WebKit::WebTouchPoint::StateStationary,
-       WebKit::WebTouchPoint::StateCancelled);
+       blink::WebTouchEvent::TouchStart,
+       blink::WebTouchEvent::TouchMove,
+       blink::WebTouchEvent::TouchEnd,
+       blink::WebTouchEvent::TouchCancel,
+       blink::WebTouchPoint::StateUndefined,
+       blink::WebTouchPoint::StateReleased,
+       blink::WebTouchPoint::StatePressed,
+       blink::WebTouchPoint::StateMoved,
+       blink::WebTouchPoint::StateStationary,
+       blink::WebTouchPoint::StateCancelled);
 }
 
 bool RegisterTouchPoint(JNIEnv* env) {

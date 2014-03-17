@@ -265,9 +265,10 @@ class ChromeLauncher(BrowserLauncher):
 
   def MakeCmd(self, url, host, port):
     cmd = [self.binary,
-            # Note that we do not use "--enable-logging" here because
-            # it actually turns off logging to the Buildbot logs on
-            # Windows (see http://crbug.com/169941).
+            # --enable-logging enables stderr output from Chromium subprocesses
+            # on Windows (see
+            # https://code.google.com/p/chromium/issues/detail?id=171836)
+            '--enable-logging',
             '--disable-web-resources',
             '--disable-preconnect',
             # This is speculative, sync should not occur with a clean profile.
@@ -294,6 +295,10 @@ class ChromeLauncher(BrowserLauncher):
             '--user-data-dir=%s' % self.profile]
     # Log network requests to assist debugging.
     cmd.append('--log-net-log=%s' % self.NetLogName())
+    if PLATFORM == 'linux':
+      # Explicitly run with mesa on linux. The test infrastructure doesn't have
+      # sufficient native GL contextes to run these tests.
+      cmd.append('--use-gl=osmesa')
     if self.options.ppapi_plugin is None:
       cmd.append('--enable-nacl')
       disable_sandbox = False

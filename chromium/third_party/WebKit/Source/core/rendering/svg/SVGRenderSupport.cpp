@@ -26,7 +26,6 @@
 
 #include "core/rendering/svg/SVGRenderSupport.h"
 
-#include "core/platform/graphics/transforms/TransformState.h"
 #include "core/rendering/RenderGeometryMap.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/SubtreeLayoutScope.h"
@@ -40,7 +39,7 @@
 #include "core/rendering/svg/SVGResources.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
 #include "core/svg/SVGElement.h"
-#include "wtf/UnusedParam.h"
+#include "platform/geometry/TransformState.h"
 
 namespace WebCore {
 
@@ -257,7 +256,7 @@ void SVGRenderSupport::layoutChildren(RenderObject* start, bool selfNeedsLayout)
             // for the initial paint to avoid potential double-painting caused by non-sensical "old" bounds.
             // We could handle this in the individual objects, but for now it's easier to have
             // parent containers call repaint().  (RenderBlock::layout* has similar logic.)
-            if (!childEverHadLayout)
+            if (!childEverHadLayout && !RuntimeEnabledFeatures::repaintAfterLayoutEnabled())
                 child->repaint();
         } else if (layoutSizeChanged)
             notlayoutedObjects.add(child);

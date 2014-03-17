@@ -36,7 +36,7 @@
     # Allow overriding the selection of which FFmpeg binaries to copy via an
     # environment variable.  Affects the ffmpeg_binaries target.
     'conditions': [
-      ['target_arch == "arm" and armv7 == 1 and arm_neon == 1', {
+      ['target_arch == "arm" and arm_version == 7 and arm_neon == 1', {
         # Need a separate config for arm+neon vs arm
         'ffmpeg_config%': 'arm-neon',
       }, {
@@ -46,10 +46,16 @@
         'asm_sources': [
         ],
       }],
-      ['OS == "mac" or OS == "win" or OS == "openbsd"', {
-        'os_config%': '<(OS)',
-      }, {  # all other Unix OS's use the linux config
-        'os_config%': 'linux',
+      ['OS == "win" and (MSVS_VERSION == "2013" or MSVS_VERSION == "2013e")', {
+        'os_config%': 'win-vs2013',
+      }, {
+        'conditions': [
+          ['OS == "mac" or OS == "win" or OS == "openbsd"', {
+            'os_config%': '<(OS)',
+          }, {  # all other Unix OS's use the linux config
+            'os_config%': 'linux',
+          }],
+        ],
       }],
       ['chromeos == 1', {
         'ffmpeg_branding%': '<(branding)OS',
@@ -71,10 +77,69 @@
     'extra_header': 'chromium/ffmpeg_stub_headers.fragment',
   },
   'conditions': [
-    ['OS == "win" and clang == 0', {
+    ['target_arch != "arm"', {
+      'targets': [
+        {
+          'target_name': 'ffmpeg_yasm',
+          'type': 'static_library',
+          # VS2010 does not correctly incrementally link obj files generated
+          # from asm files. This flag disables UseLibraryDependencyInputs to
+          # avoid this problem.
+          'msvs_2010_disable_uldi_when_referenced': 1,
+          'includes': [
+            'ffmpeg_generated.gypi',
+            '../yasm/yasm_compile.gypi',
+          ],
+          'sources': [
+            '<@(asm_sources)',
+            # XCode doesn't want to link a pure assembly target and will fail
+            # to link when it creates an empty file list.  So add a dummy file
+            # keep the linker happy.  See http://crbug.com/157073
+            'xcode_hack.c',
+          ],
+          'variables': {
+            # Path to platform configuration files.
+            'platform_config_root': 'chromium/config/<(ffmpeg_branding)/<(os_config)/<(ffmpeg_config)',
+
+            'conditions': [
+              ['target_arch == "ia32"', {
+                'more_yasm_flags': [
+                  '-DARCH_X86_32',
+                 ],
+              }, {
+                'more_yasm_flags': [
+                  '-DARCH_X86_64',
+                ],
+              }],
+              ['OS == "mac"', {
+                'more_yasm_flags': [
+                  # Necessary to ensure symbols end up with a _ prefix; added by
+                  # yasm_compile.gypi for Windows, but not Mac.
+                  '-DPREFIX',
+                ]
+              }],
+            ],
+            'yasm_flags': [
+              '-DPIC',
+              '>@(more_yasm_flags)',
+              '-I', '<(platform_config_root)',
+              '-I', 'libavcodec/x86/',
+              '-I', 'libavutil/x86/',
+              '-I', '.',
+              # Disable warnings, prevents log spam for things we won't fix.
+              '-w',
+              '-P', 'config.asm',
+            ],
+            'yasm_output_path': '<(shared_generated_dir)/yasm'
+          },
+        },
+      ] # targets
+    }], # arch != arm
+    ['OS == "win" and clang == 0 and MSVS_VERSION != "2013" and MSVS_VERSION != "2013e"', {
       # Convert the source code from c99 to c89 if we're on Windows and not
       # using clang, which can compile c99 directly.  Clang support is
-      # experimental and unsupported.
+      # experimental and unsupported. VS2013 also supports enough of C99 to
+      # be able to avoid this conversion.
       'variables': {
         'converter_script': 'chromium/scripts/c99conv.py',
         'converter_executable': 'chromium/binaries/c99conv.exe',
@@ -154,7 +219,7 @@
             '-fomit-frame-pointer',
           ],
           'conditions': [
-            ['OS != "win" or clang == 1', {
+            ['OS != "win" or clang == 1 or MSVS_VERSION == "2013" or MSVS_VERSION == "2013e"', {
               # If we're not doing C99 conversion, add the normal source code.
               'sources': ['<@(c_sources)'],
             }, {
@@ -370,10 +435,10 @@
               # TODO(dalecurtis): We should fix these.  http://crbug.com/154421
               'msvs_disabled_warnings': [
                 4996, 4018, 4090, 4305, 4133, 4146, 4554, 4028, 4334, 4101, 4102,
-                4116, 4307, 4273
+                4116, 4307, 4273, 4005, 4056, 4756,
               ],
               'conditions': [
-                ['clang == 1', {
+                ['clang == 1 or (OS == "win" and (MSVS_VERSION == "2013" or MSVS_VERSION == "2013e"))', {
                   'defines': [
                     'inline=__inline',
                     'strtoll=_strtoi64',
@@ -592,59 +657,6 @@
           ],  # conditions
         }],
       ],  # conditions
-    },
-    {
-      'target_name': 'ffmpeg_yasm',
-      'type': 'static_library',
-      # VS2010 does not correctly incrementally link obj files generated
-      # from asm files. This flag disables UseLibraryDependencyInputs to
-      # avoid this problem.
-      'msvs_2010_disable_uldi_when_referenced': 1,
-      'includes': [
-        'ffmpeg_generated.gypi',
-        '../yasm/yasm_compile.gypi',
-      ],
-      'sources': [
-        '<@(asm_sources)',
-        # XCode doesn't want to link a pure assembly target and will fail
-        # to link when it creates an empty file list.  So add a dummy file
-        # keep the linker happy.  See http://crbug.com/157073
-        'xcode_hack.c',
-      ],
-      'variables': {
-        # Path to platform configuration files.
-        'platform_config_root': 'chromium/config/<(ffmpeg_branding)/<(os_config)/<(ffmpeg_config)',
-        'conditions': [
-          ['target_arch == "ia32"', {
-            'more_yasm_flags': [
-              '-DARCH_X86_32',
-             ],
-          }, {
-            'more_yasm_flags': [
-              '-DARCH_X86_64',
-            ],
-          }],
-          ['OS == "mac"', {
-            'more_yasm_flags': [
-              # Necessary to ensure symbols end up with a _ prefix; added by
-              # yasm_compile.gypi for Windows, but not Mac.
-              '-DPREFIX',
-            ]
-          }],
-        ],
-        'yasm_flags': [
-          '-DPIC',
-          '>@(more_yasm_flags)',
-          '-I', '<(platform_config_root)',
-          '-I', 'libavcodec/x86/',
-          '-I', 'libavutil/x86/',
-          '-I', '.',
-          # Disable warnings, prevents log spam for things we won't fix.
-          '-w',
-          '-P', 'config.asm',
-        ],
-        'yasm_output_path': '<(shared_generated_dir)/yasm'
-      },
     },
   ],  # targets
 }

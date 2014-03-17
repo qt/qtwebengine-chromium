@@ -30,7 +30,7 @@
 #ifndef DatabaseBackendBase_h
 #define DatabaseBackendBase_h
 
-#include "core/platform/sql/SQLiteDatabase.h"
+#include "modules/webdatabase/sqlite/SQLiteDatabase.h"
 #include "modules/webdatabase/DatabaseBasicTypes.h"
 #include "modules/webdatabase/DatabaseDetails.h"
 #include "modules/webdatabase/DatabaseError.h"
@@ -40,13 +40,13 @@
 #include "wtf/text/WTFString.h"
 
 #if !LOG_DISABLED || !ERROR_DISABLED
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #endif
 
 namespace WebCore {
 
 class DatabaseAuthorizer;
-class DatabaseBackendContext;
+class DatabaseContext;
 class DatabaseBase;
 class SecurityOrigin;
 
@@ -83,10 +83,9 @@ public:
     bool hadDeletes();
     void resetAuthorizer();
 
-    virtual void markAsDeletedAndClose() = 0;
     virtual void closeImmediately() = 0;
 
-    DatabaseBackendContext* databaseContext() const { return m_databaseContext.get(); }
+    DatabaseContext* databaseContext() const { return m_databaseContext.get(); }
     void setFrontend(DatabaseBase* frontend) { m_frontend = frontend; }
 
 protected:
@@ -96,7 +95,7 @@ protected:
     friend class SQLTransactionBackend;
     friend class SQLTransactionBackendSync;
 
-    DatabaseBackendBase(PassRefPtr<DatabaseBackendContext>, const String& name, const String& expectedVersion,
+    DatabaseBackendBase(PassRefPtr<DatabaseContext>, const String& name, const String& expectedVersion,
         const String& displayName, unsigned long estimatedSize, DatabaseType);
 
     void closeDatabase();
@@ -122,7 +121,7 @@ protected:
     static const char* databaseInfoTableName();
 
     RefPtr<SecurityOrigin> m_contextThreadSecurityOrigin;
-    RefPtr<DatabaseBackendContext> m_databaseContext; // Associated with m_scriptExecutionContext.
+    RefPtr<DatabaseContext> m_databaseContext; // Associated with m_executionContext.
 
     String m_name;
     String m_expectedVersion;

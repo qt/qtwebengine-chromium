@@ -34,15 +34,18 @@
 #include "PageOverlayList.h"
 #include "WebInputEvent.h"
 #include "WebInputEventConversion.h"
+#include "core/page/AutoscrollController.h"
 #include "core/page/EventHandler.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
-#include "core/platform/graphics/GraphicsContext.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
+#include "core/rendering/RenderLayerCompositor.h"
+#include "core/rendering/RenderView.h"
+#include "platform/graphics/GraphicsContext.h"
 #include "wtf/CurrentTime.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 static inline FrameView* mainFrameView(Page* page)
 {
@@ -59,6 +62,7 @@ void PageWidgetDelegate::animate(Page* page, double monotonicFrameBeginTime)
     FrameView* view = mainFrameView(page);
     if (!view)
         return;
+    page->autoscrollController().animate(monotonicFrameBeginTime);
     view->serviceScriptedAnimations(monotonicFrameBeginTime);
 }
 
@@ -78,6 +82,11 @@ void PageWidgetDelegate::layout(Page* page)
     // setFrameRect may have the side-effect of causing existing page layout to
     // be invalidated, so layout needs to be called last.
     view->updateLayoutAndStyleIfNeededRecursive();
+
+    // For now, as we know this is the point in code where the compositor has
+    // actually asked for Blink to update the composited layer tree. So finally
+    // do all the deferred work for updateCompositingLayers() here.
+    view->renderView()->compositor()->updateCompositingLayers(CompositingUpdateFinishAllDeferredWork);
 }
 
 void PageWidgetDelegate::paint(Page* page, PageOverlayList* overlays, WebCanvas* canvas, const WebRect& rect, CanvasBackground background)
@@ -153,6 +162,7 @@ bool PageWidgetDelegate::handleInputEvent(Page* page, PageWidgetEventHandler& ha
     case WebInputEvent::GestureTap:
     case WebInputEvent::GestureTapUnconfirmed:
     case WebInputEvent::GestureTapDown:
+    case WebInputEvent::GestureShowPress:
     case WebInputEvent::GestureTapCancel:
     case WebInputEvent::GestureDoubleTap:
     case WebInputEvent::GestureTwoFingerTap:
@@ -186,32 +196,32 @@ bool PageWidgetDelegate::handleInputEvent(Page* page, PageWidgetEventHandler& ha
 
 void PageWidgetEventHandler::handleMouseMove(Frame& mainFrame, const WebMouseEvent& event)
 {
-    mainFrame.eventHandler()->handleMouseMoveEvent(PlatformMouseEventBuilder(mainFrame.view(), event));
+    mainFrame.eventHandler().handleMouseMoveEvent(PlatformMouseEventBuilder(mainFrame.view(), event));
 }
 
 void PageWidgetEventHandler::handleMouseLeave(Frame& mainFrame, const WebMouseEvent& event)
 {
-    mainFrame.eventHandler()->handleMouseLeaveEvent(PlatformMouseEventBuilder(mainFrame.view(), event));
+    mainFrame.eventHandler().handleMouseLeaveEvent(PlatformMouseEventBuilder(mainFrame.view(), event));
 }
 
 void PageWidgetEventHandler::handleMouseDown(Frame& mainFrame, const WebMouseEvent& event)
 {
-    mainFrame.eventHandler()->handleMousePressEvent(PlatformMouseEventBuilder(mainFrame.view(), event));
+    mainFrame.eventHandler().handleMousePressEvent(PlatformMouseEventBuilder(mainFrame.view(), event));
 }
 
 void PageWidgetEventHandler::handleMouseUp(Frame& mainFrame, const WebMouseEvent& event)
 {
-    mainFrame.eventHandler()->handleMouseReleaseEvent(PlatformMouseEventBuilder(mainFrame.view(), event));
+    mainFrame.eventHandler().handleMouseReleaseEvent(PlatformMouseEventBuilder(mainFrame.view(), event));
 }
 
 bool PageWidgetEventHandler::handleMouseWheel(Frame& mainFrame, const WebMouseWheelEvent& event)
 {
-    return mainFrame.eventHandler()->handleWheelEvent(PlatformWheelEventBuilder(mainFrame.view(), event));
+    return mainFrame.eventHandler().handleWheelEvent(PlatformWheelEventBuilder(mainFrame.view(), event));
 }
 
 bool PageWidgetEventHandler::handleTouchEvent(Frame& mainFrame, const WebTouchEvent& event)
 {
-    return mainFrame.eventHandler()->handleTouchEvent(PlatformTouchEventBuilder(mainFrame.view(), event));
+    return mainFrame.eventHandler().handleTouchEvent(PlatformTouchEventBuilder(mainFrame.view(), event));
 }
 
 }

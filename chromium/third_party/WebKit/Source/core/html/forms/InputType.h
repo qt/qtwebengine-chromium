@@ -36,7 +36,7 @@
 #include "core/html/HTMLTextFormControlElement.h"
 #include "core/html/forms/InputTypeView.h"
 #include "core/html/forms/StepRange.h"
-#include "core/page/UseCounter.h"
+#include "core/frame/UseCounter.h"
 
 namespace WebCore {
 
@@ -58,8 +58,8 @@ class InputType : public InputTypeView {
     WTF_MAKE_FAST_ALLOCATED;
 
 public:
-    static PassRefPtr<InputType> create(HTMLInputElement*, const AtomicString&);
-    static PassRefPtr<InputType> createText(HTMLInputElement*);
+    static PassRefPtr<InputType> create(HTMLInputElement&, const AtomicString&);
+    static PassRefPtr<InputType> createText(HTMLInputElement&);
     static const AtomicString& normalizeTypeName(const AtomicString&);
     virtual ~InputType();
 
@@ -108,6 +108,7 @@ public:
     virtual void restoreFormControlState(const FormControlState&);
     virtual bool isFormDataAppendable() const;
     virtual bool appendFormData(FormDataList&, bool multipart) const;
+    virtual String resultForDialogSubmit() const;
 
     // DOM property functions
 
@@ -145,6 +146,8 @@ public:
     virtual void stepUp(int, ExceptionState&);
     virtual void stepUpFromRenderer(int);
     virtual String badInputText() const;
+    virtual String rangeOverflowText(const Decimal& maximum) const;
+    virtual String rangeUnderflowText(const Decimal& minimum) const;
     virtual String typeMismatchText() const;
     virtual String valueMissingText() const;
     virtual bool canSetStringValue() const;
@@ -162,19 +165,9 @@ public:
     virtual void accessKeyAction(bool sendMouseEvents);
     virtual bool canBeSuccessfulSubmitButton();
 
-    // Shadow tree handling
-
-    virtual void createShadowSubtree();
-    virtual void destroyShadowSubtree();
-
-    virtual HTMLElement* containerElement() const { return 0; }
-    virtual HTMLElement* innerTextElement() const { return 0; }
-    virtual HTMLElement* passwordGeneratorButtonElement() const { return 0; }
-
     // Miscellaneous functions
 
     virtual bool rendererIsNeeded();
-    virtual void detach();
     virtual void countUsage();
     virtual void sanitizeValueInResponseToMinOrMaxAttributeChange();
     virtual bool shouldRespectAlignAttribute();
@@ -238,11 +231,16 @@ public:
     virtual bool hasCustomFocusLogic() const OVERRIDE;
 
 protected:
-    InputType(HTMLInputElement* element) : InputTypeView(element) { }
+    InputType(HTMLInputElement& element) : InputTypeView(element) { }
     Chrome* chrome() const;
     Locale& locale() const;
     Decimal parseToNumberOrNaN(const String&) const;
-    void observeFeatureIfVisible(UseCounter::Feature) const;
+    void countUsageIfVisible(UseCounter::Feature) const;
+
+    // Derive the step base, following the HTML algorithm steps.
+    Decimal findStepBase(const Decimal&) const;
+
+    StepRange createStepRange(AnyStepHandling, const Decimal& stepBaseDefault, const Decimal& minimumDefault, const Decimal& maximumDefault, const StepRange::StepDescription&) const;
 
 private:
     // Helper for stepUp()/stepDown(). Adds step value * count to the current value.

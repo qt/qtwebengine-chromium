@@ -28,7 +28,7 @@
 #ifndef SQLStatementBackend_h
 #define SQLStatementBackend_h
 
-#include "core/platform/sql/SQLValue.h"
+#include "modules/webdatabase/sqlite/SQLValue.h"
 #include "modules/webdatabase/AbstractSQLStatementBackend.h"
 #include "wtf/Forward.h"
 #include "wtf/PassOwnPtr.h"
@@ -53,7 +53,6 @@ public:
     bool hasStatementCallback() const { return m_hasCallback; }
     bool hasStatementErrorCallback() const { return m_hasErrorCallback; }
 
-    void setDatabaseDeletedError(DatabaseBackend*);
     void setVersionMismatchedError(DatabaseBackend*);
 
     AbstractSQLStatement* frontend();

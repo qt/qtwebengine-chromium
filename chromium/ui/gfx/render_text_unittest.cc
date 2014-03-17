@@ -8,6 +8,7 @@
 
 #include "base/format_macros.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -19,8 +20,8 @@
 #include "ui/gfx/render_text_win.h"
 #endif
 
-#if defined(OS_LINUX)
-#include "ui/gfx/render_text_linux.h"
+#if defined(OS_LINUX) && !defined(USE_OZONE)
+#include "ui/gfx/render_text_pango.h"
 #endif
 
 #if defined(TOOLKIT_GTK)
@@ -34,11 +35,13 @@ namespace {
 // Various weak, LTR, RTL, and Bidi string cases with three characters each.
 const wchar_t kWeak[] =      L" . ";
 const wchar_t kLtr[] =       L"abc";
+const wchar_t kRtl[] =       L"\x5d0\x5d1\x5d2";
+#if !defined(OS_MACOSX)
 const wchar_t kLtrRtl[] =    L"a" L"\x5d0\x5d1";
 const wchar_t kLtrRtlLtr[] = L"a" L"\x5d1" L"b";
-const wchar_t kRtl[] =       L"\x5d0\x5d1\x5d2";
 const wchar_t kRtlLtr[] =    L"\x5d0\x5d1" L"a";
 const wchar_t kRtlLtrRtl[] = L"\x5d0" L"a" L"\x5d1";
+#endif
 
 // Checks whether |range| contains |index|. This is not the same as calling
 // |range.Contains(gfx::Range(index))| - as that would return true when
@@ -63,6 +66,7 @@ void SetRTL(bool rtl) {
   EXPECT_EQ(rtl, base::i18n::IsRTL());
 }
 
+#if !defined(OS_MACOSX)
 // Ensure cursor movement in the specified |direction| yields |expected| values.
 void RunMoveCursorLeftRightTest(RenderText* render_text,
                                 const std::vector<SelectionModel>& expected,
@@ -79,6 +83,7 @@ void RunMoveCursorLeftRightTest(RenderText* render_text,
   render_text->MoveCursor(LINE_BREAK, direction, false);
   EXPECT_EQ(expected.back(), render_text->selection_model());
 }
+#endif  // !defined(OS_MACOSX)
 
 }  // namespace
 
@@ -182,7 +187,7 @@ TEST_F(RenderTextTest, ApplyColorAndStyle) {
   EXPECT_TRUE(render_text->styles()[ITALIC].EqualsForTesting(expected_italic));
 }
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) && !defined(USE_OZONE)
 TEST_F(RenderTextTest, PangoAttributes) {
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   render_text->SetText(ASCIIToUTF16("012345678"));
@@ -205,7 +210,7 @@ TEST_F(RenderTextTest, PangoAttributes) {
   };
 
   int start = 0, end = 0;
-  RenderTextLinux* rt_linux = static_cast<RenderTextLinux*>(render_text.get());
+  RenderTextPango* rt_linux = static_cast<RenderTextPango*>(render_text.get());
   rt_linux->EnsureLayout();
   PangoAttrList* attributes = pango_layout_get_attributes(rt_linux->layout_);
   PangoAttrIterator* iter = pango_attr_list_get_iterator(attributes);
@@ -1137,6 +1142,7 @@ TEST_F(RenderTextTest, StringSizeEmptyString) {
   const FontList font_list("Arial,Symbol, 16px");
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   render_text->SetFontList(font_list);
+  render_text->SetDisplayRect(Rect(0, 0, 0, font_list.GetHeight()));
 
   // The empty string respects FontList metrics for non-zero height
   // and baseline.
@@ -1154,7 +1160,11 @@ TEST_F(RenderTextTest, StringSizeEmptyString) {
 TEST_F(RenderTextTest, StringSizeRespectsFontListMetrics) {
   // Check that Arial and Symbol have different font metrics.
   Font arial_font("Arial", 16);
+  ASSERT_EQ("arial",
+            StringToLowerASCII(arial_font.GetActualFontNameForTesting()));
   Font symbol_font("Symbol", 16);
+  ASSERT_EQ("symbol",
+            StringToLowerASCII(symbol_font.GetActualFontNameForTesting()));
   EXPECT_NE(arial_font.GetHeight(), symbol_font.GetHeight());
   EXPECT_NE(arial_font.GetBaseline(), symbol_font.GetBaseline());
   // "a" should be rendered with Arial, not with Symbol.
@@ -1178,7 +1188,9 @@ TEST_F(RenderTextTest, StringSizeRespectsFontListMetrics) {
   // Check |smaller_font_text| is rendered with the smaller font.
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   render_text->SetText(UTF8ToUTF16(smaller_font_text));
-  render_text->SetFont(smaller_font);
+  render_text->SetFontList(FontList(smaller_font));
+  render_text->SetDisplayRect(Rect(0, 0, 0,
+                                   render_text->font_list().GetHeight()));
   EXPECT_EQ(smaller_font.GetHeight(), render_text->GetStringSize().height());
   EXPECT_EQ(smaller_font.GetBaseline(), render_text->GetBaseline());
 
@@ -1190,6 +1202,8 @@ TEST_F(RenderTextTest, StringSizeRespectsFontListMetrics) {
   fonts.push_back(larger_font);
   const FontList font_list(fonts);
   render_text->SetFontList(font_list);
+  render_text->SetDisplayRect(Rect(0, 0, 0,
+                                   render_text->font_list().GetHeight()));
   EXPECT_LT(smaller_font.GetHeight(), render_text->GetStringSize().height());
   EXPECT_LT(smaller_font.GetBaseline(), render_text->GetBaseline());
   EXPECT_EQ(font_list.GetHeight(), render_text->GetStringSize().height());
@@ -1291,21 +1305,19 @@ TEST_F(RenderTextTest, GetTextOffset) {
 
   // Set display area's size equal to the font size.
   const Size font_size(render_text->GetContentWidth(),
-                       render_text->GetStringSize().height());
+                       render_text->font_list().GetHeight());
   Rect display_rect(font_size);
   render_text->SetDisplayRect(display_rect);
 
   Vector2d offset = render_text->GetLineOffset(0);
   EXPECT_TRUE(offset.IsZero());
 
-  // Set display area's size greater than font size.
-  const int kEnlargement = 2;
-  display_rect.Inset(0, 0, -kEnlargement, -kEnlargement);
+  const int kEnlargementX = 2;
+  display_rect.Inset(0, 0, -kEnlargementX, 0);
   render_text->SetDisplayRect(display_rect);
 
-  // Check the default horizontal and vertical alignment.
+  // Check the default horizontal alignment.
   offset = render_text->GetLineOffset(0);
-  EXPECT_EQ(kEnlargement / 2, offset.y());
   EXPECT_EQ(0, offset.x());
 
   // Check explicitly setting the horizontal alignment.
@@ -1314,21 +1326,20 @@ TEST_F(RenderTextTest, GetTextOffset) {
   EXPECT_EQ(0, offset.x());
   render_text->SetHorizontalAlignment(ALIGN_CENTER);
   offset = render_text->GetLineOffset(0);
-  EXPECT_EQ(kEnlargement / 2, offset.x());
+  EXPECT_EQ(kEnlargementX / 2, offset.x());
   render_text->SetHorizontalAlignment(ALIGN_RIGHT);
   offset = render_text->GetLineOffset(0);
-  EXPECT_EQ(kEnlargement, offset.x());
+  EXPECT_EQ(kEnlargementX, offset.x());
 
-  // Check explicitly setting the vertical alignment.
-  render_text->SetVerticalAlignment(ALIGN_TOP);
+  // Check that text is vertically centered within taller display rects.
+  const int kEnlargementY = display_rect.height();
+  display_rect.Inset(0, 0, 0, -kEnlargementY);
+  render_text->SetDisplayRect(display_rect);
+  const Vector2d prev_offset = render_text->GetLineOffset(0);
+  display_rect.Inset(0, 0, 0, -2 * kEnlargementY);
+  render_text->SetDisplayRect(display_rect);
   offset = render_text->GetLineOffset(0);
-  EXPECT_EQ(0, offset.y());
-  render_text->SetVerticalAlignment(ALIGN_VCENTER);
-  offset = render_text->GetLineOffset(0);
-  EXPECT_EQ(kEnlargement / 2, offset.y());
-  render_text->SetVerticalAlignment(ALIGN_BOTTOM);
-  offset = render_text->GetLineOffset(0);
-  EXPECT_EQ(kEnlargement, offset.y());
+  EXPECT_EQ(prev_offset.y() + kEnlargementY, offset.y());
 
   SetRTL(was_rtl);
 }
@@ -1674,19 +1685,13 @@ TEST_F(RenderTextTest, Multiline_MinWidth) {
 
 // Ensure strings wrap onto multiple lines for a normal available width.
 TEST_F(RenderTextTest, Multiline_NormalWidth) {
-  // TODO(ckocagil): Enable this test on XP.
-#if defined(OS_WIN)
-  if (base::win::GetVersion() < base::win::VERSION_VISTA)
-    return;
-#endif
-
   const struct {
     const wchar_t* const text;
     const Range first_line_char_range;
     const Range second_line_char_range;
   } kTestStrings[] = {
     { L"abc defg hijkl", Range(0, 9), Range(9, 14) },
-    { L"qwertyuiop", Range(0, 8), Range(8, 10) },
+    { L"qwertyzxcvbn", Range(0, 8), Range(8, 12) },
     { L"\x062A\x0641\x0627\x062D\x05EA\x05E4\x05D5\x05D6\x05D9\x05DD",
           Range(4, 10), Range(0, 4) }
   };
@@ -1730,13 +1735,59 @@ TEST_F(RenderTextTest, Multiline_SufficientWidth) {
     EXPECT_EQ(1U, render_text->lines_.size());
   }
 }
-#endif  // defined(OS_WIN)
 
-#if defined(OS_WIN)
+TEST_F(RenderTextTest, Multiline_Newline) {
+  const struct {
+    const wchar_t* const text;
+    // Ranges of the characters on each line preceding the newline.
+    const Range first_line_char_range;
+    const Range second_line_char_range;
+  } kTestStrings[] = {
+    { L"abc\ndef", Range(0, 3), Range(4, 7) },
+    { L"a \n b ", Range(0, 2), Range(3, 6) },
+    { L"\n" , Range::InvalidRange(), Range::InvalidRange() }
+  };
+
+  scoped_ptr<RenderTextWin> render_text(
+      static_cast<RenderTextWin*>(RenderText::CreateInstance()));
+  render_text->SetDisplayRect(Rect(200, 1000));
+  render_text->SetMultiline(true);
+  Canvas canvas;
+
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestStrings); ++i) {
+    SCOPED_TRACE(base::StringPrintf("kTestStrings[%" PRIuS "]", i));
+    render_text->SetText(WideToUTF16(kTestStrings[i].text));
+    render_text->Draw(&canvas);
+
+    ASSERT_EQ(2U, render_text->lines_.size());
+
+    const Range first_expected_range = kTestStrings[i].first_line_char_range;
+    ASSERT_EQ(first_expected_range.IsValid() ? 2U : 1U,
+              render_text->lines_[0].segments.size());
+    if (first_expected_range.IsValid())
+      EXPECT_EQ(first_expected_range,
+                render_text->lines_[0].segments[0].char_range);
+
+    const internal::LineSegment& newline_segment =
+        render_text->lines_[0].segments[first_expected_range.IsValid() ? 1 : 0];
+    ASSERT_EQ(1U, newline_segment.char_range.length());
+    EXPECT_EQ(L'\n', kTestStrings[i].text[newline_segment.char_range.start()]);
+
+    const Range second_expected_range = kTestStrings[i].second_line_char_range;
+    ASSERT_EQ(second_expected_range.IsValid() ? 1U : 0U,
+              render_text->lines_[1].segments.size());
+    if (second_expected_range.IsValid())
+      EXPECT_EQ(second_expected_range,
+                render_text->lines_[1].segments[0].char_range);
+  }
+}
+
+
 TEST_F(RenderTextTest, Win_BreakRunsByUnicodeBlocks) {
   scoped_ptr<RenderTextWin> render_text(
       static_cast<RenderTextWin*>(RenderText::CreateInstance()));
 
+  // The '\x25B6' "play character" should break runs. http://crbug.com/278913
   render_text->SetText(WideToUTF16(L"x\x25B6y"));
   render_text->EnsureLayout();
   ASSERT_EQ(3U, render_text->runs_.size());
@@ -1750,8 +1801,7 @@ TEST_F(RenderTextTest, Win_BreakRunsByUnicodeBlocks) {
   EXPECT_EQ(Range(0, 2), render_text->runs_[0]->range);
   EXPECT_EQ(Range(2, 3), render_text->runs_[1]->range);
   EXPECT_EQ(Range(3, 5), render_text->runs_[2]->range);
-
 }
-#endif  // !defined(OS_WIN)
+#endif  // defined(OS_WIN)
 
 }  // namespace gfx

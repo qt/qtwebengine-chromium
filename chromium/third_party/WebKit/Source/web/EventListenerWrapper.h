@@ -31,13 +31,13 @@
 #ifndef EventListenerWrapper_h
 #define EventListenerWrapper_h
 
-#include "core/dom/EventListener.h"
+#include "core/events/EventListener.h"
 
 namespace WebCore {
-class ScriptExecutionContext;
+class ExecutionContext;
 }
 
-namespace WebKit {
+namespace blink {
 
 class WebDOMEventListener;
 
@@ -49,7 +49,7 @@ public:
     ~EventListenerWrapper();
 
     virtual bool operator==(const WebCore::EventListener&);
-    virtual void handleEvent(WebCore::ScriptExecutionContext*, WebCore::Event*);
+    virtual void handleEvent(WebCore::ExecutionContext*, WebCore::Event*);
 
     void webDOMEventListenerDeleted();
 
@@ -57,6 +57,6 @@ private:
     WebDOMEventListener* m_webDOMEventListener;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

@@ -27,6 +27,7 @@
 
 #include "talk/p2p/base/transportchannelproxy.h"
 #include "talk/base/common.h"
+#include "talk/base/logging.h"
 #include "talk/base/thread.h"
 #include "talk/p2p/base/transport.h"
 #include "talk/p2p/base/transportchannelimpl.h"
@@ -54,8 +55,15 @@ TransportChannelProxy::~TransportChannelProxy() {
 }
 
 void TransportChannelProxy::SetImplementation(TransportChannelImpl* impl) {
-  // TODO(juberti): Fix this to occur on the correct thread.
-  // ASSERT(talk_base::Thread::Current() == worker_thread_);
+  ASSERT(talk_base::Thread::Current() == worker_thread_);
+
+  if (impl == impl_) {
+    ASSERT(false);
+    // Ignore if the |impl| has already been set.
+    LOG(LS_WARNING) << "Ignored TransportChannelProxy::SetImplementation call "
+                    << "with a same impl as the existing one.";
+    return;
+  }
 
   // Destroy any existing impl_.
   if (impl_) {
@@ -172,6 +180,24 @@ bool TransportChannelProxy::GetSrtpCipher(std::string* cipher) {
   return impl_->GetSrtpCipher(cipher);
 }
 
+bool TransportChannelProxy::GetLocalIdentity(
+    talk_base::SSLIdentity** identity) const {
+  ASSERT(talk_base::Thread::Current() == worker_thread_);
+  if (!impl_) {
+    return false;
+  }
+  return impl_->GetLocalIdentity(identity);
+}
+
+bool TransportChannelProxy::GetRemoteCertificate(
+    talk_base::SSLCertificate** cert) const {
+  ASSERT(talk_base::Thread::Current() == worker_thread_);
+  if (!impl_) {
+    return false;
+  }
+  return impl_->GetRemoteCertificate(cert);
+}
+
 bool TransportChannelProxy::ExportKeyingMaterial(const std::string& label,
                                                  const uint8* context,
                                                  size_t context_len,
@@ -208,12 +234,12 @@ void TransportChannelProxy::OnWritableState(TransportChannel* channel) {
   // Note: SignalWritableState fired by set_readable.
 }
 
-void TransportChannelProxy::OnReadPacket(TransportChannel* channel,
-                                         const char* data, size_t size,
-                                         int flags) {
+void TransportChannelProxy::OnReadPacket(
+    TransportChannel* channel, const char* data, size_t size,
+    const talk_base::PacketTime& packet_time, int flags) {
   ASSERT(talk_base::Thread::Current() == worker_thread_);
   ASSERT(channel == impl_);
-  SignalReadPacket(this, data, size, flags);
+  SignalReadPacket(this, data, size, packet_time, flags);
 }
 
 void TransportChannelProxy::OnReadyToSend(TransportChannel* channel) {

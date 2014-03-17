@@ -29,16 +29,14 @@ base.exportTo('tracing', function() {
   /**
    * View
    * @constructor
-   * @extends {HTMLDivElement}
+   * @extends {HTMLUnknownElement}
    */
-  var TimelineView = ui.define('div');
+  var TimelineView = ui.define('x-timeline-view');
 
   TimelineView.prototype = {
-    __proto__: HTMLDivElement.prototype,
+    __proto__: HTMLUnknownElement.prototype,
 
     decorate: function() {
-      this.classList.add('timeline-view');
-
       var node = base.instantiateTemplate('#timeline-view-template');
       this.appendChild(node);
 
@@ -94,6 +92,7 @@ base.exportTo('tracing', function() {
       var helpTextEl = node.querySelector('.view-help-text');
 
       var dlg = new ui.Overlay();
+      dlg.title = 'chrome://tracing Help';
       dlg.classList.add('view-help-overlay');
       dlg.appendChild(node);
 
@@ -121,6 +120,7 @@ base.exportTo('tracing', function() {
       var textEl = node.querySelector('.info-button-text');
 
       var dlg = new ui.Overlay();
+      dlg.title = 'Metadata for trace';
       dlg.classList.add('view-metadata-overlay');
       dlg.appendChild(node);
 

@@ -10,9 +10,8 @@
 #include "base/event_types.h"
 #include "base/logging.h"
 #include "base/time/time.h"
-#include "ui/base/dragdrop/os_exchange_data.h"
-#include "ui/base/gestures/gesture_types.h"
 #include "ui/events/event_constants.h"
+#include "ui/events/gestures/gesture_types.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/events/latency_info.h"
 #include "ui/gfx/point.h"
@@ -48,20 +47,6 @@ class EVENTS_EXPORT Event {
     DISALLOW_COPY_AND_ASSIGN(DispatcherApi);
   };
 
-  // For testing.
-  class TestApi {
-   public:
-    explicit TestApi(Event* event) : event_(event) {}
-
-    void set_time_stamp(base::TimeDelta time_stamp) {
-      event_->time_stamp_ = time_stamp;
-    }
-
-   private:
-    TestApi();
-    Event* event_;
-  };
-
   const base::NativeEvent& native_event() const { return native_event_; }
   EventType type() const { return type_; }
   const std::string& name() const { return name_; }
@@ -76,9 +61,6 @@ class EVENTS_EXPORT Event {
   EventTarget* target() const { return target_; }
   EventPhase phase() const { return phase_; }
   EventResult result() const { return result_; }
-  bool dispatch_to_hidden_targets() const {
-    return dispatch_to_hidden_targets_;
-  }
 
   LatencyInfo* latency() { return &latency_; }
   const LatencyInfo* latency() const { return &latency_; }
@@ -141,6 +123,9 @@ class EVENTS_EXPORT Event {
       case ET_GESTURE_LONG_PRESS:
       case ET_GESTURE_LONG_TAP:
       case ET_GESTURE_MULTIFINGER_SWIPE:
+      case ET_GESTURE_SHOW_PRESS:
+        // When adding a gesture event which is paired with an event which
+        // occurs earlier, add the event to |IsEndingEvent|.
         return true;
 
       case ET_SCROLL_FLING_CANCEL:
@@ -153,6 +138,21 @@ class EVENTS_EXPORT Event {
         break;
     }
     return false;
+  }
+
+  // An ending event is paired with the event which started it. Setting capture
+  // should not prevent ending events from getting to their initial target.
+  bool IsEndingEvent() const {
+    switch(type_) {
+      case ui::ET_TOUCH_CANCELLED:
+      case ui::ET_GESTURE_TAP_CANCEL:
+      case ui::ET_GESTURE_END:
+      case ui::ET_GESTURE_SCROLL_END:
+      case ui::ET_GESTURE_PINCH_END:
+        return true;
+      default:
+        return false;
+    }
   }
 
   bool IsScrollEvent() const {
@@ -206,9 +206,6 @@ class EVENTS_EXPORT Event {
     delete_native_event_ = delete_native_event;
   }
   void set_cancelable(bool cancelable) { cancelable_ = cancelable; }
-  void set_dispatch_to_hidden_targets(bool dispatch_to_hidden_targets) {
-    dispatch_to_hidden_targets_ = dispatch_to_hidden_targets;
-  }
 
   void set_time_stamp(const base::TimeDelta& time_stamp) {
     time_stamp_ = time_stamp;
@@ -216,9 +213,9 @@ class EVENTS_EXPORT Event {
 
   void set_name(const std::string& name) { name_ = name; }
 
-  void InitLatencyInfo();
-
  private:
+  friend class EventTestApi;
+
   // Safely initializes the native event members of this class.
   void Init();
   void InitWithNativeEvent(const base::NativeEvent& native_event);
@@ -228,7 +225,6 @@ class EVENTS_EXPORT Event {
   base::TimeDelta time_stamp_;
   LatencyInfo latency_;
   int flags_;
-  bool dispatch_to_hidden_targets_;
   base::NativeEvent native_event_;
   bool delete_native_event_;
   bool cancelable_;
@@ -245,22 +241,6 @@ class EVENTS_EXPORT CancelModeEvent : public Event {
 
 class EVENTS_EXPORT LocatedEvent : public Event {
  public:
-  // For testing.
-  class TestApi : public Event::TestApi {
-   public:
-    explicit TestApi(LocatedEvent* located_event)
-        : Event::TestApi(located_event),
-          located_event_(located_event) {}
-
-    void set_location(const gfx::Point& location) {
-      located_event_->location_ = location;
-    }
-
-   private:
-    TestApi();
-    LocatedEvent* located_event_;
-  };
-
   virtual ~LocatedEvent();
 
   int x() const { return location_.x(); }
@@ -283,6 +263,7 @@ class EVENTS_EXPORT LocatedEvent : public Event {
   }
 
  protected:
+  friend class LocatedEventTestApi;
   explicit LocatedEvent(const base::NativeEvent& native_event);
 
   // Create a new LocatedEvent which is identical to the provided model.
@@ -531,25 +512,19 @@ class EVENTS_EXPORT KeyEvent : public Event {
   // Used for synthetic events.
   KeyEvent(EventType type, KeyboardCode key_code, int flags, bool is_char);
 
-  // These setters allow an I18N virtual keyboard to fabricate a keyboard event
-  // which does not have a corresponding KeyboardCode (example: U+00E1 Latin
-  // small letter A with acute, U+0410 Cyrillic capital letter A.)
-  // GetCharacter() and GetUnmodifiedCharacter() return the character.
+  // Used for synthetic events with code of DOM KeyboardEvent (e.g. 'KeyA')
+  // See also: ui/events/keycodes/dom4/keycode_converter_data.h
+  KeyEvent(EventType type, KeyboardCode key_code, const std::string& code,
+           int flags, bool is_char);
+
+  // This allows an I18N virtual keyboard to fabricate a keyboard event that
+  // does not have a corresponding KeyboardCode (example: U+00E1 Latin small
+  // letter A with acute, U+0410 Cyrillic capital letter A).
   void set_character(uint16 character) { character_ = character; }
-  void set_unmodified_character(uint16 unmodified_character) {
-    unmodified_character_ = unmodified_character;
-  }
 
   // Gets the character generated by this key event. It only supports Unicode
   // BMP characters.
   uint16 GetCharacter() const;
-
-  // Gets the character generated by this key event ignoring concurrently-held
-  // modifiers (except shift).
-  uint16 GetUnmodifiedCharacter() const;
-
-  // Returns the copy of this key event. Used in NativeWebKeyboardEvent.
-  KeyEvent* Copy() const;
 
   KeyboardCode key_code() const { return key_code_; }
   bool is_char() const { return is_char_; }
@@ -563,6 +538,8 @@ class EVENTS_EXPORT KeyEvent : public Event {
   // TODO(msw): Additional work may be needed for analogues on other platforms.
   bool IsUnicodeKeyCode() const;
 
+  std::string code() const { return code_; }
+
   // Normalizes flags_ to make it Windows/Mac compatible. Since the way
   // of setting modifier mask on X is very different than Windows/Mac as shown
   // in http://crbug.com/127142#c8, the normalization is necessary.
@@ -570,12 +547,19 @@ class EVENTS_EXPORT KeyEvent : public Event {
 
  private:
   KeyboardCode key_code_;
+
+  // String of 'code' defined in DOM KeyboardEvent (e.g. 'KeyA', 'Space')
+  // http://www.w3.org/TR/uievents/#keyboard-key-codes.
+  //
+  // This value represents the physical position in the keyboard and can be
+  // converted from / to keyboard scan code like XKB.
+  std::string code_;
+
   // True if this is a translated character event (vs. a raw key down). Both
   // share the same type: ET_KEY_PRESSED.
   bool is_char_;
 
   uint16 character_;
-  uint16 unmodified_character_;
 };
 
 // A key event which is translated by an input method (IME).
@@ -597,26 +581,6 @@ class EVENTS_EXPORT TranslatedKeyEvent : public KeyEvent {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TranslatedKeyEvent);
-};
-
-class EVENTS_EXPORT DropTargetEvent : public LocatedEvent {
- public:
-  DropTargetEvent(const OSExchangeData& data,
-                  const gfx::Point& location,
-                  const gfx::Point& root_location,
-                  int source_operations);
-
-  const OSExchangeData& data() const { return data_; }
-  int source_operations() const { return source_operations_; }
-
- private:
-  // Data associated with the drag/drop session.
-  const OSExchangeData& data_;
-
-  // Bitmask of supported DragDropTypes::DragOperation by the source.
-  int source_operations_;
-
-  DISALLOW_COPY_AND_ASSIGN(DropTargetEvent);
 };
 
 class EVENTS_EXPORT ScrollEvent : public MouseEvent {

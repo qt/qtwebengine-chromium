@@ -30,7 +30,7 @@
 
 /**
  * @constructor
- * @param{WebInspector.HeapSnapshotWorkerDispatcher} dispatcher
+ * @param {!WebInspector.HeapSnapshotWorkerDispatcher} dispatcher
  * @implements {WebInspector.OutputStream}
  */
 WebInspector.HeapSnapshotLoader = function(dispatcher)
@@ -137,7 +137,7 @@ WebInspector.HeapSnapshotLoader.prototype = {
                 var closingBracketIndex = WebInspector.findBalancedCurlyBrackets(this._json);
                 if (closingBracketIndex === -1)
                     return;
-                this._snapshot.snapshot = /** @type {HeapSnapshotHeader} */ (JSON.parse(this._json.slice(0, closingBracketIndex)));
+                this._snapshot.snapshot = /** @type {!HeapSnapshotHeader} */ (JSON.parse(this._json.slice(0, closingBracketIndex)));
                 this._json = this._json.slice(closingBracketIndex);
                 this._state = "find-nodes";
                 break;
@@ -207,7 +207,7 @@ WebInspector.HeapSnapshotLoader.prototype = {
                     return;
                 this._json = this._json.slice(bracketIndex + 1);
 
-                var trace_function_info_field_count = 3;
+                var trace_function_info_field_count = this._snapshot.snapshot.meta.trace_function_info_fields.length;
                 var trace_function_info_length = this._snapshot.snapshot.trace_function_count * trace_function_info_field_count;
                 this._array = new Uint32Array(trace_function_info_length);
                 this._arrayIndex = 0;

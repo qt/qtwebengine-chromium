@@ -339,35 +339,6 @@ void PictureLayerTiling::Reset() {
   tiles_.clear();
 }
 
-namespace {
-
-bool NearlyOne(SkMScalar lhs) {
-  return std::abs(lhs-1.0) < std::numeric_limits<float>::epsilon();
-}
-
-bool NearlyZero(SkMScalar lhs) {
-  return std::abs(lhs) < std::numeric_limits<float>::epsilon();
-}
-
-bool ApproximatelyTranslation(const SkMatrix44& matrix) {
-  return
-      NearlyOne(matrix.get(0, 0)) &&
-      NearlyZero(matrix.get(1, 0)) &&
-      NearlyZero(matrix.get(2, 0)) &&
-      matrix.get(3, 0) == 0 &&
-      NearlyZero(matrix.get(0, 1)) &&
-      NearlyOne(matrix.get(1, 1)) &&
-      NearlyZero(matrix.get(2, 1)) &&
-      matrix.get(3, 1) == 0 &&
-      NearlyZero(matrix.get(0, 2)) &&
-      NearlyZero(matrix.get(1, 2)) &&
-      NearlyOne(matrix.get(2, 2)) &&
-      matrix.get(3, 2) == 0 &&
-      matrix.get(3, 3) == 1;
-}
-
-}  // namespace
-
 void PictureLayerTiling::UpdateTilePriorities(
     WhichTree tree,
     gfx::Size device_viewport,
@@ -406,7 +377,8 @@ void PictureLayerTiling::UpdateTilePriorities(
   gfx::Rect interest_rect = ExpandRectEquallyToAreaBoundedBy(
       starting_rect,
       interest_rect_area,
-      ContentRect());
+      ContentRect(),
+      &expansion_cache_);
   DCHECK(interest_rect.IsEmpty() ||
          ContentRect().Contains(interest_rect));
 
@@ -419,17 +391,15 @@ void PictureLayerTiling::UpdateTilePriorities(
         current_frame_time_in_seconds - last_impl_frame_time_in_seconds_;
   }
 
-  gfx::Rect view_rect(device_viewport);
+  gfx::RectF view_rect(device_viewport);
   float current_scale = current_layer_contents_scale / contents_scale_;
   float last_scale = last_layer_contents_scale / contents_scale_;
 
-  bool store_screen_space_quads_on_tiles;
-  TRACE_EVENT_CATEGORY_GROUP_ENABLED(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
-                                     &store_screen_space_quads_on_tiles);
-
   // Fast path tile priority calculation when both transforms are translations.
-  if (ApproximatelyTranslation(last_screen_transform.matrix()) &&
-      ApproximatelyTranslation(current_screen_transform.matrix())) {
+  if (last_screen_transform.IsApproximatelyIdentityOrTranslation(
+          std::numeric_limits<float>::epsilon()) &&
+      current_screen_transform.IsApproximatelyIdentityOrTranslation(
+          std::numeric_limits<float>::epsilon())) {
     gfx::Vector2dF current_offset(
         current_screen_transform.matrix().get(0, 3),
         current_screen_transform.matrix().get(1, 3));
@@ -456,7 +426,7 @@ void PictureLayerTiling::UpdateTilePriorities(
           last_scale) + last_offset;
 
       float distance_to_visible_in_pixels =
-          TilePriority::manhattanDistance(current_screen_rect, view_rect);
+          current_screen_rect.ManhattanInternalDistance(view_rect);
 
       float time_to_visible_in_seconds =
           TilePriority::TimeForBoundsToIntersect(
@@ -465,8 +435,6 @@ void PictureLayerTiling::UpdateTilePriorities(
           resolution_,
           time_to_visible_in_seconds,
           distance_to_visible_in_pixels);
-      if (store_screen_space_quads_on_tiles)
-        priority.set_current_screen_quad(gfx::QuadF(current_screen_rect));
       tile->SetPriority(tree, priority);
     }
   } else if (!last_screen_transform.HasPerspective() &&
@@ -538,7 +506,7 @@ void PictureLayerTiling::UpdateTilePriorities(
           last_tile_origin + last_vertical).BoundingBox();
 
       float distance_to_visible_in_pixels =
-          TilePriority::manhattanDistance(current_screen_rect, view_rect);
+          current_screen_rect.ManhattanInternalDistance(view_rect);
 
       float time_to_visible_in_seconds =
           TilePriority::TimeForBoundsToIntersect(
@@ -547,21 +515,6 @@ void PictureLayerTiling::UpdateTilePriorities(
           resolution_,
           time_to_visible_in_seconds,
           distance_to_visible_in_pixels);
-
-      if (store_screen_space_quads_on_tiles) {
-        // This overhead is only triggered when logging event tracing data.
-        gfx::Rect tile_bounds =
-            tiling_data_.TileBounds(iter.index_x(), iter.index_y());
-        gfx::RectF current_layer_content_rect = gfx::ScaleRect(
-            tile_bounds,
-            current_scale,
-            current_scale);
-        bool clipped;
-        priority.set_current_screen_quad(
-            MathUtil::MapQuad(current_screen_transform,
-                              gfx::QuadF(current_layer_content_rect),
-                              &clipped));
-      }
       tile->SetPriority(tree, priority);
     }
   } else {
@@ -588,7 +541,7 @@ void PictureLayerTiling::UpdateTilePriorities(
           last_screen_transform, last_layer_content_rect);
 
       float distance_to_visible_in_pixels =
-          TilePriority::manhattanDistance(current_screen_rect, view_rect);
+          current_screen_rect.ManhattanInternalDistance(view_rect);
 
       float time_to_visible_in_seconds =
           TilePriority::TimeForBoundsToIntersect(
@@ -598,13 +551,6 @@ void PictureLayerTiling::UpdateTilePriorities(
           resolution_,
           time_to_visible_in_seconds,
           distance_to_visible_in_pixels);
-      if (store_screen_space_quads_on_tiles) {
-        bool clipped;
-        priority.set_current_screen_quad(
-            MathUtil::MapQuad(current_screen_transform,
-                              gfx::QuadF(current_layer_content_rect),
-                              &clipped));
-      }
       tile->SetPriority(tree, priority);
     }
   }
@@ -648,6 +594,16 @@ void PictureLayerTiling::SetLiveTilesRect(
   live_tiles_rect_ = new_live_tiles_rect;
 }
 
+void PictureLayerTiling::DidBecomeRecycled() {
+  // DidBecomeActive below will set the active priority for tiles that are
+  // still in the tree. Calling this first on an active tiling that is becoming
+  // recycled takes care of tiles that are no longer in the active tree (eg.
+  // due to a pending invalidation).
+  for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it) {
+    it->second->SetPriority(ACTIVE_TREE, TilePriority());
+  }
+}
+
 void PictureLayerTiling::DidBecomeActive() {
   for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it) {
     it->second->SetPriority(ACTIVE_TREE, it->second->priority(PENDING_TREE));
@@ -687,6 +643,10 @@ size_t PictureLayerTiling::GPUMemoryUsageInBytes() const {
   return amount;
 }
 
+PictureLayerTiling::RectExpansionCache::RectExpansionCache()
+  : previous_target(0) {
+}
+
 namespace {
 
 // This struct represents an event at which the expending rect intersects
@@ -718,9 +678,22 @@ int ComputeExpansionDelta(int num_x_edges, int num_y_edges,
 gfx::Rect PictureLayerTiling::ExpandRectEquallyToAreaBoundedBy(
     gfx::Rect starting_rect,
     int64 target_area,
-    gfx::Rect bounding_rect) {
+    gfx::Rect bounding_rect,
+    RectExpansionCache* cache) {
   if (starting_rect.IsEmpty())
     return starting_rect;
+
+  if (cache &&
+      cache->previous_start == starting_rect &&
+      cache->previous_bounds == bounding_rect &&
+      cache->previous_target == target_area)
+    return cache->previous_result;
+
+  if (cache) {
+    cache->previous_start = starting_rect;
+    cache->previous_bounds = bounding_rect;
+    cache->previous_target = target_area;
+  }
 
   DCHECK(!bounding_rect.IsEmpty());
   DCHECK_GT(target_area, 0);
@@ -735,11 +708,15 @@ gfx::Rect PictureLayerTiling::ExpandRectEquallyToAreaBoundedBy(
   gfx::Rect rect = IntersectRects(expanded_starting_rect, bounding_rect);
   if (rect.IsEmpty()) {
     // The starting_rect and bounding_rect are far away.
+    if (cache)
+      cache->previous_result = rect;
     return rect;
   }
   if (delta >= 0 && rect == expanded_starting_rect) {
     // The starting rect already covers the entire bounding_rect and isn't too
     // large for the target_area.
+    if (cache)
+      cache->previous_result = rect;
     return rect;
   }
 
@@ -809,7 +786,10 @@ gfx::Rect PictureLayerTiling::ExpandRectEquallyToAreaBoundedBy(
       break;
   }
 
-  return gfx::Rect(origin_x, origin_y, width, height);
+  gfx::Rect result(origin_x, origin_y, width, height);
+  if (cache)
+    cache->previous_result = result;
+  return result;
 }
 
 }  // namespace cc

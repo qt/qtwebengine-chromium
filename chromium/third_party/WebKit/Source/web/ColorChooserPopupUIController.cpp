@@ -31,16 +31,13 @@
 #include "PickerCommon.h"
 #include "WebColorChooser.h"
 #include "WebViewImpl.h"
-#include "core/page/FrameView.h"
-#include "core/platform/ColorChooserClient.h"
-#include "core/platform/LocalizedStrings.h"
-#include "core/platform/graphics/IntRect.h"
-#include "public/platform/Platform.h"
-#include "public/platform/WebLocalizedString.h"
+#include "core/frame/FrameView.h"
+#include "platform/ColorChooserClient.h"
+#include "platform/geometry/IntRect.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 // Keep in sync with Actions in colorSuggestionPicker.js.
 enum ColorPickerPopupAction {
@@ -54,7 +51,7 @@ ColorChooserPopupUIController::ColorChooserPopupUIController(ChromeClientImpl* c
     , m_chromeClient(chromeClient)
     , m_client(client)
     , m_popup(0)
-    , m_locale(Locale::createDefault())
+    , m_locale(Locale::defaultLocale())
 {
 }
 
@@ -85,10 +82,10 @@ IntSize ColorChooserPopupUIController::contentSize()
 
 void ColorChooserPopupUIController::writeDocument(DocumentWriter& writer)
 {
-    Vector<Color> suggestions = m_client->suggestions();
+    Vector<ColorSuggestion> suggestions = m_client->suggestions();
     Vector<String> suggestionValues;
     for (unsigned i = 0; i < suggestions.size(); i++)
-        suggestionValues.append(suggestions[i].serialized());
+        suggestionValues.append(suggestions[i].color.serialized());
     IntRect anchorRectInScreen = m_chromeClient->rootViewToScreen(m_client->elementRectRelativeToRootView());
 
     PagePopupClient::addString("<!DOCTYPE html><head><meta charset='UTF-8'><style>\n", writer);
@@ -97,7 +94,7 @@ void ColorChooserPopupUIController::writeDocument(DocumentWriter& writer)
     PagePopupClient::addString("</style></head><body><div id=main>Loading...</div><script>\n"
         "window.dialogArguments = {\n", writer);
     PagePopupClient::addProperty("values", suggestionValues, writer);
-    PagePopupClient::addProperty("otherColorLabel", Platform::current()->queryLocalizedString(WebLocalizedString::OtherColorLabel), writer);
+    PagePopupClient::addProperty("otherColorLabel", locale().queryString(WebLocalizedString::OtherColorLabel), writer);
     addProperty("anchorRectInScreen", anchorRectInScreen, writer);
     PagePopupClient::addString("};\n", writer);
     writer.addData(pickerCommonJs, sizeof(pickerCommonJs));
@@ -107,7 +104,7 @@ void ColorChooserPopupUIController::writeDocument(DocumentWriter& writer)
 
 Locale& ColorChooserPopupUIController::locale()
 {
-    return *m_locale;
+    return m_locale;
 }
 
 void ColorChooserPopupUIController::setValueAndClosePopup(int numValue, const String& stringValue)

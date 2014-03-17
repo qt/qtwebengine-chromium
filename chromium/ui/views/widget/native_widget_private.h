@@ -151,8 +151,8 @@ class VIEWS_EXPORT NativeWidgetPrivate : public NativeWidget {
       gfx::Rect* bounds,
       ui::WindowShowState* show_state) const = 0;
 
-  // Sets the NativeWindow title.
-  virtual void SetWindowTitle(const string16& title) = 0;
+  // Sets the NativeWindow title. Returns true if the title changed.
+  virtual bool SetWindowTitle(const string16& title) = 0;
 
   // Sets the Window icons. |window_icon| is a 16x16 icon suitable for use in
   // a title bar. |app_icon| is a larger size for use in the host environment
@@ -188,6 +188,7 @@ class VIEWS_EXPORT NativeWidgetPrivate : public NativeWidget {
   virtual void Deactivate() = 0;
   virtual bool IsActive() const = 0;
   virtual void SetAlwaysOnTop(bool always_on_top) = 0;
+  virtual bool IsAlwaysOnTop() const = 0;
   virtual void Maximize() = 0;
   virtual void Minimize() = 0;
   virtual bool IsMaximized() const = 0;
@@ -208,10 +209,10 @@ class VIEWS_EXPORT NativeWidgetPrivate : public NativeWidget {
   virtual bool IsMouseEventsEnabled() const = 0;
   virtual void ClearNativeFocus() = 0;
   virtual gfx::Rect GetWorkAreaBoundsInScreen() const = 0;
-  virtual void SetInactiveRenderingDisabled(bool value) = 0;
   virtual Widget::MoveLoopResult RunMoveLoop(
       const gfx::Vector2d& drag_offset,
-      Widget::MoveLoopSource source) = 0;
+      Widget::MoveLoopSource source,
+      Widget::MoveLoopEscapeBehavior escape_behavior) = 0;
   virtual void EndMoveLoop() = 0;
   virtual void SetVisibilityChangedAnimationsEnabled(bool value) = 0;
   virtual ui::NativeTheme* GetNativeTheme() const = 0;

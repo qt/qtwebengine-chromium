@@ -89,6 +89,13 @@ void SkPathOpsDebug::DumpAngles(const SkTArray<SkOpAngle, true>& angles) {
         angles[index].dump();
     }
 }
+
+void SkPathOpsDebug::DumpAngles(const SkTArray<SkOpAngle* , true>& angles) {
+    int count = angles.count();
+    for (int index = 0; index < count; ++index) {
+        angles[index]->dump();
+    }
+}
 #endif  // SK_DEBUG || !FORCE_RELEASE
 
 #ifdef SK_DEBUG
@@ -96,7 +103,7 @@ void SkOpSpan::dump() const {
     SkDebugf("t=");
     DebugDumpDouble(fT);
     SkDebugf(" pt=");
-    SkDPoint::DumpSkPoint(fPt);
+    SkDPoint::dump(fPt);
     SkDebugf(" other.fID=%d", fOther->debugID());
     SkDebugf(" [%d] otherT=", fOtherIndex);
     DebugDumpDouble(fOtherT);
@@ -127,9 +134,28 @@ void SkOpSpan::dump() const {
     if (fLoop) {
         SkDebugf(" loop");
     }
-    if (fNear) {
-        SkDebugf(" near");
-    }
     SkDebugf("\n");
+}
+
+void Dump(const SkTArray<class SkOpAngle, true>& angles) {
+    SkPathOpsDebug::DumpAngles(angles);
+}
+
+void Dump(const SkTArray<class SkOpAngle* , true>& angles) {
+    SkPathOpsDebug::DumpAngles(angles);
+}
+
+void Dump(const SkTArray<class SkOpAngle, true>* angles) {
+    SkPathOpsDebug::DumpAngles(*angles);
+}
+
+void Dump(const SkTArray<class SkOpAngle* , true>* angles) {
+    SkPathOpsDebug::DumpAngles(*angles);
+}
+
+#endif
+
+#if !FORCE_RELEASE && 0  // enable when building without extended test
+void SkPathOpsDebug::ShowPath(const SkPath& one, const SkPath& two, SkPathOp op, const char* name) {
 }
 #endif

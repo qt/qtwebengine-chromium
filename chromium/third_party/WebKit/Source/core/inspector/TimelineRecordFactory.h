@@ -31,8 +31,8 @@
 #ifndef TimelineRecordFactory_h
 #define TimelineRecordFactory_h
 
-#include "core/platform/JSONValues.h"
-#include "weborigin/KURL.h"
+#include "platform/JSONValues.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/Forward.h"
 #include "wtf/text/WTFString.h"
 
@@ -48,9 +48,9 @@ namespace WebCore {
     class TimelineRecordFactory {
     public:
         static PassRefPtr<JSONObject> createGenericRecord(double startTime, int maxCallStackDepth, const String& type);
-        static PassRefPtr<JSONObject> createBackgroundRecord(double startTime, const String& thread);
+        static PassRefPtr<JSONObject> createBackgroundRecord(double startTime, const String& thread, const String& type, PassRefPtr<JSONObject> data = 0);
 
-        static PassRefPtr<JSONObject> createGCEventData(const size_t usedHeapSizeDelta);
+        static PassRefPtr<JSONObject> createGCEventData(size_t usedHeapSizeDelta);
 
         static PassRefPtr<JSONObject> createFunctionCallData(const String& scriptName, int scriptLine);
 
@@ -90,9 +90,15 @@ namespace WebCore {
 
         static PassRefPtr<JSONObject> createAnimationFrameData(int callbackId);
 
+        static PassRefPtr<JSONObject> createNodeData(long long nodeId);
+
         static PassRefPtr<JSONObject> createLayerData(long long layerRootNodeId);
 
-        static PassRefPtr<JSONObject> createPaintData(const FloatQuad&, long long layerRootNodeId);
+        static PassRefPtr<JSONObject> createPaintData(const FloatQuad&, long long layerRootNodeId, int graphicsLayerId);
+
+        static PassRefPtr<JSONObject> createFrameData(int frameId);
+
+        static PassRefPtr<JSONObject> createGPUTaskData(bool foreign, size_t usedGPUMemoryBytes);
 
         static void appendLayoutRoot(JSONObject* data, const FloatQuad&, long long rootNodeId);
 

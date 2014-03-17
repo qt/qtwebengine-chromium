@@ -26,10 +26,10 @@
 #ifndef RenderSVGShape_h
 #define RenderSVGShape_h
 
-#include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/transforms/AffineTransform.h"
 #include "core/rendering/svg/RenderSVGModelObject.h"
 #include "core/rendering/svg/SVGMarkerData.h"
+#include "platform/geometry/FloatRect.h"
+#include "platform/transforms/AffineTransform.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/Vector.h"
 
@@ -37,6 +37,7 @@ namespace WebCore {
 
 class FloatPoint;
 class GraphicsContextStateSaver;
+class PointerEventsHitRules;
 class RenderSVGContainer;
 class RenderSVGPath;
 class RenderSVGResource;
@@ -54,6 +55,8 @@ public:
     virtual void setNeedsTransformUpdate() OVERRIDE FINAL { m_needsTransformUpdate = true; }
     virtual void fillShape(GraphicsContext*) const;
     virtual void strokeShape(GraphicsContext*) const;
+
+    bool nodeAtFloatPointInternal(const HitTestRequest&, const FloatPoint&, PointerEventsHitRules);
 
     Path& path() const
     {
@@ -123,20 +126,7 @@ private:
     bool m_needsTransformUpdate : 1;
 };
 
-inline RenderSVGShape* toRenderSVGShape(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isSVGShape());
-    return static_cast<RenderSVGShape*>(object);
-}
-
-inline const RenderSVGShape* toRenderSVGShape(const RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isSVGShape());
-    return static_cast<const RenderSVGShape*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderSVGShape(const RenderSVGShape*);
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderSVGShape, isSVGShape());
 
 }
 

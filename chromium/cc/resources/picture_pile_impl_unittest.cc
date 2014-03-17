@@ -635,128 +635,75 @@ TEST(PicturePileImplTest, PixelRefIteratorLazyRefsBaseNonLazy) {
   }
 }
 
-TEST(PicturePileImplTest, PixelRefIteratorMultiplePictures) {
-  gfx::Size tile_size(256, 256);
-  gfx::Size layer_bounds(256, 256);
-
-  SkTileGridPicture::TileGridInfo tile_grid_info;
-  tile_grid_info.fTileInterval = SkISize::Make(256, 256);
-  tile_grid_info.fMargin.setEmpty();
-  tile_grid_info.fOffset.setZero();
-
-  scoped_refptr<FakePicturePileImpl> pile =
-      FakePicturePileImpl::CreateFilledPile(tile_size, layer_bounds);
-
-  SkBitmap lazy_bitmap[2][2];
-  CreateBitmap(gfx::Size(32, 32), "lazy", &lazy_bitmap[0][0]);
-  CreateBitmap(gfx::Size(32, 32), "lazy", &lazy_bitmap[0][1]);
-  CreateBitmap(gfx::Size(32, 32), "lazy", &lazy_bitmap[1][1]);
-  SkBitmap non_lazy_bitmap;
-  CreateBitmap(gfx::Size(256, 256), "notlazy", &non_lazy_bitmap);
-
-  // Each bitmap goes into its own picture, the final layout
-  // has lazy pixel refs in the following regions:
-  // ||=======||
-  // ||x|   |x||
-  // ||--   --||
-  // ||     |x||
-  // ||=======||
-  pile->add_draw_bitmap(non_lazy_bitmap, gfx::Point(0, 0));
-  pile->RerecordPile();
-
-  FakeContentLayerClient content_layer_clients[2][2];
-  FakeRenderingStatsInstrumentation stats_instrumentation;
-  scoped_refptr<Picture> pictures[2][2];
-  for (int y = 0; y < 2; ++y) {
-    for (int x = 0; x < 2; ++x) {
-      if (x == 0 && y == 1)
-        continue;
-      content_layer_clients[y][x].add_draw_bitmap(
-          lazy_bitmap[y][x],
-          gfx::Point(x * 128 + 10, y * 128 + 10));
-      pictures[y][x] = Picture::Create(
-          gfx::Rect(x * 128 + 10, y * 128 + 10, 64, 64));
-      pictures[y][x]->Record(
-          &content_layer_clients[y][x],
-          tile_grid_info,
-          &stats_instrumentation);
-      pictures[y][x]->GatherPixelRefs(tile_grid_info, &stats_instrumentation);
-      pile->AddPictureToRecording(0, 0, pictures[y][x]);
-    }
-  }
-
-  // These should find only one pixel ref.
-  {
-    PicturePileImpl::PixelRefIterator iterator(
-        gfx::Rect(0, 0, 128, 128), 1.0, pile.get());
-    EXPECT_TRUE(iterator);
-    EXPECT_TRUE(*iterator == lazy_bitmap[0][0].pixelRef());
-    EXPECT_FALSE(++iterator);
-  }
-  {
-    PicturePileImpl::PixelRefIterator iterator(
-        gfx::Rect(128, 0, 128, 128), 1.0, pile.get());
-    EXPECT_TRUE(iterator);
-    EXPECT_TRUE(*iterator == lazy_bitmap[0][1].pixelRef());
-    EXPECT_FALSE(++iterator);
-  }
-  {
-    PicturePileImpl::PixelRefIterator iterator(
-        gfx::Rect(128, 128, 128, 128), 1.0, pile.get());
-    EXPECT_TRUE(iterator);
-    EXPECT_TRUE(*iterator == lazy_bitmap[1][1].pixelRef());
-    EXPECT_FALSE(++iterator);
-  }
-  // This one should not find any refs
-  {
-    PicturePileImpl::PixelRefIterator iterator(
-        gfx::Rect(0, 128, 128, 128), 1.0, pile.get());
-    EXPECT_FALSE(iterator);
-  }
-}
-
 TEST(PicturePileImpl, RasterContentsOpaque) {
   gfx::Size tile_size(1000, 1000);
   gfx::Size layer_bounds(3, 5);
   float contents_scale = 1.5f;
+  float raster_divisions = 2.f;
 
   scoped_refptr<FakePicturePileImpl> pile =
       FakePicturePileImpl::CreateFilledPile(tile_size, layer_bounds);
   // Because the caller sets content opaque, it also promises that it
   // has at least filled in layer_bounds opaquely.
-  SkPaint red_paint;
-  red_paint.setColor(SK_ColorRED);
-  pile->add_draw_rect_with_paint(gfx::Rect(layer_bounds), red_paint);
+  SkPaint white_paint;
+  white_paint.setColor(SK_ColorWHITE);
+  pile->add_draw_rect_with_paint(gfx::Rect(layer_bounds), white_paint);
 
   pile->SetMinContentsScale(contents_scale);
-  pile->set_background_color(SK_ColorRED);
+  pile->set_background_color(SK_ColorBLACK);
   pile->set_contents_opaque(true);
+  pile->set_clear_canvas_with_debug_color(false);
   pile->RerecordPile();
 
   gfx::Size content_bounds(
       gfx::ToCeiledSize(gfx::ScaleSize(layer_bounds, contents_scale)));
 
-  // Simulate a canvas rect larger than the content bounds.  Every pixel
-  // up to one pixel outside the content bounds is guaranteed to be opaque.
-  // Outside of that is undefined.
-  gfx::Rect canvas_rect(content_bounds);
-  canvas_rect.Inset(0, 0, -1, -1);
+  // Simulate drawing into different tiles at different offsets.
+  int step_x = std::ceil(content_bounds.width() / raster_divisions);
+  int step_y = std::ceil(content_bounds.height() / raster_divisions);
+  for (int offset_x = 0; offset_x < content_bounds.width();
+       offset_x += step_x) {
+    for (int offset_y = 0; offset_y < content_bounds.height();
+         offset_y += step_y) {
+      gfx::Rect content_rect(offset_x, offset_y, step_x, step_y);
+      content_rect.Intersect(gfx::Rect(content_bounds));
 
-  SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config,
-                   canvas_rect.width(),
-                   canvas_rect.height());
-  bitmap.allocPixels();
-  SkCanvas canvas(bitmap);
+      // Simulate a canvas rect larger than the content rect.  Every pixel
+      // up to one pixel outside the content rect is guaranteed to be opaque.
+      // Outside of that is undefined.
+      gfx::Rect canvas_rect(content_rect);
+      canvas_rect.Inset(0, 0, -1, -1);
 
-  PicturePileImpl::RasterStats raster_stats;
-  pile->RasterToBitmap(
-      &canvas, canvas_rect, contents_scale, &raster_stats);
+      SkBitmap bitmap;
+      bitmap.setConfig(SkBitmap::kARGB_8888_Config,
+                       canvas_rect.width(),
+                       canvas_rect.height());
+      bitmap.allocPixels();
+      SkCanvas canvas(bitmap);
+      canvas.clear(SK_ColorTRANSPARENT);
 
-  SkColor* pixels = reinterpret_cast<SkColor*>(bitmap.getPixels());
-  int num_pixels = bitmap.width() * bitmap.height();
-  for (int i = 0; i < num_pixels; ++i) {
-    EXPECT_EQ(SkColorGetA(pixels[i]), 255u);
+      FakeRenderingStatsInstrumentation rendering_stats_instrumentation;
+
+      pile->RasterToBitmap(&canvas,
+                           canvas_rect,
+                           contents_scale,
+                           &rendering_stats_instrumentation);
+
+      SkColor* pixels = reinterpret_cast<SkColor*>(bitmap.getPixels());
+      int num_pixels = bitmap.width() * bitmap.height();
+      bool all_white = true;
+      for (int i = 0; i < num_pixels; ++i) {
+        EXPECT_EQ(SkColorGetA(pixels[i]), 255u);
+        all_white &= (SkColorGetR(pixels[i]) == 255);
+        all_white &= (SkColorGetG(pixels[i]) == 255);
+        all_white &= (SkColorGetB(pixels[i]) == 255);
+      }
+
+      // If the canvas doesn't extend past the edge of the content,
+      // it should be entirely white. Otherwise, the edge of the content
+      // will be non-white.
+      EXPECT_EQ(all_white, gfx::Rect(content_bounds).Contains(canvas_rect));
+    }
   }
 }
 
@@ -770,6 +717,7 @@ TEST(PicturePileImpl, RasterContentsTransparent) {
   pile->set_background_color(SK_ColorTRANSPARENT);
   pile->set_contents_opaque(false);
   pile->SetMinContentsScale(contents_scale);
+  pile->set_clear_canvas_with_debug_color(false);
   pile->RerecordPile();
 
   gfx::Size content_bounds(
@@ -785,9 +733,9 @@ TEST(PicturePileImpl, RasterContentsTransparent) {
   bitmap.allocPixels();
   SkCanvas canvas(bitmap);
 
-  PicturePileImpl::RasterStats raster_stats;
+  FakeRenderingStatsInstrumentation rendering_stats_instrumentation;
   pile->RasterToBitmap(
-      &canvas, canvas_rect, contents_scale, &raster_stats);
+      &canvas, canvas_rect, contents_scale, &rendering_stats_instrumentation);
 
   SkColor* pixels = reinterpret_cast<SkColor*>(bitmap.getPixels());
   int num_pixels = bitmap.width() * bitmap.height();

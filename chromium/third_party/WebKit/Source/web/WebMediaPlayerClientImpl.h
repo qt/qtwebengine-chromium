@@ -31,17 +31,16 @@
 #ifndef WebMediaPlayerClientImpl_h
 #define WebMediaPlayerClientImpl_h
 
-#include "WebAudioSourceProviderClient.h"
-#include "WebMediaPlayerClient.h"
-#include "core/platform/audio/AudioSourceProvider.h"
-#include "core/platform/graphics/InbandTextTrackPrivate.h"
-#include "core/platform/graphics/MediaPlayer.h"
+#include "platform/audio/AudioSourceProvider.h"
+#include "platform/graphics/media/MediaPlayer.h"
+#include "public/platform/WebAudioSourceProviderClient.h"
+#include "public/platform/WebMediaPlayerClient.h"
 #if OS(ANDROID)
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
 #include "third_party/skia/include/gpu/GrTexture.h"
 #endif
-#include "weborigin/KURL.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/ThreadingPrimitives.h"
@@ -51,20 +50,20 @@ class AudioSourceProviderClient;
 class HTMLMediaSource;
 }
 
-namespace WebKit {
+namespace blink {
 
 class WebHelperPluginImpl;
 class WebAudioSourceProvider;
 class WebMediaPlayer;
 
 // This class serves as a bridge between WebCore::MediaPlayer and
-// WebKit::WebMediaPlayer.
+// blink::WebMediaPlayer.
 class WebMediaPlayerClientImpl : public WebCore::MediaPlayer, public WebMediaPlayerClient {
 
 public:
     static PassOwnPtr<WebCore::MediaPlayer> create(WebCore::MediaPlayerClient*);
 
-    // Returns the encapsulated WebKit::WebMediaPlayer.
+    // Returns the encapsulated blink::WebMediaPlayer.
     WebMediaPlayer* mediaPlayer() const;
 
     // WebMediaPlayerClient methods:
@@ -84,20 +83,19 @@ public:
     virtual void keyMessage(const WebString& keySystem, const WebString& sessionId, const unsigned char* message, unsigned messageLength, const WebURL& defaultURL);
     virtual void keyNeeded(const WebString& keySystem, const WebString& sessionId, const unsigned char* initData, unsigned initDataLength);
     virtual WebPlugin* createHelperPlugin(const WebString& pluginType, WebFrame*);
-    virtual void closeHelperPlugin();
     virtual void closeHelperPluginSoon(WebFrame*);
     virtual bool needsWebLayerForVideo() const;
     virtual void setWebLayer(WebLayer*);
     virtual void addTextTrack(WebInbandTextTrack*);
     virtual void removeTextTrack(WebInbandTextTrack*);
     virtual void mediaSourceOpened(WebMediaSource*);
+    virtual void requestFullscreen();
     virtual void requestSeek(double);
 
     // MediaPlayer methods:
     virtual void load(const WTF::String& url) OVERRIDE;
     virtual void load(const WTF::String& url, PassRefPtr<WebCore::HTMLMediaSource>) OVERRIDE;
 
-    virtual WebKit::WebLayer* platformLayer() const OVERRIDE;
     virtual void play() OVERRIDE;
     virtual void pause() OVERRIDE;
     virtual void prepareToPlay() OVERRIDE;
@@ -121,7 +119,6 @@ public:
     virtual WTF::PassRefPtr<WebCore::TimeRanges> buffered() const OVERRIDE;
     virtual bool didLoadingProgress() const OVERRIDE;
     virtual void paint(WebCore::GraphicsContext*, const WebCore::IntRect&) OVERRIDE;
-    virtual void paintCurrentFrameInContext(WebCore::GraphicsContext*, const WebCore::IntRect&) OVERRIDE;
     virtual bool copyVideoTextureToPlatformTexture(WebCore::GraphicsContext3D*, Platform3DObject texture, GC3Dint level, GC3Denum type, GC3Denum internalFormat, bool premultiplyAlpha, bool flipY) OVERRIDE;
     virtual void setPreload(WebCore::MediaPlayer::Preload) OVERRIDE;
     virtual bool hasSingleSecurityOrigin() const OVERRIDE;
@@ -129,6 +126,7 @@ public:
     virtual double mediaTimeForTimeValue(double timeValue) const OVERRIDE;
     virtual unsigned decodedFrameCount() const OVERRIDE;
     virtual unsigned droppedFrameCount() const OVERRIDE;
+    virtual unsigned corruptedFrameCount() const OVERRIDE;
     virtual unsigned audioDecodedByteCount() const OVERRIDE;
     virtual unsigned videoDecodedByteCount() const OVERRIDE;
     virtual void showFullscreenOverlay() OVERRIDE;
@@ -138,8 +136,6 @@ public:
 #if ENABLE(WEB_AUDIO)
     virtual WebCore::AudioSourceProvider* audioSourceProvider() OVERRIDE;
 #endif
-
-    virtual bool supportsAcceleratedRendering() const OVERRIDE;
 
     virtual WebCore::MediaPlayer::MediaKeyException generateKeyRequest(const String& keySystem, const unsigned char* initData, unsigned initDataLength) OVERRIDE;
     virtual WebCore::MediaPlayer::MediaKeyException addKey(const String& keySystem, const unsigned char* key, unsigned keyLength, const unsigned char* initData, unsigned initDataLength, const String& sessionId) OVERRIDE;
@@ -152,14 +148,11 @@ private:
     void loadRequested();
     void loadInternal();
 
-    bool acceleratedRenderingInUse();
-
 #if OS(ANDROID)
     // FIXME: This path "only works" on Android. It is a workaround for the problem that Skia could not handle Android's GL_TEXTURE_EXTERNAL_OES
     // texture internally. It should be removed and replaced by the normal paint path.
     // https://code.google.com/p/skia/issues/detail?id=1189
     void paintOnAndroid(WebCore::GraphicsContext* context, WebCore::GraphicsContext3D* context3D, const WebCore::IntRect& rect, uint8_t alpha);
-    SkAutoTUnref<GrTexture> m_texture;
     SkBitmap m_bitmap;
 #endif
 
@@ -170,8 +163,6 @@ private:
     bool m_delayingLoad;
     WebCore::MediaPlayer::Preload m_preload;
     RefPtr<WebHelperPluginImpl> m_helperPlugin;
-    WebLayer* m_videoLayer;
-    bool m_opaque;
     bool m_needsWebLayerForVideo;
     double m_volume;
     bool m_muted;
@@ -181,7 +172,7 @@ private:
     // AudioClientImpl wraps an AudioSourceProviderClient.
     // When the audio format is known, Chromium calls setFormat() which then dispatches into WebCore.
 
-    class AudioClientImpl : public WebKit::WebAudioSourceProviderClient {
+    class AudioClientImpl : public blink::WebAudioSourceProviderClient {
     public:
         AudioClientImpl(WebCore::AudioSourceProviderClient* client)
             : m_client(client)
@@ -228,6 +219,6 @@ private:
     RefPtr<WebCore::HTMLMediaSource> m_mediaSource;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

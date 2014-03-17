@@ -28,12 +28,15 @@
 #include "modules/device_orientation/DeviceSensorEventController.h"
 
 #include "core/dom/Document.h"
-#include "core/page/DOMWindow.h"
+#include "core/frame/DOMWindow.h"
+#include "core/page/Page.h"
 
 namespace WebCore {
 
 DeviceSensorEventController::DeviceSensorEventController(Document* document)
-    : m_document(document)
+    : PageLifecycleObserver(document->page())
+    , m_hasEventListener(false)
+    , m_document(document)
     , m_isActive(false)
     , m_needsCheckingNullEvents(true)
     , m_timer(this, &DeviceSensorEventController::fireDeviceEvent)
@@ -42,7 +45,6 @@ DeviceSensorEventController::DeviceSensorEventController(Document* document)
 
 DeviceSensorEventController::~DeviceSensorEventController()
 {
-    stopUpdating();
 }
 
 void DeviceSensorEventController::fireDeviceEvent(Timer<DeviceSensorEventController>* timer)
@@ -94,6 +96,17 @@ void DeviceSensorEventController::stopUpdating()
 
     unregisterWithDispatcher();
     m_isActive = false;
+}
+
+void DeviceSensorEventController::pageVisibilityChanged()
+{
+    if (!m_hasEventListener)
+        return;
+
+    if (page()->visibilityState() == PageVisibilityStateVisible)
+        startUpdating();
+    else
+        stopUpdating();
 }
 
 } // namespace WebCore

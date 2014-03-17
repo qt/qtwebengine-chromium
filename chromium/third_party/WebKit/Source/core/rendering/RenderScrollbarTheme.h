@@ -26,13 +26,12 @@
 #ifndef RenderScrollbarTheme_h
 #define RenderScrollbarTheme_h
 
-#include "core/platform/ScrollbarTheme.h"
+#include "platform/scroll/ScrollbarTheme.h"
 
 namespace WebCore {
 
 class PlatformMouseEvent;
 class Scrollbar;
-class ScrollView;
 
 class RenderScrollbarTheme : public ScrollbarTheme {
 public:
@@ -44,7 +43,7 @@ public:
 
     virtual bool supportsControlTints() const OVERRIDE { return true; }
 
-    virtual void paintScrollCorner(ScrollView*, GraphicsContext*, const IntRect& cornerRect) OVERRIDE;
+    virtual void paintScrollCorner(GraphicsContext*, const IntRect& cornerRect) OVERRIDE;
 
     virtual bool shouldCenterOnThumb(ScrollbarThemeClient* scrollbar, const PlatformMouseEvent& event) OVERRIDE { return ScrollbarTheme::theme()->shouldCenterOnThumb(scrollbar, event); }
 

@@ -10,14 +10,13 @@
 #include "base/memory/shared_memory.h"
 #include "base/stl_util.h"
 #include "content/common/child_process_messages.h"
-#include "content/common/gpu/client/gl_surface_capturer_host.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/gpu/client/gpu_video_decode_accelerator_host.h"
-#include "content/common/gpu/gpu_memory_allocation.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/view_messages.h"
 #include "gpu/command_buffer/common/cmd_buffer_common.h"
 #include "gpu/command_buffer/common/command_buffer_shared.h"
+#include "gpu/command_buffer/common/gpu_memory_allocation.h"
 #include "ui/gfx/size.h"
 
 namespace content {
@@ -99,8 +98,7 @@ void CommandBufferProxyImpl::OnConsoleMessage(
 }
 
 void CommandBufferProxyImpl::SetMemoryAllocationChangedCallback(
-    const base::Callback<void(const GpuMemoryAllocationForRenderer&)>&
-        callback) {
+    const MemoryAllocationChangedCallback& callback) {
   if (last_state_.error != gpu::error::kNoError)
     return;
 
@@ -119,7 +117,7 @@ void CommandBufferProxyImpl::RemoveDeletionObserver(
 }
 
 void CommandBufferProxyImpl::OnSetMemoryAllocation(
-    const GpuMemoryAllocationForRenderer& allocation) {
+    const gpu::MemoryAllocation& allocation) {
   if (!memory_allocation_changed_callback_.is_null())
     memory_allocation_changed_callback_.Run(allocation);
 }
@@ -157,7 +155,8 @@ bool CommandBufferProxyImpl::Initialize() {
     return false;
 
   bool result;
-  if (!Send(new GpuCommandBufferMsg_Initialize(route_id_, handle, &result))) {
+  if (!Send(new GpuCommandBufferMsg_Initialize(
+      route_id_, handle, &result, &capabilities_))) {
     LOG(ERROR) << "Could not send GpuCommandBufferMsg_Initialize.";
     return false;
   }
@@ -166,6 +165,8 @@ bool CommandBufferProxyImpl::Initialize() {
     LOG(ERROR) << "Failed to initialize command buffer service.";
     return false;
   }
+
+  capabilities_.map_image = true;
 
   return true;
 }
@@ -367,44 +368,84 @@ void CommandBufferProxyImpl::SetContextLostReason(
   NOTREACHED();
 }
 
+gpu::Capabilities CommandBufferProxyImpl::GetCapabilities() {
+  return capabilities_;
+}
+
+gfx::GpuMemoryBuffer* CommandBufferProxyImpl::CreateGpuMemoryBuffer(
+    size_t width,
+    size_t height,
+    unsigned internalformat,
+    int32* id) {
+  *id = -1;
+
+  if (last_state_.error != gpu::error::kNoError)
+    return NULL;
+
+  int32 new_id = channel_->ReserveGpuMemoryBufferId();
+  DCHECK(gpu_memory_buffers_.find(new_id) == gpu_memory_buffers_.end());
+
+  scoped_ptr<gfx::GpuMemoryBuffer> gpu_memory_buffer(
+      channel_->factory()->AllocateGpuMemoryBuffer(width,
+                                                   height,
+                                                   internalformat));
+  if (!gpu_memory_buffer)
+    return NULL;
+
+  DCHECK(GpuChannelHost::IsValidGpuMemoryBuffer(
+             gpu_memory_buffer->GetHandle()));
+
+  // This handle is owned by the GPU process and must be passed to it or it
+  // will leak. In otherwords, do not early out on error between here and the
+  // sending of the RegisterGpuMemoryBuffer IPC below.
+  gfx::GpuMemoryBufferHandle handle =
+      channel_->ShareGpuMemoryBufferToGpuProcess(
+          gpu_memory_buffer->GetHandle());
+
+  if (!Send(new GpuCommandBufferMsg_RegisterGpuMemoryBuffer(
+                route_id_,
+                new_id,
+                handle,
+                width,
+                height,
+                internalformat))) {
+    return NULL;
+  }
+
+  *id = new_id;
+  gpu_memory_buffers_[new_id] = gpu_memory_buffer.release();
+  return gpu_memory_buffers_[new_id];
+}
+
+void CommandBufferProxyImpl::DestroyGpuMemoryBuffer(int32 id) {
+  if (last_state_.error != gpu::error::kNoError)
+    return;
+
+  // Remove the gpu memory buffer from the client side cache.
+  GpuMemoryBufferMap::iterator it = gpu_memory_buffers_.find(id);
+  if (it != gpu_memory_buffers_.end()) {
+    delete it->second;
+    gpu_memory_buffers_.erase(it);
+  }
+
+  Send(new GpuCommandBufferMsg_DestroyGpuMemoryBuffer(route_id_, id));
+}
+
 int CommandBufferProxyImpl::GetRouteID() const {
   return route_id_;
 }
 
-bool CommandBufferProxyImpl::Echo(const base::Closure& callback) {
+void CommandBufferProxyImpl::Echo(const base::Closure& callback) {
   if (last_state_.error != gpu::error::kNoError) {
-    return false;
+    return;
   }
 
-  if (!Send(new GpuCommandBufferMsg_Echo(route_id_,
-                    GpuCommandBufferMsg_EchoAck(route_id_)))) {
-    return false;
+  if (!Send(new GpuCommandBufferMsg_Echo(
+           route_id_, GpuCommandBufferMsg_EchoAck(route_id_)))) {
+    return;
   }
 
   echo_tasks_.push(callback);
-
-  return true;
-}
-
-bool CommandBufferProxyImpl::SetSurfaceVisible(bool visible) {
-  if (last_state_.error != gpu::error::kNoError)
-    return false;
-
-  return Send(new GpuCommandBufferMsg_SetSurfaceVisible(route_id_, visible));
-}
-
-bool CommandBufferProxyImpl::DiscardBackbuffer() {
-  if (last_state_.error != gpu::error::kNoError)
-    return false;
-
-  return Send(new GpuCommandBufferMsg_DiscardBackbuffer(route_id_));
-}
-
-bool CommandBufferProxyImpl::EnsureBackbuffer() {
-  if (last_state_.error != gpu::error::kNoError)
-    return false;
-
-  return Send(new GpuCommandBufferMsg_EnsureBackbuffer(route_id_));
 }
 
 uint32 CommandBufferProxyImpl::InsertSyncPoint() {
@@ -416,29 +457,25 @@ uint32 CommandBufferProxyImpl::InsertSyncPoint() {
   return sync_point;
 }
 
-bool CommandBufferProxyImpl::SignalSyncPoint(uint32 sync_point,
+void CommandBufferProxyImpl::SignalSyncPoint(uint32 sync_point,
                                              const base::Closure& callback) {
-  if (last_state_.error != gpu::error::kNoError) {
-    return false;
-  }
+  if (last_state_.error != gpu::error::kNoError)
+    return;
 
   uint32 signal_id = next_signal_id_++;
   if (!Send(new GpuCommandBufferMsg_SignalSyncPoint(route_id_,
                                                     sync_point,
                                                     signal_id))) {
-    return false;
+    return;
   }
 
   signal_tasks_.insert(std::make_pair(signal_id, callback));
-
-  return true;
 }
 
-bool CommandBufferProxyImpl::SignalQuery(unsigned query,
+void CommandBufferProxyImpl::SignalQuery(uint32 query,
                                          const base::Closure& callback) {
-  if (last_state_.error != gpu::error::kNoError) {
-    return false;
-  }
+  if (last_state_.error != gpu::error::kNoError)
+    return;
 
   // Signal identifiers are hidden, so nobody outside of this class will see
   // them. (And thus, they cannot save them.) The IDs themselves only last
@@ -452,14 +489,27 @@ bool CommandBufferProxyImpl::SignalQuery(unsigned query,
   if (!Send(new GpuCommandBufferMsg_SignalQuery(route_id_,
                                                 query,
                                                 signal_id))) {
-    return false;
+    return;
   }
 
   signal_tasks_.insert(std::make_pair(signal_id, callback));
-
-  return true;
 }
 
+void CommandBufferProxyImpl::SetSurfaceVisible(bool visible) {
+  if (last_state_.error != gpu::error::kNoError)
+    return;
+
+  Send(new GpuCommandBufferMsg_SetSurfaceVisible(route_id_, visible));
+}
+
+void CommandBufferProxyImpl::SendManagedMemoryStats(
+    const gpu::ManagedMemoryStats& stats) {
+  if (last_state_.error != gpu::error::kNoError)
+    return;
+
+  Send(new GpuCommandBufferMsg_SendClientManagedMemoryStats(route_id_,
+                                                            stats));
+}
 
 bool CommandBufferProxyImpl::GenerateMailboxNames(
     unsigned num,
@@ -499,25 +549,6 @@ CommandBufferProxyImpl::CreateVideoDecoder(
                                         this);
   vda.reset(decoder_host);
   return vda.Pass();
-}
-
-scoped_ptr<SurfaceCapturer> CommandBufferProxyImpl::CreateSurfaceCapturer(
-    SurfaceCapturer::Client* client) {
-  int capturer_route_id;
-  scoped_ptr<SurfaceCapturer> capturer;
-  if (!Send(new GpuCommandBufferMsg_CreateSurfaceCapturer(
-           route_id_, &capturer_route_id))) {
-    LOG(ERROR) << "Send(GpuCommandBufferMsg_CreateSurfaceCapturer) failed";
-    return capturer.Pass();
-  }
-
-  if (capturer_route_id < 0) {
-    DLOG(ERROR) << "Failed create surface capturer";
-    return capturer.Pass();
-  }
-
-  capturer.reset(new GLSurfaceCapturerHost(capturer_route_id, client, this));
-  return capturer.Pass();
 }
 
 gpu::error::Error CommandBufferProxyImpl::GetLastError() {
@@ -562,15 +593,6 @@ void CommandBufferProxyImpl::SetOnConsoleMessageCallback(
 void CommandBufferProxyImpl::TryUpdateState() {
   if (last_state_.error == gpu::error::kNoError)
     shared_state()->Read(&last_state_);
-}
-
-void CommandBufferProxyImpl::SendManagedMemoryStats(
-    const GpuManagedMemoryStats& stats) {
-  if (last_state_.error != gpu::error::kNoError)
-    return;
-
-  Send(new GpuCommandBufferMsg_SendClientManagedMemoryStats(route_id_,
-                                                            stats));
 }
 
 }  // namespace content

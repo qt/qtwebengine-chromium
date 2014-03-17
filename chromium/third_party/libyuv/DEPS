@@ -13,7 +13,7 @@ vars = {
   "googlecode_url": "http://%s.googlecode.com/svn",
   "chromium_trunk" : "http://src.chromium.org/svn/trunk",
   # chrome://version/ for revision of canary Chrome.
-  "chromium_revision": "202548",
+  "chromium_revision": "232627",
 }
 
 # NOTE: Prefer revision numbers to tags for svn deps. Use http rather than
@@ -78,6 +78,26 @@ deps_os = {
     "third_party/gold":
       From("chromium_deps", "src/third_party/gold"),
   },
+  "android": {
+    "third_party/android_tools":
+      From("chromium_deps", "src/third_party/android_tools"),
+  },
+  "ios": {
+    # NSS, for SSLClientSocketNSS.
+    "third_party/nss":
+      From("chromium_deps", "src/third_party/nss"),
+
+    "net/third_party/nss":
+      Var("chromium_trunk") + "/src/net/third_party/nss@" + Var("chromium_revision"),
+
+    # class-dump utility to generate header files for undocumented SDKs.
+    "testing/iossim/third_party/class-dump":
+      From("chromium_deps", "src/testing/iossim/third_party/class-dump"),
+
+    # Helper for running under the simulator.
+    "testing/iossim":
+      Var("chromium_trunk") + "/src/testing/iossim@" + Var("chromium_revision"),
+  },
 }
 
 hooks = [
@@ -92,7 +112,7 @@ hooks = [
     # A change to a .gyp, .gypi, or to GYP itself should run the generator.
     "pattern": ".",
     "action": ["python", Var("root_dir") + "/build/gyp_chromium",
-               "--depth=" + Var("root_dir"), Var("root_dir") + "/libyuv_test.gyp",
+               "--depth=" + Var("root_dir"), Var("root_dir") + "/all.gyp",
                Var("extra_gyp_flag")],
   },
   {

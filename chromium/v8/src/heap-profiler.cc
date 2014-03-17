@@ -35,7 +35,9 @@ namespace internal {
 
 HeapProfiler::HeapProfiler(Heap* heap)
     : snapshots_(new HeapSnapshotsCollection(heap)),
-      next_snapshot_uid_(1) {
+      next_snapshot_uid_(1),
+      is_tracking_allocations_(false),
+      is_tracking_object_moves_(false) {
 }
 
 
@@ -83,6 +85,7 @@ HeapSnapshot* HeapProfiler::TakeSnapshot(
     }
   }
   snapshots_->SnapshotGenerationFinished(result);
+  is_tracking_object_moves_ = true;
   return result;
 }
 
@@ -95,8 +98,14 @@ HeapSnapshot* HeapProfiler::TakeSnapshot(
 }
 
 
-void HeapProfiler::StartHeapObjectsTracking() {
-  snapshots_->StartHeapObjectsTracking();
+void HeapProfiler::StartHeapObjectsTracking(bool track_allocations) {
+  snapshots_->StartHeapObjectsTracking(track_allocations);
+  is_tracking_object_moves_ = true;
+  ASSERT(!is_tracking_allocations_);
+  if (track_allocations) {
+    heap()->DisableInlineAllocation();
+    is_tracking_allocations_ = true;
+  }
 }
 
 
@@ -107,6 +116,10 @@ SnapshotObjectId HeapProfiler::PushHeapObjectsStats(OutputStream* stream) {
 
 void HeapProfiler::StopHeapObjectsTracking() {
   snapshots_->StopHeapObjectsTracking();
+  if (is_tracking_allocations_) {
+    heap()->EnableInlineAllocation();
+    is_tracking_allocations_ = false;
+  }
 }
 
 
@@ -132,14 +145,26 @@ SnapshotObjectId HeapProfiler::GetSnapshotObjectId(Handle<Object> obj) {
 }
 
 
-void HeapProfiler::ObjectMoveEvent(Address from, Address to) {
-  snapshots_->ObjectMoveEvent(from, to);
+void HeapProfiler::ObjectMoveEvent(Address from, Address to, int size) {
+  snapshots_->ObjectMoveEvent(from, to, size);
 }
+
+
+void HeapProfiler::AllocationEvent(Address addr, int size) {
+  snapshots_->AllocationEvent(addr, size);
+}
+
+
+void HeapProfiler::UpdateObjectSizeEvent(Address addr, int size) {
+  snapshots_->UpdateObjectSizeEvent(addr, size);
+}
+
 
 void HeapProfiler::SetRetainedObjectInfo(UniqueId id,
                                          RetainedObjectInfo* info) {
   // TODO(yurus, marja): Don't route this information through GlobalHandles.
   heap()->isolate()->global_handles()->SetRetainedObjectInfo(id, info);
 }
+
 
 } }  // namespace v8::internal

@@ -41,29 +41,7 @@ public:
 
     bool isValid() const { return m_name; }
     const char* name() const { return m_name; }
-    const char* domName() const; // name exposed via DOM
     bool usesVisualOrdering() const;
-    bool isJapanese() const;
-
-    bool hasTrivialDisplayString() const { return m_backslashAsCurrencySymbol == '\\'; }
-
-    PassRefPtr<StringImpl> displayString(PassRefPtr<StringImpl> str) const
-    {
-        if (hasTrivialDisplayString() || !str)
-            return str;
-        return str->replace('\\', m_backslashAsCurrencySymbol);
-    }
-    template <typename CharacterType>
-    void displayBuffer(CharacterType* characters, unsigned len) const
-    {
-        if (hasTrivialDisplayString())
-            return;
-        for (unsigned i = 0; i < len; ++i) {
-            if (characters[i] == '\\')
-                characters[i] = m_backslashAsCurrencySymbol;
-        }
-    }
-
     const TextEncoding& closestByteBasedEquivalent() const;
     const TextEncoding& encodingForFormSubmission() const;
 

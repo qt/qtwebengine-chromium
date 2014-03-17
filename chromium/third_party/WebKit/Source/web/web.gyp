@@ -30,10 +30,11 @@
 
 {
     'includes': [
-        '../build/win/precompile.gypi',
         '../bindings/bindings.gypi',
         '../core/core.gypi',
-        '../core/features.gypi',
+        '../build/features.gypi',
+        '../build/scripts/scripts.gypi',
+        '../build/win/precompile.gypi',
         '../modules/modules.gypi',
         '../wtf/wtf.gypi',
         'web.gypi',
@@ -44,14 +45,15 @@
             'type': '<(component)',
             'variables': { 'enable_wexit_time_destructors': 1, },
             'dependencies': [
+                '../config.gyp:config',
+                '../platform/blink_platform.gyp:blink_common',
                 '../core/core.gyp:webcore',
                 '../modules/modules.gyp:modules',
                 '<(DEPTH)/skia/skia.gyp:skia',
-                '<(DEPTH)/third_party/angle_dx11/src/build_angle.gyp:translator_glsl',
+                '<(angle_path)/src/build_angle.gyp:translator',
                 '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
                 '<(DEPTH)/third_party/npapi/npapi.gyp:npapi',
                 '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
-                'blink_common',
             ],
             'export_dependent_settings': [
                 '<(DEPTH)/skia/skia.gyp:skia',
@@ -62,12 +64,12 @@
             'include_dirs': [
                 '../../public/web',
                 '../web',
-                '<(DEPTH)/third_party/angle_dx11/include',
+                '<(angle_path)/include',
                 '<(DEPTH)/third_party/skia/include/utils',
             ],
             'defines': [
-                'WEBKIT_IMPLEMENTATION=1',
-                'INSIDE_WEBKIT',
+                'BLINK_IMPLEMENTATION=1',
+                'INSIDE_BLINK',
             ],
             'sources': [
                 '<@(webcore_platform_support_files)',
@@ -78,11 +80,13 @@
                     'dependencies': [
                         '../core/core.gyp:webcore_derived',
                         '../core/core.gyp:webcore_test_support',
+                        '../modules/modules.gyp:modules_test_support',
+                        '../wtf/wtf_tests.gyp:wtf_unittest_helpers',
                         '<(DEPTH)/base/base.gyp:test_support_base',
                         '<(DEPTH)/testing/gmock.gyp:gmock',
                         '<(DEPTH)/testing/gtest.gyp:gtest',
-                        '<(DEPTH)/third_party/icu/icu.gyp:*',
-                        '<(libjpeg_gyp_path):libjpeg',
+                        '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
+                        '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
                         '<(DEPTH)/third_party/libpng/libpng.gyp:libpng',
                         '<(DEPTH)/third_party/libwebp/libwebp.gyp:libwebp',
                         '<(DEPTH)/third_party/libxml/libxml.gyp:libxml',
@@ -92,6 +96,7 @@
                         '<(DEPTH)/third_party/zlib/zlib.gyp:zlib',
                         '<(DEPTH)/url/url.gyp:url_lib',
                         '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
+                        '<(libjpeg_gyp_path):libjpeg',
                         # We must not add webkit_support here because of cyclic dependency.
                     ],
                     'export_dependent_settings': [
@@ -175,7 +180,7 @@
                     ],
                 }, { # else: toolkit_uses_gtk != 1
                     'sources/': [
-                        ['exclude', 'gtk/'],
+                        ['exclude', 'WebInputEventFactoryGtk.cpp$'],
                     ],
                 }],
                 ['OS=="android"', {
@@ -185,7 +190,7 @@
                     ],
                 }, { # else: OS!="android"
                     'sources/': [
-                        ['exclude', 'android/'],
+                        ['exclude', 'WebInputEventFactoryAndroid.cpp$'],
                     ],
                 }],
                 ['OS=="mac"', {
@@ -200,7 +205,8 @@
                     },
                 }, { # else: OS!="mac"
                     'sources/': [
-                        ['exclude', 'mac/'],
+                        ['exclude', 'WebInputEventFactoryMac.mm$'],
+                        ['exclude', 'mac/WebScrollbarTheme.cpp$'],
                     ],
                 }],
                 ['OS=="win"', {
@@ -209,12 +215,8 @@
                     ],
                 }, { # else: OS!="win"
                     'sources/': [
-                        ['exclude', 'win/']
+                        ['exclude', 'WebInputEventFactoryWin.cpp$'],
                     ],
-                    'variables': {
-                        # FIXME: Turn on warnings on Windows.
-                        'chromium_code': 1,
-                    }
                 }],
                 ['use_default_render_theme==1', {
                     'include_dirs': [
@@ -235,9 +237,88 @@
                 ['OS=="android"', {
                     'sources/': [
                         ['include', '^linux/WebFontRendering\\.cpp$'],
-                        ['include', '^linux/WebFontRenderStyle\\.cpp$'],
                     ],
                 }],
+            ],
+            'actions': [
+                {
+                    'action_name': 'PickerCommon',
+                    'process_outputs_as_sources': 1,
+                    'variables': {
+                        'resources': [
+                            'resources/pickerCommon.css',
+                            'resources/pickerCommon.js',
+                        ],
+                    },
+                    'inputs': [
+                        'scripts/make-file-arrays.py',
+                        '<@(resources)',
+                    ],
+                    'outputs': [
+                        '<(SHARED_INTERMEDIATE_DIR)/blink/PickerCommon.h',
+                        '<(SHARED_INTERMEDIATE_DIR)/blink/PickerCommon.cpp',
+                        ],
+                    'action': [
+                        'python',
+                        'scripts/make-file-arrays.py',
+                        '--out-h=<(SHARED_INTERMEDIATE_DIR)/blink/PickerCommon.h',
+                        '--out-cpp=<(SHARED_INTERMEDIATE_DIR)/blink/PickerCommon.cpp',
+                        '<@(resources)',
+                    ],
+                },
+                {
+                    'action_name': 'CalendarPicker',
+                    'process_outputs_as_sources': 1,
+                    'variables': {
+                        'resources': [
+                            'resources/calendarPicker.css',
+                            'resources/calendarPicker.js',
+                            'resources/pickerButton.css',
+                            'resources/suggestionPicker.css',
+                            'resources/suggestionPicker.js',
+                        ],
+                    },
+                    'inputs': [
+                        'scripts/make-file-arrays.py',
+                        '<@(resources)'
+                    ],
+                    'outputs': [
+                        '<(SHARED_INTERMEDIATE_DIR)/blink/CalendarPicker.h',
+                        '<(SHARED_INTERMEDIATE_DIR)/blink/CalendarPicker.cpp',
+                    ],
+                    'action': [
+                        'python',
+                        'scripts/make-file-arrays.py',
+                        '--out-h=<(SHARED_INTERMEDIATE_DIR)/blink/CalendarPicker.h',
+                        '--out-cpp=<(SHARED_INTERMEDIATE_DIR)/blink/CalendarPicker.cpp',
+                        '<@(resources)',
+                    ],
+               },
+                {
+                    'action_name': 'ColorSuggestionPicker',
+                    'process_outputs_as_sources': 1,
+                    'variables': {
+                        'resources': [
+                            'resources/colorSuggestionPicker.css',
+                            'resources/colorSuggestionPicker.js',
+                        ],
+                    },
+                    'inputs': [
+                        'scripts/make-file-arrays.py',
+                        '<@(resources)',
+                    ],
+                    'outputs': [
+                        '<(SHARED_INTERMEDIATE_DIR)/blink/ColorSuggestionPicker.h',
+                        '<(SHARED_INTERMEDIATE_DIR)/blink/ColorSuggestionPicker.cpp',
+                    ],
+                    'action': [
+                        'python',
+                        'scripts/make-file-arrays.py',
+                        '--out-h=<(SHARED_INTERMEDIATE_DIR)/blink/ColorSuggestionPicker.h',
+                        '--out-cpp=<(SHARED_INTERMEDIATE_DIR)/blink/ColorSuggestionPicker.cpp',
+                        '<@(resources)',
+                    ],
+                },
             ],
         },
         {
@@ -248,7 +329,9 @@
                 }, {
                     'type': 'static_library',
                     'dependencies': [
+                        '../config.gyp:config',
                         '../core/core.gyp:webcore_test_support',
+                        '../modules/modules.gyp:modules_test_support',
                         '../wtf/wtf.gyp:wtf',
                         '<(DEPTH)/skia/skia.gyp:skia',
                     ],
@@ -261,33 +344,6 @@
                         'WebTestingSupport.cpp',
                     ],
                 }],
-            ],
-        },
-        {
-            'target_name': 'blink_common',
-            'type': '<(component)',
-            'variables': { 'enable_wexit_time_destructors': 1 },
-            'dependencies': [
-                '../wtf/wtf.gyp:wtf',
-                '<(DEPTH)/skia/skia.gyp:skia',
-                '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
-            ],
-            'export_dependent_settings': [
-              '<(DEPTH)/skia/skia.gyp:skia',
-              '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
-            ],
-            'defines': [
-                'INSIDE_WEBKIT',
-                'BLINK_COMMON_IMPLEMENTATION=1',
-            ],
-            'include_dirs': [
-                '..',
-                '../..',
-            ],
-            'sources': [
-                '../core/platform/chromium/support/WebCString.cpp',
-                '../core/platform/chromium/support/WebString.cpp',
-                'WebCommon.cpp',
             ],
         },
     ], # targets

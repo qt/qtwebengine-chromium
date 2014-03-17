@@ -19,25 +19,6 @@
 
 namespace {
 
-// External template that can handle initialization of either character type.
-// The input spec is given, and the canonical version will be placed in
-// |*canonical|, along with the parsing of the canonical spec in |*parsed|.
-template<typename STR>
-bool InitCanonical(const STR& input_spec,
-                   std::string* canonical,
-                   url_parse::Parsed* parsed) {
-  // Reserve enough room in the output for the input, plus some extra so that
-  // we have room if we have to escape a few things without reallocating.
-  canonical->reserve(input_spec.size() + 32);
-  url_canon::StdStringCanonOutput output(canonical);
-  bool success = url_util::Canonicalize(
-      input_spec.data(), static_cast<int>(input_spec.length()),
-      NULL, &output, parsed);
-
-  output.Complete();  // Must be done before using string.
-  return success;
-}
-
 static std::string* empty_string = NULL;
 static GURL* empty_gurl = NULL;
 
@@ -80,58 +61,69 @@ const std::string& EmptyStringForGURL() {
 
 } // namespace
 
-GURL::GURL() : is_valid_(false), inner_url_(NULL) {
+GURL::GURL() : is_valid_(false) {
 }
 
 GURL::GURL(const GURL& other)
     : spec_(other.spec_),
       is_valid_(other.is_valid_),
-      parsed_(other.parsed_),
-      inner_url_(NULL) {
+      parsed_(other.parsed_) {
   if (other.inner_url_)
-    inner_url_ = new GURL(*other.inner_url_);
+    inner_url_.reset(new GURL(*other.inner_url_));
   // Valid filesystem urls should always have an inner_url_.
   DCHECK(!is_valid_ || !SchemeIsFileSystem() || inner_url_);
 }
 
-GURL::GURL(const std::string& url_string) : inner_url_(NULL) {
-  is_valid_ = InitCanonical(url_string, &spec_, &parsed_);
-  if (is_valid_ && SchemeIsFileSystem()) {
-    inner_url_ =
-        new GURL(spec_.data(), parsed_.Length(), *parsed_.inner_parsed(), true);
-  }
+GURL::GURL(const std::string& url_string) {
+  InitCanonical(url_string, true);
 }
 
-GURL::GURL(const base::string16& url_string) : inner_url_(NULL) {
-  is_valid_ = InitCanonical(url_string, &spec_, &parsed_);
-  if (is_valid_ && SchemeIsFileSystem()) {
-    inner_url_ =
-        new GURL(spec_.data(), parsed_.Length(), *parsed_.inner_parsed(), true);
-  }
+GURL::GURL(const base::string16& url_string) {
+  InitCanonical(url_string, true);
+}
+
+GURL::GURL(const std::string& url_string, RetainWhiteSpaceSelector) {
+  InitCanonical(url_string, false);
 }
 
 GURL::GURL(const char* canonical_spec, size_t canonical_spec_len,
            const url_parse::Parsed& parsed, bool is_valid)
     : spec_(canonical_spec, canonical_spec_len),
       is_valid_(is_valid),
-      parsed_(parsed),
-      inner_url_(NULL) {
+      parsed_(parsed) {
   InitializeFromCanonicalSpec();
 }
 
 GURL::GURL(std::string canonical_spec,
            const url_parse::Parsed& parsed, bool is_valid)
     : is_valid_(is_valid),
-      parsed_(parsed),
-      inner_url_(NULL) {
+      parsed_(parsed) {
   spec_.swap(canonical_spec);
   InitializeFromCanonicalSpec();
 }
 
+template<typename STR>
+void GURL::InitCanonical(const STR& input_spec, bool trim_path_end) {
+  // Reserve enough room in the output for the input, plus some extra so that
+  // we have room if we have to escape a few things without reallocating.
+  spec_.reserve(input_spec.size() + 32);
+  url_canon::StdStringCanonOutput output(&spec_);
+  is_valid_ = url_util::Canonicalize(
+      input_spec.data(), static_cast<int>(input_spec.length()), trim_path_end,
+      NULL, &output, &parsed_);
+
+  output.Complete();  // Must be done before using string.
+  if (is_valid_ && SchemeIsFileSystem()) {
+    inner_url_.reset(new GURL(spec_.data(), parsed_.Length(),
+                              *parsed_.inner_parsed(), true));
+  }
+}
+
 void GURL::InitializeFromCanonicalSpec() {
   if (is_valid_ && SchemeIsFileSystem()) {
-    inner_url_ =
-        new GURL(spec_.data(), parsed_.Length(), *parsed_.inner_parsed(), true);
+    inner_url_.reset(
+        new GURL(spec_.data(), parsed_.Length(),
+                 *parsed_.inner_parsed(), true));
   }
 
 #ifndef NDEBUG
@@ -140,13 +132,17 @@ void GURL::InitializeFromCanonicalSpec() {
   // and we can't always canonicalize then reproducabely.
   if (is_valid_) {
     url_parse::Component scheme;
+    // We can't do this check on the inner_url of a filesystem URL, as
+    // canonical_spec actually points to the start of the outer URL, so we'd
+    // end up with infinite recursion in this constructor.
     if (!url_util::FindAndCompareScheme(spec_.data(), spec_.length(),
                                         "filesystem", &scheme) ||
         scheme.begin == parsed_.scheme.begin) {
-      // We can't do this check on the inner_url of a filesystem URL, as
-      // canonical_spec actually points to the start of the outer URL, so we'd
-      // end up with infinite recursion in this constructor.
-      GURL test_url(spec_);
+      // We need to retain trailing whitespace on path URLs, as the |parsed_|
+      // spec we originally received may legitimately contain trailing white-
+      // space on the path or  components e.g. if the #ref has been
+      // removed from a "foo:hello #ref" URL (see http://crbug.com/291747).
+      GURL test_url(spec_, RETAIN_TRAILING_PATH_WHITEPACE);
 
       DCHECK(test_url.is_valid_ == is_valid_);
       DCHECK(test_url.spec_ == spec_);
@@ -165,19 +161,10 @@ void GURL::InitializeFromCanonicalSpec() {
 }
 
 GURL::~GURL() {
-  delete inner_url_;
 }
 
-GURL& GURL::operator=(const GURL& other) {
-  spec_ = other.spec_;
-  is_valid_ = other.is_valid_;
-  parsed_ = other.parsed_;
-  delete inner_url_;
-  inner_url_ = NULL;
-  if (other.inner_url_)
-    inner_url_ = new GURL(*other.inner_url_);
-  // Valid filesystem urls should always have an inner_url_.
-  DCHECK(!is_valid_ || !SchemeIsFileSystem() || inner_url_);
+GURL& GURL::operator=(GURL other) {
+  Swap(&other);
   return *this;
 }
 
@@ -222,8 +209,9 @@ GURL GURL::ResolveWithCharsetConverter(
   output.Complete();
   result.is_valid_ = true;
   if (result.SchemeIsFileSystem()) {
-    result.inner_url_ = new GURL(result.spec_.data(), result.parsed_.Length(),
-                                 *result.parsed_.inner_parsed(), true);
+    result.inner_url_.reset(
+        new GURL(result.spec_.data(), result.parsed_.Length(),
+                 *result.parsed_.inner_parsed(), true));
   }
   return result;
 }
@@ -254,8 +242,9 @@ GURL GURL::ResolveWithCharsetConverter(
   output.Complete();
   result.is_valid_ = true;
   if (result.SchemeIsFileSystem()) {
-    result.inner_url_ = new GURL(result.spec_.data(), result.parsed_.Length(),
-                                 *result.parsed_.inner_parsed(), true);
+    result.inner_url_.reset(
+        new GURL(result.spec_.data(), result.parsed_.Length(),
+                 *result.parsed_.inner_parsed(), true));
   }
   return result;
 }
@@ -280,8 +269,8 @@ GURL GURL::ReplaceComponents(
 
   output.Complete();
   if (result.is_valid_ && result.SchemeIsFileSystem()) {
-    result.inner_url_ = new GURL(spec_.data(), result.parsed_.Length(),
-                                 *result.parsed_.inner_parsed(), true);
+    result.inner_url_.reset(new GURL(spec_.data(), result.parsed_.Length(),
+                                     *result.parsed_.inner_parsed(), true));
   }
   return result;
 }
@@ -306,8 +295,8 @@ GURL GURL::ReplaceComponents(
 
   output.Complete();
   if (result.is_valid_ && result.SchemeIsFileSystem()) {
-    result.inner_url_ = new GURL(spec_.data(), result.parsed_.Length(),
-                                 *result.parsed_.inner_parsed(), true);
+    result.inner_url_.reset(new GURL(spec_.data(), result.parsed_.Length(),
+                                     *result.parsed_.inner_parsed(), true));
   }
   return result;
 }
@@ -371,6 +360,10 @@ bool GURL::SchemeIsHTTPOrHTTPS() const {
   return SchemeIs("http") || SchemeIs("https");
 }
 
+bool GURL::SchemeIsWSOrWSS() const {
+  return SchemeIs("ws") || SchemeIs("wss");
+}
+
 int GURL::IntPort() const {
   if (parsed_.port.is_nonempty())
     return url_parse::ParsePort(spec_.data(), parsed_.port);
@@ -417,6 +410,10 @@ std::string GURL::HostNoBrackets() const {
     h.len -= 2;
   }
   return ComponentString(h);
+}
+
+std::string GURL::GetContent() const {
+  return is_valid_ ? ComponentString(parsed_.GetContent()) : std::string();
 }
 
 bool GURL::HostIsIPAddress() const {
@@ -513,7 +510,7 @@ void GURL::Swap(GURL* other) {
   spec_.swap(other->spec_);
   std::swap(is_valid_, other->is_valid_);
   std::swap(parsed_, other->parsed_);
-  std::swap(inner_url_, other->inner_url_);
+  inner_url_.swap(other->inner_url_);
 }
 
 std::ostream& operator<<(std::ostream& out, const GURL& url) {

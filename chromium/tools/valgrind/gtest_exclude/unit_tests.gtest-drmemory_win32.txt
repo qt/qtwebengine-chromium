@@ -62,9 +62,6 @@ UserCloudPolicyStoreTest.StoreThenLoad
 UserCloudPolicyStoreTest.StoreTwoTimes
 UserCloudPolicyStoreTest.StoreValidationError
 
-# Tests are timing out on the bot. crbug.com/248373.
-PnaclTranslationCacheTest.*
-
 # Failing on the bot. crbug.com/266972
 OneClickSigninBubbleViewTest.ShowBubble
 
@@ -74,3 +71,6 @@ SyncBackendHostTest.SilentlyFailToDownloadControlTypes
 
 # DrM-i#1339: https://code.google.com/p/drmemory/issues/detail?id=1339
 ExtensionServiceTest.InstallTheme
+
+# http://crbug.com/302156
+TabStripModelTest.FastShutdown

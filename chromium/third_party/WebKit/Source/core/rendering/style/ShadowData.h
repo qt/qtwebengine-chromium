@@ -25,11 +25,8 @@
 #ifndef ShadowData_h
 #define ShadowData_h
 
-#include "core/platform/graphics/Color.h"
-#include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/LayoutRect.h"
-#include "wtf/OwnPtr.h"
-#include "wtf/PassOwnPtr.h"
+#include "platform/geometry/IntPoint.h"
+#include "platform/graphics/Color.h"
 
 namespace WebCore {
 
@@ -39,42 +36,6 @@ enum ShadowStyle { Normal, Inset };
 class ShadowData {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    static PassOwnPtr<ShadowData> create() { return adoptPtr(new ShadowData); }
-    static PassOwnPtr<ShadowData> create(const IntPoint& location, int blur, int spread, ShadowStyle style, const Color& color)
-    {
-        return adoptPtr(new ShadowData(location, blur, spread, style, color));
-    }
-    // This clones the whole ShadowData linked list.
-    PassOwnPtr<ShadowData> clone() const
-    {
-        return adoptPtr(new ShadowData(*this));
-    }
-
-    bool operator==(const ShadowData&) const;
-    bool operator!=(const ShadowData& o) const { return !(*this == o); }
-
-    int x() const { return m_location.x(); }
-    int y() const { return m_location.y(); }
-    IntPoint location() const { return m_location; }
-    int blur() const { return m_blur; }
-    int spread() const { return m_spread; }
-    ShadowStyle style() const { return m_style; }
-    const Color& color() const { return m_color; }
-
-    const ShadowData* next() const { return m_next.get(); }
-    void setNext(PassOwnPtr<ShadowData> shadow) { m_next = shadow; }
-
-    void adjustRectForShadow(LayoutRect&, int additionalOutlineSize = 0) const;
-    void adjustRectForShadow(FloatRect&, int additionalOutlineSize = 0) const;
-
-private:
-    ShadowData()
-        : m_blur(0)
-        , m_spread(0)
-        , m_style(Normal)
-    {
-    }
-
     ShadowData(const IntPoint& location, int blur, int spread, ShadowStyle style, const Color& color)
         : m_location(location)
         , m_blur(blur)
@@ -84,26 +45,26 @@ private:
     {
     }
 
-    ShadowData(const ShadowData&);
+    bool operator==(const ShadowData&) const;
+    bool operator!=(const ShadowData& o) const { return !(*this == o); }
 
+    ShadowData blend(const ShadowData& from, double progress) const;
+
+    int x() const { return m_location.x(); }
+    int y() const { return m_location.y(); }
+    IntPoint location() const { return m_location; }
+    int blur() const { return m_blur; }
+    int spread() const { return m_spread; }
+    ShadowStyle style() const { return m_style; }
+    const Color& color() const { return m_color; }
+
+private:
     IntPoint m_location;
     int m_blur;
     int m_spread;
     Color m_color;
     ShadowStyle m_style;
-    OwnPtr<ShadowData> m_next;
 };
-
-// Helper method to handle nullptr, otherwise all callers need an ugly ternary.
-inline PassOwnPtr<ShadowData> cloneShadow(const ShadowData* shadow)
-{
-    return shadow ? shadow->clone() : nullptr;
-}
-
-inline PassOwnPtr<ShadowData> cloneShadow(const OwnPtr<ShadowData>& shadow)
-{
-    return cloneShadow(shadow.get());
-}
 
 } // namespace WebCore
 

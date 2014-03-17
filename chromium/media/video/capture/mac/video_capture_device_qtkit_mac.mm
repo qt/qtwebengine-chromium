@@ -12,6 +12,7 @@
 #include "media/video/capture/mac/video_capture_device_mac.h"
 #include "media/video/capture/video_capture_device.h"
 #include "media/video/capture/video_capture_types.h"
+#include "ui/gfx/size.h"
 
 @implementation VideoCaptureDeviceQTKit
 
@@ -28,8 +29,9 @@
       });
 
   for (QTCaptureDevice* device in captureDevices) {
-    [deviceNames setObject:[device localizedDisplayName]
-                    forKey:[device uniqueID]];
+    if (![[device attributeForKey:QTCaptureDeviceSuspendedAttribute] boolValue])
+      [deviceNames setObject:[device localizedDisplayName]
+                      forKey:[device uniqueID]];
   }
 }
 
@@ -47,7 +49,7 @@
 
 #pragma mark Public methods
 
-- (id)initWithFrameReceiver:(media::VideoCaptureDeviceMac *)frameReceiver {
+- (id)initWithFrameReceiver:(media::VideoCaptureDeviceMac*)frameReceiver {
   self = [super init];
   if (self) {
     frameReceiver_ = frameReceiver;
@@ -62,13 +64,13 @@
   [super dealloc];
 }
 
-- (void)setFrameReceiver:(media::VideoCaptureDeviceMac *)frameReceiver {
+- (void)setFrameReceiver:(media::VideoCaptureDeviceMac*)frameReceiver {
   [lock_ lock];
   frameReceiver_ = frameReceiver;
   [lock_ unlock];
 }
 
-- (BOOL)setCaptureDevice:(NSString *)deviceId {
+- (BOOL)setCaptureDevice:(NSString*)deviceId {
   if (deviceId) {
     // Set the capture device.
     if (captureDeviceInput_) {
@@ -86,6 +88,11 @@
       return NO;
     }
     QTCaptureDevice *device = [captureDevices objectAtIndex:index];
+    if ([[device attributeForKey:QTCaptureDeviceSuspendedAttribute]
+            boolValue]) {
+      DLOG(ERROR) << "Cannot open suspended video capture device.";
+      return NO;
+    }
     NSError *error;
     if (![device open:&error]) {
       DLOG(ERROR) << "Could not open video capture device."
@@ -172,22 +179,15 @@
   QTCaptureDecompressedVideoOutput *output =
       [[captureSession_ outputs] objectAtIndex:0];
 
-  // The old capture dictionary is used to retrieve the initial pixel
-  // format, which must be maintained.
-  NSDictionary *oldCaptureDictionary = [output pixelBufferAttributes];
-
-  // Set up desired output properties.
-  NSDictionary *captureDictionary =
-      [NSDictionary dictionaryWithObjectsAndKeys:
-          [NSNumber numberWithDouble:width],
-          (id)kCVPixelBufferWidthKey,
-          [NSNumber numberWithDouble:height],
-          (id)kCVPixelBufferHeightKey,
-          [oldCaptureDictionary
-              valueForKey:(id)kCVPixelBufferPixelFormatTypeKey],
-          (id)kCVPixelBufferPixelFormatTypeKey,
-          nil];
-  [output setPixelBufferAttributes:captureDictionary];
+  // Set up desired output properties. The old capture dictionary is used to
+  // retrieve the initial pixel format, which must be maintained.
+  NSDictionary* videoSettingsDictionary = @{
+    (id)kCVPixelBufferWidthKey : @(width),
+    (id)kCVPixelBufferHeightKey : @(height),
+    (id)kCVPixelBufferPixelFormatTypeKey : [[output pixelBufferAttributes]
+        valueForKey:(id)kCVPixelBufferPixelFormatTypeKey]
+  };
+  [output setPixelBufferAttributes:videoSettingsDictionary];
 
   [output setMinimumVideoFrameInterval:(NSTimeInterval)1/(float)frameRate];
   return YES;
@@ -227,10 +227,10 @@
 }
 
 // |captureOutput| is called by the capture device to deliver a new frame.
-- (void)captureOutput:(QTCaptureOutput *)captureOutput
+- (void)captureOutput:(QTCaptureOutput*)captureOutput
   didOutputVideoFrame:(CVImageBufferRef)videoFrame
-     withSampleBuffer:(QTSampleBuffer *)sampleBuffer
-       fromConnection:(QTCaptureConnection *)connection {
+     withSampleBuffer:(QTSampleBuffer*)sampleBuffer
+       fromConnection:(QTCaptureConnection*)connection {
   [lock_ lock];
   if(!frameReceiver_) {
     [lock_ unlock];
@@ -275,13 +275,10 @@
       addressToPass = adjustedAddress;
       frameSize = frameHeight * expectedBytesPerRow;
     }
-    media::VideoCaptureCapability captureCapability;
-    captureCapability.width = frameWidth;
-    captureCapability.height = frameHeight;
-    captureCapability.frame_rate = frameRate_;
-    captureCapability.color = media::PIXEL_FORMAT_UYVY;
-    captureCapability.expected_capture_delay = 0;
-    captureCapability.interlaced = false;
+
+    media::VideoCaptureFormat captureFormat(gfx::Size(frameWidth, frameHeight),
+                                            frameRate_,
+                                            media::PIXEL_FORMAT_UYVY);
 
     // The aspect ratio dictionary is often missing, in which case we report
     // a pixel aspect ratio of 0:0.
@@ -301,7 +298,7 @@
     }
 
     // Deliver the captured video frame.
-    frameReceiver_->ReceiveFrame(addressToPass, frameSize, captureCapability,
+    frameReceiver_->ReceiveFrame(addressToPass, frameSize, captureFormat,
         aspectNumerator, aspectDenominator);
 
     CVPixelBufferUnlockBaseAddress(videoFrame, kLockFlags);
@@ -309,8 +306,8 @@
   [lock_ unlock];
 }
 
-- (void)handleNotification:(NSNotification *)errorNotification {
-  NSError * error = (NSError *)[[errorNotification userInfo]
+- (void)handleNotification:(NSNotification*)errorNotification {
+  NSError * error = (NSError*)[[errorNotification userInfo]
       objectForKey:QTCaptureSessionErrorKey];
   frameReceiver_->ReceiveError([[error localizedDescription] UTF8String]);
 }

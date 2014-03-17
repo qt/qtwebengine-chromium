@@ -338,8 +338,10 @@ dump "Checking content of downloaded package: ok"
 # tarball, which will be extracted after the import process.
 #
 dump "Saving .svn subdirectories"
+SVN_LIST_FILE=$BUILD_DIR/svn-subdirs
+run find . -type d -name ".svn" > $SVN_LIST_FILE
 SAVED_SVN_TARBALL=$BUILD_DIR/saved-svn-subdirs.tar.gz
-run tar czf $SAVED_SVN_TARBALL $(find . -type d -name ".svn")
+run tar czf $SAVED_SVN_TARBALL -T $SVN_LIST_FILE
 
 # Re-run the import_openssl.sh script.
 dump "Re-running the 'import_openssl.sh' script to reconfigure all sources."

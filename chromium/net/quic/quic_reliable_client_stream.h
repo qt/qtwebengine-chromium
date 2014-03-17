@@ -12,7 +12,7 @@
 #include "net/http/http_request_info.h"
 #include "net/http/http_response_info.h"
 #include "net/http/http_stream.h"
-#include "net/quic/reliable_quic_stream.h"
+#include "net/quic/quic_data_stream.h"
 
 namespace net {
 
@@ -20,23 +20,12 @@ class QuicClientSession;
 
 // A client-initiated ReliableQuicStream.  Instances of this class
 // are owned by the QuicClientSession which created them.
-class NET_EXPORT_PRIVATE QuicReliableClientStream : public ReliableQuicStream {
+class NET_EXPORT_PRIVATE QuicReliableClientStream : public QuicDataStream {
  public:
   // Delegate handles protocol specific behavior of a quic stream.
   class NET_EXPORT_PRIVATE Delegate {
    public:
     Delegate() {}
-
-    // Called when stream is ready to send data.
-    // Returns network error code. OK when it successfully sent data.
-    // ERR_IO_PENDING when performing operation asynchronously.
-    virtual int OnSendData() = 0;
-
-    // Called when data has been sent. |status| indicates network error
-    // or number of bytes that has been sent. On return, |eof| is set to true
-    // if no more data is available to send.
-    // Returns network error code. OK when it successfully sent data.
-    virtual int OnSendDataComplete(int status, bool* eof) = 0;
 
     // Called when data is received.
     // Returns network error code. OK when it successfully receives data.
@@ -64,15 +53,15 @@ class NET_EXPORT_PRIVATE QuicReliableClientStream : public ReliableQuicStream {
 
   virtual ~QuicReliableClientStream();
 
-  // ReliableQuicStream
+  // QuicDataStream
   virtual uint32 ProcessData(const char* data, uint32 data_len) OVERRIDE;
-  virtual void TerminateFromPeer(bool half_close) OVERRIDE;
+  virtual void OnFinRead() OVERRIDE;
   virtual void OnCanWrite() OVERRIDE;
   virtual QuicPriority EffectivePriority() const OVERRIDE;
 
   // While the server's set_priority shouldn't be called externally, the creator
   // of client-side streams should be able to set the priority.
-  using ReliableQuicStream::set_priority;
+  using QuicDataStream::set_priority;
 
   int WriteStreamData(base::StringPiece data,
                       bool fin,
@@ -84,7 +73,15 @@ class NET_EXPORT_PRIVATE QuicReliableClientStream : public ReliableQuicStream {
   Delegate* GetDelegate() { return delegate_; }
   void OnError(int error);
 
+  // Returns true if the stream can possible write data.  (The socket may
+  // turn out to be write blocked, of course).  If the stream can not write,
+  // this method returns false, and |callback| will be invoked when
+  // it becomes writable.
+  bool CanWrite(const CompletionCallback& callback);
+
   const BoundNetLog& net_log() const { return net_log_; }
+
+  using QuicDataStream::HasBufferedData;
 
  private:
   BoundNetLog net_log_;

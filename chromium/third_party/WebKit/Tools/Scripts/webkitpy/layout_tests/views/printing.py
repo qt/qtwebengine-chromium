@@ -77,7 +77,7 @@ class Printer(object):
     def print_config(self, results_directory):
         self._print_default("Using port '%s'" % self._port.name())
         self._print_default("Test configuration: %s" % self._port.test_configuration())
-        self._print_default("Placing test results in %s" % results_directory)
+        self._print_default("View the test results at file://%s/results.html" % results_directory)
 
         # FIXME: should these options be in printing_options?
         if self._options.new_baseline:
@@ -388,8 +388,13 @@ class Printer(object):
             self._print_default(' base: %s' % base)
             self._print_default(' args: %s' % args)
 
-        for extension in ('.txt', '.png', '.wav'):
-            self._print_baseline(test_name, extension)
+        references = self._port.reference_files(test_name)
+        if references:
+            for _, filename in references:
+                self._print_default('  ref: %s' % self._port.relative_test_filename(filename))
+        else:
+            for extension in ('.txt', '.png', '.wav'):
+                    self._print_baseline(test_name, extension)
 
         self._print_default('  exp: %s' % exp_str)
         self._print_default('  got: %s' % got_str)

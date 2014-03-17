@@ -111,8 +111,8 @@ bool SkWBMPImageDecoder::onDecode(SkStream* stream, SkBitmap* decodedBitmap,
     int width = head.fWidth;
     int height = head.fHeight;
 
-    decodedBitmap->setConfig(SkBitmap::kIndex8_Config, width, height);
-    decodedBitmap->setIsOpaque(true);
+    decodedBitmap->setConfig(SkBitmap::kIndex8_Config, width, height, 0,
+                             kOpaque_SkAlphaType);
 
     if (SkImageDecoder::kDecodeBounds_Mode == mode) {
         return true;
@@ -152,7 +152,7 @@ bool SkWBMPImageDecoder::onDecode(SkStream* stream, SkBitmap* decodedBitmap,
 DEFINE_DECODER_CREATOR(WBMPImageDecoder);
 ///////////////////////////////////////////////////////////////////////////////
 
-static SkImageDecoder* sk_wbmp_dfactory(SkStream* stream) {
+static SkImageDecoder* sk_wbmp_dfactory(SkStreamRewindable* stream) {
     wbmp_head   head;
 
     if (head.init(stream)) {
@@ -161,7 +161,7 @@ static SkImageDecoder* sk_wbmp_dfactory(SkStream* stream) {
     return NULL;
 }
 
-static SkImageDecoder::Format get_format_wbmp(SkStream* stream) {
+static SkImageDecoder::Format get_format_wbmp(SkStreamRewindable* stream) {
     wbmp_head head;
     if (head.init(stream)) {
         return SkImageDecoder::kWBMP_Format;

@@ -42,42 +42,53 @@ WebInspector.AllocationProfile = function(profile)
 
     this._traceTops = null;
 
-    this._buildAllocationFunctionInfos(profile.trace_function_infos);
-    this._traceTree = this._buildInvertedAllocationTree(profile.trace_tree);
+    this._buildAllocationFunctionInfos(profile);
+    this._traceTree = this._buildInvertedAllocationTree(profile);
 }
 
 WebInspector.AllocationProfile.prototype = {
-    _buildAllocationFunctionInfos: function(rawInfos)
+    _buildAllocationFunctionInfos: function(profile)
     {
         var strings = this._strings;
-        var functionIdOffset = 0;
-        var functionNameOffset = 1;
-        var scriptNameOffset = 2;
-        var functionInfoFieldCount = 3;
+
+        var functionInfoFields = profile.snapshot.meta.trace_function_info_fields;
+        var functionIdOffset = functionInfoFields.indexOf("function_id");
+        var functionNameOffset = functionInfoFields.indexOf("name");
+        var scriptNameOffset = functionInfoFields.indexOf("script_name");
+        var scriptIdOffset = functionInfoFields.indexOf("script_id");
+        var lineOffset = functionInfoFields.indexOf("line");
+        var columnOffset = functionInfoFields.indexOf("column");
+        var functionInfoFieldCount = functionInfoFields.length;
 
         var map = this._idToFunctionInfo;
 
         // Special case for the root node.
-        map[0] = new WebInspector.FunctionAllocationInfo("(root)", "<unknown>");
+        map[0] = new WebInspector.FunctionAllocationInfo("(root)", "<unknown>", 0, -1, -1);
 
+        var rawInfos = profile.trace_function_infos;
         var infoLength = rawInfos.length;
         for (var i = 0; i < infoLength; i += functionInfoFieldCount) {
             map[rawInfos[i + functionIdOffset]] = new WebInspector.FunctionAllocationInfo(
                 strings[rawInfos[i + functionNameOffset]],
-                strings[rawInfos[i + scriptNameOffset]]);
+                strings[rawInfos[i + scriptNameOffset]],
+                rawInfos[i + scriptIdOffset],
+                rawInfos[i + lineOffset],
+                rawInfos[i + columnOffset]);
         }
-
     },
 
-    _buildInvertedAllocationTree: function(traceTreeRaw)
+    _buildInvertedAllocationTree: function(profile)
     {
+        var traceTreeRaw = profile.trace_tree;
         var idToFunctionInfo = this._idToFunctionInfo;
-        var nodeIdOffset = 0;
-        var functionIdOffset = 1;
-        var allocationCountOffset = 2;
-        var allocationSizeOffset = 3;
-        var childrenOffset = 4;
-        var nodeFieldCount = 5;
+
+        var traceNodeFields = profile.snapshot.meta.trace_node_fields;
+        var nodeIdOffset = traceNodeFields.indexOf("id");
+        var functionIdOffset = traceNodeFields.indexOf("function_id");
+        var allocationCountOffset = traceNodeFields.indexOf("count");
+        var allocationSizeOffset = traceNodeFields.indexOf("size");
+        var childrenOffset = traceNodeFields.indexOf("children");
+        var nodeFieldCount = traceNodeFields.length;
 
         function traverseNode(rawNodeArray, nodeOffset, parent)
         {
@@ -113,12 +124,15 @@ WebInspector.AllocationProfile.prototype = {
             var nodeId = this._nextNodeId++;
             result.push(this._serializeNode(
                 nodeId,
-                info.functionName,
+                info,
                 info.totalCount,
                 info.totalSize,
                 true));
             this._collapsedTopNodeIdToFunctionInfo[nodeId] = info;
         }
+        result.sort(function(a, b) {
+            return b.size - a.size;
+        });
         return result;
     },
 
@@ -131,27 +145,44 @@ WebInspector.AllocationProfile.prototype = {
             delete this._collapsedTopNodeIdToFunctionInfo[nodeId];
             this._idToNode[nodeId] = node;
         }
-        var result = [];
+
+        var nodesWithSingleCaller = [];
+        while (node.callers().length === 1) {
+            node = node.callers()[0];
+            nodesWithSingleCaller.push(this._serializeCaller(node));
+        }
+
+        var branchingCallers = [];
         var callers = node.callers();
         for (var i = 0; i < callers.length; i++) {
-            var callerNode = callers[i];
-            var callerId = this._nextNodeId++;
-            this._idToNode[callerId] = callerNode;
-            result.push(this._serializeNode(
-                callerId,
-                callerNode.functionInfo.functionName,
-                callerNode.allocationCount,
-                callerNode.allocationSize,
-                callerNode.hasCallers()));
+            branchingCallers.push(this._serializeCaller(callers[i]));
         }
-        return result;
+        return {
+            nodesWithSingleCaller: nodesWithSingleCaller,
+            branchingCallers: branchingCallers
+        };
     },
 
-    _serializeNode: function(nodeId, functionName, count, size, hasChildren)
+    _serializeCaller: function(node)
+    {
+        var callerId = this._nextNodeId++;
+        this._idToNode[callerId] = node;
+        return this._serializeNode(
+            callerId,
+            node.functionInfo,
+            node.allocationCount,
+            node.allocationSize,
+            node.hasCallers());
+    },
+
+    _serializeNode: function(nodeId, functionInfo, count, size, hasChildren)
     {
         return {
             id: nodeId,
-            name: functionName,
+            name: functionInfo.functionName,
+            scriptName: functionInfo.scriptName,
+            line: functionInfo.line,
+            column: functionInfo.column,
             count: count,
             size: size,
             hasChildren: hasChildren
@@ -176,7 +207,7 @@ WebInspector.AllocationTraceNode = function(id, functionInfo, count, size, paren
 
 /**
  * @constructor
- * @param {WebInspector.FunctionAllocationInfo} functionInfo
+ * @param {!WebInspector.FunctionAllocationInfo} functionInfo
  */
 WebInspector.AllocationBackTraceNode = function(functionInfo)
 {
@@ -189,8 +220,8 @@ WebInspector.AllocationBackTraceNode = function(functionInfo)
 
 WebInspector.AllocationBackTraceNode.prototype = {
     /**
-     * @param {WebInspector.AllocationTraceNode} traceNode
-     * @return {WebInspector.AllocationTraceNode}
+     * @param {!WebInspector.AllocationTraceNode} traceNode
+     * @return {!WebInspector.AllocationTraceNode}
      */
     addCaller: function(traceNode)
     {
@@ -225,10 +256,13 @@ WebInspector.AllocationBackTraceNode.prototype = {
 /**
  * @constructor
  */
-WebInspector.FunctionAllocationInfo = function(functionName, scriptName)
+WebInspector.FunctionAllocationInfo = function(functionName, scriptName, scriptId, line, column)
 {
     this.functionName = functionName;
     this.scriptName = scriptName;
+    this.scriptId = scriptId;
+    this.line = line;
+    this.column = column;
     this.totalCount = 0;
     this.totalSize = 0;
     this._traceTops = [];

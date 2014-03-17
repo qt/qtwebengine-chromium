@@ -27,9 +27,12 @@
 #include "core/css/StylePropertySet.h"
 #include "core/css/StyleRule.h"
 #include "core/css/StyleRuleImport.h"
+#include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Node.h"
+#include "core/dom/StyleEngine.h"
 #include "core/fetch/CSSStyleSheetResource.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/TraceEvent.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/Deque.h"
 
 namespace WebCore {
@@ -56,12 +59,12 @@ StyleSheetContents::StyleSheetContents(StyleRuleImport* ownerRule, const String&
     : m_ownerRule(ownerRule)
     , m_originalURL(originalURL)
     , m_loadCompleted(false)
-    , m_isUserStyleSheet(ownerRule && ownerRule->parentStyleSheet() && ownerRule->parentStyleSheet()->isUserStyleSheet())
     , m_hasSyntacticallyValidCSSHeader(true)
     , m_didLoadErrorOccur(false)
     , m_usesRemUnits(false)
     , m_isMutable(false)
     , m_isInMemoryCache(false)
+    , m_hasFontFaceRule(false)
     , m_parserContext(context)
 {
 }
@@ -75,12 +78,12 @@ StyleSheetContents::StyleSheetContents(const StyleSheetContents& o)
     , m_childRules(o.m_childRules.size())
     , m_namespaces(o.m_namespaces)
     , m_loadCompleted(true)
-    , m_isUserStyleSheet(o.m_isUserStyleSheet)
     , m_hasSyntacticallyValidCSSHeader(o.m_hasSyntacticallyValidCSSHeader)
     , m_didLoadErrorOccur(false)
     , m_usesRemUnits(o.m_usesRemUnits)
     , m_isMutable(false)
     , m_isInMemoryCache(false)
+    , m_hasFontFaceRule(o.m_hasFontFaceRule)
     , m_parserContext(o.m_parserContext)
 {
     ASSERT(o.isCacheable());
@@ -99,6 +102,13 @@ StyleSheetContents::~StyleSheetContents()
 
 bool StyleSheetContents::isCacheable() const
 {
+    // FIXME: StyleSheets with media queries can't be cached because their RuleSet
+    // is processed differently based off the media queries, which might resolve
+    // differently depending on the context of the parent CSSStyleSheet (e.g.
+    // if they are in differently sized iframes). Once RuleSets are media query
+    // agnostic, we can restore sharing of StyleSheetContents with medea queries.
+    if (m_hasMediaQueries)
+        return false;
     // FIXME: Support copying import rules.
     if (!m_importRules.isEmpty())
         return false;
@@ -126,17 +136,29 @@ void StyleSheetContents::parserAppendRule(PassRefPtr<StyleRuleBase> rule)
     if (rule->isImportRule()) {
         // Parser enforces that @import rules come before anything else except @charset.
         ASSERT(m_childRules.isEmpty());
-        m_importRules.append(static_cast<StyleRuleImport*>(rule.get()));
+        StyleRuleImport* importRule = toStyleRuleImport(rule.get());
+        if (importRule->mediaQueries())
+            setHasMediaQueries();
+        m_importRules.append(importRule);
         m_importRules.last()->setParentStyleSheet(this);
         m_importRules.last()->requestStyleSheet();
         return;
     }
 
     // Add warning message to inspector if dpi/dpcm values are used for screen media.
-    if (rule->isMediaRule())
-        reportMediaQueryWarningIfNeeded(singleOwnerDocument(), static_cast<StyleRuleMedia*>(rule.get())->mediaQueries());
+    if (rule->isMediaRule()) {
+        setHasMediaQueries();
+        reportMediaQueryWarningIfNeeded(singleOwnerDocument(), toStyleRuleMedia(rule.get())->mediaQueries());
+    }
 
     m_childRules.append(rule);
+}
+
+void StyleSheetContents::setHasMediaQueries()
+{
+    m_hasMediaQueries = true;
+    if (parentStyleSheet())
+        parentStyleSheet()->setHasMediaQueries();
 }
 
 StyleRuleBase* StyleSheetContents::ruleAt(unsigned index) const
@@ -209,7 +231,7 @@ bool StyleSheetContents::wrapperInsertRule(PassRefPtr<StyleRuleBase> rule, unsig
         // Inserting non-import rule before @import is not allowed.
         if (!rule->isImportRule())
             return false;
-        m_importRules.insert(childVectorIndex, static_cast<StyleRuleImport*>(rule.get()));
+        m_importRules.insert(childVectorIndex, toStyleRuleImport(rule.get()));
         m_importRules[childVectorIndex]->setParentStyleSheet(this);
         m_importRules[childVectorIndex]->requestStyleSheet();
         // FIXME: Stylesheet doesn't actually change meaningfully before the imported sheets are loaded.
@@ -263,15 +285,16 @@ const AtomicString& StyleSheetContents::determineNamespace(const AtomicString& p
         return nullAtom; // No namespace. If an element/attribute has a namespace, we won't match it.
     if (prefix == starAtom)
         return starAtom; // We'll match any namespace.
-    PrefixNamespaceURIMap::const_iterator it = m_namespaces.find(prefix);
-    if (it == m_namespaces.end())
-        return nullAtom;
-    return it->value;
+    return m_namespaces.get(prefix);
 }
 
 void StyleSheetContents::parseAuthorStyleSheet(const CSSStyleSheetResource* cachedStyleSheet, const SecurityOrigin* securityOrigin)
 {
-    bool enforceMIMEType = isStrictParserMode(m_parserContext.mode);
+    TRACE_EVENT0("webkit", "StyleSheetContents::parseAuthorStyleSheet");
+
+    bool quirksMode = isQuirksModeBehavior(m_parserContext.mode());
+
+    bool enforceMIMEType = !quirksMode;
     bool hasValidMIMEType = false;
     String sheetText = cachedStyleSheet->sheetText(enforceMIMEType, &hasValidMIMEType);
 
@@ -287,15 +310,6 @@ void StyleSheetContents::parseAuthorStyleSheet(const CSSStyleSheetResource* cach
             clearRules();
             return;
         }
-    }
-    if (m_parserContext.needsSiteSpecificQuirks && isStrictParserMode(m_parserContext.mode)) {
-        // Work around <https://bugs.webkit.org/show_bug.cgi?id=28350>.
-        DEFINE_STATIC_LOCAL(const String, mediaWikiKHTMLFixesStyleSheet, ("/* KHTML fix stylesheet */\n/* work around the horizontal scrollbars */\n#column-content { margin-left: 0; }\n\n"));
-        // There are two variants of KHTMLFixes.css. One is equal to mediaWikiKHTMLFixesStyleSheet,
-        // while the other lacks the second trailing newline.
-        if (baseURL().string().endsWith("/KHTMLFixes.css") && !sheetText.isNull() && mediaWikiKHTMLFixesStyleSheet.startsWith(sheetText)
-            && sheetText.length() >= mediaWikiKHTMLFixesStyleSheet.length() - 1)
-            clearRules();
     }
 }
 
@@ -351,6 +365,10 @@ void StyleSheetContents::notifyLoadedSheet(const CSSStyleSheetResource* sheet)
 {
     ASSERT(sheet);
     m_didLoadErrorOccur |= sheet->errorOccurred();
+    // updateLayoutIgnorePendingStyleSheets can cause us to create the RuleSet on this
+    // sheet before its imports have loaded. So clear the RuleSet when the imports
+    // load since the import's subrules are flattened into its parent sheet's RuleSet.
+    clearRuleSet();
 }
 
 void StyleSheetContents::startLoadingDynamicSheet()
@@ -415,7 +433,7 @@ void StyleSheetContents::addSubresourceStyleURLs(ListHashSet<KURL>& urls)
             if (rule->isStyleRule())
                 toStyleRule(rule)->properties()->addSubresourceStyleURLs(urls, this);
             else if (rule->isFontFaceRule())
-                static_cast<StyleRuleFontFace*>(rule)->properties()->addSubresourceStyleURLs(urls, this);
+                toStyleRuleFontFace(rule)->properties()->addSubresourceStyleURLs(urls, this);
         }
     }
 }
@@ -426,23 +444,19 @@ static bool childRulesHaveFailedOrCanceledSubresources(const Vector<RefPtr<Style
         const StyleRuleBase* rule = rules[i].get();
         switch (rule->type()) {
         case StyleRuleBase::Style:
-            if (static_cast<const StyleRule*>(rule)->properties()->hasFailedOrCanceledSubresources())
+            if (toStyleRule(rule)->properties()->hasFailedOrCanceledSubresources())
                 return true;
             break;
         case StyleRuleBase::FontFace:
-            if (static_cast<const StyleRuleFontFace*>(rule)->properties()->hasFailedOrCanceledSubresources())
+            if (toStyleRuleFontFace(rule)->properties()->hasFailedOrCanceledSubresources())
                 return true;
             break;
         case StyleRuleBase::Media:
-            if (childRulesHaveFailedOrCanceledSubresources(static_cast<const StyleRuleMedia*>(rule)->childRules()))
+            if (childRulesHaveFailedOrCanceledSubresources(toStyleRuleMedia(rule)->childRules()))
                 return true;
             break;
         case StyleRuleBase::Region:
-            if (childRulesHaveFailedOrCanceledSubresources(static_cast<const StyleRuleRegion*>(rule)->childRules()))
-                return true;
-            break;
-        case StyleRuleBase::HostInternal:
-            if (childRulesHaveFailedOrCanceledSubresources(static_cast<const StyleRuleHost*>(rule)->childRules()))
+            if (childRulesHaveFailedOrCanceledSubresources(toStyleRuleRegion(rule)->childRules()))
                 return true;
             break;
         case StyleRuleBase::Import:
@@ -504,5 +518,35 @@ void StyleSheetContents::shrinkToFit()
     m_importRules.shrinkToFit();
     m_childRules.shrinkToFit();
 }
+
+RuleSet& StyleSheetContents::ensureRuleSet(const MediaQueryEvaluator& medium, AddRuleFlags addRuleFlags)
+{
+    if (!m_ruleSet) {
+        m_ruleSet = RuleSet::create();
+        m_ruleSet->addRulesFromSheet(this, medium, addRuleFlags);
+    }
+    return *m_ruleSet.get();
+}
+
+void StyleSheetContents::clearRuleSet()
+{
+    if (StyleSheetContents* parentSheet = parentStyleSheet())
+        parentSheet->clearRuleSet();
+
+    // Don't want to clear the StyleResolver if the RuleSet hasn't been created
+    // since we only clear the StyleResolver so that it's members are properly
+    // updated in ScopedStyleResolver::addRulesFromSheet.
+    if (!m_ruleSet)
+        return;
+
+    // Clearing the ruleSet means we need to recreate the styleResolver data structures.
+    // See the StyleResolver calls in ScopedStyleResolver::addRulesFromSheet.
+    for (size_t i = 0; i < m_clients.size(); ++i) {
+        if (Document* document = m_clients[i]->ownerDocument())
+            document->styleEngine()->clearResolver();
+    }
+    m_ruleSet.clear();
+}
+
 
 }

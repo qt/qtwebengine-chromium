@@ -30,10 +30,14 @@ class MediaInternalsMessageHandler : public WebUIMessageHandler {
   void OnGetEverything(const base::ListValue* list);
 
   // MediaInternals message handlers.
-  void OnUpdate(const string16& update);
+  void OnUpdate(const base::string16& update);
 
  private:
   scoped_refptr<MediaInternalsProxy> proxy_;
+
+  // Reflects whether the chrome://media-internals HTML+JS has finished loading.
+  // If not, it's not safe to send JavaScript calls targeting the page yet.
+  bool page_load_complete_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaInternalsMessageHandler);
 };

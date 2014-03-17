@@ -31,15 +31,15 @@
 #ifndef UserMediaClientImpl_h
 #define UserMediaClientImpl_h
 
-#include "core/platform/mediastream/MediaStreamSource.h"
 #include "modules/mediastream/UserMediaClient.h"
+#include "platform/mediastream/MediaStreamSource.h"
 #include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 class UserMediaRequest;
 }
 
-namespace WebKit {
+namespace blink {
 
 class WebUserMediaClient;
 class WebViewImpl;
@@ -58,6 +58,6 @@ private:
     WebUserMediaClient* m_client;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // UserMediaClientImpl_h

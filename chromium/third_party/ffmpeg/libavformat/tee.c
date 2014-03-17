@@ -102,10 +102,10 @@ fail:
 static int parse_bsfs(void *log_ctx, const char *bsfs_spec,
                       AVBitStreamFilterContext **bsfs)
 {
-    char *bsf_name, *buf, *saveptr;
+    char *bsf_name, *buf, *dup, *saveptr;
     int ret = 0;
 
-    if (!(buf = av_strdup(bsfs_spec)))
+    if (!(dup = buf = av_strdup(bsfs_spec)))
         return AVERROR(ENOMEM);
 
     while (bsf_name = av_strtok(buf, ",", &saveptr)) {
@@ -128,7 +128,7 @@ static int parse_bsfs(void *log_ctx, const char *bsfs_spec,
     }
 
 end:
-    av_free(buf);
+    av_free(dup);
     return ret;
 }
 
@@ -160,6 +160,7 @@ static int open_slave(AVFormatContext *avf, char *slave, TeeSlave *tee_slave)
     ret = avformat_alloc_output_context2(&avf2, NULL, format, filename);
     if (ret < 0)
         goto end;
+    av_dict_copy(&avf2->metadata, avf->metadata, 0);
 
     tee_slave->stream_map = av_calloc(avf->nb_streams, sizeof(*tee_slave->stream_map));
     if (!tee_slave->stream_map) {
@@ -279,6 +280,7 @@ static int open_slave(AVFormatContext *avf, char *slave, TeeSlave *tee_slave)
 
 end:
     av_free(format);
+    av_free(select);
     av_dict_free(&options);
     return ret;
 }
@@ -301,6 +303,7 @@ static void close_slaves(AVFormatContext *avf)
             }
         }
         av_freep(&tee->slaves[i].stream_map);
+        av_freep(&tee->slaves[i].bsfs);
 
         avio_close(avf2->pb);
         avf2->pb = NULL;
@@ -386,7 +389,7 @@ static int filter_packet(void *log_ctx, AVPacket *pkt,
                          AVFormatContext *fmt_ctx, AVBitStreamFilterContext *bsf_ctx)
 {
     AVCodecContext *enc_ctx = fmt_ctx->streams[pkt->stream_index]->codec;
-    int ret;
+    int ret = 0;
 
     while (bsf_ctx) {
         AVPacket new_pkt = *pkt;

@@ -19,11 +19,18 @@
 
 namespace base {
 
+// ***************************************************************************
+// ***** Don't use anything from this file anymore. It is being removed!
+// ***** Use base/files/base_file.h instead
+// ***************************************************************************
+
 // PLATFORM_FILE_(OPEN|CREATE).* are mutually exclusive. You should specify
 // exactly one of the five (possibly combining with other flags) when opening
 // or creating a file.
 // PLATFORM_FILE_(WRITE|APPEND) are mutually exclusive. This is so that APPEND
 // behavior will be consistent with O_APPEND on POSIX.
+// PLATFORM_FILE_EXCLUSIVE_(READ|WRITE) only grant exclusive access to the file
+// on creation on POSIX; for existing files, consider using LockPlatformFile().
 enum PlatformFileFlags {
   PLATFORM_FILE_OPEN = 1 << 0,             // Opens a file, only if it exists.
   PLATFORM_FILE_CREATE = 1 << 1,           // Creates a new file, only if it
@@ -44,16 +51,19 @@ enum PlatformFileFlags {
   PLATFORM_FILE_DELETE_ON_CLOSE = 1 << 13,
 
   PLATFORM_FILE_WRITE_ATTRIBUTES = 1 << 14,  // Used on Windows only
-  PLATFORM_FILE_ENUMERATE = 1 << 15,         // May enumerate directory
 
-  PLATFORM_FILE_SHARE_DELETE = 1 << 16,      // Used on Windows only
+  PLATFORM_FILE_SHARE_DELETE = 1 << 15,      // Used on Windows only
 
-  PLATFORM_FILE_TERMINAL_DEVICE = 1 << 17,   // Serial port flags
-  PLATFORM_FILE_BACKUP_SEMANTICS = 1 << 18,  // Used on Windows only
+  PLATFORM_FILE_TERMINAL_DEVICE = 1 << 16,   // Serial port flags
+  PLATFORM_FILE_BACKUP_SEMANTICS = 1 << 17,  // Used on Windows only
 
-  PLATFORM_FILE_EXECUTE = 1 << 19,           // Used on Windows only
+  PLATFORM_FILE_EXECUTE = 1 << 18,           // Used on Windows only
 };
 
+// This enum has been recorded in multiple histograms. If the order of the
+// fields needs to change, please ensure that those histograms are obsolete or
+// have been moved to a different enum.
+//
 // PLATFORM_FILE_ERROR_ACCESS_DENIED is returned when a call fails because of
 // a filesystem restriction. PLATFORM_FILE_ERROR_SECURITY is returned when a
 // browser policy doesn't allow the operation to be executed.
@@ -117,11 +127,11 @@ struct BASE_EXPORT PlatformFileInfo {
 #if defined(OS_WIN)
 typedef HANDLE PlatformFile;
 const PlatformFile kInvalidPlatformFileValue = INVALID_HANDLE_VALUE;
-PlatformFileError LastErrorToPlatformFileError(DWORD saved_errno);
+BASE_EXPORT PlatformFileError LastErrorToPlatformFileError(DWORD last_error);
 #elif defined(OS_POSIX)
 typedef int PlatformFile;
 const PlatformFile kInvalidPlatformFileValue = -1;
-PlatformFileError ErrnoToPlatformFileError(int saved_errno);
+BASE_EXPORT PlatformFileError ErrnoToPlatformFileError(int saved_errno);
 #endif
 
 // Creates or opens the given file. If |created| is provided, it will be set to
@@ -210,6 +220,31 @@ BASE_EXPORT bool TouchPlatformFile(PlatformFile file,
 
 // Returns some information for the given file.
 BASE_EXPORT bool GetPlatformFileInfo(PlatformFile file, PlatformFileInfo* info);
+
+// Attempts to take an exclusive write lock on the file. Returns immediately
+// (i.e. does not wait for another process to unlock the file). If the lock
+// was obtained, the result will be PLATFORM_FILE_OK. A lock only guarantees
+// that other processes may not also take a lock on the same file with the
+// same API - it may still be opened, renamed, unlinked, etc.
+//
+// Common semantics:
+//  * Locks are held by processes, but not inherited by child processes.
+//  * Locks are released by the OS on file handle close or process termination.
+//  * Locks are reliable only on local filesystems.
+//  * Duplicated file handles may also write to locked files.
+// Windows-specific semantics:
+//  * Locks are mandatory for read/write APIs, advisory for mapping APIs.
+//  * Within a process, locking the same file (by the same or new handle)
+//    will fail.
+// POSIX-specific semantics:
+//  * Locks are advisory only.
+//  * Within a process, locking the same file (by the same or new handle)
+//    will succeed.
+//  * Closing any descriptor on a given file releases the lock.
+BASE_EXPORT PlatformFileError LockPlatformFile(PlatformFile file);
+
+// Unlock a file previously locked with LockPlatformFile.
+BASE_EXPORT PlatformFileError UnlockPlatformFile(PlatformFile file);
 
 // Use this class to pass ownership of a PlatformFile to a receiver that may or
 // may not want to accept it.  This class does not own the storage for the

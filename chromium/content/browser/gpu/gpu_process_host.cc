@@ -48,6 +48,10 @@
 #include "ui/surface/accelerated_surface_win.h"
 #endif
 
+#if defined(USE_OZONE)
+#include "ui/ozone/ozone_switches.h"
+#endif
+
 namespace content {
 
 bool GpuProcessHost::gpu_enabled_ = true;
@@ -200,22 +204,8 @@ class GpuSandboxedProcessLauncherDelegate
         SetJobLevel(*cmd_line_, sandbox::JOB_UNPROTECTED, 0, policy);
         policy->SetDelayedIntegrityLevel(sandbox::INTEGRITY_LEVEL_LOW);
       } else {
-        if (cmd_line_->GetSwitchValueASCII(switches::kUseGL) ==
-                gfx::kGLImplementationSwiftShaderName ||
-            cmd_line_->HasSwitch(switches::kReduceGpuSandbox) ||
-            cmd_line_->HasSwitch(switches::kDisableImageTransportSurface)) {
-          // Swiftshader path.
-          policy->SetTokenLevel(sandbox::USER_RESTRICTED_SAME_ACCESS,
-                                sandbox::USER_LIMITED);
-        } else {
-          // Angle + DirectX path.
-          policy->SetTokenLevel(sandbox::USER_RESTRICTED_SAME_ACCESS,
-                                sandbox::USER_RESTRICTED);
-          // This is a trick to keep the GPU out of low-integrity processes. It
-          // starts at low-integrity for UIPI to work, then drops below
-          // low-integrity after warm-up.
-          policy->SetDelayedIntegrityLevel(sandbox::INTEGRITY_LEVEL_UNTRUSTED);
-        }
+        policy->SetTokenLevel(sandbox::USER_RESTRICTED_SAME_ACCESS,
+                              sandbox::USER_LIMITED);
 
         // UI restrictions break when we access Windows from outside our job.
         // However, we don't want a proxy window in this process because it can
@@ -266,7 +256,7 @@ class GpuSandboxedProcessLauncherDelegate
 #endif
 
     if (cmd_line_->HasSwitch(switches::kEnableLogging)) {
-      string16 log_file_path = logging::GetLogFileFullPath();
+      base::string16 log_file_path = logging::GetLogFileFullPath();
       if (!log_file_path.empty()) {
         result = policy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
                                  sandbox::TargetPolicy::FILES_ALLOW_ANY,
@@ -442,6 +432,9 @@ GpuProcessHost::~GpuProcessHost() {
   static bool crashed_before = false;
   static int swiftshader_crash_count = 0;
 
+  bool disable_crash_limit = CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableGpuProcessCrashLimit);
+
   // Ending only acts as a failure if the GPU process was actually started and
   // was intended for actual rendering (and not just checking caps or other
   // options).
@@ -451,7 +444,8 @@ GpuProcessHost::~GpuProcessHost() {
                                 DIED_FIRST_TIME + swiftshader_crash_count,
                                 GPU_PROCESS_LIFETIME_EVENT_MAX);
 
-      if (++swiftshader_crash_count >= kGpuMaxCrashCount) {
+      if (++swiftshader_crash_count >= kGpuMaxCrashCount &&
+          !disable_crash_limit) {
         // SwiftShader is too unstable to use. Disable it for current session.
         gpu_enabled_ = false;
       }
@@ -476,8 +470,8 @@ GpuProcessHost::~GpuProcessHost() {
       crashed_before = true;
       last_gpu_crash_time = current_time;
 
-      if (gpu_recent_crash_count >= kGpuMaxCrashCount ||
-          !initialized_) {
+      if ((gpu_recent_crash_count >= kGpuMaxCrashCount && !disable_crash_limit)
+          || !initialized_) {
 #if !defined(OS_CHROMEOS)
         // The gpu process is too unstable to use. Disable it for current
         // session.
@@ -577,7 +571,8 @@ bool GpuProcessHost::Init() {
   if (channel_id.empty())
     return false;
 
-  if (in_process_ && g_gpu_main_thread_factory) {
+  if (in_process_) {
+    DCHECK(g_gpu_main_thread_factory);
     CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kDisableGpuWatchdog);
 
@@ -1121,6 +1116,9 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
     switches::kDisableImageTransportSurface,
     switches::kDisableLogging,
     switches::kDisableSeccompFilterSandbox,
+#if defined(ENABLE_WEBRTC)
+    switches::kDisableWebRtcHWEncoding,
+#endif
     switches::kEnableLogging,
     switches::kEnableShareGroupAsyncTextureUpload,
     switches::kGpuStartupDialog,
@@ -1137,6 +1135,9 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
 #endif
 #if defined(USE_AURA)
     switches::kUIPrioritizeInGpuProcess,
+#endif
+#if defined(USE_OZONE)
+    switches::kOzonePlatform,
 #endif
   };
   cmd_line->CopySwitchesFrom(browser_command_line, kSwitchNames,

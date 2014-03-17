@@ -28,11 +28,11 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ContextLifecycleObserver.h"
-#include "core/dom/EventTarget.h"
+#include "core/events/EventTarget.h"
 #include "core/html/URLRegistry.h"
-#include "core/platform/Timer.h"
 #include "core/platform/mediastream/MediaStreamDescriptor.h"
 #include "modules/mediastream/MediaStreamTrack.h"
+#include "platform/Timer.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
@@ -40,12 +40,13 @@ namespace WebCore {
 
 class ExceptionState;
 
-class MediaStream : public RefCounted<MediaStream>, public ScriptWrappable, public URLRegistrable, public MediaStreamDescriptorClient, public EventTarget, public ContextLifecycleObserver {
+class MediaStream : public RefCounted<MediaStream>, public ScriptWrappable, public URLRegistrable, public MediaStreamDescriptorClient, public EventTargetWithInlineData, public ContextLifecycleObserver {
+    REFCOUNTED_EVENT_TARGET(MediaStream);
 public:
-    static PassRefPtr<MediaStream> create(ScriptExecutionContext*);
-    static PassRefPtr<MediaStream> create(ScriptExecutionContext*, PassRefPtr<MediaStream>);
-    static PassRefPtr<MediaStream> create(ScriptExecutionContext*, const MediaStreamTrackVector&);
-    static PassRefPtr<MediaStream> create(ScriptExecutionContext*, PassRefPtr<MediaStreamDescriptor>);
+    static PassRefPtr<MediaStream> create(ExecutionContext*);
+    static PassRefPtr<MediaStream> create(ExecutionContext*, PassRefPtr<MediaStream>);
+    static PassRefPtr<MediaStream> create(ExecutionContext*, const MediaStreamTrackVector&);
+    static PassRefPtr<MediaStream> create(ExecutionContext*, PassRefPtr<MediaStreamDescriptor>);
     virtual ~MediaStream();
 
     // DEPRECATED
@@ -75,29 +76,18 @@ public:
 
     // EventTarget
     virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ScriptExecutionContext* scriptExecutionContext() const OVERRIDE;
-
-    using RefCounted<MediaStream>::ref;
-    using RefCounted<MediaStream>::deref;
+    virtual ExecutionContext* executionContext() const OVERRIDE;
 
     // URLRegistrable
     virtual URLRegistry& registry() const OVERRIDE;
 
 protected:
-    MediaStream(ScriptExecutionContext*, PassRefPtr<MediaStreamDescriptor>);
-
-    // EventTarget
-    virtual EventTargetData* eventTargetData() OVERRIDE;
-    virtual EventTargetData* ensureEventTargetData() OVERRIDE;
+    MediaStream(ExecutionContext*, PassRefPtr<MediaStreamDescriptor>);
 
     // ContextLifecycleObserver
     virtual void contextDestroyed();
 
 private:
-    // EventTarget
-    virtual void refEventTarget() OVERRIDE { ref(); }
-    virtual void derefEventTarget() OVERRIDE { deref(); }
-
     // MediaStreamDescriptorClient
     virtual void addRemoteTrack(MediaStreamComponent*) OVERRIDE;
     virtual void removeRemoteTrack(MediaStreamComponent*) OVERRIDE;
@@ -106,8 +96,6 @@ private:
     void scheduledEventTimerFired(Timer<MediaStream>*);
 
     bool m_stopped;
-
-    EventTargetData m_eventTargetData;
 
     MediaStreamTrackVector m_audioTracks;
     MediaStreamTrackVector m_videoTracks;

@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "net/base/net_log.h"
@@ -33,15 +34,15 @@ base::Value* NetLogQuicPacketSentCallback(
     QuicPacketSequenceNumber sequence_number,
     EncryptionLevel level,
     size_t packet_size,
-    int rv,
+    WriteResult result,
     NetLog::LogLevel /* log_level */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetInteger("encryption_level", level);
   dict->SetString("packet_sequence_number",
                   base::Uint64ToString(sequence_number));
   dict->SetInteger("size", packet_size);
-  if (rv < 0) {
-    dict->SetInteger("net_error", rv);
+  if (result.status != WRITE_STATUS_OK) {
+    dict->SetInteger("net_error", result.error_code);
   }
   return dict;
 }
@@ -79,7 +80,7 @@ base::Value* NetLogQuicStreamFrameCallback(const QuicStreamFrame* frame,
   dict->SetInteger("stream_id", frame->stream_id);
   dict->SetBoolean("fin", frame->fin);
   dict->SetString("offset", base::Uint64ToString(frame->offset));
-  dict->SetInteger("length", frame->data.length());
+  dict->SetInteger("length", frame->data.TotalBufferSize());
   return dict;
 }
 
@@ -182,7 +183,7 @@ base::Value* NetLogQuicCryptoHandshakeMessageCallback(
   return dict;
 }
 
-base::Value* NetLogQuicConnectionClosedCallback(
+base::Value* NetLogQuicOnConnectionClosedCallback(
     QuicErrorCode error,
     bool from_peer,
     NetLog::LogLevel /* log_level */) {
@@ -233,6 +234,8 @@ void QuicConnectionLogger::OnFrameAddedToPacket(const QuicFrame& frame) {
                      frame.congestion_feedback_frame));
       break;
     case RST_STREAM_FRAME:
+      UMA_HISTOGRAM_SPARSE_SLOWLY("Net.QuicSession.RstStreamErrorCodeClient",
+                                  frame.rst_stream_frame->error_code);
       net_log_.AddEvent(
           NetLog::TYPE_QUIC_SESSION_RST_STREAM_FRAME_SENT,
           base::Bind(&NetLogQuicRstStreamFrameCallback,
@@ -255,11 +258,11 @@ void QuicConnectionLogger::OnPacketSent(
     QuicPacketSequenceNumber sequence_number,
     EncryptionLevel level,
     const QuicEncryptedPacket& packet,
-    int rv) {
+    WriteResult result) {
   net_log_.AddEvent(
       NetLog::TYPE_QUIC_SESSION_PACKET_SENT,
       base::Bind(&NetLogQuicPacketSentCallback, sequence_number, level,
-                 packet.length(), rv));
+                 packet.length(), result));
 }
 
 void QuicConnectionLogger:: OnPacketRetransmitted(
@@ -365,6 +368,8 @@ void QuicConnectionLogger::OnCongestionFeedbackFrame(
 }
 
 void QuicConnectionLogger::OnRstStreamFrame(const QuicRstStreamFrame& frame) {
+  UMA_HISTOGRAM_SPARSE_SLOWLY("Net.QuicSession.RstStreamErrorCodeServer",
+                              frame.error_code);
   net_log_.AddEvent(
       NetLog::TYPE_QUIC_SESSION_RST_STREAM_FRAME_RECEIVED,
       base::Bind(&NetLogQuicRstStreamFrameCallback, &frame));
@@ -411,11 +416,11 @@ void QuicConnectionLogger::OnCryptoHandshakeMessageSent(
       base::Bind(&NetLogQuicCryptoHandshakeMessageCallback, &message));
 }
 
-void QuicConnectionLogger::OnConnectionClose(QuicErrorCode error,
-                                             bool from_peer) {
+void QuicConnectionLogger::OnConnectionClosed(QuicErrorCode error,
+                                              bool from_peer) {
   net_log_.AddEvent(
       NetLog::TYPE_QUIC_SESSION_CLOSED,
-      base::Bind(&NetLogQuicConnectionClosedCallback, error, from_peer));
+      base::Bind(&NetLogQuicOnConnectionClosedCallback, error, from_peer));
 }
 
 void QuicConnectionLogger::OnSuccessfulVersionNegotiation(

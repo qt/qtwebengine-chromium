@@ -89,13 +89,9 @@ int HttpAuthHandlerNTLM::GenerateAuthTokenImpl(
   // Base64 encode data in output buffer and prepend "NTLM ".
   std::string encode_input(static_cast<char*>(out_buf), out_buf_len);
   std::string encode_output;
-  bool base64_rv = base::Base64Encode(encode_input, &encode_output);
+  base::Base64Encode(encode_input, &encode_output);
   // OK, we are done with |out_buf|
   free(out_buf);
-  if (!base64_rv) {
-    LOG(ERROR) << "Unexpected problem Base64 encoding.";
-    return ERR_UNEXPECTED;
-  }
   *auth_token = std::string("NTLM ") + encode_output;
   return OK;
 #endif
@@ -136,11 +132,11 @@ HttpAuth::AuthorizationResult HttpAuthHandlerNTLM::ParseChallenge(
 }
 
 // static
-std::wstring HttpAuthHandlerNTLM::CreateSPN(const GURL& origin) {
+std::string HttpAuthHandlerNTLM::CreateSPN(const GURL& origin) {
   // The service principal name of the destination server.  See
   // http://msdn.microsoft.com/en-us/library/ms677949%28VS.85%29.aspx
-  std::wstring target(L"HTTP/");
-  target.append(ASCIIToWide(GetHostAndPort(origin)));
+  std::string target("HTTP/");
+  target.append(GetHostAndPort(origin));
   return target;
 }
 

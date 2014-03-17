@@ -21,15 +21,16 @@
 #ifndef Page_h
 #define Page_h
 
-#include "core/dom/ViewportArguments.h"
-#include "core/page/LayoutMilestones.h"
+#include "core/dom/ViewportDescription.h"
+#include "core/frame/SettingsDelegate.h"
+#include "core/frame/UseCounter.h"
+#include "core/loader/HistoryController.h"
 #include "core/page/PageVisibilityState.h"
-#include "core/page/UseCounter.h"
-#include "core/platform/LifecycleContext.h"
-#include "core/platform/Supplementable.h"
-#include "core/platform/graphics/LayoutRect.h"
-#include "core/platform/graphics/Region.h"
 #include "core/rendering/Pagination.h"
+#include "platform/LifecycleContext.h"
+#include "platform/Supplementable.h"
+#include "platform/geometry/LayoutRect.h"
+#include "platform/geometry/Region.h"
 #include "wtf/Forward.h"
 #include "wtf/HashSet.h"
 #include "wtf/Noncopyable.h"
@@ -39,7 +40,6 @@ namespace WebCore {
 
 class AutoscrollController;
 class BackForwardClient;
-class BackForwardController;
 class Chrome;
 class ChromeClient;
 class ClientRectList;
@@ -73,14 +73,17 @@ class VisibleSelection;
 class ScrollableArea;
 class ScrollingCoordinator;
 class Settings;
+class SharedWorkerRepositoryClient;
+class SpellCheckerClient;
 class StorageNamespace;
+class UndoStack;
 class ValidationMessageClient;
 
 typedef uint64_t LinkHash;
 
 float deviceScaleFactor(Frame*);
 
-class Page : public Supplementable<Page>, public LifecycleContext {
+class Page : public Supplementable<Page>, public LifecycleContext<Page>, public SettingsDelegate {
     WTF_MAKE_NONCOPYABLE(Page);
     friend class Settings;
 public:
@@ -99,6 +102,7 @@ public:
         DragClient* dragClient;
         InspectorClient* inspectorClient;
         BackForwardClient* backForwardClient;
+        SpellCheckerClient* spellCheckerClient;
     };
 
     explicit Page(PageClients&);
@@ -106,12 +110,16 @@ public:
 
     void setNeedsRecalcStyleInAllFrames();
 
-    ViewportArguments viewportArguments() const;
+    ViewportDescription viewportDescription() const;
 
     static void refreshPlugins(bool reload);
     PluginData* pluginData() const;
 
     EditorClient& editorClient() const { return *m_editorClient; }
+    SpellCheckerClient& spellCheckerClient() const { return *m_spellCheckerClient; }
+    UndoStack& undoStack() const { return *m_undoStack; }
+
+    HistoryController& historyController() const { return *m_historyController; }
 
     void setMainFrame(PassRefPtr<Frame>);
     Frame* mainFrame() const { return m_mainFrame.get(); }
@@ -121,11 +129,7 @@ public:
     bool openedByDOM() const;
     void setOpenedByDOM();
 
-    // DEPRECATED. Use backForward() instead of the following function.
-    void goToItem(HistoryItem*);
-
-    // FIXME: InspectorPageGroup is only needed to support single process debugger layout tests, it should be removed when DumpRenderTree is gone.
-    enum PageGroupType { InspectorPageGroup, PrivatePageGroup, SharedPageGroup };
+    enum PageGroupType { PrivatePageGroup, SharedPageGroup };
     void setGroupType(PageGroupType);
     void clearPageGroup();
     PageGroup& group()
@@ -140,6 +144,7 @@ public:
     int subframeCount() const { checkSubframeCountConsistency(); return m_subframeCount; }
 
     Chrome& chrome() const { return *m_chrome; }
+    AutoscrollController& autoscrollController() const { return *m_autoscrollController; }
     DragCaretController& dragCaretController() const { return *m_dragCaretController; }
     DragController& dragController() const { return *m_dragController; }
     FocusController& focusController() const { return *m_focusController; }
@@ -148,19 +153,8 @@ public:
     PointerLockController& pointerLockController() const { return *m_pointerLockController; }
     ValidationMessageClient* validationMessageClient() const { return m_validationMessageClient; }
     void setValidationMessageClient(ValidationMessageClient* client) { m_validationMessageClient = client; }
-
-    bool autoscrollInProgress() const;
-    bool autoscrollInProgress(const RenderBox*) const;
-    bool panScrollInProgress() const;
-    void startAutoscrollForSelection(RenderObject*);
-    void stopAutoscrollIfNeeded(RenderObject*);
-    void stopAutoscrollTimer();
-    void updateAutoscrollRenderer();
-    void updateDragAndDrop(Node* targetNode, const IntPoint& eventPosition, double eventTime);
-#if OS(WIN)
-    void handleMouseReleaseForPanScrolling(Frame*, const PlatformMouseEvent&);
-    void startPanScrolling(RenderBox*, const IntPoint&);
-#endif
+    SharedWorkerRepositoryClient* sharedWorkerRepositoryClient() { return m_sharedWorkerRepositoryClient; }
+    void setSharedWorkerRepositoryClient(SharedWorkerRepositoryClient* client) { m_sharedWorkerRepositoryClient = client; }
 
     ScrollingCoordinator* scrollingCoordinator();
 
@@ -169,7 +163,7 @@ public:
 
     Settings& settings() const { return *m_settings; }
     ProgressTracker& progress() const { return *m_progress; }
-    BackForwardController& backForward() const { return *m_backForwardController; }
+    BackForwardClient& backForward() const { return *m_backForwardClient; }
 
     UseCounter& useCounter() { return m_useCounter; }
 
@@ -178,6 +172,9 @@ public:
 
     void unmarkAllTextMatches();
 
+    // DefersLoading is used to delay loads during modal dialogs.
+    // Modal dialogs are supposed to freeze all background processes
+    // in the page, including prevent additional loads from staring/continuing.
     void setDefersLoading(bool);
     bool defersLoading() const { return m_defersLoading; }
 
@@ -193,11 +190,6 @@ public:
     // FrameView.
     const Pagination& pagination() const { return m_pagination; }
     void setPagination(const Pagination&);
-
-    void userStyleSheetLocationChanged();
-    const String& userStyleSheet() const;
-
-    void dnsPrefetchingStateChanged();
 
     static void allVisitedStateChanged(PageGroup*);
     static void visitedStateChanged(PageGroup*, LinkHash visitedHash);
@@ -216,15 +208,6 @@ public:
     bool isCursorVisible() const { return m_isCursorVisible; }
     void setIsCursorVisible(bool isVisible) { m_isCursorVisible = isVisible; }
 
-    void addLayoutMilestones(LayoutMilestones);
-    LayoutMilestones layoutMilestones() const { return m_layoutMilestones; }
-
-    bool isCountingRelevantRepaintedObjects() const;
-    void startCountingRelevantRepaintedObjects();
-    void resetRelevantPaintedObjectCounter();
-    void addRelevantRepaintedObject(RenderObject*, const LayoutRect& objectPaintRect);
-    void addRelevantUnpaintedObject(RenderObject*, const LayoutRect& objectPaintRect);
-
 #ifndef NDEBUG
     void setIsPainting(bool painting) { m_isPainting = painting; }
     bool isPainting() const { return m_isPainting; }
@@ -241,12 +224,14 @@ public:
 
     void addMultisamplingChangedObserver(MultisamplingChangedObserver*);
     void removeMultisamplingChangedObserver(MultisamplingChangedObserver*);
-    void multisamplingChanged();
 
     void didCommitLoad(Frame*);
 
+    static void networkStateChanged(bool online);
+    PassOwnPtr<LifecycleNotifier<Page> > createLifecycleNotifier();
+
 protected:
-    PageLifecycleNotifier* lifecycleNotifier();
+    PageLifecycleNotifier& lifecycleNotifier();
 
 private:
     void initGroup();
@@ -259,7 +244,9 @@ private:
 
     void setTimerAlignmentInterval(double);
 
-    virtual PassOwnPtr<LifecycleNotifier> createLifecycleNotifier() OVERRIDE;
+    // SettingsDelegate overrides.
+    virtual Page* page() OVERRIDE { return this; }
+    virtual void settingsChanged(SettingsDelegate::ChangeType) OVERRIDE;
 
     const OwnPtr<AutoscrollController> m_autoscrollController;
     const OwnPtr<Chrome> m_chrome;
@@ -271,16 +258,19 @@ private:
     const OwnPtr<PointerLockController> m_pointerLockController;
     RefPtr<ScrollingCoordinator> m_scrollingCoordinator;
 
-    const OwnPtr<Settings> m_settings;
+    const OwnPtr<HistoryController> m_historyController;
     const OwnPtr<ProgressTracker> m_progress;
+    const OwnPtr<UndoStack> m_undoStack;
 
-    const OwnPtr<BackForwardController> m_backForwardController;
     RefPtr<Frame> m_mainFrame;
 
     mutable RefPtr<PluginData> m_pluginData;
 
+    BackForwardClient* m_backForwardClient;
     EditorClient* const m_editorClient;
     ValidationMessageClient* m_validationMessageClient;
+    SharedWorkerRepositoryClient* m_sharedWorkerRepositoryClient;
+    SpellCheckerClient* const m_spellCheckerClient;
 
     UseCounter m_useCounter;
 
@@ -295,9 +285,6 @@ private:
 
     Pagination m_pagination;
 
-    mutable String m_userStyleSheet;
-    mutable bool m_didLoadUserStyleSheet;
-
     RefPtr<PageGroup> m_group;
 
     OwnPtr<StorageNamespace> m_sessionStorage;
@@ -308,13 +295,6 @@ private:
 
     bool m_isCursorVisible;
 
-    LayoutMilestones m_layoutMilestones;
-
-    HashSet<RenderObject*> m_relevantUnpaintedRenderObjects;
-    Region m_topRelevantPaintedRegion;
-    Region m_bottomRelevantPaintedRegion;
-    Region m_relevantUnpaintedRegion;
-    bool m_isCountingRelevantRepaintedObjects;
 #ifndef NDEBUG
     bool m_isPainting;
 #endif

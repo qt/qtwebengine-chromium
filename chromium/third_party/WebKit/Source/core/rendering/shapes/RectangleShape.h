@@ -30,41 +30,21 @@
 #ifndef RectangleShape_h
 #define RectangleShape_h
 
-#include "core/platform/graphics/FloatPoint.h"
-#include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/FloatSize.h"
 #include "core/rendering/shapes/Shape.h"
+#include "platform/geometry/FloatPoint.h"
+#include "platform/geometry/FloatRect.h"
+#include "platform/geometry/FloatSize.h"
 #include "wtf/Assertions.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
-class FloatRoundedRect : public FloatRect {
-public:
-    FloatRoundedRect() { }
-    FloatRoundedRect(const FloatRect& bounds, const FloatSize& radii)
-        : FloatRect(bounds)
-        , m_radii(radii)
-    {
-    }
-
-    float rx() const { return m_radii.width(); }
-    float ry() const { return m_radii.height(); }
-    FloatRoundedRect marginBounds(float margin) const;
-    FloatRoundedRect paddingBounds(float padding) const;
-    FloatPoint cornerInterceptForWidth(float width) const;
-
-private:
-    FloatSize m_radii;
-};
-
 class RectangleShape : public Shape {
 public:
     RectangleShape(const FloatRect& bounds, const FloatSize& radii)
         : Shape()
-        , m_bounds(bounds, radii)
-        , m_haveInitializedMarginBounds(false)
-        , m_haveInitializedPaddingBounds(false)
+        , m_bounds(bounds)
+        , m_radii(radii)
     {
     }
 
@@ -76,14 +56,18 @@ public:
     virtual bool firstIncludedIntervalLogicalTop(LayoutUnit minLogicalIntervalTop, const LayoutSize& minLogicalIntervalSize, LayoutUnit&) const OVERRIDE;
 
 private:
-    FloatRoundedRect shapeMarginBounds() const;
-    FloatRoundedRect shapePaddingBounds() const;
+    FloatRect shapeMarginBounds() const;
+    FloatRect shapePaddingBounds() const;
 
-    FloatRoundedRect m_bounds;
-    mutable FloatRoundedRect m_marginBounds;
-    mutable FloatRoundedRect m_paddingBounds;
-    mutable bool m_haveInitializedMarginBounds : 1;
-    mutable bool m_haveInitializedPaddingBounds : 1;
+    float rx() const { return m_radii.width(); }
+    float ry() const { return m_radii.height(); }
+    float x() const { return m_bounds.x(); }
+    float y() const { return m_bounds.y(); }
+    float width() const { return m_bounds.width(); }
+    float height() const { return m_bounds.height(); }
+
+    FloatRect m_bounds;
+    FloatSize m_radii;
 };
 
 } // namespace WebCore

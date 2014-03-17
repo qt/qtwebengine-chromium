@@ -74,6 +74,7 @@
 namespace ui {
 class AcceleratorTarget;
 class AcceleratorManager;
+class EventHandler;
 class KeyEvent;
 }
 
@@ -307,7 +308,6 @@ class VIEWS_EXPORT FocusManager {
     return arrow_key_traversal_enabled_;
   }
 
- private:
   // Returns the next focusable view. Traversal starts at |starting_view|. If
   // |starting_view| is NULL |starting_widget| is consuled to determine which
   // Widget to start from. See
@@ -319,6 +319,7 @@ class VIEWS_EXPORT FocusManager {
                              bool reverse,
                              bool dont_loop);
 
+ private:
   // Returns the focusable view found in the FocusTraversable specified starting
   // at the specified view. This traverses down along the FocusTraversable
   // hierarchy.

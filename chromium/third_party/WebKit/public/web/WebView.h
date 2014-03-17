@@ -38,7 +38,7 @@
 #include "WebPageVisibilityState.h"
 #include "WebWidget.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebAXObject;
 class WebAutofillClient;
@@ -58,6 +58,7 @@ class WebSettings;
 class WebSpellCheckClient;
 class WebString;
 class WebPasswordGeneratorClient;
+class WebSharedWorkerRepositoryClient;
 class WebValidationMessageClient;
 class WebViewClient;
 struct WebActiveWheelFlingParameters;
@@ -68,39 +69,33 @@ struct WebWindowFeatures;
 
 class WebView : public WebWidget {
 public:
-    WEBKIT_EXPORT static const double textSizeMultiplierRatio;
-    WEBKIT_EXPORT static const double minTextSizeMultiplier;
-    WEBKIT_EXPORT static const double maxTextSizeMultiplier;
-    WEBKIT_EXPORT static const float minPageScaleFactor;
-    WEBKIT_EXPORT static const float maxPageScaleFactor;
+    BLINK_EXPORT static const double textSizeMultiplierRatio;
+    BLINK_EXPORT static const double minTextSizeMultiplier;
+    BLINK_EXPORT static const double maxTextSizeMultiplier;
+    BLINK_EXPORT static const float minPageScaleFactor;
+    BLINK_EXPORT static const float maxPageScaleFactor;
 
-    // Controls which frames user content is injected into.
-    enum UserContentInjectIn {
-        UserContentInjectInAllFrames,
-        UserContentInjectInTopFrameOnly
-    };
-
-    // Controls which documents user styles are injected into.
-    enum UserStyleInjectionTime {
-        UserStyleInjectInExistingDocuments,
-        UserStyleInjectInSubsequentDocuments
+    enum StyleInjectionTarget {
+        InjectStyleInAllFrames,
+        InjectStyleInTopFrameOnly
     };
 
 
     // Initialization ------------------------------------------------------
 
-    // Creates a WebView that is NOT yet initialized.  You will need to
-    // call initializeMainFrame to finish the initialization.  It is valid
-    // to pass null client pointers.
-    WEBKIT_EXPORT static WebView* create(WebViewClient*);
+    // Creates a WebView that is NOT yet initialized. You will need to
+    // call setMainFrame to finish the initialization. It is valid
+    // to pass a null client pointer.
+    BLINK_EXPORT static WebView* create(WebViewClient*);
 
     // After creating a WebView, you should immediately call this method.
     // You can optionally modify the settings before calling this method.
-    // The WebFrameClient will receive events for the main frame and any
-    // child frames.  It is valid to pass a null WebFrameClient pointer.
+    // This WebFrame will receive events for the main frame and must not
+    // be null.
+    virtual void setMainFrame(WebFrame*) = 0;
+    // FIXME: Remove initializeMainFrame() after clients have migrated to
+    // setMainFrame().
     virtual void initializeMainFrame(WebFrameClient*) = 0;
-
-    virtual void initializeHelperPluginFrame(WebFrameClient*) = 0;
 
     // Initializes the various client interfaces.
     virtual void setAutofillClient(WebAutofillClient*) = 0;
@@ -110,6 +105,7 @@ public:
     virtual void setSpellCheckClient(WebSpellCheckClient*) = 0;
     virtual void setValidationMessageClient(WebValidationMessageClient*) = 0;
     virtual void setPasswordGeneratorClient(WebPasswordGeneratorClient*) = 0;
+    virtual void setSharedWorkerRepositoryClient(WebSharedWorkerRepositoryClient*) = 0;
 
     // Options -------------------------------------------------------------
 
@@ -230,17 +226,14 @@ public:
     // change.
     virtual double setZoomLevel(double) = 0;
 
-    // FIXME: Deprecated, delete once Chromium side is updated.
-    virtual double setZoomLevel(bool textOnly, double zoomLevel) = 0;
-
     // Updates the zoom limits for this view.
     virtual void zoomLimitsChanged(double minimumZoomLevel,
                                    double maximumZoomLevel) = 0;
 
     // Helper functions to convert between zoom level and zoom factor.  zoom
     // factor is zoom percent / 100, so 300% = 3.0.
-    WEBKIT_EXPORT static double zoomLevelToZoomFactor(double zoomLevel);
-    WEBKIT_EXPORT static double zoomFactorToZoomLevel(double factor);
+    BLINK_EXPORT static double zoomLevelToZoomFactor(double zoomLevel);
+    BLINK_EXPORT static double zoomFactorToZoomLevel(double factor);
 
     // Returns the current text zoom factor, where 1.0 is the normal size, > 1.0
     // is scaled up and < 1.0 is scaled down.
@@ -305,13 +298,8 @@ public:
 
     // Fixed Layout --------------------------------------------------------
 
-    // In fixed layout mode, the layout of the page is independent of the
-    // view port size, given by WebWidget::size().
-
-    virtual bool isFixedLayoutModeEnabled() const = 0;
-    virtual void enableFixedLayoutMode(bool enable) = 0;
-
-    virtual WebSize fixedLayoutSize() const = 0;
+    // Locks main frame's layout size to specified size. Passing WebSize(0, 0)
+    // removes the lock.
     virtual void setFixedLayoutSize(const WebSize&) = 0;
 
 
@@ -401,6 +389,15 @@ public:
     virtual void setInspectorSetting(const WebString& key,
                                      const WebString& value) = 0;
 
+    // Set an override of device scale factor passed from WebView to
+    // compositor. Pass zero to cancel override. This is used to implement
+    // device metrics emulation.
+    virtual void setCompositorDeviceScaleFactorOverride(float) = 0;
+
+    // Set offset and scale on the root composited layer. This is used
+    // to implement device metrics emulation.
+    virtual void setRootLayerTransform(const WebSize& offset, float scale) = 0;
+
     // The embedder may optionally engage a WebDevToolsAgent.  This may only
     // be set once per WebView.
     virtual WebDevToolsAgent* devToolsAgent() = 0;
@@ -443,48 +440,47 @@ public:
     // Popup menu ----------------------------------------------------------
 
     // Sets whether select popup menus should be rendered by the browser.
-    WEBKIT_EXPORT static void setUseExternalPopupMenus(bool);
+    BLINK_EXPORT static void setUseExternalPopupMenus(bool);
 
 
     // Visited link state --------------------------------------------------
 
     // Tells all WebView instances to update the visited link state for the
     // specified hash.
-    WEBKIT_EXPORT static void updateVisitedLinkState(unsigned long long hash);
+    BLINK_EXPORT static void updateVisitedLinkState(unsigned long long hash);
 
     // Tells all WebView instances to update the visited state for all
     // their links.
-    WEBKIT_EXPORT static void resetVisitedLinkState();
+    BLINK_EXPORT static void resetVisitedLinkState();
 
 
     // Custom colors -------------------------------------------------------
-
-    virtual void setScrollbarColors(unsigned inactiveColor,
-                                    unsigned activeColor,
-                                    unsigned trackColor) = 0;
 
     virtual void setSelectionColors(unsigned activeBackgroundColor,
                                     unsigned activeForegroundColor,
                                     unsigned inactiveBackgroundColor,
                                     unsigned inactiveForegroundColor) = 0;
 
-    // User scripts --------------------------------------------------------
-    WEBKIT_EXPORT static void addUserStyleSheet(const WebString& sourceCode,
-                                                const WebVector<WebString>& patterns,
-                                                UserContentInjectIn injectIn,
-                                                UserStyleInjectionTime injectionTime = UserStyleInjectInSubsequentDocuments);
-    WEBKIT_EXPORT static void removeAllUserContent();
+    // Injected style ------------------------------------------------------
+
+    // Treats |sourceCode| as a CSS author style sheet and injects it into all Documents whose URLs match |patterns|,
+    // in the frames specified by the last argument.
+    BLINK_EXPORT static void injectStyleSheet(const WebString& sourceCode, const WebVector<WebString>& patterns, StyleInjectionTarget);
+    BLINK_EXPORT static void removeInjectedStyleSheets();
 
     // Modal dialog support ------------------------------------------------
 
     // Call these methods before and after running a nested, modal event loop
     // to suspend script callbacks and resource loads.
-    WEBKIT_EXPORT static void willEnterModalLoop();
-    WEBKIT_EXPORT static void didExitModalLoop();
+    BLINK_EXPORT static void willEnterModalLoop();
+    BLINK_EXPORT static void didExitModalLoop();
 
     // Called to inform the WebView that a wheel fling animation was started externally (for instance
     // by the compositor) but must be completed by the WebView.
     virtual void transferActiveWheelFlingAnimation(const WebActiveWheelFlingParameters&) = 0;
+
+    // Cancels an active fling, returning true if a fling was active.
+    virtual bool endActiveFlingAnimation() = 0;
 
     virtual bool setEditableSelectionOffsets(int start, int end) = 0;
     virtual bool setCompositionFromExistingText(int compositionStart, int compositionEnd, const WebVector<WebCompositionUnderline>& underlines) = 0;
@@ -522,6 +518,6 @@ protected:
     ~WebView() {}
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

@@ -30,18 +30,11 @@ const int kGlyfThisYIsSame = 1 << 5;
 
 // composite glyph flags
 const int FLAG_ARG_1_AND_2_ARE_WORDS = 1 << 0;
-const int FLAG_ARGS_ARE_XY_VALUES = 1 << 1;
-const int FLAG_ROUND_XY_TO_GRID = 1 << 2;
 const int FLAG_WE_HAVE_A_SCALE = 1 << 3;
-const int FLAG_RESERVED = 1 << 4;
 const int FLAG_MORE_COMPONENTS = 1 << 5;
 const int FLAG_WE_HAVE_AN_X_AND_Y_SCALE = 1 << 6;
 const int FLAG_WE_HAVE_A_TWO_BY_TWO = 1 << 7;
 const int FLAG_WE_HAVE_INSTRUCTIONS = 1 << 8;
-const int FLAG_USE_MY_METRICS = 1 << 9;
-const int FLAG_OVERLAP_COMPOUND = 1 << 10;
-const int FLAG_SCALED_COMPONENT_OFFSET = 1 << 11;
-const int FLAG_UNSCALED_COMPONENT_OFFSET = 1 << 12;
 
 const size_t kSfntHeaderSize = 12;
 const size_t kSfntEntrySize = 16;
@@ -55,9 +48,6 @@ const size_t kCompositeGlyphBegin = 10;
 
 const unsigned int kWoff2FlagsContinueStream = 1 << 4;
 const unsigned int kWoff2FlagsTransform = 1 << 5;
-
-const size_t kWoff2HeaderSize = 44;
-const size_t kWoff2EntrySize = 20;
 
 const size_t kLzmaHeaderSize = 13;
 
@@ -836,6 +826,10 @@ bool ReadShortDirectory(ots::Buffer* file, std::vector<Table>* tables,
       if (!ReadBase128(file, &src_length)) {
         return OTS_FAILURE();
       }
+    } else if (static_cast<uint32_t>(flag_byte >> 6) == kShortFlagsContinue) {
+      // The compressed data for this table is in a previuos table, so we set
+      // the src_length to zero.
+      src_length = 0;
     }
     // Disallow huge numbers (> 1GB) for sanity.
     if (src_length > 1024 * 1024 * 1024 ||
@@ -964,12 +958,12 @@ bool ConvertWOFF2ToTTF(uint8_t* result, size_t result_length,
   }
   std::vector<uint8_t> uncompressed_buf;
   bool continue_valid = false;
+  const uint8_t* transform_buf = NULL;
   for (uint16_t i = 0; i < num_tables; ++i) {
     const Table* table = &tables.at(i);
     uint32_t flags = table->flags;
     const uint8_t* src_buf = data + table->src_offset;
     uint32_t compression_type = flags & kCompressionTypeMask;
-    const uint8_t* transform_buf = NULL;
     size_t transform_length = table->transform_length;
     if ((flags & kWoff2FlagsContinueStream) != 0) {
       if (!continue_valid) {

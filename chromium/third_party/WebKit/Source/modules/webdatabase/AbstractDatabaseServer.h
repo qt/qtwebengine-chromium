@@ -27,29 +27,27 @@
 #define AbstractDatabaseServer_h
 
 #include "modules/webdatabase/DatabaseBasicTypes.h"
-#include "modules/webdatabase/DatabaseDetails.h"
 #include "modules/webdatabase/DatabaseError.h"
 #include "wtf/RefPtr.h"
-#include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
 class DatabaseBackendBase;
-class DatabaseBackendContext;
+class DatabaseContext;
 class DatabaseManagerClient;
 class SecurityOrigin;
 
 class AbstractDatabaseServer {
 public:
     virtual String fullPathForDatabase(SecurityOrigin*, const String& name, bool createIfDoesNotExist = true) = 0;
-    virtual PassRefPtr<DatabaseBackendBase> openDatabase(RefPtr<DatabaseBackendContext>&, DatabaseType,
+    virtual PassRefPtr<DatabaseBackendBase> openDatabase(RefPtr<DatabaseContext>&, DatabaseType,
         const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize,
         bool setVersionInNewDatabase, DatabaseError&, String& errorMessage) = 0;
 
     virtual void closeDatabasesImmediately(const String& originIdentifier, const String& name) = 0;
 
-    virtual void interruptAllDatabasesForContext(const DatabaseBackendContext*) = 0;
+    virtual void interruptAllDatabasesForContext(const DatabaseContext*) = 0;
 
 protected:
     AbstractDatabaseServer() { }

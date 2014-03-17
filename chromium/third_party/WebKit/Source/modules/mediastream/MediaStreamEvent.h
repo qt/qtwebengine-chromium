@@ -25,7 +25,7 @@
 #ifndef MediaStreamEvent_h
 #define MediaStreamEvent_h
 
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 #include "modules/mediastream/MediaStream.h"
 #include "wtf/text/AtomicString.h"
 
@@ -46,6 +46,7 @@ public:
     static PassRefPtr<MediaStreamEvent> create(const AtomicString& type, const MediaStreamEventInit& initializer);
 
     MediaStream* stream() const;
+    MediaStream* stream(bool&) const;
 
     virtual const AtomicString& interfaceName() const;
 

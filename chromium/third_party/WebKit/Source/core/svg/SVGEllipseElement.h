@@ -25,17 +25,17 @@
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
-#include "core/svg/SVGGraphicsElement.h"
+#include "core/svg/SVGGeometryElement.h"
 
 namespace WebCore {
 
-class SVGEllipseElement FINAL : public SVGGraphicsElement,
+class SVGEllipseElement FINAL : public SVGGeometryElement,
                                 public SVGExternalResourcesRequired {
 public:
-    static PassRefPtr<SVGEllipseElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGEllipseElement> create(Document&);
 
 private:
-    SVGEllipseElement(const QualifiedName&, Document&);
+    explicit SVGEllipseElement(Document&);
 
     virtual bool isValid() const { return SVGTests::isValid(); }
     virtual bool supportsFocus() const OVERRIDE { return hasFocusEventListeners(); }
@@ -57,11 +57,7 @@ private:
     END_DECLARE_ANIMATED_PROPERTIES
 };
 
-inline SVGEllipseElement* toSVGEllipseElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::ellipseTag));
-    return static_cast<SVGEllipseElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(SVGEllipseElement, hasTagName(SVGNames::ellipseTag));
 
 } // namespace WebCore
 

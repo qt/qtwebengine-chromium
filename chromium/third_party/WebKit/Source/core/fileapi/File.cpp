@@ -26,14 +26,12 @@
 #include "config.h"
 #include "core/fileapi/File.h"
 
-#include "core/platform/FileMetadata.h"
-#include "core/platform/FileSystem.h"
-#include "core/platform/MIMETypeRegistry.h"
+#include "platform/FileMetadata.h"
+#include "platform/MIMETypeRegistry.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebFileUtilities.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/DateMath.h"
-#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -82,7 +80,7 @@ static PassOwnPtr<BlobData> createBlobDataForFileSystemURL(const KURL& fileSyste
 {
     OwnPtr<BlobData> blobData = BlobData::create();
     blobData->setContentType(getContentTypeFromFileName(fileSystemURL.path(), File::WellKnownContentTypes));
-    blobData->appendURL(fileSystemURL, 0, metadata.length, metadata.modificationTime);
+    blobData->appendFileSystemURL(fileSystemURL, 0, metadata.length, metadata.modificationTime);
     return blobData.release();
 }
 
@@ -94,30 +92,19 @@ PassRefPtr<File> File::createWithRelativePath(const String& path, const String& 
 }
 
 File::File(const String& path, ContentTypeLookupPolicy policy)
-    : Blob(createBlobDataForFile(path, policy), -1)
+    : Blob(BlobDataHandle::create(createBlobDataForFile(path, policy), -1))
+    , m_hasBackingFile(true)
     , m_path(path)
-    , m_name(WebKit::Platform::current()->fileUtilities()->baseName(path))
+    , m_name(blink::Platform::current()->fileUtilities()->baseName(path))
     , m_snapshotSize(-1)
     , m_snapshotModificationTime(invalidFileTime())
 {
     ScriptWrappable::init(this);
-}
-
-File::File(const String& path, const KURL& url, const String& type)
-    : Blob(url, type, -1)
-    , m_path(path)
-    , m_snapshotSize(-1)
-    , m_snapshotModificationTime(invalidFileTime())
-{
-    ScriptWrappable::init(this);
-    m_name = WebKit::Platform::current()->fileUtilities()->baseName(path);
-    // FIXME: File object serialization/deserialization does not include
-    // newer file object data members: m_name and m_relativePath.
-    // See SerializedScriptValue.cpp for js and v8.
 }
 
 File::File(const String& path, const String& name, ContentTypeLookupPolicy policy)
-    : Blob(createBlobDataForFileWithName(path, name, policy), -1)
+    : Blob(BlobDataHandle::create(createBlobDataForFileWithName(path, name, policy), -1))
+    , m_hasBackingFile(true)
     , m_path(path)
     , m_name(name)
     , m_snapshotSize(-1)
@@ -126,8 +113,31 @@ File::File(const String& path, const String& name, ContentTypeLookupPolicy polic
     ScriptWrappable::init(this);
 }
 
+File::File(const String& path, const String& name, const String& relativePath, bool hasSnaphotData, uint64_t size, double lastModified, PassRefPtr<BlobDataHandle> blobDataHandle)
+    : Blob(blobDataHandle)
+    , m_hasBackingFile(!path.isEmpty() || !relativePath.isEmpty())
+    , m_path(path)
+    , m_name(name)
+    , m_snapshotSize(hasSnaphotData ? static_cast<long long>(size) : -1)
+    , m_snapshotModificationTime(hasSnaphotData ? lastModified : invalidFileTime())
+    , m_relativePath(relativePath)
+{
+    ScriptWrappable::init(this);
+}
+
+File::File(const String& name, double modificationTime, PassRefPtr<BlobDataHandle> blobDataHandle)
+    : Blob(blobDataHandle)
+    , m_hasBackingFile(false)
+    , m_name(name)
+    , m_snapshotSize(Blob::size())
+    , m_snapshotModificationTime(modificationTime)
+{
+    ScriptWrappable::init(this);
+}
+
 File::File(const String& name, const FileMetadata& metadata)
-    : Blob(createBlobDataForFileWithMetadata(name, metadata), metadata.length)
+    : Blob(BlobDataHandle::create(createBlobDataForFileWithMetadata(name, metadata),  metadata.length))
+    , m_hasBackingFile(true)
     , m_path(metadata.platformPath)
     , m_name(name)
     , m_snapshotSize(metadata.length)
@@ -137,7 +147,8 @@ File::File(const String& name, const FileMetadata& metadata)
 }
 
 File::File(const KURL& fileSystemURL, const FileMetadata& metadata)
-    : Blob(createBlobDataForFileSystemURL(fileSystemURL, metadata), metadata.length)
+    : Blob(BlobDataHandle::create(createBlobDataForFileSystemURL(fileSystemURL, metadata), metadata.length))
+    , m_hasBackingFile(true)
     , m_fileSystemURL(fileSystemURL)
     , m_snapshotSize(metadata.length)
     , m_snapshotModificationTime(metadata.modificationTime)

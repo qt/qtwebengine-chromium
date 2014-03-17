@@ -32,15 +32,16 @@ class CONTENT_EXPORT ContextProviderCommandBuffer
 
   virtual bool BindToCurrentThread() OVERRIDE;
   virtual WebGraphicsContext3DCommandBufferImpl* Context3d() OVERRIDE;
+  virtual gpu::gles2::GLES2Interface* ContextGL() OVERRIDE;
+  virtual gpu::ContextSupport* ContextSupport() OVERRIDE;
   virtual class GrContext* GrContext() OVERRIDE;
+  virtual void MakeGrContextCurrent() OVERRIDE;
   virtual Capabilities ContextCapabilities() OVERRIDE;
+  virtual bool IsContextLost() OVERRIDE;
   virtual void VerifyContexts() OVERRIDE;
   virtual bool DestroyedOnMainThread() OVERRIDE;
   virtual void SetLostContextCallback(
       const LostContextCallback& lost_context_callback) OVERRIDE;
-  virtual void SetSwapBuffersCompleteCallback(
-      const SwapBuffersCompleteCallback& swap_buffers_complete_callback)
-      OVERRIDE;
   virtual void SetMemoryPolicyChangedCallback(
       const MemoryPolicyChangedCallback& memory_policy_changed_callback)
       OVERRIDE;
@@ -57,9 +58,7 @@ class CONTENT_EXPORT ContextProviderCommandBuffer
   virtual ~ContextProviderCommandBuffer();
 
   void OnLostContext();
-  void OnSwapBuffersComplete();
-  void OnMemoryAllocationChanged(
-      const WebKit::WebGraphicsMemoryAllocation& allocation);
+  void OnMemoryAllocationChanged(const gpu::MemoryAllocation& allocation);
 
  private:
   void InitializeCapabilities();
@@ -74,7 +73,6 @@ class CONTENT_EXPORT ContextProviderCommandBuffer
   std::string debug_name_;
 
   LostContextCallback lost_context_callback_;
-  SwapBuffersCompleteCallback swap_buffers_complete_callback_;
   MemoryPolicyChangedCallback memory_policy_changed_callback_;
 
   base::Lock main_thread_lock_;
@@ -83,13 +81,6 @@ class CONTENT_EXPORT ContextProviderCommandBuffer
 
   class LostContextCallbackProxy;
   scoped_ptr<LostContextCallbackProxy> lost_context_callback_proxy_;
-
-  class SwapBuffersCompleteCallbackProxy;
-  scoped_ptr<SwapBuffersCompleteCallbackProxy>
-      swap_buffers_complete_callback_proxy_;
-
-  class MemoryAllocationCallbackProxy;
-  scoped_ptr<MemoryAllocationCallbackProxy> memory_allocation_callback_proxy_;
 };
 
 }  // namespace content

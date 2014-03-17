@@ -48,8 +48,8 @@
 
 #include "HTMLNames.h"
 #include "core/html/HTMLMarqueeElement.h"
-#include "core/page/FrameView.h"
-#include "core/page/UseCounter.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/UseCounter.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
 
@@ -72,7 +72,7 @@ RenderMarquee::RenderMarquee(Element* element)
     , m_stopped(false)
     , m_direction(MAUTO)
 {
-    UseCounter::count(&document(), UseCounter::HTMLMarqueeElement);
+    UseCounter::count(document(), UseCounter::HTMLMarqueeElement);
 }
 
 RenderMarquee::~RenderMarquee()
@@ -162,27 +162,17 @@ void RenderMarquee::start()
     if (m_timer.isActive() || style()->marqueeIncrement().isZero())
         return;
 
-    // We may end up propagating a scroll event. It is important that we suspend events until
-    // the end of the function since they could delete the layer, including the marquee.
-    FrameView* frameView = document().view();
-    if (frameView)
-        frameView->pauseScheduledEvents();
-
     if (!m_suspended && !m_stopped) {
         if (isHorizontal())
-            layer()->scrollToOffset(IntSize(m_start, 0));
+            layer()->scrollableArea()->scrollToOffset(IntSize(m_start, 0));
         else
-            layer()->scrollToOffset(IntSize(0, m_start));
-    }
-    else {
+            layer()->scrollableArea()->scrollToOffset(IntSize(0, m_start));
+    } else {
         m_suspended = false;
         m_stopped = false;
     }
 
     m_timer.startRepeating(speed() * 0.001);
-
-    if (frameView)
-        frameView->resumeScheduledEvents();
 }
 
 void RenderMarquee::suspend()
@@ -219,8 +209,6 @@ const char* RenderMarquee::renderName() const
         return "RenderMarquee (generated)";
     if (isRelPositioned())
         return "RenderMarquee (relative positioned)";
-    if (isRunIn())
-        return "RenderMarquee (run-in)";
     return "RenderMarquee";
 
 }
@@ -287,9 +275,9 @@ void RenderMarquee::timerFired(Timer<RenderMarquee>*)
     if (m_reset) {
         m_reset = false;
         if (isHorizontal())
-            layer()->scrollToXOffset(m_start);
+            layer()->scrollableArea()->scrollToXOffset(m_start);
         else
-            layer()->scrollToYOffset(m_start);
+            layer()->scrollableArea()->scrollToYOffset(m_start);
         return;
     }
 
@@ -312,7 +300,7 @@ void RenderMarquee::timerFired(Timer<RenderMarquee>*)
         bool positive = range > 0;
         int clientSize = (isHorizontal() ? clientWidth() : clientHeight());
         int increment = abs(intValueForLength(style()->marqueeIncrement(), clientSize));
-        int currentPos = (isHorizontal() ? layer()->scrollXOffset() : layer()->scrollYOffset());
+        int currentPos = (isHorizontal() ? layer()->scrollableArea()->scrollXOffset() : layer()->scrollableArea()->scrollYOffset());
         newPos =  currentPos + (addIncrement ? increment : -increment);
         if (positive)
             newPos = min(newPos, endPoint);
@@ -329,9 +317,9 @@ void RenderMarquee::timerFired(Timer<RenderMarquee>*)
     }
 
     if (isHorizontal())
-        layer()->scrollToXOffset(newPos);
+        layer()->scrollableArea()->scrollToXOffset(newPos);
     else
-        layer()->scrollToYOffset(newPos);
+        layer()->scrollableArea()->scrollToYOffset(newPos);
 }
 
 } // namespace WebCore

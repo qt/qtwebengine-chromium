@@ -5,7 +5,6 @@ no-camellia \
 no-capieng \
 no-cast \
 no-cms \
-no-dtls1 \
 no-gost \
 no-gmp \
 no-heartbeats \
@@ -866,8 +865,10 @@ crypto/x86_64cpuid.S \
 OPENSSL_CRYPTO_SOURCES_EXCLUDES_x86_64="\
 crypto/aes/aes_cbc.c \
 crypto/aes/aes_core.c \
+crypto/bn/bn_asm.c \
 crypto/mem_clr.c \
 crypto/rc4/rc4_enc.c \
+crypto/rc4/rc4_skey.c \
 "
 
 OPENSSL_SSL_INCLUDES="\
@@ -879,10 +880,12 @@ crypto \
 OPENSSL_SSL_SOURCES="\
 ssl/bio_ssl.c \
 ssl/d1_both.c \
+ssl/d1_clnt.c \
 ssl/d1_enc.c \
 ssl/d1_lib.c \
 ssl/d1_pkt.c \
 ssl/d1_srtp.c \
+ssl/d1_srvr.c \
 ssl/kssl.c \
 ssl/s23_clnt.c \
 ssl/s23_lib.c \
@@ -989,8 +992,10 @@ progs.patch \
 handshake_cutthrough.patch \
 jsse.patch \
 channelid.patch \
+channelidchromium.patch \
 eng_dyn_dirs.patch \
 fix_clang_build.patch \
+x509_hash_name_algorithm_change.patch \
 "
 
 OPENSSL_PATCHES_progs_SOURCES="\
@@ -1047,3 +1052,6 @@ crypto/bio/b_sock.c \
 crypto/x509v3/v3_utl.c \
 "
 
+OPENSSL_PATCHES_x509_hash_name_algorithm_change_SOURCES="\
+crypto/x509/by_dir.c \
+"

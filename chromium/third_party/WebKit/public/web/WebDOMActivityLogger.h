@@ -36,23 +36,22 @@
 #include "../platform/WebURL.h"
 #include <v8.h>
 
-namespace WebKit {
+namespace blink {
 
 class WebDOMActivityLogger {
 public:
     virtual ~WebDOMActivityLogger() { }
-    virtual void log(const WebString& apiName, int argc, const v8::Handle<v8::Value>* argv, const WebString& extraInfo) { }
     virtual void log(const WebString& apiName, int argc, const v8::Handle<v8::Value>* argv, const WebString& extraInfo, const WebURL& url, const WebString& title) { }
 };
 
 // Checks if a logger already exists for the world identified
 // by worldId (worldId may be 0 identifying the main world).
-WEBKIT_EXPORT bool hasDOMActivityLogger(int worldId);
+BLINK_EXPORT bool hasDOMActivityLogger(int worldId);
 
 // Checks if the provided logger is non-null and if so associates it
 // with the world identified by worldId (worldId may be 0 identifying the main world).
-WEBKIT_EXPORT void setDOMActivityLogger(int worldId, WebDOMActivityLogger*);
+BLINK_EXPORT void setDOMActivityLogger(int worldId, WebDOMActivityLogger*);
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

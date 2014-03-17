@@ -31,9 +31,9 @@
 #include "config.h"
 #include "WebUserGestureToken.h"
 
-#include "core/dom/UserGestureIndicator.h"
+#include "platform/UserGestureIndicator.h"
 
-namespace WebKit {
+namespace blink {
 
 bool WebUserGestureToken::hasGestures() const
 {
@@ -70,4 +70,4 @@ void WebUserGestureToken::reset()
     m_token.reset();
 }
 
-} // namespace WebKit
+} // namespace blink

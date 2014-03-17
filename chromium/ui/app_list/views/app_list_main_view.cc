@@ -12,6 +12,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "ui/app_list/app_list_constants.h"
+#include "ui/app_list/app_list_folder_item.h"
 #include "ui/app_list/app_list_item_model.h"
 #include "ui/app_list/app_list_model.h"
 #include "ui/app_list/app_list_view_delegate.h"
@@ -43,13 +44,13 @@ class AppListMainView::IconLoader : public AppListItemModelObserver {
  public:
   IconLoader(AppListMainView* owner,
              AppListItemModel* item,
-             ui::ScaleFactor scale_factor)
+             float scale)
       : owner_(owner),
         item_(item) {
     item_->AddObserver(this);
 
     // Triggers icon loading for given |scale_factor|.
-    item_->icon().GetRepresentation(scale_factor);
+    item_->icon().GetRepresentation(scale);
   }
 
   virtual ~IconLoader() {
@@ -77,26 +78,33 @@ class AppListMainView::IconLoader : public AppListItemModelObserver {
 // AppListMainView:
 
 AppListMainView::AppListMainView(AppListViewDelegate* delegate,
-                                 AppListModel* model,
                                  PaginationModel* pagination_model,
                                  gfx::NativeView parent)
     : delegate_(delegate),
-      model_(model),
+      pagination_model_(pagination_model),
+      model_(delegate->GetModel()),
       search_box_view_(NULL),
       contents_view_(NULL),
       weak_ptr_factory_(this) {
   // Starts icon loading early.
-  PreloadIcons(pagination_model, parent);
+  PreloadIcons(parent);
 
   SetLayoutManager(new views::BoxLayout(views::BoxLayout::kVertical,
                                         kInnerPadding,
                                         kInnerPadding,
                                         kInnerPadding));
 
-  search_box_view_ = new SearchBoxView(this, delegate, model_);
+  search_box_view_ = new SearchBoxView(this, delegate);
   AddChildView(search_box_view_);
+  AddContentsView();
+}
 
-  contents_view_ = new ContentsView(this, pagination_model, model_);
+void AppListMainView::AddContentsView() {
+  contents_view_ =
+      new ContentsView(this,
+                       pagination_model_,
+                       model_,
+                       delegate_ ? delegate_->GetStartPageContents() : NULL);
   AddChildView(contents_view_);
 
   search_box_view_->set_contents_view(contents_view_);
@@ -137,34 +145,45 @@ void AppListMainView::Prerender() {
   contents_view_->Prerender();
 }
 
+void AppListMainView::ModelChanged() {
+  pending_icon_loaders_.clear();
+  model_ = delegate_->GetModel();
+  search_box_view_->ModelChanged();
+  delete contents_view_;
+  contents_view_ = NULL;
+  pagination_model_->SelectPage(0, false /* animate */);
+  AddContentsView();
+  Layout();
+}
+
 void AppListMainView::SetDragAndDropHostOfCurrentAppList(
     ApplicationDragAndDropHost* drag_and_drop_host) {
   contents_view_->SetDragAndDropHostOfCurrentAppList(drag_and_drop_host);
 }
 
-void AppListMainView::PreloadIcons(PaginationModel* pagination_model,
-                                   gfx::NativeView parent) {
+void AppListMainView::PreloadIcons(gfx::NativeView parent) {
   ui::ScaleFactor scale_factor = ui::SCALE_FACTOR_100P;
   if (parent)
     scale_factor = ui::GetScaleFactorForNativeView(parent);
 
+  float scale = ui::GetImageScale(scale_factor);
   // |pagination_model| could have -1 as the initial selected page and
   // assumes first page (i.e. index 0) will be used in this case.
-  const int selected_page = std::max(0, pagination_model->selected_page());
+  const int selected_page = std::max(0, pagination_model_->selected_page());
 
   const int tiles_per_page = kPreferredCols * kPreferredRows;
   const int start_model_index = selected_page * tiles_per_page;
   const int end_model_index = std::min(
-      static_cast<int>(model_->apps()->item_count()),
+      static_cast<int>(model_->item_list()->item_count()),
       start_model_index + tiles_per_page);
 
   pending_icon_loaders_.clear();
   for (int i = start_model_index; i < end_model_index; ++i) {
-    AppListItemModel* item = model_->apps()->GetItemAt(i);
-    if (item->icon().HasRepresentation(scale_factor))
+    AppListItemModel* item = model_->item_list()->item_at(i);
+    if (item->icon().HasRepresentation(scale))
       continue;
 
-    pending_icon_loaders_.push_back(new IconLoader(this, item, scale_factor));
+    pending_icon_loaders_.push_back(new IconLoader(this, item, scale));
   }
 }
 
@@ -185,18 +204,17 @@ void AppListMainView::OnItemIconLoaded(IconLoader* loader) {
 }
 
 void AppListMainView::ActivateApp(AppListItemModel* item, int event_flags) {
-  if (delegate_)
-    delegate_->ActivateAppListItem(item, event_flags);
+  // TODO(jennyz): Activate the folder via AppListModel notification.
+  if (item->GetAppType() == AppListFolderItem::kAppType)
+    contents_view_->ShowFolderContent(static_cast<AppListFolderItem*>(item));
+  else
+    item->Activate(event_flags);
 }
 
 void AppListMainView::GetShortcutPathForApp(
     const std::string& app_id,
     const base::Callback<void(const base::FilePath&)>& callback) {
-  if (delegate_) {
-    delegate_->GetShortcutPathForApp(app_id, callback);
-    return;
-  }
-  callback.Run(base::FilePath());
+  delegate_->GetShortcutPathForApp(app_id, callback);
 }
 
 void AppListMainView::QueryChanged(SearchBoxView* sender) {
@@ -205,24 +223,20 @@ void AppListMainView::QueryChanged(SearchBoxView* sender) {
   bool should_show_search = !query.empty();
   contents_view_->ShowSearchResults(should_show_search);
 
-  if (delegate_) {
-    if (should_show_search)
-      delegate_->StartSearch();
-    else
-      delegate_->StopSearch();
-  }
+  if (should_show_search)
+    delegate_->StartSearch();
+  else
+    delegate_->StopSearch();
 }
 
 void AppListMainView::OpenResult(SearchResult* result, int event_flags) {
-  if (delegate_)
-    delegate_->OpenSearchResult(result, event_flags);
+  delegate_->OpenSearchResult(result, event_flags);
 }
 
 void AppListMainView::InvokeResultAction(SearchResult* result,
                                          int action_index,
                                          int event_flags) {
-  if (delegate_)
-    delegate_->InvokeSearchResultAction(result, action_index, event_flags);
+  delegate_->InvokeSearchResultAction(result, action_index, event_flags);
 }
 
 void AppListMainView::OnResultInstalled(SearchResult* result) {

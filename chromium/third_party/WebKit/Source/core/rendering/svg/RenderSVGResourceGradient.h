@@ -22,13 +22,12 @@
 #ifndef RenderSVGResourceGradient_h
 #define RenderSVGResourceGradient_h
 
-#include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/Gradient.h"
-#include "core/platform/graphics/ImageBuffer.h"
-#include "core/platform/graphics/transforms/AffineTransform.h"
 #include "core/rendering/svg/RenderSVGResourceContainer.h"
 #include "core/svg/SVGGradientElement.h"
-
+#include "platform/geometry/FloatRect.h"
+#include "platform/graphics/Gradient.h"
+#include "platform/graphics/ImageBuffer.h"
+#include "platform/transforms/AffineTransform.h"
 #include "wtf/HashMap.h"
 
 namespace WebCore {
@@ -51,7 +50,6 @@ public:
 
     virtual bool applyResource(RenderObject*, RenderStyle*, GraphicsContext*&, unsigned short resourceMode) OVERRIDE FINAL;
     virtual void postApplyResource(RenderObject*, GraphicsContext*&, unsigned short resourceMode, const Path*, const RenderSVGShape*) OVERRIDE FINAL;
-    virtual FloatRect resourceBoundingBox(RenderObject*) OVERRIDE FINAL { return FloatRect(); }
 
 protected:
     void addStops(GradientData*, const Vector<Gradient::ColorStop>&) const;

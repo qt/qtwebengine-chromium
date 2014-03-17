@@ -19,7 +19,10 @@
 namespace aura {
 class RootWindow;
 namespace client {
-class StackingClient;
+class DragDropClient;
+class FocusClient;
+class ScreenPositionClient;
+class WindowTreeClient;
 }
 }
 
@@ -27,17 +30,21 @@ namespace views {
 
 namespace corewm {
 class CompoundEventFilter;
+class CursorManager;
+class FocusController;
 class InputMethodEventFilter;
-class ScopedCaptureClient;
 class ShadowController;
+class TooltipController;
 class VisibilityController;
 class WindowModalityController;
 }
 
+class DesktopCaptureClient;
+class DesktopDispatcherClient;
+class DesktopEventClient;
 class DesktopRootWindowHost;
 class DropHelper;
-class NativeWidgetAuraWindowObserver;
-class ScopedTooltipClient;
+class FocusManagerEventHandler;
 class TooltipManagerAura;
 class WindowReorderer;
 
@@ -59,20 +66,18 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
 
   // Called by our DesktopRootWindowHost after it has deleted native resources;
   // this is the signal that we should start our shutdown.
-  void OnHostClosed();
+  virtual void OnHostClosed();
 
-  // Installs the input method filter on |root|. This is intended to be invoked
-  // by the DesktopRootWindowHost implementation during Init().
-  void InstallInputMethodEventFilter(aura::RootWindow* root);
+  // Called from ~DesktopRootWindowHost. This takes the RootWindow as by the
+  // time we get here |root_window_| is NULL.
+  virtual void OnDesktopRootWindowHostDestroyed(aura::RootWindow* root);
+
   corewm::InputMethodEventFilter* input_method_event_filter() {
     return input_method_event_filter_.get();
   }
   corewm::CompoundEventFilter* root_window_event_filter() {
     return root_window_event_filter_;
   }
-
-  // Invoked from DesktopRootWindowHost creation to create the CaptureClient.
-  void CreateCaptureClient(aura::RootWindow* root);
 
   // Overridden from NativeWidget:
   virtual ui::EventHandler* GetEventHandler() OVERRIDE;
@@ -109,7 +114,7 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   virtual void GetWindowPlacement(
       gfx::Rect* bounds,
       ui::WindowShowState* maximized) const OVERRIDE;
-  virtual void SetWindowTitle(const string16& title) OVERRIDE;
+  virtual bool SetWindowTitle(const string16& title) OVERRIDE;
   virtual void SetWindowIcons(const gfx::ImageSkia& window_icon,
                               const gfx::ImageSkia& app_icon) OVERRIDE;
   virtual void InitModalType(ui::ModalType modal_type) OVERRIDE;
@@ -134,6 +139,7 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   virtual void Deactivate() OVERRIDE;
   virtual bool IsActive() const OVERRIDE;
   virtual void SetAlwaysOnTop(bool always_on_top) OVERRIDE;
+  virtual bool IsAlwaysOnTop() const OVERRIDE;
   virtual void Maximize() OVERRIDE;
   virtual void Minimize() OVERRIDE;
   virtual bool IsMaximized() const OVERRIDE;
@@ -154,10 +160,10 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   virtual bool IsMouseEventsEnabled() const OVERRIDE;
   virtual void ClearNativeFocus() OVERRIDE;
   virtual gfx::Rect GetWorkAreaBoundsInScreen() const OVERRIDE;
-  virtual void SetInactiveRenderingDisabled(bool value) OVERRIDE;
   virtual Widget::MoveLoopResult RunMoveLoop(
       const gfx::Vector2d& drag_offset,
-      Widget::MoveLoopSource source) OVERRIDE;
+      Widget::MoveLoopSource source,
+      Widget::MoveLoopEscapeBehavior escape_behavior) OVERRIDE;
   virtual void EndMoveLoop() OVERRIDE;
   virtual void SetVisibilityChangedAnimationsEnabled(bool value) OVERRIDE;
   virtual ui::NativeTheme* GetNativeTheme() const OVERRIDE;
@@ -167,7 +173,7 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   virtual gfx::Size GetMinimumSize() const OVERRIDE;
   virtual gfx::Size GetMaximumSize() const OVERRIDE;
   virtual void OnBoundsChanged(const gfx::Rect& old_bounds,
-                               const gfx::Rect& new_bounds) OVERRIDE;
+                               const gfx::Rect& new_bounds) OVERRIDE {}
   virtual gfx::NativeCursor GetCursor(const gfx::Point& point) OVERRIDE;
   virtual int GetNonClientComponent(const gfx::Point& point) const OVERRIDE;
   virtual bool ShouldDescendIntoChildForEventHandling(
@@ -215,12 +221,24 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   // Overridden from aura::RootWindowObserver:
   virtual void OnRootWindowHostCloseRequested(
       const aura::RootWindow* root) OVERRIDE;
+  virtual void OnRootWindowHostResized(const aura::RootWindow* root) OVERRIDE;
+  virtual void OnRootWindowHostMoved(const aura::RootWindow* root,
+                                     const gfx::Point& new_origin) OVERRIDE;
 
  private:
+  friend class FocusManagerEventHandler;
+
+  // Installs the input method filter.
+  void InstallInputMethodEventFilter();
+
+  // To save a clear on platforms where the window is never transparent, the
+  // window is only set as transparent when the glass frame is in use.
+  void UpdateWindowTransparency();
+
   // See class documentation for Widget in widget.h for a note about ownership.
   Widget::InitParams::Ownership ownership_;
 
-  scoped_ptr<corewm::ScopedCaptureClient> capture_client_;
+  scoped_ptr<DesktopCaptureClient> capture_client_;
 
   // The NativeWidget owns the RootWindow. Required because the RootWindow owns
   // its RootWindowHost, so DesktopRootWindowHost can't own it.
@@ -230,26 +248,30 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   // instance.
   base::WeakPtrFactory<DesktopNativeWidgetAura> close_widget_factory_;
 
-  scoped_ptr<NativeWidgetAuraWindowObserver> active_window_observer_;
-
   // Can we be made active?
   bool can_activate_;
 
   // Ownership passed to RootWindow on Init.
   DesktopRootWindowHost* desktop_root_window_host_;
 
-  // The content of |root_window_|. WARNING: this may be NULL if deleted out
-  // from under us.
-  aura::Window* window_;
-
-  // Contains the content window defined above. Ensures that ZOrder changes
-  // occurring in the content window hierarchy don't affect the other children
-  // of the root window.
+  // Child of the root, contains |content_window_|.
   aura::Window* content_window_container_;
+
+  // Child of |content_window_container_|. This is the return value from
+  // GetNativeView().
+  // WARNING: this may be NULL, in particular during shutdown it becomes NULL.
+  aura::Window* content_window_;
 
   internal::NativeWidgetDelegate* native_widget_delegate_;
 
-  scoped_ptr<aura::client::StackingClient> stacking_client_;
+  scoped_ptr<corewm::FocusController> focus_client_;
+  scoped_ptr<DesktopDispatcherClient> dispatcher_client_;
+  scoped_ptr<views::corewm::CursorManager> cursor_client_;
+  scoped_ptr<aura::client::ScreenPositionClient> position_client_;
+  scoped_ptr<aura::client::DragDropClient> drag_drop_client_;
+  scoped_ptr<aura::client::WindowTreeClient> window_tree_client_;
+  scoped_ptr<DesktopEventClient> event_client_;
+  scoped_ptr<FocusManagerEventHandler> focus_manager_event_handler_;
 
   // Toplevel event filter which dispatches to other event filters.
   corewm::CompoundEventFilter* root_window_event_filter_;
@@ -259,7 +281,7 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   scoped_ptr<DropHelper> drop_helper_;
   int last_drop_operation_;
 
-  scoped_ptr<ScopedTooltipClient> scoped_tooltip_client_;
+  scoped_ptr<corewm::TooltipController> tooltip_controller_;
   scoped_ptr<TooltipManagerAura> tooltip_manager_;
 
   scoped_ptr<views::corewm::VisibilityController> visibility_controller_;
@@ -277,6 +299,9 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   // Reorders child windows of |window_| associated with a view based on the
   // order of the associated views in the widget's view hierarchy.
   scoped_ptr<WindowReorderer> window_reorderer_;
+
+  // See class documentation for Widget in widget.h for a note about type.
+  Widget::InitParams::Type widget_type_;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopNativeWidgetAura);
 };

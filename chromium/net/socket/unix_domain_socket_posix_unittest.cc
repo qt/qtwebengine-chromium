@@ -40,7 +40,6 @@ namespace net {
 namespace {
 
 const char kSocketFilename[] = "unix_domain_socket_for_testing";
-const char kFallbackSocketName[] = "unix_domain_socket_for_testing_2";
 const char kInvalidSocketPath[] = "/invalid/path";
 const char kMsg[] = "hello";
 
@@ -55,7 +54,7 @@ enum EventType {
 
 string MakeSocketPath(const string& socket_file_name) {
   base::FilePath temp_dir;
-  file_util::GetTempDir(&temp_dir);
+  base::GetTempDir(&temp_dir);
   return temp_dir.Append(socket_file_name).value();
 }
 
@@ -275,6 +274,7 @@ TEST_F(UnixDomainSocketTest, TestFallbackName) {
           file_path_.value(), "", socket_delegate_.get(), MakeAuthCallback());
   EXPECT_TRUE(socket_.get() == NULL);
   // Now with a fallback name.
+  const char kFallbackSocketName[] = "unix_domain_socket_for_testing_2";
   socket_ = UnixDomainSocket::CreateAndListenWithAbstractNamespace(
       file_path_.value(),
       MakeSocketPath(kFallbackSocketName),
@@ -306,7 +306,7 @@ TEST_F(UnixDomainSocketTest, TestWithClient) {
   ASSERT_EQ(kMsg, socket_delegate_->ReceivedData());
 
   // Close the client socket.
-  ret = HANDLE_EINTR(close(sock));
+  ret = IGNORE_EINTR(close(sock));
   event = event_manager_->WaitForEvent();
   ASSERT_EQ(EVENT_CLOSE, event);
 }

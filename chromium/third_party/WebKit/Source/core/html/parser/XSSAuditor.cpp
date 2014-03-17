@@ -32,20 +32,18 @@
 #include "XLinkNames.h"
 #include "core/dom/Document.h"
 #include "core/fetch/TextResourceDecoder.h"
+#include "core/frame/ContentSecurityPolicy.h"
+#include "core/frame/Frame.h"
 #include "core/html/HTMLParamElement.h"
 #include "core/html/parser/HTMLDocumentParser.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/parser/XSSAuditorDelegate.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/page/ContentSecurityPolicy.h"
-#include "core/page/Frame.h"
-#include "core/page/Settings.h"
-#include "core/platform/JSONValues.h"
-#include "core/platform/network/FormData.h"
-#include "core/platform/text/DecodeEscapeSequences.h"
-#include "weborigin/KURL.h"
+#include "core/frame/Settings.h"
+#include "platform/JSONValues.h"
+#include "platform/network/FormData.h"
+#include "platform/text/DecodeEscapeSequences.h"
 #include "wtf/MainThread.h"
-#include "wtf/text/TextEncoding.h"
 
 namespace WebCore {
 
@@ -170,12 +168,12 @@ static String fullyDecodeString(const String& string, const WTF::TextEncoding& e
     return workingString;
 }
 
-static ContentSecurityPolicy::ReflectedXSSDisposition combineXSSProtectionHeaderAndCSP(ContentSecurityPolicy::ReflectedXSSDisposition xssProtection, ContentSecurityPolicy::ReflectedXSSDisposition reflectedXSS)
+static ReflectedXSSDisposition combineXSSProtectionHeaderAndCSP(ReflectedXSSDisposition xssProtection, ReflectedXSSDisposition reflectedXSS)
 {
-    ContentSecurityPolicy::ReflectedXSSDisposition result = std::max(xssProtection, reflectedXSS);
+    ReflectedXSSDisposition result = std::max(xssProtection, reflectedXSS);
 
-    if (result == ContentSecurityPolicy::ReflectedXSSInvalid || result == ContentSecurityPolicy::FilterReflectedXSS || result == ContentSecurityPolicy::ReflectedXSSUnset)
-        return ContentSecurityPolicy::FilterReflectedXSS;
+    if (result == ReflectedXSSInvalid || result == FilterReflectedXSS || result == ReflectedXSSUnset)
+        return FilterReflectedXSS;
 
     return result;
 }
@@ -198,7 +196,7 @@ static bool semicolonSeparatedValueContainsJavaScriptURL(const String& value)
 
 XSSAuditor::XSSAuditor()
     : m_isEnabled(false)
-    , m_xssProtection(ContentSecurityPolicy::FilterReflectedXSS)
+    , m_xssProtection(FilterReflectedXSS)
     , m_didSendValidCSPHeader(false)
     , m_didSendValidXSSProtectionHeader(false)
     , m_state(Uninitialized)
@@ -214,7 +212,7 @@ void XSSAuditor::initForFragment()
 {
     ASSERT(isMainThread());
     ASSERT(m_state == Uninitialized);
-    m_state = Initialized;
+    m_state = FilteringTokens;
     // When parsing a fragment, we don't enable the XSS auditor because it's
     // too much overhead.
     ASSERT(!m_isEnabled);
@@ -226,10 +224,9 @@ void XSSAuditor::init(Document* document, XSSAuditorDelegate* auditorDelegate)
     const int suffixTreeDepth = 5;
 
     ASSERT(isMainThread());
-    if (m_state == Initialized)
+    if (m_state != Uninitialized)
         return;
-    ASSERT(m_state == Uninitialized);
-    m_state = Initialized;
+    m_state = FilteringTokens;
 
     if (Settings* settings = document->settings())
         m_isEnabled = settings->xssAuditorEnabled();
@@ -265,30 +262,30 @@ void XSSAuditor::init(Document* document, XSSAuditorDelegate* auditorDelegate)
         m_decodedURL = String();
 
     String httpBodyAsString;
-    if (DocumentLoader* documentLoader = document->frame()->loader()->documentLoader()) {
-        DEFINE_STATIC_LOCAL(String, XSSProtectionHeader, ("X-XSS-Protection"));
-        String headerValue = documentLoader->response().httpHeaderField(XSSProtectionHeader);
+    if (DocumentLoader* documentLoader = document->frame()->loader().documentLoader()) {
+        DEFINE_STATIC_LOCAL(const AtomicString, XSSProtectionHeader, ("X-XSS-Protection", AtomicString::ConstructFromLiteral));
+        const AtomicString& headerValue = documentLoader->response().httpHeaderField(XSSProtectionHeader);
         String errorDetails;
         unsigned errorPosition = 0;
         String reportURL;
         KURL xssProtectionReportURL;
 
         // Process the X-XSS-Protection header, then mix in the CSP header's value.
-        ContentSecurityPolicy::ReflectedXSSDisposition xssProtectionHeader = parseXSSProtectionHeader(headerValue, errorDetails, errorPosition, reportURL);
-        m_didSendValidXSSProtectionHeader = xssProtectionHeader != ContentSecurityPolicy::ReflectedXSSUnset && xssProtectionHeader != ContentSecurityPolicy::ReflectedXSSInvalid;
-        if ((xssProtectionHeader == ContentSecurityPolicy::FilterReflectedXSS || xssProtectionHeader == ContentSecurityPolicy::BlockReflectedXSS) && !reportURL.isEmpty()) {
+        ReflectedXSSDisposition xssProtectionHeader = parseXSSProtectionHeader(headerValue, errorDetails, errorPosition, reportURL);
+        m_didSendValidXSSProtectionHeader = xssProtectionHeader != ReflectedXSSUnset && xssProtectionHeader != ReflectedXSSInvalid;
+        if ((xssProtectionHeader == FilterReflectedXSS || xssProtectionHeader == BlockReflectedXSS) && !reportURL.isEmpty()) {
             xssProtectionReportURL = document->completeURL(reportURL);
             if (MixedContentChecker::isMixedContent(document->securityOrigin(), xssProtectionReportURL)) {
                 errorDetails = "insecure reporting URL for secure page";
-                xssProtectionHeader = ContentSecurityPolicy::ReflectedXSSInvalid;
+                xssProtectionHeader = ReflectedXSSInvalid;
                 xssProtectionReportURL = KURL();
             }
         }
-        if (xssProtectionHeader == ContentSecurityPolicy::ReflectedXSSInvalid)
+        if (xssProtectionHeader == ReflectedXSSInvalid)
             document->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, "Error parsing header X-XSS-Protection: " + headerValue + ": "  + errorDetails + " at character position " + String::format("%u", errorPosition) + ". The default protections will be applied.");
 
-        ContentSecurityPolicy::ReflectedXSSDisposition cspHeader = document->contentSecurityPolicy()->reflectedXSSDisposition();
-        m_didSendValidCSPHeader = cspHeader != ContentSecurityPolicy::ReflectedXSSUnset && cspHeader != ContentSecurityPolicy::ReflectedXSSInvalid;
+        ReflectedXSSDisposition cspHeader = document->contentSecurityPolicy()->reflectedXSSDisposition();
+        m_didSendValidCSPHeader = cspHeader != ReflectedXSSUnset && cspHeader != ReflectedXSSInvalid;
 
         m_xssProtection = combineXSSProtectionHeaderAndCSP(xssProtectionHeader, cspHeader);
         // FIXME: Combine the two report URLs in some reasonable way.
@@ -315,8 +312,8 @@ void XSSAuditor::init(Document* document, XSSAuditorDelegate* auditorDelegate)
 
 PassOwnPtr<XSSInfo> XSSAuditor::filterToken(const FilterTokenRequest& request)
 {
-    ASSERT(m_state == Initialized);
-    if (!m_isEnabled || m_xssProtection == ContentSecurityPolicy::AllowReflectedXSS)
+    ASSERT(m_state != Uninitialized);
+    if (!m_isEnabled || m_xssProtection == AllowReflectedXSS)
         return nullptr;
 
     bool didBlockScript = false;
@@ -330,7 +327,7 @@ PassOwnPtr<XSSInfo> XSSAuditor::filterToken(const FilterTokenRequest& request)
     }
 
     if (didBlockScript) {
-        bool didBlockEntirePage = (m_xssProtection == ContentSecurityPolicy::BlockReflectedXSS);
+        bool didBlockEntirePage = (m_xssProtection == BlockReflectedXSS);
         OwnPtr<XSSInfo> xssInfo = XSSInfo::create(m_documentURL, didBlockEntirePage, m_didSendValidXSSProtectionHeader, m_didSendValidCSPHeader);
         return xssInfo.release();
     }
@@ -339,6 +336,7 @@ PassOwnPtr<XSSInfo> XSSAuditor::filterToken(const FilterTokenRequest& request)
 
 bool XSSAuditor::filterStartToken(const FilterTokenRequest& request)
 {
+    m_state = FilteringTokens;
     bool didBlockScript = eraseDangerousAttributesIfInjected(request);
 
     if (hasName(request.token, scriptTag)) {
@@ -372,6 +370,7 @@ bool XSSAuditor::filterStartToken(const FilterTokenRequest& request)
 void XSSAuditor::filterEndToken(const FilterTokenRequest& request)
 {
     ASSERT(m_scriptTagNestingLevel);
+    m_state = FilteringTokens;
     if (hasName(request.token, scriptTag)) {
         m_scriptTagNestingLevel--;
         ASSERT(request.shouldAllowCDATA || !m_scriptTagNestingLevel);
@@ -381,11 +380,19 @@ void XSSAuditor::filterEndToken(const FilterTokenRequest& request)
 bool XSSAuditor::filterCharacterToken(const FilterTokenRequest& request)
 {
     ASSERT(m_scriptTagNestingLevel);
-    if (m_scriptTagFoundInRequest && isContainedInRequest(decodedSnippetForJavaScript(request))) {
+    ASSERT(m_state != Uninitialized);
+    if (m_state == PermittingAdjacentCharacterTokens)
+        return false;
+
+    if ((m_state == SuppressingAdjacentCharacterTokens)
+        || (m_scriptTagFoundInRequest && isContainedInRequest(decodedSnippetForJavaScript(request)))) {
         request.token.eraseCharacters();
         request.token.appendToCharacter(' '); // Technically, character tokens can't be empty.
+        m_state = SuppressingAdjacentCharacterTokens;
         return true;
     }
+
+    m_state = PermittingAdjacentCharacterTokens;
     return false;
 }
 
@@ -465,11 +472,10 @@ bool XSSAuditor::filterFrameToken(const FilterTokenRequest& request)
     ASSERT(request.token.type() == HTMLToken::StartTag);
     ASSERT(hasName(request.token, iframeTag) || hasName(request.token, frameTag));
 
-    bool didBlockScript = false;
-    if (isContainedInRequest(decodedSnippetForName(request))) {
+    bool didBlockScript = eraseAttributeIfInjected(request, srcdocAttr, String(), ScriptLikeAttribute);
+    if (isContainedInRequest(decodedSnippetForName(request)))
         didBlockScript |= eraseAttributeIfInjected(request, srcAttr, String(), SrcLikeAttribute);
-        didBlockScript |= eraseAttributeIfInjected(request, srcdocAttr, String(), ScriptLikeAttribute);
-    }
+
     return didBlockScript;
 }
 

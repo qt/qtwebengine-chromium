@@ -35,13 +35,13 @@
 #include "WebString.h"
 #include <url/third_party/mozilla/url_parse.h>
 
-#if WEBKIT_IMPLEMENTATION
+#if INSIDE_BLINK
 namespace WebCore { class KURL; }
 #else
 #include <url/gurl.h>
 #endif
 
-namespace WebKit {
+namespace blink {
 
 class WebURL {
 public:
@@ -101,10 +101,10 @@ public:
         return m_string.isEmpty();
     }
 
-#if WEBKIT_IMPLEMENTATION
-    WebURL(const WebCore::KURL&);
-    WebURL& operator=(const WebCore::KURL&);
-    operator WebCore::KURL() const;
+#if INSIDE_BLINK
+    BLINK_PLATFORM_EXPORT WebURL(const WebCore::KURL&);
+    BLINK_PLATFORM_EXPORT WebURL& operator=(const WebCore::KURL&);
+    BLINK_PLATFORM_EXPORT operator WebCore::KURL() const;
 #else
     WebURL(const GURL& url)
         : m_string(WebString::fromUTF8(url.possibly_invalid_spec()))
@@ -143,6 +143,6 @@ inline bool operator!=(const WebURL& a, const WebURL& b)
     return !(a == b);
 }
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

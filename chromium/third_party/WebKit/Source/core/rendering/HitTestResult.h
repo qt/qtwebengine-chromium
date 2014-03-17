@@ -22,12 +22,12 @@
 #ifndef HitTestResult_h
 #define HitTestResult_h
 
-#include "core/platform/graphics/FloatQuad.h"
-#include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/LayoutRect.h"
-#include "core/platform/text/TextDirection.h"
 #include "core/rendering/HitTestLocation.h"
 #include "core/rendering/HitTestRequest.h"
+#include "platform/geometry/FloatQuad.h"
+#include "platform/geometry/FloatRect.h"
+#include "platform/geometry/LayoutRect.h"
+#include "platform/text/TextDirection.h"
 #include "wtf/Forward.h"
 #include "wtf/ListHashSet.h"
 #include "wtf/OwnPtr.h"
@@ -41,6 +41,7 @@ class HTMLMediaElement;
 class Image;
 class KURL;
 class Node;
+class RenderObject;
 class RenderRegion;
 class Scrollbar;
 
@@ -58,6 +59,7 @@ public:
     HitTestResult& operator=(const HitTestResult&);
 
     Node* innerNode() const { return m_innerNode.get(); }
+    Node* innerPossiblyPseudoNode() const { return m_innerPossiblyPseudoNode.get(); }
     Element* innerElement() const;
     Node* innerNonSharedNode() const { return m_innerNonSharedNode.get(); }
     Element* URLElement() const { return m_innerURLElement.get(); }
@@ -80,6 +82,8 @@ public:
     const LayoutPoint& localPoint() const { return m_localPoint; }
     void setLocalPoint(const LayoutPoint& p) { m_localPoint = p; }
 
+    RenderObject* renderer() const;
+
     void setToNodesInDocumentTreeScope();
     void setToShadowHostIfInUserAgentShadowRoot();
 
@@ -89,13 +93,14 @@ public:
     void setInnerNonSharedNode(Node*);
     void setURLElement(Element*);
     void setScrollbar(Scrollbar*);
+    void setIsFirstLetter(bool b) { m_isFirstLetter = b; }
     void setIsOverWidget(bool b) { m_isOverWidget = b; }
 
     Frame* targetFrame() const;
     bool isSelected() const;
     String spellingToolTip(TextDirection&) const;
     String title(TextDirection&) const;
-    String altDisplayString() const;
+    const AtomicString& altDisplayString() const;
     String titleDisplayString() const;
     Image* image() const;
     IntRect imageRect() const;
@@ -107,6 +112,7 @@ public:
     bool isMisspelled() const;
     bool isContentEditable() const;
 
+    bool isOverLink() const;
     // Returns true if it is rect-based hit test and needs to continue until the rect is fully
     // enclosed by the boundaries of a node.
     bool addNodeToRectBasedTestResult(Node*, const HitTestRequest&, const HitTestLocation& pointInContainer, const LayoutRect& = LayoutRect());
@@ -127,6 +133,7 @@ private:
     HitTestLocation m_hitTestLocation;
 
     RefPtr<Node> m_innerNode;
+    RefPtr<Node> m_innerPossiblyPseudoNode;
     RefPtr<Node> m_innerNonSharedNode;
     LayoutPoint m_pointInInnerNodeFrame; // The hit-tested point in innerNode frame coordinates.
     LayoutPoint m_localPoint; // A point in the local coordinate space of m_innerNonSharedNode's renderer. Allows us to efficiently
@@ -134,11 +141,10 @@ private:
     RefPtr<Element> m_innerURLElement;
     RefPtr<Scrollbar> m_scrollbar;
     bool m_isOverWidget; // Returns true if we are over a widget (and not in the border/padding area of a RenderWidget for example).
+    bool m_isFirstLetter;
 
     mutable OwnPtr<NodeSet> m_rectBasedTestResult;
 };
-
-String displayString(const String&, const Node*);
 
 } // namespace WebCore
 

@@ -40,6 +40,7 @@
 #include <map>
 #include <vector>
 #include <string>
+#include "talk/base/asyncpacketsocket.h"
 #include "talk/base/sigslot.h"
 #include "talk/p2p/base/candidate.h"
 #include "talk/p2p/base/portinterface.h"
@@ -127,6 +128,15 @@ class P2PTransportChannel : public TransportChannelImpl,
     return false;
   }
 
+  // Returns false because the channel is not encrypted by default.
+  virtual bool GetLocalIdentity(talk_base::SSLIdentity** identity) const {
+    return false;
+  }
+
+  virtual bool GetRemoteCertificate(talk_base::SSLCertificate** cert) const {
+    return false;
+  }
+
   // Allows key material to be extracted for external encryption.
   virtual bool ExportKeyingMaterial(
       const std::string& label,
@@ -198,8 +208,9 @@ class P2PTransportChannel : public TransportChannelImpl,
   void OnPortDestroyed(PortInterface* port);
   void OnRoleConflict(PortInterface* port);
 
-  void OnConnectionStateChange(Connection *connection);
-  void OnReadPacket(Connection *connection, const char *data, size_t len);
+  void OnConnectionStateChange(Connection* connection);
+  void OnReadPacket(Connection *connection, const char *data, size_t len,
+                    const talk_base::PacketTime& packet_time);
   void OnReadyToSend(Connection* connection);
   void OnConnectionDestroyed(Connection *connection);
 

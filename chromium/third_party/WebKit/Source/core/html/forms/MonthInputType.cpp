@@ -32,11 +32,11 @@
 #include "core/html/forms/MonthInputType.h"
 
 #include "HTMLNames.h"
+#include "InputTypeNames.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/forms/DateTimeFieldsState.h"
-#include "core/html/forms/InputTypeNames.h"
-#include "core/platform/DateComponents.h"
-#include "core/platform/text/PlatformLocale.h"
+#include "platform/DateComponents.h"
+#include "platform/text/PlatformLocale.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/DateMath.h"
 #include "wtf/MathExtras.h"
@@ -51,30 +51,25 @@ static const int monthDefaultStep = 1;
 static const int monthDefaultStepBase = 0;
 static const int monthStepScaleFactor = 1;
 
-PassRefPtr<InputType> MonthInputType::create(HTMLInputElement* element)
+PassRefPtr<InputType> MonthInputType::create(HTMLInputElement& element)
 {
     return adoptRef(new MonthInputType(element));
 }
 
 void MonthInputType::countUsage()
 {
-    observeFeatureIfVisible(UseCounter::InputTypeMonth);
+    countUsageIfVisible(UseCounter::InputTypeMonth);
 }
 
 const AtomicString& MonthInputType::formControlType() const
 {
-    return InputTypeNames::month();
-}
-
-DateComponents::Type MonthInputType::dateType() const
-{
-    return DateComponents::Month;
+    return InputTypeNames::month;
 }
 
 double MonthInputType::valueAsDate() const
 {
     DateComponents date;
-    if (!parseToDateComponents(element()->value(), &date))
+    if (!parseToDateComponents(element().value(), &date))
         return DateComponents::invalidMilliseconds();
     double msec = date.millisecondsSinceEpoch();
     ASSERT(std::isfinite(msec));
@@ -108,11 +103,7 @@ StepRange MonthInputType::createStepRange(AnyStepHandling anyStepHandling) const
 {
     DEFINE_STATIC_LOCAL(const StepRange::StepDescription, stepDescription, (monthDefaultStep, monthDefaultStepBase, monthStepScaleFactor, StepRange::ParsedStepValueShouldBeInteger));
 
-    const Decimal stepBase = parseToNumber(element()->fastGetAttribute(minAttr), Decimal::fromDouble(monthDefaultStepBase));
-    const Decimal minimum = parseToNumber(element()->fastGetAttribute(minAttr), Decimal::fromDouble(DateComponents::minimumMonth()));
-    const Decimal maximum = parseToNumber(element()->fastGetAttribute(maxAttr), Decimal::fromDouble(DateComponents::maximumMonth()));
-    const Decimal step = StepRange::parseStep(anyStepHandling, stepDescription, element()->fastGetAttribute(stepAttr));
-    return StepRange(stepBase, minimum, maximum, step, stepDescription);
+    return InputType::createStepRange(anyStepHandling, Decimal::fromDouble(monthDefaultStepBase), Decimal::fromDouble(DateComponents::minimumMonth()), Decimal::fromDouble(DateComponents::maximumMonth()), stepDescription);
 }
 
 Decimal MonthInputType::parseToNumber(const String& src, const Decimal& defaultValue) const
@@ -155,9 +146,9 @@ void MonthInputType::setupLayoutParameters(DateTimeEditElement::LayoutParameters
 {
     layoutParameters.dateTimeFormat = layoutParameters.locale.monthFormat();
     layoutParameters.fallbackDateTimeFormat = "yyyy-MM";
-    if (!parseToDateComponents(element()->fastGetAttribute(minAttr), &layoutParameters.minimum))
+    if (!parseToDateComponents(element().fastGetAttribute(minAttr), &layoutParameters.minimum))
         layoutParameters.minimum = DateComponents();
-    if (!parseToDateComponents(element()->fastGetAttribute(maxAttr), &layoutParameters.maximum))
+    if (!parseToDateComponents(element().fastGetAttribute(maxAttr), &layoutParameters.maximum))
         layoutParameters.maximum = DateComponents();
     layoutParameters.placeholderForMonth = "--";
     layoutParameters.placeholderForYear = "----";

@@ -41,16 +41,16 @@ namespace IPC {
 struct ChannelHandle;
 }
 
-namespace WebKit {
+namespace blink {
 class WebPluginContainer;
-}  // namespace WebKit
+}  // namespace blink
 
 namespace content {
 class HostDispatcherWrapper;
 class PepperPluginInstanceImpl;
 class PepperBroker;
 class RendererPpapiHostImpl;
-class RenderViewImpl;
+class RenderFrameImpl;
 struct WebPluginInfo;
 
 // Represents one plugin library loaded into one renderer. This library may
@@ -139,8 +139,8 @@ class CONTENT_EXPORT PluginModule :
   const ppapi::PpapiPermissions& permissions() const { return permissions_; }
 
   PepperPluginInstanceImpl* CreateInstance(
-      RenderViewImpl* render_view,
-      WebKit::WebPluginContainer* container,
+      RenderFrameImpl* render_frame,
+      blink::WebPluginContainer* container,
       const GURL& plugin_url);
 
   // Returns "some" plugin instance associated with this module. This is not
@@ -189,7 +189,7 @@ class CONTENT_EXPORT PluginModule :
   // Create a new HostDispatcher for proxying, hook it to the PluginModule,
   // and perform other common initialization.
   RendererPpapiHostImpl* CreateOutOfProcessModule(
-      RenderViewImpl* render_view,
+      RenderFrameImpl* render_frame,
       const base::FilePath& path,
       ppapi::PpapiPermissions permissions,
       const IPC::ChannelHandle& channel_handle,
@@ -212,7 +212,7 @@ class CONTENT_EXPORT PluginModule :
   // the second is that the plugin failed to initialize. In this case,
   // |*pepper_plugin_was_registered| will be set to true and the caller should
   // not fall back on any other plugin types.
-  static scoped_refptr<PluginModule> Create(RenderViewImpl* render_view,
+  static scoped_refptr<PluginModule> Create(RenderFrameImpl* render_frame,
                                             const WebPluginInfo& webplugin_info,
                                             bool* pepper_plugin_was_registered);
 

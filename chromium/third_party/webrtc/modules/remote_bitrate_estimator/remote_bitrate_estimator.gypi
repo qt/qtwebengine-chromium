@@ -18,17 +18,12 @@
         '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
         '<(rbe_components_path)/remote_bitrate_estimator_components.gyp:rbe_components',
       ],
-      'direct_dependent_settings': {
-        'include_dirs': [
-          'include',
-        ],
-      },
       'sources': [
         'include/bwe_defines.h',
         'include/remote_bitrate_estimator.h',
         'include/rtp_to_ntp.h',
-        'bitrate_estimator.cc',
-        'bitrate_estimator.h',
+        'rate_statistics.cc',
+        'rate_statistics.h',
         'rtp_to_ntp.cc',
       ], # source
     },

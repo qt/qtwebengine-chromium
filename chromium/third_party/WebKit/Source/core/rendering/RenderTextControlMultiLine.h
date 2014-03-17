@@ -41,21 +41,15 @@ private:
     virtual float getAvgCharWidth(AtomicString family);
     virtual LayoutUnit preferredContentLogicalWidth(float charWidth) const;
     virtual LayoutUnit computeControlLogicalHeight(LayoutUnit lineHeight, LayoutUnit nonContentHeight) const OVERRIDE;
-    virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const;
+    // We override the two baseline functions because we want our baseline to be the bottom of our margin box.
+    virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const OVERRIDE;
+    virtual int inlineBlockBaseline(LineDirectionMode) const OVERRIDE { return -1; }
 
-    virtual RenderStyle* textBaseStyle() const;
     virtual PassRefPtr<RenderStyle> createInnerTextStyle(const RenderStyle* startStyle) const;
     virtual RenderObject* layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope&);
 };
 
-inline RenderTextControlMultiLine* toRenderTextControlMultiLine(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isTextArea());
-    return static_cast<RenderTextControlMultiLine*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderTextControlMultiLine(const RenderTextControlMultiLine*);
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderTextControlMultiLine, isTextArea());
 
 }
 

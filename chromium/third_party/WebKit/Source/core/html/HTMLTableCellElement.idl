@@ -23,11 +23,11 @@ interface HTMLTableCellElement : HTMLElement {
     [Reflect] attribute DOMString abbr;
     [Reflect] attribute DOMString align;
     [Reflect] attribute DOMString axis;
-    [Reflect] attribute DOMString bgColor;
+    [Reflect, TreatNullAs=NullString] attribute DOMString bgColor;
     [Reflect=char] attribute DOMString ch;
     [Reflect=charoff] attribute DOMString chOff;
     attribute long colSpan;
-    [Reflect] attribute DOMString headers;
+    [Reflect, TreatNullAs=NullString] attribute DOMString headers;
     [Reflect] attribute DOMString height;
     [Reflect] attribute boolean noWrap;
     attribute long rowSpan;
@@ -35,4 +35,3 @@ interface HTMLTableCellElement : HTMLElement {
     [Reflect] attribute DOMString vAlign;
     [Reflect] attribute DOMString width;
 };
-

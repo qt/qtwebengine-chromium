@@ -56,7 +56,7 @@ PRUNE_PATHS = set([
 
     # Chromium code in third_party.
     os.path.join('third_party','fuzzymatch'),
-    os.path.join('tools', 'swarm_client'),
+    os.path.join('tools', 'swarming_client'),
 
     # Stuff pulled in from chrome-internal for official builds/tools.
     os.path.join('third_party', 'clear_cache'),
@@ -84,10 +84,7 @@ ADDITIONAL_PATHS = (
     os.path.join('chrome', 'test', 'chromeos', 'autotest'),
     os.path.join('chrome', 'test', 'data'),
     os.path.join('native_client'),
-    os.path.join('native_client_sdk'),
     os.path.join('net', 'tools', 'spdyshark'),
-    os.path.join('ppapi'),
-    os.path.join('sandbox', 'linux', 'seccomp-legacy'),
     os.path.join('sdch', 'open-vcdiff'),
     os.path.join('testing', 'gmock'),
     os.path.join('testing', 'gtest'),
@@ -111,11 +108,6 @@ SPECIAL_CASES = {
     os.path.join('native_client'): {
         "Name": "native client",
         "URL": "http://code.google.com/p/nativeclient",
-        "License": "BSD",
-    },
-    os.path.join('sandbox', 'linux', 'seccomp-legacy'): {
-        "Name": "seccompsandbox",
-        "URL": "http://code.google.com/p/seccompsandbox",
         "License": "BSD",
     },
     os.path.join('sdch', 'open-vcdiff'): {

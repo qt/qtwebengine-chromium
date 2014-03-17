@@ -32,7 +32,8 @@ label Chrome {
   PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_VGA = 1 << 2,
   PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_HDMI = 1 << 3,
   PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_DVI = 1 << 4,
-  PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_DISPLAYPORT = 1 << 5
+  PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_DISPLAYPORT = 1 << 5,
+  PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_NETWORK = 1 << 6
 };
 
 /**
@@ -124,9 +125,12 @@ interface PPB_OutputProtection_Private {
    * @param[in] desired_protection_mask The desired protection methods, which
    * is a bit-mask of the <code>PP_OutputProtectionMethod_Private</code>
    * values.
-   * @param[in] callback A <code>PP_CompletionCallback</code> to be called when
-   * the protection request has been made. This may be before the protection
-   * have actually been applied. Call QueryStatus to get protection status.
+   * @param[in] callback A <code>PP_CompletionCallback</code> to be called with
+   * <code>PP_OK</code> when the protection request has been made. This may be
+   * before the protection have actually been applied. Call QueryStatus to get
+   * protection status. If it failed to make the protection request, the
+   * callback is called with <code>PP_ERROR_FAILED</code> and there is no need
+   * to call QueryStatus().
    *
    * @return An int32_t containing an error code from <code>pp_errors.h</code>.
    */

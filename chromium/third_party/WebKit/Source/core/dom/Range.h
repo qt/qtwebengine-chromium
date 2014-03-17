@@ -28,8 +28,8 @@
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/RangeBoundaryPoint.h"
-#include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/IntRect.h"
+#include "platform/geometry/FloatRect.h"
+#include "platform/geometry/IntRect.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
@@ -130,7 +130,7 @@ public:
 
     void nodeChildrenChanged(ContainerNode*);
     void nodeChildrenWillBeRemoved(ContainerNode*);
-    void nodeWillBeRemoved(Node*);
+    void nodeWillBeRemoved(Node&);
 
     void didInsertText(Node*, unsigned offset, unsigned length);
     void didRemoveText(Node*, unsigned offset, unsigned length);
@@ -156,7 +156,7 @@ private:
     void setDocument(Document&);
 
     Node* checkNodeWOffset(Node*, int offset, ExceptionState&) const;
-    void checkNodeBA(Node*, ExceptionState&, const char* methodName) const;
+    void checkNodeBA(Node*, ExceptionState&) const;
     void checkDeleteExtract(ExceptionState&);
     int maxStartOffset() const;
     int maxEndOffset() const;

@@ -59,6 +59,11 @@ static __inline uint32 Abs(int32 v) {
 }
 #endif  // USE_BRANCHLESS
 
+// Divide num by div and return as 16.16 fixed point result.
+int FixedDiv_C(int num, int div) {
+  return static_cast<int>((static_cast<int64>(num) << 16) / div);
+}
+
 #ifdef LIBYUV_LITTLE_ENDIAN
 #define WRITEWORD(p, v) *reinterpret_cast<uint32*>(p) = v
 #else
@@ -649,21 +654,27 @@ void ARGBSepiaRow_C(uint8* dst_argb, int width) {
 }
 
 // Apply color matrix to a row of image. Matrix is signed.
-void ARGBColorMatrixRow_C(uint8* dst_argb, const int8* matrix_argb, int width) {
+// TODO(fbarchard): Consider adding rounding (+32).
+void ARGBColorMatrixRow_C(const uint8* src_argb, uint8* dst_argb,
+                          const int8* matrix_argb, int width) {
   for (int x = 0; x < width; ++x) {
-    int b = dst_argb[0];
-    int g = dst_argb[1];
-    int r = dst_argb[2];
-    int a = dst_argb[3];
+    int b = src_argb[0];
+    int g = src_argb[1];
+    int r = src_argb[2];
+    int a = src_argb[3];
     int sb = (b * matrix_argb[0] + g * matrix_argb[1] +
-              r * matrix_argb[2] + a * matrix_argb[3]) >> 7;
+              r * matrix_argb[2] + a * matrix_argb[3]) >> 6;
     int sg = (b * matrix_argb[4] + g * matrix_argb[5] +
-              r * matrix_argb[6] + a * matrix_argb[7]) >> 7;
+              r * matrix_argb[6] + a * matrix_argb[7]) >> 6;
     int sr = (b * matrix_argb[8] + g * matrix_argb[9] +
-              r * matrix_argb[10] + a * matrix_argb[11]) >> 7;
+              r * matrix_argb[10] + a * matrix_argb[11]) >> 6;
+    int sa = (b * matrix_argb[12] + g * matrix_argb[13] +
+              r * matrix_argb[14] + a * matrix_argb[15]) >> 6;
     dst_argb[0] = Clamp(sb);
     dst_argb[1] = Clamp(sg);
     dst_argb[2] = Clamp(sr);
+    dst_argb[3] = Clamp(sa);
+    src_argb += 4;
     dst_argb += 4;
   }
 }
@@ -679,6 +690,19 @@ void ARGBColorTableRow_C(uint8* dst_argb, const uint8* table_argb, int width) {
     dst_argb[1] = table_argb[g * 4 + 1];
     dst_argb[2] = table_argb[r * 4 + 2];
     dst_argb[3] = table_argb[a * 4 + 3];
+    dst_argb += 4;
+  }
+}
+
+// Apply color table to a row of image.
+void RGBColorTableRow_C(uint8* dst_argb, const uint8* table_argb, int width) {
+  for (int x = 0; x < width; ++x) {
+    int b = dst_argb[0];
+    int g = dst_argb[1];
+    int r = dst_argb[2];
+    dst_argb[0] = table_argb[b * 4 + 0];
+    dst_argb[1] = table_argb[g * 4 + 1];
+    dst_argb[2] = table_argb[r * 4 + 2];
     dst_argb += 4;
   }
 }
@@ -842,6 +866,16 @@ void SobelRow_C(const uint8* src_sobelx, const uint8* src_sobely,
     dst_argb[2] = static_cast<uint8>(s);
     dst_argb[3] = static_cast<uint8>(255u);
     dst_argb += 4;
+  }
+}
+
+void SobelToPlaneRow_C(const uint8* src_sobelx, const uint8* src_sobely,
+                       uint8* dst_y, int width) {
+  for (int i = 0; i < width; ++i) {
+    int r = src_sobelx[i];
+    int b = src_sobely[i];
+    int s = clamp255(r + b);
+    dst_y[i] = static_cast<uint8>(s);
   }
 }
 
@@ -1670,7 +1704,7 @@ void ARGBAttenuateRow_C(const uint8* src_argb, uint8* dst_argb, int width) {
 // Reciprocal method is off by 1 on some values. ie 125
 // 8.8 fixed point inverse table with 1.0 in upper short and 1 / a in lower.
 #define T(a) 0x01000000 + (0x10000 / a)
-uint32 fixed_invtbl8[256] = {
+const uint32 fixed_invtbl8[256] = {
   0x01000000, 0x0100ffff, T(0x02), T(0x03), T(0x04), T(0x05), T(0x06), T(0x07),
   T(0x08), T(0x09), T(0x0a), T(0x0b), T(0x0c), T(0x0d), T(0x0e), T(0x0f),
   T(0x10), T(0x11), T(0x12), T(0x13), T(0x14), T(0x15), T(0x16), T(0x17),
@@ -1774,10 +1808,26 @@ void ARGBAffineRow_C(const uint8* src_argb, int src_argb_stride,
   }
 }
 
+// Blend 2 rows into 1 for conversions such as I422ToI420.
+void HalfRow_C(const uint8* src_uv, int src_uv_stride,
+               uint8* dst_uv, int pix) {
+  for (int x = 0; x < pix; ++x) {
+    dst_uv[x] = (src_uv[x] + src_uv[src_uv_stride + x] + 1) >> 1;
+  }
+}
+
 // C version 2x2 -> 2x1.
 void InterpolateRow_C(uint8* dst_ptr, const uint8* src_ptr,
                       ptrdiff_t src_stride,
                       int width, int source_y_fraction) {
+  if (source_y_fraction == 0) {
+    memcpy(dst_ptr, src_ptr, width);
+    return;
+  }
+  if (source_y_fraction == 128) {
+    HalfRow_C(src_ptr, static_cast<int>(src_stride), dst_ptr, width);
+    return;
+  }
   int y1_fraction = source_y_fraction;
   int y0_fraction = 256 - y1_fraction;
   const uint8* src_ptr1 = src_ptr + src_stride;
@@ -1791,14 +1841,6 @@ void InterpolateRow_C(uint8* dst_ptr, const uint8* src_ptr,
   }
   if (width & 1) {
     dst_ptr[0] = (src_ptr[0] * y0_fraction + src_ptr1[0] * y1_fraction) >> 8;
-  }
-}
-
-// Blend 2 rows into 1 for conversions such as I422ToI420.
-void HalfRow_C(const uint8* src_uv, int src_uv_stride,
-               uint8* dst_uv, int pix) {
-  for (int x = 0; x < pix; ++x) {
-    dst_uv[x] = (src_uv[x] + src_uv[src_uv_stride + x] + 1) >> 1;
   }
 }
 
@@ -1816,6 +1858,21 @@ void ARGBToBayerRow_C(const uint8* src_argb,
   }
   if (pix & 1) {
     dst_bayer[0] = src_argb[index0];
+  }
+}
+
+// Select G channel from ARGB.  e.g.  GGGGGGGG
+void ARGBToBayerGGRow_C(const uint8* src_argb,
+                        uint8* dst_bayer, uint32 /*selector*/, int pix) {
+  // Copy a row of G.
+  for (int x = 0; x < pix - 1; x += 2) {
+    dst_bayer[0] = src_argb[1];
+    dst_bayer[1] = src_argb[5];
+    src_argb += 8;
+    dst_bayer += 2;
+  }
+  if (pix & 1) {
+    dst_bayer[0] = src_argb[1];
   }
 }
 
@@ -1886,10 +1943,19 @@ void I422ToUYVYRow_C(const uint8* src_y,
     }
 }
 
-#if !defined(LIBYUV_DISABLE_X86)
+// TODO(fbarchard): Ensure these are stack safe.
+#ifdef DEBUG
+#define MAYBE_SAFEBUFFERS
+#else
+#define MAYBE_SAFEBUFFERS SAFEBUFFERS
+#endif
+
+
+#if !defined(LIBYUV_DISABLE_X86) && defined(HAS_I422TOARGBROW_SSSE3)
 // row_win.cc has asm version, but GCC uses 2 step wrapper.  5% slower.
 // TODO(fbarchard): Handle width > kMaxStride here instead of calling code.
 #if defined(__x86_64__) || defined(__i386__)
+MAYBE_SAFEBUFFERS
 void I422ToRGB565Row_SSSE3(const uint8* src_y,
                            const uint8* src_u,
                            const uint8* src_v,
@@ -1902,6 +1968,7 @@ void I422ToRGB565Row_SSSE3(const uint8* src_y,
 #endif  // defined(__x86_64__) || defined(__i386__)
 
 #if defined(_M_IX86) || defined(__x86_64__) || defined(__i386__)
+MAYBE_SAFEBUFFERS
 void I422ToARGB1555Row_SSSE3(const uint8* src_y,
                              const uint8* src_u,
                              const uint8* src_v,
@@ -1912,6 +1979,7 @@ void I422ToARGB1555Row_SSSE3(const uint8* src_y,
   ARGBToARGB1555Row_SSE2(row, rgb_buf, width);
 }
 
+MAYBE_SAFEBUFFERS
 void I422ToARGB4444Row_SSSE3(const uint8* src_y,
                              const uint8* src_u,
                              const uint8* src_v,
@@ -1922,6 +1990,7 @@ void I422ToARGB4444Row_SSSE3(const uint8* src_y,
   ARGBToARGB4444Row_SSE2(row, rgb_buf, width);
 }
 
+MAYBE_SAFEBUFFERS
 void NV12ToRGB565Row_SSSE3(const uint8* src_y,
                            const uint8* src_uv,
                            uint8* dst_rgb565,
@@ -1931,6 +2000,7 @@ void NV12ToRGB565Row_SSSE3(const uint8* src_y,
   ARGBToRGB565Row_SSE2(row, dst_rgb565, width);
 }
 
+MAYBE_SAFEBUFFERS
 void NV21ToRGB565Row_SSSE3(const uint8* src_y,
                            const uint8* src_vu,
                            uint8* dst_rgb565,
@@ -1940,6 +2010,7 @@ void NV21ToRGB565Row_SSSE3(const uint8* src_y,
   ARGBToRGB565Row_SSE2(row, dst_rgb565, width);
 }
 
+MAYBE_SAFEBUFFERS
 void YUY2ToARGBRow_SSSE3(const uint8* src_yuy2,
                          uint8* dst_argb,
                          int width) {
@@ -1951,6 +2022,7 @@ void YUY2ToARGBRow_SSSE3(const uint8* src_yuy2,
   I422ToARGBRow_SSSE3(row_y, row_u, row_v, dst_argb, width);
 }
 
+MAYBE_SAFEBUFFERS
 void YUY2ToARGBRow_Unaligned_SSSE3(const uint8* src_yuy2,
                                    uint8* dst_argb,
                                    int width) {
@@ -1962,6 +2034,7 @@ void YUY2ToARGBRow_Unaligned_SSSE3(const uint8* src_yuy2,
   I422ToARGBRow_Unaligned_SSSE3(row_y, row_u, row_v, dst_argb, width);
 }
 
+MAYBE_SAFEBUFFERS
 void UYVYToARGBRow_SSSE3(const uint8* src_uyvy,
                          uint8* dst_argb,
                          int width) {
@@ -1973,6 +2046,7 @@ void UYVYToARGBRow_SSSE3(const uint8* src_uyvy,
   I422ToARGBRow_SSSE3(row_y, row_u, row_v, dst_argb, width);
 }
 
+MAYBE_SAFEBUFFERS
 void UYVYToARGBRow_Unaligned_SSSE3(const uint8* src_uyvy,
                                    uint8* dst_argb,
                                    int width) {
@@ -1986,8 +2060,102 @@ void UYVYToARGBRow_Unaligned_SSSE3(const uint8* src_uyvy,
 
 #endif  // defined(_M_IX86) || defined(__x86_64__) || defined(__i386__)
 #endif  // !defined(LIBYUV_DISABLE_X86)
-#undef clamp0
-#undef clamp255
+
+void ARGBPolynomialRow_C(const uint8* src_argb,
+                         uint8* dst_argb, const float* poly,
+                         int width) {
+  for (int i = 0; i < width; ++i) {
+    float b = static_cast<float>(src_argb[0]);
+    float g = static_cast<float>(src_argb[1]);
+    float r = static_cast<float>(src_argb[2]);
+    float a = static_cast<float>(src_argb[3]);
+    float b2 = b * b;
+    float g2 = g * g;
+    float r2 = r * r;
+    float a2 = a * a;
+    float db = poly[0] + poly[4] * b;
+    float dg = poly[1] + poly[5] * g;
+    float dr = poly[2] + poly[6] * r;
+    float da = poly[3] + poly[7] * a;
+    db += poly[8] * b2;
+    dg += poly[9] * g2;
+    dr += poly[10] * r2;
+    da += poly[11] * a2;
+    float b3 = b2 * b;
+    float g3 = g2 * g;
+    float r3 = r2 * r;
+    float a3 = a2 * a;
+    db += poly[12] * b3;
+    dg += poly[13] * g3;
+    dr += poly[14] * r3;
+    da += poly[15] * a3;
+
+    dst_argb[0] = Clamp(static_cast<int32>(db));
+    dst_argb[1] = Clamp(static_cast<int32>(dg));
+    dst_argb[2] = Clamp(static_cast<int32>(dr));
+    dst_argb[3] = Clamp(static_cast<int32>(da));
+    src_argb += 4;
+    dst_argb += 4;
+  }
+}
+
+void ARGBLumaColorTableRow_C(const uint8* src_argb, uint8* dst_argb, int width,
+                             const uint8* luma, const uint32 lumacoeff) {
+  uint32 bc = lumacoeff & 0xff;
+  uint32 gc = (lumacoeff >> 8) & 0xff;
+  uint32 rc = (lumacoeff >> 16) & 0xff;
+
+  for (int i = 0; i < width - 1; i += 2) {
+    // Luminance in rows, color values in columns.
+    const uint8* luma0 = ((src_argb[0] * bc + src_argb[1] * gc +
+                           src_argb[2] * rc) & 0x7F00u) + luma;
+    dst_argb[0] = luma0[src_argb[0]];
+    dst_argb[1] = luma0[src_argb[1]];
+    dst_argb[2] = luma0[src_argb[2]];
+    dst_argb[3] = src_argb[3];
+    const uint8* luma1 = ((src_argb[4] * bc + src_argb[5] * gc +
+                           src_argb[6] * rc) & 0x7F00u) + luma;
+    dst_argb[4] = luma1[src_argb[4]];
+    dst_argb[5] = luma1[src_argb[5]];
+    dst_argb[6] = luma1[src_argb[6]];
+    dst_argb[7] = src_argb[7];
+    src_argb += 8;
+    dst_argb += 8;
+  }
+  if (width & 1) {
+    // Luminance in rows, color values in columns.
+    const uint8* luma0 = ((src_argb[0] * bc + src_argb[1] * gc +
+                           src_argb[2] * rc) & 0x7F00u) + luma;
+    dst_argb[0] = luma0[src_argb[0]];
+    dst_argb[1] = luma0[src_argb[1]];
+    dst_argb[2] = luma0[src_argb[2]];
+    dst_argb[3] = src_argb[3];
+  }
+}
+
+void ARGBCopyAlphaRow_C(const uint8* src, uint8* dst, int width) {
+  for (int i = 0; i < width - 1; i += 2) {
+    dst[3] = src[3];
+    dst[7] = src[7];
+    dst += 8;
+    src += 8;
+  }
+  if (width & 1) {
+    dst[3] = src[3];
+  }
+}
+
+void ARGBCopyYToAlphaRow_C(const uint8* src, uint8* dst, int width) {
+  for (int i = 0; i < width - 1; i += 2) {
+    dst[3] = src[0];
+    dst[7] = src[1];
+    dst += 8;
+    src += 2;
+  }
+  if (width & 1) {
+    dst[3] = src[0];
+  }
+}
 
 #ifdef __cplusplus
 }  // extern "C"

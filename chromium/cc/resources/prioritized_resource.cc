@@ -124,6 +124,7 @@ PrioritizedResource::Backing::Backing(unsigned id,
       priority_at_last_priority_update_(PriorityCalculator::LowestPriority()),
       was_above_priority_cutoff_at_last_priority_update_(false),
       in_drawing_impl_tree_(false),
+      in_parent_compositor_(false),
 #ifdef NDEBUG
       resource_has_been_deleted_(false) {}
 #else
@@ -154,7 +155,7 @@ bool PrioritizedResource::Backing::ResourceHasBeenDeleted() const {
   return resource_has_been_deleted_;
 }
 
-bool PrioritizedResource::Backing::CanBeRecycled() const {
+bool PrioritizedResource::Backing::CanBeRecycledIfNotInExternalUse() const {
   DCHECK(!proxy() || proxy()->IsImplThread());
   return !was_above_priority_cutoff_at_last_priority_update_ &&
          !in_drawing_impl_tree_;
@@ -173,10 +174,12 @@ void PrioritizedResource::Backing::UpdatePriority() {
   }
 }
 
-void PrioritizedResource::Backing::UpdateInDrawingImplTree() {
+void PrioritizedResource::Backing::UpdateState(
+    ResourceProvider* resource_provider) {
   DCHECK(!proxy() ||
          (proxy()->IsImplThread() && proxy()->IsMainThreadBlocked()));
   in_drawing_impl_tree_ = !!owner();
+  in_parent_compositor_ = resource_provider->InUseByConsumer(id());
   if (!in_drawing_impl_tree_) {
     DCHECK_EQ(priority_at_last_priority_update_,
               PriorityCalculator::LowestPriority());

@@ -125,10 +125,11 @@ class StunBindingRequest : public StunRequest {
 };
 
 UDPPort::UDPPort(talk_base::Thread* thread,
+                 talk_base::PacketSocketFactory* factory,
                  talk_base::Network* network,
                  talk_base::AsyncPacketSocket* socket,
                  const std::string& username, const std::string& password)
-    : Port(thread, network, socket->GetLocalAddress().ipaddr(),
+    : Port(thread, factory, network, socket->GetLocalAddress().ipaddr(),
            username, password),
       requests_(thread),
       socket_(socket),
@@ -139,10 +140,10 @@ UDPPort::UDPPort(talk_base::Thread* thread,
 }
 
 UDPPort::UDPPort(talk_base::Thread* thread,
-                   talk_base::PacketSocketFactory* factory,
-                   talk_base::Network* network,
-                   const talk_base::IPAddress& ip, int min_port, int max_port,
-                   const std::string& username, const std::string& password)
+                 talk_base::PacketSocketFactory* factory,
+                 talk_base::Network* network,
+                 const talk_base::IPAddress& ip, int min_port, int max_port,
+                 const std::string& username, const std::string& password)
     : Port(thread, LOCAL_PORT_TYPE, factory, network, ip, min_port, max_port,
            username, password),
       requests_(thread),
@@ -253,9 +254,10 @@ void UDPPort::OnLocalAddressReady(talk_base::AsyncPacketSocket* socket,
   MaybePrepareStunCandidate();
 }
 
-void UDPPort::OnReadPacket(talk_base::AsyncPacketSocket* socket,
-                           const char* data, size_t size,
-                           const talk_base::SocketAddress& remote_addr) {
+void UDPPort::OnReadPacket(
+  talk_base::AsyncPacketSocket* socket, const char* data, size_t size,
+  const talk_base::SocketAddress& remote_addr,
+  const talk_base::PacketTime& packet_time) {
   ASSERT(socket == socket_);
 
   // Look for a response from the STUN server.
@@ -268,7 +270,7 @@ void UDPPort::OnReadPacket(talk_base::AsyncPacketSocket* socket,
   }
 
   if (Connection* conn = GetConnection(remote_addr)) {
-    conn->OnReadPacket(data, size);
+    conn->OnReadPacket(data, size, packet_time);
   } else {
     Port::OnReadPacket(data, size, remote_addr, PROTO_UDP);
   }
@@ -287,8 +289,13 @@ void UDPPort::SendStunBindingRequest() {
   if (server_addr_.IsUnresolved()) {
     ResolveStunAddress();
   } else if (socket_->GetState() == talk_base::AsyncPacketSocket::STATE_BOUND) {
-    if (server_addr_.family() == ip().family()) {
+    // Check if |server_addr_| is compatible with the port's ip.
+    if (IsCompatibleAddress(server_addr_)) {
       requests_.Send(new StunBindingRequest(this, true, server_addr_));
+    } else {
+      // Since we can't send stun messages to the server, we should mark this
+      // port ready.
+      OnStunBindingOrResolveRequestFailed();
     }
   }
 }
@@ -297,21 +304,21 @@ void UDPPort::ResolveStunAddress() {
   if (resolver_)
     return;
 
-  resolver_ = new talk_base::AsyncResolver();
-  resolver_->SignalWorkDone.connect(this, &UDPPort::OnResolveResult);
-  resolver_->set_address(server_addr_);
-  resolver_->Start();
+  resolver_ = socket_factory()->CreateAsyncResolver();
+  resolver_->SignalDone.connect(this, &UDPPort::OnResolveResult);
+  resolver_->Start(server_addr_);
 }
 
-void UDPPort::OnResolveResult(talk_base::SignalThread* t) {
-  ASSERT(t == resolver_);
-  if (resolver_->error() != 0) {
+void UDPPort::OnResolveResult(talk_base::AsyncResolverInterface* resolver) {
+  ASSERT(resolver == resolver_);
+  if (resolver_->GetError() != 0 ||
+      !resolver_->GetResolvedAddress(ip().family(), &server_addr_))  {
     LOG_J(LS_WARNING, this) << "StunPort: stun host lookup received error "
-                            << resolver_->error();
+                            << resolver_->GetError();
     OnStunBindingOrResolveRequestFailed();
+    return;
   }
 
-  server_addr_ = resolver_->address();
   SendStunBindingRequest();
 }
 

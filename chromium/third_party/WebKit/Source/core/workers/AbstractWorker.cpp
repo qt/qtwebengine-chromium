@@ -32,15 +32,14 @@
 #include "core/workers/AbstractWorker.h"
 
 #include "bindings/v8/ExceptionState.h"
-#include "core/dom/EventNames.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ScriptExecutionContext.h"
-#include "core/page/ContentSecurityPolicy.h"
-#include "weborigin/SecurityOrigin.h"
+#include "core/dom/ExecutionContext.h"
+#include "core/frame/ContentSecurityPolicy.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
-AbstractWorker::AbstractWorker(ScriptExecutionContext* context)
+AbstractWorker::AbstractWorker(ExecutionContext* context)
     : ActiveDOMObject(context)
 {
 }
@@ -49,47 +48,27 @@ AbstractWorker::~AbstractWorker()
 {
 }
 
-void AbstractWorker::contextDestroyed()
+KURL AbstractWorker::resolveURL(const String& url, ExceptionState& exceptionState)
 {
-    ActiveDOMObject::contextDestroyed();
-}
-
-KURL AbstractWorker::resolveURL(const String& url, ExceptionState& es)
-{
-    if (url.isEmpty()) {
-        es.throwDOMException(SyntaxError, "Failed to create a worker: an empty URL was provided.");
-        return KURL();
-    }
-
     // FIXME: This should use the dynamic global scope (bug #27887)
-    KURL scriptURL = scriptExecutionContext()->completeURL(url);
+    KURL scriptURL = executionContext()->completeURL(url);
     if (!scriptURL.isValid()) {
-        es.throwDOMException(SyntaxError, "Failed to create a worker: '" + url + "' is not a valid URL.");
+        exceptionState.throwDOMException(SyntaxError, "'" + url + "' is not a valid URL.");
         return KURL();
     }
 
     // We can safely expose the URL in the following exceptions, as these checks happen synchronously before redirection. JavaScript receives no new information.
-    if (!scriptExecutionContext()->securityOrigin()->canRequest(scriptURL)) {
-        es.throwSecurityError("Failed to create a worker: script at '" + scriptURL.elidedString() + "' cannot be accessed from origin '" + scriptExecutionContext()->securityOrigin()->toString() + "'.");
+    if (!executionContext()->securityOrigin()->canRequest(scriptURL)) {
+        exceptionState.throwSecurityError("Script at '" + scriptURL.elidedString() + "' cannot be accessed from origin '" + executionContext()->securityOrigin()->toString() + "'.");
         return KURL();
     }
 
-    if (scriptExecutionContext()->contentSecurityPolicy() && !scriptExecutionContext()->contentSecurityPolicy()->allowScriptFromSource(scriptURL)) {
-        es.throwSecurityError("Failed to create a worker: access to the script at '" + scriptURL.elidedString() + "' is denied by the document's Content Security Policy.");
+    if (executionContext()->contentSecurityPolicy() && !executionContext()->contentSecurityPolicy()->allowScriptFromSource(scriptURL)) {
+        exceptionState.throwSecurityError("Access to the script at '" + scriptURL.elidedString() + "' is denied by the document's Content Security Policy.");
         return KURL();
     }
 
     return scriptURL;
-}
-
-EventTargetData* AbstractWorker::eventTargetData()
-{
-    return &m_eventTargetData;
-}
-
-EventTargetData* AbstractWorker::ensureEventTargetData()
-{
-    return &m_eventTargetData;
 }
 
 } // namespace WebCore

@@ -71,8 +71,7 @@ private:
 
     virtual void viewCleared() OVERRIDE FINAL;
 
-    virtual bool scroll(ScrollDirection, ScrollGranularity, float multiplier, Node** stopNode) OVERRIDE FINAL;
-    virtual bool logicalScroll(ScrollLogicalDirection, ScrollGranularity, float multiplier, Node** stopNode) OVERRIDE FINAL;
+    virtual bool scroll(ScrollDirection, ScrollGranularity, float multiplier) OVERRIDE FINAL;
 
     bool getReplacementTextGeometry(const LayoutPoint& accumulatedOffset, FloatRect& contentRect, Path&, FloatRect& replacementTextRect, Font&, TextRun&, float& textWidth) const;
 
@@ -88,14 +87,7 @@ private:
     RenderObjectChildList m_children;
 };
 
-inline RenderEmbeddedObject* toRenderEmbeddedObject(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isEmbeddedObject());
-    return static_cast<RenderEmbeddedObject*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderEmbeddedObject(const RenderEmbeddedObject*);
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderEmbeddedObject, isEmbeddedObject());
 
 } // namespace WebCore
 

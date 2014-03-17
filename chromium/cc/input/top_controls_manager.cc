@@ -7,11 +7,12 @@
 #include <algorithm>
 
 #include "base/logging.h"
-#include "base/time/time.h"
 #include "cc/animation/keyframed_animation_curve.h"
 #include "cc/animation/timing_function.h"
 #include "cc/input/top_controls_manager_client.h"
+#include "cc/output/begin_frame_args.h"
 #include "cc/trees/layer_tree_impl.h"
+#include "ui/gfx/frame_time.h"
 #include "ui/gfx/transform.h"
 #include "ui/gfx/vector2d_f.h"
 
@@ -48,7 +49,8 @@ TopControlsManager::TopControlsManager(TopControlsManagerClient* client,
       top_controls_show_height_(
           top_controls_height * top_controls_hide_threshold),
       top_controls_hide_height_(
-          top_controls_height * (1.f - top_controls_show_threshold)) {
+          top_controls_height * (1.f - top_controls_show_threshold)),
+      pinch_gesture_active_(false) {
   CHECK(client_);
 }
 
@@ -89,6 +91,7 @@ void TopControlsManager::UpdateTopControlsState(TopControlsState constraints,
 }
 
 void TopControlsManager::ScrollBegin() {
+  DCHECK(!pinch_gesture_active_);
   ResetAnimations();
   current_scroll_delta_ = 0.f;
   controls_scroll_begin_offset_ = controls_top_offset_;
@@ -96,6 +99,9 @@ void TopControlsManager::ScrollBegin() {
 
 gfx::Vector2dF TopControlsManager::ScrollBy(
     const gfx::Vector2dF pending_delta) {
+  if (pinch_gesture_active_)
+    return pending_delta;
+
   if (permitted_state_ == SHOWN && pending_delta.y() > 0)
     return pending_delta;
   else if (permitted_state_ == HIDDEN && pending_delta.y() < 0)
@@ -120,7 +126,22 @@ gfx::Vector2dF TopControlsManager::ScrollBy(
 }
 
 void TopControlsManager::ScrollEnd() {
+  DCHECK(!pinch_gesture_active_);
   StartAnimationIfNecessary();
+}
+
+void TopControlsManager::PinchBegin() {
+  DCHECK(!pinch_gesture_active_);
+  pinch_gesture_active_ = true;
+  StartAnimationIfNecessary();
+}
+
+void TopControlsManager::PinchEnd() {
+  DCHECK(pinch_gesture_active_);
+  // Pinch{Begin,End} will always occur within the scope of Scroll{Begin,End},
+  // so return to a state expected by the remaining scroll sequence.
+  pinch_gesture_active_ = false;
+  ScrollBegin();
 }
 
 void TopControlsManager::SetControlsTopOffset(float controls_top_offset) {
@@ -174,7 +195,7 @@ void TopControlsManager::SetupAnimation(AnimationDirection direction) {
 
   top_controls_animation_ = KeyframedFloatAnimationCurve::Create();
   double start_time =
-      (base::TimeTicks::Now() - base::TimeTicks()).InMillisecondsF();
+      (gfx::FrameTime::Now() - base::TimeTicks()).InMillisecondsF();
   top_controls_animation_->AddKeyframe(
       FloatKeyframe::Create(start_time, controls_top_offset_,
                             scoped_ptr<TimingFunction>()));

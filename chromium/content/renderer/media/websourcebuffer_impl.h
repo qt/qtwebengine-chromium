@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "third_party/WebKit/public/web/WebSourceBuffer.h"
+#include "third_party/WebKit/public/platform/WebSourceBuffer.h"
 
 namespace media {
 class ChunkDemuxer;
@@ -17,13 +17,13 @@ class ChunkDemuxer;
 
 namespace content {
 
-class WebSourceBufferImpl : public WebKit::WebSourceBuffer {
+class WebSourceBufferImpl : public blink::WebSourceBuffer {
  public:
   WebSourceBufferImpl(const std::string& id, media::ChunkDemuxer* demuxer);
   virtual ~WebSourceBufferImpl();
 
-  // WebKit::WebSourceBuffer implementation.
-  virtual WebKit::WebTimeRanges buffered() OVERRIDE;
+  // blink::WebSourceBuffer implementation.
+  virtual blink::WebTimeRanges buffered() OVERRIDE;
   virtual void append(const unsigned char* data, unsigned length) OVERRIDE;
   virtual void abort() OVERRIDE;
   // TODO(acolwell): Add OVERRIDE when Blink-side changes land.

@@ -27,6 +27,9 @@
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 
 namespace webrtc {
+
+class EncodedFrameObserver;
+
 namespace vcm {
 
 class VCMProcessTimer {
@@ -95,6 +98,12 @@ class VideoSender {
   int StartDebugRecording(const char* file_name_utf8);
   int StopDebugRecording();
 
+  void SuspendBelowMinBitrate();
+  bool VideoSuspended() const;
+
+  void RegisterPostEncodeImageCallback(
+      EncodedImageCallback* post_encode_callback);
+
   int32_t TimeUntilNextProcess();
   int32_t Process();
 
@@ -133,6 +142,8 @@ class VideoReceiver {
   int32_t RegisterReceiveCallback(VCMReceiveCallback* receiveCallback);
   int32_t RegisterReceiveStatisticsCallback(
       VCMReceiveStatisticsCallback* receiveStats);
+  int32_t RegisterDecoderTimingCallback(
+      VCMDecoderTimingCallback* decoderTiming);
   int32_t RegisterFrameTypeCallback(VCMFrameTypeCallback* frameTypeCallback);
   int32_t RegisterPacketRequestCallback(VCMPacketRequestCallback* callback);
   int RegisterRenderBufferSizeCallback(VCMRenderBufferSizeCallback* callback);
@@ -168,6 +179,8 @@ class VideoReceiver {
   int32_t TimeUntilNextProcess();
   int32_t Process();
 
+  void RegisterPreDecodeImageCallback(EncodedImageCallback* observer);
+
  protected:
   int32_t Decode(const webrtc::VCMEncodedFrame& frame);
   int32_t RequestKeyFrame();
@@ -196,6 +209,7 @@ class VideoReceiver {
   VCMDecodedFrameCallback _dualDecodedFrameCallback;
   VCMFrameTypeCallback* _frameTypeCallback;
   VCMReceiveStatisticsCallback* _receiveStatsCallback;
+  VCMDecoderTimingCallback* _decoderTimingCallback;
   VCMPacketRequestCallback* _packetRequestCallback;
   VCMRenderBufferSizeCallback* render_buffer_callback_;
   VCMGenericDecoder* _decoder;
@@ -207,6 +221,7 @@ class VideoReceiver {
   VCMKeyRequestMode _keyRequestMode;
   bool _scheduleKeyRequest;
   size_t max_nack_list_size_;
+  EncodedImageCallback* pre_decode_image_callback_;
 
   VCMCodecDataBase _codecDataBase;
   VCMProcessTimer _receiveStatsTimer;

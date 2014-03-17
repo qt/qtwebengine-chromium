@@ -27,12 +27,11 @@
 
 #include "core/accessibility/AXObjectCache.h"
 #include "core/dom/Text.h"
+#include "core/editing/TextIterator.h"
 #include "core/fetch/TextResourceDecoder.h"
-#include "core/page/FrameView.h"
-#include "core/page/Settings.h"
-#include "core/platform/graphics/FloatQuad.h"
-#include "core/platform/text/TextBreakIterator.h"
-#include "core/platform/text/transcoder/FontTranscoder.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/Settings.h"
+#include "core/rendering/AbstractInlineTextBox.h"
 #include "core/rendering/EllipsisBox.h"
 #include "core/rendering/InlineTextBox.h"
 #include "core/rendering/RenderBlock.h"
@@ -40,6 +39,8 @@
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/break_lines.h"
+#include "platform/geometry/FloatQuad.h"
+#include "platform/text/TextBreakIterator.h"
 #include "wtf/text/StringBuffer.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/unicode/CharacterNames.h"
@@ -120,8 +121,8 @@ static void makeCapitalized(String* string, UChar previous)
     result.reserveCapacity(length);
 
     int32_t endOfWord;
-    int32_t startOfWord = textBreakFirst(boundary);
-    for (endOfWord = textBreakNext(boundary); endOfWord != TextBreakDone; startOfWord = endOfWord, endOfWord = textBreakNext(boundary)) {
+    int32_t startOfWord = boundary->first();
+    for (endOfWord = boundary->next(); endOfWord != TextBreakDone; startOfWord = endOfWord, endOfWord = boundary->next()) {
         if (startOfWord) // Ignore first char of previous string
             result.append(input[startOfWord - 1] == noBreakSpace ? noBreakSpace : toTitleCase(stringWithPrevious[startOfWord]));
         for (int i = startOfWord + 1; i < endOfWord; i++)
@@ -137,7 +138,6 @@ RenderText::RenderText(Node* node, PassRefPtr<StringImpl> str)
     , m_linesDirty(false)
     , m_containsReversedText(false)
     , m_knownToHaveNoOverflowAndNoFallbackFonts(false)
-    , m_needsTranscoding(false)
     , m_minWidth(-1)
     , m_maxWidth(-1)
     , m_firstLineMinWidth(0)
@@ -184,12 +184,6 @@ bool RenderText::isWordBreak() const
     return false;
 }
 
-void RenderText::updateNeedsTranscoding()
-{
-    const WTF::TextEncoding* encoding = document().decoder() ? &document().decoder()->encoding() : 0;
-    m_needsTranscoding = fontTranscoder().needsTranscoding(style()->font().fontDescription(), encoding);
-}
-
 void RenderText::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
 {
     // There is no need to ever schedule repaints from a style change of a text run, since
@@ -202,18 +196,9 @@ void RenderText::styleDidChange(StyleDifference diff, const RenderStyle* oldStyl
     }
 
     RenderStyle* newStyle = style();
-    bool needsResetText = false;
-    if (!oldStyle) {
-        updateNeedsTranscoding();
-        needsResetText = m_needsTranscoding;
-    } else if (oldStyle->font().needsTranscoding() != newStyle->font().needsTranscoding() || (newStyle->font().needsTranscoding() && oldStyle->font().family().family() != newStyle->font().family().family())) {
-        updateNeedsTranscoding();
-        needsResetText = true;
-    }
-
     ETextTransform oldTransform = oldStyle ? oldStyle->textTransform() : TTNONE;
     ETextSecurity oldSecurity = oldStyle ? oldStyle->textSecurity() : TSNONE;
-    if (needsResetText || oldTransform != newStyle->textTransform() || oldSecurity != newStyle->textSecurity())
+    if (oldTransform != newStyle->textTransform() || oldSecurity != newStyle->textSecurity())
         transformText();
 
     if (!text().containsOnlyWhitespace())
@@ -315,6 +300,22 @@ PassRefPtr<StringImpl> RenderText::originalText() const
     return (e && e->isTextNode()) ? toText(e)->dataImpl() : 0;
 }
 
+String RenderText::plainText() const
+{
+    if (node())
+        return WebCore::plainText(rangeOfContents(node()).get());
+
+    // FIXME: this is just a stopgap until TextIterator is adapted to support generated text.
+    StringBuilder plainTextBuilder;
+    for (InlineTextBox* textBox = firstTextBox(); textBox; textBox = textBox->nextTextBox()) {
+        String text = m_text.substring(textBox->start(), textBox->len()).simplifyWhiteSpace(WTF::DoNotStripWhiteSpace);
+        plainTextBuilder.append(text);
+        if (textBox->nextTextBox() && textBox->nextTextBox()->start() > textBox->end() && text.length() && !text.right(1).containsOnlyWhitespace())
+            plainTextBuilder.append(" ");
+    }
+    return plainTextBuilder.toString();
+}
+
 void RenderText::absoluteRects(Vector<IntRect>& rects, const LayoutPoint& accumulatedOffset) const
 {
     for (InlineTextBox* box = firstTextBox(); box; box = box->nextTextBox())
@@ -330,10 +331,10 @@ static FloatRect localQuadForTextBox(InlineTextBox* box, unsigned start, unsigne
             // Change the height and y position (or width and x for vertical text)
             // because selectionRect uses selection-specific values.
             if (box->isHorizontal()) {
-                r.setHeight(box->logicalHeight());
+                r.setHeight(box->height());
                 r.setY(box->y());
             } else {
-                r.setWidth(box->logicalWidth());
+                r.setWidth(box->width());
                 r.setX(box->x());
             }
         }
@@ -532,7 +533,8 @@ static PositionWithAffinity createPositionWithAffinityForBox(const InlineBox* bo
         affinity = offset > box->caretMinOffset() ? VP_UPSTREAM_IF_POSSIBLE : DOWNSTREAM;
         break;
     }
-    return box->renderer()->createPositionWithAffinity(offset, affinity);
+    int textStartOffset = box->renderer()->isText() ? toRenderText(box->renderer())->textStartOffset() : 0;
+    return box->renderer()->createPositionWithAffinity(offset + textStartOffset, affinity);
 }
 
 static PositionWithAffinity createPositionWithAffinityForBoxAfterAdjustingOffsetForBiDi(const InlineTextBox* box, int offset, ShouldAffinityBeDownstream shouldAffinityBeDownstream)
@@ -758,7 +760,7 @@ ALWAYS_INLINE float RenderText::widthFromCache(const Font& f, int start, int len
         return w;
     }
 
-    TextRun run = RenderBlock::constructTextRun(const_cast<RenderText*>(this), f, this, start, len, style());
+    TextRun run = RenderBlockFlow::constructTextRun(const_cast<RenderText*>(this), f, this, start, len, style());
     run.setCharactersLength(textLength() - start);
     ASSERT(run.charactersLength() >= run.length());
 
@@ -813,7 +815,7 @@ void RenderText::trimmedPrefWidths(float leadWidth,
         const Font& font = style()->font(); // FIXME: This ignores first-line.
         if (stripFrontSpaces) {
             const UChar space = ' ';
-            float spaceWidth = font.width(RenderBlock::constructTextRun(this, font, &space, 1, style()));
+            float spaceWidth = font.width(RenderBlockFlow::constructTextRun(this, font, &space, 1, style()));
             maxWidth -= spaceWidth;
         } else {
             maxWidth += font.wordSpacing();
@@ -887,7 +889,7 @@ void RenderText::computePreferredLogicalWidths(float leadWidth)
 static inline float hyphenWidth(RenderText* renderer, const Font& font)
 {
     RenderStyle* style = renderer->style();
-    return font.width(RenderBlock::constructTextRun(renderer, font, style->hyphenString().string(), style));
+    return font.width(RenderBlockFlow::constructTextRun(renderer, font, style->hyphenString().string(), style));
 }
 
 void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const SimpleFontData*>& fallbackFonts, GlyphOverflow& glyphOverflow)
@@ -926,13 +928,11 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
 
     // Non-zero only when kerning is enabled, in which case we measure words with their trailing
     // space, then subtract its width.
-    float wordTrailingSpaceWidth = f.typesettingFeatures() & Kerning ? f.width(RenderBlock::constructTextRun(this, f, &space, 1, styleToUse)) + wordSpacing : 0;
+    float wordTrailingSpaceWidth = f.typesettingFeatures() & Kerning ? f.width(RenderBlockFlow::constructTextRun(this, f, &space, 1, styleToUse)) + wordSpacing : 0;
 
     // If automatic hyphenation is allowed, we keep track of the width of the widest word (or word
     // fragment) encountered so far, and only try hyphenating words that are wider.
     float maxWordWidth = numeric_limits<float>::max();
-    int minimumPrefixLength = 0;
-    int minimumSuffixLength = 0;
     int firstGlyphLeftOverflow = -1;
 
     bool breakAll = (styleToUse->wordBreak() == BreakAllWordBreak || styleToUse->wordBreak() == BreakWordBreak) && styleToUse->autoWrap();
@@ -1074,7 +1074,7 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
                     m_maxWidth = currMaxWidth;
                 currMaxWidth = 0;
             } else {
-                TextRun run = RenderBlock::constructTextRun(this, f, this, i, 1, styleToUse);
+                TextRun run = RenderBlockFlow::constructTextRun(this, f, this, i, 1, styleToUse);
                 run.setCharactersLength(len - i);
                 ASSERT(run.charactersLength() >= run.length());
                 run.setTabSize(!style()->collapseWhiteSpace(), style()->tabSize());
@@ -1316,10 +1316,10 @@ void applyTextTransform(const RenderStyle* style, String& text, UChar previousCh
         makeCapitalized(&text, previousCharacter);
         break;
     case UPPERCASE:
-        text.makeUpper();
+        text = text.upper(style->locale());
         break;
     case LOWERCASE:
-        text.makeLower();
+        text = text.lower(style->locale());
         break;
     }
 }
@@ -1328,11 +1328,6 @@ void RenderText::setTextInternal(PassRefPtr<StringImpl> text)
 {
     ASSERT(text);
     m_text = text;
-    if (m_needsTranscoding) {
-        const WTF::TextEncoding* encoding = document().decoder() ? &document().decoder()->encoding() : 0;
-        fontTranscoder().convert(m_text, style()->font().fontDescription(), encoding);
-    }
-    ASSERT(m_text);
 
     if (style()) {
         applyTextTransform(style(), m_text, previousCharacter());
@@ -1366,17 +1361,17 @@ void RenderText::secureText(UChar mask)
         return;
 
     int lastTypedCharacterOffsetToReveal = -1;
-    String revealedText;
+    UChar revealedText;
     SecureTextTimer* secureTextTimer = gSecureTextTimers ? gSecureTextTimers->get(this) : 0;
     if (secureTextTimer && secureTextTimer->isActive()) {
         lastTypedCharacterOffsetToReveal = secureTextTimer->lastTypedCharacterOffset();
         if (lastTypedCharacterOffsetToReveal >= 0)
-            revealedText.append(m_text[lastTypedCharacterOffsetToReveal]);
+            revealedText = m_text[lastTypedCharacterOffsetToReveal];
     }
 
     m_text.fill(mask);
     if (lastTypedCharacterOffsetToReveal >= 0) {
-        m_text.replace(lastTypedCharacterOffsetToReveal, 1, revealedText);
+        m_text.replace(lastTypedCharacterOffsetToReveal, 1, String(&revealedText, 1));
         // m_text may be updated later before timer fires. We invalidate the lastTypedCharacterOffset to avoid inconsistency.
         secureTextTimer->invalidate();
     }
@@ -1395,19 +1390,6 @@ void RenderText::setText(PassRefPtr<StringImpl> text, bool force)
 
     if (AXObjectCache* cache = document().existingAXObjectCache())
         cache->textChanged(this);
-}
-
-String RenderText::textWithoutTranscoding() const
-{
-    // If m_text isn't transcoded or is secure, we can just return the modified text.
-    if (!m_needsTranscoding || style()->textSecurity() != TSNONE)
-        return text();
-
-    // Otherwise, we should use original text. If text-transform is
-    // specified, we should transform the text on the fly.
-    String text = originalText();
-    applyTextTransform(style(), text, previousCharacter());
-    return text;
 }
 
 void RenderText::dirtyLineBoxes(bool fullLayout)
@@ -1496,7 +1478,7 @@ float RenderText::width(unsigned from, unsigned len, const Font& f, float xPos, 
         } else
             w = widthFromCache(f, from, len, xPos, fallbackFonts, glyphOverflow);
     } else {
-        TextRun run = RenderBlock::constructTextRun(const_cast<RenderText*>(this), f, this, from, len, style());
+        TextRun run = RenderBlockFlow::constructTextRun(const_cast<RenderText*>(this), f, this, from, len, style());
         run.setCharactersLength(textLength() - from);
         ASSERT(run.charactersLength() >= run.length());
 
@@ -1663,7 +1645,7 @@ int RenderText::previousOffset(int current) const
     if (!iterator)
         return current - 1;
 
-    long result = textBreakPreceding(iterator, current);
+    long result = iterator->preceding(current);
     if (result == TextBreakDone)
         result = current - 1;
 
@@ -1671,7 +1653,7 @@ int RenderText::previousOffset(int current) const
     return result;
 }
 
-#if OS(MACOSX)
+#if OS(POSIX)
 
 #define HANGUL_CHOSEONG_START (0x1100)
 #define HANGUL_CHOSEONG_END (0x115F)
@@ -1713,7 +1695,7 @@ inline bool isRegionalIndicator(UChar32 c)
 
 int RenderText::previousOffsetForBackwardDeletion(int current) const
 {
-#if OS(MACOSX)
+#if OS(POSIX)
     ASSERT(m_text);
     StringImpl& text = *m_text.impl();
     UChar32 character;
@@ -1756,7 +1738,6 @@ int RenderText::previousOffsetForBackwardDeletion(int current) const
     character = text.characterStartingAt(current);
     if (((character >= HANGUL_CHOSEONG_START) && (character <= HANGUL_JONGSEONG_END)) || ((character >= HANGUL_SYLLABLE_START) && (character <= HANGUL_SYLLABLE_END))) {
         HangulState state;
-        HangulState initialState;
 
         if (character < HANGUL_JUNGSEONG_START)
             state = HangulStateL;
@@ -1766,8 +1747,6 @@ int RenderText::previousOffsetForBackwardDeletion(int current) const
             state = HangulStateT;
         else
             state = isHangulLVT(character) ? HangulStateLVT : HangulStateLV;
-
-        initialState = state;
 
         while (current > 0 && ((character = text.characterStartingAt(current - 1)) >= HANGUL_CHOSEONG_START) && (character <= HANGUL_SYLLABLE_END) && ((character <= HANGUL_JONGSEONG_END) || (character >= HANGUL_SYLLABLE_START))) {
             switch (state) {
@@ -1800,7 +1779,7 @@ int RenderText::previousOffsetForBackwardDeletion(int current) const
 
     return current;
 #else
-    // Platforms other than Mac delete by one code point.
+    // Platforms other than Unix-like delete by one code point.
     if (U16_IS_TRAIL(m_text[--current]))
         --current;
     if (current < 0)
@@ -1819,7 +1798,7 @@ int RenderText::nextOffset(int current) const
     if (!iterator)
         return current + 1;
 
-    long result = textBreakFollowing(iterator, current);
+    long result = iterator->following(current);
     if (result == TextBreakDone)
         result = current + 1;
 
@@ -1861,6 +1840,11 @@ void RenderText::momentarilyRevealLastTypedCharacter(unsigned lastTypedCharacter
         gSecureTextTimers->add(this, secureTextTimer);
     }
     secureTextTimer->restartWithNewText(lastTypedCharacterOffset);
+}
+
+PassRefPtr<AbstractInlineTextBox> RenderText::firstAbstractInlineTextBox()
+{
+    return AbstractInlineTextBox::getOrCreate(this, m_firstTextBox);
 }
 
 } // namespace WebCore

@@ -166,8 +166,8 @@ static int xsub_encode(AVCodecContext *avctx, unsigned char *buf,
     bytestream_put_le16(&hdr, height);
     bytestream_put_le16(&hdr, h->rects[0]->x);
     bytestream_put_le16(&hdr, h->rects[0]->y);
-    bytestream_put_le16(&hdr, h->rects[0]->x + width);
-    bytestream_put_le16(&hdr, h->rects[0]->y + height);
+    bytestream_put_le16(&hdr, h->rects[0]->x + width -1);
+    bytestream_put_le16(&hdr, h->rects[0]->y + height -1);
 
     rlelenptr = hdr; // Will store length of first field here later.
     hdr+=2;
@@ -206,14 +206,16 @@ static av_cold int xsub_encoder_init(AVCodecContext *avctx)
     if (!avctx->codec_tag)
         avctx->codec_tag = MKTAG('D','X','S','B');
 
+    avctx->bits_per_coded_sample = 4;
+
     return 0;
 }
 
 AVCodec ff_xsub_encoder = {
     .name       = "xsub",
+    .long_name  = NULL_IF_CONFIG_SMALL("DivX subtitles (XSUB)"),
     .type       = AVMEDIA_TYPE_SUBTITLE,
     .id         = AV_CODEC_ID_XSUB,
     .init       = xsub_encoder_init,
     .encode_sub = xsub_encode,
-    .long_name  = NULL_IF_CONFIG_SMALL("DivX subtitles (XSUB)"),
 };
